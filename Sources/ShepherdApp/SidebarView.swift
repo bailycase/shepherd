@@ -136,6 +136,7 @@ private struct SidebarItemView: View, Equatable {
                     .accessibilityLabel(row.accessibilityLabel)
                     .accessibilityAddTraits(row.selected ? .isSelected : [])
                     .contextMenu { SidebarRowMenu(vm: vm, row: row) }
+                    .threadDraggable(row.id)
             }
         }
     }
@@ -182,6 +183,7 @@ struct SidebarRowMenu: View {
                 Button("Rename…") { vm.agentRenameTarget = id }
                     .keyboardShortcut(KeybindingsStore.shared.shortcut(.renameAgent))
                 PinMenuItem(vm: vm, row: row)
+                if !row.worktree { ThreadMoveMenu(vm: vm, row: row.id) }
                 Button("Fork from Here", systemImage: "arrow.branch") { vm.forkAgent(id) }
                 Button("Copy Transcript", systemImage: "doc.on.doc") { vm.copyAgentTranscript(id) }
                 Divider()
@@ -239,6 +241,9 @@ private struct RemoteRowMenu: View {
     var body: some View {
         Button("Rename…") { vm.remoteRenameTarget = ref }
         PinMenuItem(vm: vm, row: row)
+        if !row.worktree, vm.remoteHosts.connections.first(where: { $0.id == ref.hostID })?.supportsThreadMove == true {
+            ThreadMoveMenu(vm: vm, row: row.id)
+        }
         Divider()
         if row.worktree {
             Button("Finalize Worktree…") {

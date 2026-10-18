@@ -243,6 +243,17 @@ struct NativePeerEngineTests {
         #expect(started.duration(to: .now) <= .seconds(90))
         #expect(parentSnapshot?.stats?.cost == 0)
         #expect(peerSnapshot?.stats?.cost == 0)
+        // A task has settled in the native queue; a report's append receipt has arrived.
+        // Neither may leave a permanent move fence after real engine delivery.
+        let destinationPath = root.appendingPathComponent("moved")
+        try FileManager.default.createDirectory(at: destinationPath, withIntermediateDirectories: true)
+        let destination = Space(name: "Moved", path: destinationPath.path)
+        try await app.server.addSpace(destination)
+        try await eventuallyAsync("the delivered peer message and final turn capture to settle") {
+            do { try await vm.moveThread(peer.id, to: destination.id); return true }
+            catch let error as ProjectFileError where error.code == "thread_active" { return false }
+        }
+        #expect(app.server.state.agents.first { $0.id == peer.id }?.spaceID == destination.id)
         print("NativePeerEngineTests \(scenario): \(requests.count) loopback requests; real agent_spawn + agent_send finalized; \(expectedTurns) recipient turns; events \(events); two native peers; parent selection and menu spaces intact")
     }
 }

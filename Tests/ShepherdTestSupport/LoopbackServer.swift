@@ -7,8 +7,8 @@ import ShepherdTestKit
 /// tests: a blocking thread per connection over plain POSIX sockets, so what a test sees is the
 /// bytes and nothing a framework did to them. It never leaves the machine and stops with the test.
 ///
-/// `handler` gets each accepted socket on its own thread and owns it (it must close it). The
-/// HTTP and WebSocket servers below are handlers.
+/// `handler` gets each accepted socket on its own thread; the server closes it on return.
+/// The HTTP and WebSocket servers below are handlers.
 public final class LoopbackServer: @unchecked Sendable {
     public enum Family { case ipv4, ipv6 }
 
@@ -81,7 +81,13 @@ public final class LoopbackServer: @unchecked Sendable {
                 lock.unlock()
                 guard live else { close(client); return }
                 connections.withValue { $0 += 1 }
-                Thread.detachNewThread { handler(client) }
+                Thread.detachNewThread { [self] in
+                    handler(client)
+                    lock.lock()
+                    accepted.remove(client)
+                    close(client)
+                    lock.unlock()
+                }
             }
         }
     }
@@ -89,13 +95,14 @@ public final class LoopbackServer: @unchecked Sendable {
     /// Stops listening and shuts every connection a handler may still be blocked on.
     public func stop() {
         lock.lock()
+        defer { lock.unlock() }
+        guard !stopped else { return }
         stopped = true
-        let open = accepted
-        accepted.removeAll()
-        lock.unlock()
         shutdown(listenFD, SHUT_RDWR)
         close(listenFD)
-        for fd in open { shutdown(fd, SHUT_RDWR) }
+        // Keep shutdown and the handlers' close under the same lock: a closed descriptor may
+        // already belong to another test by the time stop runs.
+        for fd in accepted { shutdown(fd, SHUT_RDWR) }
     }
 
     public enum LoopbackError: Error { case system(String) }
@@ -174,7 +181,6 @@ public final class DevServerFixture: @unchecked Sendable {
     public init(family: LoopbackServer.Family = .ipv4, port: UInt16 = 0) throws {
         let requests = requests
         server = try LoopbackServer(family: family, port: port) { fd in
-            defer { close(fd) }
             guard let (head, rest) = LoopbackServer.readHead(fd) else { return }
             let lines = head.components(separatedBy: "\r\n")
             let requestLine = lines[0]
@@ -286,7 +292,6 @@ extension LoopbackServer {
     /// Echoes every byte it is sent.
     public static func echo(family: Family = .ipv4) throws -> LoopbackServer {
         try LoopbackServer(family: family) { fd in
-            defer { close(fd) }
             var buffer = [UInt8](repeating: 0, count: 64 * 1024)
             while true {
                 let n = retrying { read(fd, &buffer, buffer.count) }
@@ -300,7 +305,6 @@ extension LoopbackServer {
     /// counts what it wrote: how far a slow reader lets a sender run ahead.
     public static func firehose(written: Locked<Int>) throws -> LoopbackServer {
         try LoopbackServer { fd in
-            defer { close(fd) }
             let block = Data((0..<(64 * 1024)).map { UInt8($0 % 251) })
             while writeAll(fd, block) { written.withValue { $0 += block.count } }
         }
@@ -311,7 +315,7 @@ extension LoopbackServer {
     public static func deaf(open: Locked<Int> = Locked(0), address: String? = nil) throws -> LoopbackServer {
         try LoopbackServer(address: address) { fd in
             open.withValue { $0 += 1 }
-            defer { open.withValue { $0 -= 1 }; close(fd) }
+            defer { open.withValue { $0 -= 1 } }
             var byte: UInt8 = 0
             // Block until the peer or the server closes the socket, reading nothing that arrived.
             var pfd = pollfd(fd: fd, events: Int16(POLLHUP), revents: 0)

@@ -15,7 +15,6 @@ struct ProjectSettingsCompatibilityTests {
         let saved = Locked(original)
         let requests = Locked<[RemoteProjectsRequest]>([])
         let server = try LoopbackServer { fd in
-            defer { close(fd) }
             var line = Data()
             while let byte = LoopbackServer.readExactly(fd, 1) {
                 guard byte.first == 10 else {

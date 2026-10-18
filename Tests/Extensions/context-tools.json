@@ -82,7 +82,8 @@
         "agent_interrupt",
         "agent_wait",
         "agent_delete",
-        "agent_spawn"
+        "agent_spawn",
+        "agent_move"
       ],
       "group": "agent",
       "extension": "shepherd-panes.ts",

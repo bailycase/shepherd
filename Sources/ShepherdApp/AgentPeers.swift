@@ -80,6 +80,18 @@ extension ShepherdViewModel {
                 }
             }
 
+        case .move(_, let targetAgentID, let spaceID):
+            Task { @MainActor in
+                do {
+                    try await moveThread(targetAgentID, to: spaceID)
+                    respond(.ok)
+                } catch let error as ProjectFileError {
+                    respond(.failed(code: error.code, message: error.description))
+                } catch {
+                    respond(.failed(code: "move_failed", message: String(describing: error)))
+                }
+            }
+
         case .spawn(_, let cwd, let prompt):
             let expanded = (cwd as NSString).expandingTildeInPath
             var isDirectory: ObjCBool = false

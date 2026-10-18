@@ -126,6 +126,7 @@ final class RemoteHostStore {
         var supportsDesigns: Bool { designs.available }
 
         var supportsInspection: Bool { client?.capabilities.contains(RemoteProtocol.agentInspectionCapability) == true }
+        var supportsThreadMove: Bool { client?.capabilities.contains(RemoteProtocol.moveThreadCapability) == true }
         /// The host deletes a design for this Mac, with Undo (`design.delete.v1`, while it serves
         /// designs).
         var supportsDesignDelete: Bool {

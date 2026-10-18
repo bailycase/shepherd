@@ -67,7 +67,7 @@ struct RemoteBrowserTests {
     }
 
     private func unusedPort() throws -> UInt16 {
-        let server = try LoopbackServer { close($0) }
+        let server = try LoopbackServer { _ in }
         let port = server.port
         server.stop()
         return port

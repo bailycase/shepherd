@@ -55,7 +55,7 @@ struct PeerApprovalFlowTests {
         for id in 1...2 {
             try leadClient.send(.sendToAgent(id: id, agentID: lead.agent.id, targetAgentID: worker.agent.id, text: "run the tests"))
             #expect(try await leadClient.reply() == .ok(id: id))
-            #expect(try await workerClient.reply() == .message(id: 0, text: AgentMessageFraming.framed(from: "lead", "run the tests"), delivery: .task))
+            #expect(try await workerClient.reply() == .message(id: id, text: AgentMessageFraming.framed(from: "lead", "run the tests"), delivery: .task))
             window.layout()
             #expect(window.controls().allSatisfy { !["Deny", "Allow once", "Allow for this thread"].contains($0.label ?? "") })
         }

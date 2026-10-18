@@ -5,6 +5,10 @@ top of one foundation. This page says who owns what, how screens are reached, an
 track plugs into another's screen, so every track can open its own PR into `nightly` without
 colliding. [README.md](README.md) describes the app; [VALIDATION.md](VALIDATION.md) the checks.
 
+The shared `RemoteHostClient.agentAction` supports `.move(spaceID:)` behind `agent.move.v1`.
+It preserves the host's conversation and reloads destination context only for inactive ordinary
+threads. Mac and iOS share decoding and the capability gate; this adds no iOS drag UI.
+
 ## The one rule
 
 **A track edits only its own folders, plus new files anywhere under them. Everything else goes

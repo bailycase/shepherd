@@ -144,6 +144,7 @@ private struct SidebarTreeItemView: View, Equatable {
     let focus: (SidebarProjectID) -> Void
     let dragChanged: (SidebarProjectID, CGFloat) -> Void
     let dragEnded: (SidebarProjectID, CGFloat) -> Void
+    @State private var threadDropTargeted = false
 
     static func == (a: SidebarTreeItemView, b: SidebarTreeItemView) -> Bool {
         a.vm === b.vm && a.item == b.item && a.hiddenProjects == b.hiddenProjects && a.drop == b.drop && a.dragging == b.dragging
@@ -177,6 +178,7 @@ private struct SidebarTreeItemView: View, Equatable {
                     .accessibilityLabel(row.accessibilityLabel)
                     .accessibilityAddTraits(row.selected ? .isSelected : [])
                     .contextMenu { SidebarRowMenu(vm: vm, row: row) }
+                    .threadDraggable(row.id)
             }
         }
         .overlay(alignment: drop == .bottom ? .bottom : .top) {
@@ -199,14 +201,18 @@ private struct SidebarTreeItemView: View, Equatable {
                             newThread: project.newThreadSpace == nil ? nil : { vm.startThread(in: project) }) {
             SidebarProjectMenu(vm: vm, project: project)
         }
-        .padding(.leading, CGFloat(project.depth) * (NWProjectMetrics.chevronSlot + NWProjectMetrics.gap))
         .help(project.missing ? "Folder not found: \(project.path)" : project.path)
         .contextMenu { SidebarProjectMenu(vm: vm, project: project) }
         .opacity(dragging ? NWProjectMetrics.draggedOpacity : 1)
+        .background(threadDropTargeted ? Color.nw.bgSelected : Color.clear, in: RoundedRectangle(cornerRadius: NW.Radius.m))
+        .dropDestination(for: String.self) { payloads, _ in
+            vm.dropThread(payloads, on: id)
+        } isTargeted: { threadDropTargeted = $0 }
         .gesture(DragGesture(minimumDistance: NW.Space.xs)
             .onChanged { dragChanged(id, $0.translation.height) }
             .onEnded { dragEnded(id, $0.translation.height) },
                  isEnabled: project.movable)
+        .padding(.leading, CGFloat(project.depth) * (NWProjectMetrics.chevronSlot + NWProjectMetrics.gap))
     }
 }
 

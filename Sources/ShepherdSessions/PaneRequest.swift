@@ -169,10 +169,11 @@ public enum AgentPeerRequest: Hashable, Sendable {
     case send(agentID: AgentID, targetAgentID: AgentID, text: String, delivery: AgentMessageDelivery = .task)
     case spawn(agentID: AgentID, cwd: String, prompt: String)
     case delete(agentID: AgentID, targetAgentID: AgentID, requestID: String)
+    case move(agentID: AgentID, targetAgentID: AgentID, spaceID: SpaceID)
 
     public var agentID: AgentID {
         switch self {
-        case .list(let agentID), .send(let agentID, _, _, _), .spawn(let agentID, _, _), .delete(let agentID, _, _):
+        case .list(let agentID), .send(let agentID, _, _, _), .spawn(let agentID, _, _), .delete(let agentID, _, _), .move(let agentID, _, _):
             return agentID
         }
     }

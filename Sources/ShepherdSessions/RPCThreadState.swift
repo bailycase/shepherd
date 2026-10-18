@@ -504,6 +504,18 @@ final class RPCThreadState {
         refreshCommands(timeout: timeout)
     }
 
+    /// Moving changes the working directory and reloads instructions, so no pending work may survive it.
+    var canMoveSpace: Bool {
+        isServable && !running && !inputActive && compactingRun == nil && openingPrompt == nil
+            && dialogs.isEmpty && items.isEmpty && dispatches.isEmpty && retryDispatch == nil
+            && afterSettleCapture.isEmpty && preparingPrompts.isEmpty && settleCapture == nil
+            && sendAfterCapture == nil && interrupting == nil && !interruptAbortPending
+            && unboundSteers.isEmpty && steersInFlight == 0 && !settleAwaitingSteers
+            && piSteering.isEmpty && piFollowUp.isEmpty && sendingDesignPayloads.isEmpty
+            && subagents.allSatisfy { $0.isTerminal && $0.state != "paused" && !$0.needsAttention }
+            && (goal == nil || goal?.state == .paused || goal?.state == .met) && goalCommand == nil
+    }
+
     func refreshSkillsIfIdle() {
         guard skillsNeedRefresh, session.isAlive, skillRefreshFailures < 3, !skillRefreshInFlight,
               piSessionID != nil, !running, !inputActive, compactingRun == nil else { return }

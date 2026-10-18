@@ -368,7 +368,7 @@ struct RemoteRequestTests {
         #expect(try Wire.roundTrip(RemoteRequest.upload(id: 1, action: action)) == .upload(id: 1, action: action))
     }
 
-    @Test(arguments: [RemoteAgentAction.rename(name: "x"), .deleteKeepingWorktree, .reorder(target: AgentID(rawValue: "b")),
+    @Test(arguments: [RemoteAgentAction.rename(name: "x"), .move(spaceID: SpaceID(rawValue: "destination")), .deleteKeepingWorktree, .reorder(target: AgentID(rawValue: "b")),
                       .renameTerminal(paneID: PaneID(rawValue: "p"), title: "logs"), .renameTerminal(paneID: PaneID(rawValue: "p"), title: nil),
                       .killTerminalProcess(paneID: PaneID(rawValue: "p")),
                       .openTerminal(cwd: "/host/repo/apps/web", command: "pnpm dev")])
@@ -792,7 +792,7 @@ struct RemoteProtocolConstantTests {
     }
 
     @Test func hostAdvertisesEveryNamedCapabilityOnce() {
-        let named = [
+        let named = [RemoteProtocol.moveThreadCapability,
             RemoteProtocol.logicalProjectsCapability, RemoteProtocol.logicalProjectAutomationsCapability,
             RemoteProtocol.logicalProjectRuntimeCapability, RemoteProtocol.projectExecutionCapability,
             RemoteProtocol.projectPlacementCapability, RemoteProtocol.logicalProjectFilesCapability, RemoteProtocol.projectWorkerCapability, RemoteProtocol.projectMessageImagesCapability, RemoteProtocol.projectPublicationsCapability,
