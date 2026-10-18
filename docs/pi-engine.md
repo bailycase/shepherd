@@ -92,8 +92,9 @@ with `ERR_MODULE_NOT_FOUND`.
 modular resource loader, package discovery, agent session and RPC mode, plus the small native
 watcher source `skill-watch.js`. It also removes command-based configuration value resolution
 from the modular runtime and SDK bundle, and finishes MCP's owned process group when its server
-leader closes, including descendants that ignore SIGTERM. The MCP fix covers both the pinned
-stdio dependency and the bundled SDK. Its hash is recorded in the engine pin.
+leader closes, including descendants that ignore SIGTERM. MCP shutdown also closes clients still
+initializing or listing tools, without waiting for their request timeout. The MCP fixes cover the
+modular runtime, pinned stdio dependency and bundled SDK. Its hash is recorded in the engine pin.
 Staging verifies the pi version, full original file hashes, unique replacement anchors and final
 file hashes; verification also checks the shipped patched files. A source, patch or pin mismatch
 fails closed. Update the patch hash in the pin and restage whenever the patch changes, so Xcode's

@@ -40,14 +40,16 @@ test("process liveness distinguishes Linux zombies from live and unreadable stat
 });
 const pidAt = (file) => { try { const pid = Number(fs.readFileSync(file, "utf8")); return pid > 0 ? pid : undefined; } catch {} };
 
-for (const entry of ["dist/cli.js", "dist/bundle/cli.js"]) {
-  test(`${entry} closes detached MCP descendants on normal shutdown`, { timeout: 20000 }, async (t) => {
+for (const entry of ["dist/cli.js", "dist/bundle/cli.js"]) for (const initializing of [false, true]) {
+  test(`${entry} closes detached MCP descendants on normal shutdown (initializing: ${initializing})`, { timeout: 20000 }, async (t) => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-mcp-close-"));
     const leaderFile = path.join(dir, "leader.pid"), descendantFile = path.join(dir, "descendant.pid");
+    const logFile = path.join(dir, "mcp.log");
     fs.writeFileSync(path.join(dir, "settings.json"), JSON.stringify({ extensions: ["-builtin:mcp", "-builtin:codemode", "-builtin:tool-search"] }));
     fs.writeFileSync(path.join(dir, "mcp.json"), JSON.stringify({ mcpServers: { fixture: {
       command: process.execPath, args: [fixture], exposure: "deferred",
-      env: { FAKE_MCP_PIDFILE: leaderFile, FAKE_MCP_DESCENDANT: descendantFile },
+      env: { FAKE_MCP_PIDFILE: leaderFile, FAKE_MCP_DESCENDANT: descendantFile,
+        ...(initializing ? { FAKE_MCP_HOLD_INITIALIZE: "1", FAKE_MCP_LOG: logFile } : {}) },
     } } }));
     const pi = spawn(process.execPath, [path.join(pkg, entry), "--mode", "rpc", "--no-session", "--no-extensions", "--no-skills", "--no-prompt-templates", "-e", "builtin:mcp"], {
       cwd: dir, detached: true, stdio: ["pipe", "pipe", "pipe"],
@@ -62,6 +64,10 @@ for (const entry of ["dist/cli.js", "dist/bundle/cli.js"]) {
     });
     pi.stdin.write(JSON.stringify({ type: "get_state", id: "ready" }) + "\n");
     await until("Pi and its owned MCP descendants ready", () => output.includes('"id":"ready"') && pidAt(leaderFile) && pidAt(descendantFile), 10000);
+    if (initializing) {
+      await until("MCP initialize received but deliberately unanswered", () => fs.existsSync(logFile) && fs.readFileSync(logFile, "utf8").includes('"method":"initialize"'));
+      assert.ok(!fs.readFileSync(logFile, "utf8").includes('"method":"notifications/initialized"'));
+    }
     leader = Number(fs.readFileSync(leaderFile, "utf8"));
     const descendant = Number(fs.readFileSync(descendantFile, "utf8"));
     assert.ok(alive(leader) && alive(descendant), "MCP leader and descendant must be live before shutdown");

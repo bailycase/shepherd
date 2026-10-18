@@ -163,6 +163,52 @@
         }
       ],
       "after": "758027728da50ece5ee4f93325d710599519279405feef5b61cb727d8807ac13"
+    },
+    {
+      "path": "dist/extensions/mcp/runtime.js",
+      "before": "46788ee4d3d6c5e93686920701e070692691cd6505e3bf9768eafac82c45157d",
+      "after": "09de4daf1b6bae1bfc69fc9066f10557c015cbb740b73dab4dad78e46b1d79f7",
+      "edits": [
+        {
+          "old": "    client;\n    opening;",
+          "new": "    client;\n    connectingClient;\n    opening;"
+        },
+        {
+          "old": "            await client.connect(transport);",
+          "new": "            // Own the client before initialize/list requests can yield to session shutdown.\n            this.connectingClient = client;\n            await client.connect(transport);"
+        },
+        {
+          "old": "            throw error;\n        }\n    }\n    connectFailed(error)",
+          "new": "            throw error;\n        }\n        finally {\n            this.connectingClient = undefined;\n        }\n    }\n    connectFailed(error)"
+        },
+        {
+          "old": "        const client = this.client;\n        this.client = undefined;",
+          "new": "        const client = this.client ?? this.connectingClient;\n        this.client = undefined;"
+        }
+      ]
+    },
+    {
+      "path": "dist/bundle/chunks/chunk-7FH3BDRG.js",
+      "before": "ce163e72b4d319f7129762dc4989c25e28b59b4cce0910af64858535794bfb1a",
+      "after": "c475898689d11bbdad6d1122016106cce4135b89851911af21ede1334a47b741",
+      "edits": [
+        {
+          "old": "client;opening;closed=!1;",
+          "new": "client;connectingClient;opening;closed=!1;"
+        },
+        {
+          "old": "transport=this.createTransport(this.entry,this.cwd,this.authProvider),await client.connect(transport)",
+          "new": "transport=this.createTransport(this.entry,this.cwd,this.authProvider),this.connectingClient=client,await client.connect(transport)"
+        },
+        {
+          "old": "||void 0),error}}connectFailed(error)",
+          "new": "||void 0),error}finally{this.connectingClient=void 0}}connectFailed(error)"
+        },
+        {
+          "old": "let client=this.client;this.client=void 0,await client?.close()",
+          "new": "let client=this.client??this.connectingClient;this.client=void 0,await client?.close()"
+        }
+      ]
     }
   ]
 }
