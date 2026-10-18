@@ -77,6 +77,9 @@ struct Composer: View {
     @Environment(\.projectComposerSend) private var projectSend
     @Environment(\.composerModelDefaults) private var modelDefaults
     @Environment(\.projectWorkerThread) private var workerStyle
+    /// A Project conversation's waiting messages, which its owner holds, not pi: Up next draws them instead of the native queue (a
+    /// coordinator takes no native send, so it has none), read-only. nil for every ordinary thread.
+    var projectUpNext: ProjectUpNext? = nil
     /// The thread's design references (the @ picker, a pasted reference, the chips); nil where
     /// none reach: a design's chat, another host's thread, the Design tool off.
     @Environment(\.designReferences) private var references
@@ -346,7 +349,8 @@ struct Composer: View {
                              showsQueue: queueStack.isVisible, goalStore: store, goalActive: active) {
                     if queueStack.isVisible {
                         QueueStackView(state: queueStack, store: store, running: running, animated: !catchingUp, framed: !showsTray && !store.hasGoal,
-                                       focusedRow: $focusedRow, focusComposer: { composing = true })
+                                       focusedRow: $focusedRow, focusComposer: { composing = true },
+                                       readOnly: projectUpNext != nil, heldReason: projectUpNext?.paused)
                     }
                 }
                 // A lifted row floats over the card too.
@@ -404,13 +408,15 @@ struct Composer: View {
         .onChange(of: store.goalID, initial: true) { _, id in
             if id != nil { queueStack.collapsed = true }
         }
-        .onChange(of: store.queue, initial: true) { _, queue in
+        .onChange(of: projectUpNext?.queue ?? store.queue, initial: true) { _, queue in
             // The stack takes the queue a render later, outside the catch-up's transaction: a
             // queue that changed while the thread was away lands without motion all the same.
-            guard catchingUp else { return queueStack.update(queue, images: store.queuedImages) }
+            // The owner's images have no bytes here: their rows name them, as another client's do.
+            let images: (UUID) -> [NativeImage] = projectUpNext == nil ? store.queuedImages : { _ in [] }
+            guard catchingUp else { return queueStack.update(queue, images: images) }
             var instant = Transaction()
             instant.disablesAnimations = true
-            withTransaction(instant) { queueStack.update(queue, images: store.queuedImages) }
+            withTransaction(instant) { queueStack.update(queue, images: images) }
         }
         // ⌘↩ is watched only while this composer (or one of its queued messages) has focus.
         .onChange(of: composing || focusedRow != nil, initial: true) { _, focused in
@@ -750,7 +756,7 @@ struct Composer: View {
                     return .handled
                 }
                 // ↑ in an empty composer edits the last queued message.
-                guard store.draft.isEmpty, menu == nil, queueStack.editLast(store: store) else { return .ignored }
+                guard store.draft.isEmpty, menu == nil, projectUpNext == nil, queueStack.editLast(store: store) else { return .ignored }
                 return .handled
             }
             .onComposerKey(.downArrow) {

@@ -22,8 +22,9 @@ struct ProjectComposerSend {
     var emptyState: (() -> AnyView)? = nil
     /// The strip over the card ("2 of 3 done · 1 needs you"), drawn only when there are tasks.
     var dock: (() -> AnyView)? = nil
-    /// The person's own messages the runtime accepted but the native transcript does not show yet: held while paused, in flight, or
-    /// not delivered. Drawn after the transcript as the thread's own pending bubble (70%) with its own one-line note.
+    /// The person's own messages the runtime accepted but the native transcript does not show yet. One still waiting on the owner
+    /// (queued, or handed off before pi's own pending row appears) is drawn in the composer's own Up next, read-only
+    /// (`ProjectHeldMessages.upNext`); one not delivered (unknown, failed) after the transcript as a pending bubble with its note.
     var held: () -> [ProjectHeldMessage] = { [] }
     /// Operations the owner itself recorded as worker events (a message with a `source`): the runtime's own wake-ups of the coordinator,
     /// which are not the person's words and which the boards never draw. Matched by the operation the native user message carries,
@@ -210,6 +211,15 @@ struct ProjectHeldMessage: Equatable, Identifiable {
     let id: UUID
     let text: String
     let note: String
+    var phase: ProjectMessage.Phase = .queued
+    /// The Project is paused, so a waiting message is held until Resume.
+    var paused = false
+    /// Its images' names; the bytes stay with the owner.
+    var images: [NativeQueuedImage] = []
+
+    /// Still the owner's to send: nothing says it reached pi yet, so it waits in Up next, never as a sent bubble. Unknown and failed
+    /// are outcomes, drawn in the transcript with their note.
+    var waiting: Bool { phase == .queued || phase == .delivering }
 }
 
 /// Which Project messages still need a place in the conversation, from the Project's real `messages` and the transcript's real
@@ -232,7 +242,24 @@ enum ProjectHeldMessages {
                 note = reason.isEmpty ? "Not delivered. Send it again to retry." : "Not delivered. \(sentence) Send it again to retry."
             case .delivered: return nil
             }
-            return ProjectHeldMessage(id: message.id, text: message.text, note: note)
+            return ProjectHeldMessage(id: message.id, text: message.text, note: note, phase: message.phase, paused: paused,
+                                      images: (message.images ?? []).map { NativeQueuedImage(mimeType: $0.mimeType, name: $0.name) })
         }
     }
+
+    /// The waiting messages as the shared Up next stack takes a queue, in the owner's order, and why it waits while paused. Read-only:
+    /// the owner has no edit, delete, reorder or send-now for them. A message leaves once the transcript holds its operation (pi's own
+    /// pending row for the handoff, then the saved message), so it is drawn in exactly one place.
+    static func upNext(_ held: [ProjectHeldMessage]) -> ProjectUpNext {
+        let waiting = held.filter(\.waiting)
+        return ProjectUpNext(queue: waiting.map { NativeQueuedMessage(id: $0.id, text: $0.text, images: $0.images, sentAt: 0) },
+                             paused: waiting.contains { $0.paused && $0.phase == .queued } ? "Sends when the project resumes" : nil)
+    }
+}
+
+/// The owner's waiting messages, shaped as the queue the composer's shared Up next stack draws (`QueueStackView(readOnly:)`).
+struct ProjectUpNext: Equatable {
+    var queue: [NativeQueuedMessage] = []
+    /// The header's Paused tooltip while the Project holds them.
+    var paused: String?
 }

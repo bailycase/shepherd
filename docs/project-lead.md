@@ -652,7 +652,7 @@ not kept; the cause and fix are in `docs/project-execution.md`, Coordinator star
   is not answered twice.
 - **Coordinators are not threads:** every ordinary-thread producer (sidebar in both modes, completions, palette, pins, notifications, remote
   inspection, peer lists) now asks `isOrdinaryThread`, covered by `ProjectCoordinatorHiddenTests`.
-- **Finished is done:** the strip counts settled and resolved tasks as done ("2 of 3 done"), as Claude's Projects counts a thread that finished. Settled still means finished but unconfirmed: it keeps Mark resolved in the pane and moves to Resolved only when the person or the coordinator resolves it.
+- **Finished is done:** the strip counts settled and resolved tasks as done ("2 of 3 done"), as Claude's Projects counts a thread that finished. Settled still means finished but unconfirmed: it keeps Mark resolved in the pane and moves to Resolved only when the person or the coordinator resolves it. Pressing the strip expands the current task rows inline; selecting one opens its thread in the existing pane. The list scrolls beyond four rows, and switching Projects collapses it.
 - **Remote Projects:** an owner-remote Project's runtime actions are refused in words; they are never sent to this Mac's runtime.
 
 Verified with `ProjectPagePresentationTests`, `ProjectCoordinatorHiddenTests` (unit), `LogicalProjectConversationTests` (real scratch
@@ -731,9 +731,18 @@ Wired over the merged producers (nothing typed in, nothing from a title or prose
   Project and task, never by agent. Tested end to end against a real owner with no other host connected.
 - **Images**: the paperclip, paste and drop ask the Project's owner (`projectCarriesImages`), not the coordinator's thread, so they exist
   before the first message; an image alone is a first message; `sendMessage` carries images and clears only what it submitted.
-- **Held messages**: a message the owner accepted but the transcript has not taken in (queued while paused, sending, unconfirmed, failed) is
-  drawn as the thread's own pending bubble with one note in the thread's own style. It leaves when the transcript holds its operation id or
-  the owner's native delivery id. Unknown and failed are never retried for the person; sending the same words again is the explicit retry.
+- **Held messages**: a message the owner accepted but the transcript has not taken in is drawn in exactly one place, chosen by its phase
+  (`ProjectHeldMessages`). `queued` and `delivering` wait in the composer's own Up next: the same `QueueStackView`, `NWQueueStack` and
+  `NWQueueRow` an ordinary thread draws, fed by the owner's queue instead of the native one, numbered in the owner's order, with the header's
+  Paused ("Sends when the project resumes") while the Project is paused. That holds while the coordinator is busy, idle, starting or offline:
+  only the owner sends, so nothing there looks sent. The rows are read-only (`QueueStackView(readOnly:)`): no Steer or Send now, Edit, Delete,
+  reorder, row keys or options menu, because the owner offers no queue mutation. An image shows by the name the owner holds, with no
+  thumbnail (the bytes stay with the owner, local or remote). A message leaves Up next when the transcript holds its operation id or the
+  owner's native delivery id, which is the native pending row of the real handoff; dispatch accepted is still `delivering`, and only pi
+  starting the message (native consumption) makes it `delivered`. A cancelled handoff returns to `queued` under a new delivery id and to Up
+  next. `unknown` ("Delivery unconfirmed") and `failed` ("Not delivered", with the owner's redacted reason when it has one) stay in the
+  transcript as a pending bubble whose note sits below it. Neither is ever retried for the person; sending the same words again is the
+  explicit retry.
 - **New thread** offers a host when the Project allows more than its owner, from the owner's own host list; the host rides the `assign`.
 - **Nav**: New thread, Designs, Automations; More removed (palette opens Hosts, Design systems, Extensions).
 

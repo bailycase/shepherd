@@ -167,6 +167,12 @@ struct ProjectPagePresentationTests {
 
     /// A finished thread counts as done in the strip whether or not anyone has pressed Mark resolved yet (the user's report: three
     /// scouts all reported back and the strip still said "0 of 3 done"). It is never "in progress", and only Resolved moves its group.
+    @Test func theStripShowsOnlyTheOwnersQuestionOrFailureNeverWorkerActivity() {
+        let p = page([task("Run", .running), task("Ask", .waiting, question: "Which API?"),
+                      task("Fail", .failed, error: "Launch failed"), task("Done", .resolved)])
+        #expect(p.rows.map(ProjectSummaryStrip.detail) == [nil, "Which API?", "Launch failed", nil])
+    }
+
     @Test func aFinishedThreadCountsAsDoneBeforeAnyoneResolvesIt() {
         let p = page([task("A", .settled), task("B", .resolved), task("C", .running)])
         #expect(p.settled == 1 && p.working == 1 && p.resolved == 1)
