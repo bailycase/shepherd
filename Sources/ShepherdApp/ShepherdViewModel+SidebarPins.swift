@@ -49,7 +49,7 @@ extension ShepherdViewModel {
         if next.unpin(thread) { sidebarPins = next }
     }
 
-    /// Pin or Unpin in a space's menu: a pinned space leads its siblings in the Spaces tree.
+    /// Pin or Unpin in a space's menu: move it between Pinned and its ordinary place in Spaces.
     func togglePinSpace(_ space: SpaceID) {
         var next = spacePins
         next.toggle(space)

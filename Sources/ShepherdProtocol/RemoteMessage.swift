@@ -130,7 +130,8 @@ public enum RemoteProtocol {
     public static let projectMessageImagesCapability = "logicalProjectRuntime.images.v1"
     public static let browserTabsCapability = "browser.tabs.v1"
 
-    public static let capabilities = [nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectTrustCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, designContextCapability, designsCapability, designMarkupCapability, designDeleteCapability, nativeRetryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability]
+    public static let moveThreadCapability = "agent.move.v1"
+    public static let capabilities = [moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectTrustCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, designContextCapability, designsCapability, designMarkupCapability, designDeleteCapability, nativeRetryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -238,6 +239,7 @@ public struct ModelListing: Hashable, Sendable {
 
 public enum RemoteAgentAction: Codable, Hashable, Sendable {
     case rename(name: String)
+    case move(spaceID: SpaceID)
     /// Retires the agent only. A worktree checkout and branch are kept.
     case deleteKeepingWorktree
     case reorder(target: AgentID)
@@ -256,6 +258,7 @@ public enum RemoteAgentAction: Codable, Hashable, Sendable {
     /// The capability a host must advertise before the action is sent to it.
     public var capability: String {
         switch self {
+        case .move: RemoteProtocol.moveThreadCapability
         case .rename, .deleteKeepingWorktree, .reorder: RemoteProtocol.agentActionsCapability
         case .renameTerminal, .killTerminalProcess: RemoteProtocol.terminalControlCapability
         case .openTerminal: RemoteProtocol.browserTunnelCapability

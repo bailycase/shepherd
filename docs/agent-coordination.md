@@ -111,6 +111,21 @@ just the extension into an older app: that host cannot serve the new requests.
 ## The tools
 
 - **`agent_list`**: every top-level thread, with its status and directory.
+- **`agent_move`**: only on the user's explicit request, moves another inactive ordinary thread
+  to a registered space on the same host. Arguments are `agentID` and `spaceID`, the latter
+  from the space registration tools. Parent and child spaces are both valid. Conversation and
+  thread identity stay; the idle process restarts in the destination folder and reloads its
+  instructions. Active turns, questions, queued messages, unfinished children, worktrees and
+  managed automation/Project/design threads are refused. It cannot move itself. Existing
+  terminal tabs keep their directories; no repository files or worktrees move.
+  This deferred tool shares the Mac sidebar's drag-and-drop and Move to Space operation.
+  `moveAgent` checks the caller's process identity before routing to the app. The server fences
+  sends and launches during the move, verifies pi's idle state, and stops only the idle runtime.
+  Shutdown is bounded to 10 seconds, the idle query to 5 seconds, and history copying to
+  30 seconds. History is copied with its header cwd updated before workspace persistence;
+  failure rolls back the copy and keeps the original. Existing destination history is never
+  overwritten. A crash leaves the original or committed destination intact. Timeout or
+  disconnect means the outcome may be unknown: inspect the thread before retrying.
 - **`agent_send`**: a message under a `[from: <sender name>, an agent, not the user. …]` header
   ([What the other thread reads](#what-the-other-thread-reads)), with optional `delivery`:
   - `task` (default, including older callers): a user follow-up (`deliverAs: "followUp"`).
@@ -148,6 +163,17 @@ just the extension into an older app: that host cannot serve the new requests.
 that the target accepted or acted on it. A missing connection, oversized message or failed
 socket dispatch is a failure, not a delivery claim. Pi's extension `sendMessage` API is
 fire-and-forget: a report's dispatch is not an acknowledgment that pi stored or read it.
+
+### Delivery fence for thread moves
+
+Peer pushes carry positive delivery IDs. Task receipt is bound to the exact extension connection,
+then the host transfers the message into its tracked native queue before releasing the receipt.
+Reports carry the ID in custom-message details; only pi's RPC `message_end` after the history
+append releases their receipt. Unacknowledged delivery blocks a move even when RPC reports idle.
+Disconnect and timeouts do not release that fence. The owning process exiting or the agent being
+removed clears it. Admission is bounded to 64 outstanding pushes per agent, 4,096 overall, and
+2 MiB of retained text. Legacy ID-0 pushes still work on older hosts; an older extension on a new
+host cannot prove receipt, so moving stays refused until its process exits.
 
 ## What the model is told
 

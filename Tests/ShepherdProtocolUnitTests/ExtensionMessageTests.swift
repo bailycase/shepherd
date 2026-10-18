@@ -17,7 +17,7 @@ struct ExtensionMessageTests {
         switch message {
         case .setAgentStatus, .setAgentName, .setAgentSession, .setAgentChildren, .notify, .helloAgent,
              .helloChildren, .childScope, .childCommandResult, .prepareProjectConfiguration, .listPanes, .openPane, .closePane, .focusPane,
-             .sendPaneInput, .readPane, .requestReview, .listAgents, .sendToAgent, .spawnAgent,
+             .sendPaneInput, .readPane, .requestReview, .listAgents, .sendToAgent, .spawnAgent, .moveAgent, .peerMessageReceived,
              .coordinateAgent, .agentResponse, .cancelAgentRequest, .createAutomation, .listAutomations,
              .updateAutomation, .deleteAutomation, .startAutomation, .stopAutomation, .suggestInstruction,
              .designRead, .designWriteBoard, .designEditBoard, .designUpdateIndex, .designComments, .designCommentReply,
@@ -27,7 +27,7 @@ struct ExtensionMessageTests {
             return Wire.caseName(message)
         }
     }
-    static let caseCount = 56
+    static let caseCount = 58
     static let design = DesignID(rawValue: "d1")
 
     static let samples: [ExtensionMessage] = [
@@ -61,10 +61,12 @@ struct ExtensionMessageTests {
         .readPane(id: 8, agentID: agent, paneID: pane),
         .requestReview(id: 9, agentID: agent, cwd: "/tmp/repo", reference: "master..HEAD"),
         .listAgents(id: 16, agentID: agent),
+        .peerMessageReceived(agentID: agent, deliveryID: 42),
         .prepareProjectConfiguration(id: 116, agentID: agent, cwd: "/project"),
         .sendToAgent(id: 17, agentID: agent, targetAgentID: AgentID(rawValue: "a2"), text: "CI is green"),
         .sendToAgent(id: 17, agentID: agent, targetAgentID: AgentID(rawValue: "a2"), text: "CI is green", delivery: .report),
         .spawnAgent(id: 18, agentID: agent, cwd: "/tmp/repo", prompt: "Fix the tests."),
+        .moveAgent(id: 118, agentID: agent, targetAgentID: AgentID(rawValue: "a2"), spaceID: SpaceID(rawValue: "s2")),
         .coordinateAgent(id: 19, agentID: agent, targetAgentID: AgentID(rawValue: "a2"),
                          request: AgentCoordinationRequest(operation: .read, limit: 10, after: "entry-1")),
         .agentResponse(agentID: AgentID(rawValue: "a2"), requestID: "server-token",

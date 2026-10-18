@@ -83,7 +83,7 @@ public struct NWProseFootnote: Equatable, Sendable {
 }
 
 extension EnvironmentValues {
-    /// The folder local image paths in prose resolve against (the agent's working directory),
+    /// The folder local file links and image paths resolve against (the agent's working directory),
     /// nil where the agent's files are not on this device (a remote host's agent, the iOS
     /// client): its images show as chips.
     @Entry public var nwProseFileRoot: URL? = nil
@@ -146,6 +146,8 @@ struct NWProseBlocks<Code: View>: View {
     @Environment(\.nwProseSize) private var size
     @Environment(\.nwProseHalfLeading) private var halfLeading
     @Environment(\.nwProseTaskLinks) private var taskLinks
+    @Environment(\.nwProseFileRoot) private var fileRoot
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         let nw = Color.nw
@@ -190,6 +192,11 @@ struct NWProseBlocks<Code: View>: View {
                 NWProseFootnotes(notes: notes)
             }
         }
+        .environment(\.openURL, OpenURLAction { url in
+            guard let destination = NWProseLink.destination(url, root: fileRoot) else { return .discarded }
+            openURL(destination)
+            return .handled
+        })
     }
 
     private func list(ordered: Bool, start: Int, items: [NWProseListItem], tone: Color, path: [Int]) -> some View {

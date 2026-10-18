@@ -11,33 +11,27 @@ Chips above the card with a thumbnail, name, size and ✕, an over-limit image k
 Send. Specified under [composer](composer.md) › Images and files. `ComposerImageStrip` draws them
 from `ComposerAttachments`; `NWAttachmentChip(detail:problem:open:remove:)` is the chip.
 
-## Viewer (built; ThreadImageOpen, measured against the board)
+## Viewer (built; the user's floating modal, replacing ThreadImageOpen's full-window layout)
 
-`NWImageViewer` over the whole window (`ImageViewerOverlay`, state in `ImageViewerState`, one at a time). The thread stays visible
-beneath, dimmed by the `imageScrim` role (`bgBase` at 94%, both appearances), not blacked out.
+`NWImageViewer` floats over the thread (`ImageViewerOverlay`, state in `ImageViewerState`, one at a time). The user chose this
+over ThreadImageOpen's full-window view and over a windowed card (2026-10-17): the thread stays in view, dimmed by `sheetScrim`
+(black at 55%, as other modals), and the picture floats on it.
 
-- **Bar**, 44pt on `bgWindow`, then a 1px `lineSubtle` rule; 12pt at each side and 8pt between parts. The name in `ui` semibold (it
-  truncates in the middle first), then mono `textTertiary` "1170 × 2532 · PNG · 1.4 MB" and "1 of 2"; trailing **Copy**
-  (`doc.on.doc`), **Add to message** (`plus`), **Show in Finder** (`folder`) as 28pt ghost buttons with 14pt glyphs, and the 28pt
-  round **Close** (`xmark` 12pt, `lineStrong` ring, `textSecondary`).
-- **Departure from the board, the user's correction.** The board's bar runs edge to edge; in a real window that left the name against
-  the window controls and the buttons in the far corner, with ‹ › at the window's edges. Now the bar's band still spans the window
-  (44pt, `bgWindow`), but its content is one centred column of at most 820pt (`NWImageViewerMetrics.barMaxWidth`) with 24pt at each
-  side, starting after the window controls (`leadingInset`, `AppLayout.trafficLightInset`; none in full screen). When the labelled
-  buttons do not fit beside the name (a narrow window, large text) they become icons, still named for VoiceOver and the tooltip.
-  The picture is drawn at its exact fitted size (`pixels`), so ‹ › sit 16pt beside the photo, not at the edges.
-- **Picture** fitted between 48pt above and below, radius 8, a `lineSubtle` line and the board's shadow (0 12 32, `bgBase` at 60%).
-  With more than one image, **‹ ›** are 36pt `bgRaised` discs with a `lineSubtle` ring and a 14pt chevron, 16pt either side of the
-  picture; the one with nowhere to go is drawn disabled (the board's first image).
-- **Footer**, 36pt, mono `textTertiary`: "Sent by you · Esc to close" ("Waiting to send" for the composer's images).
-- **Keys.** Esc closes, ← → step. They go to a hidden focus target, so no control in the viewer inherits a keyboard ring. Copy puts the
-  image on the pasteboard. Add to message puts the shown image in the composer and closes; it is drawn only where there is somewhere
-  to add it. Show in Finder is drawn only for an image that came from a file.
-- **States** beyond the board use the existing components: loading is the `bgSunken` field with a spinner; failed is a raised card
-  with the reason ("Couldn't reach the host.", "The connection was interrupted.", "This image can't be shown.") and **Try again**.
-- **Measured** on the Mac window at 1440 × 900 against the board's PNG: bar 44pt with its rule at 44 to 45; picture box
-  554 to 886 × 94 to 815 (board 554 to 886 × 94 to 815, within 2pt); close 28; arrows 36; the bar's, scrim's and disc fills match to
-  within 1 level per channel. `ThreadImagesControlTests` asserts the board's literals (44, 28, 36) and presses every control.
+- **Picture**, centred, at its fitted size and never enlarged, in the window less 64pt all round
+  (`NWImageViewerMetrics.margin`) after the arrows and the pill. Radius 8, a `lineSubtle` line and the popover shadow.
+- **‹ ›**, with more than one image: 36pt `bgRaised` discs with a `lineSubtle` ring and a 14pt chevron, 16pt either side of the
+  picture; the one with nowhere to go is drawn disabled.
+- **Pill**, 12pt under the picture, a 44pt `.nwPopover` capsule: "1 of 2" in mono `textTertiary` (only with more than one image),
+  then **Copy** (`doc.on.doc`), **Add to message** (`plus`), **Show in Finder** (`folder`) as 28pt ghost icons with 14pt glyphs
+  and their names as tooltips, and the 28pt round **Close** (`xmark` 12pt, `lineStrong` ring). The user's call: no name, type,
+  resolution or byte size is drawn. VoiceOver still reads the name, its facts and "Sent by you · Esc to close".
+- **Closing.** Esc, Close, or a click on the scrim. ← → step. Keys go to a hidden focus target, so no control inherits a keyboard
+  ring. Copy puts the image on the pasteboard. Add to message puts the shown image in the composer and closes; it is drawn only
+  where there is somewhere to add it. Show in Finder is drawn only for an image that came from a file.
+- **States** use the existing components: loading is the `bgSunken` field with a spinner; failed is a raised card with the reason
+  ("Couldn't reach the host.", "The connection was interrupted.", "This image can't be shown.") and **Try again**.
+- **Diagrams** (Mermaid, [thread](thread.md)) open in the same viewer: the chart takes all the room, with Copy for its source.
+- `ThreadImagesControlTests` measures the 28pt close and 36pt arrows, the pill's place, and presses every control and the scrim.
 
 ## Sent and received (built, for a host that serves images: `native.images.v1`)
 

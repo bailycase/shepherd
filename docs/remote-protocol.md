@@ -52,6 +52,12 @@
   - `listDir`, `listModels`, `addSpace`, and `createAgent` with `creationOptions` (and the
     opening prompt's images behind `agent.create.images.v1`)
   - chunked uploads (32 MiB per file)
+  - `agentAction.move(spaceID:)`, behind `agent.move.v1`, moves an inactive ordinary thread
+    between registered spaces on the owning host. The host applies the same idle/worktree
+    checks and conversation-preserving operation as local drag-and-drop and `agent_move`.
+    The shared Mac/iOS client checks the capability before sending; older hosts refuse it.
+    State broadcasts carry the updated agent space, tab space and thread cwd. This does not
+    transfer a thread between hosts. The Mac adds controls; the iOS layout is unchanged.
   - `agentQuery`/`agentAction`: rename, delete, reorder, review, subagents, search, worktree
     info/setup/finalize/delete, `terminals` (what each terminal runs; answered by the
     server itself, `terminal.activity.v1`), and commit from review (`commitInfo`,
