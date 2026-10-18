@@ -23,6 +23,9 @@
     `native.serviceTier.v1`, and the images pi saved in a thread (the snapshot names each, bounded
     metadata only; `NativeThreadRequest.image` returns it in 256 KiB pieces, from pi's own history for
     that agent and session) behind `native.images.v1`
+  - queued-message subagents behind `native.queueSubagent.v1` and `queueSubagent` in the snapshot
+    actions: `NativeQueueAction.subagent(id:)` starts a child without prompting the parent. Both
+    clients hide the action on older hosts. Startup requests allow 65 s for the host acknowledgement.
   - conversation goals behind `native.goal.v1`: optional snapshot `goal`, live-only fleet
     `goalState`, and `NativeThreadRequest.goal` for set, edit, pause, resume, clear and confirm.
     Pause/Resume/Confirm require the displayed goal ID, revision and state in addition to the
