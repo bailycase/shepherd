@@ -435,6 +435,8 @@ public final class RemoteHostClient: @unchecked Sendable {
         switch request {
         case .setModel, .setThinking:
             capabilities.contains(RemoteProtocol.nativeThreadV2Capability) ? nil : "Update Shepherd on the host to change the model or thinking level."
+        case .queue(_, _, _, .subagent):
+            capabilities.contains(RemoteProtocol.nativeQueueSubagentCapability) ? nil : "Update Shepherd on the host to run queued messages in subagents."
         case .queue(_, _, _, .interrupt):
             capabilities.contains(RemoteProtocol.nativeInterruptCapability) ? nil : "Update Shepherd on the host to steer now."
         case .send(_, _, _, _, .interrupt, _, _, _, _):
@@ -474,7 +476,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         let before = value.supportedActions
         for (capability, action) in [(RemoteProtocol.nativeRetryCapability, "retry"), (RemoteProtocol.nativeInterruptCapability, "interrupt"),
                                      (RemoteProtocol.nativeServiceTierCapability, "setServiceTier"), (RemoteProtocol.nativeGoalCapability, "goal"),
-                                     (RemoteProtocol.nativeImagesCapability, "images")]
+                                     (RemoteProtocol.nativeImagesCapability, "images"), (RemoteProtocol.nativeQueueSubagentCapability, "queueSubagent")]
         where !capabilities.contains(capability) {
             value.supportedActions.removeAll { $0 == action }
         }
@@ -501,7 +503,8 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
         let reply: RemoteReply
         do {
-            reply = try await request(timeout: 15) { .nativeThread(id: $0, agentID: agentID, request: command) }
+            let timeout: TimeInterval = if case .queue(_, _, _, .subagent) = command { 65 } else { 15 }
+            reply = try await request(timeout: timeout) { .nativeThread(id: $0, agentID: agentID, request: command) }
         } catch RemoteHostClientError.timeout {
             throw RemoteHostClientError.outcomeUnknown(message: "Native request timed out. Refresh before acting; do not automatically retry.")
         } catch RemoteHostClientError.disconnected {

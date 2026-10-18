@@ -424,7 +424,15 @@ actual names.
   message, cancel, and resume. The parent model is never involved: these are the user's own Steer
   and Stop. The host still accepts a message to a child that asked (an older client's Answer
   sends one), and resumes the child with it as the user's words.
-- **Errors:** a command times out after 15 s. If the extension is not connected, the command
+- **Queued messages:** Run in subagent sends `NativeQueueAction.subagent` to the host, then
+  `childStart` over the owning parent's control connection. It forks the active branch, inherits
+  the parent model, and uses the worker profile with report-only completion. Images and fenced
+  browser context travel with the message; design-reference grants stay in their original thread.
+  Startup is bounded to 45 s, with a 60 s host acknowledgement timeout. Repeated requests reuse
+  the queued message ID instead of spawning twice. These helpers stop at 30 minutes, 256 turns,
+  or one million tokens; they never restart automatically. Blocking questions retain the normal
+  child-to-parent path. Queue edits and draining wait during startup; failures keep the message.
+- **Errors:** a card command times out after 15 s. If the extension is not connected, the command
   fails with "children extension not connected"; the extension reconnects every 2 s.
 - **Pause and Continue** are child-only commands. Pause holds the child at its next
   provider-request boundary, after the current tools finish. It sends no OS signals and never

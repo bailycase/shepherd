@@ -1336,6 +1336,7 @@ public final class SessionServer: @unchecked Sendable {
             output.delivery?.cancel()
         }
         sessions.removeAll()
+        peerDeliveries.removeAll()
         unannouncedServable.removeAll()
         attachedSessions.removeAll()
         outputStates.removeAll()
@@ -1476,6 +1477,10 @@ public final class SessionServer: @unchecked Sendable {
             unavailable("The agent no longer exists.")
             return
         }
+        guard !movingThreads.contains(agentID) else {
+            completion(.failure(code: "thread_moving", message: "This thread is moving to another space. Try again when it finishes."))
+            return
+        }
         if queuePausedExecutionAnswer(agentID: agentID, request: request, completion: { completion(.result($0)) }) { return }
         if queuePausedProjectAnswer(agentID: agentID, request: request, completion: { completion(.result($0)) }) { return }
         // Stop on the coordinator ends its current turn only; the Project keeps running (only Pause pauses it).
@@ -1595,6 +1600,26 @@ public final class SessionServer: @unchecked Sendable {
         reply(.childCommand(id: correlation, runID: runID, action: childAction, text: text, mode: mode == .interrupt ? .steer : mode), to: client)
         queue.asyncAfter(deadline: .now() + 15) { [weak self] in
             self?.childCommandPending.removeValue(forKey: correlation)?.completion("Subagent command timed out. Refresh before acting; do not automatically retry.")
+        }
+    }
+
+    /// Starts through the parent's authenticated child connection, without a parent RPC prompt.
+    private func startQueueChild(agentID: AgentID, requestID: UUID, text: String, images: [NativeImage],
+                                 completion: @escaping (String?) -> Void) {
+        guard !isProjectWorker(agentID), !store.state.isProjectCoordinator(agentID) else {
+            completion("Subagents are unavailable in Projects.")
+            return
+        }
+        guard let client = clients.values.first(where: { $0.childrenAgentID == agentID }) else {
+            completion("Native subagents are unavailable for this agent (children extension not connected).")
+            return
+        }
+        nextChildCommandID += 1
+        let id = nextChildCommandID
+        childCommandPending[id] = (client, completion)
+        reply(.childStart(id: id, requestID: requestID.uuidString, text: text, images: images), to: client)
+        queue.asyncAfter(deadline: .now() + 60) { [weak self] in
+            self?.childCommandPending.removeValue(forKey: id)?.completion("Subagent startup timed out; outcome is unknown. Retry Run in subagent to check the same launch, or inspect the tray before deleting the message.")
         }
     }
 
@@ -3027,7 +3052,7 @@ public final class SessionServer: @unchecked Sendable {
         }
         if assignedWorker {
             switch message {
-            case .childScope, .spawnAgent, .sendToAgent, .coordinateAgent, .createAutomation, .updateAutomation, .startAutomation:
+            case .childScope, .spawnAgent, .moveAgent, .sendToAgent, .coordinateAgent, .createAutomation, .updateAutomation, .startAutomation:
                 if let id = message.replyID { reply(.error(id: id, code: "project_scope", message: "Use Project threads through the coordinator; subagents and workflows are unavailable in Projects. Peer and automation admission is also unavailable."), to: client) }
                 return
             default: break
@@ -3188,6 +3213,26 @@ public final class SessionServer: @unchecked Sendable {
                                      problem: sendProblem(sender: agentID, target: targetAgentID)) else { return }
             routeAgentPeerRequest(.send(agentID: agentID, targetAgentID: targetAgentID, text: text, delivery: delivery),
                                   requestID: id, client: client)
+        case .peerMessageReceived(let agentID, let deliveryID):
+            guard var pending = peerDeliveries[deliveryID], pending.agentID == agentID,
+                  pending.client === client, !pending.dispatched else { return }
+            if pending.delivery == .task {
+                pending.received = true
+                peerDeliveries[deliveryID] = pending
+                dispatchPeerTask(deliveryID)
+            }
+        case .moveAgent(let id, let agentID, let targetAgentID, let spaceID):
+            guard agentID != targetAgentID else {
+                reply(.error(id: id, code: "self_control", message: "An active agent cannot move itself. Ask another thread or move it manually after it finishes."), to: client)
+                return
+            }
+            guard !refusesDesignPeer(id: id, sender: agentID, target: targetAgentID, client: client),
+                  agentActionAllowed(senderID: agentID, requestID: id, client: client, problem: nil) else { return }
+            guard !Self.automationRunAgentIDs(in: store.state).contains(agentID) else {
+                reply(.error(id: id, code: "not_a_thread", message: "Automation runs cannot move threads."), to: client)
+                return
+            }
+            routeAgentPeerRequest(.move(agentID: agentID, targetAgentID: targetAgentID, spaceID: spaceID), requestID: id, client: client)
         case .spawnAgent(let id, let agentID, let cwd, let prompt):
             guard !cwd.isEmpty, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 reply(.error(id: id, code: "invalid", message: "cwd and prompt are required"), to: client)
@@ -3614,6 +3659,10 @@ public final class SessionServer: @unchecked Sendable {
 
     private func coordinateAgent(id: Int, agentID: AgentID, targetAgentID: AgentID,
                                  request: AgentCoordinationRequest, client: ExtensionConnection) {
+        guard !movingThreads.contains(targetAgentID) else {
+            reply(.error(id: id, code: "thread_moving", message: "The target thread is moving to another space."), to: client)
+            return
+        }
         guard client.agentID == agentID,
               let sender = store.state.agents.first(where: { $0.id == agentID }),
               store.state.agents.contains(where: { $0.id == targetAgentID }) else {
@@ -3797,15 +3846,40 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Receipt-to-queue transfer happens on the state-owning queue, with no untracked gap.
+    private func dispatchPeerTask(_ id: Int) {
+        guard var pending = peerDeliveries[id], pending.received, !pending.dispatched,
+              let thread = rpcThread(forAgent: pending.agentID), thread.isServable,
+              thread.session.isAlive, thread.session.id == pending.sessionID else { return }
+        pending.dispatched = true
+        peerDeliveries[id] = pending
+        thread.send(id: UUID(), text: pending.text, delivery: .followUp, images: [], alone: true) { [weak self] result in
+            // Refusal stays fenced until exit; successful dispatch or queueing is now tracked.
+            if case .accepted = result { self?.peerDeliveries.removeValue(forKey: id) }
+        }
+    }
+
     /// Push a peer-thread message to an agent's registered extension
     /// connection. Returns false when the agent has no live registered
     /// connection (extension not loaded or not yet connected), or dispatch fails.
     /// Success means queued on the socket, not accepted or consumed by pi.
     public func pushMessage(toAgent agentID: AgentID, text: String, delivery: AgentMessageDelivery = .task) -> Bool {
         queue.sync {
-            guard let client = clients.values.first(where: { $0.agentID == agentID }),
-                  let payload = try? NDJSON.encode(ExtensionReply.message(id: 0, text: text, delivery: delivery)),
+            guard !movingThreads.contains(agentID), peerDeliveries.count < 4096,
+                  peerDeliveries.values.filter({ $0.agentID == agentID }).count < 64,
+                  let client = clients.values.first(where: { $0.agentID == agentID }) else { return false }
+            nextPeerDeliveryID += 1
+            let id = nextPeerDeliveryID
+            guard peerDeliveries.values.reduce(0, { $0 + $1.text.utf8.count }) + text.utf8.count <= 2 * NDJSON.maxPayloadBytes else { return false }
+            guard let payload = try? NDJSON.encode(ExtensionReply.message(id: id, text: text, delivery: delivery)),
                   payload.count - 1 <= NDJSON.maxPayloadBytes else { return false }
+            let runtime = sessions.first { _, value in
+                if case .rpc(let rpc, _) = value { return rpc.isAlive && rpc.processIdentifier == client.peerPID }
+                return false
+            }?.key ?? store.state.agents.first(where: { $0.id == agentID }).flatMap { agent in
+                store.state.tabs.first(where: { $0.id == agent.tabID })?.layout.leaf(withID: agent.paneID ?? PaneID())?.sessionID
+            }
+            peerDeliveries[id] = PendingPeerDelivery(agentID: agentID, client: client, sessionID: runtime, text: text, delivery: delivery)
             enqueuePayload(payload, to: client)
             return clients[client.fd] === client
         }
@@ -4125,10 +4199,13 @@ public final class SessionServer: @unchecked Sendable {
     private func reply(_ message: ExtensionReply, to client: ExtensionConnection) {
         guard clients[client.fd] === client else { return }
 
+        // Queued image payloads go only to the authenticated child controller, with pi's
+        // 8 MiB RPC bound. Other extension replies retain their 1 MiB bound.
+        let limit: Int = if case .childStart = message { 8 * 1024 * 1024 } else { NDJSON.maxPayloadBytes }
         let payload: Data
         do {
             let encoded = try NDJSON.encode(message)
-            if encoded.count - 1 <= NDJSON.maxPayloadBytes {
+            if encoded.count - 1 <= limit {
                 payload = encoded
             } else {
                 ShepherdLog.warning(
@@ -4146,20 +4223,20 @@ public final class SessionServer: @unchecked Sendable {
             return
         }
 
-        guard payload.count - 1 <= NDJSON.maxPayloadBytes else {
+        guard payload.count - 1 <= limit else {
             ShepherdLog.error("reply_too_large fallback exceeded the payload limit")
             disconnect(client)
             return
         }
-        enqueuePayload(payload, to: client)
+        enqueuePayload(payload, to: client, limit: max(Self.maxQueuedReplyBytes, limit + 1))
     }
 
     /// Queue an encoded NDJSON payload on a connection's write queue, bounded
     /// by `maxQueuedReplyBytes`. Shared by extension replies and remote
     /// replies/broadcasts.
-    private func enqueuePayload(_ payload: Data, to client: ExtensionConnection) {
+    private func enqueuePayload(_ payload: Data, to client: ExtensionConnection, limit: Int = SessionServer.maxQueuedReplyBytes) {
         guard clients[client.fd] === client else { return }
-        guard client.queuedReplyBytes + payload.count <= Self.maxQueuedReplyBytes else {
+        guard client.queuedReplyBytes + payload.count <= limit else {
             ShepherdLog.warning("reply queue overflow on fd \(client.fd)")
             disconnect(client)
             return
@@ -4172,7 +4249,7 @@ public final class SessionServer: @unchecked Sendable {
     private func replyID(_ message: ExtensionReply) -> Int {
         switch message {
         case .parentInput: return 0
-        case .projectPublish(let id, _), .childScope(let id, _, _), .projectChildren(let id, _, _), .projectRuntime(let id, _, _, _), .childCommand(let id, _, _, _, _), .ok(let id), .projectResult(let id, _, _),
+        case .projectPublish(let id, _), .childScope(let id, _, _), .projectChildren(let id, _, _), .projectRuntime(let id, _, _, _), .childStart(let id, _, _, _), .childCommand(let id, _, _, _, _), .ok(let id), .projectResult(let id, _, _),
              .error(let id, _, _),
              .panes(let id, _),
              .paneOpened(let id, _),
@@ -4430,6 +4507,10 @@ public final class SessionServer: @unchecked Sendable {
     /// Server queue, after a successfully persisted commit (including an off-queue staged one).
     func stateDidCommit(before: ShepherdState) {
         let state = store.state
+        if state.agents.count < before.agents.count {
+            let live = Set(state.agents.map(\.id))
+            peerDeliveries = peerDeliveries.filter { live.contains($0.value.agentID) }
+        }
         let oldWatchers = Set(before.automations.filter { $0.projectID != nil }.compactMap(\.agentID))
         for agent in before.agents where oldWatchers.contains(agent.id) && !state.agents.contains(where: { $0.id == agent.id }) {
             for tab in before.tabs where tab.id == agent.tabID || tab.inspectorFor == agent.id {
@@ -4577,6 +4658,13 @@ public final class SessionServer: @unchecked Sendable {
             guard self.store.state.tabs[index].layout.contains(paneID) else {
                 throw SessionServerError.noSuchPane(paneID)
             }
+            if self.store.state.agents.contains(where: { $0.tabID == tabID && $0.paneID == paneID && self.movingThreads.contains($0.id) }) {
+                if let sessionID, case .rpc(let rpc, _)? = self.sessions[sessionID] {
+                    self.startRecords[sessionID]?.requestStop()
+                    rpc.kill()
+                }
+                throw ProjectFileError("thread_moving", "This thread is moving to another space.")
+            }
             let previous = self.store.state.tabs[index].layout.leaf(withID: paneID)?.sessionID
             try self.mutateState {
                 $0.tabs[index].layout = $0.tabs[index].layout.updatingLeaf(paneID) {
@@ -4592,6 +4680,9 @@ public final class SessionServer: @unchecked Sendable {
             // Revisions pi reached before its pane was bound had no agent to reach.
             if let sessionID, self.sessions[sessionID]?.thread != nil {
                 self.threadRevised(sessionID: sessionID)
+                for id in self.peerDeliveries.keys.sorted() where self.peerDeliveries[id]?.sessionID == sessionID {
+                    self.dispatchPeerTask(id)
+                }
             }
         }
     }
@@ -6144,8 +6235,138 @@ public final class SessionServer: @unchecked Sendable {
         await enqueueValue { self.keptStarts[sessionID]?.retrying = true }
     }
 
-    /// Stops an agent's pi without retiring its agent: its exit keeps the agent, with no problem
-    /// to report (`SessionExit.keepsAgent`).
+    /// Held across process shutdown, conversation copy and the atomic workspace update.
+    private var movingThreads: Set<AgentID> = []
+    private struct PendingPeerDelivery {
+        let agentID: AgentID
+        let client: ExtensionConnection
+        let sessionID: SessionID?
+        let text: String
+        let delivery: AgentMessageDelivery
+        var received = false
+        var dispatched = false
+    }
+    private var peerDeliveries: [Int: PendingPeerDelivery] = [:]
+    private var nextPeerDeliveryID = 0
+
+    @discardableResult public func moveThread(_ agentID: AgentID, to spaceID: SpaceID) async throws -> Bool {
+        let plan = try await enqueue { () -> (Agent, LeafPane, Space)? in
+            guard let agent = self.store.state.agents.first(where: { $0.id == agentID }),
+                  let tab = self.store.state.tabs.first(where: { $0.id == agent.tabID }),
+                  let paneID = agent.paneID, let pane = tab.layout.leaf(withID: paneID) else {
+                throw ProjectFileError("no_such_agent", "The thread no longer exists.")
+            }
+            guard self.store.state.isOrdinaryThread(agent), !self.store.state.isProjectWorker(agentID),
+                  !self.store.state.isProjectCoordinator(agentID),
+                  !self.store.state.automations.contains(where: { $0.agentID == agentID }) else {
+                throw ProjectFileError("not_a_thread", "Only ordinary threads can move between spaces.")
+            }
+            guard agent.worktreePath == nil && agent.worktreeBranch == nil else {
+                throw ProjectFileError("worktree_thread", "Worktree threads cannot move between spaces.")
+            }
+            guard let destination = self.store.state.spaces.first(where: { $0.id == spaceID && !$0.hidden }) else {
+                throw ProjectFileError("no_such_space", "Choose an existing, non-reserved space on this host.")
+            }
+            guard !self.movingThreads.contains(agentID), !self.peerDeliveries.values.contains(where: { $0.agentID == agentID }),
+                  agent.status != .working, agent.status != .blocked,
+                  agent.waitingOn == nil else {
+                throw ProjectFileError("thread_active", "Wait until the thread is inactive before moving it.")
+            }
+            if let session = pane.sessionID.flatMap({ self.sessions[$0] }), session.isAlive {
+                guard session.thread?.canMoveSpace == true else {
+                    throw ProjectFileError("thread_active", "Finish the turn, questions, queued messages and child work before moving this thread.")
+                }
+                guard session.thread?.piSessionID == agent.effectivePiSessionID else {
+                    throw ProjectFileError("thread_active", "The conversation identity is still updating. Try again when it settles.")
+                }
+            }
+            guard !self.sessions.values.contains(where: {
+                if case .rpc(let rpc, _) = $0 { return rpc.isAlive && rpc.launchAgentID == agentID && rpc.id != pane.sessionID }
+                return false
+            }), !self.agentRequests.values.contains(where: { $0.targetAgentID == agentID }) else {
+                throw ProjectFileError("thread_active", "The thread is starting or handling another request. Try again when it is inactive.")
+            }
+            if agent.spaceID == spaceID { return nil }
+            self.movingThreads.insert(agentID)
+            return (agent, pane, destination)
+        }
+        guard let (agent, pane, destination) = plan else { return false }
+        var copy: ThreadSessionMove?
+        do {
+            var directory: ObjCBool = false
+            let cwd = PiSessionFolder.realPath(destination.path)
+            guard FileManager.default.fileExists(atPath: cwd, isDirectory: &directory), directory.boolValue else {
+                throw ProjectFileError("no_such_directory", "The destination space's folder is missing.")
+            }
+            let root = pi.sessionsRoot
+            let allowMissing = pane.sessionID == nil && agent.piSessionID == nil && agent.lastActiveAt == nil
+            _ = try await Task.detached(priority: .userInitiated) {
+                try ThreadSessionMove.preflight(sessionID: agent.effectivePiSessionID, from: pane.cwd, to: cwd, root: root, allowMissing: allowMissing)
+            }.value
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                queue.async {
+                    guard let sessionID = pane.sessionID, case .rpc(let rpc, let thread)? = self.sessions[sessionID], rpc.isAlive else {
+                        continuation.resume(); return
+                    }
+                    // Ask pi too: its own queue can contain work not yet reported to the host.
+                    rpc.request(.getState, timeout: 5) { result in
+                        guard thread.canMoveSpace, case .success(let response) = result, response.success,
+                              response.data?["isStreaming"]?.boolValue == false,
+                              response.data?["isCompacting"]?.boolValue == false,
+                              response.data?["pendingMessageCount"]?.doubleValue == 0 else {
+                            continuation.resume(throwing: ProjectFileError("thread_active", "The thread is active or its idle state could not be verified. Nothing was moved."))
+                            return
+                        }
+                        self.startRecords[sessionID]?.requestStop()
+                        rpc.kill()
+                        continuation.resume()
+                    }
+                }
+            }
+            if let sessionID = pane.sessionID {
+                let deadline = ContinuousClock.now + .seconds(10)
+                while await sessionInfo(sessionID: sessionID)?.isAlive == true {
+                    guard ContinuousClock.now < deadline else { throw ProjectFileError("move_timeout", "The thread did not stop. Nothing was moved.") }
+                    try await Task.sleep(for: .milliseconds(40))
+                }
+            }
+            copy = try await Task.detached(priority: .userInitiated) {
+                try ThreadSessionMove.prepare(sessionID: agent.effectivePiSessionID, from: pane.cwd, to: cwd, root: root, allowMissing: allowMissing)
+            }.value
+            try await enqueue {
+                guard let index = self.store.state.agents.firstIndex(where: { $0.id == agentID }),
+                      self.store.state.agents[index].spaceID == agent.spaceID,
+                      self.store.state.agents[index].effectivePiSessionID == agent.effectivePiSessionID,
+                      self.store.state.agents[index].worktreePath == nil,
+                      self.store.state.agents[index].worktreeBranch == nil,
+                      self.store.state.spaces.contains(where: { $0 == destination }),
+                      let tab = self.store.state.tabs.firstIndex(where: { $0.id == agent.tabID }),
+                      self.store.state.tabs[tab].layout.leaf(withID: pane.id)?.cwd == pane.cwd else {
+                    throw ProjectFileError("workspace_changed", "The thread or destination changed. Nothing was moved.")
+                }
+                try self.mutateState {
+                    $0.agents[index].spaceID = spaceID
+                    $0.tabs[tab].spaceID = spaceID
+                    $0.tabs[tab].layout = $0.tabs[tab].layout.updatingLeaf(pane.id) { $0.cwd = cwd }
+                }
+            }
+        } catch {
+            if let copy {
+                do { try await Task.detached { try copy.rollback() }.value }
+                catch { ShepherdLog.warning("Thread move rollback left a conversation copy: \(error)") }
+            }
+            await enqueueValue { _ = self.movingThreads.remove(agentID) }
+            throw error
+        }
+        if let copy {
+            do { try await Task.detached { try copy.finish() }.value }
+            catch { ShepherdLog.warning("Thread moved; old conversation backup retained: \(error)") }
+        }
+        await enqueueValue { _ = self.movingThreads.remove(agentID) }
+        return true
+    }
+
+    /// Stops an agent's pi without retiring its agent (`SessionExit.keepsAgent`).
     public func stopKeepingAgent(sessionID: SessionID) async {
         await enqueueValue {
             guard case .rpc(let session, _)? = self.sessions[sessionID], session.isAlive else { return }
@@ -6163,6 +6384,7 @@ public final class SessionServer: @unchecked Sendable {
         if params.runtime == .rpc {
             if let raw = params.env?["SHEPHERD_AGENT_ID"] {
                 let agent = AgentID(rawValue: raw)
+                guard !movingThreads.contains(agent) else { throw ProjectFileError("thread_moving", "This thread is moving to another space.") }
                 if store.state.isProjectCoordinator(agent) || projectLaunches.contains(agent) || executionWorkers.contains(agent) {
                     try requireProjectsEnabled()
                     if store.state.isProjectCoordinator(agent) || projectLaunches.contains(agent) {
@@ -6237,6 +6459,10 @@ public final class SessionServer: @unchecked Sendable {
                     done(error)
                 }
             }
+            thread.dispatchQueueChild = { [weak serverWeak] requestID, text, images, done in
+                guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { done("Agent is gone."); return }
+                server.startQueueChild(agentID: agentID, requestID: requestID, text: text, images: images, completion: done)
+            }
             thread.dispatchSubagentCommand = { [weak serverWeak] runID, action, text, mode, done in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { done("Agent is gone."); return }
                 server.sendChildCommand(agentID: agentID, runID: runID, action: action, text: text, mode: mode, completion: done)
@@ -6278,13 +6504,27 @@ public final class SessionServer: @unchecked Sendable {
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
                 server.hopToMain { [weak server] in server?.onAgentToolFinished?(agentID, name) }
             }
-            session.onEvent = { [weak thread] event in thread?.handle(event) }
+            session.onEvent = { [weak thread, weak serverWeak] event in
+                thread?.handle(event)
+                // pi emits custom message_end only after appending it to session history. A
+                // report receipt on the extension socket alone would not prove that append.
+                if case .messageEnd(let message) = event, message.role == "custom", message.customType == "shepherd-peer-report",
+                   let raw = message.details?["shepherdPeerDeliveryID"]?.doubleValue, raw.isFinite,
+                   let id = Int(exactly: raw), let server = serverWeak,
+                   let pending = server.peerDeliveries[id], pending.delivery == .report,
+                   pending.sessionID == sid, pending.agentID == server.agentID(forSession: sid) {
+                    server.peerDeliveries.removeValue(forKey: id)
+                }
+            }
             startRecords[sid] = PiStartRecord(resuming: resuming)
             thread.onServable = { [weak serverWeak] in
                 serverWeak?.startRecords[sid]?.served()
                 guard let server = serverWeak, server.sessions[sid] != nil else { return }
                 server.unannouncedServable.insert(sid)
                 server.announceServableThreads()
+                for id in server.peerDeliveries.keys.sorted() where server.peerDeliveries[id]?.sessionID == sid {
+                    server.dispatchPeerTask(id)
+                }
                 server.projectRuntimeReady(agentID: server.agentID(forSession: sid))
                 server.executionReady(agentID: server.agentID(forSession: sid))
             }
@@ -6666,6 +6906,7 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     private func sessionDidExit(_ sessionID: SessionID, code: Int32?) {
+        peerDeliveries = peerDeliveries.filter { $0.value.sessionID != sessionID }
         if let agent = agentID(forSession: sessionID) {
             projectRuntimeExited(agentID: agent)
             executionExited(agentID: agent)

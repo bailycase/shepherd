@@ -595,6 +595,7 @@ struct QueueRowActions {
     let running: Bool
 
     func steer(_ id: UUID) { state.steer([id], running: running, store: store) }
+    func subagent(_ id: UUID) { Task { await store.runQueuedInSubagent(id) } }
     func edit(_ id: UUID) { state.edit(id, store: store) }
     func delete(_ id: UUID) { state.delete(id, store: store) }
     func unsteer(_ id: UUID) { state.unsteer(id, store: store) }
@@ -672,7 +673,8 @@ struct QueueRowView: View, Equatable {
                     edit: id.map { id in { actions.edit(id) } },
                     delete: id.map { id in { actions.delete(id) } },
                     deleteShortcut: deleteShortcut,
-                    back: id.map { id in { actions.unsteer(id) } }),
+                    back: id.map { id in { actions.unsteer(id) } },
+                    subagent: actions.store.supportsQueueSubagent ? id.map { id in { actions.subagent(id) } } : nil),
                    drag: steering || readOnly ? nil : NWQueueDrag(changed: { actions.drag(row.id, $0) }, ended: { actions.endDrag(row.id, $0) }))
             // The lifted row follows the pointer exactly.
             .transaction(value: lift) { if lift != nil { $0.animation = nil } }
@@ -684,6 +686,7 @@ struct QueueRowView: View, Equatable {
                         Button("Back to the queue") { actions.unsteer(id) }
                     } else {
                         Button(running ? "Steer now" : "Send now") { actions.steer(id) }
+                        if actions.store.supportsQueueSubagent { Button("Run in subagent") { actions.subagent(id) } }
                         Button("Edit") { actions.edit(id) }
                         Button("Delete") { actions.delete(id) }
                         Button("Move up") { actions.move(id, by: -1) }
