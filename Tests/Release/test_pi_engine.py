@@ -233,6 +233,31 @@ class SkillPatchTests(unittest.TestCase):
             with self.assertRaisesRegex(pi_engine.EngineError, "anchor mismatch"):
                 pi_engine.apply_patch({"test.js": b"old"}, {})
 
+    def test_ci_package_patch_is_verified_idempotent_and_refuses_partial_writes(self):
+        changes = [{"path": name, "before": hashlib.sha256(b"old").hexdigest(),
+                    "after": hashlib.sha256(b"new").hexdigest(), "edits": [{"old": "old", "new": "new"}]}
+                   for name in ["first.js", "second.js"]]
+        pin = {"pi": {"name": "fixture", "version": "1"}}
+        with tempfile.TemporaryDirectory() as root, patch.object(pi_engine, "engine_patch", return_value={"files": changes}):
+            def put(name, text):
+                with open(os.path.join(root, name), "w") as f:
+                    f.write(text)
+            put("package.json", json.dumps(pin["pi"]))
+            put("first.js", "old")
+            put("second.js", "corrupt")
+            with self.assertRaisesRegex(pi_engine.EngineError, "source mismatch"):
+                pi_engine.patch_test_package(root, pin)
+            self.assertEqual(read(root, "first.js"), "old", "a failed validation must not partially patch the cache")
+            put("second.js", "old")
+            pi_engine.patch_test_package(root, pin)
+            pi_engine.patch_test_package(root, pin)
+            self.assertEqual([read(root, name) for name in ["first.js", "second.js"]], ["new", "new"])
+            put("package.json", json.dumps({"name": "fixture", "version": "wrong"}))
+            with self.assertRaisesRegex(pi_engine.EngineError, "expected"):
+                pi_engine.patch_test_package(root, pin)
+        workflow = read(ROOT, ".github", "workflows", "ci.yml")
+        self.assertLess(workflow.index("pi_engine.py patch-package"), workflow.index("Test extensions with isolated fake providers"))
+
 
 class PinTests(unittest.TestCase):
     """Node 24 LTS for Apple silicon, Pi and the SDK dependency tree, each by version and hash."""

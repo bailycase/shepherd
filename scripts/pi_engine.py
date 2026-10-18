@@ -24,6 +24,7 @@ usage:
                                    download (or reuse), verify and stage the engine
   pi_engine.py verify <App.app|staged dir>
                                    check an app's (or a staged) engine against the pin
+  pi_engine.py patch-package DIR  apply verified shipping patches to an isolated test package
   pi_engine.py check-pin           check the pin file's shape, offline
 """
 from __future__ import annotations
@@ -449,12 +450,15 @@ def engine_patch(pin: dict) -> dict | None:
     return patch
 
 
-def apply_patch(files: dict[str, bytes], pin: dict) -> None:
+def apply_patch(files: dict[str, bytes], pin: dict, *, allow_patched: bool = False) -> None:
     patch = engine_patch(pin)
     for change in (patch or {}).get("files", []):
         path = change["path"]
         original = files.get(path, b"")
-        if hashlib.sha256(original).hexdigest() != change["before"]:
+        digest = hashlib.sha256(original).hexdigest()
+        if allow_patched and digest == change["after"]:
+            continue
+        if digest != change["before"]:
             raise EngineError(f"engine patch source mismatch: {path}")
         text = original.decode("utf-8")
         if "source" in change:
@@ -467,6 +471,31 @@ def apply_patch(files: dict[str, bytes], pin: dict) -> None:
         if hashlib.sha256(result).hexdigest() != change["after"]:
             raise EngineError(f"engine patch result mismatch: {path}")
         files[path] = result
+
+
+def patch_test_package(directory: str, pin: dict) -> None:
+    """Patch the isolated npm test install (Linux included), never a user's Pi home.
+
+    A cache may contain pristine or already-patched files. Validate every input and
+    compute every replacement before writing anything; unknown contents fail closed.
+    """
+    problems = _package_version(directory, pin["pi"]["name"], pin["pi"]["version"], directory)
+    if problems:
+        raise EngineError("; ".join(problems))
+    changes = (engine_patch(pin) or {}).get("files", [])
+    files = {}
+    for change in changes:
+        try:
+            with open(os.path.join(directory, change["path"]), "rb") as source:
+                files[change["path"]] = source.read()
+        except FileNotFoundError:
+            files[change["path"]] = b""
+    apply_patch(files, pin, allow_patched=True)
+    for relative, data in files.items():
+        path = os.path.join(directory, relative)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as output:
+            output.write(data)
 
 
 def build_tree(pin: dict, downloads: dict) -> dict[str, bytes]:
@@ -741,6 +770,13 @@ def main(argv: list[str]) -> int:
             return 1
         pin = load_pin()
         print(f"{argv[1]} carries node {pin['node']['version']} and pi {pin['pi']['version']}")
+    elif argv[:1] == ["patch-package"] and len(argv) == 2:
+        try:
+            patch_test_package(os.path.abspath(argv[1]), load_pin())
+        except (EngineError, OSError) as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+        print(f"verified shipping patches in {argv[1]}")
     elif argv == ["check-pin"]:
         problems = pin_problems(load_pin())
         for problem in problems:

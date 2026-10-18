@@ -97,7 +97,9 @@ initializing or listing tools, without waiting for their request timeout. The MC
 modular runtime, pinned stdio dependency and bundled SDK. Its hash is recorded in the engine pin.
 Staging verifies the pi version, full original file hashes, unique replacement anchors and final
 file hashes; verification also checks the shipped patched files. A source, patch or pin mismatch
-fails closed. Update the patch hash in the pin and restage whenever the patch changes, so Xcode's
+fails closed. The Linux extension-test job applies the same verified patches to its isolated npm
+install with `pi_engine.py patch-package`; it accepts an already-patched cache only when hashes match.
+Update the patch hash in the pin and restage whenever the patch changes, so Xcode's
 existing pin stamp cannot reuse an older unpatched engine.
 
 The patch supplies `refresh_skills`, native file observation and the `skills_changed` /
