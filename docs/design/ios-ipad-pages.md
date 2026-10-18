@@ -191,13 +191,14 @@ Keyboard, Experiments. Agents, Worktrees, Pi and Keyboard are the host's setting
 Instructions, SettingsInstructions; `Settings/InstructionsScreens.swift`):
 
 - **Header:** "Instructions", History (secondary) and "Save to 3 hosts" (primary).
-- **Scope:** Every host | Per host (a 300pt segmented control: a `bgSelected` track at radius 9,
-  30pt segments at radius 7, 13), and the sync state at 12.5 `textTertiary` ("This Mac, build-01
-  synced · horizon when it's back").
-- **Files** as tabs (22pt apart, a hairline under them): the name in mono 13 (the open one in
-  `textPrimary` semibold with a 2pt `textPrimary` underline, the other `textSecondary`) over a
-  caption at 11.5 `textTertiary` ("how you work · ~640 tokens", "rules that win · ~90 tokens").
-- **Editor** (`bgWindow`, a 1px `lineStrong` line, radius 12): a bar on `bgSunken` (8×12 inset)
+- **Scope:** Every host | Per host (a 300pt segmented control: a `bgSunken` track with a 1px
+  `lineSubtle` line at radius 9, 30pt segments at radius 7, 13 `textPrimary`, the chosen one on
+  `bgRaised`), and under it the sync state at 12 `textTertiary` ("This Mac, build-01 synced ·
+  horizon when it's back").
+- **Files** as tabs (22pt apart, a hairline under them, 44pt): the name in mono 13, the open one
+  in `textPrimary` with a 2pt `lantern` underline, the other `textTertiary`. VoiceOver reads what
+  each file is and its size.
+- **Editor** (`bgWindow`, a 1px `lineSubtle` line, radius 12): a bar on `bgSunken` (8×12 inset)
   with the file's path in mono 12 `textSecondary` and "● edited" at 11.5 `lanternText`; lines at
   least 26pt in mono 14/26 in `textSecondary`, numbered in a 34pt column (mono 10.5
   `textTertiary`), the edited line on `lanternTint`; at least 250pt tall.
@@ -207,8 +208,7 @@ Instructions, SettingsInstructions; `Settings/InstructionsScreens.swift`):
   line, in `textPrimary`). Under it at 12.5/1.5 `textTertiary`: "APPEND_SYSTEM.md is added to the
   end of the agent’s system prompt, so these rules beat anything in an AGENTS.md. Keep it short."
 - **In the app** the bar holds the title, and History and Save (NW buttons at `l`) end the page's
-  first row, after the scope control and its state, dropping under them where the row is too
-  narrow. The state names every host ("Studio, build-01 synced · horizon when it's back", "…
+  first row, beside the scope control and its state. The state names every host ("Studio, build-01 synced · horizon when it's back", "…
   build-02 differs"), with Sync now as a link while one differs; Per host swaps it for a menu of
   the host being edited. The path is the host's own instructions folder, the editor is the
   phone's (`InstructionsTextEditor`) at the iPad's sizes, and it fills the height left: the read
