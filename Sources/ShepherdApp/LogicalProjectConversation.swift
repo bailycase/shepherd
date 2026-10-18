@@ -179,6 +179,7 @@ struct ConversationThread: View {
         // A task whose answer is already held by the owner is not asked again: its row says what became of it.
         let answered = Set(project.tasks.filter { $0.pendingAnswer != nil }.map(\.id))
         let questions: [ProjectTaskRow] = presentation.rows.filter { $0.phase == .waiting && $0.detail != nil && !answered.contains($0.id) }
+        let questionFailure = vm.logicalProjects.failure?.message
         // A pending proposal is drawn inline where its typed tool result sits in the transcript. Only one the transcript has no card for
         // (its result is outside the loaded history, or came from a different path) is offered above the composer, so it is never
         // lost and never drawn twice. An accepted or denied proposal is consumed and drawn nowhere.
@@ -193,6 +194,9 @@ struct ConversationThread: View {
             dock: (presentation.summary != nil || !offers.isEmpty) ? { [vm, ref] in
                 AnyView(VStack(spacing: NWLeadMetrics.dockGap) {
                     ForEach(offers) { proposal in SpaceOffer(vm: vm, ref: ref, proposal: proposal) }
+                    if !questions.isEmpty, let questionFailure {
+                        NWInlineProblem(questionFailure).accessibilityLabel(questionFailure)
+                    }
                     ForEach(questions) { task in TaskQuestion(vm: vm, ref: ref, task: task, paused: project.paused) }
                     if let summary = presentation.summary {
                         ProjectSummaryStrip(vm: vm, ref: ref, summary: summary, rows: presentation.rows)
@@ -302,12 +306,23 @@ struct TaskQuestion: View {
                 question: prompt.question,
                 options: prompt.options.map { NWLeadQuestionCard.Option(id: $0.number, title: $0.title, detail: $0.detail, recommended: $0.recommended) },
                 footer: Self.footer(title: task.title, paused: paused),
-                enabled: store.supports("answer") && prompt.blocked == nil && !vm.logicalProjects.busy.contains(ref.id)) { option in
-                    guard let reply = prompt.dialogAnswer(.option(prompt.options.first { $0.number == option.id } ?? prompt.options[0])) else { return }
-                    let request = NativeThreadRequest.answer(expectedSessionID: session.piSessionID, generation: session.generation,
-                                                             operationID: UUID(), dialogID: dialog.id, answer: reply)
-                    Task { _ = await vm.logicalProjects.answer(ref, task: task.id, request: request) }
+                enabled: store.supports("answer") && prompt.blocked == nil && !vm.logicalProjects.busy.contains(ref.id),
+                textPlaceholder: prompt.allowsText ? prompt.placeholder : nil,
+                submit: { words in
+                    send(prompt.answer(NativeQuestionPicks(text: words)).flatMap(prompt.dialogAnswer), dialog, session)
+                }) { option in
+                    guard let picked = prompt.options.first(where: { $0.number == option.id }) else { return }
+                    send(prompt.dialogAnswer(.option(picked)), dialog, session)
                 }
+                .id("\(session.piSessionID):\(session.generation):\(dialog.id)")
+    }
+
+    /// One answer through the Project, exactly as the native prompt maps it (a choice's words and options both answer its input).
+    private func send(_ reply: NativeDialogAnswer?, _ dialog: NativeThreadDialog, _ session: NativeThreadSession) {
+        guard let reply else { return }
+        let request = NativeThreadRequest.answer(expectedSessionID: session.piSessionID, generation: session.generation,
+                                                 operationID: UUID(), dialogID: dialog.id, answer: reply)
+        Task { _ = await vm.logicalProjects.answer(ref, task: task.id, request: request) }
     }
 }
 

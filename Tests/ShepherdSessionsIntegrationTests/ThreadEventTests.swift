@@ -767,6 +767,44 @@ struct ThreadEventTests {
         try await eventually("the dialog to expire") { try await t.snapshot().dialogs.isEmpty }
     }
 
+    @Test func projectChoiceHintsNormalizeOnlyBoundedNativeInputs() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        _ = try await t.ready()
+        let choices = ["line\nbreak", "quote \"here\""]
+        let encoded = String(decoding: try JSONEncoder().encode(choices), as: UTF8.self)
+        for (payload, placeholder, expected) in [
+            (encoded, "Say anything", Optional(choices)),
+            (encoded, "ordinary input", nil),
+            ("not JSON", "Say anything", nil),
+            ("[]", "Say anything", nil),
+            ("[\"same\",\"same\"]", "Say anything", nil),
+            ("[\"   \"]", "Say anything", nil),
+            (String(decoding: try JSONEncoder().encode((0..<17).map(String.init)), as: UTF8.self), "Say anything", nil),
+            (String(decoding: try JSONEncoder().encode([String(repeating: "é", count: 129)]), as: UTF8.self), "Say anything", nil)
+        ] {
+            let title = "Choose?\n\nOptions:\n" + payload
+            let data = try JSONSerialization.data(withJSONObject: ["type": "extension_ui_request", "id": "choice-input", "method": "input",
+                                                                  "title": title, "placeholder": placeholder])
+            let snapshot = try await t.feedThenSnapshot(String(decoding: data, as: UTF8.self))
+            let dialog = try #require(snapshot.dialogs.first)
+            #expect(dialog.kind == .input && dialog.options == expected)
+            #expect(dialog.title == (expected == nil ? title : "Choose?"))
+            #expect(dialog.placeholder == placeholder, "ordinary input fallback stays usable")
+            if expected != nil {
+                #expect(dialog.message == "1. line\nbreak\n2. quote \"here\"", "older clients can read choices above their ordinary input")
+            }
+        }
+        // Normalization adds legacy text hints: recheck the final encoded size too.
+        let largeChoices = (0..<16).map { String($0) + String(repeating: "\u{0001}", count: 254) }
+        let hints = String(decoding: try JSONEncoder().encode(largeChoices), as: UTF8.self)
+        let data = try JSONSerialization.data(withJSONObject: ["type": "extension_ui_request", "id": "choice-input", "method": "input",
+                                                              "title": String(repeating: "q", count: 2000) + "\n\nOptions:\n" + hints,
+                                                              "placeholder": "Say anything"])
+        let snapshot = try await t.feedThenSnapshot(String(decoding: data, as: UTF8.self))
+        #expect(snapshot.dialogs.first?.unavailable == "payload-limit")
+    }
+
     @Test func aRepeatedDialogIDReplacesTheDialog() async throws {
         let t = try Thread()
         defer { t.stop() }

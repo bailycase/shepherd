@@ -426,10 +426,10 @@ def script_turn(prompt, script):
             wait_for_file(item["wait"], item.get("timeout", 30.0))
             continue
         if "ask" in item:
-            # A select the worker waits on (its native dialog): the last item, so the turn stays open until it is answered.
+            # A native dialog the worker waits on: the last item keeps the turn open until answered.
             global pending_ui
             pending_ui = "uuid-script"
-            emit({"type": "extension_ui_request", "id": "uuid-script", "method": "select", "title": item["ask"]["title"], "options": item["ask"]["options"]})
+            emit({"type": "extension_ui_request", "id": "uuid-script", "method": "select", **item["ask"]})
             MESSAGES.extend(new)
             STATE["messageCount"] = len(MESSAGES)
             return

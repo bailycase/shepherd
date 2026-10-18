@@ -82,11 +82,11 @@ export default function projectContext(pi: ExtensionAPI) {
             return { content: [{ type: "text", text: "Question exceeds 2000 UTF-8 bytes or an option exceeds 256." }], details: {}, isError: true };
           }
           if (!ctx.hasUI) return { content: [{ type: "text", text: "Native question UI unavailable; no answer received." }], details: {}, isError: true };
-          // Keep select replies exact: the final choice opens a native input, not an unoffered select value.
-          const sayAnything = "Say anything";
-          const choices = options?.filter(option => option !== sayAnything).concat(sayAnything);
-          let answer = choices ? await ctx.ui.select(question, choices, { signal }) : await ctx.ui.input(question, undefined, { signal });
-          if (choices && answer === sayAnything && !signal?.aborted) answer = await ctx.ui.input(question, undefined, { signal });
+          // One native input accepts both an offered choice and the person's own words. Shepherd
+          // presents the bounded choice hints as buttons; older clients can still type a reply.
+          const choices = options?.filter(option => option !== "Say anything");
+          const title = choices?.length ? `${question}\n\nOptions:\n${JSON.stringify(choices)}` : question;
+          const answer = await ctx.ui.input(title, choices ? "Say anything" : undefined, { signal });
           const cancelled = signal?.aborted || answer === undefined;
           return { content: [{ type: "text", text: JSON.stringify(cancelled ? { cancelled: true } : { answer }) }], details: {} };
         },

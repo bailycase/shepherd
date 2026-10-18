@@ -288,8 +288,8 @@ rules (QuestionStates › Rules):
 5. **Answer** is the only button. It lights up once an option is picked or an open question has
    text. There is no Dismiss: pi is waiting on an answer. The dock has no note field and no
    built-in Something else…: select takes only offered options. Project workers' `project_question`
-   offers a final **Say anything** option; Answer opens a native text-input question, whose Answer
-   submits the person's words.
+   draws offered choices followed by a **Say anything** text field. Pick a choice or type words,
+   then Answer submits once. Typing deselects the choice; choosing a choice clears the text.
 6. **After:** the composer comes back (the field takes the keyboard again), and the thread
    keeps the record where pi asked (below).
 
@@ -386,12 +386,16 @@ it has no note or arbitrary select reply):
 | pi's select (`ctx.ui.select`) | choice, or yes or no | one of its options, exactly as offered |
 | pi's confirm (`ctx.ui.confirm`) | yes or no | true or false |
 | pi's input (`ctx.ui.input`) | open | a string |
+| Project worker's `project_question` with options | choice and a final Say anything field | one native input string: the exact offered choice or the person's words |
 | pi's editor (`ctx.ui.editor`) | open, 12 lines | a string, as typed |
 | A subagent | none | it is no asker of the user: it asks its parent (`shepherd_parent_message`, `needsReply`), which asks here, as an ordinary question, when it must |
 
-`project_question` offers **Say anything** last for a choice, then opens `ctx.ui.input` when
-selected. The first Answer opens the field; the second delivers the text. Cancellation of either
-dialog is not an answer or permission. Other select dialogs retain only their offered options.
+`project_question` uses one `ctx.ui.input`, carrying bounded choice hints that the owner normalizes
+into its existing native input's options. **Say anything** is the last field, never a selectable
+option or a second dialog. Both paths deliver one input reply. The inline Project card answers
+choices immediately and submits its field with Send or Return; the worker dock uses Answer.
+A refusal retains the draft/pick. Cancellation is not an answer or permission. Other select
+dialogs retain only their offered options.
 
 An asking tool (any tool named `ask` or `question`, such as `ask_user`) asks through the dialogs
 above, so its question is the row of the dialog it opens. Its `short` reason is for the sidebar's

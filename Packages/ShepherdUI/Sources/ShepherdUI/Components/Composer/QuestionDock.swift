@@ -85,10 +85,13 @@ public struct NWQuestionDockContent: Equatable, Sendable {
     public var notice: String?
     /// Answer is drawn (not for a yes or a no).
     public var showsAnswer: Bool
+    /// A choice whose asker also takes words: a field under the options, where typing drops the
+    /// pick and picking empties the field.
+    public var allowsText: Bool
 
     public init(count: Int = 1, question: String, message: String? = nil, kind: NWQuestionDockKind,
                 options: [NWQuestionDockOption] = [], placeholder: String = "Type your answer…", multiline: Bool = false,
-                notice: String? = nil, showsAnswer: Bool = true) {
+                notice: String? = nil, showsAnswer: Bool = true, allowsText: Bool = false) {
         self.count = count
         self.question = question
         self.message = message
@@ -98,6 +101,7 @@ public struct NWQuestionDockContent: Equatable, Sendable {
         self.multiline = multiline
         self.notice = notice
         self.showsAnswer = showsAnswer
+        self.allowsText = allowsText
     }
 }
 
@@ -183,7 +187,9 @@ public struct NWQuestionDock: View {
             if let message = content.message { messageBlock(message) }
             Group {
                 switch content.kind {
-                case .choice: options
+                case .choice:
+                    options
+                    if content.allowsText { openField }
                 case .yesNo: yesNo
                 case .open: openField
                 }
@@ -194,6 +200,12 @@ public struct NWQuestionDock: View {
         .padding(NWQuestionDockMetrics.padding)
         .nwQuestionCard()
         .nwAnimation(.hover, value: selection.picked)
+        // Options and words are one answer: the newer one replaces the other, from a click, a key or typing.
+        .onChange(of: selection) { old, new in
+            guard content.allowsText else { return }
+            if new.picked != nil, new.picked != old.picked, !new.text.isEmpty { selection.text = "" }
+            else if new.text != old.text, new.picked != nil, !new.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { selection.picked = nil }
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(NWQuestionHead.title): \(content.question)")
     }
@@ -301,7 +313,7 @@ public struct NWQuestionDock: View {
         .nwBorder(nw.lineStrong, radius: NW.Radius.m)
         .contentShape(Rectangle())
         .onTapGesture { focus.wrappedValue = .text }
-        .accessibilityLabel("Answer")
+        .accessibilityLabel(content.allowsText ? content.placeholder : "Answer")
     }
 
     // MARK: Footer
