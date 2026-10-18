@@ -385,6 +385,60 @@ struct RPCSessionTests {
         #expect(!h.exit.current.done)
     }
 
+    @Test func shutdownBeforeSourceRegistrationClosesReadPipes() async {
+        await #expect(processExitsWith: .success) {
+            await recordingErrors {
+                let queue = DispatchQueue(label: "test.rpc.no-sources")
+                func stopWithoutStarting() throws {
+                    let session = try RPCSession(params: CreateSessionParams(cwd: "/", command: ["/usr/bin/true"], runtime: .rpc), queue: queue)
+                    queue.sync { session.shutdown() }
+                }
+                try stopWithoutStarting() // Warm process/queue bookkeeping before counting descriptors.
+                let before = try FileManager.default.contentsOfDirectory(atPath: "/dev/fd").count
+                for _ in 0..<8 { try stopWithoutStarting() }
+                let after = try FileManager.default.contentsOfDirectory(atPath: "/dev/fd").count
+                #expect(after <= before, "shutdown before start must not leak the two read pipes")
+            }
+        }
+    }
+
+    @Test(arguments: [false, true])
+    func teardownKillsDetachedOwnedGroups(hard: Bool) async throws {
+        let script = """
+        import pathlib, signal, subprocess, sys, time
+        child = '''
+        import os, pathlib, signal, subprocess, sys, time
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        signal.signal(signal.SIGHUP, signal.SIG_IGN)
+        grandchild = 'import os,pathlib,signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); signal.signal(signal.SIGHUP,signal.SIG_IGN); pathlib.Path("grandchild.pid").write_text(str(os.getpid())); time.sleep(60)'
+        subprocess.Popen([sys.executable, '-c', grandchild], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        pathlib.Path('child.pid').write_text(str(os.getpid()))
+        time.sleep(60)
+        '''
+        subprocess.Popen([sys.executable, '-c', child], start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        while True: signal.pause()
+        """
+        let h = try Harness(command: ["/usr/bin/python3", "-c", script])
+        let unrelated = try Harness()
+        defer { h.stop(); unrelated.stop() }
+        let childFile = h.dir.appendingPathComponent("child.pid")
+        let grandchildFile = h.dir.appendingPathComponent("grandchild.pid")
+        try await eventually("detached server and child ready") {
+            (try? String(contentsOf: childFile, encoding: .utf8)).flatMap(Int32.init) != nil &&
+                (try? String(contentsOf: grandchildFile, encoding: .utf8)).flatMap(Int32.init) != nil
+        }
+        let child = try #require(Int32(String(contentsOf: childFile, encoding: .utf8)))
+        let grandchild = try #require(Int32(String(contentsOf: grandchildFile, encoding: .utf8)))
+        defer { _ = kill(child, SIGKILL); _ = kill(grandchild, SIGKILL) }
+        await h.onQueue {
+            if hard { h.session.shutdown() } else { h.session.kill() }
+        }
+        try await eventually("detached processes to exit") {
+            kill(child, 0) != 0 && kill(grandchild, 0) != 0
+        }
+        #expect(try await unrelated.request(.getState).get().success)
+    }
+
     @Test func aMissingExecutableFailsToSpawn() {
         #expect(throws: RPCSession.SpawnError.self) {
             _ = try RPCSession(params: CreateSessionParams(cwd: "/", command: ["/nonexistent/pi"], runtime: .rpc),
