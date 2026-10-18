@@ -233,8 +233,8 @@ Up next follows iOS (and Composer › Up next); on iPad it is a card above the c
 
 ## Questions (iPadQuestion)
 
-A question takes the composer's place: a card, not the phone's docked panel, up to 900pt wide
-(wider than the thread's column), 10pt above the thread's end and 26pt from the bottom. The
+A question takes the composer's place: a card, not the phone's docked panel, as wide as the
+thread's column (780pt), 10pt above the thread's end and 26pt from the bottom. The
 header's pill turns "Needs you" (attention, glowing).
 
 - **Card:** `bgRaised`, a 1px `lantern` line, radius 16, a 3pt `lanternTint` ring outside it;
@@ -320,22 +320,27 @@ chosen (All subagents) it lists the thread's runs under a "Subagents" head with 
   `SubagentTraySection`, `NWSubagentTray` at `.pad` size): above the composer, in one card with
   Up next (radius 12). A 40pt header (14pt leading, 4pt trailing, a 13pt glyph, "3 subagents" at
   13/600, the cells and tally, Collapse as a 34pt circle); 44pt rows (14pt leading, 4pt
-  trailing, 10pt apart): the state in a 14pt slot, the name in mono 13/600 in an 80pt column,
-  what it is doing at 13.5 (the subject in mono 12.5), its diff stat and time in mono 11, then
-  Answer (lantern `m`) for a run that needs you, else a chevron in a 34pt slot. The run the
-  inspector shows is selected: `bgSelected` (the needs-you tint kept) with a 2pt leading rule,
-  `running`, or `lantern` on a run that needs you, whose Answer gives way to the chevron. A row
-  opens its run in the inspector; touch and hold for Open, Answer and the run's controls. It
-  stays until your next message once every run finished ("all done"; iPadSubagents).
-- **In the thread:** "Started 3 subagents · worker · reviewer · tests" and, once they finished,
+  trailing, 10pt apart): the state in a 14pt slot, the agent's name ("worker", the run's role) in
+  mono 13/600 in an 80pt column, what it is doing at 13.5 on the same line (the subject in mono
+  12.5), its diff stat and time in mono 11, then a chevron in a 34pt slot. When two runs share a
+  role, the task leads and the role sits under it, so the rows stay apart. A run that asked its
+  parent says "asked the parent: …" quietly, with no Answer and no needs-you tint: a subagent
+  never asks you (the boards' "asks: …" in lantern with Answer is a departure). The run the
+  inspector shows is selected: `bgSelected` with a 2pt `running` leading rule. A row opens its
+  run in the inspector; touch and hold for Open and the run's controls. It stays until your next
+  message once every run finished ("all done"; iPadSubagents). While a goal is set the tray and
+  Up next stay open on iPad, the whole dock drawn as iPadGoal does; the iPhone folds them to
+  their headers.
+- **In the thread:** "Started 3 subagents · worker · reviewer · tests" (the agents' names; the
+  tasks' when two share one) and, once they finished,
   "3 subagents finished · 45m · 7 files · +318 −64" (34pt, 14); both, and the turn's footer "·
   3 subagents", open the runs.
 - **Inspector head, one run** (the bar's height, 14pt leading inset): its state glyph (16), the
-  name at 15/600 with "· 3 of 3" at 400 `textSecondary`, and its meta in mono 11 `textTertiary`
-  ("claude-sonnet · 11 turns · done 11:02", the finish in `done`); Previous subagent and Close
+  agent's name ("reviewer") at 15/600 with "· 3 of 3" at 400 `textSecondary`, and its meta in mono 11 `textTertiary`
+  ("claude-sonnet · 11 turns · done 11:02", the finish in `done`; the role is the name, so not repeated); Previous subagent and Close
   as 44pt circles. The app adds Next, a ••• menu (Pause, Continue, Stop, Re-run, where the host
   takes them) and All subagents (`list.bullet`).
-- **Inspector head, a live group of up to four** (iPadSteer): the runs as a segmented control (a
+- **Inspector head, a live group of up to four** (iPadSteer): the runs, by agent name, as a segmented control (a
   `bgSelected` track at radius 9, 2pt inset; 30pt segments at radius 7, 13; the chosen one on
   `bgRaised`, semibold) and Close. At accessibility sizes, or with more runs, the one-run head
   steps through them instead.

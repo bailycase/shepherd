@@ -50,10 +50,8 @@ struct ThreadScreen: View {
                     ThreadComposer(ref: ref)
                         .composerTextDrop(ref)
                         .environment(\.composerMaxHeight, height > 0 ? height * MobileLayout.composerShare : .infinity)
-                        // iPad: as wide as the thread's column, and a question's card wider (iPadQuestion).
-                        .frame(maxWidth: sizeClass == .regular
-                               ? (store.dialogs.isEmpty ? MobileLayout.threadMaxWidth : MobileLayout.questionMaxWidth) + 2 * MobileLayout.padThreadGutter
-                               : .infinity)
+                        // iPad: as wide as the thread's column, a question's card too (iPadQuestion).
+                        .frame(maxWidth: sizeClass == .regular ? MobileLayout.threadMaxWidth + 2 * MobileLayout.padThreadGutter : .infinity)
                         .frame(maxWidth: .infinity)
                         .background(Color.nw.bgWindow)
                 }

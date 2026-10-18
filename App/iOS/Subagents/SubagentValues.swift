@@ -52,10 +52,13 @@ enum SubagentValues {
     static func tray(_ tray: NativeSubagentTray) -> (summary: NWSubagentTraySummary, rows: [NWSubagentTrayRun]) {
         let summary = NWSubagentTraySummary(title: tray.title, cells: tray.cells.map(AgentState.init),
                                             tally: tray.tally.map { NWSubagentTraySummary.Part($0.text, state: $0.phase.map(AgentState.init)) })
-        return (summary, tray.rows.map(trayRow))
+        // Agents lead ("worker"), unless two share a name: then the task leads, the agent under it.
+        let roles = tray.rows.compactMap(\.role)
+        let byAgent = Set(roles).count == roles.count
+        return (summary, tray.rows.map { trayRow($0, byAgent: byAgent) })
     }
 
-    static func trayRow(_ row: NativeTrayRow) -> NWSubagentTrayRun {
+    static func trayRow(_ row: NativeTrayRow, byAgent: Bool = true) -> NWSubagentTrayRun {
         let line: NWSubagentTrayRun.Line = switch row.line {
         case .working(let verb, let subject, let live): .working(verb: verb, subject: subject, live: live)
         case .waiting(let text): .waiting(text)
@@ -63,7 +66,7 @@ enum SubagentValues {
         case .result(let text): .result(text)
         case .failed(let reason): .failed(reason)
         }
-        return NWSubagentTrayRun(id: row.id, name: row.role ?? row.name, state: AgentState(row.phase), line: line, added: row.added,
+        return NWSubagentTrayRun(id: row.id, name: byAgent ? row.role ?? row.name : row.name, role: byAgent ? nil : row.role, state: AgentState(row.phase), line: line, added: row.added,
                                  removed: row.removed, since: date(row.since), until: date(row.until),
                                  accessibilityLabel: row.accessibilityLabel)
     }
