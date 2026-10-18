@@ -151,6 +151,12 @@ struct LogicalProjectConversationTests {
         expectScenarioCompleted(result)
     }
 
+    @Test(arguments: [false, true])
+    func aWorkersSelectAnsweredFromThePanesDockIsDeliveredOnceAndTheDockLeaves(rejectedFirst: Bool) async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { [rejectedFirst = rejectedFirst as Bool] in await completingScenario { try await Self.paneDockAnswer(rejectedFirst: rejectedFirst) } }
+        expectScenarioCompleted(result)
+    }
+
     @Test func thePausedFooterMatchesItsSourceGeometryAndTheResolvedFooterKeepsItsOwn() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.footerGeometry() } }
         expectScenarioCompleted(result)
@@ -1576,6 +1582,81 @@ private static func chipsAndLinks() async throws {
         }
         try await eventuallyOnMain("the pane's dock is drawn") { window.layout(); return !paneOptions().isEmpty }
         #expect(paneOptions().allSatisfy { !$0.isEnabled }, "no second answer is offered while the owner holds one: \(paneOptions().map { "\($0.label ?? "") \($0.isEnabled)" })")
+    }
+
+    // MARK: Pane dock answer (#301)
+
+    /// The worker's own select in the pane's question dock: pick an option, press Answer (AX presses, no focus or input), and pi
+    /// receives exactly that option once; the dialog leaves and the task settles. `SHEPHERD_PREVIEW_DIR` saves the picked dock.
+    private static func paneDockAnswer(rejectedFirst: Bool) async throws {
+        let r = try await rig()
+        defer { r.app.stop() }
+        let options = ["Use SQLite", "Use Postgres", "Say anything"]
+        let script: [String: Any] = ["prompts": ["ask-store": [["ask": ["title": "Which store should the API use?", "options": options]]]],
+                                     "socket": r.app.scratch.socketPath]
+        try JSONSerialization.data(withJSONObject: script).write(to: URL(fileURLWithPath: r.space.path).appendingPathComponent("project-script.json"))
+        _ = try await r.vm.projectCoordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
+                                                      request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Library API draft", prompt: "ask-store"))
+        try await eventuallyOnMain("the worker is waiting on its question") { r.vm.state.projects.first?.tasks.first?.phase == .waiting }
+        let task = try #require(r.vm.state.projects.first?.tasks.first)
+        r.vm.openLogicalProject(r.ref)
+        let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
+        defer { window.close() }
+        let store = r.vm.projectWorkerStore(.local, task.workerAgentID)
+        try await eventuallyOnMain("the worker list has connected its store") { window.layout(); return store.ready }
+        r.vm.openProjectTask(task.id)
+        // Only the pane's controls: the conversation column may draw its own card for the same dialog.
+        func pane(_ label: String) -> [Control] {
+            let paneLeft = window.window.frame.maxX - NWLeadMetrics.paneWidth
+            return window.controls().filter { $0.role == ControlRole.button && $0.label == label && $0.frame.minX > paneLeft }
+        }
+        try await eventuallyOnMain("the pane's dock offers every option, the last Say anything") {
+            window.layout(); return options.allSatisfy { !pane($0).isEmpty }
+        }
+        let answer = try #require(pane("Answer").first)
+        #expect(!answer.isEnabled, "Answer waits for a pick")
+
+        #expect(try #require(pane("Use Postgres").first).node.press())
+        try await eventuallyOnMain("the pick lights Answer") { window.layout(); return pane("Answer").first?.isEnabled == true }
+        #expect(pane("Use Postgres").first?.isSelected == true)
+        if rejectedFirst {
+            let session = try #require(store.session), dialog = try #require(store.dialogs.first)
+            // A queued click can carry an old session. Reject it locally, visibly, without clearing the pick.
+            await store.answer(dialogID: dialog.id, sessionID: "stale-session", generation: session.generation,
+                               answer: .select(value: "Use Postgres"))
+            let notice = try #require(store.notice)
+            try await eventuallyOnMain("the rejection is visible beside the selected question") {
+                window.layout(); return window.elements().contains { $0.label == notice || $0.value == notice }
+            }
+            #expect(pane("Use Postgres").first?.isSelected == true)
+            #expect(pane("Answer").first?.isEnabled == true, "the same selection can be retried")
+            #expect(store.dialogs.first?.id == dialog.id, "a rejection does not dismiss the dialog")
+        }
+        if let dir = ProcessInfo.processInfo.environment["SHEPHERD_PREVIEW_DIR"] {
+            for dark in [false, true] {
+                let frames = await MotionProbe.record(window) {
+                    window.window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+                    window.host.appearance = window.window.appearance
+                }
+                let png = try #require(frames.settled.bitmap.representation(using: .png, properties: [:]))
+                try png.write(to: URL(fileURLWithPath: dir).appendingPathComponent("ProjectWorkerDock\(rejectedFirst ? "Rejected" : "Picked")-\(dark ? "dark" : "light").png"))
+            }
+        }
+
+        #expect(try #require(pane("Answer").first).node.press())
+        let worker = task.workerAgentID
+        func snapshot() async throws -> NativeThreadSnapshot? {
+            guard case .snapshot(let value) = try await r.app.server.nativeThread(agentID: worker, request: .snapshot()) else { return nil }
+            return value
+        }
+        try await eventuallyAsync("pi takes the answer and the dialog closes") { try await snapshot()?.dialogs.isEmpty == true }
+        let answered = try #require(try await snapshot())
+        let records = (answered.messages + answered.provisional).compactMap(\.question)
+        #expect(records.count == 1 && records.first?.answer == "Use Postgres", "delivered once, exactly as offered: \(records)")
+        try await eventuallyOnMain("the task leaves waiting") { r.app.server.state.projects.first?.tasks.first?.phase != .waiting }
+        try await eventuallyOnMain("the pane's dock leaves") { window.layout(); return pane("Answer").isEmpty && pane("Use Postgres").isEmpty }
+        #expect(r.vm.logicalProjects.failure == nil, "\(r.vm.logicalProjects.failure?.message ?? "")")
+        #expect(r.vm.projectWorkerStore(.local, worker).notice == nil, "no silent refusal: \(r.vm.projectWorkerStore(.local, worker).notice ?? "")")
     }
 
     // MARK: Footer geometry

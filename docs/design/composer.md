@@ -287,8 +287,9 @@ rules (QuestionStates › Rules):
    costs. The asker's recommendation is marked **Recommended**, never preselected.
 5. **Answer** is the only button. It lights up once an option is picked or an open question has
    text. There is no Dismiss: pi is waiting on an answer. The dock has no note field and no
-   Something else…: pi's dialogs take neither (What each asker takes), and the subagent variant
-   that did is gone.
+   built-in Something else…: select takes only offered options. Project workers' `project_question`
+   offers a final **Say anything** option; Answer opens a native text-input question, whose Answer
+   submits the person's words.
 6. **After:** the composer comes back (the field takes the keyboard again), and the thread
    keeps the record where pi asked (below).
 
@@ -378,7 +379,7 @@ rules (QuestionStates › Rules):
   none of pi's dialogs takes a note (What each asker takes).
 
 **What each asker takes** (Honest affordances: the dock offers only what the asker can take, so
-it has no note and no Something else…):
+it has no note or arbitrary select reply):
 
 | Asker | Kind | Takes back |
 | --- | --- | --- |
@@ -387,6 +388,10 @@ it has no note and no Something else…):
 | pi's input (`ctx.ui.input`) | open | a string |
 | pi's editor (`ctx.ui.editor`) | open, 12 lines | a string, as typed |
 | A subagent | none | it is no asker of the user: it asks its parent (`shepherd_parent_message`, `needsReply`), which asks here, as an ordinary question, when it must |
+
+`project_question` offers **Say anything** last for a choice, then opens `ctx.ui.input` when
+selected. The first Answer opens the field; the second delivers the text. Cancellation of either
+dialog is not an answer or permission. Other select dialogs retain only their offered options.
 
 An asking tool (any tool named `ask` or `question`, such as `ask_user`) asks through the dialogs
 above, so its question is the row of the dialog it opens. Its `short` reason is for the sidebar's

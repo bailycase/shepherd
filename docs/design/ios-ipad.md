@@ -264,6 +264,8 @@ header's pill turns "Needs you" (attention, glowing).
   last full-width "Something else…" row, but no asker takes either: pi's dialogs take neither,
   and a subagent asks its parent (the dock's What each asker takes). The components that drew
   them (`NWQuestionNoteField`, `NWQuestionOtherCard`) were pruned, with the subagent variant.
+  Project workers' `project_question` instead offers a real final **Say anything** choice; answering
+  it opens a native text-input question. Answer there delivers the person's words.
 - **Foot:** Answer, primary, 36pt, trailing, enabled once there is an answer; there is no
   Dismiss (Stop refuses pi's question, as on the Mac and the phone). A yes or a no is two cards
   side by side that answer on a tap; an open question is a field over Answer.

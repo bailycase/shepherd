@@ -17,6 +17,9 @@ test('pinned worker emits native select/input, receives exact human answers, and
   } }, async pi => {
     for (const row of [
       { parameters: { question: 'Deploy where?', options: ['Staging', 'Production'] }, response: { value: 'Staging' } },
+      { parameters: { question: 'Deploy elsewhere?', options: ['Staging', 'Production'] }, response: { value: 'Say anything' }, input: { value: 'Use a preview environment instead.' } },
+      { parameters: { question: 'Describe the alternative?', options: ['Say anything', 'Staging'] }, response: { value: 'Say anything' }, input: { cancelled: true } },
+      { parameters: { question: 'Stop the alternative?', options: ['Staging', 'Production'] }, response: { value: 'Say anything' }, abortInput: true },
       { parameters: { question: 'What retention period?' }, response: { value: '30 days — no secrets' } },
       { parameters: { question: 'An intentionally empty answer?' }, response: { value: '' } },
       { parameters: { question: 'Choose?', options: ['Yes', 'No'] }, response: { cancelled: true } },
@@ -31,20 +34,31 @@ test('pinned worker emits native select/input, receives exact human answers, and
       const dialog = await until('the real worker native dialog', () => pi.events.slice(mark).find(event => event.type === 'extension_ui_request'));
       assert.equal(dialog.method, parameters.options ? 'select' : 'input');
       assert.equal(dialog.title, parameters.question);
-      assert.deepEqual(dialog.options, parameters.options);
+      assert.deepEqual(dialog.options, parameters.options?.filter(option => option !== 'Say anything').concat('Say anything'));
       assert.equal(pi.provider.requests.length, requestMark + 1, 'waiting for the human starts no evaluator or extra model request');
       assert.ok(!pi.events.slice(mark).some(event => event.type === 'tool_execution_end'), 'question suspends the real tool');
       if (row.abort) assert.equal((await pi.request({ type: 'abort' })).success, true);
       else pi.child.stdin.write(JSON.stringify({ type: 'extension_ui_response', id: dialog.id, ...row.response }) + '\n');
+      if (row.input || row.abortInput) {
+        const input = await until('Say anything opens a supported native input', () => pi.events.slice(mark).find(event => event.type === 'extension_ui_request' && event.id !== dialog.id));
+        assert.equal(input.method, 'input');
+        assert.equal(input.title, parameters.question);
+        assert.equal(pi.provider.requests.length, requestMark + 1, 'choosing free text starts no extra model request');
+        assert.ok(!pi.events.slice(mark).some(event => event.type === 'tool_execution_end'), 'the choice itself is not the worker answer');
+        if (row.abortInput) assert.equal((await pi.request({ type: 'abort' })).success, true);
+        else pi.child.stdin.write(JSON.stringify({ type: 'extension_ui_response', id: input.id, ...row.input }) + '\n');
+      }
       const turn = await pendingTurn;
       assert.ok(turn.requests[0].tools.includes('project_question'), pi.stderr);
       assert.ok(!turn.requests[0].tools.includes('project_answer'));
       const result = questionResult(turn);
       assert.ok(result, pi.stderr);
       assert.equal(result.isError, false);
-      const expected = row.abort || row.response.cancelled ? { cancelled: true } : { answer: row.response.value };
+      const response = row.input ?? row.response;
+      const expected = row.abort || row.abortInput || response.cancelled ? { cancelled: true } : { answer: response.value };
+      assert.equal(turn.events.filter(event => event.type === 'tool_execution_end' && event.toolName === 'project_question').length, 1);
       assert.deepEqual(JSON.parse(result.result.content[0].text), expected);
-      if (!row.abort) {
+      if (!row.abort && !row.abortInput) {
         assert.equal(turn.requests.length, 2, 'only the normal worker follow-up runs');
         const delivered = turn.requests[1].messages.filter(message => message.role === 'tool').at(-1);
         assert.deepEqual(JSON.parse(delivered.content), expected, 'the worker model receives the actual native reply');

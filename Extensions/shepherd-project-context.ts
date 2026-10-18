@@ -82,7 +82,11 @@ export default function projectContext(pi: ExtensionAPI) {
             return { content: [{ type: "text", text: "Question exceeds 2000 UTF-8 bytes or an option exceeds 256." }], details: {}, isError: true };
           }
           if (!ctx.hasUI) return { content: [{ type: "text", text: "Native question UI unavailable; no answer received." }], details: {}, isError: true };
-          const answer = options ? await ctx.ui.select(question, options, { signal }) : await ctx.ui.input(question, undefined, { signal });
+          // Keep select replies exact: the final choice opens a native input, not an unoffered select value.
+          const sayAnything = "Say anything";
+          const choices = options?.filter(option => option !== sayAnything).concat(sayAnything);
+          let answer = choices ? await ctx.ui.select(question, choices, { signal }) : await ctx.ui.input(question, undefined, { signal });
+          if (choices && answer === sayAnything && !signal?.aborted) answer = await ctx.ui.input(question, undefined, { signal });
           const cancelled = signal?.aborted || answer === undefined;
           return { content: [{ type: "text", text: JSON.stringify(cancelled ? { cancelled: true } : { answer }) }], details: {} };
         },
