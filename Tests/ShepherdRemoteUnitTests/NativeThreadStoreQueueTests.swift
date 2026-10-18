@@ -206,11 +206,13 @@ struct NativeThreadStoreQueueTests {
         #expect(seen().first == ["b"], "it leaves the queue for the thread")
     }
 
-    @Test func imagesQueuedStayWithTheClientThatSentThem() async throws {
+    @Test(arguments: [true, false])
+    func queuedImagesSurviveUndoAndFailedActionsButReleaseWhenDelivered(restore: Bool) async throws {
         let (store, host, task) = await started()
         defer { task.cancel() }
         host.acceptAll()
         let png = NativeImage(mimeType: "image/png", data: Data([1, 2]), name: "checkout.png")
+        host.starting = true // The first refresh has not confirmed the optimistic send yet.
         store.draft = "look"
         await store.send(images: [png])
         guard case .send(_, _, let op, _, _, let images, _, _, _) = try #require(host.actions.first) else {
@@ -220,6 +222,70 @@ struct NativeThreadStoreQueueTests {
         #expect(images == [png])
         #expect(store.queuedImages(op) == [png])
         #expect(store.queuedImages(UUID()).isEmpty)
+        let item = NativeQueuedMessage(id: op, text: "look", images: [.init(mimeType: png.mimeType, name: png.name)], sentAt: 1)
+        host.starting = false
+        host.snapshot = snapshot(revision: 2, items: [item])
+        await store.refresh()
+        host.action = { _ in .failure(code: "busy", message: "Try again") }
+        await store.sendQueuedNow([op])
+        #expect(store.queuedImages(op) == [png], "a failed optimistic removal must not discard images")
+        host.action = { request in
+            guard case .queue(_, _, let operation, let action) = request else { return .failure(code: "unexpected", message: "unexpected") }
+            switch action {
+            case .delete: host.snapshot = snapshot(revision: 3)
+            case .restore: host.snapshot = snapshot(revision: 4, items: [item])
+            default: break
+            }
+            return .accepted(operationID: operation)
+        }
+        let deleted = try #require(await store.deleteQueued(op))
+        #expect(store.queuedImages(op) == [png], "Undo owns deleted images")
+        if restore {
+            await store.restoreQueued([deleted.message], at: deleted.index)
+            #expect(store.queuedImages(op) == [png])
+            var delivered = F.user("look", id: "delivered")
+            delivered.operationID = op
+            host.snapshot = snapshot(revision: 5, provisional: [delivered])
+            await store.refresh()
+        } else {
+            store.releaseQueueUndoImages([op])
+        }
+        #expect(store.queuedImages(op).isEmpty, "completed sends and expired Undo must not remain until 65 more image sends")
+    }
+
+    @Test func pendingBatchRetainsImagesThroughRefusalAndReleasesEveryConfirmedPart() async throws {
+        let (store, host, task) = await started()
+        defer { task.cancel() }
+        host.acceptAll()
+        host.starting = true
+        let image = NativeImage(mimeType: "image/png", data: Data([1, 2]), name: "test.png")
+        for text in ["first", "second"] {
+            store.draft = text
+            await store.send(images: [image])
+        }
+        let ids = host.actions.compactMap { request -> UUID? in
+            if case .send(_, _, let id, _, _, _, _, _, _) = request { return id }
+            return nil
+        }
+        try #require(ids.count == 2)
+        let items = ids.map { NativeQueuedMessage(id: $0, text: "queued", images: [.init(mimeType: image.mimeType, name: image.name)], sentAt: 1) }
+        host.starting = false
+        host.snapshot = snapshot(revision: 2, items: items)
+        await store.refresh()
+        var batch = F.user("first\nsecond", id: "batch")
+        batch.operationID = ids[0]
+        batch.origin = .queue(parts: ids.map { NativeQueuePart(id: $0, text: "queued", sentAt: 1, images: 1) })
+        batch.status = "pending"
+        host.snapshot = snapshot(revision: 3, provisional: [batch])
+        await store.refresh()
+        #expect(ids.allSatisfy { store.queuedImages($0) == [image] })
+        host.snapshot = snapshot(revision: 4, items: items)
+        await store.refresh()
+        #expect(ids.allSatisfy { store.queuedImages($0) == [image] }, "a refused batch returns with its local images")
+        batch.status = nil
+        host.snapshot = snapshot(revision: 5, provisional: [batch])
+        await store.refresh()
+        #expect(ids.allSatisfy { store.queuedImages($0).isEmpty }, "all confirmed batch parts release their image bytes")
     }
 
     /// The other half of the reported bug: an idle send's echo waited to find its text on the

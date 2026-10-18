@@ -1,3 +1,4 @@
+import CryptoKit
 import Dispatch
 import Foundation
 import ShepherdCore
@@ -77,7 +78,7 @@ final class RPCThreadState {
     }
 
     private struct Operation {
-        let fingerprint: NativeThreadRequest
+        let fingerprint: SHA256.Digest
         var result: NativeThreadResult?
         var waiters: [(NativeThreadResult) -> Void] = []
     }
@@ -829,9 +830,15 @@ final class RPCThreadState {
                 completion(.failure(code: "stale_session", message: "Refresh the thread before acting."))
                 return
             }
+            let fingerprint: SHA256.Digest
+            do { fingerprint = try Self.operationFingerprint(request) }
+            catch {
+                completion(.failure(code: "invalid", message: "The request could not be encoded."))
+                return
+            }
             let key = operationID.uuidString.uppercased()
             if let index = operations.firstIndex(where: { $0.id == key }) {
-                guard operations[index].operation.fingerprint == request else {
+                guard operations[index].operation.fingerprint == fingerprint else {
                     completion(.failure(code: "operation_conflict", message: "Operation ID was reused with a different payload."))
                     return
                 }
@@ -842,7 +849,7 @@ final class RPCThreadState {
                 }
                 return
             }
-            operations.append((key, Operation(fingerprint: request)))
+            operations.append((key, Operation(fingerprint: fingerprint)))
             if operations.count > Self.operationTableSize { operations.removeFirst() }
             perform(request, operationID: operationID, alone: olderClient || isolateSend) { [weak self] result in
                 guard let self else { completion(result); return }
@@ -862,6 +869,27 @@ final class RPCThreadState {
                 waiters.forEach { $0(result) }
             }
         }
+    }
+
+    /// Retain only 32 bytes per operation, not its text and image payloads. Request strings use
+    /// Swift's canonical Unicode equality; the only floating-point request fields also equate ±0.
+    static func operationFingerprint(_ request: NativeThreadRequest) throws -> SHA256.Digest {
+        var normalized = request.withDesignReferences(request.designReferences?.map { reference in
+            var reference = reference
+            if reference.width == 0 { reference.width = 0 }
+            if reference.height == 0 { reference.height = 0 }
+            return reference
+        })
+        if case .send(let session, let generation, let operation, let text, let delivery, let images, let context, let references, let elements) = normalized {
+            normalized = .send(expectedSessionID: session, generation: generation, operationID: operation, text: text, delivery: delivery,
+                               images: images?.map { NativeImage(mimeType: $0.mimeType, data: Data(SHA256.hash(data: $0.data)), name: $0.name) },
+                               designContext: context, designReferences: references, browserElements: elements)
+        }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        let data = try encoder.encode(normalized)
+        let text = String(decoding: data, as: UTF8.self).precomposedStringWithCanonicalMapping
+        return SHA256.hash(data: Data(text.utf8))
     }
 
     static func dispatchFailure(_ result: Result<RPCResponse, RPCError>) -> NativeThreadResult? {

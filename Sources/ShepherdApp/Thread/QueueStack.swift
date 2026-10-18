@@ -374,7 +374,7 @@ final class QueueStackState {
     /// Closes the Undo rows whose window has passed. One under the pointer waits: its window
     /// starts over from now. Returns the next deadline, if any.
     @discardableResult
-    func expireUndo(at now: ContinuousClock.Instant = .now) -> ContinuousClock.Instant? {
+    func expireUndo(at now: ContinuousClock.Instant = .now, store: NativeThreadStore? = nil) -> ContinuousClock.Instant? {
         var expired: Set<String> = []
         for entry in undo {
             guard let deadline = deadlines[entry.id] else { continue }
@@ -385,6 +385,7 @@ final class QueueStackState {
             }
         }
         if !expired.isEmpty {
+            store?.releaseQueueUndoImages(undo.filter { expired.contains($0.id) }.flatMap { $0.messages.map(\.id) })
             undo.removeAll { expired.contains($0.id) }
             for id in expired { deadlines[id] = nil }
             derive()
@@ -557,7 +558,7 @@ struct QueueStackView: View {
         // Rows arriving, leaving, moving, and changing kind; a drag's own motion follows the pointer.
         .nwAnimation(.list, value: animated ? rows : nil)
         .task(id: state.undo.map(\.id)) {
-            while let next = state.expireUndo() {
+            while let next = state.expireUndo(store: store) {
                 do { try await Task.sleep(until: next, clock: .continuous) } catch { return }
             }
         }
