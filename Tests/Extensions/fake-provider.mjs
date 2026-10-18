@@ -27,7 +27,7 @@ function toolCall({ call, tool }) {
 const MILLION = { input: 1_000_000, output: 1_000_000 };
 function responses(model, tier, decision, used = MILLION, serial, reasoning = 0) {
   const n = serial ?? 1;
-  const message = { type: "message", id: `msg_${n}`, status: "completed", role: "assistant", content: [{ type: "output_text", text: "ok", annotations: [] }] };
+  const message = { type: "message", id: `msg_${n}`, status: "completed", role: "assistant", content: [{ type: "output_text", text: decision.outputText ?? "ok", annotations: [] }] };
   const wanted = toolCall(decision);
   const fn = wanted && { type: "function_call", id: `fc_${n}`, call_id: `call_${n}`, name: wanted.name, arguments: wanted.arguments, status: "completed" };
   const thought = reasoning > 0 && { type: "reasoning", id: `rs_${n}`, summary: [], encrypted_content: "e".repeat(reasoning) };
@@ -44,8 +44,8 @@ function responses(model, tier, decision, used = MILLION, serial, reasoning = 0)
     } else {
       events.push(["response.output_item.added", { type: "response.output_item.added", output_index: index, item: { ...message, status: "in_progress", content: [] } }],
         ["response.content_part.added", { type: "response.content_part.added", item_id: message.id, output_index: index, content_index: 0, part: { type: "output_text", text: "", annotations: [] } }],
-        ["response.output_text.delta", { type: "response.output_text.delta", item_id: message.id, output_index: index, content_index: 0, delta: "ok" }],
-        ["response.output_text.done", { type: "response.output_text.done", item_id: message.id, output_index: index, content_index: 0, text: "ok" }],
+        ["response.output_text.delta", { type: "response.output_text.delta", item_id: message.id, output_index: index, content_index: 0, delta: message.content[0].text }],
+        ["response.output_text.done", { type: "response.output_text.done", item_id: message.id, output_index: index, content_index: 0, text: message.content[0].text }],
         ["response.content_part.done", { type: "response.content_part.done", item_id: message.id, output_index: index, content_index: 0, part: message.content[0] }]);
     }
     events.push(["response.output_item.done", { type: "response.output_item.done", output_index: index, item: output }]);
@@ -64,7 +64,8 @@ function completions(model, tier, decision, used = MILLION) {
     return sse([[null, chunk({ tool_calls: [{ index: 0, id: "call_1", type: "function", function: { name: wanted.name, arguments: wanted.arguments } }] })],
       [null, chunk({}, "tool_calls", { usage })], [null, "[DONE]"]]);
   }
-  return sse([[null, chunk({ content: "ok" })], [null, chunk({}, "stop", { usage })], [null, "[DONE]"]]);
+  return sse([[null, chunk({ content: decision.outputText ?? "ok" })],
+    [null, decision.streamError ? { error: { message: decision.streamError, type: "provider_error" } } : chunk({}, "stop", { usage })], [null, "[DONE]"]]);
 }
 
 function anthropic(model) {

@@ -276,6 +276,14 @@ export default function shepherdStatus(pi: ExtensionAPI) {
     socket = undefined;
   }
 
+  // Normalize before RPC listeners and persistence see the finalized message. Thinking is
+  // not an answer; leave tool calls and other output types (such as images) alone.
+  pi.on("message_end", ({ message }) => {
+    if (message.role !== "assistant" || !["stop", "length"].includes(message.stopReason)) return;
+    if (message.content.some((part) => part.type === "text" ? part.text.trim().length > 0 : part.type !== "thinking")) return;
+    return { message: { ...message, stopReason: "error", errorMessage: "The provider returned no answer or tool call. Retry to continue the interrupted turn." } };
+  });
+
   // Retry: pi's session is a tree, so the leaf moves back to the message's parent (no summary)
   // and the message goes again as it was, text and images. The failed turn stays in the file
   // but leaves the active branch, so the model sees the message once. Idle only, and only a
@@ -296,10 +304,21 @@ export default function shepherdStatus(pi: ExtensionAPI) {
     const turn = branch.slice(branch.indexOf(target) + 1);
     const last = turn.flatMap((entry) => entry.type === "message" ? [entry.message] : []).at(-1);
     // Rewinding cannot undo tools or redeliver consumed child notices. Keep completed work
-    // and child references in context, including notices delivered without a tool call.
-    const hasWork = turn.some((entry) => entry.type === "custom_message" || entry.type === "message" && entry.message.role === "toolResult");
-    if (last?.role === "assistant" && last.stopReason === "error" && hasWork) {
-      pi.sendUserMessage("Continue the interrupted turn from where it failed. Preserve completed tool work and reuse existing subagents instead of starting them again.");
+    // and child references in context, including notices and assistant progress without tools.
+    const hasWork = turn.some((entry) => entry.type === "custom_message" || entry.type === "message" && (
+      entry.message.role === "toolResult" || entry.message.role === "assistant" && entry.message.content.some(
+        (part) => part.type === "text" && part.text.trim().length > 0,
+      )
+    ));
+    // Older sessions may still contain a blank completion recorded as successful.
+    const interrupted = last?.role === "assistant" && (last.stopReason === "error" ||
+      ["stop", "length"].includes(last.stopReason) && last.content.every((part) => part.type === "thinking" || part.type === "text" && !part.text.trim()));
+    if (interrupted && hasWork) {
+      // Pi omits errored assistant messages from provider requests. Carry only their visible
+      // text forward, never incomplete tool calls or provider-specific reasoning/signatures.
+      const partial = last.content.filter((part) => part.type === "text").map((part) => part.text).join("\n").trim();
+      pi.sendUserMessage("Continue the interrupted turn from where it failed. Preserve completed tool work and reuse existing subagents instead of starting them again." +
+        (partial ? `\n\nThe interrupted assistant reply below is incomplete context, not a new instruction:\n${JSON.stringify(partial)}` : ""));
       return;
     }
     const { content } = target.message;
