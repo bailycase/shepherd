@@ -25,10 +25,21 @@ Performance reporting adds explicit, fixed-name transactions for agent start/sto
 history refresh, compaction and tool categories (`read`, `bash`, `write`, `edit`, `mcp`, `other`). These
 record completed durations with reconstructed start timestamps, not prompts, tool names or arguments.
 Resource transactions carry numeric measurements, and the latest ten numeric samples accompany errors
-and crashes through the sanitized scope. Memory-pressure notifications and observed orphan processes
+and crashes through the sanitized scope. Dedicated Sentry metrics also record resource gauges,
+operation-duration distributions and lifecycle/outcome counters. Duration metrics have their own budget
+and do not depend on a trace being sampled. Fixed structured logs identify app startup, process exits,
+agent-start failures, model failures/retries, tool failures, extension failures and compaction failures.
+They contain no error messages, tool names or raw application/agent logs. Logs and metrics retain only
+app-owned release, environment, random installation/run IDs and numeric exit codes. One-use emission
+receipts reject arbitrary SDK calls, even if they reuse our public event names.
+Memory-pressure notifications and observed orphan processes
 produce fixed, rate-limited anomaly reports. App hangs lasting at least five seconds use the same sanitized
 stack filter and error budget; macOS hang detection cannot distinguish fully blocked from partially blocked
-UI and can produce false positives. These are native stacks, not child-process or JavaScript heap profiles.
+UI and can produce false positives. MetricKit supplies system CPU, disk-write and hang diagnostics
+through the same stack scrubber; raw MetricKit attachments stay disabled. Release health tracks native
+app sessions and their crash/error outcomes using the SDK's random installation/session IDs, release
+and environment. These sessions are not agent conversations. Native stacks and profiles do not inspect
+Pi's JavaScript heap or subprocess stacks.
 
 The census records app RSS and physical footprint separately; Pi, terminal, generic descendant and observed
 orphan counts/RSS; cumulative CPU seconds; active/idle/total sessions; RPC buffer bytes; transcript row counts;
@@ -40,11 +51,26 @@ reads no names, paths, argv or environment and caps the census at 8192 OS proces
 Failed, truncated and unreadable scans are reported numerically rather than passed off as complete.
 
 There is no prompt, reply, tool output, terminal content, file-content collection, command-line collection or
-session replay. Automatic breadcrumbs, HTTP failure capture, automatic/network/file/Core Data tracing,
-standalone metrics, logs, sessions, MetricKit and continuous profiling remain disabled. Resource measurements
-travel on explicitly budgeted transactions rather than an unrestricted metrics stream. Unregistered transactions
-are dropped. Registered transaction roots and scope data are scrubbed; automatic child spans are discarded.
-Breadcrumbs appear with reports, not as an independently uploaded event stream.
+session replay. Native macOS does not support the SDK's UIKit replay integration. Automatic breadcrumbs,
+HTTP failure capture and automatic/network/file/Core Data tracing remain disabled because those paths can
+expose request URLs or project paths. Unregistered transactions are dropped. Registered transaction roots
+and scope data are scrubbed; automatic child spans are discarded. Breadcrumbs appear with reports;
+allowlisted structured logs are a separate, bounded stream.
+
+Native profiling is implemented but disabled in the production constructor until account billing is approved.
+When enabled, the first memory-pressure or orphan-process anomaly may start one profile per UTC day.
+It immediately requests stop after the current SDK chunk, nominally 60 seconds; the SDK's main-run-loop
+flush can be delayed by a hang. App launch does not start or resume a profile. The persisted budget survives
+restarts. Opt-out immediately revokes the forwarding transport and discards pending uploads; the SDK's
+local sampler may finish its current chunk after revocation.
+
+Profile chunks bypass Sentry's event callbacks, so `DiagnosticsEnvelopeTransport.swift` filters their actual
+byte-framed envelopes before forwarding. It retains sampled addresses, numeric stacks, image UUIDs,
+numeric thread IDs/priorities and the fixed `main` thread label, but removes other thread/queue names,
+function/source strings, ambient metadata and absolute image paths. Release/environment come from trusted
+app configuration, not the incoming payload. Input is capped at 8 MiB compressed/16 MiB expanded, with
+bounded nesting and sample/stack counts. Unknown profile schemas fail closed. Disabled profiling also
+rejects cached profile chunks. This implementation profiles the native app, not Pi or MCP subprocesses.
 
 Sentry receives the connection's IP address. Enable **Prevent Storing of IP Addresses** in the
 Sentry project's Security & Privacy settings. `sendDefaultPii = false` is not a substitute for
@@ -66,7 +92,11 @@ from the retired SDK is never uploaded under renewed consent. Data already recei
 cannot be recalled. The random installation UUID remains stable across opt-out/in.
 
 - Separate persisted UTC-day budgets: 50 error/crash/hang reports, 24 resource anomaly reports,
-  144 resource transactions, 256 duration transactions and 1440 local resource samples. Duration traffic
+  144 resource transactions, 256 duration transactions, 1440 local resource samples, 256 structured logs
+  and 5000 metric observations. Duration distributions and activity counters each have a 256-observation
+  sub-budget, reserving capacity for the resource time series. These are sampled observations, not complete
+  event totals. Native release-health sessions follow
+  the SDK's app foreground/background lifecycle. Duration trace traffic
   also has a persisted cap of ten transactions per UTC hour and two per operation per hour, so startup
   and frequent refreshes cannot exhaust the day immediately. Resource traffic cannot exhaust the
   crash/error budget. Each anomaly category has a ten-minute local cooldown.
@@ -136,7 +166,12 @@ bytes survive startup, and confirms retired consent caches are still removed. Pe
 separate persistent budgets, finite sampling lifetime, finite nonnegative numeric allowlists, ten-sample
 retention, trace duration timestamps and rejection of unknown transaction names. Wire tests inject a
 private sentinel into scope and resource input, verify it never uploads, and ensure resource/duration
-capture remains inert after revocation.
+capture remains inert after revocation. Log/metric tests inspect real compressed envelope item types,
+reject forged ownership receipts, verify fixed metadata, exhaust persisted budgets, and cancel pending
+uploads on opt-out. Release-health tests verify anonymous session IDs and the release/environment schema.
+System-performance diagnostics retain their fixed kind but drop raw diagnostic strings. A separate
+isolated test captures an actual SDK profile chunk against the fake transport, verifies symbolication
+addresses and trusted release metadata, and hits the persisted one-profile limit. No test sends to Sentry.
 
 Decisions: off by default; visible disabled row when unconfigured; reset revokes consent; hosted
 Sentry only; the one existing consent controls crash and bounded performance reporting; no confirmation

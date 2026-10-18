@@ -96,6 +96,7 @@ final class RPCThreadState {
     /// serves (pi has answered `get_state` and `get_messages`).
     var onServable: (() -> Void)?
     var onDiagnosticDuration: ((String, Double) -> Void)?
+    var onDiagnosticActivity: ((String) -> Void)?
     private var diagnosticTimings: [String: (String, ContinuousClock.Instant)] = [:]
     private var announcedServable = false
     /// A new agent's opening prompt, held until the thread serves (`sendOpeningPrompt`).
@@ -682,6 +683,7 @@ final class RPCThreadState {
             }
             runFailed = message.stopReason == "error"
             runError = runFailed ? message.errorMessage : nil
+            if runFailed, !stopRequested { onDiagnosticActivity?("model.failed") }
             var ended = message
             if runFailed, stopRequested {
                 ended.stopReason = "aborted"
@@ -714,6 +716,7 @@ final class RPCThreadState {
         case .toolExecutionEnd(let id, let name, let result, let isError, _):
             endDiagnostic("tool:" + id)
             let stopped = isError && stopRequested
+            if isError, !stopRequested { onDiagnosticActivity?("tool.failed") }
             askingCalls.removeAll { $0.id == id }
             if stopped { stoppedCalls.insert(id) }
             upsertTool(id: id, name: name, args: nil, content: result?.content ?? [], isError: isError, status: stopped ? "aborted" : "complete", projectAction: result?.projectAction)
@@ -723,6 +726,7 @@ final class RPCThreadState {
         case .extensionUIRequest(let request):
             handleUIRequest(request)
         case .extensionError(let path, let event, let error):
+            onDiagnosticActivity?("extension.failed")
             ShepherdLog.warning("rpc session \(session.id) extension error in \(path ?? "?") (\(event ?? "?")): \(error)")
             recordCommandFailure(path: path, event: event, error: error)
             if goalCommand != nil, event == "command", path == "command:shepherd-goal" { goalCommandFailure = error }
@@ -731,8 +735,10 @@ final class RPCThreadState {
             compactionStarted(reason: NativeCompactionReason(pi: reason))
         case .compactionEnd(let reason, let result, let aborted, let willRetry, let error):
             endDiagnostic("context.compact")
+            if error != nil, !aborted { onDiagnosticActivity?("context.compact_failed") }
             compactionEnded(reason: NativeCompactionReason(pi: reason), result: result, aborted: aborted, willRetry: willRetry, error: error)
         case .autoRetryStart(let attempt, let maxAttempts, let delayMs, _):
+            onDiagnosticActivity?("model.retry")
             retry = NativeThreadRetry(attempt: attempt, maxAttempts: maxAttempts,
                                       retryAt: (Date().timeIntervalSince1970 * 1000 + max(0, delayMs)).rounded())
         case .autoRetryEnd:

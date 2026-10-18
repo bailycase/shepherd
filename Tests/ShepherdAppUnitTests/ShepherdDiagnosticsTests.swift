@@ -69,7 +69,9 @@ struct ShepherdDiagnosticsTests {
         #expect(!options.enableAutoBreadcrumbTracking && !options.enableNetworkBreadcrumbs)
         #expect(options.enableAutoSessionTracking && !options.enableCaptureFailedRequests)
         #expect(options.enableMetricKit && !options.enableMetricKitRawPayload)
-        #expect(!options.enableLogs && !options.enableMetrics)
+        #expect(options.enableLogs && options.enableMetrics)
+        #expect(options.beforeSendLog?(SentryLog(level: .info, body: "app.started")) == nil,
+                "options fail closed until the owned emission callbacks are installed")
         #expect(!options.enableAutoPerformanceTracing && options.tracesSampleRate == 1)
         #expect(!options.enableNetworkTracking && !options.enableFileIOTracing && !options.enableCoreDataTracing)
         #expect(options.enableAppHangTracking && options.appHangTimeoutInterval == 5)
@@ -77,7 +79,20 @@ struct ShepherdDiagnosticsTests {
         #expect(options.urlSession === session)
     }
 
-    @Test func performanceBudgetsAreSeparatePersistedAndRevoked() {
+    @Test(arguments: [false, true])
+    func profilingIsManualAndNeverStartsFromPersistedLaunchConfiguration(_ enabled: Bool) {
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
+        let options = ShepherdDiagnostics.makeOptions(dsn: "https://key@o1.ingest.sentry.io/1",
+            cache: URL(fileURLWithPath: "/unused"), session: session, profilingEnabled: enabled)
+        let profile = SentryProfileOptions()
+        options.configureProfiling?(profile)
+        #expect(profile.lifecycle == .manual)
+        #expect(profile.sessionSampleRate == (enabled ? 1 : 0))
+        #expect(!profile.profileAppStarts)
+    }
+
+    @Test func performanceLogAndMetricBudgetsAreSeparatePersistedAndRevoked() {
         let defaults = ScratchDefaults()
         let gate = DiagnosticsGate(store: defaults)
         let now = Date(timeIntervalSince1970: 100 * 86_400)
