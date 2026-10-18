@@ -56,21 +56,32 @@ struct PiMCPCLI: MCPCLI {
             stderr.fileHandleForReading.readabilityHandler = nil
             return MCPCLIResult(status: 127, stdout: "", stderr: "Couldn’t run pi: \(error.localizedDescription)")
         }
+        let ownedProcesses = OwnedProcessTree(root: process.processIdentifier)
         try? stdin.fileHandleForWriting.close()
-        let timer = Task { [weak process] in
+        let timer = Task {
             try await Task.sleep(for: .seconds(timeout))
             collected.markTimedOut()
-            process?.terminate()
-            try await Task.sleep(for: .seconds(2))
-            if let process, process.isRunning { kill(process.processIdentifier, SIGKILL) }
+            ownedProcesses.capture()
+            ownedProcesses.signalRoot(SIGTERM)
+            try await Task.sleep(for: .seconds(3))
+            ownedProcesses.signalDescendants(SIGKILL)
+            ownedProcesses.signalRoot(SIGKILL)
         }
         let status = await withTaskCancellationHandler {
             for await status in exited.stream { return status }
             return 1
         } onCancel: {
-            if process.isRunning { process.terminate() }
+            ownedProcesses.capture()
+            ownedProcesses.signalRoot(SIGTERM)
+            // Cancellation ends AsyncStream iteration immediately, including its timeout task.
+            // This bounded fallback is independent of that task and retains only our owned PIDs.
+            DispatchQueue.global().asyncAfter(deadline: .now() + .seconds(3)) {
+                ownedProcesses.signalDescendants(SIGKILL)
+                ownedProcesses.signalRoot(SIGKILL)
+            }
         }
         timer.cancel()
+        ownedProcesses.signalDescendants(SIGKILL)
         stdout.fileHandleForReading.readabilityHandler = nil
         stderr.fileHandleForReading.readabilityHandler = nil
         let rest = stdout.fileHandleForReading.readDataToEndOfFile()

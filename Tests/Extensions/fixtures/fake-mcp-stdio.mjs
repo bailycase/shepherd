@@ -43,6 +43,8 @@ function handle(message) {
   if (process.env.FAKE_MCP_LOG) fs.appendFileSync(process.env.FAKE_MCP_LOG, JSON.stringify(message) + "\n");
   const { id, method, params } = message;
   if (method === "initialize") {
+    // Deliberately never answer: shutdown must cancel initialization, not wait for its timeout.
+    if (process.env.FAKE_MCP_HOLD_INITIALIZE) return;
     // Some servers log to stdout: the client must skip lines that aren't JSON.
     process.stdout.write("fake-mcp starting up\n");
     return result(id, { protocolVersion: params.protocolVersion, capabilities: { tools: { listChanged: true } }, serverInfo: { name: "fake-mcp", title: "Fake MCP", version: "1.0.0" } });

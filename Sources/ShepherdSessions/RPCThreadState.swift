@@ -1,3 +1,4 @@
+import CryptoKit
 import Dispatch
 import Foundation
 import ShepherdCore
@@ -77,7 +78,7 @@ final class RPCThreadState {
     }
 
     private struct Operation {
-        let fingerprint: NativeThreadRequest
+        let fingerprint: SHA256.Digest
         var result: NativeThreadResult?
         var waiters: [(NativeThreadResult) -> Void] = []
     }
@@ -97,6 +98,8 @@ final class RPCThreadState {
     /// Installed by SessionServer: called once, on the session queue, when the thread first
     /// serves (pi has answered `get_state` and `get_messages`).
     var onServable: (() -> Void)?
+    var onDiagnosticDuration: ((String, Double) -> Void)?
+    private var diagnosticTimings: [String: (String, ContinuousClock.Instant)] = [:]
     private var announcedServable = false
     /// A new agent's opening prompt, held until the thread serves (`sendOpeningPrompt`).
     typealias OpeningPrompt = (text: String, images: [NativeImage], id: UUID, at: Double)
@@ -597,6 +600,8 @@ final class RPCThreadState {
         case .skillsWatchError(let error):
             ShepherdLog.warning("Skill file observation failed for session \(session.id): \(error)")
         case .agentStart:
+            diagnosticTimings.removeAll(keepingCapacity: true)
+            beginDiagnostic("agent.turn", operation: "agent.turn")
             retryStarted()
             lastTurnAssistant = nil
             // A compaction that stopped or failed says so until the next run.
@@ -622,6 +627,8 @@ final class RPCThreadState {
             refreshState()
             refreshStats()
         case .agentSettled:
+            endDiagnostic("agent.turn")
+            diagnosticTimings.removeAll(keepingCapacity: true)
             running = false
             retry = nil
             dropStreamingCalls()
@@ -654,6 +661,7 @@ final class RPCThreadState {
             userMessageEnded(message)
         case .messageStart(let message):
             guard message.role == "assistant" else { break }
+            beginDiagnostic("model.response", operation: "model.response")
             sequence += 1
             currentAssistant = sequence
             upsertAssistant(message, ended: false)
@@ -683,6 +691,7 @@ final class RPCThreadState {
             if !running { refreshMessages() }
         case .messageEnd(let message):
             guard message.role == "assistant" else { break }
+            endDiagnostic("model.response")
             if currentAssistant == nil {
                 sequence += 1
                 currentAssistant = sequence
@@ -708,6 +717,8 @@ final class RPCThreadState {
             // The ring moves once per reply, never per token.
             refreshStats()
         case .toolExecutionStart(let id, let name, let args, _):
+            let operation = name.hasPrefix("mcp__") ? "tool.mcp" : (["read", "bash", "write", "edit"].contains(name) ? "tool." + name : "tool.other")
+            beginDiagnostic("tool:" + id, operation: operation)
             if Self.asksUser(name) {
                 askingCalls.removeAll { $0.id == id }
                 askingCalls.append((id, Self.shortReason(in: args)))
@@ -717,6 +728,7 @@ final class RPCThreadState {
         case .toolExecutionUpdate(let id, let name, let args, let partial, _):
             upsertTool(id: id, name: name, args: args, content: partial?.content ?? [], isError: nil, status: "running")
         case .toolExecutionEnd(let id, let name, let result, let isError, _):
+            endDiagnostic("tool:" + id)
             let stopped = isError && stopRequested
             askingCalls.removeAll { $0.id == id }
             if stopped { stoppedCalls.insert(id) }
@@ -731,18 +743,33 @@ final class RPCThreadState {
             recordCommandFailure(path: path, event: event, error: error)
             if goalCommand != nil, event == "command", path == "command:shepherd-goal" { goalCommandFailure = error }
         case .compactionStart(let reason):
+            beginDiagnostic("context.compact", operation: "context.compact")
             compactionStarted(reason: NativeCompactionReason(pi: reason))
         case .compactionEnd(let reason, let result, let aborted, let willRetry, let error):
+            endDiagnostic("context.compact")
             compactionEnded(reason: NativeCompactionReason(pi: reason), result: result, aborted: aborted, willRetry: willRetry, error: error)
         case .autoRetryStart(let attempt, let maxAttempts, let delayMs, _):
             retry = NativeThreadRetry(attempt: attempt, maxAttempts: maxAttempts,
                                       retryAt: (Date().timeIntervalSince1970 * 1000 + max(0, delayMs)).rounded())
         case .autoRetryEnd:
             retry = nil
-        case .turnStart, .turnEnd, .unknown:
+        case .turnStart:
+            beginDiagnostic("model.response", operation: "model.response")
+        case .turnEnd, .unknown:
             break
         }
         commit()
+    }
+
+    private func beginDiagnostic(_ key: String, operation: String) {
+        guard onDiagnosticDuration != nil, diagnosticTimings[key] == nil, diagnosticTimings.count < 128 else { return }
+        diagnosticTimings[key] = (operation, .now)
+    }
+
+    private func endDiagnostic(_ key: String) {
+        guard let (operation, started) = diagnosticTimings.removeValue(forKey: key) else { return }
+        let elapsed = started.duration(to: .now).components
+        onDiagnosticDuration?(operation, Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18)
     }
 
     /// The run ended in a provider error the user did not cause by stopping it.
@@ -831,9 +858,15 @@ final class RPCThreadState {
                 completion(.failure(code: "stale_session", message: "Refresh the thread before acting."))
                 return
             }
+            let fingerprint: SHA256.Digest
+            do { fingerprint = try Self.operationFingerprint(request) }
+            catch {
+                completion(.failure(code: "invalid", message: "The request could not be encoded."))
+                return
+            }
             let key = operationID.uuidString.uppercased()
             if let index = operations.firstIndex(where: { $0.id == key }) {
-                guard operations[index].operation.fingerprint == request else {
+                guard operations[index].operation.fingerprint == fingerprint else {
                     completion(.failure(code: "operation_conflict", message: "Operation ID was reused with a different payload."))
                     return
                 }
@@ -844,7 +877,7 @@ final class RPCThreadState {
                 }
                 return
             }
-            operations.append((key, Operation(fingerprint: request)))
+            operations.append((key, Operation(fingerprint: fingerprint)))
             if operations.count > Self.operationTableSize { operations.removeFirst() }
             perform(request, operationID: operationID, alone: olderClient || isolateSend) { [weak self] result in
                 guard let self else { completion(result); return }
@@ -864,6 +897,27 @@ final class RPCThreadState {
                 waiters.forEach { $0(result) }
             }
         }
+    }
+
+    /// Retain only 32 bytes per operation, not its text and image payloads. Request strings use
+    /// Swift's canonical Unicode equality; the only floating-point request fields also equate ±0.
+    static func operationFingerprint(_ request: NativeThreadRequest) throws -> SHA256.Digest {
+        var normalized = request.withDesignReferences(request.designReferences?.map { reference in
+            var reference = reference
+            if reference.width == 0 { reference.width = 0 }
+            if reference.height == 0 { reference.height = 0 }
+            return reference
+        })
+        if case .send(let session, let generation, let operation, let text, let delivery, let images, let context, let references, let elements) = normalized {
+            normalized = .send(expectedSessionID: session, generation: generation, operationID: operation, text: text, delivery: delivery,
+                               images: images?.map { NativeImage(mimeType: $0.mimeType, data: Data(SHA256.hash(data: $0.data)), name: $0.name) },
+                               designContext: context, designReferences: references, browserElements: elements)
+        }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        let data = try encoder.encode(normalized)
+        let text = String(decoding: data, as: UTF8.self).precomposedStringWithCanonicalMapping
+        return SHA256.hash(data: Data(text.utf8))
     }
 
     static func dispatchFailure(_ result: Result<RPCResponse, RPCError>) -> NativeThreadResult? {
@@ -1302,6 +1356,12 @@ final class RPCThreadState {
     func refreshMessages(timeout: TimeInterval = 10, bootstrap: Bool = false,
                          done: ((Result<RPCResponse, RPCError>) -> Void)? = nil) {
         let generation = generation
+        let started = ContinuousClock.now
+        let measured: (Result<RPCResponse, RPCError>) -> Void = { [weak self] result in
+            let elapsed = started.duration(to: .now).components
+            self?.onDiagnosticDuration?("history.refresh", Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18)
+            done?(result)
+        }
         let receive: (Result<RPCResponse, RPCError>) -> Void = { [weak self] result in
             // A history with images costs a header read and a SHA-256 each. That work is done here, off the thread's queue, into a
             // table built from exactly these messages; the projection on the thread's queue only looks entries up. A history with
@@ -1311,12 +1371,12 @@ final class RPCThreadState {
                 DispatchQueue.global(qos: .utility).async { [weak self] in
                     let table = ThreadImages.table(for: messages)
                     self?.queue.async { [weak self] in
-                        self?.finishRefresh(result, generation: generation, bootstrap: bootstrap, images: table, done: done)
+                        self?.finishRefresh(result, generation: generation, bootstrap: bootstrap, images: table, done: measured)
                     }
                 }
                 return
             }
-            self?.finishRefresh(result, generation: generation, bootstrap: bootstrap, images: [:], done: done)
+            self?.finishRefresh(result, generation: generation, bootstrap: bootstrap, images: [:], done: measured)
         }
         session.request(.getMessages, timeout: timeout,
                         onLateResponse: bootstrap ? { receive(.success($0)) } : nil, completion: receive)

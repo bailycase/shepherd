@@ -66,8 +66,15 @@ struct DiagnosticsRuntimeTests {
         configuration.protocolClasses = [DiagnosticsTransport.self]
         let diagnostics = ShepherdDiagnostics(dsn: "https://key@o1.ingest.sentry.io/1", store: defaults,
                                               cacheRoot: root, sessionConfiguration: configuration)
-        diagnostics.start(settings: settings)
-        defer { settings.shareDiagnostics = false }
+        let sampleReply = Locked<CheckedContinuation<[String: Double], Never>?>(nil)
+        diagnostics.start(settings: settings, resourceSampler: {
+            await withCheckedContinuation { continuation in sampleReply.withValue { $0 = continuation } }
+        })
+        defer {
+            settings.shareDiagnostics = false
+            sampleReply.withValue { reply in reply?.resume(returning: [:]); reply = nil }
+        }
+        try await eventuallyOnMain("the resource sampler to start") { sampleReply.withValue { $0 != nil } }
         #expect(diagnostics.isActive && SentrySDK.isEnabled)
         #expect(!FileManager.default.fileExists(atPath: retired.path))
         #expect(defaults.string(forKey: "shepherd.diagnostics.cacheID") == cacheID.uuidString)
@@ -86,11 +93,39 @@ struct DiagnosticsRuntimeTests {
         #expect(envelope.contains("shepherd.installation") && envelope.contains("shepherd.run"))
         #expect(!envelope.contains("PRIVATE_PROMPT_SENTINEL"))
 
+        diagnostics.recordResources(["app.rss_bytes": 1234, "sessions.total": 2, "PRIVATE_PROMPT_SENTINEL": 123,
+                                     "pi.rss_bytes": .infinity, "pi.count": -1])
+        diagnostics.recordDuration("agent.start", seconds: 2)
+        diagnostics.recordDuration("PRIVATE_PROMPT_SENTINEL", seconds: 1)
+        diagnostics.recordDuration("agent.start", seconds: .nan)
+        SentrySDK.startTransaction(name: "PRIVATE_PROMPT_SENTINEL", operation: "unowned").finish()
+        try await eventuallyOnMain("two allowlisted performance transactions") { DiagnosticsTransport.state.bodies.count == 3 }
+        let performance = try DiagnosticsTransport.state.bodies.dropFirst().map(uncompressed)
+        #expect(performance.allSatisfy { !$0.contains("PRIVATE_PROMPT_SENTINEL") })
+        #expect(performance.contains { $0.contains("resources.sample") && $0.contains("app.rss_bytes") && $0.contains("1234") })
+        #expect(performance.contains { $0.contains("agent.start") && $0.contains("duration.seconds") })
+        for data in performance {
+            for line in data.split(separator: "\n") {
+                guard let payload = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+                      payload["transaction"] as? String == "agent.start" else { continue }
+                let end = try #require(payload["timestamp"] as? Double)
+                let start = try #require(payload["start_timestamp"] as? Double)
+                #expect(end - start >= 1.9 && end - start < 3)
+            }
+        }
+
         DiagnosticsTransport.state.hold()
         diagnostics.capture(.agentStartFailed, code: 3)
-        try await eventuallyOnMain("a pending upload") { DiagnosticsTransport.state.bodies.count == 2 }
+        try await eventuallyOnMain("a pending upload") { DiagnosticsTransport.state.bodies.count == 4 }
+        let recent = try uncompressed(try #require(DiagnosticsTransport.state.bodies.last))
+        #expect(recent.contains("shepherd.resources") && recent.contains("app.rss_bytes"))
+        #expect(!recent.contains("PRIVATE_PROMPT_SENTINEL"))
         let stoppedBefore = DiagnosticsTransport.state.stopped
         settings.shareDiagnostics = false
+        sampleReply.withValue { reply in
+            reply?.resume(returning: ["app.rss_bytes": 9999, "PRIVATE_PROMPT_SENTINEL": 1])
+            reply = nil
+        }
         #expect(!diagnostics.isActive && !SentrySDK.isEnabled)
         #expect(defaults.string(forKey: "shepherd.diagnostics.cacheID") == nil)
         #expect(!FileManager.default.fileExists(atPath: backing.appendingPathComponent("diagnostics").path))
@@ -98,6 +133,8 @@ struct DiagnosticsRuntimeTests {
         settings.shareDiagnostics = true
         diagnostics.start(settings: settings)
         diagnostics.capture(.agentStartFailed, code: 4)
+        diagnostics.recordResources(["app.rss_bytes": 9999])
+        diagnostics.recordDuration("agent.stop", seconds: 1)
         #expect(!diagnostics.isActive && !SentrySDK.isEnabled, "off/on must not restart asynchronous crash replay")
         // Exercise the same protocol configuration as a late SDK request after shutdown.
         // The fake transport is still the fallback, so even a broken guard cannot reach a socket.
@@ -109,7 +146,7 @@ struct DiagnosticsRuntimeTests {
         } catch {
             #expect((error as? URLError)?.code == .cancelled)
         }
-        #expect(DiagnosticsTransport.state.bodies.count == 2)
+        #expect(DiagnosticsTransport.state.bodies.count == 4)
     }
 
     private static func uncompressed(_ data: Data) throws -> String {

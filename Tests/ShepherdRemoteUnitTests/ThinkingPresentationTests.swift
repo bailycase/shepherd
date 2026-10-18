@@ -182,6 +182,29 @@ struct ThinkingPresentationTests {
 struct ThinkingStoreTests {
     typealias F = Fixture
 
+    @Test func cachesReplacePriorVersionsOfTheSameThoughtAndToolCall() async {
+        func snapshot(_ revision: UInt64) -> NativeThreadSnapshot {
+            let thought = F.assistant("", thinking: "Reasoning version \(revision)", id: "thought")
+            var tool = F.tool("read", args: #"{"path":"config"}"#, id: "tool", callID: "tool")
+            tool.status = "running"
+            tool.blocks = [.init(kind: .text, text: String(repeating: "x", count: Int(revision)))]
+            return F.snapshot(revision: revision, running: true, messages: [F.user("go", id: "user"), thought], provisional: [tool])
+        }
+        let host = FakeHost(snapshot(1))
+        let store = manualStore()
+        let task = await start(store, host)
+        defer { task.cancel() }
+        for revision in 2...20 {
+            host.snapshot = snapshot(UInt64(revision))
+            await store.refresh()
+        }
+        #expect(store.cachedCallCount == 1)
+        #expect(store.cachedThinkingCount == 1)
+        #expect(store.rows.last?.presentation?.items.contains { item in
+            if case .thinking(_, let text, _, _, _, _) = item { text == "Reasoning version 20" } else { false }
+        } == true)
+    }
+
     @Test func aStreamingReplyNeverParsesAFinishedThoughtAgain() async {
         var thought = F.assistant("", thinking: "**Inspecting SSH config**\n\nChecking ~/.ssh/config.\n\n", id: "a")
         thought.thinkingSeconds = 3

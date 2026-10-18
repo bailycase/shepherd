@@ -124,7 +124,13 @@ events come out on stdout, one record per LF.
 - **Requests:** default to a 10 s deadline (60 s during bootstrap) and fail cleanly on timeout
   or when the process exits. Bootstrap retains late readiness answers without retrying.
 - **stderr:** used for diagnostics only, logged line by line. A line is cut at 64 KiB.
-- **Shutdown:** `kill()` sends SIGTERM to the process group, then SIGKILL after 2 s.
+- **Shutdown:** `kill()` sends SIGTERM to the process group, then SIGKILL after 3 s, allowing
+  MCP's 2.5-second graceful close. Before signalling, `OwnedProcessTree` captures descendants,
+  including detached MCP groups, and fences later cleanup with PID start identities. Hard
+  shutdown cleans those captured groups too. This covers app-requested teardown, not an external
+  SIGKILL of Pi before capture: already-reparented, previously unknown MCP processes cannot be
+  safely rediscovered by name and are deliberately not swept. Shutdown before pipe-source
+  registration closes its descriptors directly.
 - **Queueing:** like `PTYSession`, all mutable state is confined to a queue that targets the
   server's serial queue.
 

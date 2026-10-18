@@ -232,6 +232,8 @@ public final class SessionServer: @unchecked Sendable {
     /// A session's child process exited, and whether its agent stays (`SessionExit`). Delivered
     /// on the main actor.
     public var onSessionExited: ((SessionID, SessionExit) -> Void)?
+    /// Fixed operation names and elapsed seconds only; delivered on main, never session contents.
+    public var onDiagnosticDuration: ((String, Double) -> Void)?
     /// State was persisted. Every mutation broadcasts, including mutations
     /// initiated by the GUI. Delivered on the main actor.
     public var onStateChanged: ((ShepherdState) -> Void)?
@@ -764,6 +766,7 @@ public final class SessionServer: @unchecked Sendable {
 
     private var sessions: [SessionID: ServerSession] = [:]
     private var attachedSessions: Set<SessionID> = []
+    private var diagnosticStops: [SessionID: ContinuousClock.Instant] = [:]
     /// Output waiting for the GUI, plus the one delivery currently executing
     /// on the main queue, tracked independently for each session.
     private var outputStates: [SessionID: SessionOutputState] = [:]
@@ -1336,6 +1339,7 @@ public final class SessionServer: @unchecked Sendable {
             output.delivery?.cancel()
         }
         sessions.removeAll()
+        diagnosticStops.removeAll()
         peerDeliveries.removeAll()
         unannouncedServable.removeAll()
         attachedSessions.removeAll()
@@ -6202,6 +6206,32 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Cheap counters on the server queue; the OS process census runs separately.
+    public func resourceState() async -> SessionResourceState {
+        await enqueueValue {
+            var pi = Set<Int32>(), terminals = Set<Int32>()
+            var active = 0, idle = 0, rows = 0, buffered = 0
+            for session in self.sessions.values {
+                switch session {
+                case .rpc(let process, let thread):
+                    rows += thread.history.count
+                    buffered += process.retainedRecordBytes + process.pendingInputBytes
+                    if process.isAlive {
+                        pi.insert(process.processIdentifier)
+                        if thread.running { active += 1 } else { idle += 1 }
+                    }
+                case .pty(let process):
+                    if process.isAlive { terminals.insert(process.processIdentifier) }
+                }
+            }
+            return SessionResourceState(piPIDs: pi, terminalPIDs: terminals, values: [
+                "sessions.active": Double(active), "sessions.idle": Double(idle),
+                "sessions.total": Double(self.sessions.count), "transcript.rows": Double(rows),
+                "rpc.buffer_bytes": Double(buffered)
+            ])
+        }
+    }
+
     /// Read one runtime's current liveness without exposing the session
     /// object. Dead sessions remain queryable until explicit retirement.
     public func sessionInfo(sessionID: SessionID) async -> SessionInfo? {
@@ -6519,9 +6549,16 @@ public final class SessionServer: @unchecked Sendable {
                 }
             }
             startRecords[sid] = PiStartRecord(resuming: resuming)
+            let diagnosticStart = ContinuousClock.now
+            if onDiagnosticDuration != nil {
+                thread.onDiagnosticDuration = { [weak serverWeak] operation, seconds in
+                    serverWeak?.diagnosticDuration(operation, seconds: seconds)
+                }
+            }
             thread.onServable = { [weak serverWeak] in
                 serverWeak?.startRecords[sid]?.served()
                 guard let server = serverWeak, server.sessions[sid] != nil else { return }
+                server.diagnosticDuration("agent.start", since: diagnosticStart)
                 server.unannouncedServable.insert(sid)
                 server.announceServableThreads()
                 for id in server.peerDeliveries.keys.sorted() where server.peerDeliveries[id]?.sessionID == sid {
@@ -6788,6 +6825,9 @@ public final class SessionServer: @unchecked Sendable {
     private func killSessionOnQueue(_ sessionID: SessionID) {
         guard let session = sessions[sessionID] else { return }
         if session.isAlive {
+            if onDiagnosticDuration != nil, session.thread != nil, diagnosticStops[sessionID] == nil {
+                diagnosticStops[sessionID] = .now
+            }
             ShepherdLog.info("session \(sessionID) kill requested; sending SIGTERM to its process group")
             session.signalProcessGroup(SIGTERM)
         } else {
@@ -6908,6 +6948,9 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     private func sessionDidExit(_ sessionID: SessionID, code: Int32?) {
+        if let started = diagnosticStops.removeValue(forKey: sessionID) {
+            diagnosticDuration("agent.stop", since: started)
+        }
         peerDeliveries = peerDeliveries.filter { $0.value.sessionID != sessionID }
         if let agent = agentID(forSession: sessionID) {
             projectRuntimeExited(agentID: agent)
@@ -6954,6 +6997,15 @@ public final class SessionServer: @unchecked Sendable {
 
     private func notifySessionExit(sessionID: SessionID, exit: SessionExit) {
         hopToMain { [weak self] in self?.onSessionExited?(sessionID, exit) }
+    }
+
+    private func diagnosticDuration(_ operation: String, since start: ContinuousClock.Instant) {
+        let elapsed = start.duration(to: .now).components
+        diagnosticDuration(operation, seconds: Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18)
+    }
+
+    private func diagnosticDuration(_ operation: String, seconds: Double) {
+        hopToMain { [weak self] in self?.onDiagnosticDuration?(operation, seconds) }
     }
 
     // MARK: - Queue plumbing
