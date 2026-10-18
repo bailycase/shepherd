@@ -792,7 +792,7 @@ struct RemoteProtocolConstantTests {
     }
 
     @Test func hostAdvertisesEveryNamedCapabilityOnce() {
-        let named = [RemoteProtocol.moveThreadCapability,
+        let named = [RemoteProtocol.moveThreadCapability, RemoteProtocol.projectConversationThinkingCapability,
             RemoteProtocol.logicalProjectsCapability, RemoteProtocol.logicalProjectAutomationsCapability,
             RemoteProtocol.logicalProjectRuntimeCapability, RemoteProtocol.projectExecutionCapability,
             RemoteProtocol.projectPlacementCapability, RemoteProtocol.logicalProjectFilesCapability, RemoteProtocol.projectWorkerCapability, RemoteProtocol.projectMessageImagesCapability, RemoteProtocol.projectPublicationsCapability,
@@ -830,6 +830,7 @@ struct RemoteProtocolConstantTests {
     @Test func capabilityStringsAreStable() {
         #expect(RemoteProtocol.logicalProjectsCapability == "logicalProjects.v1")
         #expect(RemoteProtocol.projectMessageImagesCapability == "logicalProjectRuntime.images.v1")
+        #expect(RemoteProtocol.projectConversationThinkingCapability == "logicalProjects.conversationThinking.v1")
         #expect(RemoteProtocol.projectsCapability == "projects.v1")
         #expect(RemoteProtocol.projectsV2Capability == "projects.v2")
         #expect(RemoteProtocol.clientCapabilities.contains(RemoteProtocol.projectsV2Capability))

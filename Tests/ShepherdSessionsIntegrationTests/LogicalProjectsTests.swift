@@ -119,6 +119,24 @@ struct LogicalProjectsTests {
         #expect(project.paused)
         #expect(try remote.host.persisted().projects == [project])
         #expect(await remote.server.listSessions().isEmpty)
+
+        // The coordinator's reasoning level: an owner with the capability keeps it, an invalid one is refused, and an edit that omits it
+        // (a viewer that predates the field) keeps the saved one instead of clearing it.
+        #expect(client.capabilities.contains(RemoteProtocol.projectConversationThinkingCapability))
+        var reasoning = project.settings
+        reasoning.conversationThinking = "xhigh"
+        project = try value(await client.logicalProjects(.settings(projectID: id, expectedRevision: project.revision, settings: reasoning)))
+        #expect(project.settings.conversationThinking == "xhigh")
+        var unknown = reasoning
+        unknown.conversationThinking = "turbo"
+        let bad = unknown, current = project.revision
+        await refusal("invalid_project") { try await client.logicalProjects(.settings(projectID: id, expectedRevision: current, settings: bad)) }
+        var older = project.settings
+        older.conversationThinking = nil
+        older.maxConcurrentWorkers = 2
+        project = try value(await client.logicalProjects(.settings(projectID: id, expectedRevision: project.revision, settings: older)))
+        #expect(project.settings.maxConcurrentWorkers == 2 && project.settings.conversationThinking == "xhigh")
+        #expect(try remote.host.persisted().projects.first?.settings.conversationThinking == "xhigh")
     }
 
     @Test func restartLaunchesNothingNeverPausesAndClearsOnlyStaleCoordinatorReferences() async throws {
