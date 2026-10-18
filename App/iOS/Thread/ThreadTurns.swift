@@ -137,6 +137,9 @@ struct AgentTurnView<Proposals: View>: View, Equatable {
             }
         case .goalRecord(_, let text):
             GoalRecordLine(text: text)
+        case .artifact(_, let artifact):
+            // The file the agent made, as a card under the words that follow its line (PaneArtifacts, iPadPaneArtifacts).
+            ArtifactCardItem(artifact: artifact)
         case .images(_, let images):
             // The phone and the iPad do not draw a thread's images yet: how many, as the note it replaced said.
             Text(images.count == 1 ? "Image attached" : "\(images.count) images attached").font(.nw(.caption))
@@ -298,11 +301,25 @@ struct ActivityLinesView: View, Equatable {
     }
 }
 
+/// The card where the agent made a file: a value that compares by the artifact, so a turn streaming below it leaves it alone.
+struct ArtifactCardItem: View, Equatable {
+    let artifact: NativeArtifact
+    @Environment(\.openArtifact) private var openArtifact
+
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.artifact == rhs.artifact }
+
+    var body: some View {
+        NWArtifactCard(NWArtifactRow(id: artifact.path, name: artifact.name, detail: artifact.detail(), symbol: artifact.kind.symbol),
+                       open: openArtifact.map { open in { open(artifact.path) } })
+    }
+}
+
 /// One burst of tool work. Expanding it shows its calls; an edit opens review at its file, any
 /// other call expands to its output, and a long press offers the full output and the raw call.
 struct ActivityLineView: View, Equatable {
     let burst: NativeActivityBurst
     var review: ((String) -> Void)?
+    @Environment(\.openArtifact) private var openArtifact
     @State private var expanded = false
     @State private var expandedCalls: Set<String> = []
     @State private var sheet: ToolOutput?
@@ -316,7 +333,7 @@ struct ActivityLineView: View, Equatable {
         VStack(alignment: .leading, spacing: 0) {
             NWActivityLine(kind: kind, label: burst.label, meta: burst.meta, status: status, isExpanded: expanded,
                            accessibilityLabel: burst.accessibilityLabel,
-                           action: burst.expandable ? toggle : nil)
+                           action: opensArtifact ?? (burst.expandable ? toggle : nil))
             if expanded {
                 NWActivityCalls(burst.calls.map(row), onSelect: select, onShowAll: showOutput) { row in
                     if let call = burst.calls.first(where: { $0.id == row.id }) { menu(call) }
@@ -328,9 +345,16 @@ struct ActivityLineView: View, Equatable {
         .sheet(item: $sheet) { ToolOutputSheet(output: $0) }
     }
 
+    /// "Made an artifact · plan.md" opens the file beside the thread (iPad) or over it (iPhone).
+    private var opensArtifact: (() -> Void)? {
+        guard let artifact = burst.artifact, let openArtifact else { return nil }
+        return { openArtifact(artifact.path) }
+    }
+
     private var kind: NWActivityLine.Kind {
         switch burst.kind {
         case .explore: .explore
+        case .edit where burst.artifact != nil: .artifact
         case .edit: .edit
         case .run: .run
         case .subagents: .subagents

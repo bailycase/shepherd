@@ -246,6 +246,8 @@ struct NWProseDetails<Code: View>: View {
 /// marker sits, and its text in caption `textSecondary`.
 struct NWProseFootnotes: View {
     let notes: [NWProseFootnote]
+    @Environment(\.nwProseFileRoot) private var fileRoot
+    @Environment(\.nwProseFileLinks) private var fileLinks
 
     var body: some View {
         let nw = Color.nw
@@ -256,8 +258,10 @@ struct NWProseFootnotes: View {
                     Text("\(note.number)").font(.nw(.caption)).foregroundStyle(nw.textTertiary).monospacedDigit()
                         .frame(width: NWThreadMetrics.listIndent - NW.Space.s, alignment: .trailing)
                         .padding(.trailing, NW.Space.s)
-                    Text(note.text).nwText(.caption).foregroundStyle(nw.textSecondary).textSelection(.enabled)
+                    NWProseFileLinks.prose(note.text, root: fileRoot, actions: fileLinks).nwText(.caption).foregroundStyle(nw.textSecondary)
+                        .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
+                        .modifier(NWFileLinkTargets(actions: NWProseFileLinks.targets(note.text, root: fileRoot, actions: fileLinks)))
                 }
                 .accessibilityElement(children: .combine)
             }

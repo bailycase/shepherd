@@ -297,6 +297,9 @@ struct AgentTurn: View, Equatable {
             }
         case .goalRecord(_, let text):
             GoalRecordLine(text: text)
+        case .artifact(_, let artifact):
+            // The file the agent made, as a card under the words that follow its line (PaneArtifacts).
+            ArtifactCardItem(artifact: artifact)
         case .images(_, let images):
             // What the agent made or a tool returned, where it happened (ThreadImagesReceived): the neutral count, then the pictures.
             VStack(alignment: .leading, spacing: NW.Space.m) {

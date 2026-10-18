@@ -139,3 +139,15 @@ private let started = Date().addingTimeInterval(-41 * 60)
         .frame(width: NWPaletteMetrics.width)
     }
 }
+
+#Preview("Artifacts") {
+    NWPreviewBoth {
+        VStack(alignment: .leading, spacing: NW.Space.xl) {
+            NWArtifactCard(NWArtifactRow(id: "a", name: "Load test report", detail: "HTML · 6m ago", symbol: "chevron.left.forwardslash.chevron.right"), open: {})
+            NWArtifactList([NWArtifactRow(id: "a", name: "Load test report", detail: "HTML · 6m ago", symbol: "chevron.left.forwardslash.chevron.right"),
+                            NWArtifactRow(id: "b", name: "retry-plan.md", detail: "Markdown · just now", symbol: "doc.text")], selection: "a", open: { _ in })
+                .frame(height: 200)
+        }
+        .frame(width: 420)
+    }
+}

@@ -31,7 +31,7 @@ final class RPCThreadState {
     static let widgetAggregateBytes = 32 * 1024
     static let operationTableSize = 256
     static let supportedActions = ["send", "abort", "answer", "setModel", "setThinking", "sendImages", "subagents", "queue", "compact", "designContext",
-                                   "designReferences", "browserElements", "retry", "interrupt", "setServiceTier", "images"]
+                                   "designReferences", "browserElements", "retry", "interrupt", "setServiceTier", "images", "artifacts"]
     /// pi answers `compact` only once the summary is written, which takes as long as a reply.
     static let compactTimeout: TimeInterval = 600
     /// Bytes of a child session file the transcript reader will scan (tail); older is unreachable.
@@ -762,6 +762,12 @@ final class RPCThreadState {
                 return
             }
             serveImage(imageID, offset: offset, completion: completion)
+        case .artifact(let expectedSessionID, let path, let offset):
+            guard expectedSessionID == piSessionID else {
+                completion(.failure(code: "stale_session", message: "Refresh the thread before acting."))
+                return
+            }
+            serveArtifact(path, offset: offset, completion: completion)
         case .subagentTranscript(let expectedSessionID, let runID, let beforeEntryID):
             guard expectedSessionID == piSessionID else {
                 completion(.failure(code: "stale_session", message: "Refresh the thread before acting."))
@@ -1011,7 +1017,7 @@ final class RPCThreadState {
             compact(instructions: instructions, operationID: operationID, completion: completion)
         case .retry(_, _, _, let entryID):
             retryTurn(entryID: entryID, operationID: operationID, completion: completion)
-        case .snapshot, .subagentTranscript, .image:
+        case .snapshot, .subagentTranscript, .image, .artifact:
             completion(.failure(code: "invalid", message: "Not an action."))
         }
     }
@@ -1045,6 +1051,40 @@ final class RPCThreadState {
                     if let chunk { completion(.imageChunk(value: chunk)); return }
                     completion(.failure(code: NativeImageCode.unknown,
                                         message: found == nil ? "That image is not in this thread." : "That part of the image is past its end."))
+                }
+            }
+        }
+    }
+
+    // MARK: - Artifacts
+
+    /// One piece of a file this thread's `write` calls made (`ThreadArtifacts`). The written paths are read from pi's own history for this
+    /// agent as it is now, and the file from disk, off the server queue; the answer is given only if the session is still the one asked about.
+    private func serveArtifact(_ path: String, offset: Int, completion: @escaping (NativeThreadResult) -> Void) {
+        guard !path.isEmpty, offset >= 0 else {
+            completion(.failure(code: NativeArtifactCode.unknown, message: "That file is not one this thread made."))
+            return
+        }
+        let generation = generation
+        let sessionID = piSessionID
+        let cwd = session.cwd
+        let stale = NativeThreadResult.failure(code: "stale_session", message: "Refresh the thread before acting.")
+        session.request(.getMessages, timeout: 30) { [weak self] result in
+            guard let self, generation == self.generation else { completion(stale); return }
+            guard case .success(let response) = result, response.success, let messages = response.messages else {
+                completion(.failure(code: NativeArtifactCode.unknown, message: "The thread's history could not be read."))
+                return
+            }
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                let read = ThreadArtifacts.read(path, offset: offset, written: ThreadArtifacts.writtenPaths(in: messages), cwd: cwd)
+                guard let self else { completion(stale); return }
+                self.queue.async { [weak self] in
+                    guard let self, generation == self.generation, sessionID == self.piSessionID else { completion(stale); return }
+                    switch read {
+                    case .chunk(let chunk): completion(.artifactChunk(value: chunk))
+                    case .outOfRange: completion(.failure(code: NativeArtifactCode.unknown, message: "That file is not one this thread made."))
+                    case .unavailable: completion(.failure(code: NativeArtifactCode.unavailable, message: "That file can't be opened now."))
+                    }
                 }
             }
         }
@@ -2334,7 +2374,7 @@ final class RPCThreadState {
         result.projectAction = message.projectAction
         if let toolName = message.toolName { result.toolName = clip(toolName) }
         if let toolCallID = message.toolCallId { result.toolCallID = clip(toolCallID) }
-        if let args { result.argumentsText = clip(json(args)) }
+        if let args { result.argumentsText = clip(json(Self.fitting(args, within: remaining))) }
         // A design view record the viewer's message carried is pi's to read, not the thread's.
         var fenced = message.role == "user"
         var goalDetailsAdded = false
@@ -2434,6 +2474,25 @@ final class RPCThreadState {
         result.truncated = truncated
         return result
     }
+
+    /// `args` that fit `limit` bytes of JSON: when they do not, each long string of the call (a `write`'s `content`) is cut to
+    /// `argumentStringBytes`, so the call stays valid JSON and its short fields (the `path`, which sorts after `content`) survive; the
+    /// cut `content` leaves its true line count in `contentLines`. Clipping the encoded text instead would end it mid-string and lose
+    /// the path of exactly the big files an activity line, the Changes card and the Artifacts tab name.
+    static func fitting(_ args: JSONValue, within limit: Int) -> JSONValue {
+        guard case .object(var fields) = args, json(args).utf8.count > limit else { return args }
+        for (key, value) in fields {
+            guard case .string(let text) = value, text.utf8.count > argumentStringBytes else { continue }
+            fields[key] = .string(clippedText(text, limit: argumentStringBytes))
+            if key == "content" {
+                fields["contentLines"] = .number(Double(text.split(separator: "\n", omittingEmptySubsequences: false).count - (text.hasSuffix("\n") ? 1 : 0)))
+            }
+        }
+        return .object(fields)
+    }
+
+    /// The most a long string argument keeps in a row that has to be clipped.
+    static let argumentStringBytes = 1024
 
     private static let argumentEncoder: JSONEncoder = {
         let e = JSONEncoder()

@@ -22,7 +22,9 @@
     `serviceTier` and `serviceTiers`; no Speed control from a host without it) behind
     `native.serviceTier.v1`, and the images pi saved in a thread (the snapshot names each, bounded
     metadata only; `NativeThreadRequest.image` returns it in 256 KiB pieces, from pi's own history for
-    that agent and session) behind `native.images.v1`
+    that agent and session) behind `native.images.v1`, and the files a thread's `write` calls made
+    (`NativeThreadRequest.artifact` returns one in 256 KiB pieces; the host serves only a path its own history
+    for that agent and session shows a successful `write` made) behind `native.artifacts.v1`
   - conversation goals behind `native.goal.v1`: optional snapshot `goal`, live-only fleet
     `goalState`, and `NativeThreadRequest.goal` for set, edit, pause, resume, clear and confirm.
     Pause/Resume/Confirm require the displayed goal ID, revision and state in addition to the
