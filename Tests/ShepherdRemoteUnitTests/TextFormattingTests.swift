@@ -30,6 +30,25 @@ struct TextFormattingTests {
         #expect(nativeClockText(1_758_582_540_000, timeZone: utc) == "11:09 PM")
     }
 
+    @Test(arguments: [
+        (0.0, "UTC", "12:00 AM"), (43_200_000, "UTC", "12:00 PM"),
+        (-1, "UTC", "11:59 PM"), (59_999, "UTC", "12:00 AM"), (60_000, "UTC", "12:01 AM"),
+        (1_772_963_999_000, "America/Los_Angeles", "1:59 AM"),
+        (1_772_964_000_000, "America/Los_Angeles", "3:00 AM"),
+        (1_793_521_800_000, "America/Los_Angeles", "1:30 AM"),
+        (1_793_525_400_000, "America/Los_Angeles", "1:30 AM"),
+        (1_767_225_600_000, "Asia/Kathmandu", "5:45 AM"),
+        (1_767_225_600_000, "Pacific/Chatham", "1:45 PM"),
+    ] as [(Double, String, String)])
+    func clockStylePreservesBoundariesAndTimeZones(milliseconds: Double, zone: String, expected: String) throws {
+        let timeZone = try #require(TimeZone(identifier: zone))
+        #expect(nativeClockText(milliseconds, timeZone: timeZone) == expected)
+        #expect(nativeClockText(milliseconds, meridiem: false, timeZone: timeZone) == String(expected.dropLast(3)))
+        // Alternating timezones/styles must not leave state from the previous formatter call.
+        #expect(nativeClockText(0, timeZone: try #require(TimeZone(secondsFromGMT: 0))) == "12:00 AM")
+        #expect(nativeClockText(milliseconds, timeZone: timeZone) == expected)
+    }
+
     @Test func turnTimeIsTheClockPlusAnyDurationOfASecondOrMore() {
         let start = Board.nowMS
         #expect(nativeTurnTimeText(startedAt: nil, endedAt: 5) == nil)

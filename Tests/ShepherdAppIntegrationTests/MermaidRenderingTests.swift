@@ -10,6 +10,84 @@ import ShepherdTestSupport
 @Suite("Mermaid rendering", .serialized, .mainActorExclusive)
 @MainActor
 struct MermaidRenderingTests {
+    @Test func windowPresentationOpensClosesAndPreservesTheExplicitCallback() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
+            await completingScenario { try await Self.presentationControls() }
+        }
+        expectScenarioCompleted(result)
+    }
+
+    private static func presentationControls() async throws {
+        AccessibilityNode.enable()
+        let firstApp = try AppHarness(), secondApp = try AppHarness()
+        defer { firstApp.stop(); secondApp.stop() }
+        let space = Fixture.space(path: firstApp.dir.path)
+        let agents = (0..<2).map { Fixture.agent("diagram ($0)", in: space, order: $0) }
+        let first = try await firstApp.start(with: Fixture.state(spaces: [space], agents: agents))
+        first.sessions.holdStarts()
+        first.selectAgent(agents[0].agent.id)
+        let second = try await secondApp.start()
+        let presentation = first.diagramPresentation
+        #expect(presentation !== second.diagramPresentation)
+        let source = "flowchart LR\n Request --> Review"
+        let store = first.threadStores.store(for: agents[0].agent.id)
+        store.preview(ThreadFixture.snapshot([ThreadFixture.assistant("diagram", "```mermaid\n\(source)\n```")]))
+        defer { store.stop() }
+        for dark in [false, true] {
+            let window = OffscreenWindow(size: CGSize(width: 900, height: 640), dark: dark,
+                RootView(vm: first).environment(\._accessibilityReduceMotion, true))
+            defer { window.close() }
+            try await eventuallyOnMain("the diagram's full-screen control") {
+                window.layout()
+                return window.controls().contains { $0.label == "Open diagram full screen" }
+            }
+            let deck = try WorkspaceNavigationTests.deck(in: window)
+            let retained = try #require(deck.pages[agents[0].tab.id]?.host)
+            for returning in [false, true] {
+                if returning {
+                    first.selectAgent(agents[1].agent.id)
+                    try await eventuallyOnMain("the diagram's retained thread to hide") {
+                        window.layout()
+                        return retained.isHidden && !store.isLive
+                    }
+                    first.selectAgent(agents[0].agent.id)
+                    try await eventuallyOnMain("the retained thread's full-screen control to return") {
+                        window.layout()
+                        return !retained.isHidden && store.isLive
+                            && window.controls().contains { $0.label == "Open diagram full screen" }
+                    }
+                    #expect(deck.pages[agents[0].tab.id]?.host === retained)
+                }
+                try window.press("Open diagram full screen")
+                try await eventuallyOnMain("the owning window's diagram viewer") {
+                    window.layout()
+                    return first.diagramViewer == source && window.controls().contains { $0.label == "Close" }
+                }
+                #expect(second.diagramViewer == nil)
+                #expect(first.diagramPresentation === presentation)
+                try window.press("Close")
+                try await eventuallyOnMain("the diagram viewer to close") {
+                    window.layout()
+                    return presentation.source == nil && !window.controls().contains { $0.label == "Close" }
+                }
+            }
+
+            // The existing callback remains an override, including beneath a window state.
+            var received: String?
+            window.show(NWMermaidBlock(source)
+                .environment(\.nwDiagramPresentation, presentation)
+                .environment(\.nwPresentDiagram) { received = $0 })
+            try await eventuallyOnMain("the legacy full-screen callback control") {
+                window.layout()
+                return window.controls().contains { $0.label == "Open diagram full screen" }
+            }
+            try window.press("Open diagram full screen")
+            #expect(received == source)
+            #expect(first.diagramViewer == nil && second.diagramViewer == nil)
+        }
+        #expect(first.sessions.startQueue.started.isEmpty, "rendering and switching never start pi")
+    }
+
     @Test func localRenderErrorAndSecurity() async throws {
         let renderer = MermaidRenderer()
         let window = OffscreenWindow(size: CGSize(width: 640, height: 480))

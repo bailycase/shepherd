@@ -10,9 +10,18 @@ import ShepherdUI
 // message or composer, shown one at a time over the window. The state is values only; the host
 // view draws `NWImageViewer` and carries out Copy, Add to message and Show in Finder.
 
+/// The window's stable identity, rather than a new captured closure on every shell resize.
+struct ImageViewerPresenter: Equatable {
+    weak var model: ShepherdViewModel?
+
+    static func == (a: Self, b: Self) -> Bool { a.model === b.model }
+
+    @MainActor func callAsFunction(_ state: ImageViewerState) { model?.imageViewer = state }
+}
+
 extension EnvironmentValues {
-    /// Opens the viewer over the window (`ShepherdViewModel.imageViewer`); does nothing where no window sets it.
-    @Entry var presentImages: (ImageViewerState) -> Void = { _ in }
+    /// Opens the viewer over the window; does nothing where no window sets it.
+    @Entry var presentImages = ImageViewerPresenter()
 }
 
 /// One image the viewer can show: its bytes are already here (a composer's image, or one the
