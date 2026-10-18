@@ -490,7 +490,6 @@ def build_tree(pin: dict, downloads: dict) -> dict[str, bytes]:
     if set(pin["modules"]) != expected:
         raise EngineError(f"SDK modules differ from pi's shrinkwrap: missing {sorted(expected - set(pin['modules']))}, "
                           f"extra {sorted(set(pin['modules']) - expected)}")
-    apply_patch(pi, pin)
     # Keep Pi's environment names; only Shepherd's project configuration directory changes.
     manifest.setdefault("piConfig", {}).update(name="pi", configDir=".shepherd")
     pi["package.json"] = (json.dumps(manifest, indent=2) + "\n").encode()
@@ -523,6 +522,10 @@ def build_tree(pin: dict, downloads: dict) -> dict[str, bytes]:
             if _kept(relative, keep):
                 tree[f"{ENGINE}/node_modules/{location}/{relative}"] = data
 
+    # Runtime patches can also cover a pinned SDK dependency (MCP's stdio transport).
+    engine_files = {path.removeprefix(f"{ENGINE}/"): data for path, data in tree.items()}
+    apply_patch(engine_files, pin)
+    tree = {f"{ENGINE}/{path}": data for path, data in engine_files.items()}
     tree[NODE], tree[f"{ENGINE}/NODE-LICENSE"] = node_files(downloads["node"], pin["node"]["version"])
     # pi's tarball carries no LICENSE; package.json says MIT and names the author.
     tree[f"{ENGINE}/LICENSE"] = MIT.format(holder=_author(manifest)).encode()

@@ -125,7 +125,7 @@
     {
       "path": "dist/bundle/chunks/chunk-IBCPYVFK.js",
       "before": "36657698101aaff1634e513874455f7580874febab92616637e71754d9874361",
-      "after": "f4f181d1d58468b63024fd076556a6198afbe6113a2672fbf9ace51ffb01f3ee",
+      "after": "29e85b7554e7fb8e70cca6dd9f4be54450f9ff686f7a3fa1205c1c6e5544ffdf",
       "edits": [
         {
           "old": "import{execSync,spawnSync}from\"child_process\";var commandResultCache=new Map,",
@@ -146,8 +146,23 @@
         {
           "old": "`Failed to resolve ${description} from shell command: ${reference.config.slice(1)}`",
           "new": "`Command configuration values are not supported for ${description}`"
+        },
+        {
+          "old": "for(let timer of timers)clearTimeout(timer);killProcessTree(child,\"SIGTERM\"),resolve()",
+          "new": "for(let timer of timers)clearTimeout(timer);killProcessTree(child,\"SIGKILL\"),resolve()"
         }
       ]
+    },
+    {
+      "path": "node_modules/@earendil-works/pi-mcp/dist/transports/stdio.js",
+      "before": "c90e0c20bf1052a70fcac794b4b223b477a627f30cbab683203497b5cf769bba",
+      "edits": [
+        {
+          "old": "                // Children of the server that ignored stdin closing would otherwise outlive it.\n                killProcessTree(child, \"SIGTERM\");",
+          "new": "                // The leader is gone: finish its owned group now, including TERM-resistant children.\n                killProcessTree(child, \"SIGKILL\");"
+        }
+      ],
+      "after": "758027728da50ece5ee4f93325d710599519279405feef5b61cb727d8807ac13"
     }
   ]
 }
