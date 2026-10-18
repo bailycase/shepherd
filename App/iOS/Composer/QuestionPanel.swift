@@ -91,7 +91,7 @@ struct QuestionPanel: View {
                 } else {
                     ForEach(prompt.options) { option($0) }
                 }
-                if prompt.allowsText { answerField }
+                if prompt.allowsText { textOption }
             }
         case .yesNo:
             VStack(spacing: NW.Space.s) {
@@ -114,7 +114,7 @@ struct QuestionPanel: View {
         }
     }
 
-    /// An open question's field, or the words a choice also takes (typing them drops the pick).
+    /// An open question's field.
     private var answerField: some View {
         TextField(prompt.placeholder, text: Binding(get: { picks.text }, set: { text in
             var next = picks
@@ -126,7 +126,40 @@ struct QuestionPanel: View {
             .textInputAutocapitalization(prompt.multiline ? .never : .sentences)
             .autocorrectionDisabled(prompt.multiline)
             .focused($field, equals: .text)
-            .accessibilityLabel(prompt.allowsText ? prompt.placeholder : prompt.multiline ? "Editor answer" : "Answer")
+            .accessibilityLabel(prompt.multiline ? "Editor answer" : "Answer")
+    }
+
+    /// A choice that also takes words: its last numbered option, N+1, is an editable row in the
+    /// option card's style, lit while it holds words (typing them drops the pick).
+    private var textOption: some View {
+        let nw = Color.nw
+        let typed = !picks.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let shape = RoundedRectangle(cornerRadius: NW.Radius.m)
+        return HStack(alignment: .top, spacing: NW.Space.l) {
+            NWQuestionNumber(prompt.options.count + 1, filled: typed)
+            TextField(text: Binding(get: { picks.text }, set: { text in
+                var next = picks
+                next.text = text
+                picks = NativeQuestionPicks.exclusive(picks, next)
+            }), prompt: Text(prompt.placeholder).foregroundStyle(nw.textTertiary), axis: .vertical) {
+                Text(prompt.placeholder)
+            }
+                .lineLimit(1...6)
+                .font(.nw(.ui, weight: .semibold))
+                .foregroundStyle(nw.textPrimary)
+                .tint(nw.lantern)
+                .textInputAutocapitalization(.sentences)
+                .focused($field, equals: .text)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityLabel(prompt.placeholder)
+        }
+        .padding(NW.Space.l)
+        .frame(maxWidth: .infinity, minHeight: NWTouchQuestionMetrics.optionHeight, alignment: .topLeading)
+        .background(typed ? nw.lanternTint : nw.bgWindow, in: shape)
+        .nwBorder(typed ? nw.lantern : nw.lineSubtle, radius: NW.Radius.m)
+        .nwAnimation(.hover, value: typed)
+        .contentShape(shape)
+        .onTapGesture { field = .text }
     }
 
     private func option(_ option: NativeQuestionOption) -> some View {

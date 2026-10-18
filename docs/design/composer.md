@@ -386,13 +386,13 @@ it has no note or arbitrary select reply):
 | pi's select (`ctx.ui.select`) | choice, or yes or no | one of its options, exactly as offered |
 | pi's confirm (`ctx.ui.confirm`) | yes or no | true or false |
 | pi's input (`ctx.ui.input`) | open | a string |
-| Project worker's `project_question` with options | choice and a final Say anything field | one native input string: the exact offered choice or the person's words |
+| Project worker's `project_question` with options | option rows, with Say anything as the final editable row | one native input string: the exact offered choice or the person's words |
 | pi's editor (`ctx.ui.editor`) | open, 12 lines | a string, as typed |
 | A subagent | none | it is no asker of the user: it asks its parent (`shepherd_parent_message`, `needsReply`), which asks here, as an ordinary question, when it must |
 
 `project_question` uses one `ctx.ui.input`, carrying bounded choice hints that the owner normalizes
-into its existing native input's options. **Say anything** is the last field, never a selectable
-option or a second dialog. Both paths deliver one input reply. The inline Project card answers
+into its existing native input's options. **Say anything** is the final numbered option row,
+with an input in place of its title, not a separate box or a choice opening a second dialog. Both paths deliver one input reply. The inline Project card answers
 choices immediately and submits its field with Send or Return; the worker dock uses Answer.
 A refusal retains the draft/pick. Cancellation is not an answer or permission. Other select
 dialogs retain only their offered options.

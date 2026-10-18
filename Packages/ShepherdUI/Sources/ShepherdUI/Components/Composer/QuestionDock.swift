@@ -85,8 +85,8 @@ public struct NWQuestionDockContent: Equatable, Sendable {
     public var notice: String?
     /// Answer is drawn (not for a yes or a no).
     public var showsAnswer: Bool
-    /// A choice whose asker also takes words: a field under the options, where typing drops the
-    /// pick and picking empties the field.
+    /// A choice whose last numbered option is editable: typing drops the pick, and picking
+    /// empties the field.
     public var allowsText: Bool
 
     public init(count: Int = 1, question: String, message: String? = nil, kind: NWQuestionDockKind,
@@ -187,9 +187,7 @@ public struct NWQuestionDock: View {
             if let message = content.message { messageBlock(message) }
             Group {
                 switch content.kind {
-                case .choice:
-                    options
-                    if content.allowsText { openField }
+                case .choice: options
                 case .yesNo: yesNo
                 case .open: openField
                 }
@@ -253,6 +251,31 @@ public struct NWQuestionDock: View {
                 pick(option.number)
             }
         }
+        // An asker that also takes words: its last numbered option is where they are typed.
+        if content.allowsText { textOption }
+    }
+
+    /// The last option, N+1, as an editable row: the same card and number, lit while it holds words.
+    private var textOption: some View {
+        let nw = Color.nw
+        let typed = !selection.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return HStack(alignment: .top, spacing: NWQuestionDockMetrics.optionSpacing) {
+            NWQuestionDockNumber(number: content.options.count + 1, picked: typed)
+            TextField(text: $selection.text, prompt: Text(content.placeholder).foregroundStyle(nw.textTertiary), axis: .vertical) {
+                Text(content.placeholder)
+            }
+            .lineLimit(1...6)
+            .textFieldStyle(.plain)
+            .font(.nw(.headline))
+            .foregroundStyle(nw.textPrimary)
+            .tint(nw.lantern)
+            .focused(focus, equals: .text)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityLabel(content.placeholder)
+        }
+        .padding(NWQuestionDockMetrics.optionPadding)
+        .nwQuestionOptionChrome(picked: typed)
+        .onTapGesture { focus.wrappedValue = .text }
     }
 
     private func pick(_ number: Int) {
@@ -313,7 +336,7 @@ public struct NWQuestionDock: View {
         .nwBorder(nw.lineStrong, radius: NW.Radius.m)
         .contentShape(Rectangle())
         .onTapGesture { focus.wrappedValue = .text }
-        .accessibilityLabel(content.allowsText ? content.placeholder : "Answer")
+        .accessibilityLabel("Answer")
     }
 
     // MARK: Footer
