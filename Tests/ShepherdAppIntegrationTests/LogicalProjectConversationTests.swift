@@ -1557,7 +1557,11 @@ private static func chipsAndLinks() async throws {
 
         // Answer while paused through the card's own option button: the owner holds it, and no second active answer remains.
         try window.press("ALPHA")
-        try await eventuallyOnMain("the owner holds the answer") { r.app.server.state.projects.first?.tasks.first?.pendingAnswer != nil }
+        try await eventuallyOnMain("the owner holds the answer or reports why it could not") {
+            r.app.server.state.projects.first?.tasks.first?.pendingAnswer != nil || r.vm.logicalProjects.failure != nil
+        }
+        #expect(r.vm.logicalProjects.failure == nil, "\(r.vm.logicalProjects.failure?.message ?? "")")
+        #expect(r.app.server.state.projects.first?.tasks.first?.pendingAnswer != nil)
         // The view model's copy of the Project lags the owner's; read the row only once it has the held answer too.
         try await eventuallyOnMain("the app sees the held answer") { r.vm.state.projects.first?.tasks.first?.pendingAnswer != nil }
         let held = ProjectPagePresentation(try #require(r.vm.state.projects.first)).rows[0]
@@ -1653,7 +1657,8 @@ private static func chipsAndLinks() async throws {
         try await eventuallyOnMain("the popover lists the owner's models") { window.layout(); return window.element("Model, thinking and speed") != nil }
         try window.press("All models…")
         try await eventuallyOnMain("the full picker") { window.layout(); return window.element("Choose a model") != nil }
-        try window.press(choice)
+        let choiceLabel = try #require(window.controls().first { $0.label == choice || $0.label?.hasPrefix(choice + ", ") == true }?.label)
+        try window.press(choiceLabel)
         try await eventuallyOnMain("the pick is the Project's conversation model") {
             r.app.server.state.projects.first?.settings.conversationModel == choice
         }
@@ -1714,7 +1719,9 @@ private static func chipsAndLinks() async throws {
         try await eventuallyOnMain("the popover") { window.layout(); return window.element("All models…") != nil }
         try window.press("All models…")
         try await eventuallyOnMain("the full picker") { window.layout(); return window.element("Choose a model") != nil }
-        try window.press("anthropic/claude-opus-4-5")
+        let choice = "anthropic/claude-opus-4-5"
+        let choiceLabel = try #require(window.controls().first { $0.label == choice || $0.label?.hasPrefix(choice + ", ") == true }?.label)
+        try window.press(choiceLabel)
         try await eventuallyOnMain("the refusal is reported") { r.vm.logicalProjects.failure != nil }
         try await eventuallyOnMain("the composer says the model was not saved") {
             window.layout(); return window.elements().contains { $0.label?.contains(r.vm.logicalProjects.failure?.message ?? "\u{0}") == true }
