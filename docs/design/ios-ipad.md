@@ -378,58 +378,52 @@ hides the sidebar so the thread keeps a 540pt column; the app keeps the sidebar 
 (`PadShell`), so the pane narrows and its toolbar drops the viewed count, then the stat, rather
 than clip (Known gaps).
 
-- **Pane head** (52pt, 10pt inset, a hairline under it): the Changes tab (36pt, radius 6,
-  `bgSelected`, 12.5/600, its glyph and the file count in mono 10.5 `textTertiary`), then Pane
-  options (a 28pt bordered circle: Full screen, Finalize worktree…) and Close pane (28pt). The
-  board's Browser, Artifacts and Files tabs are not built on iPad (Side pane).
-- **Toolbar** (ChangesStates › ChangesToolbar; 54pt, 12pt leading, a hairline under it): the
-  scope pill (36pt, radius 6, `bgRaised`, a 1px `lineStrong` line: a branch glyph, "Branch" at
-  15/600, a chevron), the scope's stat (mono 12), then "👁 2/5 viewed" (a 24pt `bgSunken`
-  capsule, 12 `textSecondary`), Commit… (secondary, 28pt, the commit glyph), then 36pt icons:
-  Refresh, Collapse all files (Expand all once every file is folded), the split toggle (its
-  glyph is the mode it switches to), and Diff options (•••: Word diffs, Hide whitespace changes,
-  Load full files, then Copy git apply command and Copy as patch). Changing a host-side diff
-  option reloads the displayed hunks even when the compared trees did not change; a late reply
-  for an older option or scope never replaces them.
-- **Compare row** (38pt on `bgBase`, 12pt inset): the head in mono 12 `textSecondary`, →, the
-  base in mono 12 `textPrimary` with a chevron (Branch only: the base picker, a popover), and
-  "merge base 3f2a91c" (or a turn's `after “…”`) in mono 11 `textTertiary` trailing.
-- **File strip** (`NWTouchFileStrip`): 36pt chips in mono 12 (the status letter bold, the name,
-  the stat); the chip tapped is filled, and the stack scrolls its file to the top; viewed files
-  dim.
+- **Pane head** (52pt, 10pt inset, a hairline under it): "Changes 3" (15/600, the file count
+  once loaded), then Full screen and Close pane (44pt icons). The board's Browser, Artifacts and
+  Files tabs are not built on iPad (Side pane).
+- **Toolbar** (54pt, 12pt inset, 8pt gaps, a hairline under it): the scope pill (44pt, radius 6,
+  `bgRaised`, a 1px `lineStrong` line: "Branch" at 15 and a chevron), the scope's stat (mono 12),
+  then Commit… (secondary, `l`) and Diff options (•••, 44pt): Refresh, Collapse all files (Expand
+  all once every file is folded), Split diff or Unified diff, then Word diffs, Hide whitespace
+  changes, Load full files, Copy git apply command, Copy as patch, and Finalize worktree… for a
+  worktree agent. Changing a host-side diff option reloads the displayed hunks even when the
+  compared trees did not change; a late reply for an older option or scope never replaces them.
+- **Compare row** (38pt, 12pt inset, a hairline under it, mono 12): the head in `textSecondary`,
+  "vs" in `textTertiary`, the base in `textPrimary` with a chevron (Branch only: the base picker,
+  a popover), and "1 of 3 viewed" trailing in `textSecondary`.
+- **File strip** (`NWTouchFileStrip`, 8pt inset, 6pt apart): 44pt chips with the file name in
+  mono 12 (`bgRaised`, a 1px `lineStrong` line, radius 6); the chip tapped is filled and the stack
+  scrolls its file to the top; viewed files dim.
 - **Files, stacked** in one lazy list: each file's head sticks while its file scrolls (44pt on
-  `bgRaised`, hairlines above and below): a disclosure chevron, the status letter, the folder in
-  `textTertiary` and the name semibold (mono 12), its stat, and Viewed (a 14pt checkbox and
-  "Viewed" at 12 `textSecondary`); ticking Viewed folds the file away, and a tap on the head folds
-  or opens it. The board's per-file Comment and Open buttons are not built (Known gaps).
-- **Diff** (unified while the pane is narrow, ChangesStates' rule: split from 900pt): lines in
-  mono 12.5, two 34pt gutters in mono 11 `textTertiary`, a 14pt sign column; removed lines on
-  `failedTint` and added on `doneTint`, each with a 3pt `failed`/`done` bar at its leading edge
-  (the gutter bar), a changed word on its tint again. A hunk's head is the unchanged lines before
-  it ("95 unmodified lines", 44pt on `bgSunken` between hairlines, a ⌃⌄ glyph, 12
-  `textSecondary`); a tap asks the host for the whole file. Long runs fold as on the phone.
-  Tapping a line opens a comment editor under it.
+  `bgRaised`, a hairline under it, 10pt inset): "FleetView.swift · +9 −7" in mono 12, then Viewed
+  (a 14pt checkbox and "Viewed" at 12 `textSecondary`); ticking Viewed folds the file away, and a
+  tap on the head folds or opens it. The board's per-file Comment and Open buttons are not built
+  (Known gaps).
+- **Diff** (unified while the pane is narrow, ChangesStates' rule: split from 900pt), as the
+  phone's (MobileDiff): one number column (mono 11 `textTertiary`), a 14pt sign column, code in
+  mono 13 wrapped; removed lines on `failedTint` and added on `doneTint`, a changed word on its tint
+  again; a line with a comment on `lanternTint` with a 3pt `lantern` bar. Each hunk's head
+  ("@@ −27,14 +27,16 @@ struct FleetView: View") is mono 11 `textTertiary` on `runningTint`. The
+  unchanged lines before a hunk read "Show 18 unchanged lines" (44pt on `bgSunken`, a hairline
+  above, 12 `textTertiary`, centered); a tap asks the host for the whole file. Long runs fold as
+  on the phone. Tapping a line opens a comment editor under it.
 - **Comment** under its line, indented to the code: `bgRaised`, a 1px `lineStrong` line, radius 10,
   10×12 inset: an 18pt initial, "You" semibold, "line 103 · just now" in mono 12 `textSecondary`,
   Edit and Delete, then the text at 14/1.5.
-- **Send bar** (`NWReviewSendBar`, only while comments wait; a hairline above, `bgWindow`): a
-  `running` bubble, "1 comment" semibold and "on outbox.go, not sent yet" in `textSecondary`,
-  then Discard (ghost) and Send to agent (primary). Sent, the review closes and opens next on
-  Last turn. There is no overall comment box. A failed send shows "Couldn't send the comments"
-  with Dismiss.
+- **Send bar** (only while comments wait; at least 56pt, 8×12 inset, a hairline above,
+  `bgWindow`): "1 pending · FleetView.swift" (12 `textTertiary`), then Discard (ghost) and
+  "Send 1 comment" (primary). Sent, the review closes and opens next on Last turn. There is no
+  overall comment box. A failed send shows "Couldn't send the comments" with Dismiss.
 
 **Full screen** (iPadReviewSplit): the review takes the detail column (the sidebar stays in
 landscape, Known gaps).
 
-- **Head** (the bar): "‹ Thread" (back beside the thread), "Review" at 17/600, the scope pill and
-  the stat; trailing, "2/5 viewed", Commit…, the split toggle and Diff options (which adds Refresh
-  and Collapse all here), and Finalize worktree for a worktree agent.
-- **Compare row** as docked.
-- **File list** (260pt on `bgBase`, a 1px `lineSubtle` trailing edge, 12×10 inset, 4pt apart):
-  "5 FILES" (`.nwSectionLabel()`) with "+200 −8"; rows at least 58pt, radius 10: the status letter
-  in mono 12 bold, the name in mono 13/600 over its directory in mono 11 `textTertiary`, the
-  comment count and the stat trailing. The file tapped is filled and scrolled to; viewed files
-  dim.
+- **Head** (the bar): "‹ Thread" (back beside the thread) and "Review" at 15/600 leading, Close
+  trailing (the system bar's glass button).
+- **Toolbar and compare row** as docked.
+- **File list** (260pt, a 1px `lineSubtle` trailing edge): rows at least 56pt, 12pt inset, a
+  hairline under each: the name in mono 13 over its stat in mono 11 `textTertiary`. The file tapped
+  is filled (`bgSelected`) and scrolled to; viewed files dim.
 - **Split** (the default here): halves split by a 1px `lineSubtle` line; rows in mono 12, a 34pt
   number column, a 14pt sign column, removed rows on `failedTint` and added on `doneTint` with
   their gutter bars; a side with no line opposite is hatched (`lineSubtle` stripes at 135°, every
