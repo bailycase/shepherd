@@ -37,6 +37,7 @@ struct AppSettingsTests {
         #expect(settings.deferTools, "rarely used tools are deferred behind tool search until switched off")
         #expect(settings.codemode, "native tool scripting is enabled until switched off")
         #expect(settings.compactAtPercent == nil, "compaction is pi's own until a share is chosen")
+        #expect(settings.editor == nil, "files open in their system default app until an editor is chosen")
     }
 
     /// Settings ▸ Agents ▸ Context: Compact at is a share from the list or pi's default, only a
@@ -113,6 +114,17 @@ struct AppSettingsTests {
         #expect(!settings.goalCrossProviderEvaluation)
         #expect(!AppSettings(store: store).goalCrossProviderEvaluation)
         #expect(store.object(forKey: AppSettings.Key.goalCrossProviderEvaluation) == nil)
+    }
+
+    @Test func theEditorPersistsAndResetsToTheSystemDefault() {
+        let store = Fixture.defaults()
+        store.set("", forKey: AppSettings.Key.editor)
+        #expect(AppSettings(store: store).editor == nil, "an empty saved editor reads as the system default")
+        let settings = AppSettings(store: store)
+        settings.editor = "dev.zed.Zed"
+        #expect(AppSettings(store: store).editor == "dev.zed.Zed")
+        settings.resetToDefaults()
+        #expect(settings.editor == nil && store.object(forKey: AppSettings.Key.editor) == nil)
     }
 
     /// While pi works: how the queue goes persists, resets, and a new delivery default reaches
