@@ -31,7 +31,7 @@ final class RPCThreadState {
     static let widgetAggregateBytes = 32 * 1024
     static let operationTableSize = 256
     static let supportedActions = ["send", "abort", "answer", "setModel", "setThinking", "sendImages", "subagents", "queue", "compact", "designContext",
-                                   "designReferences", "browserElements", "retry", "interrupt", "setServiceTier", "images", "artifacts"]
+                                   "designReferences", "browserElements", "retry", "interrupt", "setServiceTier", "images", "queueSubagent", "artifacts"]
     /// pi answers `compact` only once the summary is written, which takes as long as a reply.
     static let compactTimeout: TimeInterval = 600
     /// Bytes of a child session file the transcript reader will scan (tail); older is unreachable.
@@ -202,6 +202,10 @@ final class RPCThreadState {
     private(set) var bytesEncodedByLastSnapshot = 0
     private(set) var bytesOfLastSnapshot = 0
     #endif
+    /// Queue admission is serialized with edits and draining; uncertain launches require reconciliation.
+    var startingQueueChild: UUID?
+    var unknownQueueChildren: Set<UUID> = []
+    var dispatchQueueChild: ((UUID, String, [NativeImage], @escaping (String?) -> Void) -> Void)?
     /// Installed by SessionServer: writes a childCommand to the children extension and answers
     /// with its error text (nil on success). Runs on the server queue.
     var dispatchSubagentCommand: ((String, NativeSubagentAction, String?, NativeThreadDelivery?, @escaping (String?) -> Void) -> Void)?
@@ -502,6 +506,18 @@ final class RPCThreadState {
         }
         refreshStats(timeout: timeout)
         refreshCommands(timeout: timeout)
+    }
+
+    /// Moving changes the working directory and reloads instructions, so no pending work may survive it.
+    var canMoveSpace: Bool {
+        isServable && !running && !inputActive && compactingRun == nil && openingPrompt == nil
+            && dialogs.isEmpty && items.isEmpty && dispatches.isEmpty && retryDispatch == nil
+            && afterSettleCapture.isEmpty && preparingPrompts.isEmpty && settleCapture == nil
+            && sendAfterCapture == nil && interrupting == nil && !interruptAbortPending
+            && unboundSteers.isEmpty && steersInFlight == 0 && !settleAwaitingSteers
+            && piSteering.isEmpty && piFollowUp.isEmpty && sendingDesignPayloads.isEmpty
+            && subagents.allSatisfy { $0.isTerminal && $0.state != "paused" && !$0.needsAttention }
+            && (goal == nil || goal?.state == .paused || goal?.state == .met) && goalCommand == nil
     }
 
     func refreshSkillsIfIdle() {

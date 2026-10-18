@@ -75,7 +75,7 @@ export function requestSummary(entry) {
   const body = entry.body ?? {};
   const tools = body.tools ?? [];
   return {
-    tools: tools.map((tool) => tool.function.name),
+    tools: tools.map((tool) => tool.function?.name ?? tool.name),
     toolsJSON: JSON.stringify(tools),
     system: (body.messages ?? []).filter((m) => m.role === "system" || m.role === "developer").map(messageText).join("\n"),
     messages: body.messages ?? [],
@@ -95,7 +95,7 @@ export async function withPi(t, options, body) {
   fs.mkdirSync(work, { recursive: true });
   fs.writeFileSync(path.join(home, "settings.json"), JSON.stringify({ retry: { enabled: false }, ...settings }));
   fs.writeFileSync(path.join(home, "models.json"), JSON.stringify({ providers: { fixture: {
-    baseUrl: `http://127.0.0.1:${provider.port}/v1`, api: "openai-completions", apiKey: "local-fixture-not-secret",
+    baseUrl: `http://127.0.0.1:${provider.port}/v1`, api: options.api ?? "openai-completions", apiKey: "local-fixture-not-secret",
     models: [{ id: "fixture", name: "fixture", reasoning: false, input: ["text"], contextWindow: 64000, maxTokens: 1024, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }],
   } } }));
   for (const [name, content] of Object.entries(files(dir, work))) {

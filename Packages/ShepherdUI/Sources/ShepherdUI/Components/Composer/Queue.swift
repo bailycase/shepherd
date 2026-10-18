@@ -170,18 +170,22 @@ public struct NWQueueStack<Rows: View, Options: View>: View {
     let collapsed: Bool
     let scrolls: Bool
     let drop: Int?
+    let showsOptions: Bool
     let onToggle: () -> Void
     @ViewBuilder let rows: () -> Rows
     @ViewBuilder let options: () -> Options
 
+    /// `showsOptions` false drops the ••• menu: a queue whose holder offers no options draws no empty menu.
     /// `count` is every message in the queue, steering ones included. `paused` says why the
     /// queue waits (its tooltip), when it does. `scrolls` caps the rows at `expandedMaxRows` and
     /// scrolls them, keeping the last row ("Show fewer") below.
     /// `drop` draws a drag's lantern drop line at the top of that row's slot, under the lifted
     /// row.
     public init(count: Int, paused: String? = nil, collapsed: Bool, scrolls: Bool = false, drop: Int? = nil, framed: Bool = true, afterGoalCheck: Bool = false,
+                showsOptions: Bool = true,
                 onToggle: @escaping () -> Void, @ViewBuilder rows: @escaping () -> Rows, @ViewBuilder options: @escaping () -> Options) {
         self.count = count
+        self.showsOptions = showsOptions
         self.framed = framed
         self.afterGoalCheck = afterGoalCheck
         self.paused = paused
@@ -197,7 +201,8 @@ public struct NWQueueStack<Rows: View, Options: View>: View {
         let nw = Color.nw
         let shape = RoundedRectangle(cornerRadius: NW.Radius.m)
         VStack(spacing: 0) {
-            NWQueueHeader(count: count, paused: paused, afterGoalCheck: afterGoalCheck, collapsed: collapsed, onToggle: onToggle, options: options)
+            NWQueueHeader(count: count, paused: paused, afterGoalCheck: afterGoalCheck, collapsed: collapsed, showsOptions: showsOptions,
+                          onToggle: onToggle, options: options)
             if !collapsed {
                 Group(subviews: rows()) { subviews in
                     // Scrolling, the last row ("Show fewer") stays under the rows that scroll.
@@ -264,6 +269,7 @@ private struct NWQueueHeader<Options: View>: View {
     let paused: String?
     let afterGoalCheck: Bool
     let collapsed: Bool
+    let showsOptions: Bool
     let onToggle: () -> Void
     @ViewBuilder let options: () -> Options
 
@@ -289,7 +295,7 @@ private struct NWQueueHeader<Options: View>: View {
             if afterGoalCheck {
                 Text("after the goal check").font(.nwMono(NWGoalMetrics.metaFont)).foregroundStyle(nw.textTertiary)
             }
-            NWOptionsMenu("Queue options", size: NWQueueMetrics.headerButton, content: options)
+            if showsOptions { NWOptionsMenu("Queue options", size: NWQueueMetrics.headerButton, content: options) }
             Button(action: onToggle) {
                 Image(systemName: "chevron.down")
                     .rotationEffect(.degrees(collapsed ? 180 : 0))
@@ -333,6 +339,7 @@ public struct NWQueueAttachment: Identifiable, Equatable {
 public struct NWQueueRowActions {
     /// Steer now (Send now while pi is idle).
     public var steer: (() -> Void)?
+    public var subagent: (() -> Void)?
     public var steerLabel: String
     public var steerShortcut: String?
     /// What the action does, for its tooltip and VoiceOver ("Stop the agent and send this now").
@@ -349,8 +356,9 @@ public struct NWQueueRowActions {
 
     public init(steer: (() -> Void)? = nil, steerLabel: String = "Steer now", steerShortcut: String? = nil, steerHelp: String? = nil,
                 steerLabelled: Bool = false, edit: (() -> Void)? = nil, delete: (() -> Void)? = nil, deleteShortcut: String? = nil,
-                back: (() -> Void)? = nil) {
+                back: (() -> Void)? = nil, subagent: (() -> Void)? = nil) {
         self.steer = steer
+        self.subagent = subagent
         self.steerLabel = steerLabel
         self.steerShortcut = steerShortcut
         self.steerHelp = steerHelp
@@ -465,11 +473,12 @@ public struct NWQueueRow: View {
                     HStack(spacing: NW.Space.xxs) {
                         HStack(spacing: NW.Space.xxs) {
                             if active && !lifted {
+                                if let subagent = actions.subagent { iconButton(NWGlyph.gitBranch.symbolName, "Run in subagent", action: subagent) }
                                 if let edit = actions.edit { iconButton("pencil", "Edit", action: edit) }
                                 if let delete = actions.delete { iconButton("trash", "Delete", shortcut: actions.deleteShortcut, action: delete) }
                             }
                         }
-                        .frame(width: NWQueueMetrics.editDeleteWidth, alignment: .trailing)
+                        .frame(width: NWQueueMetrics.editDeleteWidth + subagentWidth, alignment: .trailing)
                         labelledSteer(steer)
                             .opacity(lifted ? 0 : 1)
                             .allowsHitTesting(!lifted)
@@ -483,11 +492,12 @@ public struct NWQueueRow: View {
                             if let steer = actions.steer {
                                 iconButton("arrow.turn.down.right", actions.steerLabel, help: actions.steerHelp, shortcut: actions.steerShortcut, action: steer)
                             }
+                            if let subagent = actions.subagent { iconButton(NWGlyph.gitBranch.symbolName, "Run in subagent", action: subagent) }
                             if let edit = actions.edit { iconButton("pencil", "Edit", action: edit) }
                             if let delete = actions.delete { iconButton("trash", "Delete", shortcut: actions.deleteShortcut, action: delete) }
                         }
                     }
-                    .frame(width: NWQueueMetrics.actionsWidth, alignment: .trailing)
+                    .frame(width: NWQueueMetrics.actionsWidth + subagentWidth, alignment: .trailing)
                     .nwTransition(.content)
                 }
             }
@@ -528,6 +538,8 @@ public struct NWQueueRow: View {
                 .nwAnimation(.hover, value: hovering)
         }
     }
+
+    private var subagentWidth: CGFloat { actions.subagent == nil ? 0 : NWQueueMetrics.actionSize + NW.Space.xxs }
 
     private func grip(shown: Bool) -> some View {
         NWGripGlyph()

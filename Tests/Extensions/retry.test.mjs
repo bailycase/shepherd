@@ -83,6 +83,83 @@ async function startPi(dir) {
 
 function userMessages(messages) { return messages.filter((m) => m.role === "user"); }
 
+for (const api of ["openai-responses", "openai-completions"]) {
+  for (const reasoning of [0, 32]) {
+    test(`${api}: an empty completion surfaces an error without automatically replaying work (reasoning=${reasoning})`, { timeout: 120000 }, async (t) => {
+      await withPi(t, {
+        api,
+        settings: { retry: { enabled: true, maxRetries: 1, baseDelayMs: 1 }, compaction: { enabled: false } },
+        args: ["-ne", "-ns", "-np", "-e", statusSource],
+        env: (dir) => ({ SHEPHERD_AGENT_ID: "fixture", SHEPHERD_SOCKET: path.join(dir, "absent.sock") }),
+        onRequest: ({ index }) => index === 0 ? { outputText: reasoning ? " \n\t" : "", reasoning } : {},
+      }, async (pi) => {
+        const turn = await pi.prompt("Give me an answer.");
+        const messages = (await pi.request({ type: "get_messages" })).data.messages;
+        assert.equal(messages.at(-1).stopReason, "error");
+        assert.match(messages.at(-1).errorMessage, /no answer or tool call/i);
+        assert.equal(turn.requests.length, 1, "empty completions must not automatically retry");
+        assert.equal(turn.events.find((e) => e.type === "message_end" && e.message.role === "assistant").message.stopReason, "error");
+        assert.equal(turn.events.find((e) => e.type === "agent_end").messages.at(-1).stopReason, "error");
+        const sessionFiles = fs.readdirSync(path.join(pi.dir, "sessions"), { recursive: true }).filter((f) => String(f).endsWith(".jsonl"));
+        const entries = fs.readFileSync(path.join(pi.dir, "sessions", sessionFiles[0]), "utf8").trim().split("\n").map(JSON.parse);
+        assert.equal(entries.filter((e) => e.type === "message").at(-1).message.stopReason, "error", "the persisted completion agrees with RPC");
+        const retried = await pi.prompt(`/shepherd-retry ${Math.trunc(userMessages(messages)[0].timestamp)}`);
+        assert.equal(retried.requests.length, 1);
+        assert.equal((await pi.request({ type: "get_messages" })).data.messages.at(-1).stopReason, "stop", "ordinary answers stay successful");
+      });
+    });
+  }
+}
+
+test("Retry retains partial assistant progress when the provider stream fails before any tool runs", { timeout: 120000 }, async (t) => {
+  await withPi(t, {
+    settings: { compaction: { enabled: false } },
+    args: ["-ne", "-ns", "-np", "-e", statusSource],
+    env: (dir) => ({ SHEPHERD_AGENT_ID: "fixture", SHEPHERD_SOCKET: path.join(dir, "absent.sock") }),
+    onRequest: ({ index }) => index === 0 ? { outputText: "The analysis is complete. Next I will explain the result.", streamError: "Provider stream failed" } : {},
+  }, async (pi) => {
+    await pi.prompt("Analyze this, then explain the result.");
+    const before = (await pi.request({ type: "get_messages" })).data.messages;
+    assert.equal(before.at(-1).stopReason, "error");
+    assert(!before.some((m) => m.role === "toolResult"));
+    const retry = await pi.prompt(`/shepherd-retry ${Math.trunc(userMessages(before)[0].timestamp)}`);
+    assert(JSON.stringify(retry.requests[0].messages).includes("The analysis is complete"), "Retry must not erase assistant progress");
+    const after = (await pi.request({ type: "get_messages" })).data.messages;
+    assert.equal(userMessages(after)[0].timestamp, userMessages(before)[0].timestamp, "the opening prompt was not replayed");
+    assert.equal(after.at(-1).stopReason, "stop");
+  });
+});
+
+for (const legacy of [false, true]) test(`Retry after an empty Responses completion keeps completed tools in context (legacy=${legacy})`, { timeout: 120000 }, async (t) => {
+  await withPi(t, {
+    api: "openai-responses",
+    settings: { compaction: { enabled: false } },
+    args: ["-ne", "-ns", "-np", "-e", statusSource, ...(legacy ? ["-e", "./legacy.ts"] : [])],
+    // Emulate the persisted pre-fix shape, after Shepherd's normalization hook.
+    files: (_dir, work) => ({ [path.join(work, "legacy.ts")]: `export default function (pi) {
+      pi.on("message_end", ({ message }) => {
+        if (message.role === "assistant" && message.errorMessage?.includes("no answer or tool call"))
+          return { message: { ...message, stopReason: "stop", errorMessage: undefined } };
+      });
+    }` }),
+    env: (dir) => ({ SHEPHERD_AGENT_ID: "fixture", SHEPHERD_SOCKET: path.join(dir, "absent.sock") }),
+    onRequest: ({ index }) => index === 0 ? { tool: { name: "write", arguments: { path: "completed.txt", content: "already done" } } }
+      : index === 1 ? { outputText: "", reasoning: 32 } : {},
+  }, async (pi) => {
+    await pi.prompt("Write the file, then explain it.");
+    const before = (await pi.request({ type: "get_messages" })).data.messages;
+    assert.equal(before.at(-1).stopReason, legacy ? "stop" : "error");
+    const result = before.find((m) => m.role === "toolResult");
+    assert(result, "the tool ran before the blank reply");
+    const retry = await pi.prompt(`/shepherd-retry ${Math.trunc(userMessages(before)[0].timestamp)}`);
+    assert(JSON.stringify(retry.requests[0].body.input).includes("function_call_output"), "the provider still sees completed work");
+    const after = (await pi.request({ type: "get_messages" })).data.messages;
+    assert(after.some((m) => m.role === "toolResult" && m.toolCallId === result.toolCallId));
+    assert.equal(pi.events.filter((e) => e.type === "tool_execution_end").length, 1);
+    assert.equal(after.at(-1).stopReason, "stop");
+  });
+});
+
 test("Retry after a provider error retains completed work and running children without starting them again", { timeout: 120000 }, async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sh-retry-children-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));

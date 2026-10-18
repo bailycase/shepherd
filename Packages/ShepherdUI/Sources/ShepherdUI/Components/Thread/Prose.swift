@@ -148,6 +148,7 @@ struct NWProseBlocks<Code: View>: View {
     @Environment(\.nwProseTaskLinks) private var taskLinks
     @Environment(\.nwProseFileRoot) private var fileRoot
     @Environment(\.nwProseFileLinks) private var fileLinks
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         let nw = Color.nw
@@ -192,6 +193,11 @@ struct NWProseBlocks<Code: View>: View {
                 NWProseFootnotes(notes: notes)
             }
         }
+        .environment(\.openURL, OpenURLAction { url in
+            guard let destination = NWProseLink.destination(url, root: fileRoot) else { return .discarded }
+            openURL(destination)
+            return .handled
+        })
     }
 
     private func list(ordered: Bool, start: Int, items: [NWProseListItem], tone: Color, path: [Int]) -> some View {

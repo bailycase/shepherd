@@ -1,9 +1,13 @@
 # Build, run, test
 
-> Read when you build, run or test Shepherd: the schemes, the pi engine and the exact commands.
+> Read when you build or run the Mac app, change a scheme, or stage the bundled engine.
 
 There is deliberately no Makefile or Taskfile. One Xcode project at the repo root runs the apps,
-and plain SwiftPM drives everything else.
+and plain SwiftPM drives everything else. For package changes, start with
+[focused local validation](testing.md#local-validation): `swift test --filter '<suite or test>'`
+builds before running. Use `swift build` only for a compile-only check, not before a test run.
+Build the app when validating launcher, bundled resources, Xcode configuration or app-only behavior;
+a package check and an Xcode build are not both required for every change.
 
 **The Mac app:** open `Shepherd.xcodeproj`, pick a scheme, choose My Mac, and Run. The Mac target
 is a shim (`App/ShepherdLauncher.swift` calls `ShepherdMacApp.main()` from the `ShepherdApp`
@@ -52,12 +56,7 @@ engine" phase copies it from `.build/pi-engine` and fails, saying so, when it is
 python3 scripts/pi_engine.py stage           # downloads to .build/pi-engine-cache, checks the pin
 xcodebuild -project Shepherd.xcodeproj -scheme 'Shepherd (Dev)' -destination 'platform=macOS' \
   -onlyUsePackageVersionsFromResolvedFile build
-swift build                                  # every package target
-swift test --filter UnitTests                # fast tier: seconds
-swift test --filter IntegrationTests         # real server, stub pi, git, off-screen windows
-SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter PreviewTests
-swift test                                   # everything (previews skip without SHEPHERD_PREVIEW_DIR)
-CI=true swift test                          # what CI runs: timing-sensitive tests skipped
-PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" node --test Tests/Extensions/*.test.mjs
-python3 -m unittest discover -s Tests/Release   # release rules, CI planning and workflow checks
 ```
+
+Keep `-onlyUsePackageVersionsFromResolvedFile` so a fresh Xcode build does not update
+`Package.resolved`. Test tiers, focused examples and broader checks live in [testing](testing.md).

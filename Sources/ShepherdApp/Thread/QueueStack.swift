@@ -506,28 +506,33 @@ struct QueueStackView: View {
     var framed = true
     var focusedRow: FocusState<String?>.Binding
     let focusComposer: () -> Void
+    /// A queue someone else holds (a Project's owner): its rows draw the same, with no control the holder does not offer (no
+    /// steer, edit, delete, reorder, row keys or options menu), and `heldReason` is its Paused tooltip.
+    var readOnly = false
+    var heldReason: String? = nil
 
     var body: some View {
         let _ = NWRenderProbe.tick("queue.body")
         let rows = state.rows
         let keys = KeybindingsStore.shared
         let actions = QueueRowActions(state: state, store: store, running: running)
-        NWQueueStack(count: state.count, paused: NativeQueueStack.pausedReason(paused: store.queuePaused, notice: store.queueNotice),
+        NWQueueStack(count: state.count,
+                     paused: readOnly ? heldReason : NativeQueueStack.pausedReason(paused: store.queuePaused, notice: store.queueNotice),
                      collapsed: state.collapsed,
                      scrolls: rows.last?.kind == .more(hidden: 0, expanded: true) && rows.count - 1 > NWQueueMetrics.expandedMaxRows,
-                     drop: state.dropSlot, framed: framed, afterGoalCheck: store.hasGoal,
+                     drop: state.dropSlot, framed: framed, afterGoalCheck: store.hasGoal, showsOptions: !readOnly,
                      onToggle: { withNWAnimation(.disclosure) { state.collapsed.toggle() } }) {
             ForEach(rows) { row in
                 QueueRowView(row: row, hover: state.hover(row.id), focused: focusedRow.wrappedValue == row.id, running: running,
                              lift: state.dragging == row.id ? state.translation : nil, shift: state.shift(row.id),
                              total: state.queuedCount, steerShortcut: keys.display(.alternateSend),
-                             deleteShortcut: keys.display(.deleteQueued), draft: $state.draft, actions: actions)
+                             deleteShortcut: keys.display(.deleteQueued), draft: $state.draft, actions: actions, readOnly: readOnly)
                     .equatable()
                     // The row's keyboard focus sits behind it, not around it: its buttons are not
                     // inside the focused view, so they never draw a focus ring of their own. Like
                     // a button, a row takes focus from the keyboard (⇥ with keyboard navigation on).
                     .background {
-                        if row.isMessage && !isEditing(row) {
+                        if row.isMessage && !isEditing(row) && !readOnly {
                             Color.clear
                                 .focusable(interactions: .activate)
                                 .focusEffectDisabled()
@@ -590,6 +595,7 @@ struct QueueRowActions {
     let running: Bool
 
     func steer(_ id: UUID) { state.steer([id], running: running, store: store) }
+    func subagent(_ id: UUID) { Task { await store.runQueuedInSubagent(id) } }
     func edit(_ id: UUID) { state.edit(id, store: store) }
     func delete(_ id: UUID) { state.delete(id, store: store) }
     func unsteer(_ id: UUID) { state.unsteer(id, store: store) }
@@ -619,10 +625,13 @@ struct QueueRowView: View, Equatable {
     let deleteShortcut: String
     let draft: Binding<String>
     let actions: QueueRowActions
+    /// No controls: the queue's holder offers none (`QueueStackView.readOnly`).
+    var readOnly = false
 
     static func == (a: Self, b: Self) -> Bool {
         a.row == b.row && a.hover === b.hover && a.focused == b.focused && a.running == b.running
             && a.lift == b.lift && a.shift == b.shift && a.total == b.total && a.steerShortcut == b.steerShortcut && a.deleteShortcut == b.deleteShortcut
+            && a.readOnly == b.readOnly
     }
 
     var body: some View {
@@ -650,7 +659,7 @@ struct QueueRowView: View, Equatable {
     }
 
     @ViewBuilder private func message(_ kind: NWQueueRow.Kind) -> some View {
-        let id = row.message?.id
+        let id = readOnly ? nil : row.message?.id
         let text = row.message?.text ?? ""
         let steering = kind == .steering
         NWQueueRow(text, attachments: row.attachments, kind: kind, hovering: hover.hovering, focused: focused, lifted: lift != nil,
@@ -664,8 +673,9 @@ struct QueueRowView: View, Equatable {
                     edit: id.map { id in { actions.edit(id) } },
                     delete: id.map { id in { actions.delete(id) } },
                     deleteShortcut: deleteShortcut,
-                    back: id.map { id in { actions.unsteer(id) } }),
-                   drag: steering ? nil : NWQueueDrag(changed: { actions.drag(row.id, $0) }, ended: { actions.endDrag(row.id, $0) }))
+                    back: id.map { id in { actions.unsteer(id) } },
+                    subagent: actions.store.supportsQueueSubagent ? id.map { id in { actions.subagent(id) } } : nil),
+                   drag: steering || readOnly ? nil : NWQueueDrag(changed: { actions.drag(row.id, $0) }, ended: { actions.endDrag(row.id, $0) }))
             // The lifted row follows the pointer exactly.
             .transaction(value: lift) { if lift != nil { $0.animation = nil } }
             .accessibilityElement(children: .ignore)
@@ -676,6 +686,7 @@ struct QueueRowView: View, Equatable {
                         Button("Back to the queue") { actions.unsteer(id) }
                     } else {
                         Button(running ? "Steer now" : "Send now") { actions.steer(id) }
+                        if actions.store.supportsQueueSubagent { Button("Run in subagent") { actions.subagent(id) } }
                         Button("Edit") { actions.edit(id) }
                         Button("Delete") { actions.delete(id) }
                         Button("Move up") { actions.move(id, by: -1) }

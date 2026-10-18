@@ -628,7 +628,7 @@ private struct ReviewScrollFollower: ViewModifier {
             // A file asked for before the diff loaded: the diff opens there.
             .onChange(of: session.files) { _, _ in scrollToFocus(animated: false) }
             .onChange(of: model.currentChange) { _, change in
-                if let change { proxy.scrollTo(change, anchor: .top) }
+                if let change { proxy.scrollTo(change, anchor: .topLeading) }
             }
             .onAppear { DispatchQueue.main.async { scrollToFocus(animated: false) } }
     }
@@ -636,9 +636,9 @@ private struct ReviewScrollFollower: ViewModifier {
     private func scrollToFocus(animated: Bool) {
         guard let id = model.takeFocusRequest() else { return }
         if animated, !model.movedByKey {
-            withNWAnimation(.scroll) { proxy.scrollTo(id, anchor: .top) }
+            withNWAnimation(.scroll) { proxy.scrollTo(id, anchor: .topLeading) }
         } else {
-            proxy.scrollTo(id, anchor: .top)
+            proxy.scrollTo(id, anchor: .topLeading)
         }
     }
 }
@@ -696,7 +696,7 @@ private struct DiffFileSection: View, Equatable {
                              comment: { model.startFileComment(file.id) },
                              open: canOpen ? { model.actions.open?(file) } : nil, isPinned: pinned)
             }
-                .frame(width: layout == .split ? nil : model.width, alignment: .leading)
+                .containerRelativeFrame(.horizontal, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
                 .onTapGesture { model.point(at: file.id) }
@@ -737,19 +737,24 @@ private struct DiffFileSection: View, Equatable {
     @ViewBuilder private func annotation(_ line: NWDiffLineContent?, _ note: ReviewLineNote) -> some View {
         let lineID = line?.key ?? ReviewSession.fileLineID
         let place = line.flatMap(\.number).map { "line \($0)" } ?? "the file"
-        switch note {
-        case .editing(let initialText):
-            ReviewCommentEditor(initialText: initialText, context: "on \(place)", focused: commentFocused,
-                                save: { model.saveComment($0, fileID: file.id, lineID: lineID) },
-                                cancel: { model.cancelComment() })
-                .nwTransition(.disclosure)
-        case .comment(let comment):
-            NWInlineComment(initial: ReviewAuthor.initial, author: "You",
-                            meta: "\(comment.lineID == ReviewSession.fileLineID ? "file" : "line \(comment.lineNumber)") · \(reviewCommentAge(comment.createdAt))",
-                            text: comment.text,
-                            onEdit: { model.startComment(fileID: file.id, lineID: lineID) },
-                            onDelete: { model.deleteComment(fileID: file.id, lineID: lineID) })
-                .nwTransition(.disclosure)
+        Group {
+            switch note {
+            case .editing(let initialText):
+                ReviewCommentEditor(initialText: initialText, context: "on \(place)", focused: commentFocused,
+                                    save: { model.saveComment($0, fileID: file.id, lineID: lineID) },
+                                    cancel: { model.cancelComment() })
+                    .nwTransition(.disclosure)
+            case .comment(let comment):
+                NWInlineComment(initial: ReviewAuthor.initial, author: "You",
+                                meta: "\(comment.lineID == ReviewSession.fileLineID ? "file" : "line \(comment.lineNumber)") · \(reviewCommentAge(comment.createdAt))",
+                                text: comment.text,
+                                onEdit: { model.startComment(fileID: file.id, lineID: lineID) },
+                                onDelete: { model.deleteComment(fileID: file.id, lineID: lineID) })
+                    .nwTransition(.disclosure)
+            }
+        }
+        .containerRelativeFrame(.horizontal, alignment: .leading) { width, _ in
+            max(0, width - NWDiffMetrics.annotationInsets.leading - NWDiffMetrics.annotationInsets.trailing)
         }
     }
 }

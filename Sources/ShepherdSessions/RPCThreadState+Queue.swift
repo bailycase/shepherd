@@ -107,7 +107,9 @@ extension RPCThreadState {
     }
 
     var queueValue: NativeQueue {
-        NativeQueue(items: items.map(\.entry), mode: effectiveMode, paused: paused && !items.isEmpty, notice: items.isEmpty ? nil : queueNotice)
+        let uncertain = items.contains { unknownQueueChildren.contains($0.entry.id) }
+        let notice = uncertain ? "Subagent startup outcome is unknown. Retry Run in subagent, or check the tray before deleting the message." : queueNotice
+        return NativeQueue(items: items.map(\.entry), mode: effectiveMode, paused: (paused || uncertain) && !items.isEmpty, notice: items.isEmpty ? nil : notice)
     }
 
     /// A goal yields to host input, not to an empty queue. Keep that intent until the last
@@ -215,9 +217,55 @@ extension RPCThreadState {
     }
 
     func perform(_ action: NativeQueueAction, operationID: UUID, completion: @escaping (NativeThreadResult) -> Void) {
+        guard startingQueueChild == nil else {
+            completion(.failure(code: "queue_busy", message: "A queued message is starting in a subagent. Wait for it to finish starting."))
+            return
+        }
+        if items.contains(where: { unknownQueueChildren.contains($0.entry.id) }) {
+            switch action {
+            case .subagent, .delete, .clear: break
+            default:
+                completion(.failure(code: "outcome_unknown", message: "Check the subagent tray, then retry Run in subagent or delete the queued message. Its launch outcome is unknown."))
+                return
+            }
+        }
         let accepted = NativeThreadResult.accepted(operationID: operationID)
         let missing = NativeThreadResult.failure(code: "queue_item_unavailable", message: "That message is no longer queued.")
         switch action {
+        case .subagent(let id):
+            guard let item = items.first(where: { $0.entry.id == id && $0.entry.state == .queued && !$0.entry.held }) else { completion(missing); return }
+            guard item.designPayloads.isEmpty else {
+                completion(.failure(code: "unsupported", message: "Messages with design references must stay in this thread."))
+                return
+            }
+            guard interrupting == nil, !interruptAbortPending, let dispatchQueueChild else {
+                completion(.failure(code: "unavailable", message: "The subagent runtime is unavailable or the thread is stopping."))
+                return
+            }
+            let generation = generation
+            startingQueueChild = id
+            dispatchQueueChild(id, item.promptText, item.images) { [weak self] error in
+                guard let self, self.generation == generation else {
+                    completion(.failure(code: "stale_session", message: "The thread changed while the subagent was starting. Check the subagent tray."))
+                    return
+                }
+                self.startingQueueChild = nil
+                if let error {
+                    // An acknowledgement can be lost after launch. Keep the message, but never
+                    // automatically deliver it to the parent as well.
+                    if error.contains("outcome is unknown") || error.contains("disconnected") { self.unknownQueueChildren.insert(id) }
+                    self.paused = true
+                    self.queueNotice = error
+                    completion(.failure(code: "child_start_failed", message: error))
+                } else {
+                    self.unknownQueueChildren.remove(id)
+                    self.items.removeAll { $0.entry.id == id }
+                    self.unyieldGoalIfQueueEmpty()
+                    completion(accepted)
+                    self.drainIfReady()
+                }
+                self.commit()
+            }
         case .edit(let id, let text):
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text.utf8.count <= Self.textLimit else {
                 completion(.failure(code: "invalid", message: "A queued message needs text up to 16 KiB."))
@@ -345,6 +393,7 @@ extension RPCThreadState {
         let removed = removed.filter { $0.item.designPayloads.isEmpty }
         deleted.append(contentsOf: removed)
         if deleted.count > Self.deletedLimit { deleted.removeFirst(deleted.count - Self.deletedLimit) }
+        unknownQueueChildren.formIntersection(items.map(\.entry.id) + deleted.map(\.item.entry.id))
     }
 
     private func releaseLapsedHolds() {
@@ -377,6 +426,7 @@ extension RPCThreadState {
 
     /// The queue goes when pi is idle, not paused, holds no question, and no editor holds it.
     func drainIfReady() {
+        guard startingQueueChild == nil, !items.contains(where: { unknownQueueChildren.contains($0.entry.id) }) else { return }
         releaseLapsedHolds()
         guard !piBusy, !paused, session.isAlive, isServable, dialogs.isEmpty else { return }
         // An interrupt's messages are an explicit send: an editor open on another one doesn't hold them.
@@ -864,6 +914,12 @@ extension RPCThreadState {
 
     /// A new pi session: its queue is new, so steering items wait in the queue again.
     func resetQueueForNewSession() {
+        if let id = startingQueueChild {
+            unknownQueueChildren.insert(id)
+            paused = true
+            queueNotice = "The session changed during subagent startup. Check the subagent tray before acting on the queued message."
+        }
+        startingQueueChild = nil
         goalYieldGeneration = nil
         cancelPreparingPrompts()
         interrupting = nil

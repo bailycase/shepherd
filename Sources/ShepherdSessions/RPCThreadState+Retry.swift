@@ -4,9 +4,10 @@ import ShepherdProtocol
 /// Retry (`NativeThreadRequest.retry`): restart or continue the latest turn. The status extension's
 /// `/shepherd-retry <ms>` moves pi's session back to before the user message pi stamped at that
 /// millisecond (its tree keeps the failed turn off the active branch) and sends the message
-/// again, text and images. A failed turn with tool results or extension messages continues
-/// without rewinding, keeping completed work and child references. The host reads pi's
-/// history again once the command runs: either the replacement branch or the retained history.
+/// again, text and images. An interrupted turn with tool results, assistant progress or
+/// extension messages continues without rewinding, keeping completed work and child references.
+/// The host reads pi's history again once the command runs: either the replacement branch or
+/// the retained history.
 extension RPCThreadState {
     static let retryCommand = "shepherd-retry"
 

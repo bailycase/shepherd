@@ -2,7 +2,10 @@
 
 > Read when you check a UI change: previews, windows, motion probes, the Component Gallery.
 
-- **Previews:** `ShepherdPreviewTests` render every surface offscreen, in light and dark:
+Render and inspect only the surfaces and states affected by the change, in light and dark.
+Use existing preview coverage where it fits; the catalog below is not a per-change checklist.
+
+- **Previews:** `ShepherdPreviewTests` render surfaces offscreen, in light and dark:
   - thread states (idle, running, thinking, queued, failed, prose, question, empty, starting
     before and after the delay, restoring from disk, a hovered turn, "Jump to latest" over the
     fade, a long stretch of burst lines, a turn between tools ending in "Thinking…") and the
@@ -28,7 +31,7 @@
   when it is unset), so you, or an agent, can look at them:
 
   ```sh
-  SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter PreviewTests
+  SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter '<affected preview suite or test>'
   ```
 
 - **Text size:** `Preview.renderMatrix` renders light and dark at each text scale (1 and 1.3 by
@@ -49,5 +52,7 @@
   transitions at once (even an explicit `withAnimation`'s completion fires within a frame), so
   record what arrives; what leaves runs the same transition in reverse.
 - **Component Gallery:** in Debug builds, the View menu has a Component Gallery.
-- **The running app:** build and run the `Shepherd (Dev)` scheme and check the change in both
-  appearances.
+- **The running app:** appearance-only changes need no second visual check in the app. Use
+  integration tests for interactions, focus, menus and app lifecycle. Add a manual check in the
+  isolated `Shepherd (Dev)` app only for behavior the test harness cannot establish; report any
+  unverified behavior. Never automate input into an installed or running user app.

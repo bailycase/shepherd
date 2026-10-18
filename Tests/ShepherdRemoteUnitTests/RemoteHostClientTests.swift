@@ -107,6 +107,7 @@ struct RemoteHostClientTests {
         (.retry(expectedSessionID: "s", generation: "g", operationID: UUID(), entryID: "user:1"), RemoteProtocol.nativeRetryCapability),
         (.send(expectedSessionID: "s", generation: "g", operationID: UUID(), text: "t", delivery: .interrupt), RemoteProtocol.nativeInterruptCapability),
         (.queue(expectedSessionID: "s", generation: "g", operationID: UUID(), action: .interrupt(ids: [UUID()])), RemoteProtocol.nativeInterruptCapability),
+        (.queue(expectedSessionID: "s", generation: "g", operationID: UUID(), action: .subagent(id: UUID())), RemoteProtocol.nativeQueueSubagentCapability),
         (.setServiceTier(expectedSessionID: "s", generation: "g", operationID: UUID(), tier: "fast"), RemoteProtocol.nativeServiceTierCapability),
         (.image(expectedSessionID: "s", imageID: "user:1|0|0123456789abcdef", offset: 0), RemoteProtocol.nativeImagesCapability),
         (.artifact(expectedSessionID: "s", path: "plan.md", offset: 0), RemoteProtocol.nativeArtifactsCapability),

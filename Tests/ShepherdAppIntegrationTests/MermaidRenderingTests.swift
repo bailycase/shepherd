@@ -10,6 +10,84 @@ import ShepherdTestSupport
 @Suite("Mermaid rendering", .serialized, .mainActorExclusive)
 @MainActor
 struct MermaidRenderingTests {
+    @Test func windowPresentationOpensClosesAndPreservesTheExplicitCallback() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
+            await completingScenario { try await Self.presentationControls() }
+        }
+        expectScenarioCompleted(result)
+    }
+
+    private static func presentationControls() async throws {
+        AccessibilityNode.enable()
+        let firstApp = try AppHarness(), secondApp = try AppHarness()
+        defer { firstApp.stop(); secondApp.stop() }
+        let space = Fixture.space(path: firstApp.dir.path)
+        let agents = (0..<2).map { Fixture.agent("diagram ($0)", in: space, order: $0) }
+        let first = try await firstApp.start(with: Fixture.state(spaces: [space], agents: agents))
+        first.sessions.holdStarts()
+        first.selectAgent(agents[0].agent.id)
+        let second = try await secondApp.start()
+        let presentation = first.diagramPresentation
+        #expect(presentation !== second.diagramPresentation)
+        let source = "flowchart LR\n Request --> Review"
+        let store = first.threadStores.store(for: agents[0].agent.id)
+        store.preview(ThreadFixture.snapshot([ThreadFixture.assistant("diagram", "```mermaid\n\(source)\n```")]))
+        defer { store.stop() }
+        for dark in [false, true] {
+            let window = OffscreenWindow(size: CGSize(width: 900, height: 640), dark: dark,
+                RootView(vm: first).environment(\._accessibilityReduceMotion, true))
+            defer { window.close() }
+            try await eventuallyOnMain("the diagram's full-screen control") {
+                window.layout()
+                return window.controls().contains { $0.label == "Open diagram full screen" }
+            }
+            let deck = try WorkspaceNavigationTests.deck(in: window)
+            let retained = try #require(deck.pages[agents[0].tab.id]?.host)
+            for returning in [false, true] {
+                if returning {
+                    first.selectAgent(agents[1].agent.id)
+                    try await eventuallyOnMain("the diagram's retained thread to hide") {
+                        window.layout()
+                        return retained.isHidden && !store.isLive
+                    }
+                    first.selectAgent(agents[0].agent.id)
+                    try await eventuallyOnMain("the retained thread's full-screen control to return") {
+                        window.layout()
+                        return !retained.isHidden && store.isLive
+                            && window.controls().contains { $0.label == "Open diagram full screen" }
+                    }
+                    #expect(deck.pages[agents[0].tab.id]?.host === retained)
+                }
+                try window.press("Open diagram full screen")
+                try await eventuallyOnMain("the owning window's diagram viewer") {
+                    window.layout()
+                    return first.diagramViewer == source && window.controls().contains { $0.label == "Close" }
+                }
+                #expect(second.diagramViewer == nil)
+                #expect(first.diagramPresentation === presentation)
+                try window.press("Close")
+                try await eventuallyOnMain("the diagram viewer to close") {
+                    window.layout()
+                    return presentation.source == nil && !window.controls().contains { $0.label == "Close" }
+                }
+            }
+
+            // The existing callback remains an override, including beneath a window state.
+            var received: String?
+            window.show(NWMermaidBlock(source)
+                .environment(\.nwDiagramPresentation, presentation)
+                .environment(\.nwPresentDiagram) { received = $0 })
+            try await eventuallyOnMain("the legacy full-screen callback control") {
+                window.layout()
+                return window.controls().contains { $0.label == "Open diagram full screen" }
+            }
+            try window.press("Open diagram full screen")
+            #expect(received == source)
+            #expect(first.diagramViewer == nil && second.diagramViewer == nil)
+        }
+        #expect(first.sessions.startQueue.started.isEmpty, "rendering and switching never start pi")
+    }
+
     @Test func localRenderErrorAndSecurity() async throws {
         let renderer = MermaidRenderer()
         let window = OffscreenWindow(size: CGSize(width: 640, height: 480))
@@ -72,6 +150,48 @@ struct MermaidRenderingTests {
         try await eventuallyOnMain("oversized diagram source rejected") { status == .failed }
     }
 
+    /// Inline, a plain scroll over an unzoomed chart is the thread's; ⌘-scroll zooms toward the pointer, then a scroll pans until
+    /// the chart's edge and passes through there. The viewer keeps every scroll.
+    @Test func zoomAndPan() async throws {
+        for viewer in [false, true] {
+            let renderer = MermaidRenderer()
+            let window = OffscreenWindow(size: CGSize(width: 640, height: 480))
+            window.window.contentView = renderer.webView
+            renderer.webView.frame = CGRect(x: 0, y: 0, width: 640, height: 480)
+            defer { renderer.stop(); window.close() }
+            var status = NWMermaidStatus.loading
+            renderer.onStatus = { status = $0; _ = $1 }
+            renderer.render(source: "flowchart LR\nA[Request] --> B[Review] --> C[Approved]",
+                            colors: ThemeDefinition.nightWatch.light.colors, fontSize: NWTextStyle.body.size, viewer: viewer)
+            try await eventuallyOnMain("chart rendered") { status == .ready }
+            func wheel(_ dx: Double, _ dy: Double, meta: Bool = false) async throws -> Bool {
+                let script = """
+                const event = new WheelEvent('wheel', {deltaX: \(dx), deltaY: \(dy), metaKey: \(meta), clientX: 40, clientY: 20, cancelable: true, bubbles: true});
+                document.getElementById('chart').dispatchEvent(event);
+                return event.defaultPrevented;
+                """
+                return try await renderer.webView.callAsyncJavaScript(script, arguments: [:], in: nil, contentWorld: .page) as? Bool == true
+            }
+            func zoom() async throws -> [String: Double] {
+                try #require(try await renderer.webView.evaluateJavaScript("window.nwZoom.state()") as? [String: Double])
+            }
+            #expect(try await wheel(0, 40) == viewer, "an unzoomed scroll passes to the thread only inline")
+            #expect(try await zoom()["s"] == 1)
+            #expect(try await wheel(0, -200, meta: true))
+            let zoomed = try await zoom()
+            #expect(zoomed["s"]! > 2)
+            #expect(try await wheel(30, 0), "a zoomed chart pans")
+            #expect(try await zoom()["x"]! < zoomed["x"]!)
+            _ = try await wheel(-100_000, 0)
+            #expect(try await zoom()["x"] == 0, "panning stops at the chart's edge")
+            #expect(try await wheel(-40, 0) == viewer, "at the edge, a scroll passes through only inline")
+            #expect(try await wheel(0, 100_000, meta: true))
+            #expect(try await zoom()["s"] == 1, "zooming out stops at the fitted size")
+            #expect(try await wheel(0, -100_000, meta: true))
+            #expect(try await zoom()["s"] == Double(NWMermaidMetrics.maximumZoom))
+        }
+    }
+
     @Test func markdownRoutesFinishedFencesOnly() async throws {
         let open = nativeMarkdownParse("```mermaid\nflowchart LR\nA-->B\n", streaming: true)
         let closed = nativeMarkdownParse("```mermaid\nflowchart LR\nA-->B\n```\n", streaming: true)
@@ -123,6 +243,7 @@ struct MermaidPreviewTests {
                 Prose(blocks: blocks).padding()
                     .frame(width: 680, height: 620, alignment: .topLeading)
                     .background(Color.nw.bgWindow)
+                    .environment(\.nwPresentDiagram) { _ in }
                     .environment(\.colorScheme, dark ? .dark : .light))
             defer { window.close() }
 
@@ -155,6 +276,48 @@ struct MermaidPreviewTests {
             let tiff = try #require(image.tiffRepresentation)
             let output = try #require(NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]))
             try output.write(to: directory.appendingPathComponent("thread-mermaid-\(dark ? "dark" : "light").png"))
+        }
+    }
+
+    /// The viewer over a window: the bar, the chart fitted to the room, and the hint line.
+    @Test func fullScreenViewer() async throws {
+        let path = try #require(ProcessInfo.processInfo.environment["SHEPHERD_PREVIEW_DIR"])
+        let directory = URL(fileURLWithPath: path, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let source = "flowchart TD\n  Request --> Agent\n  Agent --> Review\n  Review -->|changes| Agent\n  Review --> Approved"
+        for dark in [false, true] {
+            let size = CGSize(width: 900, height: 640)
+            let window = OffscreenWindow(size: size, dark: dark,
+                NWMermaidViewer(source) {}
+                    .frame(width: size.width, height: size.height)
+                    .background(Color.nw.bgWindow)
+                    .environment(\.colorScheme, dark ? .dark : .light))
+            defer { window.close() }
+            var chart: WKWebView?
+            try await eventuallyOnMain("viewer web view") {
+                window.layout()
+                chart = mermaidWebViews(in: window.host).first
+                return chart != nil
+            }
+            let web = try #require(chart)
+            try await eventually("viewer SVG") { @Sendable @MainActor in
+                window.layout()
+                return (try? await web.evaluateJavaScript("document.body.classList.contains('viewer') && document.querySelector('#chart svg').getBoundingClientRect().height > 0")) as? Bool == true
+            }
+            // The chart fills the room it is given, not its inline height.
+            #expect(web.frame.height > size.height / 2)
+            let snapshot = try await web.takeSnapshot(configuration: nil)
+            let bitmap = try #require(window.host.bitmapImageRepForCachingDisplay(in: window.host.bounds))
+            window.host.cacheDisplay(in: window.host.bounds, to: bitmap)
+            let image = NSImage(size: window.host.bounds.size)
+            image.lockFocus()
+            bitmap.draw(in: CGRect(origin: .zero, size: image.size))
+            let frame = web.convert(web.bounds, to: window.host)
+            snapshot.draw(in: CGRect(x: frame.minX, y: image.size.height - frame.maxY, width: frame.width, height: frame.height))
+            image.unlockFocus()
+            let tiff = try #require(image.tiffRepresentation)
+            let output = try #require(NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]))
+            try output.write(to: directory.appendingPathComponent("thread-mermaid-viewer-\(dark ? "dark" : "light").png"))
         }
     }
 }

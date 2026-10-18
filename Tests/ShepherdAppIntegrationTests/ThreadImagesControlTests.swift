@@ -49,13 +49,30 @@ struct ThreadImagesControlTests {
         expectScenarioCompleted(result)
     }
 
-    /// The viewer over the whole window (ThreadImageOpen), measured against the board and pressed as VoiceOver presses it: a 44pt bar with a 28pt close
-    /// circle, 36pt ‹ › with the one that has nowhere to go disabled, and every control at least the Mac's 24pt.
-    @Test func theViewerOverTheWindowHasTheBoardsBarAndControls() async {
+    /// The viewer floats over the thread, measured and pressed as VoiceOver presses it: the picture and its pill centred, a 28pt close
+    /// circle, 36pt ‹ › with the one that has nowhere to go disabled, every control at least the Mac's 24pt, and a click on the scrim closes it.
+    @Test func theFloatingViewerHasItsPillAndControlsAndTheScrimCloses() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
             await completingScenario { try await Self.measuring() }
         }
         expectScenarioCompleted(result)
+    }
+
+    @Test @MainActor func thePresenterKeepsItsWindowIdentityAndRoutesImagesOnlyToThatWindow() async throws {
+        let firstApp = try AppHarness(), secondApp = try AppHarness()
+        defer { firstApp.stop(); secondApp.stop() }
+        let first = try await firstApp.start(), second = try await secondApp.start()
+        let presenter = ImageViewerPresenter(model: first)
+        #expect(presenter == ImageViewerPresenter(model: first))
+        #expect(presenter != ImageViewerPresenter(model: second))
+        let viewer = ImageViewerState(images: [], origin: "Window-local image")
+        presenter(viewer)
+        #expect(first.imageViewer === viewer)
+        #expect(second.imageViewer == nil)
+        ImageViewerPresenter()(viewer)
+        #expect(second.imageViewer == nil, "the default presenter has no window to change")
+        first.closeImageViewer()
+        #expect(first.imageViewer == nil)
     }
 
     // MARK: Fixtures
@@ -100,8 +117,7 @@ struct ThreadImagesControlTests {
         #expect(small.isEmpty, "undersized: \(small)")
     }
 
-    /// A bar too narrow for the labelled buttons shows icons, named for VoiceOver, and each still presses; the window controls' room
-    /// (`leadingInset`) is taken from the bar, so a narrower column makes the same choice.
+    /// In a small window, with a long name, the pill's icons are still named for VoiceOver and each still presses.
     @MainActor
     static func barInANarrowWindow() async throws {
         AccessibilityNode.enable()
@@ -112,7 +128,7 @@ struct ThreadImagesControlTests {
         vm.imageViewerActions = ImageViewerActions(reveal: { revealed.append($0) }, copy: { _ in copied += 1 })
         let shown = [attachment("a-rather-long-name-for-the-bar-checkout-iphone.png", bytes: 1_400_000, source: URL(fileURLWithPath: "/tmp/a.png"))]
         vm.imageViewer = ImageViewerState(images: shown.map(ViewerImage.init), origin: "Sent by you", addToMessage: { added.append($0.name) })
-        let window = OffscreenWindow(size: CGSize(width: 520, height: 400), dark: false, ImageViewerOverlay(vm: vm, leadingInset: AppLayout.trafficLightInset))
+        let window = OffscreenWindow(size: CGSize(width: 520, height: 400), dark: false, ImageViewerOverlay(vm: vm))
         defer { window.close() }
         let controls = window.controls()
         for label in ["Copy", "Add to message", "Show in Finder", "Close"] {
@@ -291,25 +307,16 @@ struct ThreadImagesControlTests {
         let controls = window.controls()
         func control(_ label: String) throws -> Control { try #require(controls.first { $0.label == label }, "\(label)") }
         let frame = window.window.frame
-        // The board's own numbers, written out (not read from the metrics under test): a 44pt bar, a 28pt close circle, 36pt arrows.
-        // The bar is 44pt: its buttons and the close circle sit inside it, vertically centred.
+        // A 28pt close circle and 36pt arrows; the pill holds every action, and the close circle sits below the picture, in the window's middle third.
         let close = try control("Close"), copy = try control("Copy")
-        #expect(abs(close.frame.width - 28) < 1 && abs(close.frame.height - 28) < 1,
-                "the close circle is 28pt: \(close.frame)")
-        let barTop = frame.maxY
-        #expect(abs((barTop - close.frame.midY) - 44 / 2) < 1, "the close circle is centred in a 44pt bar: \(close.frame) in \(frame)")
-        #expect(abs((barTop - copy.frame.midY) - 44 / 2) < 1, "Copy is centred in the same bar")
-        // The user's correction to the board: the bar's content is a centred column of at most 820pt (+24pt each side), not the
-        // window's corners, so the close circle sits at that column's edge, 24pt inside a 868pt band centred in the window.
-        let column = min(frame.width, NWImageViewerMetrics.barMaxWidth + 2 * NW.Space.xxl)
-        #expect(abs(close.frame.maxX - (frame.midX + column / 2 - NW.Space.xxl)) < 1, "the close circle ends the centred column: \(close.frame) in \(frame)")
-        #expect(close.frame.maxX < frame.maxX - NW.Space.xxl, "not in the window's corner")
-        // ‹ › are 36pt discs, centred in the window's height between the bar and the footer; ‹ is disabled on the first image.
+        #expect(abs(close.frame.width - 28) < 1 && abs(close.frame.height - 28) < 1, "the close circle is 28pt: \(close.frame)")
+        #expect(abs(close.frame.midY - copy.frame.midY) < 1, "Copy and close share the pill")
+        #expect(abs(close.frame.midX - frame.midX) < frame.width / 6, "the pill is centred, not in a corner: \(close.frame) in \(frame)")
+        #expect(close.frame.minY > frame.minY + NWImageViewerMetrics.margin / 2, "the pill floats above the window's bottom edge: \(close.frame)")
         let next = try control("Next image")
         #expect(abs(next.frame.width - 36) < 1 && abs(next.frame.height - 36) < 1, "\(next.frame)")
         let previous = try control("Previous image")
         #expect(!previous.isEnabled && next.isEnabled, "the first image's ‹ is drawn and disabled")
-        // The arrows sit beside the picture, 16pt from it, not at the window's edges: the pair is centred about the window's middle.
         #expect(abs((previous.frame.midX + next.frame.midX) / 2 - frame.midX) < 1, "centred: \(previous.frame) \(next.frame)")
         #expect(next.frame.minX - previous.frame.maxX < frame.width / 2, "close to the picture, not at the edges: \(previous.frame) \(next.frame)")
         // Every control is at least the Mac's 24pt, and each does what it says.
@@ -321,5 +328,11 @@ struct ThreadImagesControlTests {
         try await eventuallyOnMain("the second image") { state.current?.name == "refunds-dashboard.png" }
         try await eventuallyOnMain("the arrows swap") { window.controls().first { $0.label == "Next image" }?.isEnabled == false }
         #expect(window.controls().first { $0.label == "Previous image" }?.isEnabled == true)
+        // The scrim, outside the picture and its pill, is a control of its own that closes the viewer. It is pressed as VoiceOver presses it:
+        // a synthetic click into this never-key window is not delivered to SwiftUI's gesture on a headless runner.
+        let scrim = try control("Close viewer")
+        #expect(scrim.frame.width >= frame.width - 1 && scrim.frame.height >= frame.height - 1, "the scrim takes the whole window: \(scrim.frame)")
+        try window.press("Close viewer")
+        try await eventuallyOnMain("a click on the scrim closes the viewer") { vm.imageViewer == nil }
     }
 }

@@ -92,25 +92,26 @@ struct ThreadView: View {
     /// What the context details ask the thread to find (Largest, Show summary). A stable object,
     /// not a closure, so the composer is not redrawn with every render of the thread.
     @State private var finder = ThreadFinder()
-    /// Narrow windows drop to 16pt gutters so the column keeps its width, not its margins.
-    @State private var gutter = AppLayout.gutter
     @State private var hovering = false
     @State private var wheelMonitor: Any?
-    /// Measured height of the floating composer: the scroll view insets by exactly this, so the
-    /// thread neither hides under the card nor scrolls into blank space below the last turn.
-    /// Read only by the inset's own modifier, so the composer changing height (a question taking
-    /// its place, Up next growing) never reruns the thread's body or its rows.
+    /// Composer height and responsive gutters are observed by their consumers, not the
+    /// transcript builder. Resizing or a growing composer must not rebuild every row.
     @State private var composerInset = ComposerInset()
     /// The user turn the last ⌥⌘↑/↓ landed on.
     @State private var jumpedTurn: String?
     @State private var arrivals = ThreadArrivals()
     @Environment(\.designCommentCards) private var commentCards
+    @Environment(\.nwUserBubbleMetrics) private var bubbleMetrics
 
     var body: some View {
         let _ = NWRenderProbe.tick("thread.view")
         // A turn made only of the owner's wake-ups has no row. A mixed turn keeps its row (and identity); `turn` draws it per message.
         let origins = userOrigins
         let rows: [NativeThreadRow] = origins.runtime.isEmpty ? store.rows : store.rows.filter { !($0.isUser && origins.hides($0.turn)) }
+        // A Project's accepted messages the transcript has not taken in: waiting ones go to the composer's Up next, outcomes stay here.
+        let held = projectSend?.held() ?? []
+        // A row's background needs only the boundary ID, not a captured copy of the transcript.
+        let historyRowID = historyAnchor.rowID ?? rows.first?.id
         let running = store.running
         let liveRow = rows.last(where: \.live)
         // Only one thing moves (LiveText): a running call's own line, thinking, or the reply as it
@@ -152,7 +153,7 @@ struct ThreadView: View {
                                     .accessibilityHidden(true)
                             }
                             .background {
-                                if row.id == (historyAnchor.rowID ?? rows.first?.id) {
+                                if row.id == historyRowID {
                                     ThreadHistoryAnchor.Probe(anchor: historyAnchor, rowID: row.id)
                                         .onGeometryChange(for: CGFloat.self) { $0.frame(in: .scrollView).minY } action: { _ in
                                             historyAnchor.moved()
@@ -161,11 +162,13 @@ struct ThreadView: View {
                             }
                         }
                         // A Project's accepted messages the transcript has not taken in: held, in flight, or not delivered.
-                        if let held = projectSend?.held() {
-                            ForEach(held) { message in
-                                UserTurn(bubbles: [.init(text: message.text, images: 0, caption: nil, pending: true)], note: message.note)
-                                    .equatable()
-                            }
+                        // Not delivered (unknown, failed): the person's words with what became of them. Never retried for them.
+                        // Its note always shows, so it takes its own room below the bubble: an overlaid caption that wraps (a refusal's
+                        // reason, a larger text size) would grow up into the words.
+                        ForEach(held.filter { !$0.waiting }) { message in
+                            UserTurn(bubbles: [.init(text: message.text, images: message.images.count, caption: nil, pending: true)], note: message.note)
+                                .equatable()
+                                .environment(\.nwUserBubbleMetrics, { var metrics = bubbleMetrics; metrics.overlaysCaption = false; return metrics }())
                         }
                         if thinking, liveRow == nil { (projectActionCards != nil || workerStyle != nil ? AnyView(ProjectLiveLine(startedAt: nil)) : AnyView(NWThinking.live())).nwArrival(settled) }
                         if let authNotice {
@@ -189,7 +192,7 @@ struct ThreadView: View {
                             .accessibilityHidden(true)
                     }
                     .frame(maxWidth: projectSend?.columnWidth ?? AppLayout.threadMaxWidth)
-                    .padding(.horizontal, workerStyle?.gutter ?? gutter)
+                    .modifier(ThreadGutterPadding(inset: composerInset, fixedGutter: workerStyle?.gutter))
                     .frame(maxWidth: .infinity)
                     .background { ThreadInputBackground(input: input) }
                     .background { ThreadScrollViewFinder(guardian: tailGuard) }
@@ -202,6 +205,7 @@ struct ThreadView: View {
                     .environment(\.nwProseFileLinks, .app)
                 }
                 .id(transcriptRevision)
+                .scrollPosition($historyAnchor.position)
                 // The composer floats over the scroll view; inset by its real height so "the
                 // bottom" is the last turn, not the space under the card.
                 .modifier(ComposerInsetPadding(inset: composerInset, gap: leadColumn ? 0 : AppLayout.composerTranscriptGap,
@@ -212,8 +216,8 @@ struct ThreadView: View {
                 // before accepting cached visibility as proof that the transcript contains content.
                 .onScrollTargetVisibilityChange(idType: String.self, threshold: 0) { tailGuard.targets($0) }
                 .onChange(of: rows.first?.id) { _, first in
-                    historyAnchor.prepended(firstID: first, session: store.sessionKey, active: active) { id in
-                        proxy.scrollTo(id, anchor: .top)
+                    historyAnchor.prepended(firstID: first, session: store.sessionKey, active: active) { [weak historyAnchor] id in
+                        historyAnchor?.position.scrollTo(id: id, anchor: .top)
                     }
                 }
                 .onChange(of: historyEnabled) { _, _ in loadVisibleHistory() }
@@ -241,6 +245,7 @@ struct ThreadView: View {
                 .onScrollPhaseChange { old, phase, context in
                     // Only a live finger/wheel counts. Momentum and programmatic phases are not
                     // intent; a gesture that ends near the bottom re-sticks from where it lands.
+                    historyAnchor.animating = phase == .animating
                     follower.userScrolling = phase == .interacting
                     if phase == .interacting {
                         historyAnchor.cancel()
@@ -250,6 +255,7 @@ struct ThreadView: View {
                     if phase == .idle, old == .interacting || old == .decelerating {
                         follower.observe(distanceFromBottom: Self.distanceFromBottom(context.geometry), userIntent: true)
                     }
+                    if phase == .idle { loadVisibleHistory() }
                 }
                 .onChange(of: store.sentCount) { _, _ in
                     // A send that goes in now re-attaches to the tail: the echoed turn is the last
@@ -287,7 +293,7 @@ struct ThreadView: View {
                 // A resolved Project thread takes no message: no composer at all, not a disabled one.
                 if workerStyle?.composerHidden != true {
                     Composer(store: store, input: input, allowsLocalFiles: allowsLocalFiles, active: active, isFocused: isFocused, agentName: agentName, hasTurns: !rows.isEmpty,
-                             gutter: gutter, listModels: listModels, branch: branch, directory: allowsLocalFiles ? workingDirectory : nil,
+                             gutter: AppLayout.gutter, measuredInset: composerInset, listModels: listModels, branch: branch, directory: allowsLocalFiles ? workingDirectory : nil,
                              showChanges: showChanges, modelSettingsOpen: modelSettingsOpen, commandKey: commandKey,
                              jumpToLatest: follower.showsJump(running: running) ? {
                                  historyAnchor.cancel()
@@ -298,7 +304,7 @@ struct ThreadView: View {
                              inspectSubagent: inspectSubagent, steerSubagent: steerSubagent, inspectedRunID: inspectedRunID,
                              designChat: designChat, restartPi: restartPi,
                              hidesNotSignedIn: { if case .notSignedIn? = authNotice { true } else { false } }(),
-                             slashLogin: slashLogin)
+                             slashLogin: slashLogin, projectUpNext: projectSend.map { _ in ProjectHeldMessages.upNext(held) })
                         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { [composerInset] in
                             if composerInset.height != $0 { composerInset.height = $0 }
                         }
@@ -334,7 +340,7 @@ struct ThreadView: View {
         .tint(Color.nw.running)
         .background { ThreadInputBackground(input: input) }
         .background(Color.nw.bgWindow)
-        .onGeometryChange(for: CGFloat.self) { AppLayout.threadGutter(width: $0.size.width) } action: { gutter = $0 }
+        .onGeometryChange(for: CGFloat.self) { AppLayout.threadGutter(width: $0.size.width) } action: { [composerInset] in composerInset.gutter = $0 }
         .onHover { hovering = $0 }
         .onAppear { installWheelMonitor() }
         .onDisappear {
@@ -347,7 +353,7 @@ struct ThreadView: View {
         // Hidden, the thread stops polling and keeps what it shows; shown again, it polls from
         // there (`NativeThreadStore.suspend`).
         .task(id: active) {
-            guard active else { historyAnchor.cancel(); tailGuard.stop(); store.suspend(); return }
+            guard active else { historyAnchor.cancel(); historyAnchor.animating = false; tailGuard.stop(); store.suspend(); return }
             await store.run(request: request, preview: preview)
         }
     }
@@ -413,7 +419,8 @@ struct ThreadView: View {
         tailGuard.rowIDs = Set(store.rows.map(\.id))
     }
 
-    private var historyEnabled: Bool { active && store.ready && !store.loadingOlder && !follower.sticky }
+    // Starting history during an animated jump can discard its restoration scroll request.
+    private var historyEnabled: Bool { active && store.ready && !store.loadingOlder && !follower.sticky && !historyAnchor.animating }
 
     private func loadVisibleHistory() {
         guard historyPaging.takeRequest(session: store.sessionKey, cursor: store.olderCursor, enabled: historyEnabled) else { return }
@@ -695,11 +702,21 @@ struct ThreadTailAnchor: ViewModifier {
     }
 }
 
-/// The floating composer's measured height, observed only by `ComposerInsetPadding`.
+/// Measured insets, read by the composer and padding rather than the transcript builder.
 @MainActor
 @Observable
 final class ComposerInset {
     var height: CGFloat = 120
+    var gutter = AppLayout.gutter
+}
+
+private struct ThreadGutterPadding: ViewModifier {
+    let inset: ComposerInset
+    let fixedGutter: CGFloat?
+
+    func body(content: Content) -> some View {
+        content.padding(.horizontal, fixedGutter ?? inset.gutter)
+    }
 }
 
 /// Reserves the floating composer and the transcript's breathing room above it.

@@ -10,9 +10,18 @@ import ShepherdUI
 // message or composer, shown one at a time over the window. The state is values only; the host
 // view draws `NWImageViewer` and carries out Copy, Add to message and Show in Finder.
 
+/// The window's stable identity, rather than a new captured closure on every shell resize.
+struct ImageViewerPresenter: Equatable {
+    weak var model: ShepherdViewModel?
+
+    static func == (a: Self, b: Self) -> Bool { a.model === b.model }
+
+    @MainActor func callAsFunction(_ state: ImageViewerState) { model?.imageViewer = state }
+}
+
 extension EnvironmentValues {
-    /// Opens the viewer over the window (`ShepherdViewModel.imageViewer`); does nothing where no window sets it.
-    @Entry var presentImages: (ImageViewerState) -> Void = { _ in }
+    /// Opens the viewer over the window; does nothing where no window sets it.
+    @Entry var presentImages = ImageViewerPresenter()
 }
 
 /// One image the viewer can show: its bytes are already here (a composer's image, or one the
@@ -208,12 +217,9 @@ struct ImageViewerActions {
     }
 }
 
-/// The viewer over the window: a click outside the picture does not close it (the bar's close
-/// button and Esc do); ← and → step through the images.
+/// The viewer over the window: a click on the scrim, the pill's close button or Esc closes it; ← and → step through the images.
 struct ImageViewerOverlay: View {
     var vm: ShepherdViewModel
-    /// How far the window controls reach into the bar (`AppLayout.trafficLightInset`; none in full screen).
-    var leadingInset: CGFloat = 0
     @FocusState private var focused: Bool
 
     private func content(_ slot: ViewerSlot) -> NWImageViewer.Content {
@@ -239,7 +245,7 @@ struct ImageViewerOverlay: View {
                     addToMessage: image.flatMap { shown in state.addToMessage.map { add in { add(shown); vm.closeImageViewer() } } },
                     showInFinder: image?.source.map { url in { actions.reveal(url) } },
                     retry: { if case .failed = slot { return { state.retry() } } else { return nil } }(),
-                    leadingInset: leadingInset, pixels: image?.pixels ?? image?.picture?.size,
+                    pixels: image?.pixels ?? image?.picture?.size,
                     close: { vm.closeImageViewer() })
                 .id("\(slot.name)/\(state.index)")
                 // Esc and the arrows go to a hidden focus target of their own: focusing the whole viewer would hand every control in it an
@@ -260,6 +266,33 @@ struct ImageViewerOverlay: View {
         }
         .allowsHitTesting(vm.imageViewer != nil)
         .nwAnimation(.overlay, value: vm.imageViewer != nil)
+    }
+}
+
+/// A Mermaid diagram open over the window, in the image viewer; a click on the scrim, the close button or Esc closes it.
+struct DiagramViewerOverlay: View {
+    var vm: ShepherdViewModel
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        ZStack {
+            if let source = vm.diagramViewer {
+                NWMermaidViewer(source) { vm.diagramViewer = nil }
+                    .id(source)
+                    .background {
+                        Color.clear
+                            .focusable()
+                            .focusEffectDisabled()
+                            .focused($focused)
+                            .onAppear { focused = true }
+                            .onKeyPress(.escape) { vm.diagramViewer = nil; return .handled }
+                            .accessibilityHidden(true)
+                    }
+                    .nwTransition(.overlay)
+            }
+        }
+        .allowsHitTesting(vm.diagramViewer != nil)
+        .nwAnimation(.overlay, value: vm.diagramViewer != nil)
     }
 }
 

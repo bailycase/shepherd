@@ -486,6 +486,13 @@ final class ShepherdViewModel {
     var showCommandPalette = false
     /// An image open full size (ThreadImageOpen); nil when none is.
     var imageViewer: ImageViewerState?
+    /// Stable identity in the window environment, independent of shell geometry.
+    let diagramPresentation = NWDiagramPresentation()
+    /// A Mermaid diagram open full screen (its source); nil when none is.
+    var diagramViewer: String? {
+        get { diagramPresentation.source }
+        set { diagramPresentation.source = newValue }
+    }
     /// Reveal in Finder and Copy for the viewer; a test replaces them.
     @ObservationIgnored var imageViewerActions = ImageViewerActions()
 
@@ -822,6 +829,7 @@ final class ShepherdViewModel {
                     switch action {
                     case .rename(let name): try await self.server.renameAgent(agentID, to: name)
                     case .reorder(let target): try await self.server.reorderAgent(agentID, onto: target)
+                    case .move(let spaceID): try await self.moveThread(agentID, to: spaceID)
                     case .deleteKeepingWorktree: try await self.deleteAgentPersisted(agentID)
                     case .renameTerminal(let paneID, let title): try self.renameTerminalPane(paneID, of: agentID, to: title)
                     case .killTerminalProcess(let paneID): try await self.killTerminalProcess(paneID, of: agentID)
@@ -1134,6 +1142,10 @@ final class ShepherdViewModel {
             sidebarOpeningTurns.subtract(serverState.agents.filter { $0.status != .idle }.map(\.id))
         }
         state = serverState
+        // A move keeps the selected thread and its existing layout visible in its new space.
+        if destination == nil, selectedRemoteAgent == nil, let agent = selectedAgent, selectedSpaceID != agent.spaceID {
+            selectedSpaceID = agent.spaceID
+        }
         checkMissingSpaces()
         let runs = server.openAutomationRuns
         if runs != openAutomationRuns { openAutomationRuns = runs }

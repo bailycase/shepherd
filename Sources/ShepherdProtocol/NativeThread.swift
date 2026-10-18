@@ -268,6 +268,8 @@ public enum NativeQueueAction: Codable, Hashable, Sendable {
     /// by `interrupt` in `supportedActions` and, remotely, `native.interrupt.v1`; a client
     /// without them sends `steer`.
     case interrupt(ids: [UUID])
+    /// Start this queued message in a background child without prompting the parent.
+    case subagent(id: UUID)
     /// Take a steering item back before pi reads it; it returns to the head of the queue.
     case unsteer(id: UUID)
     /// Delete every queued item (steering items stay).

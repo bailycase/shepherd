@@ -85,6 +85,7 @@ public final class QueueFixture {
         case .hold(let id, let held): NativeQueueRules.hold(id, held, in: &items)
         case .setMode(let chosen): mode = chosen ?? .all
         case .sendNow(let ids): items.removeAll { ids.contains($0.id) }
+        case .subagent(let id): items.removeAll { $0.id == id }
         }
         change(items, mode: mode)
     }

@@ -659,7 +659,14 @@ struct ListPerformanceTests {
             window.close()
         }
         try await eventuallyOnMain("the thread to load") { store.ready }
-        ListPerf.settle(window)
+        // Data readiness precedes SwiftUI's first scroll-to-tail. Count streaming work, not a
+        // still-pending initial layout (which otherwise flakes on both baseline and optimized code).
+        try await eventuallyOnMain("the initial thread layout to reach its tail") {
+            ListPerf.settle(window)
+            guard let scroll = ListPerf.scrollView(in: window), let document = scroll.documentView else { return false }
+            return document.bounds.height > scroll.contentView.bounds.height
+                && abs(document.bounds.height - scroll.contentView.bounds.maxY + scroll.contentInsets.bottom) < 2
+        }
 
         NWRenderProbe.start()
         for index in 0..<5 {
@@ -699,6 +706,7 @@ struct ListPerformanceTests {
         }
         #expect(rows["thread.agentTurn", default: 0] > 20, "the thread scrolled: \(rows)")
         #expect(rows["arrival.animates", default: 0] == 0, "\(rows)")
+        #expect(rows["thread.view", default: 0] <= 2, "scrolling must not repeatedly rebuild the transcript: \(rows)")
     }
 
     // MARK: Thread chrome
@@ -929,9 +937,40 @@ struct ListPerformanceTests {
         #expect(changed["queue.row", default: 0] >= 1, "\(changed)")
     }
 
-    /// Widening or narrowing the thread redraws its composer only when the Send menu would
-    /// change sides (beside the card, or above it), never for each width a live resize passes.
-    @Test func aWidthThatKeepsTheSendMenusSideRedrawsNoComposer() async throws {
+    @Test(arguments: [false, true])
+    func changingThreadGuttersDoesNotRebuildTheTranscript(dark: Bool) async throws {
+        let threshold = AppLayout.threadMaxWidth + 2 * AppLayout.gutter
+        let thread = FakeThread(ThreadFixture.snapshot(ThreadFixture.history(120)),
+                                size: CGSize(width: threshold + 60, height: 800), dark: dark)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        let scroll = try #require(thread.scrollView)
+        let widths = [threshold - 40, threshold + 40]
+        #expect(AppLayout.threadGutter(width: widths[0]) != AppLayout.threadGutter(width: widths[1]))
+
+        let rows = try await counting(thread.window) {
+            for step in 0..<6 {
+                let width = widths[step % widths.count]
+                thread.window.window.setContentSize(CGSize(width: width, height: 800))
+                try await eventuallyOnMain("resized thread viewport") {
+                    ListPerf.settle(thread.window)
+                    return abs(thread.window.host.bounds.width - width) < 1
+                }
+                await withCheckedContinuation { continuation in
+                    DispatchQueue.main.async { continuation.resume() }
+                }
+                ListPerf.settle(thread.window)
+                #expect(thread.scrollView === scroll, "gutter changes keep the mounted scroll view")
+            }
+        }
+        #expect(rows["composer.body", default: 0] > 0, "the composer receives the changing gutters: \(rows)")
+        #expect(rows["thread.view", default: 0] <= 1, "six gutter changes must not rebuild the transcript: \(rows)")
+    }
+
+    /// Resizing redraws the composer only when the Send menu changes sides, not for each
+    /// width or height a live resize passes while the menu remains on the same side.
+    @Test(arguments: [false, true])
+    func aResizeThatKeepsTheSendMenusSideRedrawsNoComposer(heightOnly: Bool) async throws {
         let thread = FakeThread(ThreadFixture.snapshot(ThreadFixture.history(4)), size: CGSize(width: 1800, height: 800))
         defer { thread.close() }
         try await thread.waitUntilReady()
@@ -941,7 +980,8 @@ struct ListPerformanceTests {
         let frames = 10
         let rows = try await counting(thread.window) {
             for step in 1...frames {
-                thread.window.window.setContentSize(NSSize(width: 1800 - CGFloat(step) * 8, height: 800))
+                thread.window.window.setContentSize(NSSize(width: heightOnly ? 1800 : 1800 - CGFloat(step) * 8,
+                                                           height: heightOnly ? 800 - CGFloat(step) * 8 : 800))
                 ListPerf.settle(thread.window)
             }
         }
@@ -1121,6 +1161,36 @@ struct ListPerformanceTests {
         for key in ["shell.root", "shell.sidebar", "paletteOverlay"] {
             #expect(rows[key, default: 0] == 0, "\(key): \(rows)")
         }
+    }
+
+    /// Narrowing a window changes the shell's sidebar geometry. Its image-viewer action must
+    /// keep a stable identity so all fixed-size hidden threads are not invalidated with it.
+    @Test func aShellResizeDoesNotInvalidateEveryMountedThread() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, agents) = try await MountedWorkspace.start(6, in: app)
+        let window = OffscreenWindow(size: CGSize(width: 1200, height: 800), dark: true, RootView(vm: vm))
+        defer { window.close() }
+        try await eventuallyOnMain("the mounted workspace to settle") {
+            ListPerf.settle(window)
+            return vm.mountedTabs.count == agents.count
+                && vm.threadStores.store(for: agents[0].agent.id).ready
+                && IdleCostTests.spinners(in: window.host).all == 0
+        }
+        let deck = try WorkspaceNavigationTests.deck(in: window)
+        let hidden = deck.pages.values.filter { $0.host.isHidden }.map(\.host)
+        let bounds = hidden.map(\.bounds)
+        let frames = 12
+        let counts = ListPerf.counting {
+            for step in 1...frames {
+                window.window.setContentSize(CGSize(width: 1200 - CGFloat(step) * 12, height: 800))
+                ListPerf.settle(window)
+            }
+        }
+        #expect(counts["shell.root", default: 0] > 0, "the shell really changed during resizing")
+        #expect(hidden.count == agents.count - 1 && hidden.map(\.bounds) == bounds)
+        #expect(counts["thread.view", default: 0] <= frames,
+                "a changing shell must not invalidate every fixed-size hidden thread: \(counts)")
     }
 
     /// A hidden agent reporting its status redraws no mounted layout: the workspace resolves

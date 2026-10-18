@@ -436,6 +436,7 @@ public final class NativeThreadStore {
     /// The host stops pi for a message (`interrupt` in `supportedActions`, remotely
     /// `native.interrupt.v1`). A host without it only steers.
     public var hostInterrupts: Bool { supportedActions.contains("interrupt") }
+    public var supportsQueueSubagent: Bool { supportedActions.contains("queueSubagent") }
 
     /// The delivery a send actually gets. `interrupt` becomes a plain `steer` where the host can't
     /// stop pi, and a steer never carries a message that begins with "/" (pi runs a command only
@@ -1380,6 +1381,12 @@ public final class NativeThreadStore {
     /// the queue resumes after it.
     public func sendQueuedNow(_ ids: [UUID]) async {
         await queueAction(.sendNow(ids: ids)) { items in items.removeAll { ids.contains($0.id) } }
+    }
+
+    /// Keep the row until the host confirms that the independent child has started.
+    public func runQueuedInSubagent(_ id: UUID) async {
+        guard supportsQueueSubagent else { return }
+        await queueAction(.subagent(id: id)) { _ in }
     }
 
     /// Applies `apply` to `queue` at once, then asks the host. Queue actions never make the
