@@ -441,7 +441,12 @@ struct LogicalProjectConversationTests {
         try mouse(.leftMouseDown, x: grab)
         for step in 1...5 { try mouse(.leftMouseDragged, x: grab - CGFloat(step) * 20) }
         try mouse(.leftMouseUp, x: grab - 100)
-        try await eventuallyOnMain("dragged") { window.layout(); return r.vm.logicalProjectPane.width == 619 }
+        do {
+            try await eventuallyOnMain("dragged") { window.layout(); return r.vm.logicalProjectPane.width == 619 }
+        } catch {
+            Issue.record("the drag left the saved width \(r.vm.logicalProjectPane.width), drawn \(paneWidth() ?? "no divider"), from \(start)")
+            throw error
+        }
         #expect(!window.window.isKeyWindow, "local mouse dispatch never takes the user's focus")
         try await eventuallyOnMain("the drawn width follows") { paneWidth() == "619 points" }
         try expectReachable("after the drag")
