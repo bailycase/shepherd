@@ -169,6 +169,12 @@ struct LogicalProjectConversationTests {
         expectScenarioCompleted(result)
     }
 
+    @Test(arguments: ["pane-option", "pane-text", "project-text"], [false, true])
+    func aWorkersSelectAnsweredFromThePanesDockIsDeliveredOnceAndTheDockLeaves(route: String, rejectedFirst: Bool) async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { [route = route as String, rejectedFirst = rejectedFirst as Bool] in await completingScenario { try await Self.paneDockAnswer(route: route, rejectedFirst: rejectedFirst) } }
+        expectScenarioCompleted(result)
+    }
+
     @Test func thePausedFooterMatchesItsSourceGeometryAndTheResolvedFooterKeepsItsOwn() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.footerGeometry() } }
         expectScenarioCompleted(result)
@@ -1840,6 +1846,135 @@ private static func chipsAndLinks() async throws {
         }
         try await eventuallyOnMain("the pane's dock is drawn") { window.layout(); return !paneOptions().isEmpty }
         #expect(paneOptions().allSatisfy { !$0.isEnabled }, "no second answer is offered while the owner holds one: \(paneOptions().map { "\($0.label ?? "") \($0.isEnabled)" })")
+    }
+
+    // MARK: Pane dock answer (#301)
+
+    /// Real Project choice-input: offered buttons and a final field, answered from either surface.
+    /// Rejection preserves the pick/text; acceptance delivers one answer and removes both views.
+    private static func paneDockAnswer(route: String, rejectedFirst: Bool) async throws {
+        let r = try await rig()
+        defer { r.app.stop() }
+        let options = ["Use SQLite", "Use Postgres"]
+        let hints = String(decoding: try JSONEncoder().encode(options), as: UTF8.self)
+        let script: [String: Any] = ["prompts": ["ask-store": [["ask": ["method": "input", "title": "Which store should the API use?\n\nOptions:\n" + hints, "placeholder": "Say anything"]]]],
+                                     "socket": r.app.scratch.socketPath]
+        try JSONSerialization.data(withJSONObject: script).write(to: URL(fileURLWithPath: r.space.path).appendingPathComponent("project-script.json"))
+        _ = try await r.vm.projectCoordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
+                                                      request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Library API draft", prompt: "ask-store"))
+        try await eventuallyOnMain("the worker is waiting on its question") { r.vm.state.projects.first?.tasks.first?.phase == .waiting }
+        let task = try #require(r.vm.state.projects.first?.tasks.first)
+        r.vm.openLogicalProject(r.ref)
+        let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
+        defer { window.close() }
+        let store = r.vm.projectWorkerStore(.local, task.workerAgentID)
+        try await eventuallyOnMain("the worker list has connected its store") { window.layout(); return store.ready }
+        let inPane = route != "project-text", typed = route != "pane-option"
+        if inPane { r.vm.openProjectTask(task.id) }
+        func onTarget(_ frame: CGRect) -> Bool {
+            (frame.minX > window.window.frame.maxX - NWLeadMetrics.paneWidth) == inPane
+        }
+        func controls(_ label: String) -> [Control] {
+            window.controls().filter { $0.role == ControlRole.button && $0.label == label && onTarget($0.frame) }
+        }
+        func field() -> AccessibilityNode? {
+            window.elements().first { $0.label == "Say anything" && ["AXTextField", "AXTextArea"].contains($0.role ?? "") && onTarget($0.frame) }
+        }
+        func type(_ value: String) throws {
+            let node = try #require(field()), setter = NSSelectorFromString("setAccessibilityValue:")
+            try #require(node.object.responds(to: setter))
+            _ = node.object.perform(setter, with: value)
+            if let editor = node.object as? NSTextView { NotificationCenter.default.post(name: NSText.didChangeNotification, object: editor) }
+            func native(_ view: NSView) -> NSTextField? {
+                if let text = view as? NSTextField, text.stringValue == value { return text }
+                return view.subviews.compactMap(native).first
+            }
+            let text = node.object as? NSTextField ?? (node.object as? NSCell)?.controlView as? NSTextField ?? native(window.host)
+            text?.delegate?.controlTextDidChange?(Notification(name: NSControl.textDidChangeNotification, object: text))
+        }
+        let submit = inPane ? "Answer" : "Send"
+        try await eventuallyOnMain("offered choices and a final field, not a Say anything button") {
+            window.layout(); return options.allSatisfy { !controls($0).isEmpty } && field() != nil
+        }
+        #expect(controls("Say anything").isEmpty)
+        #expect(controls(submit).first?.isEnabled == false)
+        let words = "  Use an in-memory cache instead.  "
+        let expected = typed ? words.trimmingCharacters(in: .whitespacesAndNewlines) : "Use Postgres"
+        if typed {
+            try type("   ")
+            #expect(controls(submit).first?.isEnabled == false, "whitespace is not an answer")
+            if inPane {
+                #expect(try #require(controls("Use Postgres").first).node.press())
+                try await eventuallyOnMain("picking clears the field") { field()?.value == "" }
+            }
+            try type(words)
+        } else {
+            #expect(try #require(controls("Use Postgres").first).node.press())
+        }
+        try await eventuallyOnMain("the answer can be submitted") { window.layout(); return controls(submit).first?.isEnabled == true }
+        if !typed { #expect(controls("Use Postgres").first?.isSelected == true) }
+        else if inPane {
+            try await eventuallyOnMain("typing clears the pick") { controls("Use Postgres").first?.isSelected == false }
+        }
+        if rejectedFirst {
+            let session = try #require(store.session), dialog = try #require(store.dialogs.first)
+            let reply = NativeThreadRequest.answer(expectedSessionID: "stale-session", generation: session.generation,
+                                                   operationID: UUID(), dialogID: dialog.id, answer: .input(value: expected))
+            if inPane {
+                await store.answer(dialogID: dialog.id, sessionID: "stale-session", generation: session.generation, answer: .input(value: expected))
+            } else {
+                #expect(await r.vm.logicalProjects.answer(r.ref, task: task.id, request: reply) == false)
+            }
+            let notice = try #require(inPane ? store.notice : r.vm.logicalProjects.failure?.message)
+            do {
+                try await eventuallyOnMain("the rejection is visible beside the answer") {
+                    window.layout(); return window.elements().contains { ($0.label ?? "").contains(notice) || ($0.value ?? "").contains(notice) }
+                }
+            } catch {
+                if let dir = ProcessInfo.processInfo.environment["SHEPHERD_PREVIEW_DIR"] {
+                    let nodes = window.elements().map { "\($0.role ?? ""): \($0.label ?? "") = \($0.value ?? "")" }
+                    try ("Expected notice: \(notice)\n" + nodes.joined(separator: "\n")).write(
+                        to: URL(fileURLWithPath: dir).appendingPathComponent("\(route)-failure-AX.txt"), atomically: true, encoding: .utf8)
+                    let frames = await MotionProbe.record(window) {}
+                    try frames.settled.bitmap.representation(using: .png, properties: [:])?.write(
+                        to: URL(fileURLWithPath: dir).appendingPathComponent("\(route)-failure.png"))
+                }
+                throw error
+            }
+            if typed { #expect(field()?.value == words, "a refusal preserves the typed draft") }
+            else { #expect(controls("Use Postgres").first?.isSelected == true) }
+            #expect(controls(submit).first?.isEnabled == true, "the same answer can be retried")
+            #expect(store.dialogs.first?.id == dialog.id, "a rejection does not dismiss the dialog")
+        }
+        if let dir = ProcessInfo.processInfo.environment["SHEPHERD_PREVIEW_DIR"] {
+            for dark in [false, true] {
+                let frames = await MotionProbe.record(window) {
+                    window.window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+                    window.host.appearance = window.window.appearance
+                }
+                let png = try #require(frames.settled.bitmap.representation(using: .png, properties: [:]))
+                try png.write(to: URL(fileURLWithPath: dir).appendingPathComponent("ProjectQuestion-\(route)-\(rejectedFirst ? "Rejected" : "Ready")-\(dark ? "dark" : "light").png"))
+            }
+        }
+
+        #expect(try #require(controls(submit).first).node.press())
+        let worker = task.workerAgentID
+        func snapshot() async throws -> NativeThreadSnapshot? {
+            guard case .snapshot(let value) = try await r.app.server.nativeThread(agentID: worker, request: .snapshot()) else { return nil }
+            return value
+        }
+        try await eventuallyAsync("pi takes the answer and the dialog closes") { try await snapshot()?.dialogs.isEmpty == true }
+        let answered = try #require(try await snapshot())
+        let records = (answered.messages + answered.provisional).compactMap(\.question)
+        #expect(records.count == 1 && records.first?.answer == expected, "one native answer, exactly as selected or typed: \(records)")
+        try await eventuallyOnMain("the task leaves waiting") { r.app.server.state.projects.first?.tasks.first?.phase != .waiting }
+        try await eventuallyOnMain("the question leaves both surfaces") {
+            window.layout()
+            return !window.elements().contains { $0.label == "Say anything" && ["AXTextField", "AXTextArea"].contains($0.role ?? "") }
+                && !window.controls().contains { $0.label == "Use Postgres" }
+        }
+        #expect(r.vm.logicalProjects.failure == nil, "\(r.vm.logicalProjects.failure?.message ?? "")")
+        #expect(r.vm.projectWorkerStore(.local, worker).notice == nil, "no silent refusal: \(r.vm.projectWorkerStore(.local, worker).notice ?? "")")
     }
 
     // MARK: Footer geometry

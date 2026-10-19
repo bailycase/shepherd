@@ -85,10 +85,13 @@ public struct NWQuestionDockContent: Equatable, Sendable {
     public var notice: String?
     /// Answer is drawn (not for a yes or a no).
     public var showsAnswer: Bool
+    /// A choice whose last numbered option is editable: typing drops the pick, and picking
+    /// empties the field.
+    public var allowsText: Bool
 
     public init(count: Int = 1, question: String, message: String? = nil, kind: NWQuestionDockKind,
                 options: [NWQuestionDockOption] = [], placeholder: String = "Type your answer…", multiline: Bool = false,
-                notice: String? = nil, showsAnswer: Bool = true) {
+                notice: String? = nil, showsAnswer: Bool = true, allowsText: Bool = false) {
         self.count = count
         self.question = question
         self.message = message
@@ -98,6 +101,7 @@ public struct NWQuestionDockContent: Equatable, Sendable {
         self.multiline = multiline
         self.notice = notice
         self.showsAnswer = showsAnswer
+        self.allowsText = allowsText
     }
 }
 
@@ -194,6 +198,12 @@ public struct NWQuestionDock: View {
         .padding(NWQuestionDockMetrics.padding)
         .nwQuestionCard()
         .nwAnimation(.hover, value: selection.picked)
+        // Options and words are one answer: the newer one replaces the other, from a click, a key or typing.
+        .onChange(of: selection) { old, new in
+            guard content.allowsText else { return }
+            if new.picked != nil, new.picked != old.picked, !new.text.isEmpty { selection.text = "" }
+            else if new.text != old.text, new.picked != nil, !new.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { selection.picked = nil }
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(NWQuestionHead.title): \(content.question)")
     }
@@ -241,6 +251,31 @@ public struct NWQuestionDock: View {
                 pick(option.number)
             }
         }
+        // An asker that also takes words: its last numbered option is where they are typed.
+        if content.allowsText { textOption }
+    }
+
+    /// The last option, N+1, as an editable row: the same card and number, lit while it holds words.
+    private var textOption: some View {
+        let nw = Color.nw
+        let typed = !selection.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return HStack(alignment: .top, spacing: NWQuestionDockMetrics.optionSpacing) {
+            NWQuestionDockNumber(number: content.options.count + 1, picked: typed)
+            TextField(text: $selection.text, prompt: Text(content.placeholder).foregroundStyle(nw.textTertiary), axis: .vertical) {
+                Text(content.placeholder)
+            }
+            .lineLimit(1...6)
+            .textFieldStyle(.plain)
+            .font(.nw(.headline))
+            .foregroundStyle(nw.textPrimary)
+            .tint(nw.lantern)
+            .focused(focus, equals: .text)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityLabel(content.placeholder)
+        }
+        .padding(NWQuestionDockMetrics.optionPadding)
+        .nwQuestionOptionChrome(picked: typed)
+        .onTapGesture { focus.wrappedValue = .text }
     }
 
     private func pick(_ number: Int) {

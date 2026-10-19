@@ -1941,6 +1941,19 @@ final class RPCThreadState {
                 id: request.id, kind: kind, title: request.title ?? "", options: request.options,
                 message: request.message, placeholder: request.placeholder, prefill: request.prefill, timeout: request.timeout
             )
+            if kind == .input, Self.bytes(dialog) <= Self.dialogBytes, dialog.placeholder == "Say anything",
+                      let suffix = dialog.title.range(of: "\n\nOptions:\n", options: .backwards),
+                      let choices = try? JSONDecoder().decode([String].self, from: Data(dialog.title[suffix.upperBound...].utf8)),
+                      !choices.isEmpty, choices.count <= 16, Set(choices).count == choices.count,
+                      choices.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.utf8.count <= 256 }),
+                      dialog.title[..<suffix.lowerBound].utf8.count <= 2000 {
+                // project_question uses a supported input, not a select accepting unoffered values.
+                // Normalize its human-readable fallback hints before persisting or presenting it.
+                dialog.options = choices
+                dialog.title = String(dialog.title[..<suffix.lowerBound])
+                // Older clients still draw the offered hints above their ordinary input field.
+                dialog.message = choices.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
+            }
             if Self.bytes(dialog) > Self.dialogBytes {
                 dialog = NativeThreadDialog(id: request.id, kind: kind, title: "Dialog too large for native thread", unavailable: "payload-limit")
             }

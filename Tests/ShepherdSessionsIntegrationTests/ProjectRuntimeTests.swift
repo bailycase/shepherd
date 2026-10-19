@@ -388,6 +388,20 @@ struct ProjectRuntimeTests {
         try await eventually("question receipt persisted") { rig.host.server.state.projects.first?.tasks.first?.phase == .waiting }
         let state = try #require(rig.host.server.state.projects.first), task = try #require(state.tasks.first)
         #expect(task.phase == .waiting)
+        for (revision, session, generation, dialog) in [
+            (state.revision - 1, asked.piSessionID, asked.generation, "uuid-2"),
+            (state.revision, "stale-session", asked.generation, "uuid-2"),
+            (state.revision, asked.piSessionID, "stale-generation", "uuid-2"),
+            (state.revision, asked.piSessionID, asked.generation, "missing-dialog")
+        ] {
+            let rejected = NativeThreadRequest.answer(expectedSessionID: session, generation: generation,
+                operationID: UUID(), dialogID: dialog, answer: .confirm(value: true))
+            do {
+                let result = try await rig.host.server.answerProjectQuestion(project.id, expectedRevision: revision, taskID: task.id, request: rejected)
+                #expect(result.failureCode != nil)
+            } catch let error as LogicalProjectsError { #expect(error.code == "stale_project") }
+            #expect(pi.stdin("extension_ui_response").isEmpty, "a rejected answer never reaches the worker")
+        }
         let answer = NativeThreadRequest.answer(expectedSessionID: asked.piSessionID, generation: asked.generation,
                                                operationID: UUID(), dialogID: "uuid-2", answer: .confirm(value: true))
         #expect(try await rig.host.server.answerProjectQuestion(project.id, expectedRevision: state.revision, taskID: task.id, request: answer).failureCode == nil)

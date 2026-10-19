@@ -46,6 +46,9 @@ public struct NativeQuestionPrompt: Equatable, Sendable {
     public var mayTimeOut: Bool
     /// Why it cannot be answered here, when it cannot.
     public var blocked: String?
+    /// An input that offers choices (`project_question`): its options are buttons and a last field
+    /// takes the person's own words. Both answer the input with a string.
+    public var allowsText = false
 
     /// Options at most this long, two of them with nothing under their titles, sit side by side.
     public static let shortOption = 24
@@ -72,8 +75,12 @@ public struct NativeQuestionPrompt: Equatable, Sendable {
             kind = .yesNo
         case .input:
             reply = .input
-            options = []
-            kind = .open
+            // An input's offered choices are hints, not limits: buttons over its field.
+            options = NativeQuestionOption.options(dialog)
+            allowsText = !options.isEmpty
+            kind = allowsText ? .choice : .open
+            let hints = (dialog.options ?? []).enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
+            if allowsText, dialog.message == hints { message = nil } // Hide only the older clients' duplicate hints.
         case .editor:
             reply = .editor
             options = []
@@ -101,6 +108,15 @@ public struct NativeQuestionPrompt: Equatable, Sendable {
 
 /// What the person has chosen or typed so far.
 public struct NativeQuestionPicks: Equatable, Sendable {
+    /// Where a field sits beside the options, one replaces the other: typing words drops the pick,
+    /// and picking an option empties the field.
+    public static func exclusive(_ old: NativeQuestionPicks, _ new: NativeQuestionPicks) -> NativeQuestionPicks {
+        var next = new
+        if new.picked != nil, new.picked != old.picked { next.text = "" }
+        else if new.text != old.text, !new.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { next.picked = nil }
+        return next
+    }
+
     /// An option's number.
     public var picked: Int?
     /// An open question's text.
@@ -130,6 +146,11 @@ extension NativeQuestionPrompt {
     /// empty, or a question that cannot be answered here.
     public func answer(_ picks: NativeQuestionPicks) -> NativeQuestionAnswer? {
         guard blocked == nil else { return nil }
+        // Typed words win over a pick (the field clears the pick as it is typed in).
+        if allowsText {
+            let text = picks.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty { return .words(text) }
+        }
         if kind == .open {
             // An editor's answer is the text as typed; an input's, trimmed.
             let text = picks.text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -145,6 +166,7 @@ extension NativeQuestionPrompt {
         case (.select, .option(let option)): return .select(value: option.value)
         case (.confirm, .option(let option)): return .confirm(value: option.number == 1)
         case (.input, .words(let text)): return .input(value: text)
+        case (.input, .option(let option)) where allowsText: return .input(value: option.value)
         case (.editor, .words(let text)): return .editor(value: text)
         default: return nil
         }
