@@ -234,6 +234,8 @@ public final class SessionServer: @unchecked Sendable {
     public var onSessionExited: ((SessionID, SessionExit) -> Void)?
     /// Fixed operation names and elapsed seconds only; delivered on main, never session contents.
     public var onDiagnosticDuration: ((String, Double) -> Void)?
+    /// Fixed outcome names only; delivered on main, never errors, tool names or session contents.
+    public var onDiagnosticActivity: ((String) -> Void)?
     /// State was persisted. Every mutation broadcasts, including mutations
     /// initiated by the GUI. Delivered on the main actor.
     public var onStateChanged: ((ShepherdState) -> Void)?
@@ -6554,6 +6556,12 @@ public final class SessionServer: @unchecked Sendable {
             if onDiagnosticDuration != nil {
                 thread.onDiagnosticDuration = { [weak serverWeak] operation, seconds in
                     serverWeak?.diagnosticDuration(operation, seconds: seconds)
+                }
+            }
+            if onDiagnosticActivity != nil {
+                thread.onDiagnosticActivity = { [weak serverWeak] activity in
+                    guard let server = serverWeak else { return }
+                    server.hopToMain { [weak server] in server?.onDiagnosticActivity?(activity) }
                 }
             }
             thread.onServable = { [weak serverWeak] in

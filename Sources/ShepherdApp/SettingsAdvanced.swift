@@ -115,7 +115,7 @@ struct DiagnosticsSettings: View {
     let configured: Bool
     var active = false
 
-    static let disclosure = "Send crash and hang stacks, errors, app and device details, process and memory counts, and operation timings to a third-party diagnostics service. No prompts, replies, tool output, file contents, command lines or session replay. Performance reports upload while Shepherd runs; crashes upload when you reopen it."
+    static let disclosure = "Send crash and hang stacks, app and device details, resource metrics, operation timings, fixed diagnostic logs and app-session health to Sentry. No prompts, replies, tool output, file contents, command lines or session replay. Performance reports upload while Shepherd runs; crashes upload when you reopen it."
 
     private var status: String? {
         guard configured else {

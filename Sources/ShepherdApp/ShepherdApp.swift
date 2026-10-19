@@ -62,6 +62,10 @@ public struct ShepherdMacApp: App {
             SessionServer.shared.onDiagnosticDuration = { operation, seconds in
                 ShepherdDiagnostics.shared.recordDuration(operation, seconds: seconds)
             }
+            SessionServer.shared.onDiagnosticActivity = { name in
+                guard let activity = ShepherdDiagnostics.Activity(rawValue: name) else { return }
+                ShepherdDiagnostics.shared.record(activity)
+            }
         }
         keys = KeybindingsStore.shared
         themes = ThemeManager.shared
