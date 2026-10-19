@@ -36,14 +36,26 @@ struct LogicalProjectConversationTests {
         expectScenarioCompleted(result)
     }
 
-    /// The same divider dragged by mouse events sent to the window (never posted). The scenario first checks, in its own process,
-    /// that such a drag reaches a plain SwiftUI `DragGesture` in a window of its own (`SyntheticMouse`); only where it does not is
-    /// this test cancelled, by name. Where events arrive, the divider must follow them exactly.
+    /// The shared split's own divider under mouse events sent to its window (never posted), bound to the Project pane's real width:
+    /// the DragGesture's wiring to `RightPaneDrag`, which the event-free scenario cannot reach. CI's runner delivers these to the
+    /// split in a window of its own; cancelled by name only in a process that delivers no synthetic drag to SwiftUI at all.
+    @Test func theSharedSplitFollowsAMouseDragAtItsDivider() async throws {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.splitMouseDrag() } }
+        expectScenarioCompleted(result)
+        if String(decoding: result?.standardOutputContent ?? [], as: UTF8.self).contains(SyntheticMouse.undeliveredLine) {
+            try Test.cancel("this process does not deliver synthetic mouse events to SwiftUI gestures")
+        }
+    }
+
+    /// The Project page's divider in the whole window under the same events. CI's runner has delivered them to neither divider of
+    /// this window, not even the sidebar's (run 39206720931), so the scenario first drags the sidebar's divider (the app's own,
+    /// independent of the pane's gesture) and is cancelled by name only when that does not move; where it does, the pane's divider
+    /// must follow exactly.
     @Test func theThreadsPaneFollowsAMouseDragAtItsDivider() async throws {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.paneMouseDrag() } }
         expectScenarioCompleted(result)
         if String(decoding: result?.standardOutputContent ?? [], as: UTF8.self).contains(SyntheticMouse.undeliveredLine) {
-            try Test.cancel("this process does not deliver synthetic mouse events to SwiftUI gestures; the drag path is covered without them")
+            try Test.cancel("this window does not deliver synthetic mouse drags even to the sidebar's divider")
         }
     }
 
@@ -454,7 +466,7 @@ struct LogicalProjectConversationTests {
         // A drag, through the handle's own path: `RightPaneDrag` is what its DragGesture's onChanged builds from each pointer
         // location and what its onEnded saves, and `RightPaneDrag.layout` is what the split draws meanwhile. Driven over the page's
         // real split (its width checked against the drawn divider) and the view model's real binding, without mouse events, which
-        // CI's headless runner does not deliver (theThreadsPaneFollowsAMouseDragAtItsDivider sends them where they arrive).
+        // CI's runner does not deliver to this window (theSharedSplitFollowsAMouseDragAtItsDivider and theThreadsPaneFollowsAMouseDragAtItsDivider send them).
         // The page is the window less the 232 sidebar and its 1pt edge: 1367, so the widest pane (half of it) is 683.5.
         let page = AppLayout.sidebarDefaultWidth + AppLayout.dividerWidth
         let total = window.window.frame.width - page
@@ -535,72 +547,78 @@ struct LogicalProjectConversationTests {
         #expect(RightPaneState(widthKey: ShepherdViewModel.logicalProjectPaneWidthKey, defaultWidth: 479, defaults: r.app.defaults).width == 619)
     }
 
-    /// The divider under real mouse events sent to the window: while the button is down the pane follows the pointer and nothing is
-    /// saved; letting go saves where it was drawn. Never posted, never key.
-    private static func paneMouseDrag() async throws {
+    /// `RightPaneSplit` alone, 1367 wide (the Project page beside the 232 sidebar in a 1600 window), on the Project pane's real state,
+    /// under mouse events: while the button is down the pane follows the pointer and nothing is saved; letting go saves (and
+    /// persists) where it was drawn, within half the column.
+    private static func splitMouseDrag() async throws {
         let r = try await rig()
         defer { r.app.stop() }
-        r.vm.openLogicalProject(r.ref)
-        // 700pt tall: CI's runner has one 1024x768 screen, and there this page in a 900pt window never took a mouse drag at either
-        // divider while the split alone did in windows shorter than that screen (run 39204670841).
-        let window = OffscreenWindow(size: CGSize(width: 1600, height: 700), dark: true, RootView(vm: r.vm))
-        defer { window.close() }
-        func handle() -> AccessibilityNode? { window.elements().first { $0.label == "Pane width" } }
-        func paneWidth() -> String? { handle().map { "\(Int((window.window.frame.maxX - $0.frame.midX - AppLayout.dividerWidth / 2).rounded())) points" } }
-        try await eventuallyOnMain("the divider") { paneWidth() == "479 points" }
         guard await SyntheticMouse.reachesSwiftUIGestures() else {
             FileHandle.standardOutput.write(Data(SyntheticMouse.undeliveredLine.utf8))
             return
         }
+        final class Log: NSView { var widths: [CGFloat] = []
+            override func setFrameSize(_ size: NSSize) { super.setFrameSize(size); if widths.last != size.width { widths.append(size.width) } } }
+        struct Logged: NSViewRepresentable { let view: Log
+            func makeNSView(context: Context) -> Log { view }
+            func updateNSView(_ nsView: Log, context: Context) {} }
+        let pane = Log()
+        let total: CGFloat = 1367
+        let window = OffscreenWindow(size: CGSize(width: total, height: 700), dark: true,
+                                     RightPaneSplit(state: r.vm.logicalProjectPane, showPane: true) { Color.white } pane: { Logged(view: pane) })
+        defer { window.close() }
+        try await eventuallyOnMain("the default pane") { window.layout(); return pane.widths.last == 479 }
+        // At the 1pt line's trailing edge, so each width is whole.
+        let mouse = SyntheticMouse(window: window.window, y: 350)
+        let grab = total - 479
+        try mouse.press(at: grab)
+        for step in 1...5 { try mouse.move(to: grab - CGFloat(step) * 20) }
+        try await eventuallyOnMain("the pane follows the pointer") { window.layout(); return pane.widths.last == 579 }
+        #expect(r.vm.logicalProjectPane.width == 0, "nothing is saved while the button is down")
+        try mouse.move(to: grab - 1000)
+        // Half the 1367 column is 683.5, drawn on whole points at this window's 1x scale.
+        try await eventuallyOnMain("no wider than half the column") { window.layout(); return pane.widths.last.map { abs($0 - 683.5) <= 0.5 } == true }
+        try mouse.move(to: grab - 140)
+        try mouse.release(at: grab - 140)
+        try await eventuallyOnMain("saved where it was let go") { r.vm.logicalProjectPane.width == 619 }
+        #expect(r.app.defaults.double(forKey: ShepherdViewModel.logicalProjectPaneWidthKey) == 619)
+        #expect(r.app.defaults.object(forKey: RightPaneState.widthKey) == nil, "a thread's pane width is untouched")
+        try await eventuallyOnMain("drawn where it was saved") { window.layout(); return pane.widths.last == 619 }
+        #expect(!window.window.isKeyWindow, "local mouse dispatch never takes the user's focus")
+    }
+
+    /// The Project page's divider in the whole window under real mouse events: while the button is down the pane follows the
+    /// pointer and nothing is saved; letting go saves where it was drawn. Never posted, never key.
+    private static func paneMouseDrag() async throws {
+        let r = try await rig()
+        defer { r.app.stop() }
+        r.vm.openLogicalProject(r.ref)
+        let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
+        defer { window.close() }
+        func handle() -> AccessibilityNode? { window.elements().first { $0.label == "Pane width" } }
+        func paneWidth() -> String? { handle().map { "\(Int((window.window.frame.maxX - $0.frame.midX - AppLayout.dividerWidth / 2).rounded())) points" } }
+        try await eventuallyOnMain("the divider") { paneWidth() == "479 points" }
+        let mouse = SyntheticMouse(window: window.window, y: window.host.bounds.midY)
         // Window coordinates from the window's own geometry, taken at the 1pt line's trailing edge so the widths are whole.
         let grab = try #require(handle()).frame.midX + AppLayout.dividerWidth / 2 - window.window.frame.minX
-        let mouse = SyntheticMouse(window: window.window, y: window.host.bounds.midY)
         try mouse.press(at: grab)
         for step in 1...5 { try mouse.move(to: grab - CGFloat(step) * 20) }
         do {
             try await eventuallyOnMain("the pane follows the pointer") { paneWidth() == "579 points" }
         } catch {
-            // This process delivers a drag to a plain gesture (the probe above), so say where this one stopped: the same drag at
-            // other points across the 9pt handle, and on the shared split alone in a window of its own.
+            // Did this window deliver the drag at all? The sidebar's own divider (its handle centres on x 232.5), independent of
+            // the pane's gesture: where it does not move either, the window delivers no drag and the test is cancelled by name;
+            // where it moves, the pane's divider alone ignored the drag, which fails.
             try mouse.release(at: grab - 100)
-            var tried: [String] = []
-            // `grab` is the 1pt line's trailing edge: -0.5 is its centre; -4 and +3 are on the 9pt handle beside it.
-            for dx in [-4.0, -1.5, -0.5, 0.0, 3.0] as [CGFloat] {
-                let before = paneWidth() ?? "-"
-                try mouse.press(at: grab + dx)
-                for step in 1...5 { try mouse.move(to: grab + dx - CGFloat(step) * 20) }
-                try? await eventuallyOnMain("moved", timeout: .seconds(1)) { paneWidth() != before }
-                tried.append("\(dx): \(before) → \(paneWidth() ?? "-")")
-                try mouse.release(at: grab + dx - 100)
+            let sidebar = r.vm.settings.sidebarWidth
+            try mouse.press(at: sidebar + 0.5)
+            for step in 1...5 { try mouse.move(to: sidebar + 0.5 + CGFloat(step) * 10) }
+            try mouse.release(at: sidebar + 50.5)
+            if (try? await eventuallyOnMain("the sidebar follows", timeout: .seconds(2)) { r.vm.settings.sidebarWidth != sidebar }) == nil {
+                FileHandle.standardOutput.write(Data(SyntheticMouse.undeliveredLine.utf8))
+                return
             }
-            /// The shared split alone, in a window `width` by `height`, dragged 100pt left from its line's centre: what it saves.
-            func alone(width: CGFloat, height: CGFloat = 200) async throws -> CGFloat {
-                let state = RightPaneState(widthKey: "probe-\(Int(width))-\(Int(height))", defaultWidth: 400, defaults: r.app.defaults)
-                let split = OffscreenWindow(size: CGSize(width: width, height: height), dark: false,
-                                            RightPaneSplit(state: state, showPane: true) { Color.white } pane: { Color.black })
-                defer { split.close() }
-                let edge = width - 400 - AppLayout.dividerWidth / 2
-                let other = SyntheticMouse(window: split.window, y: height / 2)
-                try other.press(at: edge)
-                for step in 1...5 { try other.move(to: edge - CGFloat(step) * 20) }
-                try other.release(at: edge - 100)
-                try? await eventuallyOnMain("the split alone saved", timeout: .seconds(2)) { state.width != 0 }
-                return state.width
-            }
-            // The app's own sidebar divider, in this window: its 9pt handle centres on x 232.5.
-            let sidebarBefore = r.vm.settings.sidebarWidth
-            try mouse.press(at: AppLayout.sidebarDefaultWidth + 0.5)
-            for step in 1...5 { try mouse.move(to: AppLayout.sidebarDefaultWidth + 0.5 + CGFloat(step) * 10) }
-            try mouse.release(at: AppLayout.sidebarDefaultWidth + 50.5)
-            try? await eventuallyOnMain("the sidebar moved", timeout: .seconds(2)) { r.vm.settings.sidebarWidth != sidebarBefore }
-            let point = CGPoint(x: grab - 0.5, y: window.host.bounds.midY)
-            var hit = window.host.hitTest(window.host.superview?.convert(point, from: nil) ?? point)
-            var chain: [String] = []
-            while let view = hit, chain.count < 5 { chain.append(String(String(describing: type(of: view)).prefix(48))); hit = view.superview }
-            let narrow = try await alone(width: 1000), wide = try await alone(width: 1600), tall = try await alone(width: 1600, height: 900)
-            let sidebarAfter = r.vm.settings.sidebarWidth
-            let screens = NSScreen.screens.map(\.frame)
-            Issue.record("divider drag not delivered: \(tried); the shared split alone saved \(narrow) at 1000x200, \(wide) at 1600x200, \(tall) at 1600x900; the sidebar went \(sidebarBefore) → \(sidebarAfter); hit at the divider \(chain); scale \(window.window.backingScaleFactor), screens \(screens)")
+            Issue.record("the sidebar's divider followed the drag (\(sidebar) → \(r.vm.settings.sidebarWidth)) but the pane's did not")
             throw error
         }
         #expect(r.vm.logicalProjectPane.width == 0, "nothing is saved while the button is down")
