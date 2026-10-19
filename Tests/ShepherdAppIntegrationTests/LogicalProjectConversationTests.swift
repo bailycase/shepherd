@@ -571,18 +571,34 @@ struct LogicalProjectConversationTests {
                 tried.append("\(dx): \(before) → \(paneWidth() ?? "-")")
                 try mouse.release(at: grab + dx - 100)
             }
-            let alone = RightPaneState(widthKey: "probe", defaultWidth: 400, defaults: r.app.defaults)
-            let split = OffscreenWindow(size: CGSize(width: 1000, height: 200), dark: false,
-                                        RightPaneSplit(state: alone, showPane: true) { Color.white } pane: { Color.black })
-            defer { split.close() }
-            // The line's centre in this window.
-            let edge = 1000 - 400 - AppLayout.dividerWidth / 2
-            let other = SyntheticMouse(window: split.window, y: 100)
-            try other.press(at: edge)
-            for step in 1...5 { try other.move(to: edge - CGFloat(step) * 20) }
-            try other.release(at: edge - 100)
-            try? await eventuallyOnMain("the split alone saved", timeout: .seconds(2)) { alone.width != 0 }
-            Issue.record("divider drag not delivered: \(tried); the shared split alone saved \(alone.width)")
+            /// The shared split alone, in a window `width` wide, dragged 100pt left from its line's centre: what it saves.
+            func alone(width: CGFloat) async throws -> CGFloat {
+                let state = RightPaneState(widthKey: "probe-\(Int(width))", defaultWidth: 400, defaults: r.app.defaults)
+                let split = OffscreenWindow(size: CGSize(width: width, height: 200), dark: false,
+                                            RightPaneSplit(state: state, showPane: true) { Color.white } pane: { Color.black })
+                defer { split.close() }
+                let edge = width - 400 - AppLayout.dividerWidth / 2
+                let other = SyntheticMouse(window: split.window, y: 100)
+                try other.press(at: edge)
+                for step in 1...5 { try other.move(to: edge - CGFloat(step) * 20) }
+                try other.release(at: edge - 100)
+                try? await eventuallyOnMain("the split alone saved", timeout: .seconds(2)) { state.width != 0 }
+                return state.width
+            }
+            // The app's own sidebar divider, in this window: its 9pt handle centres on x 232.5.
+            let sidebarBefore = r.vm.settings.sidebarWidth
+            try mouse.press(at: AppLayout.sidebarDefaultWidth + 0.5)
+            for step in 1...5 { try mouse.move(to: AppLayout.sidebarDefaultWidth + 0.5 + CGFloat(step) * 10) }
+            try mouse.release(at: AppLayout.sidebarDefaultWidth + 50.5)
+            try? await eventuallyOnMain("the sidebar moved", timeout: .seconds(2)) { r.vm.settings.sidebarWidth != sidebarBefore }
+            let point = CGPoint(x: grab - 0.5, y: window.host.bounds.midY)
+            var hit = window.host.hitTest(window.host.superview?.convert(point, from: nil) ?? point)
+            var chain: [String] = []
+            while let view = hit, chain.count < 5 { chain.append(String(String(describing: type(of: view)).prefix(48))); hit = view.superview }
+            let narrow = try await alone(width: 1000), wide = try await alone(width: 1600)
+            let sidebarAfter = r.vm.settings.sidebarWidth
+            let screens = NSScreen.screens.map(\.frame)
+            Issue.record("divider drag not delivered: \(tried); the shared split alone saved \(narrow) at 1000 wide, \(wide) at 1600; the sidebar went \(sidebarBefore) → \(sidebarAfter); hit at the divider \(chain); scale \(window.window.backingScaleFactor), screens \(screens)")
             throw error
         }
         #expect(r.vm.logicalProjectPane.width == 0, "nothing is saved while the button is down")
