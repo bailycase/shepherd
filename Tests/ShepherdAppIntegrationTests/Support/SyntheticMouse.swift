@@ -25,25 +25,27 @@ struct SyntheticMouse {
     }
 
     private struct NoEvent: Error {}
-    private static var probed: Bool?
 
-    /// Whether a drag sent this way reaches a plain SwiftUI `DragGesture` in this process at all. CI's headless runner has not
-    /// delivered synthetic clicks to SwiftUI in a never-key window (ThreadImagesControlTests); a test that needs real mouse
-    /// delivery is enabled by this probe, never by `CI`, so it is skipped by name only where delivery itself is missing.
+    /// What a scenario prints when its own process does not deliver these events to SwiftUI, so its test is cancelled by name.
+    static let undeliveredLine = "SHEPHERD-MOUSE-UNDELIVERED\n"
+
+    /// Whether a drag sent this way reaches a plain SwiftUI `DragGesture`, its changes and its end, in a window of its own. Run in
+    /// the scenario's own process, beside the window under test and never on the gesture under test, so a broken gesture there
+    /// fails its test instead of skipping it. A parent test process delivered such a drag on CI's runner while the scenario's
+    /// exit-test process did not deliver one to the divider, so only this process's answer counts.
     static func reachesSwiftUIGestures() async -> Bool {
-        if let probed { return probed }
-        final class Ended { var value = false }
-        let ended = Ended()
+        final class Seen { var changed = false, ended = false }
+        let seen = Seen()
         let window = OffscreenWindow(size: CGSize(width: 200, height: 100), dark: false,
                                      Color.clear.contentShape(Rectangle())
-                                        .gesture(DragGesture(minimumDistance: 1).onEnded { _ in ended.value = true }))
+                                        .gesture(DragGesture(minimumDistance: 1)
+                                            .onChanged { _ in seen.changed = true }
+                                            .onEnded { _ in seen.ended = true }))
         defer { window.close() }
         let mouse = SyntheticMouse(window: window.window, y: 50)
         try? mouse.press(at: 150)
         for x in [130.0, 110, 90] { try? mouse.move(to: x) }
         try? mouse.release(at: 90)
-        let reached = (try? await eventuallyOnMain("a probe drag", timeout: .seconds(2)) { ended.value }) != nil
-        probed = reached
-        return reached
+        return (try? await eventuallyOnMain("a probe drag", timeout: .seconds(2)) { seen.changed && seen.ended }) != nil
     }
 }

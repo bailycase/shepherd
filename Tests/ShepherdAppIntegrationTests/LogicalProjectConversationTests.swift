@@ -36,12 +36,15 @@ struct LogicalProjectConversationTests {
         expectScenarioCompleted(result)
     }
 
-    /// The same divider dragged by mouse events sent to the window (never posted). Enabled where such a drag reaches a plain SwiftUI
-    /// `DragGesture` at all (`SyntheticMouse`): CI's headless runner has not delivered them. Where it runs, it must land exactly.
-    @Test(.enabled("synthetic mouse events reach SwiftUI gestures here") { await SyntheticMouse.reachesSwiftUIGestures() })
-    func theThreadsPaneFollowsAMouseDragAtItsDivider() async {
+    /// The same divider dragged by mouse events sent to the window (never posted). The scenario first checks, in its own process,
+    /// that such a drag reaches a plain SwiftUI `DragGesture` in a window of its own (`SyntheticMouse`); only where it does not is
+    /// this test cancelled, by name. Where events arrive, the divider must follow them exactly.
+    @Test func theThreadsPaneFollowsAMouseDragAtItsDivider() async throws {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.paneMouseDrag() } }
         expectScenarioCompleted(result)
+        if String(decoding: result?.standardOutputContent ?? [], as: UTF8.self).contains(SyntheticMouse.undeliveredLine) {
+            try Test.cancel("this process does not deliver synthetic mouse events to SwiftUI gestures; the drag path is covered without them")
+        }
     }
 
     @Test func aChosenFilterOffersShowAllAndChoosingItClearsTheFilter() async {
@@ -543,6 +546,10 @@ struct LogicalProjectConversationTests {
         func handle() -> AccessibilityNode? { window.elements().first { $0.label == "Pane width" } }
         func paneWidth() -> String? { handle().map { "\(Int((window.window.frame.maxX - $0.frame.midX - AppLayout.dividerWidth / 2).rounded())) points" } }
         try await eventuallyOnMain("the divider") { paneWidth() == "479 points" }
+        guard await SyntheticMouse.reachesSwiftUIGestures() else {
+            FileHandle.standardOutput.write(Data(SyntheticMouse.undeliveredLine.utf8))
+            return
+        }
         // Window coordinates from the window's own geometry, taken at the 1pt line's trailing edge so the widths are whole.
         let grab = try #require(handle()).frame.midX + AppLayout.dividerWidth / 2 - window.window.frame.minX
         let mouse = SyntheticMouse(window: window.window, y: window.host.bounds.midY)
