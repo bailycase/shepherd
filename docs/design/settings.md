@@ -31,7 +31,7 @@ Save or Apply. Instructions and [Spaces](settings-projects.md) edit files with a
     (`textPrimary` when selected), then, 10pt after it, the name in Geist 13 `textPrimary`. The
     selected page sits on `bgSelected` with its name at medium (500); hover is `bgHover`
     (`NWSettingsNavMetrics`). `NWGlyph.Settings` draws the boards' vector outlines rather than
-    similar SF Symbols; Extensions and Slash commands are the boards' filled outlines, cropped to
+    similar SF Symbols, except Advanced, which draws the system `gearshape` itself (a traced copy rendered lumpy); Extensions and Slash commands are the boards' filled outlines, cropped to
     their ink and drawn at the boards' 42.86pt scale.
   - "Shepherd x.y.z · agent x.y.z" pinned at the bottom in mono `micro`, `textTertiary`, aligned with
     the rows' icons: the app's own name, so "Shepherd Nightly …" there. On Pi it names the
