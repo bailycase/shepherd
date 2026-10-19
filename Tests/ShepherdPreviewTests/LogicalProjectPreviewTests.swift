@@ -260,6 +260,26 @@ struct LogicalProjectPreviewTests {
         _ = ref
     }
 
+    /// The Threads pane after a drag at its divider: the board's 480 box, a wide 760 pane, and a 1100 window where the pane gives
+    /// way so the conversation keeps 400 (the shared side-pane bounds). Real tasks from the stub engine.
+    @Test func threadsPaneAtDefaultWideAndNarrowWidths() async throws {
+        let (world, _) = try await running([("Reading list research", "slow"), ("Library API draft", "slow")])
+        defer { world.stop() }
+        let vm = world.vm
+        let ready: @MainActor () -> Bool = { vm.state.projects.first.flatMap { $0.coordinatorAgentID }.flatMap { vm.projectCoordinator.conversationStore(agentID: $0) }?.rows.isEmpty == false }
+        try await Preview.renderMatrix("lead-pane-default", size: CGSize(width: 1600, height: 900), ready: ready) { window(vm, style: .projects) }
+        vm.logicalProjectPane.width = 760
+        try await Preview.renderMatrix("lead-pane-wide", size: CGSize(width: 1600, height: 900), ready: ready) { window(vm, style: .projects) }
+        try await Preview.renderMatrix("lead-pane-narrow", size: CGSize(width: 1100, height: 900), ready: ready) {
+            HStack(spacing: 0) {
+                SidebarView(vm: vm).frame(width: 232).background(Color.nw.bgBase)
+                    .overlay(alignment: .trailing) { Rectangle().fill(Color.nw.lineSubtle).frame(width: 1) }
+                LogicalProjectDestination(vm: vm).frame(width: 1100 - 232)
+            }
+        }
+        vm.logicalProjectPane.width = 0
+    }
+
     /// ProjectLead-AddsSpace: a real pending proposal (from the owner's own `proposeSpace`), drawn as the offer card over the composer.
     @Test func addsSpaceOfferFromARealProposal() async throws {
         try StubPi.installAsEngine()

@@ -468,6 +468,10 @@ final class ShepherdViewModel {
     var logicalProjectPaneSearching = false
     var logicalProjectPaneFilter: Set<ProjectTaskGroup> = []
     var logicalProjectPaneExpanded = false
+    /// The Threads pane's width, dragged at its divider as a thread's side pane is: one width for every Project, kept across launches.
+    /// The board's 480 box is the 1pt divider and a 479 pane.
+    let logicalProjectPane: RightPaneState
+    static let logicalProjectPaneWidthKey = "shepherd.projectPaneWidth"
     /// The New thread sheet over a Project (assign a task into one of its Spaces).
     var assigningProjectTask: AssignProjectTaskDraft?
     @ObservationIgnored let emptyProjectConversation = NativeThreadStore()
@@ -599,6 +603,8 @@ final class ShepherdViewModel {
         self.restoresAgentsAtLaunch = restoresAgentsAtLaunch
         self.settings = settings ?? .shared
         self.sidebarDefaults = sidebarDefaults
+        logicalProjectPane = RightPaneState(widthKey: Self.logicalProjectPaneWidthKey,
+                                            defaultWidth: NWLeadMetrics.paneWidth - AppLayout.dividerWidth, defaults: sidebarDefaults)
         LegacyTerminalAgents.forgetPresentationPreferences(in: sidebarDefaults)
         self.keybindings = keybindings ?? .shared
         self.themeManager = themeManager ?? .shared

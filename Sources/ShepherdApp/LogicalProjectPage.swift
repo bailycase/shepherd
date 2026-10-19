@@ -18,22 +18,18 @@ struct LogicalProjectDestination: View {
             if let ref = vm.selectedLogicalProject, let project = vm.logicalProjects.project(ref) {
                 let presentation = ProjectPagePresentation(project)
                 // The toolbar and conversation are one column; the Threads pane runs the window's full height beside it, with
-                // its own header (ProjectLead-Started).
-                HStack(spacing: 0) {
-                    // Expand gives the pane the whole page; pressing it again brings the conversation back.
-                    let expanded = vm.logicalProjectPaneOpen && vm.logicalProjectPaneExpanded
-                    if !expanded {
-                        VStack(spacing: 0) {
-                            LogicalProjectToolbar(vm: vm, ref: ref, project: project, presentation: presentation, chrome: chrome)
-                            LogicalProjectConversation(vm: vm, ref: ref, project: project, presentation: presentation)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        }
+                // its own header (ProjectLead-Started). It is a thread's side pane: the same divider to drag (or adjust with
+                // VoiceOver, or double-click for half the page), the same bounds, and in a page too narrow to keep the
+                // conversation 400pt it overlays it. Expand gives the pane the whole page, the conversation hidden under it.
+                RightPaneSplit(state: vm.logicalProjectPane, showPane: vm.logicalProjectPaneOpen,
+                               maximized: vm.logicalProjectPaneExpanded) {
+                    VStack(spacing: 0) {
+                        LogicalProjectToolbar(vm: vm, ref: ref, project: project, presentation: presentation, chrome: chrome)
+                        LogicalProjectConversation(vm: vm, ref: ref, project: project, presentation: presentation)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
-                    if vm.logicalProjectPaneOpen {
-                        LogicalProjectPane(vm: vm, ref: ref, project: project, presentation: presentation)
-                            .frame(width: expanded ? nil : NWLeadMetrics.paneWidth)
-                            .frame(maxWidth: expanded ? .infinity : NWLeadMetrics.paneWidth)
-                    }
+                } pane: {
+                    LogicalProjectPane(vm: vm, ref: ref, project: project, presentation: presentation)
                 }
             } else {
                 PlainHeader(title: "Project", leadingInset: chrome.leadingInset, showSidebar: chrome.showSidebar)

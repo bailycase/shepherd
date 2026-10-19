@@ -47,10 +47,8 @@ struct LogicalProjectPane: View {
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
-        // The leading line takes its own 1pt (a CSS border-left), so the content starts one point in.
-        .padding(.leading, NWLeadMetrics.paneBorder)
+        // The leading line (a CSS border-left) is the page's divider, drawn and dragged by `RightPaneSplit`.
         .background(Color.nw.bgWindow)
-        .overlay(alignment: .leading) { NWHairline(.vertical, width: NWLeadMetrics.paneBorder) }
         .task(id: listedWorkers) {
             await withTaskGroup(of: Void.self) { group in
                 for row in listedWorkers {
