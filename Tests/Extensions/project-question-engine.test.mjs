@@ -8,7 +8,7 @@ const args = ['--no-extensions', '--no-skills', '--no-prompt-templates', '--no-t
 const worker = { SHEPHERD_PROJECT_CONTEXT: '{"projectID":"fixture-project"}', SHEPHERD_PROJECT_COORDINATOR: '0', SHEPHERD_AGENT_ID: 'fixture-worker', SHEPHERD_SOCKET: '/no-question-socket' };
 const questionResult = turn => turn.events.find(event => event.type === 'tool_execution_end' && event.toolName === 'project_question');
 
-test('pinned worker emits native select/input, receives exact human answers, and cancels without permission', { timeout: 60000 }, async t => {
+test('pinned worker emits one native input for choices or free text, receives exact answers, and cancels without permission', { timeout: 60000 }, async t => {
   let parameters, issueCall = false;
   await withPi(t, { args, env: worker, settings: { compaction: { enabled: false } }, onRequest: () => {
     if (!issueCall) return {};
@@ -17,6 +17,9 @@ test('pinned worker emits native select/input, receives exact human answers, and
   } }, async pi => {
     for (const row of [
       { parameters: { question: 'Deploy where?', options: ['Staging', 'Production'] }, response: { value: 'Staging' } },
+      { parameters: { question: 'Deploy elsewhere?', options: ['Staging', 'Production'] }, response: { value: 'Use a preview environment instead.' } },
+      { parameters: { question: 'Describe the alternative?', options: ['Say anything', 'Staging'] }, response: { value: 'Use a local instance.' } },
+      { parameters: { question: 'Quoted options?', options: ['line\nbreak', 'quote "here"'] }, response: { value: 'quote "here"' } },
       { parameters: { question: 'What retention period?' }, response: { value: '30 days — no secrets' } },
       { parameters: { question: 'An intentionally empty answer?' }, response: { value: '' } },
       { parameters: { question: 'Choose?', options: ['Yes', 'No'] }, response: { cancelled: true } },
@@ -29,9 +32,11 @@ test('pinned worker emits native select/input, receives exact human answers, and
       const mark = pi.events.length, requestMark = pi.provider.requests.length;
       const pendingTurn = pi.prompt('Ask the required Project question.');
       const dialog = await until('the real worker native dialog', () => pi.events.slice(mark).find(event => event.type === 'extension_ui_request'));
-      assert.equal(dialog.method, parameters.options ? 'select' : 'input');
-      assert.equal(dialog.title, parameters.question);
-      assert.deepEqual(dialog.options, parameters.options);
+      assert.equal(dialog.method, 'input');
+      const choices = parameters.options?.filter(option => option !== 'Say anything');
+      assert.equal(dialog.title, choices?.length ? `${parameters.question}\n\nOptions:\n${JSON.stringify(choices)}` : parameters.question);
+      assert.equal(dialog.placeholder, choices ? 'Say anything' : undefined);
+      assert.equal(dialog.options, undefined, 'choice shortcuts still answer a supported native input');
       assert.equal(pi.provider.requests.length, requestMark + 1, 'waiting for the human starts no evaluator or extra model request');
       assert.ok(!pi.events.slice(mark).some(event => event.type === 'tool_execution_end'), 'question suspends the real tool');
       if (row.abort) assert.equal((await pi.request({ type: 'abort' })).success, true);
@@ -43,6 +48,8 @@ test('pinned worker emits native select/input, receives exact human answers, and
       assert.ok(result, pi.stderr);
       assert.equal(result.isError, false);
       const expected = row.abort || row.response.cancelled ? { cancelled: true } : { answer: row.response.value };
+      assert.equal(turn.events.filter(event => event.type === 'extension_ui_request').length, 1, 'no second question or automated reply handoff');
+      assert.equal(turn.events.filter(event => event.type === 'tool_execution_end' && event.toolName === 'project_question').length, 1);
       assert.deepEqual(JSON.parse(result.result.content[0].text), expected);
       if (!row.abort) {
         assert.equal(turn.requests.length, 2, 'only the normal worker follow-up runs');

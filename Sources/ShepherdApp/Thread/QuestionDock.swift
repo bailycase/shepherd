@@ -141,7 +141,8 @@ struct QuestionDock: View {
             count: count, question: prompt.question, message: prompt.message, kind: kind,
             options: prompt.options.map { NWQuestionDockOption(number: $0.number, title: $0.title, detail: $0.detail, recommended: $0.recommended) },
             placeholder: prompt.placeholder, multiline: prompt.multiline,
-            notice: prompt.blocked ?? (prompt.mayTimeOut ? timeoutNotice : nil), showsAnswer: prompt.showsAnswer)
+            notice: prompt.blocked ?? (prompt.mayTimeOut ? timeoutNotice : nil), showsAnswer: prompt.showsAnswer,
+            allowsText: prompt.allowsText)
     }
 
     static let timeoutNotice = "The agent may stop waiting for this answer"
