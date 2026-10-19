@@ -73,11 +73,19 @@ struct TokenTests {
     }
 
     @Test func settingsGlyphsUseEverySuppliedVectorAsset() throws {
-        for glyph in NWGlyph.Settings.allCases {
+        for glyph in NWGlyph.Settings.allCases where glyph.systemSymbolName == nil {
             let svg = try String(contentsOf: #require(glyph.resourceURL), encoding: .utf8)
             #expect(svg.contains("<svg") && svg.contains("stroke="))
             #expect(!svg.contains("<script") && !svg.contains("href="))
         }
+    }
+
+    /// A user saw a lumpy, hand-traced gear on Advanced; it is the system `gearshape` the board draws.
+    @Test func advancedDrawsTheSystemGear() throws {
+        #expect(NWGlyph.Settings.advanced.systemSymbolName == "gearshape")
+        #expect(NWGlyph.Settings.advanced.resourceURL == nil)
+        #expect(NSImage(systemSymbolName: try #require(NWGlyph.Settings.advanced.systemSymbolName), accessibilityDescription: nil) != nil)
+        #expect(NWGlyph.Settings.allCases.filter { $0.systemSymbolName != nil } == [.advanced])
     }
 
     @Test func theBundledFacesAreRegistered() {
