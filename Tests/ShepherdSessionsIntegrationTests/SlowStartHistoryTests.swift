@@ -5,30 +5,32 @@ import ShepherdProtocol
 @testable import ShepherdSessions
 import ShepherdTestSupport
 
-/// A pi slower than the request deadline is asked again (`RPCThreadState.bootstrap`). The history
-/// it sends for the retry can take a while to arrive, and until it has the thread is starting, not
-/// served empty and clipped.
+/// Late bootstrap history still has to land whole before the thread can serve.
 @Suite("Thread history after a slow start", .integrationTimeLimit)
 struct SlowStartHistoryTests {
     @Test func aPiSlowerThanTheDeadlineIsNotServedWithoutItsHistory() async throws {
         let t = try ThreadEventTests.Thread(bootstrap: false, env: ["STUB_PI_STARTUP_GATE": "release-pi", "STUB_PI_HISTORY_BYTES": "1048576"])
         defer { t.stop() }
-        let decodes = Locked(0)
+        let decoding = Locked(false)
         let hold = DispatchSemaphore(value: 0)
+        defer { hold.signal() }
         t.session.beforeOffQueueDecode = {
-            // The first big record answers the attempt that gave up; the retry's is held.
-            if decodes.withValue({ $0 += 1; return $0 }) >= 2 { hold.wait() }
+            decoding.withValue { $0 = true }
+            hold.wait()
         }
-        t.queue.async { t.state.bootstrap(timeout: 1) }
-        try await eventually("the bootstrap to ask again") {
-            await withCheckedContinuation { continuation in t.queue.async { continuation.resume(returning: t.state.bootstrapAttempts >= 2) } }
+        t.queue.async { t.state.bootstrap(timeout: 0.2) }
+        try await eventually("the readiness deadline to expire") {
+            await t.request(.snapshot()).failureCode == NativeThreadCode.unavailable
         }
         FileManager.default.createFile(atPath: t.dir.appendingPathComponent("release-pi").path, contents: nil)
-        try await eventually("pi to answer the retry's state while its history is held") {
-            await withCheckedContinuation { continuation in t.queue.async { continuation.resume(returning: t.state.piSessionID != nil) } }
+        try await eventually("pi to answer state and start decoding its late history") {
+            let hasState = await withCheckedContinuation { continuation in
+                t.queue.async { continuation.resume(returning: t.state.piSessionID != nil) }
+            }
+            return hasState && decoding.current
         }
 
-        #expect(await t.request(.snapshot()).failureCode == NativeThreadCode.starting, "the history is still on its way")
+        #expect(await t.request(.snapshot()).failureCode == NativeThreadCode.unavailable, "not served empty while history is decoding")
         hold.signal()
         var landed: NativeThreadSnapshot?
         try await eventually("the history to land") {

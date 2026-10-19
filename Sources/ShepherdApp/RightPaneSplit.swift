@@ -16,6 +16,8 @@ final class RightPaneState {
     var tabs: [SidePaneOwner: SidePaneTab] = [:]
     /// Tabs the agent opened something in since you last showed them.
     var news: [SidePaneOwner: Set<SidePaneTab>] = [:]
+    /// The artifact each pane has open on its Artifacts tab, by its path; none shows the list.
+    var artifact: [SidePaneOwner: String] = [:]
     /// Panes over their whole layout (ChangesWide), the thread hidden under them.
     var maximized: Set<SidePaneOwner> = []
     /// A run whose Steer field takes focus when its inspector shows it (the tray's Steer),
@@ -60,6 +62,7 @@ final class RightPaneState {
         if open.contains(owner) { open.remove(owner) }
         if tabs[owner] != nil { tabs.removeValue(forKey: owner) }
         if news[owner] != nil { news.removeValue(forKey: owner) }
+        if artifact[owner] != nil { artifact.removeValue(forKey: owner) }
         if maximized.contains(owner) { maximized.remove(owner) }
     }
 }

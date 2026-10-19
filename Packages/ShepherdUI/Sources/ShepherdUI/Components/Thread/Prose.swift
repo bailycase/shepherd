@@ -83,7 +83,7 @@ public struct NWProseFootnote: Equatable, Sendable {
 }
 
 extension EnvironmentValues {
-    /// The folder local file links and image paths resolve against (the agent's working directory),
+    /// The folder local image and file-link paths in prose resolve against (the agent's working directory),
     /// nil where the agent's files are not on this device (a remote host's agent, the iOS
     /// client): its images show as chips.
     @Entry public var nwProseFileRoot: URL? = nil
@@ -147,6 +147,7 @@ struct NWProseBlocks<Code: View>: View {
     @Environment(\.nwProseHalfLeading) private var halfLeading
     @Environment(\.nwProseTaskLinks) private var taskLinks
     @Environment(\.nwProseFileRoot) private var fileRoot
+    @Environment(\.nwProseFileLinks) private var fileLinks
     @Environment(\.openURL) private var openURL
 
     var body: some View {
@@ -254,7 +255,9 @@ struct NWProseBlocks<Code: View>: View {
                     .modifier(NWTaskChipPressTargets(halfLeading: Self.halfLeadingPad))
             } else {
                 // Outside a Project conversation a task reference is only words: nothing opens it, the system included.
-                Text(NWProseTaskLinks.hasReference(text) ? NWProseTaskLinks.inert(text) : text).nwText(.body, size: size).italic(voice == .quoted)
+                let shown = NWProseTaskLinks.hasReference(text) ? NWProseTaskLinks.inert(text) : text
+                NWProseFileLinks.prose(shown, root: fileRoot, actions: fileLinks).nwText(.body, size: size).italic(voice == .quoted)
+                    .modifier(NWFileLinkTargets(actions: NWProseFileLinks.targets(shown, root: fileRoot, actions: fileLinks)))
             }
         case .thinking: Text(text).font(NWThinking.font).italic().lineSpacing(NWThinking.lineSpacing)
         }
@@ -262,7 +265,9 @@ struct NWProseBlocks<Code: View>: View {
 
     @ViewBuilder private func heading(_ text: AttributedString) -> some View {
         switch voice {
-        case .reply, .quoted: Text(text).font(.nw(.headline, size: size)).lineSpacing(NWTextStyle.headline.lineSpacing(size))
+        case .reply, .quoted:
+            NWProseFileLinks.prose(text, root: fileRoot, actions: fileLinks).font(.nw(.headline, size: size)).lineSpacing(NWTextStyle.headline.lineSpacing(size))
+                .modifier(NWFileLinkTargets(actions: NWProseFileLinks.targets(text, root: fileRoot, actions: fileLinks)))
         case .thinking: Text(text).font(NWThinking.headingFont).italic().lineSpacing(NWThinking.lineSpacing)
         }
     }

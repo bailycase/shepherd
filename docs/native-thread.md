@@ -121,9 +121,16 @@ events come out on stdout, one record per LF.
   whole history as a single record, far beyond the 1 MiB NDJSON cap that still applies to the
   extension socket and TCP frames. A larger record is logged and skipped.
 - **Stdin:** queued up to 8 MiB. A command beyond that is dropped.
-- **Requests:** each has a 10 s deadline and fails cleanly on timeout or when the process exits.
+- **Requests:** default to a 10 s deadline (60 s during bootstrap) and fail cleanly on timeout
+  or when the process exits. Bootstrap retains late readiness answers without retrying.
 - **stderr:** used for diagnostics only, logged line by line. A line is cut at 64 KiB.
-- **Shutdown:** `kill()` sends SIGTERM to the process group, then SIGKILL after 2 s.
+- **Shutdown:** `kill()` sends SIGTERM to the process group, then SIGKILL after 3 s, allowing
+  MCP's 2.5-second graceful close. Before signalling, `OwnedProcessTree` captures descendants,
+  including detached MCP groups, and fences later cleanup with PID start identities. Hard
+  shutdown cleans those captured groups too. This covers app-requested teardown, not an external
+  SIGKILL of Pi before capture: already-reparented, previously unknown MCP processes cannot be
+  safely rediscovered by name and are deliberately not swept. Shutdown before pipe-source
+  registration closes its descriptors directly.
 - **Queueing:** like `PTYSession`, all mutable state is confined to a queue that targets the
   server's serial queue.
 
@@ -148,14 +155,21 @@ events come out on stdout, one record per LF.
   client. The thread keeps everything pi listed (`allCommands`): typing a hidden command still
   runs it, and the server's `slashCommandCatalog` lists every command any thread's pi reported, so
   the page can switch a hidden one back on). Until `get_state` and
-  `get_messages` have answered, requests fail with `native_starting` ("The agent is starting."): pi
-  answers `get_state` first, and a thread served before a long history arrives would show a
-  resumed agent as a new, empty one. pi reads stdin only once it has started, so a pi slower
-  than the 10 s request deadline answers requests already given up on; when `get_state` times
-  out, the bootstrap asks again, and only the retry's `get_messages` ends the wait (the earlier
-  attempt's timeout declares nothing, or the thread would be served with an empty history
-  while the retry's is on its way). A failed history fetch is `clips.history` (Clipped, below)
-  until the next one lands whole.
+  `get_messages` have answered, ordinary requests fail with `native_starting` ("The agent is
+  starting."): a thread served before history arrives would show a resumed agent as a new,
+  empty one. A startup question is the exception: snapshots carry `initializing: true`, an empty
+  session id, the real generation and only the `answer` action. Clients keep their preview and
+  history, allow the answer, and do not release waiting sends until full readiness. Older hosts
+  omit `initializing`. Remote clients opt in with `native.startup-dialogs.v1`; older clients
+  get an update-required error for an answerable startup question, never an empty history page.
+  Bootstrap sends its readiness requests once and bounds machine readiness
+  at 60 seconds, independently of clients and visibility. Answerable startup questions pause
+  that deadline while the person decides; answering starts a fresh machine deadline. A live process that has not answered
+  returns `native_unavailable`, naming the missing readiness replies and keeping its opening
+  prompt. Late state and history replies still use the normal projection and can make the
+  thread usable, delivering that prompt once. A bootstrap history timeout never serves an
+  empty conversation. Other failed history fetches are `clips.history` (Clipped, below) until
+  the next one lands whole.
 - **Events** update the projection in place. The run pi is streaming is one ordered list of
   live rows (`provisional`), in the order pi produced them:
   - `message_start`, `message_update`, and `message_end` stream the current assistant message
@@ -635,6 +649,32 @@ what it sent (`sentImages`) or on the original file.
   was ("Image attached"). The Mac draws them ([thread-images](design/thread-images.md)); the phone and iPad draw
   the count for now.
 
+### Artifacts
+
+An artifact is any file the agent made in the thread: every path a successful `write` call created. There is no
+new tool, no versioning and no editing. The host stores nothing and trusts no client path.
+
+- **Derived, not stored.** `nativeArtifacts` (ShepherdRemote) reads the thread's finished, successful `write`
+  calls: a path once however often it was written, newest write first, with its kind from the extension (Markdown,
+  HTML, SVG, other text) and the age of its latest write. `NativeThreadStore.artifacts` holds it, derived with the rows.
+  A write the host cut short keeps its `path` (`RPCThreadState.fitting` shortens long string arguments, `content`
+  first, and records `contentLines`), so a big report is still named.
+- **`NativeThreadRequest.artifact(expectedSessionID, path, offset)`** answers `artifactChunk` (`path`, `totalBytes`,
+  `offset`, `data`), at most 256 KiB a piece. The host asks pi for its history again (`get_messages`) and serves
+  only a `path` equal to the one a successful `write` of this agent's session gave (`ThreadArtifacts.writtenPaths`),
+  resolved against the agent's folder; it reads the file on a utility queue (`NativeArtifactFile`), opened with
+  `O_NOFOLLOW` (a link in the last place is refused), a regular file only, at most `NativeArtifactChunk.maxBytes`
+  (8 MiB). Failures: `stale_session`, `unknown_artifact` (not a path this thread wrote, or an offset past the end),
+  `artifact_unavailable` (gone, a link, not a file, too big).
+- **Gated** by `artifacts` in `supportedActions` and, remotely, `native.artifacts.v1`; an older host's snapshot
+  loses the action and the request is refused client-side. The tab shows from the thread's own `write` calls
+  either way, and opens "isn't available" on a host that cannot serve them.
+- **The client** (`NativeThreadArtifacts`) checks each piece (same path, in order, a size that does not change,
+  within the limits), holds up to 24 MiB, keyed by path and latest write, and drops everything on a new session.
+- **Drawn** by `NWArtifactCard`, `NWArtifactList`, `NWArtifactBar` (ShepherdUI). Markdown through the thread's prose
+  renderer; HTML and SVG in `NWArtifactWebView`: JavaScript off, no base URL (so no file access), a content rule list
+  that blocks every request but `data:`, every navigation cancelled. Save a copy writes the fetched bytes.
+
 ## Goals
 
 The snapshot's optional `goal` is the live projection of a session-persisted conversation goal.
@@ -809,8 +849,9 @@ transport differs.
     every other request is `native_unavailable`. `retryStart` makes it `native_starting` until
     the new pi is bound, and that pi takes the opening prompt the stopped one never read. An
     older client ignores the field and draws an empty thread it cannot send to.
-  - `native_unavailable`, with the reason: the agent no longer exists, its thread runs no pi, or
-    its pi exited after it served (with the exit code, also after the app retired the session).
+  - `native_unavailable`, with the reason: the agent no longer exists, its thread runs no pi,
+    its live pi missed the bootstrap readiness deadline, or its pi exited after it served
+    (with the exit code, also after the app retired the session).
   - Hosts advertise `native.thread.starting.v1`. `RemoteHostClient` reads `native_unavailable`
     from an older host as starting: such a host said that while pi started, and it retires an
     agent whose pi exits.
@@ -891,6 +932,7 @@ output grows.
   opening prompt's pending row) before the agent is selected, so its thread draws complete at
   once, with what the user asked for. A pi still
   starting after `startingLimit` (a minute) becomes a `loadError`, cleared if it answers later.
+  Suspending polling does not reset that elapsed time; showing the thread checks it again.
 - **Can't start:** a snapshot carrying `startProblem` sets `startProblem` and nothing else: the
   store keeps what it drew (a preview stays a preview), is neither `ready` nor `starting`, offers
   no send, and a send waiting for pi gives up with its draft kept. `restarting()` (Retry) clears

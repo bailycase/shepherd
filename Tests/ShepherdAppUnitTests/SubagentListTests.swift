@@ -127,10 +127,10 @@ struct SubagentListTests {
         let tabs = SidePaneTabs.items(news: [], changedFiles: 5, subagents: (5, .running))
         #expect(tabs.map(\.title) == ["Changes", "Browser", "Subagents"])
         let tab = try #require(tabs.last)
-        #expect(tab.systemImage == "arrow.triangle.branch" && tab.shortcut == "⌃3" && tab.count == 5)
+        #expect(tab.systemImage == "arrow.triangle.branch" && tab.shortcut == "⌃4" && tab.count == 5)
         #expect(SidePaneTabs.items(news: [], changedFiles: 5, subagents: nil).map(\.title) == ["Changes", "Browser"])
         let noBrowser = SidePaneTabs.items(news: [], changedFiles: 5, browser: false, subagents: (1, .done))
         #expect(noBrowser.map(\.title) == ["Changes", "Subagents"], "a host with no tunnels has no Browser")
-        #expect(noBrowser.last?.shortcut == "⌃3", "and Subagents keeps ⌃3")
+        #expect(noBrowser.last?.shortcut == "⌃4", "and Subagents keeps ⌃4, after Artifacts (PaneStates: Artifacts is ⌃3)")
     }
 }

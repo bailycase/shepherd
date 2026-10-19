@@ -30,7 +30,7 @@
     {
       "path": "dist/modes/rpc/rpc-mode.js",
       "before": "631697cd35928fc827f4a423538c43ff227b8cbf63c2a2f11060616f55eba6db",
-      "after": "6b364eaf366cf321c24ec8b481cf2cd4306927560cd73bc9c8abf8110327b5a7",
+      "after": "f5384700bb0a08f3411e54478312e4a64cb44c3ac61b4d266f9e8e7b6cf50b94",
       "edits": [
         {
           "old": "    // Handle a single command",
@@ -63,6 +63,22 @@
         {
           "old": "        await runtimeHost.dispose();",
           "new": "        stopSkillWatch?.();\n        await runtimeHost.dispose();"
+        },
+        {
+          "old": "    await rebindSession();\n    registerSignalHandlers();\n",
+          "new": ""
+        },
+        {
+          "old": "    const handleInputLine = async (line) => {",
+          "new": "    // Startup dialogs need stdin before session_start completes. Other commands stay gated.\n    const startup = rebindSession();\n    registerSignalHandlers();\n    const handleInputLine = async (line) => {"
+        },
+        {
+          "old": "        try {\n            const response = await handleCommand(command);",
+          "new": "        try {\n            await startup;\n            const response = await handleCommand(command);"
+        },
+        {
+          "old": "    // Keep process alive forever",
+          "new": "    await startup;\n    // Keep process alive forever"
         }
       ]
     },
@@ -125,7 +141,7 @@
     {
       "path": "dist/bundle/chunks/chunk-IBCPYVFK.js",
       "before": "36657698101aaff1634e513874455f7580874febab92616637e71754d9874361",
-      "after": "f4f181d1d58468b63024fd076556a6198afbe6113a2672fbf9ace51ffb01f3ee",
+      "after": "29e85b7554e7fb8e70cca6dd9f4be54450f9ff686f7a3fa1205c1c6e5544ffdf",
       "edits": [
         {
           "old": "import{execSync,spawnSync}from\"child_process\";var commandResultCache=new Map,",
@@ -146,6 +162,67 @@
         {
           "old": "`Failed to resolve ${description} from shell command: ${reference.config.slice(1)}`",
           "new": "`Command configuration values are not supported for ${description}`"
+        },
+        {
+          "old": "for(let timer of timers)clearTimeout(timer);killProcessTree(child,\"SIGTERM\"),resolve()",
+          "new": "for(let timer of timers)clearTimeout(timer);killProcessTree(child,\"SIGKILL\"),resolve()"
+        }
+      ]
+    },
+    {
+      "path": "node_modules/@earendil-works/pi-mcp/dist/transports/stdio.js",
+      "before": "c90e0c20bf1052a70fcac794b4b223b477a627f30cbab683203497b5cf769bba",
+      "edits": [
+        {
+          "old": "                // Children of the server that ignored stdin closing would otherwise outlive it.\n                killProcessTree(child, \"SIGTERM\");",
+          "new": "                // The leader is gone: finish its owned group now, including TERM-resistant children.\n                killProcessTree(child, \"SIGKILL\");"
+        }
+      ],
+      "after": "758027728da50ece5ee4f93325d710599519279405feef5b61cb727d8807ac13"
+    },
+    {
+      "path": "dist/extensions/mcp/runtime.js",
+      "before": "46788ee4d3d6c5e93686920701e070692691cd6505e3bf9768eafac82c45157d",
+      "after": "09de4daf1b6bae1bfc69fc9066f10557c015cbb740b73dab4dad78e46b1d79f7",
+      "edits": [
+        {
+          "old": "    client;\n    opening;",
+          "new": "    client;\n    connectingClient;\n    opening;"
+        },
+        {
+          "old": "            await client.connect(transport);",
+          "new": "            // Own the client before initialize/list requests can yield to session shutdown.\n            this.connectingClient = client;\n            await client.connect(transport);"
+        },
+        {
+          "old": "            throw error;\n        }\n    }\n    connectFailed(error)",
+          "new": "            throw error;\n        }\n        finally {\n            this.connectingClient = undefined;\n        }\n    }\n    connectFailed(error)"
+        },
+        {
+          "old": "        const client = this.client;\n        this.client = undefined;",
+          "new": "        const client = this.client ?? this.connectingClient;\n        this.client = undefined;"
+        }
+      ]
+    },
+    {
+      "path": "dist/bundle/chunks/chunk-7FH3BDRG.js",
+      "before": "ce163e72b4d319f7129762dc4989c25e28b59b4cce0910af64858535794bfb1a",
+      "after": "c475898689d11bbdad6d1122016106cce4135b89851911af21ede1334a47b741",
+      "edits": [
+        {
+          "old": "client;opening;closed=!1;",
+          "new": "client;connectingClient;opening;closed=!1;"
+        },
+        {
+          "old": "transport=this.createTransport(this.entry,this.cwd,this.authProvider),await client.connect(transport)",
+          "new": "transport=this.createTransport(this.entry,this.cwd,this.authProvider),this.connectingClient=client,await client.connect(transport)"
+        },
+        {
+          "old": "||void 0),error}}connectFailed(error)",
+          "new": "||void 0),error}finally{this.connectingClient=void 0}}connectFailed(error)"
+        },
+        {
+          "old": "let client=this.client;this.client=void 0,await client?.close()",
+          "new": "let client=this.client??this.connectingClient;this.client=void 0,await client?.close()"
         }
       ]
     }
