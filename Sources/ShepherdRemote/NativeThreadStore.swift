@@ -156,6 +156,8 @@ public final class NativeThreadStore {
     /// Each reply's subagents, where their spawn calls were (keyed by turn id).
     public private(set) var placements: [String: NativeSubagentPlacement] = [:] { didSet { threadVersion &+= 1 } }
     public private(set) var subagents: [NativeSubagent] = [] { didSet { chromeVersion &+= 1 } }
+    /// The files the agent made in this thread (`nativeArtifacts`), newest first. Derived once per change, never in a view.
+    public private(set) var artifacts: [NativeArtifact] = []
     /// The subagent tray above the composer, while it shows (`nativeTrayRuns`).
     public private(set) var tray: NativeSubagentTray? { didSet { chromeVersion &+= 1 } }
     /// When the prompt that opened the current turn was sent (ms). A queued follow-up has not
@@ -300,7 +302,7 @@ public final class NativeThreadStore {
     /// Actions (their operation ids) the host has not answered yet, and those of them a suspension
     /// reported as "outcome unknown" meanwhile: the host's answer, when it comes, settles that
     /// notice (`perform`).
-    @ObservationIgnored private var inFlight: Set<UUID> = []
+    private var inFlight: Set<UUID> = []
     @ObservationIgnored private var reportedUnknown: Set<UUID> = []
     private static let outcomeUnknown = "Action outcome unknown. Refresh and check the thread before trying again. Nothing will be resent automatically."
     @ObservationIgnored private var recentRequest = UUID()
@@ -321,6 +323,8 @@ public final class NativeThreadStore {
     /// The images pi saved in this thread, fetched on demand from the host (`NativeThreadImages`). Not observed: a view
     /// that wants one asks, and holds what it got.
     @ObservationIgnored public let images = NativeThreadImages()
+    /// The files the agent made, fetched on demand from the host (`NativeThreadArtifacts`).
+    @ObservationIgnored public let artifactFiles = NativeThreadArtifacts()
     @ObservationIgnored private var presentationCache: [String: (key: PresentationKey, value: NativeTurnPresentation)] = [:]
     /// The machine the agent runs on ("build-01"), named in its errors' Details. Set by the
     /// thread's owner.
@@ -328,9 +332,11 @@ public final class NativeThreadStore {
         didSet { if hostName != oldValue { derive() } }
     }
     /// Calls parse their JSON and output once; a finished call never changes.
-    @ObservationIgnored private var callCache: [CallKey: NativeActivityCall] = [:]
+    @ObservationIgnored private var callCache: [String: (key: CallKey, value: NativeActivityCall)] = [:]
+    var cachedCallCount: Int { callCache.count }
     /// Finished thinking is parsed once: a reply streaming under it rebuilds its turn, not it.
-    @ObservationIgnored private var thinkingCache: [String: [NativeMarkdownBlock]] = [:]
+    @ObservationIgnored private var thinkingCache: [ProseKey: (text: String, blocks: [NativeMarkdownBlock])] = [:]
+    var cachedThinkingCount: Int { thinkingCache.count }
     /// How many times thinking was parsed (tests).
     @ObservationIgnored private(set) var thinkingParses = 0
     /// Only the latest text and mode per prose item: streaming prefixes never accumulate.
@@ -378,6 +384,7 @@ public final class NativeThreadStore {
             echoAccepted = [:]
             overlays = []
             holding = []
+            sentImages = [:]
             return
         }
         // Everything this client changed before the host answered the pull that brought this
@@ -426,7 +433,11 @@ public final class NativeThreadStore {
     }
 
     public func supports(_ action: String) -> Bool {
-        ready && !busy && supportedActions.contains(action)
+        if action == "answer", snapshot?.initializing == true {
+            return request != nil && loadError == nil && supportedActions.contains(action)
+                && inFlight.isEmpty && (!busy || !startWaiters.isEmpty)
+        }
+        return ready && !busy && supportedActions.contains(action)
     }
 
     /// The host stops pi for a message (`interrupt` in `supportedActions`, remotely
@@ -487,6 +498,8 @@ public final class NativeThreadStore {
         if turns != self.turns { self.turns = turns }
         let runs = snapshot?.subagents ?? []
         if runs != subagents { subagents = runs }
+        let made = nativeArtifacts(displayed.filter { $0.toolName == "write" }.map(call))
+        if made != artifacts { artifacts = made }
         let placements = nativeSubagentPlacements(runs, turns: turns)
         if placements != self.placements { self.placements = placements }
         let currentTurns = turns.suffix(from: turns.lastIndex(where: \.isUser) ?? turns.startIndex)
@@ -521,8 +534,12 @@ public final class NativeThreadStore {
             if let cached = presentationCache[turn.id], cached.key == key {
                 presentation = cached.value
             } else {
+                var thinkingIndex = 0
                 presentation = nativeTurnPresentation(turn.messages, live: isLive, cards: key.cards, errors: errors, call: call,
-                                                      thinking: thinkingBlocks, prose: { id, text, streaming in
+                                                      thinking: { text in
+                    defer { thinkingIndex += 1 }
+                    return self.thinkingBlocks(turn: turn.id, index: thinkingIndex, text: text)
+                }, prose: { id, text, streaming in
                     self.proseBlocks(turn: turn.id, item: id, text: text, streaming: streaming)
                 })
                 presentationCache[turn.id] = (key, presentation)
@@ -680,10 +697,18 @@ public final class NativeThreadStore {
         if paused != queuePaused { queuePaused = paused }
         let notice = items.isEmpty ? nil : snapshot?.queue?.notice
         if notice != queueNotice { queueNotice = notice }
-        if sentImages.count > 64 {
-            let kept = Set(items.map(\.id))
-            sentImages = sentImages.filter { kept.contains($0.key) }
+        guard !sentImages.isEmpty else { return }
+        // A pending row precedes Pi's acceptance and can still return to the queue on refusal.
+        // Absence alone is not delivery either: another client may have deleted it for Undo.
+        var delivered = Set<UUID>()
+        for row in (snapshot?.messages ?? []) + (snapshot?.provisional ?? [])
+            where row.role == "user" && (row.status == nil || row.status == "complete") {
+            if let id = row.operationID { delivered.insert(id) }
+            delivered.formUnion(row.origin?.parts?.compactMap(\.id) ?? [])
         }
+        let kept = Set(items.map(\.id)).union(snapshot?.queue?.items.map(\.id) ?? []).union(holding)
+        let overLimit = sentImages.count > 64
+        sentImages = sentImages.filter { kept.contains($0.key) || (!overLimit && !delivered.contains($0.key)) }
     }
 
     private func call(_ message: NativeThreadMessage) -> NativeActivityCall {
@@ -692,19 +717,20 @@ public final class NativeThreadStore {
                           outputSize: message.blocks.reduce(0) { $0 + $1.text.utf8.count },
                           argumentsSize: message.argumentsText?.utf8.count,
                           liveTail: running ? message.blocks.last.map { String(decoding: $0.text.utf8.suffix(1024), as: UTF8.self) } : nil)
-        if let cached = callCache[key] { return cached }
+        if let cached = callCache[message.entryID], cached.key == key { return cached.value }
         let value = NativeActivityCall(message)
-        if callCache.count > 4096 { callCache.removeAll(keepingCapacity: true) }
-        callCache[key] = value
+        if callCache[message.entryID] == nil, callCache.count >= 4096 { callCache.removeAll(keepingCapacity: true) }
+        callCache[message.entryID] = (key, value)
         return value
     }
 
-    private func thinkingBlocks(_ text: String) -> [NativeMarkdownBlock] {
-        if let cached = thinkingCache[text] { return cached }
+    private func thinkingBlocks(turn: String, index: Int, text: String) -> [NativeMarkdownBlock] {
+        let key = ProseKey(turn: turn, item: String(index))
+        if let cached = thinkingCache[key], cached.text == text { return cached.blocks }
         thinkingParses += 1
         let value = nativeThinkingBlocks(text)
-        if thinkingCache.count > 1024 { thinkingCache.removeAll(keepingCapacity: true) }
-        thinkingCache[text] = value
+        if thinkingCache[key] == nil, thinkingCache.count >= 1024 { thinkingCache.removeAll(keepingCapacity: true) }
+        thinkingCache[key] = (text, value)
         return value
     }
 
@@ -732,6 +758,7 @@ public final class NativeThreadStore {
         let run = epoch
         self.request = request
         images.configure(sessionID: snapshot?.piSessionID, fetch: request)
+        artifactFiles.configure(sessionID: snapshot?.piSessionID, fetch: request)
         if let preview, snapshot == nil {
             Task { [weak self] in
                 guard let value = await preview(), let self, self.epoch == run else { return }
@@ -767,9 +794,21 @@ public final class NativeThreadStore {
     }
 
     /// Shows `value`, history read from pi's session file (or a new agent's empty thread), until
-    /// pi answers. Ignored once pi has served this thread anything: disk never overwrites pi.
+    /// pi answers with history. A startup question alone does not replace the disk preview.
     public func preview(_ value: NativeThreadSnapshot) {
-        guard !ready, snapshot == nil || previewing else { return }
+        guard !ready, snapshot == nil || previewing || snapshot?.initializing == true else { return }
+        var value = value
+        if let current = snapshot, current.initializing == true {
+            value.piSessionID = current.piSessionID
+            value.generation = current.generation
+            value.revision = current.revision
+            value.initializing = true
+            value.dialogs = current.dialogs
+            value.dialogsSupported = current.dialogsSupported
+            value.supportedActions = current.supportedActions
+            let ids = Set(current.provisional.map(\.entryID))
+            value.provisional = value.provisional.filter { !ids.contains($0.entryID) } + current.provisional
+        }
         if value != snapshot { snapshot = value }
         if value.messages != messages { messages = value.messages }
         if olderCursor != value.olderCursor { olderCursor = value.olderCursor }
@@ -833,8 +872,7 @@ public final class NativeThreadStore {
         // Pieces still being asked for stop; the ones held stay for the next poll.
         images.cancelAll()
         catchUp = nil
-        // The starting limit counts from the next answer.
-        startingSince = nil
+        // Visibility does not restart pi or its readiness deadline.
         if busy { busy = false }
         if loadingOlder { loadingOlder = false }
     }
@@ -892,6 +930,23 @@ public final class NativeThreadStore {
             switch result {
             case .snapshot(let value) where value.startProblem != nil:
                 noteStartProblem(value.startProblem!)
+            case .snapshot(var value) where value.initializing == true:
+                // Startup questions are live, but this is not a replacement history page.
+                value.messages = messages
+                value.olderCursor = olderCursor
+                snapshot = value
+                ready = false
+                if loadError != nil { loadError = nil }
+                if value.dialogs.contains(where: { $0.unavailable == nil }) {
+                    endStarting()
+                    starting = true
+                } else {
+                    noteStarting()
+                }
+                clearStartProblem()
+                settleRunning(false, catchingUp: true)
+                deriveQueue()
+                derive()
             case .snapshot(var value):
                 let sameSession = previous?.piSessionID == value.piSessionID && previous?.generation == value.generation
                 if sameSession, let previous, value.revision < previous.revision { return }
@@ -915,6 +970,7 @@ public final class NativeThreadStore {
                 }
                 if value != snapshot { snapshot = value }
                 images.configure(sessionID: value.piSessionID, fetch: request)
+                artifactFiles.configure(sessionID: value.piSessionID, fetch: request)
                 if previewing { previewing = false }
                 if !ready { ready = true }
                 endStarting()
@@ -923,7 +979,7 @@ public final class NativeThreadStore {
                 deriveQueue()
                 derive()
                 caughtUp()
-                resumeStartWaiters(true)
+                if inFlight.isEmpty { resumeStartWaiters(true) }
             case .unchanged(let session, let generation, _):
                 if previous?.piSessionID != session || previous?.generation != generation || fresh {
                     ready = false
@@ -942,7 +998,7 @@ public final class NativeThreadStore {
                         derive()
                     }
                     caughtUp()
-                    resumeStartWaiters(true)
+                    if inFlight.isEmpty { resumeStartWaiters(true) }
                 }
             case .failure(let code, _) where code == NativeThreadCode.starting:
                 noteStarting()
@@ -1074,7 +1130,7 @@ public final class NativeThreadStore {
         let started = await withCheckedContinuation { startWaiters.append($0) }
         // stop() already reset everything for a thread that went away meanwhile.
         guard epoch == run else { return false }
-        busy = false
+        busy = !inFlight.isEmpty
         return started && ready
     }
 
@@ -1295,6 +1351,12 @@ public final class NativeThreadStore {
     /// empty for another client's.
     public func queuedImages(_ id: UUID) -> [NativeImage] {
         sentImages[id] ?? []
+    }
+
+    /// The client's Undo affordance expired; only queue/overlay/editor owners may keep its images.
+    public func releaseQueueUndoImages(_ ids: [UUID]) {
+        let kept = Set(queue.map(\.id)).union(snapshot?.queue?.items.map(\.id) ?? []).union(holding)
+        for id in ids where !kept.contains(id) { sentImages[id] = nil }
     }
 
     /// Saves an edit to a queued message; it keeps its place. Also releases the item's hold.
@@ -1567,6 +1629,9 @@ public final class NativeThreadStore {
             return false
         }
         let run = epoch
+        let answeringStartup: Bool
+        if case .answer = action { answeringStartup = current.initializing == true }
+        else { answeringStartup = false }
         var wasAccepted = false
         // A follow-up sent while a turn runs waits in the queue until the turn ends.
         let queued = current.running && delivery == .followUp
@@ -1577,6 +1642,10 @@ public final class NativeThreadStore {
         defer {
             inFlight.remove(operation)
             reportedUnknown.remove(operation)
+            if epoch == run {
+                if ready && inFlight.isEmpty { resumeStartWaiters(true) }
+                busy = !startWaiters.isEmpty || !inFlight.isEmpty
+            }
         }
         do {
             let result = try await request(action)
@@ -1584,8 +1653,10 @@ public final class NativeThreadStore {
                 return settledAfterRestart(result, operation: operation, sentText: sentText, typed: typed, files: files,
                                            references: references, elements: elements)
             }
-            guard snapshot?.piSessionID == current.piSessionID, snapshot?.generation == current.generation else {
-                busy = false
+            let startupFinished = answeringStartup && current.piSessionID.isEmpty
+                && snapshot?.initializing != true && snapshot?.piSessionID.isEmpty == false
+            guard snapshot?.generation == current.generation,
+                  snapshot?.piSessionID == current.piSessionID || startupFinished else {
                 notice = "The session changed while the action was pending. Check the thread before trying again."
                 return false
             }
@@ -1640,7 +1711,7 @@ public final class NativeThreadStore {
             } else { notice = String(describing: error) }
         }
         guard epoch == run else { return wasAccepted }
-        busy = false
+        busy = !startWaiters.isEmpty || inFlight.contains { $0 != operation }
         ready = false
         await refresh(fresh: true)
         return wasAccepted

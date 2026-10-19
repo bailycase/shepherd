@@ -625,6 +625,7 @@ final class ShepherdViewModel {
         self.sessions.mcpLaunch = { [settings = self.settings, mcp = self.mcp] in
             try MCPLaunch.forAgents(settings: settings, store: mcp)
         }
+        server.projects.editor = { [settings = self.settings] in settings.editor }
         self.yourPi = yourPi ?? YourPiModel(pi: server.pi)
         self.piAuth = piAuth ?? PiAuthStore(pi: server.pi)
         self.selectedSpaceID = nil

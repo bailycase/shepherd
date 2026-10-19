@@ -45,6 +45,9 @@ struct ThreadScreen: View {
         // Where the agent works (the branch chip); the host is named once there is more than one.
         let branch = agent.flatMap { AgentBranchLabel(agent: $0, host: hosts.hosts.count > 1 ? host?.name : nil) }
         ThreadTranscript(ref: ref, store: store, banner: banner(host: host, agent: agent, store: store, supported: supported))
+            .environment(\.openArtifact, store.supports("artifacts") || !store.artifacts.isEmpty ? { [navigator, ref] path in
+                ArtifactHooks.open(thread: ref, path: path, navigator: navigator)
+            } : nil)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if agent != nil {
                     ThreadComposer(ref: ref)

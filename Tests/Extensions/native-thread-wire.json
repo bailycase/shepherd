@@ -1015,5 +1015,31 @@
         }
       }
     }
+  },
+  {
+    "type": "nativeThread",
+    "id": 32,
+    "agentID": "agent",
+    "request": {
+      "artifact": {
+        "expectedSessionID": "session",
+        "path": "docs/plan.md",
+        "offset": 262144
+      }
+    }
+  },
+  {
+    "type": "nativeThread",
+    "id": 33,
+    "result": {
+      "artifactChunk": {
+        "value": {
+          "path": "docs/plan.md",
+          "totalBytes": 300000,
+          "offset": 262144,
+          "data": "IyBQbGFu"
+        }
+      }
+    }
   }
 ]

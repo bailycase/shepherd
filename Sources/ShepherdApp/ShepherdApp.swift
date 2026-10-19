@@ -54,7 +54,15 @@ public struct ShepherdMacApp: App {
             NSLog("Shepherd: failed to start session server: \(error)")
             exit(EXIT_FAILURE)
         }
-        ShepherdDiagnostics.shared.start(settings: .shared)
+        let resourceSampler = SessionResourceSampler()
+        ShepherdDiagnostics.shared.start(settings: .shared, resourceSampler: {
+            await resourceSampler.sample(SessionServer.shared.resourceState())
+        })
+        if ShepherdDiagnostics.shared.isActive {
+            SessionServer.shared.onDiagnosticDuration = { operation, seconds in
+                ShepherdDiagnostics.shared.recordDuration(operation, seconds: seconds)
+            }
+        }
         keys = KeybindingsStore.shared
         themes = ThemeManager.shared
         // Geist and Geist Mono ship in the ShepherdUI bundle; register them before any view draws.
