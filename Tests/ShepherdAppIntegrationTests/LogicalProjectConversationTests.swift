@@ -435,9 +435,12 @@ struct LogicalProjectConversationTests {
 
         // A drag: down on the divider, 100pt to the left, up. The pane widens by the drag, the conversation narrows.
         let start = try #require(handle()).frame
+        // Each event carries its own, later time, as a real drag does: a gesture can read a run of zero timestamps as no movement.
+        var eventTime = ProcessInfo.processInfo.systemUptime
         func mouse(_ type: NSEvent.EventType, x: CGFloat) throws {
             let point = window.window.convertPoint(fromScreen: CGPoint(x: x, y: start.midY))
-            window.window.sendEvent(try #require(NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: 0,
+            eventTime += 0.016
+            window.window.sendEvent(try #require(NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: eventTime,
                                                                     windowNumber: window.window.windowNumber, context: nil,
                                                                     eventNumber: 0, clickCount: 1, pressure: 1)))
         }
