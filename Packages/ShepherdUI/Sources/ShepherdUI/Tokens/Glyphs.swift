@@ -85,7 +85,12 @@ public enum NWGlyph: CaseIterable, Sendable {
             }
         }
 
-        public var resourceURL: URL? { Bundle.module.url(forResource: rawValue, withExtension: "svg", subdirectory: "Glyphs") }
+        /// Advanced's gear is the system `gearshape` the boards draw: a hand-traced copy rendered as a lumpy polygon.
+        public var systemSymbolName: String? { self == .advanced ? "gearshape" : nil }
+
+        public var resourceURL: URL? {
+            systemSymbolName == nil ? Bundle.module.url(forResource: rawValue, withExtension: "svg", subdirectory: "Glyphs") : nil
+        }
 
         @MainActor public var image: Image {
             #if os(macOS)
@@ -97,6 +102,14 @@ public enum NWGlyph: CaseIterable, Sendable {
 
         #if os(macOS)
         @MainActor private static let artwork: [Settings: NSImage] = Dictionary(uniqueKeysWithValues: allCases.map { glyph in
+            if let symbol = glyph.systemSymbolName {
+                guard let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+                    .withSymbolConfiguration(.init(pointSize: NWSettingsNavMetrics.glyphSize, weight: .regular)) else {
+                    preconditionFailure("Missing Settings symbol: \(symbol)")
+                }
+                image.isTemplate = true
+                return (glyph, image)
+            }
             guard let url = glyph.resourceURL,
                   let image = NSImage(contentsOf: url) else {
                 preconditionFailure("Missing Settings glyph: \(glyph.rawValue)")
