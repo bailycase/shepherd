@@ -49,10 +49,12 @@ struct MobileRoot: View {
 }
 
 private extension MobileRoute {
-    /// The palette sizes its own sheet.
+    /// The palette sizes its own sheet, and an artifact fills it (a page has no height of its own to fit).
     var sizesItself: Bool {
-        if case .search(.palette) = self { return true }
-        return false
+        switch self {
+        case .search(.palette), .review(.artifact): true
+        default: false
+        }
     }
 }
 

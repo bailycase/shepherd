@@ -6,13 +6,15 @@ import ShepherdRemote
 import ShepherdUI
 
 /// A tab of the side pane beside a thread (docs/design/side-pane-changes.md › Side pane). Only the tabs Shepherd has
-/// are here; Artifacts and Files join as cases when they are built, each with its content in
-/// `SidePaneView` and its ⌃ digit following its place. Subagents (SubagentList) is last for now.
+/// are here; Files joins as a case when it is built, with its content in `SidePaneView` and its ⌃ digit following its place.
+/// Artifacts takes ⌃3 as PaneStates draws it, and Subagents (SubagentList) follows it.
 enum SidePaneTab: String, CaseIterable, Hashable, Sendable {
     case changes
     /// A thread's Browser (PaneBrowser): a local thread's, or a remote one's whose host carries
     /// tunnels (`browser.tunnel.v1`).
     case browser
+    /// The files the agent made in this thread (ArtifactList), once it has made one.
+    case artifacts
     /// Every subagent of the thread, this turn's and the earlier ones (SubagentList).
     case subagents
 
@@ -20,6 +22,7 @@ enum SidePaneTab: String, CaseIterable, Hashable, Sendable {
         switch self {
         case .changes: "Changes"
         case .browser: "Browser"
+        case .artifacts: "Artifacts"
         case .subagents: "Subagents"
         }
     }
@@ -28,18 +31,20 @@ enum SidePaneTab: String, CaseIterable, Hashable, Sendable {
         switch self {
         case .changes: "plus.forwardslash.minus"
         case .browser: "globe"
+        case .artifacts: NWGlyph.artifact.symbolName
         case .subagents: NWGlyph.gitBranch.symbolName
         }
     }
 
     /// The tabs a thread's pane shows: Changes, the Browser where the thread has one (a remote
-    /// thread's host that carries no tunnels has none), and Subagents.
+    /// thread's host that carries no tunnels has none), Artifacts once the thread has one, and Subagents once it has a run.
+    /// `SidePaneTabs.items` and `ShepherdViewModel.sidePaneTabs(for:)` drop the last two while they have nothing.
     static func tabs(browser: Bool) -> [SidePaneTab] {
-        browser ? allCases : [.changes, .subagents]
+        browser ? allCases : allCases.filter { $0 != .browser }
     }
 
     /// Its fixed chord: ⌃1 for the first tab, and so on (⌃1–4 are the pane's). A tab keeps its digit when
-    /// the Browser is out (a host with no tunnels), so ⌃3 is always Subagents.
+    /// the Browser is out (a host with no tunnels), so ⌃3 is always Artifacts and ⌃4 Subagents.
     var digit: Int { (Self.allCases.firstIndex(of: self) ?? 0) + 1 }
     var shortcutDisplay: String { "⌃\(digit)" }
 
@@ -48,6 +53,8 @@ enum SidePaneTab: String, CaseIterable, Hashable, Sendable {
         switch self {
         case .changes: "Agent opened a review in Changes"
         case .browser: "Agent opened a page in Browser"
+        // Nothing marks this tab either: the thread's own "Made an artifact" line is the news, and opening it shows the tab.
+        case .artifacts: "Agent made an artifact"
         // Nothing marks this tab as news: the dot is pi opening something, and a subagent opens nothing in the pane.
         case .subagents: "Agent started a subagent"
         }
@@ -125,8 +132,29 @@ extension ShepherdViewModel {
         panes.clearNews(owner, shown)
         switch shown {
         case .changes: ensureReview(owner)
-        case .browser, .subagents: break
+        case .browser, .artifacts, .subagents: break
         }
+    }
+
+    /// A "Made an artifact" line or card, the list: the pane on Artifacts with `artifact` open (nil: the list).
+    func showArtifact(_ owner: SidePaneOwner, path: String?) {
+        let panes = subagentInspector
+        if panes.artifact[owner] != path { panes.artifact[owner] = path }
+        showSidePane(owner, tab: .artifacts)
+    }
+
+    /// What `owner`'s Artifacts tab does outside itself.
+    func artifactsActions(for owner: SidePaneOwner) -> ArtifactsActions {
+        ArtifactsActions(
+            selection: subagentInspector.artifact[owner],
+            show: { [weak self] in self?.showArtifact(owner, path: $0) },
+            editorURL: { [weak self] artifact in
+                // A local thread's file is on this Mac; a remote thread's is on its host.
+                guard let self, case .local(let id) = owner, let agent = self.state.agents.first(where: { $0.id == id }) else { return nil }
+                return URL(fileURLWithPath: nativeArtifactFilePath(artifact.path, cwd: self.agentCwd(agent)))
+            },
+            editor: settings.editor,
+            failed: { [weak self] in self?.remoteActionError = $0 })
     }
 
     /// The pane over the whole layout (ChangesWide), or back beside the thread.
@@ -190,19 +218,23 @@ extension ShepherdViewModel {
     }
 
     /// The tabs `owner`'s pane shows: a remote thread has the Browser only while its host carries
-    /// tunnels (an older host has none, as before), and Subagents only once the thread has a run.
+    /// tunnels (an older host has none, as before), Artifacts only once the thread has made a file (an empty tab would be an empty
+    /// state in every thread that writes none), and Subagents only once the thread has a run.
     func sidePaneTabs(for owner: SidePaneOwner) -> [SidePaneTab] {
         let hasRuns: Bool
+        let hasArtifacts: Bool
         let browser: Bool
         switch owner {
         case .local(let id):
             hasRuns = threadStores.existing(for: id)?.subagents.isEmpty == false
+            hasArtifacts = threadStores.existing(for: id)?.artifacts.isEmpty == false
             browser = true
         case .remote(let ref):
             hasRuns = remoteThreadStores.existing(for: ref)?.subagents.isEmpty == false
+            hasArtifacts = remoteThreadStores.existing(for: ref)?.artifacts.isEmpty == false
             browser = remoteHosts.connections.first { $0.id == ref.hostID }?.supportsBrowser == true
         }
-        return SidePaneTab.tabs(browser: browser).filter { $0 != .subagents || hasRuns }
+        return SidePaneTab.tabs(browser: browser).filter { ($0 != .subagents || hasRuns) && ($0 != .artifacts || hasArtifacts) }
     }
 
     /// The header button's state for `owner` (`SidePaneTab.button`).

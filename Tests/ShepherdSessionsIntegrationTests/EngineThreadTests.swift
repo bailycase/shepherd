@@ -2,6 +2,7 @@ import Foundation
 import Testing
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 @testable import ShepherdSessions
 import ShepherdTestSupport
 
@@ -17,6 +18,143 @@ import ShepherdTestSupport
 @Suite("The bundled pi engine, through the thread", .integrationTimeLimit,
        .enabled(if: EngineSmoke.engine != nil, "set SHEPHERD_ENGINE_SMOKE to a built Shepherd.app or a staged engine"))
 struct EngineThreadTests {
+    @Test @MainActor func aStartupQuestionCanBeAnsweredBeforeReadinessEvenWithASendWaiting() async throws {
+        let fixtures = try makeScratchDirectory("startup-question")
+        defer { try? FileManager.default.removeItem(at: fixtures) }
+        let extensionFile = fixtures.appendingPathComponent("question.ts")
+        try """
+        export default function(pi) {
+          pi.on("session_start", async (_, ctx) => {
+            const answer = await ctx.ui.confirm("Startup permission", "Continue?", { timeout: 15000 });
+            if (!answer) throw new Error("Startup permission was not answered");
+          });
+        }
+        """.write(to: extensionFile, atomically: true, encoding: .utf8)
+        let pi = try await RealPi.launch(engine: #require(EngineSmoke.engine), extensions: [extensionFile.path])
+        defer { pi.stop() }
+        let opening = try #require(OpeningPrompt("hello", agentID: pi.agent.agent.id))
+        await pi.host.server.sendOpeningPrompt(opening, sessionID: pi.agent.sessionID)
+        let store = NativeThreadStore()
+        defer { store.stop() }
+        store.preview(opening.preview())
+        let request: NativeThreadStore.Request = { try await pi.request($0) }
+        let shown = Task { await store.run(request: request) }
+        try await eventuallyOnMain("the live startup question", timeout: .seconds(10)) { !store.dialogs.isEmpty }
+        #expect(!store.ready && store.supports("answer") && !store.supports("send"))
+        #expect(store.displayedMessages.filter { $0.operationID == opening.operationID }.count == 1)
+        shown.cancel()
+        await shown.value
+        let resumed = Task { await store.run(request: request) }
+        defer { resumed.cancel() }
+        try await eventuallyOnMain("the startup question after showing the thread") { store.supports("answer") }
+        let current = try #require(store.snapshot)
+        let dialog = try #require(current.dialogs.first)
+        let refused = try await pi.request(.send(expectedSessionID: current.piSessionID, generation: current.generation,
+                                             operationID: UUID(), text: "must not run", delivery: .followUp))
+        #expect(refused.failureCode == NativeThreadCode.starting)
+        let stale = try await pi.request(.answer(expectedSessionID: current.piSessionID, generation: "wrong", operationID: UUID(),
+                                              dialogID: dialog.id, answer: .confirm(value: true)))
+        #expect(stale.failureCode == "stale_session")
+        store.draft = "later"
+        let waiting = Task { await store.send() }
+        defer { waiting.cancel() }
+        try await eventuallyOnMain("Send to wait without disabling the startup answer") { store.busy && store.supports("answer") }
+        await store.answer(dialogID: dialog.id, sessionID: current.piSessionID, generation: current.generation, answer: .confirm(value: true))
+        await waiting.value
+        try await eventuallyOnMain("both messages and the recorded startup answer", timeout: .seconds(15)) {
+            store.ready && store.messages.filter { $0.role == "user" }.count == 2
+                && store.messages.filter { $0.role == "assistant" }.count == 2
+                && store.messages.contains { $0.question?.confirmed == true }
+        }
+        #expect(store.loadError == nil && store.notice == nil)
+        #expect(store.messages.filter { $0.role == "user" && $0.operationID == opening.operationID }.count == 1)
+        #expect(store.messages.filter { $0.role == "user" }.map { $0.blocks.first?.text } == ["hello", "later"])
+        let records = try String(contentsOf: pi.sessionFile, encoding: .utf8).split(separator: "\n").compactMap {
+            try JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any]
+        }
+        #expect(records.filter { ($0["message"] as? [String: Any])?["role"] as? String == "user" }.count == 2)
+    }
+
+    /// Real CLI startup awaits session_start before reading RPC stdin. A slow extension can
+    /// therefore leave a live, sleeping pi with only the three seed records and no conversation.
+    @Test @MainActor func aLiveEngineBlockedInSessionStartFailsWithinTheBoundAndRecoversItsOpeningMessageOnce() async throws {
+        let fixtures = try makeScratchDirectory("startup-extension")
+        defer { try? FileManager.default.removeItem(at: fixtures) }
+        let extensionFile = fixtures.appendingPathComponent("startup.ts")
+        try """
+            import { existsSync, appendFileSync } from "node:fs";
+            import { join } from "node:path";
+            import { setTimeout } from "node:timers/promises";
+            export default function (pi: any) {
+              pi.on("session_start", async (_event: any, ctx: any) => {
+                const trace = join(ctx.cwd, "startup.trace");
+                appendFileSync(trace, `entered session_start pid=${process.pid}\\n`);
+                const deadline = Date.now() + 90000;
+                while (!existsSync(join(ctx.cwd, "release-startup"))) {
+                  if (Date.now() >= deadline) throw new Error("startup fixture exceeded 90 seconds");
+                  await setTimeout(25);
+                }
+                appendFileSync(trace, "finished session_start\\n");
+              });
+            }
+            """.write(to: extensionFile, atomically: true, encoding: .utf8)
+        let pi = try await RealPi.launch(engine: #require(EngineSmoke.engine), extensions: [extensionFile.path])
+        defer { pi.stop() }
+        let project = pi.host.dir.appendingPathComponent("project")
+        let trace = project.appendingPathComponent("startup.trace")
+        try await eventuallyOnMain("the real engine to enter the extension's session_start") {
+            FileManager.default.fileExists(atPath: trace.path)
+        }
+        let opening = try #require(OpeningPrompt("hello", agentID: pi.agent.agent.id))
+        await pi.host.server.sendOpeningPrompt(opening, sessionID: pi.agent.sessionID)
+        // Keep the presentation fallback later than the host's deadline so it cannot mask it.
+        let store = NativeThreadStore(startingLimit: .seconds(120))
+        store.preview(opening.preview())
+        defer { store.stop() }
+        var pulls = 0
+        let request: NativeThreadStore.Request = {
+            let value = try await pi.request($0)
+            pulls += 1
+            return value
+        }
+        let shown = Task { await store.run(request: request) }
+        try await eventuallyOnMain("the actual thread store to be starting") { store.starting }
+        shown.cancel()
+        await shown.value
+        let hiddenAt = ContinuousClock.now
+        try await eventuallyOnMain("the real default readiness deadline to pass while hidden", timeout: .seconds(70), poll: .milliseconds(100)) {
+            ContinuousClock.now - hiddenAt > .seconds(65)
+        }
+        #expect(await pi.host.server.sessionInfo(sessionID: pi.agent.sessionID)?.isAlive == true)
+        #expect(try String(contentsOf: trace, encoding: .utf8).hasPrefix("entered session_start pid="))
+        let records = try String(contentsOf: pi.sessionFile, encoding: .utf8).split(separator: "\n").map {
+            try JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any]
+        }
+        #expect(records.map { $0?["type"] as? String } == ["session", "model_change", "thinking_level_change"])
+        if case .failure(let code, let message) = try await pi.request(.snapshot()) {
+            #expect(code == NativeThreadCode.unavailable)
+            #expect(message.contains("get_state") && message.contains("get_messages"))
+        } else { Issue.record("the unready live engine must report a bounded startup failure") }
+        let previousPulls = pulls
+        let resumed = Task { await store.run(request: request) }
+        defer { resumed.cancel() }
+        try await eventuallyOnMain("the first pull after showing the thread") { pulls > previousPulls }
+        #expect(!store.starting && store.loadError != nil)
+        #expect(store.displayedMessages.contains { $0.operationID == opening.operationID }, "the first message remains visible and held")
+        FileManager.default.createFile(atPath: project.appendingPathComponent("release-startup").path, contents: nil)
+        try await eventuallyOnMain("late engine readiness and its first reply", timeout: .seconds(20)) {
+            store.ready && store.messages.last?.role == "assistant" && store.messages.last?.blocks.first?.text == "ok"
+        }
+        await store.refresh(fresh: true)
+        #expect(store.loadError == nil)
+        #expect(store.messages.filter { $0.role == "user" && $0.operationID == opening.operationID }.count == 1)
+        let persisted = try String(contentsOf: pi.sessionFile, encoding: .utf8).split(separator: "\n").compactMap {
+            try JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any]
+        }
+        #expect(persisted.filter { ($0["message"] as? [String: Any])?["role"] as? String == "user" }.count == 1)
+        #expect(try String(contentsOf: trace, encoding: .utf8).contains("finished session_start"))
+    }
+
     @Test func skillsAddedEditedAndRemovedAppearInTheExistingThreadWithoutRestarting() async throws {
         let pi = try await RealPi.launch(engine: #require(EngineSmoke.engine))
         defer { pi.stop() }
@@ -231,7 +369,7 @@ final class RealPi: @unchecked Sendable {
 
         """
 
-    static func launch(engine: BundledPiEngine) async throws -> RealPi {
+    static func launch(engine: BundledPiEngine, extensions: [String] = []) async throws -> RealPi {
         let directory = try makeScratchDirectory("real-pi")
         let setup = PiSetup(engine: .bundled(engine), home: directory.appendingPathComponent("support/pi"),
                             userHome: directory.appendingPathComponent("home").path)
@@ -284,7 +422,7 @@ final class RealPi: @unchecked Sendable {
             let sessionFile = folder.appendingPathComponent("2026-10-01T00-00-00-000Z_\(sessionID).jsonl")
             try (JSONSerialization.data(withJSONObject: header, options: [.sortedKeys]) + Data("\n".utf8)).write(to: sessionFile)
             let line = try PiLaunch.agent(home: home, cwd: project.path, sessionID: sessionID, model: "fixture/fixture", thinking: nil,
-                                          extensions: [fixture.path])
+                                          extensions: [fixture.path] + extensions)
             let session = try await host.server.createSession(params: CreateSessionParams(
                 cwd: project.path, command: line.argv,
                 env: ["HOME": userHome.path, "TMPDIR": temporary.path + "/", "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"], runtime: .rpc), resuming: sessionID)

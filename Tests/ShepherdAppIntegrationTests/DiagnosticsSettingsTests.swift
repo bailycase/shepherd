@@ -23,7 +23,7 @@ struct DiagnosticsSettingsTests {
             DiagnosticsSettings(settings: settings, configured: true))
         defer { window.close() }
         func toggle() -> AccessibilityNode? {
-            window.elements().first { $0.label == "Share crash diagnostics" && ["AXCheckBox", "AXSwitch"].contains($0.role) }
+            window.elements().first { $0.label == "Share diagnostics" && ["AXCheckBox", "AXSwitch"].contains($0.role) }
         }
         try await eventuallyOnMain("the diagnostics switch") { toggle() != nil }
         let role = try #require(toggle()?.role)
@@ -32,10 +32,10 @@ struct DiagnosticsSettingsTests {
         #expect(object.responds(to: helpSelector))
         let help = object.perform(helpSelector)?.takeUnretainedValue() as? String
         #expect(help == DiagnosticsSettings.disclosure)
-        let control = try window.press("Share crash diagnostics", role: role)
+        let control = try window.press("Share diagnostics", role: role)
         #expect(control.frame.width >= 24 && control.frame.height >= 24)
         #expect(settings.shareDiagnostics && AppSettings(store: defaults).shareDiagnostics)
-        try window.press("Share crash diagnostics", role: role)
+        try window.press("Share diagnostics", role: role)
         #expect(!settings.shareDiagnostics && !AppSettings(store: defaults).shareDiagnostics)
         #expect(changes == [true, false])
 
@@ -43,8 +43,8 @@ struct DiagnosticsSettingsTests {
             DiagnosticsSettings(settings: settings, configured: false))
         defer { unconfigured.close() }
         try await eventuallyOnMain("the unconfigured switch") {
-            unconfigured.controls().contains { $0.label == "Share crash diagnostics" }
+            unconfigured.controls().contains { $0.label == "Share diagnostics" }
         }
-        #expect(unconfigured.controls().filter { $0.label == "Share crash diagnostics" }.allSatisfy { !$0.isEnabled })
+        #expect(unconfigured.controls().filter { $0.label == "Share diagnostics" }.allSatisfy { !$0.isEnabled })
     }
 }

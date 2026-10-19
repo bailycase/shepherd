@@ -361,6 +361,9 @@ automated step of the worktree flows can be turned off here.
   socket, "Where each agent process reports status and terminal requests.": `PathRow`s, the file's name in
   mono `textSecondary` (`state.json`, `shepherd.sock`; the full path as its tooltip) and Reveal,
   which selects it in Finder.
+- **Editor:** Open files in, "File links in replies, reviewed files and project files. System
+  default uses each file's own app.": a popup of System default, the installed apps that open
+  plain text or source code, and Choose… (an app picker). Stored as the app's bundle identifier.
 - **Updates:** Check for updates automatically, a switch; Update channel, "Stable: tagged releases.
   Beta: pre-releases, plus newer stable builds. Nightly builds are a separate app, Shepherd
   Nightly.": Stable · Beta. Shepherd Nightly names its one channel instead ("Nightly", in
@@ -368,12 +371,13 @@ automated step of the worktree flows can be turned off here.
   as Shepherd." Last, "Version 0.1.0 (1)" (the short version and the build) with Check for updates.
   Debug builds have no updater: the group holds only the version row, with no button, and Sparkle's
   rows disclose once it reports it can update.
-- **Diagnostics:** Share crash diagnostics, off by default. A labelled switch opts in to sending
-  crash stacks, app/device details and fixed lifecycle events to a third-party crash-reporting service. The adjacent disclosure
-  excludes prompts, replies, tool output, file contents and session replay. The footnote distinguishes
+- **Diagnostics:** Share diagnostics, off by default. The existing labelled switch covers crash/hang
+  stacks, errors, app/device details, aggregate process/memory measurements and fixed operation timings
+  sent to a third-party diagnostics service. The adjacent disclosure excludes prompts, replies, tool
+  output, file contents, command lines and session replay. Saved consent remains unchanged. The footnote distinguishes
   off, pending relaunch and active reporting. Turning it off stops reporting and discards pending
   reports; it does not delete reports already sent.
-  Unconfigured builds show a disabled off switch and "Crash reporting is not configured in this
+  Unconfigured builds show a disabled off switch and "Diagnostics reporting is not configured in this
   build." A saved on preference can still be revoked. Full copy, states and component checklist:
   [Diagnostics](boards/Diagnostics.md). Behavior and setup: [diagnostics](../diagnostics.md).
 - **Reset:** Reset settings, "Restores appearance, terminal, agent, worktree, extension, keyboard and diagnostics
