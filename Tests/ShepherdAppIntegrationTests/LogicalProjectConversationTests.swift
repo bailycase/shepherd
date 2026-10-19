@@ -555,7 +555,36 @@ struct LogicalProjectConversationTests {
         let mouse = SyntheticMouse(window: window.window, y: window.host.bounds.midY)
         try mouse.press(at: grab)
         for step in 1...5 { try mouse.move(to: grab - CGFloat(step) * 20) }
-        try await eventuallyOnMain("the pane follows the pointer") { paneWidth() == "579 points" }
+        do {
+            try await eventuallyOnMain("the pane follows the pointer") { paneWidth() == "579 points" }
+        } catch {
+            // This process delivers a drag to a plain gesture (the probe above), so say where this one stopped: the same drag at
+            // other points across the 9pt handle, and on the shared split alone in a window of its own.
+            try mouse.release(at: grab - 100)
+            var tried: [String] = []
+            // `grab` is the 1pt line's trailing edge: -0.5 is its centre; -4 and +3 are on the 9pt handle beside it.
+            for dx in [-4.0, -1.5, -0.5, 0.0, 3.0] as [CGFloat] {
+                let before = paneWidth() ?? "-"
+                try mouse.press(at: grab + dx)
+                for step in 1...5 { try mouse.move(to: grab + dx - CGFloat(step) * 20) }
+                try? await eventuallyOnMain("moved", timeout: .seconds(1)) { paneWidth() != before }
+                tried.append("\(dx): \(before) → \(paneWidth() ?? "-")")
+                try mouse.release(at: grab + dx - 100)
+            }
+            let alone = RightPaneState(widthKey: "probe", defaultWidth: 400, defaults: r.app.defaults)
+            let split = OffscreenWindow(size: CGSize(width: 1000, height: 200), dark: false,
+                                        RightPaneSplit(state: alone, showPane: true) { Color.white } pane: { Color.black })
+            defer { split.close() }
+            // The line's centre in this window.
+            let edge = 1000 - 400 - AppLayout.dividerWidth / 2
+            let other = SyntheticMouse(window: split.window, y: 100)
+            try other.press(at: edge)
+            for step in 1...5 { try other.move(to: edge - CGFloat(step) * 20) }
+            try other.release(at: edge - 100)
+            try? await eventuallyOnMain("the split alone saved", timeout: .seconds(2)) { alone.width != 0 }
+            Issue.record("divider drag not delivered: \(tried); the shared split alone saved \(alone.width)")
+            throw error
+        }
         #expect(r.vm.logicalProjectPane.width == 0, "nothing is saved while the button is down")
         try mouse.move(to: grab - 1000)
         try await eventuallyOnMain("no wider than half the page (683.5)") {
