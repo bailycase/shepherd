@@ -111,6 +111,24 @@ struct ShellLayoutTests {
                 "a width under the minimum restores the default")
     }
 
+    /// A thread's side pane under its handle's drag path: the 600 default until a drag, the pointer's place deciding the width,
+    /// clamped to 380...half the column while previewing and when let go, and only letting go saves it, under the thread's own key.
+    @Test func aThreadPaneDragPreviewsWithinItsBoundsAndSavesOnlyWhenLetGo() {
+        let defaults = ScratchDefaults()
+        let state = RightPaneState(defaults: defaults)
+        #expect(RightPaneDrag.layout(nil, state: state, containerWidth: 1440).width == 600)
+        for (pointer, preview) in [(900.0, 540.0), (300, 720), (1200, 380)] as [(CGFloat, CGFloat)] {
+            #expect(RightPaneDrag.layout(RightPaneDrag(pointerX: pointer, containerWidth: 1440), state: state, containerWidth: 1440).width == preview)
+        }
+        #expect(state.width == 0 && defaults.object(forKey: RightPaneState.widthKey) == nil, "previewing saves nothing")
+        RightPaneDrag(pointerX: 300, containerWidth: 1440).end(in: state, containerWidth: 1440)
+        #expect(state.width == 720 && defaults.double(forKey: RightPaneState.widthKey) == 720)
+        #expect(defaults.object(forKey: ShepherdViewModel.logicalProjectPaneWidthKey) == nil)
+        // Beside a column too narrow to dock, the pane overlays and lets go at what fits.
+        RightPaneDrag(pointerX: -100, containerWidth: 700).end(in: state, containerWidth: 700)
+        #expect(state.width == 699)
+    }
+
     @Test(arguments: Array(stride(from: 0.0, through: 2400, by: 37)))
     func thePaneNeverProducesANegativeOrOversizedWidth(column: Double) {
         for preferred in [nil, 0, 200, 600, 5000] as [Double?] {
