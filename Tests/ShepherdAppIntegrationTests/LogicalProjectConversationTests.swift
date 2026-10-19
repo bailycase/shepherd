@@ -1574,7 +1574,7 @@ private static func chipsAndLinks() async throws {
         }
         try window.press(try #require(window.controls().first { $0.label?.hasPrefix(back + ", ") == true }?.label))
         try await eventuallyOnMain("the model and its clamped level are saved together") {
-            owner()?.conversationModel == back && owner()?.conversationThinking == "high"
+            owner()?.conversationModel == back && owner()?.conversationThinking == "high" && !vm.logicalProjects.busy.contains(ref.id)
         }
 
         // The next message relaunches the coordinator: the owner's launch carries the Project's model and level. (This harness's owner
