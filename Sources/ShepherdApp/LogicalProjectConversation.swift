@@ -179,7 +179,6 @@ struct ConversationThread: View {
         // A task whose answer is already held by the owner is not asked again: its row says what became of it.
         let answered = Set(project.tasks.filter { $0.pendingAnswer != nil }.map(\.id))
         let questions: [ProjectTaskRow] = presentation.rows.filter { $0.phase == .waiting && $0.detail != nil && !answered.contains($0.id) }
-        let questionFailure = vm.logicalProjects.failure?.message
         // A pending proposal is drawn inline where its typed tool result sits in the transcript. Only one the transcript has no card for
         // (its result is outside the loaded history, or came from a different path) is offered above the composer, so it is never
         // lost and never drawn twice. An accepted or denied proposal is consumed and drawn nowhere.
@@ -194,7 +193,9 @@ struct ConversationThread: View {
             dock: (presentation.summary != nil || !offers.isEmpty) ? { [vm, ref] in
                 AnyView(VStack(spacing: NWLeadMetrics.dockGap) {
                     ForEach(offers) { proposal in SpaceOffer(vm: vm, ref: ref, proposal: proposal) }
-                    if !questions.isEmpty, let questionFailure {
+                    // Read in the dock, not the thread's body: observed there, a refused send redraws the thread and leaves its Send
+                    // disabled once the owner has dropped the coordinator.
+                    if !questions.isEmpty, let questionFailure = vm.logicalProjects.failure?.message {
                         NWInlineProblem(questionFailure).accessibilityLabel(questionFailure)
                     }
                     ForEach(questions) { task in TaskQuestion(vm: vm, ref: ref, task: task, paused: project.paused) }
