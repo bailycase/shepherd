@@ -239,16 +239,21 @@ public enum NativeModelChoices {
     /// `current` model the ones pi reports for it (`currentLevels`, the snapshot's), when it does.
     public static func thinkingLines(_ listing: ModelListing, hostTakesAllLevels: Bool, current: String? = nil,
                                      currentLevels: [String]? = nil) -> [String: String] {
+        var lines = thinkingLevels(listing, hostTakesAllLevels: hostTakesAllLevels).mapValues(NativeThinkingLevel.line)
+        if let current, let currentLevels, !currentLevels.isEmpty { lines[current] = NativeThinkingLevel.line(currentLevels) }
+        return lines
+    }
+
+    /// The levels each listed model takes (pi's spellings, in pi's order; none for a model without reasoning).
+    public static func thinkingLevels(_ listing: ModelListing, hostTakesAllLevels: Bool) -> [String: [String]] {
         let plain = Set(listing.withoutThinking ?? [])
         // Without `withoutThinking`, so that one set lookup says whether each model reasons.
         let configured = ModelListing(models: [], defaultModel: nil, thinkingLevels: listing.thinkingLevels)
-        var lines: [String: String] = [:]
-        for id in listing.models where lines[id] == nil {
-            let levels = plain.contains(id) ? [] : ThinkingLevel.offered(model: id, listing: configured, hostTakesAllLevels: hostTakesAllLevels)
-            lines[id] = NativeThinkingLevel.line(levels.map(\.rawValue))
+        var levels: [String: [String]] = [:]
+        for id in listing.models where levels[id] == nil {
+            levels[id] = plain.contains(id) ? [] : ThinkingLevel.offered(model: id, listing: configured, hostTakesAllLevels: hostTakesAllLevels).map(\.rawValue)
         }
-        if let current, let currentLevels, !currentLevels.isEmpty { lines[current] = NativeThinkingLevel.line(currentLevels) }
-        return lines
+        return levels
     }
 }
 

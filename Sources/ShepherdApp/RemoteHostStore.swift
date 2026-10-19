@@ -155,6 +155,8 @@ final class RemoteHostStore {
         /// The host serves Project automation settings (`logicalProjectAutomations.v1`), apart from running them.
         /// The host carries images with a Project message (`logicalProjectRuntime.images.v1`).
         var supportsProjectMessageImages: Bool { client?.capabilities.contains(RemoteProtocol.projectMessageImagesCapability) == true }
+        /// The host keeps a Project's conversation reasoning level (`logicalProjects.conversationThinking.v1`).
+        var supportsProjectConversationThinking: Bool { client?.capabilities.contains(RemoteProtocol.projectConversationThinkingCapability) == true }
         var supportsLogicalProjectAutomations: Bool { client?.capabilities.contains(RemoteProtocol.logicalProjectAutomationsCapability) == true }
         var supportsProjectDetails: Bool { client?.capabilities.contains(RemoteProtocol.projectDetailsCapability) == true }
         var supportsProjectMCP: Bool { client?.capabilities.contains(RemoteProtocol.projectMCPCapability) == true }

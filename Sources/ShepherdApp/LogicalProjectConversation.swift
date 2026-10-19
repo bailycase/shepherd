@@ -207,8 +207,14 @@ struct ConversationThread: View {
             runtimeOperations: Set(project.messages.filter { $0.source != nil }.flatMap { [$0.id] + [$0.nativeDeliveryID].compactMap { $0 } }),
             model: ProjectConversationModel(
                 current: project.settings.conversationModel ?? (ref.home == .local ? vm.settings.agentDefaults.model : nil),
-                pending: agent == nil,
-                choose: { [vm, ref] id in await vm.logicalProjects.saveSettings(ref) { $0.conversationModel = id } }))
+                // Before a coordinator exists, the level a new one starts with: the owner's default (a local owner's is known here).
+                thinking: project.settings.conversationThinking ?? (agent == nil && ref.home == .local ? vm.settings.agentDefaults.thinking.rawValue : nil),
+                choose: { [vm, ref] id, level in await vm.logicalProjects.saveSettings(ref) {
+                    $0.conversationModel = id
+                    if let level { $0.conversationThinking = level }
+                } },
+                chooseThinking: vm.projectKeepsConversationThinking(ref.home)
+                    ? { [vm, ref] level in await vm.logicalProjects.saveSettings(ref) { $0.conversationThinking = level } } : nil))
     }
 }
 

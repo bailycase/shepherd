@@ -136,6 +136,11 @@ struct LogicalProjectConversationTests {
         expectScenarioCompleted(result)
     }
 
+    @Test func aHeldOffCoordinatorsModelAndReasoningAreTheProjectsOwnSettingsAndItsNextLaunchUsesThem() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.heldOffModelAndReasoning() } }
+        expectScenarioCompleted(result)
+    }
+
     @Test func aSavedCoordinatorsHistoryShowsOnAColdLaunchAndTheNextMessageStartsItsPi() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.coldCoordinator() } }
         expectScenarioCompleted(result)
@@ -1494,6 +1499,98 @@ private static func chipsAndLinks() async throws {
         try await eventuallyOnMain("the message is delivered") { app.server.state.projects.first?.messages.last?.phase == .delivered }
     }
 
+    /// The reported case: a relaunched Project whose coordinator's pi is held off (here paused). Its composer is the ordinary one, and its
+    /// model and reasoning controls open: no git chip, the model picker and the Thinking segments from the catalog's levels for the model.
+    /// A pick changes the Project's own coordinator settings on the owner (never a task thread's), a model's new levels clamp the saved
+    /// level as pi would, and the owner applies both to the relaunched coordinator before it delivers the next message.
+    private static func heldOffModelAndReasoning() async throws {
+        AccessibilityNode.enable()
+        try StubPi.installAsEngine()
+        let directory = try makeScratchDirectory("mdl")
+        let folder = directory.appendingPathComponent("logical-project")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let held = Space(name: "Projects", path: folder.path, hidden: true, holdsProjects: true)
+        var fixture = Fixture.agent("Sample App", in: held)
+        var project = Project(name: "Sample App", goal: "", coordinatorAgentID: fixture.agent.id, paused: true)
+        project.settings.threadModel = "anthropic/claude-haiku-4-5"
+        fixture.agent.coordinatorFor = project.id
+        project.messages = [ProjectMessage(id: UUID(), text: "hello", phase: .delivered)]
+        var state = Fixture.state(spaces: [held], agents: [fixture])
+        state.projects = [project]
+        try JSONEncoder().encode(state).write(to: directory.appendingPathComponent("state.json"))
+        let app = try AppHarness(directory: directory)
+        defer { app.stop() }
+        app.settings.projectsEnabled = true
+        let vm = try await app.start()
+        let ref = LogicalProjectRef(home: .local, id: project.id)
+        vm.openLogicalProject(ref)
+        let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: vm))
+        defer { window.close() }
+        let store = vm.threadStores.store(for: fixture.agent.id)
+        func owner() -> LogicalProjectSettings? { app.server.state.projects.first?.settings }
+        func chip() -> Control? { window.controls().first { $0.label?.hasPrefix("Model settings:") == true } }
+        try await eventuallyOnMain("the held-off coordinator's composer") {
+            window.layout(); return store.offline && !store.ready && chip()?.isEnabled == true
+        }
+        // Nothing is saved and pi is off: this existing coordinator resumes its own level, which nothing here knows, so the chip names none.
+        #expect((chip()?.value ?? "").isEmpty, "no reasoning level is invented: \(String(describing: chip()?.value))")
+        #expect(!window.elements().contains { ($0.label ?? "").localizedCaseInsensitiveContains("branch") || ($0.label ?? "").localizedCaseInsensitiveContains("worktree") },
+                "the Project composer draws no git affordance")
+
+        // The model, from the full picker: the owner's setting for the coordinator, not the task threads'.
+        try window.press(try #require(chip()?.label))
+        try await eventuallyOnMain("the settings popover with the Project's levels") {
+            window.layout(); return window.element("All models\u{2026}") != nil && !window.buttons(in: "Thinking").isEmpty
+        }
+        // The default model is not one the catalog lists, so the standard four are offered.
+        #expect(window.buttons(in: "Thinking").compactMap(\.label) == ["Off", "Low", "Medium", "High"])
+        try window.press("All models\u{2026}")
+        let pick = "openai/gpt-5"
+        try await eventuallyOnMain("the full picker lists the pick") {
+            window.layout(); return window.controls().contains { $0.label?.hasPrefix(pick + ", ") == true && $0.isEnabled }
+        }
+        try window.press(try #require(window.controls().first { $0.label?.hasPrefix(pick + ", ") == true }?.label))
+        try await eventuallyOnMain("the owner saved the coordinator's model") { owner()?.conversationModel == pick && !vm.logicalProjects.busy.contains(ref.id) }
+        #expect(owner()?.threadModel == "anthropic/claude-haiku-4-5", "the task threads' model is untouched")
+        try await eventuallyOnMain("the chip names it") { window.layout(); return chip()?.label == "Model settings: \(pick)" }
+
+        // Reasoning: the levels the catalog lists for that model, and a pick is the Project's setting.
+        try window.press("Model settings: \(pick)")
+        try await eventuallyOnMain("the Thinking segments for gpt-5") { window.layout(); return !window.buttons(in: "Thinking").isEmpty }
+        let offered = window.buttons(in: "Thinking").compactMap(\.label)
+        #expect(!offered.contains("Minimal") && offered.contains("Extra high"), "gpt-5's own levels (no Minimal, Extra high): \(offered)")
+        try window.press("Extra high", in: "Thinking")
+        // One owner write at a time: each save is acknowledged before the next control is pressed.
+        try await eventuallyOnMain("the owner saved the coordinator's level") { owner()?.conversationThinking == "xhigh" && !vm.logicalProjects.busy.contains(ref.id) }
+        try await eventuallyOnMain("the chip names it") { window.layout(); return chip()?.value?.contains("Extra high") == true }
+        #expect(store.offline && !store.ready, "setting the Project's coordinator starts nothing")
+
+        // Back to a model whose levels lack Extra high: the saved level is clamped with it, as pi would. A level leaves the popover open,
+        // as in any thread.
+        try window.press("All models\u{2026}")
+        let back = "anthropic/claude-opus-4-5"
+        try await eventuallyOnMain("the full picker lists it") {
+            window.layout(); return window.controls().contains { $0.label?.hasPrefix(back + ", ") == true && $0.isEnabled }
+        }
+        try window.press(try #require(window.controls().first { $0.label?.hasPrefix(back + ", ") == true }?.label))
+        try await eventuallyOnMain("the model and its clamped level are saved together") {
+            owner()?.conversationModel == back && owner()?.conversationThinking == "high" && !vm.logicalProjects.busy.contains(ref.id)
+        }
+
+        // The next message relaunches the coordinator: the owner's launch carries the Project's model and level. (This harness's owner
+        // lists stand-in models, not the composer's catalog, so the launch is refused here and the Project re-pauses; the owner applying
+        // both to a running coordinator before delivery is `ProjectCoordinatorFlowTests`'.)
+        let launching = app.server.onProjectRuntimeLaunch
+        let launched = Locked<[ProjectRuntimeLaunch]>([])
+        app.server.onProjectRuntimeLaunch = { request, done in launched.withValue { $0.append(request) }; launching?(request, done) }
+        #expect(await vm.logicalProjects.setPaused(ref, false))
+        #expect(await vm.logicalProjects.sendMessage(ref, text: "hello again"))
+        try await eventuallyOnMain("the owner launches the coordinator") { !launched.current.isEmpty }
+        let launch = try #require(launched.current.first)
+        #expect(launch.coordinator && launch.agentID == fixture.agent.id, "the coordinator, never a task thread")
+        #expect(launch.model == back && launch.thinking == "high", "launched with the Project's model and level: \(String(describing: launch.model)) \(String(describing: launch.thinking))")
+    }
+
     // MARK: A resolved worker
 
     /// A real worker settles; its thread in the pane shows the steering composer. Marking it resolved removes the composer entirely
@@ -1749,7 +1846,8 @@ private static func chipsAndLinks() async throws {
 
     /// A served coordinator thread (a scripted host that records every request and applies a model or level as the real one does,
     /// `ComposerThread`'s way) under the Project's own composer wiring. A pick is saved as the Project's conversation model FIRST and
-    /// only then reaches the thread as a native `setModel`; a refused save sends none. A level goes to the thread as `setThinking`.
+    /// only then reaches the thread as a native `setModel`; a refused save sends none. A level is saved as the Project's reasoning level
+    /// first, then reaches the thread as `setThinking`.
     private static func liveModelPick() async throws {
         AccessibilityNode.enable()
         try StubPi.installAsEngine()
@@ -1760,6 +1858,7 @@ private static func chipsAndLinks() async throws {
         let input = ThreadInput()
         let requests = Locked<[NativeThreadRequest]>([])
         let saved = Locked<[String]>([])
+        let savedLevels = Locked<[String]>([])
         let accept = Locked(true)
         let host = Locked(snapshot)
         let request: NativeThreadStore.Request = { value in
@@ -1771,6 +1870,7 @@ private static func chipsAndLinks() async throws {
                 host.withValue { $0.model = model; $0.revision += 1 }
                 return .accepted(operationID: operation)
             case .setThinking(_, _, let operation, let level):
+                #expect(savedLevels.current.last == level, "the accepted Project save precedes the native setThinking")
                 host.withValue { $0.thinking = level; $0.revision += 1 }
                 return .accepted(operationID: operation)
             default: return .snapshot(value: host.current)
@@ -1778,8 +1878,11 @@ private static func chipsAndLinks() async throws {
         }
         let send = ProjectComposerSend(
             placeholder: "Ask Sample App a question or start a task\u{2026}", send: { _, _ in true },
-            model: ProjectConversationModel(current: nil, pending: false, choose: { id in
+            model: ProjectConversationModel(current: nil, choose: { id, _ in
                 saved.withValue { $0.append(id) }
+                return accept.current
+            }, chooseThinking: { level in
+                savedLevels.withValue { $0.append(level) }
                 return accept.current
             }))
         let window = OffscreenWindow(size: CGSize(width: 1000, height: 700), dark: true)
@@ -1834,6 +1937,7 @@ private static func chipsAndLinks() async throws {
             requests.current.contains { if case .setThinking(_, _, _, let level) = $0 { level == "high" } else { false } }
         }
         try await eventuallyOnMain("the thread reports high") { store.thinking == "high" }
+        #expect(savedLevels.current == ["high"], "the level is the Project's coordinator setting first: \(savedLevels.current)")
     }
 
     /// The coordinator's ID is reserved before its agent exists. With the app's real launch held there, the page's own request closure

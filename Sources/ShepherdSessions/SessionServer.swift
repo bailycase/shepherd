@@ -735,7 +735,8 @@ public final class SessionServer: @unchecked Sendable {
     private var offeredCapabilities: [String] {
         let designs = advertisedCapabilities.contains(RemoteProtocol.designsCapability)
         return advertisedCapabilities.filter {
-            (isStarted || ($0 != RemoteProtocol.logicalProjectsCapability && $0 != RemoteProtocol.logicalProjectAutomationsCapability && $0 != RemoteProtocol.logicalProjectFilesCapability))
+            (isStarted || ($0 != RemoteProtocol.logicalProjectsCapability && $0 != RemoteProtocol.logicalProjectAutomationsCapability && $0 != RemoteProtocol.logicalProjectFilesCapability
+                                && $0 != RemoteProtocol.projectConversationThinkingCapability))
                 && (!([RemoteProtocol.logicalProjectRuntimeCapability, RemoteProtocol.projectWorkerCapability, RemoteProtocol.projectMessageImagesCapability].contains($0)) || (isStarted && onProjectRuntimeRequest != nil && onProjectRuntimeLaunch != nil))
                 && (isStarted && onProjectExecutionLaunch != nil || $0 != RemoteProtocol.projectExecutionCapability)
                 && ($0 != RemoteProtocol.projectPublicationsCapability || (isStarted && (onProjectPlacement != nil || onProjectExecutionLaunch != nil || onProjectRuntimeLaunch != nil)))

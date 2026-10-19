@@ -3,6 +3,8 @@ import SwiftUI
 import Testing
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
+import ShepherdSessions
 import ShepherdTestSupport
 import ShepherdUI
 @testable import ShepherdApp
@@ -412,6 +414,44 @@ struct LogicalProjectPreviewTests {
         let vm = world.vm
         try await Preview.renderMatrix("lead-delete-project", size: CGSize(width: 560, height: 360)) {
             DeleteLogicalProjectDialog(vm: vm, ref: LogicalProjectRef(home: .local, id: projects[0].id), project: projects[0], dismiss: {})
+        }
+    }
+}
+
+extension LogicalProjectPreviewTests {
+    /// The reported case: a Project whose coordinator's pi is held off (paused, or a relaunch with nothing to deliver), through the real
+    /// ThreadView and Composer with the Project's composer wiring. Its model settings are open with the Project's own model and reasoning
+    /// level and the levels the catalog lists for that model, and it draws no branch or worktree chip. An ordinary thread's composer with
+    /// its git chip renders beside it for comparison. (The page's own wiring and the owner's save are `LogicalProjectConversationTests`'.)
+    @Test func projectComposerModelAndReasoningWhileItsCoordinatorIsHeldOff() async throws {
+        let send = ProjectComposerSend(placeholder: "Paused. Your message waits until you resume\u{2026}", send: { _, _ in false },
+                                       model: ProjectConversationModel(current: "openai/gpt-5", thinking: "xhigh", choose: { _, _ in false },
+                                                                       chooseThinking: { _ in false }))
+        let held = NativeThreadStore()
+        held.offline = true
+        let catalog = ModelCatalog([PiModelCatalog.Entry(id: "openai/gpt-5", context: "400K"), PiModelCatalog.Entry(id: "anthropic/claude-opus-4-5", context: "200K")],
+                                   levels: ["openai/gpt-5": ["off", "low", "medium", "high", "xhigh"]])
+        var snapshot = ActivityThreads.idle
+        snapshot.model = "anthropic/claude-opus-4-5"
+        snapshot.thinking = "medium"
+        snapshot.thinkingLevels = ["off", "low", "medium", "high"]
+        let ordinary = ThreadFixture(snapshot)
+        defer { ordinary.store.stop() }
+        try await Preview.renderMatrix("project-composer-model-held-off", size: CGSize(width: 1500, height: 560),
+                                       ready: { ordinary.store.ready }) {
+            HStack(alignment: .bottom, spacing: NW.Space.xl) {
+                ThreadView(store: held, active: true, isFocused: false, request: { _ in .failure(code: NativeThreadCode.starting, message: "held off") },
+                           agentName: "Sample App", listModels: { catalog }, modelSettingsOpen: true)
+                    .environment(\.projectComposerSend, send)
+                    .frame(width: 720)
+                ThreadView(store: ordinary.store, active: true, isFocused: false, request: ordinary.request, agentName: "Review the composer",
+                           workingDirectory: "~/Developer/Shepherd",
+                           branch: AgentBranchLabel(kind: .worktree, branch: "agent/swiftui-previews", changedFiles: 3),
+                           showChanges: {}, listModels: { catalog }, modelSettingsOpen: true)
+                    .frame(width: 720)
+            }
+            .padding(NW.Space.l)
+            .background(Color.nw.bgWindow)
         }
     }
 }

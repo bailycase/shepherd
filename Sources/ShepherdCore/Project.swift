@@ -10,6 +10,9 @@ public typealias ProjectMemoryID = Identifier<ProjectMemoryMarker>
 public struct LogicalProjectSettings: Codable, Hashable, Sendable {
     public var maxConcurrentWorkers: Int
     public var conversationModel: String?
+    /// The coordinator's reasoning level (a `ThinkingLevel` raw value), applied with `conversationModel` at launch and before each
+    /// delivered message; nil keeps the coordinator's own level (the owner's default for a new one).
+    public var conversationThinking: String?
     public var threadModel: String?
     public var instructions: String
     /// Permission to request user approval, never permission to link a Space autonomously.
@@ -19,9 +22,10 @@ public struct LogicalProjectSettings: Codable, Hashable, Sendable {
 
     public init(maxConcurrentWorkers: Int = 3, conversationModel: String? = nil,
                 threadModel: String? = nil, instructions: String = "", canRequestSpaceLinks: Bool = true,
-                hostPolicy: ProjectHostPolicy = .selected, allowedHosts: [ProjectHostReference] = [.local]) {
+                hostPolicy: ProjectHostPolicy = .selected, allowedHosts: [ProjectHostReference] = [.local], conversationThinking: String? = nil) {
         self.maxConcurrentWorkers = maxConcurrentWorkers
         self.conversationModel = conversationModel
+        self.conversationThinking = conversationThinking
         self.threadModel = threadModel
         self.instructions = instructions
         self.canRequestSpaceLinks = canRequestSpaceLinks
@@ -29,11 +33,14 @@ public struct LogicalProjectSettings: Codable, Hashable, Sendable {
         self.allowedHosts = allowedHosts
     }
 
-    private enum CodingKeys: String, CodingKey { case maxConcurrentWorkers, conversationModel, threadModel, instructions, canRequestSpaceLinks, hostPolicy, allowedHosts }
+    private enum CodingKeys: String, CodingKey {
+        case maxConcurrentWorkers, conversationModel, conversationThinking, threadModel, instructions, canRequestSpaceLinks, hostPolicy, allowedHosts
+    }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         maxConcurrentWorkers = try c.decodeIfPresent(Int.self, forKey: .maxConcurrentWorkers) ?? 3
         conversationModel = try c.decodeIfPresent(String.self, forKey: .conversationModel)
+        conversationThinking = try c.decodeIfPresent(String.self, forKey: .conversationThinking)
         threadModel = try c.decodeIfPresent(String.self, forKey: .threadModel)
         instructions = try c.decodeIfPresent(String.self, forKey: .instructions) ?? ""
         canRequestSpaceLinks = try c.decodeIfPresent(Bool.self, forKey: .canRequestSpaceLinks) ?? true
@@ -179,6 +186,9 @@ public struct Project: Codable, Hashable, Sendable, Identifiable {
         }
         for model in [settings.conversationModel, settings.threadModel].compactMap({ $0 }) {
             try require(!model.isEmpty && model.count <= 512, "Model preference must contain 1...512 characters.")
+        }
+        if let level = settings.conversationThinking {
+            try require(ThinkingLevel(rawValue: level) != nil, "Reasoning level must be one of " + ThinkingLevel.allCases.map(\.rawValue).joined(separator: ", ") + ".")
         }
         try require(tasks.count <= 64 && Set(tasks.map(\.id)).count == tasks.count
                     && Set(tasks.map(\.operationID)).count == tasks.count

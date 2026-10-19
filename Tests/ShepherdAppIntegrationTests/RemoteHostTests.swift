@@ -2,7 +2,7 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
-import ShepherdSessions
+@testable import ShepherdSessions
 import ShepherdTestSupport
 import ShepherdUI
 import Testing
@@ -261,6 +261,22 @@ struct RemoteHostTests {
 
         local.remoteHosts.updateHost(id: connection.id, name: "studio", host: "127.0.0.1", port: remote.port, token: remote.token)
         try await eventuallyOnMain("the corrected token to connect") { connection.phase == .connected }
+    }
+
+    /// A remote Project's reasoning level is its owner's to keep: offered against an owner that advertises it, never against an older one
+    /// (which would drop the field and leave a control that changes nothing).
+    @Test func aRemoteProjectsReasoningLevelIsOfferedOnlyByAnOwnerThatKeepsIt() async throws {
+        let local = try AppHarness(), current = try RemoteHostHarness(), older = try RemoteHostHarness()
+        defer { local.stop(); current.stop(); older.stop() }
+        older.host.server.advertisedCapabilities.removeAll { $0 == RemoteProtocol.projectConversationThinkingCapability }
+        try await current.host.start()
+        try await older.host.start()
+        let vm = try await local.start()
+        let keeps = try await current.connect(local.remoteHosts, name: "current")
+        let drops = try await older.connect(local.remoteHosts, name: "older")
+        #expect(vm.projectKeepsConversationThinking(.local))
+        #expect(vm.projectKeepsConversationThinking(.host(keeps.id)))
+        #expect(!vm.projectKeepsConversationThinking(.host(drops.id)))
     }
 
     @Test func aHostWithNothingListeningKeepsRetrying() async throws {

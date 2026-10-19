@@ -132,6 +132,9 @@ extension SessionServer {
                 guard settings.allowedHosts.allSatisfy({ project.settings.allowedHosts.contains($0) || projectEligibleHosts.contains($0) }) else {
                     throw LogicalProjectsError("invalid_host", "Choose a currently connected host binding configured on the Project owner.")
                 }
+                // A viewer that predates the reasoning level sends none: nil keeps the owner's, so its edit never clears it.
+                var settings = settings
+                settings.conversationThinking = settings.conversationThinking ?? project.settings.conversationThinking
                 project.settings = settings
                 if !settings.canRequestSpaceLinks {
                     for i in project.spaceProposals.indices where project.spaceProposals[i].phase == .pending {

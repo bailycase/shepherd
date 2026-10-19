@@ -130,6 +130,11 @@
     See [Projects slice 1](project-lead.md#slice-1-persisted-owner-service-implemented-no-ui-or-dispatch)
     for method cases, limits, lifecycle and conflict/error semantics. Existing `projects.v1` and
     `Project*` directory configuration remain wire-compatible.
+  - `logicalProjects.conversationThinking.v1`: the owner keeps `settings.conversationThinking`, the
+    coordinator's reasoning level, applies it with the conversation model at launch and before each
+    delivered message, and keeps it when a settings edit omits it. Advertised with `logicalProjects.v1`.
+    A client offers the Project's own reasoning choice only to an owner with it; an older owner would
+    drop the field.
   - `logicalProjectRuntime` (`logicalProjectRuntime.v1`): authenticated Project-capable viewers
     call the OWNER VM/controller, never their own local runtime. `ProjectRuntimeTransport` has
     revision-checked `action`, native `conversation`, original-fence worker `answer`, and `hosts`

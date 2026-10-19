@@ -87,7 +87,8 @@ extension SessionServer {
                       let tab = self.store.state.tabs.first(where: { $0.id == agent.tabID }), let pane = tab.layout.leaves.first else { return current }
                 if self.rpcThread(forAgent: agent.id)?.session.isAlive != true {
                     self.launchProject(.init(projectID: id, agentID: agent.id, spaceID: agent.spaceID, cwd: pane.cwd,
-                                             name: current.name, model: current.settings.conversationModel, coordinator: true))
+                                             name: current.name, model: current.settings.conversationModel,
+                                             thinking: current.settings.conversationThinking, coordinator: true))
                 }
                 return current
             }
@@ -559,7 +560,7 @@ extension SessionServer {
                     else if self.rpcThread(forAgent: coordinator)?.session.isAlive != true,
                             let agent = self.store.state.agents.first(where: { $0.id == coordinator }),
                             let pane = self.store.state.tabs.first(where: { $0.id == agent.tabID })?.layout.leaves.first {
-                        self.launchProject(.init(projectID: id, agentID: coordinator, spaceID: agent.spaceID, cwd: pane.cwd, name: p.name, model: p.settings.conversationModel, coordinator: true))
+                        self.launchProject(.init(projectID: id, agentID: coordinator, spaceID: agent.spaceID, cwd: pane.cwd, name: p.name, model: p.settings.conversationModel, thinking: p.settings.conversationThinking, coordinator: true))
                     }
                 }
             } else {
@@ -584,7 +585,7 @@ extension SessionServer {
                 }
                 if let space { try await enqueue {
                     guard self.activeProject(id)?.coordinatorAgentID == coordinator else { return }
-                    self.launchProject(.init(projectID: id, agentID: coordinator, spaceID: space.id, cwd: directory.path, name: p.name, model: p.settings.conversationModel, coordinator: true))
+                    self.launchProject(.init(projectID: id, agentID: coordinator, spaceID: space.id, cwd: directory.path, name: p.name, model: p.settings.conversationModel, thinking: p.settings.conversationThinking, coordinator: true))
                 } }
             }
         }
@@ -748,6 +749,7 @@ extension SessionServer {
                 catch { completed(.failure(code: "project_image_unavailable", message: "Project input images are unavailable. Nothing was sent without them.")); return }
                 self.projectStartedPrompts.remove(agentID)
                 self.dispatchProjectInput(projectID: projectID, thread: thread, model: current.settings.conversationModel,
+                    thinking: current.settings.conversationThinking,
                     request: .send(expectedSessionID: session, generation: generation, operationID: message.nativeDeliveryID ?? message.id,
                                    text: message.text, delivery: .followUp, images: images.isEmpty ? nil : images), completion: completed)
             }

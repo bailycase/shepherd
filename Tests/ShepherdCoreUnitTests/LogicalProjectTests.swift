@@ -33,6 +33,16 @@ struct LogicalProjectTests {
         #expect(throws: ShepherdStateValidationError.self) { try ShepherdState(projects: [project, project]).validate() }
     }
 
+    /// The coordinator's reasoning level round-trips, decodes as nil from an older owner's record, and must be a known level.
+    @Test func theConversationReasoningLevelRoundTripsDefaultsToNoneAndMustBeAKnownLevel() throws {
+        var project = Project(id: Self.id, name: "Release", settings: .init(conversationModel: "provider/a", conversationThinking: "xhigh"))
+        try project.validate()
+        #expect(try JSONDecoder().decode(Project.self, from: JSONEncoder().encode(project)).settings.conversationThinking == "xhigh")
+        #expect(try JSONDecoder().decode(LogicalProjectSettings.self, from: Data(#"{"conversationModel":"provider/a"}"#.utf8)).conversationThinking == nil)
+        project.settings.conversationThinking = "turbo"
+        #expect(throws: ProjectValidationError.self) { try project.validate() }
+    }
+
     @Test(arguments: ["../outside", "", "/tmp/escape", "11111111-1111-4111-8111-11111111111Z", "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"])
     func invalidProjectIDsAreRejectedBeforeTheyCanNameFiles(_ value: String) {
         #expect(throws: ProjectValidationError.self) { try Project(id: .init(rawValue: value), name: "Project").validate() }

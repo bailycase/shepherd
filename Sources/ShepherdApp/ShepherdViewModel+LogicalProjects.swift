@@ -162,6 +162,15 @@ extension ShepherdViewModel {
         }
     }
 
+    /// Whether the Project's owner keeps its conversation reasoning level: this Mac always; a remote owner only with
+    /// `logicalProjects.conversationThinking.v1` (an older one would drop the field).
+    func projectKeepsConversationThinking(_ home: LogicalProjectHome) -> Bool {
+        switch home {
+        case .local: true
+        case .host(let id): remoteHosts.connections.first { $0.id == id }?.supportsProjectConversationThinking == true
+        }
+    }
+
     /// A worker's own native thread store: this Mac's for a local Project, the owner's (read as a remote agent) for a remote one.
     func projectWorkerStore(_ home: LogicalProjectHome, _ agent: AgentID) -> NativeThreadStore {
         switch home {
