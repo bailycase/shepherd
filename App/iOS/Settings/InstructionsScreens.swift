@@ -332,15 +332,10 @@ private struct InstructionsPadPage: View {
             // History's popover hangs off its button, so the actions are built once: only the
             // scope wraps under its picker when the column is narrow.
             HStack(alignment: .top, spacing: NW.Space.l) {
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: NW.Space.l) {
-                        scopePicker(model)
-                        scopeState(model, hosts: hosts)
-                    }
-                    VStack(alignment: .leading, spacing: NW.Space.s) {
-                        scopePicker(model)
-                        scopeState(model, hosts: hosts)
-                    }
+                // iPadSettingsInstructions: the scope control over each host's state.
+                VStack(alignment: .leading, spacing: NW.Space.s) {
+                    scopePicker(model)
+                    scopeState(model, hosts: hosts)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 actions(model, hosts: hosts, ready: snapshot != nil)
@@ -452,12 +447,12 @@ private struct InstructionsPadPage: View {
         }
         .background(nw.bgWindow)
         .clipShape(RoundedRectangle(cornerRadius: NW.Radius.l))
-        .nwBorder(nw.lineStrong, radius: NW.Radius.l)
+        .nwBorder(nw.lineSubtle, radius: NW.Radius.l)
     }
 }
 
-/// Every host | Per host (iPadSettingsInstructions): a 300pt control on `bgSelected`, the chosen
-/// side raised.
+/// Every host | Per host (iPadSettingsInstructions): a 300pt control on `bgSunken` with a
+/// `lineSubtle` line, the chosen side raised.
 private struct InstructionsScopePicker: View {
     @Binding var sameEverywhere: Bool
 
@@ -468,7 +463,8 @@ private struct InstructionsScopePicker: View {
         }
         .padding(NW.Space.xxs)
         .frame(width: MobileLayout.instructionsScopeWidth)
-        .background(Color.nw.bgSelected, in: RoundedRectangle(cornerRadius: MobileLayout.instructionsScopeRadius))
+        .background(Color.nw.bgSunken, in: RoundedRectangle(cornerRadius: MobileLayout.instructionsScopeRadius))
+        .nwBorder(Color.nw.lineSubtle, radius: MobileLayout.instructionsScopeRadius)
         .nwAnimation(.content, value: sameEverywhere)
         .accessibilityRepresentation {
             Picker("Instructions", selection: $sameEverywhere) {
@@ -483,8 +479,8 @@ private struct InstructionsScopePicker: View {
         let nw = Color.nw
         return Button(action: action) {
             Text(title)
-                .font(.nwSans(MobileLayout.instructionsScopeTextSize, chosen ? .semibold : .regular))
-                .foregroundStyle(chosen ? nw.textPrimary : nw.textSecondary)
+                .font(.nwSans(MobileLayout.instructionsScopeTextSize, .regular))
+                .foregroundStyle(nw.textPrimary)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, minHeight: MobileLayout.instructionsScopeSegmentHeight)
                 .background(chosen ? nw.bgRaised : .clear, in: RoundedRectangle(cornerRadius: MobileLayout.instructionsScopeSegmentRadius))
@@ -494,8 +490,8 @@ private struct InstructionsScopePicker: View {
     }
 }
 
-/// The files as tabs (22pt apart over a hairline): the name in mono 13, the open one semibold in
-/// `textPrimary` with a 2pt underline, over what it is and its size.
+/// The files as tabs (22pt apart over a hairline, iPadSettingsInstructions): the name in mono 13,
+/// the open one in `textPrimary` over a 2pt `lantern` underline, the other `textTertiary`.
 private struct InstructionsFileTabs: View {
     @Binding var file: InstructionFile
     let note: (InstructionFile) -> String
@@ -514,23 +510,17 @@ private struct InstructionsFileTabs: View {
         let nw = Color.nw
         let chosen = option == file
         return Button { file = option } label: {
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                Text(option.fileName)
-                    .font(.nwMono(MobileLayout.instructionsTabTextSize, chosen ? .semibold : .medium))
-                    .foregroundStyle(chosen ? nw.textPrimary : nw.textSecondary)
-                Text(note(option))
-                    .font(.nw(.micro, weight: .regular))
-                    .foregroundStyle(nw.textTertiary)
-            }
-            .padding(.horizontal, NW.Space.xxs)
-            .padding(.top, NW.Space.m)
-            .padding(.bottom, NW.Space.m + NW.Space.xxs)
-            .overlay(alignment: .bottom) {
-                if chosen { Rectangle().fill(nw.textPrimary).frame(height: MobileLayout.instructionsTabUnderline) }
-            }
-            .contentShape(Rectangle())
+            Text(option.fileName)
+                .font(.nwMono(MobileLayout.instructionsTabTextSize, .regular))
+                .foregroundStyle(chosen ? nw.textPrimary : nw.textTertiary)
+                .frame(minHeight: NW.Height.touch)
+                .overlay(alignment: .bottom) {
+                    if chosen { Rectangle().fill(nw.lantern).frame(height: MobileLayout.instructionsTabUnderline) }
+                }
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityValue(note(option))
         .accessibilityAddTraits(chosen ? .isSelected : [])
     }
 }

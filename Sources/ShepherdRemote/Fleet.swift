@@ -315,6 +315,14 @@ public struct FleetAttention: Identifiable, Equatable, Sendable {
         }
     }
 
+    /// The iPad's kind line (iPadInbox, iPadOverview): "Thread", "Automation".
+    public var shortOriginLabel: String {
+        switch origin {
+        case .thread: "Thread"
+        case .automation: "Automation"
+        }
+    }
+
     /// The card's title: the thread.
     public var title: String { thread }
 }

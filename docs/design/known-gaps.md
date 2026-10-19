@@ -30,9 +30,8 @@ below collects the rest, and the places those sentences point here.
   - Mac: ⌘1–9 to jump
     to a file (ChangesStates), chords that select agents today; Rich preview (the engine sends no
     file contents).
-  - iPad: the sidebar stays in landscape, so the docked pane is narrower than the board's 640pt;
-    its toolbar drops "2/5 viewed", then the stat (`PadChangesToolbar`), and its head sits under
-    the thread's bar rather than beside it.
+  - iPad: the sidebar stays in landscape, and the pane's head sits under the thread's bar rather
+    than beside it.
   - iPhone and iPad, not built: a file head's Comment on the file and Open buttons; the base
     picker's "A commit…"; a commits range (touch has no ⇧); Rich preview and Open in your editor;
     a draft pull request from Commit… (`RemoteCommitOptions` has no draft).

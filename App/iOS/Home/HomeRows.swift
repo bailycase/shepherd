@@ -120,9 +120,11 @@ struct AttentionCard: View {
     @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
-        // An automation's card is titled by its question over the asker's context (MobileInbox).
-        let asked = answers && item.symbol != nil && item.message != nil
-        NWAttentionCard(symbol: item.symbol, origin: item.originLabel, title: asked ? item.question : item.title,
+        // On iPhone an automation's card is titled by its question over the asker's context
+        // (MobileInbox); the iPad's cards keep the name and "Thread" or "Automation" (iPadOverview).
+        let pad = navigator.layout == .pad
+        let asked = !pad && answers && item.symbol != nil && item.message != nil
+        NWAttentionCard(symbol: item.symbol, origin: pad ? item.shortOriginLabel : item.originLabel, title: asked ? item.question : item.title,
                         question: asked ? (item.message ?? item.question) : item.question,
                         message: answers && !asked ? item.message : nil, since: item.since.map(Date.init(milliseconds:)), host: item.hostTag,
                         selected: selected, style: answers ? .card : .item) {

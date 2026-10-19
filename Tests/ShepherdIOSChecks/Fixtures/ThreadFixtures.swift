@@ -41,6 +41,8 @@ extension FixtureCatalog {
             FixtureScreen(name: "running", hosts: ThreadFixtures.hosts(), routes: [.thread(running)]),
             // MobileGoal: the goal card above the composer while the agent works toward it.
             FixtureScreen(name: "goal", hosts: ThreadFixtures.hosts(running: ThreadFixtures.goalWorking()), routes: [.thread(running)]),
+            // iPadGoal: the goal, its subagents and Up next in one dock.
+            FixtureScreen(name: "goal-dock", hosts: ThreadFixtures.hosts(running: ThreadFixtures.goalDock()), routes: [.thread(running)]),
             // MobileQuestion, iPadQuestion: numbered answers, Recommended, one chosen on iPad.
             FixtureScreen(name: "question", hosts: ThreadFixtures.hosts(), routes: [.thread(dock)]),
             FixtureScreen(name: "question-confirm", hosts: ThreadFixtures.hosts(dock: ThreadFixtures.confirm()), routes: [.thread(dock)]),
@@ -301,6 +303,26 @@ enum ThreadFixtures {
         snapshot.supportedActions.append("goal")
         snapshot.goal = NativeGoal(id: "00000000-0000-0000-0000-000000000042", text: "Ledger tests pass and go vet is clean, without changing the consumer package.",
                                    state: .working, elapsedSeconds: 400, tokensUsed: 71_000)
+        return snapshot
+    }
+
+    /// iPadGoal: a worker editing, a reviewer that asked its parent, two messages after the goal check.
+    static func goalDock() -> NativeThreadSnapshot {
+        var snapshot = goalWorking()
+        let now = Date().timeIntervalSince1970 * 1000
+        snapshot.subagents = [
+            ChildRun(runID: "goal-worker", label: "worker: settle", state: "running", startedAt: now - 4 * 60_000, currentTool: "edit",
+                     role: "worker", lastActivity: ChildActivity(kind: ChildActivity.runningKind, tool: "edit", preview: "ledger/settle.go", at: now - 5_000),
+                     task: "Fix the settle path so the ledger tests pass."),
+            ChildRun(runID: "goal-reviewer", label: "reviewer: schema", state: "running", startedAt: now - 2 * 60_000, needsAttention: true,
+                     role: "reviewer", lastActivity: ChildActivity(tool: "shepherd_parent_message", at: now - 2 * 60_000),
+                     question: ChildQuestion(text: "Add an index on refund_id, or leave the schema alone?", options: ["Add the index", "Leave it"]),
+                     task: "Check the outbox schema."),
+        ]
+        snapshot.queue = NativeQueue(items: [
+            NativeQueuedMessage(id: second, text: "Also cover partial refunds in the tests.", sentAt: FixtureData.start),
+            NativeQueuedMessage(id: first, text: "Then open a draft PR.", sentAt: FixtureData.start),
+        ])
         return snapshot
     }
 
