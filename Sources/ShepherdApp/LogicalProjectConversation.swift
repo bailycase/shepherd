@@ -193,6 +193,11 @@ struct ConversationThread: View {
             dock: (presentation.summary != nil || !offers.isEmpty) ? { [vm, ref] in
                 AnyView(VStack(spacing: NWLeadMetrics.dockGap) {
                     ForEach(offers) { proposal in SpaceOffer(vm: vm, ref: ref, proposal: proposal) }
+                    // Read in the dock, not the thread's body: observed there, a refused send redraws the thread and leaves its Send
+                    // disabled once the owner has dropped the coordinator.
+                    if !questions.isEmpty, let questionFailure = vm.logicalProjects.failure?.message {
+                        NWInlineProblem(questionFailure).accessibilityLabel(questionFailure)
+                    }
                     ForEach(questions) { task in TaskQuestion(vm: vm, ref: ref, task: task, paused: project.paused) }
                     if let summary = presentation.summary {
                         ProjectSummaryStrip(vm: vm, ref: ref, summary: summary, rows: presentation.rows)
@@ -207,8 +212,14 @@ struct ConversationThread: View {
             runtimeOperations: Set(project.messages.filter { $0.source != nil }.flatMap { [$0.id] + [$0.nativeDeliveryID].compactMap { $0 } }),
             model: ProjectConversationModel(
                 current: project.settings.conversationModel ?? (ref.home == .local ? vm.settings.agentDefaults.model : nil),
-                pending: agent == nil,
-                choose: { [vm, ref] id in await vm.logicalProjects.saveSettings(ref) { $0.conversationModel = id } }))
+                // Before a coordinator exists, the level a new one starts with: the owner's default (a local owner's is known here).
+                thinking: project.settings.conversationThinking ?? (agent == nil && ref.home == .local ? vm.settings.agentDefaults.thinking.rawValue : nil),
+                choose: { [vm, ref] id, level in await vm.logicalProjects.saveSettings(ref) {
+                    $0.conversationModel = id
+                    if let level { $0.conversationThinking = level }
+                } },
+                chooseThinking: vm.projectKeepsConversationThinking(ref.home)
+                    ? { [vm, ref] level in await vm.logicalProjects.saveSettings(ref) { $0.conversationThinking = level } } : nil))
     }
 }
 
@@ -302,12 +313,23 @@ struct TaskQuestion: View {
                 question: prompt.question,
                 options: prompt.options.map { NWLeadQuestionCard.Option(id: $0.number, title: $0.title, detail: $0.detail, recommended: $0.recommended) },
                 footer: Self.footer(title: task.title, paused: paused),
-                enabled: store.supports("answer") && prompt.blocked == nil && !vm.logicalProjects.busy.contains(ref.id)) { option in
-                    guard let reply = prompt.dialogAnswer(.option(prompt.options.first { $0.number == option.id } ?? prompt.options[0])) else { return }
-                    let request = NativeThreadRequest.answer(expectedSessionID: session.piSessionID, generation: session.generation,
-                                                             operationID: UUID(), dialogID: dialog.id, answer: reply)
-                    Task { _ = await vm.logicalProjects.answer(ref, task: task.id, request: request) }
+                enabled: store.supports("answer") && prompt.blocked == nil && !vm.logicalProjects.busy.contains(ref.id),
+                textPlaceholder: prompt.allowsText ? prompt.placeholder : nil,
+                submit: { words in
+                    send(prompt.answer(NativeQuestionPicks(text: words)).flatMap(prompt.dialogAnswer), dialog, session)
+                }) { option in
+                    guard let picked = prompt.options.first(where: { $0.number == option.id }) else { return }
+                    send(prompt.dialogAnswer(.option(picked)), dialog, session)
                 }
+                .id("\(session.piSessionID):\(session.generation):\(dialog.id)")
+    }
+
+    /// One answer through the Project, exactly as the native prompt maps it (a choice's words and options both answer its input).
+    private func send(_ reply: NativeDialogAnswer?, _ dialog: NativeThreadDialog, _ session: NativeThreadSession) {
+        guard let reply else { return }
+        let request = NativeThreadRequest.answer(expectedSessionID: session.piSessionID, generation: session.generation,
+                                                 operationID: UUID(), dialogID: dialog.id, answer: reply)
+        Task { _ = await vm.logicalProjects.answer(ref, task: task.id, request: request) }
     }
 }
 

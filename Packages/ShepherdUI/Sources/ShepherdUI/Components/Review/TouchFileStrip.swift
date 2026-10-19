@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// The review's files as touch chips (iPadReview board): 36pt, a bold status letter, the
-/// filename and, for a modified file, its diff stat; the selected chip is filled, viewed files
-/// dim. The strip scrolls the selection into view.
+/// The review's files as touch chips (iPadReview board): 44pt bordered chips on `bgRaised` with
+/// the filename in mono 12; the selected chip is filled, viewed files dim. The strip scrolls the
+/// selection into view.
 public struct NWTouchFileStrip: View {
     let items: [NWFileStrip.Item]
     let selection: NWFileStrip.Item.ID?
@@ -23,8 +23,7 @@ public struct NWTouchFileStrip: View {
                             .equatable()
                     }
                 }
-                .padding(.horizontal, NW.Space.l)
-                .padding(.vertical, NW.Space.m)
+                .padding(NW.Space.m)
             }
             .scrollIndicators(.hidden)
             .fixedSize(horizontal: false, vertical: true)
@@ -32,14 +31,13 @@ public struct NWTouchFileStrip: View {
                 if let id { proxy.scrollTo(id) }
             }
         }
-        .background(Color.nw.bgBase)
         .overlay(alignment: .bottom) { NWHairline() }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Changed files")
     }
 
-    /// The chips' drawn height; their hit area is the touch minimum.
-    public static let chipHeight: CGFloat = 36
+    /// The chips' height, the touch minimum.
+    public static let chipHeight: CGFloat = NW.Height.touch
 }
 
 private struct NWTouchFileChip: View, Equatable {
@@ -51,20 +49,20 @@ private struct NWTouchFileChip: View, Equatable {
 
     var body: some View {
         let nw = Color.nw
+        let shape = RoundedRectangle(cornerRadius: NW.Radius.s)
         Button(action: action) {
-            HStack(spacing: NW.Space.s) {
-                Text(item.status.letter).font(.nw(.mono, weight: .bold)).foregroundStyle(item.status.color)
-                Text(item.name).font(.nw(.mono)).foregroundStyle(nw.textPrimary).lineLimit(1)
-                if item.showsStat { NWDiffStat(added: item.added, removed: item.removed, font: .nw(.mono)) }
-            }
-            .padding(.horizontal, NW.Space.l)
-            .frame(minHeight: NWTouchFileStrip.chipHeight)
-            .opacity(item.isViewed ? 0.5 : 1)
-            .background(selected ? nw.bgSelected : .clear, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-            .contentShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+            Text(item.name)
+                .font(.nw(.mono))
+                .foregroundStyle(nw.textPrimary)
+                .lineLimit(1)
+                .padding(.horizontal, NW.Space.l)
+                .frame(minHeight: NWTouchFileStrip.chipHeight)
+                .opacity(item.isViewed ? 0.5 : 1)
+                .background(selected ? nw.bgSelected : nw.bgRaised, in: shape)
+                .nwBorder(nw.lineStrong, radius: NW.Radius.s)
+                .contentShape(shape)
         }
         .buttonStyle(.plain)
-        .nwTouchTarget(height: NWTouchFileStrip.chipHeight)
         .accessibilityLabel(item.accessibilityText)
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }

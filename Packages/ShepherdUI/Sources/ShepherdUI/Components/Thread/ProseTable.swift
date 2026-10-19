@@ -90,17 +90,20 @@ struct NWTableCell: View {
     /// header's end.
     let copyInset: Bool
     @Environment(\.nwProseSize) private var size
+    @Environment(\.nwProseFileRoot) private var fileRoot
+    @Environment(\.nwProseFileLinks) private var fileLinks
 
     var body: some View {
         let _ = NWRenderProbe.tick("prose.tableCell")
         let nw = Color.nw
-        Text(text)
+        NWProseFileLinks.prose(text, root: fileRoot, actions: fileLinks)
             .font(header ? .nw(.ui, weight: .semibold) : .nw(.body, size: size))
             .lineSpacing(header ? NWTextStyle.ui.lineSpacing(size) : NWTextStyle.headline.lineSpacing(size))
             .foregroundStyle(header ? nw.textSecondary : nw.textPrimary)
             .multilineTextAlignment(alignment.text)
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
+            .modifier(NWFileLinkTargets(actions: NWProseFileLinks.targets(text, root: fileRoot, actions: fileLinks)))
             .padding(.vertical, Self.verticalPadding)
             .padding(.leading, NW.Space.l)
             .padding(.trailing, NW.Space.l + (copyInset ? NWThreadMetrics.codeCopyButton : 0))

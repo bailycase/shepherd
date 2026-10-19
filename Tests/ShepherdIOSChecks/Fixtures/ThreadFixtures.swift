@@ -41,10 +41,13 @@ extension FixtureCatalog {
             FixtureScreen(name: "running", hosts: ThreadFixtures.hosts(), routes: [.thread(running)]),
             // MobileGoal: the goal card above the composer while the agent works toward it.
             FixtureScreen(name: "goal", hosts: ThreadFixtures.hosts(running: ThreadFixtures.goalWorking()), routes: [.thread(running)]),
+            // iPadGoal: the goal, its subagents and Up next in one dock.
+            FixtureScreen(name: "goal-dock", hosts: ThreadFixtures.hosts(running: ThreadFixtures.goalDock()), routes: [.thread(running)]),
             // MobileQuestion, iPadQuestion: numbered answers, Recommended, one chosen on iPad.
             FixtureScreen(name: "question", hosts: ThreadFixtures.hosts(), routes: [.thread(dock)]),
             FixtureScreen(name: "question-confirm", hosts: ThreadFixtures.hosts(dock: ThreadFixtures.confirm()), routes: [.thread(dock)]),
             FixtureScreen(name: "question-input", hosts: ThreadFixtures.hosts(dock: ThreadFixtures.input()), routes: [.thread(dock)]),
+            FixtureScreen(name: "question-project-input", hosts: ThreadFixtures.hosts(dock: ThreadFixtures.projectInput()), routes: [.thread(dock)]),
             // Hiding the question (iPad's Hide the question, the phone's grabber) folds it to one
             // line so the thread reads; the agent still waits.
             FixtureScreen(name: "question-hidden", hosts: ThreadFixtures.hosts(), routes: [.thread(dock)],
@@ -303,6 +306,26 @@ enum ThreadFixtures {
         return snapshot
     }
 
+    /// iPadGoal: a worker editing, a reviewer that asked its parent, two messages after the goal check.
+    static func goalDock() -> NativeThreadSnapshot {
+        var snapshot = goalWorking()
+        let now = Date().timeIntervalSince1970 * 1000
+        snapshot.subagents = [
+            ChildRun(runID: "goal-worker", label: "worker: settle", state: "running", startedAt: now - 4 * 60_000, currentTool: "edit",
+                     role: "worker", lastActivity: ChildActivity(kind: ChildActivity.runningKind, tool: "edit", preview: "ledger/settle.go", at: now - 5_000),
+                     task: "Fix the settle path so the ledger tests pass."),
+            ChildRun(runID: "goal-reviewer", label: "reviewer: schema", state: "running", startedAt: now - 2 * 60_000, needsAttention: true,
+                     role: "reviewer", lastActivity: ChildActivity(tool: "shepherd_parent_message", at: now - 2 * 60_000),
+                     question: ChildQuestion(text: "Add an index on refund_id, or leave the schema alone?", options: ["Add the index", "Leave it"]),
+                     task: "Check the outbox schema."),
+        ]
+        snapshot.queue = NativeQueue(items: [
+            NativeQueuedMessage(id: second, text: "Also cover partial refunds in the tests.", sentAt: FixtureData.start),
+            NativeQueuedMessage(id: first, text: "Then open a draft PR.", sentAt: FixtureData.start),
+        ])
+        return snapshot
+    }
+
     /// MobileQueue: one steering, two queued.
     static func queued() -> NativeThreadSnapshot {
         refunds(NativeQueue(items: [
@@ -348,6 +371,12 @@ enum ThreadFixtures {
             "Compare, keep what's unique, then go through GitHub (Recommended)\nNew branch and PR for anything not merged. Nothing on Horizon is overwritten.",
             "Leave Horizon alone and deploy from a clean checkout\nHorizon keeps its edits. The deploy uses a fresh clone.",
         ]))
+    }
+
+    /// A Project worker's single native input after the owner normalizes its offered-choice hints.
+    static func projectInput() -> NativeThreadSnapshot {
+        asking(NativeThreadDialog(id: "d-project-input", kind: .input, title: "Which store should the API use?",
+                                  options: ["Use SQLite (Recommended)", "Use Postgres"], placeholder: "Say anything"))
     }
 
     /// QuestionAnswered: the question recorded where pi asked it, and the turn going on.

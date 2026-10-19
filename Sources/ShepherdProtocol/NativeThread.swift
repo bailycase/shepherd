@@ -46,6 +46,10 @@ public enum NativeThreadRequest: Codable, Hashable, Sendable {
     /// `offset`. Gated by `images` in `supportedActions` and, remotely, `native.images.v1`. The host reads
     /// the image from pi's own history for this agent and session, never from a path a client names.
     case image(expectedSessionID: String, imageID: String, offset: Int)
+    /// v5: one 256 KiB piece of an artifact: a file a successful `write` call created in this thread, named by the path the call
+    /// gave, from byte `offset`. Gated by `artifacts` in `supportedActions` and, remotely, `native.artifacts.v1`. The path is only a
+    /// key: the host serves it only when its own history holds a successful `write` of exactly that path, never an arbitrary file.
+    case artifact(expectedSessionID: String, path: String, offset: Int)
     /// Goal controls execute even during work or evaluation; fenced by the displayed goal revision.
     case goal(expectedSessionID: String, generation: String, operationID: UUID, action: NativeGoalAction,
               expectedGoalID: String? = nil, expectedGoalRevision: Int? = nil, expectedGoalState: NativeGoalState? = nil)
@@ -469,6 +473,8 @@ public enum NativeThreadResult: Codable, Hashable, Sendable {
     case transcript(value: NativeSubagentTranscript)
     /// v5: one piece of an image for `.image`.
     case imageChunk(value: NativeImageChunk)
+    /// v5: one piece of an artifact for `.artifact`.
+    case artifactChunk(value: NativeArtifactChunk)
 }
 
 /// One piece of an image the host read from pi's saved thread (`NativeThreadRequest.image`). The client
@@ -496,6 +502,34 @@ public enum NativeImageCode {
     public static let unknown = "unknown_image"
     /// The image is not one the thread offers (over `NativeImage.maxBytes` or `NativeImage.maxPixels`, or not a raster type).
     public static let unsupported = "image_unsupported"
+}
+
+/// One piece of an artifact the host read from disk (`NativeThreadRequest.artifact`). The client asks again from
+/// `offset + data.count` until it holds `totalBytes`; a total that changes between pieces means the file changed under it.
+public struct NativeArtifactChunk: Codable, Hashable, Sendable {
+    /// The most bytes of one artifact the host serves.
+    public static let maxBytes = 8 * 1024 * 1024
+
+    public var path: String
+    public var totalBytes: Int
+    public var offset: Int
+    public var data: Data
+
+    public init(path: String, totalBytes: Int, offset: Int, data: Data) {
+        self.path = path
+        self.totalBytes = totalBytes
+        self.offset = offset
+        self.data = data
+    }
+}
+
+/// Why an artifact could not be had; the codes of a `.failure` to `NativeThreadRequest.artifact`. They travel between hosts and
+/// clients, so they never change.
+public enum NativeArtifactCode {
+    /// No successful `write` of this path is in the thread's history, or the offset is invalid.
+    public static let unknown = "unknown_artifact"
+    /// The thread wrote it, but the file cannot be served now: gone, not a regular file, a symlink, or over `NativeArtifactChunk.maxBytes`.
+    public static let unavailable = "artifact_unavailable"
 }
 
 /// Failure codes a thread's availability is reported with, as `NativeThreadResult.failure` or
@@ -584,6 +618,10 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
     /// Absent from older hosts. The extension, not a turn's lifecycle status, owns completion.
     public var goal: NativeGoal?
 
+    /// Startup has asked a question before history is ready. Only answering is available;
+    /// messages are not an authoritative history page yet. Absent from older hosts.
+    public var initializing: Bool?
+
     public var isRPC: Bool { runtime == "rpc" }
 
     public init(
@@ -594,7 +632,7 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
         commands: [NativeCommand]? = nil, subagents: [NativeSubagent]? = nil, queue: NativeQueue? = nil,
         context: NativeThreadContext? = nil, turnChanges: [ChangesTurn]? = nil, retry: NativeThreadRetry? = nil,
         startProblem: NativeStartProblem? = nil, serviceTier: String? = nil, serviceTiers: [String]? = nil, goal: NativeGoal? = nil,
-        clips: NativeThreadClips? = nil
+        clips: NativeThreadClips? = nil, initializing: Bool? = nil
     ) {
         self.piSessionID = piSessionID
         self.generation = generation
@@ -624,6 +662,7 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
         self.serviceTiers = serviceTiers
         self.goal = goal
         self.clips = clips
+        self.initializing = initializing
     }
 }
 

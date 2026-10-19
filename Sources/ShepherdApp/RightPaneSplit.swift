@@ -7,7 +7,7 @@ import ShepherdUI
 /// Device-local view state: the width persists, the rest does not.
 @MainActor @Observable
 final class RightPaneState {
-    static let widthKey = "shepherd.rightPaneWidth"
+    nonisolated static let widthKey = "shepherd.rightPaneWidth"
     var runByAgent: [AgentID: String] = [:]
     var remoteRuns: [RemoteAgentRef: String] = [:]
     /// Threads whose pane shows its tabs (an inspected run may cover them).
@@ -16,18 +16,28 @@ final class RightPaneState {
     var tabs: [SidePaneOwner: SidePaneTab] = [:]
     /// Tabs the agent opened something in since you last showed them.
     var news: [SidePaneOwner: Set<SidePaneTab>] = [:]
+    /// The artifact each pane has open on its Artifacts tab, by its path; none shows the list.
+    var artifact: [SidePaneOwner: String] = [:]
     /// Panes over their whole layout (ChangesWide), the thread hidden under them.
     var maximized: Set<SidePaneOwner> = []
     /// A run whose Steer field takes focus when its inspector shows it (the tray's Steer),
     /// until it does.
     var steerRun: String?
-    /// Zero until the user resizes: the pane then takes the 600pt default.
+    /// Zero until the user resizes: the pane then takes `defaultWidth`.
     var width: CGFloat {
-        didSet { UserDefaults.standard.set(Double(width), forKey: Self.widthKey) }
+        didSet { defaults.set(Double(width), forKey: widthKey) }
     }
+    /// The width before the user resizes (a thread's 600; a Project page's 480 box less its divider).
+    let defaultWidth: CGFloat
+    @ObservationIgnored private let widthKey: String
+    @ObservationIgnored private let defaults: UserDefaults
 
-    init() {
-        let saved = UserDefaults.standard.double(forKey: Self.widthKey)
+    init(widthKey: String = RightPaneState.widthKey, defaultWidth: CGFloat = AppLayout.paneDefaultWidth,
+         defaults: UserDefaults = .standard) {
+        self.widthKey = widthKey
+        self.defaultWidth = defaultWidth
+        self.defaults = defaults
+        let saved = defaults.double(forKey: widthKey)
         width = saved >= AppLayout.paneMinWidth ? CGFloat(saved) : 0
     }
 
@@ -60,6 +70,7 @@ final class RightPaneState {
         if open.contains(owner) { open.remove(owner) }
         if tabs[owner] != nil { tabs.removeValue(forKey: owner) }
         if news[owner] != nil { news.removeValue(forKey: owner) }
+        if artifact[owner] != nil { artifact.removeValue(forKey: owner) }
         if maximized.contains(owner) { maximized.remove(owner) }
     }
 }
@@ -81,12 +92,13 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
     var maximized = false
     @ViewBuilder let content: () -> Content
     @ViewBuilder let pane: () -> Pane
-    @State private var liveWidth: CGFloat?
+    /// The drag under way at the handle: only this split previews it, so hidden layouts never follow it frame by frame.
+    @State private var drag: RightPaneDrag?
 
     var body: some View {
         GeometryReader { geo in
             let total = geo.size.width
-            let layout = ShellLayout.rightPane(containerWidth: total, preferredWidth: liveWidth ?? state.width)
+            let layout = RightPaneDrag.layout(drag, state: state, containerWidth: total)
             let docked = layout.mode == .docked
             let covers = showPane && maximized
             let paneWidth = covers ? total : layout.width
@@ -132,12 +144,10 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
                     .contentShape(Rectangle())
                     .pointerStyle(.columnResize)
                     .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .named("right-pane"))
-                        .onChanged { liveWidth = total - $0.location.x }
+                        .onChanged { drag = RightPaneDrag(pointerX: $0.location.x, containerWidth: total) }
                         .onEnded { _ in
-                            if let liveWidth {
-                                state.width = ShellLayout.rightPane(containerWidth: total, preferredWidth: liveWidth).width
-                            }
-                            liveWidth = nil
+                            drag?.end(in: state, containerWidth: total)
+                            drag = nil
                         })
                     // Double-click: as wide as the pane goes, half the column (PaneStates).
                     .simultaneousGesture(TapGesture(count: 2).onEnded { state.width = ShellLayout.widestRightPane(containerWidth: total) })
@@ -148,8 +158,30 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
             .accessibilityValue("\(Int(width)) points")
             .accessibilityAdjustableAction { direction in
                 let step: CGFloat = direction == .increment ? AppLayout.paneAdjustStep : direction == .decrement ? -AppLayout.paneAdjustStep : 0
-                state.width = ShellLayout.rightPane(containerWidth: total, preferredWidth: width + step).width
+                state.width = ShellLayout.rightPane(containerWidth: total, preferredWidth: width + step,
+                                                    defaultWidth: state.defaultWidth).width
             }
+    }
+}
+
+/// One drag of a side pane's divider, as the handle's gesture reports it, in the split's own coordinates: the pointer's x previews
+/// the pane as wide as what lies right of it (unbounded; the layout bounds what is drawn), and letting go saves that width
+/// within the split's bounds. The pointer's position, not a sum of moves, decides, so a drag's steps never accumulate error.
+struct RightPaneDrag: Equatable {
+    let width: CGFloat
+
+    init(pointerX: CGFloat, containerWidth: CGFloat) {
+        width = containerWidth - pointerX
+    }
+
+    /// The split's layout: the drag's width while one is under way, else the saved one, within the split's bounds.
+    @MainActor static func layout(_ drag: RightPaneDrag?, state: RightPaneState, containerWidth: CGFloat) -> ShellLayout.Pane {
+        ShellLayout.rightPane(containerWidth: containerWidth, preferredWidth: drag?.width ?? state.width, defaultWidth: state.defaultWidth)
+    }
+
+    /// Letting go: the width the layout drew for the drag, saved (and persisted) as the pane's.
+    @MainActor func end(in state: RightPaneState, containerWidth: CGFloat) {
+        state.width = Self.layout(self, state: state, containerWidth: containerWidth).width
     }
 }
 

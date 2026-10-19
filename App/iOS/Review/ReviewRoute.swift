@@ -13,10 +13,12 @@ enum ReviewRoute: Hashable, Codable {
     /// Commit from review on iPhone (Commit/): the message, the files, push or a pull request,
     /// run by the host. Presented; on iPad it is a popover beside Commit….
     case commit(AgentRef)
+    /// A file the agent made, over the thread (iPhone; iPad shows it in the pane's Artifacts tab). Presented.
+    case artifact(AgentRef, path: String)
 
     var thread: AgentRef {
         switch self {
-        case .changes(let ref, _), .diff(let ref, _), .finalize(let ref), .commit(let ref): ref
+        case .changes(let ref, _), .diff(let ref, _), .finalize(let ref), .commit(let ref), .artifact(let ref, _): ref
         }
     }
 }
@@ -60,6 +62,8 @@ struct ReviewDestination: View {
             FinalizeScreen(ref: ref)
         case .commit(let ref):
             CommitScreen(ref: ref)
+        case .artifact(let ref, let path):
+            PhoneArtifactScreen(ref: ref, path: path)
         }
     }
 }

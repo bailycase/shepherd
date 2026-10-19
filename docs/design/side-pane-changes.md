@@ -18,8 +18,9 @@ inspector; the tray's Steer opens it with its Steer field focused.
 - **Showing and hiding:** ⇧⌘B, the header's side-pane button, or View › Show Side Pane / Hide Side
   Pane. Showing opens the pane on its tab (Changes starts the review); hiding also closes an
   inspected subagent, and discards the review like a cancel. ⌃1 (View › Changes) shows Changes in
-  front of an inspected subagent, ⌃2 (View › Browser) the Browser (a remote thread on a host without tunnels beeps), and ⌃3
-  (View › Subagents) the Subagents tab (a thread with no run beeps); they are fixed, like ⌘1–9, and ⌃4 waits for the other tabs.
+  front of an inspected subagent, ⌃2 (View › Browser) the Browser (a remote thread on a host without tunnels beeps), ⌃3
+  (View › Artifacts) the Artifacts tab (a thread with no artifact beeps) and ⌃4 (View › Subagents) the Subagents tab (a thread with
+  no run beeps); they are fixed, like ⌘1–9.
   Review Changes (a sidebar row's menu), the palette's Review diff, the chip's Show Changes, a
   thread's "review ›" link and the inspector's file links show Changes too.
 - **Nothing opens by itself** (PaneStates): when pi opens something for the pane (today, an

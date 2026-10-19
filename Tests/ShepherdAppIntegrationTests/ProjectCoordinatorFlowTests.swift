@@ -64,7 +64,8 @@ struct ProjectCoordinatorFlowTests {
         let vm = try await app.start()
         let id = ProjectID()
         guard case .project(let project) = try await app.server.logicalProjects(.create(projectID: id, name: "Project", goal: "Only assigned work")) else { Issue.record("Missing project"); return }
-        let settings = LogicalProjectSettings(conversationModel: "anthropic/claude-opus-4-5", threadModel: "anthropic/claude-sonnet-4-5", instructions: "Use the existing tests.")
+        let settings = LogicalProjectSettings(conversationModel: "anthropic/claude-opus-4-5", threadModel: "anthropic/claude-sonnet-4-5", instructions: "Use the existing tests.",
+                                              conversationThinking: "high")
         guard case .project(let configured) = try await app.server.logicalProjects(.settings(projectID: id, expectedRevision: project.revision, settings: settings)) else { Issue.record("Missing settings"); return }
         let sent = try await vm.projectCoordinator.sendProjectMessage(projectID: id, expectedRevision: configured.revision, operationID: UUID(), text: "hello")
         let coordinator = try #require(sent.coordinatorAgentID)
@@ -77,6 +78,8 @@ struct ProjectCoordinatorFlowTests {
         #expect(launch.argv.contains("--no-extensions"))
         #expect(launch.argv.contains("--no-skills") && launch.argv.contains("--no-context-files"))
         #expect(launch.argv.contains("anthropic/claude-opus-4-5"))
+        // The coordinator's reasoning level is the Project's, given at launch.
+        #expect(launch.argv.joined(separator: " ").contains("--thinking 'high'") || launch.argv.joined(separator: " ").contains("--thinking high"), "\(launch.argv)")
         #expect(!launch.argv.contains { $0.hasSuffix("shepherd-panes.ts") || $0.hasSuffix("shepherd-browser.ts") || $0.hasSuffix("shepherd-children.ts") })
         #expect(launch.env["SHEPHERD_PROJECT_COORDINATOR"] == "1")
         #expect(launch.env["SHEPHERD_PROJECT_CONTEXT"]?.contains(project.id.rawValue) == true)
@@ -88,15 +91,16 @@ struct ProjectCoordinatorFlowTests {
         try await eventuallyAsync("coordinator message committed") { app.server.state.projects.first?.messages.first?.phase == .delivered }
         try await eventuallyAsync("coordinator settled") {
             guard case .snapshot(let snapshot) = try? await app.server.nativeThread(agentID: coordinator, request: .snapshot()) else { return false }
-            return !snapshot.running && snapshot.model == "anthropic/claude-opus-4-5"
+            return !snapshot.running && snapshot.model == "anthropic/claude-opus-4-5" && snapshot.thinking == "high"
         }
-        var changed = settings; changed.conversationModel = "anthropic/claude-sonnet-4-5"
+        var changed = settings; changed.conversationModel = "anthropic/claude-sonnet-4-5"; changed.conversationThinking = "low"
         let ready = try #require(app.server.state.projects.first)
         guard case .project(let updated) = try await app.server.logicalProjects(.settings(projectID: id, expectedRevision: ready.revision, settings: changed)) else { Issue.record("Missing settings"); return }
         _ = try await vm.projectCoordinator.sendProjectMessage(projectID: id, expectedRevision: updated.revision, operationID: UUID(), text: "Use updated model")
-        try await eventuallyAsync("live model choice applied to next turn") {
+        try await eventuallyAsync("live model and reasoning choice applied to next turn") {
             guard case .snapshot(let snapshot) = try? await app.server.nativeThread(agentID: coordinator, request: .snapshot()) else { return false }
-            return !snapshot.running && snapshot.model == "anthropic/claude-sonnet-4-5" && app.server.state.projects.first?.messages.last?.phase == .delivered
+            return !snapshot.running && snapshot.model == "anthropic/claude-sonnet-4-5" && snapshot.thinking == "low"
+                && app.server.state.projects.first?.messages.last?.phase == .delivered
         }
         let current = try #require(app.server.state.projects.first)
         _ = try await app.server.logicalProjects(.delete(projectID: id, expectedRevision: current.revision))

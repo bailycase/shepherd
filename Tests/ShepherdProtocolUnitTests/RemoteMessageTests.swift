@@ -792,12 +792,12 @@ struct RemoteProtocolConstantTests {
     }
 
     @Test func hostAdvertisesEveryNamedCapabilityOnce() {
-        let named = [RemoteProtocol.moveThreadCapability,
+        let named = [RemoteProtocol.moveThreadCapability, RemoteProtocol.projectConversationThinkingCapability,
             RemoteProtocol.logicalProjectsCapability, RemoteProtocol.logicalProjectAutomationsCapability,
             RemoteProtocol.logicalProjectRuntimeCapability, RemoteProtocol.projectExecutionCapability,
             RemoteProtocol.projectPlacementCapability, RemoteProtocol.logicalProjectFilesCapability, RemoteProtocol.projectWorkerCapability, RemoteProtocol.projectMessageImagesCapability, RemoteProtocol.projectPublicationsCapability,
             RemoteProtocol.nativeThreadCapability, RemoteProtocol.nativeThreadV2Capability,
-            RemoteProtocol.nativeThreadStartingCapability, RemoteProtocol.nativeQueueCapability,
+            RemoteProtocol.nativeThreadStartingCapability, RemoteProtocol.nativeQueueCapability, RemoteProtocol.nativeStartupDialogsCapability,
             RemoteProtocol.pasteCapability, RemoteProtocol.paneControlCapability,
             RemoteProtocol.agentActionsCapability, RemoteProtocol.agentInspectionCapability,
             RemoteProtocol.worktreeActionsCapability, RemoteProtocol.worktreeSetupCapability,
@@ -817,7 +817,8 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.nativeRetryCapability,
             RemoteProtocol.nativeQueueSubagentCapability, RemoteProtocol.nativeInterruptCapability, RemoteProtocol.browserTunnelCapability, RemoteProtocol.browserDriveCapability,
             RemoteProtocol.browserTabsCapability,
-            RemoteProtocol.nativeServiceTierCapability, RemoteProtocol.nativeImagesCapability, RemoteProtocol.createAgentServiceTierCapability,
+            RemoteProtocol.nativeServiceTierCapability, RemoteProtocol.nativeImagesCapability, RemoteProtocol.nativeArtifactsCapability,
+            RemoteProtocol.createAgentServiceTierCapability,
             RemoteProtocol.nativeGoalCapability, RemoteProtocol.goalExperimentCapability, RemoteProtocol.projectsExperimentCapability,
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).
             RemoteProtocol.designsCapability, RemoteProtocol.designMarkupCapability, RemoteProtocol.designDeleteCapability,
@@ -830,6 +831,7 @@ struct RemoteProtocolConstantTests {
     @Test func capabilityStringsAreStable() {
         #expect(RemoteProtocol.logicalProjectsCapability == "logicalProjects.v1")
         #expect(RemoteProtocol.projectMessageImagesCapability == "logicalProjectRuntime.images.v1")
+        #expect(RemoteProtocol.projectConversationThinkingCapability == "logicalProjects.conversationThinking.v1")
         #expect(RemoteProtocol.projectsCapability == "projects.v1")
         #expect(RemoteProtocol.projectsV2Capability == "projects.v2")
         #expect(RemoteProtocol.clientCapabilities.contains(RemoteProtocol.projectsV2Capability))
@@ -840,6 +842,8 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.changesCapability == "changes.v1")
         #expect(RemoteProtocol.nativeThreadStartingCapability == "native.thread.starting.v1")
         #expect(RemoteProtocol.nativeQueueCapability == "native.queue.v1")
+        #expect(RemoteProtocol.nativeStartupDialogsCapability == "native.startup-dialogs.v1")
+        #expect(RemoteProtocol.clientCapabilities.contains(RemoteProtocol.nativeStartupDialogsCapability))
         #expect(RemoteProtocol.pasteCapability == "session.paste.v1")
         #expect(RemoteProtocol.paneControlCapability == "pane.control.v1")
         #expect(RemoteProtocol.uploadCapability == "session.upload.v1")
@@ -861,6 +865,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.nativeInterruptCapability == "native.interrupt.v1")
         #expect(RemoteProtocol.nativeServiceTierCapability == "native.serviceTier.v1")
         #expect(RemoteProtocol.nativeImagesCapability == "native.images.v1")
+        #expect(RemoteProtocol.nativeArtifactsCapability == "native.artifacts.v1")
         #expect(RemoteProtocol.designsCapability == "designs.v1")
         #expect(RemoteProtocol.designMarkupCapability == "design.markup.v1")
         #expect(RemoteProtocol.designDeleteCapability == "design.delete.v1")

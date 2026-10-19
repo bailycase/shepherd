@@ -13,6 +13,9 @@
   or trusted network is the transport boundary. Never describe the listener as internet-safe.
 - **Protocol** (NDJSON, `RemoteMessage.swift`):
   - state fetch and pushed `stateChanged`
+  - `native.startup-dialogs.v1` is advertised by both peers. Opted-in clients can answer
+    startup questions without replacing history or releasing sends; older clients get an
+    update-required error rather than a partial snapshot they would mistake for empty history.
   - native thread requests, with the context and Compact now behind `native.context.v1`, Retry
     in place behind `native.retry.v1`, and Steer now (a message that stops pi and goes at once,
     `interrupt` in `supportedActions`, sent as a steer to a host without it) behind
@@ -22,7 +25,9 @@
     `serviceTier` and `serviceTiers`; no Speed control from a host without it) behind
     `native.serviceTier.v1`, and the images pi saved in a thread (the snapshot names each, bounded
     metadata only; `NativeThreadRequest.image` returns it in 256 KiB pieces, from pi's own history for
-    that agent and session) behind `native.images.v1`
+    that agent and session) behind `native.images.v1`, and the files a thread's `write` calls made
+    (`NativeThreadRequest.artifact` returns one in 256 KiB pieces; the host serves only a path its own history
+    for that agent and session shows a successful `write` made) behind `native.artifacts.v1`
   - queued-message subagents behind `native.queueSubagent.v1` and `queueSubagent` in the snapshot
     actions: `NativeQueueAction.subagent(id:)` starts a child without prompting the parent. Both
     clients hide the action on older hosts. Startup requests allow 65 s for the host acknowledgement.
@@ -125,6 +130,11 @@
     See [Projects slice 1](project-lead.md#slice-1-persisted-owner-service-implemented-no-ui-or-dispatch)
     for method cases, limits, lifecycle and conflict/error semantics. Existing `projects.v1` and
     `Project*` directory configuration remain wire-compatible.
+  - `logicalProjects.conversationThinking.v1`: the owner keeps `settings.conversationThinking`, the
+    coordinator's reasoning level, applies it with the conversation model at launch and before each
+    delivered message, and keeps it when a settings edit omits it. Advertised with `logicalProjects.v1`.
+    A client offers the Project's own reasoning choice only to an owner with it; an older owner would
+    drop the field.
   - `logicalProjectRuntime` (`logicalProjectRuntime.v1`): authenticated Project-capable viewers
     call the OWNER VM/controller, never their own local runtime. `ProjectRuntimeTransport` has
     revision-checked `action`, native `conversation`, original-fence worker `answer`, and `hosts`

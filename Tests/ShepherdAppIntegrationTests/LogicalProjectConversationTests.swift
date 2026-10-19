@@ -31,6 +31,34 @@ struct LogicalProjectConversationTests {
         expectScenarioCompleted(result)
     }
 
+    @Test func theThreadsPaneResizesAtItsDividerLikeAThreadsSidePane() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.paneResize() } }
+        expectScenarioCompleted(result)
+    }
+
+    /// The shared split's own divider under mouse events sent to its window (never posted), bound to the Project pane's real width:
+    /// the DragGesture's wiring to `RightPaneDrag`, which the event-free scenario cannot reach. CI's runner delivers these to the
+    /// split in a window of its own; cancelled by name only in a process that delivers no synthetic drag to SwiftUI at all.
+    @Test func theSharedSplitFollowsAMouseDragAtItsDivider() async throws {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.splitMouseDrag() } }
+        expectScenarioCompleted(result)
+        if String(decoding: result?.standardOutputContent ?? [], as: UTF8.self).contains(SyntheticMouse.undeliveredLine) {
+            try Test.cancel("this process does not deliver synthetic mouse events to SwiftUI gestures")
+        }
+    }
+
+    /// The Project page's divider in the whole window under the same events. CI's runner has delivered them to neither divider of
+    /// this window, not even the sidebar's (run 39206720931), so the scenario first drags the sidebar's divider (the app's own,
+    /// independent of the pane's gesture) and is cancelled by name only when that does not move; where it does, the pane's divider
+    /// must follow exactly.
+    @Test func theThreadsPaneFollowsAMouseDragAtItsDivider() async throws {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.paneMouseDrag() } }
+        expectScenarioCompleted(result)
+        if String(decoding: result?.standardOutputContent ?? [], as: UTF8.self).contains(SyntheticMouse.undeliveredLine) {
+            try Test.cancel("this window does not deliver synthetic mouse drags even to the sidebar's divider")
+        }
+    }
+
     @Test func aChosenFilterOffersShowAllAndChoosingItClearsTheFilter() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.filterReset() } }
         expectScenarioCompleted(result)
@@ -136,6 +164,11 @@ struct LogicalProjectConversationTests {
         expectScenarioCompleted(result)
     }
 
+    @Test func aHeldOffCoordinatorsModelAndReasoningAreTheProjectsOwnSettingsAndItsNextLaunchUsesThem() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.heldOffModelAndReasoning() } }
+        expectScenarioCompleted(result)
+    }
+
     @Test func aSavedCoordinatorsHistoryShowsOnAColdLaunchAndTheNextMessageStartsItsPi() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.coldCoordinator() } }
         expectScenarioCompleted(result)
@@ -148,6 +181,12 @@ struct LogicalProjectConversationTests {
 
     @Test func aBlockingQuestionSaysTruthfullyWhatAReplyDoesAndAHeldAnswerLeavesNoSecondAnswerButton() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.questionCopy() } }
+        expectScenarioCompleted(result)
+    }
+
+    @Test(arguments: ["pane-option", "pane-text", "project-text"], [false, true])
+    func aWorkersSelectAnsweredFromThePanesDockIsDeliveredOnceAndTheDockLeaves(route: String, rejectedFirst: Bool) async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { [route = route as String, rejectedFirst = rejectedFirst as Bool] in await completingScenario { try await Self.paneDockAnswer(route: route, rejectedFirst: rejectedFirst) } }
         expectScenarioCompleted(result)
     }
 
@@ -382,6 +421,217 @@ struct LogicalProjectConversationTests {
         }
         try window.press("Close")
         try await eventuallyOnMain("the pane returns to Threads") { r.vm.logicalProjectPaneTask == nil }
+    }
+
+    /// The Threads pane's leading edge is `RightPaneSplit`'s divider, as a thread's side pane is: a column-resize handle you drag, or
+    /// adjust with VoiceOver, that keeps the conversation 400pt while it docks, persists one width for every Project, and survives
+    /// Close, Expand, a narrower window and larger text. The drag is real mouse events sent to the off-screen window (never posted).
+    private static func paneResize() async throws {
+        let r = try await rig()
+        defer { r.app.stop() }
+        guard case .project(let other) = try await r.app.server.logicalProjects(
+            .create(projectID: ProjectID(), name: "Other project", goal: "", linkedSpaceIDs: [r.space.id])) else { throw RigError("no other project") }
+        try await eventuallyOnMain("both projects") { r.vm.state.projects.count == 2 }
+        r.vm.openLogicalProject(r.ref)
+        let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
+        defer { window.close() }
+        func handle() -> AccessibilityNode? { window.elements().first { $0.label == "Pane width" } }
+        /// The drawn pane's width: the window's trailing edge less the 1pt divider, which the 9pt handle centres on.
+        func paneWidth() -> String? { handle().map { "\(Int((window.window.frame.maxX - $0.frame.midX - AppLayout.dividerWidth / 2).rounded())) points" } }
+        func drawn() -> CGFloat? { handle().map { window.window.frame.maxX - $0.frame.midX - AppLayout.dividerWidth / 2 } }
+        func control(_ label: String) throws -> Control { try #require(window.controls().first { $0.label == label }, "\(label) on screen") }
+        /// The pane's header stays inside the window and the conversation's composer stays left of the divider.
+        func expectReachable(_ when: String) throws {
+            let edge = try #require(handle()).frame
+            let close = try control("Close")
+            let field = try #require(window.elements().first { $0.label == "Message the agent" }).frame
+            #expect(close.frame.maxX <= window.window.frame.maxX + 0.5 && close.frame.minX > edge.maxX, "Close is reachable \(when): \(close.frame) beside \(edge)")
+            #expect(field.maxX <= edge.minX, "the composer \(field) stays left of the divider \(edge) \(when)")
+        }
+        try await eventuallyOnMain("the divider") { paneWidth() == "479 points" }
+        // The default is the board's: a 1pt divider and the 479 pane, so the conversation keeps its 888.
+        let edge = try #require(handle()).frame
+        #expect(edge.width == AppLayout.resizeHandleWidth, "the shared 9pt handle: \(edge)")
+        #expect(abs(window.window.frame.maxX - (edge.midX - AppLayout.dividerWidth / 2) - NWLeadMetrics.paneWidth) < 0.5, "the divider and pane are the board's 480: \(edge)")
+        try expectReachable("by default")
+
+        // VoiceOver's increment widens it by the shared step, and the width is saved where a thread's pane keeps its own.
+        let increment = NSSelectorFromString("accessibilityPerformIncrement")
+        _ = try #require(handle()).object.perform(increment)
+        try await eventuallyOnMain("incremented") { paneWidth() == "\(479 + Int(AppLayout.paneAdjustStep)) points" }
+        let saved = r.app.defaults.double(forKey: ShepherdViewModel.logicalProjectPaneWidthKey)
+        #expect(saved == Double(479 + AppLayout.paneAdjustStep), "saved \(saved), the state holds \(r.vm.logicalProjectPane.width)")
+        #expect(r.app.defaults.object(forKey: RightPaneState.widthKey) == nil, "a thread's pane width is untouched")
+
+        // A drag, through the handle's own path: `RightPaneDrag` is what its DragGesture's onChanged builds from each pointer
+        // location and what its onEnded saves, and `RightPaneDrag.layout` is what the split draws meanwhile. Driven over the page's
+        // real split (its width checked against the drawn divider) and the view model's real binding, without mouse events, which
+        // CI's runner does not deliver to this window (theSharedSplitFollowsAMouseDragAtItsDivider and theThreadsPaneFollowsAMouseDragAtItsDivider send them).
+        // The page is the window less the 232 sidebar and its 1pt edge: 1367, so the widest pane (half of it) is 683.5.
+        let page = AppLayout.sidebarDefaultWidth + AppLayout.dividerWidth
+        let total = window.window.frame.width - page
+        let layout = RightPaneDrag.layout(nil, state: r.vm.logicalProjectPane, containerWidth: total)
+        #expect(layout == ShellLayout.Pane(mode: .docked, width: 519, contentWidth: total - 520), "the split lays out the saved width")
+        let line = try #require(handle()).frame.midX - AppLayout.dividerWidth / 2 - window.window.frame.minX
+        #expect(line == page + layout.contentWidth, "the divider is drawn where that layout puts it: \(line)")
+        /// One drag: the pointer taken at the divider's trailing edge, then moved by `deltas` in turn; each step previews without
+        /// saving, and letting go saves (and persists) what the last preview drew.
+        func drag(by deltas: [CGFloat], previews: [CGFloat], saves saved: CGFloat) throws {
+            let before = r.vm.logicalProjectPane.width
+            var pointer = total - before
+            var last: RightPaneDrag?
+            for (delta, preview) in zip(deltas, previews) {
+                pointer += delta
+                let step = RightPaneDrag(pointerX: pointer, containerWidth: total)
+                #expect(RightPaneDrag.layout(step, state: r.vm.logicalProjectPane, containerWidth: total).width == preview,
+                        "after \(delta) the pane previews \(preview)")
+                #expect(r.vm.logicalProjectPane.width == before, "nothing is saved while the drag lasts")
+                last = step
+            }
+            try #require(last).end(in: r.vm.logicalProjectPane, containerWidth: total)
+            #expect(r.vm.logicalProjectPane.width == saved)
+            #expect(r.app.defaults.double(forKey: ShepherdViewModel.logicalProjectPaneWidthKey) == Double(saved), "persisted")
+        }
+        // Past the widest (half the page, 683.5) and past the narrowest (380): each bound holds while dragging and when let go.
+        try drag(by: [-300, -400], previews: [683.5, 683.5], saves: 683.5)
+        try await eventuallyOnMain("the widest is drawn") { drawn().map { abs($0 - 683.5) <= 0.5 } == true }
+        try drag(by: [200, 200], previews: [483.5, 380], saves: 380)
+        try await eventuallyOnMain("the narrowest is drawn") { paneWidth() == "380 points" }
+        // Five 50pt moves add up, then 11 back: the pointer's place decides, so 239pt left of 380 is 619.
+        try drag(by: [-50, -50, -50, -50, -50, 11], previews: [430, 480, 530, 580, 630, 619], saves: 619)
+        #expect(r.app.defaults.object(forKey: RightPaneState.widthKey) == nil, "a thread's pane width is untouched")
+        try await eventuallyOnMain("the drawn width follows") { paneWidth() == "619 points" }
+        try expectReachable("after the drag")
+
+        // Another Project: one width for every Project, as one width serves every thread.
+        r.vm.openLogicalProject(LogicalProjectRef(home: .local, id: other.id))
+        try await eventuallyOnMain("the other project") { window.layout(); return window.elements().contains { $0.label == "Other project" } }
+        #expect(paneWidth() == "619 points")
+        r.vm.openLogicalProject(r.ref)
+
+        // A narrower window: the pane gives way so the conversation keeps 400 (1200 less the 232 sidebar and its edge is 967, half
+        // of which is 483); narrower still, it overlays the conversation as a thread's does. The saved width is kept for later.
+        window.window.setContentSize(CGSize(width: 1200, height: 900))
+        try await eventuallyOnMain("clamped") { paneWidth() == "483 points" }
+        try expectReachable("in a 1200 window")
+        #expect(r.vm.logicalProjectPane.width == 619)
+        window.window.setContentSize(CGSize(width: 960, height: 900))
+        try await eventuallyOnMain("overlaid") { window.layout(); return (try? control("Close").frame.maxX).map { $0 <= window.window.frame.maxX + 0.5 } == true }
+        window.window.setContentSize(CGSize(width: 1600, height: 900))
+        try await eventuallyOnMain("back to its width") { paneWidth() == "619 points" }
+
+        // Larger text: the header's controls stay inside the pane, in both appearances.
+        let original = ThemeStore.shared.textScale
+        defer { ThemeStore.shared.textScale = original }
+        for dark in [true, false] {
+            window.window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            window.host.appearance = window.window.appearance
+            ThemeStore.shared.textScale = 1.3
+            window.layout()
+            try expectReachable("at 1.3x in \(dark ? "dark" : "light")")
+        }
+        ThemeStore.shared.textScale = original
+
+        // Close hides the divider with the pane, Overview brings both back at the same width.
+        try window.press("Close")
+        try await eventuallyOnMain("closed") { !r.vm.logicalProjectPaneOpen && handle() == nil }
+        try window.press("Overview")
+        try await eventuallyOnMain("reopened") { paneWidth() == "619 points" }
+        // Expand covers the page with the pane and drops the divider; Collapse restores both.
+        try window.press("Expand")
+        try await eventuallyOnMain("expanded") { r.vm.logicalProjectPaneExpanded && handle() == nil }
+        try window.press("Collapse")
+        try await eventuallyOnMain("collapsed") { paneWidth() == "619 points" }
+
+        // The next launch reads the saved width (ShellLayoutTests covers an unsaved or too-narrow one restoring 479).
+        #expect(RightPaneState(widthKey: ShepherdViewModel.logicalProjectPaneWidthKey, defaultWidth: 479, defaults: r.app.defaults).width == 619)
+    }
+
+    /// `RightPaneSplit` alone, 1367 wide (the Project page beside the 232 sidebar in a 1600 window), on the Project pane's real state,
+    /// under mouse events: while the button is down the pane follows the pointer and nothing is saved; letting go saves (and
+    /// persists) where it was drawn, within half the column.
+    private static func splitMouseDrag() async throws {
+        let r = try await rig()
+        defer { r.app.stop() }
+        guard await SyntheticMouse.reachesSwiftUIGestures() else {
+            FileHandle.standardOutput.write(Data(SyntheticMouse.undeliveredLine.utf8))
+            return
+        }
+        final class Log: NSView { var widths: [CGFloat] = []
+            override func setFrameSize(_ size: NSSize) { super.setFrameSize(size); if widths.last != size.width { widths.append(size.width) } } }
+        struct Logged: NSViewRepresentable { let view: Log
+            func makeNSView(context: Context) -> Log { view }
+            func updateNSView(_ nsView: Log, context: Context) {} }
+        let pane = Log()
+        let total: CGFloat = 1367
+        let window = OffscreenWindow(size: CGSize(width: total, height: 700), dark: true,
+                                     RightPaneSplit(state: r.vm.logicalProjectPane, showPane: true) { Color.white } pane: { Logged(view: pane) })
+        defer { window.close() }
+        try await eventuallyOnMain("the default pane") { window.layout(); return pane.widths.last == 479 }
+        // At the 1pt line's trailing edge, so each width is whole.
+        let mouse = SyntheticMouse(window: window.window, y: 350)
+        let grab = total - 479
+        try mouse.press(at: grab)
+        for step in 1...5 { try mouse.move(to: grab - CGFloat(step) * 20) }
+        try await eventuallyOnMain("the pane follows the pointer") { window.layout(); return pane.widths.last == 579 }
+        #expect(r.vm.logicalProjectPane.width == 0, "nothing is saved while the button is down")
+        try mouse.move(to: grab - 1000)
+        // Half the 1367 column is 683.5, drawn on whole points at this window's 1x scale.
+        try await eventuallyOnMain("no wider than half the column") { window.layout(); return pane.widths.last.map { abs($0 - 683.5) <= 0.5 } == true }
+        try mouse.move(to: grab - 140)
+        try mouse.release(at: grab - 140)
+        try await eventuallyOnMain("saved where it was let go") { r.vm.logicalProjectPane.width == 619 }
+        #expect(r.app.defaults.double(forKey: ShepherdViewModel.logicalProjectPaneWidthKey) == 619)
+        #expect(r.app.defaults.object(forKey: RightPaneState.widthKey) == nil, "a thread's pane width is untouched")
+        try await eventuallyOnMain("drawn where it was saved") { window.layout(); return pane.widths.last == 619 }
+        #expect(!window.window.isKeyWindow, "local mouse dispatch never takes the user's focus")
+    }
+
+    /// The Project page's divider in the whole window under real mouse events: while the button is down the pane follows the
+    /// pointer and nothing is saved; letting go saves where it was drawn. Never posted, never key.
+    private static func paneMouseDrag() async throws {
+        let r = try await rig()
+        defer { r.app.stop() }
+        r.vm.openLogicalProject(r.ref)
+        let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
+        defer { window.close() }
+        func handle() -> AccessibilityNode? { window.elements().first { $0.label == "Pane width" } }
+        func paneWidth() -> String? { handle().map { "\(Int((window.window.frame.maxX - $0.frame.midX - AppLayout.dividerWidth / 2).rounded())) points" } }
+        try await eventuallyOnMain("the divider") { paneWidth() == "479 points" }
+        let mouse = SyntheticMouse(window: window.window, y: window.host.bounds.midY)
+        // Window coordinates from the window's own geometry, taken at the 1pt line's trailing edge so the widths are whole.
+        let grab = try #require(handle()).frame.midX + AppLayout.dividerWidth / 2 - window.window.frame.minX
+        try mouse.press(at: grab)
+        for step in 1...5 { try mouse.move(to: grab - CGFloat(step) * 20) }
+        do {
+            try await eventuallyOnMain("the pane follows the pointer") { paneWidth() == "579 points" }
+        } catch {
+            // Did this window deliver the drag at all? The sidebar's own divider (its handle centres on x 232.5), independent of
+            // the pane's gesture: where it does not move either, the window delivers no drag and the test is cancelled by name;
+            // where it moves, the pane's divider alone ignored the drag, which fails.
+            try mouse.release(at: grab - 100)
+            let sidebar = r.vm.settings.sidebarWidth
+            try mouse.press(at: sidebar + 0.5)
+            for step in 1...5 { try mouse.move(to: sidebar + 0.5 + CGFloat(step) * 10) }
+            try mouse.release(at: sidebar + 50.5)
+            if (try? await eventuallyOnMain("the sidebar follows", timeout: .seconds(2)) { r.vm.settings.sidebarWidth != sidebar }) == nil {
+                FileHandle.standardOutput.write(Data(SyntheticMouse.undeliveredLine.utf8))
+                return
+            }
+            Issue.record("the sidebar's divider followed the drag (\(sidebar) → \(r.vm.settings.sidebarWidth)) but the pane's did not")
+            throw error
+        }
+        #expect(r.vm.logicalProjectPane.width == 0, "nothing is saved while the button is down")
+        try mouse.move(to: grab - 1000)
+        try await eventuallyOnMain("no wider than half the page (683.5)") {
+            handle().map { abs(window.window.frame.maxX - $0.frame.midX - AppLayout.dividerWidth / 2 - 683.5) <= 0.5 } == true
+        }
+        try mouse.move(to: grab - 140)
+        try mouse.release(at: grab - 140)
+        try await eventuallyOnMain("saved where it was let go") { r.vm.logicalProjectPane.width == 619 }
+        #expect(r.app.defaults.double(forKey: ShepherdViewModel.logicalProjectPaneWidthKey) == 619)
+        try await eventuallyOnMain("drawn where it was saved") { paneWidth() == "619 points" }
+        #expect(!window.window.isKeyWindow, "local mouse dispatch never takes the user's focus")
     }
 
     private static func paneHeader() async throws {
@@ -1494,6 +1744,98 @@ private static func chipsAndLinks() async throws {
         try await eventuallyOnMain("the message is delivered") { app.server.state.projects.first?.messages.last?.phase == .delivered }
     }
 
+    /// The reported case: a relaunched Project whose coordinator's pi is held off (here paused). Its composer is the ordinary one, and its
+    /// model and reasoning controls open: no git chip, the model picker and the Thinking segments from the catalog's levels for the model.
+    /// A pick changes the Project's own coordinator settings on the owner (never a task thread's), a model's new levels clamp the saved
+    /// level as pi would, and the owner applies both to the relaunched coordinator before it delivers the next message.
+    private static func heldOffModelAndReasoning() async throws {
+        AccessibilityNode.enable()
+        try StubPi.installAsEngine()
+        let directory = try makeScratchDirectory("mdl")
+        let folder = directory.appendingPathComponent("logical-project")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let held = Space(name: "Projects", path: folder.path, hidden: true, holdsProjects: true)
+        var fixture = Fixture.agent("Sample App", in: held)
+        var project = Project(name: "Sample App", goal: "", coordinatorAgentID: fixture.agent.id, paused: true)
+        project.settings.threadModel = "anthropic/claude-haiku-4-5"
+        fixture.agent.coordinatorFor = project.id
+        project.messages = [ProjectMessage(id: UUID(), text: "hello", phase: .delivered)]
+        var state = Fixture.state(spaces: [held], agents: [fixture])
+        state.projects = [project]
+        try JSONEncoder().encode(state).write(to: directory.appendingPathComponent("state.json"))
+        let app = try AppHarness(directory: directory)
+        defer { app.stop() }
+        app.settings.projectsEnabled = true
+        let vm = try await app.start()
+        let ref = LogicalProjectRef(home: .local, id: project.id)
+        vm.openLogicalProject(ref)
+        let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: vm))
+        defer { window.close() }
+        let store = vm.threadStores.store(for: fixture.agent.id)
+        func owner() -> LogicalProjectSettings? { app.server.state.projects.first?.settings }
+        func chip() -> Control? { window.controls().first { $0.label?.hasPrefix("Model settings:") == true } }
+        try await eventuallyOnMain("the held-off coordinator's composer") {
+            window.layout(); return store.offline && !store.ready && chip()?.isEnabled == true
+        }
+        // Nothing is saved and pi is off: this existing coordinator resumes its own level, which nothing here knows, so the chip names none.
+        #expect((chip()?.value ?? "").isEmpty, "no reasoning level is invented: \(String(describing: chip()?.value))")
+        #expect(!window.elements().contains { ($0.label ?? "").localizedCaseInsensitiveContains("branch") || ($0.label ?? "").localizedCaseInsensitiveContains("worktree") },
+                "the Project composer draws no git affordance")
+
+        // The model, from the full picker: the owner's setting for the coordinator, not the task threads'.
+        try window.press(try #require(chip()?.label))
+        try await eventuallyOnMain("the settings popover with the Project's levels") {
+            window.layout(); return window.element("All models\u{2026}") != nil && !window.buttons(in: "Thinking").isEmpty
+        }
+        // The default model is not one the catalog lists, so the standard four are offered.
+        #expect(window.buttons(in: "Thinking").compactMap(\.label) == ["Off", "Low", "Medium", "High"])
+        try window.press("All models\u{2026}")
+        let pick = "openai/gpt-5"
+        try await eventuallyOnMain("the full picker lists the pick") {
+            window.layout(); return window.controls().contains { $0.label?.hasPrefix(pick + ", ") == true && $0.isEnabled }
+        }
+        try window.press(try #require(window.controls().first { $0.label?.hasPrefix(pick + ", ") == true }?.label))
+        try await eventuallyOnMain("the owner saved the coordinator's model") { owner()?.conversationModel == pick && !vm.logicalProjects.busy.contains(ref.id) }
+        #expect(owner()?.threadModel == "anthropic/claude-haiku-4-5", "the task threads' model is untouched")
+        try await eventuallyOnMain("the chip names it") { window.layout(); return chip()?.label == "Model settings: \(pick)" }
+
+        // Reasoning: the levels the catalog lists for that model, and a pick is the Project's setting.
+        try window.press("Model settings: \(pick)")
+        try await eventuallyOnMain("the Thinking segments for gpt-5") { window.layout(); return !window.buttons(in: "Thinking").isEmpty }
+        let offered = window.buttons(in: "Thinking").compactMap(\.label)
+        #expect(!offered.contains("Minimal") && offered.contains("Extra high"), "gpt-5's own levels (no Minimal, Extra high): \(offered)")
+        try window.press("Extra high", in: "Thinking")
+        // One owner write at a time: each save is acknowledged before the next control is pressed.
+        try await eventuallyOnMain("the owner saved the coordinator's level") { owner()?.conversationThinking == "xhigh" && !vm.logicalProjects.busy.contains(ref.id) }
+        try await eventuallyOnMain("the chip names it") { window.layout(); return chip()?.value?.contains("Extra high") == true }
+        #expect(store.offline && !store.ready, "setting the Project's coordinator starts nothing")
+
+        // Back to a model whose levels lack Extra high: the saved level is clamped with it, as pi would. A level leaves the popover open,
+        // as in any thread.
+        try window.press("All models\u{2026}")
+        let back = "anthropic/claude-opus-4-5"
+        try await eventuallyOnMain("the full picker lists it") {
+            window.layout(); return window.controls().contains { $0.label?.hasPrefix(back + ", ") == true && $0.isEnabled }
+        }
+        try window.press(try #require(window.controls().first { $0.label?.hasPrefix(back + ", ") == true }?.label))
+        try await eventuallyOnMain("the model and its clamped level are saved together") {
+            owner()?.conversationModel == back && owner()?.conversationThinking == "high" && !vm.logicalProjects.busy.contains(ref.id)
+        }
+
+        // The next message relaunches the coordinator: the owner's launch carries the Project's model and level. (This harness's owner
+        // lists stand-in models, not the composer's catalog, so the launch is refused here and the Project re-pauses; the owner applying
+        // both to a running coordinator before delivery is `ProjectCoordinatorFlowTests`'.)
+        let launching = app.server.onProjectRuntimeLaunch
+        let launched = Locked<[ProjectRuntimeLaunch]>([])
+        app.server.onProjectRuntimeLaunch = { request, done in launched.withValue { $0.append(request) }; launching?(request, done) }
+        #expect(await vm.logicalProjects.setPaused(ref, false))
+        #expect(await vm.logicalProjects.sendMessage(ref, text: "hello again"))
+        try await eventuallyOnMain("the owner launches the coordinator") { !launched.current.isEmpty }
+        let launch = try #require(launched.current.first)
+        #expect(launch.coordinator && launch.agentID == fixture.agent.id, "the coordinator, never a task thread")
+        #expect(launch.model == back && launch.thinking == "high", "launched with the Project's model and level: \(String(describing: launch.model)) \(String(describing: launch.thinking))")
+    }
+
     // MARK: A resolved worker
 
     /// A real worker settles; its thread in the pane shows the steering composer. Marking it resolved removes the composer entirely
@@ -1576,6 +1918,135 @@ private static func chipsAndLinks() async throws {
         }
         try await eventuallyOnMain("the pane's dock is drawn") { window.layout(); return !paneOptions().isEmpty }
         #expect(paneOptions().allSatisfy { !$0.isEnabled }, "no second answer is offered while the owner holds one: \(paneOptions().map { "\($0.label ?? "") \($0.isEnabled)" })")
+    }
+
+    // MARK: Pane dock answer (#301)
+
+    /// Real Project choice-input: offered buttons and a final field, answered from either surface.
+    /// Rejection preserves the pick/text; acceptance delivers one answer and removes both views.
+    private static func paneDockAnswer(route: String, rejectedFirst: Bool) async throws {
+        let r = try await rig()
+        defer { r.app.stop() }
+        let options = ["Use SQLite", "Use Postgres"]
+        let hints = String(decoding: try JSONEncoder().encode(options), as: UTF8.self)
+        let script: [String: Any] = ["prompts": ["ask-store": [["ask": ["method": "input", "title": "Which store should the API use?\n\nOptions:\n" + hints, "placeholder": "Say anything"]]]],
+                                     "socket": r.app.scratch.socketPath]
+        try JSONSerialization.data(withJSONObject: script).write(to: URL(fileURLWithPath: r.space.path).appendingPathComponent("project-script.json"))
+        _ = try await r.vm.projectCoordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
+                                                      request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Library API draft", prompt: "ask-store"))
+        try await eventuallyOnMain("the worker is waiting on its question") { r.vm.state.projects.first?.tasks.first?.phase == .waiting }
+        let task = try #require(r.vm.state.projects.first?.tasks.first)
+        r.vm.openLogicalProject(r.ref)
+        let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
+        defer { window.close() }
+        let store = r.vm.projectWorkerStore(.local, task.workerAgentID)
+        try await eventuallyOnMain("the worker list has connected its store") { window.layout(); return store.ready }
+        let inPane = route != "project-text", typed = route != "pane-option"
+        if inPane { r.vm.openProjectTask(task.id) }
+        func onTarget(_ frame: CGRect) -> Bool {
+            (frame.minX > window.window.frame.maxX - NWLeadMetrics.paneWidth) == inPane
+        }
+        func controls(_ label: String) -> [Control] {
+            window.controls().filter { $0.role == ControlRole.button && $0.label == label && onTarget($0.frame) }
+        }
+        func field() -> AccessibilityNode? {
+            window.elements().first { $0.label == "Say anything" && ["AXTextField", "AXTextArea"].contains($0.role ?? "") && onTarget($0.frame) }
+        }
+        func type(_ value: String) throws {
+            let node = try #require(field()), setter = NSSelectorFromString("setAccessibilityValue:")
+            try #require(node.object.responds(to: setter))
+            _ = node.object.perform(setter, with: value)
+            if let editor = node.object as? NSTextView { NotificationCenter.default.post(name: NSText.didChangeNotification, object: editor) }
+            func native(_ view: NSView) -> NSTextField? {
+                if let text = view as? NSTextField, text.stringValue == value { return text }
+                return view.subviews.compactMap(native).first
+            }
+            let text = node.object as? NSTextField ?? (node.object as? NSCell)?.controlView as? NSTextField ?? native(window.host)
+            text?.delegate?.controlTextDidChange?(Notification(name: NSControl.textDidChangeNotification, object: text))
+        }
+        let submit = inPane ? "Answer" : "Send"
+        try await eventuallyOnMain("offered choices and a final field, not a Say anything button") {
+            window.layout(); return options.allSatisfy { !controls($0).isEmpty } && field() != nil
+        }
+        #expect(controls("Say anything").isEmpty)
+        #expect(controls(submit).first?.isEnabled == false)
+        let words = "  Use an in-memory cache instead.  "
+        let expected = typed ? words.trimmingCharacters(in: .whitespacesAndNewlines) : "Use Postgres"
+        if typed {
+            try type("   ")
+            #expect(controls(submit).first?.isEnabled == false, "whitespace is not an answer")
+            if inPane {
+                #expect(try #require(controls("Use Postgres").first).node.press())
+                try await eventuallyOnMain("picking clears the field") { field()?.value == "" }
+            }
+            try type(words)
+        } else {
+            #expect(try #require(controls("Use Postgres").first).node.press())
+        }
+        try await eventuallyOnMain("the answer can be submitted") { window.layout(); return controls(submit).first?.isEnabled == true }
+        if !typed { #expect(controls("Use Postgres").first?.isSelected == true) }
+        else if inPane {
+            try await eventuallyOnMain("typing clears the pick") { controls("Use Postgres").first?.isSelected == false }
+        }
+        if rejectedFirst {
+            let session = try #require(store.session), dialog = try #require(store.dialogs.first)
+            let reply = NativeThreadRequest.answer(expectedSessionID: "stale-session", generation: session.generation,
+                                                   operationID: UUID(), dialogID: dialog.id, answer: .input(value: expected))
+            if inPane {
+                await store.answer(dialogID: dialog.id, sessionID: "stale-session", generation: session.generation, answer: .input(value: expected))
+            } else {
+                #expect(await r.vm.logicalProjects.answer(r.ref, task: task.id, request: reply) == false)
+            }
+            let notice = try #require(inPane ? store.notice : r.vm.logicalProjects.failure?.message)
+            do {
+                try await eventuallyOnMain("the rejection is visible beside the answer") {
+                    window.layout(); return window.elements().contains { ($0.label ?? "").contains(notice) || ($0.value ?? "").contains(notice) }
+                }
+            } catch {
+                if let dir = ProcessInfo.processInfo.environment["SHEPHERD_PREVIEW_DIR"] {
+                    let nodes = window.elements().map { "\($0.role ?? ""): \($0.label ?? "") = \($0.value ?? "")" }
+                    try ("Expected notice: \(notice)\n" + nodes.joined(separator: "\n")).write(
+                        to: URL(fileURLWithPath: dir).appendingPathComponent("\(route)-failure-AX.txt"), atomically: true, encoding: .utf8)
+                    let frames = await MotionProbe.record(window) {}
+                    try frames.settled.bitmap.representation(using: .png, properties: [:])?.write(
+                        to: URL(fileURLWithPath: dir).appendingPathComponent("\(route)-failure.png"))
+                }
+                throw error
+            }
+            if typed { #expect(field()?.value == words, "a refusal preserves the typed draft") }
+            else { #expect(controls("Use Postgres").first?.isSelected == true) }
+            #expect(controls(submit).first?.isEnabled == true, "the same answer can be retried")
+            #expect(store.dialogs.first?.id == dialog.id, "a rejection does not dismiss the dialog")
+        }
+        if let dir = ProcessInfo.processInfo.environment["SHEPHERD_PREVIEW_DIR"] {
+            for dark in [false, true] {
+                let frames = await MotionProbe.record(window) {
+                    window.window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+                    window.host.appearance = window.window.appearance
+                }
+                let png = try #require(frames.settled.bitmap.representation(using: .png, properties: [:]))
+                try png.write(to: URL(fileURLWithPath: dir).appendingPathComponent("ProjectQuestion-\(route)-\(rejectedFirst ? "Rejected" : "Ready")-\(dark ? "dark" : "light").png"))
+            }
+        }
+
+        #expect(try #require(controls(submit).first).node.press())
+        let worker = task.workerAgentID
+        func snapshot() async throws -> NativeThreadSnapshot? {
+            guard case .snapshot(let value) = try await r.app.server.nativeThread(agentID: worker, request: .snapshot()) else { return nil }
+            return value
+        }
+        try await eventuallyAsync("pi takes the answer and the dialog closes") { try await snapshot()?.dialogs.isEmpty == true }
+        let answered = try #require(try await snapshot())
+        let records = (answered.messages + answered.provisional).compactMap(\.question)
+        #expect(records.count == 1 && records.first?.answer == expected, "one native answer, exactly as selected or typed: \(records)")
+        try await eventuallyOnMain("the task leaves waiting") { r.app.server.state.projects.first?.tasks.first?.phase != .waiting }
+        try await eventuallyOnMain("the question leaves both surfaces") {
+            window.layout()
+            return !window.elements().contains { $0.label == "Say anything" && ["AXTextField", "AXTextArea"].contains($0.role ?? "") }
+                && !window.controls().contains { $0.label == "Use Postgres" }
+        }
+        #expect(r.vm.logicalProjects.failure == nil, "\(r.vm.logicalProjects.failure?.message ?? "")")
+        #expect(r.vm.projectWorkerStore(.local, worker).notice == nil, "no silent refusal: \(r.vm.projectWorkerStore(.local, worker).notice ?? "")")
     }
 
     // MARK: Footer geometry
@@ -1749,7 +2220,8 @@ private static func chipsAndLinks() async throws {
 
     /// A served coordinator thread (a scripted host that records every request and applies a model or level as the real one does,
     /// `ComposerThread`'s way) under the Project's own composer wiring. A pick is saved as the Project's conversation model FIRST and
-    /// only then reaches the thread as a native `setModel`; a refused save sends none. A level goes to the thread as `setThinking`.
+    /// only then reaches the thread as a native `setModel`; a refused save sends none. A level is saved as the Project's reasoning level
+    /// first, then reaches the thread as `setThinking`.
     private static func liveModelPick() async throws {
         AccessibilityNode.enable()
         try StubPi.installAsEngine()
@@ -1760,6 +2232,7 @@ private static func chipsAndLinks() async throws {
         let input = ThreadInput()
         let requests = Locked<[NativeThreadRequest]>([])
         let saved = Locked<[String]>([])
+        let savedLevels = Locked<[String]>([])
         let accept = Locked(true)
         let host = Locked(snapshot)
         let request: NativeThreadStore.Request = { value in
@@ -1771,6 +2244,7 @@ private static func chipsAndLinks() async throws {
                 host.withValue { $0.model = model; $0.revision += 1 }
                 return .accepted(operationID: operation)
             case .setThinking(_, _, let operation, let level):
+                #expect(savedLevels.current.last == level, "the accepted Project save precedes the native setThinking")
                 host.withValue { $0.thinking = level; $0.revision += 1 }
                 return .accepted(operationID: operation)
             default: return .snapshot(value: host.current)
@@ -1778,8 +2252,11 @@ private static func chipsAndLinks() async throws {
         }
         let send = ProjectComposerSend(
             placeholder: "Ask Sample App a question or start a task\u{2026}", send: { _, _ in true },
-            model: ProjectConversationModel(current: nil, pending: false, choose: { id in
+            model: ProjectConversationModel(current: nil, choose: { id, _ in
                 saved.withValue { $0.append(id) }
+                return accept.current
+            }, chooseThinking: { level in
+                savedLevels.withValue { $0.append(level) }
                 return accept.current
             }))
         let window = OffscreenWindow(size: CGSize(width: 1000, height: 700), dark: true)
@@ -1834,6 +2311,7 @@ private static func chipsAndLinks() async throws {
             requests.current.contains { if case .setThinking(_, _, _, let level) = $0 { level == "high" } else { false } }
         }
         try await eventuallyOnMain("the thread reports high") { store.thinking == "high" }
+        #expect(savedLevels.current == ["high"], "the level is the Project's coordinator setting first: \(savedLevels.current)")
     }
 
     /// The coordinator's ID is reserved before its agent exists. With the app's real launch held there, the page's own request closure

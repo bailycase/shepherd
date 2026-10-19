@@ -147,6 +147,8 @@ $STUB_PI_HISTORY_BYTES seeds that many bytes of prior history (see below).
 Startup, like a pi that takes a while to boot (or fails to), before stdin is read:
   $STUB_PI_STARTUP_DELAY  seconds to wait
   $STUB_PI_STARTUP_GATE   a file in the cwd to wait for (up to 60 s)
+  $STUB_PI_HISTORY_GATE   hold get_messages until this file exists (up to 60 s)
+  $STUB_PI_METADATA_GATE  hold get_session_stats until this file exists (up to 60 s)
   $STUB_PI_STARTUP_NEW_SESSION  write pi's warning (in chalk's yellow) that it found no session
                           with the `--session-id` it was given and creates one, then go on
   $STUB_PI_STARTUP_EXIT   exit with this code instead of serving
@@ -426,10 +428,10 @@ def script_turn(prompt, script):
             wait_for_file(item["wait"], item.get("timeout", 30.0))
             continue
         if "ask" in item:
-            # A select the worker waits on (its native dialog): the last item, so the turn stays open until it is answered.
+            # A native dialog the worker waits on: the last item keeps the turn open until answered.
             global pending_ui
             pending_ui = "uuid-script"
-            emit({"type": "extension_ui_request", "id": "uuid-script", "method": "select", "title": item["ask"]["title"], "options": item["ask"]["options"]})
+            emit({"type": "extension_ui_request", "id": "uuid-script", "method": "select", **item["ask"]})
             MESSAGES.extend(new)
             STATE["messageCount"] = len(MESSAGES)
             return
@@ -1292,6 +1294,8 @@ for raw in sys.stdin.buffer:
             held_history_request = None
             stale_history = None
     elif t == "get_messages":
+        if os.environ.get("STUB_PI_HISTORY_GATE"):
+            wait_for_file(os.environ["STUB_PI_HISTORY_GATE"], timeout=60.0)
         if stale_history is not None:
             held_history_request = cmd
         elif fail_switched_history:
@@ -1318,6 +1322,8 @@ for raw in sys.stdin.buffer:
         commands = [dict(c, sourceInfo={"path": template}) if template and c["name"] == "fix-tests" else c for c in COMMANDS]
         respond(cmd, t, data={"commands": commands})
     elif t == "get_session_stats":
+        if os.environ.get("STUB_PI_METADATA_GATE"):
+            wait_for_file(os.environ["STUB_PI_METADATA_GATE"], timeout=60.0)
         respond(cmd, t, data=STATS)
     elif t == "compact":
         result = compaction("manual", cmd.get("customInstructions"))
