@@ -138,11 +138,18 @@ struct AutomationDetailContent: View {
         } else if detail.runs.isEmpty {
             Text("No runs yet. Run now starts one.").nwText(.caption).foregroundStyle(Color.nw.textTertiary)
         } else {
-            NWRunBars(detail.bars.map { NWRunBars.Bar(id: $0.id.uuidString, height: $0.height, state: AgentState($0.tone), label: $0.label) },
-                      first: detail.chartStart, summary: detail.chartSummary, last: detail.chartEnd)
-                .padding(NW.Space.l)
-                .nwCard(radius: MobileLayout.cardRadius)
-            if let last = detail.lastRun {
+            let bars = NWRunBars(detail.bars.map { NWRunBars.Bar(id: $0.id.uuidString, height: $0.height, state: AgentState($0.tone), label: $0.label) },
+                                 first: detail.chartStart, summary: detail.chartSummary, last: detail.chartEnd)
+            if pad {
+                // iPadAutomations: the bars on the page, then the last run as a card.
+                bars
+                if let last = detail.lastRun { lastRunCard(last) }
+            } else {
+                bars
+                    .padding(NW.Space.l)
+                    .nwCard(radius: MobileLayout.cardRadius)
+            }
+            if !pad, let last = detail.lastRun {
                 VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
                     NWListHeader("Last run")
                     runRow(last)
@@ -157,6 +164,30 @@ struct AutomationDetailContent: View {
                 }
             }
         }
+    }
+
+    /// iPadAutomations' last-run card: its glyph, "Today 02:00 · finished in 43s", and Open thread.
+    private func lastRunCard(_ run: AutomationRunRow) -> some View {
+        let nw = Color.nw
+        let state = AgentState(run.tone)
+        return HStack(spacing: NW.Space.m) {
+            NWStateGlyph(state)
+            Text([run.started, run.duration.map { "\(run.word) in \($0)" } ?? run.word].joined(separator: " · "))
+                .font(.nw(.ui, weight: .semibold))
+                .foregroundStyle(nw.textPrimary)
+                .lineLimit(1)
+            Spacer(minLength: NW.Space.s)
+            if let agent = run.agent {
+                Button("Open thread") { navigator.open(.thread(AgentRef(host: agent.host, agent: agent.agent))) }
+                    .buttonStyle(.nwLink(color: nw.running, font: .nw(.ui)))
+                    .nwTouchTarget(height: NW.Height.controlL)
+            }
+        }
+        .padding(.horizontal, NW.Space.l + NW.Space.xxs)
+        .padding(.vertical, NW.Space.l)
+        .nwCard(radius: MobileLayout.cardRadius)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Last run, \(run.started), \(run.word)\(run.duration.map { " in \($0)" } ?? "")")
     }
 
     private func runRow(_ run: AutomationRunRow) -> some View {

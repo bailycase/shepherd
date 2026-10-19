@@ -59,6 +59,12 @@ public func nativeRunNames(_ run: ChildRun) -> (name: String, role: String?) {
     return (run.label, run.label == role ? nil : role)
 }
 
+/// The agent's name a run is shown by ("worker"), or its label when it has no role.
+public func nativeRunAgentName(_ run: ChildRun) -> String {
+    if let role = run.role, !role.isEmpty { return role }
+    return nativeRunNames(run).name
+}
+
 /// "claude-sonnet" from "anthropic/claude-sonnet".
 public func nativeModelTag(_ model: String) -> String {
     model.split(separator: "/", omittingEmptySubsequences: false).last.map(String.init) ?? model
@@ -332,8 +338,9 @@ public func nativeRunGroupStatus(_ runs: [ChildRun]) -> String? {
 
 /// The run header's mono line: its secondary role, then a live run's model, thinking, turns
 /// and tokens; a finished run's model and turns, then "done 11:02" in the state's color.
-public func nativeRunInspectorMeta(_ run: ChildRun, timeZone: TimeZone = .current) -> (meta: String, accent: String?) {
-    var parts = [nativeRunNames(run).role].compactMap { $0 }
+/// `withRole: false` where the head already names the run by its role (the iPad's "worker").
+public func nativeRunInspectorMeta(_ run: ChildRun, withRole: Bool = true, timeZone: TimeZone = .current) -> (meta: String, accent: String?) {
+    var parts = [withRole ? nativeRunNames(run).role : nil].compactMap { $0 }
     if let model = run.model { parts.append(nativeModelTag(model)) }
     if !run.isTerminal, let thinking = run.thinking, thinking != "off" { parts.append("thinking \(thinking)") }
     if let turns = run.turns { parts.append(nativeCount(turns, "turn")) }

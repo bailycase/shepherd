@@ -194,26 +194,21 @@ struct ReviewFileNotice: View {
     }
 }
 
-/// "95 unmodified lines" above a hunk (iPadReview): a tap asks the host for the whole file.
+/// "Show 18 unchanged lines" before a hunk (iPadReview): a tap asks the host for the whole file.
 struct ReviewGapRow: View {
     let count: Int
-    let leading: CGFloat
     let action: (() -> Void)?
 
     var body: some View {
         let nw = Color.nw
-        let label = HStack(spacing: NW.Space.m) {
-            Image(systemName: "chevron.up.chevron.down").imageScale(.small).accessibilityHidden(true)
-            Text(nativeCount(count, "unmodified line")).lineLimit(1)
-        }
-        .font(.nw(.caption))
-        .foregroundStyle(nw.textSecondary)
-        .padding(.leading, leading)
-        .frame(maxWidth: .infinity, minHeight: NW.Height.touch, alignment: .leading)
-        .background(nw.bgSunken)
-        .overlay(alignment: .top) { NWHairline() }
-        .overlay(alignment: .bottom) { NWHairline() }
-        .contentShape(Rectangle())
+        let label = Text(action == nil ? nativeCount(count, "unchanged line") : "Show \(nativeCount(count, "unchanged line"))")
+            .font(.nw(.caption))
+            .foregroundStyle(nw.textTertiary)
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, minHeight: NW.Height.touch)
+            .background(nw.bgSunken)
+            .overlay(alignment: .top) { NWHairline() }
+            .contentShape(Rectangle())
         if let action {
             Button(action: action) { label }
                 .buttonStyle(.plain)
@@ -254,11 +249,9 @@ struct ReviewUnifiedRowView: View {
         VStack(alignment: .leading, spacing: 0) {
             switch row {
             case .hunk(_, let header, let gap):
-                if let gap {
-                    if gap > 0 { ReviewGapRow(count: gap, leading: leading, action: store.opensGaps ? { store.loadWhole(fileID) } : nil) }
-                } else {
-                    NWTouchHunkHeader(header, leading: tintedHunks ? MobileLayout.gutter : leading, tinted: tintedHunks)
-                }
+                // iPadReview: the unchanged lines before a hunk, then its head.
+                if let gap, gap > 0 { ReviewGapRow(count: gap, action: store.opensGaps ? { store.loadWhole(fileID) } : nil) }
+                NWTouchHunkHeader(header, leading: tintedHunks ? MobileLayout.gutter : leading, tinted: tintedHunks)
             case .line(let line):
                 let selected = store.selection == ReviewStore.LineKey(fileID: fileID, lineID: line.key)
                 let comment = store.commentsByFile[fileID]?[line.key]
@@ -321,8 +314,7 @@ struct ReviewSplitRowView: View {
             switch row {
             case .hunk(_, _, let gap):
                 if gap > 0 {
-                    ReviewGapRow(count: gap, leading: NWTouchDiffMetrics.annotationLeading(gutters: 1),
-                                 action: store.opensGaps ? { store.loadWhole(fileID) } : nil)
+                    ReviewGapRow(count: gap, action: store.opensGaps ? { store.loadWhole(fileID) } : nil)
                 }
             case .pair(_, let old, let new):
                 // A context line is one line on both sides: it is selected and commented on the right.
