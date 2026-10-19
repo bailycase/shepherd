@@ -20,6 +20,9 @@ struct ModelCatalog: Sendable {
         /// The row's second line: the levels the model takes ("Off · Minimal · Low · Medium ·
         /// High", or "No thinking"; `NativeModelChoices.thinkingLines`).
         let thinking: String
+        /// The levels the model takes (pi's spellings; none without reasoning): what a Project's reasoning menu offers before its
+        /// coordinator serves.
+        let levels: [String]
         /// The id, lowercased: what a query matches.
         let key: String
         /// The model offers a raised service tier (Fast) on the host that listed it.
@@ -39,10 +42,10 @@ struct ModelCatalog: Sendable {
          hostTakesAllLevels: Bool = true) {
         var listing = ModelListing(entries: entries, defaultModel: nil)
         listing.thinkingLevels = levels
-        let lines = NativeModelChoices.thinkingLines(listing, hostTakesAllLevels: hostTakesAllLevels)
+        let levels = NativeModelChoices.thinkingLevels(listing, hostTakesAllLevels: hostTakesAllLevels)
         models = entries.map {
             Model(id: $0.id, provider: $0.provider, title: nativeModelShortName($0.id), context: $0.context, reasoning: $0.reasoning,
-                  thinking: lines[$0.id] ?? NativeThinkingLevel.line([]), key: $0.id.lowercased(),
+                  thinking: NativeThinkingLevel.line(levels[$0.id] ?? []), levels: levels[$0.id] ?? [], key: $0.id.lowercased(),
                   fast: (serviceTiers?[$0.id] ?? []).contains { $0 != ServiceTier.standard.rawValue })
         }
         index = Dictionary(models.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
