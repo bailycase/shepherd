@@ -43,7 +43,17 @@ struct AutomationsScreen: View {
         .task { await store.watch() }
         .navigationTitle("Automations")
         .navigationBarTitleDisplayMode(sizeClass == .regular ? .inline : .large)
+        .toolbar(removing: sizeClass == .regular ? .title : nil)
         .toolbar {
+            // iPadAutomations: "Automations" leads the bar, over the list.
+            if sizeClass == .regular {
+                ToolbarItem(placement: .topBarLeading) {
+                    Text("Automations").font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary)
+                        .fixedSize()
+                        .accessibilityAddTraits(.isHeader)
+                }
+                .sharedBackgroundVisibility(.hidden)
+            }
             if !store.editableHosts.isEmpty {
                 ToolbarItem(placement: .topBarTrailing) {
                     // New automation is the lantern circle (MobileAutomations).

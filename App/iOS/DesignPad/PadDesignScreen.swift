@@ -152,7 +152,7 @@ private struct PadDesignHeader: View {
                 .nwTouchTarget(height: MobileLayout.padDesignHeaderButton, width: MobileLayout.padDesignHeaderButton)
                 .accessibilityLabel("Chat")
             }
-            Button("Export", systemImage: "square.and.arrow.up") { export?() }
+            Button("Export") { export?() }
                 .buttonStyle(.nw(.secondary, size: .l))
                 .disabled(export == nil)
         }

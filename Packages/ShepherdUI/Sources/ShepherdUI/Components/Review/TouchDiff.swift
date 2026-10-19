@@ -58,7 +58,7 @@ public struct NWTouchDiffLine: View, Equatable {
                 .foregroundStyle(line.kind == .added ? nw.done : nw.failed)
                 .frame(width: NWTouchDiffMetrics.signWidth, alignment: .leading)
             Text(line.text)
-                .font(.nw(.mono))
+                .font(.nw(.code))
                 .foregroundStyle(nw.textPrimary)
                 .lineLimit(wraps ? nil : 1)
                 .truncationMode(.tail)
@@ -72,6 +72,8 @@ public struct NWTouchDiffLine: View, Equatable {
         .overlay(alignment: .leading) {
             if selected {
                 Rectangle().fill(nw.running).frame(width: NWTouchDiffMetrics.selectionBar)
+            } else if commented {
+                Rectangle().fill(nw.lantern).frame(width: NWTouchDiffMetrics.selectionBar)
             } else if changeBar, line.kind != .context {
                 Rectangle().fill(line.kind == .added ? nw.done : nw.failed).frame(width: NWTouchDiffMetrics.selectionBar)
             }
@@ -86,6 +88,8 @@ public struct NWTouchDiffLine: View, Equatable {
 
     private func background(_ nw: NWPalette) -> Color {
         if selected { return nw.runningTint }
+        // A line with a comment waiting (MobileDiff, iPadReview: lantern bar and tint).
+        if commented { return nw.lanternTint }
         switch line.kind {
         case .added: return nw.doneTint
         case .removed: return nw.failedTint

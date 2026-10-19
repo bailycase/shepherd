@@ -44,7 +44,8 @@ struct QueueSection: View {
                 options(running: running)
             }
             .nwTransition(.list)
-            .onChange(of: store.goalID, initial: true) { _, id in collapsed = id != nil }
+            // A goal folds Up next to its header on iPhone; the iPad draws it in full (GoalStates, iPadGoal).
+            .onChange(of: store.goalID, initial: true) { _, id in collapsed = id != nil && sizeClass != .regular }
             .onDisappear { closeEditor(save: false) }
             .sheet(item: Binding(get: { presentation.editing }, set: { if $0 == nil { closeEditor(save: false) } })) { message in
                 QueueEditorSheet(number: (state.queuedIndex(message.id) ?? 0) + 1, text: Binding(get: { presentation.editText }, set: { presentation.editText = $0 }),

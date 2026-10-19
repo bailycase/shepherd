@@ -57,7 +57,6 @@ enum DesignRuleAllowlist {
         .init(.rawGlyphName, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Automations/Automations.swift", 1, bolt),
         .init(.rawGlyphName, "Sources/ShepherdApp/SettingsExperiments.swift", 1, bolt),
         .init(.rawGlyphName, "Sources/ShepherdApp/SidebarModel.swift", 7, bolt),
-        .init(.rawGlyphName, "App/iOS/Review/ReviewParts.swift", 1, chevrons),
         .init(.rawGlyphName, "App/iOS/Settings/HostSettingsScreens.swift", 1, chevrons),
         .init(.rawGlyphName, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Controls/Pickers.swift", 1, chevrons),
         .init(.rawGlyphName, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Review/TouchDiff.swift", 1, chevrons),

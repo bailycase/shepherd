@@ -42,6 +42,24 @@ struct NeedsYouScreen: View {
         .task { await feed.watch() }
         .navigationTitle("Needs you")
         .navigationBarTitleDisplayMode(sizeClass == .regular ? .inline : .large)
+        .toolbar {
+            // iPadInbox: "Needs you" with "5 waiting" beside it, leading the bar.
+            if sizeClass == .regular {
+                ToolbarItem(placement: .topBarLeading) {
+                    HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
+                        Text("Needs you").font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary)
+                        if !items.isEmpty {
+                            Text("\(items.count) waiting").font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                        }
+                    }
+                    .fixedSize()
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(.isHeader)
+                }
+                .sharedBackgroundVisibility(.hidden)
+            }
+        }
+        .toolbar(removing: sizeClass == .regular ? .title : nil)
     }
 
     /// "4 things are waiting on you".
@@ -63,10 +81,6 @@ private struct NeedsYouSplit: View {
             ScrollView {
                 // Flat items, 2pt apart, the chosen one filled (iPadInbox).
                 LazyVStack(alignment: .leading, spacing: NW.Space.xxs) {
-                    Text(NeedsYouScreen.waiting(items.count))
-                        .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
-                        .padding(.horizontal, NW.Space.l)
-                        .padding(.bottom, NW.Space.s)
                     ForEach(items) { item in
                         Button { chosen = item.id } label: {
                             AttentionCard(item: item, busy: answering.contains(item.id), failure: nil,

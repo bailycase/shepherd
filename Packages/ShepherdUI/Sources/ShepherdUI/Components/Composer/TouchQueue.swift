@@ -108,7 +108,7 @@ private struct NWTouchQueueHeader<Options: View>: View {
                 .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: NW.Space.m)
                 if afterGoalCheck {
-                    Text("after the goal check").font(.nw(.caption)).foregroundStyle(nw.textTertiary)
+                    Text("after the goal check").font(.nwMono(NWGoalMetrics.metaFont)).foregroundStyle(nw.textTertiary)
                         .lineLimit(1).minimumScaleFactor(0.75)
                 }
                 if !stacked { sendNow }

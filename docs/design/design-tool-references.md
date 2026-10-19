@@ -551,7 +551,8 @@ What the board draws:
     **Apply both** (primary, 36pt) and **Keep as comments** (secondary, 36pt), 8pt apart, then
     "Handwriting in the chat box works too: Scribble turns it into text." in 12.5/1.5
     `textTertiary`.
-  - The chat pane's tabs are 44pt at the bottom of a 76pt header (14pt labels, 18pt apart;
+  - The chat pane's tabs are 44pt at the bottom of a 76pt header, sharing the pane's width (15,
+    the open one in `textPrimary` over a 2pt `lantern` underline, the others `textSecondary`;
     "Comments 3"). The chat has 16pt padding and 12pt between items. Its prose is 14.5/1.55 and
     its activity lines are at least 34pt tall (14.5 `textSecondary`, a 14pt glyph, 9pt gap, meta
     in mono 11.5). The composer (10×14 padding, 26pt below, a hairline above) is the iPad

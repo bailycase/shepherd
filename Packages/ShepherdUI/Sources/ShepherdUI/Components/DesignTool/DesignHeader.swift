@@ -157,14 +157,14 @@ public struct NWDesignPaneTabs: View {
 
     public var body: some View {
         let touch = size == .touch
-        HStack(spacing: NWDesignMetrics.paneTabSpacing) {
+        HStack(spacing: touch ? 0 : NWDesignMetrics.paneTabSpacing) {
             ForEach(tabs) { tab in
                 let current = tab.id == selection
                 Button { select(tab.id) } label: {
                     HStack(spacing: NW.Space.xs) {
                         if touch {
                             Text(tab.count.map { "\(tab.title) \($0)" } ?? tab.title)
-                                .font(.nwSans(NWDesignMetrics.touchPaneTabTextSize, current ? .semibold : .regular))
+                                .font(.nwSans(NWDesignMetrics.touchPaneTabTextSize, .regular))
                                 .foregroundStyle(current ? Color.nw.textPrimary : Color.nw.textSecondary)
                         } else {
                             Text(tab.title)
@@ -177,11 +177,13 @@ public struct NWDesignPaneTabs: View {
                             }
                         }
                     }
+                    // iPadDesign: the touch tabs share the pane's width under a lantern line.
+                    .frame(maxWidth: touch ? .infinity : nil)
                     .frame(height: touch ? NWDesignMetrics.touchPaneTabHeight : nil)
                     .frame(maxHeight: touch ? nil : .infinity)
                     .overlay(alignment: .bottom) {
                         if current {
-                            Rectangle().fill(Color.nw.textPrimary).frame(height: NWDesignMetrics.paneTabUnderline)
+                            Rectangle().fill(touch ? Color.nw.lantern : Color.nw.textPrimary).frame(height: NWDesignMetrics.paneTabUnderline)
                         }
                     }
                     .contentShape(Rectangle())
@@ -189,10 +191,10 @@ public struct NWDesignPaneTabs: View {
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(current ? .isSelected : [])
             }
-            Spacer(minLength: 0)
+            if !touch { Spacer(minLength: 0) }
         }
-        .padding(.leading, touch ? NWDesignMetrics.touchPaneTabsLeading : NWDesignMetrics.paneTabsLeading)
-        .padding(.trailing, touch ? NWDesignMetrics.touchPaneTabsLeading : NW.Space.l)
+        .padding(.leading, touch ? 0 : NWDesignMetrics.paneTabsLeading)
+        .padding(.trailing, touch ? 0 : NW.Space.l)
         .frame(height: touch ? nil : NWDesignMetrics.paneTabsHeight, alignment: .bottom)
         .overlay(alignment: .bottom) { NWHairline() }
     }

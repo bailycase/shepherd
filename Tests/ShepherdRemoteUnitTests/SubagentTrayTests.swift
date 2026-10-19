@@ -193,7 +193,7 @@ struct SubagentTrayTests {
         var tests = Self.run("t", state: "complete", role: "tests", startedAt: 41 * 60_000, endedAt: 45 * 60_000)
         tests.result = ChildResultSummary(files: 2, added: 96, removed: 3, tools: 1, tokens: 1)
         let record = try #require(NativeSubagentRecord([tests, reviewer, worker]))
-        #expect(record.started == NativeSubagentRecordLine(title: "Started 3 subagents", meta: "task · task · task"))
+        #expect(record.started == NativeSubagentRecordLine(title: "Started 3 subagents", meta: "worker · reviewer · tests"))
         #expect(record.finished == NativeSubagentRecordLine(title: "3 subagents finished", meta: "45m · 7 files · +318 −64"))
         #expect(record.firstRunID == "w")
         #expect(record.finishedAt == 45 * 60_000.0)
