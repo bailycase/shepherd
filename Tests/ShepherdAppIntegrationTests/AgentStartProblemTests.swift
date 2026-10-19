@@ -81,8 +81,11 @@ struct AgentStartProblemTests {
         #expect(pane.phase == .stopped)
         #expect(vm.cannotStart.contains(id))
         #expect(!store.ready && !store.starting && !store.awaitingPi && !store.acceptsSend && store.loadError == nil)
-        #expect(store.previewing && store.messages.map(\.entryID) == ["user:1733234567890", "assistant:1733234567891"],
-                "the thread keeps its history from disk")
+        // A real snapshot can beat resumed-as-new stderr on the other pipe. Keep that history,
+        // or wait for the disk preview if no snapshot landed, without requiring preview mode.
+        try await eventuallyOnMain("the stopped thread's history") { !store.messages.isEmpty }
+        #expect(store.messages.map(\.entryID) == ["user:1733234567890", "assistant:1733234567891"],
+                "the thread keeps its history")
         #expect(vm.state.agents.contains { $0.id == id } && server.state.agents.contains { $0.id == id })
         if c.kind == .notSignedIn {
             // AgentNotSignedIn: it waits for a sign-in, in Needs you.

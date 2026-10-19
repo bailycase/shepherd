@@ -1,17 +1,26 @@
-# Side pane: Artifacts, Files (not built yet)
+# Side pane: Artifacts, Files
 
-> Read only when asked to build the Artifacts or Files tabs.
+> Read only when asked to build or change the Artifacts or Files tabs.
 
-**Not built yet.** The page boards give the side pane two more tabs beside Changes and Browser
-(PaneStates, PaneArtifacts, PaneArtifactEdit, PaneFiles). Neither is shown until it is built. When
-one is, it joins the strip and the ⋯ menu above and follows this section; where the boards leave a
-choice open, it says so. The boards draw these surfaces at radius 10 (9 and 5 for some tiles and
+**Built: Artifacts** (Mac and iPad; see the user's decisions below). **Not built yet: Files, Editing in place, Versions, Split, the pane's
+own window.** The page boards give the side pane two more tabs beside Changes and Browser
+(PaneStates, PaneArtifacts, PaneArtifactEdit, PaneFiles). Files is not shown until it is built. When
+it is, it joins the strip and the ⋯ menu above and follows this section; where the boards leave a
+choice open, it says so.
+
+**The user's decisions for Artifacts (binding, 2026-10-17):** an artifact is any file the agent makes in the thread, practically every
+path a successful `write` call created (no new tool); **there are no versions** (no chip, no popover, no "v2": the line and the card say
+the kind and the age, "HTML · 6m ago"); **no editing in place, no Files tab, no split, no pop-out window**, so no Edit pencil. Only the
+tabs Shepherd has show, so Artifacts shows once the thread has an artifact (an empty tab would be an empty state in every thread that
+writes none). What is built: [`NativeArtifacts.swift`](../../Sources/ShepherdRemote/NativeArtifacts.swift) derives the list,
+`ArtifactsTab` (Mac) and `ArtifactScreens.swift` (iPad, and an iPhone sheet) draw it, and docs/native-thread.md › Artifacts has the host's
+request and its limits. Issue #296: Save a copy. The boards draw these surfaces at radius 10 (9 and 5 for some tiles and
 rows) beside a 52pt toolbar. This section gives their other values as drawn and maps radii onto the
 radius scale (8 for cards, panes and tiles, 6 for rows and controls, 12 for popovers), as the
 departures table records for the page boards.
 
-- **Their tabs** (`SidePaneTabs`, PaneStates): Artifacts (with its count of new artifacts) and
-  Files, after Browser, taking ⌃3–⌃4. A tab the agent opened something in gets the dot and a brief
+- **Their tabs** (`SidePaneTabs`, PaneStates): Artifacts (with its count of the thread's artifacts) and
+  Files, after Browser, taking ⌃3–⌃4 on the board. Built: Artifacts is ⌃3 and Subagents moved to ⌃4; Files will take the next digit. A tab the agent opened something in gets the dot and a brief
   popover under it ("Agent opened localhost:5173/checkout" with the URL in mono and its age in
   `textTertiary`; Geist 12, a 12pt glyph).
 - **The rest of the ⋯ menu** (`SidePaneOptions`), once there is more than one tab: Split below,
@@ -31,8 +40,7 @@ departures table records for the page boards.
   terminal doesn't eat it. (The Browser's ⌘L and ⇧⌘C are built: Side pane: Browser.)
 
 **Artifacts** (PaneArtifacts, PaneArtifactEdit, PaneStates): reports, plans, diagrams and images
-pi makes along the way. Each is a file on the thread's host, versioned on every save by you or
-pi. Open one from the thread or the list; edit it in place.
+pi makes along the way. Each is a file on the thread's host. Open one from the thread or the list. (The board's versions and editing in place are not built: the decisions above.)
 
 - **In the thread:** an activity line "Made an artifact · Load test report · v2", and a card
   (`bgRaised`, a `lineStrong` line, radius 8, padding 10×12, 12pt gaps): a 34pt `bgSelected` tile

@@ -94,7 +94,9 @@ watcher source `skill-watch.js`. It also removes command-based configuration val
 from the modular runtime and SDK bundle, and finishes MCP's owned process group when its server
 leader closes, including descendants that ignore SIGTERM. MCP shutdown also closes clients still
 initializing or listing tools, without waiting for their request timeout. The MCP fixes cover the
-modular runtime, pinned stdio dependency and bundled SDK. Its hash is recorded in the engine pin.
+modular runtime, pinned stdio dependency and bundled SDK. RPC input starts before extension
+initialization finishes so startup UI answers can get through; all other commands wait for
+initialization. Its hash is recorded in the engine pin.
 Staging verifies the pi version, full original file hashes, unique replacement anchors and final
 file hashes; verification also checks the shipped patched files. A source, patch or pin mismatch
 fails closed. The Linux extension-test job applies the same verified patches to its isolated npm

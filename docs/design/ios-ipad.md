@@ -378,9 +378,9 @@ hides the sidebar so the thread keeps a 540pt column; the app keeps the sidebar 
 (`PadShell`), so the pane narrows and its toolbar drops the viewed count, then the stat, rather
 than clip (Known gaps).
 
-- **Pane head** (52pt, 10pt inset, a hairline under it): "Changes 3" (15/600, the file count
-  once loaded), then Full screen and Close pane (44pt icons). The board's Browser, Artifacts and
-  Files tabs are not built on iPad (Side pane).
+- **Pane head** (52pt, a hairline under it): the side pane's tabs (`NWPadPaneHead`): "Changes 3"
+  (the file count once loaded), and Artifacts once the thread has made a file, then Full screen
+  (on Changes) and Close pane. The board's Browser and Files tabs are not built on iPad (Side pane).
 - **Toolbar** (54pt, 12pt inset, 8pt gaps, a hairline under it): the scope pill (44pt, radius 6,
   `bgRaised`, a 1px `lineStrong` line: "Branch" at 15 and a chevron), the scope's stat (mono 12),
   then Commit… (secondary, `l`) and Diff options (•••, 44pt): Refresh, Collapse all files (Expand

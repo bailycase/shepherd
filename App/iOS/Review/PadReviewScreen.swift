@@ -13,6 +13,8 @@ import ShepherdRemote
 struct PadReviewScreen: View {
     let ref: AgentRef
     let file: String?
+    /// An artifact to show on the Artifacts tab (a "Made an artifact" line opened on an iPad whose pane was not showing).
+    var artifact: String? = nil
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
     @Environment(\.dismiss) private var dismiss
@@ -28,7 +30,7 @@ struct PadReviewScreen: View {
                             .environment(\.threadSidePaneOpen, true)
                             .frame(maxWidth: .infinity)
                         NWHairline(.vertical, color: Color.nw.lineStrong)
-                        PadChangesPane(store: store, finalize: finalize, close: { dismiss() })
+                        PadChangesPane(ref: ref, store: store, finalize: finalize, close: { dismiss() })
                             .frame(width: min(MobileLayout.reviewDockWidth, proxy.size.width * MobileLayout.reviewDockShare))
                     }
                 }
@@ -36,7 +38,10 @@ struct PadReviewScreen: View {
                 PadFullReview(store: store, finalize: finalize, close: { dismiss() })
             }
         }
-        .onAppear { store.focus(file) }
+        .onAppear {
+            store.focus(file)
+            if let artifact { store.padTab = .artifacts; store.artifact = artifact }
+        }
         .task(id: hosts.host(ref.host)?.session) { await store.loadIfNeeded(hosts: hosts) }
         .onChange(of: store.pullRequest) { _, _ in store.refresh() }
     }
@@ -53,58 +58,68 @@ struct PadReviewScreen: View {
 
 // MARK: Docked
 
-/// The docked pane (iPadReview).
+/// The docked pane (iPadReview, iPadPaneArtifacts): the head's tabs, then the open tab. Changes is the review; Artifacts is the files
+/// the agent made in this thread, once it has made one.
 private struct PadChangesPane: View {
+    let ref: AgentRef
     let store: ReviewStore
     let finalize: (() -> Void)?
     let close: () -> Void
+    @Environment(ThreadStores.self) private var threads
     @State private var scrollTarget: String?
 
     var body: some View {
+        let artifacts = threads.store(for: ref).artifacts
+        // A pane left on Artifacts over a thread that has none shows Changes.
+        let tab: ReviewStore.PadTab = artifacts.isEmpty ? .changes : store.padTab
         VStack(spacing: 0) {
-            PadPaneHeader(store: store, close: close)
-            PadChangesToolbar(store: store, compact: true, finalize: finalize)
-            PadCompareRow(store: store)
-            if !store.entries.isEmpty {
-                NWTouchFileStrip(store.chips, selection: store.currentFile) { id in
-                    store.clearSelection()
-                    store.currentFile = id
-                    scrollTarget = id
+            PadPaneHeader(store: store, tab: tab, artifacts: artifacts.count, close: close)
+            switch tab {
+            case .changes:
+                PadChangesToolbar(store: store, compact: true, finalize: finalize)
+                PadCompareRow(store: store)
+                if !store.entries.isEmpty {
+                    NWTouchFileStrip(store.chips, selection: store.currentFile) { id in
+                        store.clearSelection()
+                        store.currentFile = id
+                        scrollTarget = id
+                    }
                 }
+                PadChangesStack(store: store, scrollTarget: $scrollTarget)
+                PadSendBar(store: store, close: close)
+            case .artifacts:
+                PadArtifactsPane(ref: ref, store: store, artifacts: artifacts)
             }
-            PadChangesStack(store: store, scrollTarget: $scrollTarget)
-            PadSendBar(store: store, close: close)
         }
         .background(Color.nw.bgWindow)
         .clipped()
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Changes")
+        .accessibilityLabel(tab == .changes ? "Changes" : "Artifacts")
     }
 }
 
-/// The pane's head (iPadReview): "Changes 3", then Full screen and Close.
+/// The pane's head (iPadReview, iPadPaneArtifacts): the tabs Shepherd has as a segmented control, then the open tab's options
+/// (Changes: Full screen) and Close pane. Finalize worktree is in the toolbar's Diff options. Browser and Files are not built, so
+/// they have no tab.
 private struct PadPaneHeader: View {
     let store: ReviewStore
+    let tab: ReviewStore.PadTab
+    let artifacts: Int
     let close: () -> Void
 
     var body: some View {
-        let nw = Color.nw
-        HStack(spacing: NW.Space.m) {
-            Text(store.loaded ? "Changes \(store.entries.count)" : "Changes")
-                .font(.nw(.ui, weight: .semibold))
-                .foregroundStyle(nw.textPrimary)
-                .accessibilityAddTraits(.isHeader)
-            Spacer(minLength: NW.Space.s)
-            Button("Full screen", systemImage: "arrow.up.left.and.arrow.down.right") {
-                withNWAnimation(.disclosure) { store.padLayout = .full }
+        var tabs = [NWPadPaneTab(id: "changes", title: "Changes", systemImage: "plus.forwardslash.minus", count: store.loaded ? store.entries.count : nil)]
+        if artifacts > 0 { tabs.append(NWPadPaneTab(id: "artifacts", title: "Artifacts", systemImage: NWGlyph.artifact.symbolName, count: artifacts)) }
+        return NWPadPaneHead(tabs, selection: tab == .changes ? "changes" : "artifacts",
+                             select: { store.padTab = $0 == "artifacts" ? .artifacts : .changes }, close: close) {
+            if tab == .changes {
+                Button("Full screen", systemImage: "arrow.up.left.and.arrow.down.right") {
+                    withNWAnimation(.disclosure) { store.padLayout = .full }
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.nwIcon(size: NW.Height.touch - NW.Space.xs))
             }
-            Button("Close pane", systemImage: "xmark", action: close)
         }
-        .labelStyle(.iconOnly)
-        .buttonStyle(.nwIcon(size: NW.Height.touch))
-        .padding(.horizontal, NW.Space.m + NW.Space.xxs)
-        .frame(height: MobileLayout.reviewPaneHeaderHeight)
-        .overlay(alignment: .bottom) { NWHairline() }
     }
 }
 
