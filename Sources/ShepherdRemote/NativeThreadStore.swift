@@ -1548,8 +1548,9 @@ public final class NativeThreadStore {
     }
 
     public func answer(dialogID: String, sessionID: String, generation: String, answer: NativeDialogAnswer) async {
-        // A second click while delivery is pending is not another answer.
-        guard !busy else { return }
+        // A second click while delivery is pending is not another answer. A send parked until pi starts is not one in flight:
+        // the startup answer it waits on must still go (`supports("answer")`).
+        guard inFlight.isEmpty else { return }
         guard supports("answer"), let current = snapshot else {
             notice = "This thread can't answer right now. Refresh the thread and try again."
             return
