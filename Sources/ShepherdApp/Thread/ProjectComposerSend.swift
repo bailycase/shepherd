@@ -44,17 +44,22 @@ struct ProjectComposerSend {
     }
 }
 
-/// The Project's conversation model as the composer's model chip shows and sets it. Before the first message there is no coordinator
-/// to ask, so `pending` is true and the chip reads and writes the Project's `conversationModel` setting, which the launch then uses.
-/// Once the coordinator exists the setting is saved FIRST and the thread's own `setModel` runs only after the owner accepted it, so the
-/// live model and the one a relaunch uses never disagree; a refused save changes nothing and says why.
+/// The Project's conversation model and reasoning level as the composer's model chip shows and sets them. While the coordinator's pi
+/// does not serve (no coordinator yet, held off, paused, starting) the chip reads and writes the Project's `conversationModel` and
+/// `conversationThinking` settings, which the owner applies at launch and before each message it delivers. While it serves, a setting
+/// is saved FIRST and the thread's own `setModel`/`setThinking` runs only after the owner accepted it, so the live thread and the one a
+/// relaunch uses never disagree; a refused save changes nothing and says why.
 struct ProjectConversationModel {
     /// The Project's saved conversation model, else the app's default; nil when neither is named.
     var current: String?
-    /// No coordinator yet: the thread cannot take `setModel`, the setting is the only place to put the choice.
-    var pending: Bool
-    /// Saves the pick as the Project's conversation model; true only when the owner accepted it. Nothing else changes the model before it does.
-    var choose: (String) async -> Bool
+    /// The Project's saved reasoning level for its coordinator; nil keeps the coordinator's own (the owner's default for a new one).
+    var thinking: String? = nil
+    /// Saves the pick as the Project's conversation model, with the reasoning level clamped to it when that changed (nil keeps it); true
+    /// only when the owner accepted it. Nothing else changes the model before it does.
+    var choose: (String, String?) async -> Bool
+    /// Saves a reasoning level as the Project's; nil where the owner cannot keep one (an older remote owner), which leaves the coordinator's
+    /// live thread its own setting while it serves, as before.
+    var chooseThinking: ((String) async -> Bool)? = nil
     /// What the chip says while no model is named: the launch will use the default.
     static let defaultName = "Default model"
 }

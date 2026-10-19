@@ -1610,9 +1610,21 @@ public final class NativeThreadStore {
     }
 
     public func answer(dialogID: String, sessionID: String, generation: String, answer: NativeDialogAnswer) async {
-        guard supports("answer"), let current = snapshot,
-              current.piSessionID == sessionID, current.generation == generation,
-              current.dialogs.contains(where: { $0.id == dialogID && $0.unavailable == nil }) else { return }
+        // A second click while delivery is pending is not another answer. A send parked until pi starts is not one in flight:
+        // the startup answer it waits on must still go (`supports("answer")`).
+        guard inFlight.isEmpty else { return }
+        guard supports("answer"), let current = snapshot else {
+            notice = "This thread can't answer right now. Refresh the thread and try again."
+            return
+        }
+        guard current.piSessionID == sessionID, current.generation == generation else {
+            notice = "The session changed. Refresh the thread before answering."
+            return
+        }
+        guard current.dialogs.contains(where: { $0.id == dialogID && $0.unavailable == nil }) else {
+            notice = "This question is no longer available here. Refresh the thread before answering."
+            return
+        }
         let operation = UUID()
         await perform(.answer(expectedSessionID: sessionID, generation: generation, operationID: operation,
                               dialogID: dialogID, answer: answer), operation: operation, current: current)
