@@ -159,8 +159,9 @@ Core types live in `Sources/ShepherdCore/Project.swift`:
 
 - `ProjectID`; `Project` with `id`, `name`, `goal`, `coordinatorAgentID?`, `revision`, `paused`,
   `settings`, `memory`, and `linkedSpaces`.
-- `LogicalProjectSettings(maxConcurrentWorkers: 3, conversationModel: nil, threadModel: nil,
-  instructions: "", canRequestSpaceLinks: true)`. Model preferences are the existing
+- `LogicalProjectSettings(maxConcurrentWorkers: 3, conversationModel: nil, conversationThinking: nil, threadModel: nil,
+  instructions: "", canRequestSpaceLinks: true)`. `conversationThinking` is the coordinator's reasoning level (a
+  `ThinkingLevel` raw value); an edit that omits it keeps the saved one. Model preferences are the existing
   provider/model strings used by `Agent.model`. Save does not require a currently available
   model; a future launch must validate against the owning host's catalog. The Space setting
   allows **requesting user approval**, never automatically adding a Space.
@@ -635,12 +636,17 @@ copied transcript. Only the composer's **send** and **placeholder** differ (`Pro
 a send uses one operation identity per text-and-images submission, so a retry never delivers twice. While paused a message
 is accepted and held by the runtime (queued, not delivered), and Resume is a real control until the owner acknowledges the interruption.
 
-**Model and branch.** The conversation's composer is the standard one, with its model chip and the same All models… picker (a remote
-Project lists its owner's catalog). The chip names the Project's `conversationModel`, else the app's default model. A pick saves that
-setting FIRST (`ProjectConversationModel.choose`, a revision-checked settings write), and only when the owner accepts it does a running
-coordinator's own `setModel` follow, so the live model and the one a relaunch uses never disagree. A refused save leaves the chip as it
-was and says why on the composer's own failed line. Before the first message there is no coordinator, so the setting is the only
-place the pick can go, and the launch reads it. A Project conversation and its worker threads draw no branch or worktree chip: the runtime
+**Model, reasoning and branch.** The conversation's composer is the standard one, with its model chip, reasoning levels and the same
+All models… picker (a remote Project lists its owner's catalog). The Project's settings target the coordinator only: `conversationModel`
+and `conversationThinking` (never the task threads' `threadModel` or a task's own level). While the coordinator's pi serves, the chip
+names its live model and level; while it does not (no coordinator yet, held off after a relaunch, paused, starting), it names the
+Project's saved model, else the app's default, and the saved level, else the owner's default for a new coordinator, offering the levels
+the catalog lists for that model. Either way the chip opens and a pick saves the setting FIRST (`ProjectConversationModel.choose` and
+`chooseThinking`, revision-checked settings writes); only when the owner accepts it does a serving coordinator's own `setModel` or
+`setThinking` follow, so the live thread and the one a relaunch uses never disagree. A new model clamps the saved level to the levels it
+takes, as pi does. The owner applies both at launch and before each message it delivers. A refused save leaves the chip as it was and
+says why on the composer's own failed line. A remote owner without `logicalProjects.conversationThinking.v1` keeps no level: there the
+level is offered only while its coordinator serves, as the live thread's own. A Project conversation and its worker threads draw no branch or worktree chip: the runtime
 places the work in the Project's linked Spaces. (Reported 2026-10-13: starting a Project showed "Lost connection to the agent process.
 native_unavailable: The agent no longer exists." with a model chip that could not be changed. The screenshot was a temporary file and is
 not kept; the cause and fix are in `docs/project-execution.md`, Coordinator startup.)

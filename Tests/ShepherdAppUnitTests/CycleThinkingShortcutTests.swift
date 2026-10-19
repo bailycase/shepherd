@@ -27,3 +27,19 @@ struct CycleThinkingShortcutTests {
         #expect(CycleThinkingShortcut.next(current: current, levels: ["low", "medium", "high"], steps: steps) == expected)
     }
 }
+
+@Suite("A Project's reasoning level follows its model")
+struct ProjectThinkingClampTests {
+    /// A new model keeps the level when it takes it, else gets the one pi would use; an unknown model's or no level changes nothing.
+    @Test(arguments: [
+        ("xhigh", ["off", "low", "medium", "high"], "high"),
+        ("minimal", ["off", "low", "medium", "high", "xhigh"], "low"),
+        ("high", ["off", "low", "medium", "high"], "high"),
+        ("high", [], "high"),
+        ("high", nil, "high"),
+        (nil, ["low"], nil),
+    ] as [(String?, [String]?, String?)])
+    func aLevelTheNewModelLacksBecomesTheOnePiWouldUse(level: String?, levels: [String]?, expected: String?) {
+        #expect(Composer.clampedThinking(level, to: levels) == expected)
+    }
+}
