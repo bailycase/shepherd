@@ -45,6 +45,7 @@ extension FixtureCatalog {
             FixtureScreen(name: "question", hosts: ThreadFixtures.hosts(), routes: [.thread(dock)]),
             FixtureScreen(name: "question-confirm", hosts: ThreadFixtures.hosts(dock: ThreadFixtures.confirm()), routes: [.thread(dock)]),
             FixtureScreen(name: "question-input", hosts: ThreadFixtures.hosts(dock: ThreadFixtures.input()), routes: [.thread(dock)]),
+            FixtureScreen(name: "question-project-input", hosts: ThreadFixtures.hosts(dock: ThreadFixtures.projectInput()), routes: [.thread(dock)]),
             // Hiding the question (iPad's Hide the question, the phone's grabber) folds it to one
             // line so the thread reads; the agent still waits.
             FixtureScreen(name: "question-hidden", hosts: ThreadFixtures.hosts(), routes: [.thread(dock)],
@@ -348,6 +349,12 @@ enum ThreadFixtures {
             "Compare, keep what's unique, then go through GitHub (Recommended)\nNew branch and PR for anything not merged. Nothing on Horizon is overwritten.",
             "Leave Horizon alone and deploy from a clean checkout\nHorizon keeps its edits. The deploy uses a fresh clone.",
         ]))
+    }
+
+    /// A Project worker's single native input after the owner normalizes its offered-choice hints.
+    static func projectInput() -> NativeThreadSnapshot {
+        asking(NativeThreadDialog(id: "d-project-input", kind: .input, title: "Which store should the API use?",
+                                  options: ["Use SQLite (Recommended)", "Use Postgres"], placeholder: "Say anything"))
     }
 
     /// QuestionAnswered: the question recorded where pi asked it, and the turn going on.

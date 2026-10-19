@@ -23,15 +23,25 @@ public struct NWLeadQuestionCard: View {
     let options: [Option]
     let footer: String?
     let enabled: Bool
+    /// The field's placeholder (its label too) when the asker also takes the person's own words.
+    let textPlaceholder: String?
     let pick: (Option) -> Void
+    let submit: ((String) -> Void)?
+    @State private var text = ""
 
-    public init(question: String, options: [Option], footer: String? = nil, enabled: Bool = true, pick: @escaping (Option) -> Void) {
+    /// `textPlaceholder`: draws a last row whose field sends its words (Send or Return); a pick still answers at once.
+    public init(question: String, options: [Option], footer: String? = nil, enabled: Bool = true, textPlaceholder: String? = nil,
+                submit: ((String) -> Void)? = nil, pick: @escaping (Option) -> Void) {
         self.question = question
         self.options = options
         self.footer = footer
         self.enabled = enabled
+        self.textPlaceholder = textPlaceholder
         self.pick = pick
+        self.submit = submit
     }
+
+    private var words: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     public var body: some View {
         VStack(spacing: 0) {
@@ -47,6 +57,10 @@ public struct NWLeadQuestionCard: View {
                 ForEach(Array(options.enumerated()), id: \.element.id) { index, option in
                     if index > 0 { NWHairline() }
                     row(index, option)
+                }
+                if let textPlaceholder, submit != nil {
+                    if !options.isEmpty { NWHairline() }
+                    textRow(options.count, placeholder: textPlaceholder)
                 }
             }
             .overlay(alignment: .top) { NWHairline() }
@@ -67,15 +81,46 @@ public struct NWLeadQuestionCard: View {
         .accessibilityLabel(question)
     }
 
+    /// A row's letter key: A, B, C…
+    private func key(_ index: Int) -> some View {
+        Text(String(UnicodeScalar(UInt8(65 + min(index, 25)))))
+            .font(.nwMono(NWLeadMetrics.optionKeySize))
+            .foregroundStyle(Color.nw.textSecondary)
+            .frame(width: NWLeadMetrics.optionKey, height: NWLeadMetrics.optionKey)
+            .overlay(RoundedRectangle(cornerRadius: NWLeadMetrics.optionKeyRadius).stroke(Color.nw.lineStrong, lineWidth: 1))
+            .accessibilityHidden(true)
+    }
+
+    /// The last row: the person's own words, sent as the answer (whitespace alone sends nothing).
+    private func textRow(_ index: Int, placeholder: String) -> some View {
+        HStack(alignment: .center, spacing: NWLeadMetrics.optionGap) {
+            key(index)
+            TextField(placeholder, text: $text)
+                .textFieldStyle(.plain)
+                .font(.nw(.ui))
+                .foregroundStyle(Color.nw.textPrimary)
+                .onSubmit(send)
+                .accessibilityLabel(placeholder)
+            Button(action: send) { Text("Send", bundle: .module) }
+                .buttonStyle(.nw(.primary, size: .s))
+                .disabled(!enabled || words.isEmpty)
+        }
+        .padding(.horizontal, NWLeadMetrics.optionPaddingH)
+        .padding(.vertical, NWLeadMetrics.optionPaddingV)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .disabled(!enabled)
+    }
+
+    private func send() {
+        guard enabled, !words.isEmpty else { return }
+        // The words stay until the question leaves, so a refused answer can be sent again.
+        submit?(words)
+    }
+
     private func row(_ index: Int, _ option: Option) -> some View {
-        Button { pick(option) } label: {
+        Button { text = ""; pick(option) } label: {
             HStack(alignment: .top, spacing: NWLeadMetrics.optionGap) {
-                Text(String(UnicodeScalar(UInt8(65 + min(index, 25)))))
-                    .font(.nwMono(NWLeadMetrics.optionKeySize))
-                    .foregroundStyle(Color.nw.textSecondary)
-                    .frame(width: NWLeadMetrics.optionKey, height: NWLeadMetrics.optionKey)
-                    .overlay(RoundedRectangle(cornerRadius: NWLeadMetrics.optionKeyRadius).stroke(Color.nw.lineStrong, lineWidth: 1))
-                    .accessibilityHidden(true)
+                key(index)
                 VStack(alignment: .leading, spacing: NWLeadMetrics.optionTitleGap) {
                     HStack(spacing: NW.Space.s) {
                         Text(option.title).font(.nw(.ui, weight: .medium)).foregroundStyle(Color.nw.textPrimary)

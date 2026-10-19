@@ -1150,9 +1150,15 @@ struct NativeThreadStoreTests {
         defer { task.cancel() }
         host.acceptAll()
         await store.answer(dialogID: "ext", sessionID: "s", generation: "g", answer: .cancel)
+        #expect(store.notice?.contains("question") == true)
         await store.answer(dialogID: "missing", sessionID: "s", generation: "g", answer: .cancel)
+        #expect(store.notice?.contains("question") == true)
         await store.answer(dialogID: "ok", sessionID: "old", generation: "g", answer: .cancel)
+        #expect(store.notice?.contains("session") == true)
+        await store.answer(dialogID: "ok", sessionID: "s", generation: "old", answer: .cancel)
+        #expect(store.notice?.contains("session") == true)
         #expect(host.actions.isEmpty)
+        #expect(store.dialogs == dialogs, "refusals do not dismiss or replace the question")
         await store.answer(dialogID: "ok", sessionID: "s", generation: "g", answer: .confirm(value: true))
         guard case .answer(_, _, _, let dialog, let answer)? = host.actions.first else { Issue.record("expected an answer"); return }
         #expect(dialog == "ok" && answer == .confirm(value: true))
