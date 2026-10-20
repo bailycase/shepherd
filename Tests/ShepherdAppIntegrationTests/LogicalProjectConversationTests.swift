@@ -1140,7 +1140,8 @@ private static func chipsAndLinks() async throws {
             return r.app.server.state.projects.first?.messages.first { $0.text == "send me later" }?.phase == .delivered
         }
         #expect(r.app.server.state.projects.first?.paused == false, "the message restarted the Project")
-        #expect(store.draft.isEmpty, "the draft cleared, so the person knows it was accepted")
+        // The composer clears its draft in its own task once the send returns, which can trail the delivery itself.
+        try await eventuallyOnMain("the draft cleared, so the person knows it was accepted") { store.draft.isEmpty }
         #expect(!sawControls, "the owner's queue offers no native queue controls")
         #expect(!sawPaused, "Up next never says Paused")
         // The thread's own bubble takes over once its native operation is consumed: nothing held, no row, never two.
