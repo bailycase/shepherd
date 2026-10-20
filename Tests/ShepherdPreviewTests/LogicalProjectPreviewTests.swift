@@ -79,7 +79,9 @@ struct LogicalProjectPreviewTests {
         // The thread polls only while it is on screen: the page's own ThreadView runs the store once it is mounted, so
         // nothing is awaited here (its poll loop never returns).
         _ = coordinator
-        if paused { _ = await vm.logicalProjects.setPaused(ref, true) }
+        if paused, let p = vm.state.projects.first {
+            _ = try await vm.projectCoordinator.perform(projectID: p.id, expectedRevision: p.revision, request: .pause)
+        }
         vm.openLogicalProject(ref)
         return (world, ref)
     }
@@ -173,8 +175,8 @@ struct LogicalProjectPreviewTests {
 
     /// Paused, from the real runtime: Pause aborts running turns, so a worker that was only asking ends its turn and its task is
     /// `.settled`, not `.waiting` (ProjectLead-PausedV2 draws a paused Project that still has a question: not reachable
-    /// from this data, reported to the runtime owner). This renders what the runtime really does: the banner, both Resume
-    /// controls, and the settled rows.
+    /// from this data, reported to the runtime owner). This renders what the runtime really does: no banner or Resume (the next
+    /// message restarts it), and the settled rows.
     @Test func pausedAsTheRuntimeActuallyLeavesIt() async throws {
         let (world, ref) = try await running([("Reading list research", "slow"), ("Library API draft", "ask-choice")], paused: true)
         defer { world.stop() }
@@ -191,8 +193,8 @@ struct LogicalProjectPreviewTests {
         _ = ref
     }
 
-    /// A paused Project holding a message with an image, beside one the engine refused: the queued one in the composer's shared Up next
-    /// (read-only, Paused, the image by name), the refused one in the transcript with the owner's reason. All from the real runtime.
+    /// A Project paused by the runtime holding a message with an image, beside one the engine refused: the queued one in the composer's
+    /// shared Up next (read-only, the image by name), the refused one in the transcript with the owner's reason. All from the real runtime.
     @Test func pausedQueueWithAnImageAndARefusedMessage() async throws {
         let (world, ref) = try await running([])
         defer { world.stop() }
@@ -200,7 +202,8 @@ struct LogicalProjectPreviewTests {
         // The stub engine refuses a prompt with "refuse" in it: a definite refusal, recorded with its reason.
         #expect(await vm.logicalProjects.sendMessage(ref, text: "Please refuse this one so its note shows."))
         try await eventuallyOnMain("the refusal is recorded") { vm.state.projects.first?.messages.contains { $0.phase == .failed } == true }
-        #expect(await vm.logicalProjects.setPaused(ref, true))
+        let running = try #require(vm.state.projects.first)
+        _ = try await vm.projectCoordinator.perform(projectID: running.id, expectedRevision: running.revision, request: .pause)
         try await eventuallyOnMain("paused and acknowledged") { vm.state.projects.first.map { $0.paused && !$0.interruptPending } == true }
         let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==")!
         #expect(await vm.logicalProjects.sendMessage(ref, text: "Use this sketch for the reading-list layout when you continue.",

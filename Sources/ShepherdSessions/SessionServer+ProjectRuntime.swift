@@ -116,6 +116,7 @@ extension SessionServer {
             let refs = try LogicalProjectDirectory.inputReferences(operation: operation, images: images)
             var candidate = current
             candidate.messages.append(.init(id: operation, text: text, images: refs))
+            candidate.retireFinishedMessages()
             try candidate.validate()
             let url = try await enqueue { () throws -> URL in
                 guard self.projectInputWriteCount < 8 else { throw LogicalProjectsError("project_busy", "Project image storage is busy. Retry the same submission.") }
@@ -140,8 +141,22 @@ extension SessionServer {
                     throw LogicalProjectsError("project_scope", "Coordinator admission was revoked.")
                 }
             }
+            // There is no Pause or Resume for the person. Only the runtime stops a Project (a failed launch or save, Projects turned
+            // off, a restart of an old record); the person's next message starts it again.
+            func restart() throws {
+                guard !p.interruptPending else { throw LogicalProjectsError("project_busy", "Shepherd is still stopping this project's threads. Send again in a moment.") }
+                guard p.paused else { return }
+                for i in p.tasks.indices where p.tasks[i].executionAssignment == nil && p.tasks[i].phase == .waiting {
+                    // A question whose helpers never acknowledged shutdown stays parked; it never blocks the person's message.
+                    guard let thread = self.rpcThread(forAgent: p.tasks[i].workerAgentID),
+                          let scope = self.projectChildScope(p, task: p.tasks[i], thread: thread), self.canResumeProjectChildScope(scope) else { continue }
+                    p.tasks[i].childScopeEpoch = scope.epoch + 1; p.tasks[i].revision += 1
+                }
+                p.paused = false
+            }
             switch request {
             case .message(let op, let text, _):
+                if coordinator == nil { try restart() }
                 var message = ProjectMessage(id: op, text: text, images: acceptedImages)
                 message.humanSubmitted = true
                 p.messages.append(message)
@@ -207,17 +222,7 @@ extension SessionServer {
                 p.paused = true; p.interruptPending = true
                 self.projectChildClosed.formUnion(self.currentProjectChildScope.values.filter { $0.key.projectID == id && $0.key.ownerID == p.ownerID })
             case .resume:
-                guard !p.interruptPending else { throw LogicalProjectsError("conflict", "Wait for native interruption acknowledgement.") }
-                if p.paused {
-                    for i in p.tasks.indices where p.tasks[i].executionAssignment == nil && p.tasks[i].phase == .waiting {
-                        guard let thread = self.rpcThread(forAgent: p.tasks[i].workerAgentID),
-                              let scope = self.projectChildScope(p, task: p.tasks[i], thread: thread), self.canResumeProjectChildScope(scope) else {
-                            throw LogicalProjectsError("project_scope", "Resume requires the original parked question and acknowledged helper shutdown.")
-                        }
-                        p.tasks[i].childScopeEpoch = scope.epoch + 1; p.tasks[i].revision += 1
-                    }
-                }
-                p.paused = false
+                try restart()
             case .read, .inspect, .conversation, .answer: break
             }
         }
@@ -234,7 +239,9 @@ extension SessionServer {
         return try await enqueue {
             try admission()
             self.projectPersistenceFailed.remove(id)
-            if case .resume = request, current.paused, !project.paused,
+            let restarted: Bool
+            switch request { case .resume: restarted = true; case .message: restarted = current.paused && !project.paused; default: restarted = false }
+            if restarted, current.paused, !project.paused,
                self.store.state.projects.first(where: { $0.id == id })?.paused == false {
                 for task in project.tasks where task.executionAssignment == nil && task.phase == .waiting {
                     guard let oldScope = self.currentProjectChildScope[task.workerAgentID], self.canResumeProjectChildScope(oldScope),
@@ -255,7 +262,7 @@ extension SessionServer {
                     let agents = project.tasks.map(\.workerAgentID) + [project.coordinatorAgentID].compactMap { $0 }
                     self.projectInterrupts.subtract(agents); self.projectInterruptAcknowledged.subtract(agents)
                 }
-                if case .resume = request { self.resumeProjectPlacements(id) }
+                if restarted { self.resumeProjectPlacements(id) }
                 self.pumpProject(id)
             }
             return project
@@ -897,6 +904,7 @@ extension SessionServer {
 
     static func appendProjectEvent(_ p: inout Project, source: ProjectEventSource, data: String) {
         guard p.coordinatorAgentID != nil, !p.messages.contains(where: { $0.source == source }) else { return }
+        p.retireFinishedMessages()
         guard p.messages.count < 64 else {
             p.paused = true; p.interruptPending = true
             if let i = p.tasks.firstIndex(where: { $0.id == source.taskID }) {

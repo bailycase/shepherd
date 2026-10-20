@@ -43,7 +43,6 @@ struct LogicalProjectPane: View {
                 case .files: LogicalProjectFiles(vm: vm, ref: ref, project: project)
                 case .automations: LogicalProjectPaneAutomations(vm: vm, ref: ref, project: project)
                 }
-                if project.paused && vm.logicalProjectPaneTab == .threads { pausedFooter }
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
@@ -181,16 +180,6 @@ struct LogicalProjectPane: View {
                 }
             }
         }
-    }
-
-    private var pausedFooter: some View {
-        NWLeadFooterCard(title: "The project is paused.", action: "Resume",
-                         enabled: !vm.logicalProjects.busy.contains(ref.id) && !project.interruptPending,
-                         height: NWLeadMetrics.pausedFooterHeight) {
-            Task { _ = await vm.logicalProjects.setPaused(ref, false) }
-        }
-        .padding(.horizontal, NWLeadMetrics.pausedFooterMargin)
-        .padding(.bottom, NWLeadMetrics.pausedFooterMargin)
     }
 
     /// "29m", "2h", "3d": minutes, hours or days since the task settled.

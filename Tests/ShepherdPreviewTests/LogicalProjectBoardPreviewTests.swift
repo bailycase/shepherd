@@ -135,7 +135,8 @@ extension LogicalProjectPreviewTests {
         try await Preview.renderMatrix("board-resolved", size: CGSize(width: 1600, height: 900), scales: [1, 1.3], ready: ready) { window(vm, style: .projects) }
         // Board 04: Pause. The question stays waiting (the runtime does not abort a turn that is only asking).
         vm.logicalProjectPaneTask = nil
-        #expect(await vm.logicalProjects.setPaused(ref, true))
+        let running = try #require(vm.state.projects.first)
+        _ = try await vm.projectCoordinator.perform(projectID: running.id, expectedRevision: running.revision, request: .pause)
         try await eventuallyOnMain("paused, with the question still waiting", timeout: .seconds(30)) {
             vm.state.projects.first?.paused == true && vm.state.projects.first?.tasks.first { $0.title == jobs[1].0 }?.phase == .waiting
         }
