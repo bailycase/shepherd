@@ -107,6 +107,8 @@ public struct Project: Codable, Hashable, Sendable, Identifiable {
     public var spaceProposals: [ProjectSpaceProposal] = []
     /// Receipts survive Forget so retrying an old tool call cannot resurrect forgotten memory.
     public var memoryOperations: [UUID] = []
+    /// Native operations of retired worker-event wake-ups (`retireFinishedMessages`), so the conversation still hides them.
+    public var retiredWakeups: [UUID] = []
     /// A pause request may precede an actual native interruption acknowledgement.
     public var interruptPending: Bool = false
 
@@ -127,7 +129,7 @@ public struct Project: Codable, Hashable, Sendable, Identifiable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, ownerID, name, goal, coordinatorAgentID, revision, paused, settings, memory, linkedSpaces, tasks, messages, interruptPending, spaceProposals, memoryOperations, artifacts
+        case id, ownerID, name, goal, coordinatorAgentID, revision, paused, settings, memory, linkedSpaces, tasks, messages, interruptPending, spaceProposals, memoryOperations, artifacts, retiredWakeups
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -147,6 +149,7 @@ public struct Project: Codable, Hashable, Sendable, Identifiable {
         interruptPending = try c.decodeIfPresent(Bool.self, forKey: .interruptPending) ?? false
         spaceProposals = try c.decodeIfPresent([ProjectSpaceProposal].self, forKey: .spaceProposals) ?? []
         memoryOperations = try c.decodeIfPresent([UUID].self, forKey: .memoryOperations) ?? []
+        retiredWakeups = try c.decodeIfPresent([UUID].self, forKey: .retiredWakeups) ?? []
     }
 
     // Aggregate byte limits also bound JSON-escaped, four-byte characters. The server checks
@@ -159,6 +162,30 @@ public struct Project: Codable, Hashable, Sendable, Identifiable {
     public static let maximumMemoryLength = 4_000
     public static let maximumLinkedSpaces = 32
     public static let maximumEncodedCollectionBytes = 512 * 1024
+
+    /// Messages kept once older finished ones are retired. `messages` is a delivery log, not chat history (pi's transcript is), so
+    /// without this a long conversation hit the 64-entry ceiling and every later save was refused.
+    public static let retainedMessages = 32
+
+    /// Drops the oldest finished messages past `retainedMessages`. Never one still waiting or in flight, one whose chat answer is in
+    /// flight, a question event its task still waits on, the newest human message (the reply a chat answer cites), or one of the newest eight.
+    public mutating func retireFinishedMessages() {
+        guard messages.count > Self.retainedMessages else { return }
+        let waiting = Set(tasks.filter { $0.phase == .waiting }.map(\.operationID))
+        var newest = Set(messages.suffix(8).map(\.id))
+        if let human = messages.last(where: { $0.humanSubmitted == true }) { newest.insert(human.id) }
+        var excess = messages.count - Self.retainedMessages
+        messages.removeAll { message in
+            guard excess > 0, ![.queued, .delivering].contains(message.phase), !newest.contains(message.id),
+                  !(message.answerReceipts ?? []).contains(where: { [.queued, .delivering].contains($0.nativeAnswer.phase) }),
+                  !(message.source.map { $0.kind == .question && waiting.contains($0.operationID) } ?? false) else { return false }
+            excess -= 1
+            if message.source != nil { retiredWakeups += [message.id] + [message.nativeDeliveryID].compactMap { $0 } }
+            return true
+        }
+        // ponytail: a wake-up older than the newest 128 can show as a bubble again, far back in the transcript.
+        if retiredWakeups.count > 128 { retiredWakeups.removeFirst(retiredWakeups.count - 128) }
+    }
 
     public static func validID(_ value: String) -> Bool {
         UUID(uuidString: value)?.uuidString.lowercased() == value
@@ -249,6 +276,7 @@ public struct Project: Codable, Hashable, Sendable, Identifiable {
                         && images.reduce(0, { $0 + $1.byteCount }) <= 5 * 1024 * 1024
                         && (images.isEmpty || message.source == nil), "Invalid Project input image descriptors.")
         }
+        try require(retiredWakeups.count <= 128, "Too many retired wake-up receipts.")
         try require(memoryOperations.count <= 128 && Set(memoryOperations).count == memoryOperations.count, "Invalid or excessive memory receipts.")
         try require(memory.count <= Self.maximumMemoryCount, "Project exceeds 64 memory entries.")
         try require(Set(memory.map(\.id)).count == memory.count, "Duplicate memory ID.")

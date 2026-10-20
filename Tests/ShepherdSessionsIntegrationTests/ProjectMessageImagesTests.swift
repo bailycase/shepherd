@@ -55,28 +55,23 @@ struct ProjectMessageImagesTests {
         #expect(try FileManager.default.attributesOfItem(atPath: blob(rig, p.id, operation).path)[.systemFileNumber] as? NSNumber == before)
     }
 
-    @Test func pausedImageOnlySubmissionIsDurablePrivateAndExplicitResumeSendsItOnceAfterRestart() async throws {
-        let rig = try Rig()
+    /// A stopped Project has no Resume: the person's image-only message restarts it, and its bytes stay private blobs, never state.
+    @Test func imageOnlySubmissionToAStoppedProjectRestartsItKeepsBytesPrivateAndSendsOnce() async throws {
+        let rig = try Rig(); defer { rig.stop() }
         let p = try await rig.create(), operation = UUID()
         _ = try await rig.perform(p.id, .pause)
-        let queued = try await rig.perform(p.id, .message(operationID: operation, text: "", images: [Self.image]))
-        #expect(queued.paused && queued.messages.first?.phase == .queued && queued.coordinatorAgentID == nil)
-        #expect(await rig.host.server.listSessions().isEmpty)
+        try await eventually("pause acknowledged") { rig.host.server.state.projects.first?.interruptPending == false }
+        let accepted = try await rig.perform(p.id, .message(operationID: operation, text: "", images: [Self.image]))
+        #expect(!accepted.paused, "the message restarts the stopped Project")
         let stateBytes = try Data(contentsOf: rig.host.stateURL)
         #expect(!String(decoding: stateBytes, as: UTF8.self).contains(Self.png.base64EncodedString()))
-        #expect(!String(decoding: try JSONEncoder().encode(LogicalProjectsResult.project(queued)), as: UTF8.self).contains(Self.png.base64EncodedString()))
+        #expect(!String(decoding: try JSONEncoder().encode(LogicalProjectsResult.project(accepted)), as: UTF8.self).contains(Self.png.base64EncodedString()))
         guard case .files(let listing) = try await rig.host.server.logicalProjects(.files(projectID: p.id, path: "")) else { throw WireError("files") }
         #expect(listing.entries.isEmpty)
-        rig.host.server.onProjectRuntimeLaunch = nil; rig.host.stop(keepFiles: true)
-        let restarted = try Rig(dir: rig.host.dir); defer { restarted.stop() }
-        #expect(restarted.host.server.state.projects.first?.paused == true)
-        #expect(restarted.host.server.state.projects.first?.messages.first?.images == queued.messages.first?.images)
-        #expect(await restarted.host.server.listSessions().isEmpty)
-        _ = try await restarted.perform(p.id, .resume)
-        let pi = try await coordinator(restarted, p.id)
+        let pi = try await coordinator(rig, p.id)
         try assertImage(await pi.waitForStdin("prompt"), text: "")
-        try await eventually("restored submission delivered once") { restarted.host.server.state.projects.first?.messages.first?.phase == .delivered }
-        _ = try await restarted.perform(p.id, .message(operationID: operation, text: "", images: [Self.image]))
+        try await eventually("submission delivered once") { rig.host.server.state.projects.first?.messages.first?.phase == .delivered }
+        _ = try await rig.perform(p.id, .message(operationID: operation, text: "", images: [Self.image]))
         #expect(pi.stdin("prompt").count == 1)
     }
 
@@ -194,6 +189,8 @@ struct ProjectMessageImagesTests {
         let rig = try Rig(); defer { rig.stop() }
         let p = try await rig.create(), operation = UUID()
         _ = try await rig.perform(p.id, .pause)
+        // The stop's acknowledgement is a state write: let it land before the folder turns read-only, or nothing could clear it.
+        try await eventually("pause acknowledged") { rig.host.server.state.projects.first?.interruptPending == false }
         #expect(chmod(rig.host.dir.path, 0o500) == 0)
         defer { _ = chmod(rig.host.dir.path, 0o700) }
         await #expect(throws: (any Error).self) { try await rig.perform(p.id, .message(operationID: operation, text: "with image", images: [Self.image])) }

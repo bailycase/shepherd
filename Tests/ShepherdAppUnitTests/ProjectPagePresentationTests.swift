@@ -37,7 +37,7 @@ struct ProjectPagePresentationTests {
     }
 
     @Test(arguments: [
-        (ProjectQuestionAnswer.Phase.queued, "Answer queued", "Sends when the project resumes."),
+        (ProjectQuestionAnswer.Phase.queued, "Answer queued", "Waiting to send."),
         (.delivering, "Answering", "How should I proceed?"),
         (.failed, "Answer failed", "The question changed before it could be sent. Open the thread to answer again."),
         (.unknown, "Answer unconfirmed", "Shepherd restarted before it knew the worker got it. Open the thread to check."),
@@ -66,16 +66,15 @@ struct ProjectPagePresentationTests {
                                                                                       workerAgentID: AgentID(), sessionID: nil))
         let all = [queued, delivering, unknown, failed, delivered, report]
 
-        let running = ProjectHeldMessages.held(messages: all, paused: false, consumed: [])
+        let running = ProjectHeldMessages.held(messages: all, consumed: [])
         #expect(running.map(\.text) == ["queued", "sending", "unknown", "failed"], "a delivered message is the transcript's, a worker report is the runtime's")
         #expect(running.map(\.note) == ["Waiting to send", "Sending", "Delivery unconfirmed. Send it again to retry.", "Not delivered. Send it again to retry."])
-        #expect(ProjectHeldMessages.held(messages: [queued], paused: true, consumed: []).first?.note == "Sends when the project resumes")
         // A definite refusal shows the owner's reason; an unknown outcome and a record without one show no invented text.
         var refused = failed
         refused.failureDetail = "The agent refused it: No API key found for the model provider"
         var unknownWithDetail = unknown
         unknownWithDetail.failureDetail = "must never show"
-        let notes = ProjectHeldMessages.held(messages: [refused, unknownWithDetail], paused: false, consumed: []).map(\.note)
+        let notes = ProjectHeldMessages.held(messages: [refused, unknownWithDetail], consumed: []).map(\.note)
         #expect(notes == ["Not delivered. The agent refused it: No API key found for the model provider. Send it again to retry.",
                           "Delivery unconfirmed. Send it again to retry."])
     }
@@ -84,9 +83,9 @@ struct ProjectPagePresentationTests {
         var m = ProjectMessage(id: UUID(), text: "hi", phase: .delivering)
         let native = UUID()
         m.nativeDeliveryID = native
-        #expect(ProjectHeldMessages.held(messages: [m], paused: false, consumed: [UUID()]).count == 1, "an unrelated operation consumes nothing")
-        #expect(ProjectHeldMessages.held(messages: [m], paused: false, consumed: [m.id]).isEmpty, "its own operation id")
-        #expect(ProjectHeldMessages.held(messages: [m], paused: false, consumed: [native]).isEmpty, "the native delivery id the owner recorded")
+        #expect(ProjectHeldMessages.held(messages: [m], consumed: [UUID()]).count == 1, "an unrelated operation consumes nothing")
+        #expect(ProjectHeldMessages.held(messages: [m], consumed: [m.id]).isEmpty, "its own operation id")
+        #expect(ProjectHeldMessages.held(messages: [m], consumed: [native]).isEmpty, "the native delivery id the owner recorded")
     }
 
     @Test func aTypedReferenceDrawsOnlyWhatStillExistsInThisProject() {
@@ -200,12 +199,10 @@ struct ProjectPagePresentationTests {
         #expect(!ProjectComposerSend.isOffline(paused: false, messages: [message(.delivered)], coordinatorLive: true))
     }
 
-    /// The question card told people the worker "keeps going on its best guess", which is false for a blocking native question and
-    /// for a paused project (the owner holds the answer until Resume).
-    @Test func theQuestionFootersCopyIsTruthfulWhileRunningAndWhilePaused() {
-        #expect(TaskQuestion.footer(title: "Question check", paused: false) == "Or just reply in chat. Question check is waiting for your answer.")
-        #expect(TaskQuestion.footer(title: "Question check", paused: true) == "Or just reply in chat. Your answer waits until you resume.")
-        for paused in [false, true] { #expect(!TaskQuestion.footer(title: "X", paused: paused).contains("best guess")) }
+    /// The question card told people the worker "keeps going on its best guess", which is false for a blocking native question.
+    @Test func theQuestionFootersCopyIsTruthful() {
+        #expect(TaskQuestion.footer(title: "Question check") == "Or just reply in chat. Question check is waiting for your answer.")
+        #expect(!TaskQuestion.footer(title: "X").contains("best guess"))
     }
 
     @Test func aTaskWithAHeldAnswerSaysSoAndIsMarkedSoItsDockOffersNoSecondAnswer() {
@@ -213,15 +210,15 @@ struct ProjectPagePresentationTests {
         #expect(page([asking]).rows[0].answerHeld == false)
         asking.pendingAnswer = ProjectQuestionAnswer(operationID: UUID(), sessionID: "s", generation: "g", dialogID: "d", request: Data("x".utf8), phase: .queued)
         let row = page([asking], paused: true).rows[0]
-        #expect(row.answerHeld && row.lead == "Answer queued" && row.detail == "Sends when the project resumes.")
+        #expect(row.answerHeld && row.lead == "Answer queued" && row.detail == "Waiting to send.")
     }
 
     @Test func theSentenceUnderWelcomeBackReadsTheCounts() {
         #expect(page([]).status == "Nothing running yet.")
         #expect(page([task("A", .running), task("B", .running), task("C", .queued)]).status == "3 threads are working.")
         #expect(page([task("A", .waiting, question: "?")]).status == "1 thread is waiting on you.")
-        #expect(page([task("A", .waiting, question: "?")], paused: true).status == "Paused. 1 thread is still waiting on you.")
-        #expect(page([task("A", .running)], paused: true).status == "Paused.")
+        #expect(page([task("A", .waiting, question: "?")], paused: true).status == "1 thread is waiting on you.", "no Paused wording")
+        #expect(page([task("A", .running)], paused: true).status == "1 thread is working.")
     }
 
     @Test func noTasksMeansNoStripAndNoSummary() {

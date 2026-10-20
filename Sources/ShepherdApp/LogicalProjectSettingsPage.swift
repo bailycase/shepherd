@@ -178,14 +178,6 @@ private struct LogicalProjectGeneralTab: View {
                 }
             }
             ProjectSettingsCard {
-                ProjectSettingsRow(title: "Pause project",
-                            subtitle: project.paused ? "Paused. Nothing new starts until you resume."
-                                : "Stops threads at a safe point and skips automation runs until you resume.") {
-                    ProjectSettingsButton(title: project.paused ? "Resume" : "Pause") {
-                        Task { _ = await model.setPaused(ref, !project.paused) }
-                    }
-                    .disabled(saving)
-                }
                 ProjectSettingsRow(title: "Delete project",
                             subtitle: "Removes the conversation, memory and automations. Threads stay in their spaces; branches and PRs are untouched.") {
                     ProjectSettingsButton(title: "Delete…", danger: true) { confirmingDelete = true }

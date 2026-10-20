@@ -174,9 +174,6 @@ struct Composer: View {
     private var canSend: Bool {
         active && store.acceptsSend && (store.hasDraft || !input.attachments.isEmpty) && input.attachments.oversize == nil
     }
-    /// ProjectLead-Started/-ThreadRunning draw the conversation's empty composer as the disabled arrow while the coordinator works: Stop
-    /// there would also pause the Project (Esc included). Worker and ordinary threads keep Stop.
-    private var projectConversation: Bool { projectSend != nil }
     private var fadeHeight: CGFloat { projectSend != nil || workerStyle != nil ? NWLeadMetrics.turnGap : AppLayout.composerFade }
     /// A Project conversation whose coordinator's pi is not serving (none yet, held off, paused, starting): the chip names and sets the
     /// Project's saved model and reasoning level, which the owner applies at launch and before each message it delivers.
@@ -391,7 +388,7 @@ struct Composer: View {
                     if queueStack.isVisible {
                         QueueStackView(state: queueStack, store: store, running: running, animated: !catchingUp, framed: !showsTray && !store.hasGoal,
                                        focusedRow: $focusedRow, focusComposer: { composing = true },
-                                       readOnly: projectUpNext != nil, heldReason: projectUpNext?.paused)
+                                       readOnly: projectUpNext != nil)
                     }
                 }
                 // A lifted row floats over the card too.
@@ -722,8 +719,6 @@ struct Composer: View {
                              dismissal: dismissal).equatable()
         }
         .coordinateSpace(.named(Self.cardSpace))
-        .environment(\.nwComposerControlsInset, projectSend != nil || workerStyle != nil
-                     ? NWComposerControlsInset(top: NWLeadMetrics.composerControlsTop, bottom: NWLeadMetrics.composerControlsBottom) : nil)
     }
 
     private var placeholder: String {
@@ -838,8 +833,7 @@ struct Composer: View {
             }
             .onComposerKey(.escape) {
                 switch ComposerEscape(menuOpen: menu != nil, commandsOpen: commandQuery != nil || loginQuery != nil || mentionShown,
-                                      canStop: running && dialogs.isEmpty && active && store.supports("abort")
-                                          && !(projectConversation && !store.hasDraft && input.attachments.isEmpty)) {
+                                      canStop: running && dialogs.isEmpty && active && store.supports("abort")) {
                 case .closeMenu: menu = nil
                 case .dismissCommands where mentionShown && commandQuery == nil && loginQuery == nil:
                     mentions.dismissed = store.draft
@@ -865,7 +859,7 @@ struct Composer: View {
     private var controlsModel: ComposerControlsModel {
         let working = running
         let draftEmpty = !store.hasDraft && input.attachments.isEmpty
-        let stops = NativeSendChoice.stopsInPlaceOfSend(running: working, hasInput: !draftEmpty) && !projectConversation
+        let stops = NativeSendChoice.stopsInPlaceOfSend(running: working, hasInput: !draftEmpty)
         return ComposerControlsModel(
             active: active, canAttach: canAttach, attachFull: input.attachments.isFull,
             model: modelName, modelChangeable: store.supportedActions.contains("setModel") || projectSend?.model != nil,

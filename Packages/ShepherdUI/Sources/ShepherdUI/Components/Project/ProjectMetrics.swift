@@ -189,20 +189,6 @@ public enum NWLeadMetrics {
     public static let composerRadius: CGFloat = 8
     public static let composerFieldHeight: CGFloat = 56
     public static let composerBottom: CGFloat = 16
-    /// The controls row sits 9pt under the field and flush to the card's 1pt line (Attach y 856..882 and Send 855..883 in a card 790..884),
-    /// where the ordinary composer leaves 4 above and 6 below.
-    public static let composerControlsTop: CGFloat = 9
-    public static let composerControlsBottom: CGFloat = 1
-
-    // MARK: Pause banner (ProjectLead-PausedV2)
-
-    /// 46pt tall, 856pt wide inside the 888 section (16pt in), radius 8, 1pt `lineStrong` on `bgRaised`, padding 8/8/8/12.
-    public static let bannerHeight: CGFloat = 46
-    public static let bannerInset: CGFloat = 16
-    public static let bannerTop: CGFloat = 12
-    public static let bannerPadding = EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 8)
-    public static let bannerGap: CGFloat = 12
-    public static let bannerGlyph: CGFloat = 14
 
     // MARK: Right pane (Threads)
 
@@ -225,13 +211,9 @@ public enum NWLeadMetrics {
     public static let ageSize: CGFloat = 10.5
     public static let rowGap: CGFloat = 2
 
-    /// The pane's footer card ("The project is paused." / "This thread is resolved."): 50pt, 8pt radius.
+    /// The pane's footer card ("This thread is resolved."): 50pt, 8pt radius.
     public static let footerHeight: CGFloat = 50
     public static let footerInset: CGFloat = 16
-    /// The paused footer alone (ProjectLead-PausedV2): margin 0 / 8 / 8 (no top), padding 8 / 12 / 8 / 8, a 1pt line around a 28pt
-    /// button, so 46pt outer, 8pt from the sides and the bottom. The resolved footer keeps `footerInset` and `footerHeight`.
-    public static let pausedFooterHeight: CGFloat = 46
-    public static let pausedFooterMargin: CGFloat = NW.Space.m
     public static let footerGlyph: CGFloat = 14
 
     /// A worker's thread in the pane: prose and its composer sit 16pt in from the pane's left edge; the composer card ends 16pt

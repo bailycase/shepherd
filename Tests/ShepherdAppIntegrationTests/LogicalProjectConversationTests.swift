@@ -16,7 +16,7 @@ import Testing
 @Suite("Project conversation and tasks", .mainActorExclusive)
 @MainActor
 struct LogicalProjectConversationTests {
-    @Test func theFirstMessageStartsTheConversationAndPausedMessagesWaitForResume() async {
+    @Test func theFirstMessageStartsTheConversationAndAMessageRestartsAPausedProject() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.conversation() } }
         expectScenarioCompleted(result)
     }
@@ -89,7 +89,7 @@ struct LogicalProjectConversationTests {
         expectScenarioCompleted(result)
     }
 
-    @Test func aPausedMessageStaysVisibleUntilResumeAndAnUnconfirmedOneIsNeverLostOrRetriedForThePerson() async {
+    @Test func aMessageSentToAPausedProjectRestartsItAndIsDrawnInExactlyOnePlace() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.heldMessages() } }
         expectScenarioCompleted(result)
     }
@@ -190,7 +190,7 @@ struct LogicalProjectConversationTests {
         expectScenarioCompleted(result)
     }
 
-    @Test func thePausedFooterMatchesItsSourceGeometryAndTheResolvedFooterKeepsItsOwn() async {
+    @Test func theResolvedFooterKeepsItsSourceGeometry() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.footerGeometry() } }
         expectScenarioCompleted(result)
     }
@@ -360,22 +360,23 @@ struct LogicalProjectConversationTests {
         #expect(!r.vm.state.isOrdinaryThread(try #require(r.vm.state.agents.first { $0.id == coordinator })))
         #expect(r.vm.projectCoordinator.conversationStore(agentID: coordinator) === r.vm.threadStores.store(for: coordinator))
 
-        // Pause: the banner says so, Resume is a real control, and a message sent while paused is held, not delivered.
-        #expect(await r.vm.logicalProjects.setPaused(r.ref, true))
-        try await eventuallyOnMain("the paused banner") { window.layout(); return window.elements().contains { $0.label?.hasPrefix("Paused.") == true || $0.value?.hasPrefix("Paused.") == true } }
-        let held = await r.vm.logicalProjects.sendMessage(r.ref, text: "wait for me")
-        #expect(held, "the runtime accepts and keeps it: \(r.vm.logicalProjects.failure?.message ?? "no refusal")")
-        let messages = try #require(r.app.server.state.projects.first).messages
-        #expect(messages.contains { $0.text == "wait for me" && $0.phase == .queued }, "queued, not delivered, while paused: \(messages)")
-        try await eventuallyOnMain("the interruption is acknowledged") { r.app.server.state.projects.first?.interruptPending == false }
-        try await eventuallyOnMain("the banner's Resume is enabled once the interruption is acknowledged") {
-            window.layout(); return window.controls().contains { $0.label == "Resume" && $0.isEnabled }
+        // The runtime stops the Project (no person-facing Pause): the page draws no banner or Resume, and the person's next message
+        // starts it again and is delivered.
+        try await eventuallyOnMain("the first message is delivered") { r.app.server.state.projects.first?.messages.first?.phase == .delivered }
+        let running = try #require(r.app.server.state.projects.first)
+        _ = try await r.vm.projectCoordinator.perform(projectID: running.id, expectedRevision: running.revision, request: .pause)
+        try await eventuallyOnMain("paused and acknowledged") { r.app.server.state.projects.first.map { $0.paused && !$0.interruptPending } == true }
+        // The runtime call bypasses the model, so wait for its copy to reach the owner's revision before acting on it.
+        try await eventuallyOnMain("the page sees the owner's revision") { r.vm.logicalProjects.project(r.ref)?.revision == r.app.server.state.projects.first?.revision }
+        window.layout()
+        #expect(!window.elements().contains { ($0.label ?? $0.value ?? "").hasPrefix("Paused.") }, "no paused banner")
+        #expect(!window.controls().contains { $0.label == "Resume" }, "no Resume control")
+        let restarted = await r.vm.logicalProjects.sendMessage(r.ref, text: "wake up")
+        #expect(restarted, "\(r.vm.logicalProjects.failure?.message ?? "no refusal")")
+        try await eventuallyOnMain("restarted and delivered") {
+            let p = r.app.server.state.projects.first
+            return p?.paused == false && p?.messages.first { $0.text == "wake up" }?.phase == .delivered
         }
-        let resumes = window.controls().filter { $0.label == "Resume" }
-        let resume = try #require(resumes.first { $0.isEnabled })
-        #expect(ControlPress.undersized([resume], minimum: .desktop).isEmpty, "Resume is \(resume.frame.size)")
-        try window.press("Resume", nth: try #require(resumes.firstIndex { $0.isEnabled }))
-        try await eventuallyOnMain("resumed") { r.app.server.state.projects.first?.paused == false }
     }
 
     // MARK: Tasks
@@ -1105,7 +1106,7 @@ private static func chipsAndLinks() async throws {
         func heldNow() -> [ProjectHeldMessage] {
             let project = r.vm.logicalProjects.project(r.ref)
             let consumed = Set((store.messages + store.pending + store.rows.flatMap(\.turn.messages)).compactMap { $0.operationID })
-            return ProjectHeldMessages.held(messages: project?.messages ?? [], paused: project?.paused ?? false, consumed: consumed)
+            return ProjectHeldMessages.held(messages: project?.messages ?? [], consumed: consumed)
         }
         // The shared Up next row's own label, and the transcript's bubble for the same words (with or without a note).
         let row = "Queued 1 of 1: send me later"
@@ -1116,41 +1117,33 @@ private static func chipsAndLinks() async throws {
                 return label == "send me later" || label.hasPrefix("send me later, ")
             }.count
         }
-        // Pause through the real control, then send through the real composer: the owner accepts and holds it.
-        try window.press("Project settings")
-        try await eventuallyOnMain("settings") { window.layout(); return window.element("Pause") != nil }
-        try window.press("Pause")
-        try await eventuallyOnMain("paused") { r.app.server.state.projects.first?.paused == true }
-        r.vm.openLogicalProject(r.ref)
-        try await eventuallyOnMain("the page is back") { window.layout(); return window.controls().contains { $0.label == "Send" } }
+        // The runtime stops the Project (no person-facing Pause); then the person sends through the real composer, which restarts it.
+        let running = try #require(r.app.server.state.projects.first)
+        _ = try await r.vm.projectCoordinator.perform(projectID: running.id, expectedRevision: running.revision, request: .pause)
+        try await eventuallyOnMain("paused and acknowledged") { r.app.server.state.projects.first.map { $0.paused && !$0.interruptPending } == true }
+        // The runtime call bypasses the model, so wait for its copy to reach the owner's revision before acting on it.
+        try await eventuallyOnMain("the page sees the owner's revision") { r.vm.logicalProjects.project(r.ref)?.revision == r.app.server.state.projects.first?.revision }
+        try await eventuallyOnMain("Send is reachable") { window.layout(); return window.element("Message the agent") != nil }
         store.draft = "send me later"
         try await eventuallyOnMain("Send is offered") { window.layout(); return window.controls().contains { $0.label == "Send" && $0.isEnabled } }
-        try window.press("Send")
-        try await eventuallyOnMain("the owner holds it queued") {
-            r.app.server.state.projects.first?.messages.first { $0.text == "send me later" }?.phase == .queued
-        }
-        try await eventuallyOnMain("the draft cleared, so the person knows it was accepted") { store.draft.isEmpty }
-        // It is still represented, as a normal thread's queued message: the shared Up next row, its header Paused, and no bubble.
-        try await window.diagnosing(stores: [store], needles: [row, "send me later"], extra: {
-            ["held=\(heldNow().map { "\($0.text) | \($0.phase)" }) projectMessages=\((r.vm.logicalProjects.project(r.ref)?.messages ?? []).map { "\($0.text) \($0.phase)" })"]
-        }) {
-            try await eventuallyOnMain("the held message waits in Up next") { upNextRows() == 1 }
-        }
-        #expect(heldNow().map(\.text) == ["send me later"], "its own words are what is held")
-        #expect(window.element("Up next, 1 message") != nil, "the shared stack's header counts it")
-        #expect(window.elements().contains { $0.label == "Paused" || $0.value == "Paused" }, "the header says the Project holds it")
-        #expect(bubbles() == 0, "never a sent-looking transcript bubble while the owner holds it")
         // The owner offers no queue controls: none of the native stack's are drawn, and no empty options menu.
         let unsupported: Set = ["Queue options", "Steer now", "Send now", "Edit", "Delete", "Back to the queue", "Steer all now", "Send all now"]
-        #expect(!window.controls().contains { unsupported.contains($0.label ?? "") }, "\(window.controls().compactMap(\.label))")
-        // Resume: the owner hands it to pi only now. Until the native transcript holds its operation it stays in Up next; then it is the
-        // transcript's alone. Each observation is one place or (for a frame while the two pushes cross) none, never two.
-        try window.press("Resume", nth: 0)
-        var sawTwo = false
-        try await eventuallyOnMain("resumed and delivered") {
+        // Until the native transcript holds its operation it may wait in Up next; then it is the transcript's alone. Each observation
+        // is one place or (for a frame while the two pushes cross) none, never two.
+        try window.press("Send")
+        var sawTwo = false, sawControls = false, sawPaused = false
+        try await eventuallyOnMain("restarted and delivered") {
+            window.layout()
             if upNextRows() > 0 && bubbles() > 0 { sawTwo = true }
+            if window.controls().contains(where: { unsupported.contains($0.label ?? "") }) { sawControls = true }
+            if window.elements().contains(where: { $0.label == "Paused" || $0.value == "Paused" }) { sawPaused = true }
             return r.app.server.state.projects.first?.messages.first { $0.text == "send me later" }?.phase == .delivered
         }
+        #expect(r.app.server.state.projects.first?.paused == false, "the message restarted the Project")
+        // The composer clears its draft in its own task once the send returns, which can trail the delivery itself.
+        try await eventuallyOnMain("the draft cleared, so the person knows it was accepted") { store.draft.isEmpty }
+        #expect(!sawControls, "the owner's queue offers no native queue controls")
+        #expect(!sawPaused, "Up next never says Paused")
         // The thread's own bubble takes over once its native operation is consumed: nothing held, no row, never two.
         try await eventuallyOnMain("the Up next row gave way to the transcript") {
             heldNow().isEmpty && upNextRows() == 0 && window.element("Up next, 1 message") == nil
@@ -1211,7 +1204,7 @@ private static func chipsAndLinks() async throws {
         func held() -> [ProjectHeldMessage] {
             let shown = vm.logicalProjects.project(ref)
             let consumed = Set((store.messages + store.pending + store.rows.flatMap(\.turn.messages)).compactMap { $0.operationID })
-            return ProjectHeldMessages.held(messages: shown?.messages ?? [], paused: shown?.paused ?? false, consumed: consumed)
+            return ProjectHeldMessages.held(messages: shown?.messages ?? [], consumed: consumed)
         }
         func labelled(_ text: String, note: String? = nil) -> Int {
             let labels = note.map { [$0, "\(text), \($0)"] } ?? [text]
@@ -1223,7 +1216,8 @@ private static func chipsAndLinks() async throws {
         try await window.diagnosing(stores: [store], needles: [row], extra: { ["held=\(held().map { "\($0.text) \($0.phase)" })"] }) {
             try await eventuallyOnMain("the queued message waits in Up next") { window.layout(); return labelled(row) == 1 }
         }
-        #expect(window.elements().contains { $0.label == "Paused" || $0.value == "Paused" } && window.element("Up next, 1 message") != nil)
+        #expect(window.element("Up next, 1 message") != nil)
+        #expect(held().filter { $0.phase == .queued }.map(\.note) == ["Waiting to send"])
         #expect(labelled(waiting.text) == 0 && echoes() == 0, "no transcript bubble while the owner holds it")
         // The image goes by the name the owner holds; this Mac draws no bytes for it.
         #expect(ProjectHeldMessages.upNext(held()).queue.map { $0.images.map(\.name) } == [["sketch.png"]])
@@ -1233,8 +1227,9 @@ private static func chipsAndLinks() async throws {
 
         // The relaunch holds the coordinator off on purpose (nothing can be delivered while paused), as a cold Project does.
         try await eventuallyOnMain("the restored coordinator is held off") { store.offline && !store.starting && store.loadError == nil }
-        // Resume: the owner starts the coordinator's pi, which is still booting. Resume alone sends nothing, so nothing looks sent.
-        #expect(await vm.logicalProjects.setPaused(ref, false))
+        // The runtime's resume: the owner starts the coordinator's pi, which is still booting. Resume alone sends nothing, so nothing looks sent.
+        let pausedProject = try #require(app.server.state.projects.first)
+        _ = try await vm.projectCoordinator.perform(projectID: pausedProject.id, expectedRevision: pausedProject.revision, request: .resume)
         let watchedUntil = ContinuousClock.now + .milliseconds(900)
         var moved = false
         try await eventuallyOnMain("the start is watched") {
@@ -1243,7 +1238,6 @@ private static func chipsAndLinks() async throws {
             return ContinuousClock.now >= watchedUntil
         }
         #expect(!moved, "while pi starts, the message stays queued and in Up next only: \(String(describing: message(waiting.id)?.phase))")
-        #expect(!window.elements().contains { $0.label == "Paused" || $0.value == "Paused" }, "resumed: the header no longer says Paused")
 
         // pi serves: the owner hands the message over. Once the transcript holds the delivery's pending row it is there alone, still
         // `.delivering`: pi has neither accepted nor started it.
@@ -1462,8 +1456,8 @@ private static func chipsAndLinks() async throws {
     }
 
     /// ProjectLead-ThreadRunning's left composer. The coordinator's turn is held by the engine's own `project-action` script (it waits for
-    /// `continue-1`, which this test never creates), so the thread is running while the composer is drawn. The board draws the disabled arrow,
-    /// not Stop (a Stop would pause the Project). With words typed, Send is enabled and remains the only action.
+    /// `continue-1`, which this test never creates), so the thread is running while the composer is drawn. The composer is the ordinary one:
+    /// Stop while the field is empty (it ends the coordinator's turn only), Send once words are typed.
     private static func projectComposerWhileRunning() async throws {
         let r = try await rig()
         defer { r.app.stop() }
@@ -1495,15 +1489,14 @@ private static func chipsAndLinks() async throws {
         Task { await store.run(request: { try await server.nativeThread(agentID: coordinator, request: $0) }) }
         try await eventuallyOnMain("the coordinator's turn is running") { window.layout(); return store.running }
         #expect(store.draft.isEmpty, "the field is empty")
-        let sends = window.controls().filter { $0.label == "Send" }
-        #expect(sends.count == 1 && sends.allSatisfy { !$0.isEnabled }, "the Project's own composer shows a disabled arrow: \(sends.map(\.description))")
-        #expect(!window.controls().contains { $0.label == "Stop" }, "and no Stop while its field is empty")
+        #expect(window.controls().contains { $0.label == "Stop" && $0.isEnabled }, "an empty field offers Stop, as any thread does")
+        #expect(!window.controls().contains { $0.label == "Send" }, "and Stop is the one action")
         store.draft = "one more thing"
         try await eventuallyOnMain("a draft enables the single Send action") {
             window.layout()
             return window.controls().contains { $0.label == "Send" && $0.isEnabled }
         }
-        #expect(!window.controls().contains { $0.label == "Stop" }, "typing never adds a second action to the Project composer")
+        #expect(!window.controls().contains { $0.label == "Stop" }, "Send replaces Stop; never both")
         #expect(r.app.server.state.projects.first?.paused == false, "nothing paused the Project")
     }
 
@@ -1528,14 +1521,14 @@ private static func chipsAndLinks() async throws {
         #expect(stops.count == 1, "one Stop in the window (the conversation has no turn): \(stops.map(\.description))")
         #expect(ControlPress.undersized(stops, minimum: .desktop).isEmpty, "Stop is \(stops.map(\.frame.size))")
         #expect(!window.controls().contains { $0.label == "Send" && $0.frame.minX > 1100 }, "the worker's empty composer draws no Send")
-        // Board 08 markup, 1600x900 window: Stop is 28 x 28 at (1534, 855); Attach 26 x 26 at (1143, 856). The AX frame of a 28pt disc is
-        // its 34pt hit target centred on it (x 1531, y 852 here).
+        // Board 08 markup, 1600x900 window: Stop 28 x 28 at x 1534, Attach 26 x 26 at x 1143. The card is the ordinary composer's, so its
+        // controls row sits 4pt under the field and 6 over the line (the board drew 9 and 1): 5pt above the board's y 855 and 856.
         let origin = try #require(window.elements().first { $0.role == "AXGroup" }?.frame)
         func rect(_ c: Control) -> CGRect { CGRect(x: c.frame.minX - origin.minX, y: origin.maxY - c.frame.maxY, width: c.frame.width, height: c.frame.height) }
         let stopRect = rect(try #require(stops.first))
         let attach = try #require(window.controls().filter { $0.label == "Attach file" }.map(rect).first { $0.minX > 1100 })
-        #expect(stopRect.midX == 1548 && stopRect.midY == 869, "Stop centre \(stopRect.midX), \(stopRect.midY); board 1548, 869")
-        #expect(attach.minX == 1143 && attach.minY == 856, "Attach at \(attach.origin); board 1143, 856")
+        #expect(stopRect.midX == 1548 && stopRect.midY == 864, "Stop centre \(stopRect.midX), \(stopRect.midY); expected 1548, 864")
+        #expect(attach.minX == 1143 && attach.minY == 851, "Attach at \(attach.origin); expected 1143, 851")
         try window.press("Stop")
         try await eventuallyOnMain("the worker's turn was aborted") { !store.running }
         #expect(r.app.server.state.projects.first?.paused == false, "a worker's Stop does not pause the project")
@@ -1696,7 +1689,7 @@ private static func chipsAndLinks() async throws {
         }
         #expect(!saidStarting, "a cold Project's composer says nothing about starting")
         #expect(store.offline && store.loadError == nil && !store.starting, "the store knows the owner holds the pi off on purpose")
-        #expect(window.elements().contains { ($0.value ?? $0.label ?? "").hasPrefix("Paused.") })
+        #expect(!window.elements().contains { ($0.value ?? $0.label ?? "").hasPrefix("Paused.") }, "no paused banner")
 
         // Leaving the page and coming back must not lose the owner's "held off on purpose".
         for _ in 0..<3 {
@@ -1735,11 +1728,9 @@ private static func chipsAndLinks() async throws {
                 "a store made for a cold Project's coordinator starts held off")
         vm.adopt(app.server.state)
 
-        // Resume alone launches nothing; the next message starts the saved coordinator's pi and the thread goes ready.
-        #expect(await vm.logicalProjects.setPaused(ref, false))
-        #expect(store.offline, "a resumed Project with nothing to deliver still holds its pi off")
-        #expect(!window.elements().contains { $0.label == startingLabel })
+        // The person's next message restarts the Project, starts the saved coordinator's pi, and the thread goes ready.
         #expect(await vm.logicalProjects.sendMessage(ref, text: "Reply with exactly READY2"))
+        try await eventuallyOnMain("the message restarted the Project") { app.server.state.projects.first?.paused == false }
         try await eventuallyOnMain("the coordinator's pi serves its thread") { window.layout(); return store.ready && !store.offline }
         try await eventuallyOnMain("the message is delivered") { app.server.state.projects.first?.messages.last?.phase == .delivered }
     }
@@ -1828,8 +1819,7 @@ private static func chipsAndLinks() async throws {
         let launching = app.server.onProjectRuntimeLaunch
         let launched = Locked<[ProjectRuntimeLaunch]>([])
         app.server.onProjectRuntimeLaunch = { request, done in launched.withValue { $0.append(request) }; launching?(request, done) }
-        #expect(await vm.logicalProjects.setPaused(ref, false))
-        #expect(await vm.logicalProjects.sendMessage(ref, text: "hello again"))
+        #expect(await vm.logicalProjects.sendMessage(ref, text: "hello again"), "the message itself restarts the stopped Project")
         try await eventuallyOnMain("the owner launches the coordinator") { !launched.current.isEmpty }
         let launch = try #require(launched.current.first)
         #expect(launch.coordinator && launch.agentID == fixture.agent.id, "the coordinator, never a task thread")
@@ -1893,9 +1883,15 @@ private static func chipsAndLinks() async throws {
         #expect(footer() == "Or just reply in chat. Library API draft is waiting for your answer.", "\(footer() ?? "none")")
         #expect(!(footer() ?? "").contains("best guess"))
 
-        // Paused: the footer says an answer waits until Resume.
-        #expect(await r.vm.logicalProjects.setPaused(r.ref, true))
-        try await eventuallyOnMain("the paused footer") { window.layout(); return footer() == "Or just reply in chat. Your answer waits until you resume." }
+        // Paused by the runtime: the footer's wording does not change (there is no Resume to wait for).
+        let running = try #require(r.app.server.state.projects.first)
+        _ = try await r.vm.projectCoordinator.perform(projectID: running.id, expectedRevision: running.revision, request: .pause)
+        try await eventuallyOnMain("paused and acknowledged, and the page sees the owner's revision") {
+            r.app.server.state.projects.first.map { $0.paused && !$0.interruptPending } == true
+                && r.vm.logicalProjects.project(r.ref)?.revision == r.app.server.state.projects.first?.revision
+        }
+        window.layout()
+        #expect(footer() == "Or just reply in chat. Library API draft is waiting for your answer.", "\(footer() ?? "none")")
 
         // Answer while paused through the card's own option button: the owner holds it, and no second active answer remains.
         try window.press("ALPHA")
@@ -2051,8 +2047,7 @@ private static func chipsAndLinks() async throws {
 
     // MARK: Footer geometry
 
-    /// ProjectLead-PausedV2's footer: 8pt from the pane's sides and bottom (margin 0 / 8 / 8) around a 46pt card (padding 8, a 28pt
-    /// button, a 1pt line). The resolved footer is its own wrapper (12 / 16 / 16) and keeps its 50pt card.
+    /// The resolved footer is its own wrapper (12 / 16 / 16) and keeps its 50pt card.
     private static func footerGeometry() async throws {
         let r = try await rig()
         defer { r.app.stop() }
@@ -2060,27 +2055,12 @@ private static func chipsAndLinks() async throws {
                                                       request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Publish file", prompt: "hello"))
         try await eventuallyOnMain("the worker settles") { r.app.server.state.projects.first?.tasks.first?.phase == .settled }
         let task = try #require(r.app.server.state.projects.first?.tasks.first)
-        let paused = try #require(r.app.server.state.projects.first)
-        _ = try await r.vm.projectCoordinator.perform(projectID: paused.id, expectedRevision: paused.revision, request: .pause)
-        try await eventuallyOnMain("paused and acknowledged") { r.app.server.state.projects.first?.paused == true && r.app.server.state.projects.first?.interruptPending == false }
         r.vm.openLogicalProject(r.ref)
         let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
         defer { window.close() }
-        try await eventuallyOnMain("the paused footer is drawn in the pane") {
-            window.layout(); return window.elements().contains { ($0.value ?? $0.label ?? "") == "The project is paused." }
-        }
         let paneRight = window.window.frame.maxX, paneBottom = window.window.frame.minY
-        let resume = try #require(window.controls().filter { $0.label == "Resume" }.max { $0.frame.minX < $1.frame.minX }?.frame)
-        // The button sits 8pt in from the card's right edge, and the card 8pt in from the pane's edge: 16 from the window's right.
-        #expect(abs(paneRight - resume.maxX - (NWLeadMetrics.pausedFooterMargin + NW.Space.m)) <= 1.5, "Resume ends \(paneRight - resume.maxX) from the pane's edge")
-        // The card is 46 tall around the 28pt button (8 above and below), 8 from the bottom: the button's bottom is 16 from the window's.
-        #expect(abs(resume.minY - paneBottom - (NWLeadMetrics.pausedFooterMargin + NW.Space.m)) <= 1.5, "Resume sits \(resume.minY - paneBottom) above the bottom")
-        #expect(NWLeadMetrics.pausedFooterHeight == 46 && NWLeadMetrics.pausedFooterHeight < NWLeadMetrics.footerHeight)
-
-        // The resolved footer is unchanged: its own 16pt inset and 50pt card.
-        _ = try await r.vm.projectCoordinator.perform(projectID: paused.id, expectedRevision: try #require(r.app.server.state.projects.first).revision, request: .resume)
+        // The resolved footer: its own 16pt inset and 50pt card.
         r.vm.logicalProjectPaneTask = task.id
-        try await eventuallyOnMain("resumed") { r.app.server.state.projects.first?.paused == false }
         try await eventuallyOnMain("the worker detail opens") { window.layout(); return window.element("Mark resolved") != nil }
         try window.press("Mark resolved")
         try await eventuallyOnMain("the resolved footer is drawn") { window.layout(); return window.elements().contains { ($0.value ?? $0.label ?? "") == "This thread is resolved." } }
@@ -2166,7 +2146,6 @@ private static func chipsAndLinks() async throws {
         #expect(r.vm.state.agents.isEmpty, "no coordinator was created")
         #expect(!window.elements().contains { $0.label?.contains("Lost connection") == true || $0.label?.contains("no longer exists") == true },
                 "the page draws no lost connection for an agent that was never created")
-        #expect(window.controls().contains { $0.label == "Resume" }, "the pause is shown with its Resume")
         #expect(window.element("Message the agent") != nil, "and the composer stays")
     }
 

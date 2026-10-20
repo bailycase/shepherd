@@ -44,7 +44,7 @@ final class LogicalProjectsModel {
     /// What each owner last pushed in its state snapshot (the server's word, never a client's).
     typealias Pushed = @MainActor (LogicalProjectHome) -> [Project]
 
-    /// The owner's runtime (`ProjectRuntimeRequest`): pause, resume, resolve, reopen, message, assign, decide a Space. Local calls this
+    /// The owner's runtime (`ProjectRuntimeRequest`): resolve, reopen, message, assign, decide a Space. Local calls this
     /// Mac's own; a remote one is sent to its OWNER (`ProjectRuntimeTransport.action`), never run on this Mac.
     typealias Runtime = @MainActor (LogicalProjectRef, UInt64, ProjectRuntimeRequest) async throws -> Project
 
@@ -133,12 +133,6 @@ final class LogicalProjectsModel {
             change(&settings)
             return .settings(projectID: ref.id, expectedRevision: project.revision, settings: settings)
         }
-    }
-
-    /// Pause closes admissions and asks active work to stop at a safe point; Resume is refused until that is
-    /// acknowledged. Both go through the runtime, which owns the interruption (a bare `setPaused` only flips a flag).
-    func setPaused(_ ref: LogicalProjectRef, _ paused: Bool) async -> Bool {
-        await run(ref, paused ? .pause : .resume)
     }
 
     func resolve(_ ref: LogicalProjectRef, task: ProjectTaskID) async -> Bool { await run(ref, .resolve(taskID: task)) }

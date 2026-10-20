@@ -347,11 +347,11 @@ Remaining differences are recorded in "Pass UI11" below. RunElsewhere and struct
 Renders: `/tmp/ui-final11/r` (126 PNGs, full 1600x900 windows at 1 and 1.3, light and dark, from the real producers). Board numbers are read from the
 board PNGs and from the original markup in headless Chromium at 1x (CSS px = pt). Each row says what was compared and what is left.
 
-- **Worker composer: the board is built as drawn.** Board 08's worker pane draws the red `stop.fill` Stop (28pt at 1534,855) while its turn runs; the disabled
-  arrow is the Project composer on the left (982,855). Both match now (render 1534,855 and 983,855, 1pt off on the arrow). Pressing the worker's Stop aborts only
+- **Worker composer: the board is built as drawn.** Board 08's worker pane draws the red `stop.fill` Stop (28pt at 1534,855) while its turn runs; the Project
+  composer on the left draws the same Stop now (see below). Both match now (render 1534,855 and 983,855, 1pt off on the arrow). Pressing the worker's Stop aborts only
   that worker (`aRunningWorkersEmptyComposer...`). No departure.
-- **Controls row of both composers.** The board's controls row sits 9pt under the field and flush to the 1pt line (Attach 856, Stop 855); ours left 4 above and 6
-  below, so every control was 5pt high. Now `NWLeadMetrics.composerControlsTop/Bottom` through `nwComposerControlsInset`, set only for Project and worker composers.
+- **Controls row of both composers.** Departure (owner's call, 2026-10-20): the board's controls row sits 9pt under the field and flush to the 1pt line (Attach
+  856, Stop 855). Project and worker composers now use the ordinary composer's 4 above and 6 below, so every control is 5pt higher than the board.
 - **Mixed user turns.** One row, drawn per message from the real operation IDs (`ProjectUserOrigins`): assignment plain, the person's words a bubble with their
   images and design references; wake-ups drop out of a mixed coordinator turn and hide a pure one. Tests: `ProjectUserOriginsTests` (5) and
   `aWorkerTurnHolding...` through the real worker store and AX tree. Render: `board-worker-mixed-*`.
@@ -397,8 +397,9 @@ user's workflow decisions; neither is built.
   `create()` and offer tests (the accessibility frame rounds outward to whole points). Ink differences left, not nudged: the New project title ink is 1pt lower
   than the board's (28 against 27) with the box placed as in the markup; Create's left edge 437 against 438 and Add to project's right edge 1248 against 1247 are
   edge snapping at equal widths.
-- **Project composer while the coordinator runs.** The disabled arrow (no Stop), enabled Send alone with a draft (no secondary Stop), and no pause, checked through
-  AX with the engine's `project-action` script held by its own `continue-1` file (no focus, no sleep). Reverting the rule turns the test red.
+- **Project composer while the coordinator runs.** Departure (owner's call, 2026-10-20): the board drew a disabled arrow. It is now the ordinary composer's Stop,
+  which ends the coordinator's turn only and never pauses; Send replaces it with a draft. Checked through AX with the engine's `project-action` script held by its
+  own `continue-1` file (no focus, no sleep).
 - **Plain paragraph measurement.** `NWPlainParagraph` no longer uses a numeric size ceiling: the label measures itself with `greatestFiniteMagnitude`; a 300-character
   unbroken token wraps inside a 200pt column (test). Its comment says what was observed, not what SwiftUI does inside.
 - **Remaining ink differences (recorded, not approved by this lane):** the live line's ink is about 1.5pt lower than the board's in the dark render (its box is

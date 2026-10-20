@@ -9,7 +9,7 @@ import ShepherdUI
 /// runtime accepted the message (queued, or delivered), so the draft clears only then; a refusal leaves the words in
 /// the field.
 struct ProjectComposerSend {
-    /// "Ask Sample App a question or start a task…", or the paused wording.
+    /// "Ask Sample App a question or start a task…".
     var placeholder: String
     /// Sends the words and the images on the card. True only when the runtime accepted BOTH; then the composer clears the draft and
     /// exactly the images it submitted. A refusal or a lost connection keeps every word and every image.
@@ -217,8 +217,6 @@ struct ProjectHeldMessage: Equatable, Identifiable {
     let text: String
     let note: String
     var phase: ProjectMessage.Phase = .queued
-    /// The Project is paused, so a waiting message is held until Resume.
-    var paused = false
     /// Its images' names; the bytes stay with the owner.
     var images: [NativeQueuedImage] = []
 
@@ -231,13 +229,13 @@ struct ProjectHeldMessage: Equatable, Identifiable {
 /// consumed operation identities. A message is represented once the native thread has a user message carrying its operation ID, or
 /// the native delivery ID the owner recorded for it. Worker reports (a `source`) are the runtime's own and are never drawn here.
 enum ProjectHeldMessages {
-    static func held(messages: [ProjectMessage], paused: Bool, consumed: Set<UUID>) -> [ProjectHeldMessage] {
+    static func held(messages: [ProjectMessage], consumed: Set<UUID>) -> [ProjectHeldMessage] {
         messages.compactMap { message in
             guard message.source == nil else { return nil }
             if consumed.contains(message.id) || message.nativeDeliveryID.map(consumed.contains) == true { return nil }
             let note: String
             switch message.phase {
-            case .queued: note = paused ? "Sends when the project resumes" : "Waiting to send"
+            case .queued: note = "Waiting to send"
             case .delivering: note = "Sending"
             case .unknown: note = "Delivery unconfirmed. Send it again to retry."
             case .failed:
@@ -247,24 +245,21 @@ enum ProjectHeldMessages {
                 note = reason.isEmpty ? "Not delivered. Send it again to retry." : "Not delivered. \(sentence) Send it again to retry."
             case .delivered: return nil
             }
-            return ProjectHeldMessage(id: message.id, text: message.text, note: note, phase: message.phase, paused: paused,
+            return ProjectHeldMessage(id: message.id, text: message.text, note: note, phase: message.phase,
                                       images: (message.images ?? []).map { NativeQueuedImage(mimeType: $0.mimeType, name: $0.name) })
         }
     }
 
-    /// The waiting messages as the shared Up next stack takes a queue, in the owner's order, and why it waits while paused. Read-only:
+    /// The waiting messages as the shared Up next stack takes a queue, in the owner's order. Read-only:
     /// the owner has no edit, delete, reorder or send-now for them. A message leaves once the transcript holds its operation (pi's own
     /// pending row for the handoff, then the saved message), so it is drawn in exactly one place.
     static func upNext(_ held: [ProjectHeldMessage]) -> ProjectUpNext {
         let waiting = held.filter(\.waiting)
-        return ProjectUpNext(queue: waiting.map { NativeQueuedMessage(id: $0.id, text: $0.text, images: $0.images, sentAt: 0) },
-                             paused: waiting.contains { $0.paused && $0.phase == .queued } ? "Sends when the project resumes" : nil)
+        return ProjectUpNext(queue: waiting.map { NativeQueuedMessage(id: $0.id, text: $0.text, images: $0.images, sentAt: 0) })
     }
 }
 
 /// The owner's waiting messages, shaped as the queue the composer's shared Up next stack draws (`QueueStackView(readOnly:)`).
 struct ProjectUpNext: Equatable {
     var queue: [NativeQueuedMessage] = []
-    /// The header's Paused tooltip while the Project holds them.
-    var paused: String?
 }

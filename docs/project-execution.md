@@ -168,7 +168,7 @@ Snapshot/proof reads, Pause and Cancel remain available while OFF, so a disconne
 reconcile retained work without replaying it. Owner reconciliation can record evidence while
 OFF but cannot dispatch work, deliver answers or commit pulled artifacts. Disconnect or failed
 interruption is not completion and does not release a remote reservation. Re-enabling leaves
-receipts and Projects paused until explicit Resume; no new polling or scheduler is introduced.
+receipts and Projects stopped until the person's next message; no new polling or scheduler is introduced.
 
 One assignment activates at most one native prompt, with no receiver retry/model/evaluator loop.
 The default elapsed bound is ten minutes from durable admission, including launch and prompt
