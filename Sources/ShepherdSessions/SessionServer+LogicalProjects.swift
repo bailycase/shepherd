@@ -192,6 +192,7 @@ extension SessionServer {
                 return
             case .list, .get, .create, .files, .read: preconditionFailure("Handled above")
             }
+            project.retireFinishedMessages()
             project.revision += 1
             try validateLogicalProject(project, replacing: project.id)
             let projects = store.state.projects.map { $0.id == project.id ? project : $0 }

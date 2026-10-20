@@ -41,6 +41,7 @@ extension SessionServer {
                 }
                 var project = before
                 try change(&project)
+                project.retireFinishedMessages()
                 if project != before { project.revision += 1 }
                 var candidate = self.store.state
                 try workspace?(&candidate)

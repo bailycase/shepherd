@@ -102,4 +102,25 @@ struct LogicalProjectTests {
         let heavy = (0..<12).map { Project(name: "Project \($0)", settings: .init(instructions: String(repeating: "🦊", count: 16_000))) }
         #expect(throws: ProjectValidationError.self) { try ShepherdState(projects: heavy).validate() }
     }
+    /// A long conversation used to hit the 64-message ceiling and refuse every later save ("Project message queue is full").
+    @Test func aLongConversationRetiresFinishedMessagesAndKeepsWhatIsStillLive() throws {
+        var project = Project(id: Self.id, name: "Release")
+        let worker = AgentID(), waitingOp = UUID()
+        project.tasks = [ProjectTask(operationID: waitingOp, workerAgentID: worker, spaceID: SpaceID(), title: "Ask", prompt: "p", phase: .waiting)]
+        let question = ProjectMessage(id: UUID(), text: "q", phase: .delivered,
+                                      source: .init(kind: .question, taskID: project.tasks[0].id, operationID: waitingOp, workerAgentID: worker, sessionID: "s"))
+        let wake = ProjectMessage(id: UUID(), text: "w", phase: .delivered,
+                                  source: .init(kind: .settled, taskID: project.tasks[0].id, operationID: UUID(), workerAgentID: worker, sessionID: "s"))
+        let queued = ProjectMessage(id: UUID(), text: "held")
+        project.messages = [question, wake, queued] + (0..<200).map { ProjectMessage(id: UUID(), text: "m\($0)", phase: .delivered) }
+        project.retireFinishedMessages()
+        #expect(project.messages.count == Project.retainedMessages)
+        #expect(project.messages.contains(question), "a question its task still waits on stays")
+        #expect(project.messages.contains(queued), "a message not yet sent stays")
+        #expect(!project.messages.contains(wake) && project.retiredWakeups == [wake.id], "a retired wake-up stays hidden")
+        #expect(project.messages.suffix(8).map(\.text) == (192..<200).map { "m\($0)" }, "the newest stay")
+        try ShepherdState(projects: [project]).validate()
+        let decoded = try JSONDecoder().decode(Project.self, from: JSONEncoder().encode(project))
+        #expect(decoded.retiredWakeups == [wake.id])
+    }
 }

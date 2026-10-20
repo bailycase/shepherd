@@ -52,8 +52,6 @@ struct ProjectTaskRow: Identifiable, Equatable {
 struct ProjectPagePresentation: Equatable {
     let projectID: ProjectID
     let name: String
-    let paused: Bool
-    let interruptPending: Bool
     let conversationAgent: AgentID?
     let rows: [ProjectTaskRow]
     let waiting: Int
@@ -77,13 +75,10 @@ struct ProjectPagePresentation: Equatable {
         return parts.joined(separator: " · ")
     }
 
-    /// The pane's sentence under "Welcome back": "3 threads are working.", "Paused. 1 thread is still waiting on you."
+    /// The pane's sentence under "Welcome back": "3 threads are working.", "1 thread is waiting on you."
     var status: String {
         func threads(_ n: Int) -> String { n == 1 ? "1 thread" : "\(n) threads" }
         if total == 0 { return "Nothing running yet." }
-        if paused {
-            return waiting > 0 ? "Paused. \(threads(waiting)) \(waiting == 1 ? "is" : "are") still waiting on you." : "Paused."
-        }
         if waiting > 0 { return "\(threads(waiting)) \(waiting == 1 ? "is" : "are") waiting on you." }
         if working > 0 { return "\(threads(working)) \(working == 1 ? "is" : "are") working." }
         return "Nothing is running."
@@ -94,8 +89,6 @@ struct ProjectPagePresentation: Equatable {
     init(_ project: Project) {
         projectID = project.id
         name = project.name
-        paused = project.paused
-        interruptPending = project.interruptPending
         conversationAgent = project.coordinatorAgentID
         let published = Dictionary(grouping: project.artifacts.filter { $0.state == .ready }, by: \.taskID)
         let built = project.tasks.map { task in
@@ -124,7 +117,7 @@ struct ProjectPagePresentation: Equatable {
 
     static func answerDetail(_ phase: ProjectQuestionAnswer.Phase) -> String? {
         switch phase {
-        case .queued: "Sends when the project resumes."
+        case .queued: "Waiting to send."
         case .delivering: nil
         case .delivered: nil
         case .failed: "The question changed before it could be sent. Open the thread to answer again."

@@ -109,9 +109,9 @@ concurrency limits still bound coordination; this feature makes no strict dollar
   that a thread finished or that a question was answered.
 - Resolved threads remain inspectable and can be reopened. They are not deleted. A thread
   becoming idle is not automatically proof that its assigned task succeeded.
-- Pause prevents new coordinated work and automation runs and requests safe interruption of
-  active project work. Messages sent while paused wait for explicit Resume. The UI cannot
-  claim an unreachable worker stopped before its host acknowledges that request.
+- There is no person-facing Pause. When the runtime stops a Project itself (see Pause, restart and
+  deletion) it requests safe interruption of active work; the person's next message restarts it. The
+  UI cannot claim an unreachable worker stopped before its host acknowledges that request.
 - Project deletion removes project-owned conversation, memory and automation records while
   retaining ordinary task threads in their Spaces, their worktrees, branches and pull requests.
   Project-owned file retention or deletion must be explicit in the deletion confirmation.
@@ -292,8 +292,8 @@ staged writes and delayed callbacks across OFF/ON. A worker prompt waiting for C
 is withdrawn by its exact native delivery ID, even before consumption establishes its run scope.
 Releasing the preparation cannot send it; explicit Resume uses a new native delivery ID. Manual
 messages in that worker are not cancelled. Saved messages, files, memory, links and ordinary
-worker threads remain. Turning ON never resumes work; use explicit Project Resume
-or start. Restart likewise restores paused work. Worker no-subagents policy is membership-based
+worker threads remain. Turning ON never resumes work; the person's next message
+restarts the Project. Restart likewise restores paused work. Worker no-subagents policy is membership-based
 and remains enforced even with the experiment OFF.
 
 ### Runtime hooks
@@ -302,8 +302,8 @@ and remains enforced even with the experiment OFF.
 
 - `sendProjectMessage(projectID:expectedRevision:operationID:text:) async throws -> Project`
 - `ensureProjectConversation(projectID:expectedRevision:) async throws -> AgentID`: finds/restores
-  an existing active conversation idle, without a prompt. A paused Project requires explicit
-  Resume first; an empty project requires its first message.
+  an existing active conversation idle, without a prompt. A stopped Project requires the person's
+  next message first; an empty project requires its first message.
 - `perform(projectID:expectedRevision:request:) async throws -> Project`
 - `conversationStore(agentID:) -> NativeThreadStore?`: the normal shared agent store, not a
   copied transcript. Composer sends use the Project hook. Raw coordinator sends, queue actions,
@@ -349,8 +349,8 @@ message it can deliver: the page reads the saved history from pi's session file
 coordinator pi runs and no message is queued or in flight (or the Project is paused), the store is
 `offline` (`ProjectComposerSend.isOffline`, restated by the view model on every adoption and when a
 store is made): `native_starting` is then the expected answer, so the composer never says "Starting
-the agent" and no "has not started after a minute" error appears. Resume alone launches nothing; the
-next message does, and its start is the ordinary, timed warm-up. A remote owner's page sets
+the agent" and no "has not started after a minute" error appears. Nothing launches the coordinator but the
+next message, and its start is the ordinary, timed warm-up. A remote owner's page sets
 `offline` from the Project it pushed; a served snapshot is ready whatever `offline` says.
 
 The coordinator's pi launches with `--no-builtin-tools` (`PiLaunch.agent(coordinator:)`), never
@@ -368,8 +368,8 @@ refused, not silently reinterpreted. Questions retain worker identity and remain
 
 `Project.messages` retains bounded queued/delivering/delivered/unknown/failed receipts.
 Human image-only and text-plus-image submissions use optional `NativeImage` inputs; durable
-receipts retain bounded private blob descriptors, never image bytes in Project JSON. Paused
-images wait for explicit Resume and restart remains paused. Remote image submissions require
+receipts retain bounded private blob descriptors, never image bytes in Project JSON. Images sent to a
+stopped Project restart it with the message. Remote image submissions require
 `logicalProjectRuntime.images.v1` and must fit one frame; oversized sends fail before transmission
 without clearing the draft. Storage, privacy and UI API: [Project producers](project-producers.md). A retry with the
 same operation identity returns the current record without another prompt, even with a stale
@@ -398,20 +398,23 @@ the Instructions editor's independent character counter does not change.
 
 ### Pause, restart and deletion
 
-A Project never pauses on its own. Only the person pauses it (Project settings > Pause project, or the pane), and only Resume or
-their next message after Resume starts work again. There is no run-time or activation limit; the bounds are Threads at once
-(how many threads run together) and the owner's plan limits, as in Claude's Projects. Stop on the coordinator ends its current
-turn only. A coordinator pi that exits marks an in-flight delivery `unknown` (never resent) and the next message relaunches it.
-A failed launch of the coordinator still pauses (there is nothing to talk to) and says why.
+The person has no Pause or Resume (removed 2026-10-20: the owner found it made no sense). Stop on the coordinator or a worker ends
+that turn only. There is no run-time or activation limit; the bounds are Threads at once (how many threads run together) and the
+owner's plan limits, as in Claude's Projects. A coordinator pi that exits marks an in-flight delivery `unknown` (never resent) and the
+next message relaunches it.
 
-Pause closes admissions, retains new messages and queued assignments, and issues native aborts
+The runtime still stops a Project on its own when it cannot go on: a failed coordinator launch, a failed Project save, or Projects
+turned off. That stop is the internal `.pause` described below. The person's next message restarts it (the `.resume` transition,
+applied by `.message`); while the interruption is unacknowledged the message is refused with `project_busy` and the words stay.
+
+The internal stop closes admissions, retains new messages and queued assignments, and issues native aborts
 for active project work. `interruptPending` distinguishes the request from acknowledged idle
 processes; pending launcher callbacks also reconcile the acknowledgement. A worker solely waiting
 on an actual native human dialog is a safe pause point and is NOT aborted. Concurrent non-question
 tool work still interrupts. Both native answer views enter the same owner gate while paused:
 `ProjectTask.pendingAnswer: ProjectQuestionAnswer?` persists the original operation/session/
 generation/dialog identity and a bounded opaque native answer envelope. Its phase is queued,
-delivering, delivered, failed or unknown. UI shows queued as waiting for explicit Resume; it must
+delivering, delivered, failed or unknown. UI shows queued as waiting to send; it must
 not display or log the envelope. Resume revalidates the original live dialog and consumes the
 answer once; expired/replaced dialogs fail honestly, never become synthetic replacement dialogs.
 Restart marks retained answers unknown and never sends them. An ordinary worker Stop can explicitly
