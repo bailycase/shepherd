@@ -39,8 +39,10 @@ folder-based UI becomes Spaces before the new Projects UI uses that name.
 
 - **D1. Assigned work.** A project coordinates tasks the user asks for, including follow-up work
   needed to finish those tasks. The goal provides context, not permission to invent more work
-  indefinitely. Quick questions can be answered in the project conversation. Related follow-ups
-  can reuse an existing task thread.
+  indefinitely. Quick questions can be answered in the project conversation. Follow-ups may reuse
+  a settled worker only for its original unresolved assignment. New assignments use `project_assign`
+  with fresh task and worker-thread identities, even in the same area. Include exact prior result
+  references and a short handoff when useful; never keep unfinished tasks as reusable peers.
 - **D2. Questions.** Needs you primarily means questions. A question is associated with its
   originating task thread. The user can answer in the project conversation or in that thread.
   The answer must reach the same question without being delivered twice. Unrelated work need
@@ -107,8 +109,9 @@ concurrency limits still bound coordination; this feature makes no strict dollar
   thread as coordinated work.
 - Questions and results retain their originating thread identity. Model prose is not proof
   that a thread finished or that a question was answered.
-- Resolved threads remain inspectable and can be reopened. They are not deleted. A thread
-  becoming idle is not automatically proof that its assigned task succeeded.
+- Resolved tasks are terminal, not deleted. Their history, results and artifacts remain readable
+  through authorized routes. A stopped (settled) turn is not success or resolution. Fresh follow-ups
+  and legacy `reopen` requests refuse with `task_resolved` and direct callers to `project_assign`.
 - There is no person-facing Pause. When the runtime stops a Project itself (see Pause, restart and
   deletion) it requests safe interruption of active work; the person's next message restarts it. The
   UI cannot claim an unreachable worker stopped before its host acknowledges that request.
@@ -316,7 +319,8 @@ and remains enforced even with the experiment OFF.
 
 These call `SessionServer.projectRuntime(_:expectedRevision:request:)`. `ProjectRuntimeRequest`
 contains `conversation`, `message(operationID:text:images:)`, `assign(operationID:spaceID:title:prompt:)`,
-`followUp(taskID:operationID:text:)`, `resolve(taskID:)`, `reopen(taskID:)`, `pause`, and `resume`.
+`followUp(taskID:operationID:text:)`, `resolve(taskID:)`, `pause`, and `resume`.
+The legacy `reopen(taskID:)` wire case still decodes but refuses new requests; resolved tasks are terminal.
 Additional actions are `read`, `inspect(taskID:)`, `proposeSpace(operationID:path:spaceID:originTaskID:)`,
 `decideSpace(proposalID:expectedProposalRevision:accept:)` and `remember(operationID:text:taskID:)`.
 Model resolution supplies an optional `operationID` on `resolve` for durable retry receipts.
@@ -361,8 +365,10 @@ its Project extension registers, leaving the coordinator with none.
 owner-local Space, title, prompt, phase, revision, optional error, settled timestamp and question
 title. Phases are `queued`, `reserved`, `running`, `waiting`, `settled`, `resolved`, `unknown`,
 `failed`. **Settled means an admitted worker emitted an actual started/settled native turn, not
-success or automatic resolution.** User resolution requires settled; Reopen returns resolved
-to settled. Follow-up reuses a settled worker and its native conversation. Active work can still
+success or automatic resolution.** User resolution requires settled and is terminal. Follow-up
+reuses a settled worker and its native conversation only for the original unresolved assignment.
+Fresh resolved-task follow-ups refuse before changing prompt, model, thinking or delivery state,
+including tasks restored from durable history. Active work can still
 be steered directly in that ordinary thread; a project follow-up to an active/unknown task is
 refused, not silently reinterpreted. Questions retain worker identity and remain inspectable.
 
@@ -426,7 +432,7 @@ follow-up continues it); another host's thread stays `unknown` until its receipt
 Deliveries in flight become `unknown` and are never resent. No polling model, invented backlog or
 automatic task retry is used. First-class child/workflow/peer/automation spawn/send bypasses are
 gated for active assigned workers; ordinary coding tools stay available.
-Completed history no longer consumes a permanent delivery, activation, resolution, memory-operation or executor-receipt quota. The owner archives resolved tasks before retaining at most 16 recent resolved tasks plus live work; `archivedResolvedTaskCount` preserves the lifecycle count. Reopen/follow-up restores the exact retained task. Recent terminal Space proposals and executor receipts are bounded too; active/unknown receipts stay pinned. Artifact references pin their operations. Retired referenced tasks keep only bounded task/worker/Space/host/operation provenance, not prompts or full task records, so artifacts and pending Space proposals still validate. Terminal recovery preserves the exact operation's diagnostic, including takeover and native turn warnings, rather than clearing it or importing an older failure.
+Completed history no longer consumes a permanent delivery, activation, resolution, memory-operation or executor-receipt quota. The owner archives resolved tasks before retaining at most 16 recent resolved tasks plus live work; `archivedResolvedTaskCount` preserves the lifecycle count. Authorized archived open/read routes retrieve the exact retained task without reactivating it. New follow-up/reopen requests cannot revive it. Previously accepted operations, including legacy resolved-task follow-ups, retain their replay/recovery proof: exact-payload replay returns retained receipts before new admission checks, never redispatches or reopens work. Legacy proof without a verifiable payload refuses resend. No historical lifecycle or native transcript is rewritten, and uncertain work is never automatically resent. Recent terminal Space proposals and executor receipts are bounded too; active/unknown receipts stay pinned. Artifact references pin their operations. Retired referenced tasks keep only bounded task/worker/Space/host/operation provenance, not prompts or full task records, so artifacts and pending Space proposals still validate. Terminal recovery preserves the exact operation's diagnostic, including takeover and native turn warnings, rather than clearing it or importing an older failure.
 
 A native stop first enters the durable event/result outbox. Only then can a workspace save publish settlement. If the live queue is full, the result remains indexed in the outbox and drains in owner sequence before newer human admission; it is not dropped and the worker is not rerun. A failed workspace rename leaves the outbox recoverable on the next owner save. Storage failure fails closed, retains the in-process capture where available, and blocks admissions; explicit Resume can retry retaining that already-observed stop without resending its prompt. Process death before capture is durably recorded can still leave an interrupted/unknown operation with unavailable content, never invented success or automatic dispatch.
 
@@ -445,7 +451,8 @@ coordinator's `project_read({includeModels: true})`) and `thinking` (off…max).
 task, launches the thread with them, and before a follow-up's prompt sets the thread's model and
 thinking when they changed. Omitted, a task uses the Project's Thread model and the owner's default
 thinking level (Settings > Agents), never a hardcoded level. A follow-up keeps the task's earlier
-choice unless it names a new one, and reaches a resolved task too, reopening it.
+choice unless it names a new one. Only an admitted same-assignment turn may change these values;
+a fresh follow-up to resolved work cannot change them.
 
 ### Asking the person
 
@@ -612,7 +619,10 @@ creates no thread, session or process and fakes no conversation, task or send.
   state, because an `Automation` has no project link yet.
 - **A resolved task's thread** in the pane draws no composer at all (`ProjectWorkerThreadStyle.composerHidden`), not a
   disabled one: the footer card ("This thread is resolved.", Reopen) stands in and the transcript reaches the pane's
-  bottom. Reopen brings the steering composer back.
+  bottom. The owner now refuses Reopen because resolved tasks are terminal. Removing that stale
+  footer action and the row/context-menu Reopen actions in `LogicalProjectPane.swift`, backed by
+  `ProjectPagePresentation.swift`, remains a separate UI-lane change; this backend change does not
+  alter ordinary chat or authorized owner manual takeover.
 - **A worker's question card** above the conversation's composer is truthful: the worker is blocked on a native question, so its
   footer says "<thread> is waiting for your answer." (never that it "keeps going on its best guess"), and while the Project is
   paused "Your answer waits until you resume." Once the owner holds an answer (queued for Resume, or on its way) the card goes,

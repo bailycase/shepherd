@@ -393,6 +393,16 @@ struct ProjectHistoryTests {
         try await eventually("remote settled") { rig.receipt(exact)?.phase == .settled }
         rig.owner.server.reconcileProjectExecutions(host: binding)
         try await eventually("owner has exact remote receipt") { rig.owner.server.state.projects.first?.tasks.first?.executionReceipt?.phase == .settled }
+        let resolved = try await rig.owner.server.projectRuntime(project.id, expectedRevision: rig.owner.server.state.projects[0].revision,
+            request: .resolve(taskID: exact.taskID))
+        let placementsBefore = routes.current.count
+        do {
+            _ = try await rig.owner.server.projectRuntime(project.id, expectedRevision: resolved.revision,
+                request: .followUp(taskID: exact.taskID, operationID: UUID(), text: "Unrelated new assignment", thinking: "low"))
+            Issue.record("Resolved remote assignment must not be reused")
+        } catch let error as LogicalProjectsError { #expect(error.code == "task_resolved" && error.description.contains("project_assign")) }
+        #expect(rig.owner.server.state.projects[0] == resolved)
+        #expect(routes.current.count == placementsBefore && rig.launches.current == 1, "Terminal refusal never reaches the executor or creates a worker")
         let read = ProjectRuntimeRequest.result(taskID: exact.taskID, operationID: exact.key.operationID, offset: 0, sha256: nil)
         let workerRead = ProjectRuntimeRequest.worker(taskID: exact.taskID)
         let routedWorker = try await rig.owner.server.projectRuntime(project.id, expectedRevision: rig.owner.server.state.projects[0].revision, request: workerRead)

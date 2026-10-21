@@ -29,6 +29,7 @@ struct ProjectRuntimeTests {
                         let log = host.dir.appendingPathComponent("\(agent.id).log")
                         let session = try await host.server.createSession(params: .init(cwd: launch.cwd, command: StubPi.command,
                             env: ["STUB_PI_LOG": log.path, "SHEPHERD_AGENT_ID": agent.id.rawValue,
+                                  "STUB_PI_SESSION_ID": agent.id.rawValue,
                                   "SHEPHERD_SOCKET": host.socketPath,
                                   "SHEPHERD_PROJECT_CONTEXT": "{\"projectID\":\"\(launch.projectID)\"}"], runtime: .rpc))
                         try await host.server.updatePaneSession(tabID: tab.id, paneID: pane.id, sessionID: session.id)
@@ -331,8 +332,13 @@ struct ProjectRuntimeTests {
         #expect(settled.tasks.allSatisfy { $0.settledAt != nil })
         let resolved = try await rig.perform(project.id, .resolve(taskID: settled.tasks[0].id))
         #expect(resolved.tasks[0].phase == .resolved)
-        let reopened = try await rig.perform(project.id, .reopen(taskID: settled.tasks[0].id))
-        #expect(reopened.tasks[0].phase == .settled)
+        do {
+            _ = try await rig.perform(project.id, .reopen(taskID: settled.tasks[0].id))
+            Issue.record("Resolved tasks must be terminal, including the legacy owner reopen route")
+        } catch let error as LogicalProjectsError {
+            #expect(error.code == "task_resolved" && error.description.contains("project_assign"))
+        }
+        #expect(rig.host.server.state.projects.first == resolved)
     }
 
     @Test func pauseInterruptsRefusesMessagesWhileStoppingAndTheNextMessageRestarts() async throws {
@@ -467,11 +473,18 @@ struct ProjectRuntimeTests {
         #expect(task.thinking == "high")
         let pi = try #require(rig.agents.current[task.workerAgentID])
         #expect(pi.stdin("set_thinking_level").last?["level"] as? String == "high")
-        // A resolved thread still takes a follow-up, which reopens it (as a finished thread does in Claude's Projects).
-        _ = try await rig.perform(project.id, .resolve(taskID: task.id))
+        // Only the original unresolved assignment can iterate in this worker conversation.
         _ = try await rig.perform(project.id, .followUp(taskID: task.id, operationID: UUID(), text: "hello", thinking: "low"))
         try await eventually("follow-up settled") { pi.stdin("prompt").count == 2 && rig.host.server.state.projects.first?.tasks.first?.phase == .settled }
         #expect(rig.host.server.state.projects.first?.tasks.first?.thinking == "low")
+        #expect(pi.stdin("set_thinking_level").last?["level"] as? String == "low")
+        let resolved = try await rig.perform(project.id, .resolve(taskID: task.id))
+        do {
+            _ = try await rig.perform(project.id, .followUp(taskID: task.id, operationID: UUID(), text: "new work", model: "nobody/unlisted", thinking: "high"))
+            Issue.record("A new follow-up must not reopen resolved work or change its model/thinking")
+        } catch let error as LogicalProjectsError { #expect(error.code == "task_resolved") }
+        #expect(rig.host.server.state.projects.first == resolved)
+        #expect(pi.stdin("prompt").count == 2)
         #expect(pi.stdin("set_thinking_level").last?["level"] as? String == "low")
     }
 
