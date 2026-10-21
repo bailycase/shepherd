@@ -95,6 +95,9 @@ final class RPCThreadState {
     /// long history takes a moment to arrive: served meanwhile, a resumed thread would show
     /// as a new, empty one.
     private var historyPending = true
+    // Only a successfully installed history supersedes an older request still hydrating images.
+    private var historyRequestSequence: UInt64 = 0
+    private var appliedHistorySequence: UInt64 = 0
     /// Installed by SessionServer: called once, on the session queue, when the thread first
     /// serves (pi has answered `get_state` and `get_messages`).
     var onServable: (() -> Void)?
@@ -224,6 +227,8 @@ final class RPCThreadState {
     /// new revision.
     private var historyVersion = 0
     var live: [LiveItem] = []
+    /// Tests only: runs off the queue before a history's images are read (`refreshMessages`).
+    var beforeHistoryImages: (() -> Void)?
     private var sequence = 0
     private var currentAssistant: Int?
     /// When each tool call was first seen (ms): named by the model, else running. Its clock, for
@@ -1434,6 +1439,8 @@ final class RPCThreadState {
     func refreshMessages(timeout: TimeInterval = 10, bootstrap: Bool = false,
                          done: ((Result<RPCResponse, RPCError>) -> Void)? = nil) {
         let generation = generation
+        historyRequestSequence += 1
+        let sequence = historyRequestSequence
         let started = ContinuousClock.now
         let measured: (Result<RPCResponse, RPCError>) -> Void = { [weak self] result in
             let elapsed = started.duration(to: .now).components
@@ -1441,30 +1448,47 @@ final class RPCThreadState {
             done?(result)
         }
         let receive: (Result<RPCResponse, RPCError>) -> Void = { [weak self] result in
+            guard let self else { return }
+            // The live rows that had ended when pi answered are the ones this history holds. One that ends while the images
+            // below are read (the next message pi starts, a Steer now's above all) is not in it, and stays live.
+            let persisted = Set(self.live.filter(Self.persisted).map(\.value.entryID))
             // A history with images costs a header read and a SHA-256 each. That work is done here, off the thread's queue, into a
             // table built from exactly these messages; the projection on the thread's queue only looks entries up. A history with
             // no images goes straight on.
-            if let self, case .success(let response) = result, response.success, let messages = response.messages,
+            if case .success(let response) = result, response.success, let messages = response.messages,
                ThreadImages.hasImages(messages) {
+                let hook = self.beforeHistoryImages
                 DispatchQueue.global(qos: .utility).async { [weak self] in
+                    hook?()
                     let table = ThreadImages.table(for: messages)
                     self?.queue.async { [weak self] in
-                        self?.finishRefresh(result, generation: generation, bootstrap: bootstrap, images: table, done: measured)
+                        self?.finishRefresh(result, generation: generation, sequence: sequence, bootstrap: bootstrap, images: table, persisted: persisted,
+                                            done: measured)
                     }
                 }
                 return
             }
-            self?.finishRefresh(result, generation: generation, bootstrap: bootstrap, images: [:], done: measured)
+            self.finishRefresh(result, generation: generation, sequence: sequence, bootstrap: bootstrap, images: [:], persisted: persisted, done: measured)
         }
         session.request(.getMessages, timeout: timeout,
                         onLateResponse: bootstrap ? { receive(.success($0)) } : nil, completion: receive)
     }
 
-    private func finishRefresh(_ result: Result<RPCResponse, RPCError>, generation: String, bootstrap: Bool,
-                               images: [String: ThreadImages.Meta], done: ((Result<RPCResponse, RPCError>) -> Void)?) {
+    /// A live row pi has persisted: a fetch of its history from then on holds it.
+    private static func persisted(_ item: LiveItem) -> Bool {
+        switch item.kind {
+        case .assistant, .user, .compaction: item.ended
+        case .tool: item.value.status == "complete" || item.value.status == "aborted"
+        case .pending, .question, .notice: false
+        }
+    }
+
+    private func finishRefresh(_ result: Result<RPCResponse, RPCError>, generation: String, sequence: UInt64, bootstrap: Bool,
+                               images: [String: ThreadImages.Meta], persisted: Set<String>,
+                               done: ((Result<RPCResponse, RPCError>) -> Void)?) {
         do {
             defer { done?(result) }
-            guard generation == self.generation else { return }
+            guard generation == self.generation, sequence > appliedHistorySequence else { return }
             // During bootstrap a timeout is not an empty history. The readiness deadline
             // surfaces the failure; a late answer can still recover the full conversation.
             if bootstrap, case .failure(.timeout) = result { return }
@@ -1482,6 +1506,7 @@ final class RPCThreadState {
             }
             // The whole history is here again: what it could not read, and the live rows `trimLive`
             // dropped, are in it.
+            self.appliedHistorySequence = sequence
             self.historyUnread = false
             self.liveLeftOut = 0
             let history = Self.projectHistory(self.markingStopped(messages),
@@ -1517,15 +1542,12 @@ final class RPCThreadState {
             }
             let estimate = Self.estimate(messages)
             if estimate != self.estimate { self.estimate = estimate }
-            // message_end precedes persistence; a refresh means everything ended is now history.
+            // message_end precedes persistence: what had ended when pi answered is now history.
             self.live.removeAll { item in
                 switch item.kind {
-                case .assistant, .user: item.ended
-                case .tool: item.value.status == "complete" || item.value.status == "aborted"
-                case .pending: false
-                case .compaction: item.ended
                 // History places it now.
                 case .question, .notice: true
+                default: persisted.contains(item.value.entryID) && Self.persisted(item)
                 }
             }
             self.updateContext()

@@ -281,6 +281,55 @@ struct InterruptTests {
         #expect((sent["images"] as? [[String: Any]])?.first?["data"] as? String == Data([1, 2, 3]).base64EncodedString())
     }
 
+    /// In a thread whose history holds images, Steer now's message stays in the thread from the press until its turn is over.
+    /// The stopped run's history is read off the queue for its images, and pi starts the message in the meantime: that
+    /// history does not hold it yet, so it must stay a live row, not leave the thread (it used to, until the next run ended).
+    @Test func steerNowStaysInTheThreadWhileAHistoryWithImagesIsRead() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let png = ThreadImagesTests.png(side: 16)
+        let file = h.dir.appendingPathComponent("history.json")
+        let history: [[String: Any]] = [
+            ["role": "user", "content": [["type": "text", "text": "look"], ["type": "image", "data": png.base64EncodedString(), "mimeType": "image/png"]],
+             "timestamp": 1_733_234_000_000],
+            ["role": "assistant", "content": [["type": "text", "text": "seen"]], "stopReason": "stop", "timestamp": 1_733_234_000_001],
+        ]
+        try JSONSerialization.data(withJSONObject: history).write(to: file)
+        let pi = try await PiAgent.launch(on: h, env: ["STUB_PI_MESSAGES_FILE": file.path])
+        let running = try await startRun(pi, "tools:2 build")
+        // Hold every image read from here: the stopped run's history is read, and pi starts the message, before it lands.
+        let held = DispatchSemaphore(value: 0), reads = Locked(0)
+        defer { for _ in 0..<8 { held.signal() } }
+        try await h.server.enqueue {
+            h.server.rpcThread(forAgent: pi.agent.id)?.beforeHistoryImages = { reads.withValue { $0 += 1 }; held.wait() }
+        }
+        func shown(_ s: NativeThreadSnapshot, _ op: UUID) -> [NativeThreadMessage] {
+            (s.messages + s.provisional).filter { $0.role == "user" && ($0.operationID == op || $0.entryID == "pending:\(op.uuidString)") }
+        }
+
+        let op = UUID()
+        #expect(try await pi.send("tools:1 do this instead", delivery: .interrupt, operationID: op, from: running) == .accepted(operationID: op))
+        let started = try await pi.snapshot("pi to start the message while the history is read") { s in
+            reads.current > 0 && s.running && shown(s, op).contains { $0.status == nil }
+        }
+        // The read lands while the message's turn runs (its tool waits): the message pi started after the history was asked
+        // for is not in it, and stays, once.
+        held.signal()
+        let until = ContinuousClock.now + .seconds(1)
+        while ContinuousClock.now < until {
+            let s = try #require(try await pi.request(.snapshot()).snapshotValue)
+            #expect(s.running)
+            #expect(shown(s, op).count == 1, "the message is in the thread exactly once: \(shown(s, op).map(\.entryID))")
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        for _ in 0..<8 { held.signal() }
+        pi.finishTool(2) // the stub numbers calls across runs: the stopped run's was 1
+        let done = try await pi.snapshot("the message's turn to finish") { s in !s.running && s.messages.contains { $0.operationID == op } }
+        let message = try #require(shown(done, op).first)
+        #expect(shown(done, op).count == 1 && message.entryID == shown(started, op).first?.entryID, "one row, which keeps its id as it is saved")
+        #expect(message.origin == nil && message.blocks.first?.text == "tools:1 do this instead")
+    }
+
     /// While pi is idle it is a plain send: nothing to stop.
     @Test func steerNowWhilePiIsIdleIsAPlainSend() async throws {
         let h = try ScratchServer.fresh()
