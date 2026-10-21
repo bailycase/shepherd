@@ -9,6 +9,8 @@ The shared `RemoteHostClient.agentAction` supports `.move(spaceID:)` behind `age
 It preserves the host's conversation and reloads destination context only for inactive ordinary
 threads. Mac and iOS share decoding and the capability gate; this adds no iOS drag UI.
 
+The shared Project protocol also advertises `logicalProjects.result.v1` for explicit selected-operation result reads. `Project.resultPage`, `historyPage`, `historyNext`, operational-history counters and worker-ownership fields are optional compatible additions. Older peers refuse result requests before sending; no iOS UI or conversation behavior changes.
+
 ## The one rule
 
 **A track edits only its own folders, plus new files anywhere under them. Everything else goes

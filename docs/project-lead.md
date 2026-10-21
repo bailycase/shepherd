@@ -366,7 +366,7 @@ to settled. Follow-up reuses a settled worker and its native conversation. Activ
 be steered directly in that ordinary thread; a project follow-up to an active/unknown task is
 refused, not silently reinterpreted. Questions retain worker identity and remain inspectable.
 
-`Project.messages` retains bounded queued/delivering/delivered/unknown/failed receipts.
+`Project.messages` is bounded operational delivery state, not the Project's lifetime history. An owner-only SQLite ledger beside the owner state file archives committed messages, task activations, native events and replay/answer proof before retirement. It retains attachment references and human provenance; it does not rewrite native transcripts. Reads use indexed, bounded pages rather than loading the archive into every update. The newest 32 messages are retained where possible; queued, delivering, unknown, unanswered questions and unresolved answer dispatches remain pinned, up to the existing 64-message/frame admission bounds.
 Human image-only and text-plus-image submissions use optional `NativeImage` inputs; durable
 receipts retain bounded private blob descriptors, never image bytes in Project JSON. Images sent to a
 stopped Project restart it with the message. Remote image submissions require
@@ -426,10 +426,17 @@ follow-up continues it); another host's thread stays `unknown` until its receipt
 Deliveries in flight become `unknown` and are never resent. No polling model, invented backlog or
 automatic task retry is used. First-class child/workflow/peer/automation spawn/send bypasses are
 gated for active assigned workers; ordinary coding tools stay available.
-Record limits remain 64 task links, 32 activations and 32 resolution receipts per task, 64 message
-receipts, 32 Space proposals and 128 memory-operation receipts within the encoded project budget.
-A full event receipt queue pauses and records an inspectable error; the native result remains in
-the worker conversation. These are storage safeguards, not run limits.
+Completed history no longer consumes a permanent delivery, activation, resolution, memory-operation or executor-receipt quota. The owner archives resolved tasks before retaining at most 16 recent resolved tasks plus live work; `archivedResolvedTaskCount` preserves the lifecycle count. Reopen/follow-up restores the exact retained task. Recent terminal Space proposals and executor receipts are bounded too; active/unknown receipts stay pinned. Artifact references pin their operations. Retired referenced tasks keep only bounded task/worker/Space/host/operation provenance, not prompts or full task records, so artifacts and pending Space proposals still validate. Terminal recovery preserves the exact operation's diagnostic, including takeover and native turn warnings, rather than clearing it or importing an older failure.
+
+A native stop first enters the durable event/result outbox. Only then can a workspace save publish settlement. If the live queue is full, the result remains indexed in the outbox and drains in owner sequence before newer human admission; it is not dropped and the worker is not rerun. A failed workspace rename leaves the outbox recoverable on the next owner save. Storage failure fails closed, retains the in-process capture where available, and blocks admissions; explicit Resume can retry retaining that already-observed stop without resending its prompt. Process death before capture is durably recorded can still leave an interrupted/unknown operation with unavailable content, never invented success or automatic dispatch.
+
+Migration archives the original committed state transactionally before changing working arrays. It is idempotent, also for legacy Projects already holding 64 messages; queued/in-flight/failed/unknown states, original IDs, attachments and answer proof survive. Restart resumes no model work. History already discarded by an earlier version cannot be reconstructed from a clipped receipt or display ID.
+
+Archived native threads remain hidden as managed workers but are readable through the owner-authorized worker route. It loads one historical task, checks the original worker/session and remote execution binding, and allows snapshots only. It does not reactivate a task or resend work. Closed child-scope tombstones retain at most 16 recent scopes plus scopes still draining; old tokens/callbacks fail closed after eviction and restart.
+
+Result, history and worker-snapshot reads retain their initial permission grant across asynchronous storage/host I/O. Disable/re-enable, caller replacement, ownership or linked host-policy changes revoke that grant; Pause and ordinary work-state updates do not. Both owner and executor recheck before returning content or metadata. Removing, hiding or replacing the exact executor Space/path/binding revokes its read grant even if that route is later restored; no-op refreshes, display renames and unrelated Spaces do not. Route tokens mirror only the current visible directory, not lifetime history. Existing disabled-executor cancellation, pause and receipt reconciliation remain available with exact scope checks; execute/resume/answer and the new result/worker-content reads still require Projects to be enabled.
+
+Resources remain finite: working task/executor counts, unknown dispatches, active answer receipts, linked Spaces, configuration memory and existing artifact/storage budgets can apply real backpressure. SQLite history grows on disk; disk exhaustion is an error, not automatic proof deletion. Captures retain at most 16 MiB of final visible text and explicitly mark larger/non-text/abnormal-stop results incomplete. Settled still does not mean reviewed success.
 
 ### Per-task model and thinking
 
@@ -476,7 +483,7 @@ including the existing genuine persistence-failure regression.
 ### Typed tools, live context, Space approval and hosts
 
 `shepherd-project-context.ts` registers only
-`project_read`, `project_inspect`, `project_answer`, `project_assign`, `project_follow_up`, `project_resolve`,
+`project_read`, `project_inspect`, `project_history`, `project_result`, `project_answer`, `project_assign`, `project_follow_up`, `project_resolve`,
 `project_propose_space` and `project_remember` for coordinators. Ordinary workers get no coordinator
 tools. Kernel extension-peer identity, reciprocal coordinator ownership, revision, operation,
 linked Space and host permission checks run independently on the host. These primary tools are
@@ -486,11 +493,11 @@ coordinators and their working directories.
 
 AI-facing results omit the model catalogue unless `project_read({includeModels: true})` requests it.
 Reads omit task prompts and result bodies; mutations acknowledge only the affected task or proposal.
-`project_inspect({taskID})` returns task state and native receipt identities without replaying settled
-result prose. Add `includeResults: true` to retrieve retained prompt/result bodies, not a full native
-transcript. Remote receipt text is capped at 4,096 bytes; oversized local events omit content.
-Inspect the source worker conversation when receipts are clipped or omitted; an index or preview
-is not proof of result inspection or success. Questions, options and eligible human reply proof
+`project_inspect({taskID, operationID?})` returns task state and at most three retained native receipt identities without replaying settled result prose. `project_history({taskID?, beforeSequence?, includeResults?})` explicitly pages retained owner history, newest first, at most five records/256 KiB of retained bodies per page. Omit taskID for Project messages, including historical human replies. Default pages are indexes, not inspected result content. `includeResults: true` on inspect/history reveals retained receipt bodies only; old remote receipt text can be capped at 4,096 bytes and oversized local receipts can omit content.
+
+`project_result({taskID, operationID, offset?, sha256?})` retrieves only that exact operation's visible final assistant text, redacted before paging. First use offset 0; follow `nextOffset` with the returned SHA-256. Pages contain at most 8 KiB of base64-encoded bytes with stable total bytes, hash, redaction status and exact owner/Project/task/operation/event/worker/session/generation/delivery/host identity. Remote results retain both owner-event and executor-origin identities/revisions. Continuations require the digest; bytes reconstruct one immutable UTF-8 result even if a code point spans a page. Read all pages and check availability; an index, clipped preview or partial page is not proof of complete inspection or success. No thinking, system prompt, unrelated transcript or tool-output browsing is exposed.
+
+Availability is `complete`, `incomplete`, `unavailable` or `unsupported`. Legacy clipped/missing captures remain honestly unavailable. Remote reads require `logicalProjects.result.v1`, the original owner host/binding/Space authorization and executor key; stale generations, replaced bindings and unsupported peers fail closed, never fall back to a latest assistant response. Questions, options and eligible human reply proof
 remain intact. App snapshots, native receipts and existing transcripts are unchanged; these
 projections apply only to new coordinator tool results. Lost mutation replies report an unknown
 outcome, never a refusal or verified success.
@@ -526,12 +533,10 @@ answer, expired dialog, changed activation/generation, manual takeover, stale re
 Project cannot redirect the chat answer to another question. Ordinary native controls need no
 coordinator proof and keep their existing behavior.
 
-`project_read`/`project_inspect` expose at most the current eligible human message, redacted, alongside
-inspect's existing three worker events. They never expose chat history, image descriptors, chat-answer
-payload receipts or immutable execution retry context. Native question sources carry optional
+`project_read`/`project_inspect` expose at most the current eligible human message, redacted, alongside inspect's three worker events. Explicit `project_history` pages can retrieve historical human messages and their original provenance; neither those old messages nor a result can authorize a new native answer. Model-facing copies omit image descriptors, opaque chat-answer envelopes and immutable execution retry context. Native question sources carry optional
 generation; old events without it cannot authorize a relay.
 
-The owner retains up to 64 chat-answer receipts per Project under their human messages, each binding
+The bounded live state retains up to 64 chat-answer receipts under human messages; the durable history/replay ledger preserves retired proof without a Project-lifetime answer quota. Each receipt binds
 operation, task, question event and the exact bounded native answer envelope (32 KiB). Identical
 accepted retries do not dispatch again; changing the answer or source under an operation refuses.
 In-flight/unknown delivery is reported as uncertain, never retried as a fresh answer. A definite
