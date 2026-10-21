@@ -9,6 +9,7 @@ struct ProjectExecutionWireTests {
     static let assignment = ProjectExecutionAssignment(key: key, taskID: ProjectTaskID(), reservedWorkerID: AgentID(),
                                                        executorSpaceID: SpaceID(), title: "Task", prompt: "Do assigned work")
     @Test(arguments: [ProjectExecutionRequest.execute(assignment), .snapshot(key: key, watch: true),
+                      .result(key: key, offset: 8190, sha256: "exact-content-digest"),
                       .snapshot(key: key, watch: false), .cancel(key: key), .pause(key: key), .resume(key: key),
                       .answer(key: key, request: .answer(expectedSessionID: "session", generation: "generation", operationID: UUID(), dialogID: "dialog", answer: .confirm(value: true)))])
     func everyExecutionActionRoundTrips(_ command: ProjectExecutionRequest) throws {
@@ -28,6 +29,15 @@ struct ProjectExecutionWireTests {
         #expect(try Wire.roundTrip(saved) == saved)
         #expect(saved.withoutProjectExecutions.projectExecutions.isEmpty)
     }
+    @Test func completeResultPagingIsExplicitAndOldPeersHaveNoResultPage() throws {
+        let receipt = ProjectExecutionReceipt(key: Self.key, assignment: Self.assignment, phase: .settled)
+        let page = ProjectResultPage(availability: .unavailable, reason: "legacy capture has no exact complete result")
+        let result = ProjectExecutionResult(receipt: receipt, resultPage: page)
+        #expect(try Wire.roundTrip(RemoteReply.projectExecution(id: 44, result: result)) == .projectExecution(id: 44, result: result))
+        let legacy = try JSONDecoder().decode(ProjectExecutionResult.self, from: JSONEncoder().encode(ProjectExecutionResult(receipt: receipt)))
+        #expect(legacy.resultPage == nil && RemoteProtocol.capabilities.contains(RemoteProtocol.projectResultCapability))
+    }
+
     @Test func manualTakeoverProofRoundTripsButOlderExecutorsSupplyNoProof() throws {
         let receipt = ProjectExecutionReceipt(key: Self.key, assignment: Self.assignment, phase: .unknown)
         let proven = ProjectExecutionResult(receipt: receipt, workerTakenOver: true)

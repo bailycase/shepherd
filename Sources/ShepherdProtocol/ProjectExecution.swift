@@ -18,6 +18,7 @@ public enum ProjectExecutionRequest: Codable, Hashable, Sendable {
         }
     }
     case snapshot(key: ProjectExecutionKey, watch: Bool)
+    case result(key: ProjectExecutionKey, offset: Int64, sha256: String?)
     case cancel(key: ProjectExecutionKey)
     case pause(key: ProjectExecutionKey)
     case resume(key: ProjectExecutionKey)
@@ -30,7 +31,7 @@ public enum ProjectExecutionRequest: Codable, Hashable, Sendable {
     public var key: ProjectExecutionKey {
         switch self {
         case .execute(let assignment): assignment.key
-        case .snapshot(let key, _), .cancel(let key), .pause(let key), .resume(let key), .answer(let key, _), .publicationRead(let key, _, _): key
+        case .result(let key, _, _), .snapshot(let key, _), .cancel(let key), .pause(let key), .resume(let key), .answer(let key, _), .publicationRead(let key, _, _): key
         }
     }
 }
@@ -42,7 +43,8 @@ public struct ProjectExecutionResult: Codable, Hashable, Sendable {
     public var publication: ProjectPublicationChunk?
     /// Live executor proof for this exact activation/session/generation. Missing is not proof.
     public var workerTakenOver: Bool?
-    public init(receipt: ProjectExecutionReceipt, thread: NativeThreadSnapshot? = nil, workerTakenOver: Bool? = nil) {
-        self.receipt = receipt; self.thread = thread; self.workerTakenOver = workerTakenOver
+    public var resultPage: ProjectResultPage?
+    public init(receipt: ProjectExecutionReceipt, thread: NativeThreadSnapshot? = nil, workerTakenOver: Bool? = nil, resultPage: ProjectResultPage? = nil) {
+        self.receipt = receipt; self.thread = thread; self.workerTakenOver = workerTakenOver; self.resultPage = resultPage
     }
 }

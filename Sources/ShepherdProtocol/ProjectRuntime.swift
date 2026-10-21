@@ -22,9 +22,25 @@ public struct ProjectRuntimeLaunch: Sendable {
 
 /// Owner-validated actions. Extension callers receive only the explicitly permitted subset.
 public enum ProjectRuntimeRequest: Codable, Hashable, Sendable {
+    public var targetTaskID: ProjectTaskID? {
+        switch self {
+        case .followUp(let id, _, _, _, _), .resolve(let id, _), .reopen(let id), .remember(_, _, let id): id
+        default: nil
+        }
+    }
+    public var operationID: UUID? {
+        switch self {
+        case .message(let id, _, _), .assign(let id, _, _, _, _, _, _), .followUp(_, let id, _, _, _), .remember(let id, _, _), .proposeSpace(let id, _, _, _): id
+        case .resolve(_, let id): id
+        default: nil
+        }
+    }
     case conversation
     case read
-    case inspect(taskID: ProjectTaskID)
+    case inspect(taskID: ProjectTaskID, operationID: UUID? = nil)
+    /// Explicit indexed history and immutable final-result pages. Neither is a success assertion.
+    case history(taskID: ProjectTaskID? = nil, beforeSequence: Int64? = nil, includeBodies: Bool? = nil)
+    case result(taskID: ProjectTaskID, operationID: UUID, offset: Int64 = 0, sha256: String? = nil)
     case answer(operationID: UUID, taskID: ProjectTaskID, questionEventID: UUID, humanReplyID: UUID, answer: NativeDialogAnswer)
     case proposeSpace(operationID: UUID, path: String?, spaceID: SpaceID?, originTaskID: ProjectTaskID?)
     case decideSpace(proposalID: UUID, expectedProposalRevision: UInt64, accept: Bool)
@@ -42,6 +58,12 @@ public enum ProjectRuntimeRequest: Codable, Hashable, Sendable {
 
 /// A Project viewer addresses only its owner; no worker is started on the viewing Mac.
 public enum ProjectRuntimeTransport: Codable, Hashable, Sendable {
+    public var requiresResults: Bool {
+        if case .action(_, _, let request) = self {
+            switch request { case .result, .history: return true; default: break }
+        }
+        return false
+    }
     case hosts
     case action(projectID: ProjectID, expectedRevision: UInt64, request: ProjectRuntimeRequest)
     case conversation(projectID: ProjectID, request: NativeThreadRequest)
@@ -63,6 +85,7 @@ public enum ProjectRuntimeTransport: Codable, Hashable, Sendable {
 
 public extension RemoteProtocol {
     static let projectWorkerCapability = "logicalProjects.worker.v1"
+    static let projectResultCapability = "logicalProjects.result.v1"
 }
 
 public enum ProjectRuntimeResult: Codable, Hashable, Sendable {

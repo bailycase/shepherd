@@ -109,6 +109,16 @@ public struct Project: Codable, Hashable, Sendable, Identifiable {
     public var memoryOperations: [UUID] = []
     /// Native operations of retired worker-event wake-ups (`retireFinishedMessages`), so the conversation still hides them.
     public var retiredWakeups: [UUID] = []
+    /// Owner-internal native captures, consumed by the durable history writer before publication. Never decoded from wire/state.
+    public var stagedEvents: [ProjectStagedEvent] = []
+    /// Explicit read responses only. Normal snapshots/working state leave these nil.
+    public var archivedResolvedTaskCount: Int?
+    public var historyPending: Bool?
+    public var commandReceipt: ProjectCommandReceipt?
+    public var operationReceipt: ProjectOperationReceipt?
+    public var resultPage: ProjectResultPage?
+    public var historyPage: [ProjectHistoryEntry]?
+    public var historyNext: Int64?
     /// A pause request may precede an actual native interruption acknowledgement.
     public var interruptPending: Bool = false
 
@@ -129,7 +139,7 @@ public struct Project: Codable, Hashable, Sendable, Identifiable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, ownerID, name, goal, coordinatorAgentID, revision, paused, settings, memory, linkedSpaces, tasks, messages, interruptPending, spaceProposals, memoryOperations, artifacts, retiredWakeups
+        case id, ownerID, name, goal, coordinatorAgentID, revision, paused, settings, memory, linkedSpaces, tasks, messages, interruptPending, spaceProposals, memoryOperations, artifacts, retiredWakeups, archivedResolvedTaskCount, historyPending, commandReceipt, operationReceipt, resultPage, historyPage, historyNext
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -150,6 +160,13 @@ public struct Project: Codable, Hashable, Sendable, Identifiable {
         spaceProposals = try c.decodeIfPresent([ProjectSpaceProposal].self, forKey: .spaceProposals) ?? []
         memoryOperations = try c.decodeIfPresent([UUID].self, forKey: .memoryOperations) ?? []
         retiredWakeups = try c.decodeIfPresent([UUID].self, forKey: .retiredWakeups) ?? []
+        archivedResolvedTaskCount = try c.decodeIfPresent(Int.self, forKey: .archivedResolvedTaskCount)
+        historyPending = try c.decodeIfPresent(Bool.self, forKey: .historyPending)
+        commandReceipt = try c.decodeIfPresent(ProjectCommandReceipt.self, forKey: .commandReceipt)
+        operationReceipt = try c.decodeIfPresent(ProjectOperationReceipt.self, forKey: .operationReceipt)
+        resultPage = try c.decodeIfPresent(ProjectResultPage.self, forKey: .resultPage)
+        historyPage = try c.decodeIfPresent([ProjectHistoryEntry].self, forKey: .historyPage)
+        historyNext = try c.decodeIfPresent(Int64.self, forKey: .historyNext)
     }
 
     // Aggregate byte limits also bound JSON-escaped, four-byte characters. The server checks
@@ -167,28 +184,38 @@ public struct Project: Codable, Hashable, Sendable, Identifiable {
     /// without this a long conversation hit the 64-entry ceiling and every later save was refused.
     public static let retainedMessages = 32
 
-    /// Drops the oldest finished messages past `retainedMessages`. Never one still waiting or in flight, one whose chat answer is in
+    /// Retires only durably archived finished messages past `retainedMessages`. Never an unknown dispatch, one waiting or in flight, one whose chat answer is in
     /// flight, a question event its task still waits on, the newest human message (the reply a chat answer cites), or one of the newest eight.
-    public mutating func retireFinishedMessages() {
+    public mutating func retireFinishedMessages(archived: Set<UUID> = []) {
         guard messages.count > Self.retainedMessages else { return }
         let waiting = Set(tasks.filter { $0.phase == .waiting }.map(\.operationID))
         var newest = Set(messages.suffix(8).map(\.id))
         if let human = messages.last(where: { $0.humanSubmitted == true }) { newest.insert(human.id) }
         var excess = messages.count - Self.retainedMessages
         messages.removeAll { message in
-            guard excess > 0, ![.queued, .delivering].contains(message.phase), !newest.contains(message.id),
-                  !(message.answerReceipts ?? []).contains(where: { [.queued, .delivering].contains($0.nativeAnswer.phase) }),
+            guard excess > 0, archived.contains(message.id), ![.queued, .delivering, .unknown].contains(message.phase), !newest.contains(message.id),
+                  !(message.answerReceipts ?? []).contains(where: { [.queued, .delivering, .unknown].contains($0.nativeAnswer.phase) }),
                   !(message.source.map { $0.kind == .question && waiting.contains($0.operationID) } ?? false) else { return false }
             excess -= 1
             if message.source != nil { retiredWakeups += [message.id] + [message.nativeDeliveryID].compactMap { $0 } }
             return true
         }
-        // ponytail: a wake-up older than the newest 128 can show as a bubble again, far back in the transcript.
+        // ponytail: this display-only suppression cache covers 128 IDs; durable history, not this list, owns replay proof.
         if retiredWakeups.count > 128 { retiredWakeups.removeFirst(retiredWakeups.count - 128) }
     }
 
     public static func validID(_ value: String) -> Bool {
         UUID(uuidString: value)?.uuidString.lowercased() == value
+    }
+
+    /// This only edits a disposable candidate. The owner must archive its committed predecessor before publication.
+    public mutating func retireResolvedTasks(eligible: Set<ProjectTaskID>) {
+        var excess = tasks.filter { $0.phase == .resolved }.count - 16
+        let protected = Set(messages.filter { [.queued, .delivering, .unknown].contains($0.phase) }.compactMap { $0.source?.taskID })
+        tasks.removeAll { task in
+            guard excess > 0, eligible.contains(task.id), task.phase == .resolved, !protected.contains(task.id), task.pendingAnswer.map({ [.queued, .delivering, .unknown].contains($0.phase) }) != true else { return false }
+            excess -= 1; return true
+        }
     }
 
     public func validate() throws {
@@ -217,6 +244,7 @@ public struct Project: Codable, Hashable, Sendable, Identifiable {
         if let level = settings.conversationThinking {
             try require(ThinkingLevel(rawValue: level) != nil, "Reasoning level must be one of " + ThinkingLevel.allCases.map(\.rawValue).joined(separator: ", ") + ".")
         }
+        try require((archivedResolvedTaskCount ?? 0) >= 0, "Invalid archived task count.")
         try require(tasks.count <= 64 && Set(tasks.map(\.id)).count == tasks.count
                     && Set(tasks.map(\.operationID)).count == tasks.count
                     && Set(tasks.map(\.workerAgentID)).count == tasks.count, "Invalid or excessive project tasks.")
@@ -243,7 +271,7 @@ public struct Project: Codable, Hashable, Sendable, Identifiable {
             let resolutions = task.resolutionOperations ?? []
             try require(resolutions.count <= 32 && Set(resolutions).count == resolutions.count, "Invalid resolution receipts.")
             let operations = (task.previousOperations ?? []) + [task.operationID]
-            try require(operations.count <= 32 && Set(operations).count == operations.count, "Invalid task activation identities.")
+            try require(operations.count <= ProjectArtifactReceipt.maximumCount + 2 && Set(operations).count == operations.count, "Invalid task activation identities.")
             try require(!task.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && task.title.count <= 200
                         && !task.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && task.prompt.utf8.count <= 16 * 1024,
                         "Task needs a nonempty title and prompt up to 16 KiB UTF-8.")
@@ -254,6 +282,7 @@ public struct Project: Codable, Hashable, Sendable, Identifiable {
                 && tasks.contains { $0.id == artifact.taskID && $0.workerAgentID == artifact.workerAgentID
                     && ([$0.operationID] + ($0.previousOperations ?? [])).contains(artifact.key.operationID) }, "Artifact provenance does not match its task.")
         }
+        try require(commandReceipt == nil || commandReceipt?.sha256.utf8.count == 64, "Command receipt exceeds its working-set bound.")
         try require(messages.count <= 64 && Set(messages.map(\.id)).count == messages.count, "Project message queue is full or duplicated.")
         let answers = messages.flatMap { $0.answerReceipts ?? [] }
         try require(answers.count <= 64 && Set(answers.map { $0.nativeAnswer.operationID }).count == answers.count,

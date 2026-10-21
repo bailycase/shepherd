@@ -752,6 +752,9 @@ public final class RemoteHostClient: @unchecked Sendable {
     }
 
     public func projectRuntime(_ request: ProjectRuntimeTransport) async throws -> ProjectRuntimeResult {
+        guard !request.requiresResults || capabilities.contains(RemoteProtocol.projectResultCapability) else {
+            throw RemoteHostClientError.rejected(code: "unsupported_result", message: "This owner cannot serve durable Project history/results.")
+        }
         if case .worker = request, !capabilities.contains(RemoteProtocol.projectWorkerCapability) {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update the Project owner before opening its worker threads.")
         }
@@ -796,6 +799,9 @@ public final class RemoteHostClient: @unchecked Sendable {
 
     /// Logical projects on this owning host, shared by Mac and iOS clients. No dispatch implied.
     public func projectExecution(_ command: ProjectExecutionRequest) async throws -> ProjectExecutionResult {
+        if case .result = command, !capabilities.contains(RemoteProtocol.projectResultCapability) {
+            throw RemoteHostClientError.rejected(code: "unsupported_result", message: "This executor cannot return exact retained results.")
+        }
         guard !command.requiresPublications || capabilities.contains(RemoteProtocol.projectPublicationsCapability) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update the executor before publishing Project artifacts.")
         }

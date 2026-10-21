@@ -215,6 +215,14 @@ struct RemoteHostClientTests {
         #expect(await code { _ = try await client.agentQuery(agentID: AgentID(), query: query) } == "update_required")
     }
 
+    @Test func exactProjectResultsAreRefusedBeforeSendingToOlderPeers() async {
+        let client = RemoteHostClient()
+        let key = ProjectExecutionKey(ownerID: UUID(), projectID: ProjectID(), operationID: UUID())
+        #expect(await code { _ = try await client.projectExecution(.result(key: key, offset: 0, sha256: nil)) } == "unsupported_result")
+        let read = ProjectRuntimeTransport.action(projectID: key.projectID, expectedRevision: 1, request: .history())
+        #expect(await code { _ = try await client.projectRuntime(read) } == "unsupported_result")
+    }
+
     /// Commit from review needs its own capability: a host that inspects agents but predates
     /// it is never asked to commit.
     @Test(arguments: [

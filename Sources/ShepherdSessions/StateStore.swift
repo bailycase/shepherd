@@ -23,6 +23,7 @@ final class StateStore: @unchecked Sendable {
     private(set) var state: ShepherdState
     /// Moves with every committed state, so derived lookups know when to rebuild.
     private(set) var version: UInt64 = 0
+    private var historyPrepared = false
     private var recoveryError: StateStoreError?
     private let committedLock = NSLock()
     private var committedState = ShepherdState()
@@ -47,15 +48,26 @@ final class StateStore: @unchecked Sendable {
 
         var candidate = state
         mutate(&candidate)
+        let logicalChange = candidate.projects != state.projects || candidate.projectExecutions != state.projectExecutions
+        if (!candidate.projects.isEmpty || !candidate.projectExecutions.isEmpty || !state.projects.isEmpty || !state.projectExecutions.isEmpty) && (!historyPrepared || logicalChange) {
+            candidate = try ProjectHistoryStore(beside: url).prepare(before: state, candidate: candidate)
+        }
         try candidate.validate()
         try persist(candidate)
         commit(candidate)
+        historyPrepared = true
     }
 
     /// Logical-project mutations stage the complete snapshot off the server queue. The final
     /// rename and publication stay on that queue as one indivisible state transition; otherwise
     /// another service could persist between the revision check and replacement of state.json.
-    static func stageLogicalProjects(_ candidate: ShepherdState, at url: URL) throws -> URL {
+    struct LogicalProjectsStage: Sendable {
+        var url: URL
+        var state: ShepherdState
+    }
+
+    static func stageLogicalProjects(_ proposed: ShepherdState, before: ShepherdState, at url: URL) throws -> LogicalProjectsStage {
+        let candidate = try ProjectHistoryStore(beside: url).prepare(before: before, candidate: proposed)
         try candidate.validate()
         guard try NDJSON.encode(RemoteReply.stateChanged(state: candidate)).count <= NDJSON.maxPayloadBytes else {
             throw LogicalProjectsError("project_limit", "Workspace exceeds the remote state frame budget.")
@@ -70,7 +82,7 @@ final class StateStore: @unchecked Sendable {
         do {
             try file.write(contentsOf: data)
             try file.close()
-            return staged
+            return LogicalProjectsStage(url: staged, state: candidate)
         } catch {
             try? file.close()
             _ = unlink(staged.path)
@@ -78,16 +90,17 @@ final class StateStore: @unchecked Sendable {
         }
     }
 
-    func commitLogicalProjects(_ candidate: ShepherdState, version expected: UInt64, staged: URL) throws {
+    func commitLogicalProjects(_ candidate: ShepherdState, version expected: UInt64, staged: LogicalProjectsStage) throws {
         if let recoveryError { throw recoveryError }
         guard version == expected else {
             throw LogicalProjectsError("workspace_changed", "Workspace changed while saving. Refresh and retry.")
         }
         // Only a single atomic metadata operation runs here; encoding and writing ran off queue.
-        guard rename(staged.path, url.path) == 0 else {
+        guard rename(staged.url.path, url.path) == 0 else {
             throw SessionServerError.persistFailed(String(cString: strerror(errno)))
         }
-        commit(candidate)
+        commit(staged.state)
+        historyPrepared = true
     }
 
     /// Commits a change that no invariant depends on and no relaunch needs (an agent's status,

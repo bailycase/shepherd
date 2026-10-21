@@ -230,6 +230,7 @@
   host ID as the initial binding, so loading them needs no migration write. A binding identifies
   a configured destination, not an authenticated machine identity; future dispatch must compare
   the saved binding before using a host connection.
+- **Exact Project results:** `logicalProjects.result.v1` gates `ProjectExecutionRequest.result(key:offset:sha256:)` and owner `ProjectRuntimeRequest.result(taskID:operationID:offset:sha256:)`. Result pages use optional compatible fields on the existing reply models, at most 8 KiB of redacted visible final text, total length/digest, next byte offset, availability, stop reason and exact owner/executor identities. Remote reads keep the original host/binding and owner authorization; metadata cache hits cannot bypass revocation. Older peers refuse before transmission, never substitute snapshot text. `history(taskID:beforeSequence:)` is explicit bounded owner-record discovery, not arbitrary native transcript access.
 - **Protocol changes** touch the request and reply enums with every Codable arm, `RemoteProtocol`
   capabilities where relevant, server handling, `RemoteHostClient` (Mac and iOS), and the
   round-trip and listener tests.

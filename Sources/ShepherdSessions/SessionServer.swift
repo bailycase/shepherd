@@ -433,6 +433,7 @@ public final class SessionServer: @unchecked Sendable {
 
     let queue = DispatchQueue(label: "shepherd.sessions")
     let logicalProjectFiles = DispatchQueue(label: "shepherd.logical-project-files", qos: .utility)
+    let projectHistoryReads = DispatchQueue(label: "shepherd.project-history-reads", qos: .utility)
     var logicalProjectCreates: Set<ProjectID> = []
     var logicalProjectEpoch: UInt64 = 0
     var projectsEnabled = false
@@ -740,6 +741,7 @@ public final class SessionServer: @unchecked Sendable {
             (isStarted || ($0 != RemoteProtocol.logicalProjectsCapability && $0 != RemoteProtocol.logicalProjectAutomationsCapability && $0 != RemoteProtocol.logicalProjectFilesCapability
                                 && $0 != RemoteProtocol.projectConversationThinkingCapability))
                 && (!([RemoteProtocol.logicalProjectRuntimeCapability, RemoteProtocol.projectWorkerCapability, RemoteProtocol.projectMessageImagesCapability].contains($0)) || (isStarted && onProjectRuntimeRequest != nil && onProjectRuntimeLaunch != nil))
+                && (isStarted && (onProjectExecutionLaunch != nil || onProjectRuntimeRequest != nil && onProjectRuntimeLaunch != nil) || $0 != RemoteProtocol.projectResultCapability)
                 && (isStarted && onProjectExecutionLaunch != nil || $0 != RemoteProtocol.projectExecutionCapability)
                 && ($0 != RemoteProtocol.projectPublicationsCapability || (isStarted && (onProjectPlacement != nil || onProjectExecutionLaunch != nil || onProjectRuntimeLaunch != nil)))
                 && ($0 != RemoteProtocol.projectPlacementCapability || (isStarted && (onProjectPlacement != nil || onProjectExecutionLaunch != nil)))
@@ -1138,7 +1140,7 @@ public final class SessionServer: @unchecked Sendable {
         let staleDesigns = Self.designsNeedReconciling(in: store.state, missing: missingDesigns, removedAgents: runAgents)
             || Self.designAgentsNeedSettling(in: store.state, missing: missingDesigns)
         if !stale.isEmpty || deadInspectors || deadReviews || splitTerminals || staleRuns || !shellTabs.isEmpty
-            || !runAgents.isEmpty || staleDesigns || !store.state.projects.isEmpty || store.state.projectExecutions.contains(where: { $0.phase.active })
+            || !runAgents.isEmpty || staleDesigns || !store.state.projects.isEmpty || !store.state.projectExecutions.isEmpty
             || store.state.agents.contains(where: { $0.coordinatorFor != nil }) {
             do {
                 try store.update { state in
@@ -2008,6 +2010,9 @@ public final class SessionServer: @unchecked Sendable {
         case .design(let id, let request):
             remoteDesign(id: id, request: request, client: client)
         case .logicalProjectRuntime(let id, let request):
+            guard !request.requiresResults || offeredCapabilities.contains(RemoteProtocol.projectResultCapability) && client.clientCapabilities.contains(RemoteProtocol.projectResultCapability) else {
+                send(.error(id: id, code: "unsupported_result", message: "Durable result reads require compatible owner and viewer."), to: client); return
+            }
             guard projectsEnabled else {
                 send(.error(id: id, code: "unsupported", message: Self.projectsDisabledMessage), to: client); return
             }
@@ -2058,6 +2063,9 @@ public final class SessionServer: @unchecked Sendable {
             default: hopToMain { perform(request, finish) }
             }
         case .projectExecution(let id, let request):
+            if case .result = request, !offeredCapabilities.contains(RemoteProtocol.projectResultCapability) || !client.clientCapabilities.contains(RemoteProtocol.projectResultCapability) {
+                send(.error(id: id, code: "unsupported_result", message: "Exact result reads require a compatible executor and owner."), to: client); return
+            }
             guard !request.requiresPublications || (offeredCapabilities.contains(RemoteProtocol.projectPublicationsCapability)
                 && client.clientCapabilities.contains(RemoteProtocol.projectPublicationsCapability)) else {
                 send(.error(id: id, code: "unsupported", message: "Update both owner and executor to publish Project artifacts."), to: client); return
@@ -7184,7 +7192,13 @@ public final class SessionServer: @unchecked Sendable {
         guard let agent = store.state.agents.first(where: { $0.id == agentID }),
               let tab = store.state.tabs.first(where: { $0.id == agent.tabID }),
               let paneID = agent.paneID, let sessionID = tab.layout.leaf(withID: paneID)?.sessionID else { return nil }
-        return sessions[sessionID]?.thread
+        let thread = sessions[sessionID]?.thread
+        if let task = store.state.projects.lazy.flatMap(\.tasks).first(where: { $0.workerAgentID == agentID && $0.phase.occupiesSlot }) {
+            thread?.projectResultDeliveryID = task.nativeDeliveryID ?? task.operationID
+        } else if let receipt = store.state.projectExecutions.first(where: { $0.assignment?.reservedWorkerID == agentID && ($0.phase.active || $0.phase == .unknown) }) {
+            thread?.projectResultDeliveryID = receipt.key.operationID
+        } else { thread?.projectResultDeliveryID = nil }
+        return thread
     }
 
     // MARK: - Socket helpers

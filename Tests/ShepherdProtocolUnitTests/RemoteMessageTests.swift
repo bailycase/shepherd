@@ -792,7 +792,7 @@ struct RemoteProtocolConstantTests {
     }
 
     @Test func hostAdvertisesEveryNamedCapabilityOnce() {
-        let named = [RemoteProtocol.moveThreadCapability, RemoteProtocol.projectConversationThinkingCapability,
+        let named = [RemoteProtocol.projectResultCapability, RemoteProtocol.moveThreadCapability, RemoteProtocol.projectConversationThinkingCapability,
             RemoteProtocol.logicalProjectsCapability, RemoteProtocol.logicalProjectAutomationsCapability,
             RemoteProtocol.logicalProjectRuntimeCapability, RemoteProtocol.projectExecutionCapability,
             RemoteProtocol.projectPlacementCapability, RemoteProtocol.logicalProjectFilesCapability, RemoteProtocol.projectWorkerCapability, RemoteProtocol.projectMessageImagesCapability, RemoteProtocol.projectPublicationsCapability,
