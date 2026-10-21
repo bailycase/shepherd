@@ -95,6 +95,9 @@ final class RPCThreadState {
     /// long history takes a moment to arrive: served meanwhile, a resumed thread would show
     /// as a new, empty one.
     private var historyPending = true
+    // Only a successfully installed history supersedes an older request still hydrating images.
+    private var historyRequestSequence: UInt64 = 0
+    private var appliedHistorySequence: UInt64 = 0
     /// Installed by SessionServer: called once, on the session queue, when the thread first
     /// serves (pi has answered `get_state` and `get_messages`).
     var onServable: (() -> Void)?
@@ -1436,6 +1439,8 @@ final class RPCThreadState {
     func refreshMessages(timeout: TimeInterval = 10, bootstrap: Bool = false,
                          done: ((Result<RPCResponse, RPCError>) -> Void)? = nil) {
         let generation = generation
+        historyRequestSequence += 1
+        let sequence = historyRequestSequence
         let started = ContinuousClock.now
         let measured: (Result<RPCResponse, RPCError>) -> Void = { [weak self] result in
             let elapsed = started.duration(to: .now).components
@@ -1457,13 +1462,13 @@ final class RPCThreadState {
                     hook?()
                     let table = ThreadImages.table(for: messages)
                     self?.queue.async { [weak self] in
-                        self?.finishRefresh(result, generation: generation, bootstrap: bootstrap, images: table, persisted: persisted,
+                        self?.finishRefresh(result, generation: generation, sequence: sequence, bootstrap: bootstrap, images: table, persisted: persisted,
                                             done: measured)
                     }
                 }
                 return
             }
-            self.finishRefresh(result, generation: generation, bootstrap: bootstrap, images: [:], persisted: persisted, done: measured)
+            self.finishRefresh(result, generation: generation, sequence: sequence, bootstrap: bootstrap, images: [:], persisted: persisted, done: measured)
         }
         session.request(.getMessages, timeout: timeout,
                         onLateResponse: bootstrap ? { receive(.success($0)) } : nil, completion: receive)
@@ -1478,12 +1483,12 @@ final class RPCThreadState {
         }
     }
 
-    private func finishRefresh(_ result: Result<RPCResponse, RPCError>, generation: String, bootstrap: Bool,
+    private func finishRefresh(_ result: Result<RPCResponse, RPCError>, generation: String, sequence: UInt64, bootstrap: Bool,
                                images: [String: ThreadImages.Meta], persisted: Set<String>,
                                done: ((Result<RPCResponse, RPCError>) -> Void)?) {
         do {
             defer { done?(result) }
-            guard generation == self.generation else { return }
+            guard generation == self.generation, sequence > appliedHistorySequence else { return }
             // During bootstrap a timeout is not an empty history. The readiness deadline
             // surfaces the failure; a late answer can still recover the full conversation.
             if bootstrap, case .failure(.timeout) = result { return }
@@ -1501,6 +1506,7 @@ final class RPCThreadState {
             }
             // The whole history is here again: what it could not read, and the live rows `trimLive`
             // dropped, are in it.
+            self.appliedHistorySequence = sequence
             self.historyUnread = false
             self.liveLeftOut = 0
             let history = Self.projectHistory(self.markingStopped(messages),
