@@ -4,6 +4,29 @@ import ShepherdProtocol
 import ShepherdRemote
 
 extension SessionServer {
+    /// Server queue. Match admission's visible Space predicate; path changes replace the route.
+    func refreshExecutionSpaceAuthority(before: [Space]) {
+        let previous = Dictionary(uniqueKeysWithValues: before.map { ($0.id, $0) })
+        var authority: [SpaceID: UUID] = [:]
+        for space in store.state.spaces where !space.hidden && !space.holdsProjects && !space.holdsDesigns {
+            let old = previous[space.id]
+            let unchanged = old?.path == space.path && old?.hidden == false && old?.holdsProjects == false && old?.holdsDesigns == false
+            authority[space.id] = unchanged ? (executionSpaceAuthority[space.id] ?? UUID()) : UUID()
+        }
+        executionSpaceAuthority = authority
+    }
+
+    private func executionSpaceGrants() -> [SpaceID: UUID] {
+        // Lazily seed routes loaded at startup even if no state commit has happened yet.
+        refreshExecutionSpaceAuthority(before: store.state.spaces)
+        return executionSpaceAuthority
+    }
+
+    private func executionSpaceIsCurrent(_ id: SpaceID, grants: [SpaceID: UUID]) -> Bool {
+        guard let captured = grants[id] else { return false }
+        return executionSpaceGrants()[id] == captured
+    }
+
     public func projectExecution(_ request: ProjectExecutionRequest) async throws -> ProjectExecutionResult {
         try await withCheckedThrowingContinuation { continuation in
             queue.async { self.projectExecutionOnQueue(request) { continuation.resume(with: $0) } }
@@ -26,14 +49,21 @@ extension SessionServer {
             if store.state.projectExecutions.contains(where: { $0.key == request.key }) {
                 projectExecutionOnQueue(request, history: .init(), completion: completion)
             } else {
-                let url = store.url, epoch = logicalProjectEpoch, generation = projectsGeneration, spaceGrant = executionReadGeneration
+                let url = store.url, epoch = logicalProjectEpoch, generation = projectsGeneration, spaceGrants = executionSpaceGrants()
                 projectHistoryReads.async {
                     let loaded = Result { try ProjectHistoryStore(beside: url).executionHistory(request) }
                     self.queue.async {
                         guard self.logicalProjectEpoch == epoch,
-                              !requiresEnabled || (self.projectsEnabled && self.projectsGeneration == generation && self.executionReadGeneration == spaceGrant) else { completion(.failure(LogicalProjectsError("project_scope", "Executor result permission was revoked."))); return }
+                              !requiresEnabled || (self.projectsEnabled && self.projectsGeneration == generation) else { completion(.failure(LogicalProjectsError("project_scope", "Executor result permission was revoked."))); return }
                         switch loaded {
-                        case .success(let value): self.projectExecutionOnQueue(request, history: value, completion: completion)
+                        case .success(let value):
+                            let spaceID: SpaceID?
+                            if case .execute(let assignment) = request { spaceID = assignment.executorSpaceID }
+                            else { spaceID = value.existing?.assignment?.executorSpaceID }
+                            if requiresEnabled, let spaceID, self.executionSpaceGrants()[spaceID] != spaceGrants[spaceID] {
+                                completion(.failure(LogicalProjectsError("project_scope", "Executor Space permission was revoked."))); return
+                            }
+                            self.projectExecutionOnQueue(request, history: value, completion: completion)
                         case .failure(let error): completion(.failure(error))
                         }
                     }
@@ -61,12 +91,12 @@ extension SessionServer {
             switch request {
             case .result(_, let offset, let hash):
                 guard let existing else { throw LogicalProjectsError("unknown_execution", "No receipt exists for this exact result.") }
-                let url = store.url, epoch = logicalProjectEpoch, generation = projectsGeneration, spaceGrant = executionReadGeneration
+                let url = store.url, epoch = logicalProjectEpoch, generation = projectsGeneration, spaceGrants = executionSpaceGrants()
                 logicalProjectFiles.async {
                     let page = Result { try ProjectHistoryStore(beside: url).executionResult(existing, offset: offset, hash: hash) }
                     self.queue.async {
-                        guard self.projectsEnabled, self.projectsGeneration == generation, self.executionReadGeneration == spaceGrant, self.logicalProjectEpoch == epoch,
-                              existing.assignment.map({ assignment in self.store.state.spaces.contains { $0.id == assignment.executorSpaceID } }) ?? true else {
+                        guard self.projectsEnabled, self.projectsGeneration == generation, self.logicalProjectEpoch == epoch,
+                              existing.assignment.map({ self.executionSpaceIsCurrent($0.executorSpaceID, grants: spaceGrants) }) ?? true else {
                             completion(.failure(LogicalProjectsError("project_scope", "Executor result permission was revoked."))); return
                         }
                         completion(page.map { .init(receipt: existing, resultPage: $0) })
@@ -77,11 +107,11 @@ extension SessionServer {
                 try readExecutionPublication(existing, id: id, offset: offset, completion: completion)
             case .worker:
                 guard let existing else { throw LogicalProjectsError("no_such_execution", "No execution receipt exists.") }
-                let spaceGrant = executionReadGeneration, epoch = logicalProjectEpoch
+                let spaceGrants = executionSpaceGrants(), epoch = logicalProjectEpoch
                 self.executionSnapshot(existing) { result in
                     self.queue.async {
-                        guard self.projectsEnabled, self.projectsGeneration == generation, self.executionReadGeneration == spaceGrant, self.logicalProjectEpoch == epoch,
-                              existing.assignment.map({ assignment in self.store.state.spaces.contains { $0.id == assignment.executorSpaceID } }) ?? false else {
+                        guard self.projectsEnabled, self.projectsGeneration == generation, self.logicalProjectEpoch == epoch,
+                              existing.assignment.map({ self.executionSpaceIsCurrent($0.executorSpaceID, grants: spaceGrants) }) ?? false else {
                             completion(.failure(LogicalProjectsError("project_scope", "Executor worker permission was revoked."))); return
                         }
                         completion(result)

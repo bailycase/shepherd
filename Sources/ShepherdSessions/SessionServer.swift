@@ -439,7 +439,8 @@ public final class SessionServer: @unchecked Sendable {
     var projectsEnabled = false
     var projectsGeneration: UInt64 = 0
     var projectReadAuthority: [ProjectID: UUID] = [:]
-    var executionReadGeneration: UInt64 = 0
+    // Current visible executor routes only. Removal/replacement rotates that Space's grant, not its peers'.
+    var executionSpaceAuthority: [SpaceID: UUID] = [:]
     var automationStarts = Set<AutomationID>()
     /// Server-queue owner adapter. Must use the ProjectTask reservation/activation ledger,
     /// launch idle, fence native delivery, and retain occupancy for unknown outcomes.
@@ -4532,7 +4533,7 @@ public final class SessionServer: @unchecked Sendable {
     /// Server queue, after a successfully persisted commit (including an off-queue staged one).
     func stateDidCommit(before: ShepherdState) {
         let state = store.state
-        if Set(before.spaces.map(\.id)) != Set(state.spaces.map(\.id)) { executionReadGeneration &+= 1 }
+        refreshExecutionSpaceAuthority(before: before.spaces)
         for old in before.projects {
             let next = state.projects.first { $0.id == old.id }
             let oldCaller = before.agents.first { $0.id == old.coordinatorAgentID }
