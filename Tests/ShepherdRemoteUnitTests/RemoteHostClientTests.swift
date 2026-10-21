@@ -219,8 +219,11 @@ struct RemoteHostClientTests {
         let client = RemoteHostClient()
         let key = ProjectExecutionKey(ownerID: UUID(), projectID: ProjectID(), operationID: UUID())
         #expect(await code { _ = try await client.projectExecution(.result(key: key, offset: 0, sha256: nil)) } == "unsupported_result")
-        let read = ProjectRuntimeTransport.action(projectID: key.projectID, expectedRevision: 1, request: .history())
-        #expect(await code { _ = try await client.projectRuntime(read) } == "unsupported_result")
+        for request in [ProjectRuntimeRequest.history(), .result(taskID: ProjectTaskID(), operationID: key.operationID), .inspect(taskID: ProjectTaskID(), operationID: key.operationID)] {
+            let read = ProjectRuntimeTransport.action(projectID: key.projectID, expectedRevision: 1, request: request)
+            #expect(await code { _ = try await client.projectRuntime(read) } == "unsupported_result")
+        }
+        #expect(!ProjectRuntimeTransport.action(projectID: key.projectID, expectedRevision: 1, request: .inspect(taskID: ProjectTaskID())).requiresResults)
     }
 
     /// Commit from review needs its own capability: a host that inspects agents but predates

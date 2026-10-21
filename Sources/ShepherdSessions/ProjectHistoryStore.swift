@@ -361,10 +361,6 @@ final class ProjectHistoryStore {
         return try record(project, kind: "command", id: operation.uuidString, as: ProjectCommandReceipt.self)
     }
 
-    func answer(_ project: Project, operation: UUID) throws -> ProjectMessage? {
-        try record(project, kind: "answer", id: operation.uuidString, as: ProjectMessage.self)
-    }
-
     func legacyOperation(_ project: Project, operation: UUID) throws -> Bool {
         var count = false
         try statement("SELECT 1 FROM records WHERE scope=? AND identity=? AND kind IN ('activation','legacy_activation','resolution','memory','proposal','message','retired') LIMIT 1", [bytes(scope(project)),bytes(operation.uuidString)]) { stmt in

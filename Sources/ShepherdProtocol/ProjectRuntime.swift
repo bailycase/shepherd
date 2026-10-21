@@ -60,7 +60,7 @@ public enum ProjectRuntimeRequest: Codable, Hashable, Sendable {
 public enum ProjectRuntimeTransport: Codable, Hashable, Sendable {
     public var requiresResults: Bool {
         if case .action(_, _, let request) = self {
-            switch request { case .result, .history: return true; default: break }
+            switch request { case .result, .history, .inspect(_, .some): return true; default: break }
         }
         return false
     }
