@@ -226,12 +226,12 @@ extension SessionServer {
         }
         let snapshot = candidate
         logicalProjectFiles.async {
-            let staged = Result { try StateStore.stageLogicalProjects(snapshot, at: url) }
+            let staged = Result { try StateStore.stageLogicalProjects(snapshot, before: before, at: url) }
             self.queue.async {
                 self.logicalProjectSaveCount -= 1
                 do {
                     let file = try staged.get()
-                    defer { self.logicalProjectFiles.async { _ = unlink(file.path) } }
+                    defer { self.logicalProjectFiles.async { _ = unlink(file.url.path) } }
                     try self.requireStarted()
                     try self.requireProjectsEnabled()
                     guard self.logicalProjectEpoch == epoch, self.projectsGeneration == generation, !self.projectFolderOperation else {
@@ -247,7 +247,9 @@ extension SessionServer {
                     }
                     try self.store.commitLogicalProjects(snapshot, version: version, staged: file)
                     self.stateDidCommit(before: before)
-                    completion(.success(result))
+                    if case .project(let project) = result, let saved = self.store.state.projects.first(where: { $0.id == project.id }) {
+                        completion(.success(.project(saved)))
+                    } else { completion(.success(result)) }
                 } catch let error as ProjectValidationError {
                     completion(.failure(LogicalProjectsError("invalid_project", error.description)))
                 } catch { completion(.failure(error)) }

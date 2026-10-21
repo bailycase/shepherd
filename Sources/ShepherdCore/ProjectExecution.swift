@@ -78,6 +78,7 @@ public struct ProjectExecutionReceipt: Codable, Hashable, Sendable {
     /// A new, explicitly requested activation of this task's existing ordinary worker.
     /// Absent on original receipts; the predecessor remains retained under its own key.
     public var previousOperationID: UUID?
+    public var predecessorProof: ProjectExecutionPredecessor?
     public var publications: [ProjectArtifactReceipt]?
     /// Pause retains native dialogs; nil is the legacy unpaused default.
     public var ownerPaused: Bool?
@@ -129,6 +130,24 @@ public struct ProjectExecutionReceipt: Codable, Hashable, Sendable {
               try JSONEncoder().encode(self).count <= JSONEncoder().encode(assignment).count + Self.maximumEvidenceBytes else {
             throw ProjectValidationError("Invalid execution receipt.")
         }
+    }
+}
+
+/// One-hop settlement evidence. The complete replay chain lives in the owner/executor history store, not the working snapshot.
+public struct ProjectExecutionPredecessor: Codable, Hashable, Sendable {
+    public var key: ProjectExecutionKey
+    public var taskID: ProjectTaskID
+    public var workerID: AgentID
+    public var spaceID: SpaceID
+    public var sessionID: String
+    public var matchedUserEntryID: String
+    public var generation: String?
+    public var phase: ProjectExecutionReceipt.Phase
+    public init?(_ receipt: ProjectExecutionReceipt) {
+        guard let assignment = receipt.assignment, let session = receipt.sessionID, let entry = receipt.matchedUserEntryID,
+              receipt.phase == .settled || receipt.phase == .cancelled else { return nil }
+        key = receipt.key; taskID = assignment.taskID; workerID = assignment.reservedWorkerID; spaceID = assignment.executorSpaceID
+        sessionID = session; matchedUserEntryID = entry; generation = receipt.generation; phase = receipt.phase
     }
 }
 

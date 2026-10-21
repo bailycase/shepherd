@@ -3,6 +3,22 @@ import ShepherdCore
 import ShepherdProtocol
 
 extension SessionServer {
+    /// Closed epochs authorize nothing. Keep only current scopes and positively undrained helpers.
+    func pruneProjectChildScopes() {
+        let uncertain = Set(store.state.projectExecutions.filter { $0.phase == .unknown }.compactMap(projectChildScope))
+            .union(store.state.projects.flatMap { p in p.tasks.filter { $0.phase == .unknown }.compactMap { task -> ProjectChildScope? in
+                guard let thread = rpcThread(forAgent: task.workerAgentID) else { return nil }
+                return projectChildScope(p, task: task, thread: thread)
+            } })
+        let keep = Set(currentProjectChildScope.values).union(uncertain).union(projectChildDraining).union(
+            projectChildAdmitted.filter { !projectChildDrained.contains($0) && !projectChildStopped.contains($0) })
+        for scope in projectChildClosed.subtracting(keep) where !projectChildRecentClosed.contains(scope) { projectChildRecentClosed.append(scope) }
+        projectChildRecentClosed = Array(projectChildRecentClosed.suffix(Project.retainedMessages))
+        let tombstones = keep.union(projectChildRecentClosed)
+        projectChildClosed.formIntersection(tombstones); projectChildDrained.formIntersection(tombstones)
+        projectChildStopped.formIntersection(tombstones); projectChildTakenOver.formIntersection(tombstones)
+        projectChildAdmitted.formIntersection(keep)
+    }
     /// Called only for native role=user consumption. Pi child notices have role=custom, so
     /// their continuations preserve this scope; no text or custom-type string grants authority.
     func projectChildUserStarted(agentID: AgentID, thread: RPCThreadState, operation: UUID?) {
@@ -24,6 +40,7 @@ extension SessionServer {
             })
         }
         currentProjectChildScope[agentID] = nil
+        pruneProjectChildScopes()
         guard let operation, let session = thread.piSessionID else { return }
         let key: ProjectExecutionKey?
         let scopeEpoch: UInt64

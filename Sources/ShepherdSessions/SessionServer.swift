@@ -433,10 +433,14 @@ public final class SessionServer: @unchecked Sendable {
 
     let queue = DispatchQueue(label: "shepherd.sessions")
     let logicalProjectFiles = DispatchQueue(label: "shepherd.logical-project-files", qos: .utility)
+    let projectHistoryReads = DispatchQueue(label: "shepherd.project-history-reads", qos: .utility)
     var logicalProjectCreates: Set<ProjectID> = []
     var logicalProjectEpoch: UInt64 = 0
     var projectsEnabled = false
     var projectsGeneration: UInt64 = 0
+    var projectReadAuthority: [ProjectID: UUID] = [:]
+    // Current visible executor routes only. Removal/replacement rotates that Space's grant, not its peers'.
+    var executionSpaceAuthority: [SpaceID: UUID] = [:]
     var automationStarts = Set<AutomationID>()
     /// Server-queue owner adapter. Must use the ProjectTask reservation/activation ledger,
     /// launch idle, fence native delivery, and retain occupancy for unknown outcomes.
@@ -459,6 +463,7 @@ public final class SessionServer: @unchecked Sendable {
     var currentProjectChildScope: [AgentID: ProjectChildScope] = [:]
     var projectChildAdmitted: Set<ProjectChildScope> = []
     var projectChildClosed: Set<ProjectChildScope> = []
+    var projectChildRecentClosed: [ProjectChildScope] = []
     var projectChildDrained: Set<ProjectChildScope> = []
     var projectChildStopped: Set<ProjectChildScope> = []
     var projectChildTakenOver: Set<ProjectChildScope> = []
@@ -468,6 +473,8 @@ public final class SessionServer: @unchecked Sendable {
     public var projectEligibleHosts: [ProjectHostReference] = [.local]
     /// Owner-relative connected, execution-capable destinations. Never a path mapping.
     var projectExecutionSpaces: [ProjectHostReference: [Space]] = [:]
+    // Only current directory routes retain tokens. Removed/restored routes get a new authority.
+    var projectExecutionSpaceAuthority: [ProjectHostReference: [SpaceID: UUID]] = [:]
     public var onProjectDefaultModel: (@Sendable () async -> String?)?
     public var onProjectPlacement: (@Sendable (ProjectHostReference, ProjectExecutionRequest, @escaping @Sendable (Result<ProjectExecutionResult, Error>) -> Void) -> Void)?
     var projectPlacementReads: Set<ProjectExecutionKey> = []
@@ -740,6 +747,7 @@ public final class SessionServer: @unchecked Sendable {
             (isStarted || ($0 != RemoteProtocol.logicalProjectsCapability && $0 != RemoteProtocol.logicalProjectAutomationsCapability && $0 != RemoteProtocol.logicalProjectFilesCapability
                                 && $0 != RemoteProtocol.projectConversationThinkingCapability))
                 && (!([RemoteProtocol.logicalProjectRuntimeCapability, RemoteProtocol.projectWorkerCapability, RemoteProtocol.projectMessageImagesCapability].contains($0)) || (isStarted && onProjectRuntimeRequest != nil && onProjectRuntimeLaunch != nil))
+                && (isStarted && (onProjectExecutionLaunch != nil || onProjectRuntimeRequest != nil && onProjectRuntimeLaunch != nil) || $0 != RemoteProtocol.projectResultCapability)
                 && (isStarted && onProjectExecutionLaunch != nil || $0 != RemoteProtocol.projectExecutionCapability)
                 && ($0 != RemoteProtocol.projectPublicationsCapability || (isStarted && (onProjectPlacement != nil || onProjectExecutionLaunch != nil || onProjectRuntimeLaunch != nil)))
                 && ($0 != RemoteProtocol.projectPlacementCapability || (isStarted && (onProjectPlacement != nil || onProjectExecutionLaunch != nil)))
@@ -1138,7 +1146,7 @@ public final class SessionServer: @unchecked Sendable {
         let staleDesigns = Self.designsNeedReconciling(in: store.state, missing: missingDesigns, removedAgents: runAgents)
             || Self.designAgentsNeedSettling(in: store.state, missing: missingDesigns)
         if !stale.isEmpty || deadInspectors || deadReviews || splitTerminals || staleRuns || !shellTabs.isEmpty
-            || !runAgents.isEmpty || staleDesigns || !store.state.projects.isEmpty || store.state.projectExecutions.contains(where: { $0.phase.active })
+            || !runAgents.isEmpty || staleDesigns || !store.state.projects.isEmpty || !store.state.projectExecutions.isEmpty
             || store.state.agents.contains(where: { $0.coordinatorFor != nil }) {
             do {
                 try store.update { state in
@@ -1332,7 +1340,7 @@ public final class SessionServer: @unchecked Sendable {
         projectAnswersInFlight.removeAll()
         projectPromptInFlight.removeAll()
         projectStartedPrompts.removeAll()
-        currentProjectChildScope.removeAll(); projectChildAdmitted.removeAll(); projectChildClosed.removeAll()
+        currentProjectChildScope.removeAll(); projectChildAdmitted.removeAll(); projectChildClosed.removeAll(); projectChildRecentClosed.removeAll()
         projectChildDrained.removeAll(); projectChildDraining.removeAll(); projectChildStopped.removeAll(); projectChildTakenOver.removeAll()
         pendingDesignDeletions.removeAll()
         for session in sessions.values {
@@ -1637,6 +1645,7 @@ public final class SessionServer: @unchecked Sendable {
         let finish: (String?) -> Void = { error in
             if action == .stop, error == nil { self.projectChildStopped.insert(scope) }
             completion(error)
+            self.pruneProjectChildScopes()
         }
         guard let client = clients.values.first(where: { $0.childrenAgentID == scope.workerAgentID }) else {
             finish(projectChildAdmitted.contains(scope) ? "Children extension disconnected; helper outcome is unknown." : nil)
@@ -2008,6 +2017,9 @@ public final class SessionServer: @unchecked Sendable {
         case .design(let id, let request):
             remoteDesign(id: id, request: request, client: client)
         case .logicalProjectRuntime(let id, let request):
+            guard !request.requiresResults || offeredCapabilities.contains(RemoteProtocol.projectResultCapability) && client.clientCapabilities.contains(RemoteProtocol.projectResultCapability) else {
+                send(.error(id: id, code: "unsupported_result", message: "Durable result reads require compatible owner and viewer."), to: client); return
+            }
             guard projectsEnabled else {
                 send(.error(id: id, code: "unsupported", message: Self.projectsDisabledMessage), to: client); return
             }
@@ -2058,6 +2070,11 @@ public final class SessionServer: @unchecked Sendable {
             default: hopToMain { perform(request, finish) }
             }
         case .projectExecution(let id, let request):
+            let needsResultCapability: Bool
+            switch request { case .result, .worker: needsResultCapability = true; default: needsResultCapability = false }
+            if needsResultCapability, !offeredCapabilities.contains(RemoteProtocol.projectResultCapability) || !client.clientCapabilities.contains(RemoteProtocol.projectResultCapability) {
+                send(.error(id: id, code: "unsupported_result", message: "Exact result reads require a compatible executor and owner."), to: client); return
+            }
             guard !request.requiresPublications || (offeredCapabilities.contains(RemoteProtocol.projectPublicationsCapability)
                 && client.clientCapabilities.contains(RemoteProtocol.projectPublicationsCapability)) else {
                 send(.error(id: id, code: "unsupported", message: "Update both owner and executor to publish Project artifacts."), to: client); return
@@ -4516,6 +4533,20 @@ public final class SessionServer: @unchecked Sendable {
     /// Server queue, after a successfully persisted commit (including an off-queue staged one).
     func stateDidCommit(before: ShepherdState) {
         let state = store.state
+        refreshExecutionSpaceAuthority(before: before.spaces)
+        for old in before.projects {
+            let next = state.projects.first { $0.id == old.id }
+            let oldCaller = before.agents.first { $0.id == old.coordinatorAgentID }
+            let newCaller = state.agents.first { $0.id == next?.coordinatorAgentID }
+            if next?.ownerID != old.ownerID || next?.coordinatorAgentID != old.coordinatorAgentID
+                || next?.linkedSpaces != old.linkedSpaces || next?.settings.hostPolicy != old.settings.hostPolicy
+                || next?.settings.allowedHosts != old.settings.allowedHosts
+                || oldCaller?.coordinatorFor != newCaller?.coordinatorFor || oldCaller?.id != newCaller?.id {
+                projectReadAuthority[old.id] = UUID()
+            }
+        }
+        projectReadAuthority = projectReadAuthority.filter { key, _ in state.projects.contains { $0.id == key } }
+        pruneProjectChildScopes()
         if state.agents.count < before.agents.count {
             let live = Set(state.agents.map(\.id))
             peerDeliveries = peerDeliveries.filter { live.contains($0.value.agentID) }
@@ -7184,7 +7215,13 @@ public final class SessionServer: @unchecked Sendable {
         guard let agent = store.state.agents.first(where: { $0.id == agentID }),
               let tab = store.state.tabs.first(where: { $0.id == agent.tabID }),
               let paneID = agent.paneID, let sessionID = tab.layout.leaf(withID: paneID)?.sessionID else { return nil }
-        return sessions[sessionID]?.thread
+        let thread = sessions[sessionID]?.thread
+        if let task = store.state.projects.lazy.flatMap(\.tasks).first(where: { $0.workerAgentID == agentID && $0.phase.occupiesSlot }) {
+            thread?.projectResultDeliveryID = task.nativeDeliveryID ?? task.operationID
+        } else if let receipt = store.state.projectExecutions.first(where: { $0.assignment?.reservedWorkerID == agentID && ($0.phase.active || $0.phase == .unknown) }) {
+            thread?.projectResultDeliveryID = receipt.key.operationID
+        } else { thread?.projectResultDeliveryID = nil }
+        return thread
     }
 
     // MARK: - Socket helpers

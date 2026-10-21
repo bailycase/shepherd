@@ -20,7 +20,7 @@ struct RemoteListenerTests {
         // on, and it starts off.
         // A bare server also has no owner Project launcher/controller installed.
         let offered = RemoteProtocol.capabilities.filter {
-            !RemoteProtocol.designCapabilities.contains($0) && $0 != RemoteProtocol.logicalProjectRuntimeCapability && $0 != RemoteProtocol.projectWorkerCapability && $0 != RemoteProtocol.projectMessageImagesCapability && $0 != RemoteProtocol.projectExecutionCapability && $0 != RemoteProtocol.projectPlacementCapability && $0 != RemoteProtocol.projectPublicationsCapability
+            !RemoteProtocol.designCapabilities.contains($0) && $0 != RemoteProtocol.logicalProjectRuntimeCapability && $0 != RemoteProtocol.projectWorkerCapability && $0 != RemoteProtocol.projectMessageImagesCapability && $0 != RemoteProtocol.projectExecutionCapability && $0 != RemoteProtocol.projectPlacementCapability && $0 != RemoteProtocol.projectPublicationsCapability && $0 != RemoteProtocol.projectResultCapability
         }
         #expect(try await client.next() == .helloOk(id: 7, protocolVersion: RemoteProtocol.version, capabilities: offered))
     }

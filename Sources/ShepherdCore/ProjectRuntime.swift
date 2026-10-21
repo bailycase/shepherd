@@ -127,6 +127,7 @@ public extension ShepherdState {
     func isProjectWorker(_ id: AgentID) -> Bool {
         projects.contains { $0.tasks.contains { $0.workerAgentID == id } }
             || projectExecutions.contains { $0.assignment?.reservedWorkerID == id }
+            || agents.contains { $0.id == id && ($0.executionFor != nil || $0.projectWorkerFor.map { project in projects.contains { $0.id == project } } == true) }
     }
     /// What the sidebar lists as a thread of its own: an ordinary thread no Project started.
     func isSidebarThread(_ agent: Agent) -> Bool { isOrdinaryThread(agent) && !isProjectWorker(agent.id) }
