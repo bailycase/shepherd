@@ -13,6 +13,15 @@ extension SessionServer {
     func projectExecutionOnQueue(_ request: ProjectExecutionRequest,
                                 history: ProjectHistoryStore.ExecutionHistory? = nil,
                                 completion: @escaping @Sendable (Result<ProjectExecutionResult, Error>) -> Void) {
+        let requiresEnabled: Bool
+        switch request {
+        case .execute, .resume, .answer, .result, .worker: requiresEnabled = true
+        case .pause, .cancel, .snapshot, .publicationRead: requiresEnabled = false
+        }
+        do {
+            try requireStarted()
+            if requiresEnabled { try requireProjectsEnabled() }
+        } catch { completion(.failure(error)); return }
         if history == nil {
             if store.state.projectExecutions.contains(where: { $0.key == request.key }) {
                 projectExecutionOnQueue(request, history: .init(), completion: completion)
@@ -21,7 +30,8 @@ extension SessionServer {
                 projectHistoryReads.async {
                     let loaded = Result { try ProjectHistoryStore(beside: url).executionHistory(request) }
                     self.queue.async {
-                        guard self.projectsEnabled, self.projectsGeneration == generation, self.executionReadGeneration == spaceGrant, self.logicalProjectEpoch == epoch else { completion(.failure(LogicalProjectsError("project_scope", "Executor result permission was revoked."))); return }
+                        guard self.logicalProjectEpoch == epoch,
+                              !requiresEnabled || (self.projectsEnabled && self.projectsGeneration == generation && self.executionReadGeneration == spaceGrant) else { completion(.failure(LogicalProjectsError("project_scope", "Executor result permission was revoked."))); return }
                         switch loaded {
                         case .success(let value): self.projectExecutionOnQueue(request, history: value, completion: completion)
                         case .failure(let error): completion(.failure(error))

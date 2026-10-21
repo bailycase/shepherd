@@ -101,7 +101,7 @@ final class ProjectCoordinatorController {
         case .local:
             let result = try await vm.server.nativeThread(agentID: task.workerAgentID, request: request)
             _ = try await vm.server.projectRuntime(projectID, expectedRevision: routed.revision, request: .worker(taskID: taskID))
-            try await vm.server.validateProjectWorkerRead(projectID, grant: grant)
+            try await vm.server.validateProjectWorkerRead(projectID, grant: grant, task: task)
             return result
         case .remote(let hostID, let bindingID):
             guard let connection = vm.remoteHosts.connections.first(where: { $0.id == hostID && $0.config.bindingID == bindingID }),
@@ -112,7 +112,7 @@ final class ProjectCoordinatorController {
             do {
                 let result = try await client.nativeThread(agentID: task.workerAgentID, request: request)
                 _ = try await vm.server.projectRuntime(projectID, expectedRevision: routed.revision, request: .worker(taskID: taskID))
-                try await vm.server.validateProjectWorkerRead(projectID, grant: grant)
+                try await vm.server.validateProjectWorkerRead(projectID, grant: grant, task: task)
                 return result
             }
             catch RemoteHostClientError.outcomeUnknown(let message) { throw LogicalProjectsError("outcome_unknown", message) }

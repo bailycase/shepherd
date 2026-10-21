@@ -50,18 +50,18 @@ extension SessionServer {
 
     func performProjectRuntime(_ id: ProjectID, expectedRevision: UInt64, request: ProjectRuntimeRequest, coordinator: AgentID?,
                                expectedGeneration: UInt64? = nil, reader: AgentID? = nil) async throws -> Project {
-        let (current, epoch, generation, readAuthority) = try await enqueue {
+        let (current, epoch, generation, readAuthority, readRoutes) = try await enqueue {
             guard expectedGeneration == nil || expectedGeneration == self.projectsGeneration else {
                 throw LogicalProjectsError("project_paused", "Project admission was revoked.")
             }
             let project = try self.runtimeProject(id)
             if self.projectReadAuthority[id] == nil { self.projectReadAuthority[id] = UUID() }
-            return (project, self.logicalProjectEpoch, self.projectsGeneration, self.projectReadAuthority[id]!)
+            return (project, self.logicalProjectEpoch, self.projectsGeneration, self.projectReadAuthority[id]!, self.projectExecutionSpaceAuthority)
         }
         if case .read = request { return current }
         switch request {
         case .worker, .inspect, .history, .result: return try await readProjectHistory(current, request: request,
-            grant: .init(epoch: epoch, generation: generation, authority: readAuthority, caller: reader))
+            grant: .init(epoch: epoch, generation: generation, authority: readAuthority, caller: reader, routes: readRoutes))
         default: break
         }
         if case .resume = request {

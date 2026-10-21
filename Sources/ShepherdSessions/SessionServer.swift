@@ -472,6 +472,8 @@ public final class SessionServer: @unchecked Sendable {
     public var projectEligibleHosts: [ProjectHostReference] = [.local]
     /// Owner-relative connected, execution-capable destinations. Never a path mapping.
     var projectExecutionSpaces: [ProjectHostReference: [Space]] = [:]
+    // Only current directory routes retain tokens. Removed/restored routes get a new authority.
+    var projectExecutionSpaceAuthority: [ProjectHostReference: [SpaceID: UUID]] = [:]
     public var onProjectDefaultModel: (@Sendable () async -> String?)?
     public var onProjectPlacement: (@Sendable (ProjectHostReference, ProjectExecutionRequest, @escaping @Sendable (Result<ProjectExecutionResult, Error>) -> Void) -> Void)?
     var projectPlacementReads: Set<ProjectExecutionKey> = []

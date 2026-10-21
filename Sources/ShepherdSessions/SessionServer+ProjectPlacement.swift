@@ -7,6 +7,16 @@ extension SessionServer {
     /// Advertised by the owner's transport directory, not by a viewer or a model.
     public func setProjectExecutionSpaces(_ spaces: [ProjectHostReference: [Space]]) {
         queue.async {
+            // Mirror only currently visible routes, not historical tombstones. Reappearing routes get new grants.
+            // Display-only changes and refreshes of other Spaces must not revoke this exact path/binding.
+            var authority: [ProjectHostReference: [SpaceID: UUID]] = [:]
+            for (host, directory) in spaces {
+                for space in directory where !space.hidden {
+                    let unchanged = self.projectExecutionSpaces[host]?.contains { $0.id == space.id && $0.path == space.path && !$0.hidden } == true
+                    authority[host, default: [:]][space.id] = unchanged ? (self.projectExecutionSpaceAuthority[host]?[space.id] ?? UUID()) : UUID()
+                }
+            }
+            self.projectExecutionSpaceAuthority = authority
             self.projectExecutionSpaces = spaces
         }
     }

@@ -9,6 +9,7 @@ public struct ProjectHistoryReadGrant: Sendable {
     var generation: UInt64
     var authority: UUID
     var caller: AgentID?
+    var routes: [ProjectHostReference: [SpaceID: UUID]]
 }
 
 extension SessionServer {
@@ -16,7 +17,7 @@ extension SessionServer {
         let current = try runtimeProject(project.id)
         guard current.ownerID == project.ownerID else { throw LogicalProjectsError("project_scope", "Project ownership changed.") }
         if projectReadAuthority[project.id] == nil { projectReadAuthority[project.id] = UUID() }
-        return .init(epoch: logicalProjectEpoch, generation: projectsGeneration, authority: projectReadAuthority[project.id]!, caller: caller)
+        return .init(epoch: logicalProjectEpoch, generation: projectsGeneration, authority: projectReadAuthority[project.id]!, caller: caller, routes: projectExecutionSpaceAuthority)
     }
 
     func validateHistoryRead(_ project: Project, grant: ProjectHistoryReadGrant, taskID: ProjectTaskID? = nil) throws -> Project {
@@ -37,12 +38,23 @@ extension SessionServer {
         try await enqueue {
             _ = try self.runtimeProject(id)
             if self.projectReadAuthority[id] == nil { self.projectReadAuthority[id] = UUID() }
-            return .init(epoch: self.logicalProjectEpoch, generation: self.projectsGeneration, authority: self.projectReadAuthority[id]!, caller: nil)
+            return .init(epoch: self.logicalProjectEpoch, generation: self.projectsGeneration, authority: self.projectReadAuthority[id]!, caller: nil, routes: self.projectExecutionSpaceAuthority)
         }
     }
 
-    public func validateProjectWorkerRead(_ id: ProjectID, grant: ProjectHistoryReadGrant) async throws {
-        try await enqueue { _ = try self.validateHistoryRead(try self.runtimeProject(id), grant: grant) }
+    public func validateProjectWorkerRead(_ id: ProjectID, grant: ProjectHistoryReadGrant, task: ProjectTask? = nil) async throws {
+        try await enqueue {
+            _ = try self.validateHistoryRead(try self.runtimeProject(id), grant: grant)
+            if let task { try self.validateDirectoryRead(task, grant: grant) }
+        }
+    }
+
+    private func validateDirectoryRead(_ task: ProjectTask, grant: ProjectHistoryReadGrant) throws {
+        guard task.destination != .local else { return }
+        guard let token = grant.routes[task.destination]?[task.spaceID],
+              projectExecutionSpaceAuthority[task.destination]?[task.spaceID] == token else {
+            throw LogicalProjectsError("project_scope", "The original executor Space route was revoked.")
+        }
     }
 
     func projectHistoryRead<T: Sendable>(_ read: @escaping @Sendable (ProjectHistoryStore) throws -> T) async throws -> T {
@@ -63,7 +75,7 @@ extension SessionServer {
             var response = project
             switch request {
             case .worker(let id):
-                guard let task = try history.taskByID(project, id: id) else { throw LogicalProjectsError("project_scope", "No historical worker route exists.") }
+                guard let task = try history.taskByID(project, id: id) else { throw LogicalProjectsError("not_found", "No historical worker route exists.") }
                 response.tasks = [task]; response.messages = []
             case .inspect(let task, let operation):
                 guard let selectedTask = try history.taskByID(project, id: task) else { throw LogicalProjectsError("project_scope", "Task is not in this Project.") }
@@ -242,6 +254,7 @@ extension SessionServer {
             throw LogicalProjectsError("project_scope", "Result authority was revoked.")
         }
         if task.destination != .local {
+            try validateDirectoryRead(task, grant: grant)
             try validateProjectDestination(task.destination, spaceID: task.spaceID)
             guard current.linkedSpaces.contains(where: { $0.spaceID == task.spaceID && $0.destination == task.destination }),
                   current.settings.hostPolicy == .anyConnected || current.settings.allowedHosts.contains(task.destination) else {
