@@ -410,6 +410,34 @@ final class RPCThreadState {
     /// snapshots of the working tree (`ChangesService`). Called on the session queue.
     var onTurnEvent: ((TurnEvent) -> Void)?
     private(set) var lastTurnAssistant: NativeThreadMessage?
+    var projectResultDeliveryID: UUID?
+    private(set) var lastTurnResult: ProjectVisibleResult?
+    private(set) var lastTurnResultDeliveryID: UUID?
+    private func captureResult(_ message: RPCMessage, final: Bool = false) {
+        let user = live.last(where: { $0.value.role == "user" })?.value.entryID ?? history.last(where: { $0.role == "user" })?.entryID
+        guard let expected = projectResultDeliveryID, user.flatMap({ operationsByEntry[$0] }) == expected else { return }
+        var captured = Self.visibleProjectResult(message)
+        // A dropped agent_end cannot promote an earlier message_end slice to the complete final reply.
+        captured.complete = captured.complete && final
+        lastTurnResult = captured
+        lastTurnResultDeliveryID = expected
+    }
+
+    func discardProjectResult(deliveryID: UUID) {
+        guard lastTurnResultDeliveryID == deliveryID else { return }
+        lastTurnResult = nil; lastTurnResultDeliveryID = nil
+    }
+    static func visibleProjectResult(_ message: RPCMessage) -> ProjectVisibleResult {
+        let text = message.content.compactMap { block -> String? in
+            if case .text(let text) = block { return text }; return nil
+        }.joined(separator: "\n")
+        let supported = message.content.allSatisfy { block in
+            switch block { case .text, .thinking: true; default: false }
+        }
+        var bytes = Data(text.utf8.prefix(ProjectVisibleResult.maximumBytes))
+        for _ in 0..<3 where String(data: bytes, encoding: .utf8) == nil { bytes.removeLast() }
+        return .init(text: String(decoding: bytes, as: UTF8.self), complete: supported && text.utf8.count <= ProjectVisibleResult.maximumBytes && message.stopReason == "stop", stopReason: message.stopReason)
+    }
     /// A native human question is a safe pause point only when no other tool/assistant runs.
     var waitingOnlyForDialog: Bool {
         dialogs.contains(where: { $0.unavailable == nil }) && currentAssistant == nil && liveRows.filter { $0.role == "toolResult" && $0.status == "running" }
@@ -605,6 +633,8 @@ final class RPCThreadState {
             beginDiagnostic("agent.turn", operation: "agent.turn")
             retryStarted()
             lastTurnAssistant = nil
+            lastTurnResult = nil
+            lastTurnResultDeliveryID = nil
             // A compaction that stopped or failed says so until the next run.
             live.removeAll { if case .compaction = $0.kind { $0.value.compaction?.phase != .running } else { false } }
             // A retry's second start is the same turn; the engine tells them apart.
@@ -620,8 +650,9 @@ final class RPCThreadState {
                 onUserInputWhileRunning?()
             }
         case .agentEnd(let messages, _):
-            if lastTurnAssistant == nil, let message = messages.last(where: { $0.role == "assistant" }) {
-                lastTurnAssistant = Self.project(entryID: liveEntryID(for: message), message: message)
+            if let message = messages.last(where: { $0.role == "assistant" }) {
+                if lastTurnAssistant == nil { lastTurnAssistant = Self.project(entryID: liveEntryID(for: message), message: message) }
+                captureResult(message, final: true)
             }
             dropStreamingCalls()
             refreshMessages()
@@ -707,6 +738,7 @@ final class RPCThreadState {
             }
             upsertAssistant(ended, ended: true)
             lastTurnAssistant = live.last(where: { $0.value.role == "assistant" })?.value
+            captureResult(ended)
             currentAssistant = nil
             // A reply pi stopped, or that failed, runs none of its calls: those still being
             // written leave the thread. Any other hands them to pi, and each execution continues

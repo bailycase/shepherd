@@ -119,7 +119,11 @@ struct ProjectChatAnswerTests {
         #expect(worker.stdin("extension_ui_response").count == 1)
         #expect(r.host.server.state.projects.first?.messages.first { $0.id == human }?.text == text)
         let safe = try await r.host.server.projectTool(agentID: coordinator, projectID: p.id, expectedRevision: 0, request: .read)
-        #expect(safe.messages.first { $0.id == human }?.answerReceipts == nil)
+        let humanProof = try #require(safe.messages.first { $0.id == human })
+        let proof = try #require(humanProof.answerReceipts?.first)
+        #expect(humanProof.humanSubmitted == true && proof.taskID == task.id && proof.questionEventID == event.id)
+        #expect(proof.nativeAnswer.operationID == operation && proof.nativeAnswer.sessionID == event.source?.sessionID && proof.nativeAnswer.generation == event.source?.generation)
+        #expect(proof.nativeAnswer.request.isEmpty, "Native replay bytes stay private; actual answer identity/provenance remain inspectable.")
         try Data().write(to: dir.appendingPathComponent("reply-done"))
     }
 

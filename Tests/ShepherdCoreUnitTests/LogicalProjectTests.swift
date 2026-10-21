@@ -6,6 +6,16 @@ import Testing
 struct LogicalProjectTests {
     static let id = ProjectID(rawValue: "11111111-1111-4111-8111-111111111111")
 
+    @Test func archivedWorkerOwnershipSurvivesCodingWithoutBecomingDispatchAuthority() throws {
+        var worker = Agent(name: "Retained worker", spaceID: SpaceID(), tabID: TabID())
+        worker.projectWorkerFor = Self.id
+        let decoded = try JSONDecoder().decode(Agent.self, from: JSONEncoder().encode(worker))
+        #expect(decoded.projectWorkerFor == Self.id && decoded.executionFor == nil)
+        var state = ShepherdState(); state.agents = [decoded]; state.projects = [Project(id: Self.id, name: "Owning Project")]
+        #expect(state.isProjectWorker(decoded.id) && !state.isSidebarThread(decoded))
+        #expect(state.projectContext(for: decoded.id) == nil, "The marker preserves presentation, not a replayable activation or tool authority.")
+    }
+
     @Test func oldWorkspacesDecodeWithoutLogicalProjects() throws {
         let old = Data(#"{"spaces":[],"tabs":[],"agents":[]}"#.utf8)
         #expect(try JSONDecoder().decode(ShepherdState.self, from: old).projects.isEmpty)
@@ -114,6 +124,8 @@ struct LogicalProjectTests {
         let queued = ProjectMessage(id: UUID(), text: "held")
         project.messages = [question, wake, queued] + (0..<200).map { ProjectMessage(id: UUID(), text: "m\($0)", phase: .delivered) }
         project.retireFinishedMessages()
+        #expect(project.messages.count == 203, "Working history cannot be retired without durable archive confirmation.")
+        project.retireFinishedMessages(archived: Set(project.messages.map(\.id)))
         #expect(project.messages.count == Project.retainedMessages)
         #expect(project.messages.contains(question), "a question its task still waits on stays")
         #expect(project.messages.contains(queued), "a message not yet sent stays")

@@ -179,6 +179,9 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     /// Decodes nil from older state files; startup clears it when the design is gone.
     public var designID: DesignID?
     public var coordinatorFor: ProjectID?
+    /// Durable worker ownership, independent of the bounded live executor ledger. Not dispatch authority.
+    public var projectWorkerFor: ProjectID?
+    public var executionFor: ProjectExecutionKey? = nil
     /// The design references handed to this agent's thread (`DesignGrant`): what its design_get
     /// may read. Persisted; decodes empty from older state files. A design's agent holds none.
     public var designGrants: [DesignGrant]
@@ -246,7 +249,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case id, name, spaceID, tabID, paneID, status, model, thinkingLevel, nameIsFinal
-        case piSessionID, worktreeBranch, worktreeBase, worktreePath, lastActiveAt, waitingOn, waitingReason, checkout, designID, coordinatorFor, runtime
+        case piSessionID, worktreeBranch, worktreeBase, worktreePath, lastActiveAt, waitingOn, waitingReason, checkout, designID, coordinatorFor, projectWorkerFor, executionFor, runtime
         case designGrants, serviceTier, goalState
     }
 
@@ -280,6 +283,8 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         // Absent before the Design tool.
         designID = try c.decodeIfPresent(DesignID.self, forKey: .designID)
         coordinatorFor = try c.decodeIfPresent(ProjectID.self, forKey: .coordinatorFor)
+        projectWorkerFor = try c.decodeIfPresent(ProjectID.self, forKey: .projectWorkerFor)
+        executionFor = try c.decodeIfPresent(ProjectExecutionKey.self, forKey: .executionFor)
         // Absent before design references.
         designGrants = try c.decodeIfPresent([DesignGrant].self, forKey: .designGrants) ?? []
         // Absent before service tiers; a tier this build does not know (a newer build's) reads
@@ -311,6 +316,8 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         try c.encodeIfPresent(checkout, forKey: .checkout)
         try c.encodeIfPresent(designID, forKey: .designID)
         try c.encodeIfPresent(coordinatorFor, forKey: .coordinatorFor)
+        try c.encodeIfPresent(projectWorkerFor, forKey: .projectWorkerFor)
+        try c.encodeIfPresent(executionFor, forKey: .executionFor)
         if !designGrants.isEmpty { try c.encode(designGrants, forKey: .designGrants) }
         if serviceTier != .standard { try c.encode(serviceTier, forKey: .serviceTier) }
         try c.encodeIfPresent(goalState, forKey: .goalState)

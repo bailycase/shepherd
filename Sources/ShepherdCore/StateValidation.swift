@@ -81,11 +81,13 @@ public extension ShepherdState {
                 guard previous != receipt.key.operationID,
                       let predecessor = projectExecutions.first(where: {
                           $0.key.ownerID == receipt.key.ownerID && $0.key.projectID == receipt.key.projectID && $0.key.operationID == previous
-                      }), let assignment = receipt.assignment, let prior = predecessor.assignment,
-                      prior.taskID == assignment.taskID, prior.reservedWorkerID == assignment.reservedWorkerID,
-                      prior.executorSpaceID == assignment.executorSpaceID,
+                      }).flatMap(ProjectExecutionPredecessor.init) ?? receipt.predecessorProof,
+                      predecessor.key == .init(ownerID: receipt.key.ownerID, projectID: receipt.key.projectID, operationID: previous),
+                      let assignment = receipt.assignment,
+                      predecessor.taskID == assignment.taskID, predecessor.workerID == assignment.reservedWorkerID,
+                      predecessor.spaceID == assignment.executorSpaceID,
                       predecessor.phase == .settled || predecessor.phase == .cancelled,
-                      predecessor.matchedUserEntryID != nil, predecessor.sessionID != nil else {
+                      !predecessor.matchedUserEntryID.isEmpty, !predecessor.sessionID.isEmpty else {
                     throw ProjectValidationError("Execution follow-up requires retained settlement proof for the same task and worker.")
                 }
             }

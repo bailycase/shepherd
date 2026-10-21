@@ -4,6 +4,7 @@ import { readFile, mkdtemp, rm } from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { createHash } from 'node:crypto';
 import { withPi, script } from './fixtures/pi-rpc-harness.mjs';
 
 // Load the canonical extension and schema with the pinned SDK, not a hand-written Type stub.
@@ -46,7 +47,7 @@ test('real extension tools use correlated owner requests and refresh memory each
     install({ on: (name, hook) => hooks.set(name, hook), registerTool: tool => tools.set(tool.name, tool), setActiveTools: value => { active = value; } });
     hooks.get('session_start')();
     assert.deepEqual(new Set(active), new Set(tools.keys()));
-    assert.equal(tools.size, 8);
+    assert.equal(tools.size, 10);
     assert.equal((await hooks.get('tool_call')({ toolName: 'project_plan' })).block, true);
     assert.equal((await hooks.get('tool_call')({ toolName: 'agent_spawn' })).block, true);
     for (const toolName of ['shepherd_child_start', 'shepherd_child_resume', 'shepherd_child_message', 'shepherd_workflow', 'subagent', 'codemode']) {
@@ -166,6 +167,9 @@ test('coordinator results scope snapshots without losing native evidence, human 
   const models = Array.from({ length: 1200 }, (_, i) => `provider-${i % 20}/model-${i}-long-valid-catalogue-identifier`);
   const spaces = [{ id: 'local-space', name: 'Owner Space', path: '/owner/path/not-executor-path' }];
   const stored = JSON.stringify(project);
+  const finalBytes = Buffer.from('Complete final response, not a success claim.\n'.repeat(200));
+  const digest = createHash('sha256').update(finalBytes).digest('hex');
+  const finalIdentity = { ownerID: 'owner', projectID: 'project', eventID: 'immutable-event', source: source('settled', 'operation-0'), host: remote, deliveryID: 'delivery-0', observedProjectRevision: 47 };
   let failure, ownerRevision = 48, evidenceMode;
   const server = net.createServer(socket => {
     let buffer = '';
@@ -185,7 +189,17 @@ test('coordinator results scope snapshots without losing native evidence, human 
         copy.messages[0].text = '{"omitted":"Content exceeds event budget; inspect the source worker conversation."}';
       }
       if (evidenceMode === 'local') delete copy.tasks[0].executionReceipt;
-      if (action.inspect) copy.tasks = copy.tasks.filter(task => task.id === action.inspect.taskID);
+      if (action.inspect || action.result) copy.tasks = copy.tasks.filter(task => task.id === (action.inspect ?? action.result).taskID);
+      if (action.history) {
+        copy.tasks = [];
+        copy.historyPage = [...events, human].map((message, i) => ({ sequence: 40 - i, messageID: message.id, source: message.source, humanSubmitted: message.humanSubmitted, phase: message.phase, ...(action.history.includeBodies ? { message } : {}) }));
+        copy.historyNext = 37;
+      }
+      if (action.result) {
+        const offset = action.result.offset, end = Math.min(offset + 8192, finalBytes.length);
+        copy.resultPage = { identity: finalIdentity, availability: 'complete', redacted: true, totalBytes: finalBytes.length, sha256: digest, offset,
+          data: finalBytes.subarray(offset, end).toString('base64'), ...(end < finalBytes.length ? { nextOffset: end } : {}) };
+      }
       if (action.assign || action.followUp) {
         copy.tasks[0].operationID = (action.assign ?? action.followUp).operationID;
         copy.tasks[0].phase = 'queued';
@@ -275,8 +289,10 @@ test('coordinator results scope snapshots without losing native evidence, human 
       if (name === 'project_propose_space') assert.deepEqual(data.spaceProposals, [{ id: 'native-proposal', operationID: data.operationID, phase: 'pending', spaceID: 'space', revision: 1 }]);
     }
     const readDescription = tools.get('project_read').description, inspectDescription = tools.get('project_inspect').description;
-    assert.ok(readDescription.includes('Default omits') && readDescription.includes('includeModels') && readDescription.includes('project_inspect(includeResults: true)'));
-    assert.ok(inspectDescription.includes('Default omits') && inspectDescription.includes('possibly clipped/omitted') && inspectDescription.includes('source worker conversation'));
+    assert.ok(readDescription.includes('Default omits') && readDescription.includes('includeModels') && readDescription.includes('project_result'));
+    assert.ok(inspectDescription.includes('Default omits') && inspectDescription.includes('possibly clipped/omitted') && inspectDescription.includes('project_result'));
+    assert.ok(tools.get('project_result').description.includes('Continue only with nextOffset and sha256') && tools.get('project_result').description.includes('unavailable/unsupported/incomplete'));
+    assert.ok(tools.get('project_history').description.includes('index is not proof'));
     assert.ok(tools.get('project_resolve').description.includes('not a receipt index or clipped preview'));
     assert.equal(tools.get('project_read').parameters.properties.includeModels.type, 'boolean');
     assert.equal(tools.get('project_inspect').parameters.properties.includeResults.type, 'boolean');
@@ -315,11 +331,29 @@ test('coordinator results scope snapshots without losing native evidence, human 
       }
     }
     evidenceMode = undefined;
+    const { data: resultFirst } = await run('project_result', { taskID: 'task-0', operationID: 'operation-0' });
+    const { data: resultLast } = await run('project_result', { taskID: 'task-0', operationID: 'operation-0', offset: resultFirst.nextOffset, sha256: resultFirst.sha256 });
+    assert.deepEqual(resultFirst.identity, finalIdentity);
+    assert.equal(resultFirst.resultFullyIncluded, false, 'one page is not inspection of an entire multi-page result');
+    assert.equal(resultLast.resultFullyIncluded, false, 'a continuation does not pretend to contain prior pages');
+    assert.equal(resultLast.nextOffset, undefined);
+    const reconstructed = Buffer.concat([Buffer.from(resultFirst.data, 'base64'), Buffer.from(resultLast.data, 'base64')]);
+    assert.equal(reconstructed.length, resultFirst.totalBytes);
+    assert.equal(createHash('sha256').update(reconstructed).digest('hex'), digest);
+    assert.equal(resultFirst.availableModels, undefined);
+    assert.equal(resultFirst.tasks, undefined);
+    const { data: history } = await run('project_history', { beforeSequence: 41, includeResults: true });
+    assert.deepEqual(history.historyPage.map(entry => entry.message), [...events, human]);
+    assert.equal(history.historyNext, 37);
+    assert.equal(history.resultScope, 'retained_receipts');
     const calls = [
       { name: 'project_read', arguments: {} },
       { name: 'project_inspect', arguments: { taskID: 'task-0' } },
       { name: 'project_inspect', arguments: { taskID: 'task-0', includeResults: true } },
       { name: 'project_read', arguments: { includeModels: true } },
+      { name: 'project_result', arguments: { taskID: 'task-0', operationID: 'operation-0' } },
+      { name: 'project_result', arguments: { taskID: 'task-0', operationID: 'operation-0', offset: resultFirst.nextOffset, sha256: resultFirst.sha256 } },
+      { name: 'project_history', arguments: { beforeSequence: 41, includeResults: true } },
     ];
     await withPi(t, {
       args: ['--no-extensions', '--no-skills', '--no-prompt-templates', '--no-themes', '--no-approve', '-e', path.resolve('Extensions/shepherd-project-context.ts')],
@@ -330,17 +364,17 @@ test('coordinator results scope snapshots without losing native evidence, human 
       assert.equal(turn.requests.length, calls.length + 1, pi.stderr);
       const outputs = turn.requests.at(-1).messages.filter(message => message.role === 'tool').map(message => JSON.parse(message.content));
       assert.equal(outputs.length, calls.length);
-      assert.deepEqual(outputs, [read, inspect, full, discovery], 'the real pinned model sees exactly the projected results');
+      assert.deepEqual(outputs, [read, inspect, full, discovery, resultFirst, resultLast, history], 'the real pinned model sees exactly the projected results');
       assert.ok(!turn.requests[0].system.includes(models[1199]), 'live context injects goal/memory, not a catalogue');
       const declarations = turn.requests[0].body.tools.map(tool => tool.function);
-      for (const name of ['project_read', 'project_inspect', 'project_resolve']) assert.equal(declarations.find(tool => tool.name === name).description, tools.get(name).description, 'the real model gets the exact omission/retrieval warning');
+      for (const name of ['project_read', 'project_inspect', 'project_resolve', 'project_result', 'project_history']) assert.equal(declarations.find(tool => tool.name === name).description, tools.get(name).description, 'the real model gets the exact omission/retrieval warning');
       const savedResults = (await pi.request({ type: 'get_messages' })).data.messages.filter(message => message.role === 'toolResult');
       assert.deepEqual(savedResults.map(message => JSON.parse(message.content[0].text)), outputs, 'new tool results persist without rewriting native receipts');
     });
     assert.equal(JSON.stringify(project), stored, 'presentation never rewrites stored snapshots or receipts');
     // ASCII fixture: token estimates are ceil(characters / 4), not tokenizer counts.
     console.log('Project payload measurements (1200 models, 8 tasks, ~4 KiB native receipts): ' + JSON.stringify(measurements));
-    for (const row of measurements.filter(row => !row.includeModels && !row.includeResults)) assert.ok(row.bytesAfter < row.bytesBefore / 10);
+    for (const row of measurements.filter(row => row.tool !== 'project_result' && !row.includeModels && !row.includeResults)) assert.ok(row.bytesAfter < row.bytesBefore / 10);
   } finally {
     for (const key of ['SHEPHERD_PROJECT_CONTEXT', 'SHEPHERD_PROJECT_COORDINATOR', 'SHEPHERD_AGENT_ID', 'SHEPHERD_SOCKET']) {
       if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key];
