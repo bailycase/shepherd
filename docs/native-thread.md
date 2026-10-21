@@ -208,7 +208,8 @@ events come out on stdout, one record per LF.
   - `agent_start` sets `running`; `agent_settled`, not `agent_end`, clears it. Between the two
     pi may retry, compact, or continue, and a prompt without a streaming behavior is refused
     ("Agent is already processing"). `agent_end` re-fetches messages, state, and stats, which
-    settles the ended live rows into history.
+    settles into history the live rows that had ended when pi answered; one that ends after (the
+    next message pi starts while a history with images is read) stays live.
   - `queue_update` tells the host which text pi queued for a steer (see The queue).
   - Thinking spans are timed as they stream, so history can show "Thought for Ns".
   - **Thinking text** is normalized where it is projected, streaming or settled

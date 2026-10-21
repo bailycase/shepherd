@@ -25,13 +25,21 @@ final class RealThreadRig {
     let window: OffscreenWindow
     let store: NativeThreadStore
     let trace: ScrollTrace
+    let agentID: AgentID
 
     /// Opens the workspace on one agent whose history holds `turns` turns, with the thread loaded and
-    /// laid out. `mix` says how tall the long answers run.
-    init(size: CGSize, turns: Int = 40, mix: ThreadTailFlowTests.Mix) async throws {
+    /// laid out. `mix` says how tall the long answers run; `image`, when given, rides on the first user message (a history with
+    /// images is read off the queue for them).
+    init(size: CGSize, turns: Int = 40, mix: ThreadTailFlowTests.Mix, image: Data? = nil) async throws {
         let app = try AppHarness()
         let file = app.dir.appendingPathComponent("history.json")
-        try JSONSerialization.data(withJSONObject: Self.history(turns: turns, mix: mix)).write(to: file)
+        var history = Self.history(turns: turns, mix: mix)
+        if let image, var first = history.first, var content = first["content"] as? [[String: Any]] {
+            content.append(["type": "image", "data": image.base64EncodedString(), "mimeType": "image/png"])
+            first["content"] = content
+            history[0] = first
+        }
+        try JSONSerialization.data(withJSONObject: history).write(to: file)
         let space = Fixture.space(path: app.dir.path)
         let info = try await app.server.createSession(params: CreateSessionParams(
             cwd: space.path, command: StubPi.command, env: ["STUB_PI_MESSAGES_FILE": file.path], runtime: .rpc))
@@ -49,6 +57,7 @@ final class RealThreadRig {
         self.vm = vm
         self.window = window
         self.store = store
+        agentID = agent.agent.id
         trace = ScrollTrace(scroll)
     }
 
