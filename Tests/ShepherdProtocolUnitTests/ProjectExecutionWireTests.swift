@@ -9,7 +9,7 @@ struct ProjectExecutionWireTests {
     static let assignment = ProjectExecutionAssignment(key: key, taskID: ProjectTaskID(), reservedWorkerID: AgentID(),
                                                        executorSpaceID: SpaceID(), title: "Task", prompt: "Do assigned work")
     @Test(arguments: [ProjectExecutionRequest.execute(assignment), .snapshot(key: key, watch: true),
-                      .result(key: key, offset: 8190, sha256: "exact-content-digest"),
+                      .worker(key: key), .result(key: key, offset: 8190, sha256: "exact-content-digest"),
                       .snapshot(key: key, watch: false), .cancel(key: key), .pause(key: key), .resume(key: key),
                       .answer(key: key, request: .answer(expectedSessionID: "session", generation: "generation", operationID: UUID(), dialogID: "dialog", answer: .confirm(value: true)))])
     func everyExecutionActionRoundTrips(_ command: ProjectExecutionRequest) throws {

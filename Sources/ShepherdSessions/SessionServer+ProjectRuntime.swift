@@ -35,7 +35,13 @@ extension SessionServer {
     }
 
     public func setProjectEligibleHosts(_ hosts: [ProjectHostReference]) {
-        queue.async { self.projectEligibleHosts = hosts }
+        queue.async {
+            let removed = Set(self.projectEligibleHosts).subtracting(hosts)
+            for project in self.store.state.projects where project.linkedSpaces.contains(where: { removed.contains($0.destination) }) {
+                self.projectReadAuthority[project.id] = UUID()
+            }
+            self.projectEligibleHosts = hosts
+        }
     }
 
     public func projectRuntime(_ id: ProjectID, expectedRevision: UInt64, request: ProjectRuntimeRequest) async throws -> Project {
@@ -43,16 +49,19 @@ extension SessionServer {
     }
 
     func performProjectRuntime(_ id: ProjectID, expectedRevision: UInt64, request: ProjectRuntimeRequest, coordinator: AgentID?,
-                               expectedGeneration: UInt64? = nil) async throws -> Project {
-        let (current, epoch, generation) = try await enqueue {
+                               expectedGeneration: UInt64? = nil, reader: AgentID? = nil) async throws -> Project {
+        let (current, epoch, generation, readAuthority) = try await enqueue {
             guard expectedGeneration == nil || expectedGeneration == self.projectsGeneration else {
                 throw LogicalProjectsError("project_paused", "Project admission was revoked.")
             }
-            return (try self.runtimeProject(id), self.logicalProjectEpoch, self.projectsGeneration)
+            let project = try self.runtimeProject(id)
+            if self.projectReadAuthority[id] == nil { self.projectReadAuthority[id] = UUID() }
+            return (project, self.logicalProjectEpoch, self.projectsGeneration, self.projectReadAuthority[id]!)
         }
         if case .read = request { return current }
         switch request {
-        case .inspect, .history, .result: return try await readProjectHistory(current, request: request)
+        case .worker, .inspect, .history, .result: return try await readProjectHistory(current, request: request,
+            grant: .init(epoch: epoch, generation: generation, authority: readAuthority, caller: reader))
         default: break
         }
         if case .resume = request {
@@ -244,7 +253,7 @@ extension SessionServer {
                 self.projectChildClosed.formUnion(self.currentProjectChildScope.values.filter { $0.key.projectID == id && $0.key.ownerID == p.ownerID })
             case .resume:
                 try restart()
-            case .read, .inspect, .history, .result, .conversation, .answer: break
+            case .read, .worker, .inspect, .history, .result, .conversation, .answer: break
             }
             if let command { p.commandReceipt = command }
         }
@@ -337,9 +346,12 @@ extension SessionServer {
             default: throw LogicalProjectsError("project_scope", "This action requires a human Project control.")
             }
         }
+        let responseGrant = try await enqueue { try self.historyReadGrant(self.runtimeProject(projectID), caller: agentID) }
         let actor: AgentID?
-        switch request { case .read, .inspect, .history, .result: actor = nil; default: actor = agentID }
-        var result = try await performProjectRuntime(projectID, expectedRevision: expectedRevision, request: request, coordinator: actor)
+        switch request { case .read, .worker, .inspect, .history, .result: actor = nil; default: actor = agentID }
+        var result = try await performProjectRuntime(projectID, expectedRevision: expectedRevision, request: request, coordinator: actor, reader: agentID)
+        let responseSnapshot = result
+        result.revision = try await enqueue { try self.validateHistoryRead(responseSnapshot, grant: responseGrant).revision }
         result.commandReceipt = nil
         result.operationReceipt?.task = nil; result.operationReceipt?.proposal = nil; result.operationReceipt?.message = nil
         result.name = NativeRedaction.projectData(result.name)
@@ -961,6 +973,7 @@ extension SessionServer {
             projectChildClosed.insert(scope)
             if currentProjectChildScope[agentID] == scope { currentProjectChildScope[agentID] = nil }
         }
+        pruneProjectChildScopes()
         let assistant = thread?.lastTurnAssistant.map { value in
             var visible = value; visible.blocks = value.blocks.filter { $0.kind == .text }; return visible
         }

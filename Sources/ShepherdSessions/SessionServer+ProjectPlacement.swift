@@ -92,7 +92,7 @@ extension SessionServer {
                   !project.paused, projectRunStarts[project.id] != nil else {
                 throw LogicalProjectsError("project_paused", "Project placement admission was revoked.")
             }
-        case .pause, .cancel, .snapshot, .publicationRead, .result: break
+        case .pause, .cancel, .snapshot, .worker, .publicationRead, .result: break
         }
     }
 

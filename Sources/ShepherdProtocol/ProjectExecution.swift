@@ -18,6 +18,8 @@ public enum ProjectExecutionRequest: Codable, Hashable, Sendable {
         }
     }
     case snapshot(key: ProjectExecutionKey, watch: Bool)
+    /// Read the exact native source without changing live execution subscriptions.
+    case worker(key: ProjectExecutionKey)
     case result(key: ProjectExecutionKey, offset: Int64, sha256: String?)
     case cancel(key: ProjectExecutionKey)
     case pause(key: ProjectExecutionKey)
@@ -31,7 +33,7 @@ public enum ProjectExecutionRequest: Codable, Hashable, Sendable {
     public var key: ProjectExecutionKey {
         switch self {
         case .execute(let assignment): assignment.key
-        case .result(let key, _, _), .snapshot(let key, _), .cancel(let key), .pause(let key), .resume(let key), .answer(let key, _), .publicationRead(let key, _, _): key
+        case .worker(let key), .result(let key, _, _), .snapshot(let key, _), .cancel(let key), .pause(let key), .resume(let key), .answer(let key, _), .publicationRead(let key, _, _): key
         }
     }
 }

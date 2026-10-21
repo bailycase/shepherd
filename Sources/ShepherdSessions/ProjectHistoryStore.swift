@@ -213,6 +213,11 @@ final class ProjectHistoryStore {
                 try put(scope, kind: "execution", id: receipt.key.operationID.uuidString, value: receipt)
             }
             var next = candidate
+            for project in before.projects + candidate.projects {
+                for worker in project.tasks.map(\.workerAgentID) {
+                    if let i = next.agents.firstIndex(where: { $0.id == worker }) { next.agents[i].projectWorkerFor = project.id }
+                }
+            }
             for receipt in before.projectExecutions {
                 if let worker = receipt.assignment?.reservedWorkerID, let i = next.agents.firstIndex(where: { $0.id == worker }), next.agents[i].executionFor == nil {
                     next.agents[i].executionFor = receipt.key
@@ -261,7 +266,7 @@ final class ProjectHistoryStore {
                        settled.nativeDeliveryID == task.nativeDeliveryID, settled.childScopeEpoch == task.childScopeEpoch,
                        settled.executionAssignment == task.executionAssignment {
                         project.tasks[j].phase = .settled; project.tasks[j].revision += 1
-                        project.tasks[j].settledAt = settled.settledAt; project.tasks[j].error = nil
+                        project.tasks[j].settledAt = settled.settledAt; project.tasks[j].error = settled.error
                         project.tasks[j].question = nil
                     }
                 }

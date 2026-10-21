@@ -17,11 +17,11 @@ extension SessionServer {
             if store.state.projectExecutions.contains(where: { $0.key == request.key }) {
                 projectExecutionOnQueue(request, history: .init(), completion: completion)
             } else {
-                let url = store.url, epoch = logicalProjectEpoch
+                let url = store.url, epoch = logicalProjectEpoch, generation = projectsGeneration, spaceGrant = executionReadGeneration
                 projectHistoryReads.async {
                     let loaded = Result { try ProjectHistoryStore(beside: url).executionHistory(request) }
                     self.queue.async {
-                        guard self.logicalProjectEpoch == epoch else { completion(.failure(LogicalProjectsError("stale_execution", "Executor restarted during history lookup."))); return }
+                        guard self.projectsEnabled, self.projectsGeneration == generation, self.executionReadGeneration == spaceGrant, self.logicalProjectEpoch == epoch else { completion(.failure(LogicalProjectsError("project_scope", "Executor result permission was revoked."))); return }
                         switch loaded {
                         case .success(let value): self.projectExecutionOnQueue(request, history: value, completion: completion)
                         case .failure(let error): completion(.failure(error))
@@ -34,7 +34,7 @@ extension SessionServer {
         do {
             try requireStarted()
             switch request {
-            case .execute, .resume, .answer, .result: try requireProjectsEnabled()
+            case .execute, .resume, .answer, .result, .worker: try requireProjectsEnabled()
             case .pause, .cancel, .snapshot, .publicationRead: break
             }
             let generation = projectsGeneration
@@ -51,17 +51,32 @@ extension SessionServer {
             switch request {
             case .result(_, let offset, let hash):
                 guard let existing else { throw LogicalProjectsError("unknown_execution", "No receipt exists for this exact result.") }
-                let url = store.url, epoch = logicalProjectEpoch
+                let url = store.url, epoch = logicalProjectEpoch, generation = projectsGeneration, spaceGrant = executionReadGeneration
                 logicalProjectFiles.async {
                     let page = Result { try ProjectHistoryStore(beside: url).executionResult(existing, offset: offset, hash: hash) }
                     self.queue.async {
-                        guard self.logicalProjectEpoch == epoch else { completion(.failure(LogicalProjectsError("stale_execution", "Executor restarted during result lookup."))); return }
+                        guard self.projectsEnabled, self.projectsGeneration == generation, self.executionReadGeneration == spaceGrant, self.logicalProjectEpoch == epoch,
+                              existing.assignment.map({ assignment in self.store.state.spaces.contains { $0.id == assignment.executorSpaceID } }) ?? true else {
+                            completion(.failure(LogicalProjectsError("project_scope", "Executor result permission was revoked."))); return
+                        }
                         completion(page.map { .init(receipt: existing, resultPage: $0) })
                     }
                 }
             case .publicationRead(_, let id, let offset):
                 guard let existing else { throw LogicalProjectsError("no_such_execution", "No execution receipt exists.") }
                 try readExecutionPublication(existing, id: id, offset: offset, completion: completion)
+            case .worker:
+                guard let existing else { throw LogicalProjectsError("no_such_execution", "No execution receipt exists.") }
+                let spaceGrant = executionReadGeneration, epoch = logicalProjectEpoch
+                self.executionSnapshot(existing) { result in
+                    self.queue.async {
+                        guard self.projectsEnabled, self.projectsGeneration == generation, self.executionReadGeneration == spaceGrant, self.logicalProjectEpoch == epoch,
+                              existing.assignment.map({ assignment in self.store.state.spaces.contains { $0.id == assignment.executorSpaceID } }) ?? false else {
+                            completion(.failure(LogicalProjectsError("project_scope", "Executor worker permission was revoked."))); return
+                        }
+                        completion(result)
+                    }
+                }
             case .snapshot:
                 guard let existing else { throw LogicalProjectsError("no_such_execution", "No execution receipt exists.") }
                 executionSnapshot(existing, completion: completion)

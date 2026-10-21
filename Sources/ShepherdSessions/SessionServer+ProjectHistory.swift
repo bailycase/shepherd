@@ -4,7 +4,47 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
+public struct ProjectHistoryReadGrant: Sendable {
+    var epoch: UInt64
+    var generation: UInt64
+    var authority: UUID
+    var caller: AgentID?
+}
+
 extension SessionServer {
+    func historyReadGrant(_ project: Project, caller: AgentID? = nil) throws -> ProjectHistoryReadGrant {
+        let current = try runtimeProject(project.id)
+        guard current.ownerID == project.ownerID else { throw LogicalProjectsError("project_scope", "Project ownership changed.") }
+        if projectReadAuthority[project.id] == nil { projectReadAuthority[project.id] = UUID() }
+        return .init(epoch: logicalProjectEpoch, generation: projectsGeneration, authority: projectReadAuthority[project.id]!, caller: caller)
+    }
+
+    func validateHistoryRead(_ project: Project, grant: ProjectHistoryReadGrant, taskID: ProjectTaskID? = nil) throws -> Project {
+        let current = try runtimeProject(project.id)
+        guard logicalProjectEpoch == grant.epoch, projectsGeneration == grant.generation,
+              projectReadAuthority[project.id] == grant.authority, current.ownerID == project.ownerID else {
+            throw LogicalProjectsError("project_scope", "Project read permission was revoked.")
+        }
+        if let caller = grant.caller {
+            let coordinator = current.coordinatorAgentID == caller && store.state.agents.contains { $0.id == caller && $0.coordinatorFor == current.id }
+            let worker = current.tasks.contains { $0.workerAgentID == caller && (taskID == nil || $0.id == taskID) }
+            guard coordinator || worker else { throw LogicalProjectsError("project_scope", "The caller no longer owns this read grant.") }
+        }
+        return current
+    }
+    /// Keeps the original viewer permission across routing/native I/O. Re-enable cannot revive it.
+    public func projectWorkerReadGrant(_ id: ProjectID) async throws -> ProjectHistoryReadGrant {
+        try await enqueue {
+            _ = try self.runtimeProject(id)
+            if self.projectReadAuthority[id] == nil { self.projectReadAuthority[id] = UUID() }
+            return .init(epoch: self.logicalProjectEpoch, generation: self.projectsGeneration, authority: self.projectReadAuthority[id]!, caller: nil)
+        }
+    }
+
+    public func validateProjectWorkerRead(_ id: ProjectID, grant: ProjectHistoryReadGrant) async throws {
+        try await enqueue { _ = try self.validateHistoryRead(try self.runtimeProject(id), grant: grant) }
+    }
+
     func projectHistoryRead<T: Sendable>(_ read: @escaping @Sendable (ProjectHistoryStore) throws -> T) async throws -> T {
         let url = try await enqueue { self.store.url }
         return try await withCheckedThrowingContinuation { continuation in
@@ -14,14 +54,17 @@ extension SessionServer {
         }
     }
 
-    func readProjectHistory(_ project: Project, request: ProjectRuntimeRequest) async throws -> Project {
+    func readProjectHistory(_ project: Project, request: ProjectRuntimeRequest, grant: ProjectHistoryReadGrant) async throws -> Project {
         if case .result(let task, let operation, let offset, let hash) = request {
-            return try await readProjectResult(project, taskID: task, operation: operation, offset: offset, hash: hash)
+            return try await readProjectResult(project, taskID: task, operation: operation, offset: offset, hash: hash, grant: grant)
         }
         let value: Project = try await projectHistoryRead { history in
             try history.captureCommitted(project)
             var response = project
             switch request {
+            case .worker(let id):
+                guard let task = try history.taskByID(project, id: id) else { throw LogicalProjectsError("project_scope", "No historical worker route exists.") }
+                response.tasks = [task]; response.messages = []
             case .inspect(let task, let operation):
                 guard let selectedTask = try history.taskByID(project, id: task) else { throw LogicalProjectsError("project_scope", "Task is not in this Project.") }
                 response.tasks = [selectedTask]
@@ -44,10 +87,43 @@ extension SessionServer {
             }
             return response
         }
+        if case .worker = request, let task = value.tasks.first, task.destination != .local {
+            let handler = try await enqueue {
+                _ = try self.authorizedResultProject(project, task: task, archivedResolved: task.phase == .resolved, grant: grant)
+                guard let handler = self.onProjectPlacement else { throw LogicalProjectsError("execution_host_unavailable", "The original executor is unavailable.") }
+                return handler
+            }
+            guard let assignment = task.executionAssignment else { throw LogicalProjectsError("stale_execution", "No exact assignment is retained.") }
+            let remote: ProjectExecutionResult = try await withCheckedThrowingContinuation { continuation in
+                self.hopToMain { handler(task.destination, .worker(key: assignment.key)) { continuation.resume(with: $0) } }
+            }
+            guard remote.receipt.key == assignment.key, remote.receipt.assignment == assignment,
+                  remote.receipt.sessionID == task.executionReceipt?.sessionID,
+                  remote.receipt.generation == task.executionReceipt?.generation,
+                  let thread = remote.thread,
+                  thread.piSessionID == remote.receipt.sessionID, thread.generation == remote.receipt.generation else {
+                throw LogicalProjectsError("stale_execution", "The original executor cannot provide the exact native worker source.")
+            }
+        }
         return try await enqueue {
             try self.requireStarted()
-            guard let current = self.store.state.projects.first(where: { $0.id == project.id }), current.ownerID == project.ownerID,
-                  current.coordinatorAgentID == project.coordinatorAgentID else { throw LogicalProjectsError("project_scope", "Project authority changed during history read.") }
+            let current = try self.validateHistoryRead(project, grant: grant, taskID: request.targetTaskID)
+            if case .worker = request {
+                guard let task = value.tasks.first else { throw LogicalProjectsError("project_scope", "Missing worker route.") }
+                _ = try self.authorizedResultProject(project, task: task, archivedResolved: task.phase == .resolved, grant: grant)
+                if task.destination == .local {
+                    guard let agent = self.store.state.agents.first(where: { $0.id == task.workerAgentID }),
+                          current.tasks.contains(where: { $0.id == task.id }) || agent.projectWorkerFor == current.id,
+                          task.workerSessionID != nil, (self.rpcThread(forAgent: task.workerAgentID)?.piSessionID ?? agent.piSessionID) == task.workerSessionID else {
+                        throw LogicalProjectsError("stale_execution", "The exact historical worker session is unavailable.")
+                    }
+                } else {
+                    guard let receipt = task.executionReceipt, receipt.key.ownerID == current.ownerID,
+                          receipt.key.projectID == current.id, receipt.key.operationID == task.operationID,
+                          receipt.assignment == task.executionAssignment, receipt.assignment?.reservedWorkerID == task.workerAgentID,
+                          receipt.sessionID != nil else { throw LogicalProjectsError("stale_execution", "The exact remote worker receipt is unavailable.") }
+                }
+            }
             var fresh = value; fresh.revision = current.revision
             return fresh
         }
@@ -85,7 +161,7 @@ extension SessionServer {
         }
     }
 
-    private func readProjectResult(_ project: Project, taskID: ProjectTaskID, operation: UUID, offset: Int64, hash: String?) async throws -> Project {
+    private func readProjectResult(_ project: Project, taskID: ProjectTaskID, operation: UUID, offset: Int64, hash: String?, grant: ProjectHistoryReadGrant) async throws -> Project {
         guard offset >= 0, offset == 0 || hash != nil else { throw LogicalProjectsError("invalid_result_page", "Continuation requires its immutable digest and a nonnegative byte offset.") }
         let selection = try await projectHistoryRead { history in
             let task = try history.task(project, operation: operation)
@@ -97,7 +173,7 @@ extension SessionServer {
         guard let task = selection.0 else {
             guard selection.1 else { throw LogicalProjectsError("project_scope", "No exact task/operation evidence is retained.") }
             return try await enqueue {
-                var fresh = try self.runtimeProject(project.id)
+                var fresh = try self.validateHistoryRead(project, grant: grant, taskID: taskID)
                 guard fresh.ownerID == project.ownerID, fresh.coordinatorAgentID == project.coordinatorAgentID,
                       fresh.tasks.contains(where: { $0.id == taskID }) else { throw LogicalProjectsError("project_scope", "Result authority changed.") }
                 fresh.tasks = fresh.tasks.filter { $0.id == taskID }; fresh.messages = []
@@ -108,7 +184,7 @@ extension SessionServer {
         guard task.id == taskID else { throw LogicalProjectsError("project_scope", "Operation belongs to another task.") }
         var page = try await projectHistoryRead { try $0.result(project, task: taskID, operation: operation, offset: offset, hash: hash) }
         if task.destination != .local {
-            try await authorizeResultRoute(project, task: task, archivedResolved: selection.2)
+            try await authorizeResultRoute(project, task: task, archivedResolved: selection.2, grant: grant)
             guard let assignment = task.executionAssignment, let expected = task.executionReceipt,
                   assignment.key.operationID == operation else { throw LogicalProjectsError("unavailable_result", "No exact executor identity was retained.") }
             let handler = try await enqueue { self.onProjectPlacement }
@@ -134,7 +210,7 @@ extension SessionServer {
                       remote.totalBytes >= offset + Int64(remote.data.count), hash == nil || hash == remote.sha256,
                       remote.nextOffset == (offset + Int64(remote.data.count) < remote.totalBytes ? offset + Int64(remote.data.count) : nil),
                       String(data: remote.data, encoding: .utf8) != nil else { throw LogicalProjectsError("invalid_result_page", "Executor returned invalid page boundaries.") }
-                try await authorizeResultRoute(project, task: task, archivedResolved: selection.2)
+                try await authorizeResultRoute(project, task: task, archivedResolved: selection.2, grant: grant)
                 let descriptor = remote
                 try await projectHistoryRead { try $0.adoptRemoteDescriptor(project, task: task, page: descriptor) }
                 page = try await projectHistoryRead { try $0.result(project, task: taskID, operation: operation, offset: offset, hash: hash) }
@@ -146,20 +222,20 @@ extension SessionServer {
         }
         let finalPage = page
         return try await enqueue {
-            var fresh = try self.authorizedResultProject(project, task: task, archivedResolved: selection.2)
+            var fresh = try self.authorizedResultProject(project, task: task, archivedResolved: selection.2, grant: grant)
             fresh.tasks = fresh.tasks.filter { $0.id == taskID }; fresh.messages = []
             fresh.resultPage = finalPage
             return fresh
         }
     }
 
-    private func authorizeResultRoute(_ project: Project, task: ProjectTask, archivedResolved: Bool) async throws {
-        try await enqueue { _ = try self.authorizedResultProject(project, task: task, archivedResolved: archivedResolved) }
+    private func authorizeResultRoute(_ project: Project, task: ProjectTask, archivedResolved: Bool, grant: ProjectHistoryReadGrant) async throws {
+        try await enqueue { _ = try self.authorizedResultProject(project, task: task, archivedResolved: archivedResolved, grant: grant) }
     }
 
-    private func authorizedResultProject(_ project: Project, task: ProjectTask, archivedResolved: Bool) throws -> Project {
-        try requireStarted()
-        guard let current = store.state.projects.first(where: { $0.id == project.id }),
+    private func authorizedResultProject(_ project: Project, task: ProjectTask, archivedResolved: Bool, grant: ProjectHistoryReadGrant) throws -> Project {
+        let current = try validateHistoryRead(project, grant: grant, taskID: task.id)
+        guard
               current.ownerID == project.ownerID, current.coordinatorAgentID == project.coordinatorAgentID,
               current.tasks.contains(where: { $0.id == task.id && $0.workerAgentID == task.workerAgentID })
                 || (archivedResolved && !current.tasks.contains(where: { $0.id == task.id }) && (current.archivedResolvedTaskCount ?? 0) > 0) else {

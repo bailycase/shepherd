@@ -9,7 +9,7 @@ struct ProjectRuntimeWireTests {
     static let space = SpaceID(rawValue: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
     static let operation = UUID(uuidString: "cccccccc-cccc-4ccc-8ccc-cccccccccccc")!
     @Test(arguments: [ProjectRuntimeRequest.conversation, .read,
-                      .inspect(taskID: task), .inspect(taskID: task, operationID: operation),
+                      .worker(taskID: task), .inspect(taskID: task), .inspect(taskID: task, operationID: operation),
                       .history(), .history(taskID: task, beforeSequence: 42, includeBodies: true),
                       .result(taskID: task, operationID: operation, offset: 8190, sha256: "exact-content-digest"),
                       .answer(operationID: operation, taskID: task, questionEventID: operation, humanReplyID: operation, answer: .select(value: "Allow")),

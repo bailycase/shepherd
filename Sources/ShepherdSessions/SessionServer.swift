@@ -438,6 +438,8 @@ public final class SessionServer: @unchecked Sendable {
     var logicalProjectEpoch: UInt64 = 0
     var projectsEnabled = false
     var projectsGeneration: UInt64 = 0
+    var projectReadAuthority: [ProjectID: UUID] = [:]
+    var executionReadGeneration: UInt64 = 0
     var automationStarts = Set<AutomationID>()
     /// Server-queue owner adapter. Must use the ProjectTask reservation/activation ledger,
     /// launch idle, fence native delivery, and retain occupancy for unknown outcomes.
@@ -460,6 +462,7 @@ public final class SessionServer: @unchecked Sendable {
     var currentProjectChildScope: [AgentID: ProjectChildScope] = [:]
     var projectChildAdmitted: Set<ProjectChildScope> = []
     var projectChildClosed: Set<ProjectChildScope> = []
+    var projectChildRecentClosed: [ProjectChildScope] = []
     var projectChildDrained: Set<ProjectChildScope> = []
     var projectChildStopped: Set<ProjectChildScope> = []
     var projectChildTakenOver: Set<ProjectChildScope> = []
@@ -1334,7 +1337,7 @@ public final class SessionServer: @unchecked Sendable {
         projectAnswersInFlight.removeAll()
         projectPromptInFlight.removeAll()
         projectStartedPrompts.removeAll()
-        currentProjectChildScope.removeAll(); projectChildAdmitted.removeAll(); projectChildClosed.removeAll()
+        currentProjectChildScope.removeAll(); projectChildAdmitted.removeAll(); projectChildClosed.removeAll(); projectChildRecentClosed.removeAll()
         projectChildDrained.removeAll(); projectChildDraining.removeAll(); projectChildStopped.removeAll(); projectChildTakenOver.removeAll()
         pendingDesignDeletions.removeAll()
         for session in sessions.values {
@@ -1639,6 +1642,7 @@ public final class SessionServer: @unchecked Sendable {
         let finish: (String?) -> Void = { error in
             if action == .stop, error == nil { self.projectChildStopped.insert(scope) }
             completion(error)
+            self.pruneProjectChildScopes()
         }
         guard let client = clients.values.first(where: { $0.childrenAgentID == scope.workerAgentID }) else {
             finish(projectChildAdmitted.contains(scope) ? "Children extension disconnected; helper outcome is unknown." : nil)
@@ -2063,7 +2067,9 @@ public final class SessionServer: @unchecked Sendable {
             default: hopToMain { perform(request, finish) }
             }
         case .projectExecution(let id, let request):
-            if case .result = request, !offeredCapabilities.contains(RemoteProtocol.projectResultCapability) || !client.clientCapabilities.contains(RemoteProtocol.projectResultCapability) {
+            let needsResultCapability: Bool
+            switch request { case .result, .worker: needsResultCapability = true; default: needsResultCapability = false }
+            if needsResultCapability, !offeredCapabilities.contains(RemoteProtocol.projectResultCapability) || !client.clientCapabilities.contains(RemoteProtocol.projectResultCapability) {
                 send(.error(id: id, code: "unsupported_result", message: "Exact result reads require a compatible executor and owner."), to: client); return
             }
             guard !request.requiresPublications || (offeredCapabilities.contains(RemoteProtocol.projectPublicationsCapability)
@@ -4524,6 +4530,20 @@ public final class SessionServer: @unchecked Sendable {
     /// Server queue, after a successfully persisted commit (including an off-queue staged one).
     func stateDidCommit(before: ShepherdState) {
         let state = store.state
+        if Set(before.spaces.map(\.id)) != Set(state.spaces.map(\.id)) { executionReadGeneration &+= 1 }
+        for old in before.projects {
+            let next = state.projects.first { $0.id == old.id }
+            let oldCaller = before.agents.first { $0.id == old.coordinatorAgentID }
+            let newCaller = state.agents.first { $0.id == next?.coordinatorAgentID }
+            if next?.ownerID != old.ownerID || next?.coordinatorAgentID != old.coordinatorAgentID
+                || next?.linkedSpaces != old.linkedSpaces || next?.settings.hostPolicy != old.settings.hostPolicy
+                || next?.settings.allowedHosts != old.settings.allowedHosts
+                || oldCaller?.coordinatorFor != newCaller?.coordinatorFor || oldCaller?.id != newCaller?.id {
+                projectReadAuthority[old.id] = UUID()
+            }
+        }
+        projectReadAuthority = projectReadAuthority.filter { key, _ in state.projects.contains { $0.id == key } }
+        pruneProjectChildScopes()
         if state.agents.count < before.agents.count {
             let live = Set(state.agents.map(\.id))
             peerDeliveries = peerDeliveries.filter { live.contains($0.value.agentID) }

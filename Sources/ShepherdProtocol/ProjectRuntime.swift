@@ -37,6 +37,7 @@ public enum ProjectRuntimeRequest: Codable, Hashable, Sendable {
     }
     case conversation
     case read
+    case worker(taskID: ProjectTaskID)
     case inspect(taskID: ProjectTaskID, operationID: UUID? = nil)
     /// Explicit indexed history and immutable final-result pages. Neither is a success assertion.
     case history(taskID: ProjectTaskID? = nil, beforeSequence: Int64? = nil, includeBodies: Bool? = nil)
@@ -60,7 +61,7 @@ public enum ProjectRuntimeRequest: Codable, Hashable, Sendable {
 public enum ProjectRuntimeTransport: Codable, Hashable, Sendable {
     public var requiresResults: Bool {
         if case .action(_, _, let request) = self {
-            switch request { case .result, .history, .inspect(_, .some): return true; default: break }
+            switch request { case .worker, .result, .history, .inspect(_, .some): return true; default: break }
         }
         return false
     }

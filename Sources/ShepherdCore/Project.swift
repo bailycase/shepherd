@@ -113,6 +113,7 @@ public struct Project: Codable, Hashable, Sendable, Identifiable {
     public var stagedEvents: [ProjectStagedEvent] = []
     /// Explicit read responses only. Normal snapshots/working state leave these nil.
     public var archivedResolvedTaskCount: Int?
+    public var referencedTasks: [ProjectTaskProvenance] = []
     public var historyPending: Bool?
     public var commandReceipt: ProjectCommandReceipt?
     public var operationReceipt: ProjectOperationReceipt?
@@ -139,7 +140,7 @@ public struct Project: Codable, Hashable, Sendable, Identifiable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, ownerID, name, goal, coordinatorAgentID, revision, paused, settings, memory, linkedSpaces, tasks, messages, interruptPending, spaceProposals, memoryOperations, artifacts, retiredWakeups, archivedResolvedTaskCount, historyPending, commandReceipt, operationReceipt, resultPage, historyPage, historyNext
+        case id, ownerID, name, goal, coordinatorAgentID, revision, paused, settings, memory, linkedSpaces, tasks, messages, interruptPending, spaceProposals, memoryOperations, artifacts, retiredWakeups, archivedResolvedTaskCount, referencedTasks, historyPending, commandReceipt, operationReceipt, resultPage, historyPage, historyNext
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -160,6 +161,7 @@ public struct Project: Codable, Hashable, Sendable, Identifiable {
         spaceProposals = try c.decodeIfPresent([ProjectSpaceProposal].self, forKey: .spaceProposals) ?? []
         memoryOperations = try c.decodeIfPresent([UUID].self, forKey: .memoryOperations) ?? []
         retiredWakeups = try c.decodeIfPresent([UUID].self, forKey: .retiredWakeups) ?? []
+        referencedTasks = try c.decodeIfPresent([ProjectTaskProvenance].self, forKey: .referencedTasks) ?? []
         archivedResolvedTaskCount = try c.decodeIfPresent(Int.self, forKey: .archivedResolvedTaskCount)
         historyPending = try c.decodeIfPresent(Bool.self, forKey: .historyPending)
         commandReceipt = try c.decodeIfPresent(ProjectCommandReceipt.self, forKey: .commandReceipt)
@@ -212,10 +214,26 @@ public struct Project: Codable, Hashable, Sendable, Identifiable {
     public mutating func retireResolvedTasks(eligible: Set<ProjectTaskID>) {
         var excess = tasks.filter { $0.phase == .resolved }.count - 16
         let protected = Set(messages.filter { [.queued, .delivering, .unknown].contains($0.phase) }.compactMap { $0.source?.taskID })
+        retainReferenceProof()
         tasks.removeAll { task in
             guard excess > 0, eligible.contains(task.id), task.phase == .resolved, !protected.contains(task.id), task.pendingAnswer.map({ [.queued, .delivering, .unknown].contains($0.phase) }) != true else { return false }
             excess -= 1; return true
         }
+    }
+
+    /// Keep only exact identities referenced by the bounded artifact/proposal working sets.
+    public mutating func retainReferenceProof() {
+        let references = Set(artifacts.map(\.taskID) + spaceProposals.compactMap(\.originTaskID))
+        var proof = referencedTasks.filter { references.contains($0.taskID) }
+        for task in tasks where references.contains(task.id) {
+            let previous = proof.first { $0.taskID == task.id && $0.workerAgentID == task.workerAgentID }?.operations ?? []
+            let known = Set([task.operationID] + (task.previousOperations ?? []) + previous)
+            var needed = Set(artifacts.filter { $0.taskID == task.id }.map { $0.key.operationID })
+            if spaceProposals.contains(where: { $0.originTaskID == task.id }) { needed.insert(task.operationID) }
+            proof.removeAll { $0.taskID == task.id }
+            proof.append(.init(taskID: task.id, workerAgentID: task.workerAgentID, operations: needed.intersection(known).sorted { $0.uuidString < $1.uuidString }))
+        }
+        referencedTasks = proof
     }
 
     public func validate() throws {
@@ -236,7 +254,7 @@ public struct Project: Codable, Hashable, Sendable, Identifiable {
             try require((proposal.path != nil) != (proposal.spaceID != nil), "Choose an existing Space or an absolute path.")
             try require(proposal.revision > 0 && proposal.displayPath.count <= 4096, "Invalid Space proposal.")
             if let path = proposal.path { try require(path.hasPrefix("/") && !path.utf8.contains(0) && path.count <= 4096, "Invalid Space path.") }
-            if let task = proposal.originTaskID { try require(tasks.contains { $0.id == task }, "Proposal task is not in this Project.") }
+            if let task = proposal.originTaskID { try require(tasks.contains { $0.id == task } || referencedTasks.contains { $0.taskID == task }, "Proposal task is not in this Project.") }
         }
         for model in [settings.conversationModel, settings.threadModel].compactMap({ $0 }) {
             try require(!model.isEmpty && model.count <= 512, "Model preference must contain 1...512 characters.")
@@ -276,11 +294,19 @@ public struct Project: Codable, Hashable, Sendable, Identifiable {
                         && !task.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && task.prompt.utf8.count <= 16 * 1024,
                         "Task needs a nonempty title and prompt up to 16 KiB UTF-8.")
         }
+        let references = Set(artifacts.map(\.taskID) + spaceProposals.compactMap(\.originTaskID))
+        try require(referencedTasks.count <= ProjectArtifactReceipt.maximumCount + 32
+            && Set(referencedTasks.map(\.taskID)).count == referencedTasks.count
+            && referencedTasks.allSatisfy { references.contains($0.taskID)
+                && !$0.operations.isEmpty && $0.operations.count <= ProjectArtifactReceipt.maximumCount + 2
+                && Set($0.operations).count == $0.operations.count }, "Invalid referenced task provenance.")
         try ProjectArtifactReceipt.validateCollection(artifacts)
         for artifact in artifacts {
             try require(artifact.key.ownerID == ownerID && artifact.key.projectID == id
-                && tasks.contains { $0.id == artifact.taskID && $0.workerAgentID == artifact.workerAgentID
-                    && ([$0.operationID] + ($0.previousOperations ?? [])).contains(artifact.key.operationID) }, "Artifact provenance does not match its task.")
+                && (tasks.contains { $0.id == artifact.taskID && $0.workerAgentID == artifact.workerAgentID
+                    && ([$0.operationID] + ($0.previousOperations ?? [])).contains(artifact.key.operationID) }
+                || referencedTasks.contains { $0.taskID == artifact.taskID && $0.workerAgentID == artifact.workerAgentID
+                    && $0.operations.contains(artifact.key.operationID) }), "Artifact provenance does not match its task.")
         }
         try require(commandReceipt == nil || commandReceipt?.sha256.utf8.count == 64, "Command receipt exceeds its working-set bound.")
         try require(messages.count <= 64 && Set(messages.map(\.id)).count == messages.count, "Project message queue is full or duplicated.")

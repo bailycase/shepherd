@@ -394,6 +394,12 @@ struct ProjectHistoryTests {
         rig.owner.server.reconcileProjectExecutions(host: binding)
         try await eventually("owner has exact remote receipt") { rig.owner.server.state.projects.first?.tasks.first?.executionReceipt?.phase == .settled }
         let read = ProjectRuntimeRequest.result(taskID: exact.taskID, operationID: exact.key.operationID, offset: 0, sha256: nil)
+        let workerRead = ProjectRuntimeRequest.worker(taskID: exact.taskID)
+        let routedWorker = try await rig.owner.server.projectRuntime(project.id, expectedRevision: rig.owner.server.state.projects[0].revision, request: workerRead)
+        #expect(routedWorker.tasks.count == 1 && routedWorker.tasks[0].workerAgentID == exact.reservedWorkerID)
+        #expect(routedWorker.tasks[0].destination == binding)
+        let nativeSource = try await client.projectExecution(.worker(key: exact.key))
+        #expect(nativeSource.receipt.key == exact.key && nativeSource.thread?.piSessionID == nativeSource.receipt.sessionID)
         let ownerRead = try await rig.owner.server.projectRuntime(project.id, expectedRevision: rig.owner.server.state.projects[0].revision, request: read)
         let page = try #require(ownerRead.resultPage), identity = try #require(page.identity)
         #expect(page.availability == .complete)
@@ -419,7 +425,8 @@ struct ProjectHistoryTests {
         let before = routes.current.count
         rig.owner.server.setProjectExecutionSpaces([.remote(hostID: hostID, bindingID: UUID()): rig.host.server.state.spaces])
         await #expect(throws: LogicalProjectsError.self) { try await rig.owner.server.projectRuntime(project.id, expectedRevision: rig.owner.server.state.projects[0].revision, request: read) }
-        #expect(routes.current.count == before, "A cached descriptor must not bypass revoked original host binding")
+        await #expect(throws: LogicalProjectsError.self) { try await rig.owner.server.projectRuntime(project.id, expectedRevision: rig.owner.server.state.projects[0].revision, request: workerRead) }
+        #expect(routes.current.count == before, "Neither a cached result descriptor nor an archived worker route may bypass revoked original host binding")
         rig.owner.server.setProjectExecutionSpaces([binding: rig.host.server.state.spaces])
         client.disconnect(); rig.host.server.stop(); try rig.host.server.start()
         rig.owner.server.stop(); try rig.owner.server.start()

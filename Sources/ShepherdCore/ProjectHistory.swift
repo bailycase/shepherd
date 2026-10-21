@@ -1,5 +1,12 @@
 import Foundation
 
+/// Identity proof for bounded live artifact and Space-proposal records, never a full historical task.
+public struct ProjectTaskProvenance: Codable, Hashable, Sendable {
+    public var taskID: ProjectTaskID
+    public var workerAgentID: AgentID
+    public var operations: [UUID]
+}
+
 public struct ProjectCommandReceipt: Codable, Hashable, Sendable {
     public var operationID: UUID
     public var sha256: String

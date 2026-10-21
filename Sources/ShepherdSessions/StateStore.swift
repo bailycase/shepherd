@@ -67,19 +67,20 @@ final class StateStore: @unchecked Sendable {
     }
 
     static func stageLogicalProjects(_ proposed: ShepherdState, before: ShepherdState, at url: URL) throws -> LogicalProjectsStage {
-        let candidate = try ProjectHistoryStore(beside: url).prepare(before: before, candidate: proposed)
-        try candidate.validate()
-        guard try NDJSON.encode(RemoteReply.stateChanged(state: candidate)).count <= NDJSON.maxPayloadBytes else {
-            throw LogicalProjectsError("project_limit", "Workspace exceeds the remote state frame budget.")
-        }
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(candidate.persisted)
+        // Reserve the state write first. A non-writable workspace must fail before advancing history.
         let staged = url.deletingLastPathComponent().appendingPathComponent(".logical-project-state-\(UUID().uuidString.lowercased())")
         let fd = open(staged.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
         guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         let file = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
         do {
+            let candidate = try ProjectHistoryStore(beside: url).prepare(before: before, candidate: proposed)
+            try candidate.validate()
+            guard try NDJSON.encode(RemoteReply.stateChanged(state: candidate)).count <= NDJSON.maxPayloadBytes else {
+                throw LogicalProjectsError("project_limit", "Workspace exceeds the remote state frame budget.")
+            }
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try encoder.encode(candidate.persisted)
             try file.write(contentsOf: data)
             try file.close()
             return LogicalProjectsStage(url: staged, state: candidate)

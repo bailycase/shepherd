@@ -54,9 +54,22 @@ final class ProjectCoordinatorController {
     /// A viewer addresses the owning Project, never a viewer-local host or caller-supplied worker ID.
     /// The ordinary native store keeps its existing bounded snapshot polling and mutation fences.
     func worker(projectID: ProjectID, taskID: ProjectTaskID, request: NativeThreadRequest) async throws -> NativeThreadResult {
-        guard let vm, let project = vm.server.state.projects.first(where: { $0.id == projectID }),
-              let task = project.tasks.first(where: { $0.id == taskID }) else {
+        guard let vm, let project = vm.server.state.projects.first(where: { $0.id == projectID }) else {
             throw LogicalProjectsError("not_found", "The Project or its thread is no longer available.")
+        }
+        let grant = try await vm.server.projectWorkerReadGrant(projectID)
+        let routed = try await vm.server.projectRuntime(projectID, expectedRevision: project.revision, request: .worker(taskID: taskID))
+        guard let task = routed.tasks.first(where: { $0.id == taskID }) else { throw LogicalProjectsError("not_found", "Worker route is unavailable.") }
+        let archived = !project.tasks.contains(where: { $0.id == taskID })
+        var request = request
+        if archived {
+            switch request {
+            case .snapshot(let expected, let before, let revision):
+                guard expected == nil || expected == task.workerSessionID else { throw LogicalProjectsError("stale_execution", "Archived worker session changed.") }
+                request = .snapshot(expectedSessionID: task.workerSessionID, beforeEntryID: before, afterRevision: revision)
+            case .image, .artifact, .subagentTranscript: break
+            default: throw LogicalProjectsError("project_scope", "Archived worker access is read-only; it never reactivates a task.")
+            }
         }
         // Once the managed activation has ended, this is an ordinary thread. Its manual
         // questions must not be checked against the old Project delivery receipt.
@@ -86,14 +99,22 @@ final class ProjectCoordinatorController {
         }
         switch task.destination {
         case .local:
-            return try await vm.server.nativeThread(agentID: task.workerAgentID, request: request)
+            let result = try await vm.server.nativeThread(agentID: task.workerAgentID, request: request)
+            _ = try await vm.server.projectRuntime(projectID, expectedRevision: routed.revision, request: .worker(taskID: taskID))
+            try await vm.server.validateProjectWorkerRead(projectID, grant: grant)
+            return result
         case .remote(let hostID, let bindingID):
             guard let connection = vm.remoteHosts.connections.first(where: { $0.id == hostID && $0.config.bindingID == bindingID }),
                   connection.phase == .connected, let client = connection.browserClient,
                   client.capabilities.isSuperset(of: [RemoteProtocol.projectExecutionCapability, RemoteProtocol.projectPlacementCapability]) else {
                 throw LogicalProjectsError("executor_unavailable", "The thread's exact executor binding is unavailable. No fallback host was selected.")
             }
-            do { return try await client.nativeThread(agentID: task.workerAgentID, request: request) }
+            do {
+                let result = try await client.nativeThread(agentID: task.workerAgentID, request: request)
+                _ = try await vm.server.projectRuntime(projectID, expectedRevision: routed.revision, request: .worker(taskID: taskID))
+                try await vm.server.validateProjectWorkerRead(projectID, grant: grant)
+                return result
+            }
             catch RemoteHostClientError.outcomeUnknown(let message) { throw LogicalProjectsError("outcome_unknown", message) }
             catch RemoteHostClientError.rejected(let code, let message) { throw LogicalProjectsError(code, message) }
         }
