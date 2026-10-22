@@ -179,6 +179,38 @@ extension ShepherdViewModel {
         }
     }
 
+    /// Open as a thread: the worker's ordinary thread, wherever the owner's record says it runs. `destination` is owner-relative, so a
+    /// local owner opens a remote worker through its own connection with that exact binding, and a remote owner's own worker is that
+    /// host's agent. A worker the owner placed on a third Mac has no route from here (its host ID is the owner's), so it says so rather
+    /// than search hosts by agent ID or fall back to a local agent. Only selection changes: nothing is sent to the Project or the worker.
+    func openProjectWorkerThread(_ ref: LogicalProjectRef, task id: ProjectTaskID) {
+        guard let task = logicalProjects.project(ref)?.tasks.first(where: { $0.id == id }) else {
+            remoteActionError = "This thread is no longer in the Project."; return
+        }
+        let route: RemoteAgentRef
+        switch (ref.home, task.destination) {
+        case (.local, .local):
+            guard state.agents.contains(where: { $0.id == task.workerAgentID }) else {
+                remoteActionError = "This thread is no longer on this Mac."; return
+            }
+            selectAgent(task.workerAgentID); return
+        case (.local, .remote(let hostID, let bindingID)):
+            guard remoteHosts.connections.contains(where: { $0.id == hostID && $0.config.bindingID == bindingID }) else {
+                remoteActionError = "The thread's host is no longer set up as it was when the work was assigned."; return
+            }
+            route = RemoteAgentRef(hostID: hostID, agentID: task.workerAgentID)
+        case (.host(let owner), .local):
+            route = RemoteAgentRef(hostID: owner, agentID: task.workerAgentID)
+        case (.host(let owner), .remote):
+            remoteActionError = "This thread runs on a Mac that \(ownerName(of: .host(owner))) reaches. Read it here, or open it on that Mac."
+            return
+        }
+        guard remoteHosts.connections.first(where: { $0.id == route.hostID })?.phase == .connected, remoteAgent(route) != nil else {
+            remoteActionError = "The thread's host is not connected, or no longer has this thread."; return
+        }
+        selectRemoteAgent(hostID: route.hostID, agentID: route.agentID)
+    }
+
     /// How a worker's thread is read and written: always through the Project's OWNER, keyed by Project and task (never by an agent ID
     /// or a host this viewer chose). The owner finds the recorded worker and its exact executor binding, so a viewer needs no
     /// executor credentials. A task the executor has not opened yet answers `native_starting`, and nothing is started for it.

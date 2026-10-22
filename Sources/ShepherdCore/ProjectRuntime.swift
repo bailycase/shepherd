@@ -6,6 +6,7 @@ public typealias ProjectTaskID = Identifier<ProjectTaskMarker>
 /// A local ordinary thread's assignment, not a second transcript or a success assertion.
 public struct ProjectTask: Codable, Hashable, Sendable, Identifiable {
     public enum Phase: String, Codable, Sendable {
+        /// settled: the worker turn stopped, not success or resolution. resolved: terminal assignment.
         case queued, reserved, running, waiting, settled, resolved, unknown, failed
         public var occupiesSlot: Bool { [.reserved, .running, .waiting, .unknown].contains(self) }
     }
