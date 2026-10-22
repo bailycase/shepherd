@@ -69,6 +69,13 @@ struct LogicalProjectConversationTests {
         expectScenarioCompleted(result)
     }
 
+    /// The order CI run 39822019981 met: the first card is gone before the owner's reply to it lands, so the remaining offer is
+    /// still disabled. Holding that reply makes the order certain; the offer takes its one press once the reply is in.
+    @Test func theRemainingOfferTakesItsPressOnlyOnceTheFirstDecisionsReplyLands() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.offer(holdingFirstReply: true) } }
+        expectScenarioCompleted(result)
+    }
+
     @Test func thePaperclipOpensThePickerAndAnImageSendsWithItsWordsOrAloneAndAFailedSendKeepsEverything() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.paperclip() } }
         expectScenarioCompleted(result)
@@ -753,9 +760,22 @@ struct LogicalProjectConversationTests {
         try await eventuallyOnMain("Show all cleared the filter") { r.vm.logicalProjectPaneFilter.isEmpty }
     }
 
-    private static func offer() async throws {
+    private static func offer(holdingFirstReply: Bool = false) async throws {
         let r = try await rig()
         defer { r.app.stop() }
+        // The view model's own local wiring (`makeLogicalProjectsModel`), except that the owner's reply to an accepted Space is
+        // held after the owner committed it, until the scenario lets it through.
+        var heldReply: CheckedContinuation<Void, Never>?
+        if holdingFirstReply {
+            let vm = r.vm
+            vm.madeLogicalProjects = LogicalProjectsModel(
+                send: { _, request in try await vm.server.logicalProjects(request) }, pushed: { _ in vm.state.projects },
+                runtime: { ref, revision, request in
+                    let project = try await vm.projectCoordinator.perform(projectID: ref.id, expectedRevision: revision, request: request)
+                    if case .decideSpace(_, _, true) = request { await withCheckedContinuation { heldReply = $0 } }
+                    return project
+                })
+        }
         // A real conversation first, so the project has its coordinator; then two proposals through the owner's own request.
         #expect(await r.vm.logicalProjects.sendMessage(r.ref, text: "hello"))
         let web = r.app.dir.appendingPathComponent("sample-app-web")
@@ -792,6 +812,18 @@ struct LogicalProjectConversationTests {
                 && project?.linkedSpaces.contains { $0.provenance == .project } == true
         }
         try await eventuallyOnMain("one offer left") { window.layout(); return window.controls().filter { $0.label == "Add to project" }.count == 1 }
+        // The page runs one owner action at a time (`LogicalProjectsModel.busy`), and the pushed state that removed the first card
+        // can arrive before the owner's reply to it: until then the remaining offer is drawn disabled.
+        func remaining() -> [Control] { window.controls().filter { $0.label == "Not now" || $0.label == "Add to project" } }
+        if holdingFirstReply {
+            #expect(heldReply != nil, "the accepted decision's reply is held")
+            #expect(remaining().count == 2 && remaining().allSatisfy { !$0.isEnabled }, "no second decision while the first is in flight: \(remaining())")
+            heldReply?.resume()
+            heldReply = nil
+        }
+        try await eventuallyOnMain("the remaining offer is enabled once the first decision's reply lands") {
+            window.layout(); return remaining().count == 2 && remaining().allSatisfy(\.isEnabled)
+        }
         // "Not now" is consumed as a denial: nothing is linked and nothing stays actionable.
         let linked = r.app.server.state.projects.first?.linkedSpaces.count
         try window.press("Not now")
