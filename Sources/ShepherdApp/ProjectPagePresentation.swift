@@ -34,9 +34,8 @@ struct ProjectTaskRow: Identifiable, Equatable {
     let workerAgentID: AgentID
     let spaceID: SpaceID
     let revision: UInt64
-    /// A settled task the user may resolve; a resolved one they may reopen.
+    /// A settled task the user may resolve. A resolved task is terminal: no row offers to reopen it.
     let canResolve: Bool
-    let canReopen: Bool
     /// Seconds since 1970 of the last settlement, for the row's age.
     let settledAt: Double?
     /// The task's ready published files, in publication order.
@@ -148,7 +147,7 @@ struct ProjectPagePresentation: Equatable {
         }
         return ProjectTaskRow(id: task.id, title: task.title, group: group, phase: task.phase, detail: detail, lead: lead,
                               workerAgentID: task.workerAgentID, spaceID: task.spaceID, revision: task.revision,
-                              canResolve: task.phase == .settled, canReopen: task.phase == .resolved, settledAt: task.settledAt, files: files,
+                              canResolve: task.phase == .settled, settledAt: task.settledAt, files: files,
                               assignmentOperations: Set([task.operationID] + [task.nativeDeliveryID].compactMap { $0 }),
                               answerHeld: task.pendingAnswer != nil)
     }

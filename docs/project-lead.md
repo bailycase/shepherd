@@ -618,11 +618,11 @@ creates no thread, session or process and fakes no conversation, task or send.
   from the text and `Project.maximumInstructionsLength` (16,000), and Forget. **Automations:** an honest empty
   state, because an `Automation` has no project link yet.
 - **A resolved task's thread** in the pane draws no composer at all (`ProjectWorkerThreadStyle.composerHidden`), not a
-  disabled one: the footer card ("This thread is resolved.", Reopen) stands in and the transcript reaches the pane's
-  bottom. The owner now refuses Reopen because resolved tasks are terminal. Removing that stale
-  footer action and the row/context-menu Reopen actions in `LogicalProjectPane.swift`, backed by
-  `ProjectPagePresentation.swift`, remains a separate UI-lane change; this backend change does not
-  alter ordinary chat or authorized owner manual takeover.
+  disabled one: the read-only footer card ("This thread is resolved." / "Its history stays here. New work starts a new
+  thread.") stands in and the transcript reaches the pane's bottom. Resolved tasks are terminal, so the detail offers no
+  Reopen anywhere (the header's check is a green status, the More menu keeps only Open as a thread, the footer has no
+  action, and `ProjectTaskRow` has no `canReopen`). The history stays readable in the pane and through Open as a thread;
+  new work is a fresh assignment. Ordinary chat and authorized owner manual takeover are unchanged.
 - **A worker's question card** above the conversation's composer is truthful: the worker is blocked on a native question, so its
   footer says "<thread> is waiting for your answer." (never that it "keeps going on its best guess"), and while the Project is
   paused "Your answer waits until you resume." Once the owner holds an answer (queued for Resume, or on its way) the card goes,
@@ -671,7 +671,7 @@ not kept; the cause and fix are in `docs/project-execution.md`, Coordinator star
 
 - **Right pane:** Waiting on you, Working and Resolved groups from `Project.tasks`; a row's detail is the worker's own question (waiting) or
   its latest native activity (running); ages come from the task's own clock. Opening a row shows the worker's **ordinary** thread with its
-  own composer (steering stays native); Resolve, Reopen and Open as a thread are real runtime calls with the displayed revision.
+  own composer (steering stays native); Resolve is a real runtime call with the displayed revision and Open as a thread selects the worker's ordinary thread; a resolved task is terminal and offers no Reopen.
 - **Questions:** a waiting task's native dialog is drawn as lettered options and answered through `answerProjectQuestion`, so the same dialog
   is not answered twice.
 - **Coordinators are not threads:** every ordinary-thread producer (sidebar in both modes, completions, palette, pins, notifications, remote

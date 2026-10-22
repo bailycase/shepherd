@@ -44,7 +44,7 @@ final class LogicalProjectsModel {
     /// What each owner last pushed in its state snapshot (the server's word, never a client's).
     typealias Pushed = @MainActor (LogicalProjectHome) -> [Project]
 
-    /// The owner's runtime (`ProjectRuntimeRequest`): resolve, reopen, message, assign, decide a Space. Local calls this
+    /// The owner's runtime (`ProjectRuntimeRequest`): resolve, message, assign, decide a Space. Local calls this
     /// Mac's own; a remote one is sent to its OWNER (`ProjectRuntimeTransport.action`), never run on this Mac.
     typealias Runtime = @MainActor (LogicalProjectRef, UInt64, ProjectRuntimeRequest) async throws -> Project
 
@@ -136,7 +136,6 @@ final class LogicalProjectsModel {
     }
 
     func resolve(_ ref: LogicalProjectRef, task: ProjectTaskID) async -> Bool { await run(ref, .resolve(taskID: task)) }
-    func reopen(_ ref: LogicalProjectRef, task: ProjectTaskID) async -> Bool { await run(ref, .reopen(taskID: task)) }
 
     /// A runtime request against the revision shown. A refusal re-reads the owner and keeps the person's words.
     @discardableResult
