@@ -127,6 +127,7 @@ pi's queues, as pi 1.0.0 behaves (docs/rpc-commands.md, and transcripts of the r
     a prompt while compaction is in progress...").
   - "long:P" in the prompt makes a run's final reply P paragraphs and a code block long.
   - Idle, a prompt with a streamingBehavior is a plain prompt.
+$STUB_PI_SESSION_ID gives independent fixture workers distinct native session identities.
 $STUB_PI_MESSAGES_FILE, when set, loads the history from that file at start and saves it
 after every "tools:N" run, like pi resuming its session file.
 
@@ -240,7 +241,7 @@ STATE = {
     "steeringMode": "all",
     "followUpMode": "one-at-a-time",
     "sessionFile": "/tmp/stub-session.jsonl",
-    "sessionId": "stub-session",
+    "sessionId": os.environ.get("STUB_PI_SESSION_ID", "stub-session"),
     "autoCompactionEnabled": True,
     "messageCount": 2,
     "pendingMessageCount": 0,
@@ -273,7 +274,7 @@ COMMANDS = [
 ]
 
 STATS = {
-    "sessionFile": "/tmp/stub-session.jsonl", "sessionId": "stub-session",
+    "sessionFile": "/tmp/stub-session.jsonl", "sessionId": STATE["sessionId"],
     "userMessages": 1, "assistantMessages": 1, "toolCalls": 0, "toolResults": 0, "totalMessages": 2,
     "tokens": {"input": 50000, "output": 10000, "cacheRead": 40000, "cacheWrite": 5000, "total": 105000},
     "cost": 0.45,

@@ -79,6 +79,8 @@ extension SessionServer {
             return try await relayProjectAnswer(id, revision: expectedRevision, coordinator: coordinator, operation: operation,
                                                 taskID: task, eventID: event, replyID: reply, answer: answer)
         }
+        // Accepted-operation proof (including legacy follow-ups) is replay, not fresh admission.
+        // Keep it ahead of terminal-state checks and never pump work from this return path.
         if let replay = try await replayProjectCommand(current, request: request) { return replay }
         let restored: ProjectTask?
         if let target = request.targetTaskID, !current.tasks.contains(where: { $0.id == target }) {
@@ -198,8 +200,9 @@ extension SessionServer {
                 p.tasks.append(.init(operationID: op, spaceID: space, title: title, prompt: prompt, host: host,
                                      model: try self.projectTaskModel(model), thinking: try Self.projectTaskThinking(thinking)))
             case .followUp(let task, let op, let text, let model, let thinking):
-                // A finished thread takes a follow-up whether or not it was marked resolved: the follow-up reopens it.
-                guard let i = p.tasks.firstIndex(where: { $0.id == task }), [.settled, .resolved].contains(p.tasks[i].phase) else { throw LogicalProjectsError("conflict", "Follow-up requires finished work; steer active work in its ordinary thread.") }
+                guard let i = p.tasks.firstIndex(where: { $0.id == task }) else { throw LogicalProjectsError("no_such_task", "Task no longer exists.") }
+                guard p.tasks[i].phase != .resolved else { throw LogicalProjectsError("task_resolved", "Resolved Project tasks are terminal. Use project_assign for a new assignment in a fresh thread.") }
+                guard p.tasks[i].phase == .settled else { throw LogicalProjectsError("conflict", "Follow-up requires a settled turn on its original unresolved assignment; steer active work in its ordinary thread.") }
                 try self.validateProjectPlacement(p, host: p.tasks[i].destination, spaceID: p.tasks[i].spaceID)
                 p.tasks[i].executionAssignment = nil; p.tasks[i].executionReceipt = nil
                 p.tasks[i].previousOperations = (p.tasks[i].previousOperations ?? []) + [p.tasks[i].operationID]
@@ -209,19 +212,18 @@ extension SessionServer {
                 if let model { p.tasks[i].model = try self.projectTaskModel(model) }
                 if let thinking { p.tasks[i].thinking = try Self.projectTaskThinking(thinking) }
                 p.tasks[i].settledAt = nil; p.tasks[i].error = nil; p.tasks[i].question = nil; p.tasks[i].pendingAnswer = nil
-            case .resolve(let task, _), .reopen(let task):
+            case .resolve(let task, let op):
                 guard let i = p.tasks.firstIndex(where: { $0.id == task }) else { throw LogicalProjectsError("no_such_task", "Task no longer exists.") }
-                if case .resolve(_, let op) = request {
-                    if let op {
-                        p.tasks[i].resolutionOperations = (p.tasks[i].resolutionOperations ?? []) + [op]
-                    }
-                    guard p.tasks[i].phase == .settled else { throw LogicalProjectsError("conflict", "Only an actually settled turn can be resolved.") }
-                    p.tasks[i].phase = .resolved
-                } else {
-                    guard p.tasks[i].phase == .resolved else { throw LogicalProjectsError("conflict", "Task is not resolved.") }
-                    p.tasks[i].phase = .settled
+                if let op {
+                    p.tasks[i].resolutionOperations = (p.tasks[i].resolutionOperations ?? []) + [op]
                 }
-                p.tasks[i].revision += 1
+                guard p.tasks[i].phase == .settled else { throw LogicalProjectsError("conflict", "Only an actually settled turn can be resolved.") }
+                p.tasks[i].phase = .resolved; p.tasks[i].revision += 1
+            case .reopen(let task):
+                guard let item = p.tasks.first(where: { $0.id == task }) else { throw LogicalProjectsError("no_such_task", "Task no longer exists.") }
+                guard item.phase == .resolved else { throw LogicalProjectsError("conflict", "Task is not resolved.") }
+                // Retain the wire case for older clients, not the old lifecycle transition.
+                throw LogicalProjectsError("task_resolved", "Resolved Project tasks are terminal. Use project_assign for a new assignment in a fresh thread.")
             case .proposeSpace(let op, let path, let space, let task):
                 guard p.settings.canRequestSpaceLinks else { throw LogicalProjectsError("suggestion_only", "Space requests are disabled. You may suggest a path in prose; no actionable approval was stored.") }
                 let display: String

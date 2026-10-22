@@ -130,20 +130,20 @@ struct NWLeadRowPress: ButtonStyle {
 }
 
 /// The pane's footer card ("The project is paused." / "This thread is resolved."): a raised, bordered card 50pt tall,
-/// an optional leading glyph, a line (and a quieter line under it), and one action.
+/// an optional leading glyph, a line (and a quieter line under it), and at most one action.
 public struct NWLeadFooterCard: View {
     let symbol: String?
     let symbolTint: Color
     let title: String
     let detail: String?
-    let action: String
+    let action: String?
     let perform: () -> Void
     let enabled: Bool
     let height: CGFloat
 
     @MainActor
-    public init(symbol: String? = nil, symbolTint: Color? = nil, title: String, detail: String? = nil, action: String,
-                enabled: Bool = true, height: CGFloat = NWLeadMetrics.footerHeight, perform: @escaping () -> Void) {
+    public init(symbol: String? = nil, symbolTint: Color? = nil, title: String, detail: String? = nil, action: String? = nil,
+                enabled: Bool = true, height: CGFloat = NWLeadMetrics.footerHeight, perform: @escaping () -> Void = {}) {
         self.height = height
         self.symbol = symbol
         self.symbolTint = symbolTint ?? Color.nw.done
@@ -165,9 +165,11 @@ public struct NWLeadFooterCard: View {
                 if let detail { Text(detail).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary) }
             }
             Spacer(minLength: NW.Space.m)
-            Button(action: perform) { Text(action) }
-                .buttonStyle(NWLeadSecondaryButton())
-                .disabled(!enabled)
+            if let action {
+                Button(action: perform) { Text(action) }
+                    .buttonStyle(NWLeadSecondaryButton())
+                    .disabled(!enabled)
+            }
         }
         .padding(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 8))
         .frame(minHeight: height)
@@ -176,7 +178,7 @@ public struct NWLeadFooterCard: View {
     }
 }
 
-/// The boards' secondary button ("Resume", "Reopen", "View thread"): 28pt, 10pt sides, radius 6, 1pt `lineStrong` on
+/// The boards' secondary button ("Resume", "View thread"): 28pt, 10pt sides, radius 6, 1pt `lineStrong` on
 /// `bgRaised`, 12.5/500.
 public struct NWLeadSecondaryButton: ButtonStyle {
     public init() {}

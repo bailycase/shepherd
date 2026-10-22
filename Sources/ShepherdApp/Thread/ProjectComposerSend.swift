@@ -145,7 +145,7 @@ struct ProjectWorkerThreadStyle: Equatable {
     /// (ProjectLead-ThreadRunning: prose x 1137...1584, card 1137...1568 in a pane 1121...1600).
     var gutter: CGFloat = NWLeadMetrics.paneThreadGutter
     var composerTrailing: CGFloat = NWLeadMetrics.paneComposerTrailing
-    /// A resolved task takes no more messages: its thread draws no composer at all (the footer card with Reopen stands in), and the
+    /// A resolved task takes no more messages: its thread draws no composer at all (the resolved footer card stands in), and the
     /// transcript reaches the bottom of the pane.
     var composerHidden = false
     /// The owner already holds an answer to this worker's question (queued for Resume, or on its way): the thread's own question dock

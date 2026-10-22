@@ -177,8 +177,20 @@ struct ProjectPagePresentationTests {
         #expect(p.settled == 1 && p.working == 1 && p.resolved == 1)
         #expect(p.summary == "2 of 3 done · 1 in progress")
         #expect(page([task("A", .settled), task("B", .settled), task("C", .settled)]).summary == "3 of 3 done")
-        #expect(p.rows[0].canResolve && !p.rows[0].canReopen)
-        #expect(p.rows[1].canReopen && !p.rows[1].canResolve)
+    }
+
+    /// Resolved Project tasks are terminal: the row offers nothing to send or resolve, keeps its worker (history opens through
+    /// "Open as a thread") and stays Resolved. Only a settled task offers Mark resolved; live, waiting, failed and unknown work does not.
+    @Test func onlyASettledTaskOffersResolveAndAResolvedOneKeepsItsThreadForHistory() throws {
+        let phases: [ProjectTask.Phase] = [.queued, .running, .waiting, .failed, .unknown, .settled, .resolved]
+        let tasks = phases.map { task("\($0)", $0, question: $0 == .waiting ? "Which API?" : nil, error: $0 == .failed ? "Launch failed" : nil) }
+        let p = page(tasks)
+        #expect(p.rows.map(\.canResolve) == phases.map { $0 == .settled })
+        let resolved = try #require(p.rows.first { $0.phase == .resolved })
+        #expect(resolved.group == .resolved && resolved.workerAgentID == tasks.last?.workerAgentID)
+        #expect(p.rows(in: .resolved).map(\.title) == ["resolved"])
+        let actions = Mirror(reflecting: resolved).children.compactMap(\.label).filter { $0.hasPrefix("can") }
+        #expect(actions == ["canResolve"], "a row offers Resolve as its only runtime action, never Reopen: \(actions)")
     }
 
     /// A relaunched Project keeps the coordinator's pi off until a message needs it, yet its composer said "Starting…" indefinitely.

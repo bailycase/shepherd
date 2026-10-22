@@ -129,7 +129,7 @@ extension LogicalProjectPreviewTests {
         // Board 05: the conversation alone (the Threads pane closed).
         vm.logicalProjectPaneOpen = false
         try await Preview.renderMatrix("board-question", size: CGSize(width: 1600, height: 900), scales: [1, 1.3], ready: ready) { window(vm, style: .projects) }
-        // Board 06: a resolved task opened in the pane, with its footer and Reopen.
+        // Board 06: a resolved task opened in the pane, with its read-only footer (resolved tasks are terminal: no Reopen).
         vm.logicalProjectPaneOpen = true
         vm.logicalProjectPaneTask = tasks.first { $0.title == jobs[2].0 }?.id
         try await Preview.renderMatrix("board-resolved", size: CGSize(width: 1600, height: 900), scales: [1, 1.3], ready: ready) { window(vm, style: .projects) }

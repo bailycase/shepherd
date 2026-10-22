@@ -50,8 +50,10 @@ public enum ProjectRuntimeRequest: Codable, Hashable, Sendable {
     /// `model` and `thinking` are the coordinator's choice for this one task; nil takes the Project's defaults.
     case assign(operationID: UUID, spaceID: SpaceID, title: String, prompt: String, host: ProjectHostReference? = nil,
                 model: String? = nil, thinking: String? = nil)
+    /// Continue the original unresolved assignment after its turn settles. Resolved tasks are terminal.
     case followUp(taskID: ProjectTaskID, operationID: UUID, text: String, model: String? = nil, thinking: String? = nil)
     case resolve(taskID: ProjectTaskID, operationID: UUID? = nil)
+    /// Legacy wire compatibility only. New requests refuse with task_resolved; use assign for new work.
     case reopen(taskID: ProjectTaskID)
     case pause
     case resume

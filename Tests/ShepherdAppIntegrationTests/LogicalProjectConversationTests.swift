@@ -21,7 +21,7 @@ struct LogicalProjectConversationTests {
         expectScenarioCompleted(result)
     }
 
-    @Test func aTaskThatAsksIsWaitingOnYouAndSettledWorkResolvesAndReopens() async {
+    @Test func aTaskThatAsksIsWaitingOnYouAndItsDetailOpensAndCloses() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.tasks() } }
         expectScenarioCompleted(result)
     }
@@ -66,6 +66,13 @@ struct LogicalProjectConversationTests {
 
     @Test func aProposedSpaceIsOfferedAndEachChoiceGoesToTheOwnerWithItsRevision() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.offer() } }
+        expectScenarioCompleted(result)
+    }
+
+    /// The order CI run 39822019981 met: the first card is gone before the owner's reply to it lands, so the remaining offer is
+    /// still disabled. Holding that reply makes the order certain; the offer takes its one press once the reply is in.
+    @Test func theRemainingOfferTakesItsPressOnlyOnceTheFirstDecisionsReplyLands() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.offer(holdingFirstReply: true) } }
         expectScenarioCompleted(result)
     }
 
@@ -174,8 +181,13 @@ struct LogicalProjectConversationTests {
         expectScenarioCompleted(result)
     }
 
-    @Test func aResolvedWorkersThreadDrawsNoComposerUntilItIsReopened() async {
+    @Test func aResolvedWorkersThreadDrawsNoComposerAndOffersNoReopenButKeepsItsHistory() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.resolvedHasNoComposer() } }
+        expectScenarioCompleted(result)
+    }
+
+    @Test func aSettledWorkersMoreMenuStillOffersMarkResolvedAndItResolves() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.settledMenuResolves() } }
         expectScenarioCompleted(result)
     }
 
@@ -748,9 +760,22 @@ struct LogicalProjectConversationTests {
         try await eventuallyOnMain("Show all cleared the filter") { r.vm.logicalProjectPaneFilter.isEmpty }
     }
 
-    private static func offer() async throws {
+    private static func offer(holdingFirstReply: Bool = false) async throws {
         let r = try await rig()
         defer { r.app.stop() }
+        // The view model's own local wiring (`makeLogicalProjectsModel`), except that the owner's reply to an accepted Space is
+        // held after the owner committed it, until the scenario lets it through.
+        var heldReply: CheckedContinuation<Void, Never>?
+        if holdingFirstReply {
+            let vm = r.vm
+            vm.madeLogicalProjects = LogicalProjectsModel(
+                send: { _, request in try await vm.server.logicalProjects(request) }, pushed: { _ in vm.state.projects },
+                runtime: { ref, revision, request in
+                    let project = try await vm.projectCoordinator.perform(projectID: ref.id, expectedRevision: revision, request: request)
+                    if case .decideSpace(_, _, true) = request { await withCheckedContinuation { heldReply = $0 } }
+                    return project
+                })
+        }
         // A real conversation first, so the project has its coordinator; then two proposals through the owner's own request.
         #expect(await r.vm.logicalProjects.sendMessage(r.ref, text: "hello"))
         let web = r.app.dir.appendingPathComponent("sample-app-web")
@@ -787,6 +812,18 @@ struct LogicalProjectConversationTests {
                 && project?.linkedSpaces.contains { $0.provenance == .project } == true
         }
         try await eventuallyOnMain("one offer left") { window.layout(); return window.controls().filter { $0.label == "Add to project" }.count == 1 }
+        // The page runs one owner action at a time (`LogicalProjectsModel.busy`), and the pushed state that removed the first card
+        // can arrive before the owner's reply to it: until then the remaining offer is drawn disabled.
+        func remaining() -> [Control] { window.controls().filter { $0.label == "Not now" || $0.label == "Add to project" } }
+        if holdingFirstReply {
+            #expect(heldReply != nil, "the accepted decision's reply is held")
+            #expect(remaining().count == 2 && remaining().allSatisfy { !$0.isEnabled }, "no second decision while the first is in flight: \(remaining())")
+            heldReply?.resume()
+            heldReply = nil
+        }
+        try await eventuallyOnMain("the remaining offer is enabled once the first decision's reply lands") {
+            window.layout(); return remaining().count == 2 && remaining().allSatisfy(\.isEnabled)
+        }
         // "Not now" is consumed as a denial: nothing is linked and nothing stays actionable.
         let linked = r.app.server.state.projects.first?.linkedSpaces.count
         try window.press("Not now")
@@ -1828,8 +1865,10 @@ private static func chipsAndLinks() async throws {
 
     // MARK: A resolved worker
 
-    /// A real worker settles; its thread in the pane shows the steering composer. Marking it resolved removes the composer entirely
-    /// (the footer card and Reopen stand in): absent, not disabled. Reopen brings it back.
+    /// A real worker settles; its thread in the pane shows the steering composer and an enabled Mark resolved. Marking it resolved
+    /// removes the composer entirely: absent, not disabled. A resolved task is terminal, so nothing in the detail (header, More menu,
+    /// footer) offers Reopen, yet its history stays drawn and Open as a thread still selects it. One native menu per scenario
+    /// (`NativeMenuChoice` leaves tracking open); the settled task's menu is `settledMenuResolves`.
     private static func resolvedHasNoComposer() async throws {
         let r = try await rig()
         defer { r.app.stop() }
@@ -1842,20 +1881,76 @@ private static func chipsAndLinks() async throws {
         let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
         defer { window.close() }
         // The conversation's composer is in the left column; the worker's is in the pane on the right.
-        func paneComposers() -> Int {
-            let paneLeft = window.window.frame.maxX - NWLeadMetrics.paneWidth
-            return window.elements().filter { $0.label == "Message the agent" && $0.frame.minX > paneLeft }.count
+        let paneLeft = window.window.frame.maxX - NWLeadMetrics.paneWidth
+        func paneComposers() -> Int { window.elements().filter { $0.label == "Message the agent" && $0.frame.minX > paneLeft }.count }
+        func reopenOffers() -> [String] {
+            window.elements().compactMap { node in [node.label, node.value].compactMap { $0 }.first { $0.localizedCaseInsensitiveContains("reopen") } }
         }
         try await eventuallyOnMain("the settled worker's thread shows its steering composer") {
             window.layout(); return window.element("Mark resolved") != nil && paneComposers() == 1
         }
+        // Positive control: an unresolved (settled) task keeps every action it had, and none of them is Reopen.
+        #expect(try #require(window.controls().first { $0.label == "Mark resolved" }).isEnabled, "a settled task can be resolved")
+        #expect(reopenOffers().isEmpty, "nothing offers Reopen before resolving: \(reopenOffers())")
+        // The worker's own transcript, as drawn in the pane (the stub's streamed reply), before resolving.
+        func history() -> [String] {
+            window.elements().filter { $0.frame.minX > paneLeft && $0.role == "AXStaticText" }.map { $0.value ?? $0.label ?? "" }.filter { $0.contains("Hello") }
+        }
+        try await eventuallyOnMain("the settled worker's history is drawn") { !history().isEmpty }
+        let historyBeforeResolving = history()
+
         try window.press("Mark resolved")
         try await eventuallyOnMain("resolved on the owner") { r.app.server.state.projects.first?.tasks.first?.phase == .resolved }
-        try await eventuallyOnMain("the resolved footer is drawn") { window.layout(); return window.controls().contains { $0.label == "Reopen" } }
+        try await eventuallyOnMain("the resolved footer is drawn") {
+            window.layout(); return window.elements().contains { ($0.value ?? $0.label ?? "") == "This thread is resolved." }
+        }
         #expect(paneComposers() == 0, "the resolved worker draws no composer: absent, not disabled")
-        try window.press("Reopen")
-        try await eventuallyOnMain("reopened on the owner") { r.app.server.state.projects.first?.tasks.first?.phase == .settled }
-        try await eventuallyOnMain("the composer is back") { window.layout(); return paneComposers() == 1 }
+        // No Reopen anywhere in the window: not the header's check, not the footer, not the More menu.
+        #expect(reopenOffers().isEmpty, "a resolved task offers no Reopen: \(reopenOffers())")
+        #expect(!window.controls().contains { $0.label == "Mark resolved" }, "a resolved task's check is a status, not a control")
+        #expect(window.element("Resolved") != nil, "the resolved status is named for VoiceOver")
+        #expect(window.elements().contains { ($0.value ?? $0.label ?? "") == "Its history stays here. New work starts a new thread." })
+        // The footer card is text only: no button in the pane below the transcript.
+        let footer = try #require(window.elements().first { ($0.value ?? $0.label ?? "") == "This thread is resolved." }).frame
+        #expect(!window.controls().contains { $0.frame.minX > paneLeft && abs($0.frame.midY - footer.midY) < NWLeadMetrics.footerHeight },
+                "the resolved footer carries no action: \(window.controls().filter { $0.frame.minX > paneLeft && abs($0.frame.midY - footer.midY) < NWLeadMetrics.footerHeight }.map(\.label))")
+        // History stays readable: the same worker transcript that was drawn before resolving is still drawn in the pane.
+        try await eventuallyOnMain("the resolved worker's history is still drawn") { history() == historyBeforeResolving }
+        // Historical access survives: More offers only Open as a thread, and it selects the worker's ordinary thread.
+        let resolvedMenu = try await NativeMenuChoice.choose("Open as a thread", from: try detailMore(window))
+        #expect(resolvedMenu == ["Open as a thread"], "the resolved task's More menu offers no Reopen or Resolve: \(resolvedMenu)")
+        try await eventuallyOnMain("Open as a thread selects the resolved worker") { r.vm.selectedAgentID == task.workerAgentID }
+        #expect(r.app.server.state.projects.first?.tasks.first?.phase == .resolved, "opening history never reopens the task")
+        #expect(r.vm.logicalProjects.failure == nil, "no refused action was sent: \(r.vm.logicalProjects.failure?.message ?? "")")
+    }
+
+    /// The positive control for the resolved menu: an unresolved (settled) task's More menu still offers Open as a thread and Mark
+    /// resolved, and choosing Mark resolved resolves it on the owner.
+    private static func settledMenuResolves() async throws {
+        let r = try await rig()
+        defer { r.app.stop() }
+        _ = try await r.vm.projectCoordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
+                                                      request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Publish file", prompt: "hello"))
+        try await eventuallyOnMain("the worker's turn ends") { r.app.server.state.projects.first?.tasks.first?.phase == .settled }
+        let task = try #require(r.app.server.state.projects.first?.tasks.first)
+        r.vm.openLogicalProject(r.ref)
+        r.vm.logicalProjectPaneTask = task.id
+        let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
+        defer { window.close() }
+        try await eventuallyOnMain("the settled worker's detail") { window.layout(); return window.element("Mark resolved") != nil }
+        let offered = try await NativeMenuChoice.choose("Mark resolved", from: try detailMore(window))
+        #expect(offered == ["Open as a thread", "Mark resolved"], "the settled task's More menu: \(offered)")
+        try await eventuallyOnMain("resolved on the owner from the menu") { r.app.server.state.projects.first?.tasks.first?.phase == .resolved }
+    }
+
+    /// The task detail's More menu. SwiftUI exposes this Menu's name as its help, not its label (as
+    /// `ProjectSettingsFidelityControlTests.popup` finds popups).
+    private static func detailMore(_ window: OffscreenWindow) throws -> AccessibilityNode {
+        let paneLeft = window.window.frame.maxX - NWLeadMetrics.paneWidth
+        return try #require(window.elements().first { node in
+            node.role == ControlRole.menuButton && node.frame.minX > paneLeft
+                && (node.object.perform(NSSelectorFromString("accessibilityHelp"))?.takeUnretainedValue() as? String) == "More"
+        }, "the detail's More menu")
     }
 
     // MARK: A blocking question
@@ -2064,9 +2159,11 @@ private static func chipsAndLinks() async throws {
         try await eventuallyOnMain("the worker detail opens") { window.layout(); return window.element("Mark resolved") != nil }
         try window.press("Mark resolved")
         try await eventuallyOnMain("the resolved footer is drawn") { window.layout(); return window.elements().contains { ($0.value ?? $0.label ?? "") == "This thread is resolved." } }
-        let reopen = try #require(window.controls().first { $0.label == "Reopen" }?.frame)
-        #expect(abs(paneRight - reopen.maxX - (NWLeadMetrics.footerInset + NW.Space.m)) <= 1.5, "Reopen ends \(paneRight - reopen.maxX) from the pane's edge")
-        #expect(abs(reopen.minY - paneBottom - (NWLeadMetrics.footerInset + (NWLeadMetrics.footerHeight - 28) / 2)) <= 2, "Reopen sits \(reopen.minY - paneBottom) above the bottom")
+        // The card has no action now (a resolved task is terminal); its title still sits inside the 50pt card at its leading edge.
+        let title = try #require(window.elements().first { ($0.value ?? $0.label ?? "") == "This thread is resolved." }?.frame)
+        let cardBottom = paneBottom + NWLeadMetrics.footerInset, cardTop = cardBottom + NWLeadMetrics.footerHeight
+        #expect(title.minY > cardBottom && title.maxY < cardTop, "the title \(title) sits inside the 50pt card \(cardBottom)...\(cardTop)")
+        #expect(title.minX < paneRight - NWLeadMetrics.paneWidth / 2, "the title leads the card: \(title)")
     }
 
     // MARK: Hidden coordinator
