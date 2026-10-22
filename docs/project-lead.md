@@ -672,6 +672,10 @@ not kept; the cause and fix are in `docs/project-execution.md`, Coordinator star
 - **Right pane:** Waiting on you, Working and Resolved groups from `Project.tasks`; a row's detail is the worker's own question (waiting) or
   its latest native activity (running); ages come from the task's own clock. Opening a row shows the worker's **ordinary** thread with its
   own composer (steering stays native); Resolve is a real runtime call with the displayed revision and Open as a thread selects the worker's ordinary thread; a resolved task is terminal and offers no Reopen.
+  Open as a thread follows the task's owner-relative `destination`: an owner-local worker is a local thread, a worker placed
+  on an executor opens through that exact host binding, and a viewer of a remote owner opens that owner's own workers. A worker
+  a remote owner placed on a third Mac, or a binding that has changed or gone, is reported in the action-failed dialog; it never
+  falls back to an agent-ID search or a local agent with the same ID, and opening never changes the task or sends anything.
 - **Questions:** a waiting task's native dialog is drawn as lettered options and answered through `answerProjectQuestion`, so the same dialog
   is not answered twice.
 - **Coordinators are not threads:** every ordinary-thread producer (sidebar in both modes, completions, palette, pins, notifications, remote

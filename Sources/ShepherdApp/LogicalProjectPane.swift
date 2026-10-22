@@ -229,7 +229,7 @@ struct ProjectTaskDetail: View {
                         .accessibilityLabel("Mark resolved")
                 }
                 Menu {
-                    Button("Open as a thread") { vm.selectAgent(task.workerAgentID) }
+                    Button("Open as a thread") { vm.openProjectWorkerThread(ref, task: task.id) }
                     if task.canResolve { Button("Mark resolved") { Task { _ = await vm.logicalProjects.resolve(ref, task: task.id) } } }
                 } label: { Label("More", systemImage: "ellipsis").labelStyle(.iconOnly) }
                     .menuStyle(.button)
@@ -238,7 +238,7 @@ struct ProjectTaskDetail: View {
                     .fixedSize()
                     .nwHelp("More")
                     .accessibilityLabel("More")
-                Button { vm.selectAgent(task.workerAgentID) } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }
+                Button { vm.openProjectWorkerThread(ref, task: task.id) } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }
                     .buttonStyle(.nwIcon(size: NWLeadMetrics.detailButton))
                     .nwHelp("Open as a thread")
                     .accessibilityLabel("Open as a thread")
