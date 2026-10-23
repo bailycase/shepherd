@@ -120,10 +120,15 @@ concurrency limits still bound coordination; this feature makes no strict dollar
   reopens a resolved task or touches its worker. There is no lifetime quota: `ProjectTask.outcomes` is a bounded working
   copy (newest `ProjectTaskOutcome.hotPerTask`, 4, always keeping the current run's newest fact) and
   `archivedOutcomeCount` counts the rest. Every fact is inserted once into the existing durable history (`records`,
-  kind `outcome`, append-only `ON CONFLICT DO NOTHING`) in the same transaction before it may leave the working copy, so
-  retirement, resolved-task retirement and restart lose nothing. `ProjectRuntimeRequest.outcomes(taskID:operationID:beforeSequence:)`
+  kind `outcome`, append-only `ON CONFLICT DO NOTHING`) only from committed state: the predecessor that `prepare`
+  captures, or a committed snapshot. A candidate's new fact is never written while it may still be refused or abandoned,
+  and only facts read back as durable may leave the working copy, so retirement, resolved-task retirement and restart
+  lose nothing, and a refused, failed or uncommitted fact is neither history nor retained-operation proof (its identity
+  stays admissible). `ProjectRuntimeRequest.outcomes(taskID:operationID:beforeSequence:)`
   (the coordinator's `project_outcomes`; a worker only for its own task) pages 8 facts newest first, filtered and limited in
-  SQL, under the same read grant/revocation as `project_history`; `historyNext` continues it. Replays use the existing
+  SQL; `historyNext` continues it. An executor task's facts follow its captured route grant exactly as its result does:
+  checked before page I/O and again at return, so removing or replacing that Space (including remove/restore while the read
+  is suspended) permanently revokes the captured read; a fresh read may succeed; other Spaces' changes do not revoke it. Replays use the existing
   command receipts: an exact retry returns a receipt even after archival or reload, a changed payload is
   `operation_conflict`, and nothing is duplicated, restored or dispatched. Each row always names its recorder ("per
   coordinator" or "recorded by owner"); neither is a person's approval. Nothing infers an outcome from settlement,
