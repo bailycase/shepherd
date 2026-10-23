@@ -19,7 +19,7 @@ const server = (dir, marker) => ({ command: process.execPath, args: [stdio], env
 const mcpFile = (folder, servers) => {
   // The parent extension uses Shepherd paths; native Pi uses its distribution configDir.
   const native = JSON.parse(fs.readFileSync(path.join(process.env.PI_PACKAGE_DIR, "package.json"))).piConfig?.configDir ?? ".pi";
-  for (const config of new Set([".shepherd", native])) {
+  for (const config of new Set([".shepherd", ".pi", native])) {
     fs.mkdirSync(path.join(folder, config), { recursive: true });
     fs.writeFileSync(path.join(folder, config, "mcp.json"), JSON.stringify({ mcpServers: servers }));
   }
@@ -62,7 +62,7 @@ function ownedWorktree({ trusted = true, localTrusted = false, own, grant = true
       mcpFile(work, { shared: { ...server(dir, "shared"), exposure: "deferred" }, docs: server(dir, "parent-docs") });
       // Executable branch resources must remain blocked while the owner's MCP is usable.
       const native = JSON.parse(fs.readFileSync(path.join(process.env.PI_PACKAGE_DIR, "package.json"))).piConfig?.configDir ?? ".pi";
-      for (const config of new Set([".shepherd", native])) {
+      for (const config of new Set([".shepherd", ".pi", native])) {
         const folder = path.join(here, config);
         fs.mkdirSync(path.join(folder, "extensions"), { recursive: true });
         fs.writeFileSync(path.join(folder, "extensions/mark.ts"), `import fs from 'node:fs'; fs.writeFileSync(${JSON.stringify(path.join(dir, "branch-ran"))}, 'ran'); export default function() {}`);
@@ -88,6 +88,26 @@ test("a subproject starts its parent's servers next to its own", { timeout: 1200
       return ["shared", "docs", "local"].every((name) => new RegExp(`^${name}: connected`, "m").test(text));
     });
   });
+});
+
+test("Pi MCP files work in subprojects and owned worktrees with Shepherd winning collisions", { timeout: 120000 }, async t => {
+  for (const options of [subproject(), ownedWorktree({ localTrusted: true })]) {
+    const original = options.project;
+    options.project = (dir, work) => {
+      original(dir, work);
+      fs.mkdirSync(path.join(work, ".pi"), { recursive: true });
+      fs.writeFileSync(path.join(work, ".pi/mcp.json"), JSON.stringify({ mcpServers: {
+        pi_parent: server(dir, "pi-parent"), shared: server(dir, "shadowed-pi-shared"),
+      } }));
+      const here = options.cwd(dir, work);
+      fs.mkdirSync(path.join(here, ".pi"), { recursive: true });
+      fs.writeFileSync(path.join(here, ".pi/mcp.json"), JSON.stringify({ mcpServers: { pi_local: server(dir, "pi-local") } }));
+    };
+    await withPi(t, options, async pi => {
+      await until("both alias files and inherited servers to start", () => ["pi-parent", "pi-local", "shared", "parent-docs"].every(name => pi.spawned(name)));
+      assert.equal(pi.spawned("shadowed-pi-shared"), false);
+    });
+  }
 });
 
 test("the subproject's own server of the same name wins over the parent's", { timeout: 120000 }, async (t) => {

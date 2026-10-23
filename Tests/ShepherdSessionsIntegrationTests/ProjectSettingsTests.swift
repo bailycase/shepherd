@@ -99,7 +99,8 @@ struct ProjectSettingsTests {
         _ = try await current.connect(host: "127.0.0.1", port: port, token: token, clientName: "current")
         try await host.server.projects.prepareProjectConfiguration(for: root.appendingPathComponent("unrelated").path)
         let ledger = support.appendingPathComponent("project-config-migration.json")
-        let pending = try Data(contentsOf: ledger)
+        let pending = Data("obsolete migration ledger".utf8)
+        try pending.write(to: ledger)
         let requests: [RemoteProjectsRequest] = [
             .list(), .files(directory: project.path), .context(directory: project.path),
             .read(directory: project.path, file: ".pi/mcp.json"),
@@ -125,8 +126,8 @@ struct ProjectSettingsTests {
         try old.send(.stateFetch(id: 100))
         #expect(try await old.next() == .state(id: 100, state: host.server.state))
         guard case .files(let files) = try await current.projects(.files(directory: project.path)) else { Issue.record("Current client could not open project"); return }
-        #expect(files.contains { $0.path == ".shepherd/mcp.json" } && !files.contains { $0.path == ".pi/mcp.json" })
-        _ = try await current.projects(.save(directory: project.path, file: ".shepherd/mcp.json", text: "{}", expected: original))
+        #expect(files.contains { $0.path == ".shepherd/mcp.json" && !$0.exists } && files.contains { $0.path == ".pi/mcp.json" && $0.exists })
+        _ = try await current.projects(.save(directory: project.path, file: ".shepherd/mcp.json", text: "{}", expected: nil))
         #expect(try String(contentsOf: project.appendingPathComponent(".shepherd/mcp.json"), encoding: .utf8) == "{}")
         // An editor opened by an older client stays fenced after a current client prepares the project.
         try old.send(.projects(id: 101, request: .mcp(directory: project.path, file: ".shepherd/mcp.json", action: .approveProject)))

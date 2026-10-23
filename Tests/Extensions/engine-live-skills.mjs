@@ -33,6 +33,186 @@ async function refresh(pi) {
   return result.data.changed;
 }
 
+test("trusted projects load Pi and Shepherd prompts with Shepherd winning duplicate names", { timeout: 30000 }, async t => {
+  await withPi(t, {
+    settings: { extensions: OFF },
+    files: (_dir, work) => ({ "trust.json": { [work]: true } }),
+    project: (dir, work) => {
+      write(path.join(work, ".pi/prompts/speckit.specify.md"), [
+        "---", "description: Create a feature specification.", "handoffs:",
+        "  - label: Build Technical Plan", "    agent: speckit.plan", "    prompt: Create a plan", "    send: true",
+        "tools: ['github/github-mcp-server/list_issues']", "---",
+        "Pi specification: $ARGUMENTS", "Read .specify/memory/constitution.md.", "Context: $ARGUMENTS",
+      ].join("\n"));
+      write(path.join(work, ".pi/prompts/shared.md"), "Pi duplicate");
+      write(path.join(work, ".shepherd/prompts/shared.md"), "Shepherd duplicate: $ARGUMENTS");
+      write(path.join(work, ".shepherd/prompts/local.md"), "Shepherd local");
+      write(path.join(dir, ".pi/agent/prompts/global-pi.md"), "Must stay isolated");
+      write(path.join(work, ".pi/settings.json"), JSON.stringify({ prompts: ["extra"] }));
+      write(path.join(work, ".pi/extra/not-loaded.md"), "Must not load Pi settings");
+      write(path.join(work, ".pi/extensions/probe.ts"), `import fs from "node:fs"; fs.writeFileSync(${JSON.stringify(path.join(dir, "pi-extension-ran"))}, "ran"); export default function() {}`);
+    },
+  }, async pi => {
+    const commands = await pi.commands();
+    assert.equal(commands.find(c => c.name === "speckit.specify")?.description, "Create a feature specification.");
+    assert.ok(commands.some(c => c.name === "local"));
+    assert.equal(commands.filter(c => c.name === "shared").length, 1);
+    assert.ok(!commands.some(c => c.name === "global-pi"));
+    assert.ok(commands.some(c => c.name === "not-loaded"));
+    assert.equal(fs.existsSync(path.join(pi.dir, "pi-extension-ran")), true);
+    const specify = await pi.promptSent('/speckit.specify "I\'m Groot" preserve-$1');
+    const specification = specify.messages.filter(m => m.role === "user").at(-1);
+    assert.deepEqual(specification.content, [{ type: "text", text: "Pi specification: I'm Groot preserve-$1\nRead .specify/memory/constitution.md.\nContext: I'm Groot preserve-$1" }]);
+    const shared = await pi.promptSent("/shared test");
+    assert.ok(shared.messages.some(m => m.role === "user" && JSON.stringify(m.content).includes("Shepherd duplicate: test")));
+    assert.ok(!shared.messages.some(m => JSON.stringify(m.content).includes("Pi duplicate")));
+  });
+});
+
+test("Pi-only projects require approval and respect saved trust denials", { timeout: 30000 }, async t => {
+  for (const entrypoint of ["dist/cli.js", "dist/bundle/cli.js"]) for (const decision of [null, false, true]) {
+    await withPi(t, {
+      entrypoint,
+      settings: { extensions: [...OFF, "./probe.ts"] },
+      files: (_dir, work) => ({ "probe.ts": probe, ...(decision === null ? {} : { "trust.json": { [work]: decision } }) }),
+      project: (dir, work) => {
+        write(path.join(work, ".pi/prompts/speckit.specify.md"), "Pi specification");
+        write(path.join(work, ".pi/skills/pi-only/SKILL.md"), skill("pi-only"));
+        write(path.join(work, ".pi/settings.json"), JSON.stringify({ defaultProjectTrust: "always" }));
+        write(path.join(work, ".pi/SYSTEM.md"), "PI_TRUST_SENTINEL");
+        write(path.join(work, ".pi/extensions/trust.ts"), `import fs from "node:fs"; export default () => fs.writeFileSync(${JSON.stringify(path.join(dir, "pi-executed"))}, "ran");`);
+      },
+    }, async pi => {
+      const names = (await pi.commands()).map(c => c.name);
+      for (const name of ["speckit.specify", "skill:pi-only"]) assert.equal(names.includes(name), decision === true, `trust: ${decision}`);
+      assert.equal(fs.existsSync(path.join(pi.dir, "pi-executed")), decision === true);
+      assert.equal((await inspect(pi)).prompt.includes("PI_TRUST_SENTINEL"), decision === true);
+    });
+  }
+});
+
+test("Pi prompts obey project trust, no-prompt-templates and Shepherd exclusions", { timeout: 30000 }, async t => {
+  for (const mode of ["untrusted", "disabled", "excluded"]) {
+    await withPi(t, {
+      settings: { extensions: OFF },
+      args: mode === "untrusted" ? ["--no-approve"] : mode === "disabled" ? ["--no-prompt-templates"] : [],
+      files: (_dir, work) => mode === "untrusted" ? {} : { "trust.json": { [work]: true } },
+      project: (_dir, work) => {
+        write(path.join(work, ".pi/prompts/speckit.specify.md"), "Pi specification");
+        write(path.join(work, ".shepherd/prompts/local.md"), "Shepherd local");
+        if (mode === "excluded") {
+          write(path.join(work, ".shepherd/settings.json"), JSON.stringify({ prompts: ["!../.pi/prompts/**"] }));
+        }
+      },
+    }, async pi => {
+      const names = (await pi.commands()).map(c => c.name);
+      assert.ok(!names.includes("speckit.specify"), mode);
+      assert.equal(names.includes("local"), mode === "excluded", mode);
+    });
+  }
+});
+
+test("project aliases cover settings, relative packages, extensions, skills, themes and system prompts", { timeout: 30000 }, async t => {
+  for (const entrypoint of ["dist/cli.js", "dist/bundle/cli.js"]) await withPi(t, {
+    entrypoint,
+    settings: { extensions: [...OFF, "./probe.ts"] },
+    files: (_dir, work) => ({
+      "trust.json": { [work]: true },
+      "probe.ts": `import { DefaultResourceLoader, SettingsManager, getAgentDir } from "@earendil-works/pi-coding-agent";
+        export default function(pi) { pi.registerCommand("inspect-aliases", { handler: async (_, ctx) => {
+          const settings = SettingsManager.create(ctx.cwd, getAgentDir(), { projectTrusted: ctx.isProjectTrusted() });
+          const loader = new DefaultResourceLoader({ cwd: ctx.cwd, agentDir: getAgentDir(), settingsManager: settings, noExtensions: true, noContextFiles: true });
+          await loader.reload();
+          ctx.ui.notify(JSON.stringify({ effectiveSystem: ctx.getSystemPrompt(), settings: settings.getProjectSettings(), skills: loader.getSkills().skills,
+            themes: loader.getThemes().themes.map(t => t.name), system: loader.getSystemPrompt(), append: loader.getAppendSystemPrompt(),
+            watch: loader.getSkillWatchPaths?.() ?? [] }), "info");
+        }}); }`,
+    }),
+    project: (dir, work) => {
+      write(path.join(work, ".pi/settings.json"), JSON.stringify({ quietStartup: true, extensions: ["./configured.ts"], packages: ["./local-package"] }));
+      write(path.join(work, ".pi/configured.ts"), `export default pi => pi.registerCommand("configured-extension", { handler: async () => {} });`);
+      write(path.join(work, ".pi/local-package/package.json"), JSON.stringify({ name: "alias-local", pi: { prompts: ["prompts"] } }));
+      write(path.join(work, ".pi/local-package/prompts/package-alias.md"), "Local Pi package prompt.");
+      for (const base of [".pi", ".shepherd"]) {
+        write(path.join(work, base, "skills/shared/SKILL.md"), skill("shared", base));
+        write(path.join(work, base, "skills", base.slice(1), "SKILL.md"), skill(base.slice(1)));
+        write(path.join(work, base, "extensions/collision.ts"), `import fs from "node:fs"; export default () => fs.appendFileSync(${JSON.stringify(path.join(dir, "loaded-extensions"))}, ${JSON.stringify(base + "\n")});`);
+      }
+      write(path.join(work, ".pi/extensions/pi-only.ts"), `export default pi => pi.registerCommand("pi-only-extension", { handler: async () => {} });`);
+      const theme = JSON.parse(fs.readFileSync(path.join(pkg, "dist/modes/interactive/theme/dark.json"), "utf8"));
+      theme.name = "alias-theme";
+      write(path.join(work, ".pi/themes/alias-theme.json"), JSON.stringify(theme));
+      write(path.join(work, ".pi/SYSTEM.md"), "PI_SYSTEM_SENTINEL");
+      write(path.join(work, ".pi/APPEND_SYSTEM.md"), "PI_APPEND_SENTINEL");
+    },
+  }, async pi => {
+    const names = (await pi.commands()).map(c => c.name);
+    for (const name of ["configured-extension", "pi-only-extension", "package-alias"]) assert.ok(names.includes(name), name);
+    assert.equal(fs.readFileSync(path.join(pi.dir, "loaded-extensions"), "utf8"), ".shepherd\n");
+    const inspectAliases = async () => {
+      const mark = pi.events.length;
+      assert.equal((await pi.request({ type: "prompt", message: "/inspect-aliases" })).success, true);
+      await until("alias inspection to finish", () => {
+        const error = pi.events.slice(mark).find(e => e.type === "extension_error");
+        if (error) throw Error(JSON.stringify(error));
+        return pi.events.slice(mark).some(e => e.method === "notify");
+      }, 10000);
+      return JSON.parse(pi.events.slice(mark).find(e => e.method === "notify").message);
+    };
+    let state = await inspectAliases();
+    assert.equal(state.settings.quietStartup, true);
+    assert.equal(state.skills.find(s => s.name === "shared").description, ".shepherd");
+    for (const name of ["pi", "shepherd"]) assert.ok(state.skills.some(s => s.name === name));
+    assert.ok(state.themes.includes("alias-theme"));
+    assert.equal(state.system, "PI_SYSTEM_SENTINEL");
+    assert.ok(state.effectiveSystem.includes("PI_SYSTEM_SENTINEL"));
+    assert.ok(state.append.includes("PI_APPEND_SENTINEL"));
+    if (entrypoint === "dist/cli.js") for (const base of [".pi", ".shepherd"]) assert.ok(state.watch.includes(path.join(pi.work, base, "skills")));
+    write(path.join(pi.work, ".shepherd/SYSTEM.md"), "SHEPHERD_SYSTEM_SENTINEL");
+    write(path.join(pi.work, ".shepherd/settings.json"), JSON.stringify({ quietStartup: false }));
+    state = await inspectAliases();
+    assert.equal(state.settings.quietStartup, false);
+    assert.equal(state.system, "SHEPHERD_SYSTEM_SENTINEL");
+    assert.equal(fs.readFileSync(path.join(pi.work, ".pi/SYSTEM.md"), "utf8"), "PI_SYSTEM_SENTINEL");
+    if (entrypoint === "dist/cli.js") {
+      write(path.join(pi.work, ".pi/skills/pi/SKILL.md"), skill("pi", "edited live"));
+      assert.equal(await refresh(pi), true);
+      assert.equal((await inspectAliases()).skills.find(s => s.name === "pi").description, "edited live");
+    }
+  });
+});
+
+test("every executable or instructional alias resource requires project approval", async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-trust-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const { hasTrustRequiringProjectResources } = await import(pathToFileURL(path.join(pkg, "dist/core/trust-manager.js")));
+  for (const base of [".pi", ".shepherd"]) {
+    for (const resource of ["settings.json", "mcp.json", "extensions", "skills", "prompts", "themes", "SYSTEM.md", "APPEND_SYSTEM.md"]) {
+      const cwd = fs.mkdtempSync(path.join(dir, "project-"));
+      assert.equal(hasTrustRequiringProjectResources(cwd), false);
+      write(path.join(cwd, base, resource), "fixture");
+      assert.equal(hasTrustRequiringProjectResources(cwd), true, `${base}/${resource}`);
+    }
+  }
+});
+
+test("MCP aliases merge server names with Shepherd precedence and the same trust boundary", async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-config-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const cwd = path.join(dir, "project"), agentDir = path.join(dir, "agent");
+  write(path.join(agentDir, "mcp.json"), JSON.stringify({ mcpServers: { global: { command: "global-fixture" } } }));
+  write(path.join(cwd, ".pi/mcp.json"), JSON.stringify({ mcpServers: { pi: { command: "pi-fixture" }, shared: { command: "pi-shared" }, forbidden: { url: "https://fixture.invalid/mcp", auth: { provider: "fixture" } } } }));
+  write(path.join(cwd, ".shepherd/mcp.json"), JSON.stringify({ mcpServers: { shepherd: { command: "shepherd-fixture" }, shared: { command: "shepherd-shared" } } }));
+  for (const entrypoint of ["dist/extensions/mcp/config.js", "dist/bundle/chunks/chunk-KDN6RCEQ.js"]) {
+    const { loadMcpConfig } = await import(pathToFileURL(path.join(pkg, entrypoint)));
+    const trusted = loadMcpConfig({ cwd, agentDir, projectTrusted: true });
+    assert.deepEqual(trusted.servers.map(s => s.name).sort(), ["global", "pi", "shared", "shepherd"]);
+    assert.equal(trusted.servers.find(s => s.name === "shared").config.command, "shepherd-shared");
+    assert.ok(trusted.errors.some(e => e.includes("auth is only allowed")));
+    assert.deepEqual(loadMcpConfig({ cwd, agentDir, projectTrusted: false }).servers.map(s => s.name), ["global"]);
+  }
+});
+
 test("refresh reparses global, trusted project and linked skills without replacing extensions or history", { timeout: 30000 }, async t => {
   await withPi(t, {
     settings: { extensions: OFF },
@@ -79,11 +259,12 @@ test("refresh preserves untrusted-project and no-skills exclusions", { timeout: 
       await pi.commands();
       write(path.join(pi.home, "skills/global/SKILL.md"), skill("global"));
       write(path.join(pi.work, ".shepherd/skills/untrusted/SKILL.md"), skill("untrusted"));
+      write(path.join(pi.work, ".pi/skills/untrusted-pi/SKILL.md"), skill("untrusted-pi"));
       write(path.join(pi.work, ".agents/skills/untrusted-agent/SKILL.md"), skill("untrusted-agent"));
       await refresh(pi);
       const names = (await pi.commands()).map(c => c.name);
       assert.equal(names.includes("skill:global"), args.length === 0);
-      assert.ok(!names.includes("skill:untrusted") && !names.includes("skill:untrusted-agent"));
+      assert.ok(!names.includes("skill:untrusted") && !names.includes("skill:untrusted-agent") && !names.includes("skill:untrusted-pi"));
     });
   }
 });

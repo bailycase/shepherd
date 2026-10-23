@@ -143,6 +143,23 @@ public struct PiHome: Equatable, Sendable {
         script += "  print -r -u2 -- \(q("pi: Shepherd's pi engine is missing: \(engine.command.joined(separator: " ")). Reinstall Shepherd."))\n"
         script += "  exit 127\nfi\n"
         // A subcommand is pi's only when it is the first argument, so `pi mcp list` gets no `-e` before it.
+        script += """
+            # A Bash call grants print subprocesses a private, bounded child connection,
+            # never the host socket or MCP credentials. No endpoint means normal standalone pi.
+            for _shepherd_arg in "$@"; do
+              if [[ $_shepherd_arg == -p || $_shepherd_arg == --print ]]; then
+                if [[ ${SHEPHERD_CLI_DENIED-} == 1 ]]; then
+                  print -r -u2 -- 'pi: Nested Pi subprocesses are not allowed'
+                  exit 1
+                fi
+                if [[ -n ${SHEPHERD_CLI_SOCKET-} ]]; then
+                  [[ -f ${SHEPHERD_CLI_CLIENT-} ]] || { print -r -u2 -- 'pi: Calling Bash scope is unavailable'; exit 1; }
+                  exec \(PiLaunch.word(engine.node)) "$SHEPHERD_CLI_CLIENT" "$SHEPHERD_CLI_SOCKET" "$@"
+                fi
+              fi
+            done
+
+            """
         script += "if [[ ${1-} == mcp ]]; then exec \(engine.command.map(q).joined(separator: " ")) \"$@\"; fi\n"
         script += "exec \(engine.command.map(q).joined(separator: " ")) -e \(q(directory.appendingPathComponent("shepherd-cliproxyapi.ts").path)) \"$@\"\n"
         return script

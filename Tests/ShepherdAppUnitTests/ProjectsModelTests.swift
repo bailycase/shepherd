@@ -67,6 +67,39 @@ struct ProjectsModelTests {
         #expect(model.selected == nil)
     }
 
+    @Test(arguments: [false, true])
+    func settingsSelectTheExistingAliasAndKeepCodemodeEditsOnThatFile(_ shepherdExists: Bool) async throws {
+        let files = [ProjectFile(path: ".shepherd/settings.json", category: .pi, exists: shepherdExists),
+                     ProjectFile(path: ".pi/settings.json", category: .pi, exists: true)]
+        let project = ProjectSummary(directory: "/repo", name: "repo", displayPath: "/repo", summary: "pi settings")
+        let original = "{\"unknownOption\":\"keep\"}"
+        var requests: [RemoteProjectsRequest] = []
+        let model = ProjectsModel { _, request in
+            requests.append(request)
+            switch request {
+            case .list: return .listing(.init(projects: [project]))
+            case .files: return .files(files)
+            case .context: return .context(.init())
+            case .read(_, let path): return .text(.init(file: files.first { $0.path == path }!, text: original))
+            case .save(_, let path, let text, _): return .text(.init(file: files.first { $0.path == path }!, text: text))
+            case .mcp: return .mcp(.init())
+            case .open: return .opened
+            }
+        }
+        await model.open(.init(host: .init(id: "local", name: "This Mac", known: []), project: project))
+        await model.navigate(.category(.pi))
+        let path = shepherdExists ? ".shepherd/settings.json" : ".pi/settings.json"
+        #expect(model.selectedFile?.path == path)
+        #expect(model.projectCodemode == .inherit)
+        model.projectCodemode = .on
+        #expect(model.projectCodemode == .on && model.dirty)
+        #expect((try JSONSerialization.jsonObject(with: Data(model.draft.utf8)) as? [String: Any])?["unknownOption"] as? String == "keep")
+        let saved = model.draft
+        await model.save()
+        #expect(requests.contains(.save(directory: "/repo", file: path, text: saved, expected: original)))
+        #expect(!model.dirty)
+    }
+
     @Test func aSupersededProjectRefreshDoesNotReportCompletion() async {
         var calls = 0
         var pending: CheckedContinuation<RemoteProjectsResult, Never>?

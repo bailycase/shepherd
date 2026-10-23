@@ -101,6 +101,7 @@ enum StatusExtension {
         reviewExtensionPath: String?,
         subagentsExtensionPath: String?,
         childrenExtensionPath: String? = nil,
+        nativeChildren: Bool = true,
         childEnvironment: [String: String] = [:],
         goalCrossProviderEvaluation: Bool = false,
         goalsEnabled: Bool = false,
@@ -153,7 +154,7 @@ enum StatusExtension {
         // Settings ▸ Pi ▸ Browser tools: the tools on the thread's own page (docs/browser.md).
         if let browserExtensionPath { env["SHEPHERD_EXT_BROWSER"] = browserExtensionPath }
         if let childrenExtensionPath {
-            env["SHEPHERD_NATIVE_CHILDREN"] = "1"
+            env["SHEPHERD_NATIVE_CHILDREN"] = nativeChildren ? "1" : "0"
             env["SHEPHERD_EXT_CHILDREN"] = childrenExtensionPath
             env.merge(childEnvironment) { _, value in value }
         }

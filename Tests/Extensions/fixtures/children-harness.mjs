@@ -22,6 +22,14 @@ export const jiti = createJiti(import.meta.url, { alias: {
 } });
 export const childrenSource = path.join(root, "Extensions/shepherd-children.ts");
 export const children = await jiti.import(childrenSource);
+// Node-only stand-in. EngineSmoke supplies PiHome's real launcher in a scratch home.
+export function installTestCliLauncher(home) {
+  const file = path.join(home, "bin/pi");
+  if (fs.existsSync(file)) return;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `#!/bin/sh\nif [ "$SHEPHERD_CLI_DENIED" = 1 ]; then echo 'Nested Pi subprocesses are not allowed' >&2; exit 1; fi\nexec ${JSON.stringify(process.execPath)} "$SHEPHERD_CLI_CLIENT" "$SHEPHERD_CLI_SOCKET" "$@"\n`, { mode: 0o700 });
+}
+
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function until(fn, timeout = 20000) {
   const end = Date.now() + timeout;

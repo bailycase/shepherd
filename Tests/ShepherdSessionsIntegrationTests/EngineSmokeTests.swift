@@ -26,6 +26,26 @@ struct EngineSmokeTests {
         #expect(result.status == 0, "\(result.output)")
     }
 
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["SHEPHERD_TEST_SPECKIT_PYTHON"] != nil,
+                   "set SHEPHERD_TEST_SPECKIT_PYTHON to an isolated Python with upstream specify-cli installed"))
+    func specKitHooksAndWorkflowDispatchUseShepherdsLauncher() throws {
+        let engine = try #require(EngineSmoke.engine)
+        let scratch = try makeScratchDirectory("engine-speckit")
+        let home = PiHome(directory: scratch.appendingPathComponent("pi"), engine: .bundled(engine), userHome: scratch.path)
+        try home.install()
+        var environment = [
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": scratch.path,
+            "PI_PACKAGE_DIR": engine.packageDirectory.path,
+            "SHEPHERD_TEST_PI_HOME": home.directory.path,
+            "SHEPHERD_TEST_PI_LAUNCHER": home.launcher.path,
+        ]
+        environment["SHEPHERD_TEST_SPECKIT_PYTHON"] = ProcessInfo.processInfo.environment["SHEPHERD_TEST_SPECKIT_PYTHON"]
+        let script = EngineSmoke.repository.appendingPathComponent("Tests/Extensions/engine-speckit.mjs")
+        let subprocess = EngineSmoke.repository.appendingPathComponent("Tests/Extensions/cli-subprocess.test.mjs")
+        let result = try EngineSmoke.runTool(engine.node.path, ["--test", "--test-concurrency=1", script.path, subprocess.path], environment: environment)
+        #expect(result.status == 0, "\(result.output)")
+    }
+
     @Test func itAnswersOverRPCLoadsATypeScriptExtensionAndRunsBashInItsOwnHome() async throws {
         let engine = try #require(EngineSmoke.engine)
         try await EngineSmoke.run(node: engine.node, engine: engine)
@@ -361,11 +381,17 @@ enum EngineSmoke {
         let ran = scratch.appendingPathComponent("hook-ran")
         try "require('fs').appendFileSync(\(String(reflecting: ran.path)), 'ran\\n');\n".write(to: hook, atomically: true, encoding: .utf8)
         let nodeOptions = "--require=\(hook.path)"
+        // A login shell may already contain Shepherd's bin later in PATH. It must still win.
+        let decoyBin = scratch.appendingPathComponent("decoy/bin")
+        try files.createDirectory(at: decoyBin, withIntermediateDirectories: true)
+        let decoyPi = decoyBin.appendingPathComponent("pi")
+        try "#!/bin/sh\nexit 91\n".write(to: decoyPi, atomically: true, encoding: .utf8)
+        try files.setAttributes([.posixPermissions: 0o755], ofItemAtPath: decoyPi.path)
 
         let pi = try RPCProcess(executable: home.launcher.path, arguments: ["--mode", "rpc", "--no-session"], directory: project, environment: [
             "HOME": userHome.path,
             "TMPDIR": temporary.path + "/",
-            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "PATH": "\(decoyBin.path):\(home.directory.appendingPathComponent("bin").path):/usr/bin:/bin:/usr/sbin:/sbin",
             "NODE_OPTIONS": nodeOptions,
             "PI_CODING_AGENT_DIR": scratch.appendingPathComponent("decoy").path,
         ])

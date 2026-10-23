@@ -95,7 +95,7 @@ final class ProjectsModel {
     var selectedFile: ProjectFile?
     var savedNotice: String {
         if category == .mcp { return "Saved to the space folder. MCP changes apply to new threads." }
-        if selectedFile?.path == ".shepherd/settings.json" {
+        if selectedFile?.category == .pi {
             return selectedFile?.exists == true
                 ? "Saved to the space folder. Start or restart the agent to apply Pi settings."
                 : "Save space settings, then start or restart the agent to apply them."
@@ -113,7 +113,7 @@ final class ProjectsModel {
     var projectCodemode: CodemodeChoice {
         get { codemodeChoice }
         set {
-            guard fileLoaded, selectedFile?.path == ".shepherd/settings.json", selected?.unavailable == nil, !saving else { return }
+            guard fileLoaded, selectedFile?.category == .pi, selected?.unavailable == nil, !saving else { return }
             do {
                 let settings = try codemodeSettings()
                 let enabled: Bool? = newValue == .inherit ? nil : newValue == .on
@@ -133,7 +133,7 @@ final class ProjectsModel {
     }
 
     private func deriveCodemode() {
-        guard selectedFile?.path == ".shepherd/settings.json" else { codemodeChoice = .inherit; codemodeProblem = nil; return }
+        guard selectedFile?.category == .pi else { codemodeChoice = .inherit; codemodeProblem = nil; return }
         do {
             let settings = try codemodeSettings()
             _ = try PiCodemode.setting(nil, in: settings)
@@ -176,6 +176,7 @@ final class ProjectsModel {
 
     init(request: @escaping Request) { self.request = request }
     var dirty: Bool { fileLoaded && draft != (saved ?? "") }
+    private var preferredFile: ProjectFile? { selectedFiles.first(where: \.exists) ?? selectedFiles.first }
     var selectedFiles: [ProjectFile] {
         files.filter { $0.category == category || (category == .extensions || category == .skills) && ($0.category == .skills || $0.category == .extensions) }
     }
@@ -284,7 +285,7 @@ final class ProjectsModel {
             self.files = files
             if case .context(let context) = try? await request(row.host, .context(directory: row.project.directory)), token == generation { self.context = context }
             guard token == generation, selected?.id == row.id else { return }
-            if let file = selectedFiles.first { await read(file) } else { fileLoading = false }
+            if let file = preferredFile { await read(file) } else { fileLoading = false }
         } catch { if token == generation { fileError = String(describing: error); fileLoading = false } }
     }
 
@@ -308,7 +309,7 @@ final class ProjectsModel {
         case .file(let file): showingBrowser = false; await read(file)
         case .category(let category):
             showingBrowser = false; self.category = category; selectedFile = nil; fileLoaded = false; fileError = nil; notice = nil
-            if let file = selectedFiles.first { await read(file) }
+            if let file = preferredFile { await read(file) }
         case .browser:
             showingBrowser = true; draft = saved ?? ""
         }

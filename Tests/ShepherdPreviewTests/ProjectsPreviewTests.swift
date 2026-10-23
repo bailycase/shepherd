@@ -181,7 +181,13 @@ struct ProjectsPreviewTests {
         defer { world.stop() }
         let model = world.vm.projects
         let project = try #require(model.rows.first { $0.project.name == "payments" && $0.host.id == "local" })
-        let settings = URL(fileURLWithPath: project.project.directory).appendingPathComponent(".shepherd/settings.json")
+        let root = URL(fileURLWithPath: project.project.directory)
+        let path = state == "pi" ? ".pi/settings.json" : ".shepherd/settings.json"
+        let settings = root.appendingPathComponent(path)
+        if state == "pi" {
+            try FileManager.default.removeItem(at: root.appendingPathComponent(".shepherd/settings.json"))
+            try FileManager.default.createDirectory(at: settings.deletingLastPathComponent(), withIntermediateDirectories: true)
+        }
         if state == "missing" { try FileManager.default.removeItem(at: settings) }
         else if state == "invalid" { try "{ broken".write(to: settings, atomically: true, encoding: .utf8) }
         else {
@@ -193,10 +199,13 @@ struct ProjectsPreviewTests {
         await model.open(project)
         await model.navigate(.category(.pi))
         #expect((model.codemodeProblem != nil) == (state == "invalid"))
+        #expect(model.selectedFile?.path == path)
         try await Preview.renderMatrix("projects-codemode-\(state)", size: CGSize(width: 1440, height: 1100)) {
             SettingsView(vm: world.vm)
         }
     }
+
+    @Test func piConfigurationAliases() async throws { try await codemode(state: "pi") }
 
     @Test(arguments: ["narrow", "long"])
     func detailEdges(state: String) async throws {

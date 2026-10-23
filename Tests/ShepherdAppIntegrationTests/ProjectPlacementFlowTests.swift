@@ -291,7 +291,14 @@ struct ProjectPlacementFlowTests {
         try await eventuallyOnMain("deletion cancellation acknowledged") {
             r.executor.server.state.projectExecutions.first?.phase == .cancelled && r.project.tasks.first?.phase.occupiesSlot == false && !r.project.interruptPending
         }
-        _ = try await r.owner.server.logicalProjects(.delete(projectID: r.projectID, expectedRevision: r.project.revision))
+        // Cancellation acknowledgement can precede the last receipt/interrupt write.
+        try await eventuallyAsync("delete after cancellation writes finish") {
+            do {
+                _ = try await r.owner.server.logicalProjects(.delete(projectID: r.projectID, expectedRevision: r.project.revision))
+                return true
+            } catch let error as LogicalProjectsError where ["stale_project", "workspace_changed", "project_busy"].contains(error.code) { return false }
+        }
+        #expect(r.owner.server.state.projects.isEmpty)
         #expect(r.executor.server.state.agents.count == 1)
         let retained = try #require(r.executor.server.state.projectContext(for: task.workerAgentID))
         #expect(retained.id == assignment.key.projectID && retained.tasks.first?.workerAgentID == task.workerAgentID,

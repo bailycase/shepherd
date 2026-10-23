@@ -77,7 +77,7 @@ struct ProjectMCPAuthTests {
         }
     }
 
-    @Test(arguments: [".shepherd/mcp.json", ".mcp.json"])
+    @Test(arguments: [".shepherd/mcp.json", ".pi/mcp.json", ".mcp.json"])
     func aRemoteProjectCompletesNativeOAuthAndRetainsTokensOnlyOnItsHost(_ file: String) async throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let engineRoot = root.appendingPathComponent(".build/pi-engine")
@@ -114,7 +114,7 @@ struct ProjectMCPAuthTests {
             guard case .mcp(let value) = try await client.projects(.mcp(directory: project.path, file: file, action: action)) else { throw ProjectFileError("protocol", "Expected MCP result") }
             return value
         }
-        if file == ".shepherd/mcp.json" {
+        if file != ".mcp.json" {
             #expect(try await action(.credentials).projectTrusted == false)
             #expect(try await action(.approveProject).projectTrusted == true)
             #expect(try await action(.credentials).projectTrusted == true)

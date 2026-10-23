@@ -462,8 +462,6 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, r
   // Stand-in for Shepherd's extension socket: accepts the children control channel (helloChildren)
   // and lets the test drive childCommand frames the way the native thread cards do.
   const control = { sockets: [], frames: [], prepare: (frame, socket) => {
-    const legacy = path.join(frame.cwd, ".pi"), destination = path.join(frame.cwd, CONFIG_DIR_NAME);
-    if (CONFIG_DIR_NAME !== ".pi" && fs.existsSync(legacy) && !fs.existsSync(destination)) fs.cpSync(legacy, destination, { recursive: true });
     socket.write(JSON.stringify({ type: "ok", id: frame.id }) + "\n");
   } };
   const controlServer = net.createServer((socket) => {
@@ -486,7 +484,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, r
     assert.equal(ticks.active.size, 0, "an idle parent with no runs never ticks");
     await until(() => control.sockets.length === 1);
     assert.equal(control.frames[0].agentID, "fixture");
-    // Alternate target skills exist only in legacy config until the host fence copies it.
+    // Alternate targets read live Pi config directly; the compatibility host never copies it.
     const alternate = path.join(dir, "alternate");
     fs.mkdirSync(path.join(alternate, ".pi", "skills", "migrated"), { recursive: true });
     fs.writeFileSync(path.join(alternate, ".pi", "skills", "migrated", "SKILL.md"), "---\nname: migrated\ndescription: migration fixture\n---\nMIGRATED_SKILL_SENTINEL\n");
@@ -496,8 +494,24 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, r
     const migrated = await h.call("start", { agent: "migration", cwd: alternate, task: "migrated skill", mission: false });
     assert.equal((await h.settled(migrated.id)).state, "complete");
     const migratedRun = h.entries.find((entry) => entry.customType === "shepherd-child" && entry.data.id === migrated.id).data;
-    assert.deepEqual(migratedRun.skills, [path.join(fs.realpathSync(alternate), CONFIG_DIR_NAME, "skills", "migrated", "SKILL.md")], "legacy skill must be discovered before the run's launch arguments are saved");
+    assert.deepEqual(migratedRun.skills, [path.join(fs.realpathSync(alternate), ".pi", "skills", "migrated", "SKILL.md")], "Pi skills must be discovered without a migration copy");
+    assert(!fs.existsSync(path.join(alternate, ".shepherd")));
     fs.unlinkSync(path.join(process.env.PI_CODING_AGENT_DIR, "agents", "migration.md"));
+    // Child discovery shares the parent's collision, relative-path, exclusion and trust rules.
+    for (const base of [".pi", ".shepherd"]) {
+      fs.mkdirSync(path.join(alternate, base, "skills", "shared"), { recursive: true });
+      fs.writeFileSync(path.join(alternate, base, "skills", "shared", "SKILL.md"), `---\nname: shared\ndescription: ${base}\n---\n${base}\n`);
+    }
+    fs.mkdirSync(path.join(alternate, "custom"), { recursive: true });
+    fs.writeFileSync(path.join(alternate, "custom", "SKILL.md"), "---\nname: configured\ndescription: configured\n---\nconfigured\n");
+    fs.writeFileSync(path.join(alternate, ".pi/settings.json"), JSON.stringify({ skills: ["../custom", "!skills/migrated"] }));
+    const { childSkills } = await jiti.import(path.join(root, "Extensions/shepherd-children-config.ts"));
+    const selected = await childSkills({ inheritSkills: true }, { cwd: fs.realpathSync(alternate), isProjectTrusted: () => true });
+    assert(selected.includes(path.join(fs.realpathSync(alternate), ".shepherd/skills/shared/SKILL.md")));
+    assert(selected.includes(path.join(fs.realpathSync(alternate), "custom/SKILL.md")));
+    assert(!selected.some(file => file.includes("/skills/migrated/") || file.includes("/.pi/skills/shared/")));
+    const denied = await childSkills({ inheritSkills: true }, { cwd: fs.realpathSync(alternate), isProjectTrusted: () => false });
+    assert(!denied.some(file => file.startsWith(fs.realpathSync(alternate) + path.sep)));
     // An arbitrary provider exists only in a configured user extension. Children must load
     // it without granting the unrelated tool that the same extension registers.
     const extensionDir = path.join(process.env.PI_CODING_AGENT_DIR, "extensions");

@@ -15,11 +15,10 @@ Requires pi 0.85.1 or newer. No npm dependencies are installed.
 Settings ▸ Pi ▸ Bundled extensions has two independent switches. Both are on by default, and
 both apply when an agent next launches.
 
-- **Native subagents** loads `shepherd-children.ts` together with its modules:
-  `shepherd-children-config.ts`, `shepherd-children-ui.ts`, `shepherd-workflow.ts`,
-  `shepherd-missions.ts`, and the `shepherd-inspect.mjs` view helpers. It sets
-  `SHEPHERD_NATIVE_CHILDREN=1` and the `SHEPHERD_CHILD_*` defaults below. Turning it off stops
-  Shepherd loading the runtime; it does not install anything else.
+- **Native subagents** enables the explicit child/workflow tools and commands in
+  `shepherd-children.ts`. It sets `SHEPHERD_NATIVE_CHILDREN=1` and the `SHEPHERD_CHILD_*`
+  defaults below. Turning it off hides those tools and commands, but the bundled runtime
+  remains loaded for ordinary CLI subprocesses. Nothing extra is installed by the user.
 - **Subagent display** loads `shepherd-subagents.ts`, the only publisher of `setAgentChildren`.
   It publishes only Shepherd-owned children into the runs behind the subagent tray
   above the composer, the thread's record lines, the inspector and the palette's Subagents
@@ -261,8 +260,8 @@ inherits and what it doesn't.
   `checkpoint_list`, `canvas_update`, `system_write`; not `comment_reply`, `markup_propose` or
   `checkpoint_restore`): the parent runs each
   call through its own design extension, on its own connection, and returns the result or error to
-  the helper. Nothing else is relayed, nothing to a parent that draws no design, and a profile
-  that lists them for one fails at the start, saying why. It needs no `extensions:` line; if one
+  the helper. Ordinary profile helpers relay no other tools. Nothing is relayed to a parent that
+  draws no design, and a profile that lists design tools for one fails at the start, saying why. It needs no `extensions:` line; if one
   names `shepherd-design.ts` it loads inert, as it always did. The mechanism, limits and
   cancellation are in [designs.md](designs.md#helpers). A typical line:
   `tools: read, design_read, board_edit, design_check`.
@@ -277,6 +276,24 @@ inherits and what it doesn't.
   reads `cliproxyapi/<id>`). A child that dies before it serves returns pi's own stderr, and for a
   model the parent could resolve but pi refused, says the child doesn't load that provider; one
   that starts without the model in its catalog names the providers it does have.
+
+**CLI subprocesses.** During a model-issued Bash call, Shepherd's existing `pi` launcher routes
+ordinary `pi -p`/`pi --print` commands to fresh owned children. Spec Kit uses its normal commands
+and installation; no extra tool, user-installed Pi extension or integration executable override
+is needed. This works with the native helper tools switched off. Project approval is required
+for dispatch; enabled `.pi` and `.shepherd` prompt templates expand in place. Other Bash commands
+keep their normal behavior. Interactive Pi and commands outside the calling tool remain standalone.
+
+Child tools run through the parent's validation, permission hooks and MCP connections. Model
+requests go to the selected provider, MCP requests use existing approved servers, and credentials
+never enter the shell environment. Browser identity and orchestration tools are not relayed;
+provider changes require confirmation. A Bash call's CLI children share bounds of 30 minutes,
+32 children, 256 assistant turns, 1M reported tokens and $10 reported model cost, with a 1 MiB
+output limit per child. Child tools cannot start nested Pi subprocesses. Ordinary Bash without CLI children
+has no new time limit. Cancellation ends dispatch and restart never resumes it. A question stops
+dispatch until the command is explicitly run again after answering it. Extensions supplying
+relayed tools stay in the parent to avoid duplicate registrations. An extension that also defines
+a custom model provider may need that provider separated before its model can run in a child.
 
 **Artifacts.** Each child gets `<support dir>/children/native-<uuid>/`, holding the transcript,
 prompt, status, inspector controls, what the user sent it (`user-messages.jsonl`), and a writer

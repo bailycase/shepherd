@@ -87,9 +87,9 @@ export async function withPi(t, options, body) {
   const { settings = {}, files = () => ({}), project, args = [], env: extraEnv = {}, onRequest, cwd } = options;
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pi-rpc-")));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  const provider = await startProvider({ onRequest });
+  const provider = await startProvider({ onRequest, usage: options.usage });
   t.after(() => provider.stop());
-  const home = path.join(dir, "home");
+  const home = options.agentDir ?? path.join(dir, "home");
   const work = path.join(dir, "work");
   fs.mkdirSync(home, { recursive: true });
   fs.mkdirSync(work, { recursive: true });
@@ -106,7 +106,7 @@ export async function withPi(t, options, body) {
   project?.(dir, work);
   const extra = typeof extraEnv === "function" ? extraEnv(dir, work) : extraEnv;
   const env = { PATH: process.env.PATH, HOME: dir, PI_CODING_AGENT_DIR: home, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0", ...extra };
-  const child = spawn(process.execPath, [path.join(pkg, "dist/cli.js"), "--mode", "rpc", "--session-dir", path.join(dir, "sessions"),
+  const child = spawn(options.launcher ?? process.execPath, [...(options.launcher ? [] : [path.join(pkg, options.entrypoint ?? "dist/cli.js")]), "--mode", "rpc", "--session-dir", path.join(dir, "sessions"),
     "--model", "fixture/fixture", ...args], { cwd: cwd?.(dir, work) ?? work, env, stdio: ["pipe", "pipe", "pipe"] });
   t.after(() => child.kill("SIGKILL"));
   const events = [];
