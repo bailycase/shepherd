@@ -62,7 +62,7 @@ function completions(model, tier, decision, used = MILLION) {
   const wanted = toolCall(decision);
   if (wanted) {
     return sse([[null, chunk({ tool_calls: [{ index: 0, id: "call_1", type: "function", function: { name: wanted.name, arguments: wanted.arguments } }] })],
-      [null, chunk({}, "tool_calls", { usage })], [null, "[DONE]"]]);
+      [null, decision.streamError ? { error: { message: decision.streamError, type: "provider_error" } } : chunk({}, "tool_calls", { usage })], [null, "[DONE]"]]);
   }
   return sse([[null, chunk({ content: decision.outputText ?? "ok" })],
     [null, decision.streamError ? { error: { message: decision.streamError, type: "provider_error" } } : chunk({}, "stop", { usage })], [null, "[DONE]"]]);

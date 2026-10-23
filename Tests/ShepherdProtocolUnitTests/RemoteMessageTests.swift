@@ -815,6 +815,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.terminalControlCapability,
             RemoteProtocol.designContextCapability,
             RemoteProtocol.nativeRetryCapability,
+            RemoteProtocol.checkpointRecoveryCapability,
             RemoteProtocol.nativeQueueSubagentCapability, RemoteProtocol.nativeInterruptCapability, RemoteProtocol.browserTunnelCapability, RemoteProtocol.browserDriveCapability,
             RemoteProtocol.browserTabsCapability,
             RemoteProtocol.nativeServiceTierCapability, RemoteProtocol.nativeImagesCapability, RemoteProtocol.nativeArtifactsCapability,

@@ -97,6 +97,11 @@ initializing or listing tools, without waiting for their request timeout. The MC
 modular runtime, pinned stdio dependency and bundled SDK. RPC input starts before extension
 initialization finishes so startup UI answers can get through; all other commands wait for
 initialization. Its hash is recorded in the engine pin.
+The same patch adds message-free checkpoint recovery to the readable SDK, RPC and bundled SDK/CLI.
+`checkpoint-recovery.js` owns validation and append-only receipts; its declaration file describes
+that SDK contract. This is a Shepherd patch, not a claim that unpatched upstream Pi exposes recovery.
+It reuses Pi's provider-context omission without changing automatic retry classification.
+See [Retry](native-thread.md#retry) for safety gates and limits.
 Staging verifies the pi version, full original file hashes, unique replacement anchors and final
 file hashes; verification also checks the shipped patched files. A source, patch or pin mismatch
 fails closed. The Linux extension-test job applies the same verified patches to its isolated npm

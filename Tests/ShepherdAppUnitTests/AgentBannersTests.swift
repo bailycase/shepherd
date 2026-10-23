@@ -19,6 +19,39 @@ struct AgentBannersTests {
         return agent
     }
 
+    @Test @MainActor func aContinueBannerCarriesOnlyItsExactCheckpoint() throws {
+        var snapshot = NativeThreadSnapshot(piSessionID: "session", generation: "generation", revision: 1,
+            running: false, supportedActions: ["retry", "checkpointRecovery"], dialogsSupported: true, dialogs: [],
+            messages: [NativeThreadMessage(entryID: "user", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "original request")])],
+            provisional: [], clipped: false)
+        snapshot.checkpointRecovery = NativeCheckpointRecovery(version: 1,
+            checkpoint: NativeRecoveryCheckpoint(token: "opaque-token", failedEntryID: "failed-entry"))
+        let recovery = try #require(AgentBanners.recovery(in: snapshot))
+        var banner = try #require(AgentBanners.status(of: agent(.done), from: .working,
+            failure: TurnFailure(message: "FAKE failure"), watching: false))
+        #expect(AgentNotifications.userInfo(banner)["recovery"] == nil, "old unbound notifications never recover a newer failure")
+        banner.recovery = recovery
+        let encoded = try #require(AgentNotifications.userInfo(banner)["recovery"])
+        let decoded = try JSONDecoder().decode(NativeThreadRequest.self, from: Data(encoded.utf8))
+        #expect(decoded == recovery)
+        #expect(!encoded.contains("original request"))
+        #expect(AgentBanners.matchesRecovery(decoded, in: snapshot))
+        var changed = snapshot; changed.piSessionID = "new-session"
+        #expect(!AgentBanners.matchesRecovery(decoded, in: changed))
+        changed = snapshot; changed.generation = "new-generation"
+        #expect(!AgentBanners.matchesRecovery(decoded, in: changed))
+        changed = snapshot; changed.checkpointRecovery?.checkpoint?.token = "new-checkpoint"
+        #expect(!AgentBanners.matchesRecovery(decoded, in: changed))
+        changed = snapshot; changed.checkpointRecovery?.checkpoint?.failedEntryID = "different-failure"
+        #expect(!AgentBanners.matchesRecovery(decoded, in: changed))
+        changed = snapshot; changed.running = true
+        #expect(AgentBanners.recovery(in: changed) == nil)
+        #expect(!AgentBanners.matchesRecovery(decoded, in: changed))
+        changed = snapshot; changed.supportedActions = ["retry"]
+        #expect(AgentBanners.recovery(in: changed) == nil)
+        #expect(!AgentBanners.matchesRecovery(decoded, in: changed))
+    }
+
     @Test(arguments: [
         (TurnFailure?.none, String?.some("Done. 3 files changed, tests pass."), "Turn finished",
          "Done. 3 files changed, tests pass.", [BannerAction.review], AgentBanner.Level.passive),
