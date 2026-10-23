@@ -32,6 +32,12 @@ xcrun swiftc "${flags[@]}" -lShepherdCore -lShepherdProtocol -lShepherdRemote -p
     Tests/ShepherdIOSChecks/MobileHostsCheck.swift -o "$build/hosts-check"
 DYLD_LIBRARY_PATH="$build" "$build/hosts-check"
 
+xcrun swiftc "${flags[@]}" -lShepherdCore -lShepherdProtocol -lShepherdRemote -parse-as-library \
+    App/iOS/Hosts/MobileHosts.swift App/iOS/Hosts/HostTokens.swift App/iOS/Support/AgentRef.swift \
+    App/iOS/Home/SidebarThreads.swift App/iOS/Search/AgentActions.swift \
+    Tests/ShepherdIOSChecks/SidebarThreadsCheck.swift -o "$build/sidebar-check"
+DYLD_LIBRARY_PATH="$build" "$build/sidebar-check"
+
 xcrun swiftc "${flags[@]}" -lShepherdCore -lShepherdProtocol -lShepherdRemote \
     -parse-as-library Tests/ShepherdIOSChecks/ThreadStoreCheck.swift \
     -o "$build/thread-check"
