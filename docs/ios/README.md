@@ -165,11 +165,25 @@ keep the version for real breaks.
 - **iPhone:** two tabs, Home and Settings, each a navigation stack. Home merges every host:
   Automations and More (host cards), offline hosts with Retry, Needs you (questions
   and blocked threads, answered in place when short; a subagent's question is its parent's, so
-  it is never here), and Recents with host tags. `HomeFeed`
+  it is never here), Working, Done (with Mark all seen), Pinned, and Recents with host tags. `HomeFeed`
   derives it once per change from each host's state and, while Home is on screen, the threads'
   snapshots.
+- **Thread groups and row menus (`Home/SidebarThreads.swift`, `Home/ThreadRowMenu.swift`):** the
+  Mac sidebar's groups on both devices, each thread in one (`FleetSidebarState` in ShepherdRemote):
+  Needs you, Working (running on a connected host), Done (a finished turn this device saw end;
+  opening another thread marks it seen, a later turn brings it back), Pinned (pin order, any state,
+  a waiting one keeps its reason) and Recents. Pins are this device's view state, like each Mac's:
+  `shepherd.ios.sidebar.pinned` in its preferences, never sent to a host, kept while a host is
+  offline, gone with their thread or host. A thread row's long press is the Mac's row menu for a
+  connected host's thread: Open in new window (iPad), Pin or Unpin, Rename…, Move to Space (the
+  host's visible spaces, `agent.move.v1`, never a worktree or a run), Finalize Worktree…, Review
+  Uncommitted Changes, Review PR Changes, and Delete Agent… or Delete Worktree Agent…. Each item
+  shows only where the row's own host takes it; offline, only Unpin and "<host> is offline" remain.
+  An automation run's long press opens its automation and offers Run Now or Stop… as its detail
+  does. Pin and Unpin are also in the thread's options menu.
 - **iPad:** a split view. Landscape shows the sidebar (New thread, Designs while a host serves
-  them, Automations, More expanding to Hosts and Extensions, Needs you, Recents, and a footer with
+  them, Automations, More expanding to Hosts and Extensions, Needs you, automation runs, Working,
+  Done, Pinned, Recents, and a footer with
   the hosts and Settings) beside the selected thread; in portrait the thread takes the width and
   the sidebar slides over it. Portrait is the window's shape, never what the
   keyboard leaves of it (CONTRACTS.md › Navigation). With no thread selected the detail is the
