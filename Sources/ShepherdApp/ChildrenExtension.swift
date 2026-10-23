@@ -21,7 +21,9 @@ enum ChildrenExtension {
     static var sources: [(String, String)] {
         [("shepherd-children.ts", extensionSource), ("shepherd-children-config.ts", configSource),
          ("shepherd-workflow.ts", workflowSource), ("shepherd-missions.ts", missionsSource),
-         ("shepherd-children-ui.ts", uiSource), ("shepherd-inspect.mjs", InspectExtension.extensionSource)]
+         ("shepherd-children-ui.ts", uiSource), ("shepherd-cli.ts", EmbeddedExtensions.source("shepherd-cli.ts")),
+         ("shepherd-cli-client.mjs", EmbeddedExtensions.source("shepherd-cli-client.mjs")),
+         ("shepherd-inspect.mjs", InspectExtension.extensionSource)]
     }
     static var extensionSource: String { EmbeddedExtensions.source("shepherd-children.ts") }
     static var configSource: String { EmbeddedExtensions.source("shepherd-children-config.ts") }
