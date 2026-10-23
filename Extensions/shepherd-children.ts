@@ -427,7 +427,7 @@ export async function serveRelay(run, event, { relay, ctx, answer }) {
   try { request = JSON.parse(payload); } catch { return fail("the relayed call is not JSON"); }
   const name = request?.tool;
   if (typeof name !== "string" || !(run.relayTools ?? []).includes(name) || !(relay?.cli ? cliRelayAllowed(name) : DESIGN_RELAYED.includes(name))) {
-    return fail(`${typeof name === "string" ? name : "that tool"} is not relayed to this helper (allowed: ${(run.relayTools ?? []).join(", ") || "none"})`);
+    return fail(`${typeof name === "string" ? name : "that tool"} is not relayed to this helper (${relay?.cli ? "allowed" : "its profile's design tools"}: ${(run.relayTools ?? []).join(", ") || "none"})`);
   }
   const tool = relay?.tools.get(name);
   if (!tool) return fail("this session no longer draws a design, so its design tools can't be relayed");
