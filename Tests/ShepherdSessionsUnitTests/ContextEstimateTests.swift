@@ -118,11 +118,14 @@ struct ContextEstimateTests {
             try? FileManager.default.removeItem(at: repo)
         }
         if let global { try Data(global.utf8).write(to: agent.appendingPathComponent("settings.json")) }
-        if let project {
-            try FileManager.default.createDirectory(at: repo.appendingPathComponent(".shepherd"), withIntermediateDirectories: true)
-            try Data(project.utf8).write(to: repo.appendingPathComponent(".shepherd/settings.json"))
+        for base in [".pi", ".shepherd"] {
+            if let project {
+                try FileManager.default.createDirectory(at: repo.appendingPathComponent(base), withIntermediateDirectories: true)
+                try Data(project.utf8).write(to: repo.appendingPathComponent(base + "/settings.json"))
+                if base == ".shepherd" { try Data("not json".utf8).write(to: repo.appendingPathComponent(".pi/settings.json")) }
+            }
+            #expect(PiConfig.compactionSettings(model: "anthropic/opus", cwd: repo.path, in: agent) == expected)
         }
-        #expect(PiConfig.compactionSettings(model: "anthropic/opus", cwd: repo.path, in: agent) == expected)
     }
 
     /// The sizes a compaction reports are pi's numbers as it wrote them: a size past `Int.max` is

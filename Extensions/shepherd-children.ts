@@ -12,6 +12,7 @@ import { bundledAgents as ROLES, childDefaults, discoverChildAgents, childSkills
 import { executeWorkflow } from "./shepherd-workflow.ts";
 import { missionStore } from "./shepherd-missions.ts";
 import { registerNativeCommands } from "./shepherd-children-ui.ts";
+import { registerCliBash, expandCliPrompt, cliRelayAllowed, withoutCliDispatch } from "./shepherd-cli.ts";
 import { StringEnum, validateToolArguments } from "@earendil-works/pi-ai";
 
 const EVENT = "shepherd:children:v1";
@@ -232,6 +233,7 @@ export function childLaunch({ run, bridge, inherited = [], parentEnv = process.e
   env.SHEPHERD_CHILD = "1"; env.PI_OFFLINE = "1";
   env.SHEPHERD_CHILD_TOOLS = JSON.stringify([...run.tools, "shepherd_parent_message"]);
   if (relay.length) env.SHEPHERD_CHILD_RELAY = JSON.stringify(relay);
+  if (run.cliCommand) env.SHEPHERD_CHILD_CLI = "1";
   const args = ["--mode", "rpc", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-approve",
     "-e", bridge, "--session", run.sessionFile, "--model", run.model, "--thinking", run.thinking,
     "--tools", [...run.tools, "shepherd_parent_message"].join(","),
@@ -250,6 +252,7 @@ export function childLaunch({ run, bridge, inherited = [], parentEnv = process.e
   const managed = managedProvider(parentEnv);
   if (managed) { load(managed.extension); env.SHEPHERD_CLIPROXYAPI_CONFIG = managed.config; }
   for (const extension of new Set([...inherited, ...(run.extensions ?? [])])) load(extension);
+  for (const name of run.localToolExtensions ?? []) args.push("-e", `builtin:${name}`);
   return { args, env };
 }
 
@@ -380,7 +383,9 @@ export async function relayedCall(tool, params, signal, ctx) {
   let reply;
   try { reply = JSON.parse(answer); } catch { throw new Error(`${tool}: the parent's answer was not understood`); }
   if (!reply?.ok) throw new Error(typeof reply?.error === "string" ? reply.error : `${tool} failed`);
-  return { content: Array.isArray(reply.content) ? reply.content : [], details: reply.details };
+  if (reply.isError) throw new Error((reply.content ?? []).filter(part => part.type === "text").map(part => part.text).join("\n") || `${tool} failed`);
+  return { content: Array.isArray(reply.content) ? reply.content : [], details: reply.details,
+    ...(reply.structuredContent === undefined ? {} : { structuredContent: reply.structuredContent }), ...(reply.isError ? { isError: true } : {}) };
 }
 
 function registerRelayTools(pi) {
@@ -388,8 +393,10 @@ function registerRelayTools(pi) {
   try { specs = JSON.parse(process.env.SHEPHERD_CHILD_RELAY); } catch { return; }
   for (const spec of Array.isArray(specs) ? specs : []) {
     // The helper registers only names the parent may relay, whatever its environment says.
-    if (typeof spec?.name !== "string" || !DESIGN_RELAYED.includes(spec.name) || !spec.parameters || typeof spec.parameters !== "object") continue;
+    const permitted = process.env.SHEPHERD_CHILD_CLI === "1" ? cliRelayAllowed(spec?.name ?? "") : DESIGN_RELAYED.includes(spec?.name);
+    if (typeof spec?.name !== "string" || !permitted || !spec.parameters || typeof spec.parameters !== "object") continue;
     pi.registerTool({ name: spec.name, label: String(spec.label ?? spec.name), description: String(spec.description ?? spec.name),
+      exposure: spec.exposure, namespace: spec.namespace, outputSchema: spec.outputSchema, annotations: spec.annotations,
       promptSnippet: typeof spec.promptSnippet === "string" ? spec.promptSnippet : undefined, parameters: spec.parameters,
       async execute(_id, params, signal, _update, ctx) { return pictureForModel(await relayedCall(spec.name, params, signal, ctx), ctx); } });
   }
@@ -419,8 +426,8 @@ export async function serveRelay(run, event, { relay, ctx, answer }) {
   let request;
   try { request = JSON.parse(payload); } catch { return fail("the relayed call is not JSON"); }
   const name = request?.tool;
-  if (typeof name !== "string" || !(run.relayTools ?? []).includes(name) || !DESIGN_RELAYED.includes(name)) {
-    return fail(`${typeof name === "string" ? name : "that tool"} is not relayed to this helper (its profile's design tools: ${(run.relayTools ?? []).join(", ") || "none"})`);
+  if (typeof name !== "string" || !(run.relayTools ?? []).includes(name) || !(relay?.cli ? cliRelayAllowed(name) : DESIGN_RELAYED.includes(name))) {
+    return fail(`${typeof name === "string" ? name : "that tool"} is not relayed to this helper (allowed: ${(run.relayTools ?? []).join(", ") || "none"})`);
   }
   const tool = relay?.tools.get(name);
   if (!tool) return fail("this session no longer draws a design, so its design tools can't be relayed");
@@ -444,7 +451,9 @@ export async function serveRelay(run, event, { relay, ctx, answer }) {
     });
     const size = content.reduce((total, part) => total + Buffer.byteLength(part.type === "text" ? part.text : part.data), 0);
     if (size > MAX_RELAY_BYTES) return fail(`${name}'s result is ${size} bytes; the relay carries at most ${MAX_RELAY_BYTES}`);
-    reply({ ok: true, content, details: result?.details });
+    const response = { ok: true, content, details: result?.details, structuredContent: result?.structuredContent, isError: result?.isError };
+    if (Buffer.byteLength(JSON.stringify(response)) > MAX_RELAY_BYTES) return fail(`${name}'s full result exceeds the ${MAX_RELAY_BYTES} byte relay limit`);
+    reply(response);
   } catch (error) {
     if (!controller.signal.aborted) fail(clip(error?.message ?? String(error), 4000));
   } finally { run.relays.delete(callId); }
@@ -489,7 +498,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       });
     });
     pi.on("session_shutdown", continueRun);
-    pi.registerTool(createBashTool(process.cwd(), { operations: childBashOperations() }));
+    if (process.env.SHEPHERD_CHILD_CLI !== "1") pi.registerTool(createBashTool(process.cwd(), { operations: childBashOperations() }));
     if (process.env.SHEPHERD_CHILD_RELAY) registerRelayTools(pi);
     if (process.env.SHEPHERD_CHILD_TOOLS) {
       const allowed = new Set(JSON.parse(process.env.SHEPHERD_CHILD_TOOLS));
@@ -513,9 +522,11 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     });
     return;
   }
-  if (process.env.SHEPHERD_NATIVE_CHILDREN !== "1" || !process.env.SHEPHERD_AGENT_ID || !process.env.SHEPHERD_SOCKET) return;
+  if (!process.env.SHEPHERD_AGENT_ID || !process.env.SHEPHERD_SOCKET) return;
+  const nativeChildren = process.env.SHEPHERD_NATIVE_CHILDREN === "1";
 
-  const runs = new Map(), workflows = new Map();
+  const runs = new Map(), workflows = new Map(), cliRuns = new Map();
+  let cancelCli;
   const projectWorker = !!process.env.SHEPHERD_PROJECT_CONTEXT;
   const closedScopes = new Set(), scopeStops = new Map(), scopeRequests = new Map(), scopeTimers = new Map();
   const continuationScopes = new Set(), settleWaiters = new Set();
@@ -826,10 +837,21 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     save(run); run.resolveClosed();
     const notice = `${run.state}\n${run.error || run.output || "No text result"}\nSession: ${run.sessionFile}`;
     if (run.state === "complete" && run.needsReply && run.questionNotified) return;
-    notify(run, notice);
+    if (!cliRuns.has(run.id)) notify(run, notice);
   }
   function receive(run, event) {
     if (run.exited) return;
+    const cli = cliRuns.get(run.id);
+    if (cli) {
+      try {
+        if (event.type === "message_end" && event.message?.role === "assistant") {
+          const usage = event.message.usage ?? {};
+          cli.output = (event.message.content ?? []).filter(p => p.type === "text").map(p => p.text).join("\n");
+          cli.budget.add({ turns: 1, tokens: usage.totalTokens ?? (usage.input ?? 0) + (usage.output ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0), cost: usage.cost?.total ?? 0 });
+        }
+        if (/^(?:message_|tool_execution_|agent_|turn_)/.test(event.type)) cli.emit(event);
+      } catch (error) { void stop(run, String(error.message)); }
+    }
     if (event.type === "response") {
       const pending = run.pending.get(event.id);
       if (pending) {
@@ -888,7 +910,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       relayCancel(run, event.message);
     } else if (event.type === "extension_ui_request" && event.method === "input" && typeof event.title === "string" && event.title.startsWith(RELAY_TITLE)) {
       // A design tool a helper's profile listed, relayed through this process (see serveRelay).
-      void serveRelay(run, event, { relay: designRelay(), ctx: sessionContext, answer: (value) => {
+      void serveRelay(run, event, { relay: cliRuns.get(run.id)?.relay ?? designRelay(), ctx: sessionContext, answer: (value) => {
         if (run.proc && !run.exited) run.proc.stdin.write(JSON.stringify({ type: "extension_ui_response", id: event.id, value }) + "\n");
       } });
     } else if (event.type === "extension_ui_request" && ["select", "confirm", "input", "editor"].includes(event.method)) {
@@ -924,16 +946,20 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     run.closed = new Promise((resolve) => { run.resolveClosed = resolve; });
     // A design agent's helper gets a proxy for each design tool its profile listed (the parent's tool
     // allowlist already narrowed run.tools), and the parent's allowlist for what it may relay.
-    const relayTools = run.tools.filter((name) => DESIGN_RELAYED.includes(name));
-    let relay = [];
-    if (relayTools.length) {
+    const cli = cliRuns.get(run.id);
+    const relayTools = cli ? [...cli.relay.tools.keys()] : run.tools.filter((name) => DESIGN_RELAYED.includes(name));
+    let relay = cli?.specs ?? [];
+    if (relayTools.length && !cli) {
       const registry = designRelay();
       const problem = designToolsProblem(relayTools, registry);
       if (problem) throw new Error(problem);
       relay = relaySpecs(relayTools, registry);
     }
     run.relayTools = relayTools; run.relays = new Map();
-    const { args, env } = childLaunch({ run, bridge, inherited, relay });
+    // Relayed tools and their hooks execute in the parent. Loading their extension a second
+    // time in the child would register duplicate tools and lose host-owned credentials.
+    const childExtensions = cli ? inherited.filter(file => !cli.toolExtensions.has(fs.realpathSync(file))) : inherited;
+    const { args, env } = childLaunch({ run, bridge, inherited: childExtensions, relay });
     // The parent's own engine: the node it runs on and its pi's bundle, never a `pi` from PATH
     // (Shepherd's pi ships both; its launcher pins the rest, which the child inherits).
     const script = path.join(getPackageDir(), "dist", "bundle", "cli.js");
@@ -1183,9 +1209,10 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       } catch { /* Missing artifacts cannot be resumed. */ }
     }
     publish();
-    registerCommands();
+    if (nativeChildren) registerCommands();
   });
   pi.on("session_shutdown", async () => {
+    cancelCli?.();
     active = false; pendingNotices.clear(); parentWorking = false; continuationScopes.clear(); wakeSettlements(); clearTimeout(noticeTimer); noticeTimer = undefined; syncTick(); clearTimeout(controlRetry);
     const socket = control; control = undefined; socket?.destroy();
     for (const { timer } of scopeTimers.values()) clearTimeout(timer);
@@ -1231,7 +1258,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     }
     return resolved;
   }
-  async function start(params, signal, ctx, workflowId, toolCallID, stepIndex, queueInput) {
+  async function start(params, signal, ctx, workflowId, toolCallID, stepIndex, queueInput, cli) {
       const projectScope = workflowId ? workflows.get(workflowId)?.projectScope : projectWorker ? await authorizeScope() : undefined;
       checkScope(projectScope);
       params = checked(startSchema, params);
@@ -1253,8 +1280,8 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       const name = params.agent ?? params.role ?? "worker";
       const exact = catalog.agents.filter((a) => a.name === name);
       const matches = exact.length ? exact : catalog.agents.filter((a) => a.aliases?.includes(name));
-      if (matches.length !== 1) throw Error(unknownAgentMessage(name, catalog.agents, matches));
-      const profile = matches[0], role = profile.name;
+      if (!cli && matches.length !== 1) throw Error(unknownAgentMessage(name, catalog.agents, matches));
+      const profile = cli ? cli.profile : matches[0], role = profile.name;
       if (profile.error || profile.disabled) throw Error(profile.error || `Agent ${role} is disabled`);
       if (profile.tools === "inherit") throw Error("tools: inherit requires ambient extensions, which native children do not inherit. Omit tools for Pi builtins or list tools and explicit extension files.");
       const requestedTools = profile.tools ?? defaultChildTools(cwd);
@@ -1264,21 +1291,28 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       const designProblem = designNames.length ? designToolsProblem(designNames, designRelay()) : undefined;
       if (designProblem) throw Error(designProblem);
       const unknownTools = requestedTools.filter((name) => !ROLES.worker.tools.includes(name) && name !== "shepherd_parent_message" && !DESIGN_TOOLS.includes(name));
-      if (unknownTools.length && !profile.extensions?.length) throw Error(`Unsupported agent tools without explicit extensions: ${unknownTools.join(", ")}`);
+      if (unknownTools.length && !cli && !profile.extensions?.length) throw Error(`Unsupported agent tools without explicit extensions: ${unknownTools.join(", ")}`);
       if (requestedTools.some((name) => /^(shepherd_child_|shepherd_workflow|subagent$)/.test(name))) throw Error("Nested delegation tools are unsupported");
       const resolved = resolveModel(profile, ctx, params.model);
       const model = `${resolved.model.provider}/${resolved.model.id}`;
       if (!bridge) throw new Error("Shepherd child extension path is missing");
+      const skills = await childSkills(profile, targetContext);
+      signal?.throwIfAborted();
+      if (!active || owner !== startingOwner) throw Error("Parent session ended or dispatch cancelled");
+      capacity();
+      if (runs.size >= MAX_RUNS) throw new Error("64 retained children reached; start a new parent session");
       const id = `native-${randomUUID()}`, dir = path.join(root, id);
       fs.mkdirSync(path.join(dir, "control", "steer-requests"), { recursive: true, mode: 0o700 });
       const run = { id, dir, owner, projectScope, role, model, cwd, thinking: params.thinking ?? resolved.thinkingLevel ?? profile.thinking ?? defaults.thinking ?? ctx.thinkingLevel ?? "off", task: params.task,
         context: params.context ?? profile.context ?? defaults.context, delivery: params.delivery ?? "continue",
         requiresProjectTrust: profile.requiresProjectTrust || (targetContext.isProjectTrusted() && (profile.inheritSkills || profile.skills?.length)), profileSource: profile.source, systemPromptMode: profile.systemPromptMode, inheritProjectContext: profile.inheritProjectContext,
-        extensions: profile.extensions ?? [], skills: childSkills(profile, targetContext), workflowId, ...missionFor(params, params.task),
-        tools: requestedTools.filter((name) => pi.getActiveTools().includes(name)), state: "queued", startedAt: Date.now(), sessionFile: path.join(dir, "session.jsonl"), output: "",
+        extensions: profile.extensions ?? [], skills, workflowId, ...missionFor(params, params.task),
+        tools: requestedTools.filter((name) => cli ? ctx.tools.some(tool => tool.name === name) : pi.getActiveTools().includes(name)),
+        ...(cli ? { cliCommand: params.task, localToolExtensions: requestedTools.filter(name => ["codemode", "tool_search"].includes(name)).map(name => name === "tool_search" ? "tool-search" : name) } : {}), state: "queued", startedAt: Date.now(), sessionFile: path.join(dir, "session.jsonl"), output: "",
         queueRequestID: queueInput?.requestID,
         toolCallID: typeof toolCallID === "string" ? toolCallID : undefined, stepIndex, turns: 0, toolCalls: 0, tokens: 0, added: 0, removed: 0, files: new Map() };
       runs.set(id, run);
+      if (cli) { cliRuns.set(id, cli); cli.run = run; }
       try {
         if (run.context === "fork") Object.assign(run, forkSession(ctx.sessionManager, cwd, run.sessionFile));
         else {
@@ -1288,10 +1322,55 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
         fs.writeFileSync(path.join(dir, "prompt.md"), `You are a Shepherd child, not the parent. ${profile.prompt}\nWork only on the delegated task. No nested helpers, workflows, schedules, or worktree management. Routine progress stays in your child record; do not send a separate completion message, your final answer is delivered automatically.\n${CHILD_ASK_RULE}\n`, { mode: 0o600 });
         const { dir: _dir, output: _output, files: _files, ...descriptor } = run;
         pi.appendEntry("shepherd-child", descriptor);
-        run.starting = launch(run, queueInput?.text ?? params.task, signal, queueInput?.images);
+        run.starting = launch(run, cli?.prompt ?? queueInput?.text ?? params.task, signal, queueInput?.images);
         return await run.starting;
       } catch (error) { if (!run.proc) { run.state = "failed"; run.endedAt = Date.now(); run.error = clip(error.message); save(run); } throw error; }
   }
+  cancelCli = registerCliBash(pi, { bridge, bashOperations: childBashOperations,
+    async dispatch(request, ctx, signal, budget, emit, toolCallID) {
+      const prompt = await expandCliPrompt(request.prompt, ctx);
+      const model = request.provider ? `${request.provider}/${request.model ?? ctx.model.id}` : request.model;
+      const resolved = resolveModel({}, ctx, model ?? "inherit");
+      if (resolved.model.provider !== ctx.model.provider && !await ctx.ui.confirm("Allow Pi subprocess provider change?", `This step will send project data to ${resolved.model.provider} using ${resolved.model.id}.`, { signal })) throw Error("Pi subprocess provider change declined");
+      const requested = request.tools?.split(",").map(name => name.trim());
+      const names = ctx.tools.map(tool => tool.name).filter(name => cliRelayAllowed(name) || ["codemode", "tool_search"].includes(name));
+      if (requested?.some(name => !names.includes(name))) throw Error("Pi subprocess requested tools outside the parent allowlist");
+      const allowed = requested ? names.filter(name => requested.includes(name)) : names;
+      const relayed = allowed.filter(name => cliRelayAllowed(name));
+      const metadata = new Map(pi.getAllTools().map(tool => [tool.name, tool]));
+      const tools = new Map(relayed.map(name => [name, { parameters: metadata.get(name)?.parameters,
+        async execute(_id, args, callSignal) {
+          if (name === "bash") args = { ...args, command: `unset SHEPHERD_SOCKET SHEPHERD_AGENT_ID SHEPHERD_DESIGN_ID\n${args.command}` };
+          const result = await withoutCliDispatch(() => ctx.executeTool(name, args, { signal: AbortSignal.any([signal, callSignal]) }));
+          return { ...result.result, isError: result.isError };
+        } }]));
+      const toolExtensions = new Set(relayed.map(name => metadata.get(name)?.sourceInfo?.path)
+        .filter(file => file && fs.existsSync(file)).map(file => fs.realpathSync(file)));
+      const cli = { prompt, budget, emit, output: "", toolExtensions, relay: { cli: true, tools },
+        specs: relayed.map(name => ({ ...metadata.get(name), name })),
+        profile: { name: "Pi subprocess", prompt: "Execute the delegated command. Stop and ask your parent when approval or clarification is required.",
+          tools: allowed, context: "fresh", inheritSkills: true, inheritProjectContext: true, requiresProjectTrust: true } };
+      const abort = () => { if (cli.run) void stop(cli.run, String(signal.reason?.message ?? "Pi subprocess cancelled")); };
+      signal.addEventListener("abort", abort, { once: true });
+      try {
+        await start({ task: request.prompt, model: `${resolved.model.provider}/${resolved.model.id}`, thinking: request.thinking,
+          delivery: "report", ...(missionsOn ? { mission: false } : {}) }, signal, ctx, undefined, toolCallID, undefined, undefined, cli);
+        const run = cli.run;
+        await run.closed;
+        signal.throwIfAborted();
+        if (run.state !== "complete") throw Error(run.error || "Pi subprocess child failed");
+        if (run.needsReply) throw Error(`Pi subprocess needs your answer before continuing: ${run.questionText}`);
+        return cli.output;
+      } finally {
+        signal.removeEventListener("abort", abort);
+        if (cli.run) {
+          if (!cli.run.exited) await stop(cli.run, "Pi subprocess dispatch ended");
+          cliRuns.delete(cli.run.id);
+        }
+      }
+    },
+  });
+  if (!nativeChildren) return;
   pi.registerTool({ name: "shepherd_child_agents", label: "child agents", description: "List effective agent profiles, sources and unsupported-field diagnostics. Reads only Shepherd's pi/agents folder. Invalid files stay visible as diagnostics and cannot run.",
     parameters: Type.Object({}), async execute(_id, _p, _s, _u, ctx) { return result({ defaults, ...discoverChildAgents(ctx, defaults.scope) }); } });
   pi.registerTool({ name: "shepherd_child_start", label: "start child", parameters: startSchema,
@@ -1343,6 +1422,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       return result(p.questionID ? await answerChild(run, p.message, undefined, signal, ctx) : await resume(run, p.message, signal, ctx));
     } });
   async function resume(run, message, signal, ctx) {
+    if (run.cliCommand) throw Error("Pi subprocess authority ended with its calling Bash command. Run the command again after answering the question.");
     const projectScope = projectWorker ? await authorizeScope() : undefined;
     if (!active) throw Error("No active parent session");
     if ((run.requiresProjectTrust || run.profileSource === "project") && childTargetContext(ctx, run.cwd).isProjectTrusted() !== true) throw Error("Project profile continuation requires Pi project trust");

@@ -47,17 +47,16 @@ nothing. History-only Settings rows and remote spaces have no local removal acti
 Open a space to edit its existing files, or create the standard instruction, pi settings or MCP
 files when they are missing. The categories are Instructions, Pi settings, Skills, Extensions
 and MCP servers. Text files use the existing Instructions editor. MCP uses the same server
-cards and add/edit forms as Settings > MCP servers, with file tabs for `.shepherd/mcp.json` and
-`.mcp.json`. Changes save through the selected host's file API, with conflict checks. Native
+cards and add/edit forms as Settings > MCP servers, with file tabs for `.shepherd/mcp.json`,
+`.pi/mcp.json` and `.mcp.json`. Changes save through the selected host's file API, with conflict checks. Native
 space MCP uses `enabled`, `exposure`, `timeout` and `oauth`; shared `.mcp.json` uses `disabled`
 and keeps tools searchable. Unknown fields and other top-level sections stay intact.
 Space forms keep credentials and environment references in the space file, never the
 local global Keychain. They neither connect to servers nor report global runtime status as
-space status. Older remote hosts still inventory native MCP as `.pi/mcp.json`; the viewer
-preserves that selected path and its native `enabled`, exposure and approval behavior. This
-compatibility does not restore local `.pi` discovery. Invalid files show an error and cannot be replaced by form edits. Open in editor
-remains available for repair and unsupported advanced fields. Extensions also includes
-`.shepherd/settings.json`, where pi's extension and package paths live. Saving does not execute a
+space status. Both native MCP paths retain their `enabled`, exposure and approval behavior,
+including on older remote hosts. Invalid files show an error and cannot be replaced by form edits.
+Open in editor remains available for repair and unsupported advanced fields. Project settings in
+`.shepherd/settings.json` or `.pi/settings.json` hold pi's extension and package paths. Saving does not execute a
 skill, extension or MCP server, change project trust, or restart an agent. Running agents must
 restart before they use the changes.
 
@@ -69,46 +68,31 @@ override. "Credentials saved" means OAuth tokens exist on that host, not that a 
 loaded or connected the server. The approval card also distinguishes checking, unavailable
 hosts, old hosts and errors. See [MCP approval](mcp.md#space-approval-and-thread-loading).
 
-## Project configuration cutover
+## Project configuration directories
 
-Shepherd's bundled engine discovers project configuration in `.shepherd`, not `.pi`.
-The file formats are unchanged. Root `AGENTS.md`, `.agents` resources and shared `.mcp.json`
-remain where they were. Terminal Pi's global `~/.pi/agent` import and conversation adoption,
-including its project `.pi/settings.json` session directory, are unchanged.
+Shepherd reads project configuration from both `.shepherd` and `.pi`. A `.shepherd/settings.json`
+file wins over `.pi/settings.json`; relative settings paths resolve from the chosen file's folder.
+SYSTEM.md and APPEND_SYSTEM.md each use the same per-file precedence. Skills, prompts, themes and
+extensions are discovered in both folders. Shepherd wins same-named skills, prompts and themes;
+a same-path extension in `.shepherd` replaces its `.pi` counterpart. MCP merges servers by name,
+with `.shepherd/mcp.json` winning duplicates.
 
-Remote project settings use `projects.v2` for the `.shepherd` inventory. Current hosts advertise
-v2 instead of v1 and refuse every project request from a client that has not acknowledged v2,
-before file access, migration or trust changes. The response asks the client to update; other
-remote features remain available. Current viewers also support older `projects.v1` hosts and
-preserve their native `.pi` paths and MCP schema. This gate changes neither wire shapes nor
-protocol version 1.
+Both folders use the same project approval boundary. Settings, executable extensions, MCP
+commands, packages and system prompts from an untrusted project remain blocked. Global
+configuration stays in Shepherd's isolated Pi home; this does not load the user's `~/.pi/agent`.
+Root `AGENTS.md`, `.agents` resources and shared `.mcp.json` remain where they were.
 
-On the first host startup after this change, Shepherd snapshots its existing project history,
-restored workspace directories and the existing bounded session-header history scan. The host
-stores pending directories in `<support>/project-config-migration.json` (20,000 entries and
-4 MiB maximum). Projects registered later are not automatically imported from `.pi`.
+The Spaces editor inventories both folders and saves to the selected path. It prefers an existing
+file over a missing placeholder. No automatic copy or move runs between the folders. Copies made
+by older Shepherd builds remain untouched, and existing `.shepherd` files retain precedence.
+The old child prepare request remains a no-op for wire compatibility.
 
-Before an existing project's next agent launch or editor read, the owning host copies `.pi`
-to `.shepherd` only when the source exists and the destination does not. Native children ask
-that host to prepare their target before skill/profile discovery and again before start/resume.
-Remote launches use the same host-side fence. Parent project configuration is also prepared
-before a subproject inherits MCP servers. No trust decision is granted or changed. Home,
-global configuration and Shepherd support directories are excluded.
+Remote project settings retain `projects.v2`. Current hosts refuse project requests from clients
+that have not acknowledged v2, before file access or approval changes. Current viewers also
+support older `projects.v1` hosts and preserve their native `.pi` paths and MCP schema.
 
-The source is untouched. Copying is staged beside it and published with an exclusive atomic
-rename; an existing destination always wins, without merging. The no-follow descriptor walk
-rejects symlinks and special files, caps traversal at 16 levels and 10,000 entries, each file at
-16 MiB, and the whole copy at 64 MiB and 10 seconds. A launch preparation checks a 30-second
-budget between projects (at most one additional 10-second copy); the child request times out
-at 45 seconds. Failed preparations block the affected launch through its existing error path
-and retain the pending entry for retry. Unrelated projects are not eagerly copied at startup.
-A restart resumes no agent work; pending copies are attempted only on the next explicit launch
-or project read. Nothing is sent to a model or a new provider.
-
-Explicit `.pi` references in settings, scripts and extension code are not rewritten: the original
-folder remains available. Users can update those references to `.shepherd` when appropriate.
-Configuration changes take effect at the next agent start/restart; running sessions are not
-reloaded by migration.
+Configuration changes apply at the next agent start/restart. Skill refresh watches both folders.
+Nothing starts unattended work, changes a trust decision or sends files to a new provider.
 
 ## Storage and safety
 
@@ -122,10 +106,10 @@ marker comes from Shepherd's existing `design-systems/*/system.json` metadata an
 Unknown pi settings stay in the file; the editor never rewrites a JSON object from a subset of
 fields.
 
-The file API allows only `AGENTS.md`, `AGENTS.override.md`, `.shepherd/SYSTEM.md`,
-`.shepherd/APPEND_SYSTEM.md`, `.shepherd/settings.json`, `.shepherd/mcp.json`,
-`.mcp.json`, discovered `.shepherd/skills/*/SKILL.md`, `.agents/skills/*/SKILL.md` and discovered
-JavaScript/TypeScript files directly under `.shepherd/extensions`. It refuses unknown directories,
+The file API allows only `AGENTS.md`, `AGENTS.override.md`, `.mcp.json`, and each configuration
+folder's `SYSTEM.md`, `APPEND_SYSTEM.md`, `settings.json`, `mcp.json`, discovered `skills/*/SKILL.md`
+and JavaScript/TypeScript files directly under `extensions`. Both `.shepherd` and `.pi` are
+configuration folders. Discovered `.agents/skills/*/SKILL.md` remains editable. It refuses unknown directories,
 traversal, symbolic links, devices, non-UTF-8 data and files over 64 KiB. Missing files differ
 from empty files. JSON saves require an object. Pi settings accept the comments and UTF-8 BOM
 that pi accepts. Saves compare the last-read contents again through the destination directory
