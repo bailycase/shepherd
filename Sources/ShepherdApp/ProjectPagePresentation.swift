@@ -6,7 +6,7 @@ import ShepherdCore
 // counts are counted; a phase the runtime has not reached is not drawn.
 
 /// The right pane's groups: the boards' Waiting on you, Working and Resolved, plus Stopped: a settled turn is neither still
-/// working nor accepted, so it is drawn on its own rather than with a running dot.
+/// working nor reviewed, so it is drawn on its own rather than with a running dot.
 enum ProjectTaskGroup: String, CaseIterable, Equatable {
     case waiting = "Waiting on you"
     case working = "Working"
@@ -60,7 +60,7 @@ struct ProjectPagePresentation: Equatable {
     /// Queued, reserved or running: work actually in progress. A settled task has stopped, not finished successfully.
     let working: Int
     let resolved: Int
-    /// Turn stopped, assignment not resolved: awaiting review, never counted as done.
+    /// Turn stopped, assignment not resolved: no review is implied, and it is never counted as done.
     let settled: Int
 
     var needsYou: Int { waiting }
@@ -126,11 +126,12 @@ struct ProjectPagePresentation: Equatable {
         }
     }
 
-    /// "Merged · PR #12 · per coordinator": the fact, its evidence as recorded, and who recorded it. A coordinator's claim is never
-    /// drawn as the person's approval.
+    static let noOutcome = "No outcome recorded"
+
+    /// "Merged · PR #12 · per coordinator": the fact, its evidence as recorded, and who recorded it, always. Neither attribution is a
+    /// person's approval: the coordinator's is its own claim, and an owner-control record says only where it came from.
     static func outcome(_ outcome: ProjectTaskOutcome) -> (String, String?) {
-        let detail = [outcome.evidence, outcome.recordedBy == nil ? nil : "per coordinator"].compactMap { $0 }.joined(separator: " · ")
-        return (outcome.kind.label, detail.isEmpty ? nil : detail)
+        (outcome.kind.label, [outcome.evidence, outcome.recordedBy == nil ? "recorded by owner" : "per coordinator"].compactMap { $0 }.joined(separator: " · "))
     }
 
     private static func row(_ task: ProjectTask, files: [ProjectTaskFile]) -> ProjectTaskRow {
@@ -155,7 +156,8 @@ struct ProjectPagePresentation: Equatable {
             group = .working
         case .settled:
             group = .stopped
-            (lead, detail) = task.currentOutcome.map(Self.outcome) ?? ("Stopped", "Awaiting review")
+            // Settled proves only that the turn stopped. Review is optional, so without a fact for THIS run nothing is claimed.
+            (lead, detail) = task.currentOutcome.map(Self.outcome) ?? ("Stopped", Self.noOutcome)
         }
         return ProjectTaskRow(id: task.id, title: task.title, group: group, phase: task.phase, detail: detail, lead: lead,
                               workerAgentID: task.workerAgentID, spaceID: task.spaceID, revision: task.revision,

@@ -122,6 +122,12 @@ final class ProjectHistoryStore {
             guard sqlite3_step(stmt) == SQLITE_DONE else { throw failure() }
         }
     }
+    private func insertOnce<T: Encodable>(_ project: Project, kind: String, id: String, value: T) throws {
+        try statement("INSERT INTO records(scope,kind,identity,revision,payload) VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING",
+                      [bytes(scope(project)), bytes(kind), bytes(id), bytes(String(project.revision)), try encoder.encode(value)]) { stmt in
+            guard sqlite3_step(stmt) == SQLITE_DONE else { throw failure() }
+        }
+    }
     func record<T: Decodable>(_ project: Project, kind: String, id: String, as: T.Type) throws -> T? {
         try rows("SELECT payload FROM records WHERE scope=? AND kind=? AND identity=? LIMIT 1", [scope(project),kind,id], as: T.self).first
     }
@@ -160,6 +166,8 @@ final class ProjectHistoryStore {
                 }
             }
             for id in task.resolutionOperations ?? [] { try put(project, kind: "resolution", id: id.uuidString, value: task.id) }
+            // Append-only: a fact's first durable copy is its proof; insertion order is its page order.
+            for outcome in task.outcomes ?? [] { try insertOnce(project, kind: "outcome", id: outcome.id.uuidString, value: ProjectArchivedOutcome(taskID: task.id, outcome: outcome)) }
         }
         for id in project.memoryOperations { try put(project, kind: "memory", id: id.uuidString, value: id) }
         for proposal in project.spaceProposals { try put(project, kind: "proposal", id: proposal.operationID.uuidString, value: proposal) }
@@ -304,6 +312,17 @@ final class ProjectHistoryStore {
                         project.tasks[j].previousOperations = task.previousOperations?.filter { $0 == task.previousOperations?.last || pinned.contains($0) }
                         project.tasks[j].resolutionOperations = task.resolutionOperations.map { Array($0.suffix(1)) }
                     }
+                }
+                // Archive a fact in this transaction before it leaves the working copy, so retirement can never lose one.
+                for j in project.tasks.indices where (project.tasks[j].outcomes?.count ?? 0) > ProjectTaskOutcome.hotPerTask {
+                    var archived = Set<UUID>()
+                    for outcome in project.tasks[j].outcomes ?? [] {
+                        try insertOnce(project, kind: "outcome", id: outcome.id.uuidString, value: ProjectArchivedOutcome(taskID: project.tasks[j].id, outcome: outcome))
+                        archived.insert(outcome.id)
+                    }
+                    project.tasks[j].retireOutcomes(archived: archived)
+                }
+                if let old {
                     project.memoryOperations = Array(project.memoryOperations.suffix(1))
                     let recentProposals = Set(project.spaceProposals.filter { $0.phase != .pending }.suffix(16).map(\.id))
                     project.spaceProposals.removeAll { proposal in
@@ -368,10 +387,33 @@ final class ProjectHistoryStore {
 
     func legacyOperation(_ project: Project, operation: UUID) throws -> Bool {
         var count = false
-        try statement("SELECT 1 FROM records WHERE scope=? AND identity=? AND kind IN ('activation','legacy_activation','resolution','memory','proposal','message','retired') LIMIT 1", [bytes(scope(project)),bytes(operation.uuidString)]) { stmt in
+        try statement("SELECT 1 FROM records WHERE scope=? AND identity=? AND kind IN ('activation','legacy_activation','resolution','memory','proposal','message','retired','outcome') LIMIT 1", [bytes(scope(project)),bytes(operation.uuidString)]) { stmt in
             count = sqlite3_step(stmt) == SQLITE_ROW
         }
         return count
+    }
+
+    func outcome(_ project: Project, id: UUID) throws -> ProjectArchivedOutcome? {
+        try record(project, kind: "outcome", id: id.uuidString, as: ProjectArchivedOutcome.self)
+    }
+
+    /// One bounded page of a task's durable facts, newest first, filtered and limited in SQL. Returns (page, next cursor).
+    func outcomes(_ project: Project, task: ProjectTaskID, operation: UUID?, before: Int64?) throws -> ([ProjectArchivedOutcome], Int64?) {
+        var page: [ProjectArchivedOutcome] = [], last: Int64?
+        let opFilter = operation == nil ? "" : " AND json_extract(CAST(payload AS TEXT),'$.outcome.operationID')=?"
+        let values = [bytes(scope(project)), bytes(task.rawValue), bytes(String(before ?? Int64.max))] + (operation.map { [bytes($0.uuidString)] } ?? [])
+        try statement("SELECT sequence,payload FROM records WHERE scope=? AND kind='outcome' AND json_extract(CAST(payload AS TEXT),'$.taskID')=? AND sequence < CAST(? AS INTEGER)\(opFilter) ORDER BY sequence DESC LIMIT \(ProjectTaskOutcome.pageSize + 1)", values) { stmt in
+            while true {
+                let status = sqlite3_step(stmt)
+                if status == SQLITE_DONE { break }
+                guard status == SQLITE_ROW else { throw failure() }
+                guard page.count < ProjectTaskOutcome.pageSize else { return }
+                page.append(try decoder.decode(ProjectArchivedOutcome.self, from: payload(stmt, 1)))
+                last = sqlite3_column_int64(stmt, 0)
+            }
+            last = nil
+        }
+        return (page, last)
     }
 
     func chatAnswer(_ project: Project, operation: UUID) throws -> ProjectArchivedChatAnswer? {

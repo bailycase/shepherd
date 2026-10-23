@@ -155,7 +155,7 @@ struct LogicalProjectTests {
         func outcome(_ kind: ProjectTaskOutcome.Kind, _ evidence: String? = nil) -> ProjectTaskOutcome {
             .init(id: UUID(), operationID: task.operationID, kind: kind, evidence: evidence, recordedBy: AgentID(), recordedAt: 1)
         }
-        task.outcomes = [outcome(.accepted), outcome(.needsChanges), outcome(.merged, "PR #1"), outcome(.uploaded, "build 329"), outcome(.available, "group A")]
+        task.outcomes = [outcome(.needsChanges), outcome(.merged, "PR #1"), outcome(.uploaded, "build 329"), outcome(.available, "group A")]
         project.tasks = [task]
         try project.validate()
         #expect(project.tasks[0].currentOutcome?.kind == .available, "the newest fact for this activation")
@@ -163,21 +163,41 @@ struct LogicalProjectTests {
             project.tasks[0].outcomes = [bad]
             #expect(throws: ProjectValidationError.self) { try project.validate() }
         }
-        project.tasks[0].outcomes = (0...ProjectTaskOutcome.maximumPerTask).map { _ in outcome(.accepted) }
+        // The hot copy is bounded; lifetime facts live in durable history (archivedOutcomeCount), not here.
+        project.tasks[0].outcomes = (0...ProjectTaskOutcome.hotPerTask).map { _ in outcome(.accepted) }
         #expect(throws: ProjectValidationError.self) { try project.validate() }
         let decoded = try JSONDecoder().decode(ProjectTask.self, from: JSONEncoder().encode(task))
         #expect(decoded.outcomes == task.outcomes)
     }
 
-    /// The brief carries only the newest remembered facts that fit; older ones stay stored. Each kept fact is whole.
-    @Test func briefMemoryKeepsTheNewestWholeFactsWithinItsBudget() {
-        let facts = (0..<40).map { "fact \($0) " + String(repeating: "x", count: 400) }
-        let brief = Project.briefMemory(facts)
-        #expect(brief.joined(separator: "\n").utf8.count <= Project.briefMemoryBytes)
-        #expect(brief.last == facts.last && brief.count < facts.count && brief.allSatisfy(facts.contains))
-        #expect(brief == Array(facts.suffix(brief.count)))
-        #expect(Project.briefMemory(["a", "b"]) == ["a", "b"])
-        #expect(Project.briefMemory([String(repeating: "y", count: Project.briefMemoryBytes + 1)]).isEmpty)
+    /// Retirement removes only already-archived facts, oldest first, and always keeps the current run's newest fact.
+    @Test func outcomeRetirementKeepsTheCurrentFactAndNeverDropsAnUnarchivedOne() {
+        var task = ProjectTask(operationID: UUID(), spaceID: SpaceID(), title: "T", prompt: "p", phase: .settled)
+        let earlier = UUID()
+        let old = (0..<5).map { ProjectTaskOutcome(id: UUID(), operationID: earlier, kind: .needsChanges, recordedAt: Double($0)) }
+        let current = ProjectTaskOutcome(id: UUID(), operationID: task.operationID, kind: .accepted, recordedAt: 9)
+        task.outcomes = [current] + old
+        task.retireOutcomes(archived: [])
+        #expect(task.outcomes?.count == 6 && task.archivedOutcomeCount == nil, "nothing leaves the working copy before it is archived")
+        task.retireOutcomes(archived: Set((old + [current]).map(\.id)))
+        #expect(task.outcomes == [current] + old.suffix(3) && task.archivedOutcomeCount == 2)
+        #expect(task.currentOutcome == current)
+    }
+
+    /// The brief carries only the newest WHOLE remembered facts with their sources (multi-byte text is never split), plus one honest
+    /// omission line; the stored list is untouched.
+    @Test func briefMemoryKeepsTheNewestWholeSourcedFactsWithinItsBudgetAndSaysWhatItOmitted() {
+        let memory = (0..<40).map { ProjectMemory(text: "fact \($0) " + String(repeating: "é😀", count: 60), source: "Task t\($0) · worker w", createdAt: Double($0)) }
+        let brief = Project.briefMemory(memory)
+        let lines = brief.split(separator: "\n").map(String.init)
+        #expect(brief.utf8.count <= Project.briefMemoryBytes)
+        let facts = lines.dropLast()
+        #expect(lines.last == "(\(memory.count - facts.count) older remembered facts omitted; they remain stored with the Project owner.)")
+        #expect(facts.elementsEqual(memory.suffix(facts.count).map { "\($0.text) [source: \($0.source)]" }), "newest, whole, in order, each with its source")
+        #expect(memory.count == 40, "the stored list is not changed")
+        #expect(Project.briefMemory([.init(text: "a", source: "s", createdAt: 0)]) == "a [source: s]", "no omission line when nothing is omitted")
+        #expect(Project.briefMemory([.init(text: String(repeating: "y", count: Project.briefMemoryBytes), source: "s", createdAt: 0)])
+                == "(1 older remembered facts omitted; they remain stored with the Project owner.)", "an oversized fact is omitted, never truncated")
         #expect(Project.briefMemory([]).isEmpty)
     }
 }

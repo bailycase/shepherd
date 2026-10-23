@@ -24,7 +24,8 @@ public struct ProjectRuntimeLaunch: Sendable {
 public enum ProjectRuntimeRequest: Codable, Hashable, Sendable {
     public var targetTaskID: ProjectTaskID? {
         switch self {
-        case .followUp(let id, _, _, _, _), .resolve(let id, _), .reopen(let id), .remember(_, _, let id), .recordOutcome(_, let id, _, _, _): id
+        case .followUp(let id, _, _, _, _), .resolve(let id, _), .reopen(let id), .remember(_, _, let id), .recordOutcome(_, let id, _, _, _),
+             .outcomes(let id, _, _): id
         default: nil
         }
     }
@@ -43,6 +44,8 @@ public enum ProjectRuntimeRequest: Codable, Hashable, Sendable {
     /// Explicit indexed history and immutable final-result pages. Neither is a success assertion.
     case history(taskID: ProjectTaskID? = nil, beforeSequence: Int64? = nil, includeBodies: Bool? = nil)
     case result(taskID: ProjectTaskID, operationID: UUID, offset: Int64 = 0, sha256: String? = nil)
+    /// Explicit page of one task's durable outcome facts, newest first, optionally one exact activation. Not a success assertion.
+    case outcomes(taskID: ProjectTaskID, operationID: UUID? = nil, beforeSequence: Int64? = nil)
     case answer(operationID: UUID, taskID: ProjectTaskID, questionEventID: UUID, humanReplyID: UUID, answer: NativeDialogAnswer)
     case proposeSpace(operationID: UUID, path: String?, spaceID: SpaceID?, originTaskID: ProjectTaskID?)
     case decideSpace(proposalID: UUID, expectedProposalRevision: UInt64, accept: Bool)
@@ -66,7 +69,7 @@ public enum ProjectRuntimeRequest: Codable, Hashable, Sendable {
 public enum ProjectRuntimeTransport: Codable, Hashable, Sendable {
     public var requiresResults: Bool {
         if case .action(_, _, let request) = self {
-            switch request { case .worker, .result, .history, .inspect(_, .some): return true; default: break }
+            switch request { case .worker, .result, .history, .inspect(_, .some), .outcomes: return true; default: break }
         }
         return false
     }

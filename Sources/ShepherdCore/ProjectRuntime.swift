@@ -36,10 +36,26 @@ public struct ProjectTask: Codable, Hashable, Sendable, Identifiable {
     public var settledAt: Double?
     public var question: String?
     public var pendingAnswer: ProjectQuestionAnswer?
-    /// Append-only review/delivery facts, each bound to one exact activation. nil (legacy or none recorded) is unknown, never success.
+    /// The newest review/delivery facts (at most `ProjectTaskOutcome.hotPerTask`), each bound to one exact activation. Older facts
+    /// are archived to durable history before they leave this working copy and are paged with `.outcomes`. nil (legacy or none
+    /// recorded) is unknown, never success.
     public var outcomes: [ProjectTaskOutcome]?
+    /// How many earlier facts live only in durable history. Lifetime facts are never capped or deleted.
+    public var archivedOutcomeCount: Int?
     /// The newest fact recorded for the current activation; an older activation's facts are not this one's.
     public var currentOutcome: ProjectTaskOutcome? { outcomes?.last { $0.operationID == operationID } }
+
+    /// Moves the oldest already-archived facts out of the working copy until it holds `hotPerTask`. The current activation's newest
+    /// fact always stays, so a row never reads unknown while its fact exists. An unarchived fact is never removed.
+    public mutating func retireOutcomes(archived: Set<UUID>) {
+        guard var list = outcomes, list.count > ProjectTaskOutcome.hotPerTask else { return }
+        let pinned = currentOutcome?.id
+        while list.count > ProjectTaskOutcome.hotPerTask, let i = list.firstIndex(where: { $0.id != pinned && archived.contains($0.id) }) {
+            list.remove(at: i)
+            archivedOutcomeCount = (archivedOutcomeCount ?? 0) + 1
+        }
+        outcomes = list
+    }
 
     public init(id: ProjectTaskID = .init(), operationID: UUID, workerAgentID: AgentID = .init(),
                 spaceID: SpaceID, title: String, prompt: String, phase: Phase = .queued, revision: UInt64 = 1,
@@ -67,7 +83,10 @@ public struct ProjectTaskOutcome: Codable, Hashable, Sendable, Identifiable {
             }
         }
     }
-    public static let maximumPerTask = 8
+    /// The working-state bound, not a lifetime quota: older facts are archived, never refused or dropped.
+    public static let hotPerTask = 4
+    /// One explicit `.outcomes` history page.
+    public static let pageSize = 8
     public static let maximumEvidenceBytes = 256
     /// The recording operation's identity (its replay receipt).
     public var id: UUID
@@ -83,6 +102,13 @@ public struct ProjectTaskOutcome: Codable, Hashable, Sendable, Identifiable {
         self.id = id; self.operationID = operationID; self.kind = kind; self.evidence = evidence
         self.recordedBy = recordedBy; self.recordedAt = recordedAt
     }
+}
+
+/// A durable outcome record: the fact with its exact task identity. Explicit read responses only.
+public struct ProjectArchivedOutcome: Codable, Hashable, Sendable {
+    public var taskID: ProjectTaskID
+    public var outcome: ProjectTaskOutcome
+    public init(taskID: ProjectTaskID, outcome: ProjectTaskOutcome) { self.taskID = taskID; self.outcome = outcome }
 }
 
 /// The native answer envelope is persisted opaquely to avoid a Core -> Protocol dependency.

@@ -120,6 +120,8 @@ public struct Project: Codable, Hashable, Sendable, Identifiable {
     public var resultPage: ProjectResultPage?
     public var historyPage: [ProjectHistoryEntry]?
     public var historyNext: Int64?
+    /// One explicit `.outcomes` page, newest first; `historyNext` continues it.
+    public var outcomePage: [ProjectArchivedOutcome]?
     /// A pause request may precede an actual native interruption acknowledgement.
     public var interruptPending: Bool = false
 
@@ -140,7 +142,7 @@ public struct Project: Codable, Hashable, Sendable, Identifiable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, ownerID, name, goal, coordinatorAgentID, revision, paused, settings, memory, linkedSpaces, tasks, messages, interruptPending, spaceProposals, memoryOperations, artifacts, retiredWakeups, archivedResolvedTaskCount, referencedTasks, historyPending, commandReceipt, operationReceipt, resultPage, historyPage, historyNext
+        case id, ownerID, name, goal, coordinatorAgentID, revision, paused, settings, memory, linkedSpaces, tasks, messages, interruptPending, spaceProposals, memoryOperations, artifacts, retiredWakeups, archivedResolvedTaskCount, referencedTasks, historyPending, commandReceipt, operationReceipt, resultPage, historyPage, historyNext, outcomePage
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -169,6 +171,7 @@ public struct Project: Codable, Hashable, Sendable, Identifiable {
         resultPage = try c.decodeIfPresent(ProjectResultPage.self, forKey: .resultPage)
         historyPage = try c.decodeIfPresent([ProjectHistoryEntry].self, forKey: .historyPage)
         historyNext = try c.decodeIfPresent(Int64.self, forKey: .historyNext)
+        outcomePage = try c.decodeIfPresent([ProjectArchivedOutcome].self, forKey: .outcomePage)
     }
 
     // Aggregate byte limits also bound JSON-escaped, four-byte characters. The server checks
@@ -184,11 +187,20 @@ public struct Project: Codable, Hashable, Sendable, Identifiable {
     /// What of the remembered facts rides along with every new turn and remote assignment (`ProjectExecutionAssignment.memory`'s cap).
     public static let briefMemoryBytes = 8_000
 
-    /// The newest texts that fit `budget` UTF-8 bytes joined one per line, oldest first. Older facts stay stored, listed in settings
-    /// and readable with project_read: a brief leaves them out, it never deletes them.
-    public static func briefMemory(_ texts: [String], budget: Int = briefMemoryBytes) -> [String] {
+    /// The newest whole entries that fit `budget` UTF-8 bytes, oldest first, each line carrying its source, plus one honest
+    /// line when older ones were left out. Older facts stay stored, listed in Project settings and returned by the coordinator's
+    /// project_read: a brief leaves them out, it never deletes or truncates them.
+    public static func briefMemory(_ memory: [ProjectMemory], budget: Int = briefMemoryBytes) -> String {
+        let note = { (n: Int) in "(\(n) older remembered facts omitted; they remain stored with the Project owner.)" }
+        // Reserve room for the omission line so the whole brief, note included, stays within budget.
+        let room = budget - note(memory.count).utf8.count - 1
         var used = 0
-        return Array(texts.reversed().prefix { used += $0.utf8.count + 1; return used - 1 <= budget }.reversed())
+        let kept = Array(memory.reversed().prefix { entry in
+            used += "\(entry.text) [source: \(entry.source)]".utf8.count + 1
+            return used - 1 <= room
+        }.reversed())
+        let lines = kept.map { "\($0.text) [source: \($0.source)]" } + (kept.count < memory.count ? [note(memory.count - kept.count)] : [])
+        return lines.joined(separator: "\n")
     }
 
     /// Messages kept once older finished ones are retired. `messages` is a delivery log, not chat history (pi's transcript is), so
@@ -296,10 +308,10 @@ public struct Project: Codable, Hashable, Sendable, Identifiable {
                     && answer.generation.utf8.count <= 1024 && answer.dialogID.utf8.count <= 1024, "Pending answer exceeds its native envelope budget.")
             }
             let outcomes = task.outcomes ?? []
-            try require(outcomes.count <= ProjectTaskOutcome.maximumPerTask && Set(outcomes.map(\.id)).count == outcomes.count
+            try require(outcomes.count <= ProjectTaskOutcome.hotPerTask && (task.archivedOutcomeCount ?? 0) >= 0 && Set(outcomes.map(\.id)).count == outcomes.count
                 && outcomes.allSatisfy { $0.recordedAt.isFinite && $0.recordedAt >= 0 && ($0.evidence?.utf8.count ?? 0) <= ProjectTaskOutcome.maximumEvidenceBytes
                     && (!$0.kind.needsEvidence || $0.evidence?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false) },
-                "Invalid task outcomes: at most 8, delivery facts need evidence up to 256 bytes.")
+                "Invalid task outcomes: archive older facts; delivery facts need evidence up to 256 bytes.")
             let resolutions = task.resolutionOperations ?? []
             try require(resolutions.count <= 32 && Set(resolutions).count == resolutions.count, "Invalid resolution receipts.")
             let operations = (task.previousOperations ?? []) + [task.operationID]

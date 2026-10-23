@@ -65,7 +65,8 @@ extension SessionServer {
             taskID: task.id, reservedWorkerID: task.workerAgentID, executorSpaceID: task.spaceID,
             title: NativeRedaction.projectData(task.title), prompt: NativeRedaction.projectData(task.prompt),
             goal: NativeRedaction.projectData(project.goal), instructions: NativeRedaction.projectData(project.settings.instructions),
-            memory: Project.briefMemory(project.memory.map { NativeRedaction.projectData($0.text) }).joined(separator: "\n"), model: model)
+            memory: Project.briefMemory(project.memory.map { var entry = $0; entry.text = NativeRedaction.projectData(entry.text)
+                entry.source = NativeRedaction.projectData(entry.source); return entry }), model: model)
         assignment.thinking = task.thinking
         assignment.publicationsEnabled = true
         try assignment.validate()

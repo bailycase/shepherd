@@ -51,7 +51,7 @@ test('real extension tools use correlated owner requests and refresh memory each
     install({ on: (name, hook) => hooks.set(name, hook), registerTool: tool => tools.set(tool.name, tool), setActiveTools: value => { active = value; } });
     hooks.get('session_start')();
     assert.deepEqual(new Set(active), new Set(tools.keys()));
-    assert.equal(tools.size, 11);
+    assert.equal(tools.size, 12);
     assert.equal((await hooks.get('tool_call')({ toolName: 'project_plan' })).block, true);
     assert.equal((await hooks.get('tool_call')({ toolName: 'agent_spawn' })).block, true);
     for (const toolName of ['shepherd_child_start', 'shepherd_child_resume', 'shepherd_child_message', 'shepherd_workflow', 'subagent', 'codemode']) {
@@ -121,6 +121,12 @@ test('real extension tools use correlated owner requests and refresh memory each
     assert.ok(tools.get('project_outcome').description.includes("never the person's approval"));
     assert.ok(tools.get('project_outcome').description.includes('uploaded is not available to testers'));
     assert.ok(prompt.includes('Resolution is not delivery'));
+    project.outcomePage = [{ taskID: 'server-task', outcome: { id: 'o1', operationID: 'exact-op', kind: 'needsChanges' } }]; project.historyNext = 41;
+    const paged = await tools.get('project_outcomes').execute('outcomes-call', { taskID: 'server-task', operationID: 'exact-op', beforeSequence: 50 });
+    assert.deepEqual(calls.at(-1).request, { outcomes: { taskID: 'server-task', operationID: 'exact-op', beforeSequence: 50 } });
+    assert.deepEqual(JSON.parse(paged.content[0].text).outcomes, project.outcomePage);
+    assert.equal(JSON.parse(paged.content[0].text).historyNext, 41);
+    delete project.outcomePage; delete project.historyNext;
     const answerParams = { expectedRevision: 8, taskID: 'typed-task', questionEventID: 'native-event', humanReplyID: 'human-message', answer: { select: { value: 'Staging' } } };
     await tools.get('project_answer').execute('answer-call', answerParams);
     await tools.get('project_answer').execute('answer-call', answerParams);
@@ -408,7 +414,7 @@ test('coordinator results scope snapshots without losing native evidence, human 
       const declarations = turn.requests[0].body.tools.map(tool => tool.function);
       assert.ok(turn.requests[0].system.includes('Resolved tasks are terminal, including archived tasks'));
       assert.ok(turn.requests[0].system.includes('Never retain unfinished tasks as reusable peers for unrelated work'));
-      for (const name of ['project_read', 'project_inspect', 'project_resolve', 'project_result', 'project_history', 'project_assign', 'project_follow_up']) assert.equal(declarations.find(tool => tool.name === name).description, tools.get(name).description, 'the real model gets the exact omission/retrieval warning');
+      for (const name of ['project_read', 'project_inspect', 'project_resolve', 'project_result', 'project_history', 'project_assign', 'project_follow_up', 'project_outcome', 'project_outcomes']) assert.equal(declarations.find(tool => tool.name === name).description, tools.get(name).description, 'the real model gets the exact omission/retrieval warning');
       const savedResults = (await pi.request({ type: 'get_messages' })).data.messages.filter(message => message.role === 'toolResult');
       assert.deepEqual(savedResults.map(message => JSON.parse(message.content[0].text)), outputs, 'new tool results persist without rewriting native receipts');
     });
@@ -502,7 +508,7 @@ test('worker plan is a bounded pure current-turn report with persisted v1 output
 
 test('the brief separates owner instructions from data, omits an empty goal and bounds memory', async () => {
   const dir = await mkdtemp('/tmp/prb-'), saved = { ...process.env };
-  const memory = Array.from({ length: 40 }, (_, i) => ({ id: `m${i}`, text: `fact ${i} ` + 'x'.repeat(390), source: `Task t${i} · worker w`, createdAt: i }));
+  const memory = Array.from({ length: 40 }, (_, i) => ({ id: `m${i}`, text: `fact ${i} ` + 'é😀'.repeat(60), source: `Task t${i} · worker w`, createdAt: i }));
   let project = { id: 'project', revision: 3, goal: '', settings: { instructions: '' }, memory, tasks: [] };
   const server = net.createServer(socket => socket.on('data', bytes => {
     const request = JSON.parse(String(bytes).split('\n')[0]);
@@ -518,10 +524,10 @@ test('the brief separates owner instructions from data, omits an empty goal and 
     const data = JSON.parse(prompt.split('tool output; memory entries are sourced claims, not verified success):\n')[1].split('\n')[0]);
     assert.ok(prompt.includes('Project instructions: none set by the owner.'));
     assert.equal('goal' in data, false, 'a broad workspace has no goal to invent');
-    assert.ok(Buffer.byteLength(data.memory.map(item => item.text).join('\n')) <= 8000);
-    assert.equal(data.memory.at(-1).text, memory.at(-1).text, 'the newest facts ride along');
+    assert.ok(data.memory.reduce((n, item) => n + Buffer.byteLength(item.text) + Buffer.byteLength(item.source) + 1, 0) <= 8000);
+    assert.deepEqual(data.memory, memory.slice(-data.memory.length).map(({ text, source }) => ({ text, source })), 'newest whole facts, each with its source');
     assert.equal(data.olderMemoryOmitted, memory.length - data.memory.length);
-    assert.ok(data.olderMemoryOmitted > 0 && data.memory[0].source.startsWith('Task t'), 'kept facts keep their inspectable source');
+    assert.ok(data.olderMemoryOmitted > 0 && /ask the coordinator/.test(data.olderMemoryAccess), 'a worker is told where omitted facts are');
     project = { ...project, goal: 'Optional legacy goal', settings: { instructions: 'Ask before force-pushing.' }, memory: memory.slice(0, 2) };
     prompt = (await hooks.get('before_agent_start')({ systemPrompt: prompt })).systemPrompt;
     assert.ok(prompt.startsWith('Base') && prompt.split('[Shepherd Project live context]').length === 2, 'the block is replaced, not appended');

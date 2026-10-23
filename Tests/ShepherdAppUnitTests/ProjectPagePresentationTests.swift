@@ -183,7 +183,9 @@ struct ProjectPagePresentationTests {
         #expect(page([task("A", .settled)]).status == "Nothing is running.")
         for summary in [p.summary, page([task("A", .resolved)]).summary] { #expect(summary?.contains("done") == false) }
         let stopped = try #require(p.rows.first { $0.phase == .settled })
-        #expect(stopped.group == .stopped && stopped.tone == .stopped && stopped.lead == "Stopped" && stopped.detail == "Awaiting review")
+        #expect(stopped.group == .stopped && stopped.tone == .stopped && stopped.lead == "Stopped" && stopped.detail == "No outcome recorded",
+                "settled proves only that the turn stopped; no review is implied")
+        #expect(![stopped.lead, stopped.detail, stopped.outcomeLine].compactMap { $0 }.contains { $0.localizedCaseInsensitiveContains("review") })
         #expect(p.rows.first { $0.phase == .running }?.tone == .running)
     }
 
@@ -205,11 +207,32 @@ struct ProjectPagePresentationTests {
         legacy.title = "Legacy"
         let rows = page([legacy, followed, merged, owner]).rows
         #expect(rows[0].lead == nil && rows[0].detail == nil && rows[0].outcomeLine == nil, "resolved alone is not success")
-        #expect(rows[1].lead == "Stopped" && rows[1].detail == "Awaiting review", "an earlier activation's verdict is not this one's")
+        #expect(rows[1].lead == "Stopped" && rows[1].detail == "No outcome recorded", "an earlier activation's verdict is not this one's")
         #expect(rows[2].group == .resolved && rows[2].lead == "Merged" && rows[2].detail == "PR #12 · per coordinator")
         #expect(merged.outcomes?.count == 2, "earlier facts are retained, not replaced")
-        #expect(rows[3].group == .stopped && rows[3].lead == "Accepted" && rows[3].detail == nil, "the owner's own record carries no attribution")
+        #expect(rows[3].group == .stopped && rows[3].lead == "Accepted" && rows[3].detail == "recorded by owner",
+                "an owner-control record names its source and never reads as a person's approval")
+        #expect(rows.allSatisfy { !($0.outcomeLine ?? "").localizedCaseInsensitiveContains("approved") })
         #expect(rows[3].canResolve, "recording an outcome never resolves or changes the phase")
+    }
+
+    /// A real fact for this run replaces the neutral line; it never coexists with an inferred review claim. A follow-up after a
+    /// verdict reads neutral again until its own fact exists.
+    @Test func aRecordedVerdictReplacesTheNeutralLineOnlyForItsOwnRun() {
+        let coordinator = AgentID()
+        var t = task("Iterated", .settled)
+        let first = t.operationID
+        t.outcomes = [.init(id: UUID(), operationID: first, kind: .needsChanges, recordedBy: coordinator, recordedAt: 1)]
+        var row = page([t]).rows[0]
+        #expect(row.lead == "Needs changes" && row.detail == "per coordinator" && row.outcomeLine == "Needs changes · per coordinator")
+        #expect(!(row.outcomeLine ?? "").contains(ProjectPagePresentation.noOutcome))
+        t.previousOperations = [first]; t.operationID = UUID()
+        row = page([t]).rows[0]
+        #expect(row.lead == "Stopped" && row.detail == ProjectPagePresentation.noOutcome)
+        t.outcomes?.append(.init(id: UUID(), operationID: t.operationID, kind: .accepted, recordedBy: coordinator, recordedAt: 2))
+        #expect(page([t]).rows[0].outcomeLine == "Accepted · per coordinator")
+        t.phase = .resolved
+        #expect(page([t]).rows[0].group == .resolved && page([t]).rows[0].lead == "Accepted")
     }
 
     /// Resolved Project tasks are terminal: the row offers nothing to send or resolve, keeps its worker (history opens through

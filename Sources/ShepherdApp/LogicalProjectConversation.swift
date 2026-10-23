@@ -385,7 +385,7 @@ extension ProjectTaskRow {
         case .resolved: .resolved
         }
     }
-    /// "Stopped · Awaiting review", "Accepted", or nil for a resolved task with no recorded outcome (unknown, not success).
+    /// "Stopped · No outcome recorded", "Accepted · per coordinator", or nil for a resolved task with no recorded outcome (unknown, not success).
     var outcomeLine: String? { lead.map { [$0, detail].compactMap { $0 }.joined(separator: " · ") } }
 }
 

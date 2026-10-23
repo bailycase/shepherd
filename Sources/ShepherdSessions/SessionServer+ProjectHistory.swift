@@ -88,6 +88,12 @@ extension SessionServer {
                 response.tasks = response.tasks.filter { $0.id == task }
                 let selected = operation ?? response.tasks.first?.operationID
                 if let selected { response.resultPage = try history.resultDescriptor(project, task: task, operation: selected) }
+            case .outcomes(let task, let operation, let before):
+                guard let selected = try history.taskByID(project, id: task) else { throw LogicalProjectsError("project_scope", "Task is not in this Project.") }
+                let (page, next) = try history.outcomes(project, task: task, operation: operation, before: before)
+                response.tasks = [selected]; response.messages = []
+                response.outcomePage = page
+                response.historyNext = next
             case .history(let task, let before, let bodies):
                 response.tasks = try task.flatMap { try history.taskByID(project, id: $0) }.map { [$0] } ?? []
                 if task != nil, response.tasks.isEmpty { throw LogicalProjectsError("project_scope", "Task is not in this Project.") }
@@ -152,12 +158,13 @@ extension SessionServer {
                 let messageRetry: Bool
                 if case .message = request { messageRetry = originalMessage != nil } else { messageRetry = false }
                 guard command.sha256 == digest || messageRetry else { throw LogicalProjectsError("operation_conflict", "A retained operation cannot change its payload.") }
-                let task = try history.task(project, operation: operation)
+                let archivedOutcome = try history.outcome(project, id: operation)
+                let task = try history.task(project, operation: operation) ?? archivedOutcome.flatMap { try history.taskByID(project, id: $0.taskID) }
                 let proposal = try project.spaceProposals.first(where: { $0.operationID == operation })
                     ?? history.record(project, kind: "proposal", id: operation.uuidString, as: ProjectSpaceProposal.self)
                 return .init(operationID: operation, task: task, proposal: proposal, message: originalMessage)
             }
-            let hot = project.messages.contains { $0.id == operation } || project.tasks.contains { $0.operationID == operation || ($0.previousOperations ?? []).contains(operation) || ($0.resolutionOperations ?? []).contains(operation) }
+            let hot = project.messages.contains { $0.id == operation } || project.tasks.contains { $0.operationID == operation || ($0.previousOperations ?? []).contains(operation) || ($0.resolutionOperations ?? []).contains(operation) || ($0.outcomes ?? []).contains { $0.id == operation } }
                 || project.memoryOperations.contains(operation) || project.spaceProposals.contains { $0.operationID == operation }
             if !hot, try history.legacyOperation(project, operation: operation) {
                 throw LogicalProjectsError("operation_retained", "Legacy replay proof exists but its original payload cannot be verified. No work was resent.")

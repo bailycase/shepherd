@@ -681,7 +681,7 @@ struct LogicalProjectConversationTests {
         // Its items come from the real task groups; choosing one filters the list.
         // Choosing "Working" in the real menu filters the list to that group; "Show all" then clears it.
         let offered = try await NativeMenuChoice.choose("Working", from: filter)
-        #expect(offered == ["Waiting on you", "Working", "Resolved"], "the menu offers the task groups: \(offered)")
+        #expect(offered == ["Waiting on you", "Working", "Stopped", "Resolved"], "the menu offers the task groups, a stopped turn its own: \(offered)")
         try await eventuallyOnMain("the choice reached the view model") { r.vm.logicalProjectPaneFilter == [.working] }
         try await eventuallyOnMain("only working threads show") { window.layout()
             return window.controls().contains { $0.label == "Reading list research" } }

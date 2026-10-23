@@ -60,7 +60,7 @@ extension SessionServer {
         }
         if case .read = request { return current }
         switch request {
-        case .worker, .inspect, .history, .result: return try await readProjectHistory(current, request: request,
+        case .worker, .inspect, .history, .result, .outcomes: return try await readProjectHistory(current, request: request,
             grant: .init(epoch: epoch, generation: generation, authority: readAuthority, caller: reader, routes: readRoutes))
         default: break
         }
@@ -86,6 +86,19 @@ extension SessionServer {
         if let target = request.targetTaskID, !current.tasks.contains(where: { $0.id == target }) {
             restored = try await projectHistoryRead { try $0.taskByID(current, id: target) }
         } else { restored = nil }
+        // An earlier activation may have left the bounded working copy; its durable activation record is exact provenance.
+        var earlierActivation = false
+        if case .recordOutcome(_, let taskID, let activation, _, _) = request,
+           let task = current.tasks.first(where: { $0.id == taskID }) ?? restored, activation != task.operationID {
+            earlierActivation = try await projectHistoryRead { history in
+                if (task.previousOperations ?? []).contains(activation) { return true }
+                if let run = try history.record(current, kind: "activation", id: activation.uuidString, as: ProjectTask.self) {
+                    return run.id == taskID && run.workerAgentID == task.workerAgentID
+                }
+                return try history.record(current, kind: "legacy_activation", id: activation.uuidString, as: ProjectTaskID.self) == taskID
+            }
+        }
+        let olderRun = earlierActivation
         let command: ProjectCommandReceipt?
         if let operation = request.operationID {
             let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
@@ -255,11 +268,8 @@ extension SessionServer {
                 guard let i = p.tasks.firstIndex(where: { $0.id == taskID }) else { throw LogicalProjectsError("no_such_task", "Task no longer exists.") }
                 let task = p.tasks[i]
                 // Only a stopped activation has a result to judge; an earlier activation of the same task stays addressable while retained.
-                guard activation == task.operationID ? [.settled, .resolved].contains(task.phase) : (task.previousOperations ?? []).contains(activation) else {
+                guard activation == task.operationID ? [.settled, .resolved].contains(task.phase) : olderRun || (task.previousOperations ?? []).contains(activation) else {
                     throw LogicalProjectsError("conflict", "An outcome needs an exact settled or resolved operation of this task.")
-                }
-                guard (task.outcomes?.count ?? 0) < ProjectTaskOutcome.maximumPerTask else {
-                    throw LogicalProjectsError("outcome_full", "This task already holds \(ProjectTaskOutcome.maximumPerTask) outcomes; earlier facts are never dropped.")
                 }
                 let evidence = evidence.map { NativeRedaction.projectData($0.trimmingCharacters(in: .whitespacesAndNewlines)) }.flatMap { $0.isEmpty ? nil : $0 }
                 p.tasks[i].outcomes = (task.outcomes ?? []) + [.init(id: op, operationID: activation, kind: kind, evidence: evidence,
@@ -270,7 +280,7 @@ extension SessionServer {
                 self.projectChildClosed.formUnion(self.currentProjectChildScope.values.filter { $0.key.projectID == id && $0.key.ownerID == p.ownerID })
             case .resume:
                 try restart()
-            case .read, .worker, .inspect, .history, .result, .conversation, .answer: break
+            case .read, .worker, .inspect, .history, .result, .outcomes, .conversation, .answer: break
             }
             if let command { p.commandReceipt = command }
         }
@@ -349,7 +359,7 @@ extension SessionServer {
             switch request {
             case .read:
                 if coordinator || p.tasks.contains(where: { $0.workerAgentID == agentID }) { return }
-            case .inspect(let task, _), .result(let task, _, _, _):
+            case .inspect(let task, _), .result(let task, _, _, _), .outcomes(let task, _, _):
                 if coordinator || p.tasks.contains(where: { $0.id == task && $0.workerAgentID == agentID }) { return }
             case .history(let task, _, _):
                 if coordinator || (task != nil && p.tasks.contains(where: { $0.id == task && $0.workerAgentID == agentID })) { return }
@@ -365,7 +375,7 @@ extension SessionServer {
         }
         let responseGrant = try await enqueue { try self.historyReadGrant(self.runtimeProject(projectID), caller: agentID) }
         let actor: AgentID?
-        switch request { case .read, .worker, .inspect, .history, .result: actor = nil; default: actor = agentID }
+        switch request { case .read, .worker, .inspect, .history, .result, .outcomes: actor = nil; default: actor = agentID }
         var result = try await performProjectRuntime(projectID, expectedRevision: expectedRevision, request: request, coordinator: actor, reader: agentID)
         let responseSnapshot = result
         result.revision = try await enqueue { try self.validateHistoryRead(responseSnapshot, grant: responseGrant).revision }
@@ -407,6 +417,9 @@ extension SessionServer {
             result.tasks = result.tasks.filter { $0.id == task }
             result.messages = []
         case .result(let task, _, _, _):
+            result.tasks = result.tasks.filter { $0.id == task }
+            result.messages = []
+        case .outcomes(let task, _, _):
             result.tasks = result.tasks.filter { $0.id == task }
             result.messages = []
         default: result.messages = []
