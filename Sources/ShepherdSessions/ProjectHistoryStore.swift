@@ -166,7 +166,7 @@ final class ProjectHistoryStore {
                 }
             }
             for id in task.resolutionOperations ?? [] { try put(project, kind: "resolution", id: id.uuidString, value: task.id) }
-            // Append-only: a fact's first durable copy is its proof; insertion order is its page order.
+            // Committed state only (callers pass `before` or a committed snapshot). Append-only: first copy wins; insertion order is page order.
             for outcome in task.outcomes ?? [] { try insertOnce(project, kind: "outcome", id: outcome.id.uuidString, value: ProjectArchivedOutcome(taskID: task.id, outcome: outcome)) }
         }
         for id in project.memoryOperations { try put(project, kind: "memory", id: id.uuidString, value: id) }
@@ -313,13 +313,14 @@ final class ProjectHistoryStore {
                         project.tasks[j].resolutionOperations = task.resolutionOperations.map { Array($0.suffix(1)) }
                     }
                 }
-                // Archive a fact in this transaction before it leaves the working copy, so retirement can never lose one.
+                // Only the committed predecessor is outcome proof: `capture(before)` above archived exactly its facts in this
+                // transaction. A candidate's new fact is never written here (it may still be refused or abandoned); it is archived
+                // by the next capture of committed state, and only facts already archived may leave the working copy.
+                // The archived set is read back from this transaction's durable records, never assumed from a checkpoint.
                 for j in project.tasks.indices where (project.tasks[j].outcomes?.count ?? 0) > ProjectTaskOutcome.hotPerTask {
+                    let committed = old?.tasks.first { $0.id == project.tasks[j].id }?.outcomes ?? []
                     var archived = Set<UUID>()
-                    for outcome in project.tasks[j].outcomes ?? [] {
-                        try insertOnce(project, kind: "outcome", id: outcome.id.uuidString, value: ProjectArchivedOutcome(taskID: project.tasks[j].id, outcome: outcome))
-                        archived.insert(outcome.id)
-                    }
+                    for fact in committed where try outcome(project, id: fact.id)?.outcome == fact { archived.insert(fact.id) }
                     project.tasks[j].retireOutcomes(archived: archived)
                 }
                 if let old {

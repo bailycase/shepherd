@@ -460,6 +460,8 @@ public final class SessionServer: @unchecked Sendable {
     var publicationTransferDuration = ProjectArtifactReceipt.transferSeconds
     /// Test barrier after preparation, outside both state and file queues.
     var publicationBeforeCommit: (@Sendable () async -> Void)?
+    /// Test barrier (queue-owned, like publicationBeforeCommit): awaited before an outcome read's pre-I/O and final route checks.
+    var historyReadBoundary: (@Sendable (String) async -> Void)?
     var currentProjectChildScope: [AgentID: ProjectChildScope] = [:]
     var projectChildAdmitted: Set<ProjectChildScope> = []
     var projectChildClosed: Set<ProjectChildScope> = []

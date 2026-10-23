@@ -70,6 +70,9 @@ extension SessionServer {
         if case .result(let task, let operation, let offset, let hash) = request {
             return try await readProjectResult(project, taskID: task, operation: operation, offset: offset, hash: hash, grant: grant)
         }
+        if case .outcomes(let task, let operation, let before) = request {
+            return try await readProjectOutcomes(project, taskID: task, operation: operation, before: before, grant: grant)
+        }
         let value: Project = try await projectHistoryRead { history in
             try history.captureCommitted(project)
             var response = project
@@ -88,12 +91,6 @@ extension SessionServer {
                 response.tasks = response.tasks.filter { $0.id == task }
                 let selected = operation ?? response.tasks.first?.operationID
                 if let selected { response.resultPage = try history.resultDescriptor(project, task: task, operation: selected) }
-            case .outcomes(let task, let operation, let before):
-                guard let selected = try history.taskByID(project, id: task) else { throw LogicalProjectsError("project_scope", "Task is not in this Project.") }
-                let (page, next) = try history.outcomes(project, task: task, operation: operation, before: before)
-                response.tasks = [selected]; response.messages = []
-                response.outcomePage = page
-                response.historyNext = next
             case .history(let task, let before, let bodies):
                 response.tasks = try task.flatMap { try history.taskByID(project, id: $0) }.map { [$0] } ?? []
                 if task != nil, response.tasks.isEmpty { throw LogicalProjectsError("project_scope", "Task is not in this Project.") }
@@ -244,6 +241,38 @@ extension SessionServer {
             var fresh = try self.authorizedResultProject(project, task: task, archivedResolved: selection.2, grant: grant)
             fresh.tasks = fresh.tasks.filter { $0.id == taskID }; fresh.messages = []
             fresh.resultPage = finalPage
+            return fresh
+        }
+    }
+
+    /// Outcome facts are owner-stored, but an executor task's facts follow its captured route grant exactly as its result does:
+    /// select the task, authorize it before any page I/O, page in SQL, then authorize again at return. Removing or replacing that
+    /// Space at any point (including remove/restore while this read is suspended) permanently revokes the captured grant; a fresh
+    /// read with a fresh grant may succeed. Other Spaces' changes never revoke it.
+    private func readProjectOutcomes(_ project: Project, taskID: ProjectTaskID, operation: UUID?, before: Int64?, grant: ProjectHistoryReadGrant) async throws -> Project {
+        let boundary = try await enqueue { self.historyReadBoundary }
+        await boundary?("initial")
+        // A working-set task is authorized before any history I/O; an archived one right after its record is selected.
+        if let hot = project.tasks.first(where: { $0.id == taskID }) { try await authorizeResultRoute(project, task: hot, archivedResolved: false, grant: grant) }
+        let task: ProjectTask = try await projectHistoryRead { history in
+            try history.captureCommitted(project)
+            guard let task = try history.taskByID(project, id: taskID) else { throw LogicalProjectsError("project_scope", "Task is not in this Project.") }
+            if let operation, operation != task.operationID, !(task.previousOperations ?? []).contains(operation),
+               try history.record(project, kind: "activation", id: operation.uuidString, as: ProjectTask.self)?.id != taskID,
+               try history.record(project, kind: "legacy_activation", id: operation.uuidString, as: ProjectTaskID.self) != taskID {
+                throw LogicalProjectsError("project_scope", "Operation is not a run of this task.")
+            }
+            return task
+        }
+        let archived = task.phase == .resolved && !project.tasks.contains { $0.id == taskID }
+        try await authorizeResultRoute(project, task: task, archivedResolved: archived, grant: grant)
+        let (page, next) = try await projectHistoryRead { try $0.outcomes(project, task: taskID, operation: operation, before: before) }
+        await boundary?("final")
+        return try await enqueue {
+            try self.requireStarted()
+            var fresh = try self.authorizedResultProject(project, task: task, archivedResolved: archived, grant: grant)
+            fresh.tasks = [task]; fresh.messages = []
+            fresh.outcomePage = page; fresh.historyNext = next
             return fresh
         }
     }

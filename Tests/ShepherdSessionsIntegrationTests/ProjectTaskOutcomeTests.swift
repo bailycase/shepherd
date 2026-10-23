@@ -259,3 +259,210 @@ struct ProjectTaskOutcomeTests {
         #expect(bare.nativePrompt == "Do it", "a no-goal, no-brief Project sends only the assignment")
     }
 }
+
+/// 317-F1: only a committed outcome is durable proof. A refused, failed or staged-but-uncommitted candidate is never paged,
+/// never retained-operation/replay proof, and never burns its identity; archive-before-retirement still holds.
+@Suite("Project outcome commit authority", .integrationTimeLimit)
+struct ProjectOutcomeCommitTests {
+    typealias Rig = ProjectRuntimeTests.Rig
+
+    private func stopped(_ rig: Rig) async throws -> (Project, ProjectTask) {
+        let project = try await rig.create(), space = try #require(project.linkedSpaces.first?.spaceID)
+        _ = try await rig.perform(project.id, .assign(operationID: UUID(), spaceID: space, title: "Fixture", prompt: "hello"))
+        try await eventually("stopped") { rig.host.server.state.projects[0].tasks.first?.phase == .settled }
+        return (project, try #require(rig.host.server.state.projects[0].tasks.first))
+    }
+
+    private func all(_ server: SessionServer, _ project: ProjectID, _ task: ProjectTaskID) async throws -> [ProjectArchivedOutcome] {
+        var output: [ProjectArchivedOutcome] = [], cursor: Int64?
+        repeat {
+            let page = try await server.projectRuntime(project, expectedRevision: 1, request: .outcomes(taskID: task, beforeSequence: cursor))
+            output += page.outcomePage ?? []; cursor = page.historyNext
+        } while cursor != nil
+        return output
+    }
+
+    /// Four hot facts, then a fifth refused by validation (merged without evidence). Nothing about it is readable, it is not
+    /// retained-operation proof, and the same identity is admitted later for a valid payload (a definite refusal never burns it).
+    @Test func aRefusedFifthFactIsNeitherHistoryNorProofAndItsIdentityStaysAdmissible() async throws {
+        let rig = try Rig()
+        let (project, task) = try await stopped(rig)
+        var accepted: [UUID] = []
+        for _ in 0..<4 {
+            let op = UUID(); accepted.append(op)
+            _ = try await rig.perform(project.id, .recordOutcome(operationID: op, taskID: task.id, taskOperationID: task.operationID, kind: .accepted))
+        }
+        let refused = UUID()
+        await #expect(throws: ProjectValidationError.self) {
+            try await rig.perform(project.id, .recordOutcome(operationID: refused, taskID: task.id, taskOperationID: task.operationID, kind: .merged))
+        }
+        #expect(rig.host.server.state.projects[0].tasks[0].outcomes?.count == 4)
+        #expect(try await all(rig.host.server, project.id, task.id).map(\.outcome.id) == accepted.reversed(), "a refused fact is not history")
+        // The same identity with a valid payload is fresh admission, not operation_retained.
+        let valid = ProjectRuntimeRequest.recordOutcome(operationID: refused, taskID: task.id, taskOperationID: task.operationID, kind: .uploaded, evidence: "build 7")
+        let admitted = try await rig.perform(project.id, valid)
+        #expect(admitted.tasks[0].currentOutcome?.id == refused && admitted.tasks[0].currentOutcome?.kind == .uploaded)
+        #expect(admitted.tasks[0].outcomes?.count == ProjectTaskOutcome.hotPerTask && admitted.tasks[0].archivedOutcomeCount == 1)
+        let facts = try await all(rig.host.server, project.id, task.id)
+        #expect(facts.map(\.outcome.id) == [refused] + accepted.reversed())
+        #expect(facts.first?.outcome.kind == .uploaded && facts.first?.outcome.evidence == "build 7", "never the refused merged claim")
+        // Accepted replay after reload stays a receipt; a changed payload is a conflict; no duplicate.
+        rig.host.server.onProjectRuntimeLaunch = nil; rig.host.stop(keepFiles: true)
+        let reloaded = try Rig(dir: rig.host.dir); defer { reloaded.stop() }
+        let replay = try await reloaded.host.server.projectRuntime(project.id, expectedRevision: 1, request: valid)
+        #expect(replay.operationReceipt?.operationID == refused)
+        await #expect(throws: LogicalProjectsError.self) {
+            try await reloaded.host.server.projectRuntime(project.id, expectedRevision: 1,
+                request: .recordOutcome(operationID: refused, taskID: task.id, taskOperationID: task.operationID, kind: .merged))
+        }
+        #expect(try await all(reloaded.host.server, project.id, task.id).count == 5)
+        #expect(await reloaded.host.server.listSessions().isEmpty)
+    }
+
+    /// A staged state file that is never committed (crash/abandon between stage and rename) creates no readable fact, and the
+    /// next committed write archives only what was committed. A full write path that fails after staging also leaves nothing.
+    @Test func aStagedButUncommittedCandidateIsNotHistory() throws {
+        let dir = try makeScratchDirectory("stage-outcome")
+        let url = dir.appendingPathComponent("state.json"), store = StateStore(url: url)
+        var p = Project(name: "Fixture"), t = ProjectTask(operationID: UUID(), spaceID: SpaceID(), title: "Stopped", prompt: "x", phase: .settled)
+        let committedFacts = (0..<4).map { ProjectTaskOutcome(id: UUID(), operationID: t.operationID, kind: .accepted, recordedAt: Double($0)) }
+        t.outcomes = committedFacts; p.tasks = [t]
+        try store.update { $0.projects = [p] }
+        let before = store.state
+        var proposed = before
+        let uncommitted = ProjectTaskOutcome(id: UUID(), operationID: t.operationID, kind: .merged, evidence: "uncommitted", recordedAt: 9)
+        proposed.projects[0].tasks[0].outcomes?.append(uncommitted); proposed.projects[0].revision += 1
+        let staged = try StateStore.stageLogicalProjects(proposed, before: before, at: url)
+        try FileManager.default.removeItem(at: staged.url)  // abandoned: never renamed into place
+        let history = try ProjectHistoryStore(beside: url)
+        let read = try history.outcomes(before.projects[0], task: t.id, operation: nil, before: nil).0
+        #expect(!read.contains { $0.outcome.id == uncommitted.id }, "an uncommitted candidate is not an accepted fact")
+        #expect(Set(read.map(\.outcome.id)) == Set(committedFacts.map(\.id)), "the committed predecessor is archived")
+        #expect(try history.outcome(before.projects[0], id: uncommitted.id) == nil)
+        #expect(try !history.legacyOperation(before.projects[0], operation: uncommitted.id), "no retained-operation proof")
+        #expect(StateStore(url: url).state.projects[0].tasks[0].outcomes == committedFacts)
+        // The staged candidate trimmed the hot copy only by facts already durable, never the new one.
+        #expect(staged.state.projects[0].tasks[0].outcomes?.contains(uncommitted) == true)
+        #expect(staged.state.projects[0].tasks[0].outcomes?.count == ProjectTaskOutcome.hotPerTask)
+        // A later real commit of that candidate archives it then.
+        try store.update { $0 = proposed }
+        var next = store.state; next.projects[0].revision += 1
+        try store.update { $0 = next }
+        let after = try ProjectHistoryStore(beside: url).outcomes(store.state.projects[0], task: t.id, operation: nil, before: nil).0
+        #expect(after.map(\.outcome.id).first == uncommitted.id && after.count == 5)
+    }
+
+    /// A state write that cannot even reserve its staged file (an unwritable owner directory; before any history I/O) refuses with
+    /// that error, leaves no durable fact and does not burn the identity. The after-SQL/before-rename boundary is the abandoned stage.
+    @Test func aStateWriteFailureLeavesNoFactAndKeepsItsIdentity() async throws {
+        let rig = try Rig(); defer { rig.stop() }
+        let (project, task) = try await stopped(rig)
+        for _ in 0..<4 { _ = try await rig.perform(project.id, .recordOutcome(operationID: UUID(), taskID: task.id, taskOperationID: task.operationID, kind: .accepted)) }
+        let failed = UUID()
+        let parent = rig.host.dir
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: parent.path)
+        do {
+            _ = try await rig.perform(project.id, .recordOutcome(operationID: failed, taskID: task.id, taskOperationID: task.operationID, kind: .accepted))
+            Issue.record("A write that could not be staged reported success")
+        } catch let error as POSIXError { #expect(error.code == .EACCES) }
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: parent.path)
+        #expect(!(rig.host.server.state.projects[0].tasks[0].outcomes ?? []).contains { $0.id == failed })
+        #expect(!(try await all(rig.host.server, project.id, task.id)).contains { $0.outcome.id == failed })
+        let admitted = try await rig.perform(project.id, .recordOutcome(operationID: failed, taskID: task.id, taskOperationID: task.operationID, kind: .accepted))
+        #expect(admitted.tasks[0].currentOutcome?.id == failed, "a definitely failed write does not burn its identity")
+    }
+}
+
+/// 317-F2: an executor task's outcome page follows its captured route grant at both async boundaries.
+@Suite("Project outcome route authority", .integrationTimeLimit)
+struct ProjectOutcomeRouteTests {
+    typealias Rig = ProjectRuntimeTests.Rig
+
+    @Test(arguments: ["remove", "restore", "unrelated", "noop", "disableRestore", "projectUnlinkRestore", "replaceBinding"], ["initial", "final"])
+    func anOutcomeReadHonorsItsCapturedRouteAtBothBoundaries(change: String, boundary: String) async throws {
+        let rig = try Rig(); defer { rig.stop() }
+        let p = try await rig.create()
+        // Private fake route only: never contacted, no mapping inferred.
+        let route = ProjectHostReference.remote(hostID: UUID(), bindingID: UUID())
+        let space = Space(name: "Fake route", path: rig.host.dir.path)
+        let task = ProjectTask(operationID: UUID(), spaceID: space.id, title: "Remote fact", prompt: "fixture", phase: .settled, host: route)
+        rig.host.server.setProjectEligibleHosts([.local, route]); rig.host.server.setProjectExecutionSpaces([route: [space]])
+        _ = try await rig.host.server.updateRuntimeProject(p.id) { current in
+            current.settings.allowedHosts = [.local, route]; current.linkedSpaces.append(.init(spaceID: space.id, linkedAt: 0, host: route)); current.tasks.append(task)
+        }
+        _ = try await rig.perform(p.id, .recordOutcome(operationID: UUID(), taskID: task.id, taskOperationID: task.operationID, kind: .uploaded, evidence: "fixture build"))
+        let snapshot = rig.host.server.state.projects[0]
+        let grant = try await rig.host.server.enqueue { try rig.host.server.historyReadGrant(snapshot) }
+        let entered = Locked(false), release = Locked(false)
+        try await rig.host.server.enqueue {
+            rig.host.server.historyReadBoundary = { point in
+                guard point == boundary else { return }
+                entered.withValue { $0 = true }
+                while !release.current { try? await Task.sleep(for: .milliseconds(5)) }
+            }
+        }
+        let read = Task { try await rig.host.server.readProjectHistory(snapshot, request: .outcomes(taskID: task.id), grant: grant) }
+        try await eventually("read suspended at \(boundary)") { entered.current }
+        switch change {
+        case "remove": rig.host.server.setProjectExecutionSpaces([route: []])
+        case "restore":
+            rig.host.server.setProjectExecutionSpaces([route: []]); try await rig.host.server.enqueue {}
+            rig.host.server.setProjectExecutionSpaces([route: [space]])
+        case "replaceBinding":
+            var moved = space; moved.path = rig.host.dir.path + "/moved"
+            rig.host.server.setProjectExecutionSpaces([route: [moved]])
+        case "unrelated": rig.host.server.setProjectExecutionSpaces([route: [space, Space(name: "Other", path: rig.host.dir.path + "/other")]])
+        case "noop": rig.host.server.setProjectExecutionSpaces([route: [space]])
+        case "disableRestore": rig.host.server.setProjectsEnabled(false); rig.host.server.setProjectsEnabled(true)
+        case "projectUnlinkRestore":
+            _ = try await rig.host.server.updateRuntimeProject(p.id) { $0.linkedSpaces.removeAll { $0.spaceID == space.id } }
+            _ = try await rig.host.server.updateRuntimeProject(p.id) { $0.linkedSpaces.append(.init(spaceID: space.id, linkedAt: 0, host: route)) }
+        default: Issue.record("unknown change")
+        }
+        try await rig.host.server.enqueue {}
+        release.withValue { $0 = true }
+        let benign = ["unrelated", "noop"].contains(change)
+        do {
+            let result = try await read.value
+            #expect(benign, "\(change) at \(boundary) must revoke the captured read")
+            #expect(result.outcomePage?.count == 1)
+        } catch let error as LogicalProjectsError {
+            #expect(!benign, "\(change) at \(boundary) must keep the read: \(error.code)")
+            #expect(["project_scope", "project_paused", "project_host_policy", "project_destination", "unsupported"].contains(error.code))
+        }
+        try await rig.host.server.enqueue { rig.host.server.historyReadBoundary = nil }
+        // A fresh, separately authorized read after restoration may succeed, from the restored permission only.
+        if ["restore", "projectUnlinkRestore", "disableRestore", "noop", "unrelated"].contains(change) {
+            let fresh = try await rig.host.server.projectRuntime(p.id, expectedRevision: 1, request: .outcomes(taskID: task.id))
+            #expect(fresh.outcomePage?.first?.outcome.evidence == "fixture build")
+        }
+    }
+
+    /// Local owner facts stay readable as authorized; wrong owner/task/run/caller are refused.
+    @Test func localFactsStayReadableAndWrongScopesAreRefused() async throws {
+        let rig = try Rig(); defer { rig.stop() }
+        let project = try await rig.create(), space = try #require(project.linkedSpaces.first?.spaceID)
+        _ = try await rig.perform(project.id, .assign(operationID: UUID(), spaceID: space, title: "Local", prompt: "hello"))
+        try await eventually("stopped") { rig.host.server.state.projects[0].tasks.first?.phase == .settled }
+        let task = try #require(rig.host.server.state.projects[0].tasks.first)
+        _ = try await rig.perform(project.id, .recordOutcome(operationID: UUID(), taskID: task.id, taskOperationID: task.operationID, kind: .accepted))
+        // Unrelated executor Space churn never affects a local task's read.
+        let route = ProjectHostReference.remote(hostID: UUID(), bindingID: UUID())
+        rig.host.server.setProjectExecutionSpaces([route: [Space(name: "Elsewhere", path: rig.host.dir.path)]]); rig.host.server.setProjectExecutionSpaces([route: []])
+        let page = try await rig.host.server.projectRuntime(project.id, expectedRevision: 1, request: .outcomes(taskID: task.id, operationID: task.operationID))
+        #expect(page.outcomePage?.count == 1)
+        for request in [ProjectRuntimeRequest.outcomes(taskID: ProjectTaskID()), .outcomes(taskID: task.id, operationID: UUID())] {
+            do { _ = try await rig.host.server.projectRuntime(project.id, expectedRevision: 1, request: request); Issue.record("wrong task/run read") }
+            catch let error as LogicalProjectsError { #expect(error.code == "project_scope") }
+        }
+        guard case .project(let other) = try await rig.host.server.logicalProjects(.create(projectID: .init(), name: "Other", goal: "", linkedSpaceIDs: [space])) else { throw WireError("other") }
+        do { _ = try await rig.host.server.projectRuntime(other.id, expectedRevision: 1, request: .outcomes(taskID: task.id)); Issue.record("cross-Project read") }
+        catch let error as LogicalProjectsError { #expect(error.code == "project_scope") }
+        do { _ = try await rig.host.server.projectTool(agentID: AgentID(), projectID: project.id, expectedRevision: 0, request: .outcomes(taskID: task.id)); Issue.record("stranger read") }
+        catch let error as LogicalProjectsError { #expect(error.code == "project_scope") }
+        // A captured grant whose owner identity changed is refused.
+        var forged = rig.host.server.state.projects[0]; forged.ownerID = UUID()
+        let grant = try await rig.host.server.enqueue { try rig.host.server.historyReadGrant(rig.host.server.state.projects[0]) }
+        await #expect(throws: LogicalProjectsError.self) { try await rig.host.server.readProjectHistory(forged, request: .outcomes(taskID: task.id), grant: grant) }
+    }
+}
