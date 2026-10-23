@@ -112,6 +112,22 @@ concurrency limits still bound coordination; this feature makes no strict dollar
 - Resolved tasks are terminal, not deleted. Their history, results and artifacts remain readable
   through authorized routes. A stopped (settled) turn is not success or resolution. Fresh follow-ups
   and legacy `reopen` requests refuse with `task_resolved` and direct callers to `project_assign`.
+- **Outcomes** are separate from the runtime phase. `ProjectRuntimeRequest.recordOutcome` (the coordinator's
+  `project_outcome`) appends one fact to `ProjectTask.outcomes`, bound to an exact settled or resolved activation
+  (`taskOperationID`, the current one or a retained earlier one): `accepted` or `needsChanges` (a review verdict), or
+  `merged`, `uploaded` or `available` (delivery facts that need redacted evidence up to 256 bytes, such as a PR, commit or
+  build reference). Uploaded is not available to testers. It never changes the phase, reopens a resolved task or touches its
+  worker, and replays by its own operation identity. At most 8 per task; a full task refuses (`outcome_full`) rather than
+  dropping earlier facts. A coordinator's fact records `recordedBy` and reads "per coordinator"; it is not the person's
+  approval. Nothing infers an outcome from settlement, resolution, worker prose or CI text: a legacy or unrecorded task
+  stays unknown, and a follow-up's row shows no earlier activation's verdict. No outcome is required, and no Project goal,
+  milestone or project-wide done exists or is needed.
+- **The shared brief** is the existing owner-approved source, not a new system: Settings ▸ Memory's Project
+  instructions (owner authority, labelled as set by the owner and never overriding system, host, tool or Space
+  permissions) and remembered facts (sourced data, `project_remember` only from an inspectable settled task). Every new
+  native turn reads them fresh from the owner. An empty goal is left out. Only the newest remembered facts that fit 8,000
+  UTF-8 bytes ride along (`Project.briefMemory`; the extension adds `olderMemoryOmitted`); the rest stay stored, listed
+  and readable through `project_read`. Remote assignments carry the same bounded brief inside the existing 16 KiB prompt.
 - There is no person-facing Pause. When the runtime stops a Project itself (see Pause, restart and
   deletion) it requests safe interruption of active work; the person's next message restarts it. The
   UI cannot claim an unreachable worker stopped before its host acknowledges that request.
@@ -680,7 +696,7 @@ not kept; the cause and fix are in `docs/project-execution.md`, Coordinator star
   is not answered twice.
 - **Coordinators are not threads:** every ordinary-thread producer (sidebar in both modes, completions, palette, pins, notifications, remote
   inspection, peer lists) now asks `isOrdinaryThread`, covered by `ProjectCoordinatorHiddenTests`.
-- **Finished is done:** the strip counts settled and resolved tasks as done ("2 of 3 done"), as Claude's Projects counts a thread that finished. Settled still means finished but unconfirmed: it keeps Mark resolved in the pane and moves to Resolved only when the person or the coordinator resolves it. Pressing the strip expands the current task rows inline; selecting one opens its thread in the existing pane. The list scrolls beyond four rows, and switching Projects collapses it.
+- **Execution is not delivery:** a Project is a long-lived workspace of unrelated tasks, not one campaign, so the strip counts execution facts ("1 needs you · 2 working · 1 stopped · 3 resolved"), never "N of M done". A settled task is **Stopped** (its own pane group, idle dot, "Awaiting review"): not working and not success. Resolved closes the assignment; it claims no acceptance, merge or release. Pressing the strip expands the current task rows inline; selecting one opens its thread in the existing pane. The list scrolls beyond four rows, and switching Projects collapses it.
 - **Remote Projects:** an owner-remote Project's runtime actions are refused in words; they are never sent to this Mac's runtime.
 
 Verified with `ProjectPagePresentationTests`, `ProjectCoordinatorHiddenTests` (unit), `LogicalProjectConversationTests` (real scratch
