@@ -135,4 +135,49 @@ struct LogicalProjectTests {
         let decoded = try JSONDecoder().decode(Project.self, from: JSONEncoder().encode(project))
         #expect(decoded.retiredWakeups == [wake.id])
     }
+
+    /// A Project is a long-lived multi-task workspace: no goal, milestone or project-wide done is required to create, validate or
+    /// work in one, and a legacy task decodes with an unknown outcome, never an inferred success.
+    @Test func aGoallessProjectValidatesAndLegacyTasksKeepAnUnknownOutcome() throws {
+        var project = Project(id: Self.id, name: "Workspace")
+        #expect(project.goal.isEmpty)
+        project.tasks = [.init(operationID: UUID(), spaceID: SpaceID(), title: "Investigate", prompt: "look", phase: .resolved)]
+        try project.validate()
+        var json = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(project.tasks[0])) as? [String: Any])
+        json["outcomes"] = nil
+        let legacy = try JSONDecoder().decode(ProjectTask.self, from: JSONSerialization.data(withJSONObject: json))
+        #expect(legacy.outcomes == nil && legacy.currentOutcome == nil && legacy.phase == .resolved)
+    }
+
+    @Test func outcomesAreBoundedAndDeliveryFactsNeedEvidence() throws {
+        var project = Project(id: Self.id, name: "Workspace")
+        var task = ProjectTask(operationID: UUID(), spaceID: SpaceID(), title: "Ship", prompt: "p", phase: .settled)
+        func outcome(_ kind: ProjectTaskOutcome.Kind, _ evidence: String? = nil) -> ProjectTaskOutcome {
+            .init(id: UUID(), operationID: task.operationID, kind: kind, evidence: evidence, recordedBy: AgentID(), recordedAt: 1)
+        }
+        task.outcomes = [outcome(.accepted), outcome(.needsChanges), outcome(.merged, "PR #1"), outcome(.uploaded, "build 329"), outcome(.available, "group A")]
+        project.tasks = [task]
+        try project.validate()
+        #expect(project.tasks[0].currentOutcome?.kind == .available, "the newest fact for this activation")
+        for bad in [outcome(.merged), outcome(.uploaded, "  "), outcome(.available, String(repeating: "x", count: 257))] {
+            project.tasks[0].outcomes = [bad]
+            #expect(throws: ProjectValidationError.self) { try project.validate() }
+        }
+        project.tasks[0].outcomes = (0...ProjectTaskOutcome.maximumPerTask).map { _ in outcome(.accepted) }
+        #expect(throws: ProjectValidationError.self) { try project.validate() }
+        let decoded = try JSONDecoder().decode(ProjectTask.self, from: JSONEncoder().encode(task))
+        #expect(decoded.outcomes == task.outcomes)
+    }
+
+    /// The brief carries only the newest remembered facts that fit; older ones stay stored. Each kept fact is whole.
+    @Test func briefMemoryKeepsTheNewestWholeFactsWithinItsBudget() {
+        let facts = (0..<40).map { "fact \($0) " + String(repeating: "x", count: 400) }
+        let brief = Project.briefMemory(facts)
+        #expect(brief.joined(separator: "\n").utf8.count <= Project.briefMemoryBytes)
+        #expect(brief.last == facts.last && brief.count < facts.count && brief.allSatisfy(facts.contains))
+        #expect(brief == Array(facts.suffix(brief.count)))
+        #expect(Project.briefMemory(["a", "b"]) == ["a", "b"])
+        #expect(Project.briefMemory([String(repeating: "y", count: Project.briefMemoryBytes + 1)]).isEmpty)
+        #expect(Project.briefMemory([]).isEmpty)
+    }
 }

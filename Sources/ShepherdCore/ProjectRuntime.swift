@@ -36,6 +36,10 @@ public struct ProjectTask: Codable, Hashable, Sendable, Identifiable {
     public var settledAt: Double?
     public var question: String?
     public var pendingAnswer: ProjectQuestionAnswer?
+    /// Append-only review/delivery facts, each bound to one exact activation. nil (legacy or none recorded) is unknown, never success.
+    public var outcomes: [ProjectTaskOutcome]?
+    /// The newest fact recorded for the current activation; an older activation's facts are not this one's.
+    public var currentOutcome: ProjectTaskOutcome? { outcomes?.last { $0.operationID == operationID } }
 
     public init(id: ProjectTaskID = .init(), operationID: UUID, workerAgentID: AgentID = .init(),
                 spaceID: SpaceID, title: String, prompt: String, phase: Phase = .queued, revision: UInt64 = 1,
@@ -43,6 +47,41 @@ public struct ProjectTask: Codable, Hashable, Sendable, Identifiable {
         self.id = id; self.operationID = operationID; self.workerAgentID = workerAgentID
         self.host = host; self.model = model; self.thinking = thinking
         self.spaceID = spaceID; self.title = title; self.prompt = prompt; self.phase = phase; self.revision = revision
+    }
+}
+
+/// A fact about one exact task activation, separate from its runtime phase. Recording it never changes the phase, reopens the
+/// task or touches its worker. Coordinator-recorded facts are the coordinator's claim, not the person's approval.
+public struct ProjectTaskOutcome: Codable, Hashable, Sendable, Identifiable {
+    public enum Kind: String, Codable, Sendable, CaseIterable {
+        case accepted, needsChanges, merged, uploaded, available
+        /// Delivery facts name their evidence (a PR, commit, build or release reference); review verdicts may not.
+        public var needsEvidence: Bool { [.merged, .uploaded, .available].contains(self) }
+        public var label: String {
+            switch self {
+            case .accepted: "Accepted"
+            case .needsChanges: "Needs changes"
+            case .merged: "Merged"
+            case .uploaded: "Uploaded"
+            case .available: "Available"
+            }
+        }
+    }
+    public static let maximumPerTask = 8
+    public static let maximumEvidenceBytes = 256
+    /// The recording operation's identity (its replay receipt).
+    public var id: UUID
+    /// The exact task activation this fact is about.
+    public var operationID: UUID
+    public var kind: Kind
+    public var evidence: String?
+    /// The coordinator that recorded it; nil is the owner's own Project control.
+    public var recordedBy: AgentID?
+    /// Host-assigned milliseconds since 1970.
+    public var recordedAt: Double
+    public init(id: UUID, operationID: UUID, kind: Kind, evidence: String? = nil, recordedBy: AgentID? = nil, recordedAt: Double) {
+        self.id = id; self.operationID = operationID; self.kind = kind; self.evidence = evidence
+        self.recordedBy = recordedBy; self.recordedAt = recordedAt
     }
 }
 

@@ -104,12 +104,13 @@ extension SessionServer {
         if case .followUp(_, let op, _, _, _) = request, current.tasks.contains(where: { $0.operationID == op || $0.previousOperations?.contains(op) == true }) { return current }
         if case .resolve(let task, let op?) = request, current.tasks.contains(where: { $0.id == task && $0.resolutionOperations?.contains(op) == true }) { return current }
         if case .proposeSpace(let op, _, _, _) = request, current.spaceProposals.contains(where: { $0.operationID == op }) { return current }
+        if case .recordOutcome(let op, let task, _, _, _) = request, current.tasks.contains(where: { $0.id == task && $0.outcomes?.contains { $0.id == op } == true }) { return current }
         if case .remember(let op, _, _) = request, current.memoryOperations.contains(op) || current.memory.contains(where: { $0.id.rawValue == op.uuidString.lowercased() }) { return current }
         if case .decideSpace(let proposal, _, _) = request, current.spaceProposals.contains(where: { $0.id == proposal && $0.phase != .pending }) { return current }
         // A new thread, a remembered fact or a Space request only adds a record under its own operation identity, so it needs no
         // whole-Project revision: the coordinator's parallel calls in one turn all land instead of all but one going stale.
         let additive: Bool
-        switch request { case .assign, .remember, .proposeSpace: additive = true; default: additive = false }
+        switch request { case .assign, .remember, .proposeSpace, .recordOutcome: additive = true; default: additive = false }
         let fence: UInt64? = additive ? nil : expectedRevision
         guard additive || current.revision == expectedRevision else { throw LogicalProjectsError("stale_project", "Refresh the Project before trying again.") }
         if case .conversation = request {
@@ -250,6 +251,20 @@ extension SessionServer {
                 p.memoryOperations.append(op)
                 p.memory.append(.init(id: .init(rawValue: op.uuidString.lowercased()), text: NativeRedaction.projectData(text),
                                      source: "Task \(task.id) · worker \(task.workerAgentID)", createdAt: Date().timeIntervalSince1970 * 1000))
+            case .recordOutcome(let op, let taskID, let activation, let kind, let evidence):
+                guard let i = p.tasks.firstIndex(where: { $0.id == taskID }) else { throw LogicalProjectsError("no_such_task", "Task no longer exists.") }
+                let task = p.tasks[i]
+                // Only a stopped activation has a result to judge; an earlier activation of the same task stays addressable while retained.
+                guard activation == task.operationID ? [.settled, .resolved].contains(task.phase) : (task.previousOperations ?? []).contains(activation) else {
+                    throw LogicalProjectsError("conflict", "An outcome needs an exact settled or resolved operation of this task.")
+                }
+                guard (task.outcomes?.count ?? 0) < ProjectTaskOutcome.maximumPerTask else {
+                    throw LogicalProjectsError("outcome_full", "This task already holds \(ProjectTaskOutcome.maximumPerTask) outcomes; earlier facts are never dropped.")
+                }
+                let evidence = evidence.map { NativeRedaction.projectData($0.trimmingCharacters(in: .whitespacesAndNewlines)) }.flatMap { $0.isEmpty ? nil : $0 }
+                p.tasks[i].outcomes = (task.outcomes ?? []) + [.init(id: op, operationID: activation, kind: kind, evidence: evidence,
+                                                                    recordedBy: coordinator, recordedAt: Date().timeIntervalSince1970 * 1000)]
+                p.tasks[i].revision += 1
             case .pause:
                 p.paused = true; p.interruptPending = true
                 self.projectChildClosed.formUnion(self.currentProjectChildScope.values.filter { $0.key.projectID == id && $0.key.ownerID == p.ownerID })
@@ -342,7 +357,7 @@ extension SessionServer {
             }
             guard coordinator, !p.paused, self.projectRunStarts[projectID] != nil else { throw LogicalProjectsError("project_scope", "Only this Project's active coordinator may dispatch work.") }
             switch request {
-            case .assign, .followUp, .proposeSpace, .remember, .answer: break
+            case .assign, .followUp, .proposeSpace, .remember, .answer, .recordOutcome: break
             case .resolve(_, let operation):
                 guard operation != nil else { throw LogicalProjectsError("invalid_project", "A model mutation needs an operation identity.") }
             default: throw LogicalProjectsError("project_scope", "This action requires a human Project control.")

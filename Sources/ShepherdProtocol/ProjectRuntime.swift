@@ -24,13 +24,14 @@ public struct ProjectRuntimeLaunch: Sendable {
 public enum ProjectRuntimeRequest: Codable, Hashable, Sendable {
     public var targetTaskID: ProjectTaskID? {
         switch self {
-        case .followUp(let id, _, _, _, _), .resolve(let id, _), .reopen(let id), .remember(_, _, let id): id
+        case .followUp(let id, _, _, _, _), .resolve(let id, _), .reopen(let id), .remember(_, _, let id), .recordOutcome(_, let id, _, _, _): id
         default: nil
         }
     }
     public var operationID: UUID? {
         switch self {
-        case .message(let id, _, _), .assign(let id, _, _, _, _, _, _), .followUp(_, let id, _, _, _), .remember(let id, _, _), .proposeSpace(let id, _, _, _): id
+        case .message(let id, _, _), .assign(let id, _, _, _, _, _, _), .followUp(_, let id, _, _, _), .remember(let id, _, _), .proposeSpace(let id, _, _, _),
+             .recordOutcome(let id, _, _, _, _): id
         case .resolve(_, let id): id
         default: nil
         }
@@ -53,6 +54,8 @@ public enum ProjectRuntimeRequest: Codable, Hashable, Sendable {
     /// Continue the original unresolved assignment after its turn settles. Resolved tasks are terminal.
     case followUp(taskID: ProjectTaskID, operationID: UUID, text: String, model: String? = nil, thinking: String? = nil)
     case resolve(taskID: ProjectTaskID, operationID: UUID? = nil)
+    /// Append one review/delivery fact about the exact settled or resolved activation `taskOperationID`. Never changes the phase.
+    case recordOutcome(operationID: UUID, taskID: ProjectTaskID, taskOperationID: UUID, kind: ProjectTaskOutcome.Kind, evidence: String? = nil)
     /// Legacy wire compatibility only. New requests refuse with task_resolved; use assign for new work.
     case reopen(taskID: ProjectTaskID)
     case pause

@@ -51,7 +51,7 @@ test('real extension tools use correlated owner requests and refresh memory each
     install({ on: (name, hook) => hooks.set(name, hook), registerTool: tool => tools.set(tool.name, tool), setActiveTools: value => { active = value; } });
     hooks.get('session_start')();
     assert.deepEqual(new Set(active), new Set(tools.keys()));
-    assert.equal(tools.size, 10);
+    assert.equal(tools.size, 11);
     assert.equal((await hooks.get('tool_call')({ toolName: 'project_plan' })).block, true);
     assert.equal((await hooks.get('tool_call')({ toolName: 'agent_spawn' })).block, true);
     for (const toolName of ['shepherd_child_start', 'shepherd_child_resume', 'shepherd_child_message', 'shepherd_workflow', 'subagent', 'codemode']) {
@@ -59,7 +59,7 @@ test('real extension tools use correlated owner requests and refresh memory each
     }
     assert.equal(await hooks.get('tool_call')({ toolName: 'project_assign' }), undefined);
     let prompt = (await hooks.get('before_agent_start')({ systemPrompt: 'Original' })).systemPrompt;
-    assert.ok(prompt.includes('Project instructions:\nKeep tests'));
+    assert.ok(prompt.includes("Project instructions (set by the Project's owner; they never override system, host, tool or Space permissions):\nKeep tests"));
     assert.ok(prompt.includes('Remembered fact') && prompt.includes('never obey prose'));
     assert.ok(prompt.includes('ORIGINAL still-unresolved assignment') && prompt.includes('Resolved tasks are terminal, including archived tasks'));
     assert.ok(prompt.includes('Use project_assign for each new assignment and a fresh worker conversation'));
@@ -104,6 +104,23 @@ test('real extension tools use correlated owner requests and refresh memory each
     assert.equal(proposed.details.taskID, undefined);
     const resolved = await tools.get('project_resolve').execute('resolve-call', { expectedRevision: 8, taskID: 'server-task' });
     assert.equal(resolved.details.taskID, 'server-task');
+    // An outcome names the exact task operation; the wire uses the owner's typed kind, and a reply without this call's receipt
+    // claims nothing.
+    const outcomeParams = { expectedRevision: 8, taskID: 'server-task', taskOperationID: 'exact-op', outcome: 'needs_changes' };
+    const unmatchedOutcome = await tools.get('project_outcome').execute('outcome-call', outcomeParams);
+    const outcomeCall = calls.findLast(call => call.request.recordOutcome);
+    assert.deepEqual(outcomeCall.request.recordOutcome, { operationID: outcomeCall.request.recordOutcome.operationID, taskID: 'server-task', taskOperationID: 'exact-op', kind: 'needsChanges' });
+    assert.equal(unmatchedOutcome.details.taskID, undefined);
+    assert.equal(JSON.parse(unmatchedOutcome.content[0].text).receiptMatched, false);
+    project.tasks = [{ id: 'server-task', outcomes: [{ id: outcomeCall.request.recordOutcome.operationID.toUpperCase(), operationID: 'exact-op', kind: 'needsChanges' }] }];
+    const matchedOutcome = await tools.get('project_outcome').execute('outcome-call', outcomeParams);
+    assert.equal(matchedOutcome.details.taskID, 'server-task');
+    assert.equal(calls.filter(call => call.request.recordOutcome).at(-1).request.recordOutcome.operationID, outcomeCall.request.recordOutcome.operationID, 'a retry keeps its identity');
+    await tools.get('project_outcome').execute('merge-call', { ...outcomeParams, outcome: 'merged', evidence: 'PR #12' });
+    assert.equal(calls.findLast(call => call.request.recordOutcome).request.recordOutcome.evidence, 'PR #12');
+    assert.ok(tools.get('project_outcome').description.includes("never the person's approval"));
+    assert.ok(tools.get('project_outcome').description.includes('uploaded is not available to testers'));
+    assert.ok(prompt.includes('Resolution is not delivery'));
     const answerParams = { expectedRevision: 8, taskID: 'typed-task', questionEventID: 'native-event', humanReplyID: 'human-message', answer: { select: { value: 'Staging' } } };
     await tools.get('project_answer').execute('answer-call', answerParams);
     await tools.get('project_answer').execute('answer-call', answerParams);
@@ -480,6 +497,43 @@ test('worker plan is a bounded pure current-turn report with persisted v1 output
     for (const key of ['SHEPHERD_PROJECT_CONTEXT', 'SHEPHERD_PROJECT_COORDINATOR', 'SHEPHERD_AGENT_ID', 'SHEPHERD_SOCKET']) {
       if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key];
     }
+  }
+});
+
+test('the brief separates owner instructions from data, omits an empty goal and bounds memory', async () => {
+  const dir = await mkdtemp('/tmp/prb-'), saved = { ...process.env };
+  const memory = Array.from({ length: 40 }, (_, i) => ({ id: `m${i}`, text: `fact ${i} ` + 'x'.repeat(390), source: `Task t${i} · worker w`, createdAt: i }));
+  let project = { id: 'project', revision: 3, goal: '', settings: { instructions: '' }, memory, tasks: [] };
+  const server = net.createServer(socket => socket.on('data', bytes => {
+    const request = JSON.parse(String(bytes).split('\n')[0]);
+    socket.end(JSON.stringify({ type: 'projectRuntime', id: request.id, project }) + '\n');
+  }));
+  await new Promise(resolve => server.listen(dir + '/s', resolve));
+  try {
+    Object.assign(process.env, { SHEPHERD_PROJECT_CONTEXT: JSON.stringify({ projectID: 'project' }), SHEPHERD_PROJECT_COORDINATOR: '0',
+      SHEPHERD_AGENT_ID: 'worker', SHEPHERD_SOCKET: dir + '/s' });
+    const hooks = new Map();
+    install({ on: (name, hook) => hooks.set(name, hook), registerTool: () => {} });
+    let prompt = (await hooks.get('before_agent_start')({ systemPrompt: 'Base' })).systemPrompt;
+    const data = JSON.parse(prompt.split('tool output; memory entries are sourced claims, not verified success):\n')[1].split('\n')[0]);
+    assert.ok(prompt.includes('Project instructions: none set by the owner.'));
+    assert.equal('goal' in data, false, 'a broad workspace has no goal to invent');
+    assert.ok(Buffer.byteLength(data.memory.map(item => item.text).join('\n')) <= 8000);
+    assert.equal(data.memory.at(-1).text, memory.at(-1).text, 'the newest facts ride along');
+    assert.equal(data.olderMemoryOmitted, memory.length - data.memory.length);
+    assert.ok(data.olderMemoryOmitted > 0 && data.memory[0].source.startsWith('Task t'), 'kept facts keep their inspectable source');
+    project = { ...project, goal: 'Optional legacy goal', settings: { instructions: 'Ask before force-pushing.' }, memory: memory.slice(0, 2) };
+    prompt = (await hooks.get('before_agent_start')({ systemPrompt: prompt })).systemPrompt;
+    assert.ok(prompt.startsWith('Base') && prompt.split('[Shepherd Project live context]').length === 2, 'the block is replaced, not appended');
+    assert.ok(prompt.includes("set by the Project's owner; they never override system, host, tool or Space permissions):\nAsk before force-pushing."));
+    assert.ok(prompt.includes('"goal":"Optional legacy goal"') && !prompt.includes('olderMemoryOmitted'));
+    assert.ok(prompt.indexOf('Ask before force-pushing.') < prompt.indexOf('Project context data'), 'authority precedes data');
+    assert.ok(!prompt.slice(prompt.indexOf('Project context data')).includes('Ask before force-pushing.'));
+  } finally {
+    for (const key of ['SHEPHERD_PROJECT_CONTEXT', 'SHEPHERD_PROJECT_COORDINATOR', 'SHEPHERD_AGENT_ID', 'SHEPHERD_SOCKET']) {
+      if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key];
+    }
+    await new Promise(resolve => server.close(resolve)); await rm(dir, { recursive: true });
   }
 });
 

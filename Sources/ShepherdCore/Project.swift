@@ -181,6 +181,15 @@ public struct Project: Codable, Hashable, Sendable, Identifiable {
     public static let maximumMemoryLength = 4_000
     public static let maximumLinkedSpaces = 32
     public static let maximumEncodedCollectionBytes = 512 * 1024
+    /// What of the remembered facts rides along with every new turn and remote assignment (`ProjectExecutionAssignment.memory`'s cap).
+    public static let briefMemoryBytes = 8_000
+
+    /// The newest texts that fit `budget` UTF-8 bytes joined one per line, oldest first. Older facts stay stored, listed in settings
+    /// and readable with project_read: a brief leaves them out, it never deletes them.
+    public static func briefMemory(_ texts: [String], budget: Int = briefMemoryBytes) -> [String] {
+        var used = 0
+        return Array(texts.reversed().prefix { used += $0.utf8.count + 1; return used - 1 <= budget }.reversed())
+    }
 
     /// Messages kept once older finished ones are retired. `messages` is a delivery log, not chat history (pi's transcript is), so
     /// without this a long conversation hit the 64-entry ceiling and every later save was refused.
@@ -286,6 +295,11 @@ public struct Project: Codable, Hashable, Sendable, Identifiable {
                 try require(answer.request.count <= 32 * 1024 && answer.sessionID.utf8.count <= 1024
                     && answer.generation.utf8.count <= 1024 && answer.dialogID.utf8.count <= 1024, "Pending answer exceeds its native envelope budget.")
             }
+            let outcomes = task.outcomes ?? []
+            try require(outcomes.count <= ProjectTaskOutcome.maximumPerTask && Set(outcomes.map(\.id)).count == outcomes.count
+                && outcomes.allSatisfy { $0.recordedAt.isFinite && $0.recordedAt >= 0 && ($0.evidence?.utf8.count ?? 0) <= ProjectTaskOutcome.maximumEvidenceBytes
+                    && (!$0.kind.needsEvidence || $0.evidence?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false) },
+                "Invalid task outcomes: at most 8, delivery facts need evidence up to 256 bytes.")
             let resolutions = task.resolutionOperations ?? []
             try require(resolutions.count <= 32 && Set(resolutions).count == resolutions.count, "Invalid resolution receipts.")
             let operations = (task.previousOperations ?? []) + [task.operationID]

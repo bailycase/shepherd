@@ -26,6 +26,7 @@ struct ProjectPagePresentationTests {
                       task("Done", .resolved), task("Failed", .failed, error: "pi exited"), task("Lost", .unknown)])
         #expect(p.rows(in: .waiting).map(\.title) == ["Asking", "Failed", "Lost"], "a failed or unknown task needs the person too")
         #expect(p.rows(in: .working).map(\.title) == ["Running", "Queued"])
+        #expect(p.rows(in: .stopped).isEmpty)
         #expect(p.rows(in: .resolved).map(\.title) == ["Done"])
         #expect(p.rows.count == p.waiting + p.working + p.resolved + p.settled)
     }
@@ -164,19 +165,51 @@ struct ProjectPagePresentationTests {
         #expect(ProjectRunStatus.text(startingThreads: starting, worker: worker, startedAt: startedAt, now: now) == words)
     }
 
-    /// A finished thread counts as done in the strip whether or not anyone has pressed Mark resolved yet (the user's report: three
-    /// scouts all reported back and the strip still said "0 of 3 done"). It is never "in progress", and only Resolved moves its group.
+    /// A Project is a long-lived workspace of many unrelated tasks, not one campaign: the strip counts execution facts, never "N of M
+    /// done". A stopped turn is its own fact (not working, not success), and resolution is not delivery.
     @Test func theStripShowsOnlyTheOwnersQuestionOrFailureNeverWorkerActivity() {
         let p = page([task("Run", .running), task("Ask", .waiting, question: "Which API?"),
                       task("Fail", .failed, error: "Launch failed"), task("Done", .resolved)])
-        #expect(p.rows.map(ProjectSummaryStrip.detail) == [nil, "Which API?", "Launch failed", nil])
+        #expect(p.rows.map(ProjectSummaryStrip.detail) == [nil, "Which API?", "Launch failed", nil], "a resolved task with no recorded outcome claims nothing")
     }
 
-    @Test func aFinishedThreadCountsAsDoneBeforeAnyoneResolvesIt() {
-        let p = page([task("A", .settled), task("B", .resolved), task("C", .running)])
-        #expect(p.settled == 1 && p.working == 1 && p.resolved == 1)
-        #expect(p.summary == "2 of 3 done · 1 in progress")
-        #expect(page([task("A", .settled), task("B", .settled), task("C", .settled)]).summary == "3 of 3 done")
+    @Test func aStoppedTurnIsNeitherWorkingNorDoneAndTheStripNamesEachFact() throws {
+        let p = page([task("A", .settled), task("B", .resolved), task("C", .running), task("D", .queued)])
+        #expect(p.settled == 1 && p.working == 2 && p.resolved == 1)
+        #expect(p.summary == "2 working · 1 stopped · 1 resolved")
+        #expect(page([task("A", .settled), task("B", .settled)]).summary == "2 stopped")
+        #expect(page([task("Q", .waiting, question: "?"), task("A", .settled)]).summary == "1 needs you · 1 stopped")
+        #expect(p.status == "2 threads are working.")
+        #expect(page([task("A", .settled)]).status == "Nothing is running.")
+        for summary in [p.summary, page([task("A", .resolved)]).summary] { #expect(summary?.contains("done") == false) }
+        let stopped = try #require(p.rows.first { $0.phase == .settled })
+        #expect(stopped.group == .stopped && stopped.tone == .stopped && stopped.lead == "Stopped" && stopped.detail == "Awaiting review")
+        #expect(p.rows.first { $0.phase == .running }?.tone == .running)
+    }
+
+    /// Outcomes are bound to the exact activation. A legacy task, or a resolved one nobody recorded an outcome for, stays unknown; an
+    /// earlier activation's verdict never labels a later follow-up; a coordinator's claim is never drawn as the person's.
+    @Test func outcomesShowOnlyForTheirExactOperationAndUnknownStaysUnknown() throws {
+        let coordinator = AgentID()
+        var legacy = task("Legacy", .resolved)
+        #expect(legacy.outcomes == nil && legacy.currentOutcome == nil)
+        var followed = task("Followed", .settled)
+        let earlier = followed.operationID
+        followed.outcomes = [.init(id: UUID(), operationID: earlier, kind: .needsChanges, recordedBy: coordinator, recordedAt: 1)]
+        followed.previousOperations = [earlier]; followed.operationID = UUID()
+        var merged = task("Merged", .resolved)
+        merged.outcomes = [.init(id: UUID(), operationID: merged.operationID, kind: .accepted, recordedBy: coordinator, recordedAt: 1),
+                           .init(id: UUID(), operationID: merged.operationID, kind: .merged, evidence: "PR #12", recordedBy: coordinator, recordedAt: 2)]
+        var owner = task("Owner", .settled)
+        owner.outcomes = [.init(id: UUID(), operationID: owner.operationID, kind: .accepted, recordedAt: 1)]
+        legacy.title = "Legacy"
+        let rows = page([legacy, followed, merged, owner]).rows
+        #expect(rows[0].lead == nil && rows[0].detail == nil && rows[0].outcomeLine == nil, "resolved alone is not success")
+        #expect(rows[1].lead == "Stopped" && rows[1].detail == "Awaiting review", "an earlier activation's verdict is not this one's")
+        #expect(rows[2].group == .resolved && rows[2].lead == "Merged" && rows[2].detail == "PR #12 · per coordinator")
+        #expect(merged.outcomes?.count == 2, "earlier facts are retained, not replaced")
+        #expect(rows[3].group == .stopped && rows[3].lead == "Accepted" && rows[3].detail == nil, "the owner's own record carries no attribution")
+        #expect(rows[3].canResolve, "recording an outcome never resolves or changes the phase")
     }
 
     /// Resolved Project tasks are terminal: the row offers nothing to send or resolve, keeps its worker (history opens through
