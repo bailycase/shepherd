@@ -37,19 +37,19 @@ public struct FleetSidebarGroups: Equatable, Sendable {
     public init() {}
 }
 
-/// Pins, completions and what was seen. A completion is a status edge to done that this device observed (or, on a new
-/// connection, a done thread whose `lastActiveAt` moved), never activity alone: a refused send also stamps activity.
+/// Pins, observed completions and what was seen. Activity changes, including on reconnect, are not proof of completion.
+/// Only pins persist. A relaunch observes existing Done threads anew; exact host completion chronology is unavailable.
 public struct FleetSidebarState: Equatable, Sendable {
     struct Record: Equatable, Sendable {
         var finished: Bool
-        var activity: Double?
         var generation: Int
+        var completedAt: Double?
     }
 
     public private(set) var pins: [FleetRef]
     private var records: [FleetRef: Record] = [:]
     private var generation = 0
-    private var sessions: [UUID: UUID] = [:]
+    private var endpoints: [UUID: String] = [:]
     private var seen: [FleetRef: Int] = [:]
     /// The thread opened last, and the completion it showed while open.
     private var reading: FleetRef?
@@ -75,35 +75,44 @@ public struct FleetSidebarState: Equatable, Sendable {
 
     /// Follows the hosts' pushed state. A pin goes when its host is no longer configured, or when a connected host no longer
     /// has its thread; never for a host that is offline or not reached yet. `sessions` is each connected host's connection id.
-    public mutating func reconcile(_ hosts: [FleetHost], sessions next: [UUID: UUID]) {
+    public mutating func reconcile(_ hosts: [FleetHost], sessions _: [UUID: UUID]) {
         let configured = Set(hosts.map(\.id))
         pins.removeAll { !configured.contains($0.host) }
         records = records.filter { configured.contains($0.key.host) }
         seen = seen.filter { configured.contains($0.key.host) }
+        endpoints = endpoints.filter { configured.contains($0.key) }
+        for host in hosts {
+            let endpoint = "\(host.address):\(host.port)"
+            if let old = endpoints[host.id], old != endpoint {
+                records = records.filter { $0.key.host != host.id }
+                seen = seen.filter { $0.key.host != host.id }
+                if reading?.host == host.id { readingGeneration = nil }
+            }
+            endpoints[host.id] = endpoint
+        }
         for host in hosts where host.phase.isConnected {
             let live = Set(host.state.agents.map { FleetRef(host: host.id, agent: $0.id) })
             pins.removeAll { $0.host == host.id && !live.contains($0) }
             records = records.filter { $0.key.host != host.id || live.contains($0.key) }
             seen = seen.filter { $0.key.host != host.id || live.contains($0.key) }
-            let catchUp = sessions[host.id] != next[host.id]
             for agent in host.state.agents {
                 observe(FleetRef(host: host.id, agent: agent.id), finished: agent.status == .done,
-                        activity: agent.lastActiveAt, catchUp: catchUp)
+                        activity: agent.lastActiveAt)
             }
         }
-        sessions = next
         if let reading, reading == selected, let record = records[reading], record.finished {
             readingGeneration = record.generation
         }
     }
 
-    private mutating func observe(_ ref: FleetRef, finished: Bool, activity: Double?, catchUp: Bool) {
+    private mutating func observe(_ ref: FleetRef, finished: Bool, activity: Double?) {
         let previous = records[ref]
-        // ponytail: a moved stamp on a new connection is a completion hint, as on the Mac; a send refused while
-        // disconnected looks the same. A host completion token would make it exact.
-        let completed = finished && (previous?.finished != true || (catchUp && previous?.activity != activity))
+        // ponytail: observed edges only. A whole run between observations can be missed;
+        // exact chronology requires a host completion record, not a last-activity heuristic.
+        let completed = finished && previous?.finished != true
         if completed { generation += 1 }
-        records[ref] = Record(finished: finished, activity: activity, generation: completed ? generation : previous?.generation ?? 0)
+        records[ref] = Record(finished: finished, generation: completed ? generation : previous?.generation ?? 0,
+                              completedAt: completed ? activity : previous?.completedAt)
     }
 
     /// The thread on screen changed. Opening another thread marks the one read before seen (the completion it showed);
@@ -135,7 +144,7 @@ public struct FleetSidebarState: Equatable, Sendable {
         var groups = FleetSidebarGroups()
         var pinnedRows: [FleetRef: FleetPinnedRow] = [:]
         for item in model.needsYou {
-            if pinned.contains(item.ref) {
+            if item.origin == .thread, pinned.contains(item.ref) {
                 if pinnedRows[item.ref] == nil { pinnedRows[item.ref] = .attention(item) }
             } else {
                 groups.needsYou.append(item)
@@ -154,6 +163,11 @@ public struct FleetSidebarState: Equatable, Sendable {
             }
         }
         groups.pinned = pins.compactMap { pinnedRows[$0] }
+        groups.done.sort { a, b in
+            let left = records[a.ref], right = records[b.ref]
+            let leftTime = left?.completedAt ?? -1, rightTime = right?.completedAt ?? -1
+            return leftTime != rightTime ? leftTime > rightTime : (left?.generation ?? 0) > (right?.generation ?? 0)
+        }
         return groups
     }
 }
@@ -174,18 +188,19 @@ public struct FleetThreadAbilities: Equatable, Sendable {
     public var finalize: Bool
 
     public init(agent: Agent, state: ShepherdState, connected: Bool, capabilities: Set<String>) {
-        let actions = connected && capabilities.contains(RemoteProtocol.agentActionsCapability)
+        let ordinary = state.isSidebarThread(agent)
+        let actions = ordinary && connected && capabilities.contains(RemoteProtocol.agentActionsCapability)
         let run = state.automations.contains { $0.agentID == agent.id }
         self.connected = connected
         worktree = agent.worktreeBranch != nil
         rename = actions
-        delete = worktree ? connected && capabilities.contains(RemoteProtocol.worktreeActionsCapability) : actions
-        pin = !run && !state.isDesignAgent(agent)
+        delete = ordinary && (worktree ? connected && capabilities.contains(RemoteProtocol.worktreeActionsCapability) : actions)
+        pin = ordinary && !run
         let moves = actions && capabilities.contains(RemoteProtocol.moveThreadCapability) && !worktree && !run
         moveSpaces = moves ? state.spaces.filter { !$0.hidden } : []
         review = connected && (capabilities.contains(RemoteProtocol.changesCapability)
             || capabilities.contains(RemoteProtocol.agentInspectionCapability))
-        finalize = connected && worktree && capabilities.contains(RemoteProtocol.worktreeActionsCapability)
+        finalize = ordinary && connected && worktree && capabilities.contains(RemoteProtocol.worktreeActionsCapability)
             && capabilities.contains(RemoteProtocol.worktreeSetupCapability)
     }
 }

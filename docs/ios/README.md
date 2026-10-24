@@ -172,7 +172,10 @@ keep the version for real breaks.
   Mac sidebar's groups on both devices, each thread in one (`FleetSidebarState` in ShepherdRemote):
   Needs you, Working (running on a connected host), Done (a finished turn this device saw end;
   opening another thread marks it seen, a later turn brings it back), Pinned (pin order, any state,
-  a waiting one keeps its reason) and Recents. Pins are this device's view state, like each Mac's:
+  a waiting one keeps its reason) and Recents. Done keeps its observed completion order when later activity changes;
+  activity alone on reconnect is not completion evidence. Runs between observations can be missed. Only pins persist,
+  so Done/seen state starts over on relaunch. Project threads never become ordinary rows or pins, even from legacy pins;
+  their questions stay in Needs you as the Project's. Pins are this device's view state, like each Mac's:
   `shepherd.ios.sidebar.pinned` in its preferences, never sent to a host, kept while a host is
   offline, gone with their thread or host. A thread row's long press is the Mac's row menu for a
   connected host's thread: Open in new window (iPad), Pin or Unpin, Rename…, Move to Space (the

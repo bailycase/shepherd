@@ -130,7 +130,7 @@ struct FleetSidebarTests {
         #expect(Self.refs(groups.working) == ["r"])
     }
 
-    @Test func aReconnectWithAMovedStampIsACompletionAndAnUnmovedOneIsNot() {
+    @Test func activityOnReconnectIsNotProofOfACompletion() {
         var agents = [Self.agent("a", .done, active: 1)]
         var state = Self.observed(agents)
         state.markSeen([F.ref("a")])
@@ -138,7 +138,50 @@ struct FleetSidebarTests {
         #expect(Self.groups(state, Self.hosts(agents)).done.isEmpty, "the same stamp on a new connection is not a completion")
         agents[0].lastActiveAt = 2
         state.reconcile(Self.hosts(agents), sessions: [F.studio: UUID()])
-        #expect(Self.refs(Self.groups(state, Self.hosts(agents)).done) == ["a"])
+        #expect(Self.groups(state, Self.hosts(agents)).done.isEmpty, "a refused send can move activity without a completed turn")
+        agents[0].status = .working
+        state.reconcile(Self.hosts(agents), sessions: [F.studio: Self.next])
+        agents[0].status = .done
+        state.reconcile(Self.hosts(agents), sessions: [F.studio: Self.next])
+        #expect(Self.refs(Self.groups(state, Self.hosts(agents)).done) == ["a"], "an observed completion still works")
+    }
+
+    @Test func laterActivityDoesNotReorderDone() {
+        var agents = [Self.agent("a", .done, active: 1), Self.agent("b", .done, active: 2)]
+        var state = Self.observed(agents)
+        #expect(Self.refs(Self.groups(state, Self.hosts(agents)).done) == ["b", "a"])
+        agents[0].lastActiveAt = 100
+        state.reconcile(Self.hosts(agents), sessions: [F.studio: Self.session])
+        #expect(Self.refs(Self.groups(state, Self.hosts(agents)).done) == ["b", "a"], "activity is not completion time")
+        agents[0].status = .working
+        state.reconcile(Self.hosts(agents), sessions: [F.studio: Self.session])
+        agents[0].status = .done
+        state.reconcile(Self.hosts(agents), sessions: [F.studio: Self.session])
+        #expect(Self.refs(Self.groups(state, Self.hosts(agents)).done) == ["a", "b"])
+    }
+
+    @Test(arguments: ["worker", "executor", "coordinator"], AgentStatus.allCases)
+    func projectAffiliationNeverCreatesOrdinaryRowsOrPins(kind: String, status: AgentStatus) throws {
+        let id = ProjectID(rawValue: "22222222-2222-4222-8222-222222222222")
+        var restricted = Self.agent("restricted", status, active: 10)
+        switch kind {
+        case "worker": restricted.projectWorkerFor = id
+        case "executor": restricted.executionFor = ProjectExecutionKey(ownerID: UUID(), projectID: id, operationID: UUID())
+        default: restricted.coordinatorFor = id
+        }
+        var host = try #require(Self.hosts([restricted, Self.agent("plain", .idle)]).first)
+        host.state.projects = [Project(id: id, name: "Project")]
+        var state = FleetSidebarState(pins: [F.ref("restricted")])
+        state.reconcile([host], sessions: [F.studio: Self.session])
+        let model = FleetModel(hosts: [host], digests: [:]), groups = state.groups(model)
+        #expect(model.recents.map(\.ref) == [F.ref("plain")])
+        #expect(groups.working.isEmpty && groups.done.isEmpty && groups.pinned.isEmpty)
+        if status == .blocked {
+            #expect(groups.needsYou.first?.origin == .project, "a genuine question still waits on the user")
+        }
+        let abilities = FleetThreadAbilities(agent: restricted, state: host.state, connected: true, capabilities: Set(RemoteProtocol.capabilities))
+        #expect(!abilities.pin && !abilities.rename && !abilities.delete && abilities.moveSpaces.isEmpty && !abilities.finalize)
+        #expect(abilities.review, "read-only inspection remains available")
     }
 
     @Test func anOfflineHostsThreadsAreNeverWorkingOrDoneButKeepTheirPins() {
