@@ -2,6 +2,56 @@
   "version": "1.0.0",
   "files": [
     {
+      "path": "node_modules/@earendil-works/pi-ai/dist/api/anthropic-messages.js",
+      "before": "a0644ab05cf7ee3e4d566f21113d5b6c2361588237c999a45fa0d7935b68af10",
+      "after": "992594ad33ba69a24e241cee1641ef432c3bbb7b8b3a93543dc022928f614567",
+      "edits": [
+        {
+          "old": "import Anthropic, {} from \"@anthropic-ai/sdk\";",
+          "new": "import Anthropic, {} from \"@anthropic-ai/sdk\";\nimport { buildOAuthSystemBlocks } from \"./shepherd-anthropic-oauth.js\";"
+        },
+        {
+          "old": "`claude-cli/${claudeCodeVersion}`",
+          "new": "`claude-cli/${claudeCodeVersion} (external, cli)`"
+        },
+        {
+          "old": "    // For OAuth tokens, we MUST include Claude Code identity\n    if (isOAuthToken) {\n        params.system = [\n            {\n                type: \"text\",\n                text: \"You are Claude Code, Anthropic's official CLI for Claude.\",\n                ...(cacheControl ? { cache_control: cacheControl } : {}),\n            },\n        ];\n        if (initialSystemText) {\n            params.system.push({\n                type: \"text\",\n                text: sanitizeSurrogates(initialSystemText),\n                ...(cacheControl ? { cache_control: cacheControl } : {}),\n            });\n        }\n    }",
+          "new": "    // Shepherd's automatic OAuth compatibility; API-key requests stay upstream.\n    if (isOAuthToken) {\n        params.system = buildOAuthSystemBlocks(sanitizeSurrogates(initialSystemText), cacheControl, claudeCodeVersion);\n    }"
+        }
+      ]
+    },
+    {
+      "path": "dist/bundle/chunks/anthropic-messages-UID2PALB.js",
+      "before": "86370b5d60a634d40def4b9d58a0025ca64a61fb74103a8de793ed91a398a230",
+      "after": "0099cf25d24b6d93762a7bc5ddad48d67fcc379941c692a32031e72c2ed9e069",
+      "edits": [
+        {
+          "old": "import { createRequire as __piCreateRequire } from \"node:module\"; const require = __piCreateRequire(import.meta.url);",
+          "new": "import { createRequire as __piCreateRequire } from \"node:module\"; const require = __piCreateRequire(import.meta.url);\nimport { buildOAuthSystemBlocks } from \"./shepherd-anthropic-oauth.js\";"
+        },
+        {
+          "old": "`claude-cli/${claudeCodeVersion}`",
+          "new": "`claude-cli/${claudeCodeVersion} (external, cli)`"
+        },
+        {
+          "old": "params.system=[{type:\"text\",text:\"You are Claude Code, Anthropic's official CLI for Claude.\",...cacheControl?{cache_control:cacheControl}:{}}],initialSystemText&&params.system.push({type:\"text\",text:sanitizeSurrogates(initialSystemText),...cacheControl?{cache_control:cacheControl}:{}})",
+          "new": "params.system=buildOAuthSystemBlocks(sanitizeSurrogates(initialSystemText),cacheControl,claudeCodeVersion)"
+        }
+      ]
+    },
+    {
+      "path": "node_modules/@earendil-works/pi-ai/dist/api/shepherd-anthropic-oauth.js",
+      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "df6f8a6366c73ef8617e271904d9b32d40f0740cfd354c77bb0a433d0d3da5a8",
+      "source": "anthropic-oauth.js"
+    },
+    {
+      "path": "dist/bundle/chunks/shepherd-anthropic-oauth.js",
+      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "df6f8a6366c73ef8617e271904d9b32d40f0740cfd354c77bb0a433d0d3da5a8",
+      "source": "anthropic-oauth.js"
+    },
+    {
       "path": "dist/utils/shell.js",
       "before": "c8378f2b0566e35f90dfbb622a2214acf5cf45d15107c44b260cad897b539f72",
       "after": "58555cb340755090fa990753b41d55e19dcbb1d69be2b9cce170168dc5f8114e",

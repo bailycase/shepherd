@@ -118,11 +118,21 @@ The patch supplies `refresh_skills`, native file observation and the `skills_cha
 idle boundary, without periodic requests. It does not
 reload extensions, tools, providers or settings. The same watcher also reloads the built-in MCP extension's
 `mcp.json` servers in a running session ([mcp.md](mcp.md#what-pis-mcp-does)). See [live skills](skills.md#live-threads) for
-bounds, discovery scope and busy behavior. All launches still go through `PiLaunch` and the one
-`BundledPiEngine.entryPath`, now upstream's `dist/cli.js`: agents, children, catalog and print
-launches all use the patched modular runtime. No dependency was added; the modular SDK and its
-locked dependencies already ship. No production CLI launch executes the unpatched bundle;
-existing SDK-only sign-in and definition-discovery imports still use `bundle/index.js`.
+bounds, discovery scope and busy behavior. Host launches go through `PiLaunch` and
+`BundledPiEngine.entryPath`, upstream's `dist/cli.js`: agents, catalog and print launches use the
+patched modular runtime. No dependency was added; the modular SDK and its locked dependencies
+already ship. Native children still launch `dist/bundle/cli.js`, and SDK-only sign-in and
+definition-discovery imports still use `bundle/index.js`; provider patches cover both runtimes.
+
+Anthropic OAuth compatibility is automatic in both the modular and bundled Anthropic provider,
+including launches with extensions disabled. It reuses Pi's auth/refresh, transcript conversion,
+reasoning and tool-name mapping; only OAuth requests get the Claude CLI user-agent, billing and
+Agent SDK identity blocks without cache annotations, and narrowly reshaped generated introduction/docs prose. Instruction,
+skill and documentation paths stay intact; API-key requests stay upstream. No setting, dependency
+or home-directory symlink is needed. The shared helper carries the MIT notice and pinned source
+revision of `leohenon/pi-anthropic-oauth` v0.3.4. Offline wire checks in `anthropic-oauth.test.mjs`
+cover both providers and CLI entrypoints, not live subscription billing, cache-hit behavior or
+Anthropic's server-side acceptance.
 
 Configuration values beginning with `!` never execute a command. MCP env, headers, OAuth
 client secrets and model credentials must use literal values or environment-variable references;
