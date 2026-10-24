@@ -98,6 +98,33 @@ struct RetryTests {
         #expect(try await h.request(.abort(expectedSessionID: s.piSessionID, generation: s.generation, operationID: UUID())).wasAccepted)
     }
 
+    @Test(arguments: [false, true])
+    func resolvedAssignmentsRefuseOriginalInputEvenAfterTaskRetirement(retired: Bool) async throws {
+        let host = try ScratchServer(); defer { host.stop() }
+        let h = try await PiAgent.launch(on: host)
+        let failed = try await failedCheckpoint(h)
+        let entry = try #require(failed.messages.last { $0.role == "user" }?.entryID)
+        let input = UUID()
+        // Supply the Project/native delivery association at the same seam used by consumed-input metadata.
+        try await host.server.enqueue { host.server.rpcThread(forAgent: h.agent.id)?.operationsByEntry[entry] = input }
+        host.server.setProjectsEnabled(true)
+        guard case .project(let project) = try await host.server.logicalProjects(.create(projectID: .init(), name: "Terminal fixture", goal: "", linkedSpaceIDs: [h.agent.spaceID])) else {
+            Issue.record("Project fixture was not created"); return
+        }
+        let task = ProjectTask(operationID: input, workerAgentID: h.agent.id, spaceID: h.agent.spaceID, title: "Resolved", prompt: "flaky", phase: .resolved)
+        _ = try await host.server.updateRuntimeProject(project.id) { p in
+            p.tasks = [task]
+            if retired {
+                p.tasks += (0..<16).map { ProjectTask(operationID: UUID(), spaceID: h.agent.spaceID, title: "Other \($0)", prompt: "done", phase: .resolved) }
+            }
+        }
+        _ = try await host.server.updateRuntimeProject(project.id) { $0.name = "Committed terminal fixture" }
+        #expect(host.server.state.projects[0].tasks.contains { $0.id == task.id } == !retired)
+        #expect(try await h.request(recoveryRequest(failed)).failureCode == "task_resolved")
+        #expect(h.stdin("recover_checkpoint").isEmpty && h.stdin("prompt").count == 1)
+        #expect(try await h.snapshot().messages == failed.messages)
+    }
+
     @Test func oldEngineOffersNoCapabilityAndDoesNotInjectInput() async throws {
         let host = try ScratchServer()
         defer { host.stop() }

@@ -1583,7 +1583,16 @@ public final class SessionServer: @unchecked Sendable {
                     URL(fileURLWithPath: recoveryCwd).standardizedFileURL.path,
                   !self.movingThreads.contains(agentID), self.rpcThread(forAgent: agentID) === thread,
                   self.sessions[sessionID]?.isAlive == true else { return false }
+            if case .retry(_, _, _, let entryID, _) = request,
+               (try? self.isResolvedProjectRecovery(agentID, entryID: entryID, thread: thread)) != false { return false }
             return true
+        }
+        if case .retry(_, _, _, let entryID, _) = request {
+            do {
+                if try isResolvedProjectRecovery(agentID, entryID: entryID, thread: thread) {
+                    completion(.result(.failure(code: "task_resolved", message: "This Project assignment is resolved. Its original input cannot be recovered."))); return
+                }
+            } catch { completion(.result(.failure(code: "history_storage", message: "Project recovery authority could not be checked."))); return }
         }
         if case .retry(_, _, _, let entryID, _) = request, thread.isGitMergeRetry(entryID: entryID) {
             completion(.result(.failure(code: "git_merge", message: "Use Try again with agent to retry the merge."))); return
@@ -1618,6 +1627,16 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Membership outlives a task's active turn, including manual takeover and settlement.
     /// Executor receipts retain the assignment even when the owning host is disconnected.
+    private func isResolvedProjectRecovery(_ agentID: AgentID, entryID: String, thread: RPCThreadState) throws -> Bool {
+        for project in store.state.projects {
+            guard let task = try projectHistoryStore().taskForWorker(project, worker: agentID), task.phase == .resolved else { continue }
+            // Missing historical input provenance is not permission to revive a resolved assignment.
+            guard let input = thread.operationsByEntry[entryID] else { return true }
+            if input == (task.nativeDeliveryID ?? task.operationID) { return true }
+        }
+        return false
+    }
+
     private func isProjectWorker(_ agentID: AgentID) -> Bool { store.state.isProjectWorker(agentID) }
 
     /// Server queue. Writes a childCommand to the agent's children-extension connection and

@@ -383,6 +383,13 @@ final class ProjectHistoryStore {
         return try record(project, kind: "task-index", id: id.rawValue, as: ProjectTask.self)
     }
 
+    func taskForWorker(_ project: Project, worker: AgentID) throws -> ProjectTask? {
+        if let task = project.tasks.first(where: { $0.workerAgentID == worker }) { return task }
+        // ponytail: a rare recovery scans the owner's cold task index; add a worker index if this becomes frequent.
+        return try rows("SELECT payload FROM records WHERE scope=? AND kind='task-index' AND json_extract(CAST(payload AS TEXT),'$.workerAgentID')=? ORDER BY sequence DESC LIMIT 1",
+                        [scope(project), worker.rawValue], as: ProjectTask.self).first
+    }
+
     func task(_ project: Project, operation: UUID) throws -> ProjectTask? {
         if let task = project.tasks.first(where: { $0.operationID == operation }) { return task }
         return try record(project, kind: "activation", id: operation.uuidString, as: ProjectTask.self)
