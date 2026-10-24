@@ -226,19 +226,20 @@ test("a stdio server inherits pi's whole environment, and a shell wrapper keeps 
   });
 });
 
-test("a changed mcp.json changes nothing in a running pi; /mcp reports this session's servers; /reload is not handled over RPC", { timeout: 120000 }, async (t) => {
+test("a changed global mcp.json reaches a running pi's next request; /mcp reports this session's servers; /reload is not handled over RPC", { timeout: 120000 }, async (t) => {
   await withPi(t, { settings: { extensions: OFF }, args: AGENT_FLAGS, files: mcpFile({ first: server({}, { exposure: "direct" }) }) }, async (pi) => {
     await connected(pi, "first");
     const names = async () => mcpTools((await pi.promptSent("tools?")).tools).filter((n) => n.endsWith("__echo"));
     assert.deepEqual(await names(), ["mcp__first__echo"]);
     fs.writeFileSync(path.join(pi.home, "mcp.json"), JSON.stringify({ mcpServers: { first: server({}, { exposure: "direct" }), second: server({}, { exposure: "direct" }) } }));
-    await sleep(1000);
-    assert.deepEqual(await names(), ["mcp__first__echo"], "the new server is not picked up");
+    await connected(pi, "second");
+    assert.deepEqual(await names(), ["mcp__first__echo", "mcp__second__echo"], "the new server is declared without a restart");
     const mark = pi.events.length;
     const status = await pi.request({ type: "prompt", message: "/mcp" });
     assert.equal(status.data.disposition, "handled");
     await sleep(100);
     assert.match(notices(pi, mark).join("\n"), /^first: connected, 6 tools \(direct\)$/m);
+    assert.match(notices(pi, mark).join("\n"), /^second: connected, 6 tools \(direct\)$/m);
     const reload = await pi.request({ type: "prompt", message: "/reload" });
     assert.equal(reload.data.disposition, "started", "a prompt for the model, not a reload");
   });

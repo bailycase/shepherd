@@ -111,7 +111,8 @@ existing pin stamp cannot reuse an older unpatched engine.
 The patch supplies `refresh_skills`, native file observation and the `skills_changed` /
 `skills_watch_error` RPC events, covering prompt templates as well as skills. The host coalesces dirty state and refreshes immediately at an
 idle boundary, without periodic requests. It does not
-reload extensions, tools, providers or settings. See [live skills](skills.md#live-threads) for
+reload extensions, tools, providers or settings. The same watcher also reloads the built-in MCP extension's
+`mcp.json` servers in a running session ([mcp.md](mcp.md#what-pis-mcp-does)). See [live skills](skills.md#live-threads) for
 bounds, discovery scope and busy behavior. All launches still go through `PiLaunch` and the one
 `BundledPiEngine.entryPath`, now upstream's `dist/cli.js`: agents, children, catalog and print
 launches all use the patched modular runtime. No dependency was added; the modular SDK and its
