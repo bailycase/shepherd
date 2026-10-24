@@ -147,6 +147,10 @@ early with status 0 also passes. `ModelSettingsPopoverTests` is the worked examp
 
 ## CI
 
+The hosted `other` lane also runs `Tests/ShepherdIOSChecks/run.sh --sidebar-only`: readiness, host-client and
+sidebar/Finalize loopback checks, with exact completion sentinels. This is not the full iOS checker or rendered UI
+validation. Failed compiler outputs and the client-check log are retained in its CI artifact.
+
 `scripts/ci_plan.py` picks what runs from the changed paths: docs, templates and the Xcode
 project run no Swift; a pull request runs the unit suites, the startup and identity smoke tests
 and the integration suites of the areas its paths touch, and a path no area claims runs its
