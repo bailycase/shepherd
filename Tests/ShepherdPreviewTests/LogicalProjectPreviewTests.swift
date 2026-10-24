@@ -113,6 +113,69 @@ struct LogicalProjectPreviewTests {
         }
     }
 
+    /// A broad, goal-less workspace from the real runtime and owner: one running, one stopped with no outcome, one stopped with a
+    /// coordinator-style needs-changes fact on an EARLIER run (its follow-up reads neutral), one stopped and accepted by the owner's
+    /// control, one resolved with a merged fact and one resolved with nothing recorded. Strip (collapsed/expanded) and pane rows.
+    @Test func executionAndOutcomeStatesInABroadProject() async throws {
+        try StubPi.installAsEngine()
+        let (world, projects) = try await world(projects: [("Workspace", "")])
+        defer { world.stop() }
+        let vm = world.vm, server = world.server, ref = LogicalProjectRef(home: .local, id: projects[0].id)
+        let space = try #require(vm.state.spaces.last { !$0.hidden })
+        func perform(_ request: ProjectRuntimeRequest) async throws {
+            for _ in 0..<32 {
+                let revision = try #require(server.state.projects.first?.revision)
+                do { _ = try await server.projectRuntime(ref.id, expectedRevision: revision, request: request); return }
+                catch let error as LogicalProjectsError where ["stale_project", "project_busy", "workspace_changed"].contains(error.code) { continue }
+            }
+            throw PreviewError("owner kept refusing \(request)")
+        }
+        func task(_ title: String) throws -> ProjectTask { try #require(server.state.projects.first?.tasks.first { $0.title == title }) }
+        for (title, prompt) in [("Flaky test triage", "slow"), ("Dependency audit", "hello"), ("Sidebar parity review", "hello"),
+                                ("Crash log read", "hello"), ("Release notes", "hello"), ("Legacy import check", "hello")] {
+            try await perform(.assign(operationID: UUID(), spaceID: space.id, title: title, prompt: prompt))
+        }
+        try await eventuallyOnMain("five stopped, one running") {
+            let tasks = server.state.projects.first?.tasks ?? []
+            return tasks.filter { $0.phase == .settled }.count == 5 && tasks.contains { $0.phase == .running }
+        }
+        let review = try task("Sidebar parity review")
+        try await perform(.recordOutcome(operationID: UUID(), taskID: review.id, taskOperationID: review.operationID, kind: .needsChanges))
+        try await perform(.followUp(taskID: review.id, operationID: UUID(), text: "hello"))
+        try await eventuallyOnMain("follow-up stopped") { (try? task("Sidebar parity review"))?.phase == .settled && (try? task("Sidebar parity review"))?.operationID != review.operationID }
+        let crash = try task("Crash log read")
+        try await perform(.recordOutcome(operationID: UUID(), taskID: crash.id, taskOperationID: crash.operationID, kind: .accepted))
+        for (title, merged) in [("Release notes", true), ("Legacy import check", false)] {
+            let t = try task(title)
+            if merged { try await perform(.recordOutcome(operationID: UUID(), taskID: t.id, taskOperationID: t.operationID, kind: .accepted)) }
+            try await perform(.resolve(taskID: t.id, operationID: UUID()))
+            if merged { try await perform(.recordOutcome(operationID: UUID(), taskID: t.id, taskOperationID: t.operationID, kind: .merged, evidence: "PR #318")) }
+        }
+        try await eventuallyOnMain("the viewer has the owner's record") { vm.state.projects.first?.revision == server.state.projects.first?.revision }
+        let project = try #require(vm.state.projects.first)
+        let presentation = ProjectPagePresentation(project)
+        #expect(project.goal.isEmpty)
+        #expect(presentation.summary == "1 working · 3 stopped · 2 resolved")
+        let lines = Dictionary(uniqueKeysWithValues: presentation.rows.map { ($0.title, $0.outcomeLine) })
+        #expect(lines["Dependency audit"] == "Stopped · No outcome recorded")
+        #expect(lines["Sidebar parity review"] == "Stopped · No outcome recorded", "the earlier run's verdict is not the follow-up's")
+        #expect(lines["Crash log read"] == "Accepted · recorded by owner")
+        #expect(lines["Release notes"] == "Merged · PR #318 · recorded by owner")
+        #expect(lines["Legacy import check"] == .some(nil))
+        for expanded in [false, true] {
+            try await Preview.renderMatrix("lead-outcomes-strip-\(expanded ? "expanded" : "collapsed")", size: CGSize(width: 700, height: 420), scales: [1, 1.3]) {
+                ProjectSummaryStrip(vm: vm, ref: ref, summary: presentation.summary ?? "", rows: presentation.rows, expanded: expanded)
+                    .padding(NW.Space.l)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .background(Color.nw.bgWindow)
+            }
+        }
+        try await Preview.renderMatrix("lead-outcomes-pane", size: CGSize(width: 420, height: 640), scales: [1, 1.3]) {
+            LogicalProjectPane(vm: vm, ref: ref, project: project, presentation: presentation)
+                .frame(width: 420, height: 640).background(Color.nw.bgWindow)
+        }
+    }
+
     /// Five tasks past the four-row cap, at text scale 1.3: the list stays bounded and the rest scroll.
     @Test func taskSummaryCapsFiveTasks() async throws {
         let (world, projects) = try await world(projects: [("Sample App", "")])

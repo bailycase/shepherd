@@ -150,7 +150,7 @@ struct NWTaskChipRenderer: TextRenderer {
             let color: Color = switch box.tone {
             case .running: running
             case .attention: attention
-            case .resolved: resolved
+            case .stopped, .resolved: resolved
             }
             // The dot belongs to the chip's first line only; a wrapped title continues under it without another.
             if box.fragment == 0 {
@@ -188,11 +188,5 @@ struct NWTaskChipPressTargets: ViewModifier {
         }
     }
 
-    static func word(_ tone: NWLeadTaskCard.Tone) -> String {
-        switch tone {
-        case .running: "working"
-        case .attention: "needs you"
-        case .resolved: "resolved"
-        }
-    }
+    static func word(_ tone: NWLeadTaskCard.Tone) -> String { tone.word }
 }

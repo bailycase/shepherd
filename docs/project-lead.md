@@ -112,6 +112,41 @@ concurrency limits still bound coordination; this feature makes no strict dollar
 - Resolved tasks are terminal, not deleted. Their history, results and artifacts remain readable
   through authorized routes. A stopped (settled) turn is not success or resolution. Fresh follow-ups
   and legacy `reopen` requests refuse with `task_resolved` and direct callers to `project_assign`.
+- **Outcomes** are separate from the runtime phase. `ProjectRuntimeRequest.recordOutcome` (the coordinator's
+  `project_outcome`) appends one fact bound to an exact settled or resolved activation (`taskOperationID`: the current run,
+  or an earlier run of the same task proven by `previousOperations` or its durable `activation` record): `accepted` or
+  `needsChanges` (a review verdict), or `merged`, `uploaded` or `available` (delivery facts that need redacted evidence up
+  to 256 bytes, such as a PR, commit or build reference). Uploaded is not available to testers. It never changes the phase,
+  reopens a resolved task or touches its worker. There is no lifetime quota: `ProjectTask.outcomes` is a bounded working
+  copy (newest `ProjectTaskOutcome.hotPerTask`, 4, always keeping the current run's newest fact) and
+  `archivedOutcomeCount` counts the rest. Every fact is inserted once into the existing durable history (`records`,
+  kind `outcome`, append-only `ON CONFLICT DO NOTHING`) only from committed state: the predecessor that `prepare`
+  captures, or a committed snapshot. A candidate's new fact is never written while it may still be refused or abandoned,
+  and only facts read back as durable may leave the working copy, so retirement, resolved-task retirement and restart
+  lose nothing, and a refused, failed or uncommitted fact is neither history nor retained-operation proof (its identity
+  stays admissible). `ProjectRuntimeRequest.outcomes(taskID:operationID:beforeSequence:)`
+  (the coordinator's `project_outcomes`; a worker only for its own task) pages 8 facts newest first, filtered and limited in
+  SQL; `historyNext` continues it. An executor task's facts follow its captured route grant exactly as its result does:
+  checked before page I/O and again at return, so removing or replacing that Space (including remove/restore while the read
+  is suspended) permanently revokes the captured read; a fresh read may succeed; other Spaces' changes do not revoke it. Replays use the existing
+  command receipts: an exact retry returns a receipt even after archival or reload, a changed payload is
+  `operation_conflict`, and nothing is duplicated, restored or dispatched. Each row always names its recorder ("per
+  coordinator" or "recorded by owner"); neither is a person's approval. Nothing infers an outcome from settlement,
+  resolution, worker prose or CI text: a legacy or unrecorded task stays unknown, and a follow-up's row shows no earlier
+  run's verdict. No outcome is required, and no Project goal, milestone or project-wide done exists or is needed.
+- **The shared brief** is the existing owner-approved source, not a new system: Settings ▸ Memory's Project
+  instructions (owner authority, labelled as set by the owner and never overriding system, host, tool or Space
+  permissions) and remembered facts (sourced data, `project_remember` only from an inspectable settled task). Every new
+  native turn reads them fresh from the owner. An empty goal is left out. Only the newest whole facts, each with its
+  redacted source, that fit 8,000 UTF-8 bytes ride along; none is truncated. The extension adds `olderMemoryOmitted`
+  and where to find them (the coordinator's `project_read` returns every fact; a worker is told to ask the coordinator).
+  Remote assignments carry `Project.briefMemory` (same rule, an omission line inside the budget) in the existing 16 KiB
+  prompt and retain the whole sourced records for executor-side rebudgeting. Legacy formatted-only briefs are kept or
+  omitted whole, never split into synthetic facts; an inactive executor receipt supplies none of it. Stored memory and Settings are unchanged.
+  Owner tool replies recheck their captured route through socket release. Revocation replaces an unwritten reply with a refusal,
+  or closes an already-partial frame rather than splicing NDJSON or finishing private data disclosure.
+  Executor-only context reads use their immutable execution receipt and local Space grant, not a fabricated owner Project;
+  removing and restoring that Space revokes a queued read, while unrelated Spaces leave that read live.
 - There is no person-facing Pause. When the runtime stops a Project itself (see Pause, restart and
   deletion) it requests safe interruption of active work; the person's next message restarts it. The
   UI cannot claim an unreachable worker stopped before its host acknowledges that request.
@@ -680,7 +715,7 @@ not kept; the cause and fix are in `docs/project-execution.md`, Coordinator star
   is not answered twice.
 - **Coordinators are not threads:** every ordinary-thread producer (sidebar in both modes, completions, palette, pins, notifications, remote
   inspection, peer lists) now asks `isOrdinaryThread`, covered by `ProjectCoordinatorHiddenTests`.
-- **Finished is done:** the strip counts settled and resolved tasks as done ("2 of 3 done"), as Claude's Projects counts a thread that finished. Settled still means finished but unconfirmed: it keeps Mark resolved in the pane and moves to Resolved only when the person or the coordinator resolves it. Pressing the strip expands the current task rows inline; selecting one opens its thread in the existing pane. The list scrolls beyond four rows, and switching Projects collapses it.
+- **Execution is not delivery:** a Project is a long-lived workspace of unrelated tasks, not one campaign, so the strip counts execution facts ("1 needs you · 2 working · 1 stopped · 3 resolved"), never "N of M done". A settled task is **Stopped** (its own pane group, idle dot, "No outcome recorded" until a fact for that exact run exists): settled proves only that the turn stopped, so no review is implied. Resolved closes the assignment; it claims no acceptance, merge or release. Pressing the strip expands the current task rows inline; selecting one opens its thread in the existing pane. The list scrolls beyond four rows, and switching Projects collapses it.
 - **Remote Projects:** an owner-remote Project's runtime actions are refused in words; they are never sent to this Mac's runtime.
 
 Verified with `ProjectPagePresentationTests`, `ProjectCoordinatorHiddenTests` (unit), `LogicalProjectConversationTests` (real scratch

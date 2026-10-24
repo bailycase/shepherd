@@ -171,8 +171,8 @@ struct LogicalProjectPane: View {
                 }
                 if open {
                     ForEach(rows) { row in
-                        NWLeadThreadRow(title: row.title, lead: row.lead, detail: row.group == .resolved ? nil : row.detail ?? vm.workerActivity(row.workerAgentID, home: ref.home),
-                                        tone: row.group == .resolved ? .resolved : row.group == .waiting ? .attention : .running,
+                        NWLeadThreadRow(title: row.title, lead: row.lead, detail: row.group == .working ? row.detail ?? vm.workerActivity(row.workerAgentID, home: ref.home) : row.detail,
+                                        tone: row.tone,
                                         age: row.settledAt.map(Self.age) ?? vm.workerStarted(row.workerAgentID, home: ref.home).map(Self.age)) {
                             vm.logicalProjectPaneTask = row.id
                         }
@@ -225,7 +225,7 @@ struct ProjectTaskDetail: View {
                     Button { Task { _ = await vm.logicalProjects.resolve(ref, task: task.id) } } label: { Image(systemName: NWGlyph.resolved.symbolName) }
                         .buttonStyle(.nwIcon(size: NWLeadMetrics.detailButton))
                         .disabled(!task.canResolve || vm.logicalProjects.busy.contains(ref.id))
-                        .nwHelp(task.canResolve ? "Mark resolved" : "Mark resolved once this thread has finished")
+                        .nwHelp(task.canResolve ? "Mark resolved" : "Mark resolved once this thread's turn has stopped")
                         .accessibilityLabel("Mark resolved")
                 }
                 Menu {

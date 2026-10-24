@@ -238,7 +238,7 @@ struct LogicalProjectConversationTests {
         let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
         defer { window.close() }
         try await eventuallyOnMain("the collapsed summary") { window.layout(); return window.element("Show project tasks") != nil }
-        #expect(window.controls().first { $0.label == "Show project tasks" }?.value == "Collapsed, 1 of 2 done · 1 in progress")
+        #expect(window.controls().first { $0.label == "Show project tasks" }?.value == "Collapsed, 1 working · 1 stopped")
         #expect(!window.controls().contains { $0.label?.hasPrefix(finished.title) == true })
         try window.press("Show project tasks")
         try await eventuallyOnMain("the expanded tasks") {
@@ -246,7 +246,7 @@ struct LogicalProjectConversationTests {
             return window.element("Hide project tasks") != nil && window.controls().contains { $0.label?.hasPrefix(finished.title) == true }
         }
         let header = try #require(window.controls().first { $0.label == "Hide project tasks" })
-        #expect(header.value == "Expanded, 1 of 2 done · 1 in progress")
+        #expect(header.value == "Expanded, 1 working · 1 stopped")
         // A worker's cached activity (refreshed only by the pane) never reaches the strip: the running row is its title alone.
         let ongoing = try #require(current.tasks.count == 1 ? r.vm.state.projects.first?.tasks.last : nil)
         let worker = r.vm.projectWorkerStore(.local, ongoing.workerAgentID)
@@ -264,7 +264,7 @@ struct LogicalProjectConversationTests {
         try await eventuallyOnMain("the selected worker opens in the pane") { window.layout(); return window.element("Open as a thread") != nil }
         r.vm.logicalProjectPaneOpen = false
 
-        // The open list follows the owner, without closing or changing what "done" counts.
+        // The open list follows the owner without closing; resolving moves a stopped task to resolved, never to "done".
         let latest = try #require(r.app.server.state.projects.first { $0.id == r.project.id })
         _ = try await r.vm.projectCoordinator.perform(projectID: r.project.id, expectedRevision: latest.revision,
             request: .resolve(taskID: finished.id, operationID: UUID()))
@@ -273,7 +273,7 @@ struct LogicalProjectConversationTests {
         }
         window.layout()
         #expect(window.element("Hide project tasks") != nil)
-        #expect(window.controls().first { $0.label == "Hide project tasks" }?.value == header.value)
+        #expect(window.controls().first { $0.label == "Hide project tasks" }?.value == "Expanded, 1 working · 1 resolved")
         let running = try #require(latest.tasks.last)
         guard case .snapshot(let snapshot) = try await r.app.server.nativeThread(agentID: running.workerAgentID, request: .snapshot()) else {
             throw RigError("no worker snapshot")
@@ -281,7 +281,7 @@ struct LogicalProjectConversationTests {
         _ = try await r.app.server.nativeThread(agentID: running.workerAgentID,
             request: .abort(expectedSessionID: snapshot.piSessionID, generation: snapshot.generation, operationID: UUID()))
         try await eventuallyOnMain("completion updates the expanded summary") {
-            window.layout(); return window.controls().first { $0.label == "Hide project tasks" }?.value == "Expanded, 2 of 2 done"
+            window.layout(); return window.controls().first { $0.label == "Hide project tasks" }?.value == "Expanded, 1 stopped · 1 resolved"
         }
         try window.press("Hide project tasks")
         try await eventuallyOnMain("collapse removes the rows") {
@@ -290,7 +290,7 @@ struct LogicalProjectConversationTests {
         try window.press("Show project tasks")
         r.vm.openLogicalProject(LogicalProjectRef(home: .local, id: other.id))
         try await eventuallyOnMain("another project starts collapsed") {
-            window.layout(); return window.controls().first { $0.label == "Show project tasks" }?.value == "Collapsed, 0 of 1 done · 1 in progress"
+            window.layout(); return window.controls().first { $0.label == "Show project tasks" }?.value == "Collapsed, 1 working"
         }
         #expect(!window.controls().contains { $0.label?.hasPrefix("Other work") == true })
         try window.press("Show project tasks")
@@ -681,7 +681,7 @@ struct LogicalProjectConversationTests {
         // Its items come from the real task groups; choosing one filters the list.
         // Choosing "Working" in the real menu filters the list to that group; "Show all" then clears it.
         let offered = try await NativeMenuChoice.choose("Working", from: filter)
-        #expect(offered == ["Waiting on you", "Working", "Resolved"], "the menu offers the task groups: \(offered)")
+        #expect(offered == ["Waiting on you", "Working", "Stopped", "Resolved"], "the menu offers the task groups, a stopped turn its own: \(offered)")
         try await eventuallyOnMain("the choice reached the view model") { r.vm.logicalProjectPaneFilter == [.working] }
         try await eventuallyOnMain("only working threads show") { window.layout()
             return window.controls().contains { $0.label == "Reading list research" } }

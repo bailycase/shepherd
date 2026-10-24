@@ -12,7 +12,21 @@ public struct ProjectHistoryReadGrant: Sendable {
     var routes: [ProjectHostReference: [SpaceID: UUID]]
 }
 
+enum ProjectToolResponseGrant: Sendable {
+    case history(ProjectHistoryReadGrant)
+    case execution(ProjectExecutionReceipt, epoch: UInt64, generation: UInt64, spaces: [SpaceID: UUID])
+}
+
 extension SessionServer {
+    func projectToolResponseGrant(_ id: ProjectID, agentID: AgentID, request: ProjectRuntimeRequest) throws -> ProjectToolResponseGrant {
+        try requireProjectsEnabled()
+        if case .read = request, !store.state.projects.contains(where: { $0.id == id }),
+           let receipt = store.state.projectExecutions.last(where: { $0.key.projectID == id && $0.assignment?.reservedWorkerID == agentID }) {
+            return .execution(receipt, epoch: logicalProjectEpoch, generation: projectsGeneration, spaces: executionSpaceGrants())
+        }
+        return .history(try historyReadGrant(runtimeProject(id), caller: agentID))
+    }
+
     func historyReadGrant(_ project: Project, caller: AgentID? = nil) throws -> ProjectHistoryReadGrant {
         let current = try runtimeProject(project.id)
         guard current.ownerID == project.ownerID else { throw LogicalProjectsError("project_scope", "Project ownership changed.") }
@@ -57,6 +71,28 @@ extension SessionServer {
         }
     }
 
+    /// Recheck at each outer release, not just inside the history reader. Its result can cross more awaits and a reply queue.
+    func validateProjectToolResponse(_ response: Project, request: ProjectRuntimeRequest, grant: ProjectToolResponseGrant) throws -> UInt64 {
+        switch grant {
+        case .execution(let receipt, let epoch, let generation, let spaces):
+            try requireProjectsEnabled()
+            guard case .read = request, logicalProjectEpoch == epoch, projectsGeneration == generation,
+                  receipt.key.projectID == response.id, let assignment = receipt.assignment,
+                  store.state.projectExecutions.last(where: { $0.assignment?.reservedWorkerID == assignment.reservedWorkerID }) == receipt,
+                  store.state.agents.contains(where: { $0.id == assignment.reservedWorkerID && $0.spaceID == assignment.executorSpaceID }),
+                  executionSpaceIsCurrent(assignment.executorSpaceID, grants: spaces) else {
+                throw LogicalProjectsError("project_scope", "The original executor context grant was revoked.")
+            }
+            return receipt.revision
+        case .history(let history):
+            let current = try validateHistoryRead(response, grant: history, taskID: request.targetTaskID)
+            if let taskID = request.targetTaskID, let task = response.tasks.first(where: { $0.id == taskID }) {
+                _ = try authorizedResultProject(response, task: task, archivedResolved: task.phase == .resolved, grant: history)
+            }
+            return current.revision
+        }
+    }
+
     func projectHistoryRead<T: Sendable>(_ read: @escaping @Sendable (ProjectHistoryStore) throws -> T) async throws -> T {
         let url = try await enqueue { self.store.url }
         return try await withCheckedThrowingContinuation { continuation in
@@ -69,6 +105,9 @@ extension SessionServer {
     func readProjectHistory(_ project: Project, request: ProjectRuntimeRequest, grant: ProjectHistoryReadGrant) async throws -> Project {
         if case .result(let task, let operation, let offset, let hash) = request {
             return try await readProjectResult(project, taskID: task, operation: operation, offset: offset, hash: hash, grant: grant)
+        }
+        if case .outcomes(let task, let operation, let before) = request {
+            return try await readProjectOutcomes(project, taskID: task, operation: operation, before: before, grant: grant)
         }
         let value: Project = try await projectHistoryRead { history in
             try history.captureCommitted(project)
@@ -152,12 +191,13 @@ extension SessionServer {
                 let messageRetry: Bool
                 if case .message = request { messageRetry = originalMessage != nil } else { messageRetry = false }
                 guard command.sha256 == digest || messageRetry else { throw LogicalProjectsError("operation_conflict", "A retained operation cannot change its payload.") }
-                let task = try history.task(project, operation: operation)
+                let archivedOutcome = try history.outcome(project, id: operation)
+                let task = try history.task(project, operation: operation) ?? archivedOutcome.flatMap { try history.taskByID(project, id: $0.taskID) }
                 let proposal = try project.spaceProposals.first(where: { $0.operationID == operation })
                     ?? history.record(project, kind: "proposal", id: operation.uuidString, as: ProjectSpaceProposal.self)
                 return .init(operationID: operation, task: task, proposal: proposal, message: originalMessage)
             }
-            let hot = project.messages.contains { $0.id == operation } || project.tasks.contains { $0.operationID == operation || ($0.previousOperations ?? []).contains(operation) || ($0.resolutionOperations ?? []).contains(operation) }
+            let hot = project.messages.contains { $0.id == operation } || project.tasks.contains { $0.operationID == operation || ($0.previousOperations ?? []).contains(operation) || ($0.resolutionOperations ?? []).contains(operation) || ($0.outcomes ?? []).contains { $0.id == operation } }
                 || project.memoryOperations.contains(operation) || project.spaceProposals.contains { $0.operationID == operation }
             if !hot, try history.legacyOperation(project, operation: operation) {
                 throw LogicalProjectsError("operation_retained", "Legacy replay proof exists but its original payload cannot be verified. No work was resent.")
@@ -241,11 +281,43 @@ extension SessionServer {
         }
     }
 
+    /// Outcome facts are owner-stored, but an executor task's facts follow its captured route grant exactly as its result does:
+    /// select the task, authorize it before any page I/O, page in SQL, then authorize again at return. Removing or replacing that
+    /// Space at any point (including remove/restore while this read is suspended) permanently revokes the captured grant; a fresh
+    /// read with a fresh grant may succeed. Other Spaces' changes never revoke it.
+    private func readProjectOutcomes(_ project: Project, taskID: ProjectTaskID, operation: UUID?, before: Int64?, grant: ProjectHistoryReadGrant) async throws -> Project {
+        let boundary = try await enqueue { self.historyReadBoundary }
+        await boundary?("initial")
+        // A working-set task is authorized before any history I/O; an archived one right after its record is selected.
+        if let hot = project.tasks.first(where: { $0.id == taskID }) { try await authorizeResultRoute(project, task: hot, archivedResolved: false, grant: grant) }
+        let task: ProjectTask = try await projectHistoryRead { history in
+            try history.captureCommitted(project)
+            guard let task = try history.taskByID(project, id: taskID) else { throw LogicalProjectsError("project_scope", "Task is not in this Project.") }
+            if let operation, operation != task.operationID, !(task.previousOperations ?? []).contains(operation),
+               try history.record(project, kind: "activation", id: operation.uuidString, as: ProjectTask.self)?.id != taskID,
+               try history.record(project, kind: "legacy_activation", id: operation.uuidString, as: ProjectTaskID.self) != taskID {
+                throw LogicalProjectsError("project_scope", "Operation is not a run of this task.")
+            }
+            return task
+        }
+        let archived = task.phase == .resolved && !project.tasks.contains { $0.id == taskID }
+        try await authorizeResultRoute(project, task: task, archivedResolved: archived, grant: grant)
+        let (page, next) = try await projectHistoryRead { try $0.outcomes(project, task: taskID, operation: operation, before: before) }
+        await boundary?("final")
+        return try await enqueue {
+            try self.requireStarted()
+            var fresh = try self.authorizedResultProject(project, task: task, archivedResolved: archived, grant: grant)
+            fresh.tasks = [task]; fresh.messages = []
+            fresh.outcomePage = page; fresh.historyNext = next
+            return fresh
+        }
+    }
+
     private func authorizeResultRoute(_ project: Project, task: ProjectTask, archivedResolved: Bool, grant: ProjectHistoryReadGrant) async throws {
         try await enqueue { _ = try self.authorizedResultProject(project, task: task, archivedResolved: archivedResolved, grant: grant) }
     }
 
-    private func authorizedResultProject(_ project: Project, task: ProjectTask, archivedResolved: Bool, grant: ProjectHistoryReadGrant) throws -> Project {
+    func authorizedResultProject(_ project: Project, task: ProjectTask, archivedResolved: Bool, grant: ProjectHistoryReadGrant) throws -> Project {
         let current = try validateHistoryRead(project, grant: grant, taskID: task.id)
         guard
               current.ownerID == project.ownerID, current.coordinatorAgentID == project.coordinatorAgentID,
