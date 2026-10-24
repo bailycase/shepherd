@@ -24,7 +24,7 @@ done
 echo 'PASS: fixture readiness failures exit without READY'
 
 for module in ShepherdCore ShepherdProtocol ShepherdRemote; do
-    links=()
+    links=(-L "$build")
     if [[ "$module" != ShepherdCore ]]; then links+=(-lShepherdCore); fi
     if [[ "$module" == ShepherdRemote ]]; then links+=(-lShepherdProtocol); fi
     xcrun swiftc "${flags[@]}" "${links[@]}" -enable-testing -emit-library -emit-module \
