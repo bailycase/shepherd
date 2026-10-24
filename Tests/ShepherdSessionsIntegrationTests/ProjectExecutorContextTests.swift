@@ -15,13 +15,14 @@ struct ProjectExecutorContextTests {
         assignment.memoryFacts = [.init(text: "Private whole owner fact", source: "owner receipt", createdAt: 1)]
         _ = try await rig.host.server.projectExecution(.execute(assignment))
         try await eventually("executor waiting") { rig.receipt(assignment)?.phase == .waiting }
-        let client = try ExtensionClient(path: rig.host.socketPath); defer { client.closeConnection() }
         let entered = Locked(false), release = Locked(false)
         defer { release.withValue { $0 = true } }
         try await rig.host.server.enqueue {
             rig.host.server.projectReplyWriteHeld = { entered.withValue { $0 = true }; return !release.current }
         }
-        let reply = Task { [client, workerID = assignment.reservedWorkerID, projectID = assignment.key.projectID] in
+        let reply = Task { [socketPath = rig.host.socketPath, workerID = assignment.reservedWorkerID, projectID = assignment.key.projectID] in
+            let client = try ExtensionClient(path: socketPath)
+            defer { client.closeConnection() }
             try client.send(.projectRuntime(id: 73, agentID: workerID,
                 projectID: projectID, expectedRevision: 0, request: .read))
             return try client.readReply()
