@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { withPi, sleep, until, script } from "./fixtures/pi-rpc-harness.mjs";
+import { withPi, sleep, until, script, requestSummary } from "./fixtures/pi-rpc-harness.mjs";
 import { startFakeMcpHttp } from "./fixtures/fake-mcp-http.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -259,4 +259,57 @@ test("revoked space approval, missing or mismatched ownership and disabled MCP g
       assert.equal(fs.existsSync(path.join(pi.dir, "branch-ran")), false, what);
     });
   }
+});
+
+test("a running thread picks up mcp.json edits: new servers connect, changed ones restart, removed ones go", { timeout: 120000 }, async (t) => {
+  const files = (_dir, work) => ({ "trust.json": { [fs.realpathSync(work)]: true } });
+  await withPi(t, { args: ARGS, files }, async (pi) => {
+    await status(pi);
+    const write = (servers) => {
+      fs.mkdirSync(path.join(pi.work, ".shepherd"), { recursive: true });
+      const file = path.join(pi.work, ".shepherd/mcp.json");
+      // Atomic replacement, as Shepherd and editors save.
+      fs.writeFileSync(file + ".tmp", JSON.stringify({ mcpServers: servers }));
+      fs.renameSync(file + ".tmp", file);
+    };
+    write({ live: server(pi.dir, "live-one") });
+    await until("the added server to connect", async () => pi.spawned("live-one") && /^live: connected/m.test(await status(pi)));
+    const first = Number(fs.readFileSync(path.join(pi.dir, "live-one.pid"), "utf8"));
+    write({ live: server(pi.dir, "live-two") });
+    await until("the changed server to restart", async () => pi.spawned("live-two") && /^live: connected/m.test(await status(pi)));
+    await until("the old server process to exit", () => { try { process.kill(first, 0); return false; } catch { return true; } });
+    write({});
+    await until("the removed server to go", async () => !/^live:/m.test(await status(pi)));
+  });
+});
+
+test("mcp.json edits in an untrusted project still load nothing", { timeout: 60000 }, async (t) => {
+  await withPi(t, { args: [...ARGS, "--no-approve"] }, async (pi) => {
+    await status(pi);
+    mcpFile(pi.work, { blocked: server(pi.dir, "blocked") });
+    await sleep(1500);
+    assert.equal(pi.spawned("blocked"), false);
+    assert.ok(!/^blocked:/m.test(await status(pi)));
+  });
+});
+
+test("a server added mid-session is discoverable and callable in the next turn without restarting", { timeout: 120000 }, async (t) => {
+  await withPi(t, {
+    args: ARGS,
+    files: (_dir, work) => ({ "trust.json": { [fs.realpathSync(work)]: true } }),
+    onRequest: script([
+      { tool: { name: "tool_search", arguments: { query: "echo the text back", server: "added" } } },
+      { tool: { name: "mcp__added__echo", arguments: { text: "hot" } } },
+    ]),
+  }, async (pi) => {
+    await status(pi);
+    // Deferred is what Shepherd writes for its servers: tool_search has to come on mid-session.
+    mcpFile(pi.work, { added: { ...server(pi.dir, "added"), exposure: "deferred" } });
+    await until("the added server to connect", async () => /^added: connected/m.test(await status(pi)));
+    const turn = await pi.prompt("call the added server");
+    const ends = pi.toolEvents(turn.events).filter((e) => e.type === "tool_execution_end");
+    const echo = ends.find((e) => e.toolName === "mcp__added__echo");
+    assert.equal(echo?.isError, false, JSON.stringify([ends.map((e) => [e.toolName, e.isError]), pi.provider.requests.map((r) => requestSummary(r).tools)]));
+    assert.equal(echo.result.content[0].text, "echo: hot");
+  });
 });
