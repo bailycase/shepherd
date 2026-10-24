@@ -2,7 +2,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { CONFIG_DIR_NAME, getAgentDir, parseFrontmatter, SettingsManager, DefaultPackageManager, ProjectTrustStore, loadSkills } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, parseFrontmatter, SettingsManager, DefaultPackageManager, ProjectTrustStore, loadSkills } from "@earendil-works/pi-coding-agent";
 
 export const bundledAgents = {
   scout: { description: "Find relevant code and facts. Do not edit files.", tools: ["read", "grep", "find", "ls"], prompt: "Find relevant code and facts. Return concise findings with file paths. Do not edit files." },
@@ -179,19 +179,16 @@ export function discoverChildAgents(_ctx, _scope) {
   return { agents, diagnostics };
 }
 
-export function childSkills(profile, ctx) {
+export async function childSkills(profile, ctx) {
   if (!profile.inheritSkills && !profile.skills?.length && !profile.skillPaths?.length) return [];
   const settings = SettingsManager.create(ctx.cwd, getAgentDir(), { projectTrusted: ctx.isProjectTrusted?.() === true });
   const errors = settings.drainErrors();
   if (errors.length) throw Error(`Cannot read Pi skill settings: ${errors[0].error.message}`);
-  const global = settings.getGlobalSettings(), project = settings.getProjectSettings();
-  // Shepherd's pi reads skills only from its own home, never ~/.agents/skills: its settings turn
-  // that folder off for the parent, and a filter entry ("!…") names no folder.
-  const paths = [path.join(getAgentDir(), "skills"),
-    ...(global.skills ?? []).filter((p) => !/^[!+-]/.test(p)).map((p) => path.resolve(getAgentDir(), p.replace(/^~\//, `${os.homedir()}/`)))];
-  if (ctx.isProjectTrusted?.() === true) paths.unshift(path.join(ctx.cwd, CONFIG_DIR_NAME, "skills"), path.join(ctx.cwd, ".agents", "skills"),
-    ...(project.skills ?? []).map((p) => path.resolve(ctx.cwd, CONFIG_DIR_NAME, p.replace(/^~\//, `${os.homedir()}/`))));
-  const loaded = loadSkills({ cwd: ctx.cwd, agentDir: getAgentDir(), skillPaths: [...(profile.skillPaths ?? []), ...paths.filter((p) => fs.existsSync(p))], includeDefaults: false });
+  // Reuse Pi discovery so aliases, package paths, exclusions and trust match the parent.
+  const packages = new DefaultPackageManager({ cwd: ctx.cwd, agentDir: getAgentDir(), settingsManager: settings });
+  const resources = await packages.resolve(async () => "skip");
+  const paths = resources.skills.filter(resource => resource.enabled).map(resource => resource.path);
+  const loaded = loadSkills({ cwd: ctx.cwd, agentDir: getAgentDir(), skillPaths: [...(profile.skillPaths ?? []), ...paths], includeDefaults: false });
   if (loaded.diagnostics.some((d) => d.type === "error")) throw Error("Pi skill discovery reported errors");
   const names = profile.skills ?? [];
   const explicit = loadSkills({ cwd: ctx.cwd, agentDir: getAgentDir(), skillPaths: profile.skillPaths ?? [], includeDefaults: false }).skills;
