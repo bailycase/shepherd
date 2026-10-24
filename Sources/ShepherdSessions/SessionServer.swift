@@ -445,6 +445,7 @@ public final class SessionServer: @unchecked Sendable {
     var projectReadAuthority: [ProjectID: UUID] = [:]
     // Current visible executor routes only. Removal/replacement rotates that Space's grant, not its peers'.
     var executionSpaceAuthority: [SpaceID: UUID] = [:]
+    var nativeRecoveryAuthority: [AgentID: UUID] = [:]
     var automationStarts = Set<AutomationID>()
     /// Server-queue owner adapter. Must use the ProjectTask reservation/activation ledger,
     /// launch idle, fence native delivery, and retain occupancy for unknown outcomes.
@@ -1494,6 +1495,7 @@ public final class SessionServer: @unchecked Sendable {
         requestBytes: Int,
         olderClient: Bool = false,
         startupDialogs: Bool = true,
+        transportAuthorization: @escaping () -> Bool = { true },
         completion: @escaping (NativeOutcome) -> Void
     ) {
         let unavailable = { (message: String) in completion(.failure(code: NativeThreadCode.unavailable, message: message)) }
@@ -1563,17 +1565,57 @@ public final class SessionServer: @unchecked Sendable {
             return
         }
         switch request {
-        case .send, .retry: noteAgentSend(agentID)
+        case .send: noteAgentSend(agentID)
         default: break
         }
         // The user's send hands a browser they took over back once the thread accepts it (a stale
         // or refused send changes nothing).
         let isSend: Bool = { if case .send = request { return true } else { return false } }()
-        thread.handle(request, olderClient: olderClient, startupDialogs: startupDialogs) { [weak self] result in
+        refreshExecutionSpaceAuthority(before: store.state.spaces)
+        let spaceAuthority = executionSpaceAuthority[agent.spaceID]
+        let recoveryCwd = agent.worktreePath ?? store.state.spaces.first(where: { $0.id == agent.spaceID })?.path
+        let recoveryAuthority = nativeRecoveryAuthority[agentID] ?? UUID()
+        if case .retry = request { nativeRecoveryAuthority[agentID] = recoveryAuthority }
+        let recoveryAuthorization = { [weak self, weak thread] in
+            guard let self, let thread, transportAuthorization(), let spaceAuthority,
+                  self.nativeRecoveryAuthority[agentID] == recoveryAuthority,
+                  self.executionSpaceAuthority[agent.spaceID] == spaceAuthority,
+                  let current = self.store.state.agents.first(where: { $0.id == agentID }),
+                  self.store.state.isOrdinaryThread(current),
+                  (!self.isProjectWorker(agentID) || self.projectChildTakenOver.contains { scope in
+                      scope.workerAgentID == agentID && self.projectScopeWasTakenOver(scope)
+                  }),
+                  current.spaceID == agent.spaceID, current.tabID == agent.tabID, current.paneID == agent.paneID,
+                  current.worktreePath == agent.worktreePath, let recoveryCwd,
+                  URL(fileURLWithPath: thread.session.cwd).standardizedFileURL.path ==
+                    URL(fileURLWithPath: recoveryCwd).standardizedFileURL.path,
+                  !self.movingThreads.contains(agentID), self.rpcThread(forAgent: agentID) === thread,
+                  self.sessions[sessionID]?.isAlive == true else { return false }
+            if case .retry(_, _, _, let entryID, _) = request,
+               (try? self.isResolvedProjectRecovery(agentID, entryID: entryID, thread: thread)) != false { return false }
+            return true
+        }
+        if case .retry(_, _, _, let entryID, _) = request {
+            do {
+                if try isResolvedProjectRecovery(agentID, entryID: entryID, thread: thread) {
+                    completion(.result(.failure(code: "task_resolved", message: "This Project assignment is resolved. Its original input cannot be recovered."))); return
+                }
+            } catch { completion(.result(.failure(code: "history_storage", message: "Project recovery authority could not be checked."))); return }
+        }
+        if case .retry(_, _, _, let entryID, _) = request, thread.isGitMergeRetry(entryID: entryID) {
+            completion(.result(.failure(code: "git_merge", message: "Use Try again with agent to retry the merge."))); return
+        }
+        if case .retry = request, !recoveryAuthorization() {
+            completion(.failure(code: "recovery_scope", message: "Continue is available only on this authorized ordinary thread and its current Space binding.")); return
+        }
+        thread.handle(request, olderClient: olderClient, startupDialogs: startupDialogs,
+                      recoveryBinding: CheckpointRecoveryBinding(agentID: agentID, spaceID: agent.spaceID, tabID: agent.tabID, paneID: paneID),
+                      recoveryAuthorization: recoveryAuthorization) { [weak self] result in
             if isSend, case .accepted = result {
                 self?.hopToMain { [weak self] in self?.onUserMessage?(agentID) }
                 self?.pushToBrowserOwner(agentID, .handBack(agentID: agentID))
             }
+            if case .retry = request, case .accepted = result { self?.noteAgentSend(agentID) }
             completion(.result(result))
             if case .queue = request, case .accepted = result { self?.projectRuntimeReady(agentID: agentID) }
         }
@@ -1593,6 +1635,18 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Membership outlives a task's active turn, including manual takeover and settlement.
     /// Executor receipts retain the assignment even when the owning host is disconnected.
+    private func isResolvedProjectRecovery(_ agentID: AgentID, entryID: String, thread: RPCThreadState) throws -> Bool {
+        guard !store.state.projects.isEmpty else { return false }
+        let history = try ProjectHistoryStore(beside: store.url)
+        for project in store.state.projects {
+            guard let task = try history.taskForWorker(project, worker: agentID), task.phase == .resolved else { continue }
+            // Missing historical input provenance is not permission to revive a resolved assignment.
+            guard let input = thread.operationsByEntry[entryID] else { return true }
+            if input == (task.nativeDeliveryID ?? task.operationID) { return true }
+        }
+        return false
+    }
+
     private func isProjectWorker(_ agentID: AgentID) -> Bool { store.state.isProjectWorker(agentID) }
 
     /// Server queue. Writes a childCommand to the agent's children-extension connection and
@@ -1863,9 +1917,19 @@ public final class SessionServer: @unchecked Sendable {
                             message: "Design references go only into a thread on the Mac that runs it, for now."), to: client)
                 return
             }
+            if case .retry = request, !client.clientCapabilities.contains(RemoteProtocol.checkpointRecoveryCapability) {
+                send(.nativeThread(id: id, result: .failure(code: "recovery_unsupported",
+                    message: "Update the client to use message-free checkpoint recovery. Nothing was resent.")), to: client)
+                return
+            }
             let olderClient = !client.clientCapabilities.contains(RemoteProtocol.nativeQueueCapability)
             dispatchNativeThread(agentID: agentID, request: request, requestBytes: line.count, olderClient: olderClient,
-                                 startupDialogs: client.clientCapabilities.contains(RemoteProtocol.nativeStartupDialogsCapability)) { [weak self, weak client] outcome in
+                                 startupDialogs: client.clientCapabilities.contains(RemoteProtocol.nativeStartupDialogsCapability),
+                                 transportAuthorization: { [weak self, weak client] in
+                                     guard let self, let client else { return false }
+                                     return client.authenticated && self.clients[client.fd] === client
+                                         && client.clientCapabilities.contains(RemoteProtocol.checkpointRecoveryCapability)
+                                 }) { [weak self, weak client] outcome in
                 guard let self, let client else { return }
                 switch outcome {
                 case .result(let result): self.send(.nativeThread(id: id, result: result), to: client)
@@ -4574,6 +4638,7 @@ public final class SessionServer: @unchecked Sendable {
     func stateDidCommit(before: ShepherdState) {
         let state = store.state
         refreshExecutionSpaceAuthority(before: before.spaces)
+        refreshNativeRecoveryAuthority(before: before)
         for old in before.projects {
             let next = state.projects.first { $0.id == old.id }
             let oldCaller = before.agents.first { $0.id == old.coordinatorAgentID }

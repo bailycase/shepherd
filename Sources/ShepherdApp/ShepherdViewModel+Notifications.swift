@@ -32,6 +32,8 @@ extension ShepherdViewModel {
     func notifyStatus(_ agent: Agent, from old: AgentStatus, failure: TurnFailure?) {
         guard notifications.available, Self.notifiesAsThread(agent.id, in: state) else { return }
         let target = BannerTarget.agent(agent.id)
+        let report = UUID()
+        notifications.statusReports[agent.id] = report
         let watching = isWatching(target)
         if agent.status == .blocked, old == .working, !watching { postWaitingIfNoQuestion(agent.id) }
         // No longer waiting: a "Waiting on your answer." banner (never a question's) comes down.
@@ -39,7 +41,19 @@ extension ShepherdViewModel {
             notifications.remove([AgentBanners.identifier("question", target)])
         }
         guard let banner = AgentBanners.status(of: agent, from: old, failure: failure, watching: watching) else { return }
-        guard failure == nil else { notifications.post(banner); return }
+        guard failure == nil else {
+            Task { [weak self] in
+                guard let self else { return }
+                let thread = await self.snapshot(target)
+                guard self.notifications.statusReports[agent.id] == report,
+                      Self.notifiesAsThread(agent.id, in: self.state),
+                      self.state.agents.first(where: { $0.id == agent.id })?.piSessionID == agent.piSessionID else { return }
+                var stamped = banner
+                stamped.recovery = thread.flatMap(AgentBanners.recovery(in:))
+                self.notifications.post(stamped)
+            }
+            return
+        }
         Task { [weak self] in
             guard let self else { return }
             let reply = await self.snapshot(target).flatMap { AgentBanners.closingReply(in: $0.messages) }
@@ -106,6 +120,7 @@ extension ShepherdViewModel {
     func forgetNotifications(of agentID: AgentID) {
         let target = BannerTarget.agent(agentID)
         notifications.localAsks.forget(agentID)
+        notifications.statusReports.removeValue(forKey: agentID)
         notifications.remove([AgentBanners.identifier("question", target)])
     }
 
@@ -169,7 +184,7 @@ extension ShepherdViewModel {
             default: break
             }
         case .retry?:
-            Task { await retryTurn(response.target) }
+            Task { await retryTurn(response.target, recovery: response.recovery) }
         case .reconnect?:
             if case .host(let id) = response.target { remoteHosts.reconnect(id: id) }
         case .option(let number, _)?:
@@ -193,18 +208,42 @@ extension ShepherdViewModel {
         }
     }
 
-    /// Retry, once the agent is idle: the failed turn again in its place, or, from a host that
-    /// can't retry in place, its prompt sent again.
-    private func retryTurn(_ target: BannerTarget) async {
-        guard let thread = await snapshot(target), !thread.running else { return }
-        if thread.supportedActions.contains("retry"), let entryID = AgentBanners.lastPromptEntry(in: thread.messages) {
-            _ = try? await request(target, .retry(expectedSessionID: thread.piSessionID, generation: thread.generation,
-                                                  operationID: UUID(), entryID: entryID))
+    /// A notification continues the exact checkpoint too, never resends the prompt.
+    private func retryTurn(_ target: BannerTarget, recovery: NativeThreadRequest?) async {
+        show(target)
+        let store: NativeThreadStore
+        switch target {
+        case .agent(let id): store = threadStores.store(for: id)
+        case .remote(let ref): store = remoteThreadStores.store(for: ref)
+        case .host: return
+        }
+        guard let thread = await snapshot(target) else {
+            store.reportActionNotice("The thread is unavailable. Nothing was continued."); return
+        }
+        guard !thread.running else { store.reportActionNotice("Wait for the current operation before continuing."); return }
+        guard thread.supportedActions.contains("checkpointRecovery"),
+              let checkpoint = thread.checkpointRecovery?.checkpoint else {
+            store.reportActionNotice(thread.checkpointRecovery?.refusalMessage ?? "Continue requires an updated host and Pi engine with message-free checkpoint recovery support.")
             return
         }
-        guard thread.supportedActions.contains("send"), let prompt = AgentBanners.lastPrompt(in: thread.messages) else { return }
-        _ = try? await request(target, .send(expectedSessionID: thread.piSessionID, generation: thread.generation,
-                                             operationID: UUID(), text: prompt, delivery: .followUp))
+        guard let recovery, AgentBanners.matchesRecovery(recovery, in: thread) else {
+            store.reportActionNotice("This notification does not identify the current checkpoint. Open the thread and choose Continue on the current interrupted reply.")
+            return
+        }
+        let message: String?
+        var refusalCode: String?
+        do {
+            let result = try await request(target, recovery)
+            if case .failure(let code, let problem) = result { refusalCode = code; message = problem }
+            else if case .accepted = result { message = nil }
+            else { message = "Recovery delivery is unknown. Nothing will be resent automatically." }
+        } catch {
+            message = "Recovery delivery is unknown. Nothing will be resent automatically."
+        }
+        guard let message, let current = await snapshot(target), current.piSessionID == thread.piSessionID,
+              current.generation == thread.generation else { return }
+        if let refusalCode { store.recordRecoveryRefusal(code: refusalCode, sessionID: thread.piSessionID, checkpoint: checkpoint) }
+        store.reportActionNotice(message)
     }
 
     /// An option or Reply…'s words, to pi's dialog that asked. A question answered elsewhere
