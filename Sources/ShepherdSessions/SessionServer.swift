@@ -1586,7 +1586,7 @@ public final class SessionServer: @unchecked Sendable {
             return true
         }
         if case .retry(_, _, _, let entryID, _) = request, thread.isGitMergeRetry(entryID: entryID) {
-            completion(.failure(code: "git_merge", message: "Use Try again with agent to retry the merge.")); return
+            completion(.result(.failure(code: "git_merge", message: "Use Try again with agent to retry the merge."))); return
         }
         if case .retry = request, !recoveryAuthorization() {
             completion(.failure(code: "recovery_scope", message: "Continue is available only on this authorized ordinary thread and its current Space binding.")); return
