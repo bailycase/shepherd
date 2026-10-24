@@ -544,47 +544,53 @@ one prompt at a time.
 
 ## Retry
 
-Retry (a turn's footer, its error card, a Turn failed banner) retries the latest turn
-(`NativeThreadRequest.retry`, `retry` in `supportedActions`, remotely `native.retry.v1`). A failed
-turn with tool work or extension messages continues with its history intact; other turns retry
-in place. pi's session is a tree, but RPC has no command to move in it, and `fork` would start a new session
-(clearing the agent's final name). So the status extension, which every agent loads, registers
-`/shepherd-retry <ms>`, and the host sends it as a prompt (`RPCThreadState+Retry.swift`).
+Continue/retry starts a **new provider request from a settled failure checkpoint**. It does not
+resume a provider's token stream. It never creates, rewrites or resends a user message, moves the
+session leaf backwards, drops diagnostics, or guesses a dialog answer.
 
-- **The command** runs in pi with the command context: idle only, it finds the user message pi
-  stamped at `<ms>` on the active branch (the last such), `navigateTree`s to it without a
-  summary (pi moves the leaf to the message's parent), and sends the message's content again,
-  text and images (`pi.sendUserMessage`). The failed turn stays in the session file, off the
-  active branch; the model sees the prompt once. Anything else is a `notify` and no change. It
-  never throws into pi, and the host leaves it out of the composer's commands.
-  If the turn ends in a provider error after returning tool results or receiving extension
-  messages (including child results and questions), the command does not rewind. It appends a
-  visible continuation request instead, preserving the original messages, tool results and
-  child references. The parent can retrieve completed children and keep using
-  running ones without starting replacements. Retrying cannot undo tool side effects.
-- **The host** takes it only while pi is idle (`busy` otherwise; never queued or steered) and
-  only for the latest turn's message: `entryID` in history with no later user message but ones
-  steered into its turn (`not_latest`). One sent just as pi settled waits for the Changes
-  engine's capture of that turn, then goes through `beforePrompt` like a send. Until pi's run
-  starts, the command is a dispatch, so the queue holds.
-- **The projection:** pi reports no event for the move. The host drops the message and
-  everything after it from history as it sends the command (the old bubble and its error card
-  go at once), and reads `get_messages` again when pi answers the prompt. pi answers only after
-  the command ran (before the resent turn's `agent_start`), so that history is the active
-  branch; the resent message joins as any user `message_start` does, with a new `user:<ms>` id,
-  and the reply streams in the old one's place. The session and generation stay, so clients
-  keep the thread (no remount), and the refresh is the ordinary one (`historyVersion`, one
-  revision), so the data-path budgets hold. If pi refused the command, the same refresh brings
-  the turn back. For a continuation, the refresh restores the failed turn's history and the
-  new continuation request starts a turn after it.
-- **Clients:** `NativeThreadRow.retryEntryID` is set on the latest reply only, once it has
-  finished (`offersRetry`); `NativeThreadStore.retry` sends `retry`, or, from a host without it
-  (a snapshot without `retry`; `RemoteHostClient` strips it from a host without
-  `native.retry.v1`), sends the prompt again as before.
-- **Tests:** `RetryTests` and `RetryStoreTests` (the stub answers `/shepherd-retry` as pi does,
-  and its `flaky` turn fails once), and `Tests/Extensions/retry.test.mjs` against pi's real
-  runtime, including a failed parent with one completed child result and one still-running child,
-  and a consumed child notice followed by a failed continuation that ran no tools.
+Shepherd's hash-verified Pi 1.0.0 runtime patch supplies SDK `getRecoveryState`,
+`recoverCheckpoint(token, operationID)` and `getRecoveryOperation`, with RPC
+`get_state.checkpointRecovery`, `recover_checkpoint` and `get_recovery_operation`.
+The SDK seals a failed/aborted turn's working directory, model, thinking, prompt and tool context. Missing seals,
+changed context, successful tails, busy sessions and uncertain tool work refuse recovery.
+Historical failures without that seal are not guessed recoverable. Resolved Project inputs return `task_resolved`,
+including after the task leaves hot state. Missing input provenance is not permission to revive them; a positively
+identified later manual input is not attributed to the resolved assignment. Tool seals include complete registered
+and active definitions and executable function identities, not names or function text alone. Replacing
+a same-name tool revokes the checkpoint. A replacement runtime cannot prove the old closures' authority,
+so an unaccepted tool-bearing checkpoint refuses after process reopen; recorded operation receipts still
+reconcile without executing again. Tool-free checkpoints can survive reopen.
+
+The SDK retains original errors and partial prose in the session tree. Its existing context-omission
+mechanism excludes the failed assistant attempt from the provider request without changing the
+journal. Completed tool calls/results remain paired in context and are not rerun by recovery.
+An incomplete call, failed tool result or incomplete nested batch refuses, including after compaction.
+This is not an exactly-once guarantee for arbitrary external side effects or later model decisions.
+
+The host anchors `NativeThreadRequest.retry` to the displayed user entry, exact failed entry,
+SDK checkpoint, Pi session/native generation, agent, Space, pane, and executor binding. Its private
+append-only intent is exclusive and durable before dispatch. Native questions/dialogs, capture,
+Stop, session changes and permission/binding changes fence delivery. A busy refusal with exact
+durable proof permits a **new explicit** operation; an accepted, in-flight or unknown delivery
+never permits a new operation. A newer failure is not proof that an older recovery finished;
+unresolved receipts still block recovery after reopen. Replay reads the exact receipt or refuses,
+never a latest-assistant guess. Continue notifications carry their original checkpoint; old or
+stale notifications refuse rather than recover a newer failure. A restart never resumes a request
+automatically.
+
+Clients require `native.checkpointRecovery.v1` and the engine's `checkpointRecovery` action.
+Old hosts/engines give a visible capability explanation, with no send fallback.
+The legacy retry endpoint remains advertised so older clients route to a refusal rather than
+their old send-again fallback; `/shepherd-retry` itself only reports its retirement.
+Ordinary chat remains ordinary chat. Project assignments, including resolved workers, do not gain
+a follow-up/reopen/revival route.
+
+`get_messages` with `history: true` supplies the inspectable branch, including provider-omitted
+failures. Existing successful-application history freshness guards still control painting.
+Tests in `RetryTests`, `RecoveryIntentTests`, `NativeThreadStoreTests`, `RemoteHostClientTests` and
+`Tests/Extensions/checkpoint-recovery*.test.mjs` use isolated stub or FAKE/loopback providers.
+They cover compaction/reopen/fork, tools, steering/attachments, refusal, replay and uncertainty without user
+credentials, a running app or GUI resources.
 
 ## Service tier
 

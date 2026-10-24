@@ -165,6 +165,32 @@ struct ThreadEventTests {
 
     // MARK: - Bootstrap and revisions
 
+    @Test func recoveryStateAndPendingRunningChangeSnapshotRevision() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        let before = try await t.ready()
+        await withCheckedContinuation { done in
+            t.queue.async {
+                t.state.checkpointRecovery = NativeCheckpointRecovery(version: 1, checkpoint: NativeRecoveryCheckpoint(token: "new-token", failedEntryID: "failed"))
+                t.state.commit()
+                done.resume()
+            }
+        }
+        let changed = try #require(await t.request(.snapshot(afterRevision: before.revision)).snapshotValue)
+        #expect(changed.revision > before.revision && changed.checkpointRecovery?.checkpoint?.token == "new-token")
+        await withCheckedContinuation { done in
+            t.queue.async { t.state.retryDispatch = UUID(); t.state.commit(); done.resume() }
+        }
+        let pending = try #require(await t.request(.snapshot(afterRevision: changed.revision)).snapshotValue)
+        #expect(pending.revision > changed.revision && pending.running)
+        await withCheckedContinuation { done in
+            t.queue.async { t.state.retryDispatch = nil; t.state.commit(); done.resume() }
+        }
+        let idle = try #require(await t.request(.snapshot(afterRevision: pending.revision)).snapshotValue)
+        #expect(idle.revision > pending.revision && !idle.running)
+        #expect(await t.request(.snapshot(afterRevision: idle.revision)) == .unchanged(piSessionID: idle.piSessionID, generation: idle.generation, revision: idle.revision))
+    }
+
     @Test func theBootstrapProjectsPisStateHistoryStatsAndCommands() async throws {
         let t = try Thread()
         defer { t.stop() }
@@ -176,7 +202,8 @@ struct ThreadEventTests {
         #expect(!s.running)
         #expect(s.runtime == "rpc" && s.dialogsSupported)
         #expect(s.supportedActions == ["send", "abort", "answer", "setModel", "setThinking", "sendImages", "subagents", "queue", "compact", "designContext",
-                                      "designReferences", "browserElements", "retry", "interrupt", "setServiceTier", "images", "queueSubagent", "artifacts"])
+                                      "designReferences", "browserElements", "retry", "interrupt", "setServiceTier", "images", "queueSubagent", "artifacts", "checkpointRecovery"])
+        #expect(s.checkpointRecovery?.version == 1)
         #expect(s.queue == NativeQueue(mode: .all), "an empty queue says the host holds one")
         #expect(s.messages.map(\.entryID) == ["user:1733234567890", "assistant:1733234567891"])
         #expect(s.messages.first?.blocks == [NativeThreadBlock(kind: .text, text: "Hello!")])

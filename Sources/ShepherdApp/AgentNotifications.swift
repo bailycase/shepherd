@@ -12,6 +12,7 @@ struct BannerResponse: Equatable {
     let text: String?
     /// The question the banner asked (pi's dialog id, or a subagent run's id).
     let question: String?
+    var recovery: NativeThreadRequest? = nil
 }
 
 /// Posts the Mac's system notifications (`AgentBanners` decides what they say) and hands back
@@ -36,6 +37,7 @@ final class AgentNotifications: NSObject, UNUserNotificationCenterDelegate {
     var remoteAsks = ThreadAsks<RemoteAgentRef>()
     /// Hosts whose offline banner is up.
     var offlineHosts: Set<UUID> = []
+    var statusReports: [AgentID: UUID] = [:]
 
     override init() {
         super.init()
@@ -86,6 +88,7 @@ final class AgentNotifications: NSObject, UNUserNotificationCenterDelegate {
     func removeAll() {
         guard available else { return }
         posted.removeAll()
+        statusReports.removeAll()
         UNUserNotificationCenter.current().removeAllDeliveredNotifications()
     }
 
@@ -127,7 +130,7 @@ final class AgentNotifications: NSObject, UNUserNotificationCenterDelegate {
 
     // MARK: Responses
 
-    private static func userInfo(_ banner: AgentBanner) -> [String: String] {
+    static func userInfo(_ banner: AgentBanner) -> [String: String] {
         var info: [String: String] = ["banner": banner.identifier]
         switch banner.target {
         case .agent(let id): info["agentID"] = id.rawValue
@@ -135,6 +138,8 @@ final class AgentNotifications: NSObject, UNUserNotificationCenterDelegate {
         case .host(let id): info["hostID"] = id.uuidString
         }
         if let question = banner.question { info["question"] = question }
+        if case .retry? = banner.recovery, let data = try? JSONEncoder().encode(banner.recovery),
+           let value = String(data: data, encoding: .utf8) { info["recovery"] = value }
         return info
     }
 
@@ -159,6 +164,7 @@ final class AgentNotifications: NSObject, UNUserNotificationCenterDelegate {
         let actionID = response.actionIdentifier
         let text = (response as? UNTextInputNotificationResponse)?.userText
         let question = info["question"] as? String
+        let recovery = (info["recovery"] as? String)?.data(using: .utf8).flatMap { try? JSONDecoder().decode(NativeThreadRequest.self, from: $0) }
         let target = Self.target(info)
         Task { @MainActor in
             defer { completionHandler() }
@@ -168,7 +174,7 @@ final class AgentNotifications: NSObject, UNUserNotificationCenterDelegate {
             guard clicked || action != nil else { return }
             if action?.opensShepherd ?? true { NSApp.activate() }
             guard let target else { return }
-            self.onResponse?(BannerResponse(target: target, action: action, text: text, question: question))
+            self.onResponse?(BannerResponse(target: target, action: action, text: text, question: question, recovery: recovery))
         }
     }
 

@@ -54,7 +54,7 @@ public struct NativeThreadRow: Equatable, Identifiable, Sendable {
     public var id: String { turn.id }
     public var isUser: Bool { turn.isUser }
 
-    /// The row offers Retry: the latest reply, finished, with a message to send again.
+    /// The latest settled reply carries the original user entry that anchors checkpoint recovery.
     public var offersRetry: Bool {
         !live && retryEntryID != nil && !(promptText ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
@@ -303,6 +303,7 @@ public final class NativeThreadStore {
     /// reported as "outcome unknown" meanwhile: the host's answer, when it comes, settles that
     /// notice (`perform`).
     private var inFlight: Set<UUID> = []
+    private var recoveryAttempt: (key: String, refusal: UInt64)?
     @ObservationIgnored private var reportedUnknown: Set<UUID> = []
     private static let outcomeUnknown = "Action outcome unknown. Refresh and check the thread before trying again. Nothing will be resent automatically."
     @ObservationIgnored private var recentRequest = UUID()
@@ -1280,28 +1281,51 @@ public final class NativeThreadStore {
         attachedFiles.removeAll { $0.id == id }
     }
 
-    /// Retry is offered while the agent is idle, by a host that retries in place (`retry`) or
-    /// one that takes a send.
+    /// Keep unsupported/refused Continue visible so its explanation is not silently hidden.
     public func canRetry(_ row: NativeThreadRow, running: Bool) -> Bool {
         row.offersRetry && !running && (supports("retry") || supports("send"))
     }
 
-    /// Retry the latest turn (`row.retryEntryID`): in place where the host can (the failed turn
-    /// leaves the thread and pi's context, and the retry streams in its place); elsewhere its
-    /// prompt goes again as a new message.
-    public func retry(_ row: NativeThreadRow) async {
-        guard row.offersRetry, let entryID = row.retryEntryID else { return }
-        guard supports("retry") else {
-            if let text = row.promptText { await send(text: text) }
-            return
-        }
-        guard await readyToAct(), let current = snapshot else { return }
-        let operation = UUID()
-        await perform(.retry(expectedSessionID: current.piSessionID, generation: current.generation, operationID: operation,
-                             entryID: entryID), operation: operation, current: current)
+    /// Reports a notification action's refusal in the same visible thread notice.
+    public func reportActionNotice(_ message: String) { notice = message }
+
+    public func recoveryOperation(sessionID: String, checkpoint: NativeRecoveryCheckpoint) -> UUID {
+        let key = sessionID + "/" + checkpoint.failedEntryID
+        if recoveryAttempt?.key != key { recoveryAttempt = (key, 0) }
+        return checkpoint.operationID(sessionID: sessionID, refusal: recoveryAttempt?.refusal ?? 0)
     }
 
-    /// Send `text` as a new user message without touching the draft (a turn's Retry on an older host).
+    public func recordRecoveryRefusal(code: String, sessionID: String, checkpoint: NativeRecoveryCheckpoint) {
+        if code == "busy", recoveryAttempt?.key == sessionID + "/" + checkpoint.failedEntryID {
+            recoveryAttempt?.refusal &+= 1
+        }
+    }
+
+    /// Continue from the exact displayed checkpoint. Never fall back to sending a message.
+    public func retry(_ row: NativeThreadRow) async {
+        guard row.offersRetry, let entryID = row.retryEntryID else { return }
+        guard rows.last == row else {
+            notice = "That reply changed. Use Continue on the current interrupted reply."; return
+        }
+        guard supports("checkpointRecovery") else {
+            notice = "Continue requires an updated host and Pi engine with message-free checkpoint recovery support."
+            return
+        }
+        guard let displayed = snapshot, let checkpoint = displayed.checkpointRecovery?.checkpoint else {
+            notice = snapshot?.checkpointRecovery?.refusalMessage ?? "No safe settled failure checkpoint is available."
+            return
+        }
+        guard await readyToAct(), let current = snapshot, current.piSessionID == displayed.piSessionID,
+              current.generation == displayed.generation, current.checkpointRecovery?.checkpoint == checkpoint else {
+            notice = "The thread changed. Refresh before continuing."
+            return
+        }
+        let operation = recoveryOperation(sessionID: current.piSessionID, checkpoint: checkpoint)
+        await perform(.retry(expectedSessionID: current.piSessionID, generation: current.generation, operationID: operation,
+                             entryID: entryID, checkpoint: checkpoint), operation: operation, current: current)
+    }
+
+    /// Send `text` as a new user message without touching the draft.
     public func send(text: String) async {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, await readyToAct(),
               supports("send"), let current = snapshot else { return }
@@ -1661,6 +1685,8 @@ public final class NativeThreadStore {
         }
         do {
             let result = try await request(action)
+            if case .retry = action,
+               epoch != run || snapshot?.generation != current.generation || snapshot?.piSessionID != current.piSessionID { return false }
             guard epoch == run else {
                 return settledAfterRestart(result, operation: operation, sentText: sentText, typed: typed, files: files,
                                            references: references, elements: elements)
@@ -1711,6 +1737,11 @@ public final class NativeThreadStore {
                 // Success is visible in the thread itself; only failures earn a notice.
                 notice = nil
             case .failure(let code, let message):
+                // No new operation after uncertain delivery. Only an observed pre-acceptance
+                // busy refusal permits a different operation on the next explicit click.
+                if case .retry(let sessionID, _, _, _, let checkpoint?) = action {
+                    recordRecoveryRefusal(code: code, sessionID: sessionID, checkpoint: checkpoint)
+                }
                 notice = message
                 modelUnavailable = code == "model_unavailable"
             default:
@@ -1718,6 +1749,8 @@ public final class NativeThreadStore {
             }
         } catch {
             guard epoch == run else { return false }
+            if case .retry = action,
+               snapshot?.generation != current.generation || snapshot?.piSessionID != current.piSessionID { return false }
             if case RemoteHostClientError.outcomeUnknown = error {
                 notice = Self.outcomeUnknown
             } else { notice = String(describing: error) }

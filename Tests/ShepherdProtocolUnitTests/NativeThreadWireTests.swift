@@ -61,6 +61,8 @@ struct NativeThreadWireTests {
         .compact(expectedSessionID: "s", generation: "g", operationID: op, instructions: "Keep the preview findings"),
         .retry(expectedSessionID: "s", generation: "g", operationID: op, entryID: "user:1733234570000"),
         .retry(expectedSessionID: "s", generation: "g", operationID: op, entryID: "user:1733234570000#1"),
+        .retry(expectedSessionID: "s", generation: "g", operationID: op, entryID: "user:1733234570000#1",
+               checkpoint: NativeRecoveryCheckpoint(token: "opaque-checkpoint", failedEntryID: "failed-entry")),
         .setServiceTier(expectedSessionID: "s", generation: "g", operationID: op, tier: "fast"),
         .setServiceTier(expectedSessionID: "s", generation: "g", operationID: op, tier: "standard"),
         .image(expectedSessionID: "s", imageID: "user:1733234570000|0|0123456789abcdef", offset: 0),

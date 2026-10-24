@@ -439,7 +439,7 @@ struct ThreadView: View {
             inspectedRunID: inspectedRunID)
     }
 
-    /// Retry, on the latest turn once the agent is idle: the turn again in its place.
+    /// Request checkpoint recovery from the latest settled turn. Never resend its user input.
     private func retryAction(_ row: NativeThreadRow, running: Bool) -> (() -> Void)? {
         guard store.canRetry(row, running: running) else { return nil }
         return { [store] in Task { await store.retry(row) } }
