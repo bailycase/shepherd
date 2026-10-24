@@ -148,7 +148,7 @@ The check and save use the bundled SDK without creating a Pi session, loading pr
 resources, connecting MCP servers or calling a provider. They have a ten-second deadline.
 Normal new-thread startup then resolves the saved decision, loads `.shepherd/mcp.json` through
 `builtin:mcp`, and registers tools after connection. Deferred tools are available through
-`builtin:tool-search` and codemode's `ALL_TOOLS`. Existing threads need restarting. MCP must
+`builtin:tool-search` and codemode's `ALL_TOOLS`. Running threads pick the edit up ([In a session](#what-pis-mcp-does)). MCP must
 also be enabled under Settings > Pi > Bundled extensions. Approval permits loading, but does
 not establish a connection or tool catalog; those belong to each thread.
 
@@ -207,8 +207,10 @@ request declares only the launch's tools, so the model searches again. (pi's doc
 
 **In a session.** `/mcp` over RPC answers (`disposition: handled`) with a notice listing this thread's
 servers: `name: connected, 9 tools (deferred)`, a failure with its stderr tail, `disabled`. `/mcp reconnect
-<server>` works the same way. pi reads `mcp.json` once, at `session_start`; editing the file under a running
-pi changes nothing, and `/reload` over RPC is not handled (it is sent to the model as a prompt). pi tells
+<server>` works the same way. pi reads `mcp.json` at `session_start`, and Shepherd's engine patch watches the global and (when trusted) project
+`mcp.json` files with native file events afterwards: a changed or removed server closes and withdraws its tools,
+a new one connects, and an unchanged one keeps its connection, so the next request carries the new tools without a
+restart. A trust decision still applies only at thread start. `/reload` over RPC is not handled (it is sent to the model as a prompt). pi tells
 the user once at startup which servers failed or need sign-in.
 
 **Extensions.** `pi.registerMcpServer(name, config)` adds a server for the session, in the same shape as an

@@ -754,6 +754,26 @@
       "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "after": "9e0be7c336d60bc54de3bb9f04904203d1715caefb20412123d12e7c7bd9cdc2",
       "source": "checkpoint-recovery.d.ts"
+
+    },
+    {
+      "path": "dist/extensions/mcp/index.js",
+      "before": "1c4ee9b558a158ad88ebab5e1f6b267e53a09f4a49547481a6371d38502f47ad",
+      "after": "d6bb44605cdc80f705910ae337dd349c14c92193a50af275a2d8eeb0060c7734",
+      "edits": [
+        {
+          "old": "import { getAgentDir } from \"../../config.js\";",
+          "new": "import { getAgentDir, getProjectConfigDirs } from \"../../config.js\";\nimport { watchSkillPaths } from \"../../core/shepherd-skill-watch.js\";"
+        },
+        {
+          "old": "            sessionCwd = ctx.cwd;\n",
+          "new": "            sessionCwd = ctx.cwd;\n            watchConfig(ctx);\n"
+        },
+        {
+          "old": "        pi.on(\"session_shutdown\", async () => {\n            sessionActive = false;\n",
+          "new": "        // Shepherd: `mcp.json` edits (Settings, a sign-in's setup, a git pull) apply to the running session.\n        // Changed or removed servers close and withdraw their tools; new ones connect; unchanged ones keep\n        // their connection. Native file events only, never polling; trust is the session's own decision.\n        let stopConfigWatch;\n        const serverKey = (server) => JSON.stringify([server.entry.name, server.entry.scope, server.entry.source, server.entry.config, server.registeredConfig ?? null]);\n        const reloadConfig = async (ctx) => {\n            if (!sessionActive)\n                return;\n            const current = generation;\n            const loaded = defaultLoadConfig(ctx);\n            configErrors = loaded.errors;\n            autoEnableCodemode = loaded.autoEnableCodemode ?? true;\n            configuredEntries = loaded.servers;\n            const registered = registeredServers();\n            overridden = registered.overridden;\n            const kept = new Map(servers.map((server) => [serverKey(server), server]));\n            const next = [...loaded.servers.map((entry) => ({ entry })), ...registered.servers]\n                .map((server) => kept.get(serverKey(server)) ?? server);\n            const removed = servers.filter((server) => !next.includes(server));\n            const added = next.filter((server) => !servers.includes(server));\n            if (removed.length === 0 && added.length === 0)\n                return;\n            servers = next;\n            for (const server of removed)\n                hideTools(server.entry.name);\n            emitChange();\n            ensureDiscoveryActive(ctx);\n            await Promise.all(removed.map((server) => server.connection?.close().catch(() => undefined)));\n            const connecting = added.filter(isEnabled);\n            if (current !== generation || connecting.length === 0)\n                return;\n            await Promise.all(connecting.map((server) => startConnection(server, () => current === generation)));\n            if (current !== generation) {\n                await Promise.all(connecting.map((server) => server.connection?.close()));\n                return;\n            }\n            ensureDiscoveryActive(ctx);\n            reportProblems(ctx, connecting);\n        };\n        const watchConfig = (ctx) => {\n            stopConfigWatch?.();\n            stopConfigWatch = undefined;\n            if (options.loadConfig)\n                return;\n            const paths = [join(getAgentDir(), \"mcp.json\"),\n                ...(ctx.isProjectTrusted() ? getProjectConfigDirs(ctx.cwd).map((base) => join(base, \"mcp.json\")) : [])];\n            let reloading = Promise.resolve();\n            const changed = () => {\n                reloading = reloading.then(() => reloadConfig(ctx)).catch((error) => {\n                    try {\n                        ctx.ui.notify(`MCP failed to reload: ${errorMessage(error)}`, \"error\");\n                    }\n                    catch { }\n                });\n            };\n            try {\n                stopConfigWatch = watchSkillPaths(paths, changed, () => undefined);\n            }\n            catch { }\n        };\n        pi.on(\"session_shutdown\", async () => {\n            stopConfigWatch?.();\n            stopConfigWatch = undefined;\n            sessionActive = false;\n"
+        }
+      ]
     }
   ]
 }

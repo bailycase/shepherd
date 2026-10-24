@@ -2,7 +2,8 @@
 """A stand-in for `pi --mode rpc` that speaks the documented JSONL protocol
 (pi docs/rpc.md). stdlib only. Behaviour keyed on the prompt text:
 
-  "ask"    emits a confirm extension_ui_request and waits for the response
+  "ask"    emits a confirm extension_ui_request and waits for the response (also as the last
+           paragraph, after an executor's Project context)
   "hang"   never responds (timeout path)
   "preflight-compact" compacts before answering a prompt, held by preflight-go then
            preflight-reply; add "-refuse" for a late refusal instead of a started turn
@@ -1584,7 +1585,7 @@ for raw in sys.stdin.buffer:
             with open(log_path, "ab") as f:
                 f.write(json.dumps({"type": "stub-images", "count": len(cmd["images"]),
                                     "mimeTypes": [i.get("mimeType") for i in cmd["images"]]}).encode() + b"\n")
-        if message == "ask":
+        if message == "ask" or message.endswith("\n\nask"):  # an executor prompt ends with its task
             pending_ui = "uuid-2"
             emit({"type": "agent_start"})
             user = {"role": "user", "content": message, "timestamp": now_ms()}

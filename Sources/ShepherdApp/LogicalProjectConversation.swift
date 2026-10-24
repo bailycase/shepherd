@@ -226,7 +226,7 @@ struct ProjectSummaryStrip: View {
                     LazyVStack(spacing: 0) {
                         ForEach(rows) { row in
                             NWLeadThreadRow(title: row.title, lead: row.lead, detail: Self.detail(row),
-                                            tone: row.group == .resolved ? .resolved : row.group == .waiting ? .attention : .running,
+                                            tone: row.tone,
                                             age: row.settledAt.map(LogicalProjectPane.age)) {
                                 vm.openProjectTask(row.id)
                             }
@@ -243,10 +243,8 @@ struct ProjectSummaryStrip: View {
         .onChange(of: ref) { _, _ in expanded = false }
     }
 
-    /// Only the owner's question or failure: worker activity is refreshed by the pane, not here, so it could be stale.
-    nonisolated static func detail(_ row: ProjectTaskRow) -> String? {
-        row.group == .resolved ? nil : row.detail
-    }
+    /// Only the owner's question, failure or recorded outcome: worker activity is refreshed by the pane, not here, so it could be stale.
+    nonisolated static func detail(_ row: ProjectTaskRow) -> String? { row.detail }
 }
 
 /// A waiting task's question, from the worker's own native dialog (never a copy): its options as the asker offered them,
@@ -329,8 +327,9 @@ struct ProjectTaskCard: View {
         let waiting = row.group == .waiting
         NWLeadTaskCard(
             title: row.title,
-            tone: row.group == .resolved ? .resolved : waiting ? .attention : .running,
-            detail: waiting || row.group == .resolved ? nil : vm.workerActivity(row.workerAgentID, home: ref.home),
+            tone: row.tone,
+            // Only live work shows activity; a stopped or resolved card says its execution fact and any recorded outcome instead.
+            detail: waiting ? nil : row.group == .working ? vm.workerActivity(row.workerAgentID, home: ref.home) : row.outcomeLine,
             question: waiting ? row.detail : nil,
             files: row.files.map { .init(id: $0.id, name: $0.name) },
             open: { open() },
@@ -377,13 +376,26 @@ struct ProjectActionResolver {
 /// The typed task references of the coordinator's prose: `[words](shepherd-project-task://<projectID>/<taskID>)`, a standard Markdown
 /// link. A reference resolves only when its Project is this one and its task still exists; its chip shows the task's own current
 /// title (the model's words are never read), so a renamed or duplicate title still opens the right task.
+extension ProjectTaskRow {
+    var tone: NWLeadTaskCard.Tone {
+        switch group {
+        case .waiting: .attention
+        case .working: .running
+        case .stopped: .stopped
+        case .resolved: .resolved
+        }
+    }
+    /// "Stopped · No outcome recorded", "Accepted · per coordinator", or nil for a resolved task with no recorded outcome (unknown, not success).
+    var outcomeLine: String? { lead.map { [$0, detail].compactMap { $0 }.joined(separator: " · ") } }
+}
+
 enum ProjectTaskLinks {
     static func url(project: ProjectID, task: ProjectTaskID) -> String { "\(NWProseTaskLinks.scheme)://\(project.rawValue)/\(task.rawValue)" }
 
     static func table(project: ProjectID, presentation: ProjectPagePresentation) -> NWProseTaskLinks {
         NWProseTaskLinks(links: Dictionary(uniqueKeysWithValues: presentation.rows.map { row in
             (url(project: project, task: row.id),
-             .init(title: row.title, tone: row.group == .resolved ? .resolved : row.group == .waiting ? .attention : .running))
+             .init(title: row.title, tone: row.tone))
         }))
     }
 
