@@ -114,7 +114,7 @@ Update the patch hash in the pin and restage whenever the patch changes, so Xcod
 existing pin stamp cannot reuse an older unpatched engine.
 
 The patch supplies `refresh_skills`, native file observation and the `skills_changed` /
-`skills_watch_error` RPC events. The host coalesces dirty state and refreshes immediately at an
+`skills_watch_error` RPC events, covering prompt templates as well as skills. The host coalesces dirty state and refreshes immediately at an
 idle boundary, without periodic requests. It does not
 reload extensions, tools, providers or settings. See [live skills](skills.md#live-threads) for
 bounds, discovery scope and busy behavior. All launches still go through `PiLaunch` and the one
