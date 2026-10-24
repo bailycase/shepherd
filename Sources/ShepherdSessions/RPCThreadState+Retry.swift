@@ -121,8 +121,18 @@ extension RPCThreadState {
         drainIfReady()
     }
 
+    func isGitMergeRetry(entryID: String) -> Bool {
+        (history + live.map(\.value)).contains { message in
+            message.entryID == entryID && message.role == "user" &&
+                message.blocks.contains { $0.kind == .text && $0.text == DesignGitMergeBrief.request }
+        }
+    }
+
     func retryTurn(entryID: String, checkpoint: NativeRecoveryCheckpoint?, operationID: UUID, binding: CheckpointRecoveryBinding?,
                    authorized permission: @escaping () -> Bool, completion originalCompletion: @escaping (NativeThreadResult) -> Void) {
+        guard !isGitMergeRetry(entryID: entryID) else {
+            originalCompletion(.failure(code: "git_merge", message: "Use Try again with agent to retry the merge.")); return
+        }
         guard recoveryPending == nil else {
             originalCompletion(.failure(code: "busy", message: "A recovery operation is already pending.")); return
         }

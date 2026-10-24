@@ -553,7 +553,11 @@ Shepherd's hash-verified Pi 1.0.0 runtime patch supplies SDK `getRecoveryState`,
 `get_state.checkpointRecovery`, `recover_checkpoint` and `get_recovery_operation`.
 The SDK seals a failed/aborted turn's working directory, model, thinking, prompt and tool context. Missing seals,
 changed context, successful tails, busy sessions and uncertain tool work refuse recovery.
-Historical failures without that seal are not guessed recoverable.
+Historical failures without that seal are not guessed recoverable. Tool seals include complete registered
+and active definitions and executable function identities, not names or function text alone. Replacing
+a same-name tool revokes the checkpoint. A replacement runtime cannot prove the old closures' authority,
+so an unaccepted tool-bearing checkpoint refuses after process reopen; recorded operation receipts still
+reconcile without executing again. Tool-free checkpoints can survive reopen.
 
 The SDK retains original errors and partial prose in the session tree. Its existing context-omission
 mechanism excludes the failed assistant attempt from the provider request without changing the

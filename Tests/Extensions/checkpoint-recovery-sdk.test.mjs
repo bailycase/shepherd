@@ -17,6 +17,59 @@ const { createAssistantMessageEventStream } = await import(pathToFileURL(path.jo
 const zero = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
 const userEntries = manager => manager.getEntries().filter(e => e.type === "message" && e.message.role === "user");
 
+for (const entry of ["dist/index.js", "dist/bundle/index.js"]) test(`${entry}: tool replacements revoke a failed checkpoint without redelivery`, { timeout: 30000 }, async t => {
+  const sdk = await import(pathToFileURL(path.join(pkg, entry)));
+  const dir = fs.mkdtempSync(path.join(root, "tools-"));
+  const model = { id: "tools", name: "FAKE tools", provider: "tool-fixture", api: "openai-completions",
+    baseUrl: "http://127.0.0.1:1/unused", reasoning: false, input: ["text"], contextWindow: 64000, maxTokens: 4096, cost: zero.cost };
+  let requests = 0, executions = 0, replace;
+  const stream = () => {
+    requests++;
+    const events = createAssistantMessageEventStream();
+    const message = { role: "assistant", content: [{ type: "text", text: "original partial" }], api: model.api,
+      provider: model.provider, model: model.id, timestamp: requests, usage: zero, stopReason: "error", errorMessage: "FAKE disconnect" };
+    events.push({ type: "error", reason: "error", error: message }); events.end(); return events;
+  };
+  const runtime = await sdk.ModelRuntime.create({ modelsPath: null, refreshOnCreate: false, credentials: {
+    read: async () => undefined, list: async () => [], modify: async () => assert.fail(), delete: async () => assert.fail(),
+  } });
+  runtime.registerNativeProvider({ id: model.provider, name: "FAKE", getModels: () => [model], stream, streamSimple: stream,
+    auth: { apiKey: { name: "FAKE", resolve: async () => ({ auth: { apiKey: "not-a-credential" } }) } } });
+  await runtime.refresh({ providers: [model.provider], allowNetwork: false });
+  const settings = sdk.SettingsManager.inMemory({ retry: { enabled: false }, compaction: { enabled: false }, cacheWarming: "off" });
+  const loader = new sdk.DefaultResourceLoader({ cwd: dir, agentDir: dir, settingsManager: settings,
+    noExtensions: true, noSkills: true, noThemes: true, noPromptTemplates: true, noContextFiles: true,
+    extensionFactories: [pi => {
+      replace = (schema, exposure = "direct") => pi.registerTool({ name: "x", label: "x", description: "FAKE x", exposure,
+        parameters: schema, async execute() { executions++; return { content: [{ type: "text", text: "executed" }], details: undefined }; } });
+      replace({ type: "object", properties: {} });
+    }] });
+  await loader.reload();
+  const { session } = await sdk.createAgentSession({ cwd: dir, agentDir: dir, resourceLoader: loader, settingsManager: settings,
+    sessionManager: sdk.SessionManager.inMemory(dir), modelRuntime: runtime, model, tools: ["x"] });
+  t.after(() => session.dispose());
+  await session.bindExtensions({ mode: "rpc", onError: e => assert.fail(JSON.stringify(e)) });
+  for (const [schema, exposure] of [
+    [{ type: "object", properties: { changed: { type: "string" } } }, "direct"],
+    [{ type: "object", properties: { changed: { type: "string" } } }, "direct"],
+    [{ type: "object", properties: { changed: { type: "string" } } }, "deferred"],
+  ]) {
+    await session.prompt("FAKE failed request");
+    const checkpoint = session.getRecoveryState().checkpoint;
+    assert(checkpoint, JSON.stringify(session.getRecoveryState()));
+    assert.deepEqual(session.getRecoveryState().checkpoint, checkpoint, "unchanged definitions retain their checkpoint");
+    const before = requests;
+    const history = structuredClone(userEntries(session.sessionManager));
+    replace(schema, exposure);
+    assert.deepEqual(session.getToolDefinition("x").parameters, schema, "the replacement reached the SDK registry");
+    assert.equal(session.getRecoveryState().refusal, "recovery_context_changed");
+    assert.throws(() => session.recoverCheckpoint(checkpoint.token, randomUUID()), /recovery_context_changed/);
+    assert.equal(requests, before, "a stale definition must not issue a provider request");
+    assert.equal(executions, 0);
+    assert.deepEqual(userEntries(session.sessionManager), history);
+  }
+});
+
 for (const entry of ["dist/index.js", "dist/bundle/index.js"]) test(`${entry}: direct SDK recovery survives compaction and reopen without changing users or failures`, { timeout: 30000 }, async t => {
   const sdk = await import(pathToFileURL(path.join(pkg, entry)));
   const dir = path.join(root, entry.includes("bundle") ? "bundle" : "modular");

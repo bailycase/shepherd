@@ -1557,7 +1557,7 @@ public final class SessionServer: @unchecked Sendable {
             return
         }
         switch request {
-        case .send, .retry: noteAgentSend(agentID)
+        case .send: noteAgentSend(agentID)
         default: break
         }
         // The user's send hands a browser they took over back once the thread accepts it (a stale
@@ -1585,6 +1585,9 @@ public final class SessionServer: @unchecked Sendable {
                   self.sessions[sessionID]?.isAlive == true else { return false }
             return true
         }
+        if case .retry(_, _, _, let entryID, _) = request, thread.isGitMergeRetry(entryID: entryID) {
+            completion(.failure(code: "git_merge", message: "Use Try again with agent to retry the merge.")); return
+        }
         if case .retry = request, !recoveryAuthorization() {
             completion(.failure(code: "recovery_scope", message: "Continue is available only on this authorized ordinary thread and its current Space binding.")); return
         }
@@ -1595,6 +1598,7 @@ public final class SessionServer: @unchecked Sendable {
                 self?.hopToMain { [weak self] in self?.onUserMessage?(agentID) }
                 self?.pushToBrowserOwner(agentID, .handBack(agentID: agentID))
             }
+            if case .retry = request, case .accepted = result { self?.noteAgentSend(agentID) }
             completion(.result(result))
             if case .queue = request, case .accepted = result { self?.projectRuntimeReady(agentID: agentID) }
         }

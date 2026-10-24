@@ -86,10 +86,13 @@ export function requestSummary(entry) {
 export async function withPi(t, options, body) {
   const { settings = {}, files = () => ({}), project, args = [], env: extraEnv = {}, onRequest, cwd } = options;
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pi-rpc-")));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  const provider = await startProvider({ onRequest });
+  t.after(() => {
+    if (process.env.PI_TEST_KEEP_FIXTURES !== "1") fs.rmSync(dir, { recursive: true, force: true });
+    else console.log(`Retained private Pi fixture: ${dir}`);
+  });
+  const provider = await startProvider({ onRequest, usage: options.usage });
   t.after(() => provider.stop());
-  const home = path.join(dir, "home");
+  const home = options.agentDir ?? path.join(dir, "home");
   const work = path.join(dir, "work");
   fs.mkdirSync(home, { recursive: true });
   fs.mkdirSync(work, { recursive: true });
@@ -108,7 +111,8 @@ export async function withPi(t, options, body) {
   const env = { PATH: process.env.PATH, HOME: dir, PI_CODING_AGENT_DIR: home, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0", ...extra };
   let child;
   const launch = (resumeArgs = []) => {
-    child = spawn(process.execPath, [path.join(pkg, process.env.PI_FAKE_BUNDLED_CLI === "1" ? "dist/bundle/cli.js" : "dist/cli.js"), "--mode", "rpc", "--session-dir", path.join(dir, "sessions"),
+    const entrypoint = options.entrypoint ?? (process.env.PI_FAKE_BUNDLED_CLI === "1" ? "dist/bundle/cli.js" : "dist/cli.js");
+    child = spawn(options.launcher ?? process.execPath, [...(options.launcher ? [] : [path.join(pkg, entrypoint)]), "--mode", "rpc", "--session-dir", path.join(dir, "sessions"),
       "--model", "fixture/fixture", ...args, ...resumeArgs], { cwd: cwd?.(dir, work) ?? work, env, stdio: ["pipe", "pipe", "pipe"] });
     bind();
   };

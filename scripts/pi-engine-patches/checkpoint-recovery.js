@@ -19,6 +19,21 @@ const receiptType = "shepherd.checkpoint-recovery.v1";
 const checkpointType = "shepherd.failed-checkpoint.v1";
 const unavailableCheckpoints = new WeakSet();
 const digest = value => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+const toolFunctions = new WeakMap();
+function recoveryTools(session) {
+    // Seal definitions and executable identities, including callable-only tools. Function text
+    // cannot distinguish two closures with different captured authority. A replacement runtime
+    // therefore cannot reuse an unaccepted tool-bearing checkpoint, even with identical names.
+    const tools = {
+        registered: session.getAllTools().map(tool => session.getToolDefinition(tool.name)),
+        active: session.agent.state.tools,
+    };
+    return createHash("sha256").update(JSON.stringify(tools, (_key, value) => {
+        if (typeof value !== "function") return value;
+        if (!toolFunctions.has(value)) toolFunctions.set(value, randomUUID());
+        return { recoveryFunction: toolFunctions.get(value) };
+    })).digest("hex");
+}
 const operationKey = value => typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value) ? value.toLowerCase() : undefined;
 const receipts = session => session.sessionManager.getEntries().filter(e => e.type === "custom" && e.customType === receiptType &&
     e.data?.sessionID === session.sessionId && typeof e.data.operationID === "string" && (typeof e.data.failedEntryID === "string" ||
@@ -83,7 +98,7 @@ export function recoveryCheckpoint(session, cwd) {
     const identity = {
         sessionID: session.sessionId, generation: generations.get(session), leafID: manager.getLeafId(),
         failedEntryID: failed.id, cwd, model: session.model, thinking: session.thinkingLevel,
-        systemPrompt: session.systemPrompt, tools: session.getActiveToolNames(),
+        systemPrompt: session.systemPrompt, tools: recoveryTools(session),
     };
     return { token: digest(identity), failedEntryID: failed.id };
 }
@@ -144,7 +159,7 @@ export function finishRecovery(session, receipt, state, error) {
 }
 
 const recoveryContext = (session, cwd) => digest({ cwd, model: session.model, thinking: session.thinkingLevel,
-    systemPrompt: session.systemPrompt, tools: session.getActiveToolNames() });
+    systemPrompt: session.systemPrompt, tools: recoveryTools(session) });
 
 export function recordRecoveryCheckpoint(session, sessionID, forcedPrompt, cwd) {
     if (sessionID !== session.sessionId || generations.get(session) === null) return;

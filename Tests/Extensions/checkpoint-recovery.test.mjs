@@ -269,12 +269,18 @@ test("model/thinking/leaf/new-session fences invalidate a captured checkpoint", 
     assert.notEqual(afterThinking.token, checkpoint.token);
     assert.equal((await pi.request({ type: "recover_checkpoint", token: checkpoint.token, operationID: randomUUID() })).success, false);
     const fresh = await pi.reopen(state.sessionFile);
-    assert.notEqual(fresh.data.checkpointRecovery.checkpoint.token, afterThinking.token);
+    assert.equal(fresh.data.checkpointRecovery.refusal, "recovery_context_changed",
+      "a replacement tool runtime cannot prove the old executable closures' authority");
     assert.equal((await pi.request({ type: "recover_checkpoint", token: afterThinking.token, operationID: randomUUID() })).success, false);
+    assert.equal(pi.provider.requests.length, 1, "restart and stale recovery issue no request");
+    await pi.prompt("fresh explicit failure in the replacement runtime");
+    const freshCheckpoint = (await recovery(pi)).checkpoint;
+    assert(freshCheckpoint);
+    assert.equal((await recover(pi, freshCheckpoint)).response.success, true, "the new runtime admits its own fresh failure");
     assert.equal((await pi.request({ type: "new_session" })).success, true);
-    const refused = await pi.request({ type: "recover_checkpoint", token: fresh.data.checkpointRecovery.checkpoint.token, operationID: randomUUID() });
+    const refused = await pi.request({ type: "recover_checkpoint", token: freshCheckpoint.token, operationID: randomUUID() });
     assert.equal(refused.success, false);
-    assert.equal(pi.provider.requests.length, 1);
+    assert.equal(pi.provider.requests.length, 3);
     assert.equal(users(await entries(pi)).length, 0);
   });
 });
