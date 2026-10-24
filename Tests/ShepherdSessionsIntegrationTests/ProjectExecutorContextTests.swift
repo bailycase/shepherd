@@ -21,9 +21,9 @@ struct ProjectExecutorContextTests {
         try await rig.host.server.enqueue {
             rig.host.server.projectReplyWriteHeld = { entered.withValue { $0 = true }; return !release.current }
         }
-        let reply = Task {
-            try client.send(.projectRuntime(id: 73, agentID: assignment.reservedWorkerID,
-                projectID: assignment.key.projectID, expectedRevision: 0, request: .read))
+        let reply = Task { [client, workerID = assignment.reservedWorkerID, projectID = assignment.key.projectID] in
+            try client.send(.projectRuntime(id: 73, agentID: workerID,
+                projectID: projectID, expectedRevision: 0, request: .read))
             return try client.readReply()
         }
         try await eventually("executor context queued before first write") { entered.current }
