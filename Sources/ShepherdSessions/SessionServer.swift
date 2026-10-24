@@ -1628,8 +1628,10 @@ public final class SessionServer: @unchecked Sendable {
     /// Membership outlives a task's active turn, including manual takeover and settlement.
     /// Executor receipts retain the assignment even when the owning host is disconnected.
     private func isResolvedProjectRecovery(_ agentID: AgentID, entryID: String, thread: RPCThreadState) throws -> Bool {
+        guard !store.state.projects.isEmpty else { return false }
+        let history = try ProjectHistoryStore(beside: store.url)
         for project in store.state.projects {
-            guard let task = try projectHistoryStore().taskForWorker(project, worker: agentID), task.phase == .resolved else { continue }
+            guard let task = try history.taskForWorker(project, worker: agentID), task.phase == .resolved else { continue }
             // Missing historical input provenance is not permission to revive a resolved assignment.
             guard let input = thread.operationsByEntry[entryID] else { return true }
             if input == (task.nativeDeliveryID ?? task.operationID) { return true }
