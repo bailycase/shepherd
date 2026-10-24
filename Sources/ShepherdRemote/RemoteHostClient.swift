@@ -446,7 +446,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         case .compact:
             capabilities.contains(RemoteProtocol.nativeContextCapability) ? nil : "Update Shepherd on the host to compact the context."
         case .retry:
-            capabilities.contains(RemoteProtocol.nativeRetryCapability) ? nil : "Update Shepherd on the host to retry a turn in place."
+            capabilities.contains(RemoteProtocol.checkpointRecoveryCapability) ? nil : "Continue requires an updated host with message-free checkpoint recovery support."
         case .goal:
             capabilities.contains(RemoteProtocol.nativeGoalCapability) ? nil : "Update Shepherd on the host to control goals."
         case .image:
@@ -468,15 +468,15 @@ public final class RemoteHostClient: @unchecked Sendable {
         capabilities.contains(RemoteProtocol.designContextCapability) ? request : request.droppingDesignContext
     }
 
-    /// The result as this client acts on it: a snapshot lists `retry` only from a host that
-    /// retries in place (`native.retry.v1`), so the thread sends the prompt again anywhere else,
-    /// and `interrupt` only from one that stops pi for a message (`native.interrupt.v1`), so the
+    /// A snapshot exposes message-free recovery only from a capable host. There is no
+    /// send-again fallback. `interrupt` is shown only by a host that stops pi for a message
+    /// (`native.interrupt.v1`), so the
     /// thread steers there; `setServiceTier` only from one that keeps each agent's tier
     /// (`native.serviceTier.v1`), so the composer draws no Speed control anywhere else.
     static func incoming(_ result: NativeThreadResult, capabilities: Set<String>) -> NativeThreadResult {
         guard case .snapshot(var value) = result else { return result }
         let before = value.supportedActions
-        for (capability, action) in [(RemoteProtocol.nativeRetryCapability, "retry"), (RemoteProtocol.nativeInterruptCapability, "interrupt"),
+        for (capability, action) in [(RemoteProtocol.checkpointRecoveryCapability, "checkpointRecovery"), (RemoteProtocol.nativeRetryCapability, "retry"), (RemoteProtocol.nativeInterruptCapability, "interrupt"),
                                      (RemoteProtocol.nativeServiceTierCapability, "setServiceTier"), (RemoteProtocol.nativeGoalCapability, "goal"),
                                      (RemoteProtocol.nativeImagesCapability, "images"), (RemoteProtocol.nativeQueueSubagentCapability, "queueSubagent"),
                                      (RemoteProtocol.nativeArtifactsCapability, "artifacts")]

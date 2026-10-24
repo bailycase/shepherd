@@ -104,7 +104,7 @@ struct RemoteHostClientTests {
         (NativeThreadRequest.compact(expectedSessionID: "s", generation: "g", operationID: UUID()), RemoteProtocol.nativeContextCapability),
         (.queue(expectedSessionID: "s", generation: "g", operationID: UUID(), action: .clear), RemoteProtocol.nativeQueueCapability),
         (.setThinking(expectedSessionID: "s", generation: "g", operationID: UUID(), level: "high"), RemoteProtocol.nativeThreadV2Capability),
-        (.retry(expectedSessionID: "s", generation: "g", operationID: UUID(), entryID: "user:1"), RemoteProtocol.nativeRetryCapability),
+        (.retry(expectedSessionID: "s", generation: "g", operationID: UUID(), entryID: "user:1"), RemoteProtocol.checkpointRecoveryCapability),
         (.send(expectedSessionID: "s", generation: "g", operationID: UUID(), text: "t", delivery: .interrupt), RemoteProtocol.nativeInterruptCapability),
         (.queue(expectedSessionID: "s", generation: "g", operationID: UUID(), action: .interrupt(ids: [UUID()])), RemoteProtocol.nativeInterruptCapability),
         (.queue(expectedSessionID: "s", generation: "g", operationID: UUID(), action: .subagent(id: UUID())), RemoteProtocol.nativeQueueSubagentCapability),
@@ -119,8 +119,7 @@ struct RemoteHostClientTests {
         #expect(RemoteHostClient.missingCapability(.snapshot(), capabilities: all.subtracting([capability])) == nil)
     }
 
-    /// A host without `native.retry.v1` never offers Retry in place, whatever its snapshot lists,
-    /// so the thread sends the prompt again there.
+    /// Legacy retry capability filtering remains compatible; no client sends the prompt as a fallback.
     @Test func retryIsOfferedOnlyByAHostThatRetriesInPlace() {
         let snapshot = NativeThreadSnapshot(piSessionID: "s", generation: "g", revision: 1, running: false,
                                             supportedActions: ["send", "retry"], dialogsSupported: true, dialogs: [],
