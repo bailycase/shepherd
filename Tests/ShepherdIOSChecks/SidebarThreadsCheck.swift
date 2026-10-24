@@ -35,6 +35,35 @@ struct SidebarThreadsCheck {
         hosts.setForeground(true)
         try await waitUntil("both hosts connected") { hosts.hosts.allSatisfy { $0.phase == .connected && !$0.state.agents.isEmpty } }
 
+        // A visible form owns its original handshake/client, not a saved host id that can be rebound.
+        let finalizing = AgentRef(host: studioID, agent: shared)
+        let retained = FinalizeStore(ref: finalizing)
+        await retained.begin(hosts: hosts)
+        check(retained.canFinalize, "a connected original form is usable")
+        let firstSession = hosts.host(studioID)?.session
+        try hosts.edit(studioID, RemoteHostEntry(name: "Replacement", address: "127.0.0.1", port: String(build.port), token: ActionHost.token))
+        try await waitUntil("replacement handshake") { hosts.host(studioID)?.phase == .connected && hosts.host(studioID)?.session != firstSession }
+        await retained.start(hosts: hosts)
+        check(studio.finalizations == 0 && build.finalizations == 0 && retained.operationID == nil,
+              "a retained form sends nothing to the replacement same-id host")
+        let fresh = FinalizeStore(ref: finalizing)
+        await fresh.begin(hosts: hosts)
+        await fresh.start(hosts: hosts)
+        check(studio.finalizations == 0 && build.finalizations == 1 && fresh.operation?.finished == true,
+              "a fresh form on the replacement has a positive exact-client path")
+        fresh.reset()
+        check(fresh.operationID == nil, "a proved terminal operation releases its form")
+        build.useWrongOperationID()
+        await fresh.begin(hosts: hosts)
+        await fresh.start(hosts: hosts)
+        let unknown = fresh.operationID
+        check(unknown != nil && fresh.operation == nil, "a mismatched operation reply is not adopted")
+        fresh.reset()
+        check(fresh.operationID == unknown, "Reset cannot erase a submitted operation whose outcome is unknown")
+        let replacementSession = hosts.host(studioID)?.session
+        try hosts.edit(studioID, RemoteHostEntry(name: "Studio", address: "127.0.0.1", port: String(studio.port), token: ActionHost.token))
+        try await waitUntil("original host reconnects") { hosts.host(studioID)?.phase == .connected && hosts.host(studioID)?.session != replacementSession }
+
         // Pins are this device's: kept in its preferences, restored by a new store, never sent to a host.
         let sidebar = SidebarThreads(hosts: hosts, defaults: defaults)
         let studioThread = AgentRef(host: studioID, agent: shared)
@@ -84,6 +113,7 @@ struct SidebarThreadsCheck {
         check(defaults.data(forKey: SidebarThreads.pinsKey).flatMap { try? JSONDecoder().decode([FleetRef].self, from: $0) } == [],
               "the forgotten pins are gone from the preferences too")
         hosts.setForeground(false)
+        print("PASS: retained Finalize refuses replacement, fresh Finalize reaches its exact client, unknown operation survives Reset")
         print("PASS: sidebar pins per device and host, restored in order, kept offline, dropped with their thread or host; Move to Space reaches only its own host with the exact space, refusals and offline shown, nothing sent elsewhere")
     }
 
@@ -140,6 +170,11 @@ final class ActionHost: @unchecked Sendable {
         for client in live { try? write(client, .stateChanged(state: state)) }
     }
 
+    private var finalizeCount = 0
+    private var wrongOperationID = false
+    var finalizations: Int { lock.withLock { finalizeCount } }
+    func useWrongOperationID() { lock.withLock { wrongOperationID = true } }
+
     private func acceptLoop() {
         while true {
             let client = accept(fd, nil, nil)
@@ -159,7 +194,7 @@ final class ActionHost: @unchecked Sendable {
             guard case .hello(let id, let token, _, _, _) = try NDJSON.decode(RemoteRequest.self, from: readLine(client)),
                   token == Self.token else { return }
             try write(client, .helloOk(id: id, protocolVersion: RemoteProtocol.version, capabilities: [
-                RemoteProtocol.agentActionsCapability, RemoteProtocol.moveThreadCapability,
+                RemoteProtocol.agentActionsCapability, RemoteProtocol.moveThreadCapability, RemoteProtocol.worktreeActionsCapability,
             ]))
             while true {
                 let request = try NDJSON.decode(RemoteRequest.self, from: readLine(client))
@@ -174,6 +209,22 @@ final class ActionHost: @unchecked Sendable {
                     } else {
                         try write(client, .ok(id: id))
                     }
+                case .agentQuery(let id, _, let query):
+                    let result: RemoteAgentResult
+                    switch query {
+                    case .worktreeSetup:
+                        result = .worktreeSetup(.init(repoPath: "/fixture", checks: ["git": .pass("fixture")], repoSettings: [:]))
+                    case .worktreeInfo:
+                        result = .worktreeInfo(.init(path: "/fixture", branch: "feature", warning: nil,
+                            defaults: .init(base: "nightly", title: "Fixture", body: "", autoCommit: false, deleteLocalBranch: false,
+                                            autoMergePR: false, mergeMethod: "squash"), generateDescription: false))
+                    case .worktreeCommitCount: result = .worktreeCommitCount(1)
+                    case .finalizeWorktree(let operation, _):
+                        let wrong = lock.withLock { finalizeCount += 1; return wrongOperationID }
+                        result = .worktreeOperation(.init(id: wrong ? UUID() : operation, finished: true, progress: []))
+                    default: continue
+                    }
+                    try write(client, .agentResult(id: id, result: result))
                 default:
                     continue
                 }

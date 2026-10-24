@@ -36,6 +36,30 @@ final class FinalizeStore {
     private(set) var operation: RemoteWorktreeOperation?
     private(set) var steps: [FinalizeStep] = []
     var error: String?
+    @ObservationIgnored private var offer: Offer?
+
+    private struct Offer {
+        let host: MobileHost
+        let session: UUID
+        let client: RemoteHostClient
+        let address: String
+        let port: UInt16
+        let agent: Agent
+        let spacePath: String
+
+        @MainActor func isCurrent(_ hosts: MobileHosts) -> Bool {
+            guard hosts.host(host.id) === host, host.session == session, host.connectedClient === client,
+                  host.record.address == address, host.record.port == port,
+                  host.supports(RemoteProtocol.worktreeActionsCapability),
+                  let current = host.agent(agent.id), current.spaceID == agent.spaceID,
+                  current.tabID == agent.tabID, current.paneID == agent.paneID,
+                  current.worktreePath == agent.worktreePath, current.worktreeBranch == agent.worktreeBranch,
+                  current.worktreeBase == agent.worktreeBase,
+                  let space = host.state.spaces.first(where: { $0.id == agent.spaceID }), space.path == spacePath,
+                  space.hidden != true else { return false }
+            return true
+        }
+    }
 
     init(ref: AgentRef) {
         self.ref = ref
@@ -56,6 +80,14 @@ final class FinalizeStore {
     /// Checks the host, then fills the form. A pending operation goes straight to its progress.
     func begin(hosts: MobileHosts) async {
         guard operationID == nil else { stage = .operation; return }
+        if offer == nil {
+            guard let host = hosts.host(ref.host), let session = host.session, let client = host.connectedClient,
+                  let agent = host.agent(ref.agent), let space = host.state.spaces.first(where: { $0.id == agent.spaceID }) else {
+                error = "The host is offline."; return
+            }
+            offer = Offer(host: host, session: session, client: client, address: host.record.address,
+                          port: host.record.port, agent: agent, spacePath: space.path)
+        }
         stage = .checking
         error = nil
         await runChecks(hosts: hosts)
@@ -119,6 +151,9 @@ final class FinalizeStore {
 
     func start(hosts: MobileHosts) async {
         guard canFinalize else { return }
+        guard offer?.isCurrent(hosts) == true else {
+            error = "This form belongs to an earlier worktree or connection. Close it and open it again."; return
+        }
         let id = UUID()
         submitting = true
         operationID = id
@@ -127,6 +162,7 @@ final class FinalizeStore {
         defer { submitting = false }
         do {
             if case .worktreeOperation(let status) = try await query(.finalizeWorktree(operationID: id, options: options), hosts: hosts) {
+                guard status.id == id else { throw FinalizeError.reply }
                 adopt(status)
             }
         } catch RemoteHostClientError.rejected(_, let message) {
@@ -145,6 +181,7 @@ final class FinalizeStore {
         while !Task.isCancelled, operation?.finished != true {
             do {
                 if case .worktreeOperation(let status) = try await query(.worktreeStatus(operationID: id), hosts: hosts) {
+                    guard status.id == id else { throw FinalizeError.reply }
                     adopt(status)
                     error = nil
                     if status.finished { return }
@@ -156,6 +193,8 @@ final class FinalizeStore {
 
     /// Shows an operation the host reported (and the fixtures' staged ones).
     func adopt(_ status: RemoteWorktreeOperation) {
+        guard operationID == nil || operationID == status.id else { return }
+        guard operation?.finished != true || status.finished else { return }
         operationID = status.id
         operation = status
         steps = finalizeSteps(status.progress)
@@ -174,7 +213,8 @@ final class FinalizeStore {
 
     /// Done with a finished operation: the next Finalize starts over.
     func reset() {
-        guard operation?.finished != false else { return }
+        guard operationID == nil || operation?.finished == true else { return }
+        offer = nil
         stage = .checking
         info = nil
         operationID = nil
@@ -186,16 +226,22 @@ final class FinalizeStore {
     }
 
     private func query(_ query: RemoteAgentQuery, hosts: MobileHosts) async throws -> RemoteAgentResult {
-        guard let client = hosts.host(ref.host)?.connectedClient else { throw FinalizeError.offline }
-        return try await client.agentQuery(agentID: ref.agent, query: query)
+        guard let offer, offer.isCurrent(hosts) else { throw FinalizeError.stale }
+        let result: Result<RemoteAgentResult, Error>
+        do { result = .success(try await offer.client.agentQuery(agentID: ref.agent, query: query)) }
+        catch { result = .failure(error) }
+        // A late refusal on a lost route is not proof that nothing ran on the captured host.
+        guard offer.isCurrent(hosts) else { throw FinalizeError.stale }
+        return try result.get()
     }
 
     private enum FinalizeError: Error, CustomStringConvertible {
-        case offline, reply
+        case offline, reply, stale
         var description: String {
             switch self {
             case .offline: "The host is offline."
             case .reply: "The host answered something unexpected."
+            case .stale: "This worktree's connection or binding changed. Reopen the form; do not retry an unknown operation."
             }
         }
     }

@@ -905,7 +905,3 @@ extension NWReviewFileRow.Item {
 }
 
 /// A host's refusal says what went wrong in its message; anything else describes itself.
-func reviewErrorText(_ error: Error) -> String {
-    if case RemoteHostClientError.rejected(_, let message) = error { return message }
-    return String(describing: error)
-}
