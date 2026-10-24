@@ -57,6 +57,15 @@ extension SessionServer {
         }
     }
 
+    /// Recheck at each outer release, not just inside the history reader. Its result can cross more awaits and a reply queue.
+    func validateProjectToolResponse(_ response: Project, request: ProjectRuntimeRequest, grant: ProjectHistoryReadGrant) throws -> UInt64 {
+        let current = try validateHistoryRead(response, grant: grant, taskID: request.targetTaskID)
+        if let taskID = request.targetTaskID, let task = response.tasks.first(where: { $0.id == taskID }) {
+            _ = try authorizedResultProject(response, task: task, archivedResolved: task.phase == .resolved, grant: grant)
+        }
+        return current.revision
+    }
+
     func projectHistoryRead<T: Sendable>(_ read: @escaping @Sendable (ProjectHistoryStore) throws -> T) async throws -> T {
         let url = try await enqueue { self.store.url }
         return try await withCheckedThrowingContinuation { continuation in
@@ -281,7 +290,7 @@ extension SessionServer {
         try await enqueue { _ = try self.authorizedResultProject(project, task: task, archivedResolved: archivedResolved, grant: grant) }
     }
 
-    private func authorizedResultProject(_ project: Project, task: ProjectTask, archivedResolved: Bool, grant: ProjectHistoryReadGrant) throws -> Project {
+    func authorizedResultProject(_ project: Project, task: ProjectTask, archivedResolved: Bool, grant: ProjectHistoryReadGrant) throws -> Project {
         let current = try validateHistoryRead(project, grant: grant, taskID: task.id)
         guard
               current.ownerID == project.ownerID, current.coordinatorAgentID == project.coordinatorAgentID,

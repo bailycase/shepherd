@@ -162,6 +162,15 @@ struct ProjectTaskOutcomeTests {
                 try await reloaded.host.server.projectRuntime(project.id, expectedRevision: 1, request: .recordOutcome(operationID: op, taskID: t, taskOperationID: run, kind: .available, evidence: "changed"))
             }
         }
+        // A new fact on the retired task restores its committed hot predecessor, not a lifetime quota.
+        let next = ProjectRuntimeRequest.recordOutcome(operationID: UUID(), taskID: taskID, taskOperationID: runs[2], kind: .available, evidence: "internal testers can install build 7")
+        let restored = try await reloaded.host.server.projectRuntime(project.id, expectedRevision: before.revision, request: next)
+        let restoredTask = try #require(restored.tasks.first { $0.id == taskID })
+        #expect(restoredTask.phase == .resolved && restoredTask.outcomes?.count == ProjectTaskOutcome.hotPerTask)
+        #expect(try await page(reloaded.host.server).count == ids.count + 1)
+        #expect(try await page(reloaded.host.server).first?.outcome.id == next.operationID)
+        _ = try await reloaded.host.server.projectRuntime(project.id, expectedRevision: 1, request: next)
+        #expect(try await page(reloaded.host.server).count == ids.count + 1)
         // The resolved task stays terminal.
         do {
             _ = try await reloaded.host.server.projectRuntime(project.id, expectedRevision: reloaded.host.server.state.projects[0].revision,
@@ -254,6 +263,22 @@ struct ProjectTaskOutcomeTests {
             #expect(phase.active == !view.settings.instructions.isEmpty && phase.active == !view.memory.isEmpty)
             #expect(view.goal.isEmpty != phase.active)
         }
+        // Rebudget the executor projection exactly as before_agent_start does: only entire original records can survive.
+        state.projectExecutions = [.init(key: assignment.key, assignment: assignment, phase: .sent)]
+        let projected = try #require(state.projectContext(for: assignment.reservedWorkerID))
+        let facts = projected.memory.filter { context.memory.contains($0) }
+        #expect(facts == assignment.memoryFacts)
+        #expect(projected.memory.allSatisfy { context.memory.contains($0) || $0.text == Project.briefMemoryOmission(assignment.memoryOmittedCount ?? 0) })
+        #expect(Project.briefMemoryFacts(projected.memory).allSatisfy { projected.memory.contains($0) })
+        let roundTrip = try JSONDecoder().decode(ProjectExecutionAssignment.self, from: JSONEncoder().encode(assignment))
+        #expect(roundTrip == assignment)
+        try roundTrip.validate()
+        var mismatched = assignment; mismatched.memoryFacts?[0].text = "partial replacement"
+        #expect(throws: ProjectValidationError.self) { try mismatched.validate() }
+        var legacy = assignment; legacy.memoryFacts = nil; legacy.memoryOmittedCount = nil
+        state.projectExecutions = [.init(key: legacy.key, assignment: legacy, phase: .sent)]
+        let legacyView = try #require(state.projectContext(for: legacy.reservedWorkerID))
+        #expect(legacyView.memory.count == 1 && legacyView.memory[0].text.hasPrefix("Legacy owner brief omitted:"))
         var goalless = context; goalless.goal = ""; goalless.memory = []; goalless.settings.instructions = ""
         let bare = try rig.host.server.projectAssignment(goalless, task: task, defaultModel: "test/model")
         #expect(bare.nativePrompt == "Do it", "a no-goal, no-brief Project sends only the assignment")
@@ -378,7 +403,7 @@ struct ProjectOutcomeCommitTests {
 struct ProjectOutcomeRouteTests {
     typealias Rig = ProjectRuntimeTests.Rig
 
-    @Test(arguments: ["remove", "restore", "unrelated", "noop", "disableRestore", "projectUnlinkRestore", "replaceBinding"], ["initial", "final"])
+    @Test(arguments: ["remove", "restore", "unrelated", "noop", "disableRestore", "projectUnlinkRestore", "replaceBinding"], ["initial", "final", "tool", "delivery"])
     func anOutcomeReadHonorsItsCapturedRouteAtBothBoundaries(change: String, boundary: String) async throws {
         let rig = try Rig(); defer { rig.stop() }
         let p = try await rig.create()
@@ -392,16 +417,32 @@ struct ProjectOutcomeRouteTests {
         }
         _ = try await rig.perform(p.id, .recordOutcome(operationID: UUID(), taskID: task.id, taskOperationID: task.operationID, kind: .uploaded, evidence: "fixture build"))
         let snapshot = rig.host.server.state.projects[0]
-        let grant = try await rig.host.server.enqueue { try rig.host.server.historyReadGrant(snapshot) }
+        let grant = try await rig.host.server.enqueue { try rig.host.server.historyReadGrant(snapshot, caller: task.workerAgentID) }
         let entered = Locked(false), release = Locked(false)
+        defer { release.withValue { $0 = true } }
+        let hold: @Sendable () async -> Void = {
+            entered.withValue { $0 = true }
+            while !release.current && !Task.isCancelled { try? await Task.sleep(for: .milliseconds(5)) }
+        }
         try await rig.host.server.enqueue {
             rig.host.server.historyReadBoundary = { point in
-                guard point == boundary else { return }
-                entered.withValue { $0 = true }
-                while !release.current { try? await Task.sleep(for: .milliseconds(5)) }
+                if point == boundary { await hold() }
             }
+            if boundary == "tool" { rig.host.server.projectToolResponseBoundary = hold }
         }
-        let read = Task { try await rig.host.server.readProjectHistory(snapshot, request: .outcomes(taskID: task.id), grant: grant) }
+        let request = ProjectRuntimeRequest.outcomes(taskID: task.id)
+        let read = Task {
+            if ["tool", "delivery"].contains(boundary) {
+                let value = try await rig.host.server.projectTool(agentID: task.workerAgentID, projectID: p.id, expectedRevision: 0, request: request, responseGrant: grant)
+                if boundary == "delivery" { await hold() }
+                return try await rig.host.server.enqueue {
+                    _ = try rig.host.server.validateProjectToolResponse(value, request: request, grant: grant)
+                    return value
+                }
+            }
+            return try await rig.host.server.readProjectHistory(snapshot, request: request, grant: grant)
+        }
+        defer { read.cancel() }
         try await eventually("read suspended at \(boundary)") { entered.current }
         switch change {
         case "remove": rig.host.server.setProjectExecutionSpaces([route: []])
@@ -430,7 +471,10 @@ struct ProjectOutcomeRouteTests {
             #expect(!benign, "\(change) at \(boundary) must keep the read: \(error.code)")
             #expect(["project_scope", "project_paused", "project_host_policy", "project_destination", "unsupported"].contains(error.code))
         }
-        try await rig.host.server.enqueue { rig.host.server.historyReadBoundary = nil }
+        try await rig.host.server.enqueue {
+            rig.host.server.historyReadBoundary = nil
+            rig.host.server.projectToolResponseBoundary = nil
+        }
         // A fresh, separately authorized read after restoration may succeed, from the restored permission only.
         if ["restore", "projectUnlinkRestore", "disableRestore", "noop", "unrelated"].contains(change) {
             let fresh = try await rig.host.server.projectRuntime(p.id, expectedRevision: 1, request: .outcomes(taskID: task.id))

@@ -346,13 +346,18 @@ extension SessionServer {
         return p
     }
 
-    func projectTool(agentID: AgentID, projectID: ProjectID, expectedRevision: UInt64, request: ProjectRuntimeRequest) async throws -> Project {
+    func projectTool(agentID: AgentID, projectID: ProjectID, expectedRevision: UInt64, request: ProjectRuntimeRequest,
+                     responseGrant admittedGrant: ProjectHistoryReadGrant? = nil) async throws -> Project {
         if case .read = request, let execution = try await enqueue({ () throws -> Project? in
             try self.requireProjectsEnabled()
             guard !self.store.state.projects.contains(where: { $0.id == projectID }),
                   let context = self.store.state.projectContext(for: agentID), context.id == projectID else { return nil }
             return context
         }) { return execution }
+        let responseGrant = try await enqueue {
+            if let admittedGrant { return admittedGrant }
+            return try self.historyReadGrant(self.runtimeProject(projectID), caller: agentID)
+        }
         try await enqueue {
             let p = try self.runtimeProject(projectID)
             let coordinator = p.coordinatorAgentID == agentID && self.store.state.agents.contains { $0.id == agentID && $0.coordinatorFor == projectID }
@@ -373,7 +378,6 @@ extension SessionServer {
             default: throw LogicalProjectsError("project_scope", "This action requires a human Project control.")
             }
         }
-        let responseGrant = try await enqueue { try self.historyReadGrant(self.runtimeProject(projectID), caller: agentID) }
         let actor: AgentID?
         switch request { case .read, .worker, .inspect, .history, .result, .outcomes: actor = nil; default: actor = agentID }
         var result = try await performProjectRuntime(projectID, expectedRevision: expectedRevision, request: request, coordinator: actor, reader: agentID)
@@ -457,6 +461,10 @@ extension SessionServer {
         }
         result.messages = result.messages.map(redact)
         result.historyPage = result.historyPage?.map { var entry = $0; entry.message = entry.message.map(redact); return entry }
+        let boundary = try await enqueue { self.projectToolResponseBoundary }
+        await boundary?()
+        let response = result
+        result.revision = try await enqueue { try self.validateProjectToolResponse(response, request: request, grant: responseGrant) }
         return result
     }
 

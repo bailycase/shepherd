@@ -318,7 +318,7 @@ final class ProjectHistoryStore {
                 // by the next capture of committed state, and only facts already archived may leave the working copy.
                 // The archived set is read back from this transaction's durable records, never assumed from a checkpoint.
                 for j in project.tasks.indices where (project.tasks[j].outcomes?.count ?? 0) > ProjectTaskOutcome.hotPerTask {
-                    let committed = old?.tasks.first { $0.id == project.tasks[j].id }?.outcomes ?? []
+                    let committed = try old.flatMap { try taskByID($0, id: project.tasks[j].id) }?.outcomes ?? []
                     var archived = Set<UUID>()
                     for fact in committed where try outcome(project, id: fact.id)?.outcome == fact { archived.insert(fact.id) }
                     project.tasks[j].retireOutcomes(archived: archived)

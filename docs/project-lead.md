@@ -141,7 +141,8 @@ concurrency limits still bound coordination; this feature makes no strict dollar
   redacted source, that fit 8,000 UTF-8 bytes ride along; none is truncated. The extension adds `olderMemoryOmitted`
   and where to find them (the coordinator's `project_read` returns every fact; a worker is told to ask the coordinator).
   Remote assignments carry `Project.briefMemory` (same rule, an omission line inside the budget) in the existing 16 KiB
-  prompt; an inactive executor receipt supplies none of it. Stored memory and Settings are unchanged.
+  prompt and retain the whole sourced records for executor-side rebudgeting. Legacy formatted-only briefs are kept or
+  omitted whole, never split into synthetic facts; an inactive executor receipt supplies none of it. Stored memory and Settings are unchanged.
 - There is no person-facing Pause. When the runtime stops a Project itself (see Pause, restart and
   deletion) it requests safe interruption of active work; the person's next message restarts it. The
   UI cannot claim an unreachable worker stopped before its host acknowledges that request.

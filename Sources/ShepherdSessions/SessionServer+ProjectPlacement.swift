@@ -61,12 +61,15 @@ extension SessionServer {
         guard let model = task.model ?? project.settings.threadModel ?? defaultModel else {
             throw LogicalProjectsError("project_model", "Choose an explicit worker model before remote placement; the owner default is unavailable.")
         }
+        let memory = project.memory.map { var entry = $0; entry.text = NativeRedaction.projectData(entry.text)
+            entry.source = NativeRedaction.projectData(entry.source); return entry }
         var assignment = ProjectExecutionAssignment(key: .init(ownerID: project.ownerID, projectID: project.id, operationID: task.operationID),
             taskID: task.id, reservedWorkerID: task.workerAgentID, executorSpaceID: task.spaceID,
             title: NativeRedaction.projectData(task.title), prompt: NativeRedaction.projectData(task.prompt),
             goal: NativeRedaction.projectData(project.goal), instructions: NativeRedaction.projectData(project.settings.instructions),
-            memory: Project.briefMemory(project.memory.map { var entry = $0; entry.text = NativeRedaction.projectData(entry.text)
-                entry.source = NativeRedaction.projectData(entry.source); return entry }), model: model)
+            memory: Project.briefMemory(memory), model: model)
+        assignment.memoryFacts = Project.briefMemoryFacts(memory)
+        assignment.memoryOmittedCount = memory.count - (assignment.memoryFacts?.count ?? 0)
         assignment.thinking = task.thinking
         assignment.publicationsEnabled = true
         try assignment.validate()

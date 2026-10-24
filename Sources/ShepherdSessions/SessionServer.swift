@@ -462,6 +462,7 @@ public final class SessionServer: @unchecked Sendable {
     var publicationBeforeCommit: (@Sendable () async -> Void)?
     /// Test barrier (queue-owned, like publicationBeforeCommit): awaited before an outcome read's pre-I/O and final route checks.
     var historyReadBoundary: (@Sendable (String) async -> Void)?
+    var projectToolResponseBoundary: (@Sendable () async -> Void)?
     var currentProjectChildScope: [AgentID: ProjectChildScope] = [:]
     var projectChildAdmitted: Set<ProjectChildScope> = []
     var projectChildClosed: Set<ProjectChildScope> = []
@@ -3112,14 +3113,27 @@ public final class SessionServer: @unchecked Sendable {
                 }
             }
         case .projectRuntime(let id, let agentID, let projectID, let revision, let request):
+            let responseGrant: ProjectHistoryReadGrant?
+            do {
+                responseGrant = try store.state.projects.first(where: { $0.id == projectID }).map { try historyReadGrant($0, caller: agentID) }
+            } catch {
+                reply(.error(id: id, code: (error as? LogicalProjectsError)?.code ?? "project_failed", message: String(describing: error)), to: client)
+                return
+            }
             Task {
                 let result: Result<Project, Error>
-                do { result = .success(try await self.projectTool(agentID: agentID, projectID: projectID, expectedRevision: revision, request: request)) }
+                do { result = .success(try await self.projectTool(agentID: agentID, projectID: projectID, expectedRevision: revision, request: request, responseGrant: responseGrant)) }
                 catch { result = .failure(error) }
                 self.queue.async {
                     guard self.clients[client.fd] === client else { return }
                     switch result {
                     case .success(let project):
+                        do {
+                            if let responseGrant { _ = try self.validateProjectToolResponse(project, request: request, grant: responseGrant) }
+                        } catch {
+                            self.reply(.error(id: id, code: (error as? LogicalProjectsError)?.code ?? "project_failed", message: String(describing: error)), to: client)
+                            return
+                        }
                         let spaces = self.store.state.spaces.filter { space in !space.hidden && project.linkedSpaces.contains { $0.spaceID == space.id && $0.destination == .local } }
                         // Only the coordinator chooses a task's model, so only its replies carry the owner's model list.
                         let models = project.coordinatorAgentID == agentID ? self.modelListing().models : []

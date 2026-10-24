@@ -191,16 +191,25 @@ public struct Project: Codable, Hashable, Sendable, Identifiable {
     /// line when older ones were left out. Older facts stay stored, listed in Project settings and returned by the coordinator's
     /// project_read: a brief leaves them out, it never deletes or truncates them.
     public static func briefMemory(_ memory: [ProjectMemory], budget: Int = briefMemoryBytes) -> String {
-        let note = { (n: Int) in "(\(n) older remembered facts omitted; they remain stored with the Project owner.)" }
+        let kept = briefMemoryFacts(memory, budget: budget)
+        let lines = kept.map { "\($0.text) [source: \($0.source)]" } + (kept.count < memory.count ? [briefMemoryOmission(memory.count - kept.count)] : [])
+        return lines.joined(separator: "\n")
+    }
+
+    public static func briefMemoryOmission(_ count: Int) -> String {
+        "(\(count) older remembered facts omitted; they remain stored with the Project owner.)"
+    }
+
+    /// Preserve fact boundaries for executors; a formatted brief cannot be split back into records safely.
+    public static func briefMemoryFacts(_ memory: [ProjectMemory], budget: Int = briefMemoryBytes) -> [ProjectMemory] {
+        let note = briefMemoryOmission
         // Reserve room for the omission line so the whole brief, note included, stays within budget.
         let room = budget - note(memory.count).utf8.count - 1
         var used = 0
-        let kept = Array(memory.reversed().prefix { entry in
+        return Array(memory.reversed().prefix { entry in
             used += "\(entry.text) [source: \(entry.source)]".utf8.count + 1
             return used - 1 <= room
         }.reversed())
-        let lines = kept.map { "\($0.text) [source: \($0.source)]" } + (kept.count < memory.count ? [note(memory.count - kept.count)] : [])
-        return lines.joined(separator: "\n")
     }
 
     /// Messages kept once older finished ones are retired. `messages` is a delivery log, not chat history (pi's transcript is), so
