@@ -134,7 +134,7 @@ private struct OverviewColumns: View {
                 .equatable()
         }
         .buttonStyle(.nwRow(radius: 0))
-        .contextMenu { OpenInNewWindowButton(thread: row.ref.agentRef) }
+        .contextMenu { ThreadRowMenu(thread: row.ref.agentRef) }
     }
 
     /// A finished thread: a check (a cross for a failed last turn), its title over how it ended,
@@ -147,7 +147,7 @@ private struct OverviewColumns: View {
                 .equatable()
         }
         .buttonStyle(.nwRow(radius: 0))
-        .contextMenu { OpenInNewWindowButton(thread: row.ref.agentRef) }
+        .contextMenu { ThreadRowMenu(thread: row.ref.agentRef) }
     }
 
     /// A column under its head; Needs you's is `lanternText` (iPadOverview).

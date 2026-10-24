@@ -41,7 +41,32 @@ extension FixtureCatalog {
                               FixtureCheck.report(labels.contains("Automations") && !labels.contains { $0.hasPrefix("Automations,") }
                                   ? "FIXTURE CHECK ok: no Automations group without runs" : "FIXTURE CHECK FAILED: the empty sidebar's labels \(labels.filter { $0.hasPrefix("Automations") })")
                           }),
+            // The Mac's thread groups and row menu (run on an iPad with --sidebar, and on an iPhone): Working, Done with Mark
+            // all seen, and Pinned. The check pins a thread through the store the menu calls, reads the groups as drawn, and
+            // confirms nothing reached a host (the fixture host refuses and prints any mutation).
+            FixtureScreen(name: "sidebar-groups", hosts: fleet, routes: [.thread(FixtureData.ref(FixtureData.preview))],
+                          prepare: { app in await settle(app); await SidebarGroupsCheck.run(app) }),
         ]
+    }
+}
+
+/// The sidebar's groups as VoiceOver reads them: each thread once, a pinned one only under Pinned, and Mark all seen.
+@MainActor enum SidebarGroupsCheck {
+    static func run(_ app: MobileApp) async {
+        func check(_ ok: Bool, _ what: String) { FixtureCheck.report("FIXTURE CHECK \(ok ? "ok" : "FAILED"): \(what)") }
+        let sidebar = SidebarThreads.of(app.hosts)
+        let pinned = AgentRef(host: FixtureData.buildBox, agent: FixtureData.buffer)
+        if !sidebar.isPinned(pinned) { sidebar.togglePin(pinned) }
+        SidebarAutomationsCheck.enableAccessibility()
+        try? await Task.sleep(for: .seconds(1))
+        let labels = SidebarAutomationsCheck.labels()
+        let groups = sidebar.groups(HomeFeed.of(app.hosts).model)
+        check(groups.pinned.map(\.ref) == [pinned.fleetRef], "the store pins one thread (\(groups.pinned.map(\.ref)))")
+        check(labels.contains { $0.hasPrefix("Pinned") } && labels.contains { $0.hasPrefix("Working") },
+              "Pinned and Working headers are drawn (\(labels.filter { $0.hasPrefix("Pinned") || $0.hasPrefix("Working") }))")
+        check(labels.filter { $0.contains("Fix terminal output buffer") }.count == 1, "the pinned thread is drawn once")
+        check(!groups.done.isEmpty == labels.contains("Mark all seen"), "Mark all seen shows exactly when Done has rows")
+        sidebar.togglePin(pinned)
     }
 }
 

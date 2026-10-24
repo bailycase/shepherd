@@ -37,7 +37,7 @@ bash Tests/ShepherdIOSChecks/run.sh
 ```
 
 This takes no arguments. It compiles the three shared modules as macOS libraries into a
-temporary directory, then builds and runs three programs:
+temporary directory, then builds and runs four programs:
 
 - **`MobileHostsCheck`:** `App/iOS/Hosts/MobileHosts.swift` with tokens in memory and a scratch
   preferences domain, against real TCP listeners. It covers migrating the first client's single
@@ -45,6 +45,11 @@ temporary directory, then builds and runs three programs:
   at once (one live, one refusing), pushed state, backgrounding and foregrounding with a new
   session, retry and stop, renaming without reconnecting, forgetting, and a host that refuses the
   token waiting for Retry instead of retrying on its own.
+- **`SidebarThreadsCheck`:** `Home/SidebarThreads.swift` and `Search/AgentActions.swift` over the real
+  `MobileHosts`, against two TCP hosts holding an agent with the same id. Pins name their host, are
+  saved in pin order and restored, send nothing, stay while a host is offline, and go with their
+  thread or forgotten host. Move to Space reaches only its own host with the exact space; a refusal
+  shows the host's reason, and an offline host refuses without sending.
 - **`ThreadStoreCheck`:** `NativeThreadStore`. It covers revisions, merging history with live
   entries, stale sessions, acceptance, drafts, unknown outcomes with no automatic resend,
   questions, abort, and stop and reconnect. A send stopped before its reply keeps its draft as

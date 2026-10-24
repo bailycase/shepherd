@@ -17,6 +17,14 @@ struct AgentActionsMenu: View {
             Section {
                 Button("Rename…", systemImage: "pencil") { navigator.present(.search(.rename(thread))) }
                     .disabled(!actions.canRename)
+                // Pin, as the Mac's thread options offer it: this device's own, so it needs no host.
+                if FleetThreadAbilities(agent: agent, state: host.state, connected: true, capabilities: []).pin {
+                    let sidebar = SidebarThreads.of(hosts)
+                    let pinned = sidebar.isPinned(thread)
+                    Button(pinned ? "Unpin" : "Pin", systemImage: pinned ? "pin.slash" : NWGlyph.pin.symbolName) {
+                        sidebar.togglePin(thread)
+                    }
+                }
                 if actions.canMoveUp || actions.canMoveDown {
                     Button("Move up", systemImage: "arrow.up") { move(.up) }
                         .disabled(!actions.canMoveUp)

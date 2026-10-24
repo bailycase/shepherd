@@ -34,7 +34,7 @@ extension FleetAttention {
 
     var leading: NWListRow.Leading {
         switch origin {
-        case .thread: .state(.attention)
+        case .thread, .project: .state(.attention)
         case .automation: .symbol("bolt", .attention)
         }
     }
@@ -44,13 +44,14 @@ extension FleetAttention {
         switch origin {
         case .thread: "A thread"
         case .automation(let name): "A run of the automation \(name)"
+        case .project: "A Project's thread"
         }
     }
 
     /// The card's origin glyph; a thread's is the glowing dot (nil).
     var symbol: String? {
         switch origin {
-        case .thread: nil
+        case .thread, .project: nil
         case .automation: "bolt"
         }
     }

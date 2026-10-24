@@ -96,7 +96,8 @@ yet, so they are hidden until built. There is no More row: the command palette o
   - **Kept** per Mac, as view state beside the project tree's closed projects
     (`shepherd.sidebar.pinned` in the app's preferences, by a thread's host and agent id, so a
     pinned remote thread works): not in state.json, never sent to another device, and not reset by
-    Reset settings. The iPhone and iPad do not show pins, and the project tree keeps them without
+    Reset settings. The iPhone and iPad keep pins of their own the same way (docs/ios/README.md ›
+    Thread groups and row menus), and the project tree keeps them without
     drawing them (no Pinned section, and no Pin in its menus). A pin goes when its thread is
     deleted or its host is removed, never before the workspace has loaded or for a host that
     hasn't connected this launch.

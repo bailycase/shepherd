@@ -38,6 +38,8 @@ struct MobileRoot: View {
         .tint(Color.nw.lantern)
         .preferredColorScheme(app.appearance.mode.colorScheme)
         .onChange(of: layout, initial: true) { _, layout in navigator.adopt(layout) }
+        // Done's reading: opening another thread marks the one read before seen, as the Mac's sidebar does.
+        .onChange(of: navigator.selectedThread, initial: true) { _, thread in SidebarThreads.of(app.hosts).select(thread) }
         .onAppear { app.windows.register(window, navigator: navigator) }
         .onDisappear { app.windows.unregister(window.id, hosts: app.hosts) }
         .onChange(of: scenePhase, initial: true) { _, phase in

@@ -1,4 +1,4 @@
-import SwiftUI
+import Foundation
 import Observation
 import ShepherdCore
 import ShepherdProtocol
@@ -34,6 +34,12 @@ enum AgentActions {
         }
     }
 
+    /// Move to Space: one of the thread's own host's spaces. The host refuses a worktree, an active thread or a hidden
+    /// space, and the reason is shown.
+    static func move(_ ref: AgentRef, to space: SpaceID, hosts: MobileHosts) async throws {
+        try await perform(ref, .move(spaceID: space), hosts: hosts)
+    }
+
     /// Retires the agent only; a worktree checkout and its branch stay on the host.
     static func delete(_ ref: AgentRef, hosts: MobileHosts) async throws {
         try await perform(ref, .deleteKeepingWorktree, hosts: hosts)
@@ -53,6 +59,12 @@ enum AgentActions {
         }
     }
 
+}
+
+// The app's half: presenting a failure and the worktree operations. The macOS checks (Tests/ShepherdIOSChecks/run.sh) build
+// the transport above against real TCP hosts without the app's screens.
+#if canImport(UIKit)
+extension AgentActions {
     /// Runs `action` from a menu or the palette, where nothing is on screen to show an error:
     /// a failure is presented on its own.
     static func run(_ title: String, navigator: MobileNavigator, _ action: @escaping @MainActor () async throws -> Void) {
@@ -108,3 +120,4 @@ extension MobileNavigator {
         }
     }
 }
+#endif
