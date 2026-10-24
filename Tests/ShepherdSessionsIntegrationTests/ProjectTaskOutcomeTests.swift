@@ -403,7 +403,7 @@ struct ProjectOutcomeCommitTests {
 struct ProjectOutcomeRouteTests {
     typealias Rig = ProjectRuntimeTests.Rig
 
-    @Test(arguments: ["remove", "restore", "unrelated", "noop", "disableRestore", "projectUnlinkRestore", "replaceBinding"], ["initial", "final", "tool", "delivery"])
+    @Test(arguments: ["remove", "restore", "unrelated", "noop", "disableRestore", "projectUnlinkRestore", "replaceBinding"], ["initial", "final", "tool", "delivery", "socket"])
     func anOutcomeReadHonorsItsCapturedRouteAtBothBoundaries(change: String, boundary: String) async throws {
         let rig = try Rig(); defer { rig.stop() }
         let p = try await rig.create()
@@ -429,9 +429,22 @@ struct ProjectOutcomeRouteTests {
                 if point == boundary { await hold() }
             }
             if boundary == "tool" { rig.host.server.projectToolResponseBoundary = hold }
+            if boundary == "socket" {
+                rig.host.server.projectReplyWriteHeld = { entered.withValue { $0 = true }; return !release.current }
+            }
         }
         let request = ProjectRuntimeRequest.outcomes(taskID: task.id)
         let read = Task {
+            if boundary == "socket" {
+                let client = try ExtensionClient(path: rig.host.socketPath)
+                defer { client.closeConnection() }
+                try client.send(.projectRuntime(id: 73, agentID: task.workerAgentID, projectID: p.id, expectedRevision: 0, request: request))
+                switch try client.readReply() {
+                case .projectRuntime(73, let project, _, _): return project
+                case .error(73, let code, let message): throw LogicalProjectsError(code, message)
+                default: throw LogicalProjectsError("unexpected_reply", "Expected a correlated Project reply.")
+                }
+            }
             if ["tool", "delivery"].contains(boundary) {
                 let value = try await rig.host.server.projectTool(agentID: task.workerAgentID, projectID: p.id, expectedRevision: 0, request: request, responseGrant: grant)
                 if boundary == "delivery" { await hold() }
@@ -462,6 +475,10 @@ struct ProjectOutcomeRouteTests {
         }
         try await rig.host.server.enqueue {}
         release.withValue { $0 = true }
+        try await rig.host.server.enqueue {
+            rig.host.server.projectReplyWriteHeld = nil
+            rig.host.server.resumeProjectReplies()
+        }
         let benign = ["unrelated", "noop"].contains(change)
         do {
             let result = try await read.value

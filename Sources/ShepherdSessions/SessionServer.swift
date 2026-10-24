@@ -133,7 +133,11 @@ public final class SessionServer: @unchecked Sendable {
         var lineBuffer = LineBuffer()
         var readSource: DispatchSourceRead?
         var writeSource: DispatchSourceWrite?
-        var pendingReplies: [Data] = []
+        struct PendingReply {
+            var payload: Data
+            var revocation: (() -> ExtensionReply?)?
+        }
+        var pendingReplies: [PendingReply] = []
         var pendingReplyOffset = 0
         var queuedReplyBytes = 0
         var upload: RemoteFileUpload?
@@ -463,6 +467,7 @@ public final class SessionServer: @unchecked Sendable {
     /// Test barrier (queue-owned, like publicationBeforeCommit): awaited before an outcome read's pre-I/O and final route checks.
     var historyReadBoundary: (@Sendable (String) async -> Void)?
     var projectToolResponseBoundary: (@Sendable () async -> Void)?
+    var projectReplyWriteHeld: (() -> Bool)?
     var currentProjectChildScope: [AgentID: ProjectChildScope] = [:]
     var projectChildAdmitted: Set<ProjectChildScope> = []
     var projectChildClosed: Set<ProjectChildScope> = []
@@ -3137,7 +3142,13 @@ public final class SessionServer: @unchecked Sendable {
                         let spaces = self.store.state.spaces.filter { space in !space.hidden && project.linkedSpaces.contains { $0.spaceID == space.id && $0.destination == .local } }
                         // Only the coordinator chooses a task's model, so only its replies carry the owner's model list.
                         let models = project.coordinatorAgentID == agentID ? self.modelListing().models : []
-                        self.reply(.projectRuntime(id: id, project: project, spaces: spaces, models: models), to: client)
+                        self.reply(.projectRuntime(id: id, project: project, spaces: spaces, models: models), to: client, revocation: responseGrant.map { grant in
+                            { [weak self] in
+                                guard let self else { return .error(id: id, code: "project_forbidden", message: "Project owner is unavailable.") }
+                                do { _ = try self.validateProjectToolResponse(project, request: request, grant: grant); return nil }
+                                catch { return .error(id: id, code: (error as? LogicalProjectsError)?.code ?? "project_failed", message: String(describing: error)) }
+                            }
+                        })
                     case .failure(let error): self.reply(.error(id: id, code: (error as? LogicalProjectsError)?.code ?? "project_failed", message: String(describing: error)), to: client)
                     }
                 }
@@ -4238,7 +4249,7 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    private func reply(_ message: ExtensionReply, to client: ExtensionConnection) {
+    private func reply(_ message: ExtensionReply, to client: ExtensionConnection, revocation: (() -> ExtensionReply?)? = nil) {
         guard clients[client.fd] === client else { return }
 
         // Queued image payloads go only to the authenticated child controller, with pi's
@@ -4270,20 +4281,21 @@ public final class SessionServer: @unchecked Sendable {
             disconnect(client)
             return
         }
-        enqueuePayload(payload, to: client, limit: max(Self.maxQueuedReplyBytes, limit + 1))
+        enqueuePayload(payload, to: client, limit: max(Self.maxQueuedReplyBytes, limit + 1), revocation: revocation)
     }
 
     /// Queue an encoded NDJSON payload on a connection's write queue, bounded
     /// by `maxQueuedReplyBytes`. Shared by extension replies and remote
     /// replies/broadcasts.
-    private func enqueuePayload(_ payload: Data, to client: ExtensionConnection, limit: Int = SessionServer.maxQueuedReplyBytes) {
+    private func enqueuePayload(_ payload: Data, to client: ExtensionConnection, limit: Int = SessionServer.maxQueuedReplyBytes,
+                                revocation: (() -> ExtensionReply?)? = nil) {
         guard clients[client.fd] === client else { return }
         guard client.queuedReplyBytes + payload.count <= limit else {
             ShepherdLog.warning("reply queue overflow on fd \(client.fd)")
             disconnect(client)
             return
         }
-        client.pendingReplies.append(payload)
+        client.pendingReplies.append(.init(payload: payload, revocation: revocation))
         client.queuedReplyBytes += payload.count
         drainReplies(for: client)
     }
@@ -4329,11 +4341,25 @@ public final class SessionServer: @unchecked Sendable {
     /// Drain queued replies on the server queue. A nonblocking socket that
     /// cannot accept more bytes waits for a write-source event instead of
     /// blocking the server queue or dropping an otherwise valid reply.
+    func resumeProjectReplies() { clients.values.forEach { drainReplies(for: $0) } }
+
     private func drainReplies(for client: ExtensionConnection) {
         guard clients[client.fd] === client else { return }
 
         while !client.pendingReplies.isEmpty {
-            let payload = client.pendingReplies[0]
+            if let revocation = client.pendingReplies[0].revocation {
+                if projectReplyWriteHeld?() == true { return }
+                if let refusal = revocation() {
+                    // Never splice a refusal into a partially written NDJSON frame or finish
+                    // disclosing private bytes after revocation. Close that stream instead.
+                    guard client.pendingReplyOffset == 0, let encoded = try? NDJSON.encode(refusal) else {
+                        disconnect(client); return
+                    }
+                    client.queuedReplyBytes += encoded.count - client.pendingReplies[0].payload.count
+                    client.pendingReplies[0] = .init(payload: encoded)
+                }
+            }
+            let payload = client.pendingReplies[0].payload
             let offset = client.pendingReplyOffset
             guard offset < payload.count else {
                 client.pendingReplies.removeFirst()

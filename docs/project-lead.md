@@ -143,6 +143,8 @@ concurrency limits still bound coordination; this feature makes no strict dollar
   Remote assignments carry `Project.briefMemory` (same rule, an omission line inside the budget) in the existing 16 KiB
   prompt and retain the whole sourced records for executor-side rebudgeting. Legacy formatted-only briefs are kept or
   omitted whole, never split into synthetic facts; an inactive executor receipt supplies none of it. Stored memory and Settings are unchanged.
+  Owner tool replies recheck their captured route through socket release. Revocation replaces an unwritten reply with a refusal,
+  or closes an already-partial frame rather than splicing NDJSON or finishing private data disclosure.
 - There is no person-facing Pause. When the runtime stops a Project itself (see Pause, restart and
   deletion) it requests safe interruption of active work; the person's next message restarts it. The
   UI cannot claim an unreachable worker stopped before its host acknowledges that request.
