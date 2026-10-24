@@ -1729,6 +1729,7 @@ final class RPCThreadState {
         cancelRecovery()
         historyPending = true
         generation = UUID().uuidString
+        diagnosticTimings.removeAll(keepingCapacity: true)
         operations.removeAll()
         live.removeAll()
         toolStarts.removeAll()

@@ -78,6 +78,39 @@ struct ResourceDiagnosticsTests {
         #expect(recorded.withValue { $0 } == expected)
     }
 
+    @Test func aSessionSwitchDiscardsUnfinishedDiagnosticTimings() async throws {
+        let thread = try ThreadEventTests.Thread()
+        defer { thread.stop() }
+        _ = try await thread.ready()
+        let recorded = Locked([String]())
+        thread.queue.sync {
+            thread.state.onDiagnosticDuration = { operation, _ in recorded.withValue { $0.append(operation) } }
+        }
+        try await thread.feed(
+            #"{"type":"compaction_start","reason":"manual"}"#,
+            #"{"type":"tool_execution_start","toolCallId":"old","toolName":"bash","args":{}}"#)
+        let switched: Result<RPCResponse, RPCError> = await withCheckedContinuation { continuation in
+            thread.queue.async { thread.session.request(.newSession) { continuation.resume(returning: $0) } }
+        }
+        #expect(try switched.get().success)
+        let refreshed: Result<RPCResponse, RPCError> = await withCheckedContinuation { continuation in
+            thread.queue.async { thread.state.refreshState { continuation.resume(returning: $0) } }
+        }
+        #expect(try refreshed.get().success)
+        try await eventually("the replacement session's history to load") {
+            await thread.request(.snapshot()).snapshotValue?.piSessionID == "stub-session-2"
+        }
+        // A late end must not report the previous session's start, including its idle gap.
+        try await thread.feed(
+            #"{"type":"compaction_end","reason":"manual","aborted":true,"willRetry":false}"#,
+            #"{"type":"tool_execution_end","toolCallId":"old","toolName":"bash","result":{"content":[]},"isError":false}"#)
+        #expect(recorded.withValue { !$0.contains("context.compact") && !$0.contains("tool.bash") })
+        try await thread.feed(
+            #"{"type":"compaction_start","reason":"manual"}"#,
+            #"{"type":"compaction_end","reason":"manual","aborted":false,"willRetry":false}"#)
+        #expect(recorded.withValue { $0.filter { $0 == "context.compact" }.count } == 1)
+    }
+
     @Test func toolDurationsNeverExposeCustomNamesAndInflightTimingsAreBounded() async throws {
         let thread = try ThreadEventTests.Thread(bootstrap: false)
         defer { thread.stop() }
