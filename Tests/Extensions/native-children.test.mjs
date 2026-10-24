@@ -842,7 +842,8 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, r
 
     // Keep each fixture child executing through the capacity rejection checks.
     const busy = await Promise.all(Array.from({ length: 4 }, (_, i) => h.call("start", { task: `SHELL:sleep 30 >/dev/null 2>&1 & echo $! > '${dir}/busy-${i}'; wait`, role: "worker" })));
-    await until(() => fs.existsSync(path.join(dir, "busy-3")));
+    // Each child writes its own pid file; they start in parallel, so wait for all four, not just the last.
+    await until(() => [0, 1, 2, 3].every((i) => fs.existsSync(path.join(dir, `busy-${i}`))));
     await assert.rejects(h.call("start", { task: "over capacity" }), /Four children/);
     await assert.rejects(fleet.runtime.send(ask.id, "cap must reject", "steer"), /Four children are already active; wait or cancel first/);
     fs.writeFileSync(path.join(askDir, "control", "steer-requests", "cap.json"), JSON.stringify({ message: "cap must reject" }));
