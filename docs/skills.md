@@ -58,9 +58,12 @@ skills folder and the trusted project's `.pi/skills` and `.agents/skills` update
 skill catalog and the composer's `/` menu. This includes Settings installs, updates, switches,
 removal and restore, remote changes, hand edits and symlinked skill folders. Project skills still
 do not appear in global Settings. A skill's body is read when its command is invoked; already
-read instructions remain in conversation history, even after the skill is removed.
+read instructions remain in conversation history, even after the skill is removed. Prompt
+templates ride the same watcher and refresh: Shepherd's `prompts` folder, a trusted project's
+`.shepherd/prompts` and `.pi/prompts`, and configured prompt paths, so a `git pull` that adds
+templates updates the `/` menu without a restart.
 
-The pinned engine's `refresh_skills` RPC operation reparses skills only. It preserves session
+The pinned engine's `refresh_skills` RPC operation reparses skills and prompt templates only. It preserves session
 history, tools, providers, extension state and the existing trust decision. It neither installs
 packages nor runs skill code nor sends model requests. Loaded package, command-line and
 extension-provided skill paths are retained; local discovery uses the session's existing settings

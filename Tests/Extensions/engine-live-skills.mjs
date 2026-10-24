@@ -253,6 +253,32 @@ test("refresh reparses global, trusted project and linked skills without replaci
   });
 });
 
+test("native events and refresh pick up prompt templates added to a trusted project's .pi and .shepherd", { timeout: 30000 }, async t => {
+  await withPi(t, { settings: { extensions: OFF }, files: (_dir, work) => ({ "trust.json": { [work]: true } }) }, async pi => {
+    await pi.commands();
+    const observe = async mutate => {
+      const mark = pi.events.length;
+      mutate();
+      await until("a native prompt invalidation", () => pi.events.slice(mark).some(e => e.type === "skills_changed"), 3000);
+      assert.equal(await refresh(pi), true);
+    };
+    // A git pull creates the folder and its templates after pi started.
+    await observe(() => write(path.join(pi.work, ".pi/prompts/pulled.md"), "---\ndescription: Pulled\n---\nPulled $ARGUMENTS"));
+    let commands = await pi.commands();
+    assert.equal(commands.find(c => c.name === "pulled")?.description, "Pulled");
+    await observe(() => write(path.join(pi.work, ".shepherd/prompts/pulled.md"), "---\ndescription: Shepherd wins\n---\nShepherd"));
+    commands = await pi.commands();
+    assert.equal(commands.filter(c => c.name === "pulled").length, 1);
+    assert.equal(commands.find(c => c.name === "pulled").description, "Shepherd wins");
+    await observe(() => write(path.join(pi.home, "prompts/global.md"), "Global"));
+    assert.ok((await pi.commands()).some(c => c.name === "global"));
+    const sent = await pi.promptSent("/global");
+    assert.ok(sent.messages.some(m => m.role === "user" && JSON.stringify(m.content).includes("Global")));
+    await observe(() => fs.rmSync(path.join(pi.work, ".shepherd/prompts"), { recursive: true }));
+    assert.equal((await pi.commands()).find(c => c.name === "pulled")?.description, "Pulled");
+  });
+});
+
 test("refresh preserves untrusted-project and no-skills exclusions", { timeout: 30000 }, async t => {
   for (const args of [[], ["--no-skills"]]) {
     await withPi(t, { settings: { extensions: OFF }, args: ["--no-approve", ...args] }, async pi => {
@@ -265,6 +291,9 @@ test("refresh preserves untrusted-project and no-skills exclusions", { timeout: 
       const names = (await pi.commands()).map(c => c.name);
       assert.equal(names.includes("skill:global"), args.length === 0);
       assert.ok(!names.includes("skill:untrusted") && !names.includes("skill:untrusted-agent") && !names.includes("skill:untrusted-pi"));
+      write(path.join(pi.work, ".pi/prompts/untrusted-prompt.md"), "Untrusted");
+      await refresh(pi);
+      assert.ok(!(await pi.commands()).some(c => c.name === "untrusted-prompt"));
     });
   }
 });
