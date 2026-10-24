@@ -294,8 +294,9 @@ final class RPCSession: @unchecked Sendable {
         }
         pendingRequests[requestID] = completion
         lateResponses[requestID] = onLateResponse
-        queue.asyncAfter(deadline: .now() + timeout) { [weak self] in
-            self?.expire(requestID, type: command.type, timeout: timeout)
+        // A deadline needs only the type, not the prompt and image payloads, after a reply.
+        queue.asyncAfter(deadline: .now() + timeout) { [weak self, type = command.type] in
+            self?.expire(requestID, type: type, timeout: timeout)
         }
     }
 
