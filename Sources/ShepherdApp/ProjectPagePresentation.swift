@@ -5,10 +5,12 @@ import ShepherdCore
 // (ProjectLead boards). Nothing here is sample text: a task's words are its own title, question and phase; the
 // counts are counted; a phase the runtime has not reached is not drawn.
 
-/// The right pane's three groups, in the boards' order: Waiting on you, Working, Resolved.
+/// The right pane's groups: the boards' Waiting on you, Working and Resolved, plus Stopped: a settled turn is neither still
+/// working nor reviewed, so it is drawn on its own rather than with a running dot.
 enum ProjectTaskGroup: String, CaseIterable, Equatable {
     case waiting = "Waiting on you"
     case working = "Working"
+    case stopped = "Stopped"
     case resolved = "Resolved"
 }
 
@@ -27,9 +29,10 @@ struct ProjectTaskRow: Identifiable, Equatable {
     let title: String
     let group: ProjectTaskGroup
     let phase: ProjectTask.Phase
-    /// "Blocked · <question>" for a waiting task, its failure for a failed one, else nil.
+    /// "Blocked · <question>" for a waiting task, its failure for a failed one, a stopped or resolved task's recorded outcome evidence,
+    /// else nil.
     let detail: String?
-    /// The word before the question ("Blocked"), drawn in `lanternText`.
+    /// The word before the detail ("Blocked", "Stopped", "Accepted"), drawn in `lanternText`.
     let lead: String?
     let workerAgentID: AgentID
     let spaceID: SpaceID
@@ -54,23 +57,22 @@ struct ProjectPagePresentation: Equatable {
     let conversationAgent: AgentID?
     let rows: [ProjectTaskRow]
     let waiting: Int
-    /// Queued, reserved or running: work actually in progress. A settled task is finished, not working.
+    /// Queued, reserved or running: work actually in progress. A settled task has stopped, not finished successfully.
     let working: Int
     let resolved: Int
-    /// Finished and not yet resolved by the person. The boards draw no group for these.
+    /// Turn stopped, assignment not resolved: no review is implied, and it is never counted as done.
     let settled: Int
 
     var needsYou: Int { waiting }
     var total: Int { rows.count }
 
-    /// "2 of 3 done · 1 needs you", or "0 of 3 done · 3 in progress": counted from the tasks. nil without tasks.
+    /// "1 needs you · 2 working · 1 stopped · 3 resolved": each execution fact counted from the tasks, zeros left out. A Project is
+    /// a long-lived workspace, not one campaign, so nothing is "N of M done": a stopped turn is not success and resolution is not
+    /// delivery. nil without tasks.
     var summary: String? {
         guard total > 0 else { return nil }
-        // "Done" is a thread that finished its work, as in Claude's Projects: settled (finished, not yet confirmed) or resolved.
-        // Resolution stays the person's or the coordinator's confirmation in the pane; the strip only counts what finished.
-        var parts = ["\(resolved + settled) of \(total) done"]
-        if waiting > 0 { parts.append("\(waiting) needs you") }
-        else if working > 0 { parts.append("\(working) in progress") }
+        let parts = [(waiting, "needs you"), (working, "working"), (settled, "stopped"), (resolved, "resolved")]
+            .filter { $0.0 > 0 }.map { "\($0.0) \($0.1)" }
         return parts.joined(separator: " · ")
     }
 
@@ -97,7 +99,7 @@ struct ProjectPagePresentation: Equatable {
         }
         rows = built
         waiting = built.filter { $0.group == .waiting }.count
-        working = built.filter { $0.group == .working && $0.phase != .settled }.count
+        working = built.filter { $0.group == .working }.count
         settled = built.filter { $0.phase == .settled }.count
         resolved = built.filter { $0.group == .resolved }.count
     }
@@ -124,6 +126,14 @@ struct ProjectPagePresentation: Equatable {
         }
     }
 
+    static let noOutcome = "No outcome recorded"
+
+    /// "Merged · PR #12 · per coordinator": the fact, its evidence as recorded, and who recorded it, always. Neither attribution is a
+    /// person's approval: the coordinator's is its own claim, and an owner-control record says only where it came from.
+    static func outcome(_ outcome: ProjectTaskOutcome) -> (String, String?) {
+        (outcome.kind.label, [outcome.evidence, outcome.recordedBy == nil ? "recorded by owner" : "per coordinator"].compactMap { $0 }.joined(separator: " · "))
+    }
+
     private static func row(_ task: ProjectTask, files: [ProjectTaskFile]) -> ProjectTaskRow {
         let group: ProjectTaskGroup
         var lead: String?, detail: String?
@@ -133,7 +143,9 @@ struct ProjectPagePresentation: Equatable {
             // An answer the person already gave is said in words. The envelope itself is never read here, shown or logged.
             if let answer = task.pendingAnswer { lead = Self.answerLead(answer.phase); detail = Self.answerDetail(answer.phase) ?? task.question }
         case .resolved:
+            // No recorded outcome stays unknown: resolution alone claims no acceptance, merge or release.
             group = .resolved
+            if let outcome = task.currentOutcome { (lead, detail) = Self.outcome(outcome) }
         case .failed:
             group = .waiting; lead = "Failed"; detail = task.error
         case .unknown:
@@ -143,7 +155,9 @@ struct ProjectPagePresentation: Equatable {
         case .reserved, .running:
             group = .working
         case .settled:
-            group = .working
+            group = .stopped
+            // Settled proves only that the turn stopped. Review is optional, so without a fact for THIS run nothing is claimed.
+            (lead, detail) = task.currentOutcome.map(Self.outcome) ?? ("Stopped", Self.noOutcome)
         }
         return ProjectTaskRow(id: task.id, title: task.title, group: group, phase: task.phase, detail: detail, lead: lead,
                               workerAgentID: task.workerAgentID, spaceID: task.spaceID, revision: task.revision,
