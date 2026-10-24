@@ -23,7 +23,9 @@ struct ProjectRuntimeWireTests {
                       .message(operationID: operation, text: "", images: [.init(mimeType: "image/png", data: Data([1, 2, 3]))]),
                       .assign(operationID: operation, spaceID: space, title: "Task", prompt: "Assigned"),
                       .followUp(taskID: task, operationID: operation, text: "Follow up"),
-                      .resolve(taskID: task), .reopen(taskID: task), .pause, .resume])
+                      .resolve(taskID: task), .reopen(taskID: task), .pause, .resume,
+                      .recordOutcome(operationID: operation, taskID: task, taskOperationID: operation, kind: .needsChanges),
+                      .recordOutcome(operationID: operation, taskID: task, taskOperationID: operation, kind: .merged, evidence: "PR #12")])
     func everyLocalActionRoundTrips(_ request: ProjectRuntimeRequest) throws {
         #expect(try Wire.roundTrip(request) == request)
     }
