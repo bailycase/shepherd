@@ -1314,6 +1314,11 @@ for raw in sys.stdin.buffer:
             respond(held_history_request, "get_messages", data={"messages": stale_history})
             held_history_request = None
             stale_history = None
+    elif t == "new_session":
+        STATE["sessionId"] = "stub-session-2"
+        del MESSAGES[:]
+        STATE["messageCount"] = 0
+        respond(cmd, t, data={"cancelled": False})
     elif t == "get_messages":
         if os.environ.get("STUB_PI_HISTORY_GATE"):
             wait_for_file(os.environ["STUB_PI_HISTORY_GATE"], timeout=60.0)
