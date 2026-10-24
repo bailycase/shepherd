@@ -69,7 +69,7 @@ public struct NWLeadGroupHeader: View {
 /// question) and the age. 42pt, 38 resolved. A Project's agents delegate through ordinary Project threads only (never subagents),
 /// so the board's subagent-count pill is deliberately not drawn.
 public struct NWLeadThreadRow: View {
-    public enum Tone: Sendable { case running, attention, resolved }
+    public typealias Tone = NWLeadTaskCard.Tone
 
     let title: String
     let lead: String?
@@ -93,7 +93,7 @@ public struct NWLeadThreadRow: View {
             HStack(spacing: NW.Space.m) {
                 if tone != .resolved {
                     // The dot sits centered in a 12pt slot, so a row's title lines up with its group's (ProjectLead-Started).
-                    Circle().fill(tone == .attention ? Color.nw.lantern : Color.nw.running)
+                    Circle().fill(tone.dot)
                         .frame(width: NWLeadMetrics.threadRowDot, height: NWLeadMetrics.threadRowDot)
                         .frame(width: NWLeadMetrics.groupChevron)
                         .accessibilityHidden(true)
@@ -314,7 +314,19 @@ public struct NWLeadSpaceOffer: View {
 /// for a working task its latest activity, and one chip per file the task published (22pt, mono 10.5). A task that needs you carries
 /// its question and "View thread" under the card. The card opens the task; each chip opens its own file.
 public struct NWLeadTaskCard: View {
-    public enum Tone: Sendable { case running, attention, resolved }
+    /// `stopped`: the turn ended and nobody has resolved it. Not running and not a success, so it takes the idle dot.
+    public enum Tone: Sendable {
+        case running, attention, stopped, resolved
+        @MainActor var dot: Color { self == .attention ? Color.nw.lantern : self == .stopped ? AgentState.idle.color : Color.nw.running }
+        var word: String {
+            switch self {
+            case .running: "working"
+            case .attention: "needs you"
+            case .stopped: "stopped"
+            case .resolved: "resolved"
+            }
+        }
+    }
 
     /// A file the task published: the chip's identity and name. What pressing it does is the caller's.
     public struct File: Identifiable, Equatable, Sendable {
@@ -354,8 +366,8 @@ public struct NWLeadTaskCard: View {
                         switch tone {
                         case .resolved:
                             Image(systemName: NWGlyph.resolved.symbolName).font(.system(size: NWLeadMetrics.footerGlyph)).foregroundStyle(Color.nw.textTertiary)
-                        case .attention, .running:
-                            Circle().fill(tone == .attention ? Color.nw.lantern : Color.nw.running)
+                        case .attention, .running, .stopped:
+                            Circle().fill(tone.dot)
                                 .frame(width: NWLeadMetrics.taskDot, height: NWLeadMetrics.taskDot)
                         }
                     }
@@ -381,7 +393,7 @@ public struct NWLeadTaskCard: View {
                         .contentShape(RoundedRectangle(cornerRadius: NWLeadMetrics.taskCardRadius))
                 }
                 .buttonStyle(NWLeadRowPress())
-                .accessibilityLabel([title, tone == .attention ? "needs you" : tone == .resolved ? "resolved" : "working", detail]
+                .accessibilityLabel([title, tone.word, detail]
                     .compactMap { $0 }.joined(separator: ", "))
             }
             if let question {
