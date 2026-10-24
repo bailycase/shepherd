@@ -3118,9 +3118,9 @@ public final class SessionServer: @unchecked Sendable {
                 }
             }
         case .projectRuntime(let id, let agentID, let projectID, let revision, let request):
-            let responseGrant: ProjectHistoryReadGrant?
+            let responseGrant: ProjectToolResponseGrant
             do {
-                responseGrant = try store.state.projects.first(where: { $0.id == projectID }).map { try historyReadGrant($0, caller: agentID) }
+                responseGrant = try projectToolResponseGrant(projectID, agentID: agentID, request: request)
             } catch {
                 reply(.error(id: id, code: (error as? LogicalProjectsError)?.code ?? "project_failed", message: String(describing: error)), to: client)
                 return
@@ -3134,7 +3134,7 @@ public final class SessionServer: @unchecked Sendable {
                     switch result {
                     case .success(let project):
                         do {
-                            if let responseGrant { _ = try self.validateProjectToolResponse(project, request: request, grant: responseGrant) }
+                            _ = try self.validateProjectToolResponse(project, request: request, grant: responseGrant)
                         } catch {
                             self.reply(.error(id: id, code: (error as? LogicalProjectsError)?.code ?? "project_failed", message: String(describing: error)), to: client)
                             return
@@ -3142,12 +3142,10 @@ public final class SessionServer: @unchecked Sendable {
                         let spaces = self.store.state.spaces.filter { space in !space.hidden && project.linkedSpaces.contains { $0.spaceID == space.id && $0.destination == .local } }
                         // Only the coordinator chooses a task's model, so only its replies carry the owner's model list.
                         let models = project.coordinatorAgentID == agentID ? self.modelListing().models : []
-                        self.reply(.projectRuntime(id: id, project: project, spaces: spaces, models: models), to: client, revocation: responseGrant.map { grant in
-                            { [weak self] in
+                        self.reply(.projectRuntime(id: id, project: project, spaces: spaces, models: models), to: client, revocation: { [weak self] in
                                 guard let self else { return .error(id: id, code: "project_forbidden", message: "Project owner is unavailable.") }
-                                do { _ = try self.validateProjectToolResponse(project, request: request, grant: grant); return nil }
+                                do { _ = try self.validateProjectToolResponse(project, request: request, grant: responseGrant); return nil }
                                 catch { return .error(id: id, code: (error as? LogicalProjectsError)?.code ?? "project_failed", message: String(describing: error)) }
-                            }
                         })
                     case .failure(let error): self.reply(.error(id: id, code: (error as? LogicalProjectsError)?.code ?? "project_failed", message: String(describing: error)), to: client)
                     }

@@ -145,6 +145,8 @@ concurrency limits still bound coordination; this feature makes no strict dollar
   omitted whole, never split into synthetic facts; an inactive executor receipt supplies none of it. Stored memory and Settings are unchanged.
   Owner tool replies recheck their captured route through socket release. Revocation replaces an unwritten reply with a refusal,
   or closes an already-partial frame rather than splicing NDJSON or finishing private data disclosure.
+  Executor-only context reads use their immutable execution receipt and local Space grant, not a fabricated owner Project;
+  removing and restoring that Space revokes a queued read, while unrelated Spaces leave that read live.
 - There is no person-facing Pause. When the runtime stops a Project itself (see Pause, restart and
   deletion) it requests safe interruption of active work; the person's next message restarts it. The
   UI cannot claim an unreachable worker stopped before its host acknowledges that request.

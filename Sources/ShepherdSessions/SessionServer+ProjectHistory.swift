@@ -12,7 +12,21 @@ public struct ProjectHistoryReadGrant: Sendable {
     var routes: [ProjectHostReference: [SpaceID: UUID]]
 }
 
+enum ProjectToolResponseGrant: Sendable {
+    case history(ProjectHistoryReadGrant)
+    case execution(ProjectExecutionReceipt, epoch: UInt64, generation: UInt64, spaces: [SpaceID: UUID])
+}
+
 extension SessionServer {
+    func projectToolResponseGrant(_ id: ProjectID, agentID: AgentID, request: ProjectRuntimeRequest) throws -> ProjectToolResponseGrant {
+        try requireProjectsEnabled()
+        if case .read = request, !store.state.projects.contains(where: { $0.id == id }),
+           let receipt = store.state.projectExecutions.last(where: { $0.key.projectID == id && $0.assignment?.reservedWorkerID == agentID }) {
+            return .execution(receipt, epoch: logicalProjectEpoch, generation: projectsGeneration, spaces: executionSpaceGrants())
+        }
+        return .history(try historyReadGrant(runtimeProject(id), caller: agentID))
+    }
+
     func historyReadGrant(_ project: Project, caller: AgentID? = nil) throws -> ProjectHistoryReadGrant {
         let current = try runtimeProject(project.id)
         guard current.ownerID == project.ownerID else { throw LogicalProjectsError("project_scope", "Project ownership changed.") }
@@ -58,12 +72,25 @@ extension SessionServer {
     }
 
     /// Recheck at each outer release, not just inside the history reader. Its result can cross more awaits and a reply queue.
-    func validateProjectToolResponse(_ response: Project, request: ProjectRuntimeRequest, grant: ProjectHistoryReadGrant) throws -> UInt64 {
-        let current = try validateHistoryRead(response, grant: grant, taskID: request.targetTaskID)
-        if let taskID = request.targetTaskID, let task = response.tasks.first(where: { $0.id == taskID }) {
-            _ = try authorizedResultProject(response, task: task, archivedResolved: task.phase == .resolved, grant: grant)
+    func validateProjectToolResponse(_ response: Project, request: ProjectRuntimeRequest, grant: ProjectToolResponseGrant) throws -> UInt64 {
+        switch grant {
+        case .execution(let receipt, let epoch, let generation, let spaces):
+            try requireProjectsEnabled()
+            guard case .read = request, logicalProjectEpoch == epoch, projectsGeneration == generation,
+                  receipt.key.projectID == response.id, let assignment = receipt.assignment,
+                  store.state.projectExecutions.last(where: { $0.assignment?.reservedWorkerID == assignment.reservedWorkerID }) == receipt,
+                  store.state.agents.contains(where: { $0.id == assignment.reservedWorkerID && $0.spaceID == assignment.executorSpaceID }),
+                  executionSpaceIsCurrent(assignment.executorSpaceID, grants: spaces) else {
+                throw LogicalProjectsError("project_scope", "The original executor context grant was revoked.")
+            }
+            return receipt.revision
+        case .history(let history):
+            let current = try validateHistoryRead(response, grant: history, taskID: request.targetTaskID)
+            if let taskID = request.targetTaskID, let task = response.tasks.first(where: { $0.id == taskID }) {
+                _ = try authorizedResultProject(response, task: task, archivedResolved: task.phase == .resolved, grant: history)
+            }
+            return current.revision
         }
-        return current.revision
     }
 
     func projectHistoryRead<T: Sendable>(_ read: @escaping @Sendable (ProjectHistoryStore) throws -> T) async throws -> T {

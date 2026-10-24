@@ -347,7 +347,7 @@ extension SessionServer {
     }
 
     func projectTool(agentID: AgentID, projectID: ProjectID, expectedRevision: UInt64, request: ProjectRuntimeRequest,
-                     responseGrant admittedGrant: ProjectHistoryReadGrant? = nil) async throws -> Project {
+                     responseGrant admittedGrant: ProjectToolResponseGrant? = nil) async throws -> Project {
         if case .read = request, let execution = try await enqueue({ () throws -> Project? in
             try self.requireProjectsEnabled()
             guard !self.store.state.projects.contains(where: { $0.id == projectID }),
@@ -355,7 +355,7 @@ extension SessionServer {
             return context
         }) { return execution }
         let responseGrant = try await enqueue {
-            if let admittedGrant { return admittedGrant }
+            if case .history(let admittedGrant) = admittedGrant { return admittedGrant }
             return try self.historyReadGrant(self.runtimeProject(projectID), caller: agentID)
         }
         try await enqueue {
@@ -464,7 +464,7 @@ extension SessionServer {
         let boundary = try await enqueue { self.projectToolResponseBoundary }
         await boundary?()
         let response = result
-        result.revision = try await enqueue { try self.validateProjectToolResponse(response, request: request, grant: responseGrant) }
+        result.revision = try await enqueue { try self.validateProjectToolResponse(response, request: request, grant: .history(responseGrant)) }
         return result
     }
 

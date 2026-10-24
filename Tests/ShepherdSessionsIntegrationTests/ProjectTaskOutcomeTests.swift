@@ -446,10 +446,10 @@ struct ProjectOutcomeRouteTests {
                 }
             }
             if ["tool", "delivery"].contains(boundary) {
-                let value = try await rig.host.server.projectTool(agentID: task.workerAgentID, projectID: p.id, expectedRevision: 0, request: request, responseGrant: grant)
+                let value = try await rig.host.server.projectTool(agentID: task.workerAgentID, projectID: p.id, expectedRevision: 0, request: request, responseGrant: .history(grant))
                 if boundary == "delivery" { await hold() }
                 return try await rig.host.server.enqueue {
-                    _ = try rig.host.server.validateProjectToolResponse(value, request: request, grant: grant)
+                    _ = try rig.host.server.validateProjectToolResponse(value, request: request, grant: .history(grant))
                     return value
                 }
             }
