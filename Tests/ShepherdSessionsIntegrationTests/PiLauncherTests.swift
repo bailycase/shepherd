@@ -52,6 +52,23 @@ struct PiLauncherTests {
         "JITI_ALIAS": #"{"a":"b c"}"#, "OPENSSL_CONF": "/their/openssl.cnf",
     ]
 
+    @Test(arguments: ["standalone", "missing-scope", "nested"])
+    func printSubprocessRoutingDoesNotFallBackWhenItsScopeIsInvalid(mode: String) throws {
+        let dir = try makeScratchDirectory("cli-scope")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let home = try Self.home(in: dir)
+        var environment = Self.userEnvironment
+        if mode == "missing-scope" { environment["SHEPHERD_CLI_SOCKET"] = dir.appendingPathComponent("gone.sock").path }
+        if mode == "nested" { environment["SHEPHERD_CLI_DENIED"] = "1" }
+        let result = try Self.run(home.launcher.path, ["-p", "/speckit.tasks"], environment: environment)
+        if mode == "standalone" {
+            #expect(result.status == 0 && result.out.contains("arg=/speckit.tasks"))
+        } else {
+            #expect(result.status == 1 && result.out.isEmpty)
+            #expect(result.err.contains(mode == "nested" ? "Nested Pi subprocesses" : "Bash scope is unavailable"))
+        }
+    }
+
     /// pi sees Shepherd's pins and none of the environment's pi, jiti or Node settings, except
     /// corporate CAs; each is set aside, exactly as it was.
     @Test func piSeesThePinsAndNothingOfTheUsersPiJitiOrNode() throws {

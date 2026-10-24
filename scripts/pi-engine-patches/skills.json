@@ -2,9 +2,289 @@
   "version": "1.0.0",
   "files": [
     {
+      "path": "dist/utils/shell.js",
+      "before": "c8378f2b0566e35f90dfbb622a2214acf5cf45d15107c44b260cad897b539f72",
+      "after": "58555cb340755090fa990753b41d55e19dcbb1d69be2b9cce170168dc5f8114e",
+      "edits": [
+        {
+          "old": "    const hasBinDir = pathEntries.includes(binDir);\n    const updatedPath = hasBinDir ? currentPath : [binDir, currentPath].filter(Boolean).join(delimiter);",
+          "new": "    const updatedPath = [binDir, ...pathEntries.filter(entry => entry !== binDir)].join(delimiter);"
+        }
+      ]
+    },
+    {
+      "path": "dist/bundle/chunks/chunk-PRD6WYBT.js",
+      "before": "583f63dfc899c8e5dc93e71dc4ce3febef31467df77108c95ded51b5c3adbc07",
+      "after": "0de6aa502eddc83e245d837ff1a99153967b955fd8798dd0c971bbee366112d5",
+      "edits": [
+        {
+          "old": "updatedPath=currentPath.split(delimiter).filter(Boolean).includes(binDir)?currentPath:[binDir,currentPath].filter(Boolean).join(delimiter)",
+          "new": "updatedPath=[binDir,...currentPath.split(delimiter).filter(entry=>entry&&entry!==binDir)].join(delimiter)"
+        }
+      ]
+    },
+    {
+      "path": "dist/modes/interactive/components/config-selector.js",
+      "before": "f2322efaa4c2cee047a8254473a3569e92b35e1b71827c9ad6447083aed53a18",
+      "after": "0cbb07f758fee428deca464a13a35533f8983569ef9f1882ce5464ea1bbeec30",
+      "edits": [
+        {
+          "old": "import { CONFIG_DIR_NAME } from \"../../../config.js\";",
+          "new": "import { CONFIG_DIR_NAME, getProjectConfigPath } from \"../../../config.js\";"
+        },
+        {
+          "old": "return scope === \"project\" ? join(this.cwd, CONFIG_DIR_NAME) : this.agentDir;",
+          "new": "return scope === \"project\" ? dirname(getProjectConfigPath(this.cwd, \"settings.json\")) : this.agentDir;"
+        }
+      ]
+    },
+    {
+      "path": "dist/bundle/chunks/chunk-33XOIQ5N.js",
+      "before": "1fbf59b1126d78129049710d1c825afaf3a905333a62a680fdb2174fdb6d3aca",
+      "after": "8274a830cb07021cbc066864ded70a290b10809033615b1e1f2ebe2af12da63f",
+      "edits": [
+        {
+          "old": "import{ProjectTrustStore,addMcpServerConfig,",
+          "new": "import{getProjectConfigDirs,getProjectConfigPath}from\"../../config.js\";import{ProjectTrustStore,addMcpServerConfig,"
+        },
+        {
+          "old": "projectBaseDir=join4(this.cwd,CONFIG_DIR_NAME)",
+          "new": "projectBaseDir=dirname3(getProjectConfigPath(this.cwd,\"settings.json\"))"
+        },
+        {
+          "old": "join4(this.cwd,CONFIG_DIR_NAME,\"npm\")",
+          "new": "getProjectConfigPath(this.cwd,\"npm\")"
+        },
+        {
+          "old": "join4(this.cwd,CONFIG_DIR_NAME,\"npm\",\"node_modules\",source.name)",
+          "new": "getProjectConfigPath(this.cwd,\"npm\",\"node_modules\",source.name)"
+        },
+        {
+          "old": "join4(this.cwd,CONFIG_DIR_NAME,\"git\")",
+          "new": "getProjectConfigPath(this.cwd,\"git\")"
+        },
+        {
+          "old": "join4(this.cwd,CONFIG_DIR_NAME)",
+          "new": "dirname3(getProjectConfigPath(this.cwd,\"settings.json\"))"
+        },
+        {
+          "old": "this.projectSettingsPath=join5(resolvedCwd,CONFIG_DIR_NAME,\"settings.json\")",
+          "new": "this.projectSettingsPath=getProjectConfigPath(resolvedCwd,\"settings.json\")"
+        },
+        {
+          "old": "project:join5(resolvedCwd,CONFIG_DIR_NAME,\"settings.json\")",
+          "new": "project:getProjectConfigPath(resolvedCwd,\"settings.json\")"
+        },
+        {
+          "old": "return this.resolveManagedPath(installRoot,source.host,source.path)",
+          "new": "let installed=this.resolveManagedPath(installRoot,source.host,source.path);return scope===\"project\"?getProjectConfigPath(this.cwd,\"git\",relative(installRoot,installed)):installed"
+        },
+        {
+          "old": "join17(this.cwd,CONFIG_DIR_NAME,\"SYSTEM.md\")",
+          "new": "getProjectConfigPath(this.cwd,\"SYSTEM.md\")"
+        },
+        {
+          "old": "join17(this.cwd,CONFIG_DIR_NAME,\"APPEND_SYSTEM.md\")",
+          "new": "getProjectConfigPath(this.cwd,\"APPEND_SYSTEM.md\")"
+        },
+        {
+          "old": "projectRoots=[join17(this.cwd,CONFIG_DIR_NAME,\"skills\"),join17(this.cwd,CONFIG_DIR_NAME,\"prompts\"),join17(this.cwd,CONFIG_DIR_NAME,\"themes\"),join17(this.cwd,CONFIG_DIR_NAME,\"extensions\")]",
+          "new": "projectRoots=getProjectConfigDirs(this.cwd).flatMap(base=>[\"skills\",\"prompts\",\"themes\",\"extensions\"].map(kind=>join17(base,kind)))"
+        },
+        {
+          "old": "[join17(this.agentDir,\"themes\"),join17(this.cwd,CONFIG_DIR_NAME,\"themes\")]",
+          "new": "[join17(this.agentDir,\"themes\"),...getProjectConfigDirs(this.cwd).map(base=>join17(base,\"themes\"))]"
+        },
+        {
+          "old": "scope===\"project\"?join31(this.cwd,CONFIG_DIR_NAME):this.agentDir",
+          "new": "scope===\"project\"?dirname17(getProjectConfigPath(this.cwd,\"settings.json\")):this.agentDir"
+        },
+        {
+          "old": ",projectDirs={extensions:join4(projectBaseDir,\"extensions\"),skills:join4(projectBaseDir,\"skills\"),prompts:join4(projectBaseDir,\"prompts\"),themes:join4(projectBaseDir,\"themes\")}",
+          "new": ""
+        },
+        {
+          "old": "projectTrusted&&(addResources(\"extensions\",collectAutoExtensionEntries(projectDirs.extensions),projectMetadata,projectOverrides.extensions,projectBaseDir),addResources(\"skills\",collectAutoSkillEntries(projectDirs.skills,\"pi\"),projectMetadata,projectOverrides.skills,projectBaseDir));",
+          "new": "if(projectTrusted)for(let baseDir of getProjectConfigDirs(this.cwd)){let metadata={...projectMetadata,baseDir},extensions=collectAutoExtensionEntries(join4(baseDir,\"extensions\")).filter(file=>getProjectConfigPath(this.cwd,relative(baseDir,file))===file);addResources(\"extensions\",extensions,metadata,projectOverrides.extensions,projectBaseDir);addResources(\"skills\",collectAutoSkillEntries(join4(baseDir,\"skills\"),\"pi\"),metadata,projectOverrides.skills,projectBaseDir);addResources(\"prompts\",collectAutoPromptEntries(join4(baseDir,\"prompts\")),metadata,projectOverrides.prompts,projectBaseDir);addResources(\"themes\",collectAutoThemeEntries(join4(baseDir,\"themes\")),metadata,projectOverrides.themes,projectBaseDir);}"
+        },
+        {
+          "old": "projectTrusted&&(addResources(\"prompts\",collectAutoPromptEntries(projectDirs.prompts),projectMetadata,projectOverrides.prompts,projectBaseDir),addResources(\"themes\",collectAutoThemeEntries(projectDirs.themes),projectMetadata,projectOverrides.themes,projectBaseDir)),addResources",
+          "new": "addResources"
+        },
+        {
+          "old": "addSkills(loadSkillsFromDirInternal(resolve2(resolvedCwd,CONFIG_DIR_NAME,\"skills\"),\"project\",!0))",
+          "new": "getProjectConfigDirs(resolvedCwd).forEach(base=>addSkills(loadSkillsFromDirInternal(resolve2(base,\"skills\"),\"project\",!0)))"
+        },
+        {
+          "old": "projectSkillsDir=resolve2(resolvedCwd,CONFIG_DIR_NAME,\"skills\")",
+          "new": "projectSkillsDirs=getProjectConfigDirs(resolvedCwd).map(base=>resolve2(base,\"skills\"))"
+        },
+        {
+          "old": "if(isUnderPath(resolvedPath,projectSkillsDir))",
+          "new": "if(projectSkillsDirs.some(dir=>isUnderPath(resolvedPath,dir)))"
+        },
+        {
+          "old": ",localExtDir=path3.join(resolvedCwd,CONFIG_DIR_NAME,\"extensions\");addPaths(discoverExtensionsInDir(localExtDir));",
+          "new": ";for(let base of getProjectConfigDirs(resolvedCwd)){let localExtDir=path3.join(base,\"extensions\");addPaths(discoverExtensionsInDir(localExtDir).filter(file=>getProjectConfigPath(resolvedCwd,path3.relative(base,file))===file));}"
+        },
+        {
+          "old": "projectPromptsDir=resolve6(resolvedCwd,CONFIG_DIR_NAME,\"prompts\")",
+          "new": "projectPromptsDirs=getProjectConfigDirs(resolvedCwd).map(base=>resolve6(base,\"prompts\"))"
+        },
+        {
+          "old": "isUnderPath(resolvedPath,projectPromptsDir)?createSyntheticSourceInfo(resolvedPath,{source:\"local\",scope:\"project\",baseDir:projectPromptsDir})",
+          "new": "projectPromptsDirs.some(dir=>isUnderPath(resolvedPath,dir))?createSyntheticSourceInfo(resolvedPath,{source:\"local\",scope:\"project\",baseDir:projectPromptsDirs.find(dir=>isUnderPath(resolvedPath,dir))})"
+        },
+        {
+          "old": "addResult(loadTemplatesFromDir(projectPromptsDir,getSourceInfo))",
+          "new": "projectPromptsDirs.forEach(dir=>addResult(loadTemplatesFromDir(dir,getSourceInfo)))"
+        }
+      ]
+    },
+    {
+      "path": "dist/bundle/chunks/chunk-KDN6RCEQ.js",
+      "before": "5c1bcab1a910f10a6d2f3d11fd28939358fee5bd9539e5501cad937c66a1dbfa",
+      "after": "6892f507e5874ec008d3d169bc58f6e073356690dcf22a58f6af697cfd64e391",
+      "edits": [
+        {
+          "old": "import{CONFIG_DIR_NAME,canonicalizePath,resolvePath,stripBom}from\"./chunk-2KTBZM5G.js\";",
+          "new": "import{CONFIG_DIR_NAME,canonicalizePath,resolvePath,stripBom}from\"./chunk-2KTBZM5G.js\";import{getProjectConfigDirs}from\"../../config.js\";"
+        },
+        {
+          "old": "currentDir=canonicalizePath(resolvePath(cwd)),configDir=join(currentDir,CONFIG_DIR_NAME);if(TRUST_REQUIRING_PROJECT_CONFIG_RESOURCES.some(entry=>existsSync(join(configDir,entry))))",
+          "new": "currentDir=canonicalizePath(resolvePath(cwd));if(getProjectConfigDirs(currentDir).some(configDir=>TRUST_REQUIRING_PROJECT_CONFIG_RESOURCES.some(entry=>existsSync(join(configDir,entry)))))"
+        },
+        {
+          "old": "options.projectTrusted&&readConfigFile(join2(options.cwd,CONFIG_DIR_NAME,\"mcp.json\"),\"project\",state)",
+          "new": "options.projectTrusted&&getProjectConfigDirs(options.cwd).reverse().forEach(base=>readConfigFile(join2(base,\"mcp.json\"),\"project\",state))"
+        }
+      ]
+    },
+    {
+      "path": "dist/config.js",
+      "before": "65fb18914aed61cb62d6ef932131a9b66a4e37e482d2aa09136301267929dbed",
+      "after": "93fa25754324b383d61cd75909ff3c30499c469be5988884251ff7a91f563b6b",
+      "edits": [
+        {
+          "old": "export const CONFIG_DIR_NAME = pkg.piConfig?.configDir || \".pi\";",
+          "new": "export const CONFIG_DIR_NAME = pkg.piConfig?.configDir || \".pi\";\n// Project aliases only. The global agent directory remains pinned by Shepherd.\nexport function getProjectConfigDirs(cwd) {\n    return [...new Set([\".shepherd\", \".pi\", CONFIG_DIR_NAME])].map(name => join(cwd, name));\n}\nexport function getProjectConfigPath(cwd, ...parts) {\n    return getProjectConfigDirs(cwd).map(base => join(base, ...parts)).find(path => existsSync(path))\n        ?? join(cwd, CONFIG_DIR_NAME, ...parts);\n}"
+        }
+      ]
+    },
+    {
+      "path": "dist/core/settings-manager.js",
+      "before": "b3a424ac1af9bd0c380796f9e5d812e2c61755ed3b31dd39982a57bbe0d5a391",
+      "after": "ce2dfa91b3a244b92b10373a134790acd736562070d5cde0d174646c6df2b162",
+      "edits": [
+        {
+          "old": "import { CONFIG_DIR_NAME, getAgentDir }",
+          "new": "import { CONFIG_DIR_NAME, getAgentDir, getProjectConfigPath }"
+        },
+        {
+          "old": "this.projectSettingsPath = join(resolvedCwd, CONFIG_DIR_NAME, \"settings.json\");",
+          "new": "this.projectSettingsPath = getProjectConfigPath(resolvedCwd, \"settings.json\");"
+        },
+        {
+          "old": "project: join(resolvedCwd, CONFIG_DIR_NAME, \"settings.json\"),",
+          "new": "project: getProjectConfigPath(resolvedCwd, \"settings.json\"),"
+        }
+      ]
+    },
+    {
+      "path": "dist/extensions/mcp/config.js",
+      "before": "e6167bf9b062134aadb2dc85f10a57f801be6bfc2e2b4a6b8a9b01d4a345d7b1",
+      "after": "3801569dc8997458ad33086df5d4edde017e653fc181c872b0a5fa1c9e776443",
+      "edits": [
+        {
+          "old": "import { CONFIG_DIR_NAME }",
+          "new": "import { CONFIG_DIR_NAME, getProjectConfigDirs }"
+        },
+        {
+          "old": "    if (options.projectTrusted)\n        readConfigFile(join(options.cwd, CONFIG_DIR_NAME, \"mcp.json\"), \"project\", state);",
+          "new": "    if (options.projectTrusted) {\n        for (const base of getProjectConfigDirs(options.cwd).reverse()) {\n            readConfigFile(join(base, \"mcp.json\"), \"project\", state);\n        }\n    }"
+        }
+      ]
+    },
+    {
+      "path": "dist/extensions/mcp/cli.js",
+      "before": "abcbf73233214aeae393a7cb0c8d59f2d8921c316301f141bc61c67749302eb2",
+      "after": "f7c8e072dd4800c5bf19eb29edb7c17beb85d944da7769b262d8f00974340fbd",
+      "edits": [
+        {
+          "old": "import { APP_NAME, CONFIG_DIR_NAME }",
+          "new": "import { APP_NAME, CONFIG_DIR_NAME, getProjectConfigPath }"
+        },
+        {
+          "old": "const projectConfig = join(options.cwd, CONFIG_DIR_NAME, \"mcp.json\");",
+          "new": "const projectConfig = getProjectConfigPath(options.cwd, \"mcp.json\");"
+        }
+      ]
+    },
+    {
+      "path": "dist/core/prompt-templates.js",
+      "before": "f378bb43f6a5ee8e7a2e1b53fe8d91a6e0504d96d3a724a97a58c3bd9b647555",
+      "after": "c2f1893f4f8d563408dc4ee248c2a200e11408d6119933250f86539b0d4391fd",
+      "edits": [
+        {
+          "old": "import { CONFIG_DIR_NAME }",
+          "new": "import { CONFIG_DIR_NAME, getProjectConfigDirs }"
+        },
+        {
+          "old": "const projectPromptsDir = resolve(resolvedCwd, CONFIG_DIR_NAME, \"prompts\");",
+          "new": "const projectPromptsDirs = getProjectConfigDirs(resolvedCwd).map(base => resolve(base, \"prompts\"));"
+        },
+        {
+          "old": "        if (isUnderPath(resolvedPath, projectPromptsDir)) {",
+          "new": "        const projectPromptsDir = projectPromptsDirs.find(dir => isUnderPath(resolvedPath, dir));\n        if (projectPromptsDir) {"
+        },
+        {
+          "old": "        addResult(loadTemplatesFromDir(projectPromptsDir, getSourceInfo));",
+          "new": "        for (const dir of projectPromptsDirs) addResult(loadTemplatesFromDir(dir, getSourceInfo));"
+        }
+      ]
+    },
+    {
+      "path": "dist/core/skills.js",
+      "before": "3b7cc3997c630553eb88931de978e0db623ce51fbf7356e0ab922183885e208c",
+      "after": "c2a17a27cbe6b3a9c3117f66ba65e086cff67a7b3c2e0e0c796964c8a9ebd741",
+      "edits": [
+        {
+          "old": "import { CONFIG_DIR_NAME, getAgentDir }",
+          "new": "import { CONFIG_DIR_NAME, getAgentDir, getProjectConfigDirs }"
+        },
+        {
+          "old": "        addSkills(loadSkillsFromDirInternal(resolve(resolvedCwd, CONFIG_DIR_NAME, \"skills\"), \"project\", true));",
+          "new": "        for (const base of getProjectConfigDirs(resolvedCwd)) addSkills(loadSkillsFromDirInternal(resolve(base, \"skills\"), \"project\", true));"
+        },
+        {
+          "old": "    const projectSkillsDir = resolve(resolvedCwd, CONFIG_DIR_NAME, \"skills\");",
+          "new": "    const projectSkillsDirs = getProjectConfigDirs(resolvedCwd).map(base => resolve(base, \"skills\"));"
+        },
+        {
+          "old": "if (isUnderPath(resolvedPath, projectSkillsDir))",
+          "new": "if (projectSkillsDirs.some(dir => isUnderPath(resolvedPath, dir)))"
+        }
+      ]
+    },
+    {
+      "path": "dist/core/extensions/loader.js",
+      "before": "440c37c201d3c9ea78b5188482ea6aaf19e654266ccb8d6760d00ef360dcae3c",
+      "after": "732ad76e055515de1d98a8e37037237ec83962659db47a46a4a734fc8794140e",
+      "edits": [
+        {
+          "old": "import { CONFIG_DIR_NAME, getAgentDir, isBunBinary, isBundledNode }",
+          "new": "import { CONFIG_DIR_NAME, getAgentDir, getProjectConfigDirs, getProjectConfigPath, isBunBinary, isBundledNode }"
+        },
+        {
+          "old": "    const localExtDir = path.join(resolvedCwd, CONFIG_DIR_NAME, \"extensions\");\n    addPaths(discoverExtensionsInDir(localExtDir));",
+          "new": "    for (const base of getProjectConfigDirs(resolvedCwd)) {\n        const localExtDir = path.join(base, \"extensions\");\n        addPaths(discoverExtensionsInDir(localExtDir).filter(file =>\n            getProjectConfigPath(resolvedCwd, path.relative(base, file)) === file));\n    }"
+        }
+      ]
+    },
+    {
       "path": "dist/core/resource-loader.js",
       "before": "710e367e37c40df9f8f0239ebee6955e0a971a028d20467024bf4ea9ff55a42a",
-      "after": "a1a6dcb7b0ba5e15aa44909ec9b2717fb8c00924a20dc1b40e658081d33147cc",
+      "after": "aa10b9d6c5c79d29f1ad15d00eb3611dad9d12bb711578241aa9749eabab6bbf",
       "edits": [
         {
           "old": "    async loadProjectTrustExtensions() {",
@@ -13,6 +293,30 @@
         {
           "old": "    // Shepherd: reparse skills without reloading executable extensions or settings.",
           "new": "    getSkillWatchPaths() {\n        return [...(this.noSkills ? [] : this.packageManager.getSkillWatchPaths()),\n            ...this.lastSkillPaths, ...this.additionalSkillPaths, ...this.extensionSkillSourceInfos.keys()]\n            .map(path => this.resolveResourcePath(path));\n    }\n    // Shepherd: reparse skills without reloading executable extensions or settings."
+        },
+        {
+          "old": "import { CONFIG_DIR_NAME }",
+          "new": "import { CONFIG_DIR_NAME, getProjectConfigDirs, getProjectConfigPath }"
+        },
+        {
+          "old": "const projectBase = join(this.cwd, CONFIG_DIR_NAME);",
+          "new": "const projectBase = dirname(getProjectConfigPath(this.cwd, \"settings.json\"));"
+        },
+        {
+          "old": "        const projectRoots = [\n            join(this.cwd, CONFIG_DIR_NAME, \"skills\"),\n            join(this.cwd, CONFIG_DIR_NAME, \"prompts\"),\n            join(this.cwd, CONFIG_DIR_NAME, \"themes\"),\n            join(this.cwd, CONFIG_DIR_NAME, \"extensions\"),\n        ];",
+          "new": "        const projectRoots = getProjectConfigDirs(this.cwd).flatMap(base =>\n            [\"skills\", \"prompts\", \"themes\", \"extensions\"].map(kind => join(base, kind)));"
+        },
+        {
+          "old": "const defaultDirs = [join(this.agentDir, \"themes\"), join(this.cwd, CONFIG_DIR_NAME, \"themes\")];",
+          "new": "const defaultDirs = [join(this.agentDir, \"themes\"), ...getProjectConfigDirs(this.cwd).map(base => join(base, \"themes\"))];"
+        },
+        {
+          "old": "const projectPath = join(this.cwd, CONFIG_DIR_NAME, \"SYSTEM.md\");",
+          "new": "const projectPath = getProjectConfigPath(this.cwd, \"SYSTEM.md\");"
+        },
+        {
+          "old": "const projectPath = join(this.cwd, CONFIG_DIR_NAME, \"APPEND_SYSTEM.md\");",
+          "new": "const projectPath = getProjectConfigPath(this.cwd, \"APPEND_SYSTEM.md\");"
         }
       ]
     },
@@ -93,9 +397,80 @@
         {
           "old": "function collectSkillEntries(dir, mode, ignoreMatcher, rootDir) {",
           "new": "export { addIgnoreRules as addSkillWatchIgnoreRules };\nfunction collectSkillEntries(dir, mode, ignoreMatcher, rootDir) {"
+        },
+        {
+          "old": "            addResources(\"prompts\", collectAutoPromptEntries(projectDirs.prompts), projectMetadata, projectOverrides.prompts, projectBaseDir);",
+          "new": "            addResources(\"prompts\", collectAutoPromptEntries(projectDirs.prompts), projectMetadata, projectOverrides.prompts, projectBaseDir);\n            // Spec Kit and other Pi integrations install project prompts under .pi/prompts.\n            // Keep Shepherd first for name collisions; apply Shepherd's project overrides to both.\n            if (CONFIG_DIR_NAME !== \".pi\") {\n                const piBaseDir = join(this.cwd, \".pi\");\n                addResources(\"prompts\", collectAutoPromptEntries(join(piBaseDir, \"prompts\")),\n                    { ...projectMetadata, baseDir: piBaseDir }, projectOverrides.prompts, projectBaseDir);\n            }"
+        },
+        {
+          "old": "import { CONFIG_DIR_NAME }",
+          "new": "import { CONFIG_DIR_NAME, getProjectConfigDirs, getProjectConfigPath }"
+        },
+        {
+          "old": "        const projectBase = join(this.cwd, CONFIG_DIR_NAME);",
+          "new": "        const projectBase = dirname(getProjectConfigPath(this.cwd, \"settings.json\"));"
+        },
+        {
+          "old": "            add(join(projectBase, \"skills\"), project, projectBase);",
+          "new": "            for (const base of getProjectConfigDirs(this.cwd)) add(join(base, \"skills\"), project, projectBase);"
+        },
+        {
+          "old": "        const projectBaseDir = join(this.cwd, CONFIG_DIR_NAME);",
+          "new": "        const projectBaseDir = dirname(getProjectConfigPath(this.cwd, \"settings.json\"));"
+        },
+        {
+          "old": "        const projectDirs = {\n            extensions: join(projectBaseDir, \"extensions\"),\n            skills: join(projectBaseDir, \"skills\"),\n            prompts: join(projectBaseDir, \"prompts\"),\n            themes: join(projectBaseDir, \"themes\"),\n        };\n",
+          "new": ""
+        },
+        {
+          "old": "        if (projectTrusted) {\n            // Project extensions from .pi/\n            addResources(\"extensions\", collectAutoExtensionEntries(projectDirs.extensions), projectMetadata, projectOverrides.extensions, projectBaseDir);\n            // Project skills from .pi/\n            addResources(\"skills\", collectAutoSkillEntries(projectDirs.skills, \"pi\"), projectMetadata, projectOverrides.skills, projectBaseDir);\n        }",
+          "new": "        if (projectTrusted) {\n            for (const baseDir of getProjectConfigDirs(this.cwd)) {\n                const metadata = { ...projectMetadata, baseDir };\n                const extensions = collectAutoExtensionEntries(join(baseDir, \"extensions\"))\n                    .filter(path => getProjectConfigPath(this.cwd, relative(baseDir, path)) === path);\n                addResources(\"extensions\", extensions, metadata, projectOverrides.extensions, projectBaseDir);\n                addResources(\"skills\", collectAutoSkillEntries(join(baseDir, \"skills\"), \"pi\"), metadata, projectOverrides.skills, projectBaseDir);\n                addResources(\"prompts\", collectAutoPromptEntries(join(baseDir, \"prompts\")), metadata, projectOverrides.prompts, projectBaseDir);\n                addResources(\"themes\", collectAutoThemeEntries(join(baseDir, \"themes\")), metadata, projectOverrides.themes, projectBaseDir);\n            }\n        }"
+        },
+        {
+          "old": "        if (projectTrusted) {\n            addResources(\"prompts\", collectAutoPromptEntries(projectDirs.prompts), projectMetadata, projectOverrides.prompts, projectBaseDir);\n            // Spec Kit and other Pi integrations install project prompts under .pi/prompts.\n            // Keep Shepherd first for name collisions; apply Shepherd's project overrides to both.\n            if (CONFIG_DIR_NAME !== \".pi\") {\n                const piBaseDir = join(this.cwd, \".pi\");\n                addResources(\"prompts\", collectAutoPromptEntries(join(piBaseDir, \"prompts\")),\n                    { ...projectMetadata, baseDir: piBaseDir }, projectOverrides.prompts, projectBaseDir);\n            }\n            addResources(\"themes\", collectAutoThemeEntries(projectDirs.themes), projectMetadata, projectOverrides.themes, projectBaseDir);\n        }\n",
+          "new": ""
+        },
+        {
+          "old": "return join(this.cwd, CONFIG_DIR_NAME, \"npm\");",
+          "new": "return getProjectConfigPath(this.cwd, \"npm\");"
+        },
+        {
+          "old": "return join(this.cwd, CONFIG_DIR_NAME, \"npm\", \"node_modules\", source.name);",
+          "new": "return getProjectConfigPath(this.cwd, \"npm\", \"node_modules\", source.name);"
+        },
+        {
+          "old": "return this.resolveManagedPath(installRoot, source.host, source.path);",
+          "new": "const installed = this.resolveManagedPath(installRoot, source.host, source.path);\n        return scope === \"project\" ? getProjectConfigPath(this.cwd, \"git\", relative(installRoot, installed)) : installed;"
+        },
+        {
+          "old": "return join(this.cwd, CONFIG_DIR_NAME, \"git\");",
+          "new": "return getProjectConfigPath(this.cwd, \"git\");"
+        },
+        {
+          "old": "return join(this.cwd, CONFIG_DIR_NAME);",
+          "new": "return dirname(getProjectConfigPath(this.cwd, \"settings.json\"));"
         }
       ],
-      "after": "edc0f0b76dcd1b689c68b08d4ec8867d0942e88e1e0824b2eb2e0d7446591b7f"
+      "after": "9af7ec14c496a0d02c5e0763a69ea28e39e19e078cd16ef173082e02b4074375"
+    },
+    {
+      "path": "dist/core/trust-manager.js",
+      "before": "ce8644574983b5f8a04059545305b63463557cdf8d09049c35590cb937a70c76",
+      "after": "f537a1aeb59ff35f87986ecf0d1d05329ee2df14295eb74ee65c90dd46c27f30",
+      "edits": [
+        {
+          "old": "    const configDir = join(currentDir, CONFIG_DIR_NAME);",
+          "new": "    // Pi-compatible prompts require the same project approval as Shepherd resources.\n    if (CONFIG_DIR_NAME !== \".pi\" && existsSync(join(currentDir, \".pi\", \"prompts\"))) {\n        return true;\n    }\n    const configDir = join(currentDir, CONFIG_DIR_NAME);"
+        },
+        {
+          "old": "import { CONFIG_DIR_NAME }",
+          "new": "import { CONFIG_DIR_NAME, getProjectConfigDirs }"
+        },
+        {
+          "old": "    // Pi-compatible prompts require the same project approval as Shepherd resources.\n    if (CONFIG_DIR_NAME !== \".pi\" && existsSync(join(currentDir, \".pi\", \"prompts\"))) {\n        return true;\n    }\n    const configDir = join(currentDir, CONFIG_DIR_NAME);\n    if (TRUST_REQUIRING_PROJECT_CONFIG_RESOURCES.some((entry) => existsSync(join(configDir, entry)))) {",
+          "new": "    if (getProjectConfigDirs(currentDir).some(configDir =>\n        TRUST_REQUIRING_PROJECT_CONFIG_RESOURCES.some(entry => existsSync(join(configDir, entry))))) {"
+        }
+      ]
     },
     {
       "path": "dist/core/shepherd-skill-watch.js",
