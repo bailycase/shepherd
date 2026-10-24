@@ -195,6 +195,8 @@ final class ActionHost: @unchecked Sendable {
                   token == Self.token else { return }
             try write(client, .helloOk(id: id, protocolVersion: RemoteProtocol.version, capabilities: [
                 RemoteProtocol.agentActionsCapability, RemoteProtocol.moveThreadCapability, RemoteProtocol.worktreeActionsCapability,
+                // Finalize checks the worktree setup first, which the client sends only to a host that advertises it.
+                RemoteProtocol.worktreeSetupCapability,
             ]))
             while true {
                 let request = try NDJSON.decode(RemoteRequest.self, from: readLine(client))
