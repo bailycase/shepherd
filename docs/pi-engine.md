@@ -126,8 +126,10 @@ definition-discovery imports still use `bundle/index.js`; provider patches cover
 
 Anthropic OAuth compatibility is automatic in both the modular and bundled Anthropic provider,
 including launches with extensions disabled. It reuses Pi's auth/refresh, transcript conversion,
-reasoning and tool-name mapping; only OAuth requests get the Claude CLI user-agent, billing and
-Agent SDK identity blocks without cache annotations, and narrowly reshaped generated introduction/docs prose. Instruction,
+reasoning and canonical tool-name mapping. OAuth custom tools use MCP-compatible names, decoded
+back to the original tools; existing MCP names stay intact and aliases fail closed. Only OAuth
+requests get the Claude CLI user-agent, billing and Agent SDK identity blocks without cache
+annotations, and narrowly reshaped generated introduction/docs prose. Instruction,
 skill and documentation paths stay intact; API-key requests stay upstream. No setting, dependency
 or home-directory symlink is needed. The shared helper carries the MIT notice and pinned source
 revision of `leohenon/pi-anthropic-oauth` v0.3.4. Offline wire checks in `anthropic-oauth.test.mjs`

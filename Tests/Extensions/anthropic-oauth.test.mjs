@@ -24,19 +24,20 @@ const tools = [{ name: "read", description: instructions, parameters: { type: "o
 const prompt = buildSystemPrompt({ cwd: "/tmp/pi/project", contextFiles: [{ path: "/tmp/pi/AGENTS.md", content: instructions }],
   appendSystemPrompt: instructions, selectedTools: ["read"], toolSnippets: { read: "Read files" } });
 const transcript = (text = prompt) => ({ messages: [
-  { role: "system", content: text, toolsAdded: tools, timestamp: 0 },
+  { role: "system", content: text, toolsAdded: [...tools], timestamp: 0 },
   { role: "user", content: instructions, timestamp: 1 },
 ] });
 
 // A fetch stand-in records the SDK's real serialized request and returns an Anthropic tool stream.
 // No account, auth storage, external network, or provider billing is involved.
-async function request(api, { key = oauth, context = transcript(), method = "streamSimple", cacheRetention = "short", ...options } = {}) {
+async function request(api, { key = oauth, context = transcript(), method = "streamSimple", cacheRetention = "short", requestModel = model,
+  responseName, expectedName = "read", ...options } = {}) {
   let captured;
   const fetch = async (url, init) => {
     captured = { url: String(url), headers: new Headers(init.headers), body: JSON.parse(init.body) };
     const events = [
       { type: "message_start", message: { id: "fixture", model: model.id, usage: { input_tokens: 5, output_tokens: 1 } } },
-      { type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "call_fixture", name: key === oauth ? "Read" : "read", input: {} } },
+      { type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "call_fixture", name: responseName ?? (key === oauth ? "Read" : "read"), input: {} } },
       { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: JSON.stringify({ path: "/tmp/pi/project/.pi/AGENTS.md" }) } },
       { type: "content_block_stop", index: 0 },
       { type: "message_delta", delta: { stop_reason: "tool_use" }, usage: { output_tokens: 3 } },
@@ -45,10 +46,10 @@ async function request(api, { key = oauth, context = transcript(), method = "str
     return new Response(events.map((e) => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`).join(""), { headers: { "content-type": "text/event-stream" } });
   };
   const before = JSON.stringify(context);
-  const result = await api[method](model, context, { apiKey: key, fetch, maxRetries: 0, cacheRetention, ...options }).result();
+  const result = await api[method](requestModel, context, { apiKey: key, fetch, maxRetries: 0, cacheRetention, ...options }).result();
   assert.equal(result.stopReason, "toolUse", result.errorMessage);
   assert.equal(JSON.stringify(context), before, "request shaping must not mutate session history");
-  assert.equal(result.content[0].name, "read", "canonical OAuth names must map back to the real tool");
+  assert.equal(result.content[0].name, expectedName, "OAuth names must map back to the exact real tool");
   assert.deepEqual(result.content[0].arguments, { path: "/tmp/pi/project/.pi/AGENTS.md" });
   return captured;
 }
@@ -79,7 +80,7 @@ for (const [name, relative] of providers) {
     // Every absolute documentation path remains byte-for-byte usable.
     for (const line of prompt.split("\n").filter((line) => /^- (Main documentation|Additional docs|Examples):/.test(line))) assert.ok(text.includes(line));
     assert.deepEqual(wire.body.system[2].cache_control, { type: "ephemeral" });
-    assert.deepEqual(wire.body.tools.map((t) => t.name), ["Read", "shepherd_parent_message"]);
+    assert.deepEqual(wire.body.tools.map((t) => t.name), ["Read", "mcp__pi__shepherd_parent_message"]);
     assert.equal(wire.body.tools[0].description, instructions);
     assert.equal(wire.body.messages[0].content[0].text, instructions);
     assert.equal(wire.body.thinking.type, "enabled");
@@ -91,6 +92,55 @@ for (const [name, relative] of providers) {
     const withPath = prompt.replace(/- Main documentation: [^\n]+/, `- Main documentation: ${trickyPath}`);
     const tricky = await request(api, { context: transcript(withPath) });
     assert.ok(tricky.body.system[2].text.includes(trickyPath), "documentation prose rewrites must never rewrite a path");
+  });
+
+  test(`${name}: custom tools round-trip through definitions, history, tool choice and native deferred references`, async () => {
+    const custom = "shepherd_parent_message";
+    const mcp = "mcp__web__search";
+    const context = transcript();
+    context.messages[0].toolsAdded.push({ ...tools[0], name: mcp });
+    context.messages.push(
+      { role: "assistant", api: model.api, provider: model.provider, model: model.id, stopReason: "toolUse", timestamp: 2,
+        usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+        content: [{ type: "toolCall", id: "prior_call", name: custom, arguments: { path: "/tmp/pi/prior" } }] },
+      { role: "toolResult", toolCallId: "prior_call", toolName: custom, isError: false, timestamp: 3,
+        content: [{ type: "text", text: "prior result" }] },
+    );
+    const wire = await request(api, { context, responseName: `mcp__pi__${custom}`, expectedName: custom,
+      toolChoice: { type: "tool", name: custom } });
+    assert.deepEqual(wire.body.tools.map(t => t.name), ["Read", `mcp__pi__${custom}`, mcp]);
+    assert.equal(wire.body.tool_choice.name, `mcp__pi__${custom}`);
+    const prior = wire.body.messages.flatMap(m => Array.isArray(m.content) ? m.content : []).find(b => b.type === "tool_use");
+    assert.deepEqual(prior, { type: "tool_use", id: "prior_call", name: `mcp__pi__${custom}`, input: { path: "/tmp/pi/prior" } });
+    assert.ok(JSON.stringify(wire.body.messages).includes('"tool_use_id":"prior_call"'));
+    await request(api, { context, responseName: mcp, expectedName: mcp });
+
+    const native = transcript();
+    native.messages.push({ role: "system", content: "Activate a late tool", timestamp: 2,
+      toolsRemoved: [tools[1]], toolsAdded: [{ ...tools[0], name: "shepherd_late" }] });
+    const deferred = await request(api, { context: native, responseName: "mcp__pi__shepherd_late", expectedName: "shepherd_late",
+      requestModel: { ...model, compat: { supportsMidConvoSystemMessages: true, supportsMidConvoToolChanges: true } } });
+    assert.equal(deferred.body.tools.find(t => t.name === "mcp__pi__shepherd_late").defer_loading, true);
+    assert.equal(deferred.body.tools.find(t => t.name === "mcp__pi____pi_deferred_placeholder__").defer_loading, true);
+    const refs = deferred.body.messages.flatMap(m => Array.isArray(m.content) ? m.content : [])
+      .filter(b => b.type === "tool_addition" || b.type === "tool_removal");
+    assert.deepEqual(refs.map(b => [b.type, b.tool.name]), [["tool_removal", `mcp__pi__${custom}`], ["tool_addition", "mcp__pi__shepherd_late"]]);
+  });
+
+  test(`${name}: invalid tool names are collision-safe and existing MCP aliases fail closed`, async () => {
+    const context = transcript();
+    context.messages[0].toolsAdded = ["custom.tool", "custom_tool", "x".repeat(150)].map(name => ({ ...tools[0], name }));
+    const wire = await request(api, { context, responseName: "mcp__pi__custom_tool", expectedName: "custom_tool" });
+    const names = wire.body.tools.map(t => t.name);
+    assert.equal(new Set(names).size, 3);
+    assert.ok(names.every(n => /^[a-zA-Z0-9_-]{1,128}$/.test(n)));
+    await request(api, { context, responseName: names[0], expectedName: "custom.tool" });
+    const alias = transcript();
+    alias.messages[0].toolsAdded = ["foo", "mcp__pi__foo"].map(name => ({ ...tools[0], name }));
+    let sent = false;
+    const result = await api.streamSimple(model, alias, { apiKey: oauth, maxRetries: 0, fetch: async () => { sent = true; throw Error("must not send"); } }).result();
+    assert.match(result.errorMessage, /OAuth tool name collision: mcp__pi__foo/);
+    assert.equal(sent, false);
   });
 
   test(`${name}: custom/empty prompts, system updates and all cache policies survive OAuth`, async () => {
@@ -124,6 +174,45 @@ for (const [name, relative] of providers) {
 }
 
 for (const entrypoint of ["dist/cli.js", "dist/bundle/cli.js"]) {
+  test(`${entrypoint}: extension custom tools execute and return namespaced history over real OAuth RPC`, async (t) => {
+    await withPi(t, { entrypoint, args: ["-ns", "-np", "--model", `anthropic/${model.id}`],
+      files: () => ({ "extensions/oauth-tool.ts": `export default pi => pi.registerTool({
+        name: "shepherd_parent_message", label: "fixture parent", description: "Offline Shepherd custom tool",
+        parameters: { type: "object", properties: {} },
+        async execute() { return { content: [{ type: "text", text: "CUSTOM_OAUTH_EXECUTED" }], details: {} }; }
+      });` }),
+      project(dir) {
+        const file = path.join(dir, "home/models.json");
+        const models = JSON.parse(fs.readFileSync(file));
+        models.providers.anthropic = { baseUrl: models.providers.fixture.baseUrl, models: [{ ...model, baseUrl: models.providers.fixture.baseUrl }] };
+        fs.writeFileSync(file, JSON.stringify(models));
+        fs.writeFileSync(path.join(dir, "home/auth.json"), JSON.stringify({ anthropic: {
+          type: "oauth", access: oauth, refresh: "offline-refresh-fixture", expires: Date.now() + 3600000,
+        } }));
+      },
+      onRequest({ index, body }) {
+        if (body.tools.some(t => !["Read", "Write", "Edit", "Bash", "Grep", "Glob"].includes(t.name) && !/^mcp__/.test(t.name))) {
+          return { status: 400, text: "Third-party apps now draw from your extra usage" };
+        }
+        return index === 0 ? { tool: { name: "mcp__pi__shepherd_parent_message", arguments: {} } } : {};
+      },
+    }, async pi => {
+      const turn = await pi.prompt("Use the fixture parent tool once");
+      assert.equal(turn.reply.success, true);
+      assert.equal(turn.requests.length, 2, JSON.stringify(turn.events));
+      const execution = pi.toolEvents(turn.events).find(e => e.type === "tool_execution_end");
+      assert.equal(execution.toolName, "shepherd_parent_message");
+      assert.equal(execution.isError, false);
+      const history = pi.provider.requests[1].body.messages.flatMap(m => Array.isArray(m.content) ? m.content : []);
+      const call = history.find(b => b.type === "tool_use");
+      assert.equal(call.name, "mcp__pi__shepherd_parent_message");
+      const result = history.find(b => b.type === "tool_result");
+      assert.equal(result.tool_use_id, call.id);
+      assert.ok(JSON.stringify(result).includes("CUSTOM_OAUTH_EXECUTED"));
+      for (const wire of pi.provider.requests) assertOAuth({ headers: new Headers(wire.headers), body: wire.body });
+    });
+  });
+
   test(`${entrypoint}: real RPC launches get compatibility automatically with extensions disabled`, async (t) => {
     await withPi(t, { entrypoint, args: ["-ne", "-ns", "-np", "--model", `anthropic/${model.id}`], project(dir) {
       const file = path.join(dir, "home/models.json");

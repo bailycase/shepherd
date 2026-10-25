@@ -20,7 +20,25 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+
+// Keep valid Pi suffixes exact and existing MCP names intact. Hash only names
+// requiring sanitization/truncation; reject aliases before sending a request.
+export function toOAuthToolName(name) {
+    if (/^mcp__[a-zA-Z0-9_-]+__[a-zA-Z0-9_-]+$/.test(name) && name.length <= 128) return name;
+    const prefixed = `mcp__pi__${name}`;
+    if (/^[a-zA-Z0-9_-]+$/.test(name) && prefixed.length <= 128) return prefixed;
+    const hash = createHash("sha256").update(name).digest("hex").slice(0, 16);
+    return `mcp__pi__${name.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 101)}__${hash}`;
+}
+
+export function assertUniqueOAuthToolNames(tools = []) {
+    const names = new Set();
+    for (const { name } of tools) {
+        if (names.has(name)) throw new Error(`Anthropic OAuth tool name collision: ${name}`);
+        names.add(name);
+    }
+}
 
 const preamble = "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.";
 const docsHeader = "<docs>\nPi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):";
