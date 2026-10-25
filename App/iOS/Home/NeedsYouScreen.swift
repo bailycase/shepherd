@@ -120,6 +120,7 @@ private struct NeedsYouDetail: View {
     let busy: Bool
     let failure: String?
     @Environment(MobileNavigator.self) private var navigator
+    @Environment(MobileProjects.self) private var projects
 
     var body: some View {
         let nw = Color.nw
@@ -169,7 +170,7 @@ private struct NeedsYouDetail: View {
             }
             NWHairline()
             HStack(spacing: NW.Space.m) {
-                Button("Open thread") { navigator.open(item.route) }
+                Button("Open thread") { navigator.open(projects.route(item)) }
                     .buttonStyle(.nw(item.reply == .open ? .primary : .ghost, size: .l))
                 Spacer(minLength: NW.Space.m)
                 if let failure {

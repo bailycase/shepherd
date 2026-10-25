@@ -1,4 +1,5 @@
 import Foundation
+import ShepherdRemote
 import SwiftUI
 import Testing
 import ShepherdCore

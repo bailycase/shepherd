@@ -1,4 +1,5 @@
 import Foundation
+import ShepherdRemote
 import ShepherdCore
 
 /// The pane's tabs, in the boards' order (ProjectLead-Started): Threads, Files, Automations.

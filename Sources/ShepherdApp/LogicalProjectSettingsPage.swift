@@ -1,4 +1,5 @@
 import SwiftUI
+import ShepherdRemote
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdUI
@@ -131,7 +132,7 @@ private struct LogicalProjectGeneralTab: View {
 
     private var model: LogicalProjectsModel { vm.logicalProjects }
     private var settings: LogicalProjectSettings { project.settings }
-    private var saving: Bool { model.busy.contains(ref.id) }
+    private var saving: Bool { model.busy.contains(ref) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: NW.Space.xl) {

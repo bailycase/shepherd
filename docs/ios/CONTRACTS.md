@@ -9,7 +9,7 @@ The shared `RemoteHostClient.agentAction` supports `.move(spaceID:)` behind `age
 It preserves the host's conversation and reloads destination context only for inactive ordinary
 threads. Mac and iOS share decoding and the capability gate; this adds no iOS drag UI.
 
-The shared Project protocol also advertises `logicalProjects.result.v1` for explicit selected-operation result reads. `Project.resultPage`, `historyPage`, `historyNext`, operational-history counters and worker-ownership fields are optional compatible additions. Older peers refuse result requests before sending; no iOS UI or conversation behavior changes.
+The shared Project protocol also advertises `logicalProjects.result.v1` for explicit selected-operation result reads. `Project.resultPage`, `historyPage`, `historyNext`, operational-history counters and worker-ownership fields are optional compatible additions. Older peers refuse result requests before sending. Projects uses `logicalProjects.v1` for records and files and `logicalProjects.runtime.v1` for conversations, questions, tasks and settings; neither creates a device-local execution runtime.
 
 ## The one rule
 
@@ -39,6 +39,7 @@ Never commit a `project.pbxproj` change for a new file.
 | I. Windows | `Windows/`, `Fixtures/WindowsFixtures.swift` | several iPad windows: the scene, each window's navigator and restoration, Open in new window, Send to…, text dropped on a composer |
 | J. Terminal | `Terminal/`, `Fixtures/TerminalFixtures.swift` | terminals: the iPad panel under a thread (tabs only), the iPhone's full-screen terminals, the key row |
 | K. Designs | `Designs/`, `Fixtures/DesignsFixtures.swift`, and its rows in Home, Recents, search and More | a host's designs (`designs.v1`): Designs, a design's boards, one board with its comments, New design, design systems |
+| M. Projects | `Projects/`, `Fixtures/ProjectFixtures.swift` | the host-owned Projects list, owner conversation, tasks, files, settings and creation/assignment forms; shared model in ShepherdRemote |
 | L. Designs on iPad | `DesignPad/`, `Fixtures/DesignPadFixtures.swift`, `Fixtures/DesignPadBoards.swift` | a host's designs on iPad (`designs.v1`): the Designs list, the canvas beside its chat, Split View's reply card, the sidebar's Designs row and design rows |
 
 Shared modules (`ShepherdUI`, `ShepherdRemote`, `ShepherdProtocol`, `ShepherdCore`) belong to no
@@ -65,6 +66,7 @@ enum MobileRoute: Hashable, Codable {
     case padDesign(PadDesignRoute)        // DesignPad/PadDesignRoute.swift
     case terminal(TerminalRoute)          // Terminal/TerminalRoute.swift
     case designs(DesignsRoute)            // Designs/DesignsRoute.swift
+    case projects(ProjectsRoute)          // Projects/ProjectsRoute.swift
 }
 ```
 
@@ -80,6 +82,7 @@ Routes today:
 | Route | Shows |
 | --- | --- |
 | `.thread(AgentRef)` | one agent's thread |
+| `.projects(.list / .project / .task / .files / .settings)` | host-owned Projects and their detail screens; `.create` and `.assign` are modal |
 | `.home(.needsYou / .automations / .more / .recents)` | Home's destinations, and every recent thread |
 | `.newThread(.compose(host: UUID?))` | New thread (presented modally) |
 | `.subagents(.list(AgentRef) / .run(AgentRef, runID:))` | a thread's runs, one run |

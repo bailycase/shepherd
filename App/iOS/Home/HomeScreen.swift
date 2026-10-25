@@ -49,6 +49,7 @@ private struct HomeSections: View {
     let selected: AgentRef?
     @Environment(MobileNavigator.self) private var navigator
     @Environment(MobileHosts.self) private var hosts
+    @Environment(MobileProjects.self) private var projects
 
     var body: some View {
         let designs = MobileDesigns.of(hosts).model
@@ -61,6 +62,11 @@ private struct HomeSections: View {
                 }
                 .buttonStyle(.nwRow(radius: 0))
             }
+            // Always listed: with no host serving Projects, its screen says why.
+            Button { navigator.open(.projects(.list)) } label: {
+                NWListRow("Projects", leading: .symbol("square.stack.3d.up"), trailing: projectsTrailing)
+            }
+            .buttonStyle(.nwRow(radius: 0))
             destination("Automations", symbol: "bolt", trailing: model.automations.isEmpty ? .none : .value(String(model.automations.count)), route: .automations)
             destination("More", symbol: "ellipsis", trailing: model.offlineSummary.map { .alert($0) } ?? .none, route: .more)
         }
@@ -132,6 +138,13 @@ private struct HomeSections: View {
         }
     }
 
+    private var projectsTrailing: NWListRow.Trailing {
+        let rows = projects.rows
+        let needsYou = rows.reduce(0) { $0 + $1.needsYou }
+        if needsYou > 0 { return .alert("\(needsYou) needs you") }
+        return rows.isEmpty ? .none : .value(String(rows.count))
+    }
+
     private func destination(_ title: String, symbol: String, trailing: NWListRow.Trailing, route: HomeRoute) -> some View {
         Button { navigator.open(.home(route)) } label: {
             NWListRow(title, leading: .symbol(symbol), trailing: trailing)
@@ -160,7 +173,7 @@ private struct HomeSections: View {
     }
 
     private func attentionRow(_ item: FleetAttention) -> some View {
-        Button { navigator.open(item.route) } label: { AttentionRow(item: item).equatable() }
+        Button { navigator.open(projects.route(item)) } label: { AttentionRow(item: item).equatable() }
             .buttonStyle(.nwRow(radius: 0))
             .contextMenu { ThreadRowMenu(thread: item.ref.agentRef) }
     }

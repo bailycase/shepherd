@@ -132,6 +132,8 @@ struct ThreadTranscript: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.composerDesignChat) private var designChat
     @Environment(\.designMarkupCanvas) private var markupCanvas
+    /// A Project's coordinator or worker: its key is no agent's, so no ordinary-thread action is offered.
+    @Environment(\.projectTranscript) private var projectTranscript
     /// Follows the tail until the reader drags away from it (docs/design/thread.md › Thread › Following).
     @State private var follower = NativeScrollFollower()
     @State private var historyPaging = NativeHistoryPaging()
@@ -327,6 +329,7 @@ struct ThreadTranscript: View {
         let ref = ref
         let navigator = navigator
         var actions = AgentTurnActions()
+        guard !projectTranscript else { return actions }
         if store.canRetry(row, running: running) {
             actions.retry = { [store] in Task { await store.retry(row) } }
         }

@@ -276,7 +276,7 @@ struct TaskQuestion: View {
                 question: prompt.question,
                 options: prompt.options.map { NWLeadQuestionCard.Option(id: $0.number, title: $0.title, detail: $0.detail, recommended: $0.recommended) },
                 footer: Self.footer(title: task.title),
-                enabled: store.supports("answer") && prompt.blocked == nil && !vm.logicalProjects.busy.contains(ref.id),
+                enabled: store.supports("answer") && prompt.blocked == nil && !vm.logicalProjects.busy.contains(ref),
                 textPlaceholder: prompt.allowsText ? prompt.placeholder : nil,
                 submit: { words in
                     send(prompt.answer(NativeQuestionPicks(text: words)).flatMap(prompt.dialogAnswer), dialog, session)
@@ -308,7 +308,7 @@ struct SpaceOffer: View {
         let path = space.map { ($0.path as NSString).abbreviatingWithTildeInPath } ?? proposal.displayPath
         NWLeadSpaceOffer(name: space?.name ?? (path as NSString).lastPathComponent,
                          path: "\(path) · \(vm.ownerName(of: ref.home))",
-                         enabled: !vm.logicalProjects.busy.contains(ref.id)) {
+                         enabled: !vm.logicalProjects.busy.contains(ref)) {
             Task { _ = await vm.logicalProjects.decideSpace(ref, proposal: proposal, accept: false) }
         } add: {
             Task { _ = await vm.logicalProjects.decideSpace(ref, proposal: proposal, accept: true) }

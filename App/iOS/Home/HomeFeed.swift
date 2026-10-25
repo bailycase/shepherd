@@ -22,6 +22,7 @@ final class HomeFeed {
     private(set) var failures: [String: String] = [:]
 
     @ObservationIgnored private let hosts: MobileHosts
+    @ObservationIgnored var projectNative: ((AgentRef, NativeThreadRequest) async throws -> NativeThreadResult)?
     @ObservationIgnored private var inputs: [FleetHost] = []
     @ObservationIgnored private var sessions: [UUID: UUID] = [:]
     @ObservationIgnored private var digests: [FleetRef: FleetDigest] = [:]
@@ -139,7 +140,7 @@ final class HomeFeed {
                     let request = NativeThreadRequest.snapshot(afterRevision: current ? digest?.revision : nil)
                     let result: NativeThreadResult
                     do {
-                        result = try await client.nativeThread(agentID: agent.id, request: request)
+                        result = try await native(ref.agentRef, client: client, request: request)
                     } catch RemoteHostClientError.rejected(let code, _) where code != "native_limit" {
                         // This thread has none to read yet (pi starting) or any more (pi gone): the
                         // host's other threads still answer. A quiet one waits for the next connection.
@@ -181,6 +182,14 @@ final class HomeFeed {
         await answer(item, .select(value: option))
     }
 
+    private func native(_ ref: AgentRef, client: RemoteHostClient, request: NativeThreadRequest) async throws -> NativeThreadResult {
+        if let agent = hosts.host(ref.host)?.state.agents.first(where: { $0.id == ref.agent }),
+           agent.coordinatorFor != nil || agent.projectWorkerFor != nil, let projectNative {
+            return try await projectNative(ref, request)
+        }
+        return try await client.nativeThread(agentID: ref.agent, request: request)
+    }
+
     /// Answers pi's question from Home.
     func answer(_ item: FleetAttention, _ answer: NativeDialogAnswer) async {
         await send(item) { session in
@@ -198,7 +207,7 @@ final class HomeFeed {
         failures[item.id] = nil
         defer { answering.remove(item.id) }
         do {
-            let result = try await client.nativeThread(agentID: item.ref.agent, request: request)
+            let result = try await native(item.ref.agentRef, client: client, request: request)
             if case .failure(_, let message) = result { failures[item.id] = message }
         } catch RemoteHostClientError.rejected(_, let message), RemoteHostClientError.outcomeUnknown(let message) {
             failures[item.id] = message
