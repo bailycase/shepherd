@@ -10,13 +10,12 @@ struct ServiceTierTests {
         var provider: String
         var api: String?
         var id: String
-        var ownedBy: String?
         var tiers: [ServiceTier]
         var fast: String?
         var why: String?
 
-        var model: ServiceTierModel { ServiceTierModel(provider: provider, id: id, api: api, ownedBy: ownedBy) }
-        var testDescription: String { "\(provider) \(api ?? "-") \(id) owner \(ownedBy ?? "-")" }
+        var model: ServiceTierModel { ServiceTierModel(provider: provider, id: id, api: api) }
+        var testDescription: String { "\(provider) \(api ?? "-") \(id)" }
     }
 
     /// `Tests/Extensions/service-tier-support.json` is shared with the extension's node test.
@@ -29,7 +28,7 @@ struct ServiceTierTests {
     }()
 
     @Test func theSharedTableIsLoaded() {
-        #expect(Self.rows.count >= 40)
+        #expect(!Self.rows.isEmpty)
         #expect(Self.rows.contains { !$0.tiers.isEmpty } && Self.rows.contains { $0.tiers.isEmpty })
     }
 

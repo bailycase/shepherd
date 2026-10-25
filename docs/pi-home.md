@@ -15,90 +15,7 @@ launcher, so never a draft or a native child) loads with `-e`. The host keeps
 `service-tier/<agent id>.json` (`{"tier":"fast"}`, mode 0600) for each agent in the home and
 names it in `SHEPHERD_EXT_SERVICE_TIER`; the extension reads it on every provider request and
 adds `service_tier` for the providers that take it (docs/service-tier.md). The file goes with its
-agent. It reads the managed provider's `owned_by` from `shepherd-cliproxyapi.json` through the
-launcher's `SHEPHERD_CLIPROXYAPI_CONFIG`, and never its key.
-
-## Optional CLIProxyAPI
-
-Settings ▸ Pi ▸ Sign-in connects to an existing CLIProxyAPI server with its address and API key.
-`CLIProxyAPIStore` checks its `/models` endpoint on Connect and Refresh, with bounded responses,
-timeouts and no redirects. A failed check leaves the previous connection unchanged.
-`shepherd-cliproxyapi.json` in Shepherd's pi home holds the enabled flag, URL, literal key and last
-successful model list together, written atomically with mode 0600. It is not part of imports.
-Turn off keeps the connection; Forget removes it. Neither changes the external server.
-
-`PiHome.install` installs `shepherd-cliproxyapi.ts` beside that file. The launcher supplies its
-path with `-e` and pins `SHEPHERD_CLIPROXYAPI_CONFIG` for every pi it starts: agents, the model
-catalog and drafts. Native helpers (subagents; [native-subagents.md](native-subagents.md)) are
-not started through the launcher, so `shepherd-children.ts` does the same for them
-(`managedProvider`, `childLaunch`): from the parent's pinned `SHEPHERD_CLIPROXYAPI_CONFIG` it passes
-`-e <home>/shepherd-cliproxyapi.ts` (the extension beside the connection file) and keeps that one
-variable after it has dropped every other `SHEPHERD_*` variable, and only while both files exist. A
-helper can therefore run on a `cliproxyapi/<id>` model; with no connection it is launched exactly as
-before, and a `cliproxyapi/…` model it can't see is refused with the providers it does have. The
-extension is inert without configuration. It registers the distinct provider
-`cliproxyapi`, so an imported `cpa` provider and its credentials remain untouched. Native provider
-authentication uses the saved key literally, never as an environment reference or shell command.
-Connect accepts only a key of printable ASCII, the characters a request header can carry: a
-proxy's model list may not check keys, so discovery alone can't catch a pasted curly quote or
-ellipsis, and pi's fetch would fail every request with only "Connection error." A key saved before
-this check gets its cause in the turn's error instead.
-The extension reads pi's bundled model metadata without fetching another catalog. A model newer
-than that catalog (`gpt-6.1-sol` beside a known `gpt-6-sol`) takes the capabilities and thinking
-levels of its owner's nearest earlier version of the same family, where a family is the name with
-its version numbers set aside and a release date is never a version. It keeps its own name. Other
-unknown models use conservative text-only defaults. Known proxy compatibility rules cover DeepSeek's role and
-reasoning fields and Responses tool schemas. Session-mode instances use an unref'd file watcher plus at most 30 one-second startup
-snapshot checks within the first 30 seconds. The checks catch publications absorbed by the
-watcher's initial stat; ordinary events handle later changes. Restart replaces both and
-shutdown clears both. Unchanged snapshots deduplicate. Explicit input still reloads settings. Updates wait until idle and never redirect an in-flight turn. The model catalog's fingerprint
-includes the connection file. Configuration and credentials never travel to remote clients.
-
-When a restored conversation's managed model does not match pi's current selection, its next
-input attempts to restore the exact `cliproxyapi/<model ID>` once, only while idle. The model
-must still appear in Shepherd's saved proxy catalog. Recovery refreshes only the local provider
-registry with networking disabled and a five-second abort signal, then selects that exact model.
-It never chooses a similar name, another provider, or another model in the same family, and
-never replays the prompt. Startup alone does not attempt recovery. A turn starting, a session
-change, or an explicit user selection during the refresh takes precedence. If recovery fails,
-the existing input guard still blocks the send, compaction and summarized tree navigation.
-A blocked RPC input publishes the reserved `shepherd.inputBlocked` widget before pi's `handled`
-reply. It carries a version, SHA-256 input digest and model ID, never prompt text or credentials.
-The host converts that pair into `model_unavailable`, preserving the draft and attachments;
-a queued message returns to the paused queue. The Mac composer shows a failed banner and
-"Choose model" opens the existing picker. Remote clients receive the same failure through the
-existing send-result protocol and keep their drafts.
-
-The host serializes input preflights to distinguish identical or transformed concurrent inputs.
-Stop cancels inputs that have not reached pi. A timed-out preflight keeps its unknown outcome,
-cancels unsent inputs and fences later sends until the agent restarts, so a late marker cannot
-reject a newer message. Started or queued dispositions never become retryable model failures.
-
-### Moving from an imported pi provider
-
-There is no automatic migration of `pi-cliproxyapi-provider`. Both providers can coexist while
-you verify the new connection. Existing `cpa/...` sessions keep their original provider until
-you explicitly select a model under `cliproxyapi`.
-
-1. In Settings ▸ Pi ▸ Sign-in ▸ CLIProxyAPI, enter your existing proxy address and API key,
-   then Connect. Verify a new thread using a `cliproxyapi` model before retiring the old setup.
-2. Change Settings ▸ Agents' default model and any explicit native-subagent default, agent
-   profile, workflow or environment override using `cpa/...`. Switch the model in existing
-   threads you plan to keep before disabling their old provider. Conversation history stays.
-3. In Settings ▸ Pi ▸ From your pi ▸ Extensions, turn off `pi-cliproxyapi-provider`. This removes
-   it from subsequent launches; existing processes keep loaded extension code until `/reload`
-   or an app relaunch. Finish active work before relaunching.
-4. The disabled extension's copied files and old `cpa` credential can remain without powering
-   the new provider. Settings currently disables imported extensions, rather than deleting their
-   copied files. Removing the package from your terminal pi alone does not remove Shepherd's
-   independent copy. Nothing in this cutover requires deleting the terminal's configuration.
-
-The old package can read `~/.pi/agent/pi-cliproxyapi-provider/config.json` and `~/.cache` even
-when its code runs from Shepherd's imported copy. The managed provider reads neither. It also
-does not import that package's aliases, per-model overrides, custom headers or environment
-settings. A custom model alias that pi's bundled catalog cannot identify receives conservative
-metadata; verify those models before switching. Don't disable the old provider first: restored
-old `cpa` sessions follow pi's existing fallback rules, not the new provider's fallback guard.
+agent.
 
 ## The home
 
@@ -221,7 +138,7 @@ certificates or the user's own, so a private CA works for a helper's requests to
 set to 1. The `_SHEPHERD_STASH_*` variables pass through as well (their prefix isn't `SHEPHERD_`),
 so a helper's own shell commands get the user's environment back from `restore-env.sh`. Every
 `SHEPHERD_*` variable is dropped, so a helper is cut off from the host: its agent id, socket,
-and design belong only to the parent. The one exception is the managed provider's file, above.
+and design belong only to the parent.
 What Shepherd sets per agent through its own variables and extensions reaches no helper: a helper
 runs with pi's defaults for its model (a service tier Shepherd sets for an agent, for one, isn't
 applied to its helpers).

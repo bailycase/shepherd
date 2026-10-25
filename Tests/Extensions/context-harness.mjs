@@ -21,11 +21,11 @@ export const root = path.resolve(here, "../..");
 const fixtures = path.join(here, "fixtures", "context-budget");
 const extension = (name) => path.join(root, "Extensions", name);
 
-// The agent's extensions in the order the app loads them (PiLaunch.agent, after the launcher's own
-// shepherd-cliproxyapi.ts), each with the settings switch that turns it off. "mcp" is no file: an agent's launch
+// The agent's extensions in the order the app loads them (PiLaunch.agent),
+// each with the settings switch that turns it off. "mcp" is no file: an agent's launch
 // passes `-e builtin:mcp -e builtin:tool-search` (docs/mcp.md), which switches pi's own MCP on.
 export const THREAD_EXTENSIONS = [
-  ["cliproxyapi", "shepherd-cliproxyapi.ts"], ["status", "shepherd-status.ts"], ["service-tier", "shepherd-service-tier.ts"],
+  ["status", "shepherd-status.ts"], ["service-tier", "shepherd-service-tier.ts"],
   ["instructions", "shepherd-instructions.ts"], ["panes", "shepherd-panes.ts"], ["review", "shepherd-review.ts"],
   ["subagents", "shepherd-subagents.ts"], ["children", "shepherd-children.ts"], ["goal", "shepherd-goal.ts"], ["namer", "shepherd-namer.ts"],
   ["design", "shepherd-design.ts"], ["design-refs", "shepherd-design-refs.ts"],

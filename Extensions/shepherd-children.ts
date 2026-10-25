@@ -208,19 +208,6 @@ export function childBashOperations() {
 const textSchema = Type.String({ minLength: 1, maxLength: MAX_TEXT });
 const idSchema = Type.String({ minLength: 1, maxLength: 80 });
 
-// The managed CLIProxyAPI provider (docs/pi-home.md) is loaded by Shepherd's launcher, `<home>/bin/pi`,
-// which passes `-e <home>/shepherd-cliproxyapi.ts` and pins `SHEPHERD_CLIPROXYAPI_CONFIG`, the
-// connection file beside it. A helper isn't started through the launcher, so it gets both here from the
-// parent's pinned path, and only while both files exist: with no connection it is launched as it
-// always was, and a launch never fails on a missing extension file.
-export function managedProvider(env = process.env) {
-  const config = env.SHEPHERD_CLIPROXYAPI_CONFIG;
-  if (!config || !path.isAbsolute(config)) return undefined;
-  const extension = path.join(path.dirname(config), "shepherd-cliproxyapi.ts");
-  try { return fs.statSync(extension).isFile() && fs.statSync(config).isFile() ? { extension, config } : undefined; }
-  catch { return undefined; }
-}
-
 // What a helper is started with: its arguments and its environment, built from the parent's.
 // Pure (it reads files only to name them), so a test can pin exactly which `-e` and which
 // SHEPHERD_* variables a helper gets. `inherited` are the user's enabled extensions, `relay` the
@@ -247,10 +234,6 @@ export function childLaunch({ run, bridge, inherited = [], parentEnv = process.e
     loaded.add(real); args.push("-e", extension);
   };
   // Resolved at each launch, including resume, so Pi resource enable/disable changes apply.
-  // Other providers come from the user's extensions (Pi loads those under --no-extensions when
-  // named); the managed one is Shepherd's own and comes from its home.
-  const managed = managedProvider(parentEnv);
-  if (managed) { load(managed.extension); env.SHEPHERD_CLIPROXYAPI_CONFIG = managed.config; }
   for (const extension of new Set([...inherited, ...(run.extensions ?? [])])) load(extension);
   for (const name of run.localToolExtensions ?? []) args.push("-e", `builtin:${name}`);
   return { args, env };
@@ -281,14 +264,14 @@ export function unknownAgentMessage(name, agents, matches = []) {
 // doesn't load that provider.
 export function missingProviderHint(model, message) {
   return /Model ".*" not found/.test(String(message ?? ""))
-    ? ` ${model} resolves in this Pi, so its provider is one the helper doesn't load: a helper loads Shepherd's managed provider, the user's enabled extensions and a profile's own extensions, not a project's or another CLI-only one.`
+    ? ` ${model} resolves in this Pi, so its provider is one the helper doesn't load: a helper loads the user's enabled extensions and a profile's own extensions, not a project's or another CLI-only one.`
     : "";
 }
 
 const THINKING_SUFFIX = /:(off|minimal|low|medium|high|xhigh|max)$/;
 
 // A model the Pi that would run it can't see: which provider prefixes it does have, where the same
-// id does exist, and (for the old `cpa` provider) what replaced it. `models` is that Pi's catalog.
+// id does exist. `models` is that Pi's catalog.
 export function modelNotFound(requested, models, { origin, where = "this Pi" } = {}) {
   const named = String(requested).replace(THINKING_SUFFIX, "");
   const providers = [...new Set(models.map((model) => model.provider))].sort();
@@ -301,7 +284,6 @@ export function modelNotFound(requested, models, { origin, where = "this Pi" } =
     parts.push(said(`provider "${provider}" isn't loaded in ${where}`));
     const elsewhere = models.filter((model) => model.id === id).map((model) => `${model.provider}/${model.id}`).slice(0, 3);
     if (elsewhere.length) parts.push(`Did you mean ${elsewhere.join(" or ")}?`);
-    if (provider === "cpa") parts.push("\"cpa\" was the provider of the old pi-cliproxyapi-provider package, which Shepherd's pi doesn't load; its managed provider is \"cliproxyapi\" (Settings ▸ Pi ▸ Sign-in).");
   } else if (provider) {
     const first = id.toLowerCase().split(/[^a-z0-9]+/)[0] ?? "";
     const similar = models.filter((model) => model.provider === provider && first && model.id.toLowerCase().includes(first)).map((model) => model.id).slice(0, 5);

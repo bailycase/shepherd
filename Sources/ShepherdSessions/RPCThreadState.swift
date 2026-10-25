@@ -143,9 +143,6 @@ final class RPCThreadState {
     /// The tiers `model` offers (`ServiceTierSupport`), Standard first, none when it takes no tier:
     /// worked out from what pi's `get_state` says the model is, so it follows every model change.
     private(set) var serviceTiers: [ServiceTier] = []
-    /// Installed by SessionServer: the tiers a model offers, which also knows a CLIProxyAPI model's
-    /// owner (from a cached read of its connection file).
-    var serviceTierOffer: (ServiceTierModel) -> [ServiceTier] = { ServiceTierSupport.tiers(for: $0) }
     /// Installed by SessionServer: changes the agent's tier (persisted, its file written, every
     /// client told), answering nil or why it couldn't.
     var applyServiceTier: ((ServiceTier, @escaping (String?) -> Void) -> Void)?
@@ -505,8 +502,6 @@ final class RPCThreadState {
     /// command leaves nothing in pi's session.
     var commandNotices: [CommandNotice] = []
     var commandWindows: Set<UUID> = []
-    var inputPrompts: [UUID: String] = [:]
-    var inputFailures: [UUID: String] = [:]
     var inputActive = false
     var inputOutcomeUnknown = false
     var waitingInputs: [(Bool) -> Void] = []
@@ -1392,7 +1387,7 @@ final class RPCThreadState {
             }
             if let m = data["model"], let provider = m["provider"]?.stringValue, let id = m["id"]?.stringValue {
                 self.model = "\(provider)/\(id)"
-                self.serviceTiers = self.serviceTierOffer(ServiceTierModel(provider: provider, id: id, api: m["api"]?.stringValue))
+                self.serviceTiers = ServiceTierSupport.tiers(for: ServiceTierModel(provider: provider, id: id, api: m["api"]?.stringValue))
             } else {
                 self.model = nil
                 self.serviceTiers = []
@@ -1761,8 +1756,6 @@ final class RPCThreadState {
         questions.removeAll()
         commandNotices.removeAll()
         cancelWaitingInputs()
-        inputPrompts.removeAll()
-        inputFailures.removeAll()
         // A question still open from the last session is not this one's to record.
         askedAt.removeAll()
         estimate = nil
@@ -2064,10 +2057,6 @@ final class RPCThreadState {
         case "setWidget":
             guard let key = request.widgetKey else { return }
             let text = request.widgetLines.map { $0.map(Self.stripANSI).joined(separator: "\n") }
-            if key == "shepherd.inputBlocked" {
-                if let text { recordBlockedInput(text) }
-                return
-            }
             if key == "shepherd.goal" {
                 guard goalsEnabled else { return }
                 guard let text else {

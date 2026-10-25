@@ -297,7 +297,7 @@ private struct SubagentPopupLabel: View {
 }
 
 /// The model field: the popup's look, opening the composer's searchable model picker, because a
-/// proxy such as CLIProxyAPI lists hundreds of models. Typing filters by substring of the id.
+/// custom provider lists hundreds of models. Typing filters by substring of the id.
 struct SubagentModelField: View {
     let current: String?
     let choices: [String]
