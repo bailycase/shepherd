@@ -170,6 +170,12 @@ events come out on stdout, one record per LF.
   thread usable, delivering that prompt once. A bootstrap history timeout never serves an
   empty conversation. Other failed history fetches are `clips.history` (Clipped, below) until
   the next one lands whole.
+- **Recovery** checkpoints ordinary interactive agents' active intent, host queue, and prompts
+  not yet consumed, independently of ephemeral sidebar status. Writes precede input delivery;
+  startup waits for the matching pi session and readable history before reconciling pending
+  user messages and continuing interrupted work. Explicit Stop, questions, and held queue edits
+  do not drain automatically. Three consecutive automatic recovery attempts are allowed; no
+  tool call is replayed by the host. Feature-owned unattended work remains excluded.
 - **Events** update the projection in place. The run pi is streaming is one ordered list of
   live rows (`provisional`), in the order pi produced them:
   - `message_start`, `message_update`, and `message_end` stream the current assistant message

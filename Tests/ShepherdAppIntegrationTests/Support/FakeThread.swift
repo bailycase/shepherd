@@ -150,7 +150,10 @@ enum MountedWorkspace {
         let space = Fixture.space(path: app.dir.path)
         var agents: [AgentFixture] = []
         for index in 0..<count {
-            var agent = try await app.liveAgent("agent \(index)", in: space, order: index, env: env(index))
+            let environment = env(index)
+            var agent = try await app.liveAgent("agent \(index)", in: space, order: index, env: environment)
+            // Restored records must match pi, or the first send legitimately switches sessions.
+            agent.agent.piSessionID = environment["STUB_PI_SESSION_ID"] ?? "stub-session"
             agent.agent.lastActiveAt = Double(count - index)
             agents.append(agent)
         }

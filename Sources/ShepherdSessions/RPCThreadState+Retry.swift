@@ -133,6 +133,9 @@ extension RPCThreadState {
         guard !isGitMergeRetry(entryID: entryID) else {
             originalCompletion(.failure(code: "git_merge", message: "Use Try again with agent to retry the merge.")); return
         }
+        guard !restoringRecovery || recoveryAtLaunch == nil else {
+            originalCompletion(.failure(code: "native_starting", message: "Recovery is waiting for conversation history. Try again once it has loaded.")); return
+        }
         guard recoveryPending == nil else {
             originalCompletion(.failure(code: "busy", message: "A recovery operation is already pending.")); return
         }
@@ -261,6 +264,11 @@ extension RPCThreadState {
 
     private func dispatchRecovery(_ intent: CheckpointRecoveryIntent, generation: String,
                                   authorized: @escaping () -> Bool, completion: @escaping (NativeThreadResult) -> Void) {
+        // A new, fenced Continue is authorization; a late agent_start after Stop is not.
+        stopRequested = false
+        recoveryAttempts = 0
+        restoringRecovery = false
+        recoveryAtLaunch = nil
         session.request(.recoverCheckpoint(token: intent.checkpoint.token, operationID: intent.operationID)) { [weak self] result in
                     guard let self else { return }
                     guard generation == self.generation, intent.sessionID == self.piSessionID, authorized() else {
