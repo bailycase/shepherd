@@ -224,7 +224,7 @@ struct ProjectTaskDetail: View {
                 } else {
                     Button { Task { _ = await vm.logicalProjects.resolve(ref, task: task.id) } } label: { Image(systemName: NWGlyph.resolved.symbolName) }
                         .buttonStyle(.nwIcon(size: NWLeadMetrics.detailButton))
-                        .disabled(!task.canResolve || vm.logicalProjects.busy.contains(ref.id))
+                        .disabled(!task.canResolve || vm.logicalProjects.busy.contains(ref))
                         .nwHelp(task.canResolve ? "Mark resolved" : "Mark resolved once this thread's turn has stopped")
                         .accessibilityLabel("Mark resolved")
                 }

@@ -119,6 +119,7 @@ struct AttentionCard: View {
     var answers = true
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
+    @Environment(MobileProjects.self) private var projects
 
     var body: some View {
         // On iPhone an automation's card is titled by its question over the asker's context
@@ -131,7 +132,7 @@ struct AttentionCard: View {
                         selected: selected, style: answers ? .card : .item) {
             if answers {
                 AttentionReplies(item: item, busy: busy)
-                Button("Open") { navigator.open(item.route) }
+                Button("Open") { navigator.open(projects.route(item)) }
                     .buttonStyle(.nw(item.reply == .open ? .secondary : .ghost))
                     .accessibilityLabel("Open \(item.thread)")
             }

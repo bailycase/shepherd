@@ -219,6 +219,13 @@ have found their elements. Run both with
 `-r landscape`. A real Pencil (drawing while a finger pans, the palette, Done against a host)
 is checked on a device.
 
+**Projects.** `projects`, `project`, `project-task`, `project-files`, `project-settings`,
+`project-new`, `project-assign` and `projects-unsupported` use an in-memory fixture host. Run
+`project-regressions` to exercise capability gating, create/edit/delete, revision conflicts,
+uncertain-send operation reuse, questions, settings, assignment, file reads and draft retention
+through an endpoint rebind. These writes change only fixture memory, never the paired host.
+Render in both appearances on compact and regular-width devices.
+
 **Adding a screen:** see [CONTRACTS.md › Fixture screens](CONTRACTS.md#fixture-screens).
 
 ## Not yet validated

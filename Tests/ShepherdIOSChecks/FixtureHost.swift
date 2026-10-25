@@ -121,6 +121,14 @@ final class FixtureHost: @unchecked Sendable {
     }
 
     private func answer(_ request: RemoteRequest) -> [RemoteReply] {
+        switch request {
+        case .logicalProjects, .logicalProjectRuntime:
+            if let reply = data.projectReply?(request) {
+                note(Self.kind(request))
+                return [reply]
+            }
+        default: break
+        }
         // Mutations are refused before a screen's own answers, so no fixture can let one through.
         if let refusal = refuse(request) { return refusal }
         if let reply = data.reply?(request) {

@@ -7,7 +7,7 @@ import ShepherdCore
 
 /// The right pane's groups: the boards' Waiting on you, Working and Resolved, plus Stopped: a settled turn is neither still
 /// working nor reviewed, so it is drawn on its own rather than with a running dot.
-enum ProjectTaskGroup: String, CaseIterable, Equatable {
+public enum ProjectTaskGroup: String, CaseIterable, Equatable {
     case waiting = "Waiting on you"
     case working = "Working"
     case stopped = "Stopped"
@@ -16,60 +16,60 @@ enum ProjectTaskGroup: String, CaseIterable, Equatable {
 
 /// One file a task published, from the owner's host-validated receipt (state `ready`, this task's ID). A file name the model
 /// wrote in prose, or a staged, refused or unverified receipt, is never one.
-struct ProjectTaskFile: Identifiable, Equatable {
-    let id: UUID
-    let name: String
+public struct ProjectTaskFile: Identifiable, Equatable {
+    public let id: UUID
+    public let name: String
     /// Owner-relative: what the owner's `read` takes, never a path on this Mac.
-    let relativePath: String
-    let size: Int64
+    public let relativePath: String
+    public let size: Int64
 }
 
-struct ProjectTaskRow: Identifiable, Equatable {
-    let id: ProjectTaskID
-    let title: String
-    let group: ProjectTaskGroup
-    let phase: ProjectTask.Phase
+public struct ProjectTaskRow: Identifiable, Equatable {
+    public let id: ProjectTaskID
+    public let title: String
+    public let group: ProjectTaskGroup
+    public let phase: ProjectTask.Phase
     /// "Blocked · <question>" for a waiting task, its failure for a failed one, a stopped or resolved task's recorded outcome evidence,
     /// else nil.
-    let detail: String?
+    public let detail: String?
     /// The word before the detail ("Blocked", "Stopped", "Accepted"), drawn in `lanternText`.
-    let lead: String?
-    let workerAgentID: AgentID
-    let spaceID: SpaceID
-    let revision: UInt64
+    public let lead: String?
+    public let workerAgentID: AgentID
+    public let spaceID: SpaceID
+    public let revision: UInt64
     /// A settled task the user may resolve. A resolved task is terminal: no row offers to reopen it.
-    let canResolve: Bool
+    public let canResolve: Bool
     /// Seconds since 1970 of the last settlement, for the row's age.
-    let settledAt: Double?
+    public let settledAt: Double?
     /// The task's ready published files, in publication order.
-    let files: [ProjectTaskFile]
+    public let files: [ProjectTaskFile]
     /// The operations that delivered the coordinator's assignment to the worker: its first user message carries one, which is how
     /// the worker thread tells the assignment from a person's own steering message.
-    let assignmentOperations: Set<UUID>
+    public let assignmentOperations: Set<UUID>
     /// The owner already holds the person's answer to this task's question (any phase of it but delivered).
-    var answerHeld = false
+    public var answerHeld = false
 }
 
 /// A Project's page state: its counts and rows, never computed in a view body.
-struct ProjectPagePresentation: Equatable {
-    let projectID: ProjectID
-    let name: String
-    let conversationAgent: AgentID?
-    let rows: [ProjectTaskRow]
-    let waiting: Int
+public struct ProjectPagePresentation: Equatable {
+    public let projectID: ProjectID
+    public let name: String
+    public let conversationAgent: AgentID?
+    public let rows: [ProjectTaskRow]
+    public let waiting: Int
     /// Queued, reserved or running: work actually in progress. A settled task has stopped, not finished successfully.
-    let working: Int
-    let resolved: Int
+    public let working: Int
+    public let resolved: Int
     /// Turn stopped, assignment not resolved: no review is implied, and it is never counted as done.
-    let settled: Int
+    public let settled: Int
 
-    var needsYou: Int { waiting }
-    var total: Int { rows.count }
+    public var needsYou: Int { waiting }
+    public var total: Int { rows.count }
 
     /// "1 needs you · 2 working · 1 stopped · 3 resolved": each execution fact counted from the tasks, zeros left out. A Project is
     /// a long-lived workspace, not one campaign, so nothing is "N of M done": a stopped turn is not success and resolution is not
     /// delivery. nil without tasks.
-    var summary: String? {
+    public var summary: String? {
         guard total > 0 else { return nil }
         let parts = [(waiting, "needs you"), (working, "working"), (settled, "stopped"), (resolved, "resolved")]
             .filter { $0.0 > 0 }.map { "\($0.0) \($0.1)" }
@@ -77,7 +77,7 @@ struct ProjectPagePresentation: Equatable {
     }
 
     /// The pane's sentence under "Welcome back": "3 threads are working.", "1 thread is waiting on you."
-    var status: String {
+    public var status: String {
         func threads(_ n: Int) -> String { n == 1 ? "1 thread" : "\(n) threads" }
         if total == 0 { return "Nothing running yet." }
         if waiting > 0 { return "\(threads(waiting)) \(waiting == 1 ? "is" : "are") waiting on you." }
@@ -85,9 +85,9 @@ struct ProjectPagePresentation: Equatable {
         return "Nothing is running."
     }
 
-    func rows(in group: ProjectTaskGroup) -> [ProjectTaskRow] { rows.filter { $0.group == group } }
+    public func rows(in group: ProjectTaskGroup) -> [ProjectTaskRow] { rows.filter { $0.group == group } }
 
-    init(_ project: Project) {
+    public init(_ project: Project) {
         projectID = project.id
         name = project.name
         conversationAgent = project.coordinatorAgentID
@@ -106,7 +106,7 @@ struct ProjectPagePresentation: Equatable {
 
     /// The word before the line for an answer the owner holds: queued waits for Resume, delivering is on its way, failed and unknown
     /// are honest about not knowing the worker got it.
-    static func answerLead(_ phase: ProjectQuestionAnswer.Phase) -> String {
+    public static func answerLead(_ phase: ProjectQuestionAnswer.Phase) -> String {
         switch phase {
         case .queued: "Answer queued"
         case .delivering: "Answering"
@@ -116,7 +116,7 @@ struct ProjectPagePresentation: Equatable {
         }
     }
 
-    static func answerDetail(_ phase: ProjectQuestionAnswer.Phase) -> String? {
+    public static func answerDetail(_ phase: ProjectQuestionAnswer.Phase) -> String? {
         switch phase {
         case .queued: "Waiting to send."
         case .delivering: nil
@@ -126,11 +126,11 @@ struct ProjectPagePresentation: Equatable {
         }
     }
 
-    static let noOutcome = "No outcome recorded"
+    public static let noOutcome = "No outcome recorded"
 
     /// "Merged · PR #12 · per coordinator": the fact, its evidence as recorded, and who recorded it, always. Neither attribution is a
     /// person's approval: the coordinator's is its own claim, and an owner-control record says only where it came from.
-    static func outcome(_ outcome: ProjectTaskOutcome) -> (String, String?) {
+    public static func outcome(_ outcome: ProjectTaskOutcome) -> (String, String?) {
         (outcome.kind.label, [outcome.evidence, outcome.recordedBy == nil ? "recorded by owner" : "per coordinator"].compactMap { $0 }.joined(separator: " · "))
     }
 

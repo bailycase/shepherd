@@ -38,6 +38,7 @@ struct FixtureHostData {
     /// Answers a request before the default handler (agent queries, transcripts, …); nil
     /// falls through.
     var reply: (@Sendable (RemoteRequest) -> RemoteReply?)? = nil
+    var projectReply: (@Sendable (RemoteRequest) -> RemoteReply?)? = nil
     /// What Settings reads: the host's settings, its root instructions and its suggested ones.
     /// nil answers as a host without them.
     var hostSettings: HostSettings? = FixtureData.hostSettings()
@@ -187,10 +188,10 @@ enum FixtureData {
 }
 
 /// Every screen, by track. A track edits only its own file's list.
-enum FixtureCatalog {
+@MainActor enum FixtureCatalog {
     static var all: [FixtureScreen] {
         home + thread + context + newThread + subagents + review + changes + commit + search + settings + automations + windows + terminal + clientState
-            + designs + designPad + designPadMarkup + artifacts
+            + designs + designPad + designPadMarkup + artifacts + ProjectFixtures.screens
     }
 
     static func screen(named name: String) -> FixtureScreen? {

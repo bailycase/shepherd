@@ -18,7 +18,7 @@ struct LogicalProjectSpacesTab: View {
     @State private var choosingFolder = false
     private var model: LogicalProjectsModel { vm.logicalProjects }
     private var ownerName: String { vm.ownerName(of: ref.home) }
-    private var saving: Bool { model.busy.contains(ref.id) }
+    private var saving: Bool { model.busy.contains(ref) }
     /// Each link resolved against its own destination (the owner's Spaces for this Mac, the owner's inventory for a host), never by a
     /// bare SpaceID: see `ProjectSpaceLinks`.
     private var rows: [ProjectSpaceLinks.Row] {
@@ -168,7 +168,7 @@ struct LogicalProjectMemoryTab: View {
     @State private var saveTask: Task<Void, Never>?
 
     private var model: LogicalProjectsModel { vm.logicalProjects }
-    private var saving: Bool { model.busy.contains(ref.id) }
+    private var saving: Bool { model.busy.contains(ref) }
     private var limit: Int { Project.maximumInstructionsLength }
 
     var body: some View {
@@ -269,7 +269,7 @@ struct LogicalProjectAutomationsTab: View {
     let project: Project
 
     private var model: LogicalProjectsModel { vm.logicalProjects }
-    private var saving: Bool { model.busy.contains(ref.id) }
+    private var saving: Bool { model.busy.contains(ref) }
     private var rows: [ProjectAutomationSnapshot] {
         let host: AutomationHost
         switch ref.home {

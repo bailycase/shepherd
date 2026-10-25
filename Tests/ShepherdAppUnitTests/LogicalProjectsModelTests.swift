@@ -104,14 +104,15 @@ struct LogicalProjectsModelTests {
     @Test func anOlderAnswerNeverReplacesANewerRecordAndThePushedStateWinsAtTheSameRevision() async {
         let id = ProjectID()
         let newer = Project(id: id, name: "Newer", revision: 5)
-        let older = Project(id: id, name: "Older", revision: 2)
+        var older = newer; older.name = "Older"; older.revision = 2
         let owner = Owner([newer])
         var pushedList = [older]
         let model = model(owner, pushed: { pushedList })
         let ref = LogicalProjectRef(home: .local, id: id)
         await model.refresh(.local)
         #expect(model.project(ref)?.name == "Newer", "the owner's newer answer beats an older push")
-        pushedList = [Project(id: id, name: "Pushed", revision: 7)]
+        var pushed = newer; pushed.name = "Pushed"; pushed.revision = 7
+        pushedList = [pushed]
         #expect(model.project(ref)?.name == "Pushed", "a newer push beats the remembered answer")
     }
 

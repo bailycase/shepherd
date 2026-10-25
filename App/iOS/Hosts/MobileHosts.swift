@@ -18,6 +18,8 @@ final class MobileHost: Identifiable {
     /// A new value for every connection that finishes its handshake; nil while none is live.
     /// Work tied to one connection (a thread's poll loop) keys on it.
     fileprivate(set) var session: UUID?
+    /// Retargeting or replacing credentials invalidates Project drafts' cached authority.
+    fileprivate(set) var projectBinding = UUID()
     fileprivate(set) var capabilities: Set<String> = []
     /// When this device's connection to it last ended (saved apart from the record).
     fileprivate(set) var lastSeen: Date?
@@ -161,7 +163,13 @@ final class MobileHosts {
         record.port = entry.port
         if host.record != record { host.record = record }
         persist()
-        if moved { retry(id) }
+        if moved {
+            host.projectBinding = UUID()
+            var state = host.state
+            state.projects = []
+            host.adopt(state)
+            retry(id)
+        }
     }
 
     /// Disconnects, deletes the token, and drops the host with its last known state.

@@ -8,6 +8,7 @@ import ShepherdUI
 @MainActor
 final class MobileApp {
     let hosts: MobileHosts
+    let projects: MobileProjects
     /// The navigator of a root made without its own (the fixture harness's single window).
     let navigator: MobileNavigator
     let threads: ThreadStores
@@ -17,10 +18,14 @@ final class MobileApp {
     init(hosts: MobileHosts, appearance: MobileAppearance) {
         NWFonts.register()
         self.hosts = hosts
+        projects = MobileProjects(hosts: hosts)
         navigator = MobileNavigator()
         threads = ThreadStores()
         threads.hostName = { [weak hosts] ref in hosts?.host(ref.host)?.record.name }
         self.appearance = appearance
+        HomeFeed.of(hosts).projectNative = { [projects] ref, request in
+            try await projects.native(agent: ref, request: request)
+        }
     }
 
     /// The shipped app: preferences and the Keychain.
@@ -34,6 +39,7 @@ final class MobileApp {
         navigator.forget(host: host)
         windows.forget(host: host)
         threads.forget(host: host)
+        projects.forget(host)
         SettingsStore.forget(host: host, in: hosts)
         AutomationsStore.forget(host: host, in: hosts)
         MobileTerminals.shared.forget(host: host)
@@ -55,6 +61,7 @@ extension View {
         environment(app.hosts)
             .environment(navigator)
             .environment(app.threads)
+            .environment(app.projects)
             .environment(app.appearance)
             .environment(app.windows)
             .environment(\.mobileWindow, window)
