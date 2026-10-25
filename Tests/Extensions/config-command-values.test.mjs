@@ -27,7 +27,7 @@ const source = patchedSource(change);
 const sdk = await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`);
 
 test("the SDK bundle also removes command resolver implementations and calls", () => {
-  const bundle = patchedSource(patch.files.find((entry) => entry.path.startsWith("dist/bundle/chunks/") && entry.edits.some((edit) => edit.new.includes("Command configuration values"))));
+  const bundle = patchedSource(patch.files.find((entry) => entry.path.startsWith("dist/bundle/chunks/") && entry.edits?.some((edit) => edit.new.includes("Command configuration values"))));
   assert.doesNotMatch(bundle, /executeCommand|executeWithConfiguredShell|executeWithDefaultShell|commandResultCache/);
   assert.match(bundle, /Command configuration values are not supported/);
 });

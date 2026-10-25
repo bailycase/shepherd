@@ -9,7 +9,7 @@ import ShepherdTestSupport
 private func failedCheckpoint(_ h: PiAgent) async throws -> NativeThreadSnapshot {
     let ready = try await h.ready()
     #expect(try await h.send("flaky", from: ready).wasAccepted)
-    _ = try await h.snapshot { !$0.running && $0.checkpointRecovery?.checkpoint != nil }
+    _ = try await h.snapshot("the failed turn to settle with a recovery checkpoint") { !$0.running && $0.checkpointRecovery?.checkpoint != nil }
     try await eventually("the failed turn's capture to finish") {
         try await h.server.enqueue { h.server.rpcThread(forAgent: h.agent.id)?.canRecoverCheckpoint(operationID: UUID()) == true }
     }
@@ -25,6 +25,19 @@ private func recoveryRequest(_ s: NativeThreadSnapshot, operation: UUID = UUID()
 
 @Suite("Message-free checkpoint recovery", .integrationTimeLimit)
 struct RetryTests {
+    @Test func aSettledTurnCanRecoverBeforeItsStubWorkerExits() async throws {
+        let host = try ScratchServer()
+        defer { host.stop() }
+        let h = try await PiAgent.launch(on: host, env: ["STUB_PI_FLAKY_SETTLED_GATE": "worker-exit"])
+        defer { FileManager.default.createFile(atPath: host.dir.appendingPathComponent("worker-exit").path, contents: nil) }
+        let s = try await failedCheckpoint(h)
+        #expect(try await h.request(recoveryRequest(s)).wasAccepted)
+        _ = try await h.snapshot("recovery to settle while the failed turn's worker is held") {
+            !$0.running && $0.messages.last?.blocks.first?.text == "Recovered: flaky"
+        }
+        #expect(h.stdin("recover_checkpoint").count == 1 && h.stdin("prompt").count == 1)
+    }
+
     @Test(arguments: ["native", "engine"])
     func aDefiniteBusyRefusalAllowsOnlyANewExplicitOperation(boundary: String) async throws {
         let host = try ScratchServer()
@@ -219,7 +232,7 @@ struct RetryTests {
         }
         let action = Task { try await h.request(request) }
         try await eventually("recovery's context preparation") { try await host.server.enqueue { gate.pending != nil } }
-        let busy = try await h.snapshot()
+        let busy = try await h.snapshot("\(boundary): recovery preparation's busy snapshot")
         #expect(busy.running, "preparation and delivery uncertainty are visible as busy")
         switch boundary {
         case "dialog":
@@ -229,7 +242,7 @@ struct RetryTests {
             #expect(try await h.request(.abort(expectedSessionID: s.piSessionID, generation: s.generation, operationID: UUID())).wasAccepted)
         case "new-session":
             try await host.server.enqueue { host.server.rpcThread(forAgent: h.agent.id)?.session.send(.newSession) }
-            _ = try await h.snapshot { $0.generation != s.generation }
+            _ = try await h.snapshot("new_session to replace generation \(s.generation) (session \(s.piSessionID)) during recovery preparation") { $0.generation != s.generation }
         case "project-assignment":
             var assigned = h.agent
             assigned.executionFor = ProjectExecutionKey(ownerID: UUID(), projectID: ProjectID(), operationID: UUID())
@@ -261,7 +274,7 @@ struct RetryTests {
         let result = try await action.value
         if boundary == "unrelated-space" || boundary == "renamed" {
             #expect(result.wasAccepted)
-            _ = try await h.snapshot { !$0.running && $0.messages.last?.blocks.first?.text == "Recovered: flaky" }
+            _ = try await h.snapshot("\(boundary): the accepted recovery to settle") { !$0.running && $0.messages.last?.blocks.first?.text == "Recovered: flaky" }
             #expect(h.stdin("recover_checkpoint").count == 1)
         } else {
             #expect(!result.wasAccepted)
