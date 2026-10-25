@@ -475,9 +475,9 @@ enum FollowFixture {
         try? await Task.sleep(for: .seconds(1.5))
         store.draft = ""
         for stage in 1...2 {
-            // On iPad the review docks beside the thread between the turn and its reply, and
-            // the thread's rows re-wrap narrower.
-            if stage == 2, UIDevice.current.userInterfaceIdiom == .pad { app.navigator.open(.review(.changes(ref, file: nil))) }
+            // On regular-width layouts the review docks beside the thread between the turn
+            // and its reply, and the thread's rows re-wrap narrower.
+            if stage == 2, app.navigator.layout == .pad { app.navigator.open(.review(.changes(ref, file: nil))) }
             if stage == 2 {
                 store.draft = draft
                 focusComposer()
@@ -487,7 +487,8 @@ enum FollowFixture {
             await FixtureWindows.wait(seconds: 10) { store.snapshot?.revision == UInt64(stage + 1) }
             try? await Task.sleep(for: .seconds(1))
         }
-        check("the reply ends above the composer") { $0 <= MobileLayout.gutter + 1 }
+        let gutter = threadScrollView()?.traitCollection.horizontalSizeClass == .regular ? MobileLayout.padThreadGutter : MobileLayout.gutter
+        check("the reply ends above the composer") { $0 <= gutter + 1 }
     }
 
     /// Focuses the composer as a tap does and waits for the keyboard: the field keeps the focus
@@ -603,7 +604,9 @@ enum FollowFixture {
     @MainActor private static func check(_ what: String, _ holds: (CGFloat) -> Bool) {
         guard let scroll = threadScrollView() else { return FixtureCheck.report("FIXTURE CHECK FAILED: no thread scroll view") }
         let distance = scroll.contentSize.height + scroll.adjustedContentInset.bottom - scroll.contentOffset.y - scroll.bounds.height
-        FixtureCheck.report("FIXTURE CHECK \(holds(distance) ? "ok" : "FAILED"): \(what) (\(Int(distance.rounded()))pt above the tail)")
+        let minimum = min(0, scroll.contentSize.height + scroll.adjustedContentInset.top + scroll.adjustedContentInset.bottom - scroll.bounds.height)
+        let valid = holds(distance) && distance >= minimum - NativeScrollFollower.repinSlack
+        FixtureCheck.report("FIXTURE CHECK \(valid ? "ok" : "FAILED"): \(what) (\(Int(distance.rounded()))pt above the tail)")
     }
 
     /// Puts the caret in the composer's field, so the software keyboard (when the simulator

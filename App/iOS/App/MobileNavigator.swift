@@ -35,6 +35,9 @@ final class MobileNavigator {
     /// Portrait: the sidebar slides over the thread, so choosing a row hides it again; with no
     /// thread chosen it stays out.
     var padSidebarOverlays = false
+    /// iPhone Duo's hinge: true folded shut (the outer display), false open or half open (the
+    /// inner one), nil on a device without a hinge (`onHingeClosedChange`).
+    var hingeClosed: Bool?
     /// The thread whose composer has the focus in this window (`ThreadComposer`).
     @ObservationIgnored var focusedComposer: AgentRef?
     /// The composer to focus again as it mounts: the split view's change of style (a turn

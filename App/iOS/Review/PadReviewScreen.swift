@@ -25,14 +25,19 @@ struct PadReviewScreen: View {
             switch store.padLayout {
             case .docked:
                 GeometryReader { proxy in
+                    // Half open (iPhone Duo), the thread ends at the fold and the pane starts after it.
+                    let fold = proxy.verticalFold
                     HStack(spacing: 0) {
                         ThreadScreen(ref: ref)
                             .environment(\.threadSidePaneOpen, true)
-                            .frame(maxWidth: .infinity)
+                            .paneWidth(fold?.lowerBound)
+                            .padding(.trailing, fold.map { $0.upperBound - $0.lowerBound } ?? 0)
                         NWHairline(.vertical, color: Color.nw.lineStrong)
                         PadChangesPane(ref: ref, store: store, finalize: finalize, close: { dismiss() })
-                            .frame(width: min(MobileLayout.reviewDockWidth, proxy.size.width * MobileLayout.reviewDockShare))
+                            .paneWidth(fold == nil ? min(MobileLayout.reviewDockWidth, proxy.size.width * MobileLayout.reviewDockShare) : nil)
                     }
+                    // Half open, the thread's title leads instead of centering on the fold.
+                    .toolbarRole(fold == nil ? .automatic : .editor)
                 }
             case .full:
                 PadFullReview(store: store, finalize: finalize, close: { dismiss() })
@@ -491,16 +496,21 @@ private struct PadFullReview: View {
         VStack(spacing: 0) {
             PadChangesToolbar(store: store, compact: false, finalize: finalize)
             PadCompareRow(store: store)
-            HStack(spacing: 0) {
-                PadFileList(store: store) { id in
-                    store.clearSelection()
-                    store.currentFile = id
-                    scrollTarget = id
+            // Half open (iPhone Duo), the file list ends at the fold and the files start after it.
+            GeometryReader { proxy in
+                let fold = proxy.verticalFold
+                HStack(spacing: 0) {
+                    PadFileList(store: store) { id in
+                        store.clearSelection()
+                        store.currentFile = id
+                        scrollTarget = id
+                    }
+                    .paneWidth(fold?.lowerBound ?? MobileLayout.reviewFileListWidth)
+                    .padding(.trailing, fold.map { $0.upperBound - $0.lowerBound } ?? 0)
+                    NWHairline(.vertical)
+                    PadChangesStack(store: store, scrollTarget: $scrollTarget, compact: fold != nil)
+                        .frame(maxWidth: .infinity)
                 }
-                .frame(width: MobileLayout.reviewFileListWidth)
-                NWHairline(.vertical)
-                PadChangesStack(store: store, scrollTarget: $scrollTarget, compact: false)
-                    .frame(maxWidth: .infinity)
             }
             PadSendBar(store: store, close: close)
         }

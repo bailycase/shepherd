@@ -600,9 +600,9 @@ final class PadDesignRasterizer {
     }
 }
 
-/// Where web views wait while no canvas holds them: a view at the back of the key window, under
-/// the app's content. WebKit draws a page only in a window, and a snapshot needs one drawn; it
-/// sits below the status bar and the window's top inset, where iOS paints tiles at low resolution.
+/// Where web views wait while no canvas holds them: a view at the back of a window in front
+/// (`DesignRenderAnchor`), under the app's content. WebKit draws a page only in a window, and a
+/// snapshot needs one drawn; it sits below the status bar and the window's top inset, where iOS paints tiles at low resolution.
 @MainActor
 final class PadDesignStage {
     static let shared = PadDesignStage()
@@ -624,12 +624,9 @@ final class PadDesignStage {
         stage.addSubview(view)
     }
 
-    private func attach() {
-        guard stage.window == nil else { return }
-        let window = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-            .flatMap(\.windows).first { $0.isKeyWindow } ?? UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }.flatMap(\.windows).first
-        window?.insertSubview(stage, at: 0)
+    func attach() {
+        guard let window = DesignRenderAnchor.window, stage.window !== window else { return }
+        window.insertSubview(stage, at: 0)
     }
 }
 

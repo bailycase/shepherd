@@ -33,6 +33,8 @@ struct PadDesignScreen: View {
         let name = design?.name ?? canvas.snapshot?.index.title ?? "Design"
         GeometryReader { proxy in
             let wide = proxy.size.width >= MobileLayout.padDesignSideBySideMinWidth
+            // Half open (iPhone Duo), the canvas ends at the fold and the chat starts after it.
+            let fold = wide ? proxy.verticalFold : nil
             HStack(spacing: 0) {
                 VStack(spacing: 0) {
                     PadDesignHeader(title: name, wide: wide, system: wide ? canvas.systemName(design) : nil,
@@ -45,9 +47,11 @@ struct PadDesignScreen: View {
                         .onChange(of: wide, initial: true) { _, wide in canvas.column = !wide }
                 }
                 .background { PadDesignCanvasBackground(wide: wide) }
+                .paneWidth(fold?.lowerBound)
+                .padding(.trailing, fold.map { $0.upperBound - $0.lowerBound } ?? 0)
                 if wide {
                     PadDesignChatPane(canvas: canvas, agent: agent, hostName: hosts.host(ref.host)?.name)
-                        .frame(width: MobileLayout.padDesignChatWidth)
+                        .paneWidth(fold == nil ? MobileLayout.padDesignChatWidth : nil)
                 }
             }
         }

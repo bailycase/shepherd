@@ -136,6 +136,8 @@ final class DesignRendering {
 
     // MARK: The renderer
 
+    func refreshWindow() { stage.attach() }
+
     private func makeView(_ ref: HostDesignRef, source: RemoteDesignSource, path: DesignPath, size: CGSize) -> DesignBoardView {
         let view = DesignBoardView(surface: surface(ref, source: source), board: path, size: size)
         opened()
@@ -200,24 +202,60 @@ private final class RenderStage {
     private var container: UIView?
 
     func add(_ view: UIView) {
-        guard let window = Self.window() else { return }
-        if container?.window !== window {
-            container?.removeFromSuperview()
+        if container == nil {
             let stage = UIView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
             stage.clipsToBounds = true
             stage.isUserInteractionEnabled = false
             stage.accessibilityElementsHidden = true
-            window.insertSubview(stage, at: 0)
             container = stage
         }
+        attach()
         view.frame.origin = .zero
         container?.addSubview(view)
     }
 
-    private static func window() -> UIWindow? {
-        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        let windows = scenes.flatMap(\.windows)
-        return windows.first(where: \.isKeyWindow) ?? windows.first
+    func attach() {
+        guard let container, let window = DesignRenderAnchor.window, container.window !== window else { return }
+        window.insertSubview(container, at: 0)
+    }
+}
+
+/// The shared off-screen renderers may draw in any foreground Shepherd window. Each root
+/// supplies its own window and phase, rather than searching process-wide scene state. When Duo
+/// folds shut, move even a render already in flight out of the scene that went into the background.
+struct DesignRenderAnchor: UIViewRepresentable {
+    @Environment(\.scenePhase) private var phase
+    private static let anchors = NSHashTable<Anchor>.weakObjects()
+    private static weak var current: UIWindow?
+
+    static var window: UIWindow? {
+        let mounted = anchors.allObjects.filter { $0.window != nil }
+        let active = mounted.filter { $0.phase == .active }
+        let candidates = active.isEmpty ? mounted.filter { $0.phase == .inactive } : active
+        current = candidates.first(where: { $0.window === current })?.window ?? candidates.first?.window
+        return current
+    }
+
+    private static func refresh() {
+        DesignRendering.shared.refreshWindow()
+        PadDesignStage.shared.attach()
+    }
+
+    func makeUIView(context: Context) -> Anchor { Anchor() }
+
+    func updateUIView(_ view: Anchor, context: Context) {
+        view.phase = phase
+        Self.refresh()
+    }
+
+    final class Anchor: UIView {
+        var phase: ScenePhase = .background
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            if window == nil { anchors.remove(self) } else { anchors.add(self) }
+            refresh()
+        }
     }
 }
 

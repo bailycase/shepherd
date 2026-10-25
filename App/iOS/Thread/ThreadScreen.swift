@@ -84,8 +84,12 @@ struct ThreadScreen: View {
                             }
                         }
                         ThreadStopButton(store: store, enabled: key.session != nil)
-                        ThreadOptionsMenu(ref: ref, store: store, enabled: key.session != nil)
                     }
+                }
+                // The system's ••• menu, so it overflows with the bar's items where the bar runs
+                // down the side (iPhone Duo).
+                if agent != nil {
+                    ToolbarOverflowMenu { ThreadOptionsItems(ref: ref, store: store, enabled: key.session != nil) }
                 }
             }
             .onAppear { visible = true }
@@ -134,6 +138,12 @@ struct ThreadTranscript: View {
     @State private var visibleTurn: String?
 
     private static let bottomID = "thread-bottom"
+
+    // iOS 27.1's bottom anchor can retain a lazy stack's estimated height after a fold.
+    // Use the same explicit following as macOS 27.
+    private var nativeTail: Bool {
+        if #available(iOS 27.1, *) { false } else { true }
+    }
 
     var body: some View {
         let rows = store.rows
@@ -190,13 +200,12 @@ struct ThreadTranscript: View {
             .scrollPosition(id: $visibleTurn, anchor: .top)
             .onChange(of: historyEnabled) { _, _ in loadVisibleHistory() }
             .onChange(of: store.sessionKey) { _, _ in loadVisibleHistory() }
-            .defaultScrollAnchor(.bottom, for: .initialOffset)
-            .defaultScrollAnchor(follower.sticky ? .bottom : nil, for: .sizeChanges)
+            .defaultScrollAnchor(nativeTail ? .bottom : nil, for: .initialOffset)
+            .defaultScrollAnchor(nativeTail ? (follower.sticky ? .bottom : nil) : (follower.sticky ? nil : .top), for: .sizeChanges)
             .onScrollGeometryChange(for: NativeScrollProbe.self, of: Self.probe) { old, new in
-                // The size-change anchor follows neither the composer's nor the keyboard's inset,
-                // nor rows re-wrapping beside a docked review: while stuck, every layout change
-                // lands on the tail, above the composer.
-                if follow({ $0.observe(from: old, to: new, gesture: $0.userScrolling) }) {
+                // Insets and row wrapping can settle separately from scroll offsets.
+                // While following, keep the tail above the composer through every change.
+                if follow({ $0.observe(from: old, to: new, gesture: $0.userScrolling, nativeAnchor: nativeTail) }) {
                     proxy.scrollTo(Self.bottomID, anchor: .bottom)
                 }
             }
@@ -497,26 +506,22 @@ private struct ThreadStopButton: View {
     }
 }
 
-/// The thread's options: refresh, subagents, the terminal (Terminal/), Open in new window
-/// (Windows/), and the agent actions (Search/).
-private struct ThreadOptionsMenu: View {
+/// The thread's options, in the bar's ••• menu: refresh, subagents, the terminal (Terminal/),
+/// Open in new window (Windows/), and the agent actions (Search/).
+private struct ThreadOptionsItems: View {
     let ref: AgentRef
     let store: NativeThreadStore
     let enabled: Bool
     @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
-        Menu {
-            Button("Refresh", systemImage: "arrow.clockwise") { Task { await store.refresh(fresh: true) } }
-                .disabled(!enabled)
-            if store.hasSubagents {
-                Button("Subagents", systemImage: "person.2") { navigator.open(SubagentHooks.list(thread: ref)) }
-            }
-            TerminalMenuItems(thread: ref)
-            OpenInNewWindowButton(thread: ref)
-            AgentActionsMenu(thread: ref)
-        } label: {
-            Label("Thread options", systemImage: "ellipsis")
+        Button("Refresh", systemImage: "arrow.clockwise") { Task { await store.refresh(fresh: true) } }
+            .disabled(!enabled)
+        if store.hasSubagents {
+            Button("Subagents", systemImage: "person.2") { navigator.open(SubagentHooks.list(thread: ref)) }
         }
+        TerminalMenuItems(thread: ref)
+        OpenInNewWindowButton(thread: ref)
+        AgentActionsMenu(thread: ref)
     }
 }
