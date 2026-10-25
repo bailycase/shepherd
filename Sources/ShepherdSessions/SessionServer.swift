@@ -521,6 +521,7 @@ public final class SessionServer: @unchecked Sendable {
     private let serviceTierOffers: ServiceTierOffers
     /// Where each delivered message came from, per pi session (support directory).
     private let originStore: ThreadOriginStore
+    private let agentRecovery: AgentRecoveryStore
     /// How each automation's runs went (support directory), for remote clients.
     private let runLog: AutomationRunLog
     /// The Changes pane's engine: scopes, diffs, the base picker, and each agent's turns with
@@ -824,6 +825,7 @@ public final class SessionServer: @unchecked Sendable {
         self.serviceTierOffers = ServiceTierOffers(home: pi.files)
         self.modelCatalog = modelCatalog ?? SessionServer.piModelCatalog(pi)
         self.originStore = ThreadOriginStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("thread-origins", isDirectory: true))
+        self.agentRecovery = AgentRecoveryStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("agent-recovery", isDirectory: true))
         self.runLog = AutomationRunLog(url: stateURL.deletingLastPathComponent().appendingPathComponent("automation-runs.json"))
         let instructions = InstructionsStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("instructions", isDirectory: true))
         self.instructions = instructions
@@ -1251,6 +1253,8 @@ public final class SessionServer: @unchecked Sendable {
         }
         // Runs still open died with the previous launch, their agents with them.
         runLog.closeOpenRuns()
+        do { try agentRecovery.prune(keeping: Set(store.state.agents.map(\.id))) }
+        catch { ShepherdLog.warning("Could not prune agent recovery checkpoints") }
         changes.pruneTurns(keeping: Set(store.state.agents.map(\.id)))
     }
 
@@ -4688,6 +4692,8 @@ public final class SessionServer: @unchecked Sendable {
             let gone = Set(before.agents.map(\.id)).subtracting(state.agents.map(\.id))
             designReferencePayloads.removeAgents(gone)
             for agentID in gone {
+                do { try agentRecovery.save(nil, for: agentID) }
+                catch { ShepherdLog.warning("Could not remove agent recovery checkpoint") }
                 executionExited(agentID: agentID, stopped: false)
                 ServiceTierFile.remove(for: agentID, in: pi.files)
             }
@@ -6541,6 +6547,7 @@ public final class SessionServer: @unchecked Sendable {
     public func stopKeepingAgent(sessionID: SessionID) async {
         await enqueueValue {
             guard case .rpc(let session, _)? = self.sessions[sessionID], session.isAlive else { return }
+            self.clearAgentRecovery(sessionID: sessionID)
             self.startRecords[sessionID]?.requestStop()
             ShepherdLog.info("rpc session \(sessionID) stop requested; its agent stays")
             session.kill()
@@ -6588,6 +6595,10 @@ public final class SessionServer: @unchecked Sendable {
             let sid = session.id
             session.beforeOffQueueDecode = beforeOffQueueDecode
             let thread = RPCThreadState(session: session, queue: sessionQueue, originStore: originStore)
+            if let id = session.launchAgentID {
+                do { thread.recoveryAtLaunch = try agentRecovery.checkpoint(for: id) }
+                catch { ShepherdLog.warning("Could not read agent recovery checkpoint") }
+            }
             thread.defaultQueueMode = defaultQueueMode
             thread.hiddenCommands = hiddenSlashCommands
             thread.setGoalsEnabled(goalsEnabled, notifyController: false)
@@ -6658,6 +6669,15 @@ public final class SessionServer: @unchecked Sendable {
                     }
                 }
             }
+            thread.onRecoveryChanged = { [weak serverWeak, weak thread] in
+                guard let server = serverWeak, let thread, server.isStarted else { return true }
+                if thread.restoringRecovery, thread.isServable, !thread.historyUnread, thread.recoveryAtLaunch != nil {
+                    server.restoreAgentRecovery(sessionID: sid)
+                    return !thread.restoringRecovery
+                } else {
+                    return server.checkpointAgentRecovery(sessionID: sid, thread: thread)
+                }
+            }
             thread.onRevision = { [weak serverWeak] in serverWeak?.threadRevised(sessionID: sid) }
             thread.onQuestionChanged = { [weak serverWeak] question in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
@@ -6704,6 +6724,7 @@ public final class SessionServer: @unchecked Sendable {
                 serverWeak?.startRecords[sid]?.served()
                 guard let server = serverWeak, server.sessions[sid] != nil else { return }
                 server.diagnosticDuration("agent.start", since: diagnosticStart)
+                server.restoreAgentRecovery(sessionID: sid)
                 server.unannouncedServable.insert(sid)
                 server.announceServableThreads()
                 for id in server.peerDeliveries.keys.sorted() where server.peerDeliveries[id]?.sessionID == sid {
@@ -6968,6 +6989,7 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     private func killSessionOnQueue(_ sessionID: SessionID) {
+        clearAgentRecovery(sessionID: sessionID)
         guard let session = sessions[sessionID] else { return }
         if session.isAlive {
             if onDiagnosticDuration != nil, session.thread != nil, diagnosticStops[sessionID] == nil {
@@ -7229,6 +7251,92 @@ public final class SessionServer: @unchecked Sendable {
             sessionAgents = (store.version, agents)
         }
         return sessionAgents?.agents[sessionID]
+    }
+
+    private func recoveryAgentID(sessionID: SessionID) -> AgentID? {
+        if let id = agentID(forSession: sessionID) { return id }
+        if case .rpc(let session, _)? = sessions[sessionID] { return session.launchAgentID }
+        return nil
+    }
+
+    private func allowsAgentRecovery(_ id: AgentID, thread: RPCThreadState) -> Bool {
+        guard let agent = store.state.agents.first(where: { $0.id == id }),
+              agent.coordinatorFor == nil, agent.designID == nil, thread.goal == nil,
+              !store.state.isProjectWorker(id),
+              !store.state.projectExecutions.contains(where: { $0.assignment?.reservedWorkerID == id }),
+              !Self.automationRunAgentIDs(in: store.state).contains(id) else { return false }
+        return true
+    }
+
+    @discardableResult
+    private func checkpointAgentRecovery(sessionID: SessionID, thread: RPCThreadState) -> Bool {
+        guard let id = recoveryAgentID(sessionID: sessionID) else { return true }
+        do {
+            // Bootstrap must not overwrite saved work with initial idle state. Stop is an
+            // explicit cancellation even when the old history has not become readable yet.
+            if thread.restoringRecovery, thread.unreadOpeningPrompt == nil {
+                guard thread.stopRequested, var deferred = thread.recoveryAtLaunch else { return true }
+                deferred.active = false
+                deferred.paused = true
+                deferred.pending = []
+                try agentRecovery.save(deferred, for: id)
+                thread.recoveryAtLaunch = deferred
+                return true
+            }
+            let checkpoint = allowsAgentRecovery(id, thread: thread)
+                ? thread.recoveryCheckpoint(sessionID: store.state.agents.first(where: { $0.id == id })?.piSessionID ?? id.rawValue) : nil
+            if let checkpoint, thread.piSessionID != nil {
+                // RPC observes a session switch before the extension socket necessarily does.
+                applyAgentSession(agentID: id, piSessionID: checkpoint.sessionID)
+                guard store.state.agents.first(where: { $0.id == id })?.effectivePiSessionID == checkpoint.sessionID else { return false }
+            }
+            try agentRecovery.save(checkpoint, for: id)
+            return true
+        } catch {
+            ShepherdLog.warning("Could not persist agent recovery checkpoint")
+            return false
+        }
+    }
+
+    private func restoreAgentRecovery(sessionID: SessionID) {
+        guard let thread = sessions[sessionID]?.thread, thread.restoringRecovery,
+              thread.isServable, !thread.historyUnread else { return }
+        var restored = false
+        defer {
+            if restored {
+                thread.restoringRecovery = false
+                checkpointAgentRecovery(sessionID: sessionID, thread: thread)
+            }
+        }
+        guard let id = recoveryAgentID(sessionID: sessionID) else { return }
+        do {
+            guard allowsAgentRecovery(id, thread: thread), var checkpoint = thread.recoveryAtLaunch,
+                  checkpoint.sessionID == thread.piSessionID else {
+                try agentRecovery.save(nil, for: id)
+                restored = true
+                return
+            }
+            if checkpoint.active || (!checkpoint.paused && (!checkpoint.items.isEmpty || !checkpoint.pending.isEmpty)) {
+                // Commit the attempt before any model call, including a crash during recovery.
+                checkpoint.attempts = min(checkpoint.attempts + 1, AgentRecoveryStore.attemptLimit + 1)
+                try agentRecovery.save(checkpoint, for: id)
+            }
+            thread.restoringRecovery = false
+            thread.restoreRecovery(checkpoint)
+            restored = true
+        } catch {
+            // No continuation is sent when its durable attempt fence cannot be written/read.
+            ShepherdLog.warning("Could not restore agent recovery checkpoint")
+        }
+    }
+
+    private func clearAgentRecovery(sessionID: SessionID) {
+        guard let thread = sessions[sessionID]?.thread else { return }
+        thread.stopRequested = true
+        thread.paused = true
+        thread.recoveryAtLaunch = nil
+        thread.restoringRecovery = false
+        checkpointAgentRecovery(sessionID: sessionID, thread: thread)
     }
 
     /// Server queue: tell the app a watched agent's thread revised, coalescing everything up to a

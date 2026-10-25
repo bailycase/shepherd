@@ -104,8 +104,8 @@ The full rule is in [docs/rules.md](docs/rules.md) under the name in parentheses
 - Shepherd's pi home is `<support>/pi`; never write into the user's `~/.pi` or run their `pi`/`npm`.
   `PiLaunch` builds every launch line.
 - Anything that runs without a person watching (a loop, a scheduler, an unattended model call)
-  ships a default bound with a test that hits it, never resumes after a restart, and treats tool
-  output and prose as data. (Features that act on their own)
+  ships a default bound with a test that hits it, never resumes after a restart (except bounded
+  recovery of previously authorized ordinary agent work), and treats tool output and prose as data. (Features that act on their own)
 - Unix socket paths cap at 104 bytes: tests build them under short temp paths. Terminal replay is an
   ANSI snapshot, not raw bytes. ([docs/gotchas.md](docs/gotchas.md))
 

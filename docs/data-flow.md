@@ -50,7 +50,15 @@
 - A new agent's pi spawns with its creation. At launch every restored agent's pi starts from
   the first adoption of the workspace, not when its layout mounts, in `AgentStartQueue`'s
   order: the agent on screen first (and any agent selected while it waits), then the rest a
-  few at a time. Every agent still starts. Test harnesses that seed agents only to draw them
+  few at a time. Every agent still starts. Ordinary agents recover unfinished authorized work and
+  queued input from atomic `agent-recovery` checkpoints beside `state.json`, after pi has served
+  the matching session and history. Active turns get a reconciliation instruction, not a replay
+  of interrupted tools; unconsumed inputs retain their images and order. Stop persists before
+  its asynchronous acknowledgement, waiting/held queues remain paused, and idle or completed
+  turns never get a continuation. Recovery attempts are committed before prompting and stop
+  after three consecutive interruptions; a completed turn or fresh user input resets the bound.
+  Projects, executions, goals, automation runs and design agents do not use ordinary recovery.
+  Test harnesses that seed agents only to draw them
   opt out (`restoresAgentsAtLaunch: false`); their pi starts when their thread's session is asked for.
 - At the first launch of a build with Shepherd's own pi, the queue (and automations) wait for
   the one-time copy from the user's pi (`welcomesYourPi`, on in the app only;

@@ -42,7 +42,7 @@ extension RPCThreadState {
     /// A delete or clear can be undone this long.
     static let deletedLimit = 64
 
-    struct QueueItem: NativeQueueEntry {
+    struct QueueItem: NativeQueueEntry, Codable, Equatable {
         var entry: NativeQueuedMessage
         var images: [NativeImage]
         /// The text pi queued for a steering item (its `queue_update`), which is what its user
@@ -72,6 +72,8 @@ extension RPCThreadState {
         let id: UUID
         /// What pi was handed: a design record's fence, if any, then the message.
         let text: String
+        var images: [NativeImage] = []
+        var sentAt: Double = 0
         /// From the queue: its parts, and the items to put back if pi refuses it.
         let parts: [NativeQueuePart]?
         let items: [QueueItem]
@@ -155,6 +157,10 @@ extension RPCThreadState {
         // From here the copies are pi's (a prompt) or wait in the queue, which withholds them.
         sendingDesignPayloads.subtract(designPayloads)
         if let failure = goalCommandFailure(text, context: context) { completion(failure); return }
+        guard !restoringRecovery || recoveryAtLaunch == nil else {
+            completion(.failure(code: "native_starting", message: "Recovery is waiting for conversation history. Try again once it has loaded."))
+            return
+        }
         if images.isEmpty, context == nil, text == "/goal" || text.hasPrefix("/goal "),
            commands?.contains(where: { $0.name == "goal" }) == true {
             let commandDone = beginCommandWindow(for: text)
@@ -165,6 +171,9 @@ extension RPCThreadState {
             return
         }
         guard piBusy else {
+            recoveryAttempts = 0
+            restoringRecovery = false
+            recoveryAtLaunch = nil
             if delivery == .interrupt { interruptGoal() }
             // A new message resumes a paused queue: it drains after this turn.
             paused = false
@@ -179,8 +188,16 @@ extension RPCThreadState {
             images: images, goesAlone: alone, context: context, designPayloads: designPayloads)
         item.direct = delivery == .interrupt
         guard admitsQueue(items + [item]) else { completion(queueFull); return }
+        recoveryAttempts = 0
+        restoringRecovery = false
+        recoveryAtLaunch = nil
         if delivery == .interrupt { interruptGoal() }
         items.append(item)
+        guard onRecoveryChanged?() != false else {
+            items.removeAll { $0.entry.id == id }
+            completion(.failure(code: "persist_failed", message: "Could not save this message for recovery. Try again."))
+            return
+        }
         if delivery != .interrupt { yieldGoalToQueue() }
         if delivery == .interrupt {
             // It is first in the queue for as long as pi takes to stop; the plan says how.
@@ -493,13 +510,19 @@ extension RPCThreadState {
         if let failure = goalCommandFailure(prompt) { completion(failure); return }
         stopRequested = false
         let expectsMessage = !isExtensionCommand(prompt)
-        dispatches.append(Dispatch(id: id, text: prompt, parts: parts, items: batch, expectsMessage: expectsMessage,
+        dispatches.append(Dispatch(id: id, text: prompt, images: images, sentAt: Date().timeIntervalSince1970 * 1000,
+                                   parts: parts, items: batch, expectsMessage: expectsMessage,
                                    designPayloads: designPayloads + batch.flatMap(\.designPayloads)))
         if expectsMessage {
             var row = NativeThreadMessage.pendingSend(operationID: id, text: text, images: images.count,
                                                       timestamp: Date().timeIntervalSince1970 * 1000)
             row.origin = parts.map { Self.clipped(.queue(parts: $0)) }
             live.append(LiveItem(kind: .pending(id), value: row, raw: nil, ended: false))
+        }
+        guard onRecoveryChanged?() != false else {
+            dropDispatch(id)
+            completion(.failure(code: "persist_failed", message: "Could not save this message for recovery. Try again."))
+            return
         }
         commit()
         let rpcImages = images.map { RPCImage(data: $0.data.base64EncodedString(), mimeType: $0.mimeType) }
@@ -790,6 +813,7 @@ extension RPCThreadState {
         // A settle or a released editor can arrive before clear_queue answers.
         paused = true
         queueNotice = nil
+        commit() // Persist Stop before waiting for children or pi to acknowledge it.
         cancelPreparingPrompts()
         let abort: (Bool) -> Void = { [weak self] helpersUnknown in
             guard ifCurrent() else { done(.failure(.inputRejected)); return }
