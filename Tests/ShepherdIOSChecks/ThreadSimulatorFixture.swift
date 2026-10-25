@@ -33,6 +33,7 @@ struct ThreadSimulatorFixture: App {
                             if FixtureWindows.shared.primary == nil { FixtureWindows.shared.primary = scene }
                         })
                         .background(FixtureWindowOpener())
+                        .background(FixtureWindowsAvailable().environment(app.navigator))
                         .task { await runner.run() }
                 } else {
                     MobileWindowRoot(app: app, seed: seed)
@@ -57,7 +58,9 @@ private struct FixturePrimaryWindow: View {
         let split = FixtureWindows.shared.split
         HStack(spacing: split == nil ? 0 : NW.Space.xs) {
             MobileRoot(app: app)
-                .clipShape(RoundedRectangle(cornerRadius: split == nil ? 0 : NW.Radius.l))
+                // Rounded beside a split's second window; alone it clips nothing, so a shot keeps
+                // the bars the system draws in the safe area (iPhone Duo's side bar).
+                .clipShape(BleedClip(clips: split != nil, cornerRadius: NW.Radius.l))
             if let split {
                 MobileWindowRoot(app: app, seed: split)
                     .clipShape(RoundedRectangle(cornerRadius: NW.Radius.l))
@@ -117,6 +120,19 @@ private struct FixtureWindowOpener: View {
 }
 
 /// Reports the window scene a view lands in.
+/// Prints whether the window offers "Open in new window" (`WindowsAvailable`) as it changes, so a
+/// run that folds iPhone Duo can read it: "FIXTURE WINDOWS AVAILABLE true|false".
+private struct FixtureWindowsAvailable: View {
+    @WindowsAvailable private var available
+
+    var body: some View {
+        Color.clear.onChange(of: available, initial: true) { _, available in
+            print("FIXTURE WINDOWS AVAILABLE \(available)")
+            fflush(stdout)
+        }
+    }
+}
+
 private struct FixtureSceneProbe: UIViewRepresentable {
     let found: (UIWindowScene) -> Void
 

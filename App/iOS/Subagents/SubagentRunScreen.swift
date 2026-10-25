@@ -22,7 +22,13 @@ struct SubagentRunScreen: View {
             .toolbar(.hidden, for: .tabBar)
             .toolbar {
                 ToolbarItem(placement: .principal) { SubagentRunTitle(run: run) }
-                ToolbarItem(placement: .topBarTrailing) { SubagentRunMenu(store: store, run: run) }
+                // The run's controls in the system's ••• menu, which overflows with the bar where it
+                // runs down the side (iPhone Duo).
+                if let run {
+                    ToolbarOverflowMenu {
+                        SubagentControlItems(run: run, commands: SubagentCommands(store: store, enabled: store.takesSubagentCommands))
+                    }
+                }
             }
             .keepsThreadLive(ref)
     }
@@ -49,25 +55,6 @@ struct SubagentRunTitle: View {
             .lineLimit(1)
         }
         .accessibilityElement(children: .combine)
-    }
-}
-
-/// The run's options: Pause or Continue, Stop, Re-run, and Copy transcript.
-struct SubagentRunMenu: View {
-    let store: NativeThreadStore
-    let run: NativeSubagent?
-    var copy: (() -> Void)?
-
-    var body: some View {
-        Menu {
-            if let run {
-                SubagentControlItems(run: run, commands: SubagentCommands(store: store, enabled: store.takesSubagentCommands))
-            }
-            if let copy { Button("Copy Transcript", systemImage: "doc.on.doc", action: copy) }
-        } label: {
-            Label("Subagent options", systemImage: "ellipsis")
-        }
-        .disabled(run == nil)
     }
 }
 

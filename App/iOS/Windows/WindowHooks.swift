@@ -4,8 +4,8 @@ import ShepherdUI
 import ShepherdRemote
 
 /// Where other screens reach the app's windows (iPadSplitView, iPadPalette boards): "Open in new
-/// window" for a thread, "Send to…" for text, and the composer's text drop. On iPhone (one
-/// window) the window items draw nothing.
+/// window" for a thread, "Send to…" for text, and the composer's text drop. Where the window
+/// can't open another (`WindowsAvailable`) the window items draw nothing.
 @MainActor
 enum WindowHooks {
     /// Shows `thread` in a window of its own: the window already showing it, brought forward,
@@ -36,13 +36,13 @@ struct OpenInNewWindowButton: View {
     let thread: AgentRef
     var prominent = false
     var before: (() -> Void)?
-    @Environment(\.supportsMultipleWindows) private var supportsMultipleWindows
+    @WindowsAvailable private var windowsAvailable
     @Environment(\.openWindow) private var openWindow
     @Environment(MobileWindows.self) private var windows
     @Environment(\.mobileWindow) private var window
 
     var body: some View {
-        if supportsMultipleWindows {
+        if windowsAvailable {
             let button = Button("Open in new window", systemImage: "macwindow.badge.plus") {
                 before?()
                 WindowHooks.open(thread, from: window, windows: windows, openWindow: openWindow)
@@ -98,10 +98,10 @@ struct SendToMenu: View {
 private struct TurnTransfer: ViewModifier {
     let row: NativeThreadRow
     let thread: AgentRef
-    @Environment(\.supportsMultipleWindows) private var supportsMultipleWindows
+    @WindowsAvailable private var windowsAvailable
 
     func body(content: Content) -> some View {
-        if supportsMultipleWindows {
+        if windowsAvailable {
             content
                 .contextMenu {
                     let text = Self.text(row)
@@ -138,6 +138,24 @@ private struct ComposerTextDrop: ViewModifier {
                 store.draft = draft
                 return true
             } isTargeted: { targeted = $0 }
+    }
+}
+
+/// Whether the window a view is in can open another (`WindowAvailability`): on iPhone Duo only
+/// its inner display held upright, though `supportsMultipleWindows` says yes on both displays.
+/// The hinge is SwiftUI's (`MobileNavigator.hingeClosed`), the window's shape the split view's
+/// (`padSidebarOverlays`: taller than wide).
+@propertyWrapper
+struct WindowsAvailable: DynamicProperty {
+    @Environment(\.supportsMultipleWindows) private var supportsMultipleWindows
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(MobileNavigator.self) private var navigator
+
+    @MainActor var wrappedValue: Bool {
+        WindowAvailability.canOpenWindows(supportsMultipleWindows: supportsMultipleWindows,
+                                          hinge: navigator.hingeClosed != nil,
+                                          regularWidth: sizeClass == .regular,
+                                          tallWindow: navigator.padSidebarOverlays)
     }
 }
 

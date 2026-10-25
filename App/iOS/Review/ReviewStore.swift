@@ -585,9 +585,11 @@ final class ReviewStore {
     func unifiedRows(_ fileID: String, gaps: Bool) -> [ReviewUnifiedRow] {
         guard let file = diffs[fileID] else { return [] }
         let expanded = expandedRuns[fileID] ?? []
+        // Read before the cache answers: a view that drew the rows uncolored must hear the
+        // colors arrive (the cache and its version are invisible to Observation).
+        let colors = texts[fileID] ?? [:]
         let version = fileVersions[fileID] ?? 0
         if let cached = unifiedCache[fileID], cached.version == version, cached.expanded == expanded, cached.gaps == gaps { return cached.rows }
-        let colors = texts[fileID] ?? [:]
         let gapsBefore = gaps ? reviewHunkGaps(file) : [:]
         let rows: [ReviewUnifiedRow] = reviewRows(file, expandedRuns: expanded).map { row in
             switch row.kind {
@@ -604,9 +606,9 @@ final class ReviewStore {
     func splitRows(_ fileID: String) -> [ReviewSplitDisplayRow] {
         guard let file = diffs[fileID] else { return [] }
         let expanded = expandedRuns[fileID] ?? []
+        let colors = texts[fileID] ?? [:]
         let version = fileVersions[fileID] ?? 0
         if let cached = splitCache[fileID], cached.version == version, cached.expanded == expanded { return cached.rows }
-        let colors = texts[fileID] ?? [:]
         let gapsBefore = reviewHunkGaps(file)
         let rows: [ReviewSplitDisplayRow] = reviewSplitRows(file, expandedRuns: expanded).map { row in
             switch row.kind {

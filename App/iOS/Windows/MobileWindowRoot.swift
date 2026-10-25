@@ -3,7 +3,8 @@ import ShepherdUI
 
 /// One window of the shipped app: its own navigator, put back where it was from the scene's
 /// storage when the system restores the window, or opened on its seed's route when it is new.
-/// iPad can show several side by side (Split View, Stage Manager); iPhone shows one.
+/// iPad can show several side by side (Split View, Stage Manager), and so can iPhone Duo's inner
+/// display held upright (`WindowAvailability`); other iPhones show one.
 struct MobileWindowRoot: View {
     let app: MobileApp
     let seed: MobileWindowSeed

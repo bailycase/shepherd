@@ -35,7 +35,9 @@ private struct ThreadTerminalPanel: ViewModifier {
         VStack(spacing: 0) {
             content
                 .frame(maxHeight: maximized ? 0 : .infinity)
-                .clipped()
+                // Folds the thread away while the panel is maximized. A clip at any other time cuts
+                // the thread off at the bars the system draws in the safe area (iPhone Duo's side bar).
+                .clipShape(BleedClip(clips: maximized))
                 .opacity(maximized ? 0 : 1)
                 .allowsHitTesting(!maximized)
                 .accessibilityHidden(maximized)

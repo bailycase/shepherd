@@ -83,6 +83,16 @@ bash Tests/ShepherdIOSChecks/run-simulator.sh --list
 xcrun simctl shutdown "$iphone" "$ipad" && xcrun simctl delete "$iphone" "$ipad"
 ```
 
+**iPhone Duo.** Its simulator (`SimDeviceType.iPhone-Duo`) runs only the iOS 27.1 runtime. Use
+`DEVELOPER_DIR` set to Xcode 27.1 to exercise the SwiftUI hinge and reserved-region APIs. The
+simulator boots closed, on the outer display. `-f
+closed|book|open` poses it before the app starts, held as `-r` says: `DuoPose/` asks SpringBoard's
+display tool to sweep the hinge the way Device Hub does, and the shot is of the display in use
+(the outer one closed, the inner one otherwise). Never switch its displays with `simctl io …
+screenConfig power`; that crashes SpringBoard. These commands synthesize hinge angle and device
+orientation, not the physical tent/tabletop posture. Do not label a sideways `book` run as a
+validated tent or tabletop preset.
+
 | Option | Meaning |
 | --- | --- |
 | `-d <udid>` | the simulator; booted if it is not |
@@ -90,6 +100,7 @@ xcrun simctl shutdown "$iphone" "$ipad" && xcrun simctl delete "$iphone" "$ipad"
 | `-p <products>` | the `Shepherd iOS` scheme's `Debug-iphonesimulator` products; without it the script builds them (into `$SHEPHERD_IOS_DERIVED_DATA`, or a temporary folder) |
 | `-s light\|dark\|both` | the appearance (default both); set on the simulator and in the app |
 | `-r portrait\|landscape` | the orientation (iPad; the shot is turned the way it is seen) |
+| `-f closed\|book\|open` | an iPhone Duo pose (the file name ends `-<pose>`) |
 | `-t <category>` | a Dynamic Type size (`simctl ui content_size`), reset to large afterwards |
 | `-n <label>` | the device part of file names (default: the simulator's name) |
 | `--sidebar` | opens the iPad sidebar over a portrait thread |
@@ -131,17 +142,22 @@ host push the layout it has after a relaunch (the shell's terminal under a new s
 check that the terminal draws the new session's own screen.
 
 **Windows.** Without `-w` the fixture app is single-window, as the screens of the other tracks
-expect. With it, a screen can open more windows (CONTRACTS.md › Fixture screens): `windows-split`
-and `windows-sent` draw two windows side by side as Split View does, and `windows-new` opens a
-real second window, which the simulator's full-screen mode shows over the first. Windows the
-system restores from an earlier run are closed before a screen starts.
+expect. With it, the app permits multiple scenes and resizing, matching production (CONTRACTS.md ›
+Fixture screens). `windows-split` and `windows-sent` draw two windows side by side inside one scene.
+`windows-new` opens a real second window; the OS chooses its placement. Each case
+reinstalls only the scratch fixture app so scenes from previous cases are not restored. On Duo, run
+`-w -f open windows-fold` to check two real scenes: open the second scene, close and reopen the
+hinge, preserve both threads, and render fresh thumbnails and PNG/PDF exports at each pose. The
+runner responds to its bounded `FIXTURE POSE closed|open` checkpoints. This is not a test of two
+simultaneously tiled system windows.
 
 **Client state regressions.** `client-state-regressions` exercises the actual New thread,
 review and navigation models against gated in-memory request closures (the fixture host still
 refuses mutations). It checks atomic prompt/image creation and retained images on rejection,
 completion ownership for replaced sheets, same-revision diff option invalidation and stale file
 replies, route/restoration preservation across compact and regular width, independent Settings,
-composer and Commit presentation in two windows, and release of unmounted per-host stores.
+composer and Commit presentation in two windows, release of unmounted per-host stores, and
+observation of syntax colors when unified or split diff rows come from the cache.
 `forgotten-automation-regression` gates a run-history response, forgets its host, then confirms
 that neither that reply nor a stale selection recreates it while other hosts' automations stay.
 `forgotten-design-regression` seeds phone and iPad design data, invokes full `MobileApp.forget`,
@@ -207,6 +223,8 @@ is checked on a device.
 
 ## Not yet validated
 
+- Actual Duo tent/tabletop presets, simultaneously tiled system windows, and physical Duo hardware.
+  Closed/partial/open hinge simulation and two real scenes closing/reopening are covered above.
 - A real pi session driven from a phone against the current RPC host.
 - Physical-device signing, and the TestFlight upload itself. The TestFlight lane is in place
   ([README.md › Distribution](README.md#distribution)), but only its first real run proves the

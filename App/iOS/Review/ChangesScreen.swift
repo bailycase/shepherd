@@ -75,10 +75,11 @@ struct ChangesScreen: View {
             ToolbarItem(placement: .principal) {
                 ChangesTitle(store: store) { store.pickingBase = true }
             }
-            ToolbarItem(placement: .topBarTrailing) {
-                ReviewOptionsMenu(store: store, finalize: ReviewFinalizeGate.available(host: host, agent: agent)
-                                  ? { navigator.present(.review(.finalize(ref))) } : nil,
-                                  askAgentToCommit: CommitHooks.available(host: host) ? { dismiss() } : nil)
+            // The system's ••• menu, which overflows with the bar where it runs down the side.
+            ToolbarOverflowMenu {
+                ReviewOptionsItems(store: store, finalize: ReviewFinalizeGate.available(host: host, agent: agent)
+                                   ? { navigator.present(.review(.finalize(ref))) } : nil,
+                                   askAgentToCommit: CommitHooks.available(host: host) ? { dismiss() } : nil)
             }
         }
         .sheet(isPresented: Binding(get: { store.pickingBase }, set: { store.pickingBase = $0 })) {
@@ -146,32 +147,28 @@ struct ReviewActionBar: View {
     }
 }
 
-/// The review's options: refresh, Discard comments, Ask agent to commit where Commit… commits
-/// directly (`askAgentToCommit` runs once the agent took it), and Finalize for a worktree agent.
-/// What to compare is the title's menu.
-struct ReviewOptionsMenu: View {
+/// The review's options, in the bar's ••• menu: refresh, Discard comments, Ask agent to commit
+/// where Commit… commits directly (`askAgentToCommit` runs once the agent took it), and Finalize
+/// for a worktree agent. What to compare is the title's menu.
+struct ReviewOptionsItems: View {
     @Bindable var store: ReviewStore
     let finalize: (() -> Void)?
     var askAgentToCommit: (() -> Void)? = nil
     @Environment(MobileHosts.self) private var hosts
 
     var body: some View {
-        Menu {
-            Button("Refresh", systemImage: "arrow.clockwise") { store.refresh() }
-            if !store.comments.isEmpty {
-                Button("Discard comments", systemImage: "trash", role: .destructive) { store.discardComments() }
+        Button("Refresh", systemImage: "arrow.clockwise") { store.refresh() }
+        if !store.comments.isEmpty {
+            Button("Discard comments", systemImage: "trash", role: .destructive) { store.discardComments() }
+        }
+        if let askAgentToCommit {
+            Button("Ask agent to commit", systemImage: "text.bubble") {
+                Task { if await store.commit(hosts: hosts) { askAgentToCommit() } }
             }
-            if let askAgentToCommit {
-                Button("Ask agent to commit", systemImage: "text.bubble") {
-                    Task { if await store.commit(hosts: hosts) { askAgentToCommit() } }
-                }
-                .disabled(!store.canCommit)
-            }
-            if let finalize {
-                Button("Finalize worktree…", systemImage: "checkmark.seal", action: finalize)
-            }
-        } label: {
-            Label("Review options", systemImage: "ellipsis")
+            .disabled(!store.canCommit)
+        }
+        if let finalize {
+            Button("Finalize worktree…", systemImage: "checkmark.seal", action: finalize)
         }
     }
 }

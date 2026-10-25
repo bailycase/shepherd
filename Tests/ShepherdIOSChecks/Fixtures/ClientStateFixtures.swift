@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import UIKit
 import ShepherdCore
 import ShepherdProtocol
@@ -39,6 +40,7 @@ enum ClientStateChecks {
         await commitAndQueueOwnership()
         await creation(app)
         await review(app)
+        await reviewColors(app)
     }
 
     static func sentImagesKeepTheNextAttachment() async {
@@ -441,6 +443,43 @@ enum ClientStateChecks {
         await FixtureWindows.wait(seconds: 5) { store.diff(path)?.hunks.first?.lines.first?.text == "whole" }
         check(requests.last?.fullFiles == true && !store.opensGaps, "Full files loads whole-file hunks at the same revision")
     }
+}
+
+extension ClientStateChecks {
+    /// A file's rows served from the store's cache still watch its colors: a view that drew them
+    /// before the colors arrived has to draw them again once they do.
+    static func reviewColors(_ app: MobileApp) async {
+        let path = "file.swift"
+        let file = DiffFile(oldPath: path, newPath: path, displayPath: path, isNew: false, isDeleted: false, isRenamed: false, isBinary: false,
+                            hunks: [DiffHunk(header: "@@ -1 +1 @@", lines: [DiffLine(kind: .added, text: "let x = 1", oldLine: nil, newLine: 1, id: 1)])])
+        let store = ReviewStore(ref: FixtureData.ref(FixtureData.preview)) { _, _, query in
+            switch query {
+            case .changesList(let scope, _):
+                return .changesList(ChangesList(scope: scope, revision: ChangesRevision(old: "aaaa", new: "bbbb"),
+                                               comparison: ChangesComparison(head: "working", base: "HEAD"),
+                                               files: [ChangesFile(path: path, status: .modified, added: 1, removed: 0)]))
+            case .changesFile: return .changesFile(ChangesFileDiff(file: file))
+            default: throw RemoteHostClientError.rejected(code: "fixture", message: "No overview needed")
+            }
+        }
+        await store.load(hosts: app.hosts)
+        store.ensure(path)
+        for split in [false, true] {
+            await FixtureWindows.wait(seconds: 5) { store.texts[path] != nil }
+            let rows = {
+                if split { _ = store.splitRows(path) } else { _ = store.unifiedRows(path, gaps: true) }
+            }
+            rows()
+            let changed = ClientStateFlag()
+            withObservationTracking(rows, onChange: { changed.raised = true })
+            store.setWordDiffs(split)
+            check(changed.raised, "cached \(split ? "split" : "unified") diff rows update when their colors change")
+        }
+    }
+}
+
+private final class ClientStateFlag: @unchecked Sendable {
+    var raised = false
 }
 
 @MainActor
