@@ -614,6 +614,6 @@
   },
   "patch": {
     "file": "pi-engine-patches/skills.json",
-    "sha256": "778e4eab9615285a0c2867190dfdd9e471782f88eb31c404fd38812e555bc436"
+    "sha256": "83f704c73353055a9a808976a5e386aa54a2b3bc87e73934ace38bf3927a97a3"
   }
 }

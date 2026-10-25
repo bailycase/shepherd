@@ -4,80 +4,40 @@
     {
       "path": "node_modules/@earendil-works/pi-ai/dist/api/anthropic-messages.js",
       "before": "a0644ab05cf7ee3e4d566f21113d5b6c2361588237c999a45fa0d7935b68af10",
-      "after": "0000d9ab4a045eb07455632e2a3bbcf173b2a4c1ea64f2b1bc5ca32f11955816",
+      "after": "ba237fb9d948bf14ce09fdd250e652c234d4a10ff7a1dea1c15eb4b73cd55fc3",
       "edits": [
         {
           "old": "import Anthropic, {} from \"@anthropic-ai/sdk\";",
-          "new": "import Anthropic, {} from \"@anthropic-ai/sdk\";\nimport { assertUniqueOAuthToolNames, buildOAuthSystemBlocks, toOAuthToolName } from \"./shepherd-anthropic-oauth.js\";"
+          "new": "import Anthropic, {} from \"@anthropic-ai/sdk\";\nimport { isClaudeOAuthAccessToken, streamAnthropicOAuth } from \"./shepherd-anthropic-oauth.js\";"
         },
         {
-          "old": "ccToolLookup.get(name.toLowerCase()) ?? name;",
-          "new": "ccToolLookup.get(name.toLowerCase()) ?? toOAuthToolName(name);"
+          "old": "export const stream = (model, context, options) => {",
+          "new": "export const stream = (model, context, options) => {\n    if (options?.apiKey && isClaudeOAuthAccessToken(options.apiKey)) return streamAnthropicOAuth(model, context, options);\n"
         },
         {
-          "old": "const fromClaudeCodeName = (name, tools) => {",
-          "new": "const fromClaudeCodeName = (name, tools) => {\n    const exact = tools?.find(tool => toClaudeCodeName(tool.name) === name);\n    if (exact) return exact.name;"
-        },
-        {
-          "old": "            DEFERRED_TOOL_PLACEHOLDER,",
-          "new": "            isOAuthToken ? { ...DEFERRED_TOOL_PLACEHOLDER, name: toClaudeCodeName(DEFERRED_TOOL_PLACEHOLDER.name) } : DEFERRED_TOOL_PLACEHOLDER,"
-        },
-        {
-          "old": "    return params;\n}\n// Normalize tool call IDs",
-          "new": "    if (isOAuthToken) {\n        assertUniqueOAuthToolNames(params.tools);\n        if (params.tool_choice?.type === \"tool\") params.tool_choice = { ...params.tool_choice, name: toClaudeCodeName(params.tool_choice.name) };\n    }\n    return params;\n}\n// Normalize tool call IDs"
-        },
-        {
-          "old": "`claude-cli/${claudeCodeVersion}`",
-          "new": "`claude-cli/${claudeCodeVersion} (external, cli)`"
-        },
-        {
-          "old": "    // For OAuth tokens, we MUST include Claude Code identity\n    if (isOAuthToken) {\n        params.system = [\n            {\n                type: \"text\",\n                text: \"You are Claude Code, Anthropic's official CLI for Claude.\",\n                ...(cacheControl ? { cache_control: cacheControl } : {}),\n            },\n        ];\n        if (initialSystemText) {\n            params.system.push({\n                type: \"text\",\n                text: sanitizeSurrogates(initialSystemText),\n                ...(cacheControl ? { cache_control: cacheControl } : {}),\n            });\n        }\n    }",
-          "new": "    // Shepherd's automatic OAuth compatibility; API-key requests stay upstream.\n    if (isOAuthToken) {\n        params.system = buildOAuthSystemBlocks(sanitizeSurrogates(initialSystemText), cacheControl, claudeCodeVersion);\n    }"
+          "old": "export const streamSimple = (model, context, options) => {",
+          "new": "export const streamSimple = (model, context, options) => {\n    if (options?.apiKey && isClaudeOAuthAccessToken(options.apiKey)) return streamAnthropicOAuth(model, context, options);\n"
         }
       ]
     },
     {
       "path": "dist/bundle/chunks/anthropic-messages-UID2PALB.js",
       "before": "86370b5d60a634d40def4b9d58a0025ca64a61fb74103a8de793ed91a398a230",
-      "after": "1a95e5aca7c4760d79fdef18df0d7b84d0e431df556b7351bc9691fe37521fc0",
+      "after": "eb3f8c3ab2d9fa890076d9776a52ffa1569e07701d1d4b5df8385e6c148c982c",
       "edits": [
         {
           "old": "import { createRequire as __piCreateRequire } from \"node:module\"; const require = __piCreateRequire(import.meta.url);",
-          "new": "import { createRequire as __piCreateRequire } from \"node:module\"; const require = __piCreateRequire(import.meta.url);\nimport { assertUniqueOAuthToolNames, buildOAuthSystemBlocks, toOAuthToolName } from \"./shepherd-anthropic-oauth.js\";"
+          "new": "import { createRequire as __piCreateRequire } from \"node:module\"; const require = __piCreateRequire(import.meta.url);\nimport { isClaudeOAuthAccessToken, streamAnthropicOAuth } from \"./shepherd-anthropic-oauth.js\";"
         },
         {
-          "old": "toClaudeCodeName=name=>ccToolLookup.get(name.toLowerCase())??name,fromClaudeCodeName=(name,tools)=>{",
-          "new": "toClaudeCodeName=name=>ccToolLookup.get(name.toLowerCase())??toOAuthToolName(name),fromClaudeCodeName=(name,tools)=>{let exact=tools?.find(tool=>toClaudeCodeName(tool.name)===name);if(exact)return exact.name;"
+          "old": "stream=(model,context,options)=>{",
+          "new": "stream=(model,context,options)=>{\n    if (options?.apiKey && isClaudeOAuthAccessToken(options.apiKey)) return streamAnthropicOAuth(model, context, options);\n"
         },
         {
-          "old": "),DEFERRED_TOOL_PLACEHOLDER,...convertTools(laterTools,",
-          "new": "),isOAuthToken2?{...DEFERRED_TOOL_PLACEHOLDER,name:toClaudeCodeName(DEFERRED_TOOL_PLACEHOLDER.name)}:DEFERRED_TOOL_PLACEHOLDER,...convertTools(laterTools,"
-        },
-        {
-          "old": "params.fallbacks=allowedFallbackModels.map(fallback=>({model:fallback.model}))),params}function normalizeToolCallId",
-          "new": "params.fallbacks=allowedFallbackModels.map(fallback=>({model:fallback.model}))),isOAuthToken2&&(assertUniqueOAuthToolNames(params.tools),params.tool_choice?.type===\"tool\"&&(params.tool_choice={...params.tool_choice,name:toClaudeCodeName(params.tool_choice.name)})),params}function normalizeToolCallId"
-        },
-        {
-          "old": "`claude-cli/${claudeCodeVersion}`",
-          "new": "`claude-cli/${claudeCodeVersion} (external, cli)`"
-        },
-        {
-          "old": "params.system=[{type:\"text\",text:\"You are Claude Code, Anthropic's official CLI for Claude.\",...cacheControl?{cache_control:cacheControl}:{}}],initialSystemText&&params.system.push({type:\"text\",text:sanitizeSurrogates(initialSystemText),...cacheControl?{cache_control:cacheControl}:{}})",
-          "new": "params.system=buildOAuthSystemBlocks(sanitizeSurrogates(initialSystemText),cacheControl,claudeCodeVersion)"
+          "old": "streamSimple=(model,context,options)=>{",
+          "new": "streamSimple=(model,context,options)=>{\n    if (options?.apiKey && isClaudeOAuthAccessToken(options.apiKey)) return streamAnthropicOAuth(model, context, options);\n"
         }
       ]
-    },
-    {
-      "path": "node_modules/@earendil-works/pi-ai/dist/api/shepherd-anthropic-oauth.js",
-      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "after": "05c4bfdb992836edfb3ec03f6bfae982023e25e7ce89300a11670e3a6f0a15b1",
-      "source": "anthropic-oauth.js"
-    },
-    {
-      "path": "dist/bundle/chunks/shepherd-anthropic-oauth.js",
-      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "after": "05c4bfdb992836edfb3ec03f6bfae982023e25e7ce89300a11670e3a6f0a15b1",
-      "source": "anthropic-oauth.js"
     },
     {
       "path": "dist/utils/shell.js",
@@ -852,6 +812,104 @@
           "new": "        // Shepherd: `mcp.json` edits (Settings, a sign-in's setup, a git pull) apply to the running session.\n        // Changed or removed servers close and withdraw their tools; new ones connect; unchanged ones keep\n        // their connection. Native file events only, never polling; trust is the session's own decision.\n        let stopConfigWatch;\n        const serverKey = (server) => JSON.stringify([server.entry.name, server.entry.scope, server.entry.source, server.entry.config, server.registeredConfig ?? null]);\n        const reloadConfig = async (ctx) => {\n            if (!sessionActive)\n                return;\n            const current = generation;\n            const loaded = defaultLoadConfig(ctx);\n            configErrors = loaded.errors;\n            autoEnableCodemode = loaded.autoEnableCodemode ?? true;\n            configuredEntries = loaded.servers;\n            const registered = registeredServers();\n            overridden = registered.overridden;\n            const kept = new Map(servers.map((server) => [serverKey(server), server]));\n            const next = [...loaded.servers.map((entry) => ({ entry })), ...registered.servers]\n                .map((server) => kept.get(serverKey(server)) ?? server);\n            const removed = servers.filter((server) => !next.includes(server));\n            const added = next.filter((server) => !servers.includes(server));\n            if (removed.length === 0 && added.length === 0)\n                return;\n            servers = next;\n            for (const server of removed)\n                hideTools(server.entry.name);\n            emitChange();\n            ensureDiscoveryActive(ctx);\n            await Promise.all(removed.map((server) => server.connection?.close().catch(() => undefined)));\n            const connecting = added.filter(isEnabled);\n            if (current !== generation || connecting.length === 0)\n                return;\n            await Promise.all(connecting.map((server) => startConnection(server, () => current === generation)));\n            if (current !== generation) {\n                await Promise.all(connecting.map((server) => server.connection?.close()));\n                return;\n            }\n            ensureDiscoveryActive(ctx);\n            reportProblems(ctx, connecting);\n        };\n        const watchConfig = (ctx) => {\n            stopConfigWatch?.();\n            stopConfigWatch = undefined;\n            if (options.loadConfig)\n                return;\n            const paths = [join(getAgentDir(), \"mcp.json\"),\n                ...(ctx.isProjectTrusted() ? getProjectConfigDirs(ctx.cwd).map((base) => join(base, \"mcp.json\")) : [])];\n            let reloading = Promise.resolve();\n            const changed = () => {\n                reloading = reloading.then(() => reloadConfig(ctx)).catch((error) => {\n                    try {\n                        ctx.ui.notify(`MCP failed to reload: ${errorMessage(error)}`, \"error\");\n                    }\n                    catch { }\n                });\n            };\n            try {\n                stopConfigWatch = watchSkillPaths(paths, changed, () => undefined);\n            }\n            catch { }\n        };\n        pi.on(\"session_shutdown\", async () => {\n            stopConfigWatch?.();\n            stopConfigWatch = undefined;\n            sessionActive = false;\n"
         }
       ]
+    },
+    {
+      "path": "node_modules/@earendil-works/pi-ai/dist/auth/oauth/anthropic.js",
+      "before": "80fc4412ce09d42d678f5094932f3e58eecec53df40c4530fc4f55651a57d0a4",
+      "after": "3f2f5dda5201cfd6a9e7419851ab4f51824fd9d61489c6300ae0db454d019d1c",
+      "edits": [
+        {
+          "old": "export const anthropicOAuth = {",
+          "new": "export { anthropicOAuth } from \"../../api/shepherd-anthropic-oauth.js\";\nconst nativeAnthropicOAuth = {"
+        }
+      ]
+    },
+    {
+      "path": "dist/bundle/chunks/anthropic.js",
+      "before": "ef7155d2bf92a2cb82f51cd26a1a93fb25e5660cae20082e8c55e293c7de45b8",
+      "after": "ae5467705b576b0bd1004949c2a7e368df7337aefef061940744982d235d692b",
+      "edits": [
+        {
+          "old": "import { createRequire as __piCreateRequire } from \"node:module\"; const require = __piCreateRequire(import.meta.url);",
+          "new": "import { createRequire as __piCreateRequire } from \"node:module\"; const require = __piCreateRequire(import.meta.url);\nimport { anthropicOAuth } from \"./shepherd-anthropic-oauth.js\";"
+        },
+        {
+          "old": "var anthropicOAuth={",
+          "new": "var nativeAnthropicOAuth={"
+        }
+      ]
+    },
+    {
+      "path": "node_modules/@earendil-works/pi-ai/dist/api/shepherd-anthropic-oauth.js",
+      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "4ba5982ed63fe3f27cf9c17db4930ef163cc07482385828d44d68c9ff6e5f15d",
+      "source": "anthropic-oauth.js"
+    },
+    {
+      "path": "node_modules/@earendil-works/pi-ai/dist/api/anthropic-oauth/convert.js",
+      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "0aad2a5a71627d8e5c0694804db2b2c0d10b631da0aa1bfec82be38dd107fe6f",
+      "source": "anthropic-oauth/convert.js"
+    },
+    {
+      "path": "node_modules/@earendil-works/pi-ai/dist/api/anthropic-oauth/stream.js",
+      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "3f46bb6a07338dc84a7b5dbd860d971bf1bdb98f726928dea89943e76e7c1a64",
+      "source": "anthropic-oauth/stream.js"
+    },
+    {
+      "path": "node_modules/@earendil-works/pi-ai/dist/api/anthropic-oauth/auth.js",
+      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "20e4f6035f7f3e01d807366a2dcb43f6da1f03b34a2d5684114b07ae7efc4906",
+      "source": "anthropic-oauth/auth.js"
+    },
+    {
+      "path": "node_modules/@earendil-works/pi-ai/dist/api/anthropic-oauth/version.js",
+      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "08945730a660d9a4d10e1d349f003422ddc44dbee4ebc6771af6933c2f75c259",
+      "source": "anthropic-oauth/version.js"
+    },
+    {
+      "path": "node_modules/@earendil-works/pi-ai/dist/api/anthropic-oauth/prompt.js",
+      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "041bbcb40bfe1183e2431b0090ccf90f025765f290005c2d8985c437041bbc24",
+      "source": "anthropic-oauth/prompt.js"
+    },
+    {
+      "path": "dist/bundle/chunks/shepherd-anthropic-oauth.js",
+      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "4ba5982ed63fe3f27cf9c17db4930ef163cc07482385828d44d68c9ff6e5f15d",
+      "source": "anthropic-oauth.js"
+    },
+    {
+      "path": "dist/bundle/chunks/anthropic-oauth/convert.js",
+      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "0aad2a5a71627d8e5c0694804db2b2c0d10b631da0aa1bfec82be38dd107fe6f",
+      "source": "anthropic-oauth/convert.js"
+    },
+    {
+      "path": "dist/bundle/chunks/anthropic-oauth/stream.js",
+      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "3f46bb6a07338dc84a7b5dbd860d971bf1bdb98f726928dea89943e76e7c1a64",
+      "source": "anthropic-oauth/stream.js"
+    },
+    {
+      "path": "dist/bundle/chunks/anthropic-oauth/auth.js",
+      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "20e4f6035f7f3e01d807366a2dcb43f6da1f03b34a2d5684114b07ae7efc4906",
+      "source": "anthropic-oauth/auth.js"
+    },
+    {
+      "path": "dist/bundle/chunks/anthropic-oauth/version.js",
+      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "08945730a660d9a4d10e1d349f003422ddc44dbee4ebc6771af6933c2f75c259",
+      "source": "anthropic-oauth/version.js"
+    },
+    {
+      "path": "dist/bundle/chunks/anthropic-oauth/prompt.js",
+      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "041bbcb40bfe1183e2431b0090ccf90f025765f290005c2d8985c437041bbc24",
+      "source": "anthropic-oauth/prompt.js"
     }
   ]
 }

@@ -124,17 +124,39 @@ patched modular runtime. No dependency was added; the modular SDK and its locked
 already ship. Native children still launch `dist/bundle/cli.js`, and SDK-only sign-in and
 definition-discovery imports still use `bundle/index.js`; provider patches cover both runtimes.
 
-Anthropic OAuth compatibility is automatic in both the modular and bundled Anthropic provider,
-including launches with extensions disabled. It reuses Pi's auth/refresh, transcript conversion,
-reasoning and canonical tool-name mapping. OAuth custom tools use MCP-compatible names, decoded
-back to the original tools; existing MCP names stay intact and aliases fail closed. Only OAuth
-requests get the Claude CLI user-agent, billing and Agent SDK identity blocks without cache
-annotations, and narrowly reshaped generated introduction/docs prose. Instruction,
-skill and documentation paths stay intact; API-key requests stay upstream. No setting, dependency
-or home-directory symlink is needed. The shared helper carries the MIT notice and pinned source
-revision of `leohenon/pi-anthropic-oauth` v0.3.4. Offline wire checks in `anthropic-oauth.test.mjs`
-cover both providers and CLI entrypoints, not live subscription billing, cache-hit behavior or
-Anthropic's server-side acceptance.
+Anthropic OAuth compatibility automatically uses a full source port of
+[`leohenon/pi-anthropic-oauth` v0.3.4](https://github.com/leohenon/pi-anthropic-oauth/tree/44efe694a3e81a62742cdb3e7ba9da858e191a81)
+(revision `44efe694a3e81a62742cdb3e7ba9da858e191a81`) at both modular and bundled stream
+boundaries, including native children, helpers and launches with extensions disabled. API-key
+requests remain native Pi. `scripts/pi-engine-patches/anthropic-oauth/` carries the upstream
+stream, conversion, prompt, auth and version modules with MIT notices, transpiled by Node 24's
+`stripTypeScriptTypes` (`transform` for auth's parameter property, `strip` for the others).
+`upstream/` retains the original source and hashes as an independent test oracle. The small
+`anthropic-oauth.js` adapter translates pi 1.0's auth interaction/credential API; upstream login
+and refresh replace Pi's differing callback validation, fallback and refresh semantics. No new
+runtime dependency is installed. Upstream's extension registration is replaced by automatic
+engine routing; its `~/.Claude Code` symlink setup is deliberately **not** shipped.
+
+**Upstream's outgoing prompt rewriting is aggressive, not path-safe.** It removes whole system
+paragraphs containing `you are pi` (case-insensitive), `pi-coding-agent`,
+`@earendil-works/pi-coding-agent` or `badlogic/pi-mono`, then replaces standalone `pi`/`Pi` with
+`Claude Code`, including inside executable, documentation, skill and instruction paths. For
+example `/tmp/pi/project/.pi/AGENTS.md` becomes `/tmp/Claude Code/project/.Claude Code/AGENTS.md`.
+Those references can be unusable; no aliases or home-directory changes compensate for them.
+Original stored transcripts and files, user messages and tool descriptions/arguments stay
+unchanged. This is the upstream request behavior, not a promise that all original project or
+user system instructions reach the model. Upstream's rewrite/version environment options are
+retained without a Shepherd override. Its tool conversion is also exact: existing MCP names
+receive another `mcp__pi__` prefix, sanitization collisions are not repaired, and Pi-specific
+parameters unsupported by upstream (such as `toolChoice`, `temperature` and native deferred
+wire blocks) are not added back in a hybrid implementation.
+
+Offline checks in `anthropic-oauth.test.mjs` compare SDK-serialized requests and streaming results
+against the unmodified pinned source, including `claude-opus-5-5`, histories, cache/thinking
+parameters and custom tools. Both CLI entrypoints execute selected tools and return tool-result
+history with and without extensions. API-key serialization is compared with pristine pinned Pi.
+These checks do **not** establish live subscription billing, cache hits or Anthropic's direct
+server acceptance; a direct OAuth call still needs user validation.
 
 Configuration values beginning with `!` never execute a command. MCP env, headers, OAuth
 client secrets and model credentials must use literal values or environment-variable references;
