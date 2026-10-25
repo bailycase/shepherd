@@ -13,6 +13,13 @@ struct PadSidebar: View {
     @Environment(MobileNavigator.self) private var navigator
     /// More's sub-rows show (iPadHosts); kept per window.
     @SceneStorage("shepherd.ios.sidebar.moreExpanded") private var moreExpanded = false
+    @Environment(MobileProjects.self) private var projects
+
+    private var projectsTrailing: NWListRow.Trailing {
+        let needsYou = projects.rows.reduce(0) { $0 + $1.needsYou }
+        if needsYou > 0 { return .alert("\(needsYou) needs you") }
+        return projects.rows.isEmpty ? .none : .value(String(projects.rows.count))
+    }
 
     var body: some View {
         let feed = HomeFeed.of(hosts)
@@ -31,6 +38,10 @@ struct PadSidebar: View {
                     SidebarItem("Designs", leading: .symbol("pencil.tip"), selected: pushed?.isPadDesign == true) {
                         PadDesignHooks.openList(navigator: navigator)
                     }
+                }
+                SidebarItem("Projects", leading: .symbol("square.stack.3d.up"), selected: pushed?.isProjects == true,
+                            trailing: projectsTrailing) {
+                    navigator.open(.projects(.list))
                 }
                 SidebarItem("Automations", leading: .symbol("bolt"), selected: pushed == .home(.automations),
                             trailing: model.automations.isEmpty ? .none : .value(String(model.automations.count))) {
@@ -166,7 +177,7 @@ struct PadSidebar: View {
     }
 
     private func attentionRow(_ item: FleetAttention, pushed: MobileRoute?, selected: AgentRef?) -> some View {
-        Button { navigator.open(item.route) } label: {
+        Button { navigator.open(projects.route(item)) } label: {
             AttentionRow(item: item, selected: pushed == item.route || item.ref.agentRef == selected, compact: true)
                 .equatable()
                 .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))

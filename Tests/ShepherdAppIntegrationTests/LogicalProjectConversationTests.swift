@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
-import ShepherdRemote
+@testable import ShepherdRemote
 @testable import ShepherdSessions
 import ShepherdTestSupport
 import ShepherdUI
@@ -1823,7 +1823,7 @@ private static func chipsAndLinks() async throws {
             window.layout(); return window.controls().contains { $0.label?.hasPrefix(pick + ", ") == true && $0.isEnabled }
         }
         try window.press(try #require(window.controls().first { $0.label?.hasPrefix(pick + ", ") == true }?.label))
-        try await eventuallyOnMain("the owner saved the coordinator's model") { owner()?.conversationModel == pick && !vm.logicalProjects.busy.contains(ref.id) }
+        try await eventuallyOnMain("the owner saved the coordinator's model") { owner()?.conversationModel == pick && !vm.logicalProjects.busy.contains(ref) }
         #expect(owner()?.threadModel == "anthropic/claude-haiku-4-5", "the task threads' model is untouched")
         try await eventuallyOnMain("the chip names it") { window.layout(); return chip()?.label == "Model settings: \(pick)" }
 
@@ -1834,7 +1834,7 @@ private static func chipsAndLinks() async throws {
         #expect(!offered.contains("Minimal") && offered.contains("Extra high"), "gpt-5's own levels (no Minimal, Extra high): \(offered)")
         try window.press("Extra high", in: "Thinking")
         // One owner write at a time: each save is acknowledged before the next control is pressed.
-        try await eventuallyOnMain("the owner saved the coordinator's level") { owner()?.conversationThinking == "xhigh" && !vm.logicalProjects.busy.contains(ref.id) }
+        try await eventuallyOnMain("the owner saved the coordinator's level") { owner()?.conversationThinking == "xhigh" && !vm.logicalProjects.busy.contains(ref) }
         try await eventuallyOnMain("the chip names it") { window.layout(); return chip()?.value?.contains("Extra high") == true }
         #expect(store.offline && !store.ready, "setting the Project's coordinator starts nothing")
 
@@ -1847,7 +1847,7 @@ private static func chipsAndLinks() async throws {
         }
         try window.press(try #require(window.controls().first { $0.label?.hasPrefix(back + ", ") == true }?.label))
         try await eventuallyOnMain("the model and its clamped level are saved together") {
-            owner()?.conversationModel == back && owner()?.conversationThinking == "high" && !vm.logicalProjects.busy.contains(ref.id)
+            owner()?.conversationModel == back && owner()?.conversationThinking == "high" && !vm.logicalProjects.busy.contains(ref)
         }
 
         // The next message relaunches the coordinator: the owner's launch carries the Project's model and level. (This harness's owner

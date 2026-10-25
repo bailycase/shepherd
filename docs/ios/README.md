@@ -138,7 +138,7 @@ keep the version for real breaks.
   Mac's host screens already use) for terminals.
 - **Folders:** `App/` (entry point, `MobileApp`, `MobileRoot`, the phone and iPad shells, routes
   and the navigator), `Hosts/`, `Home/`, `Thread/`, `Composer/`, `NewThread/`, `Subagents/`,
-  `Review/`, `Commit/`, `Search/`, `Settings/`, `Automations/`, `Windows/` (the scene and its
+  `Review/`, `Commit/`, `Search/`, `Settings/`, `Automations/`, `Projects/`, `Windows/` (the scene and its
   windows), `Terminal/`, `Designs/` (a host's designs on iPhone), `DesignPad/` (on iPad), and `Support/` (`AgentRef`, `MobileLayout`, `MobileAppearance`, the
   `AgentState` mapping). Ownership and hooks: [CONTRACTS.md](CONTRACTS.md).
 - **Shared with the Mac:** `RemoteHostClient`, `NativeThreadStore`, the turn and activity
@@ -164,11 +164,17 @@ keep the version for real breaks.
   kept apart from its record (`shepherd.ios.hosts.lastSeen`), so a host the phone cannot reach
   says when it was last seen.
 - **iPhone:** two tabs, Home and Settings, each a navigation stack. Home merges every host:
-  Automations and More (host cards), offline hosts with Retry, Needs you (questions
+  Projects, Automations and More (host cards), offline hosts with Retry, Needs you (questions
   and blocked threads, answered in place when short; a subagent's question is its parent's, so
   it is never here), Working, Done (with Mark all seen), Pinned, and Recents with host tags. `HomeFeed`
   derives it once per change from each host's state and, while Home is on screen, the threads'
   snapshots.
+- **Projects (`Projects/`):** lists the paired hosts' Projects, with conversations, questions,
+  task transcripts, linked-space assignment, settings and read-only file previews. Create, rename,
+  delete and send use the selected host's existing capabilities and revision checks. Drafts and
+  images stay in memory on this device until sent to that host. Offline and older hosts disable
+  writes. Execution, approvals and worker limits remain on the host. Mac and iOS share
+  `LogicalProjectsModel` and `ProjectPagePresentation` in ShepherdRemote.
 - **Thread groups and row menus (`Home/SidebarThreads.swift`, `Home/ThreadRowMenu.swift`):** the
   Mac sidebar's groups on both devices, each thread in one (`FleetSidebarState` in ShepherdRemote):
   Needs you, Working (running on a connected host), Done (a finished turn this device saw end;
@@ -186,7 +192,7 @@ keep the version for real breaks.
   An automation run's long press opens its automation and offers Run Now or Stop… as its detail
   does. Pin and Unpin are also in the thread's options menu.
 - **iPad:** a split view. Landscape shows the sidebar (New thread, Designs while a host serves
-  them, Automations, More expanding to Hosts and Extensions, Needs you, automation runs, Working,
+  them, Projects, Automations, More expanding to Hosts and Extensions, Needs you, automation runs, Working,
   Done, Pinned, Recents, and a footer with
   the hosts and Settings) beside the selected thread; in portrait the thread takes the width and
   the sidebar slides over it. Portrait is the window's shape, never what the

@@ -21,7 +21,7 @@ struct PadShell: View {
     /// on iPhone Duo's inner display.
     private static func columns(_ navigator: MobileNavigator) -> NavigationSplitViewVisibility {
         if navigator.padTakesWindow { return .detailOnly }
-        return navigator.padSidebarOverlays && navigator.padSelection != nil ? .detailOnly : .all
+        return navigator.padSidebarOverlays && (navigator.padSelection != nil || !navigator.padPath.isEmpty) ? .detailOnly : .all
     }
 
     var body: some View {
@@ -60,6 +60,10 @@ struct PadShell: View {
                 let columns = Self.columns(navigator)
                 if navigator.padColumns != columns { navigator.padColumns = columns }
                 Task { @MainActor in navigator.padColumns = Self.columns(navigator) }
+            }
+            .onChange(of: navigator.padPath.isEmpty) { _, _ in
+                let columns = Self.columns(navigator)
+                if navigator.padColumns != columns { navigator.padColumns = columns }
             }
             .onChange(of: navigator.padTakesWindow) { _, _ in
                 let columns = Self.columns(navigator)
