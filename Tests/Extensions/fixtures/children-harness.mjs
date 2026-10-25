@@ -93,12 +93,6 @@ export function scratchHome(dir, { provider = "fixture", port, models = ["fixtur
   return home;
 }
 
-/** What Shepherd's pi home holds for the managed CLIProxyAPI provider: the extension, and its connection file. */
-export function installManagedProvider(home, { baseURL, models, apiKey = "fixture-key", enabled = true } = {}) {
-  fs.copyFileSync(path.join(root, "Extensions/shepherd-cliproxyapi.ts"), path.join(home, "shepherd-cliproxyapi.ts"));
-  if (baseURL) fs.writeFileSync(path.join(home, "shepherd-cliproxyapi.json"), JSON.stringify({ enabled, baseURL, apiKey, updatedAt: 1, models: models.map((id) => ({ id })) }));
-}
-
 /**
  * The children extension loaded into a stand-in pi, as a parent would. The caller has set the parent's
  * environment (SHEPHERD_NATIVE_CHILDREN, SHEPHERD_AGENT_ID, SHEPHERD_SOCKET, SHEPHERD_EXT_CHILDREN,
