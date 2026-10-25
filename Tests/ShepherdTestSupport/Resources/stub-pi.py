@@ -1321,6 +1321,12 @@ for raw in sys.stdin.buffer:
             respond(held_history_request, "get_messages", data={"messages": stale_history})
             held_history_request = None
             stale_history = None
+    elif t == "new_session":
+        STATE["sessionId"] = "stub-session-2"
+        del MESSAGES[:]
+        STATE["messageCount"] = 0
+        respond(cmd, t, data={"cancelled": False})
+        emit({"type": "agent_settled"})
     elif t == "get_messages":
         if os.environ.get("STUB_PI_HISTORY_GATE"):
             wait_for_file(os.environ["STUB_PI_HISTORY_GATE"], timeout=60.0)
@@ -1333,12 +1339,6 @@ for raw in sys.stdin.buffer:
             respond(cmd, t, data={"messages": MESSAGES})
     elif t == "get_recovery_operation":
         respond(cmd, t, data={"receipt": RECOVERY_RECEIPTS.get(cmd.get("operationID"))})
-    elif t == "new_session":
-        STATE["sessionId"] = "stub-recovery-new-session"
-        del MESSAGES[:]
-        STATE["messageCount"] = 0
-        emit({"type": "response", "id": cmd.get("id"), "command": t, "success": True, "data": {"cancelled": False}})
-        emit({"type": "agent_settled"})
     elif t == "recover_checkpoint":
         operation_id = cmd.get("operationID")
         previous = RECOVERY_RECEIPTS.get(operation_id)
