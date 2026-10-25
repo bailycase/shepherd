@@ -277,7 +277,10 @@ redraws it unless its values changed; keep it that way.
 ## Windows (iPad)
 
 iPad runs several Shepherd windows at once, side by side in Split View or in Stage Manager;
-iPhone keeps one. `ShepherdIOSApp` has one scene:
+iPhone keeps one, except iPhone Duo, which opens them on its inner display held upright. The
+window items follow `WindowAvailability`: `supportsMultipleWindows` alone on iPad, and on iPhone
+Duo also a regular-width window wider than tall, since closed or held sideways a new window
+replaces the one showing. `ShepherdIOSApp` has one scene:
 
 ```swift
 WindowGroup(for: MobileWindowSeed.self) { $seed in MobileWindowRoot(app: app, seed: seed) }
@@ -328,7 +331,8 @@ WindowGroup(for: MobileWindowSeed.self) { $seed in MobileWindowRoot(app: app, se
   turn also drags out as text, and a composer takes dropped text into its draft.
 - **Commands** read the focused window's navigator (`@FocusedValue(\.mobileNavigator)`), set by
   each `MobileRoot`.
-- The window items are drawn only where `supportsMultipleWindows` is true: never on iPhone.
+- The window items are drawn only where `WindowAvailability` allows: never on iPhone, and on
+  iPhone Duo only its inner display held upright (the hinge from SwiftUI's `onHingeChange`).
 
 ## Rules every track follows
 

@@ -15,14 +15,15 @@ struct PadDesignRecentRow: View, Equatable {
 }
 
 /// "Open in new window" for a design (a Recents row's menu): the design in a window of its own,
-/// as Split View puts it beside a thread (iPadSplitView). iPhone draws nothing.
+/// as Split View puts it beside a thread (iPadSplitView). Nothing where the window can't open
+/// another (`WindowsAvailable`).
 struct PadDesignWindowButton: View {
     let design: PadDesignRef
-    @Environment(\.supportsMultipleWindows) private var supportsMultipleWindows
+    @WindowsAvailable private var windowsAvailable
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        if supportsMultipleWindows {
+        if windowsAvailable {
             Button("Open in new window", systemImage: "macwindow.badge.plus") {
                 openWindow(value: MobileWindowSeed(opening: .padDesign(.design(design))))
             }

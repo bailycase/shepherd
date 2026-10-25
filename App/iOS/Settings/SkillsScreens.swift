@@ -86,10 +86,9 @@ struct SkillsScreen: View {
         .navigationBarTitleDisplayMode(inColumn ? .inline : .large)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button { navigator.open(.settings(.skillsRepo(nil))) } label: {
-                    Image(systemName: "plus")
-                }
-                .accessibilityLabel("Add from repo")
+                // Title and glyph: the system shows the glyph, and needs both to move the item to a
+                // side bar or into the overflow menu.
+                Button("Add from repo", systemImage: "plus") { navigator.open(.settings(.skillsRepo(nil))) }
             }
         }
         .task { if !inColumn { await store.watch() } }

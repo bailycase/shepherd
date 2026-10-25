@@ -55,8 +55,9 @@ The iOS client ships through TestFlight, following the Mac's channels:
   plain manual run build Shepherd Nightly as before and upload nothing.
 - **Job:** the manual run's `testflight` job in `.github/workflows/release.yml`.
   `scripts/release.py plan --testflight` decides it (`ios`), and `Tests/Release` tests the rule.
-- **Build:** the job runs on the `xcode-27` runner, because the target needs the iOS 27 SDK.
-  It archives `Shepherd iOS` unsigned, and `release.py verify-ios` checks the app.
+- **Build:** the job runs on the `xcode-27` runner with Xcode 27.1 for iPhone Duo's SwiftUI hinge
+  and reserved-region APIs. Earlier SDK builds compile without that fold-aware spacing. It
+  archives `Shepherd iOS` unsigned, and `release.py verify-ios` checks the app.
 - **Signing and upload:** `xcodebuild -exportArchive` with `App/iOS/ExportOptions.plist`,
   `-allowProvisioningUpdates`, and the App Store Connect key. It signs with the team's
   cloud-managed Apple Distribution certificate and uploads the build. No certificate is
@@ -279,7 +280,9 @@ keep the version for real breaks.
   threads. Open in new window from a thread's options, a sidebar row or the ⌘K palette (it
   brings forward a window already showing the thread). A turn's long-press menu has Send to…,
   which puts its text in another window's composer, and a turn drags into a composer as text.
-  iPhone keeps one window.
+  iPhone keeps one window, except iPhone Duo, which opens them on its inner display held upright
+  (`WindowAvailability` shows or hides these items). Half open, the iPad layout splits at the
+  fold (`Support/Fold.swift`), and a list too narrow for its detail shows alone.
 - **Search and actions (`Search/`):** search across every connected host: title matches at once,
   conversations fanned out to each host (`agentQuery(.search)`), snippets with host tags. A
   thread's options menu renames, moves and deletes its agent; a worktree agent's delete follows

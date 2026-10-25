@@ -81,14 +81,15 @@ private struct SettingsList: View {
 }
 
 /// The iPad's Settings (iPadSettingsInstructions): a 300pt list of its pages, the open one on
-/// `bgSelected`, beside that page. The page names the bar and puts its actions there.
+/// `bgSelected`, beside that page. The page names the bar and puts its actions there. Too narrow
+/// for both (iPhone Duo), the phone's list.
 private struct SettingsSplit: View {
     let store: SettingsStore
     @Environment(MobileNavigator.self) private var navigator
     private var selection: SettingsSelection { navigator.settingsSelection }
 
     var body: some View {
-        HStack(spacing: 0) {
+        PadListDetail(listWidth: MobileLayout.settingsListWidth) {
             ScrollView {
                 VStack(alignment: .leading, spacing: MobileLayout.settingsListRowSpacing) {
                     ForEach(SettingsPage.allCases, id: \.self) { page in
@@ -101,13 +102,13 @@ private struct SettingsSplit: View {
                     .padding(.vertical, NW.Space.l)
             }
             .refreshable { await store.refresh() }
-            .frame(width: MobileLayout.settingsListWidth)
             .background(Color.nw.bgWindow)
-            NWHairline(.vertical)
+        } detail: {
             SettingsPageView(page: selection.page)
                 .environment(\.settingsColumn, true)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .id(selection.page)
+        } single: {
+            SettingsList(store: store)
         }
         .background(Color.nw.bgWindow)
     }

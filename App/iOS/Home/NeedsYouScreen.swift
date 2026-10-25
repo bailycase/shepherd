@@ -21,21 +21,7 @@ struct NeedsYouScreen: View {
             } else if sizeClass == .regular {
                 NeedsYouSplit(items: items, answering: feed.answering, failures: feed.failures)
             } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
-                        Text(Self.waiting(items.count))
-                            .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
-                            .padding(.horizontal, NW.Space.xs)
-                        ForEach(items) { item in
-                            AttentionCard(item: item, busy: feed.answering.contains(item.id), failure: feed.failures[item.id])
-                        }
-                    }
-                    .padding(.horizontal, MobileLayout.gutter)
-                    .padding(.bottom, MobileLayout.sectionSpacing)
-                    .frame(maxWidth: MobileLayout.homeMaxWidth)
-                    .frame(maxWidth: .infinity)
-                }
-                .refreshable { await feed.refresh() }
+                NeedsYouCards(items: items, answering: feed.answering, failures: feed.failures)
             }
         }
         .background(Color.nw.bgWindow)
@@ -68,6 +54,32 @@ struct NeedsYouScreen: View {
     }
 }
 
+/// iPhone: the cards with their answers.
+private struct NeedsYouCards: View {
+    let items: [FleetAttention]
+    let answering: Set<String>
+    let failures: [String: String]
+    @Environment(MobileHosts.self) private var hosts
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
+                Text(NeedsYouScreen.waiting(items.count))
+                    .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                    .padding(.horizontal, NW.Space.xs)
+                ForEach(items) { item in
+                    AttentionCard(item: item, busy: answering.contains(item.id), failure: failures[item.id])
+                }
+            }
+            .padding(.horizontal, MobileLayout.gutter)
+            .padding(.bottom, MobileLayout.sectionSpacing)
+            .frame(maxWidth: MobileLayout.homeMaxWidth)
+            .frame(maxWidth: .infinity)
+        }
+        .refreshable { await HomeFeed.of(hosts).refresh() }
+    }
+}
+
 /// iPad: the list beside the chosen item's detail.
 private struct NeedsYouSplit: View {
     let items: [FleetAttention]
@@ -77,7 +89,7 @@ private struct NeedsYouSplit: View {
 
     var body: some View {
         let current = items.first { $0.id == chosen } ?? items[0]
-        HStack(spacing: 0) {
+        PadListDetail(listWidth: MobileLayout.inboxListWidth) {
             ScrollView {
                 // Flat items, 2pt apart, the chosen one filled (iPadInbox).
                 LazyVStack(alignment: .leading, spacing: NW.Space.xxs) {
@@ -92,10 +104,12 @@ private struct NeedsYouSplit: View {
                 }
                 .padding(NW.Space.m)
             }
-            .frame(width: MobileLayout.inboxListWidth)
-            NWHairline(.vertical)
+        } detail: {
             NeedsYouDetail(item: current, busy: answering.contains(current.id), failure: failures[current.id])
                 .id(current.id)
+        } single: {
+            // Too narrow for both (iPhone Duo): the phone's cards, answered in place.
+            NeedsYouCards(items: items, answering: answering, failures: failures)
         }
     }
 }

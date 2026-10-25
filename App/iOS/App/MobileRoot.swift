@@ -34,10 +34,13 @@ struct MobileRoot: View {
             .preferredColorScheme(app.appearance.mode.colorScheme)
         }
         .mobileEnvironment(app, navigator: navigator, window: window)
+        .background(DesignRenderAnchor().allowsHitTesting(false).accessibilityHidden(true))
         .focusedSceneValue(\.mobileNavigator, navigator)
         .tint(Color.nw.lantern)
         .preferredColorScheme(app.appearance.mode.colorScheme)
         .onChange(of: layout, initial: true) { _, layout in navigator.adopt(layout) }
+        // The hinge reports every degree as it moves; the navigator changes only as it shuts or opens.
+        .onHingeClosedChange { closed in if navigator.hingeClosed != closed { navigator.hingeClosed = closed } }
         .onAppear { app.windows.register(window, navigator: navigator) }
         .onDisappear { app.windows.unregister(window.id, hosts: app.hosts) }
         .onChange(of: scenePhase, initial: true) { _, phase in
