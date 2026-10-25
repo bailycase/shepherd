@@ -47,13 +47,28 @@ final class RemoteSocketOpen: @unchecked Sendable {
         queue.async { self.finish(.failure(CancellationError())) }
     }
 
+    static func resolverHints(for host: String) -> addrinfo {
+        var hints = addrinfo(ai_flags: 0, ai_family: AF_UNSPEC, ai_socktype: SOCK_STREAM,
+                             ai_protocol: IPPROTO_TCP, ai_addrlen: 0, ai_canonname: nil, ai_addr: nil, ai_next: nil)
+        var address = in_addr()
+        if inet_pton(AF_INET, host, &address) == 1 {
+            let ip = UInt32(bigEndian: address.s_addr)
+            if ip & 0xff000000 == 0x0a000000 || ip & 0xfff00000 == 0xac100000 || ip & 0xffff0000 == 0xc0a80000 {
+                // Preserve RFC1918 destinations for IPv4 split-tunnel routes, rather than
+                // allowing NAT64 synthesis to send them outside the VPN over IPv6.
+                hints.ai_family = AF_INET
+                hints.ai_flags = AI_NUMERICHOST
+            }
+        }
+        return hints
+    }
+
     private func resolve(_ host: String) {
         let port = port
         // Use the system host lookup, including hosts-file and private DNS names. It can
         // block, so the connection's deadline and cancellation stay on our own queue.
         DispatchQueue.global(qos: .userInitiated).async {
-            var hints = addrinfo(ai_flags: 0, ai_family: AF_UNSPEC, ai_socktype: SOCK_STREAM,
-                                 ai_protocol: IPPROTO_TCP, ai_addrlen: 0, ai_canonname: nil, ai_addr: nil, ai_next: nil)
+            var hints = Self.resolverHints(for: host)
             var result: UnsafeMutablePointer<addrinfo>?
             let error = getaddrinfo(host, String(port), &hints, &result)
             var resolved: [Data] = []
