@@ -9,15 +9,22 @@ export const anthropicOAuth = {
     name: "Anthropic (Claude Pro/Max)",
     isSubscription: true,
     async login(interaction) {
-        const credentials = await loginAnthropic({
-            signal: interaction.signal,
-            onAuth: info => interaction.notify({ type: "auth_url", ...info }),
-            onPrompt: info => interaction.prompt({ type: "manual_code", ...info, signal: interaction.signal }),
-            onManualCodeInput: () => interaction.prompt({
-                type: "manual_code", message: "Paste the callback URL or code#state:", signal: interaction.signal,
-            }),
-        });
-        return { type: "oauth", ...credentials };
+        const manualAbort = new AbortController();
+        const promptSignal = interaction.signal
+            ? AbortSignal.any([interaction.signal, manualAbort.signal]) : manualAbort.signal;
+        try {
+            const credentials = await loginAnthropic({
+                signal: interaction.signal,
+                onAuth: info => interaction.notify({ type: "auth_url", ...info }),
+                onPrompt: info => interaction.prompt({ type: "manual_code", ...info, signal: promptSignal }),
+                onManualCodeInput: () => interaction.prompt({
+                    type: "manual_code", message: "Paste the callback URL or code#state:", signal: promptSignal,
+                }),
+            });
+            return { type: "oauth", ...credentials };
+        } finally {
+            manualAbort.abort();
+        }
     },
     async refresh(credential) {
         return { type: "oauth", ...await refreshAnthropicToken(credential) };

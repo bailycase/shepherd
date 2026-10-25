@@ -332,11 +332,13 @@ for (const [name, relative] of [
         const auth = new URL(announced.url);
         return Promise.resolve(`${auth.searchParams.get("redirect_uri")}?code=offline-code&state=${badState ? "wrong-state" : auth.searchParams.get("state")}`);
       };
-      const interaction = { notify(info) { announced = info; }, prompt: input };
+      let promptSignal;
+      const interaction = { notify(info) { announced = info; }, prompt(info) { promptSignal = info.signal; return input(); } };
       const upstream = await oracleAuth.loginAnthropic({ onAuth: interaction.notify, onPrompt: input, onManualCodeInput: input });
       const upstreamAuth = new URL(announced.url);
       const upstreamWire = structuredClone(exchange);
       assert.deepEqual(await anthropicOAuth.login(interaction), { type: "oauth", ...upstream });
+      assert.equal(promptSignal.aborted, true, "manual-success prompt lifecycle is closed");
       const auth = new URL(announced.url);
       assert.equal(exchange.body.state, auth.searchParams.get("state"));
       assert.equal(createHash("sha256").update(exchange.body.code_verifier).digest("base64url"), auth.searchParams.get("code_challenge"));
@@ -353,12 +355,72 @@ for (const [name, relative] of [
       badState = true;
       exchange = undefined;
       await assert.rejects(anthropicOAuth.login(interaction), /OAuth state mismatch/);
+      assert.equal(promptSignal.aborted, true, "failed-login prompt lifecycle is closed");
       assert.equal(exchange, undefined, "invalid state must fail before token exchange");
     } finally {
       http.createServer = originalCreateServer;
       syncBuiltinESMExports();
       globalThis.fetch = originalFetch;
       Date.now = originalNow;
+    }
+  });
+
+  test(`${name}: browser success closes the manual prompt and parent cancellation propagates`, async () => {
+    const { anthropicOAuth } = await load(relative);
+    const originalCreateServer = http.createServer;
+    const originalFetch = globalThis.fetch;
+    try {
+      for (const cancel of [false, true]) {
+        let server;
+        let auth;
+        let promptSignal;
+        let promptClosed = false;
+        let exchanges = 0;
+        const parent = new AbortController();
+        http.createServer = () => {
+          server = new EventEmitter();
+          server.listen = (_port, _host, ready) => { server.listening = true; ready(); };
+          server.closeAllConnections = () => {};
+          server.close = () => { server.listening = false; };
+          return server;
+        };
+        syncBuiltinESMExports();
+        globalThis.fetch = async () => {
+          exchanges++;
+          return Response.json({ access_token: "offline-access", refresh_token: "offline-refresh", expires_in: 3600 });
+        };
+        const login = anthropicOAuth.login({
+          signal: parent.signal,
+          notify(info) { auth = new URL(info.url); },
+          prompt(info) {
+            promptSignal = info.signal;
+            assert.notEqual(promptSignal, parent.signal, "prompt has its own cancellation lifetime");
+            return new Promise((_resolve, reject) => {
+              promptSignal.addEventListener("abort", () => {
+                promptClosed = true;
+                reject(new Error("fixture cancelled"));
+              }, { once: true });
+              queueMicrotask(() => {
+                if (cancel) parent.abort();
+                else server.emit("request", {
+                  url: `/callback?code=offline-code&state=${auth.searchParams.get("state")}`,
+                }, { writeHead() {}, end() {} });
+              });
+            });
+          },
+        });
+        if (cancel) await assert.rejects(login, /fixture cancelled/);
+        else assert.equal((await login).access, "offline-access");
+        assert.equal(promptSignal.aborted, true);
+        assert.equal(promptClosed, true);
+        assert.equal(parent.signal.aborted, cancel, "prompt cleanup must not cancel its parent");
+        assert.equal(server.listening, false);
+        assert.equal(exchanges, cancel ? 0 : 1);
+      }
+    } finally {
+      http.createServer = originalCreateServer;
+      syncBuiltinESMExports();
+      globalThis.fetch = originalFetch;
     }
   });
 

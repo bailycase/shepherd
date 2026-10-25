@@ -842,7 +842,7 @@
     {
       "path": "node_modules/@earendil-works/pi-ai/dist/api/shepherd-anthropic-oauth.js",
       "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "after": "4ba5982ed63fe3f27cf9c17db4930ef163cc07482385828d44d68c9ff6e5f15d",
+      "after": "397d0e143356da4743f90d57028e51ef70583f230578e3f6fd672eaa6c10c190",
       "source": "anthropic-oauth.js"
     },
     {
@@ -878,7 +878,7 @@
     {
       "path": "dist/bundle/chunks/shepherd-anthropic-oauth.js",
       "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "after": "4ba5982ed63fe3f27cf9c17db4930ef163cc07482385828d44d68c9ff6e5f15d",
+      "after": "397d0e143356da4743f90d57028e51ef70583f230578e3f6fd672eaa6c10c190",
       "source": "anthropic-oauth.js"
     },
     {
