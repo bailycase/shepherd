@@ -1,0 +1,14 @@
+{
+  "repository": "https://github.com/leohenon/pi-anthropic-oauth",
+  "version": "0.3.4",
+  "revision": "44efe694a3e81a62742cdb3e7ba9da858e191a81",
+  "sha256": {
+    "LICENSE": "e46cbd8e0af9d9642434b1f2c80e5de17253a6766f0e334e676b1486f470f6f3",
+    "auth.ts": "31d1c7df052c5353b1c198fa52a2f0b1b416bc83f6496e3c502b738b3ca4b461",
+    "convert.ts": "5263f2f308b674cdde710c087c4d7d8ff8dd19cae965a06a02e4bfcb0c1940d0",
+    "index.ts": "4a94bf267a15c3fb405bf6f55dfe4922251c1552327fadbce97a925cd62b97fe",
+    "prompt.ts": "e3c7c7d595a96be754cea87e9866ae58756e78e7a8112933c9dc85284fd74a1a",
+    "stream.ts": "12fe560bf72fc247e80562b1bc18af0ac59a9cdc8ba6b901c197e20c518eda10",
+    "version.ts": "0de73b8019b0cba6fc315908deac2a406a2b447f991b28c5de3bf2bdf3c56950"
+  }
+}
