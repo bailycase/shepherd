@@ -169,6 +169,9 @@ cwd ({"delay": 1.5, "gate": "release-pi", "newSession": true, "exit": 1, "stderr
 "requireAuth": true, "model": {"provider": "openai", "id": "gpt-6-luna", "api": "openai-responses"}})
 sets the same.
 
+$STUB_PI_PROMPT_GATE holds prompts before acknowledgement until that file exists (recovery crash tests).
+$STUB_PI_HISTORY_FAILURE_GATE fails history reads until that file exists, then emits an end event to refresh history.
+"late-start" delays agent_start until the file late-start exists (Stop/start race tests).
 Every stdin line is appended to $STUB_PI_LOG when set, so tests can assert
 on what the client actually wrote.
 """
@@ -1295,6 +1298,7 @@ fail_switched_history = False
 blocked_model_inputs = 0
 skill_refresh_reply_lost = False
 skill_commands_failed = False
+history_gate_watching = False
 for raw in sys.stdin.buffer:
     line = raw.rstrip(b"\n").rstrip(b"\r")
     if not line:
@@ -1330,7 +1334,16 @@ for raw in sys.stdin.buffer:
     elif t == "get_messages":
         if os.environ.get("STUB_PI_HISTORY_GATE"):
             wait_for_file(os.environ["STUB_PI_HISTORY_GATE"], timeout=60.0)
-        if stale_history is not None:
+        history_gate = os.environ.get("STUB_PI_HISTORY_FAILURE_GATE")
+        if history_gate and not os.path.exists(history_gate):
+            respond(cmd, t, success=False, error="History temporarily unavailable")
+            if not history_gate_watching:
+                history_gate_watching = True
+                def history_ready(path=history_gate):
+                    wait_for_file(path)
+                    emit({"type": "agent_end", "messages": [], "willRetry": False})
+                threading.Thread(target=history_ready, daemon=True).start()
+        elif stale_history is not None:
             held_history_request = cmd
         elif fail_switched_history:
             fail_switched_history = False
@@ -1510,6 +1523,19 @@ for raw in sys.stdin.buffer:
             emit({"type": "agent_end", "messages": [final], "willRetry": False})
             emit({"type": "agent_settled"})
             continue
+        if message == "late-start":
+            def late_start():
+                wait_for_file("late-start")
+                emit({"type": "agent_start"})
+                emit({"type": "message_start", "message": user_message("late-start", [], now_ms())})
+                wait_for_file("late-finish")
+            RUN["active"] = True
+            RUN["thread"] = threading.Thread(target=late_start, daemon=True)
+            RUN["thread"].start()
+            respond(cmd, t)
+            continue
+        if prompt_gate := os.environ.get("STUB_PI_PROMPT_GATE"):
+            wait_for_file(prompt_gate, timeout=60.0)
         if message == "hang":
             continue
         if message == "die":

@@ -116,6 +116,13 @@ final class RPCThreadState {
     private(set) var revision: UInt64 = 0
     /// Called on the session queue each time `revision` moves.
     var onRevision: (() -> Void)?
+    /// Recovery observes intent even when a change does not alter the rendered snapshot.
+    var onRecoveryChanged: (() -> Bool)?
+    var recoveryAttempts = 0
+    var restoringRecovery = true
+    var recoveryAtLaunch: AgentRecoveryStore.Checkpoint?
+    var recoveryDispatchID: UUID?
+    var recoveryWaiting: Bool { !dialogs.isEmpty || !askingCalls.isEmpty }
     /// Called on the session queue when pi finishes a tool call, with the tool's name.
     var onToolFinished: ((String) -> Void)?
     private var signature = 0
@@ -656,7 +663,7 @@ final class RPCThreadState {
             running = true
             runFailed = false
             runError = nil
-            stopRequested = false
+            // A buffered start can arrive after Stop. Only newly authorized input clears it.
             settleAwaitingSteers = false
             doneHeld = false
             if !items.isEmpty {
@@ -673,6 +680,7 @@ final class RPCThreadState {
             refreshState()
             refreshStats()
         case .agentSettled:
+            if !runFailed, !stopRequested { recoveryAttempts = 0 }
             endDiagnostic("agent.turn")
             diagnosticTimings.removeAll(keepingCapacity: true)
             running = false
@@ -2147,6 +2155,7 @@ final class RPCThreadState {
     /// nothing else does. Each part's hash is taken once per change: the lists here when they are
     /// assigned, a live row by the first commit after its value changed.
     func commit() {
+        _ = onRecoveryChanged?()
         var hasher = Hasher()
         hasher.combine(history.count)
         hasher.combine(historyVersion)

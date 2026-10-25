@@ -52,6 +52,9 @@ struct RetryTests {
         let first = Task { try await h.request(firstRequest) }
         if boundary == "native" {
             try await eventually("recovery preparation") { try await h.server.enqueue { gate.pending != nil } }
+            let ordinary = AgentRecoveryStore(directory: host.dir.appendingPathComponent("agent-recovery"))
+            #expect(try ordinary.checkpoint(for: h.agent.id) == nil,
+                    "An undelivered native Continue must not become an automatic ordinary continuation after restart")
             try await h.server.enqueue {
                 h.server.rpcThread(forAgent: h.agent.id)?.inputActive = true
                 gate.pending?(); gate.pending = nil
@@ -68,6 +71,21 @@ struct RetryTests {
         _ = try await h.snapshot { !$0.running && $0.messages.last?.blocks.first?.text == "Recovered: flaky" }
         #expect(h.stdin("recover_checkpoint").count == (boundary == "engine" ? 2 : 1))
         #expect(h.stdin("prompt").count == 1)
+    }
+
+    @Test func anExplicitContinueAfterStopClearsCancellationWithoutInjectingInput() async throws {
+        let host = try ScratchServer()
+        defer { host.stop() }
+        let h = try await PiAgent.launch(on: host)
+        let failed = try await failedCheckpoint(h)
+        #expect(try await h.request(.abort(expectedSessionID: failed.piSessionID, generation: failed.generation,
+                                          operationID: UUID())).wasAccepted)
+        #expect(try await h.server.enqueue { h.server.rpcThread(forAgent: h.agent.id)?.stopRequested == true })
+        let current = try await h.snapshot()
+        #expect(try await h.request(recoveryRequest(current)).wasAccepted)
+        _ = try await h.snapshot { !$0.running && $0.messages.last?.blocks.first?.text == "Recovered: flaky" }
+        #expect(try await h.server.enqueue { h.server.rpcThread(forAgent: h.agent.id)?.stopRequested == false })
+        #expect(h.stdin("recover_checkpoint").count == 1 && h.stdin("prompt").count == 1)
     }
 
     @Test func preservesUsersAndOriginalFailureAndReplaysWithoutDispatch() async throws {
