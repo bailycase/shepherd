@@ -86,17 +86,20 @@ export function requestSummary(entry) {
 export async function withPi(t, options, body) {
   const { settings = {}, files = () => ({}), project, args = [], env: extraEnv = {}, onRequest, cwd } = options;
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pi-rpc-")));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  const provider = await startProvider({ onRequest });
+  t.after(() => {
+    if (process.env.PI_TEST_KEEP_FIXTURES !== "1") fs.rmSync(dir, { recursive: true, force: true });
+    else console.log(`Retained private Pi fixture: ${dir}`);
+  });
+  const provider = await startProvider({ onRequest, usage: options.usage });
   t.after(() => provider.stop());
-  const home = path.join(dir, "home");
+  const home = options.agentDir ?? path.join(dir, "home");
   const work = path.join(dir, "work");
   fs.mkdirSync(home, { recursive: true });
   fs.mkdirSync(work, { recursive: true });
   fs.writeFileSync(path.join(home, "settings.json"), JSON.stringify({ retry: { enabled: false }, ...settings }));
   fs.writeFileSync(path.join(home, "models.json"), JSON.stringify({ providers: { fixture: {
     baseUrl: `http://127.0.0.1:${provider.port}/v1`, api: options.api ?? "openai-completions", apiKey: "local-fixture-not-secret",
-    models: [{ id: "fixture", name: "fixture", reasoning: false, input: ["text"], contextWindow: 64000, maxTokens: 1024, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }],
+    models: [{ id: "fixture", name: "fixture", reasoning: options.reasoning ?? false, input: options.input ?? ["text"], contextWindow: 64000, maxTokens: 1024, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }],
   } } }));
   for (const [name, content] of Object.entries(files(dir, work))) {
     const file = name.startsWith("/") ? name : path.join(home, name);
@@ -106,19 +109,35 @@ export async function withPi(t, options, body) {
   project?.(dir, work);
   const extra = typeof extraEnv === "function" ? extraEnv(dir, work) : extraEnv;
   const env = { PATH: process.env.PATH, HOME: dir, PI_CODING_AGENT_DIR: home, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0", ...extra };
-  const child = spawn(process.execPath, [path.join(pkg, "dist/cli.js"), "--mode", "rpc", "--session-dir", path.join(dir, "sessions"),
-    "--model", "fixture/fixture", ...args], { cwd: cwd?.(dir, work) ?? work, env, stdio: ["pipe", "pipe", "pipe"] });
+  let child;
+  const launch = (resumeArgs = []) => {
+    const entrypoint = options.entrypoint ?? (process.env.PI_FAKE_BUNDLED_CLI === "1" ? "dist/bundle/cli.js" : "dist/cli.js");
+    child = spawn(options.launcher ?? process.execPath, [...(options.launcher ? [] : [path.join(pkg, entrypoint)]), "--mode", "rpc", "--session-dir", path.join(dir, "sessions"),
+      "--model", "fixture/fixture", ...args, ...resumeArgs], { cwd: cwd?.(dir, work) ?? work, env, stdio: ["pipe", "pipe", "pipe"] });
+    bind();
+  };
   t.after(() => child.kill("SIGKILL"));
   const events = [];
   let out = "", err = "", next = 0;
+  function bind() {
   child.stdout.setEncoding("utf8").on("data", (chunk) => {
     out += chunk;
     for (let nl; (nl = out.indexOf("\n")) >= 0; out = out.slice(nl + 1)) { try { events.push(JSON.parse(out.slice(0, nl))); } catch {} }
   });
   child.stderr.setEncoding("utf8").on("data", (chunk) => { err += chunk; });
   child.stdin.on("error", () => {});
+  }
+  launch();
   const pi = {
-    dir, home, work, events, provider, child, get stderr() { return err; },
+    dir, home, work, events, provider, get child() { return child; }, get stderr() { return err; },
+    /** Explicit process death/reopen, never an automatic retry. Only our fixture session path. */
+    async reopen(sessionFile) {
+      if (!sessionFile.startsWith(path.join(dir, "sessions") + path.sep)) throw Error("Not a fixture session");
+      await new Promise(resolve => { child.once("exit", resolve); child.kill("SIGKILL"); });
+      out = "";
+      launch(["--session", sessionFile]);
+      return pi.request({ type: "get_state" });
+    },
     async request(command) {
       const id = `r${++next}`;
       child.stdin.write(JSON.stringify({ id, ...command }) + "\n");

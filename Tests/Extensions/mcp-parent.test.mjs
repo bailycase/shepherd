@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { withPi, sleep, until, script } from "./fixtures/pi-rpc-harness.mjs";
+import { withPi, sleep, until, script, requestSummary } from "./fixtures/pi-rpc-harness.mjs";
 import { startFakeMcpHttp } from "./fixtures/fake-mcp-http.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -19,7 +19,7 @@ const server = (dir, marker) => ({ command: process.execPath, args: [stdio], env
 const mcpFile = (folder, servers) => {
   // The parent extension uses Shepherd paths; native Pi uses its distribution configDir.
   const native = JSON.parse(fs.readFileSync(path.join(process.env.PI_PACKAGE_DIR, "package.json"))).piConfig?.configDir ?? ".pi";
-  for (const config of new Set([".shepherd", native])) {
+  for (const config of new Set([".shepherd", ".pi", native])) {
     fs.mkdirSync(path.join(folder, config), { recursive: true });
     fs.writeFileSync(path.join(folder, config, "mcp.json"), JSON.stringify({ mcpServers: servers }));
   }
@@ -62,7 +62,7 @@ function ownedWorktree({ trusted = true, localTrusted = false, own, grant = true
       mcpFile(work, { shared: { ...server(dir, "shared"), exposure: "deferred" }, docs: server(dir, "parent-docs") });
       // Executable branch resources must remain blocked while the owner's MCP is usable.
       const native = JSON.parse(fs.readFileSync(path.join(process.env.PI_PACKAGE_DIR, "package.json"))).piConfig?.configDir ?? ".pi";
-      for (const config of new Set([".shepherd", native])) {
+      for (const config of new Set([".shepherd", ".pi", native])) {
         const folder = path.join(here, config);
         fs.mkdirSync(path.join(folder, "extensions"), { recursive: true });
         fs.writeFileSync(path.join(folder, "extensions/mark.ts"), `import fs from 'node:fs'; fs.writeFileSync(${JSON.stringify(path.join(dir, "branch-ran"))}, 'ran'); export default function() {}`);
@@ -88,6 +88,26 @@ test("a subproject starts its parent's servers next to its own", { timeout: 1200
       return ["shared", "docs", "local"].every((name) => new RegExp(`^${name}: connected`, "m").test(text));
     });
   });
+});
+
+test("Pi MCP files work in subprojects and owned worktrees with Shepherd winning collisions", { timeout: 120000 }, async t => {
+  for (const options of [subproject(), ownedWorktree({ localTrusted: true })]) {
+    const original = options.project;
+    options.project = (dir, work) => {
+      original(dir, work);
+      fs.mkdirSync(path.join(work, ".pi"), { recursive: true });
+      fs.writeFileSync(path.join(work, ".pi/mcp.json"), JSON.stringify({ mcpServers: {
+        pi_parent: server(dir, "pi-parent"), shared: server(dir, "shadowed-pi-shared"),
+      } }));
+      const here = options.cwd(dir, work);
+      fs.mkdirSync(path.join(here, ".pi"), { recursive: true });
+      fs.writeFileSync(path.join(here, ".pi/mcp.json"), JSON.stringify({ mcpServers: { pi_local: server(dir, "pi-local") } }));
+    };
+    await withPi(t, options, async pi => {
+      await until("both alias files and inherited servers to start", () => ["pi-parent", "pi-local", "shared", "parent-docs"].every(name => pi.spawned(name)));
+      assert.equal(pi.spawned("shadowed-pi-shared"), false);
+    });
+  }
 });
 
 test("the subproject's own server of the same name wins over the parent's", { timeout: 120000 }, async (t) => {
@@ -239,4 +259,57 @@ test("revoked space approval, missing or mismatched ownership and disabled MCP g
       assert.equal(fs.existsSync(path.join(pi.dir, "branch-ran")), false, what);
     });
   }
+});
+
+test("a running thread picks up mcp.json edits: new servers connect, changed ones restart, removed ones go", { timeout: 120000 }, async (t) => {
+  const files = (_dir, work) => ({ "trust.json": { [fs.realpathSync(work)]: true } });
+  await withPi(t, { args: ARGS, files }, async (pi) => {
+    await status(pi);
+    const write = (servers) => {
+      fs.mkdirSync(path.join(pi.work, ".shepherd"), { recursive: true });
+      const file = path.join(pi.work, ".shepherd/mcp.json");
+      // Atomic replacement, as Shepherd and editors save.
+      fs.writeFileSync(file + ".tmp", JSON.stringify({ mcpServers: servers }));
+      fs.renameSync(file + ".tmp", file);
+    };
+    write({ live: server(pi.dir, "live-one") });
+    await until("the added server to connect", async () => pi.spawned("live-one") && /^live: connected/m.test(await status(pi)));
+    const first = Number(fs.readFileSync(path.join(pi.dir, "live-one.pid"), "utf8"));
+    write({ live: server(pi.dir, "live-two") });
+    await until("the changed server to restart", async () => pi.spawned("live-two") && /^live: connected/m.test(await status(pi)));
+    await until("the old server process to exit", () => { try { process.kill(first, 0); return false; } catch { return true; } });
+    write({});
+    await until("the removed server to go", async () => !/^live:/m.test(await status(pi)));
+  });
+});
+
+test("mcp.json edits in an untrusted project still load nothing", { timeout: 60000 }, async (t) => {
+  await withPi(t, { args: [...ARGS, "--no-approve"] }, async (pi) => {
+    await status(pi);
+    mcpFile(pi.work, { blocked: server(pi.dir, "blocked") });
+    await sleep(1500);
+    assert.equal(pi.spawned("blocked"), false);
+    assert.ok(!/^blocked:/m.test(await status(pi)));
+  });
+});
+
+test("a server added mid-session is discoverable and callable in the next turn without restarting", { timeout: 120000 }, async (t) => {
+  await withPi(t, {
+    args: ARGS,
+    files: (_dir, work) => ({ "trust.json": { [fs.realpathSync(work)]: true } }),
+    onRequest: script([
+      { tool: { name: "tool_search", arguments: { query: "echo the text back", server: "added" } } },
+      { tool: { name: "mcp__added__echo", arguments: { text: "hot" } } },
+    ]),
+  }, async (pi) => {
+    await status(pi);
+    // Deferred is what Shepherd writes for its servers: tool_search has to come on mid-session.
+    mcpFile(pi.work, { added: { ...server(pi.dir, "added"), exposure: "deferred" } });
+    await until("the added server to connect", async () => /^added: connected/m.test(await status(pi)));
+    const turn = await pi.prompt("call the added server");
+    const ends = pi.toolEvents(turn.events).filter((e) => e.type === "tool_execution_end");
+    const echo = ends.find((e) => e.toolName === "mcp__added__echo");
+    assert.equal(echo?.isError, false, JSON.stringify([ends.map((e) => [e.toolName, e.isError]), pi.provider.requests.map((r) => requestSummary(r).tools)]));
+    assert.equal(echo.result.content[0].text, "echo: hot");
+  });
 });

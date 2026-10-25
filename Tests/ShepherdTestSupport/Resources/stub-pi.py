@@ -2,7 +2,8 @@
 """A stand-in for `pi --mode rpc` that speaks the documented JSONL protocol
 (pi docs/rpc.md). stdlib only. Behaviour keyed on the prompt text:
 
-  "ask"    emits a confirm extension_ui_request and waits for the response
+  "ask"    emits a confirm extension_ui_request and waits for the response (also as the last
+           paragraph, after an executor's Project context)
   "hang"   never responds (timeout path)
   "preflight-compact" compacts before answering a prompt, held by preflight-go then
            preflight-reply; add "-refuse" for a late refusal instead of a started turn
@@ -624,17 +625,35 @@ def flaky_turn(message):
     emit({"type": "agent_settled"})
 
 
-def retry_command(at):
-    """The status extension's /shepherd-retry: the branch goes back to before the message, which
-    goes again (after pi has answered the prompt, as pi does)."""
-    for index in range(len(MESSAGES) - 1, -1, -1):
-        message = MESSAGES[index]
-        if message.get("role") == "user" and int(message.get("timestamp") or -1) == at:
-            original = message
-            del MESSAGES[index:]
-            STATE["messageCount"] = len(MESSAGES)
-            return original
-    return None
+RECOVERY_RECEIPTS = {}
+
+
+def recovery_checkpoint(streaming=False):
+    if streaming:
+        return {"version": 1, "refusal": "recovery_busy"}
+    if not MESSAGES or MESSAGES[-1].get("stopReason") not in ("error", "aborted"):
+        return {"version": 1, "refusal": "recovery_not_failed"}
+    failed_id = "failure:" + str(MESSAGES[-1].get("timestamp"))
+    if any(r.get("failedEntryID") == failed_id and r["state"] != "refused" for r in RECOVERY_RECEIPTS.values()):
+        return {"version": 1, "refusal": "recovery_consumed"}
+    return {"version": 1, "checkpoint": {"token": "fixture:" + failed_id, "failedEntryID": failed_id}}
+
+
+def recover_checkpoint_turn(operation_id):
+    emit({"type": "agent_start"})
+    emit({"type": "turn_start"})
+    original = next(m for m in reversed(MESSAGES) if m.get("role") == "user")
+    emit({"type": "message_start", "message": {"role": "assistant", "content": []}})
+    if "flaky-hold" in text_of(original):
+        wait_for_file("flaky-go")
+    final = {"role": "assistant", "content": [{"type": "text", "text": "Recovered: " + text_of(original)}],
+             "stopReason": "stop", "timestamp": max(now_ms(), MESSAGES[-1].get("timestamp", 0) + 1)}
+    MESSAGES.append(final)
+    emit({"type": "message_end", "message": final})
+    emit({"type": "turn_end", "message": final, "toolResults": []})
+    emit({"type": "agent_end", "messages": [final], "willRetry": False})
+    RECOVERY_RECEIPTS[operation_id]["state"] = "settled"
+    emit({"type": "agent_settled"})
 
 
 def paced_turn(prompt, deltas=40, interval=0.002):
@@ -1289,11 +1308,17 @@ for raw in sys.stdin.buffer:
     if t == "get_state":
         with QUEUE_LOCK:
             pending_count = len(steering) + len(follow_up)
-        respond(cmd, t, data=dict(STATE, isStreaming=streaming, pendingMessageCount=pending_count))
+        recovery = {} if os.environ.get("STUB_PI_RECOVERY_UNSUPPORTED") else {"checkpointRecovery": recovery_checkpoint(streaming)}
+        respond(cmd, t, data=dict(STATE, isStreaming=streaming, pendingMessageCount=pending_count, **recovery))
         if held_history_request is not None:
             respond(held_history_request, "get_messages", data={"messages": stale_history})
             held_history_request = None
             stale_history = None
+    elif t == "new_session":
+        STATE["sessionId"] = "stub-session-2"
+        del MESSAGES[:]
+        STATE["messageCount"] = 0
+        respond(cmd, t, data={"cancelled": False})
     elif t == "get_messages":
         if os.environ.get("STUB_PI_HISTORY_GATE"):
             wait_for_file(os.environ["STUB_PI_HISTORY_GATE"], timeout=60.0)
@@ -1304,6 +1329,34 @@ for raw in sys.stdin.buffer:
             respond(cmd, t, success=False, error="Switched history unavailable")
         else:
             respond(cmd, t, data={"messages": MESSAGES})
+    elif t == "get_recovery_operation":
+        respond(cmd, t, data={"receipt": RECOVERY_RECEIPTS.get(cmd.get("operationID"))})
+    elif t == "new_session":
+        STATE["sessionId"] = "stub-recovery-new-session"
+        del MESSAGES[:]
+        STATE["messageCount"] = 0
+        emit({"type": "response", "id": cmd.get("id"), "command": t, "success": True, "data": {"cancelled": False}})
+        emit({"type": "agent_settled"})
+    elif t == "recover_checkpoint":
+        operation_id = cmd.get("operationID")
+        previous = RECOVERY_RECEIPTS.get(operation_id)
+        checkpoint = recovery_checkpoint(streaming).get("checkpoint")
+        if previous:
+            respond(cmd, t, data=previous, success=previous["token"] == cmd.get("token"))
+        elif not checkpoint or checkpoint["token"] != cmd.get("token"):
+            respond(cmd, t, success=False, error="recovery_stale")
+        elif os.environ.get("STUB_PI_RECOVERY_BUSY_ONCE") and not RECOVERY_RECEIPTS:
+            RECOVERY_RECEIPTS[operation_id] = dict(token=cmd.get("token"), operationID=operation_id,
+                sessionID=STATE["sessionId"], state="refused", error="recovery_busy")
+            respond(cmd, t, success=False, error="recovery_busy")
+        else:
+            receipt = dict(checkpoint, operationID=operation_id, sessionID=STATE["sessionId"], state="accepted")
+            RECOVERY_RECEIPTS[operation_id] = receipt
+            if not os.environ.get("STUB_PI_RECOVERY_LOST_REPLY"):
+                respond(cmd, t, data=receipt)
+            turn_aborted = False
+            turn_thread = threading.Thread(target=recover_checkpoint_turn, args=(operation_id,), daemon=True)
+            turn_thread.start()
     elif t == "refresh_skills":
         if os.environ.get("STUB_PI_SKILL_REFRESH_LOST_REPLY") and not skill_refresh_reply_lost:
             skill_refresh_reply_lost = True
@@ -1517,21 +1570,8 @@ for raw in sys.stdin.buffer:
             respond(cmd, t)
             continue
         if message.startswith("/shepherd-retry"):
-            # pi runs an extension command at once, even while streaming; the command refuses then.
             respond(cmd, t)
-            try:
-                at = int(message.split(" ", 1)[1])
-            except (IndexError, ValueError):
-                at = None
-            original = None if streaming or at is None else retry_command(at)
-            if original is None:
-                ui("notify", message="That message is no longer in this conversation." if not streaming
-                   else "Retry once the agent has stopped.", notifyType="warning")
-                continue
-            again = dict(original, timestamp=max(now_ms(), original["timestamp"] + 1))
-            turn_aborted = False
-            turn_thread = threading.Thread(target=flaky_turn, args=(again,), daemon=True)
-            turn_thread.start()
+            ui("notify", message="Continue requires message-free checkpoint recovery support.", notifyType="warning")
             continue
         if re.search(r"tools:\d+", message):
             RUN["active"] = True
@@ -1550,7 +1590,7 @@ for raw in sys.stdin.buffer:
             with open(log_path, "ab") as f:
                 f.write(json.dumps({"type": "stub-images", "count": len(cmd["images"]),
                                     "mimeTypes": [i.get("mimeType") for i in cmd["images"]]}).encode() + b"\n")
-        if message == "ask":
+        if message == "ask" or message.endswith("\n\nask"):  # an executor prompt ends with its task
             pending_ui = "uuid-2"
             emit({"type": "agent_start"})
             user = {"role": "user", "content": message, "timestamp": now_ms()}

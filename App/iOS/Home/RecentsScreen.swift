@@ -2,14 +2,15 @@ import SwiftUI
 import ShepherdUI
 import ShepherdRemote
 
-/// Every recent thread across hosts, past Home's first few (home track).
+/// Every recent thread across hosts, past Home's first few (home track): the Recents group, so a thread in
+/// Working, Done or Pinned is listed there instead, once.
 struct RecentsScreen: View {
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
         let feed = HomeFeed.of(hosts)
-        let rows = feed.model.recents
+        let rows = SidebarThreads.of(hosts).groups(feed.model).recents
         let selected = navigator.selectedThread
         ScrollView {
             LazyVStack(spacing: 0) {
@@ -20,6 +21,7 @@ struct RecentsScreen: View {
                             ThreadRow(row: row, selected: row.ref.agentRef == selected).equatable()
                         }
                         .buttonStyle(.nwRow(radius: 0))
+                        .contextMenu { if row.design == nil { ThreadRowMenu(thread: row.ref.agentRef) } }
                     }
                 }
             }

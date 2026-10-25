@@ -41,8 +41,12 @@ Pi and its SDK modules by install location, version, registry tarball and `sha51
    multiple archive roots are refused. Named roots used by `@types` packages are supported.
 4. Sets the staged package's `piConfig` to `name: "pi", configDir: ".shepherd"`. Pi reads this
    manifest at runtime for project resource discovery; keeping `name` preserves `PI_*` environment
-   names. Shepherd still pins its global agent home, and terminal Pi is unchanged. Verification
-   rejects an engine with a different project directory or application name.
+   names. Trusted projects discover settings, skills, prompts, themes, extensions, system prompts
+   and MCP in both `.shepherd/` and `.pi/`. `.shepherd` wins collisions; settings and system prompts
+   fall back per file, while MCP merges server names. Relative settings paths use the selected
+   settings file's folder. Both SDK and bundled child CLI use the same precedence and trust rules.
+   Shepherd still pins its global agent home, and terminal Pi is unchanged. Verification rejects
+   an engine with a different primary project directory or application name.
 5. Keeps the files above (Node's binary as it comes), writes the licences, and swaps the tree
    into `.build/pi-engine` whole.
 6. Verifies the result the way `release.py verify-app` does.
@@ -97,6 +101,11 @@ initializing or listing tools, without waiting for their request timeout. The MC
 modular runtime, pinned stdio dependency and bundled SDK. RPC input starts before extension
 initialization finishes so startup UI answers can get through; all other commands wait for
 initialization. Its hash is recorded in the engine pin.
+The same patch adds message-free checkpoint recovery to the readable SDK, RPC and bundled SDK/CLI.
+`checkpoint-recovery.js` owns validation and append-only receipts; its declaration file describes
+that SDK contract. This is a Shepherd patch, not a claim that unpatched upstream Pi exposes recovery.
+It reuses Pi's provider-context omission without changing automatic retry classification.
+See [Retry](native-thread.md#retry) for safety gates and limits.
 Staging verifies the pi version, full original file hashes, unique replacement anchors and final
 file hashes; verification also checks the shipped patched files. A source, patch or pin mismatch
 fails closed. The Linux extension-test job applies the same verified patches to its isolated npm
@@ -105,9 +114,10 @@ Update the patch hash in the pin and restage whenever the patch changes, so Xcod
 existing pin stamp cannot reuse an older unpatched engine.
 
 The patch supplies `refresh_skills`, native file observation and the `skills_changed` /
-`skills_watch_error` RPC events. The host coalesces dirty state and refreshes immediately at an
+`skills_watch_error` RPC events, covering prompt templates as well as skills. The host coalesces dirty state and refreshes immediately at an
 idle boundary, without periodic requests. It does not
-reload extensions, tools, providers or settings. See [live skills](skills.md#live-threads) for
+reload extensions, tools, providers or settings. The same watcher also reloads the built-in MCP extension's
+`mcp.json` servers in a running session ([mcp.md](mcp.md#what-pis-mcp-does)). See [live skills](skills.md#live-threads) for
 bounds, discovery scope and busy behavior. All launches still go through `PiLaunch` and the one
 `BundledPiEngine.entryPath`, now upstream's `dist/cli.js`: agents, children, catalog and print
 launches all use the patched modular runtime. No dependency was added; the modular SDK and its
@@ -183,7 +193,7 @@ so tools stay reachable through direct calls or tool search when codemode is off
 
 Settings ▸ Agents ▸ Context ▸ Codemode defaults on. Before a primary agent launch, `PiHome.configureCodemode`
 writes `codemode.enabled` in the host's Pi home under Pi's settings lock. A trusted project's
-`.shepherd/settings.json` can override it. `shepherd-status.ts` uses Pi's `createCodemodeExtension` factory
+Project `settings.json` in `.shepherd` or `.pi` can override it. `shepherd-status.ts` uses Pi's `createCodemodeExtension` factory
 with `models: false` and `mode: "on"`. It caps each script at five minutes and 128 nested tool calls.
 Pi still owns the QuickJS executor, discovery, tool hooks, nested-call metadata and cancellation.
 Each nested tool has its own activity row. Pi's `nestedCalls` metadata restores its arguments and
@@ -202,7 +212,7 @@ what pi does with them, measured).
 What pi's MCP does with the files and the environment it is given is in [mcp.md](mcp.md); what it adds
 to a launch is `/mcp` (over RPC it answers with this thread's servers, `name: connected, 9 tools
 (deferred)`), a server section in the system prompt, `tool_search`, and `<home>/mcp-auth.json` for
-sign-ins. A trusted project's `.shepherd/mcp.json` is read too, as pi's trust model says. `llama.cpp`, the
+sign-ins. A trusted project's `.shepherd/mcp.json` and `.pi/mcp.json` are read too, as pi's trust model says. `llama.cpp`, the
 fourth built-in, is a provider pi has always shipped and stays; `/llama` still does nothing over RPC and
 the thread's command menu leaves it out. `PiConfig.installedExtensions` (Settings ▸ Pi, a host's
 `hostSettings`) and the first copy from "your pi" ignore the `builtin:` entries.

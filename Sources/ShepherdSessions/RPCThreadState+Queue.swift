@@ -88,7 +88,7 @@ extension RPCThreadState {
 
     /// pi is working, or about to be on a prompt it has not answered: a send now waits in the
     /// queue (or steers).
-    var piBusy: Bool { running || !dispatches.isEmpty || settleCapture != nil }
+    var piBusy: Bool { running || retryDispatch != nil || !dispatches.isEmpty || settleCapture != nil }
 
     /// pi settling does not leave the agent idle: a prompt of ours is on its way, or the
     /// queue goes next.
@@ -761,6 +761,7 @@ extension RPCThreadState {
     }
 
     func cancelPreparingPrompts() {
+        cancelRecovery()
         cancelWaitingInputs()
         let pending = preparingPrompts
         preparingPrompts.removeAll()

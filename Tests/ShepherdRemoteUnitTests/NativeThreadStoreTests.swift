@@ -1610,31 +1610,109 @@ struct NativeThreadStoreTests {
         #expect(store.rows.last { !$0.isUser }?.retryEntryID == entry)
     }
 
-    /// Retry retries in place on a host that can; elsewhere it sends the turn's prompt again.
     @Test(arguments: [true, false])
-    func retryGoesInPlaceWhereTheHostCanElseSendsThePromptAgain(inPlace: Bool) async throws {
-        let actions = ["send", "abort"] + (inPlace ? ["retry"] : [])
-        let (store, host, task) = await started(F.snapshot(actions: actions, messages: [F.user("fix it", id: "u"),
-                                                                                       F.assistant("", status: "error", id: "a")]))
+    func retryUsesTheExactCheckpointOrExplainsUnsupportedWithoutSending(supported: Bool) async throws {
+        let checkpoint = NativeRecoveryCheckpoint(token: "token", failedEntryID: "failed-entry")
+        var snapshot = F.snapshot(actions: ["send", "abort", "retry"] + (supported ? ["checkpointRecovery"] : []),
+                                  messages: [F.user("fix it", id: "u"), F.assistant("", status: "error", id: "a")])
+        snapshot.checkpointRecovery = supported ? NativeCheckpointRecovery(checkpoint: checkpoint) : nil
+        let (store, host, task) = await started(snapshot)
         defer { task.cancel() }
         host.action = { request in
-            switch request {
-            case .retry(_, _, let id, _), .send(_, _, let id, _, _, _, _, _, _): .accepted(operationID: id)
-            default: .failure(code: "x", message: "unexpected")
-            }
+            guard case .retry(_, _, let id, _, _) = request else { return .failure(code: "x", message: "unexpected") }
+            return .accepted(operationID: id)
         }
         let row = try #require(store.rows.last)
         #expect(store.canRetry(row, running: false) && !store.canRetry(row, running: true))
         await store.retry(row)
-        let action = try #require(host.actions.first)
-        if inPlace {
-            guard case .retry(let session, let generation, _, let entryID) = action else { Issue.record("expected retry"); return }
-            #expect(session == "s" && generation == "g" && entryID == "u")
+        if supported {
+            let action = try #require(host.actions.first)
+            guard case .retry(let session, let generation, _, let entryID, let sentCheckpoint) = action else {
+                Issue.record("expected recovery"); return
+            }
+            #expect(session == "s" && generation == "g" && entryID == "u" && sentCheckpoint == checkpoint)
+            #expect(host.actions.count == 1)
         } else {
-            guard case .send(_, _, _, let text, .followUp, _, _, _, _) = action else { Issue.record("expected send"); return }
-            #expect(text == "fix it")
+            #expect(host.actions.isEmpty, "old send/rewind fallback must not run")
+            #expect(store.notice?.contains("message-free checkpoint recovery") == true)
         }
-        #expect(host.actions.count == 1)
+    }
+
+    @Test func uncertainRecoveryKeepsItsOperationAndLateReplyCannotChangeTheNewRun() async throws {
+        let checkpoint = NativeRecoveryCheckpoint(token: "sealed", failedEntryID: "failure")
+        var initial = F.snapshot(actions: ["send", "abort", "retry"],
+                                 messages: [F.user("fix it", id: "u"), F.assistant("failed", status: "error", id: "a")])
+        initial.checkpointRecovery = NativeCheckpointRecovery(version: 1, checkpoint: checkpoint)
+        initial.supportedActions.append("checkpointRecovery")
+        let host = FakeHost(initial)
+        let store = manualStore()
+        var pending: CheckedContinuation<NativeThreadResult, Error>?
+        let gate = FirstPullGate()
+        var attempts: [NativeThreadRequest] = []
+        let poll = Task {
+            await store.run { request in
+                if case .retry = request {
+                    attempts.append(request)
+                    return try await withCheckedThrowingContinuation { pending = $0; gate.asked = true }
+                }
+                return try host.handle(request)
+            }
+        }
+        defer { poll.cancel(); store.suspend(); pending?.resume(throwing: CancellationError()) }
+        await until { store.ready }
+        let row = try #require(store.rows.last)
+        try #require(row.offersRetry && store.canRetry(row, running: false))
+        let first = Task { await store.retry(row) }
+        await until { gate.asked }
+        pending?.resume(returning: .failure(code: "outcome_unknown", message: "unknown delivery")); pending = nil
+        gate.asked = false
+        await first.value
+        let second = Task { await store.retry(row) }
+        await until { gate.asked }
+        #expect(attempts.count == 2 && attempts[0] == attempts[1], "an explicit check may replay the exact operation, never create a new one")
+        store.suspend()
+        poll.cancel()
+        host.snapshot.piSessionID = "new-session"
+        host.snapshot.generation = "new-generation"
+        let resumed = await start(store, host)
+        defer { resumed.cancel() }
+        store.reportActionNotice("current run notice")
+        let attempt = try #require(attempts.last)
+        guard case .retry(_, _, let operation, _, _) = attempt else { Issue.record("expected recovery"); return }
+        pending?.resume(returning: .accepted(operationID: operation)); pending = nil
+        await second.value
+        #expect(store.notice == "current run notice")
+        #expect(store.snapshot?.piSessionID == "new-session" && store.snapshot?.generation == "new-generation")
+        #expect(store.snapshot?.messages == initial.messages)
+    }
+
+    @Test func aStaleReplyCannotContinueANewerFailureInTheSameSession() async throws {
+        var initial = F.snapshot(actions: ["send", "abort", "retry", "checkpointRecovery"],
+            messages: [F.user("request", id: "u"), F.assistant("failed A", status: "error", id: "a")])
+        initial.checkpointRecovery = NativeCheckpointRecovery(version: 1,
+            checkpoint: NativeRecoveryCheckpoint(token: "token-A", failedEntryID: "failed-A"))
+        let (store, host, task) = await started(initial)
+        defer { task.cancel(); store.stop() }
+        let old = try #require(store.rows.last)
+        var newer = initial
+        newer.messages.append(F.assistant("failed B", status: "error", id: "b"))
+        newer.checkpointRecovery?.checkpoint = NativeRecoveryCheckpoint(token: "token-B", failedEntryID: "failed-B")
+        newer.revision += 1
+        host.snapshot = newer
+        await store.refresh()
+        await store.retry(old)
+        #expect(host.actions.isEmpty)
+        #expect(store.notice?.contains("That reply changed") == true)
+    }
+
+    @Test func aRecoveryRefusalIsVisibleWithoutSending() async throws {
+        var snapshot = F.snapshot(actions: ["send", "checkpointRecovery"],
+                                  messages: [F.user("fix it", id: "u"), F.assistant("", status: "error", id: "a")])
+        snapshot.checkpointRecovery = NativeCheckpointRecovery(refusal: "recovery_uncertain_tool")
+        let (store, host, task) = await started(snapshot)
+        defer { task.cancel() }
+        await store.retry(try #require(store.rows.last))
+        #expect(host.actions.isEmpty && store.notice == "A tool call may be incomplete or have failed after a side effect. Continue will not replay it.")
     }
 
     @Test func onlyTheLastReplyIsLiveWhileTheAgentRuns() async {

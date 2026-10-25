@@ -375,8 +375,8 @@ final class RPCThreadState {
     /// A Retry on its way (`RPCThreadState+Retry.swift`): its dispatch, until the run it starts
     /// does (or pi says it started none).
     var retryDispatch: UUID?
-    /// What waits for the settled turn's capture to end (a Retry sent just as pi settled).
-    var afterSettleCapture: [() -> Void] = []
+    var recoveryPending: (id: UUID, completion: (NativeThreadResult) -> Void)?
+    var checkpointRecovery: NativeCheckpointRecovery?
     var paused = false
     var queueNotice: String?
     var modeOverride: NativeQueueMode?
@@ -558,11 +558,21 @@ final class RPCThreadState {
         }
     }
 
+    func canRecoverCheckpoint(operationID: UUID) -> Bool {
+        isServable && !running && !inputActive && compactingRun == nil && openingPrompt == nil
+            && dialogs.isEmpty && items.isEmpty && dispatches.isEmpty
+            && (retryDispatch == nil || retryDispatch == operationID)
+            && preparingPrompts.isEmpty && settleCapture == nil && sendAfterCapture == nil
+            && interrupting == nil && !interruptAbortPending && unboundSteers.isEmpty
+            && steersInFlight == 0 && !settleAwaitingSteers && piSteering.isEmpty && piFollowUp.isEmpty
+            && sendingDesignPayloads.isEmpty
+    }
+
     /// Moving changes the working directory and reloads instructions, so no pending work may survive it.
     var canMoveSpace: Bool {
         isServable && !running && !inputActive && compactingRun == nil && openingPrompt == nil
             && dialogs.isEmpty && items.isEmpty && dispatches.isEmpty && retryDispatch == nil
-            && afterSettleCapture.isEmpty && preparingPrompts.isEmpty && settleCapture == nil
+            && preparingPrompts.isEmpty && settleCapture == nil
             && sendAfterCapture == nil && interrupting == nil && !interruptAbortPending
             && unboundSteers.isEmpty && steersInFlight == 0 && !settleAwaitingSteers
             && piSteering.isEmpty && piFollowUp.isEmpty && sendingDesignPayloads.isEmpty
@@ -636,7 +646,6 @@ final class RPCThreadState {
         case .agentStart:
             diagnosticTimings.removeAll(keepingCapacity: true)
             beginDiagnostic("agent.turn", operation: "agent.turn")
-            retryStarted()
             lastTurnAssistant = nil
             lastTurnResult = nil
             lastTurnResultDeliveryID = nil
@@ -668,6 +677,7 @@ final class RPCThreadState {
             diagnosticTimings.removeAll(keepingCapacity: true)
             running = false
             retry = nil
+            refreshState()
             dropStreamingCalls()
             askingCalls.removeAll()
             let token = UUID()
@@ -677,7 +687,6 @@ final class RPCThreadState {
                     guard let self, self.settleCapture == token else { return }
                     self.settleCapture = nil
                     self.onActualTurnSettled?()
-                    self.runAfterSettleCapture()
                     self.drainIfReady()
                     self.idleAfterQueue()
                 }
@@ -841,6 +850,7 @@ final class RPCThreadState {
     /// (its `hello` listed no `native.queue.v1`); its queued sends go to pi alone.
     /// `isolateSend`: host-managed operation identity must survive even an all-at-once queue.
     func handle(_ request: NativeThreadRequest, olderClient: Bool = false, isolateSend: Bool = false, startupDialogs: Bool = true,
+                recoveryBinding: CheckpointRecoveryBinding? = nil, recoveryAuthorization: @escaping () -> Bool = { true },
                 completion: @escaping (NativeThreadResult) -> Void) {
         if !isServable {
             if !startupDialogs, dialogs.contains(where: { $0.unavailable == nil }) {
@@ -900,7 +910,7 @@ final class RPCThreadState {
              .subagentCommand(let expectedSessionID, let generation, let operationID, _, _, _, _),
              .queue(let expectedSessionID, let generation, let operationID, _),
              .compact(let expectedSessionID, let generation, let operationID, _),
-             .retry(let expectedSessionID, let generation, let operationID, _),
+             .retry(let expectedSessionID, let generation, let operationID, _, _),
              .setServiceTier(let expectedSessionID, let generation, let operationID, _),
              .goal(let expectedSessionID, let generation, let operationID, _, _, _, _):
             guard expectedSessionID == piSessionID, generation == self.generation else {
@@ -928,7 +938,8 @@ final class RPCThreadState {
             }
             operations.append((key, Operation(fingerprint: fingerprint)))
             if operations.count > Self.operationTableSize { operations.removeFirst() }
-            perform(request, operationID: operationID, alone: olderClient || isolateSend) { [weak self] result in
+            perform(request, operationID: operationID, alone: olderClient || isolateSend,
+                    recoveryBinding: recoveryBinding, recoveryAuthorization: recoveryAuthorization) { [weak self] result in
                 guard let self else { completion(result); return }
                 guard let index = self.operations.firstIndex(where: { $0.id == key }) else {
                     // Evicted while in flight; still answer this caller.
@@ -998,7 +1009,8 @@ final class RPCThreadState {
     /// An accepted new user send during a running turn. Idempotent operation replay never fires it.
     var onUserInputWhileRunning: (() -> Void)?
 
-    private func perform(_ request: NativeThreadRequest, operationID: UUID, alone: Bool, completion: @escaping (NativeThreadResult) -> Void) {
+    private func perform(_ request: NativeThreadRequest, operationID: UUID, alone: Bool,
+                         recoveryBinding: CheckpointRecoveryBinding?, recoveryAuthorization: @escaping () -> Bool, completion: @escaping (NativeThreadResult) -> Void) {
         let accepted = NativeThreadResult.accepted(operationID: operationID)
         let settle: (Result<RPCResponse, RPCError>) -> Void = { result in
             completion(Self.dispatchFailure(result) ?? accepted)
@@ -1156,8 +1168,9 @@ final class RPCThreadState {
             }
         case .compact(_, _, _, let instructions):
             compact(instructions: instructions, operationID: operationID, completion: completion)
-        case .retry(_, _, _, let entryID):
-            retryTurn(entryID: entryID, operationID: operationID, completion: completion)
+        case .retry(_, _, _, let entryID, let checkpoint):
+            retryTurn(entryID: entryID, checkpoint: checkpoint, operationID: operationID, binding: recoveryBinding,
+                      authorized: recoveryAuthorization, completion: completion)
         case .snapshot, .subagentTranscript, .image, .artifact:
             completion(.failure(code: "invalid", message: "Not an action."))
         }
@@ -1375,6 +1388,9 @@ final class RPCThreadState {
             } else {
                 self.model = nil
                 self.serviceTiers = []
+            }
+            self.checkpointRecovery = data["checkpointRecovery"].flatMap { value in
+                (try? JSONEncoder().encode(value)).flatMap { try? JSONDecoder().decode(NativeCheckpointRecovery.self, from: $0) }
             }
             self.thinking = data["thinkingLevel"]?.stringValue
             self.autoCompaction = data["autoCompactionEnabled"]?.boolValue
@@ -1710,8 +1726,10 @@ final class RPCThreadState {
     /// pi switched sessions (new_session / switch): nothing from the previous
     /// session may be acted on with the old generation.
     private func resetForNewSession() {
+        cancelRecovery()
         historyPending = true
         generation = UUID().uuidString
+        diagnosticTimings.removeAll(keepingCapacity: true)
         operations.removeAll()
         live.removeAll()
         toolStarts.removeAll()
@@ -1744,11 +1762,10 @@ final class RPCThreadState {
         compactionNotes.removeAll()
         context = nil
         retryDispatch = nil
+        checkpointRecovery = nil
         resetQueueForNewSession()
         signature = 0
         bumpRevision()
-        // A Retry waiting on the old session's capture finds its turn gone.
-        runAfterSettleCapture()
     }
 
     /// Takes history from `index` on out of what the thread shows, until the next refresh
@@ -2144,7 +2161,8 @@ final class RPCThreadState {
         hasher.combine(goalsAvailable)
         hasher.combine(historyUnread)
         hasher.combine(liveLeftOut)
-        hasher.combine(running)
+        hasher.combine(running || retryDispatch != nil)
+        hasher.combine(checkpointRecovery)
         hasher.combine(model)
         hasher.combine(thinking)
         hasher.combine(thinkingLevels)
@@ -2220,15 +2238,15 @@ final class RPCThreadState {
         let clips = NativeThreadClips(history: historyUnread, live: liveLeftOut)
         let initializing = !isServable
         var base = NativeThreadSnapshot(
-            piSessionID: initializing ? "" : (piSessionID ?? ""), generation: generation, revision: revision, running: running,
+            piSessionID: initializing ? "" : (piSessionID ?? ""), generation: generation, revision: revision, running: running || retryDispatch != nil,
             model: model, thinking: thinking, thinkingLevels: thinkingLevels,
-            supportedActions: initializing ? ["answer"] : Self.supportedActions + (goalsAvailable ? ["goal"] : []), dialogsSupported: true,
+            supportedActions: initializing ? ["answer"] : Self.supportedActions + (goalsAvailable ? ["goal"] : []) + (checkpointRecovery?.version == 1 ? ["checkpointRecovery"] : []), dialogsSupported: true,
             dialogs: [], widgets: snapshotWidgets, messages: [], provisional: [],
             clipped: !clips.isEmpty,
             runtime: "rpc", stats: stats, commands: commands, subagents: snapshotSubagents, context: context,
             turnChanges: snapshotTurnChanges, retry: retry,
             serviceTier: serviceTier.rawValue, serviceTiers: serviceTiers.map(\.rawValue), goal: goal,
-            clips: clips.isEmpty ? nil : clips, initializing: initializing ? true : nil
+            clips: clips.isEmpty ? nil : clips, initializing: initializing ? true : nil, checkpointRecovery: initializing ? nil : checkpointRecovery
         )
         // The rest encodes without the queue, which adds `,"queue":` and its cached size.
         let queue = queueValue

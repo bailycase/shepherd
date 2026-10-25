@@ -16,13 +16,13 @@ extension SessionServer {
         executionSpaceAuthority = authority
     }
 
-    private func executionSpaceGrants() -> [SpaceID: UUID] {
+    func executionSpaceGrants() -> [SpaceID: UUID] {
         // Lazily seed routes loaded at startup even if no state commit has happened yet.
         refreshExecutionSpaceAuthority(before: store.state.spaces)
         return executionSpaceAuthority
     }
 
-    private func executionSpaceIsCurrent(_ id: SpaceID, grants: [SpaceID: UUID]) -> Bool {
+    func executionSpaceIsCurrent(_ id: SpaceID, grants: [SpaceID: UUID]) -> Bool {
         guard let captured = grants[id] else { return false }
         return executionSpaceGrants()[id] == captured
     }

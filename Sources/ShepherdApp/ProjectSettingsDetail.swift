@@ -125,7 +125,7 @@ struct ProjectSettingsDetail: View {
                 HStack(spacing: NW.Space.s) {
                     ForEach(model.selectedFiles) { file in
                         Button { Task { await model.navigate(.file(file)) } } label: {
-                            Text(file.path.hasSuffix("/SKILL.md") ? URL(fileURLWithPath: file.path).deletingLastPathComponent().lastPathComponent : URL(fileURLWithPath: file.path).lastPathComponent)
+                            Text(file.path)
                                 .font(.nwMono(AppLayout.projectsPathSize, file.path == model.selectedFile?.path ? .semibold : .regular))
                                 .foregroundStyle(file.path == model.selectedFile?.path ? Color.nw.textPrimary : file.exists ? Color.nw.textSecondary : Color.nw.settingsMuted)
                                 .padding(.horizontal, AppLayout.projectFilePadding).frame(height: AppLayout.projectFileHeight)
@@ -153,7 +153,7 @@ struct ProjectSettingsDetail: View {
                     Button("Discard") { Task { await model.discard() } }.buttonStyle(.nw())
                 }
             }
-            if model.selectedFile?.path == ".shepherd/settings.json", model.fileLoaded {
+            if model.selectedFile?.category == .pi, model.fileLoaded {
                 SettingsGroup(title: "Tools") {
                     SettingsRow(title: "Codemode",
                                 subtitle: "Overrides this host's global setting for this space. Save the file, then start or restart the agent.",
@@ -225,7 +225,7 @@ struct ProjectSettingsDetail: View {
             if model.category == .instructions {
                 readingCard
                 hostsCard
-                Text("APPEND_SYSTEM.md adds to the system prompt and SYSTEM.md replaces it. Both live in the space's .shepherd folder.")
+                Text("APPEND_SYSTEM.md adds to the system prompt and SYSTEM.md replaces it. Both live in the space's .shepherd or .pi folder.")
                     .font(.nwSans(AppLayout.projectsPathSize)).foregroundStyle(Color.nw.settingsMuted)
                     .lineSpacing(AppLayout.projectSideLineExtra).fixedSize(horizontal: false, vertical: true)
             } else { hostsCard }

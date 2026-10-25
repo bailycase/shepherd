@@ -341,6 +341,16 @@ final class ReviewStore {
     /// Compares Branch against `base`.
     func pickBase(_ base: String) { pick(.branch(base: base)) }
 
+    /// A thread row's Review Uncommitted Changes or Review PR Changes: that scope on a Changes host, the working tree's or
+    /// the PR's diff on an older one. A review already on screen reloads.
+    func show(_ scope: ChangesScope) {
+        pullRequest = scope == .pullRequest
+        guard pickedScope != scope else { return }
+        pickedScope = scope
+        loadedKey = nil
+        if loaded { refresh() }
+    }
+
     /// A changes card's Review: the turn it ended.
     func show(turn id: UUID) {
         guard pickedScope != .turn(id: id) else { return }
@@ -897,7 +907,3 @@ extension NWReviewFileRow.Item {
 }
 
 /// A host's refusal says what went wrong in its message; anything else describes itself.
-func reviewErrorText(_ error: Error) -> String {
-    if case RemoteHostClientError.rejected(_, let message) = error { return message }
-    return String(describing: error)
-}
