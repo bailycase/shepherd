@@ -182,6 +182,7 @@ import time
 
 out = sys.stdout.buffer
 out_lock = threading.Lock()
+turn_thread = None
 log_path = os.environ.get("STUB_PI_LOG")
 tier_path = os.environ.get("SHEPHERD_EXT_SERVICE_TIER")
 
@@ -211,9 +212,13 @@ def wait_for_file(name, timeout=30.0):
 
 
 def emit(obj, terminator=b"\n"):
+    global turn_thread
     # ensure_ascii=False keeps U+2028 as a raw code point inside the string,
     # the exact case a generic line reader would split on.
     with out_lock:
+        # Settled means idle, even if Python has not returned from the worker yet.
+        if obj.get("type") == "agent_settled" and turn_thread is threading.current_thread():
+            turn_thread = None
         out.write(json.dumps(obj, ensure_ascii=False).encode("utf-8") + terminator)
         out.flush()
 
@@ -623,6 +628,8 @@ def flaky_turn(message):
     STATE["messageCount"] = len(MESSAGES)
     emit({"type": "agent_end", "messages": [final], "willRetry": False})
     emit({"type": "agent_settled"})
+    if os.environ.get("STUB_PI_FLAKY_SETTLED_GATE"):
+        wait_for_file(os.environ["STUB_PI_FLAKY_SETTLED_GATE"])
 
 
 RECOVERY_RECEIPTS = {}
@@ -1279,7 +1286,6 @@ if os.path.exists("project-script.json"):
     STATE["messageCount"] = 0
 
 pending_ui = None
-turn_thread = None
 # An abort ends a "slow" turn as far as pi's state goes (its thread still waits for its files).
 turn_aborted = False
 stale_history = None
@@ -1304,7 +1310,8 @@ for raw in sys.stdin.buffer:
     if cmd.get("type") == "prompt":
         log_tier("prompt", cmd.get("message"))
     t = cmd.get("type")
-    streaming = RUN["active"] or (turn_thread is not None and turn_thread.is_alive() and not turn_aborted)
+    active_thread = turn_thread
+    streaming = RUN["active"] or (active_thread is not None and active_thread.is_alive() and not turn_aborted)
     if t == "get_state":
         with QUEUE_LOCK:
             pending_count = len(steering) + len(follow_up)
