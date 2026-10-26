@@ -7,7 +7,7 @@ products=$1
 device=$2
 work=$(mktemp -d /tmp/shepherd-push-check.XXXXXX)
 sources=()
-while IFS= read -r file; do sources+=("$file"); done < <(find App/iOS -name '*.swift' ! -path 'App/iOS/App/ShepherdIOSApp.swift' | sort)
+while IFS= read -r file; do sources+=("$file"); done < <(find App/iOS App/Glance -name '*.swift' ! -path 'App/iOS/App/ShepherdIOSApp.swift' | sort)
 xcrun --sdk iphonesimulator swiftc -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" \
     -target arm64-apple-ios27.0-simulator -swift-version 5 -D DEBUG -Onone -I "$products" \
     "$products/ShepherdCore.o" "$products/ShepherdProtocol.o" "$products/ShepherdRemote.o" "$products/ShepherdUI.o" \

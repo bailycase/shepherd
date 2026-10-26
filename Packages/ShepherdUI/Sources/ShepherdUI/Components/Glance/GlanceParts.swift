@@ -325,6 +325,7 @@ public struct SHGlanceButtons<Button: View>: View {
 
     public var body: some View {
         HStack(spacing: SH.Space.m) {
+            // A widget archives its views: a ForEach's ids must be Encodable.
             ForEach(actions, id: \.self) { action in make(action) }
         }
     }

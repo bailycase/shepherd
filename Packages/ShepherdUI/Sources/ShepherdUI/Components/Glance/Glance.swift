@@ -279,7 +279,7 @@ public struct SHGlance: Codable, Hashable, Sendable {
 }
 
 /// A button on a glance card. The surface decides what runs it (an App Intent, a link).
-public enum SHGlanceAction: Hashable, Sendable {
+public enum SHGlanceAction: Codable, Hashable, Sendable {
     /// One of the question's options; the recommended one is the card's primary.
     case answer(String, recommended: Bool)
     /// Opens the question in the thread.
