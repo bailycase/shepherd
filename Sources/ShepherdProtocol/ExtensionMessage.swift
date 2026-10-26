@@ -126,9 +126,12 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
 
     // MARK: Designs (request/reply)
 
+    /// Existing canvases available to the calling thread. Answered with `designList`.
+    case designList(id: Int, agentID: AgentID)
+
     /// The design extension's `design_read`: the design's index, revision and board hashes
     /// (`ExtensionReply.design`), or with `path` one board's source (`designBoard`). Only the
-    /// agent drawing the design may read it. `path` stays a string so a bad one is answered
+    /// agent drawing it or an ordinary thread explicitly targeting it may read it. `path` stays a string so a bad one is answered
     /// (`invalid_path`) rather than dropped as undecodable.
     case designRead(id: Int, agentID: AgentID, designID: DesignID, path: String?)
     /// `board_write`: one board's whole source, when the design is still at `baseRevision` (nil:
@@ -238,7 +241,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case startAutomation, stopAutomation
         case listAgents, sendToAgent, spawnAgent, moveAgent, peerMessageReceived, coordinateAgent, agentResponse, cancelAgentRequest
         case suggestInstruction
-        case designRead, designWriteBoard, designEditBoard, designUpdateIndex, designComments, designCommentReply
+        case designList, designRead, designWriteBoard, designEditBoard, designUpdateIndex, designComments, designCommentReply
         case designEditBoards, designSearch, designCheckpoint, designRender, designExport, designExtract
         case designSystemRead, designSystemWrite, designProposeComments
         case designGet, designNote
@@ -457,6 +460,8 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
                 id: try c.decode(Int.self, forKey: .id),
                 automationID: try c.decode(AutomationID.self, forKey: .automationID)
             )
+        case .designList:
+            self = .designList(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID))
         case .designRead:
             self = .designRead(
                 id: try c.decode(Int.self, forKey: .id),
@@ -803,6 +808,10 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(Kind.stopAutomation, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(automationID, forKey: .automationID)
+        case .designList(let id, let agentID):
+            try c.encode(Kind.designList, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
         case .designRead(let id, let agentID, let designID, let path):
             try c.encode(Kind.designRead, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -1274,6 +1283,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
 
     /// A `designRead` without a path: the design's index, revision and board hashes.
     case design(id: Int, snapshot: DesignSnapshot)
+    case designList(id: Int, designs: [Design])
     /// A `designRead` with a path: that board's source.
     case designBoard(id: Int, board: DesignBoardSource)
     /// What a `designWriteBoard` or `designUpdateIndex` left behind.
@@ -1321,7 +1331,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case type, id, code, message, panes, pane, paneID, lines, automations, agents, text, delivery
         case runID, action, mode, scope, deadline
         case outcome
-        case snapshot, board, replaced, path
+        case snapshot, board, replaced, path, designs
         case comments, comment
         case listing, system
         case proposals
@@ -1334,7 +1344,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case projectResult
         case ok, error, panes, paneOpened, paneContent, reviewResult, automations, agents, message
         case suggestion
-        case design, designBoard, designWritten, designEdited, designComments, designComment
+        case designList, design, designBoard, designWritten, designEdited, designComments, designComment
         case designBatchEdited, designSearchResult, designCheckpoints, designRendered, designExported, designExtracted
         case designSystems, designSystem, designSystemWritten, designProposals
         case designReference, designNote
@@ -1429,6 +1439,8 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
                 id: try c.decode(Int.self, forKey: .id),
                 outcome: try c.decode(SuggestionOutcome.self, forKey: .outcome)
             )
+        case .designList:
+            self = .designList(id: try c.decode(Int.self, forKey: .id), designs: try c.decode([Design].self, forKey: .designs))
         case .design:
             self = .design(
                 id: try c.decode(Int.self, forKey: .id),
@@ -1614,6 +1626,10 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
             try c.encode(Kind.suggestion, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(outcome, forKey: .outcome)
+        case .designList(let id, let designs):
+            try c.encode(Kind.designList, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(designs, forKey: .designs)
         case .design(let id, let snapshot):
             try c.encode(Kind.design, forKey: .type)
             try c.encode(id, forKey: .id)

@@ -52,12 +52,14 @@
   - For Settings ▸ Agents ▸ Context: `SHEPHERD_EXT_CONTEXT` (the installed `shepherd-context.ts`) while Trim old tool
     output is on, and `SHEPHERD_DEFER_TOOLS=1` while Defer rarely used tools is on, for a thread's and an automation's
     agent and never a design's (docs/context-budget.md). The extensions register the browser, other-thread,
-    automation and review tools `deferred` when they read it, and the launch adds `-e builtin:tool-search`.
+    automation, review and ordinary-thread design tools `deferred` when they read it, and the launch adds `-e builtin:tool-search`.
   - Per agent: `SHEPHERD_NEEDS_NAME`, `SHEPHERD_AUTOMATION`, `SHEPHERD_MODEL`,
     `SHEPHERD_SUGGEST_FILES` (the files its `suggest_instruction` may draft a line for, while
     Settings ▸ Experiments ▸ Suggested instructions is on for its kind of agent), and, for an
     agent that draws a design, `SHEPHERD_DESIGN_ID` and `SHEPHERD_DESIGN_SKILL_DIR` (the design
     skill the app writes to the support directory's `design-skill/`; docs/designs.md).
+    Ordinary interactive threads get `SHEPHERD_DESIGN_TOOLS=1` and the skill directory while the
+    Design tool experiment is on. Their design tools require an explicit design ID on each call.
     `SHEPHERD_DESIGN_REFS` (`on`, or `granted` for a thread that already holds a design
     reference) loads design_get and design_note in a thread that draws no design, while Settings ▸
     Experiments ▸ Design tool and Settings ▸ Pi ▸ Design references are on (docs/designs.md ›

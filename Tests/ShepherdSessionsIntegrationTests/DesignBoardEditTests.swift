@@ -243,7 +243,8 @@ struct DesignBoardEditSocketTests {
         let designID = DesignID()
         var drawer = Fixture.agent(in: space, name: "Checkout funnel")
         drawer.agent.designID = designID
-        let stranger = Fixture.agent(in: space, name: "worker")
+        var stranger = Fixture.agent(in: space, name: "another design agent")
+        stranger.agent.designID = DesignID()
         try await h.seed(Fixture.workspace([drawer, stranger], space: space))
         _ = try await h.server.createDesign(Design(id: designID, name: "Checkout funnel", agentID: drawer.agent.id, createdAt: 1_000))
         await drainMainQueue()

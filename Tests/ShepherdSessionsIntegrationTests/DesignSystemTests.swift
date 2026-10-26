@@ -66,7 +66,8 @@ struct DesignSystemTests {
         drawer.agent.designID = design
         var otherDrawer = Fixture.agent(in: space, name: "Settings")
         otherDrawer.agent.designID = other
-        let stranger = Fixture.agent(in: space, name: "worker")
+        var stranger = Fixture.agent(in: space, name: "another design agent")
+        stranger.agent.designID = DesignID()
         try await h.seed(Fixture.workspace([drawer, otherDrawer, stranger], space: space))
         // The first reads the project as a system build (designs stand alone: only a build has
         // a project to read); the other is a canvas.

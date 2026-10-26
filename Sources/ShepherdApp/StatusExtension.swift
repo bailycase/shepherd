@@ -118,6 +118,7 @@ enum StatusExtension {
         instructions: (extensionPath: String, directory: String)? = nil,
         suggestFiles: [String] = [],
         design: (extensionPath: String, designID: DesignID, skillDirectory: String)? = nil,
+        designTools: (extensionPath: String, skillDirectory: String)? = nil,
         designReferences: (extensionPath: String, granted: Bool)? = nil,
         mcp: MCPLaunch? = nil,
         worktreeOwningSpace: String? = nil,
@@ -139,7 +140,7 @@ enum StatusExtension {
         let toolSearch = deferTools && mcp == nil ? ["builtin:tool-search"] : []
         // Child result delivery must run before the goal's final-settlement evaluator.
         var extensions = [extensionPath, ServiceTierExtension.path(in: home), instructions?.extensionPath, panesExtensionPath, reviewExtensionPath, subagentsExtensionPath,
-                          childrenExtensionPath, GoalExtension.path(in: home), namerExtensionPath, design?.extensionPath, designReferences?.extensionPath,
+                          childrenExtensionPath, GoalExtension.path(in: home), namerExtensionPath, design?.extensionPath ?? designTools?.extensionPath, designReferences?.extensionPath,
                           browserExtensionPath].compactMap { $0 } + (mcp?.extensions ?? toolSearch) + [contextExtensionPath].compactMap { $0 }
         if let projectContext {
             if projectContext.coordinator { extensions = [extensionPath, ServiceTierExtension.path(in: home)] }
@@ -179,6 +180,10 @@ enum StatusExtension {
         if let design {
             env["SHEPHERD_DESIGN_ID"] = design.designID.rawValue
             env["SHEPHERD_DESIGN_SKILL_DIR"] = design.skillDirectory
+        }
+        if design == nil, let designTools {
+            env["SHEPHERD_DESIGN_TOOLS"] = "1"
+            env["SHEPHERD_DESIGN_SKILL_DIR"] = designTools.skillDirectory
         }
         // A thread's design references: design_get registers itself once it holds one.
         if let designReferences { env["SHEPHERD_DESIGN_REFS"] = designReferences.granted ? "granted" : "on" }

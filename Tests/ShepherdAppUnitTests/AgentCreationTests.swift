@@ -528,6 +528,26 @@ struct AgentLaunchCommandTests {
         #expect(command().env["SHEPHERD_DEFER_TOOLS"] == nil, "no variable unless the setting asked")
     }
 
+    @Test func ordinaryDesignToolsDoNotTurnAThreadIntoADesignAgent() throws {
+        let launch = try StatusExtension.command(
+            home: Self.home, cwd: "/tmp/project", agentID: AgentID(rawValue: "agent-id"),
+            piSessionID: "current-session", socketPath: "/tmp/shepherd.sock", extensionPath: "/tmp/status.ts",
+            panesExtensionPath: "/tmp/panes.ts", reviewExtensionPath: nil, subagentsExtensionPath: nil,
+            designTools: ("/tmp/design.ts", "/tmp/design-skill"),
+            designReferences: ("/tmp/refs.ts", false), browserExtensionPath: "/tmp/browser.ts",
+            deferTools: true, model: nil, thinking: nil)
+        #expect(launch.env["SHEPHERD_DESIGN_TOOLS"] == "1")
+        #expect(launch.env["SHEPHERD_DESIGN_ID"] == nil)
+        #expect(launch.env["SHEPHERD_DESIGN_SKILL_DIR"] == "/tmp/design-skill")
+        #expect(launch.env["SHEPHERD_DESIGN_REFS"] == "on")
+        #expect(launch.env["SHEPHERD_DEFER_TOOLS"] == "1")
+        for extensionName in ["design", "panes", "browser", "refs"] {
+            #expect(launch.argv[3].contains("-e '/tmp/\(extensionName).ts'"))
+        }
+        #expect(ShellIntegration.command(shell: ["/bin/zsh"]).env["SHEPHERD_DESIGN_TOOLS"] == "")
+        #expect(command().env["SHEPHERD_DESIGN_TOOLS"] == nil)
+    }
+
     /// One setting decides a repo's .mcp.json (Settings ▸ MCP servers), and Settings ▸ Pi ▸ MCP
     /// servers decides whether pi's MCP loads at all. What an agent launches with reads the
     /// store: pi's `mcp.json` is written and each Keychain value the file refers to is handed over.
