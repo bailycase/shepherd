@@ -4,51 +4,10 @@
 
 ## Overview (iPadOverview)
 
-With no thread selected the detail is the Overview (`PadOverview`).
-
-- **Header:** "Overview" (the board's 17/600) with the summary beside it at 12.5
-  `textTertiary` ("4 need you · 6 running · 3 hosts"), leading the bar; Search and New thread
-  trailing (40pt circles, 18pt `textSecondary` glyphs).
-- **Columns:** Needs you, Running now and Finished side by side (16pt inset, 16pt apart; the app
-  12pt), each headed by its name and count (mono 11/500, uppercase, tracked 5%; Needs you in
-  `lanternText`, the others `textTertiary`). They stack when three 256pt columns don't fit, and
-  at accessibility sizes. Pull to refresh retries the hosts. An empty column shows a quiet card
-  ("Nothing is waiting on you.", "Nothing is running.", "Nothing has finished yet."); with no
-  hosts the detail is the no-hosts state.
-- **Needs you cards** (`NWAttentionCard`): `bgRaised`, a 1px `lineSubtle` line, radius 12, 10×12
-  inset, 8pt apart. The origin line: a 14pt `lanternText` glyph (a glowing 8pt `lantern` dot for
-  a blocked thread), its kind at 12 `textTertiary` ("Thread", "Automation"), its age
-  trailing; the title at 14.5/600 (the thread's name); the question
-  at 13/1.4 `textSecondary`; then the answers as 28pt buttons at radius 6, 12.5: the first
-  primary, the rest secondary. The asker's short options (up to three, each up to 32
-  characters), or Yes and No, answer in place; anything else shows Open.
-  - The board answers a subagent here ("Replace all", "Rename new"); the app draws no subagent
-    card: a subagent asks its parent, never you.
-  - **Not built yet:** a mission's card ("Mission · now", "Retry with hint", Open).
-  - The board's "Approve plan" and "Read" are the answers a plan-approval question would offer.
-    Shepherd shows them only when the asker offers them (Principles: no permission model); a
-    blocked thread with no question shows "Waiting on you" and Open.
-- **Running now:** one card per kind (`bgRaised`, a 1px `lineSubtle` line, radius 12), each
-  opening with a caption band on `bgSunken` (mono 10.5, tracked 5%, `textTertiary`, 8×12 inset):
-  "THREADS · 3", "AUTOMATIONS · 1". Rows (10×12 inset, hairlines between): the state glyph in a
-  16pt column, the title at 14/500, its clock in mono 11 `textTertiary` ("4:12", "37m"), and
-  under it, in mono 11.5 `textTertiary`, what it does now: the running command ("swift test
-  --filter toolPreview"), its subagents ("3 subagents · 1 waiting on parent"), or its command and host
-  ("swift build · This Mac"): `NWCaptionBand`, `NWOverviewRow` and `FleetThreadRow.now`; the
-  subagents are the ones still going, an asking one included. The glyph is the running spinner
-  (`NWListRow.Leading.glyph`), the branch in `running` while its subagents work, or the state's
-  dot while it waits on you (`RunningGlyph`). A running automation's row is `AutomationRow` ("Running · 4m"; the board's
-  "waiting for CI · 3 of 5 checks" needs triggers the host doesn't have). **Not built yet:**
-  "MISSIONS · 2", with each mission's lanes as a 150×14 strip.
-- **Finished:** one card under a "TODAY" caption band. Rows at least 52pt (6×12 inset): the outcome
-  glyph (14; `done` check, `failed` cross), the title at 14/500 over its outcome at 12
-  `textTertiary` ("PR #34 merged · 2h41", "3 migrations, all reversible", "1 PR failed CI"), and the
-  time of day in mono 11 `textTertiary` ("11:02"; the weekday, "Mon", for an older one). The app
-  lists finished threads newest first in that one card, under a band per day ("Today",
-  "Yesterday", a weekday, a date; `FleetFinishedDay`), each with the check, or the `failed` cross and "failed · host" for a
-  last turn that failed, "done · <folder>" otherwise, and its time; the host sends no outcome
-  ("PR #34 merged"), and finished automation runs stay under Automations. **Not built yet:** a
-  design's row ("4 boards · 1 comment resolved").
+With no thread selected the detail is `PadOverview`: an empty state ("No thread selected",
+"Pick a thread in the sidebar, or start a new one.") with a primary New thread button, or the
+no-hosts state when no host is set up. The sidebar lists every thread, so the detail repeats
+none of them. This departs from the iPadOverview board on purpose.
 
 ## Needs you (iPadInbox)
 
