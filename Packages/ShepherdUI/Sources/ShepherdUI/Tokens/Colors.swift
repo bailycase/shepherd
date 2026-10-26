@@ -7,11 +7,11 @@ import UIKit
 
 /// Every color a view uses, resolved once from a theme. Each is dynamic: it follows the light or
 /// dark appearance of the view drawing it, so an appearance change needs no re-render. Read it as
-/// `Color.nw.textPrimary` (or `.nw.textPrimary` wherever a `ShapeStyle` or `Color` is expected).
+/// `Color.sh.textPrimary` (or `.sh.textPrimary` wherever a `ShapeStyle` or `Color` is expected).
 ///
 /// Never hardcode a color in a view: add a role to `ThemeColors` (filled in both variants of
 /// every theme) or a derived color here.
-public final class NWPalette: Sendable {
+public final class SHPalette: Sendable {
     // Surfaces
     public let bgBase: Color
     public let bgWindow: Color
@@ -82,7 +82,7 @@ public final class NWPalette: Sendable {
     public let focusRing: Color
     /// A pane divider bordering the focused pane: running at 34% in both appearances.
     public let focusDivider: Color
-    /// `.nwPopover()`'s shadow, the only shadow in the system.
+    /// `.shPopover()`'s shadow, the only shadow in the system.
     public let popoverShadow: Color
     /// Behind the command palette: black at 30% in both appearances (Composer board).
     public let scrim: Color
@@ -90,10 +90,10 @@ public final class NWPalette: Sendable {
     public let sheetScrim: Color
     /// Labels on a `failed` fill (the dangerFill button, the failed count badge).
     public let textOnFailed: Color
-    /// The design canvas's selection handles: white squares on a `running` line (NWDesignTool).
+    /// The design canvas's selection handles: white squares on a `running` line (SHDesignTool).
     public let selectionHandle: Color
     /// The primary button's fill lifted on hover and sunk while pressed, and the dangerFill
-    /// button's sunk fill (the Controls board's hexes; `NWButtonFills`).
+    /// button's sunk fill (the Controls board's hexes; `SHButtonFills`).
     public let lanternHover: Color
     public let lanternPressed: Color
     public let failedPressed: Color
@@ -153,18 +153,18 @@ public final class NWPalette: Sendable {
         textPrimary = role(\.textPrimary)
         textSecondary = role(\.textSecondary)
         textTertiary = role(\.textTertiary)
-        settingsMuted = theme.id == "night-watch" ? Color(light: l.textTertiary, dark: "#767c85") : textTertiary
-        projectDivider = theme.id == "night-watch" ? Color(light: l.lineSubtle, dark: "#22262a") : lineSubtle
-        projectRowDivider = theme.id == "night-watch" ? Color(light: l.lineSubtle, dark: "#1b1e21") : lineSubtle
+        settingsMuted = theme.id == "shepherd-design" ? Color(light: l.textTertiary, dark: "#767c85") : textTertiary
+        projectDivider = theme.id == "shepherd-design" ? Color(light: l.lineSubtle, dark: "#22262a") : lineSubtle
+        projectRowDivider = theme.id == "shepherd-design" ? Color(light: l.lineSubtle, dark: "#1b1e21") : lineSubtle
         func failedTile(_ colors: ThemeColors) -> HexColor {
             let color = HexColor(colors.failed) ?? HexColor(red: 1, green: 0, blue: 1)
             return HexColor(red: color.red, green: color.green, blue: color.blue, alpha: 0.12)
         }
         subagentFailureTile = Color(light: failedTile(l), dark: failedTile(d))
-        subagentFailureBorder = theme.id == "night-watch" ? Color(light: l.failedTint, dark: "#5a2a2a") : mix(\.failed, \.bgWindow, portion: 0.34)
-        subagentChipOn = theme.id == "night-watch" ? Color(light: l.bgBubble, dark: "#23272c") : bgSelected
-        subagentChipOnBorder = theme.id == "night-watch" ? Color(light: l.lineStrong, dark: "#3a3f45") : lineStrong
-        subagentControlText = theme.id == "night-watch" ? Color(light: l.textSecondary, dark: "#c1c5cb") : textSecondary
+        subagentFailureBorder = theme.id == "shepherd-design" ? Color(light: l.failedTint, dark: "#5a2a2a") : mix(\.failed, \.bgWindow, portion: 0.34)
+        subagentChipOn = theme.id == "shepherd-design" ? Color(light: l.bgBubble, dark: "#23272c") : bgSelected
+        subagentChipOnBorder = theme.id == "shepherd-design" ? Color(light: l.lineStrong, dark: "#3a3f45") : lineStrong
+        subagentControlText = theme.id == "shepherd-design" ? Color(light: l.textSecondary, dark: "#c1c5cb") : textSecondary
         projectCookieDanger = mix(\.failed, \.textPrimary, portion: 0.8)
         projectCookieConfirm = mix(\.failed, \.textOnLantern, portion: 0.75)
         projectCookieConfirmHover = mix(\.failed, \.textOnLantern, portion: 0.75, brightness: 0.94)
@@ -173,13 +173,13 @@ public final class NWPalette: Sendable {
         let shadeDark = HexColor(d.bgBase) ?? HexColor(red: 1, green: 0, blue: 1)
         projectCookieShade = Color(light: HexColor(red: shadeLight.red, green: shadeLight.green, blue: shadeLight.blue, alpha: 0.65),
                                    dark: HexColor(red: shadeDark.red, green: shadeDark.green, blue: shadeDark.blue, alpha: 0.65))
-        tabTileViolet = theme.id == "night-watch" ? Color(light: "#635bff", dark: "#635bff") : syn(\.keyword)
-        tabTileOrange = theme.id == "night-watch" ? Color(light: "#f46800", dark: "#f46800") : role(\.lantern)
-        projectEditorBackground = theme.id == "night-watch" ? Color(light: l.bgSunken, dark: "#111316") : bgSunken
-        projectEditorHeader = theme.id == "night-watch" ? Color(light: l.bgRaised, dark: "#15171a") : bgRaised
-        projectMarkdownHeading = theme.id == "night-watch" ? Color(light: ls.type, dark: "#79aaff") : syn(\.type)
-        projectMarkdownCode = theme.id == "night-watch" ? Color(light: ls.string, dark: "#efb550") : syn(\.string)
-        projectInstructionText = theme.id == "night-watch" ? Color(light: l.textPrimary, dark: "#b7bec7") : textSecondary
+        tabTileViolet = theme.id == "shepherd-design" ? Color(light: "#635bff", dark: "#635bff") : syn(\.keyword)
+        tabTileOrange = theme.id == "shepherd-design" ? Color(light: "#f46800", dark: "#f46800") : role(\.lantern)
+        projectEditorBackground = theme.id == "shepherd-design" ? Color(light: l.bgSunken, dark: "#111316") : bgSunken
+        projectEditorHeader = theme.id == "shepherd-design" ? Color(light: l.bgRaised, dark: "#15171a") : bgRaised
+        projectMarkdownHeading = theme.id == "shepherd-design" ? Color(light: ls.type, dark: "#79aaff") : syn(\.type)
+        projectMarkdownCode = theme.id == "shepherd-design" ? Color(light: ls.string, dark: "#efb550") : syn(\.string)
+        projectInstructionText = theme.id == "shepherd-design" ? Color(light: l.textPrimary, dark: "#b7bec7") : textSecondary
         textOnLantern = role(\.textOnLantern)
         lantern = role(\.lantern)
         lanternText = role(\.lanternText)
@@ -216,9 +216,9 @@ public final class NWPalette: Sendable {
         sheetScrim = Color(light: sheetBlack, dark: sheetBlack)
         textOnFailed = Color(light: "#ffffff", dark: "#ffffff")
         selectionHandle = Color(light: "#ffffff", dark: "#ffffff")
-        lanternHover = Color(light: NWButtonFills.lanternHover.light, dark: NWButtonFills.lanternHover.dark)
-        lanternPressed = Color(light: NWButtonFills.lanternPressed.light, dark: NWButtonFills.lanternPressed.dark)
-        failedPressed = Color(light: NWButtonFills.failedPressed.light, dark: NWButtonFills.failedPressed.dark)
+        lanternHover = Color(light: SHButtonFills.lanternHover.light, dark: SHButtonFills.lanternHover.dark)
+        lanternPressed = Color(light: SHButtonFills.lanternPressed.light, dark: SHButtonFills.lanternPressed.dark)
+        failedPressed = Color(light: SHButtonFills.failedPressed.light, dark: SHButtonFills.failedPressed.dark)
         knobOn = Color(light: "#ffffff", dark: "#ffffff")
         knobOff = Color(light: "#ffffff", dark: "#c9ccd1")
         knobShadow = Color(light: HexColor(red: 0, green: 0, blue: 0, alpha: 0.2), dark: HexColor(red: 0, green: 0, blue: 0, alpha: 0.3))
@@ -242,7 +242,7 @@ public final class NWPalette: Sendable {
 
 /// The filled buttons' hover and pressed fills, as the Controls board draws them (light, dark):
 /// primary lifts on hover and sinks while pressed; dangerFill stays put on hover and sinks.
-enum NWButtonFills {
+enum SHButtonFills {
     static let lanternHover = (light: "#eca63a", dark: "#f7b84f")
     static let lanternPressed = (light: "#cf8a1c", dark: "#d9922a")
     static let failedPressed = (light: "#bf3a35", dark: "#d24f4b")
@@ -274,7 +274,7 @@ extension Color {
 }
 
 extension ShapeStyle where Self == Color {
-    /// The current theme's resolved palette: `Color.nw.textPrimary`, or `.nw.textSecondary`
+    /// The current theme's resolved palette: `Color.sh.textPrimary`, or `.sh.textSecondary`
     /// wherever a `Color` or `ShapeStyle` is expected.
-    @MainActor public static var nw: NWPalette { ThemeStore.shared.palette }
+    @MainActor public static var sh: SHPalette { ThemeStore.shared.palette }
 }

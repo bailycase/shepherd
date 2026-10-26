@@ -9,7 +9,7 @@ import UIKit
 ///
 /// Fingers and pointers only: an Apple Pencil's touches pass through to whatever sits over the
 /// canvas for them (the Pencil markup layer), so ink never pans the canvas.
-struct NWCanvasTouchInput: UIViewRepresentable {
+struct SHCanvasTouchInput: UIViewRepresentable {
     struct Handlers {
         var pan: (CGSize) -> Void
         var zoom: (CGFloat, CGPoint) -> Void
@@ -22,7 +22,7 @@ struct NWCanvasTouchInput: UIViewRepresentable {
         var zooming: (Bool) -> Void
     }
 
-    let tool: NWCanvasTool
+    let tool: SHCanvasTool
     let handlers: Handlers
 
     /// The touch types the canvas takes: fingers, and a trackpad's or mouse's pointer.
@@ -42,7 +42,7 @@ struct NWCanvasTouchInput: UIViewRepresentable {
 
     final class InputView: UIView, UIGestureRecognizerDelegate {
         var handlers: Handlers?
-        var tool: NWCanvasTool = .select
+        var tool: SHCanvasTool = .select
         private var lastTranslation: CGPoint = .zero
         private var grabbed: String?
         private var lastScale: CGFloat = 1
@@ -51,17 +51,17 @@ struct NWCanvasTouchInput: UIViewRepresentable {
             super.init(frame: frame)
             backgroundColor = .clear
             let pan = UIPanGestureRecognizer(target: self, action: #selector(panned(_:)))
-            pan.allowedTouchTypes = NWCanvasTouchInput.touchTypes
+            pan.allowedTouchTypes = SHCanvasTouchInput.touchTypes
             pan.allowedScrollTypesMask = .continuous
             pan.maximumNumberOfTouches = 2
             pan.delegate = self
             addGestureRecognizer(pan)
             let pinch = UIPinchGestureRecognizer(target: self, action: #selector(pinched(_:)))
-            pinch.allowedTouchTypes = NWCanvasTouchInput.touchTypes
+            pinch.allowedTouchTypes = SHCanvasTouchInput.touchTypes
             pinch.delegate = self
             addGestureRecognizer(pinch)
             let tap = UITapGestureRecognizer(target: self, action: #selector(tapped(_:)))
-            tap.allowedTouchTypes = NWCanvasTouchInput.touchTypes
+            tap.allowedTouchTypes = SHCanvasTouchInput.touchTypes
             addGestureRecognizer(tap)
         }
 

@@ -20,7 +20,7 @@ struct DesignSystemPresentationTests {
     }
 
     @Test func aSystemNeverReadFromAProjectSaysNothing() {
-        #expect(DesignSystemPresentation.synced(DesignSystemInfo(namespace: "night-watch", title: "Night Watch", createdAt: 0)) == nil)
+        #expect(DesignSystemPresentation.synced(DesignSystemInfo(namespace: "shepherd-design", title: "Shepherd Design", createdAt: 0)) == nil)
     }
 
     @Test func countsAndDetailsReadAsThePageShowsThem() {

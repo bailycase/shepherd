@@ -36,17 +36,17 @@ struct DesignSystemReferencePage: View {
     @State private var group: String?
 
     /// Column widths, nil where the column takes what is left: the boards' name column is fixed.
-    private static let nameAndRest: [CGFloat?] = [AppLayout.referenceNameColumn + NW.Space.xxl * 2, nil]
-    private static let componentName: [CGFloat?] = [AppLayout.referenceComponentNameColumn + NW.Space.xxl * 2, nil]
-    private static let valueShape: [CGFloat?] = [AppLayout.referenceNameColumn + NW.Space.xxl * 2, nil,
-                                                 AppLayout.referenceShapeColumn + NW.Space.xxl * 2]
-    private static let valueNote: [CGFloat?] = [AppLayout.referenceNameColumn + NW.Space.xxl * 2, nil,
-                                                AppLayout.referenceNoteColumn + NW.Space.xxl * 2]
+    private static let nameAndRest: [CGFloat?] = [AppLayout.referenceNameColumn + SH.Space.xxl * 2, nil]
+    private static let componentName: [CGFloat?] = [AppLayout.referenceComponentNameColumn + SH.Space.xxl * 2, nil]
+    private static let valueShape: [CGFloat?] = [AppLayout.referenceNameColumn + SH.Space.xxl * 2, nil,
+                                                 AppLayout.referenceShapeColumn + SH.Space.xxl * 2]
+    private static let valueNote: [CGFloat?] = [AppLayout.referenceNameColumn + SH.Space.xxl * 2, nil,
+                                                AppLayout.referenceNoteColumn + SH.Space.xxl * 2]
 
     private var scheme: ColorScheme { appearance ?? system }
 
     var body: some View {
-        let _ = NWRenderProbe.tick("page.designSystemReference")
+        let _ = SHRenderProbe.tick("page.designSystemReference")
         VStack(spacing: 0) {
             header
             GeometryReader { area in
@@ -55,7 +55,7 @@ struct DesignSystemReferencePage: View {
                         ScrollView(.vertical) {
                             content
                                 .frame(maxWidth: AppLayout.referenceColumnWidth)
-                                .padding(.horizontal, NW.Space.xxxl)
+                                .padding(.horizontal, SH.Space.xxxl)
                                 .padding(.top, AppLayout.referenceTopPadding)
                                 .padding(.bottom, AppLayout.referenceBottomPadding)
                                 .frame(maxWidth: .infinity)
@@ -69,28 +69,28 @@ struct DesignSystemReferencePage: View {
                 }
             }
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .environment(\.colorScheme, scheme)
     }
 
     // MARK: Header
 
     private var header: some View {
-        NWDesignHeader(reference.title, style: .page, section: "Design systems", status: model.status, leadingInset: chrome.leadingInset,
+        SHDesignHeader(reference.title, style: .page, section: "Design systems", status: model.status, leadingInset: chrome.leadingInset,
                        sidebar: chrome.showSidebar, sidebarShortcut: KeybindingsStore.shared.display(.toggleSidebar),
                        designs: { vm.openDestination(.designs) }) {
-            NWSegmentedPicker("Appearance", selection: Binding(get: { scheme }, set: { appearance = $0 }),
+            SHSegmentedPicker("Appearance", selection: Binding(get: { scheme }, set: { appearance = $0 }),
                               options: [(ColorScheme.dark, "Dark"), (ColorScheme.light, "Light")])
             if model.canResync, let namespace = model.namespace {
                 Button("Re-sync", systemImage: "arrow.clockwise") { vm.resyncDesignSystem(namespace) }
-                    .buttonStyle(.nw(.secondary))
+                    .buttonStyle(.sh(.secondary))
                     .disabled(model.syncing)
                     .help("Read \(namespace)'s stylesheets again from its project")
             }
             Button("New design") { vm.openNewDesign(system: model.namespace) }
-                .buttonStyle(.nw(.primary))
+                .buttonStyle(.sh(.primary))
             if let namespace = model.namespace {
-                NWDesignToolbarMore(label: "More for \(reference.title)") {
+                SHDesignToolbarMore(label: "More for \(reference.title)") {
                     DesignMenuItems(menu: vm.designSystemMenu(.system(namespace))) { vm.performDesignSystemMenu($0, on: .system(namespace)) }
                 }
             }
@@ -102,15 +102,15 @@ struct DesignSystemReferencePage: View {
     /// The contents menu: the parts, then the designs using the system. It is as tall as its content up to the
     /// room under its button, then scrolls, so the last of many designs is always reachable in a short window.
     private func contents(height: CGFloat, select: @escaping (DesignSystemReference.Part) -> Void) -> some View {
-        VStack(alignment: .leading, spacing: NW.Space.xs) {
+        VStack(alignment: .leading, spacing: SH.Space.xs) {
             Button { menuOpen.toggle() } label: { Image(systemName: "list.bullet") }
-                .buttonStyle(.nw(.raised))
+                .buttonStyle(.sh(.raised))
                 .accessibilityLabel("Contents")
-                .nwHelp("Contents")
+                .shHelp("Contents")
             if menuOpen {
                 ScrollView(.vertical) {
-                    VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                        Text(reference.title).nwSectionLabel().padding(.horizontal, NW.Space.m).padding(.vertical, NW.Space.s)
+                    VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                        Text(reference.title).shSectionLabel().padding(.horizontal, SH.Space.m).padding(.vertical, SH.Space.s)
                         ForEach(reference.parts) { part in
                             menuRow(part.title, count: reference.count(part), selected: part == current) {
                                 current = part
@@ -118,8 +118,8 @@ struct DesignSystemReferencePage: View {
                             }
                         }
                         if !reference.used.isEmpty {
-                            NWHairline().padding(.vertical, NW.Space.s).padding(.horizontal, NW.Space.m)
-                            Text("Used by").nwSectionLabel().padding(.horizontal, NW.Space.m).padding(.vertical, NW.Space.s)
+                            SHHairline().padding(.vertical, SH.Space.s).padding(.horizontal, SH.Space.m)
+                            Text("Used by").shSectionLabel().padding(.horizontal, SH.Space.m).padding(.vertical, SH.Space.s)
                             ForEach(reference.used) { design in
                                 menuRow(design.name, count: design.boards, selected: false) {
                                     menuOpen = false
@@ -128,13 +128,13 @@ struct DesignSystemReferencePage: View {
                             }
                         }
                     }
-                    .padding(NW.Space.s)
+                    .padding(SH.Space.s)
                 }
                 .scrollIndicators(.automatic)
                 .frame(width: AppLayout.referenceMenuWidth)
-                .frame(maxHeight: max(height - NW.Height.controlM - AppLayout.referenceMenuInset * 2 - NW.Space.xs, NW.Height.row * 3))
+                .frame(maxHeight: max(height - SH.Height.controlM - AppLayout.referenceMenuInset * 2 - SH.Space.xs, SH.Height.row * 3))
                 .fixedSize(horizontal: false, vertical: true)
-                .nwPopover()
+                .shPopover()
             }
         }
         .padding(AppLayout.referenceMenuInset)
@@ -143,17 +143,17 @@ struct DesignSystemReferencePage: View {
 
     private func menuRow(_ title: String, count: Int?, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: NW.Space.m) {
-                Text(title).font(.nw(.ui, weight: selected ? .semibold : nil))
-                    .foregroundStyle(selected ? Color.nw.textPrimary : Color.nw.textSecondary).lineLimit(1)
-                Spacer(minLength: NW.Space.m)
-                if let count { Text("\(count)").font(.nw(.micro)).foregroundStyle(Color.nw.textTertiary) }
+            HStack(spacing: SH.Space.m) {
+                Text(title).font(.sh(.ui, weight: selected ? .semibold : nil))
+                    .foregroundStyle(selected ? Color.sh.textPrimary : Color.sh.textSecondary).lineLimit(1)
+                Spacer(minLength: SH.Space.m)
+                if let count { Text("\(count)").font(.sh(.micro)).foregroundStyle(Color.sh.textTertiary) }
             }
-            .padding(.horizontal, NW.Space.m)
-            .frame(height: NW.Height.row)
+            .padding(.horizontal, SH.Space.m)
+            .frame(height: SH.Height.row)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.nwRow(selected: selected))
+        .buttonStyle(.shRow(selected: selected))
     }
 
     // MARK: Content
@@ -179,60 +179,60 @@ struct DesignSystemReferencePage: View {
     }
 
     private var hero: some View {
-        let rowHeight = (AppLayout.referenceHeroHeight - NW.Space.xxxl * 2 - NW.Space.m * (AppLayout.referenceHeroRows - 1)) / AppLayout.referenceHeroRows
+        let rowHeight = (AppLayout.referenceHeroHeight - SH.Space.xxxl * 2 - SH.Space.m * (AppLayout.referenceHeroRows - 1)) / AppLayout.referenceHeroRows
         let tile = AppLayout.referenceHeroTileWidth
-        let nw = Color.nw
+        let sh = Color.sh
         return ZStack(alignment: .bottomLeading) {
-            VStack(alignment: .leading, spacing: NW.Space.m) {
+            VStack(alignment: .leading, spacing: SH.Space.m) {
                 Text(reference.title)
-                    .font(.nwSans(AppLayout.referenceHeroNameSize, .bold))
+                    .font(.shSans(AppLayout.referenceHeroNameSize, .bold))
                     .tracking(-AppLayout.referenceHeroNameSize * 0.035)
-                    .foregroundStyle(nw.textPrimary)
+                    .foregroundStyle(sh.textPrimary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
                     .accessibilityAddTraits(.isHeader)
                 if let tagline = reference.tagline {
-                    Text(tagline).font(.nw(.body)).foregroundStyle(nw.textSecondary)
+                    Text(tagline).font(.sh(.body)).foregroundStyle(sh.textSecondary)
                 }
             }
             // Clear of the art, which the name and tagline never run under at any text size.
-            .padding(.trailing, reference.tiles.isEmpty ? 0 : tile * 4 + NW.Space.m * 3 + NW.Space.xxxl)
+            .padding(.trailing, reference.tiles.isEmpty ? 0 : tile * 4 + SH.Space.m * 3 + SH.Space.xxxl)
             .frame(maxWidth: .infinity, alignment: .bottomLeading)
             if !reference.tiles.isEmpty {
-                HStack(alignment: .top, spacing: NW.Space.m) {
-                    VStack(spacing: NW.Space.m) {
-                        heroTile(0).frame(width: tile * 2 + NW.Space.m, height: rowHeight * 2 + NW.Space.m)
-                        HStack(spacing: NW.Space.m) {
+                HStack(alignment: .top, spacing: SH.Space.m) {
+                    VStack(spacing: SH.Space.m) {
+                        heroTile(0).frame(width: tile * 2 + SH.Space.m, height: rowHeight * 2 + SH.Space.m)
+                        HStack(spacing: SH.Space.m) {
                             heroTile(4).frame(width: tile, height: rowHeight)
                             heroTile(5).frame(width: tile, height: rowHeight)
                         }
                     }
                     VStack(spacing: 0) {
-                        Spacer().frame(height: rowHeight + NW.Space.m)
-                        heroTile(1).frame(width: tile, height: rowHeight * 2 + NW.Space.m)
+                        Spacer().frame(height: rowHeight + SH.Space.m)
+                        heroTile(1).frame(width: tile, height: rowHeight * 2 + SH.Space.m)
                     }
-                    VStack(spacing: NW.Space.m) {
+                    VStack(spacing: SH.Space.m) {
                         heroTile(2).frame(width: tile, height: rowHeight)
-                        heroTile(3, bordered: true).frame(width: tile, height: rowHeight * 2 + NW.Space.m)
+                        heroTile(3, bordered: true).frame(width: tile, height: rowHeight * 2 + SH.Space.m)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                 .accessibilityHidden(true)
             }
         }
-        .padding(NW.Space.xxxl)
+        .padding(SH.Space.xxxl)
         .frame(height: AppLayout.referenceHeroHeight)
-        .background(nw.bgBase, in: RoundedRectangle(cornerRadius: NW.Radius.l))
-        .overlay { RoundedRectangle(cornerRadius: NW.Radius.l).strokeBorder(nw.lineSubtle) }
+        .background(sh.bgBase, in: RoundedRectangle(cornerRadius: SH.Radius.l))
+        .overlay { RoundedRectangle(cornerRadius: SH.Radius.l).strokeBorder(sh.lineSubtle) }
     }
 
     /// One of the hero's tiles, in the system's own color for the page's appearance; empty when it has none.
     @ViewBuilder
     private func heroTile(_ index: Int, bordered: Bool = false) -> some View {
-        let shape = RoundedRectangle(cornerRadius: NW.Radius.m)
+        let shape = RoundedRectangle(cornerRadius: SH.Radius.m)
         if reference.tiles.indices.contains(index), let tile = reference.tiles[index] {
             shape.fill(Color(light: tile.light, dark: tile.dark))
-                .overlay { if bordered { shape.strokeBorder(Color.nw.lineStrong) } }
+                .overlay { if bordered { shape.strokeBorder(Color.sh.lineStrong) } }
         } else {
             Color.clear
         }
@@ -240,9 +240,9 @@ struct DesignSystemReferencePage: View {
 
     /// The system's summary, then where it came from: its own words when it says, else what Shepherd knows.
     private var lead: some View {
-        VStack(alignment: .leading, spacing: NW.Space.s) {
+        VStack(alignment: .leading, spacing: SH.Space.s) {
             if let summary = reference.summary {
-                Text(summary).nwText(.body).foregroundStyle(Color.nw.textSecondary)
+                Text(summary).shText(.body).foregroundStyle(Color.sh.textSecondary)
             }
             Group {
                 if let source = reference.source {
@@ -251,22 +251,22 @@ struct DesignSystemReferencePage: View {
                     DesignSystemContent.sourceLine(model.source)
                 }
             }
-            .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+            .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
         }
     }
 
     private var principles: some View {
-        VStack(alignment: .leading, spacing: NW.Space.m) {
-            Text("Principles").font(.nw(.title)).foregroundStyle(Color.nw.textPrimary).accessibilityAddTraits(.isHeader)
-            bullets(reference.principles.map { Text("\(Text($0.lead).fontWeight(.semibold).foregroundStyle(Color.nw.textPrimary)) \($0.text)") })
+        VStack(alignment: .leading, spacing: SH.Space.m) {
+            Text("Principles").font(.sh(.title)).foregroundStyle(Color.sh.textPrimary).accessibilityAddTraits(.isHeader)
+            bullets(reference.principles.map { Text("\(Text($0.lead).fontWeight(.semibold).foregroundStyle(Color.sh.textPrimary)) \($0.text)") })
         }
     }
 
     private var voice: some View {
-        VStack(alignment: .leading, spacing: NW.Space.m) {
-            Text("Voice").font(.nw(.title)).foregroundStyle(Color.nw.textPrimary).accessibilityAddTraits(.isHeader)
+        VStack(alignment: .leading, spacing: SH.Space.m) {
+            Text("Voice").font(.sh(.title)).foregroundStyle(Color.sh.textPrimary).accessibilityAddTraits(.isHeader)
             if let lead = reference.voiceLead {
-                Text(lead).nwText(.body).foregroundStyle(Color.nw.textSecondary)
+                Text(lead).shText(.body).foregroundStyle(Color.sh.textSecondary)
             }
             if !reference.examples.isEmpty {
                 VStack(spacing: 0) {
@@ -275,8 +275,8 @@ struct DesignSystemReferencePage: View {
                         HStack(spacing: 0) { sayCell("“\(example.say)”"); sayCell("“\(example.avoid)”", leading: true) }
                     }
                 }
-                .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
-                .overlay { RoundedRectangle(cornerRadius: NW.Radius.m).strokeBorder(Color.nw.lineSubtle) }
+                .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
+                .overlay { RoundedRectangle(cornerRadius: SH.Radius.m).strokeBorder(Color.sh.lineSubtle) }
                 .accessibilityElement(children: .contain)
             }
             bullets(reference.voiceRules.map { Text(verbatim: $0) })
@@ -285,22 +285,22 @@ struct DesignSystemReferencePage: View {
 
     private func sayCell(_ text: String, header: Bool = false, leading: Bool = false) -> some View {
         Text(verbatim: text)
-            .font(.nw(.body, weight: header ? .medium : nil))
-            .foregroundStyle(header ? Color.nw.textSecondary : Color.nw.textPrimary)
-            .padding(.horizontal, NW.Space.l).padding(.vertical, NW.Space.m)
+            .font(.sh(.body, weight: header ? .medium : nil))
+            .foregroundStyle(header ? Color.sh.textSecondary : Color.sh.textPrimary)
+            .padding(.horizontal, SH.Space.l).padding(.vertical, SH.Space.m)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .background(header ? Color.nw.bgSunken : .clear)
-            .overlay(alignment: .top) { NWHairline() }
-            .overlay(alignment: .leading) { if leading { NWHairline(.vertical) } }
+            .background(header ? Color.sh.bgSunken : .clear)
+            .overlay(alignment: .top) { SHHairline() }
+            .overlay(alignment: .leading) { if leading { SHHairline(.vertical) } }
     }
 
     private func bullets(_ items: [Text]) -> some View {
-        VStack(alignment: .leading, spacing: NW.Space.s) {
+        VStack(alignment: .leading, spacing: SH.Space.s) {
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
-                    Circle().fill(Color.nw.textTertiary).frame(width: NW.Space.s - NW.Space.xxs, height: NW.Space.s - NW.Space.xxs)
+                HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+                    Circle().fill(Color.sh.textTertiary).frame(width: SH.Space.s - SH.Space.xxs, height: SH.Space.s - SH.Space.xxs)
                         .accessibilityHidden(true)
-                    item.nwText(.body).foregroundStyle(Color.nw.textSecondary)
+                    item.shText(.body).foregroundStyle(Color.sh.textSecondary)
                 }
             }
         }
@@ -312,60 +312,60 @@ struct DesignSystemReferencePage: View {
                                                     @ViewBuilder accessory: () -> Accessory = { EmptyView() },
                                                     @ViewBuilder _ body: () -> Body) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: NW.Space.m) {
-                Text(title).font(.nwSans(AppLayout.referenceCardTitleSize, .semibold)).foregroundStyle(Color.nw.textPrimary)
+            HStack(spacing: SH.Space.m) {
+                Text(title).font(.shSans(AppLayout.referenceCardTitleSize, .semibold)).foregroundStyle(Color.sh.textPrimary)
                     .accessibilityAddTraits(.isHeader)
-                Text(sub).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary).padding(.leading, NW.Space.m)
-                Spacer(minLength: NW.Space.m)
+                Text(sub).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).padding(.leading, SH.Space.m)
+                Spacer(minLength: SH.Space.m)
                 accessory()
             }
-            .padding(.horizontal, NW.Space.xxl).padding(.top, NW.Space.xxl).padding(.bottom, NW.Space.xl)
+            .padding(.horizontal, SH.Space.xxl).padding(.top, SH.Space.xxl).padding(.bottom, SH.Space.xl)
             body()
         }
-        .nwCard(radius: NW.Radius.l)
+        .shCard(radius: SH.Radius.l)
         .id(part.id)
     }
 
     private func header(_ titles: [String], widths: [CGFloat?] = []) -> some View {
         HStack(spacing: 0) {
             ForEach(Array(titles.enumerated()), id: \.offset) { index, title in
-                Text(title).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
-                    .padding(.horizontal, NW.Space.xxl).padding(.vertical, NW.Space.m)
+                Text(title).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                    .padding(.horizontal, SH.Space.xxl).padding(.vertical, SH.Space.m)
                     .frame(width: widths.indices.contains(index) ? widths[index] : nil, alignment: .leading)
                     .frame(maxWidth: widths.indices.contains(index) && widths[index] != nil ? nil : .infinity, alignment: .leading)
-                    .overlay(alignment: .leading) { if index > 0 { NWHairline(.vertical) } }
+                    .overlay(alignment: .leading) { if index > 0 { SHHairline(.vertical) } }
             }
         }
-        .overlay(alignment: .top) { NWHairline() }
-        .overlay(alignment: .bottom) { NWHairline() }
+        .overlay(alignment: .top) { SHHairline() }
+        .overlay(alignment: .bottom) { SHHairline() }
     }
 
     private func row(_ cells: [AnyView], widths: [CGFloat?] = []) -> some View {
         HStack(spacing: 0) {
             ForEach(Array(cells.enumerated()), id: \.offset) { index, cell in
                 cell
-                    .padding(.horizontal, NW.Space.xxl).padding(.vertical, NW.Space.m)
+                    .padding(.horizontal, SH.Space.xxl).padding(.vertical, SH.Space.m)
                     .frame(width: widths.indices.contains(index) ? widths[index] : nil, alignment: .leading)
                     .frame(maxWidth: widths.indices.contains(index) && widths[index] != nil ? nil : .infinity, alignment: .leading)
-                    .overlay(alignment: .leading) { if index > 0 { NWHairline(.vertical) } }
+                    .overlay(alignment: .leading) { if index > 0 { SHHairline(.vertical) } }
             }
         }
-        .overlay(alignment: .bottom) { NWHairline() }
+        .overlay(alignment: .bottom) { SHHairline() }
     }
 
     private func name(_ text: String) -> AnyView {
-        AnyView(Text(text).font(.nw(.mono)).foregroundStyle(Color.nw.textPrimary).lineLimit(1).truncationMode(.middle)
-            .frame(minHeight: NW.Height.controlM))
+        AnyView(Text(text).font(.sh(.mono)).foregroundStyle(Color.sh.textPrimary).lineLimit(1).truncationMode(.middle)
+            .frame(minHeight: SH.Height.controlM))
     }
 
     private func groupHeader(_ title: String, count: Int, hint: String? = nil) -> some View {
-        HStack(spacing: NW.Space.s) {
-            Text(title).font(.nw(.ui, weight: .semibold)).foregroundStyle(Color.nw.textPrimary)
-            Text("\(count)").font(.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
-            if let hint { Text(hint).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary).padding(.leading, NW.Space.xs) }
+        HStack(spacing: SH.Space.s) {
+            Text(title).font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.textPrimary)
+            Text("\(count)").font(.sh(.micro)).foregroundStyle(Color.sh.textTertiary)
+            if let hint { Text(hint).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).padding(.leading, SH.Space.xs) }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, NW.Space.xxl).padding(.top, NW.Space.l).padding(.bottom, NW.Space.m)
+        .padding(.horizontal, SH.Space.xxl).padding(.top, SH.Space.l).padding(.bottom, SH.Space.m)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
     }
@@ -401,15 +401,15 @@ struct DesignSystemReferencePage: View {
     }
 
     private func typeSample(_ style: DesignSystemReference.TypeRow) -> some View {
-        VStack(alignment: .leading, spacing: NW.Space.s) {
+        VStack(alignment: .leading, spacing: SH.Space.s) {
             Text(style.sample)
                 .font(Self.font(style))
                 .tracking(style.uppercase ? CGFloat(style.size) * 0.04 : 0)
-                .foregroundStyle(Color.nw.textPrimary)
+                .foregroundStyle(Color.sh.textPrimary)
                 .lineLimit(1)
-            Text(style.tag).font(.nw(.caption)).foregroundStyle(Color.nw.textSecondary)
-                .padding(.horizontal, NW.Space.s).frame(height: NW.Space.xl + NW.Space.xs)
-                .nwBorder(Color.nw.lineStrong, radius: NW.Radius.xs)
+            Text(style.tag).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+                .padding(.horizontal, SH.Space.s).frame(height: SH.Space.xl + SH.Space.xs)
+                .shBorder(Color.sh.lineStrong, radius: SH.Radius.xs)
         }
         .accessibilityElement(children: .combine)
     }
@@ -420,10 +420,10 @@ struct DesignSystemReferencePage: View {
         let size = CGFloat(min(max(style.size, 1), AppLayout.designSystemSpecimenMaxSize))
         let weight = DesignSystemContent.weight(style.weight)
         switch style.family {
-        case NWFonts.sansFamily?: return .nwSans(size, weight)
-        case NWFonts.monoFamily?: return .nwMono(size, weight)
+        case SHFonts.sansFamily?: return .shSans(size, weight)
+        case SHFonts.monoFamily?: return .shMono(size, weight)
         case let family?: return Font.custom(family, size: size).weight(weight)
-        case nil: return .nwSans(size, weight)
+        case nil: return .shSans(size, weight)
         }
     }
 
@@ -435,9 +435,9 @@ struct DesignSystemReferencePage: View {
             ForEach(reference.spacing) { step in
                 row([name(step.name), AnyView(ValueChip(value: DesignSystemReference.number(step.px), unit: "px")
                         .frame(width: AppLayout.referenceValueChipWidth)),
-                     AnyView(RoundedRectangle(cornerRadius: NW.Radius.xs).fill(Color.nw.running)
-                        .frame(width: min(step.px * AppLayout.referenceBarScale, AppLayout.referenceShapeColumn), height: NW.Space.m)
-                        .frame(minHeight: NW.Height.controlM).accessibilityHidden(true))], widths: Self.valueShape)
+                     AnyView(RoundedRectangle(cornerRadius: SH.Radius.xs).fill(Color.sh.running)
+                        .frame(width: min(step.px * AppLayout.referenceBarScale, AppLayout.referenceShapeColumn), height: SH.Space.m)
+                        .frame(minHeight: SH.Height.controlM).accessibilityHidden(true))], widths: Self.valueShape)
             }
         }
     }
@@ -447,13 +447,13 @@ struct DesignSystemReferencePage: View {
             header(["Name", "Value", "Shape"], widths: Self.valueShape)
             ForEach(reference.radii) { step in
                 row([name(step.name),
-                     AnyView(HStack(spacing: NW.Space.m) {
+                     AnyView(HStack(spacing: SH.Space.m) {
                          ValueChip(value: DesignSystemReference.number(step.px), unit: "px")
                              .frame(width: AppLayout.referenceValueChipWidth)
-                         if !step.use.isEmpty { Text(step.use).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary) }
+                         if !step.use.isEmpty { Text(step.use).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary) }
                      }),
-                     AnyView(RoundedRectangle(cornerRadius: step.px).fill(Color.nw.bgSunken)
-                        .overlay { RoundedRectangle(cornerRadius: step.px).strokeBorder(Color.nw.lineStrong) }
+                     AnyView(RoundedRectangle(cornerRadius: step.px).fill(Color.sh.bgSunken)
+                        .overlay { RoundedRectangle(cornerRadius: step.px).strokeBorder(Color.sh.lineStrong) }
                         .frame(width: AppLayout.referenceRadiusSample.width, height: AppLayout.referenceRadiusSample.height)
                         .accessibilityHidden(true))], widths: Self.valueShape)
             }
@@ -465,8 +465,8 @@ struct DesignSystemReferencePage: View {
             header(["Name", "Value", "Used for"], widths: Self.valueNote)
             ForEach(reference.sizes) { size in
                 row([name(size.name), AnyView(ValueChip(value: size.value)),
-                     AnyView(Text(size.use).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
-                        .frame(minHeight: NW.Height.controlM, alignment: .leading))], widths: Self.valueNote)
+                     AnyView(Text(size.use).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                        .frame(minHeight: SH.Height.controlM, alignment: .leading))], widths: Self.valueNote)
             }
         }
     }
@@ -477,7 +477,7 @@ struct DesignSystemReferencePage: View {
     @ViewBuilder
     private var groups: some View {
         if reference.componentGroups.count > 1 {
-            NWPopupMenu(group ?? Self.allGroups) {
+            SHPopupMenu(group ?? Self.allGroups) {
                 Button(Self.allGroups) { group = nil }
                 ForEach(reference.componentGroups, id: \.self) { name in
                     Button(name) { group = name }
@@ -494,22 +494,22 @@ struct DesignSystemReferencePage: View {
         return LazyVStack(spacing: 0) {
             header(["Name", "Preview"], widths: Self.componentName)
             ForEach(shown) { component in
-                row([AnyView(VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                    Text(component.name).font(.nw(.ui, weight: .semibold)).foregroundStyle(Color.nw.textPrimary)
+                row([AnyView(VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                    Text(component.name).font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.textPrimary)
                     if let export = component.export {
-                        Text(export).font(.nw(.mono)).foregroundStyle(Color.nw.textTertiary).lineLimit(2)
+                        Text(export).font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary).lineLimit(2)
                     }
                 }), AnyView(ReferenceSpecimen(namespace: reference.namespace, component: component.id,
                                               specimens: vm.designRendering.specimens)
                     // A specimen is a picture of the component: it takes no press and is one element to VoiceOver.
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("\(component.name) specimen")
-                    .padding(.vertical, NW.Space.m))], widths: Self.componentName)
+                    .padding(.vertical, SH.Space.m))], widths: Self.componentName)
             }
             if let note = reference.componentsShown {
-                Text(note).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                Text(note).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, NW.Space.xxl).padding(.vertical, NW.Space.l)
+                    .padding(.horizontal, SH.Space.xxl).padding(.vertical, SH.Space.l)
                     // Its own element: the list's last row is read as itself, not folded into the card.
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(note)
@@ -524,11 +524,11 @@ private struct ReferenceColorRow: View {
     let paired: Bool
 
     var body: some View {
-        let _ = NWRenderProbe.tick("design.referenceColor")
+        let _ = SHRenderProbe.tick("design.referenceColor")
         HStack(spacing: 0) {
-            Text(color.name).font(.nw(.mono)).foregroundStyle(Color.nw.textPrimary).lineLimit(1).truncationMode(.middle)
-                .frame(minHeight: NW.Height.controlM)
-                .padding(.horizontal, NW.Space.xxl).padding(.vertical, NW.Space.m)
+            Text(color.name).font(.sh(.mono)).foregroundStyle(Color.sh.textPrimary).lineLimit(1).truncationMode(.middle)
+                .frame(minHeight: SH.Height.controlM)
+                .padding(.horizontal, SH.Space.xxl).padding(.vertical, SH.Space.m)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if paired {
                 cell(ValueChip(value: color.dark, scheme: .dark, ratio: color.darkRatio))
@@ -537,14 +537,14 @@ private struct ReferenceColorRow: View {
                 cell(ValueChip(value: color.light, ratio: color.lightRatio))
             }
         }
-        .overlay(alignment: .bottom) { NWHairline() }
+        .overlay(alignment: .bottom) { SHHairline() }
     }
 
     private func cell(_ chip: ValueChip) -> some View {
         chip
-            .padding(.horizontal, NW.Space.xxl).padding(.vertical, NW.Space.m)
+            .padding(.horizontal, SH.Space.xxl).padding(.vertical, SH.Space.m)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .overlay(alignment: .leading) { NWHairline(.vertical) }
+            .overlay(alignment: .leading) { SHHairline(.vertical) }
     }
 }
 
@@ -563,9 +563,9 @@ private struct ReferenceSpecimen: View {
             }
         }
         .frame(width: size.width, height: size.height)
-        .background(Color.nw.bgSunken)
-        .clipShape(RoundedRectangle(cornerRadius: NW.Radius.s))
-        .overlay { RoundedRectangle(cornerRadius: NW.Radius.s).strokeBorder(Color.nw.lineSubtle) }
+        .background(Color.sh.bgSunken)
+        .clipShape(RoundedRectangle(cornerRadius: SH.Radius.s))
+        .overlay { RoundedRectangle(cornerRadius: SH.Radius.s).strokeBorder(Color.sh.lineSubtle) }
     }
 }
 
@@ -579,35 +579,35 @@ private struct ValueChip: View {
     var ratio: Double?
 
     var body: some View {
-        let chip = HStack(spacing: NW.Space.m) {
+        let chip = HStack(spacing: SH.Space.m) {
             if let hex = DesignSystemPresentation.hex(value) {
-                RoundedRectangle(cornerRadius: NW.Radius.xs).fill(Color(light: hex, dark: hex))
-                    .overlay { RoundedRectangle(cornerRadius: NW.Radius.xs).strokeBorder(Color.nw.lineStrong) }
-                    .frame(width: NW.Space.xl, height: NW.Space.xl)
+                RoundedRectangle(cornerRadius: SH.Radius.xs).fill(Color(light: hex, dark: hex))
+                    .overlay { RoundedRectangle(cornerRadius: SH.Radius.xs).strokeBorder(Color.sh.lineStrong) }
+                    .frame(width: SH.Space.xl, height: SH.Space.xl)
                     .accessibilityHidden(true)
             }
             Text(value.uppercased() == value || DesignSystemPresentation.hex(value) == nil ? value : value.uppercased())
-                .font(.nw(.mono)).foregroundStyle(Color.nw.textPrimary).lineLimit(1).truncationMode(.tail)
-            Spacer(minLength: NW.Space.m)
-            if let unit { Text(unit).font(.nw(.mono)).foregroundStyle(Color.nw.textTertiary) }
+                .font(.sh(.mono)).foregroundStyle(Color.sh.textPrimary).lineLimit(1).truncationMode(.tail)
+            Spacer(minLength: SH.Space.m)
+            if let unit { Text(unit).font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary) }
             if let ratio { contrast(ratio) }
         }
-        .padding(.horizontal, NW.Space.m)
-        .frame(height: NW.Height.controlM)
-        .background(Color.nw.bgSunken, in: RoundedRectangle(cornerRadius: NW.Radius.s))
-        .overlay { RoundedRectangle(cornerRadius: NW.Radius.s).strokeBorder(Color.nw.lineStrong) }
+        .padding(.horizontal, SH.Space.m)
+        .frame(height: SH.Height.controlM)
+        .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+        .overlay { RoundedRectangle(cornerRadius: SH.Radius.s).strokeBorder(Color.sh.lineStrong) }
         .accessibilityElement(children: .combine)
         if let scheme { chip.environment(\.colorScheme, scheme) } else { chip }
     }
 
     private func contrast(_ ratio: Double) -> some View {
         let readable = ratio >= DesignSystemReference.readable
-        return HStack(spacing: NW.Space.xxs) {
+        return HStack(spacing: SH.Space.xxs) {
             Image(systemName: readable ? "checkmark" : "exclamationmark.triangle").accessibilityHidden(true)
             Text(String(format: "%.1f:1", ratio))
         }
-        .font(.nw(.micro))
-        .foregroundStyle(readable ? Color.nw.done : Color.nw.lanternText)
+        .font(.sh(.micro))
+        .foregroundStyle(readable ? Color.sh.done : Color.sh.lanternText)
         .accessibilityLabel("Contrast \(String(format: "%.1f", ratio)) to 1, \(readable ? "readable" : "low")")
     }
 }

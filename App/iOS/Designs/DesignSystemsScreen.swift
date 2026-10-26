@@ -13,20 +13,20 @@ struct DesignSystemsScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
                 if designs.model.systems.isEmpty {
-                    NWEmptyState(Text("No design systems"), message: "A host's design systems show here while it serves designs.",
+                    SHEmptyState(Text("No design systems"), message: "A host's design systems show here while it serves designs.",
                                  showsMark: false)
                         .frame(maxWidth: .infinity)
-                        .padding(.top, NW.Space.xxxl)
+                        .padding(.top, SH.Space.xxxl)
                 } else {
                     DesignSystemsCard(rows: designs.model.systems, swatches: designs.swatches)
                 }
             }
             .padding(.horizontal, MobileDesignLayout.gutter)
-            .padding(.vertical, NW.Space.l)
+            .padding(.vertical, SH.Space.l)
             .frame(maxWidth: MobileLayout.homeMaxWidth)
             .frame(maxWidth: .infinity)
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .refreshable { await designs.refresh() }
         .task { await designs.refresh() }
         .navigationTitle("Design systems")
@@ -47,19 +47,19 @@ struct DesignSystemScreen: View {
             if let system {
                 Section {
                     Text(DesignSystemPresentation.counts(system.summary.counts))
-                        .nwText(.caption).foregroundStyle(Color.nw.textSecondary)
+                        .shText(.caption).foregroundStyle(Color.sh.textSecondary)
                 }
                 if let colors = system.tokens?.colors, !colors.isEmpty {
                     Section("Colors") {
                         ForEach(colors, id: \.name) { color in
-                            HStack(spacing: NW.Space.l) {
-                                RoundedRectangle(cornerRadius: NWPhoneDesignMetrics.swatchRadius)
+                            HStack(spacing: SH.Space.l) {
+                                RoundedRectangle(cornerRadius: SHPhoneDesignMetrics.swatchRadius)
                                     .fill(DesignSystemPresentation.Swatch(color).map { Color(light: $0.light, dark: $0.dark) } ?? .clear)
-                                    .frame(width: NWPhoneDesignMetrics.swatchHeight, height: NWPhoneDesignMetrics.swatchHeight)
-                                    .nwBorder(Color.nw.lineSubtle, radius: NWPhoneDesignMetrics.swatchRadius)
-                                VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                                    Text(color.name).font(.nw(.mono)).foregroundStyle(Color.nw.textPrimary)
-                                    Text(DesignSystemPresentation.detail(color)).nwText(.caption).foregroundStyle(Color.nw.textTertiary)
+                                    .frame(width: SHPhoneDesignMetrics.swatchHeight, height: SHPhoneDesignMetrics.swatchHeight)
+                                    .shBorder(Color.sh.lineSubtle, radius: SHPhoneDesignMetrics.swatchRadius)
+                                VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                                    Text(color.name).font(.sh(.mono)).foregroundStyle(Color.sh.textPrimary)
+                                    Text(DesignSystemPresentation.detail(color)).shText(.caption).foregroundStyle(Color.sh.textTertiary)
                                 }
                             }
                         }
@@ -80,13 +80,13 @@ struct DesignSystemScreen: View {
                     }
                 }
             } else if let problem {
-                Text(problem).foregroundStyle(Color.nw.failed)
+                Text(problem).foregroundStyle(Color.sh.failed)
             } else {
-                ProgressView().progressViewStyle(.nwSpinner).frame(maxWidth: .infinity)
+                ProgressView().progressViewStyle(.shSpinner).frame(maxWidth: .infinity)
             }
         }
         .scrollContentBackground(.hidden)
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .navigationTitle(system?.summary.info.title ?? namespace)
         .navigationBarTitleDisplayMode(.inline)
         .task {

@@ -61,7 +61,7 @@ struct BrowserPaneTabsTests {
             window = OffscreenWindow(size: size, dark: true,
                                      BrowserPane(vm: vm, session: root, store: NativeThreadStore(), active: active)
                                         .frame(width: size.width, height: size.height)
-                                        .background(Color.nw.bgWindow))
+                                        .background(Color.sh.bgWindow))
         }
 
         func close() {

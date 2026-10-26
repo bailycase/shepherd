@@ -4,7 +4,7 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
-/// Consecutive activity lines (NWThread, ToolRows: one quiet line per burst of work), each
+/// Consecutive activity lines (SHThread, ToolRows: one quiet line per burst of work), each
 /// expanding to its calls. The running call's line is the thread's live indicator (LiveText).
 struct ActivityLinesView: View, Equatable {
     let bursts: [NativeActivityBurst]
@@ -36,14 +36,14 @@ struct ActivityLinesView: View, Equatable {
             ForEach(Array(bursts.enumerated()), id: \.element.id) { index, burst in
                 if let call = burst.calls.first, burst.calls.count == 1, let plan = call.projectPlan {
                     if call.id == planCallID {
-                        NWLeadStepsCard(steps: plan.steps.map { .init(text: $0.text, state: Self.state($0.state)) }).nwArrival(entering)
+                        SHLeadStepsCard(steps: plan.steps.map { .init(text: $0.text, state: Self.state($0.state)) }).shArrival(entering)
                     }
                 } else if burst.calls.first?.projectAction != nil, burst.calls.count == 1, let cards {
                     // A Project tool's typed result: the task or Space card when it still resolves, else nothing (a gone task is
                     // never redrawn from its old receipt).
-                    if let card = resolutions[index] { cards.card(card).nwArrival(entering) }
+                    if let card = resolutions[index] { cards.card(card).shArrival(entering) }
                 } else {
-                    ActivityLineView(burst: burst, review: review).equatable().nwArrival(entering)
+                    ActivityLineView(burst: burst, review: review).equatable().shArrival(entering)
                 }
             }
         }
@@ -51,7 +51,7 @@ struct ActivityLinesView: View, Equatable {
 }
 
 extension ActivityLinesView {
-    static func state(_ state: NativeProjectPlan.State) -> NWLeadStepsCard.State {
+    static func state(_ state: NativeProjectPlan.State) -> SHLeadStepsCard.State {
         switch state {
         case .pending: .pending
         case .current: .current
@@ -61,7 +61,7 @@ extension ActivityLinesView {
     }
 }
 
-/// One burst of tool work as an activity line (NWThread board). Expanding it shows its calls on
+/// One burst of tool work as an activity line (SHThread board). Expanding it shows its calls on
 /// a rail; an edit or write opens the review pane at its file, any other call expands to its
 /// output. ⌥-click or the context menu shows the raw call.
 struct ActivityLineView: View, Equatable {
@@ -69,7 +69,7 @@ struct ActivityLineView: View, Equatable {
     /// Opens the review pane at a file an edit or write touched.
     var review: ((String) -> Void)?
     @Environment(\.openArtifact) private var openArtifact
-    private let inputRows: [String: NWActivityCallRow]
+    private let inputRows: [String: SHActivityCallRow]
     private let inputTexts: [String: String]
     @State private var expanded: Bool
     @State private var expandedCalls: Set<String>
@@ -80,7 +80,7 @@ struct ActivityLineView: View, Equatable {
     init(burst: NativeActivityBurst, review: ((String) -> Void)? = nil, expanded: Bool = false, expandedCalls: Set<String> = []) {
         self.burst = burst
         self.review = review
-        var inputs: [String: NWActivityCallRow] = [:]
+        var inputs: [String: SHActivityCallRow] = [:]
         var texts: [String: String] = [:]
         var open = expandedCalls
         for call in burst.calls {
@@ -99,7 +99,7 @@ struct ActivityLineView: View, Equatable {
             guard !text.isEmpty else { continue }
             let id = "\(call.id):input"
             let lines = text.components(separatedBy: "\n")
-            inputs[id] = NWActivityCallRow(
+            inputs[id] = SHActivityCallRow(
                 id: id, label: script ? "script" : "input", detail: script ? "JavaScript" : call.name,
                 output: Array(lines.prefix(NativeActivityCall.outputHeadLines)),
                 moreLines: max(0, lines.count - NativeActivityCall.outputHeadLines),
@@ -136,11 +136,11 @@ struct ActivityLineView: View, Equatable {
     private var line: some View {
         VStack(alignment: .leading, spacing: 0) {
             // A call the model is still writing says how much of its arguments came (ResponseVisibility › A).
-            NWActivityLine(kind: kind, label: burst.label, meta: burst.meta, status: status, isExpanded: expanded,
+            SHActivityLine(kind: kind, label: burst.label, meta: burst.meta, status: status, isExpanded: expanded,
                            accessibilityLabel: burst.accessibilityLabel,
                            action: opensArtifact ?? (burst.expandable ? toggle : nil), received: burst.received)
             if expanded {
-                NWActivityCalls(burst.calls.flatMap { call -> [NWActivityCallRow] in
+                SHActivityCalls(burst.calls.flatMap { call -> [SHActivityCallRow] in
                     if var input = inputRows["\(call.id):input"] {
                         input.isExpanded = expandedCalls.contains(input.id)
                         return [input, row(call)]
@@ -149,8 +149,8 @@ struct ActivityLineView: View, Equatable {
                 }, onSelect: select, onShowAll: showOutput) { row in
                     if let call = burst.calls.first(where: { $0.id == row.id }) { menu(call) }
                 }
-                .padding(.vertical, NW.Space.xxs)
-                .nwTransition(.disclosure)
+                .padding(.vertical, SH.Space.xxs)
+                .shTransition(.disclosure)
             }
         }
         .sheet(item: $sheet) { sheet in
@@ -164,7 +164,7 @@ struct ActivityLineView: View, Equatable {
         return { openArtifact(artifact.path) }
     }
 
-    private var kind: NWActivityLine.Kind {
+    private var kind: SHActivityLine.Kind {
         switch burst.kind {
         case .explore: .explore
         case .edit where burst.artifact != nil: .artifact
@@ -179,7 +179,7 @@ struct ActivityLineView: View, Equatable {
         }
     }
 
-    private var status: NWActivityLine.Status {
+    private var status: SHActivityLine.Status {
         switch burst.state {
         case .done: .done
         case .failed: .failed
@@ -190,7 +190,7 @@ struct ActivityLineView: View, Equatable {
     /// A click on this line: the whole thread eases around the calls as they open, so the
     /// change animates as one transaction rather than from a container.
     private func toggle() {
-        withAnimation(NW.Motion.disclosure.animation(reduceMotion: reduceMotion)) {
+        withAnimation(SH.Motion.disclosure.animation(reduceMotion: reduceMotion)) {
             if !expanded {
                 for input in inputRows.values where input.label == "script" {
                     expandedCalls.insert(input.id)
@@ -200,9 +200,9 @@ struct ActivityLineView: View, Equatable {
         }
     }
 
-    private func row(_ call: NativeActivityCall) -> NWActivityCallRow {
+    private func row(_ call: NativeActivityCall) -> SHActivityCallRow {
         let open = expandedCalls.contains(call.id)
-        return NWActivityCallRow(
+        return SHActivityCallRow(
             id: call.id, label: call.label, detail: call.detail, isPath: call.isPath, stat: call.stat, failed: call.failed,
             output: open ? call.outputHead : [], moreLines: max(0, call.outputLineCount - call.outputHead.count),
             truncated: call.truncated, isExpanded: open,
@@ -211,7 +211,7 @@ struct ActivityLineView: View, Equatable {
 
     private func select(_ id: String) {
         if inputTexts[id] != nil {
-            withAnimation(NW.Motion.disclosure.animation(reduceMotion: reduceMotion)) {
+            withAnimation(SH.Motion.disclosure.animation(reduceMotion: reduceMotion)) {
                 if expandedCalls.remove(id) == nil { expandedCalls.insert(id) }
             }
             return
@@ -224,7 +224,7 @@ struct ActivityLineView: View, Equatable {
         if call.kind == .edit, let path = call.path, let review {
             review(path)
         } else if call.expandable {
-            withAnimation(NW.Motion.disclosure.animation(reduceMotion: reduceMotion)) {
+            withAnimation(SH.Motion.disclosure.animation(reduceMotion: reduceMotion)) {
                 if expandedCalls.remove(id) == nil { expandedCalls.insert(id) }
             }
         }
@@ -265,31 +265,31 @@ struct ToolOutputSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: NW.Space.l) {
-                Text(title).font(Font.nw(.mono, weight: .medium)).foregroundStyle(Color.nw.textPrimary).lineLimit(1).truncationMode(.middle)
+            HStack(spacing: SH.Space.l) {
+                Text(title).font(Font.sh(.mono, weight: .medium)).foregroundStyle(Color.sh.textPrimary).lineLimit(1).truncationMode(.middle)
                 Spacer()
                 Button("Copy") {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(output, forType: .string)
                 }
-                .buttonStyle(NWButtonStyle(.secondary, size: .s))
-                Button("Done", action: close).buttonStyle(NWButtonStyle(.primary, size: .s)).keyboardShortcut(.defaultAction)
+                .buttonStyle(SHButtonStyle(.secondary, size: .s))
+                Button("Done", action: close).buttonStyle(SHButtonStyle(.primary, size: .s)).keyboardShortcut(.defaultAction)
             }
-            .padding(.horizontal, NW.Space.xl)
+            .padding(.horizontal, SH.Space.xl)
             .frame(height: AppLayout.headerHeight)
-            .overlay(alignment: .bottom) { NWHairline() }
+            .overlay(alignment: .bottom) { SHHairline() }
             ScrollView([.vertical, .horizontal]) {
-                Text(output).font(Font.nw(.code)).lineSpacing(NWTextStyle.code.lineSpacing).foregroundStyle(Color.nw.textSecondary)
-                    .textSelection(.enabled).fixedSize().padding(NW.Space.xl)
+                Text(output).font(Font.sh(.code)).lineSpacing(SHTextStyle.code.lineSpacing).foregroundStyle(Color.sh.textSecondary)
+                    .textSelection(.enabled).fixedSize().padding(SH.Space.xl)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             if truncated {
                 Text("The host clipped this output; the full text is in the agent's session file.")
-                    .font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary).padding(NW.Space.l)
+                    .font(Font.sh(.caption)).foregroundStyle(Color.sh.textTertiary).padding(SH.Space.l)
             }
         }
         .frame(minWidth: AppLayout.toolOutputMinWidth, idealWidth: AppLayout.toolOutputIdealWidth,
                minHeight: AppLayout.toolOutputMinHeight, idealHeight: AppLayout.toolOutputIdealHeight)
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
     }
 }

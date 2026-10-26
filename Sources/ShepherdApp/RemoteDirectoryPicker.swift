@@ -123,22 +123,22 @@ struct RemoteDirectoryPicker: View {
 
     var body: some View {
         let visible = visibleDirs
-        NWDialog("\(title) on \(hostName)", width: AppLayout.directoryPickerWidth) {
+        SHDialog("\(title) on \(hostName)", width: AppLayout.directoryPickerWidth) {
             // The path is editable: typing filters the listing to what's
             // under the typed path, and ⏎ chooses it in one go.
             TextField("Path", text: $pathDraft)
                 .focused($pathFocused)
-                .nwField(focused: pathFocused, mono: true)
+                .shField(focused: pathFocused, mono: true)
                 .onChange(of: pathDraft) { draftChanged() }
                 .onSubmit { submit() }
                 .onKeyPress(.tab) {
                     completePath()
                     return .handled
                 }
-                .padding(.horizontal, NWDialogMetrics.inset)
-                .padding(.bottom, NW.Space.l)
+                .padding(.horizontal, SHDialogMetrics.inset)
+                .padding(.bottom, SH.Space.l)
 
-            NWHairline()
+            SHHairline()
             ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     if let parent {
@@ -151,39 +151,39 @@ struct RemoteDirectoryPicker: View {
                     }
                     // The host's first listing is on its way: placeholder rows, not an empty list.
                     if loading, dirs.isEmpty, parent == nil, errorText == nil {
-                        NWLoadingRows()
-                            .padding(.horizontal, NW.Space.m)
+                        SHLoadingRows()
+                            .padding(.horizontal, SH.Space.m)
                     }
                     if !loading, visible.isEmpty {
                         Text("No subdirectories")
-                            .font(.nw(.caption))
-                            .foregroundStyle(Color.nw.textTertiary)
-                            .padding(NW.Space.l)
+                            .font(.sh(.caption))
+                            .foregroundStyle(Color.sh.textTertiary)
+                            .padding(SH.Space.l)
                     }
                 }
-                .padding(NW.Space.s)
+                .padding(SH.Space.s)
                 // A new directory's listing (or the hidden ones) replaces the old as one
                 // cross-fade, never row by row; the filter you type narrows it at once.
                 .id(Listing(path: path, showHidden: showHidden))
-                .nwTransition(.content)
+                .shTransition(.content)
             }
-            .nwAnimation(.content, value: Listing(path: path, showHidden: showHidden))
+            .shAnimation(.content, value: Listing(path: path, showHidden: showHidden))
             .frame(height: AppLayout.directoryListHeight)
-            .background(Color.nw.bgSunken)
-            NWHairline()
+            .background(Color.sh.bgSunken)
+            SHHairline()
         } status: {
-            NWDialogStatus(errorText ?? (loading ? "Loading…" : "\(visible.count) directories"), isError: errorText != nil)
+            SHDialogStatus(errorText ?? (loading ? "Loading…" : "\(visible.count) directories"), isError: errorText != nil)
         } actions: {
             Toggle("Show hidden", isOn: $showHidden)
-                .toggleStyle(.nwSwitch)
-                .font(.nw(.caption))
-                .foregroundStyle(Color.nw.textSecondary)
-                .padding(.trailing, NW.Space.s)
+                .toggleStyle(.shSwitch)
+                .font(.sh(.caption))
+                .foregroundStyle(Color.sh.textSecondary)
+                .padding(.trailing, SH.Space.s)
             Button("Cancel", action: cancel)
-                .buttonStyle(.nw(.ghost))
+                .buttonStyle(.sh(.ghost))
                 .keyboardShortcut(.cancelAction)
             Button(actionTitle) { submit() }
-                .buttonStyle(.nw(.primary))
+                .buttonStyle(.sh(.primary))
                 .keyboardShortcut(.defaultAction)
                 .disabled(path.isEmpty || loading)
         }
@@ -280,26 +280,26 @@ private struct RemoteDirRow: View {
     let action: () -> Void
 
     var body: some View {
-        let _ = NWRenderProbe.tick("directory.row")
+        let _ = SHRenderProbe.tick("directory.row")
         Button(action: action) {
-            HStack(spacing: NW.Space.m) {
+            HStack(spacing: SH.Space.m) {
                 Image(systemName: isUp ? "arrow.turn.left.up" : "folder")
-                    .font(.nw(.ui))
-                    .foregroundStyle(isUp ? Color.nw.textTertiary : Color.nw.textSecondary)
-                    .frame(width: NW.Space.xl)
+                    .font(.sh(.ui))
+                    .foregroundStyle(isUp ? Color.sh.textTertiary : Color.sh.textSecondary)
+                    .frame(width: SH.Space.xl)
                     .accessibilityHidden(true)
                 Text(label)
-                    .font(.nw(.ui))
-                    .foregroundStyle(isUp ? Color.nw.textSecondary : Color.nw.textPrimary)
+                    .font(.sh(.ui))
+                    .foregroundStyle(isUp ? Color.sh.textSecondary : Color.sh.textPrimary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, NW.Space.m)
-            .frame(minHeight: NW.Height.row)
+            .padding(.horizontal, SH.Space.m)
+            .frame(minHeight: SH.Height.row)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.nwRow())
+        .buttonStyle(.shRow())
         .accessibilityLabel(isUp ? "Parent directory" : label)
     }
 }

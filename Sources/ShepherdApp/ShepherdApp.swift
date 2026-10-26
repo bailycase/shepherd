@@ -71,7 +71,7 @@ public struct ShepherdMacApp: App {
         keys = KeybindingsStore.shared
         themes = ThemeManager.shared
         // Geist and Geist Mono ship in the ShepherdUI bundle; register them before any view draws.
-        NWFonts.register()
+        SHFonts.register()
         _vm = State(initialValue: ShepherdViewModel(server: .shared, welcomesYourPi: true, browserData: .persistent))
     }
 

@@ -44,10 +44,10 @@ struct SubagentInspector: View {
                                  select: select, fork: fork, review: review, focusSteer: focusSteer, steerFocused: steerFocused,
                                  draft: draft)
                 .id(runID)
-                .transition(.asymmetric(insertion: (edge.map { NW.Motion.list.transition(reduceMotion: reduceMotion, edge: $0) }) ?? .opacity,
+                .transition(.asymmetric(insertion: (edge.map { SH.Motion.list.transition(reduceMotion: reduceMotion, edge: $0) }) ?? .opacity,
                                         removal: .opacity))
         }
-        .nwAnimation(edge == nil ? .content : .list, value: runID)
+        .shAnimation(edge == nil ? .content : .list, value: runID)
         .onChange(of: runID, initial: true) { _, id in shown.runID = id }
     }
 
@@ -116,12 +116,12 @@ private struct SubagentRunInspector: View {
             footerLine(run)
             // A run waiting on its parent's answer has no process left, but it is not finished: it keeps the
             // Steer field (the user speaking over its parent) rather than the finished run's read-only bar.
-            if let run, SubagentPresentation.isFinished(run) { finishedBar(run).nwTransition(.content) } else { composer(run).nwTransition(.content) }
+            if let run, SubagentPresentation.isFinished(run) { finishedBar(run).shTransition(.content) } else { composer(run).shTransition(.content) }
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         // The run's own milestones (paused, needing you, finishing with its result and actions)
         // and a notice under the footer reshape the column; the transcript's growth does not.
-        .nwAnimation(.disclosure, value: Phase(run: run, notice: forkError ?? store.notice))
+        .shAnimation(.disclosure, value: Phase(run: run, notice: forkError ?? store.notice))
         .task(id: FollowKey(runID: runID, active: active, startedAt: run?.startedAt)) {
             guard active else { return }
             let store = store, runID = runID
@@ -187,7 +187,7 @@ private struct SubagentRunInspector: View {
         let position = siblings.firstIndex { $0.runID == runID }
         let (meta, accent) = run.map { SubagentPresentation.inspectorMeta($0) } ?? ("no longer listed", nil)
         let role = Self.role(run)
-        return NWInspectorHeader(role, position: position.flatMap { siblings.count > 1 ? "\($0 + 1) of \(siblings.count)" : nil },
+        return SHInspectorHeader(role, position: position.flatMap { siblings.count > 1 ? "\($0 + 1) of \(siblings.count)" : nil },
                                  state: run.map(SubagentPresentation.state) ?? .idle, meta: meta, accent: accent,
                                  minHeight: AppLayout.headerHeight) {
             if let run, !SubagentPresentation.isFinished(run) {
@@ -195,25 +195,25 @@ private struct SubagentRunInspector: View {
                     Button(run.paused == true ? "Continue" : "Pause") {
                         Task { await store.subagentCommand(runID: runID, action: run.paused == true ? .continue : .pause) }
                     }
-                    .buttonStyle(.nw(.secondary, size: .s))
+                    .buttonStyle(.sh(.secondary, size: .s))
                     .disabled(!canAct)
                     .help("Pause before the next model request; current tools finish normally")
                 }
                 Button("Stop") { Task { await store.subagentCommand(runID: runID, action: .cancel) } }
-                    .buttonStyle(.nw(.danger, size: .s))
+                    .buttonStyle(.sh(.danger, size: .s))
                     .disabled(!canAct)
                     .accessibilityLabel("Stop \(role)")
-                    .padding(.trailing, NW.Space.xs)
+                    .padding(.trailing, SH.Space.xs)
             }
             if let select, let position, siblings.count > 1 {
                 Button { select(siblings[position - 1]) } label: { Image(systemName: "chevron.left") }
-                    .buttonStyle(.nwIcon).disabled(position == 0)
+                    .buttonStyle(.shIcon).disabled(position == 0)
                     .accessibilityLabel("Previous subagent")
                 Button { select(siblings[position + 1]) } label: { Image(systemName: "chevron.right") }
-                    .buttonStyle(.nwIcon).disabled(position == siblings.count - 1)
+                    .buttonStyle(.shIcon).disabled(position == siblings.count - 1)
                     .accessibilityLabel("Next subagent")
             }
-            NWOptionsMenu("Inspector options") {
+            SHOptionsMenu("Inspector options") {
                 if let run, run.isTerminal {
                     Button("Copy Transcript") { copyTranscript() }
                     if let file = run.sessionFile {
@@ -224,11 +224,11 @@ private struct SubagentRunInspector: View {
                 }
             }
             Button(action: close) { Image(systemName: "xmark") }
-                .buttonStyle(.nwIcon)
+                .buttonStyle(.shIcon)
                 .help("Close the inspector")
                 .accessibilityLabel("Close inspector")
         }
-        .nwAnimation(.content, value: siblings.map(\.runID))
+        .shAnimation(.content, value: siblings.map(\.runID))
     }
 
     // MARK: Brief
@@ -243,14 +243,14 @@ private struct SubagentRunInspector: View {
             let text = state == .failed ? (run.exitReason ?? run.summary) : (run.summary ?? run.output)
             return text?.isEmpty == false ? text : nil
         }
-        return NWRunBrief(goal: run?.task ?? run?.label ?? "", note: run.flatMap(SubagentPresentation.goalNote),
+        return SHRunBrief(goal: run?.task ?? run?.label ?? "", note: run.flatMap(SubagentPresentation.goalNote),
                           result: result, resultLabel: asked ? "Asked the parent" : "Result", resultState: state) {
             if let run, let files = run.files, !files.isEmpty { touchedFiles(files, run: run) }
         }
     }
 
     private func touchedFiles(_ files: [ChildFileChange], run: ChildRun) -> some View {
-        VStack(alignment: .leading, spacing: NW.Space.xs) {
+        VStack(alignment: .leading, spacing: SH.Space.xs) {
             ForEach(files.prefix(AppLayout.inspectorMaxFiles), id: \.path) { file in
                 Button {
                     if let review { review(file.path) } else {
@@ -258,11 +258,11 @@ private struct SubagentRunInspector: View {
                         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: file.path, relativeTo: base).absoluteURL])
                     }
                 } label: {
-                    HStack(spacing: NW.Space.s) {
-                        Text(file.path).foregroundStyle(Color.nw.running).lineLimit(1).truncationMode(.middle)
-                        NWDiffStat(added: file.added, removed: file.removed, font: .nwMono(11))
+                    HStack(spacing: SH.Space.s) {
+                        Text(file.path).foregroundStyle(Color.sh.running).lineLimit(1).truncationMode(.middle)
+                        SHDiffStat(added: file.added, removed: file.removed, font: .shMono(11))
                     }
-                    .font(.nwMono(11))
+                    .font(.shMono(11))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -271,7 +271,7 @@ private struct SubagentRunInspector: View {
                 .accessibilityLabel("\(file.path), \(file.added) added, \(file.removed) removed")
             }
             if files.count > AppLayout.inspectorMaxFiles {
-                Text(SubagentPresentation.moreFiles(files.count)).font(.nwMono(11)).foregroundStyle(Color.nw.textTertiary)
+                Text(SubagentPresentation.moreFiles(files.count)).font(.shMono(11)).foregroundStyle(Color.sh.textTertiary)
             }
         }
     }
@@ -287,7 +287,7 @@ private struct SubagentRunInspector: View {
                 LazyVStack(alignment: .leading, spacing: AppLayout.inspectorTurnSpacing) {
                     if transcript.turns.isEmpty, transcript.loaded {
                         Text(run == nil ? "This run is no longer listed." : "No transcript yet.")
-                            .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                            .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                     }
                     let turns = transcript.turns
                     ForEach(Array(turns.enumerated()), id: \.element.id) { index, turn in
@@ -303,7 +303,7 @@ private struct SubagentRunInspector: View {
                         }
                         // A turn that arrived while the transcript follows fades in where it
                         // lands: the transcript's layout, and so following the tail, changes at once.
-                        .nwRunArrival(transcript.arrived.contains(turn.id))
+                        .shRunArrival(transcript.arrived.contains(turn.id))
                     }
                     // What the run is doing now (LiveText): its call in flight. It continues the
                     // last turn: under its lines at their spacing, as the thread's live line does
@@ -316,7 +316,7 @@ private struct SubagentRunInspector: View {
                 }
                 .scrollTargetLayout()
                 .padding(AppLayout.inspectorPadding)
-                .environment(\.nwProseSize, .small)
+                .environment(\.shProseSize, .small)
             }
             .defaultScrollAnchor(terminal ? .top : .bottom, for: .initialOffset)
             .defaultScrollAnchor(transcript.following && !terminal ? .bottom : nil, for: .sizeChanges)
@@ -344,16 +344,16 @@ private struct SubagentRunInspector: View {
     private func footerLine(_ run: ChildRun?) -> some View {
         let position = run?.isTerminal == true && transcript.earlierCount == 0
             ? SubagentPresentation.position(turns: transcript.turns, top: topTurn, total: run?.turns) : nil
-        return HStack(spacing: NW.Space.s) {
+        return HStack(spacing: SH.Space.s) {
             if let position {
-                Text(position).font(.nwMono(11)).nwContentTransition(.numeric())
+                Text(position).font(.shMono(11)).shContentTransition(.numeric())
                 Spacer()
                 if moreBelow { Text("Scroll for the rest") }
             } else if transcript.earlierCount > 0 {
-                Text("\(transcript.earlierCount) earlier turn\(transcript.earlierCount == 1 ? "" : "s")").font(.nwMono(11))
-                    .nwContentTransition(.numeric())
+                Text("\(transcript.earlierCount) earlier turn\(transcript.earlierCount == 1 ? "" : "s")").font(.shMono(11))
+                    .shContentTransition(.numeric())
                 Button(transcript.loadingOlder ? "Loading…" : "Show all") { Task { await transcript.loadAll(store: store, runID: runID) } }
-                    .buttonStyle(.nwLink(font: .nwSans(11)))
+                    .buttonStyle(.shLink(font: .shSans(11)))
                     .disabled(transcript.loadingOlder)
             }
             if position == nil {
@@ -361,10 +361,10 @@ private struct SubagentRunInspector: View {
                 if run?.isTerminal != true { Text(transcript.following ? "Following live" : "Reading earlier output") }
             }
         }
-        .font(.nwSans(11)).foregroundStyle(Color.nw.textTertiary)
+        .font(.shSans(11)).foregroundStyle(Color.sh.textTertiary)
         .padding(.horizontal, AppLayout.inspectorPadding)
         .frame(minHeight: AppLayout.inspectorFooterHeight)
-        .nwAnimation(.content, value: FooterState(earlier: transcript.earlierCount, loading: transcript.loadingOlder,
+        .shAnimation(.content, value: FooterState(earlier: transcript.earlierCount, loading: transcript.loadingOlder,
                                                   following: transcript.following, position: position,
                                                   moreBelow: position != nil && moreBelow))
     }
@@ -386,9 +386,9 @@ private struct SubagentRunInspector: View {
 
     private func finishedBar(_ run: ChildRun) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            NWRunActions {
+            SHRunActions {
                 Button("Re-run") { Task { await store.subagentCommand(runID: runID, action: .resume) } }
-                    .buttonStyle(.nw(.secondary, size: .s))
+                    .buttonStyle(.sh(.secondary, size: .s))
                     .disabled(!canAct)
                     .accessibilityLabel("Re-run \(Self.role(run))")
                 if let fork {
@@ -398,18 +398,18 @@ private struct SubagentRunInspector: View {
                     } label: {
                         Label(forking ? "Forking…" : "Fork", systemImage: "arrow.branch")
                     }
-                    .buttonStyle(.nw(.secondary, size: .s))
-                    .nwAnimation(.content, value: forking)
+                    .buttonStyle(.sh(.secondary, size: .s))
+                    .shAnimation(.content, value: forking)
                     .disabled(!active || forking || run.sessionFile == nil)
                     .help("Fork as a new agent with this run's transcript")
                     .accessibilityLabel("Fork \(Self.role(run)) as a new agent")
                 }
                 Button("Copy transcript") { copyTranscript() }
-                    .buttonStyle(.nw(.ghost, size: .s))
+                    .buttonStyle(.sh(.ghost, size: .s))
                     .disabled(transcript.messages.isEmpty || copying)
             } trailing: {
                 // A finished run stays browsable from the thread's record (SubagentsDone).
-                Text("kept with the thread").font(.nwMono(11)).foregroundStyle(Color.nw.textTertiary).lineLimit(1)
+                Text("kept with the thread").font(.shMono(11)).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
             }
             notice(forkError ?? store.notice)
         }
@@ -417,58 +417,58 @@ private struct SubagentRunInspector: View {
 
     private func composer(_ run: ChildRun?) -> some View {
         let role = Self.role(run)
-        let nw = Color.nw
+        let sh = Color.sh
         // The same Steer command, called Reply while the run waits on its parent's answer.
         let words = run.map(nativeRunSteerWords) ?? .steer
         return VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 0) {
                 TextField(words.label(role), text: $draft,
                           prompt: Text("\(words.label(role)) — \(words == .reply ? "it was waiting on its parent" : "delivered before its next turn")")
-                              .foregroundStyle(nw.textTertiary),
+                              .foregroundStyle(sh.textTertiary),
                           axis: .vertical)
-                    .lineLimit(1...AppLayout.steerMaxLines).textFieldStyle(.plain).font(.nw(.body)).autocorrectionDisabled()
-                    .foregroundStyle(nw.textPrimary).tint(nw.lantern)
+                    .lineLimit(1...AppLayout.steerMaxLines).textFieldStyle(.plain).font(.sh(.body)).autocorrectionDisabled()
+                    .foregroundStyle(sh.textPrimary).tint(sh.lantern)
                     .focused($composing)
-                    .padding(EdgeInsets(top: AppLayout.steerTopInset, leading: NW.Space.l, bottom: NW.Space.xxs, trailing: NW.Space.l))
+                    .padding(EdgeInsets(top: AppLayout.steerTopInset, leading: SH.Space.l, bottom: SH.Space.xxs, trailing: SH.Space.l))
                     .onKeyPress(.return, phases: .down) { press in
-                        if let result = NWReturnKey.lineBreak(for: press) { return result }
+                        if let result = SHReturnKey.lineBreak(for: press) { return result }
                         send()
                         return .handled
                     }
                     .accessibilityLabel(words.label(role))
-                HStack(spacing: NW.Space.s) {
-                    Text("to: \(role) · not the parent").font(.nwMono(11)).foregroundStyle(nw.textTertiary)
-                        .lineLimit(1).padding(.horizontal, NW.Space.s)
-                    Spacer(minLength: NW.Space.s)
+                HStack(spacing: SH.Space.s) {
+                    Text("to: \(role) · not the parent").font(.shMono(11)).foregroundStyle(sh.textTertiary)
+                        .lineLimit(1).padding(.horizontal, SH.Space.s)
+                    Spacer(minLength: SH.Space.s)
                     Button(words.verb) { send() }
-                        .buttonStyle(.nw(.primary, size: .m))
+                        .buttonStyle(.sh(.primary, size: .m))
                         .disabled(!canAct || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         .help(words.help ?? "")
                 }
-                .padding(EdgeInsets(top: NW.Space.xs, leading: NW.Space.s, bottom: NW.Space.s, trailing: NW.Space.s))
+                .padding(EdgeInsets(top: SH.Space.xs, leading: SH.Space.s, bottom: SH.Space.s, trailing: SH.Space.s))
             }
-            .background(nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-            .nwBorder(composing ? nw.textTertiary : nw.lineStrong, radius: NW.Radius.m)
+            .background(sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+            .shBorder(composing ? sh.textTertiary : sh.lineStrong, radius: SH.Radius.m)
             .background {
                 if composing {
-                    RoundedRectangle(cornerRadius: NW.Radius.m + NWComposerMetrics.focusRing).fill(nw.bgSelected)
-                        .padding(-NWComposerMetrics.focusRing)
+                    RoundedRectangle(cornerRadius: SH.Radius.m + SHComposerMetrics.focusRing).fill(sh.bgSelected)
+                        .padding(-SHComposerMetrics.focusRing)
                 }
             }
-            .nwAnimation(.hover, value: composing)
+            .shAnimation(.hover, value: composing)
             .contentShape(Rectangle())
             .onTapGesture { composing = true }
-            .padding(EdgeInsets(top: AppLayout.steerTopInset, leading: NW.Space.l, bottom: NW.Space.l, trailing: NW.Space.l))
+            .padding(EdgeInsets(top: AppLayout.steerTopInset, leading: SH.Space.l, bottom: SH.Space.l, trailing: SH.Space.l))
             notice(store.notice)
         }
-        .overlay(alignment: .top) { NWHairline() }
+        .overlay(alignment: .top) { SHHairline() }
     }
 
     @ViewBuilder private func notice(_ text: String?) -> some View {
         if let text {
-            Text(text).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
-                .padding(.horizontal, NW.Space.l).padding(.bottom, NW.Space.m)
-                .nwTransition(.disclosure)
+            Text(text).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                .padding(.horizontal, SH.Space.l).padding(.bottom, SH.Space.m)
+                .shTransition(.disclosure)
         }
     }
 

@@ -3,7 +3,7 @@ import ShepherdUI
 import Testing
 @testable import ShepherdApp
 
-/// Settings ▸ Appearance ▸ Sidebar rows: Night Watch's Standard by default, and remembered.
+/// Settings ▸ Appearance ▸ Sidebar rows: Shepherd Design's Standard by default, and remembered.
 @Suite("Sidebar rows setting")
 @MainActor
 struct SidebarRowSettingTests {

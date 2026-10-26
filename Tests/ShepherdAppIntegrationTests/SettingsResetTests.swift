@@ -52,6 +52,6 @@ struct SettingsResetTests {
         #expect(app.settings.defaultModel == "openai/gpt-5")
         #expect(app.settings.namingModel == "google/gemini-2.5-flash")
         #expect(app.keybindings.overrides[.newAgent] == KeyChord(key: "p", command: true))
-        #expect(app.themeManager.current.id == "night-watch-light")
+        #expect(app.themeManager.current.id == "shepherd-design-light")
     }
 }

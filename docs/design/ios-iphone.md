@@ -2,27 +2,27 @@
 
 > Read when you change the iPhone client's shell, home, thread, new thread, queue, subagents or review.
 
-The iOS client (`App/iOS`, [docs/ios](../ios/README.md)) is built on Night Watch, with the
+The iOS client (`App/iOS`, [docs/ios](../ios/README.md)) is built on Shepherd Design, with the
 phone and iPad boards as its authority. The same rules hold as on the Mac (tokens only, shared
 components first), with these differences for touch:
 
 - **Type:** the phone and iPad boards' ramp, following Dynamic Type through `relativeTo:`
-  (`NWTextStyle` on iOS): `.display` 28/600, `.headline` 17/600, `.title` 16/600, `.body` 16 at 1.5
+  (`SHTextStyle` on iOS): `.display` 28/600, `.headline` 17/600, `.title` 16/600, `.body` 16 at 1.5
   line height, `.ui` 15/500, `.caption` 12, `.code` mono 13, `.mono` 12, `.micro` mono 11. Rows are
   15, prose 16, meta 12. The boards also use sizes the ramp has no step for; take the nearest step,
   never a literal: 13/600 section heads → `.caption` at 600; 14 secondary text (activity labels, a
   card's detail, a comment) → `.ui`; 12.5 → `.caption`; mono 10.5–11.5 → `.micro` or `.mono`. Sizes
-  off the ramp go through `Font.nwSans`/`Font.nwMono` with a named metric, never a literal: the
+  off the ramp go through `Font.shSans`/`Font.shMono` with a named metric, never a literal: the
   New thread prompt's 18 (`MobileLayout.newThreadPromptSize`), the selector chips' 13
-  (`NWSelectorChipMetrics`), a repo's name in Where it runs (`NWChoiceRowMetrics.titleSize`), and
+  (`SHSelectorChipMetrics`), a repo's name in Where it runs (`SHChoiceRowMetrics.titleSize`), and
   the boards' 30pt large titles.
-- **Touch targets:** 44pt (`NW.Height.touch`). Controls keep their drawn size and grow their hit
-  area (`.nwTouchTarget(height:)`); rows people tap are at least 44pt tall. One deliberate
-  exception: diff lines (`NWTouchDiffLine`) keep the boards' dense `NW.Height.rowCompact`, so a
+- **Touch targets:** 44pt (`SH.Height.touch`). Controls keep their drawn size and grow their hit
+  area (`.shTouchTarget(height:)`); rows people tap are at least 44pt tall. One deliberate
+  exception: diff lines (`SHTouchDiffLine`) keep the boards' dense `SH.Height.rowCompact`, so a
   file reads as code. A tap only selects the line to comment on (a miss selects its neighbor,
   and nothing is sent until the comment is written), and VoiceOver reaches each line as its own
   button.
-- **No hover:** `NWPlatform.showsHoverDetails` shows at rest what the Mac reveals on hover (a
+- **No hover:** `SHPlatform.showsHoverDetails` shows at rest what the Mac reveals on hover (a
   message's time, a turn's footer, a code block's Copy, a comment's actions); a pressed row
   shows the hover fill.
 - **Navigation:** iPhone has two tabs, Home and Settings, each a stack; iPad a split view with
@@ -30,7 +30,7 @@ components first), with these differences for touch:
   sidebar). Portrait is the window's shape (taller than wide), never what the keyboard leaves
   of it (`PadSplitLayout`).
 - **Following** (the boards draw only a thread at its tail): the Mac's rule (Thread ›
-  Following), with a finger's drag as the only intent. "↓ Jump to latest" (`NWJumpToLatest`)
+  Following), with a finger's drag as the only intent. "↓ Jump to latest" (`SHJumpToLatest`)
   sits 8pt above the composer, drawn as on the Mac with a 44pt hit area.
 - **A paused queue** has no hover to reveal a row's Send now or the header's tooltip: its header
   shows Send now (secondary, small; the ••• menu's Send all now) between "Paused" and the •••,
@@ -51,12 +51,12 @@ components first), with these differences for touch:
   above.
 - **App measures** come from `MobileLayout` (`App/iOS/Support`), as the Mac's come from
   `AppLayout`.
-- **Terminal** (iPadTerminal board; `App/iOS/Terminal`, `NWTerminalTabBar`, `NWTerminalKeyRow`; the
+- **Terminal** (iPadTerminal board; `App/iOS/Terminal`, `SHTerminalTabBar`, `SHTerminalKeyRow`; the
   terminal itself as in Terminal):
   - **iPad:** the Mac's panel under the thread and composer, across the thread's width
     (`.threadTerminal(_:)`), 340pt tall by default (`shepherd.ios.terminalHeight`), sliding up from
     the bottom edge (`.pane`). Its strip is 46pt with 32pt tabs and 34pt icon buttons hit at 44
-    (`NWTerminalMetrics`), in the Mac's order and states. The divider is a 36×4pt `lineStrong`
+    (`SHTerminalMetrics`), in the Mac's order and states. The divider is a 36×4pt `lineStrong`
     grabber centered on the strip's top edge (an 88×22pt hit area) in place of a pointer handle,
     snapping and clamping as on the Mac, adjustable with VoiceOver, and hidden while maximized. The
     strip and key row stop growing at xxxLarge.
@@ -65,7 +65,7 @@ components first), with these differences for touch:
     panel shows on it once the host has made it; a failure gives a haptic with no panel up, and the
     panel's banner while it is). There is no header button; iPadTerminal's is a departure
     (Terminal panel › Show and hide).
-  - **Key row** (`NWTerminalKeyRow`), while a terminal has the keyboard, under it and over the
+  - **Key row** (`SHTerminalKeyRow`), while a terminal has the keyboard, under it and over the
     software keyboard: `bgWindow` with a `lineSubtle` hairline on top, 8pt top and bottom padding
     and 12pt sides, keys 6pt apart (the board adds 26pt under the row for the home indicator). Keys:
     esc, tab, ctrl, ⌥, `|`, `~`, `/`, `-`, then the arrows (the board: esc, tab, ctrl, ⌥, the
@@ -92,7 +92,7 @@ components first), with these differences for touch:
     (destructive) and Cancel.
   - **States:** "<host> is offline."; "Update Shepherd on <host> to open terminals here." for a
     host without `pane.control.v1`, which shows its terminals but offers no + or close; there is
-    no empty state. A failed terminal request shows a `failed` `NWBanner` under the strip with
+    no empty state. A failed terminal request shows a `failed` `SHBanner` under the strip with
     Dismiss ("Couldn't open a terminal: …" or "Couldn't close the terminal: …", "Update Shepherd on
     the host to open a terminal here." (or "…to close the terminal here."), "An agent's own thread
     can't be closed."). A host from before terminals were tabs only may still hold a split tab,
@@ -141,11 +141,11 @@ screen from these parts; the sections after this one give each board's specifics
   8pt leading and 12pt trailing, 10pt under, then a 1px `lineSubtle` rule. Leading, in a 70pt slot,
   the back link naming where it goes ("‹ Home", "‹ Thread", "‹ Subagents", "‹ Changes"; 16
   `running`, 4pt gap). Centered, the title (16/600, one line, truncating) over either a status line
-  (12/500: a 6pt `NWStatusDot`, the state's word in its `textColor`, then "· meta" in mono
+  (12/500: a 6pt `SHStatusDot`, the state's word in its `textColor`, then "· meta" in mono
   `textTertiary`, 6pt gaps) or a mono 11.5 `textTertiary` subtitle ("working tree vs HEAD"), 2pt
   apart. Trailing, a 70pt slot of 34–36pt icon buttons, 4pt apart (Stop, •••, Next file). The app
   puts its own title view in the bar's principal slot (`ThreadTitle`, `SubagentListTitle`,
-  `SubagentRunTitle`, `ReviewTitle`, `DiffTitle`: `.nw(.headline)` over `.nw(.caption)`), beside the
+  `SubagentRunTitle`, `ReviewTitle`, `DiffTitle`: `.sh(.headline)` over `.sh(.caption)`), beside the
   system back button and toolbar items. MobileThread and MobileApproval draw an older header (a 40pt
   chevron with no word, the title left-aligned at 15/600); the centered form is the rule.
 - **Screen surfaces:** a thread, a diff, one subagent, the Needs you, Automations, More and Search
@@ -154,25 +154,25 @@ screen from these parts; the sections after this one give each board's specifics
   on threads, sheets and Home, and 14 on every other list (Needs you, Automations, More, Settings,
   Instructions, Experiments, Subagents, Changes, Search), with 10pt between blocks. The app uses 14
   (`MobileLayout.searchGutter`) only on Search and Changes, and 16 elsewhere.
-- **Cards** (`NWListCard`, `.nwCard(radius: MobileLayout.cardRadius)`): `bgRaised`, a 1px
-  `lineSubtle` line, 12pt corners (`NWListMetrics.cardRadius`), rows separated by 1px `lineSubtle`
+- **Cards** (`SHListCard`, `.shCard(radius: MobileLayout.cardRadius)`): `bgRaised`, a 1px
+  `lineSubtle` line, 12pt corners (`SHListMetrics.cardRadius`), rows separated by 1px `lineSubtle`
   rules. Home's cards alone are `bgWindow` on its `bgBase` screen. A card that needs you (a thread's
   question) takes a `lanternText` line; a running one (Automations' Running now) a
   `running` line with a 3pt `runningTint` ring.
-- **List rows** (`NWListRow`): 14pt sides, 8pt vertical padding, 12pt between parts. A leading
-  column 18–20pt wide (`NWListMetrics.leadingWidth`) holds an 8pt status dot or a 15–17pt glyph in
+- **List rows** (`SHListRow`): 14pt sides, 8pt vertical padding, 12pt between parts. A leading
+  column 18–20pt wide (`SHListMetrics.leadingWidth`) holds an 8pt status dot or a 15–17pt glyph in
   `textSecondary`; the title is 15/500 `textPrimary`, one line; an optional status line 2pt under
   it; one trailing accessory; an 8×14 chevron in `textTertiary`. One-line rows are 48pt
-  (`NWListMetrics.rowHeight`). A title over a status line is 52pt in thread and search lists (Home,
+  (`SHListMetrics.rowHeight`). A title over a status line is 52pt in thread and search lists (Home,
   Search, More's rows), 56pt in choice lists (Where it runs, earlier runs), 58pt for review files
   and 64pt for automations, which have three lines. The status line is mono 11 `textTertiary` for
   threads, Geist 12.5 `textTertiary` elsewhere; it turns `lanternText` for a question. Trailing
   accessories: a count in mono 12 `textTertiary`, a setting's value in 14 `textTertiary`, a problem
-  in mono `failed` ("1 host offline"), or the host a row lives on (`NWHostBadge`: mono 10.5
+  in mono `failed` ("1 host offline"), or the host a row lives on (`SHHostBadge`: mono 10.5
   `textTertiary`, a 1px `lineSubtle` line, 4pt corners, 1×5 padding; the app draws `lineStrong`).
   Link rows ("See all 4", "Show all recents") are 44pt, centered, 13/500 `textSecondary`. A pressed
-  row shows the hover fill (`.nwRow`).
-- **Section heads** (`NWListHeader`): 13/600 `textSecondary` (`lanternText` for Needs you), with 4pt
+  row shows the hover fill (`.shRow`).
+- **Section heads** (`SHListHeader`): 13/600 `textSecondary` (`lanternText` for Needs you), with 4pt
   sides and 2pt under; trailing, a count in mono 12 `textTertiary` (`lanternText` for Needs you), a
   note in 12 `textTertiary` ("tap to read the diff", "kept after they finish"), or an action in 13
   `running` ("Add host", "Add all"). A head that follows a card has 8pt more above it.
@@ -181,22 +181,22 @@ screen from these parts; the sections after this one give each board's specifics
   `running`) leading, the title (16/600) centered and, where the sheet confirms, Done (16/600
   `running`) trailing (Where it runs; Commit's trailing slot is empty), each side in a 64pt slot,
   over a 1px `lineSubtle` rule; its body has 16pt padding. The app presents the system sheet
-  (`presentationDragIndicator(.visible)`, `presentationBackground(Color.nw.bgWindow)`) with Cancel
+  (`presentationDragIndicator(.visible)`, `presentationBackground(Color.sh.bgWindow)`) with Cancel
   and Done as the stack's toolbar items.
 - **Bottom bars** (the composer, Changes, a diff's comment bar, Commit): a 1px `lineSubtle` rule
   above, `bgWindow`, 12–14pt sides, 10–12pt above and 30–34pt below for the home indicator.
-  Full-width actions are 48pt with 12pt corners at 16pt (`.nwReviewBar(_:)`): primary `lantern` with
+  Full-width actions are 48pt with 12pt corners at 16pt (`.shReviewBar(_:)`): primary `lantern` with
   600 `textOnLantern`, secondary `bgRaised` with a 1px `lineStrong` line and 500 `textPrimary`; two
   share the width with 10pt between them.
-- **Buttons inside cards** use `.buttonStyle(.nw(_:size:))`: Needs you's answers are 28pt (`.m`:
+- **Buttons inside cards** use `.buttonStyle(.sh(_:size:))`: Needs you's answers are 28pt (`.m`:
   12.5, 10pt sides); a host's Retry is 32pt (`.l`: 13, 14pt sides; the
   app's Retry on More and Home is `.s`, 24pt). The first answer is primary, the rest secondary, and
   Open or Reply… ghost. Each keeps its drawn size and hits at 44pt.
-- **Switches:** `.toggleStyle(.nwSwitch)`, 30×18, `lantern` on, `lineStrong` off, hit at 44pt.
+- **Switches:** `.toggleStyle(.shSwitch)`, 30×18, `lantern` on, `lineStrong` off, hit at 44pt.
 - **Status:** `AgentState` only. Header dots are 6pt, row dots 7–8pt; a state that needs you glows
-  in `lantern`; idle is a hollow `textTertiary` ring. Pills (`NWStatusPill`) are 20pt with 4pt
+  in `lantern`; idle is a hollow `textTertiary` ring. Pills (`SHStatusPill`) are 20pt with 4pt
   corners on the state's tint.
-- **Colors by role.** The boards' hexes are Night Watch's roles: `#0a0b0c` `bgBase`, `#0d0e10`
+- **Colors by role.** The boards' hexes are Shepherd Design's roles: `#0a0b0c` `bgBase`, `#0d0e10`
   `bgWindow`, `#15171a` `bgRaised`, `#111316` `bgSunken`, `#1a1d21` `bgBubble`, `#1f2226`
   `lineSubtle`, `#2c3035` `lineStrong`, `#e8e9ec`, `#9aa0a9` and `#5f656e` the three text roles,
   `#f2a93b` `lantern`, `#f7c16e` `lanternText`, `#7aa7ff` `running`, `#46c37b` `done`, `#f0625e`
@@ -208,16 +208,16 @@ screen from these parts; the sections after this one give each board's specifics
   its word in `textTertiary` (Status, below), as on the iPad.
 - **Glyphs that need you are `lanternText`** on every phone list (Home's Needs you rows, Needs
   you's origin lines, Search's missions): only a status dot glows in `lantern`.
-- **Components** for these screens (ShepherdUI): `NWListCard`, `NWListRow`, `NWListHeader`,
-  `NWHostBadge`, `NWAttentionCard`, `NWHostCard`, `NWWrapStack` (Fleet); `NWCapsuleComposer`,
-  `NWComposerActionButton`, `NWTouchCommandList`, `NWTouchQueueCard`, `NWTouchQueueRow`,
-  `NWQuestionCard`, `NWQuestionOptionCard`, `NWSelectorChip` (Composer); `NWRunCard`,
-  `NWRunHistoryList`, `NWRunGoal`, `NWRunQuestion`, `NWSteerField` (Agents);
-  `NWReviewFileRow`, `NWTouchDiffLine`, `NWLineCommentBar`, `NWInlineComment`, `.nwReviewBar`
-  (Review); `NWTouchSearchField`, `NWSearchResultRow` (Navigation); `NWChoiceRow`, `NWGroupCard`,
-  `NWCardRow` (Containers); `NWAutomationRow`, `NWAutomationSwitch` (Automations). Their measures
-  are `NWListMetrics`, `NWTouchComposerMetrics`, `NWTouchQueueMetrics`, `NWTouchQuestionMetrics`,
-  `NWRunTouchMetrics`, `NWSelectorChipMetrics`, `NWChoiceRowMetrics` and `NWTouchDiffMetrics`; a
+- **Components** for these screens (ShepherdUI): `SHListCard`, `SHListRow`, `SHListHeader`,
+  `SHHostBadge`, `SHAttentionCard`, `SHHostCard`, `SHWrapStack` (Fleet); `SHCapsuleComposer`,
+  `SHComposerActionButton`, `SHTouchCommandList`, `SHTouchQueueCard`, `SHTouchQueueRow`,
+  `SHQuestionCard`, `SHQuestionOptionCard`, `SHSelectorChip` (Composer); `SHRunCard`,
+  `SHRunHistoryList`, `SHRunGoal`, `SHRunQuestion`, `SHSteerField` (Agents);
+  `SHReviewFileRow`, `SHTouchDiffLine`, `SHLineCommentBar`, `SHInlineComment`, `.shReviewBar`
+  (Review); `SHTouchSearchField`, `SHSearchResultRow` (Navigation); `SHChoiceRow`, `SHGroupCard`,
+  `SHCardRow` (Containers); `SHAutomationRow`, `SHAutomationSwitch` (Automations). Their measures
+  are `SHListMetrics`, `SHTouchComposerMetrics`, `SHTouchQueueMetrics`, `SHTouchQuestionMetrics`,
+  `SHRunTouchMetrics`, `SHSelectorChipMetrics`, `SHChoiceRowMetrics` and `SHTouchDiffMetrics`; a
   screen's own measures are `MobileLayout` extensions in its folder.
 
 ## iPhone: Home (MobileAgents)
@@ -237,7 +237,7 @@ merges into one Home.
 - **Offline hosts** (the app's addition; the board only counts them on More): a card of notices, one
   per host that is not connected: its status dot (a spinner while connecting), the name (15/500),
   the reason in the state's text color ("Shepherd isn't running on MacBook Air, or it can't be
-  reached."), and Retry (`.nw(.secondary, size: .s)`, `arrow.clockwise`). A refused token or another
+  reached."), and Retry (`.sh(.secondary, size: .s)`, `arrow.clockwise`). A refused token or another
   protocol says so and waits for Edit or Retry.
 - **Needs you** (head in `lanternText` with its count): 52pt rows, each a glowing 8pt `lantern` dot
   for a thread, or the origin's 15pt glyph in `lanternText` (a bolt for an automation run); the thread's name, the question in `lanternText` mono 11 under it, and (the
@@ -257,7 +257,7 @@ merges into one Home.
   recents", which pushes `RecentsScreen`.
 - **Not built yet:** a design in Recents (a diamond glyph in `textTertiary`, its name, "design · 4
   boards").
-- **Empty states:** no hosts shows `NWEmptyState` "Add a host" ("Connect to a Mac running Shepherd
+- **Empty states:** no hosts shows `SHEmptyState` "Add a host" ("Connect to a Mac running Shepherd
   to see its threads.") with a primary Add host; no threads shows "No threads yet" ("Start one on
   any host; it shows here with the host it runs on.") with New thread in the Recents card.
 
@@ -282,18 +282,18 @@ follows the Mac's rules (Thread) with the phone's measures below.
   square, "Stop agent" to VoiceOver), the one way to refuse the question.
 - **Column:** 20pt from the header, 16pt sides, 22pt between turns, 12pt between a turn's parts
   (`MobileLayout.turnItemSpacing`). The app pads the column 16pt at the top and spaces turns 24pt
-  (`MobileLayout.turnSpacing`, `NW.Space.xxl`).
-- **User bubble** (`NWUserBubble`): trailing, at most 300pt, `bgBubble` with a 1px `lineStrong`
+  (`MobileLayout.turnSpacing`, `SH.Space.xxl`).
+- **User bubble** (`SHUserBubble`): trailing, at most 300pt, `bgBubble` with a 1px `lineStrong`
   line, 8pt corners, 10×14 padding, 15/1.45 text; its time under it at rest in mono 11
   `textTertiary` ("2:41 PM"), 4pt below (touch has no hover). The later boards (MobileSteer,
   MobileQueue, MobileQueueMenu, MobileQuestion) round it at 12, start the column 14–16pt under the
   header and space turns 12–14pt; MobileThread's 8, 20 and 22 are the rule. The app caps the bubble
-  at the Mac's 600pt (`NWThreadMetrics.bubbleMaxWidth`), so on a phone it can take the whole
+  at the Mac's 600pt (`SHThreadMetrics.bubbleMaxWidth`), so on a phone it can take the whole
   column (Known gaps).
-- **Thinking** (`NWThinking`): "Thought for 4s" in italic 12 `textSecondary` behind a 12pt
+- **Thinking** (`SHThinking`): "Thought for 4s" in italic 12 `textSecondary` behind a 12pt
   disclosure chevron, 32pt tall; it expands in place.
-- **Prose** (`NWAgentProse`): 16/1.5 `textPrimary`, paragraphs 8pt apart.
-- **Activity lines** (`NWActivityLine`): a finished line is a 36pt button (a 13pt glyph in
+- **Prose** (`SHAgentProse`): 16/1.5 `textPrimary`, paragraphs 8pt apart.
+- **Activity lines** (`SHActivityLine`): a finished line is a 36pt button (a 13pt glyph in
   `textTertiary`, the label in 14 `textSecondary`, the meta in mono 11 `textTertiary`, a 10pt
   chevron), 8pt between parts, 4pt between lines, one per burst of work; it expands its calls. The
   running line is 26pt (MobileApproval, LiveText): the tool's 13pt glyph, still, in
@@ -302,7 +302,7 @@ follows the Mac's rules (Thread) with the phone's measures below.
   indented 21pt, the newest in `textSecondary` and the rest `textTertiary`. Nothing spins, and no
   "Working…" row sits under it; between tools the turn ends in "Thinking…", shimmering, as on the
   Mac (Thread › Live text), with no chevron.
-- **"Edited N files" card** (`NWTurnChangesCard`, ChangesStates › ChangesCard): 1px
+- **"Edited N files" card** (`SHTurnChangesCard`, ChangesStates › ChangesCard): 1px
   `lineSubtle`, 12pt corners, on `bgWindow`. Its head (10×10×12 inset): a 36pt tile (`bgSunken`,
   a 1px `lineSubtle` line, radius 8) with the ± glyph in `textSecondary`; "Edited 2 files" (15/600)
   over its stat (mono 12, `done`/`failed`); then Undo (a 36pt ghost with its ↶ glyph, 13.5/500
@@ -316,11 +316,11 @@ follows the Mac's rules (Thread) with the phone's measures below.
   names the files in an alert. The card comes from the host's record of the turn
   (`turnChanges`); an older host's comes from the turn's edit calls, with no Undo. At the
   accessibility sizes the head stacks and paths take two lines.
-- **Turn footer** (`NWTurnFooter`): at rest, mono 11 `textTertiary`: "2:44 PM · 3m 12s"; the app
+- **Turn footer** (`SHTurnFooter`): at rest, mono 11 `textTertiary`: "2:44 PM · 3m 12s"; the app
   adds the tool-call count, Copy and Retry (the latest turn only; Thread › Retry), and "n subagents"
   when the turn spawned runs.
 - **Composer:** no top rule, `bgWindow`, 8pt above and below, 16pt sides. One glass capsule
-  (`NWCapsuleComposer`, the system glass material, fully rounded, at least 44pt, 2pt side padding)
+  (`SHCapsuleComposer`, the system glass material, fully rounded, at least 44pt, 2pt side padding)
   holds the 44pt paperclip at its leading edge (Attach, `textSecondary`; shown only when the host
   takes images), the field at 16 (`.body`) growing to a few lines, then the context ring and Send
   (a 32pt `lantern` circle with a `textOnLantern` up arrow, at 35% while there is nothing to send;
@@ -351,7 +351,7 @@ follows the Mac's rules (Thread) with the phone's measures below.
 - **Prompt:** the field takes the top, 18pt from the header with 16pt sides, in Geist 18 at 1.45
   line height (`MobileLayout.newThreadPromptSize`), focused on open with the keyboard up and a 2pt
   `lantern` caret. Placeholder: "What should the agent do?".
-- **Chips** (`NWSelectorChip`, 8pt apart, wrapping): 32pt capsules on `bgRaised` with a 1px
+- **Chips** (`SHSelectorChip`, 8pt apart, wrapping): 32pt capsules on `bgRaised` with a 1px
   `lineStrong` line, 10pt sides: a 13pt `textSecondary` glyph, the value at 13 (mono for repo, host
   and model; Geist for thinking), and a 10pt `textTertiary` down chevron. Repo (a book: "shepherd"),
   Host (a display: the host's name), Model (a sparkle: the model without its provider,
@@ -367,7 +367,7 @@ follows the Mac's rules (Thread) with the phone's measures below.
   `textSecondary`): a folded-map glyph, "Touches more than one repo?", and "Start a mission" (500
   `running`) trailing, which hands the prompt to a new mission. It waits for Missions.
 - **Where it runs** (MobileWorkspace): a sheet 700pt tall over the form, "Where it runs" with Done.
-  Two heads, Repo and Host, each over a `bgRaised` card of 56pt `NWChoiceRow`s (20pt leading column,
+  Two heads, Repo and Host, each over a `bgRaised` card of 56pt `SHChoiceRow`s (20pt leading column,
   the name in mono 15/600 over a 12.5 `textTertiary` detail, a 17pt `running` checkmark on the
   chosen one):
   - Repo: the chosen host's spaces with a book glyph and "main · ~/code/shepherd" (the checkout's
@@ -385,7 +385,7 @@ follows the Mac's rules (Thread) with the phone's measures below.
     `textTertiary`, naming the base's branch) and its switch, on by default. With it on the app adds
     Branch and Base fields (the base as the host resolved it) and Fetch origin first.
 - **States:** an older host says what it lacks ("Update Shepherd on <host> to start threads in a new
-  worktree."); a failed start shows a `failed` `NWBanner` "Couldn't start the thread" with Try again
+  worktree."); a failed start shows a `failed` `SHBanner` "Couldn't start the thread" with Try again
   or Resolve. Images and the prompt go in the same creation request; a host without image
   creation support, or an image exceeding the encoded frame limit, leaves the form intact.
   A completed start opens its thread only if its original sheet is still presented; cancelling
@@ -404,7 +404,7 @@ next step. Steer now on a row and Steer all now are the same interrupt.
 - **Header while it runs:** as at rest (iPhone: Thread › Header), "Running · ⧉
   agent/native-restyle" (MobileSteer, MobileQueue), with Stop trailing; the phone's header shows
   no clock (the iPad's pill does).
-- **Up next** (`NWTouchQueueCard`) sits above the capsule, 8pt apart: `bgRaised`, a 1px `lineStrong`
+- **Up next** (`SHTouchQueueCard`) sits above the capsule, 8pt apart: `bgRaised`, a 1px `lineStrong`
   line, 14pt corners. Its 38pt head (14pt leading, 4pt trailing): the queue glyph (13pt
   `textTertiary`), "Up next" (13/600 `textSecondary`), the count (mono 11.5 `textTertiary`), and •••
   (a 34pt circle: Steer all now or Send all now, "When the turn ends, send" with the delivery modes,
@@ -418,7 +418,7 @@ next step. Steer now on a row and Steer all now are the same interrupt.
   `lineStrong` ring (mono 11.5 `textSecondary`), then the message at 15 on one line. The app lets it
   wrap to two, and shows an image count and "Being edited" while an editor elsewhere holds it.
   **The first queued row while pi works also wears Steer now as a button** (decided by the user,
-  2026-10-01; no board draws it): `.nw(.secondary, size: .s)`, `arrow.turn.down.right` and "Steer
+  2026-10-01; no board draws it): `.sh(.secondary, size: .s)`, `arrow.turn.down.right` and "Steer
   now", after the message and its image count, hit at 44pt, so touch, which has no hover, sees
   what the Mac shows at rest. Its swipe actions and long-press menu (which keeps Steer now) are
   unchanged, and an idle queue draws no button (the header's Send now is its action).
@@ -434,7 +434,7 @@ next step. Steer now on a row and Steer all now are the same interrupt.
 - **Edit** opens a sheet ("Queued n", Cancel and Save) while the host holds the message; Delete
   leaves an Undo row in its place ("Deleted ~~text~~", Undo); clearing leaves "Cleared n messages".
 - **Paused:** as in the iOS list above (Send now in the head).
-- **Question** (MobileQuestion; `NWQuestionCard`, docked): the panel takes the composer's place,
+- **Question** (MobileQuestion; `SHQuestionCard`, docked): the panel takes the composer's place,
   full width, docked to the bottom: `bgRaised`, 18pt top corners, a 1px `lantern` line along its
   top, the thread's content shadowed under its edge, 12pt top, 14pt sides, 34pt bottom, 10pt between
   parts. A 36×5 `lineStrong` grabber, then a 26pt head: a 13pt question glyph and "Agent is asking"
@@ -444,13 +444,13 @@ next step. Steer now on a row and Steer all now are the same interrupt.
   5pt-cornered `lineStrong` square (mono 11 `textSecondary`), then "Recommended" (a 20pt
   `lanternTint` chip, 11/600 `lanternText`) when the asker marked it, the title (15/600, 1.35) and
   its detail (14/1.45 `textSecondary`). Tapping one selects it (the number fills); Answer, a
-  full-width 48pt `lantern` button with 12pt corners at 16/600 (`.nwReviewBar(.primary)`), stays
+  full-width 48pt `lantern` button with 12pt corners at 16/600 (`.shReviewBar(.primary)`), stays
   at 40% until one is chosen. The panel follows the question dock's rules (Composer, questions,
   and menus › Questions; `QuestionPanel` on `NativeQuestionPrompt`, as the Mac's dock): Answer is
   the only button, and picking another option moves the pick. A yes or a no (pi's confirm, or two
   short options) is two cards side by side that answer on a tap; an open question (pi's input or
   editor) is a field over Answer. The grabber is Hide the question: a tap,
-  or a drag down from it, folds the panel to one line (`NWQuestionCardHiddenLine`, the iPad's),
+  or a drag down from it, folds the panel to one line (`SHQuestionCardHiddenLine`, the iPad's),
   which never answers it; Answer or Show the question on that line opens it again, and the next
   question arrives open.
 - **What each asker takes** is the dock's table: pi's select takes only one of its options, so it
@@ -471,7 +471,7 @@ next step. Steer now on a row and Steer all now are the same interrupt.
 `Subagents/`. The runs are the Mac's (Subagents): a tray above the composer, the thread's two
 record lines, a list, and a screen per run.
 
-- **The tray** (MobileSteer, SubagentTray › iPhone; `SubagentTraySection`, `NWSubagentTray` at
+- **The tray** (MobileSteer, SubagentTray › iPhone; `SubagentTraySection`, `SHSubagentTray` at
   `.phone` size): the Mac's tray at touch sizes, in one card with Up next above the composer
   (`bgRaised`, a 1px `lineStrong` line, radius 12). A 38pt header (14pt leading, a 13pt glyph,
   "3 subagents" at 13/600, the cells and tally, Collapse as a 34pt circle); 44pt rows (14pt
@@ -488,7 +488,7 @@ record lines, a list, and a screen per run.
   have; both, and the footer's "3 subagents", open the runs list.
 - **The runs list** (MobileSubagents; `SubagentListScreen`): "Subagents" over "1 running · 1 waiting
   on parent" in the state's color, on `bgBase` with 14pt padding. "This turn" with its count heads the
-  live runs as cards (`NWRunCard`; 12×14 padding, 8pt inside):
+  live runs as cards (`SHRunCard`; 12×14 padding, 8pt inside):
   - Head: the branch glyph in the state's color, the name (mono 15/600), its tags ("background ·
     fable-5-1", 12 `textTertiary`), and a 20pt pill trailing (the state's tint and a 6pt dot: "37m"
     running, "Waiting on parent · 2m", "4m 02s" done).
@@ -504,15 +504,15 @@ record lines, a list, and a screen per run.
     the stat, a chevron.
 - **One run** (MobileSubagent; `SubagentRunScreen`): the agent's name ("worker"; the task is the goal below, and the steer field says "Steer worker…") over "Running · 37m" in plain `textTertiary`, and ••• (Pause
   or Continue, Stop, Re-run, Copy Transcript) trailing. On `bgWindow`, 16pt padding, 12pt apart:
-  - The goal (`NWRunGoal`): `bgSunken`, 1px `lineSubtle`, 12pt corners, 12×14 padding: "GOAL · FROM
-    THE PARENT" (`.nwSectionLabel()`), then the goal at 14/1.45. The app adds "step 1 of 3 · 34%".
+  - The goal (`SHRunGoal`): `bgSunken`, 1px `lineSubtle`, 12pt corners, 12×14 padding: "GOAL · FROM
+    THE PARENT" (`.shSectionLabel()`), then the goal at 14/1.45. The app adds "step 1 of 3 · 34%".
   - Its transcript: prose at 15/1.5, activity lines 32pt tall at 14; the running call live with its
     verb ("Building") and command shimmering and its elapsed seconds, as in the thread; nothing
     shows between calls (LiveText's "Thinking…" is the thread's alone). The app draws the live
     call without the board's output tail: the child's session holds no streamed output (Where
     Shepherd departs from the boards).
   - Its question, while it waits on its parent, on `bgSunken`, with the answers it offered, to read.
-  - The steer field (`NWSteerField`) at the bottom: a 44pt capsule, "Steer worker…", Send inside it,
+  - The steer field (`SHSteerField`) at the bottom: a 44pt capsule, "Steer worker…", Send inside it,
     and under it "to: worker · not the parent · lands before its next turn" (mono 11 `textTertiary`,
     8pt sides). Only while the run takes a steer; a finished run shows Re-run and Copy transcript
     instead.
@@ -536,7 +536,7 @@ follows the Commit from review rule above.
   - The summary card (14pt padding): "3 files" (17/600) and the stat (mono 11), then, under it, the branch
     ("agent/pay-button-jump", mono 12 `textSecondary`) and "1 of 3 viewed" (12 `textTertiary`); the board draws no bar. The app adds
     Finalize worktree ("commit · push · PR") to the card for a worktree agent.
-  - "Files" with "tap to read the diff", then one card of 58pt rows (`NWReviewFileRow`): the viewed
+  - "Files" with "tap to read the diff", then one card of 58pt rows (`SHReviewFileRow`): the viewed
     mark (a `done` check, or a 14pt ring in `lineStrong`), the status letter (mono 12: M `lantern`,
     A `done`), the name (mono 14/600) over its directory (mono 11 `textTertiary`), the comment count
     (a bubble glyph and "1", 12 `running`), the stat, a chevron. A row pushes its diff. The list
@@ -555,7 +555,7 @@ follows the Commit from review rule above.
 - **Diff** (MobileDiff): the file name over "App/iOS · 2 of 3 · +9 −7" (mono 11.5), and Next file (a
   34pt button, a down chevron) trailing; the app adds Mark viewed. On `bgWindow`:
   - The hunk head in mono 11 `textTertiary` on `runningTint`, 6×12 padding.
-  - Lines (`NWTouchDiffLine`) at least 22pt (`NW.Height.rowCompact`), wrapped, mono 12 at 1.55: a
+  - Lines (`SHTouchDiffLine`) at least 22pt (`SH.Height.rowCompact`), wrapped, mono 12 at 1.55: a
     32pt number column (10.5 `textTertiary`, right-aligned, 6pt after), a 14pt sign column (`failed`
     −, `done` +), the code with syntax colors; removed lines on `failedTint`, added on `doneTint`,
     and a changed word of a paired line on its tint again (`DiffWords`).

@@ -37,9 +37,9 @@ struct AutomationsPage: View {
     var body: some View {
         VStack(spacing: 0) {
             DestinationPageHeader(title: "Automations", chrome: chrome) {
-                NWPageFilterField("Filter automations", text: Binding(get: { model.filter }, set: actions.setFilter))
+                SHPageFilterField("Filter automations", text: Binding(get: { model.filter }, set: actions.setFilter))
                 Button("New automation", systemImage: "plus", action: actions.create)
-                    .buttonStyle(.nw(.primary))
+                    .buttonStyle(.sh(.primary))
             }
             HStack(spacing: 0) {
                 table
@@ -47,22 +47,22 @@ struct AutomationsPage: View {
                     AutomationDetailPane(detail: detail, actions: actions)
                         .equatable()
                         .frame(width: AppLayout.automationDetailWidth)
-                        .overlay(alignment: .leading) { NWHairline(.vertical) }
+                        .overlay(alignment: .leading) { SHHairline(.vertical) }
                 }
             }
             .frame(maxHeight: .infinity)
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
     }
 
     @ViewBuilder private var table: some View {
         VStack(spacing: 0) {
-            NWTableHead(["Automation", "Starts", "Host", "Last run"], columns: AppLayout.automationColumns)
+            SHTableHead(["Automation", "Starts", "Host", "Last run"], columns: AppLayout.automationColumns)
                 .padding(.top, AppLayout.automationTableTop)
             if let empty = model.emptyText {
                 Text(empty)
-                    .nwText(.caption)
-                    .foregroundStyle(Color.nw.textTertiary)
+                    .shText(.caption)
+                    .foregroundStyle(Color.sh.textTertiary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: AppLayout.automationEmptyMaxWidth)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -90,9 +90,9 @@ struct AutomationTableRowView: View, Equatable {
     nonisolated static func == (a: AutomationTableRowView, b: AutomationTableRowView) -> Bool { a.row == b.row }
 
     var body: some View {
-        let _ = NWRenderProbe.tick("automations.row")
+        let _ = SHRenderProbe.tick("automations.row")
         let key = row.key
-        NWAutomationTableRow(row.name, isOn: row.enabled, switchEnabled: row.canToggle, host: row.host, outcome: row.lastRun,
+        SHAutomationTableRow(row.name, isOn: row.enabled, switchEnabled: row.canToggle, host: row.host, outcome: row.lastRun,
                              selected: row.selected, columns: AppLayout.automationColumns,
                              toggle: { actions.setEnabled(key, $0) }, select: { actions.select(key) })
             .contextMenu {
@@ -127,13 +127,13 @@ struct AutomationDetailPane: View, Equatable {
                 VStack(alignment: .leading, spacing: 0) {
                     header
                     section {
-                        NWPageSectionLabel("Prompt")
-                        NWPageQuote(detail.prompt)
+                        SHPageSectionLabel("Prompt")
+                        SHPageQuote(detail.prompt)
                     }
                     section {
                         VStack(alignment: .leading, spacing: AppLayout.automationFactSpacing) {
                             ForEach(detail.facts) { fact in
-                                NWPageFact(fact.label, value: fact.value, mono: fact.mono,
+                                SHPageFact(fact.label, value: fact.value, mono: fact.mono,
                                            labelWidth: AppLayout.automationFactLabelWidth, style: .detail)
                             }
                         }
@@ -146,40 +146,40 @@ struct AutomationDetailPane: View, Equatable {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: NW.Space.xs) {
+        VStack(alignment: .leading, spacing: SH.Space.xs) {
             Text(detail.name)
-                .font(.nw(.title))
-                .foregroundStyle(Color.nw.textPrimary)
+                .font(.sh(.title))
+                .foregroundStyle(Color.sh.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
             Text(detail.summary)
-                .font(.nwSans(12))
-                .foregroundStyle(Color.nw.textTertiary)
+                .font(.shSans(12))
+                .foregroundStyle(Color.sh.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.vertical, AppLayout.automationDetailHeaderVertical)
         .padding(.horizontal, AppLayout.automationDetailSide)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(alignment: .bottom) { NWHairline() }
+        .overlay(alignment: .bottom) { SHHairline() }
     }
 
     private func section<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: NW.Space.m) { content() }
+        VStack(alignment: .leading, spacing: SH.Space.m) { content() }
             .padding(.vertical, AppLayout.automationDetailSectionVertical)
             .padding(.horizontal, AppLayout.automationDetailSide)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .overlay(alignment: .bottom) { NWHairline() }
+            .overlay(alignment: .bottom) { SHHairline() }
     }
 
     private var runs: some View {
-        VStack(alignment: .leading, spacing: NW.Space.s) {
-            NWPageSectionLabel("Recent runs")
+        VStack(alignment: .leading, spacing: SH.Space.s) {
+            SHPageSectionLabel("Recent runs")
             if let note = detail.runsNote {
-                Text(note).nwText(.caption).foregroundStyle(Color.nw.textTertiary)
+                Text(note).shText(.caption).foregroundStyle(Color.sh.textTertiary)
             } else {
                 VStack(spacing: 0) {
                     ForEach(detail.runs) { run in
-                        NWAutomationRunLine(started: run.started, word: run.word, state: run.state, duration: run.duration,
+                        SHAutomationRunLine(started: run.started, word: run.word, state: run.state, duration: run.duration,
                                             open: run.thread.map { thread in { actions.openThread(thread) } })
                     }
                 }
@@ -192,29 +192,29 @@ struct AutomationDetailPane: View, Equatable {
 
     private var footer: some View {
         let key = detail.key
-        return HStack(spacing: NW.Space.m) {
+        return HStack(spacing: SH.Space.m) {
             if detail.live {
                 Button("Stop", systemImage: "stop.fill") { actions.stop(key) }
-                    .buttonStyle(.nw(.secondary, size: .s))
+                    .buttonStyle(.sh(.secondary, size: .s))
                     .disabled(!detail.canStop)
             } else {
                 Button("Run now", systemImage: "play.fill") { actions.run(key) }
-                    .buttonStyle(.nw(.secondary, size: .s))
+                    .buttonStyle(.sh(.secondary, size: .s))
                     .disabled(!detail.canRun)
             }
             if let reason = detail.readOnlyReason {
                 Text(reason)
-                    .font(.nw(.caption))
-                    .foregroundStyle(Color.nw.textTertiary)
+                    .font(.sh(.caption))
+                    .foregroundStyle(Color.sh.textTertiary)
                     .lineLimit(2)
             }
-            Spacer(minLength: NW.Space.s)
+            Spacer(minLength: SH.Space.s)
             Button("Edit") { actions.edit(key) }
-                .buttonStyle(.nw(.ghost, size: .s))
+                .buttonStyle(.sh(.ghost, size: .s))
                 .disabled(!detail.canEdit)
         }
         .padding(.vertical, AppLayout.automationFooterVertical)
         .padding(.horizontal, AppLayout.automationFooterSide)
-        .overlay(alignment: .top) { NWHairline() }
+        .overlay(alignment: .top) { SHHairline() }
     }
 }

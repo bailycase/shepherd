@@ -1,6 +1,6 @@
 import SwiftUI
 
-// Messages (NWThread board): the user's bubble, code, thinking, the turn footer and the
+// Messages (SHThread board): the user's bubble, code, thinking, the turn footer and the
 // turn-level error (the agent's prose is in Prose.swift). Value inputs only; the app owns the
 // thread.
 
@@ -9,15 +9,15 @@ import SwiftUI
 /// message), while one of their controls has keyboard focus, while a copy confirms, or while
 /// VoiceOver runs, so they stay reachable. Either way they keep their place and only fade
 /// (`.hover`): showing them never moves or resizes anything.
-enum NWMessageDetails {
+enum SHMessageDetails {
     static func shown(hovering: Bool, focused: Bool = false, confirming: Bool = false, voiceOver: Bool) -> Bool {
-        NWPlatform.showsHoverDetails || hovering || focused || confirming || voiceOver
+        SHPlatform.showsHoverDetails || hovering || focused || confirming || voiceOver
     }
 }
 
 /// A user bubble's measure and inset: the Mac's (and the phone's) at most 600pt with 10×14
 /// inside, or the iPad boards' 520pt with 12×16 (iPadThread).
-public struct NWUserBubbleMetrics: Equatable, Sendable {
+public struct SHUserBubbleMetrics: Equatable, Sendable {
     public var maxWidth: CGFloat
     public var vertical: CGFloat
     public var horizontal: CGFloat
@@ -28,22 +28,22 @@ public struct NWUserBubbleMetrics: Equatable, Sendable {
     /// (13.5 on 1.5), which measured 2pt a line taller than the ordinary bubble's.
     public var leadingAdjustment: CGFloat = -1
 
-    public static let standard = NWUserBubbleMetrics(maxWidth: NWThreadMetrics.bubbleMaxWidth, vertical: 10, horizontal: 14)
+    public static let standard = SHUserBubbleMetrics(maxWidth: SHThreadMetrics.bubbleMaxWidth, vertical: 10, horizontal: 14)
     /// The Project conversation's bubble (ProjectLead-Started): a 520pt measure inside 12 / 16 padding and a 1pt border (554pt), caption overlaid. The 2.25pt is the half-leading CSS puts above and below a 20.25pt line that SwiftUI's first and last lines lack.
-    public static let lead = NWUserBubbleMetrics(maxWidth: 554, vertical: NW.Space.l + 2.25, horizontal: NW.Space.xl, overlaysCaption: true, leadingAdjustment: -2)
-    public static let pad = NWUserBubbleMetrics(maxWidth: 520, vertical: NW.Space.l, horizontal: NW.Space.xl)
+    public static let lead = SHUserBubbleMetrics(maxWidth: 554, vertical: SH.Space.l + 2.25, horizontal: SH.Space.xl, overlaysCaption: true, leadingAdjustment: -2)
+    public static let pad = SHUserBubbleMetrics(maxWidth: 520, vertical: SH.Space.l, horizontal: SH.Space.xl)
 }
 
 extension EnvironmentValues {
-    @Entry public var nwUserBubbleMetrics = NWUserBubbleMetrics.standard
+    @Entry public var shUserBubbleMetrics = SHUserBubbleMetrics.standard
 }
 
-/// The user's turn: right-aligned, at most 600pt (`nwUserBubbleMetrics`), `bgBubble` with a 1px strong line, radius 8.
+/// The user's turn: right-aligned, at most 600pt (`shUserBubbleMetrics`), `bgBubble` with a 1px strong line, radius 8.
 /// No avatar and no name; the time sits beneath, shown only while the message is hovered. A
 /// message steered into a running turn wears "Steered" above it and a `running` line. Its text
-/// follows `nwProseSize`. `leading` sits above the words inside the bubble: the design references
+/// follows `shProseSize`. `leading` sits above the words inside the bubble: the design references
 /// the message carries (DesignReferenceChip · sent).
-public struct NWUserBubble<Leading: View>: View {
+public struct SHUserBubble<Leading: View>: View {
     /// How the message reached pi.
     public enum Origin: Sendable {
         /// Sent, or delivered from the queue.
@@ -63,8 +63,8 @@ public struct NWUserBubble<Leading: View>: View {
     let revealed: Bool
     let origin: Origin
     let leading: Leading
-    @Environment(\.nwProseSize) private var proseSize
-    @Environment(\.nwUserBubbleMetrics) private var metrics
+    @Environment(\.shProseSize) private var proseSize
+    @Environment(\.shUserBubbleMetrics) private var metrics
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
 
     /// `attachments` name the images sent with the message. `timestamp` shows only while
@@ -84,28 +84,28 @@ public struct NWUserBubble<Leading: View>: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let steered = origin == .steered
         VStack(alignment: .trailing, spacing: 5) {
             if steered {
-                HStack(spacing: NW.Space.xs) {
+                HStack(spacing: SH.Space.xs) {
                     Image(systemName: "arrow.turn.down.right").font(.system(size: Self.steeredGlyph, weight: .medium))
-                    Text("Steered").font(.nw(.caption, weight: .medium))
+                    Text("Steered").font(.sh(.caption, weight: .medium))
                 }
-                .foregroundStyle(nw.running)
+                .foregroundStyle(sh.running)
             }
-            VStack(alignment: .leading, spacing: NW.Space.m) {
+            VStack(alignment: .leading, spacing: SH.Space.m) {
                 // Above the words: what it holds may open over them (a chip's preview).
                 leading.zIndex(1)
                 if !attachments.isEmpty {
-                    HStack(spacing: NW.Space.s) {
+                    HStack(spacing: SH.Space.s) {
                         ForEach(Array(attachments.enumerated()), id: \.offset) { _, name in
-                            NWAttachmentChip(name, thumbnail: nil)
+                            SHAttachmentChip(name, thumbnail: nil)
                         }
                     }
                 }
                 if title != nil || !text.isEmpty {
-                    VStack(alignment: .leading, spacing: NW.Space.xs) {
+                    VStack(alignment: .leading, spacing: SH.Space.xs) {
                         if let title { line(title, weight: .semibold) }
                         if !text.isEmpty { line(text, weight: nil) }
                     }
@@ -116,8 +116,8 @@ public struct NWUserBubble<Leading: View>: View {
             // The border is drawn under the content, so a chip's preview that opens over the
             // bubble's edge isn't crossed by it.
             .background {
-                RoundedRectangle(cornerRadius: NW.Radius.m).fill(nw.bgBubble)
-                    .nwBorder(steered ? nw.running : nw.lineStrong, radius: NW.Radius.m)
+                RoundedRectangle(cornerRadius: SH.Radius.m).fill(sh.bgBubble)
+                    .shBorder(steered ? sh.running : sh.lineStrong, radius: SH.Radius.m)
             }
             .frame(maxWidth: metrics.maxWidth, alignment: .trailing)
             if !metrics.overlaysCaption, timestamp != nil || note != nil {
@@ -125,7 +125,7 @@ public struct NWUserBubble<Leading: View>: View {
             }
         }
         .overlay(alignment: .bottomTrailing) {
-            if metrics.overlaysCaption, timestamp != nil || note != nil { caption.offset(y: NW.Space.xl) }
+            if metrics.overlaysCaption, timestamp != nil || note != nil { caption.offset(y: SH.Space.xl) }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .accessibilityElement(children: .combine)
@@ -133,9 +133,9 @@ public struct NWUserBubble<Leading: View>: View {
 
     private func line(_ value: String, weight: Font.Weight?) -> some View {
         Text(value)
-            .font(.nw(.body, weight: weight, size: proseSize))
-            .lineSpacing(max(0, NWTextStyle.body.lineSpacing(proseSize) + metrics.leadingAdjustment))
-            .foregroundStyle(Color.nw.textPrimary)
+            .font(.sh(.body, weight: weight, size: proseSize))
+            .lineSpacing(max(0, SHTextStyle.body.lineSpacing(proseSize) + metrics.leadingAdjustment))
+            .foregroundStyle(Color.sh.textPrimary)
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
     }
@@ -143,21 +143,21 @@ public struct NWUserBubble<Leading: View>: View {
     /// "2:41 PM", or "10:58 · from parent": the time (and its separator) fades in place beside a
     /// note that always shows.
     private var caption: some View {
-        let shown = NWMessageDetails.shown(hovering: revealed, voiceOver: voiceOver)
+        let shown = SHMessageDetails.shown(hovering: revealed, voiceOver: voiceOver)
         return HStack(spacing: 0) {
             if let timestamp {
                 Text(note == nil ? timestamp : "\(timestamp) · ").monospacedDigit()
                     .opacity(shown ? 1 : 0)
-                    .nwAnimation(.hover, value: shown)
+                    .shAnimation(.hover, value: shown)
             }
             if let note { Text(note) }
         }
-        .font(.nwMono(10.5))
-        .foregroundStyle(Color.nw.textTertiary)
+        .font(.shMono(10.5))
+        .foregroundStyle(Color.sh.textTertiary)
     }
 }
 
-extension NWUserBubble where Leading == EmptyView {
+extension SHUserBubble where Leading == EmptyView {
     public init(_ text: String, title: String? = nil, attachments: [String] = [], timestamp: String? = nil, note: String? = nil,
                 revealed: Bool = false, origin: Origin = .sent) {
         self.init(text, title: title, attachments: attachments, timestamp: timestamp, note: note, revealed: revealed, origin: origin) {
@@ -168,15 +168,15 @@ extension NWUserBubble where Leading == EmptyView {
 
 // MARK: Code
 
-/// A fenced block (NWThread board): `bgSunken`, a 1px line, radius 8; a 28pt header with the
+/// A fenced block (SHThread board): `bgSunken`, a 1px line, radius 8; a 28pt header with the
 /// language and a copy button that appears on hover (and for keyboard focus); code in mono 12
 /// at 1.6, syntax colored when `highlighted` is given.
-public struct NWCodeBlock: View {
+public struct SHCodeBlock: View {
     let code: String
     let language: String?
     let highlighted: AttributedString?
     #if os(macOS)
-    @State private var nativeCode = NWNativeCodeText.Cache()
+    @State private var nativeCode = SHNativeCodeText.Cache()
     #endif
     @State private var hovering = false
     @State private var copied = false
@@ -191,37 +191,37 @@ public struct NWCodeBlock: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: NW.Space.m) {
-                let kind = NWFenceKind(language)
-                HStack(spacing: NW.Space.xs) {
+            HStack(spacing: SH.Space.m) {
+                let kind = SHFenceKind(language)
+                HStack(spacing: SH.Space.xs) {
                     if let glyph = kind.glyph {
-                        Image(systemName: glyph).font(.system(size: NWThreadMetrics.codeLabelGlyph, weight: .medium))
+                        Image(systemName: glyph).font(.system(size: SHThreadMetrics.codeLabelGlyph, weight: .medium))
                             .accessibilityHidden(true)
                     }
-                    Text(kind.label).font(.nwMono(10.5))
+                    Text(kind.label).font(.shMono(10.5))
                 }
-                .foregroundStyle(nw.textTertiary)
+                .foregroundStyle(sh.textTertiary)
                 Spacer(minLength: 0)
                 Button {
-                    NWPasteboard.copy(code)
+                    SHPasteboard.copy(code)
                     copied = true
                     copies += 1
                     Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
                 } label: {
-                    NWCopyGlyph(copied: copied, copies: copies)
+                    SHCopyGlyph(copied: copied, copies: copies)
                 }
-                .buttonStyle(.nwIcon(size: NWThreadMetrics.codeCopyButton))
+                .buttonStyle(.shIcon(size: SHThreadMetrics.codeCopyButton))
                 .focused($copyFocused)
-                .opacity(NWPlatform.showsHoverDetails || hovering || copyFocused || copied ? 1 : 0)
-                .nwAnimation(.hover, value: hovering || copyFocused || copied)
+                .opacity(SHPlatform.showsHoverDetails || hovering || copyFocused || copied ? 1 : 0)
+                .shAnimation(.hover, value: hovering || copyFocused || copied)
                 .accessibilityLabel(copied ? "Copied" : "Copy code")
             }
-            .padding(.leading, NW.Space.l)
-            .padding(.trailing, NW.Space.s)
-            .frame(height: NWThreadMetrics.codeHeaderHeight)
-            .overlay(alignment: .bottom) { NWHairline() }
+            .padding(.leading, SH.Space.l)
+            .padding(.trailing, SH.Space.s)
+            .frame(height: SHThreadMetrics.codeHeaderHeight)
+            .overlay(alignment: .bottom) { SHHairline() }
             // The code draws directly when its longest line fits the column, so the thread's
             // wheel never meets a nested scroll view there, and scrolls sideways only when it does not.
             ViewThatFits(in: .horizontal) {
@@ -231,9 +231,9 @@ public struct NWCodeBlock: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(nw.bgSunken, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-        .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
-        .nwBorder(nw.lineSubtle, radius: NW.Radius.m)
+        .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+        .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
+        .shBorder(sh.lineSubtle, radius: SH.Radius.m)
         .onHover { hovering = $0 }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(language.map { "\($0) code" } ?? "Code")
@@ -243,18 +243,18 @@ public struct NWCodeBlock: View {
     private var codeText: some View {
         Group {
             #if os(macOS)
-            NWNativeCodeText(code: code, highlighted: highlighted, scale: ThemeStore.shared.textScale,
-                             lineSpacing: NWTextStyle.code.lineSpacing + 0.6, cache: nativeCode)
+            SHNativeCodeText(code: code, highlighted: highlighted, scale: ThemeStore.shared.textScale,
+                             lineSpacing: SHTextStyle.code.lineSpacing + 0.6, cache: nativeCode)
             #else
             if let highlighted { Text(highlighted) } else { Text(code) }
             #endif
         }
-        .font(.nw(.code))
-        .lineSpacing(NWTextStyle.code.lineSpacing + 0.6)
-        .foregroundStyle(Color.nw.textPrimary)
+        .font(.sh(.code))
+        .lineSpacing(SHTextStyle.code.lineSpacing + 0.6)
+        .foregroundStyle(Color.sh.textPrimary)
         .textSelection(.enabled)
         .fixedSize()
-        .padding(.horizontal, NW.Space.l)
+        .padding(.horizontal, SH.Space.l)
         .padding(.vertical, 10)
     }
 }
@@ -262,7 +262,7 @@ public struct NWCodeBlock: View {
 /// What a source fence's header says (including the source beneath a rendered Mermaid chart).
 /// Diagram and math source headers name the source after a glyph: "mermaid ·
 /// diagram source", "latex · math source".
-struct NWFenceKind: Equatable {
+struct SHFenceKind: Equatable {
     let label: String
     let glyph: String?
 
@@ -289,22 +289,22 @@ struct NWFenceKind: Equatable {
 
 /// A copy button's glyph (code blocks, the turn footer): `doc.on.doc`, turning into a check
 /// for a moment after each copy, replacing the symbol and popping.
-struct NWCopyGlyph: View {
+struct SHCopyGlyph: View {
     let copied: Bool
     /// Copies so far: each one pops.
     let copies: Int
 
     var body: some View {
         Image(systemName: copied ? "checkmark" : "doc.on.doc").font(.system(size: 12))
-            .nwContentTransition(.symbol)
-            .nwAnimation(.content, value: copied)
-            .nwPop(trigger: copies)
+            .shContentTransition(.symbol)
+            .shAnimation(.content, value: copied)
+            .shPop(trigger: copies)
     }
 }
 
 // MARK: Thinking
 
-/// The model's thinking (NWThread board). Collapsed: a 10pt chevron and "Thought for 4s" in
+/// The model's thinking (SHThread board). Collapsed: a 10pt chevron and "Thought for 4s" in
 /// italic 12. Expanded: the text as Markdown (bold, italic, code and links inline; paragraphs,
 /// lists and quotes as blocks) in italic 12.5 on a 2pt rule. Live (LiveText): "Thinking…"
 /// shimmering on a 26pt line with its clock in mono 11 tertiary, settling into "Thought for Ns"
@@ -313,10 +313,10 @@ struct NWCopyGlyph: View {
 /// With no text (the model kept its reasoning back), finished thinking is the plain line, not a
 /// control. A row with nothing to open draws no chevron but keeps its place, so the words never
 /// move.
-public struct NWThinking: View {
+public struct SHThinking: View {
     let title: String
     let spokenTitle: String
-    let blocks: [NWProseBlock]
+    let blocks: [SHProseBlock]
     @Binding var isExpanded: Bool
     let live: Bool
     /// When live thinking began, for its clock; nil draws none.
@@ -328,7 +328,7 @@ public struct NWThinking: View {
     /// Finished thinking: `title` is "Thought for 4s", `spokenTitle` how VoiceOver says it
     /// ("Thought for 4 seconds"), and `blocks` the text, parsed once per change by the host
     /// app. No blocks draw the plain line.
-    public init(_ title: String, blocks: [NWProseBlock], isExpanded: Binding<Bool>, spokenTitle: String? = nil) {
+    public init(_ title: String, blocks: [SHProseBlock], isExpanded: Binding<Bool>, spokenTitle: String? = nil) {
         self.title = title
         self.spokenTitle = spokenTitle ?? title
         self.blocks = blocks
@@ -345,7 +345,7 @@ public struct NWThinking: View {
         self.init(title, blocks: paragraphs.map { .paragraph(AttributedString($0)) }, isExpanded: isExpanded, spokenTitle: spokenTitle)
     }
 
-    private init(since: Date?, blocks: [NWProseBlock] = [], isExpanded: Binding<Bool> = .constant(false)) {
+    private init(since: Date?, blocks: [SHProseBlock] = [], isExpanded: Binding<Bool> = .constant(false)) {
         title = "Thinking…"
         spokenTitle = "Thinking"
         self.blocks = blocks
@@ -355,19 +355,19 @@ public struct NWThinking: View {
     }
 
     /// pi thinking between tools: its thinking streaming, or nothing yet to show for it.
-    public static func live() -> NWThinking { NWThinking(since: nil) }
+    public static func live() -> SHThinking { SHThinking(since: nil) }
 
     /// The model thinking now, since `since` (its clock; nil draws none). With `blocks`, the
     /// summary the provider has shared so far, it is a disclosure: "Thinking… · 30s".
-    public static func live(since: Date?, blocks: [NWProseBlock] = [], isExpanded: Binding<Bool> = .constant(false)) -> NWThinking {
-        NWThinking(since: since, blocks: blocks, isExpanded: isExpanded)
+    public static func live(since: Date?, blocks: [SHProseBlock] = [], isExpanded: Binding<Bool> = .constant(false)) -> SHThinking {
+        SHThinking(since: since, blocks: blocks, isExpanded: isExpanded)
     }
 
     /// Expanded thinking's text: Geist 12.5 (italic where it is drawn) at 1.55, headings
     /// semibold.
-    @MainActor static var font: Font { .nwSans(12.5) }
-    @MainActor static var headingFont: Font { .nwSans(12.5, .semibold) }
-    @MainActor static var lineSpacing: CGFloat { NWTextStyle.caption.lineSpacing + 2 }
+    @MainActor static var font: Font { .shSans(12.5) }
+    @MainActor static var headingFont: Font { .shSans(12.5, .semibold) }
+    @MainActor static var lineSpacing: CGFloat { SHTextStyle.caption.lineSpacing + 2 }
 
     /// What the row is: only a disclosure has something to open, so only it wears a chevron
     /// and takes a press.
@@ -380,7 +380,7 @@ public struct NWThinking: View {
         case plain
         case disclosure
 
-        init(live: Bool, blocks: [NWProseBlock]) {
+        init(live: Bool, blocks: [SHProseBlock]) {
             self = live ? (blocks.isEmpty ? .live : .liveDisclosure) : blocks.isEmpty ? .plain : .disclosure
         }
 
@@ -392,32 +392,32 @@ public struct NWThinking: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// When thinking ends, "Thinking…" cross-fades into "Thought for 4s" in place, as long as
-    /// the caller keeps one `NWThinking` for both (the same view identity).
+    /// the caller keeps one `SHThinking` for both (the same view identity).
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let kind = kind
-        VStack(alignment: .leading, spacing: NW.Space.m) {
+        VStack(alignment: .leading, spacing: SH.Space.m) {
             ZStack(alignment: .leading) {
                 switch kind {
-                case .live: liveHeader.nwTransition(.content)
-                case .plain: plainLine.nwTransition(.content)
-                case .disclosure, .liveDisclosure: toggle.nwTransition(.content)
+                case .live: liveHeader.shTransition(.content)
+                case .plain: plainLine.shTransition(.content)
+                case .disclosure, .liveDisclosure: toggle.shTransition(.content)
                 }
             }
-            .nwAnimation(.content, value: live)
+            .shAnimation(.content, value: live)
             if isExpanded, kind.opens {
-                VStack(alignment: .leading, spacing: NW.Space.m) {
-                    NWProseBlocks(blocks: blocks, voice: .thinking) { NWCodeBlock($0, language: $1) }
+                VStack(alignment: .leading, spacing: SH.Space.m) {
+                    SHProseBlocks(blocks: blocks, voice: .thinking) { SHCodeBlock($0, language: $1) }
                     if kind == .liveDisclosure {
-                        Text(Self.summarySource).font(.nw(.caption)).foregroundStyle(nw.textTertiary)
+                        Text(Self.summarySource).font(.sh(.caption)).foregroundStyle(sh.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                .padding(.vertical, NW.Space.xxs)
-                .padding(.leading, NW.Space.l)
-                .overlay(alignment: .leading) { nw.lineStrong.frame(width: NWThreadMetrics.ruleWidth) }
-                .frame(maxWidth: NWThreadMetrics.proseMeasure, alignment: .leading)
-                .nwTransition(.disclosure)
+                .padding(.vertical, SH.Space.xxs)
+                .padding(.leading, SH.Space.l)
+                .overlay(alignment: .leading) { sh.lineStrong.frame(width: SHThreadMetrics.ruleWidth) }
+                .frame(maxWidth: SHThreadMetrics.proseMeasure, alignment: .leading)
+                .shTransition(.disclosure)
             }
         }
     }
@@ -426,54 +426,54 @@ public struct NWThinking: View {
     /// opens yet, so no chevron draws (the user's decision, 2026-09-25); its place stays, the
     /// finished row's, so the words settle into "Thought for Ns" without moving.
     private var liveHeader: some View {
-        NWLiveLine(title, italic: true, since: since, spokenTitle: spokenTitle)
+        SHLiveLine(title, italic: true, since: since, spokenTitle: spokenTitle)
     }
 
     /// Thinking the model did not share: the collapsed row's words alone, where a toggle's would
     /// be, with nothing to open.
     private var plainLine: some View {
         let note = "\(spokenTitle). The model didn't share its reasoning."
-        return HStack(spacing: NW.Space.s) {
-            NWThreadChevron(isExpanded: false, shown: false)
-            Text(title).font(.nwSans(12)).italic()
-                .nwContentTransition(.numeric())
-                .nwAnimation(.content, value: title)
+        return HStack(spacing: SH.Space.s) {
+            SHThreadChevron(isExpanded: false, shown: false)
+            Text(title).font(.shSans(12)).italic()
+                .shContentTransition(.numeric())
+                .shAnimation(.content, value: title)
         }
-        .foregroundStyle(Color.nw.textSecondary)
+        .foregroundStyle(Color.sh.textSecondary)
         #if os(iOS)
-        .frame(minHeight: NW.Height.touch)
+        .frame(minHeight: SH.Height.touch)
         #endif
-        .nwHelp(note)
+        .shHelp(note)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(note)
     }
 
     private var toggle: some View {
         Button {
-            withAnimation(NW.Motion.disclosure.animation(reduceMotion: reduceMotion)) { isExpanded.toggle() }
+            withAnimation(SH.Motion.disclosure.animation(reduceMotion: reduceMotion)) { isExpanded.toggle() }
         } label: {
-            HStack(spacing: NW.Space.s) {
-                NWThreadChevron(isExpanded: isExpanded)
+            HStack(spacing: SH.Space.s) {
+                SHThreadChevron(isExpanded: isExpanded)
                 // Thinking that merges into this stretch counts its seconds up.
                 HStack(spacing: 0) {
                     Text(title)
                     if live, let since {
                         Text(" · ")
-                        NWElapsedText(since: since, style: .long)
+                        SHElapsedText(since: since, style: .long)
                     }
                 }
-                .font(.nwSans(12)).italic()
-                .nwContentTransition(.numeric())
-                .nwAnimation(.content, value: title)
+                .font(.shSans(12)).italic()
+                .shContentTransition(.numeric())
+                .shAnimation(.content, value: title)
             }
-            .foregroundStyle(Color.nw.textSecondary)
+            .foregroundStyle(Color.sh.textSecondary)
             #if os(iOS)
-            .frame(minHeight: NW.Height.touch)
+            .frame(minHeight: SH.Height.touch)
             #endif
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .nwFocusRing(radius: NW.Radius.xs)
+        .shFocusRing(radius: SH.Radius.xs)
         .accessibilityLabel(spokenTitle)
         .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
         .accessibilityHint(live ? "Shows the summary the model has shared so far" : "Shows the model's thinking")
@@ -484,7 +484,7 @@ public struct NWThinking: View {
 /// shimmering in 12.5 on a 26pt line ("Waiting for response", or "Thinking…" in italic), where a
 /// thinking row's words sit, and the clock beside them in mono 11 `textTertiary`. Nothing spins;
 /// under Reduce Motion the words are plain.
-public struct NWLiveLine: View {
+public struct SHLiveLine: View {
     let title: String
     let italic: Bool
     let since: Date?
@@ -500,16 +500,16 @@ public struct NWLiveLine: View {
     }
 
     public var body: some View {
-        HStack(spacing: NW.Space.s) {
-            NWThreadChevron(isExpanded: false, shown: false)
-            HStack(spacing: NW.Space.m) {
-                Text(title).font(.nw(.ui, weight: .regular)).italic(italic).lineLimit(1).nwShimmer(active: true)
+        HStack(spacing: SH.Space.s) {
+            SHThreadChevron(isExpanded: false, shown: false)
+            HStack(spacing: SH.Space.m) {
+                Text(title).font(.sh(.ui, weight: .regular)).italic(italic).lineLimit(1).shShimmer(active: true)
                 if let since {
-                    NWElapsedText(since: since, style: .long).font(.nwMono(NWThreadMetrics.liveClock)).foregroundStyle(Color.nw.textTertiary).fixedSize()
+                    SHElapsedText(since: since, style: .long).font(.shMono(SHThreadMetrics.liveClock)).foregroundStyle(Color.sh.textTertiary).fixedSize()
                 }
             }
         }
-        .frame(minHeight: NWThreadMetrics.liveHeight)
+        .frame(minHeight: SHThreadMetrics.liveHeight)
         .contentShape(Rectangle())
         .help(help ?? "")
         .accessibilityElement(children: .ignore)
@@ -525,7 +525,7 @@ public struct NWLiveLine: View {
 /// whole row shows only while its turn is hovered (`revealed`), one of its controls has keyboard
 /// focus, a copy confirms, the timing is open, or VoiceOver runs; at rest it keeps its place,
 /// invisible.
-public struct NWTurnFooter: View {
+public struct SHTurnFooter: View {
     let meta: String
     let link: String?
     let onLink: (() -> Void)?
@@ -533,7 +533,7 @@ public struct NWTurnFooter: View {
     let onRetry: (() -> Void)?
     let revealed: Bool
     /// The reply's Response timing; nil draws no timing button.
-    var timing: NWResponseTimingModel?
+    var timing: SHResponseTimingModel?
     /// Stands in for the system's VoiceOver state (tests).
     private var voiceOverSeed: Bool?
     @State private var copied = false
@@ -546,7 +546,7 @@ public struct NWTurnFooter: View {
 
     /// The footer with the reply's Response timing (nil draws no timing button).
     public init(meta: String, link: String? = nil, onLink: (() -> Void)? = nil, onCopy: (() -> Void)? = nil,
-                onRetry: (() -> Void)? = nil, timing: NWResponseTimingModel?, revealed: Bool = false) {
+                onRetry: (() -> Void)? = nil, timing: SHResponseTimingModel?, revealed: Bool = false) {
         self.init(meta: meta, link: link, onLink: onLink, onCopy: onCopy, onRetry: onRetry, revealed: revealed)
         self.timing = timing
     }
@@ -570,77 +570,77 @@ public struct NWTurnFooter: View {
     }
 
     public var body: some View {
-        let shown = NWMessageDetails.shown(hovering: revealed, focused: focus != nil || timingOpen, confirming: copied,
+        let shown = SHMessageDetails.shown(hovering: revealed, focused: focus != nil || timingOpen, confirming: copied,
                                            voiceOver: voiceOverSeed ?? voiceOver)
-        HStack(spacing: NW.Space.xs) {
+        HStack(spacing: SH.Space.xs) {
             if let onCopy {
                 Button {
                     onCopy()
                     copied = true
                     copies += 1
                     Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
-                } label: { NWCopyGlyph(copied: copied, copies: copies) }
-                .buttonStyle(.nwIcon(size: NWThreadMetrics.footerButton))
+                } label: { SHCopyGlyph(copied: copied, copies: copies) }
+                .buttonStyle(.shIcon(size: SHThreadMetrics.footerButton))
                 .focused($focus, equals: .copy)
                 .help("Copy the reply")
                 .accessibilityLabel(copied ? "Copied" : "Copy response")
             }
             if let onRetry {
                 Button(action: onRetry) { Image(systemName: "arrow.clockwise").font(.system(size: 12)) }
-                    .buttonStyle(.nwIcon(size: NWThreadMetrics.footerButton))
+                    .buttonStyle(.shIcon(size: SHThreadMetrics.footerButton))
                     .focused($focus, equals: .retry)
                     .help("Retry this turn")
                     .accessibilityLabel("Retry turn")
-                    .nwTransition(.content)
+                    .shTransition(.content)
             }
             if let timing {
-                Button { timingOpen.toggle() } label: { NWGlyph.responseTiming.image.font(.system(size: NWThreadMetrics.footerGlyph)) }
-                    .buttonStyle(.nwIcon(isOn: timingOpen, size: NWThreadMetrics.footerButton))
+                Button { timingOpen.toggle() } label: { SHGlyph.responseTiming.image.font(.system(size: SHThreadMetrics.footerGlyph)) }
+                    .buttonStyle(.shIcon(isOn: timingOpen, size: SHThreadMetrics.footerButton))
                     .focused($focus, equals: .timing)
-                    .help(NWResponseTiming.title)
-                    .accessibilityLabel(NWResponseTiming.title)
+                    .help(SHResponseTiming.title)
+                    .accessibilityLabel(SHResponseTiming.title)
                     .accessibilityValue(timingOpen ? "Expanded" : "Collapsed")
                     .popover(isPresented: $timingOpen, arrowEdge: .top) {
                         #if os(iOS)
-                        NWResponseTimingPresentation(model: timing)
+                        SHResponseTimingPresentation(model: timing)
                             .presentationCompactAdaptation(.sheet)
                         #else
-                        NWResponseTiming(timing)
+                        SHResponseTiming(timing)
                         #endif
                     }
             }
             #if os(iOS)
             // Metadata wraps in the space left by the 44pt actions, including when a scene
             // narrows while its timing sheet is open. Touch never depends on hover.
-            VStack(alignment: .leading, spacing: NW.Space.xs) {
+            VStack(alignment: .leading, spacing: SH.Space.xs) {
                 Text(meta).monospacedDigit().fixedSize(horizontal: false, vertical: true)
                 if let link, let onLink {
-                    Button(link, action: onLink).buttonStyle(.nwLink(font: .nw(.micro)))
+                    Button(link, action: onLink).buttonStyle(.shLink(font: .sh(.micro)))
                         .focused($focus, equals: .link)
-                        .frame(minHeight: NW.Height.touch)
+                        .frame(minHeight: SH.Height.touch)
                 }
             }
-            .font(.nw(.micro))
-            .foregroundStyle(Color.nw.textTertiary)
-            .padding(.leading, NW.Space.xs)
+            .font(.sh(.micro))
+            .foregroundStyle(Color.sh.textTertiary)
+            .padding(.leading, SH.Space.xs)
             #else
             HStack(spacing: 0) {
                 Text(meta).monospacedDigit()
                 if let link, let onLink {
                     if !meta.isEmpty { Text(" · ") }
-                    Button(link, action: onLink).buttonStyle(.nwLink(font: .nwMono(10.5)))
+                    Button(link, action: onLink).buttonStyle(.shLink(font: .shMono(10.5)))
                         .focused($focus, equals: .link)
                 }
             }
-            .font(.nwMono(10.5))
-            .foregroundStyle(Color.nw.textTertiary)
-            .padding(.leading, NW.Space.xs)
+            .font(.shMono(10.5))
+            .foregroundStyle(Color.sh.textTertiary)
+            .padding(.leading, SH.Space.xs)
             #endif
         }
         // Retry appears once the agent is idle again.
-        .nwAnimation(.content, value: onRetry != nil)
+        .shAnimation(.content, value: onRetry != nil)
         .opacity(shown ? 1 : 0)
-        .nwAnimation(.hover, value: shown)
+        .shAnimation(.hover, value: shown)
     }
 }
 

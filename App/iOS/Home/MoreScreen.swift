@@ -19,9 +19,9 @@ struct MoreScreen: View {
         let designs = MobileDesigns.of(hosts).model
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-                NWListHeader("Hosts") {
+                SHListHeader("Hosts") {
                     Button("Add host", systemImage: "plus") { navigator.present(.settings(.host(nil))) }
-                        .buttonStyle(.nw(.ghost, size: .s, tint: Color.nw.running))
+                        .buttonStyle(.sh(.ghost, size: .s, tint: Color.sh.running))
                 }
                 if cards.isEmpty {
                     NoHostsState()
@@ -32,24 +32,24 @@ struct MoreScreen: View {
                     }
                 }
                 Text("Hosts connect over your LAN or VPN. The connection has no TLS.")
-                    .nwText(.caption).foregroundStyle(Color.nw.textTertiary)
-                    .padding(.horizontal, NW.Space.xs)
-                    .padding(.top, NW.Space.xs)
+                    .shText(.caption).foregroundStyle(Color.sh.textTertiary)
+                    .padding(.horizontal, SH.Space.xs)
+                    .padding(.top, SH.Space.xs)
                 if !cards.isEmpty {
-                    NWListCard {
-                        // While a host serves designs (MobileMore: "2 · acme-web, Night Watch").
+                    SHListCard {
+                        // While a host serves designs (MobileMore: "2 · acme-web, Shepherd Design").
                         if designs.available {
                             Button { navigator.open(.designs(.systems)) } label: {
-                                NWListRow("Design systems", subtitle: designs.systemsSummary, subtitleMono: false,
+                                SHListRow("Design systems", subtitle: designs.systemsSummary, subtitleMono: false,
                                           leading: .symbol("paintpalette"))
                             }
-                            .buttonStyle(.nwRow(radius: 0))
+                            .buttonStyle(.shRow(radius: 0))
                         }
                         Button { navigator.open(.settings(SettingsPage.pi.route)) } label: {
-                            NWListRow(SettingsPage.pi.title, subtitle: settings.extensionsValue(chosenHost: navigator.settingsSelection.chosenHost).map { "\($0) installed" },
+                            SHListRow(SettingsPage.pi.title, subtitle: settings.extensionsValue(chosenHost: navigator.settingsSelection.chosenHost).map { "\($0) installed" },
                                       subtitleMono: false, leading: .symbol(SettingsPage.pi.symbol))
                         }
-                        .buttonStyle(.nwRow(radius: 0))
+                        .buttonStyle(.shRow(radius: 0))
                     }
                     .padding(.top, MobileLayout.sectionSpacing - MobileLayout.headerSpacing)
                 }
@@ -57,7 +57,7 @@ struct MoreScreen: View {
             .padding(.horizontal, MobileLayout.gutter)
             .padding(.bottom, MobileLayout.sectionSpacing)
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .refreshable {
             hosts.retryAll()
             await settings.refresh()
@@ -76,13 +76,13 @@ struct HostCardView: View {
     @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
-        NWHostCard(name: card.name, address: card.address, state: card.state, status: card.phase.word,
+        SHHostCard(name: card.name, address: card.address, state: card.state, status: card.phase.word,
                    summary: card.summary, summaryTone: card.state == .failed ? .failed : nil,
                    detail: card.lastSeen.map { "Last seen " + HostLastSeen.text($0, now: .now) },
                    openLabel: "Edit \(card.name)", open: edit) {
             if card.canRetry {
                 Button("Retry", systemImage: "arrow.clockwise") { hosts.retry(card.id) }
-                    .buttonStyle(.nw(.secondary, size: .s))
+                    .buttonStyle(.sh(.secondary, size: .s))
                     .accessibilityLabel("Retry \(card.name)")
             }
         }

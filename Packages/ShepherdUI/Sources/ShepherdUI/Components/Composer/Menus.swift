@@ -1,74 +1,74 @@
 import SwiftUI
 
-// The composer's popovers (NWComposer board, "Menus"): radius 12, raised, the popover shadow,
+// The composer's popovers (SHComposer board, "Menus"): radius 12, raised, the popover shadow,
 // 28pt rows, running-tint selection. ↑↓ move, ⏎ chooses, esc closes.
 
-/// A section label in a composer menu (NWComposer › Menus: COMMANDS, RECENT, MODEL, THINKING,
+/// A section label in a composer menu (SHComposer › Menus: COMMANDS, RECENT, MODEL, THINKING,
 /// SPEED): mono 10 medium, uppercase, tracked 6%, `textTertiary`, with an optional trailing count
 /// in mono 11 `textTertiary` ("4 of 23").
-public struct NWMenuHeader: View {
+public struct SHMenuHeader: View {
     let title: String
     let trailing: String?
     let inset: CGFloat
 
-    public init(_ title: String, trailing: String? = nil, inset: CGFloat = NW.Space.m) {
+    public init(_ title: String, trailing: String? = nil, inset: CGFloat = SH.Space.m) {
         self.title = title
         self.trailing = trailing
         self.inset = inset
     }
 
     public var body: some View {
-        HStack(spacing: NW.Space.m) {
+        HStack(spacing: SH.Space.m) {
             Text(title)
-                .font(.nwMono(10, .medium))
+                .font(.shMono(10, .medium))
                 .textCase(.uppercase)
                 .tracking(0.6)
-                .foregroundStyle(.nw.textTertiary)
+                .foregroundStyle(.sh.textTertiary)
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 0)
             if let trailing {
-                Text(trailing).font(.nwMono(11)).foregroundStyle(.nw.textTertiary).monospacedDigit()
+                Text(trailing).font(.shMono(11)).foregroundStyle(.sh.textTertiary).monospacedDigit()
             }
         }
         .padding(.horizontal, inset)
-        .frame(height: NWComposerMetrics.menuHeaderHeight)
+        .frame(height: SHComposerMetrics.menuHeaderHeight)
     }
 }
 
 /// Debug builds count the menu rows they draw, so tests can pin how much of a long menu a change
 /// redraws (opening, filtering, scrolling, a hover). Release builds declare it too, so the test
 /// targets build for the release benchmarks; it stays zero there.
-@MainActor public enum NWMenuDiagnostics {
+@MainActor public enum SHMenuDiagnostics {
     public static var rowBodies = 0
-    /// How many times a menu's list was put back at its top (`NWMenuListStartsAtTop`).
+    /// How many times a menu's list was put back at its top (`SHMenuListStartsAtTop`).
     public static var listReturns = 0
 }
 
 /// A 28pt menu row: `runningTint` while highlighted, hovering highlights it, and a click (or
 /// VoiceOver's press) chooses it. It is not a `Button`: each button brings an AppKit focus-ring
 /// view, and a long menu scrolls rows in and out; the field or the menu keeps keyboard focus.
-struct NWMenuRow<Label: View>: View {
+struct SHMenuRow<Label: View>: View {
     let highlighted: Bool
     /// 10pt between parts; the slash menu's columns sit 12pt apart.
     var spacing: CGFloat = 10
     /// Two-line rows (the Send menu's) align their parts to the top.
     var alignment: VerticalAlignment = .center
-    var padding = EdgeInsets(top: 0, leading: NW.Space.m, bottom: 0, trailing: NW.Space.m)
-    var height = NWComposerMetrics.menuRowHeight
+    var padding = EdgeInsets(top: 0, leading: SH.Space.m, bottom: 0, trailing: SH.Space.m)
+    var height = SHComposerMetrics.menuRowHeight
     let action: () -> Void
     let onHover: () -> Void
     @ViewBuilder let label: () -> Label
 
     var body: some View {
         #if DEBUG
-        let _ = NWMenuDiagnostics.rowBodies += 1
+        let _ = SHMenuDiagnostics.rowBodies += 1
         #endif
         HStack(alignment: alignment, spacing: spacing) { label() }
             .padding(padding)
             .frame(minHeight: height)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(highlighted ? Color.nw.runningTint : .clear, in: RoundedRectangle(cornerRadius: NW.Radius.s))
-            .contentShape(RoundedRectangle(cornerRadius: NW.Radius.s))
+            .background(highlighted ? Color.sh.runningTint : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+            .contentShape(RoundedRectangle(cornerRadius: SH.Radius.s))
             .onTapGesture(perform: action)
             .onHover { if $0 { onHover() } }
             .accessibilityElement(children: .combine)
@@ -80,15 +80,15 @@ struct NWMenuRow<Label: View>: View {
 /// The popover a menu sits on: its board width, or narrower when that is all the room offered
 /// (a composer beside a docked pane); with no width, as wide as it is offered (the slash menu
 /// spans the composer card).
-struct NWMenuSurface: ViewModifier {
+struct SHMenuSurface: ViewModifier {
     let width: CGFloat?
-    var padding: CGFloat = NW.Space.s
+    var padding: CGFloat = SH.Space.s
 
     func body(content: Content) -> some View {
         content
             .padding(padding)
             .frame(idealWidth: width, maxWidth: width ?? .infinity)
-            .nwPopover()
+            .shPopover()
     }
 }
 
@@ -103,15 +103,15 @@ struct NWMenuSurface: ViewModifier {
 /// one display pass, and with the pointer over the window AppKit's cursor hit-testing kept the
 /// chase going until it threw. So only a drift of a point or more counts, and the list is put
 /// back once, on the main queue's next turn, however many offsets one pass reports.
-private struct NWMenuListStartsAtTop: ViewModifier {
+private struct SHMenuListStartsAtTop: ViewModifier {
     /// The list's first row. (Not a zero-height marker: a lazy stack that starts with one
     /// misplaces every row a scroll aims at.)
     let top: String?
     let proxy: ScrollViewProxy
-    let list: NWMenuListMotion
+    let list: SHMenuListMotion
 
     /// Past the overlay motion's settle (about 1.7× its 180ms anchor), with room to spare.
-    private static let growing = Duration.seconds(NW.Motion.overlay.duration * 3)
+    private static let growing = Duration.seconds(SH.Motion.overlay.duration * 3)
     /// Less than this is the growth's pixel snapping, not a drift.
     private static let drift: CGFloat = 1
 
@@ -126,7 +126,7 @@ private struct NWMenuListStartsAtTop: ViewModifier {
                     list.returning = false
                     guard !list.moved else { return }
                     #if DEBUG
-                    NWMenuDiagnostics.listReturns += 1
+                    SHMenuDiagnostics.listReturns += 1
                     #endif
                     proxy.scrollTo(top, anchor: .top)
                 }
@@ -137,7 +137,7 @@ private struct NWMenuListStartsAtTop: ViewModifier {
 /// When a menu's list appeared, whether it has been scrolled since, and whether it is about to be
 /// put back at its top: bookkeeping, read and written as the list moves (never while drawing), so
 /// a plain reference.
-final class NWMenuListMotion {
+final class SHMenuListMotion {
     let appeared = ContinuousClock.now
     var moved = false
     var returning = false
@@ -146,7 +146,7 @@ final class NWMenuListMotion {
 // MARK: Slash menu
 
 /// A command the slash menu offers: pi's registry, never hard-coded.
-public struct NWSlashCommand: Identifiable, Equatable, Sendable {
+public struct SHSlashCommand: Identifiable, Equatable, Sendable {
     public var id: String { name }
     public var name: String
     public var description: String?
@@ -191,21 +191,21 @@ public struct NWSlashCommand: Identifiable, Equatable, Sendable {
 /// Rows are lazy and redraw only when their command, its typed prefix, or their highlight
 /// changes. ↑↓ scroll the highlight into view; the pointer's highlight is already under the
 /// pointer, so a hover (or the list scrolling under a still pointer) never scrolls it.
-public struct NWSlashMenu: View {
-    let commands: [NWSlashCommand]
+public struct SHSlashMenu: View {
+    let commands: [SHSlashCommand]
     let total: Int
     let query: String
     let title: String
     @Binding var selection: Int
     let maxHeight: CGFloat?
-    let onChoose: (NWSlashCommand) -> Void
+    let onChoose: (SHSlashCommand) -> Void
     /// The row the pointer just highlighted, until the highlight's change is seen.
     @State private var pointed: Int?
-    @State private var listMotion = NWMenuListMotion()
+    @State private var listMotion = SHMenuListMotion()
 
     /// `title` heads it: "Commands", or an argument list's ("Sign in to · opens Settings").
-    public init(commands: [NWSlashCommand], total: Int, query: String, title: String = "Commands", selection: Binding<Int>,
-                maxHeight: CGFloat? = nil, onChoose: @escaping (NWSlashCommand) -> Void) {
+    public init(commands: [SHSlashCommand], total: Int, query: String, title: String = "Commands", selection: Binding<Int>,
+                maxHeight: CGFloat? = nil, onChoose: @escaping (SHSlashCommand) -> Void) {
         self.commands = commands
         self.total = total
         self.query = query
@@ -218,12 +218,12 @@ public struct NWSlashMenu: View {
     public var body: some View {
         let rows = CGFloat(min(max(commands.count, 1), Self.visibleRows(in: maxHeight)))
         VStack(alignment: .leading, spacing: 0) {
-            NWMenuHeader(title, trailing: "\(commands.count) of \(total)")
+            SHMenuHeader(title, trailing: "\(commands.count) of \(total)")
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(commands.enumerated()), id: \.element.name) { index, command in
-                            NWSlashRow(command: command, typed: typed(command), index: index, highlighted: index == selection, choose: onChoose,
+                            SHSlashRow(command: command, typed: typed(command), index: index, highlighted: index == selection, choose: onChoose,
                                        hover: { index in
                                            guard index != selection else { return }
                                            pointed = index
@@ -232,14 +232,14 @@ public struct NWSlashMenu: View {
                                 .equatable()
                         }
                         if commands.isEmpty {
-                            Text("No command matches “/\(query)”").font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
-                                .padding(.horizontal, NW.Space.l)
-                                .frame(height: NWComposerMetrics.slashRowHeight)
+                            Text("No command matches “/\(query)”").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                                .padding(.horizontal, SH.Space.l)
+                                .frame(height: SHComposerMetrics.slashRowHeight)
                         }
                     }
                 }
-                .modifier(NWMenuListStartsAtTop(top: commands.first?.name, proxy: proxy, list: listMotion))
-                .frame(height: rows * NWComposerMetrics.slashRowHeight)
+                .modifier(SHMenuListStartsAtTop(top: commands.first?.name, proxy: proxy, list: listMotion))
+                .frame(height: rows * SHComposerMetrics.slashRowHeight)
                 .onChange(of: selection) { _, index in
                     // Each pointer move is seen once, so a later ↑↓ back to that row still shows it.
                     defer { pointed = nil }
@@ -249,33 +249,33 @@ public struct NWSlashMenu: View {
                 }
             }
         }
-        .modifier(NWMenuSurface(width: nil))
+        .modifier(SHMenuSurface(width: nil))
         .accessibilityElement(children: .contain)
         .accessibilityLabel(title)
     }
 
     /// How many rows fit a menu at most `height` tall (at least one, at most the board's eight).
     static func visibleRows(in height: CGFloat?) -> Int {
-        guard let height, height.isFinite else { return NWComposerMetrics.menuMaxRows }
-        let room = height - NWComposerMetrics.menuHeaderHeight - 2 * NW.Space.s
-        return max(1, min(NWComposerMetrics.menuMaxRows, Int((room / NWComposerMetrics.slashRowHeight).rounded(.down))))
+        guard let height, height.isFinite else { return SHComposerMetrics.menuMaxRows }
+        let room = height - SHComposerMetrics.menuHeaderHeight - 2 * SH.Space.s
+        return max(1, min(SHComposerMetrics.menuMaxRows, Int((room / SHComposerMetrics.slashRowHeight).rounded(.down))))
     }
 
     /// How much of the command's name the query types: its whole length when it is a prefix.
-    private func typed(_ command: NWSlashCommand) -> Int {
+    private func typed(_ command: SHSlashCommand) -> Int {
         command.name.lowercased().hasPrefix(query.lowercased()) ? query.count : 0
     }
 }
 
 /// One command in the slash menu. Equatable on what it draws (closures aside), so a highlight
 /// moving redraws the two rows it moves between.
-struct NWSlashRow: View, Equatable {
-    let command: NWSlashCommand
+struct SHSlashRow: View, Equatable {
+    let command: SHSlashCommand
     /// The length of the typed prefix, in semibold.
     let typed: Int
     let index: Int
     let highlighted: Bool
-    let choose: (NWSlashCommand) -> Void
+    let choose: (SHSlashCommand) -> Void
     let hover: (Int) -> Void
 
     static func == (a: Self, b: Self) -> Bool {
@@ -283,23 +283,23 @@ struct NWSlashRow: View, Equatable {
     }
 
     var body: some View {
-        let nw = Color.nw
-        NWMenuRow(highlighted: highlighted, spacing: NW.Space.l, padding: EdgeInsets(top: 0, leading: NW.Space.l, bottom: 0, trailing: NW.Space.l),
-                  height: NWComposerMetrics.slashRowHeight, action: { choose(command) }, onHover: { hover(index) }) {
+        let sh = Color.sh
+        SHMenuRow(highlighted: highlighted, spacing: SH.Space.l, padding: EdgeInsets(top: 0, leading: SH.Space.l, bottom: 0, trailing: SH.Space.l),
+                  height: SHComposerMetrics.slashRowHeight, action: { choose(command) }, onHover: { hover(index) }) {
             // The whole command on one line: the description gives way first.
             name
                 .lineLimit(1)
-                .frame(minWidth: NWComposerMetrics.slashNameWidth, alignment: .leading)
+                .frame(minWidth: SHComposerMetrics.slashNameWidth, alignment: .leading)
                 .layoutPriority(1)
-            Text(command.description ?? "").font(.nwSans(13)).foregroundStyle(nw.textSecondary)
+            Text(command.description ?? "").font(.shSans(13)).foregroundStyle(sh.textSecondary)
                 .lineLimit(1).truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            if let tag = command.tag { NWTag(tag) }
+            if let tag = command.tag { SHTag(tag) }
             if let status = command.status {
-                Text(status.text).font(.nw(.caption)).foregroundStyle(Self.color(status.tone)).lineLimit(1).fixedSize()
+                Text(status.text).font(.sh(.caption)).foregroundStyle(Self.color(status.tone)).lineLimit(1).fixedSize()
             }
             if highlighted {
-                Text("⏎").font(.nwMono(11)).foregroundStyle(nw.running).accessibilityHidden(true)
+                Text("⏎").font(.shMono(11)).foregroundStyle(sh.running).accessibilityHidden(true)
             }
         }
         .help(command.lead.map { $0 + " " + command.name } ?? "/" + command.name + (command.arguments.map { " " + $0 } ?? ""))
@@ -307,35 +307,35 @@ struct NWSlashRow: View, Equatable {
                             + (command.status.map { ", \($0.text)" } ?? ""))
     }
 
-    static func color(_ tone: NWSlashCommand.Status.Tone) -> Color {
+    static func color(_ tone: SHSlashCommand.Status.Tone) -> Color {
         switch tone {
-        case .tertiary: .nw.textTertiary
-        case .secondary: .nw.textSecondary
-        case .attention: .nw.lanternText
-        case .done: .nw.done
+        case .tertiary: .sh.textTertiary
+        case .secondary: .sh.textSecondary
+        case .attention: .sh.lanternText
+        case .done: .sh.done
         }
     }
 
     private var name: Text {
-        let nw = Color.nw
+        let sh = Color.sh
         if let lead = command.lead {
             // An argument row: "/login" quiet, then the argument with what's typed in semibold.
-            let head = Text(lead + " ").foregroundStyle(nw.textSecondary)
-            let typedPart = Text(String(command.name.prefix(typed))).fontWeight(.semibold).foregroundStyle(nw.textPrimary)
-            let rest = Text(String(command.name.dropFirst(typed))).foregroundStyle(nw.textPrimary)
-            return Text("\(head)\(typedPart)\(rest)").font(.nwMono(12.5))
+            let head = Text(lead + " ").foregroundStyle(sh.textSecondary)
+            let typedPart = Text(String(command.name.prefix(typed))).fontWeight(.semibold).foregroundStyle(sh.textPrimary)
+            let rest = Text(String(command.name.dropFirst(typed))).foregroundStyle(sh.textPrimary)
+            return Text("\(head)\(typedPart)\(rest)").font(.shMono(12.5))
         }
-        let head = Text("/" + command.name.prefix(typed)).fontWeight(.semibold).foregroundStyle(nw.textPrimary)
-        let tail = Text(String(command.name.dropFirst(typed))).foregroundStyle(nw.textSecondary)
-        let arguments = Text(command.arguments.map { " " + $0 } ?? "").foregroundStyle(nw.textTertiary)
-        return Text("\(head)\(tail)\(arguments)").font(.nwMono(12.5))
+        let head = Text("/" + command.name.prefix(typed)).fontWeight(.semibold).foregroundStyle(sh.textPrimary)
+        let tail = Text(String(command.name.dropFirst(typed))).foregroundStyle(sh.textSecondary)
+        let arguments = Text(command.arguments.map { " " + $0 } ?? "").foregroundStyle(sh.textTertiary)
+        return Text("\(head)\(tail)\(arguments)").font(.shMono(12.5))
     }
 }
 
 // MARK: Model picker
 
 /// A model the picker offers.
-public struct NWModelOption: Identifiable, Equatable, Sendable {
+public struct SHModelOption: Identifiable, Equatable, Sendable {
     public var id: String
     /// The name the row shows ("claude-opus"), truncated in the middle when long.
     public var title: String
@@ -359,12 +359,12 @@ public struct NWModelOption: Identifiable, Equatable, Sendable {
     }
 }
 
-public struct NWModelSection: Identifiable, Equatable, Sendable {
+public struct SHModelSection: Identifiable, Equatable, Sendable {
     public var id: String { title }
     public var title: String
-    public var options: [NWModelOption]
+    public var options: [SHModelOption]
 
-    public init(title: String, options: [NWModelOption]) {
+    public init(title: String, options: [SHModelOption]) {
         self.title = title
         self.options = options
     }
@@ -373,11 +373,11 @@ public struct NWModelSection: Identifiable, Equatable, Sendable {
 /// The model picker's list, flattened once from its sections rather than on every draw: one row
 /// per section header and per model, each model's position among the models (what ↑↓ and the
 /// highlight count in), and the list's height.
-public struct NWModelList: Equatable, Sendable {
+public struct SHModelList: Equatable, Sendable {
     public struct Row: Identifiable, Equatable, Sendable {
         public enum Kind: Equatable, Sendable {
             case header(String)
-            case option(NWModelOption, position: Int)
+            case option(SHModelOption, position: Int)
         }
 
         /// Unique in the list: a model can be in Recent and in its provider's section.
@@ -393,15 +393,15 @@ public struct NWModelList: Equatable, Sendable {
 
     public let rows: [Row]
     /// Every model in order: `options[selection]` is the highlighted one.
-    public let options: [NWModelOption]
+    public let options: [SHModelOption]
     /// The row of each model in `options`.
     private let optionRows: [String]
     /// Every row at its fixed height: headers 24pt with 4pt above, models 40pt.
     public let height: CGFloat
 
-    public init(sections: [NWModelSection]) {
+    public init(sections: [SHModelSection]) {
         var rows: [Row] = []
-        var options: [NWModelOption] = []
+        var options: [SHModelOption] = []
         var optionRows: [String] = []
         for section in sections where !section.options.isEmpty {
             rows.append(Row(id: "#" + section.title, kind: .header(section.title)))
@@ -416,8 +416,8 @@ public struct NWModelList: Equatable, Sendable {
         self.options = options
         self.optionRows = optionRows
         let headers = rows.count - options.count
-        height = CGFloat(headers) * (NWComposerMetrics.menuHeaderHeight + NWComposerMetrics.modelSectionGap)
-            + CGFloat(options.count) * NWComposerMetrics.modelRowHeight
+        height = CGFloat(headers) * (SHComposerMetrics.menuHeaderHeight + SHComposerMetrics.modelSectionGap)
+            + CGFloat(options.count) * SHComposerMetrics.modelRowHeight
     }
 
     /// The row that shows `options[position]`.
@@ -437,23 +437,23 @@ public struct NWModelList: Equatable, Sendable {
 /// a row redraws only when its model or its highlight changes. ↑↓ scroll the highlight into view;
 /// the pointer passing over rows (or the list scrolling under it) moves the highlight without
 /// scrolling the list.
-public struct NWModelPicker: View {
+public struct SHModelPicker: View {
     @Binding var query: String
-    let list: NWModelList
+    let list: SHModelList
     let loading: Bool
     @Binding var selection: Int
     let maxHeight: CGFloat?
     /// The chord that opens the picker ("⇧⌘M"), shown in the search row.
     let shortcut: String?
-    let onChoose: (NWModelOption) -> Void
+    let onChoose: (SHModelOption) -> Void
     let onClose: () -> Void
     @FocusState private var searching: Bool
     /// The model the pointer just highlighted, until the highlight's change is seen.
     @State private var pointed: Int?
-    @State private var listMotion = NWMenuListMotion()
+    @State private var listMotion = SHMenuListMotion()
 
-    public init(query: Binding<String>, list: NWModelList, loading: Bool = false, selection: Binding<Int>,
-                maxHeight: CGFloat? = nil, shortcut: String? = nil, onChoose: @escaping (NWModelOption) -> Void,
+    public init(query: Binding<String>, list: SHModelList, loading: Bool = false, selection: Binding<Int>,
+                maxHeight: CGFloat? = nil, shortcut: String? = nil, onChoose: @escaping (SHModelOption) -> Void,
                 onClose: @escaping () -> Void) {
         _query = query
         self.list = list
@@ -465,33 +465,33 @@ public struct NWModelPicker: View {
         self.onClose = onClose
     }
 
-    public init(query: Binding<String>, sections: [NWModelSection], loading: Bool = false, selection: Binding<Int>,
-                maxHeight: CGFloat? = nil, shortcut: String? = nil, onChoose: @escaping (NWModelOption) -> Void,
+    public init(query: Binding<String>, sections: [SHModelSection], loading: Bool = false, selection: Binding<Int>,
+                maxHeight: CGFloat? = nil, shortcut: String? = nil, onChoose: @escaping (SHModelOption) -> Void,
                 onClose: @escaping () -> Void) {
-        self.init(query: query, list: NWModelList(sections: sections), loading: loading, selection: selection, maxHeight: maxHeight,
+        self.init(query: query, list: SHModelList(sections: sections), loading: loading, selection: selection, maxHeight: maxHeight,
                   shortcut: shortcut, onChoose: onChoose, onClose: onClose)
     }
 
     /// The list's height limit: the board's 360pt, or what `maxHeight` leaves under the search.
     static func listMaxHeight(in height: CGFloat?) -> CGFloat {
-        let chrome = NWComposerMetrics.modelSearchHeight + 2 * NW.Space.xs
-        return max(NWComposerMetrics.modelRowHeight, min(NWComposerMetrics.modelPickerMaxHeight, (height ?? .infinity) - chrome))
+        let chrome = SHComposerMetrics.modelSearchHeight + 2 * SH.Space.xs
+        return max(SHComposerMetrics.modelRowHeight, min(SHComposerMetrics.modelPickerMaxHeight, (height ?? .infinity) - chrome))
     }
 
     private static let loadingRow = "loading"
 
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         // Rows have fixed heights, so the list's height is known without laying any of them out.
-        let height = min(list.height + (loading ? NWComposerMetrics.menuRowHeight : 0), Self.listMaxHeight(in: maxHeight))
+        let height = min(list.height + (loading ? SHComposerMetrics.menuRowHeight : 0), Self.listMaxHeight(in: maxHeight))
         ScrollViewReader { proxy in
             VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: NW.Space.m) {
-                    Image(systemName: "magnifyingglass").font(.system(size: 12, weight: .medium)).foregroundStyle(nw.textTertiary)
-                    TextField(text: $query, prompt: Text("Search models").foregroundStyle(nw.textTertiary)) { Text("Search models") }
+                HStack(spacing: SH.Space.m) {
+                    Image(systemName: "magnifyingglass").font(.system(size: 12, weight: .medium)).foregroundStyle(sh.textTertiary)
+                    TextField(text: $query, prompt: Text("Search models").foregroundStyle(sh.textTertiary)) { Text("Search models") }
                         .textFieldStyle(.plain)
-                        .font(.nwSans(13))
-                        .foregroundStyle(nw.textPrimary)
+                        .font(.shSans(13))
+                        .foregroundStyle(sh.textPrimary)
                         .focused($searching)
                         .onKeyPress(.downArrow) { move(to: selection + 1); return .handled }
                         .onKeyPress(.upArrow) { move(to: selection - 1); return .handled }
@@ -502,26 +502,26 @@ public struct NWModelPicker: View {
                         .onKeyPress(.escape) { onClose(); return .handled }
                         .accessibilityLabel("Search models")
                     if let shortcut {
-                        Text(shortcut).font(.nwMono(11)).foregroundStyle(nw.textTertiary).accessibilityHidden(true)
+                        Text(shortcut).font(.shMono(11)).foregroundStyle(sh.textTertiary).accessibilityHidden(true)
                     }
                 }
-                .padding(.horizontal, NW.Space.m)
-                .frame(height: NWComposerMetrics.modelSearchHeight)
-                .overlay(alignment: .bottom) { NWHairline() }
+                .padding(.horizontal, SH.Space.m)
+                .frame(height: SHComposerMetrics.modelSearchHeight)
+                .overlay(alignment: .bottom) { SHHairline() }
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         if loading {
-                            HStack(spacing: NW.Space.m) {
-                                ProgressView().progressViewStyle(.nwSpinner(size: 12))
-                                Text("Loading models…").font(.nw(.caption)).foregroundStyle(nw.textTertiary)
+                            HStack(spacing: SH.Space.m) {
+                                ProgressView().progressViewStyle(.shSpinner(size: 12))
+                                Text("Loading models…").font(.sh(.caption)).foregroundStyle(sh.textTertiary)
                             }
-                            .padding(.horizontal, NW.Space.m)
-                            .frame(height: NWComposerMetrics.menuRowHeight)
+                            .padding(.horizontal, SH.Space.m)
+                            .frame(height: SHComposerMetrics.menuRowHeight)
                             .id(Self.loadingRow)
-                            .nwTransition(.content)
+                            .shTransition(.content)
                         }
                         ForEach(list.rows) { row in
-                            NWModelListRow(row: row, highlighted: row.position == selection, choose: onChoose, hover: { position in
+                            SHModelListRow(row: row, highlighted: row.position == selection, choose: onChoose, hover: { position in
                                 guard position != selection else { return }
                                 pointed = position
                                 selection = position
@@ -530,12 +530,12 @@ public struct NWModelPicker: View {
                         }
                     }
                     // The catalog arriving replaces "Loading models…"; filtering stays instant.
-                    .nwAnimation(.content, value: loading)
+                    .shAnimation(.content, value: loading)
                 }
-                .modifier(NWMenuListStartsAtTop(top: top, proxy: proxy, list: listMotion))
+                .modifier(SHMenuListStartsAtTop(top: top, proxy: proxy, list: listMotion))
                 .frame(height: height)
-                .padding(.horizontal, NW.Space.s)
-                .padding(.vertical, NW.Space.xs)
+                .padding(.horizontal, SH.Space.s)
+                .padding(.vertical, SH.Space.xs)
                 .onChange(of: selection) { _, position in
                     // Each pointer move is seen once, so a later ↑↓ back to that row still shows it.
                     defer { pointed = nil }
@@ -551,7 +551,7 @@ public struct NWModelPicker: View {
             }
         }
         .fixedSize(horizontal: false, vertical: true)
-        .modifier(NWMenuSurface(width: NWComposerMetrics.modelPickerWidth, padding: 0))
+        .modifier(SHMenuSurface(width: SHComposerMetrics.modelPickerWidth, padding: 0))
         .task {
             // All models replaces a focused settings menu. Let its AppKit focus release
             // finish before claiming the search field, rather than losing this claim to it.
@@ -575,42 +575,42 @@ public struct NWModelPicker: View {
 /// One row of the model list. Equatable on what it draws (closures aside), so a highlight moving
 /// redraws the two rows it moves between and nothing else. One view whatever the row is, so the
 /// lazy list never has to build a row to learn its shape.
-struct NWModelListRow: View, Equatable {
-    let row: NWModelList.Row
+struct SHModelListRow: View, Equatable {
+    let row: SHModelList.Row
     let highlighted: Bool
-    let choose: (NWModelOption) -> Void
+    let choose: (SHModelOption) -> Void
     let hover: (Int) -> Void
 
     static func == (a: Self, b: Self) -> Bool { a.row == b.row && a.highlighted == b.highlighted }
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         VStack(spacing: 0) {
             switch row.kind {
             case .header(let title):
-                NWMenuHeader(title, inset: NW.Space.m + NW.Space.xxs)
-                    .padding(.top, NWComposerMetrics.modelSectionGap)
+                SHMenuHeader(title, inset: SH.Space.m + SH.Space.xxs)
+                    .padding(.top, SHComposerMetrics.modelSectionGap)
             case .option(let option, let position):
-                NWMenuRow(highlighted: highlighted, padding: EdgeInsets(top: 0, leading: NW.Space.m + NW.Space.xxs, bottom: 0, trailing: NW.Space.m + NW.Space.xxs),
-                          height: NWComposerMetrics.modelRowHeight, action: { choose(option) }, onHover: { hover(position) }) {
-                    Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(nw.running)
+                SHMenuRow(highlighted: highlighted, padding: EdgeInsets(top: 0, leading: SH.Space.m + SH.Space.xxs, bottom: 0, trailing: SH.Space.m + SH.Space.xxs),
+                          height: SHComposerMetrics.modelRowHeight, action: { choose(option) }, onHover: { hover(position) }) {
+                    Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(sh.running)
                         .frame(width: 12)
                         .opacity(option.isCurrent ? 1 : 0)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(option.title).font(.nwMono(12.5)).foregroundStyle(nw.textPrimary)
+                        Text(option.title).font(.shMono(12.5)).foregroundStyle(sh.textPrimary)
                             .lineLimit(1).truncationMode(.middle)
                         if let subtitle = option.subtitle {
-                            Text(subtitle).font(.nw(.caption)).foregroundStyle(nw.textSecondary)
+                            Text(subtitle).font(.sh(.caption)).foregroundStyle(sh.textSecondary)
                                 .lineLimit(1).truncationMode(.tail)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    // The model has a Fast tier (NWComposer › Menus: "fast" beside claude-sonnet).
+                    // The model has a Fast tier (SHComposer › Menus: "fast" beside claude-sonnet).
                     if option.fast {
-                        Text("fast").font(.nwMono(11)).foregroundStyle(nw.textTertiary).fixedSize()
+                        Text("fast").font(.shMono(11)).foregroundStyle(sh.textTertiary).fixedSize()
                     }
                     if let note = option.note {
-                        Text(note).font(.nwMono(11)).foregroundStyle(nw.textTertiary).fixedSize()
+                        Text(note).font(.shMono(11)).foregroundStyle(sh.textTertiary).fixedSize()
                     }
                 }
                 .help(option.id)
@@ -624,7 +624,7 @@ struct NWModelListRow: View, Equatable {
 // MARK: Model settings choices
 
 /// A thinking level the model-settings popover offers ("Low", note "quick").
-public struct NWThinkingOption: Identifiable, Equatable, Sendable {
+public struct SHThinkingOption: Identifiable, Equatable, Sendable {
     public var id: String
     public var title: String
     /// What the level means ("quick"), a tooltip on its segment.
@@ -638,12 +638,12 @@ public struct NWThinkingOption: Identifiable, Equatable, Sendable {
 }
 
 /// A speed the model-settings popover offers ("Fast", "Faster responses, billed at a higher rate").
-public struct NWSpeedOption: Identifiable, Equatable, Sendable {
+public struct SHSpeedOption: Identifiable, Equatable, Sendable {
     public var id: String
     public var title: String
     /// What the tier does, a tooltip on its segment.
     public var detail: String
-    /// A raised tier: its segment wears the Fast bolt (`NWFastBolt`).
+    /// A raised tier: its segment wears the Fast bolt (`SHFastBolt`).
     public var boosted: Bool
 
     public init(id: String, title: String, detail: String, boosted: Bool = false) {

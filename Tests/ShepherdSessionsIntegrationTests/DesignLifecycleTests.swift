@@ -234,11 +234,11 @@ struct DesignLifecycleTests {
     @Test func aBuiltInSystemIsNeverDeleted() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
-        h.server.designSystems.register(DesignSystemStore.BuiltIn(info: DesignSystemInfo(namespace: "night-watch", title: "Night Watch",
+        h.server.designSystems.register(DesignSystemStore.BuiltIn(info: DesignSystemInfo(namespace: "shepherd-design", title: "Shepherd Design",
                                                                                          createdAt: 0),
                                                                   files: ["tokens.json": Data("{}".utf8)]))
-        await #expect(throws: DesignSystemError.readOnly("night-watch")) { try await h.server.deleteDesignSystem("night-watch") }
-        #expect(await h.server.designSystemSummaries().map(\.info.namespace) == ["night-watch"])
+        await #expect(throws: DesignSystemError.readOnly("shepherd-design")) { try await h.server.deleteDesignSystem("shepherd-design") }
+        #expect(await h.server.designSystemSummaries().map(\.info.namespace) == ["shepherd-design"])
     }
 
     /// A system still being built: deleting it stops the build (its design and agent go at
@@ -270,23 +270,23 @@ struct DesignLifecycleTests {
     @Test func renamingAndDuplicatingASystem() async throws {
         let d = try await drawnDesign()
         defer { d.h.stop() }
-        d.h.server.designSystems.register(DesignSystemStore.BuiltIn(info: DesignSystemInfo(namespace: "night-watch", title: "Night Watch",
+        d.h.server.designSystems.register(DesignSystemStore.BuiltIn(info: DesignSystemInfo(namespace: "shepherd-design", title: "Shepherd Design",
                                                                                            createdAt: 0),
                                                                     files: ["tokens.json": Data(#"{"format":"shepherd-tokens/1"}"#.utf8)]))
         _ = try await d.h.server.writeDesignSystem(DesignSystemWrite(namespace: "acme-web", tokens: Self.tokens), for: d.design.id)
 
         let renamed = try await d.h.server.renameDesignSystem("acme-web", to: "  Acme web  ")
         #expect(renamed.info.title == "Acme web" && renamed.info.namespace == "acme-web")
-        await #expect(throws: DesignSystemError.readOnly("night-watch")) { try await d.h.server.renameDesignSystem("night-watch", to: "x") }
+        await #expect(throws: DesignSystemError.readOnly("shepherd-design")) { try await d.h.server.renameDesignSystem("shepherd-design", to: "x") }
 
         let copy = try await d.h.server.duplicateDesignSystem("acme-web")
         #expect(copy.info.namespace == "acme-web-copy" && copy.info.title == "Acme web copy" && copy.info.ownerDesignID == nil)
         #expect(try await d.h.server.duplicateDesignSystem("acme-web").info.namespace == "acme-web-copy-2")
         let original = try await d.h.server.designSystemContents("acme-web")
         #expect(try await d.h.server.designSystemContents("acme-web-copy") == original)
-        let nightWatch = try await d.h.server.duplicateDesignSystem("night-watch")
-        #expect(nightWatch.info.namespace == "night-watch-copy" && !nightWatch.builtIn)
-        try await d.h.server.deleteDesignSystem("night-watch-copy")
-        #expect(await d.h.server.designSystemSummaries().map(\.info.namespace) == ["night-watch", "acme-web", "acme-web-copy", "acme-web-copy-2"])
+        let shepherdDesign = try await d.h.server.duplicateDesignSystem("shepherd-design")
+        #expect(shepherdDesign.info.namespace == "shepherd-design-copy" && !shepherdDesign.builtIn)
+        try await d.h.server.deleteDesignSystem("shepherd-design-copy")
+        #expect(await d.h.server.designSystemSummaries().map(\.info.namespace) == ["shepherd-design", "acme-web", "acme-web-copy", "acme-web-copy-2"])
     }
 }

@@ -41,7 +41,7 @@ extension ThreadPreviewTests {
         }) {
             SteerChoicesBoard(queued: queued, hovered: hovered, stopping: stopping, fallback: fallback)
                 .frame(width: size.width, height: size.height, alignment: .topLeading)
-                .background(Color.nw.bgWindow)
+                .background(Color.sh.bgWindow)
         }
     }
 }
@@ -54,7 +54,7 @@ private struct SteerChoicesBoard: View {
         VStack(alignment: .leading, spacing: 32) {
             VStack(alignment: .leading, spacing: 10) {
                 label("SendMenu · Return waits for the turn to end, ⌘↩ steers now")
-                NWSendMenu(options: Composer.sendOptions(send: keys.sendDisplay, alternate: keys.display(.alternateSend)),
+                SHSendMenu(options: Composer.sendOptions(send: keys.sendDisplay, alternate: keys.display(.alternateSend)),
                            onChoose: { _ in }, onClose: {})
                 label(Composer.sendHelp(working: true, send: keys.sendDisplay, alternate: keys.display(.alternateSend)))
                     .padding(.top, 4)
@@ -79,6 +79,6 @@ private struct SteerChoicesBoard: View {
     }
 
     private func label(_ text: String) -> some View {
-        Text(text).font(.nwMono(11)).foregroundStyle(Color.nw.textSecondary)
+        Text(text).font(.shMono(11)).foregroundStyle(Color.sh.textSecondary)
     }
 }

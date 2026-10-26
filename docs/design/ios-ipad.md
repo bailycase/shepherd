@@ -5,7 +5,7 @@
 The iPadOS page's boards are the authority for the iPad: an 11-inch iPad, landscape at 1180×820
 and portrait at 820×1180. Everything in iOS holds here (tokens only, 44pt targets, details at
 rest); this section adds what the iPad boards fix. Sizes are the boards'; set them through the
-iOS ramp (`NWTextStyle`, iOS › Type), never as literals. Paragraphs marked **Not built yet**
+iOS ramp (`SHTextStyle`, iOS › Type), never as literals. Paragraphs marked **Not built yet**
 specify boards the app does not implement: build them to this text.
 
 **Two drawings.** The thread boards (iPadThread, iPadPortrait, iPadSidebar, iPadReview,
@@ -15,7 +15,7 @@ panes) draw a 76pt header (status bar included) with a 17pt title and 40pt icon 
 schematic thread behind the feature they show. The thread boards fix the thread, the composer
 and the header; each later board fixes its own feature.
 
-**Board colors to roles.** The iPad boards draw a few colors between Night Watch's roles. Use:
+**Board colors to roles.** The iPad boards draw a few colors between Shepherd Design's roles. Use:
 
 - meta, times, counters, the turn footer's glyphs (`#767c85`): `textTertiary`
 - composer chip labels, the attach glyph, close glyphs, unselected segments (`#c1c5cb`):
@@ -27,12 +27,12 @@ and the header; each later board fixes its own feature.
 - added lines and done pills (`#122a1e`, `#46c37b1f`, words `#6fd49a`): `doneTint`, `done`
 - removed lines (`#2a1615`, `#f0625e1f`): `failedTint`; Revert's glyph (`#f58a86`): `failed`
 - sheets and popovers (a 0 12 32 black 55% shadow and a 1px `lineStrong` ring):
-  `.nwPopover()`. The boards round popovers at 14 and sheets and the palette at 16
+  `.shPopover()`. The boards round popovers at 14 and sheets and the palette at 16
   (`MobileLayout.paletteRadius`).
 - the dimming behind a sheet, the palette and the portrait sidebar: black at 50% (54% behind
   the sidebar).
 
-A state pill is always `NWStatusPill` with `AgentState`'s colors: an idle agent's pill is
+A state pill is always `SHStatusPill` with `AgentState`'s colors: an idle agent's pill is
 outlined with a `textTertiary` dot, as iPadNewThread, iPadPalette and the side-pane boards draw
 it (iPadThread, iPadPortrait, iPadSidebar and iPadReview draw "Idle" in done's green; that is
 not the rule).
@@ -46,7 +46,7 @@ selected thread, or the Overview when none is. Other screens push over the detai
   `MobileLayout.sidebarWidth`), on `bgBase` with a 1px `lineSubtle` trailing edge.
 - **Portrait** (the window taller than wide, keyboard ignored): the thread takes the width, and
   the sidebar slides over it at 340pt (iPadSidebar, `MobileLayout.sidebarOverlayWidth`), its trailing corners rounded 14, with the
-  floating shadow (`.nwFloatShadow`) and the thread dimmed behind it. Tapping the dimmed thread
+  floating shadow (`.shFloatShadow`) and the thread dimmed behind it. Tapping the dimmed thread
   ("Dismiss sidebar") or choosing a row hides it. At a launch in portrait with nothing chosen,
   the sidebar is out over the dimmed Overview, since the Overview alone offers no way to a thread
   (iPadPortraitLaunch, drawn by the user's decision of 25 Sep 2026); a tap on the dim only closes
@@ -64,8 +64,8 @@ selected thread, or the Overview when none is. Other screens push over the detai
   circle; the rest with 18pt `textSecondary` glyphs, and More with a `textTertiary` chevron,
   since it expands in place (iPadHosts). Built: New thread (disabled with no hosts),
   Automations (its count trailing), More (folded, the offline summary, "1 host offline", as an
-  alert trailing). The rows are `NWListRow(compact: true)`, New thread's plus an
-  `NWListRow.Leading.badge`. A pushed destination's row is selected.
+  alert trailing). The rows are `SHListRow(compact: true)`, New thread's plus an
+  `SHListRow.Leading.badge`. A pushed destination's row is selected.
 - **Not built yet: Missions and Designs** sit between New thread and Automations (a map glyph and
   a diamond glyph). They wait for the Mac's Missions and Designs.
 - **More expands in place** (iPadHosts), its chevron turning down, kept per window: its sub-rows'
@@ -75,7 +75,7 @@ selected thread, or the Overview when none is. Other screens push over the detai
   Extensions). A page under More opened from elsewhere unfolds it. **Not built yet:** the
   board's Design systems and Archive sub-rows (Design systems waits for the Design tool, hidden
   until built; Archive for an archive).
-- **Section heads** (14pt above, 10pt inset, 4pt under): 13/500 (`NWListHeader(style: .sidebar)`). "Needs you" in `lanternText`
+- **Section heads** (14pt above, 10pt inset, 4pt under): 13/500 (`SHListHeader(style: .sidebar)`). "Needs you" in `lanternText`
   with its count in mono 10.5 `lanternText`, a 44pt target that opens Needs you; "Recents" in
   `textTertiary`. "Automations" (the user's request, no board) sits between Needs you and Recents, with its
   count, listing every connected host's automation runs (never among Recents); its head opens the Automations
@@ -118,9 +118,9 @@ selected thread, or the Overview when none is. Other screens push over the detai
 `ThreadScreen` is shared with the phone; on iPad (regular width) it draws as follows.
 
 - **Header** (the system bar, the boards' 52pt, a `lineSubtle` hairline under it): Show sidebar
-  when the sidebar is hidden; the name at `.title` (16/600), the branch chip (`NWBranchChip` as on
+  when the sidebar is hidden; the name at `.title` (16/600), the branch chip (`SHBranchChip` as on
   the Mac, without its chevron: the branch, the files changed, and the host when more than one is
-  set up; iPadThread: "pi/swiftui-previews ●3"), and the status pill (`NWStatusPill`, with the
+  set up; iPadThread: "pi/swiftui-previews ●3"), and the status pill (`SHStatusPill`, with the
   running clock: "Running · 37m"; "Failed" on `failedTint` after a reply that failed,
   iPadThreadError); then, trailing, 44pt icon buttons in `textPrimary`. The
   counters ("17 turns · 42k ctx") are gone, as on the boards.
@@ -146,7 +146,7 @@ selected thread, or the Overview when none is. Other screens push over the detai
   gaps).
 - **User bubble:** trailing, at most 520pt (432 beside the review, 420 beside the inspector),
   12×16 inset, radius 8, `bgBubble` with a 1px `lineStrong` line, 15/1.5; the time under it in
-  mono 11 `textTertiary`, at rest. The app sets `nwUserBubbleMetrics` to `.pad` on iPad (520pt,
+  mono 11 `textTertiary`, at rest. The app sets `shUserBubbleMetrics` to `.pad` on iPad (520pt,
   12×16); the bubble's text stays the thread's prose size.
 - **Thinking:** "Thought for 4s" as a 32pt disclosure, 13 `textSecondary` with a 12pt chevron.
 - **Prose:** `.body` at 16, line height 1.55 on the iPad boards, capped at 680pt.
@@ -157,7 +157,7 @@ selected thread, or the Overview when none is. Other screens push over the detai
   The running call keeps its own live line (LiveText): the tool's glyph, still, the summary and
   the command shimmering, and its clock in mono `textTertiary` ("Running tests · go test
   ./ledger/... · 18s").
-- **"Edited N files" card** (iPadReview): the phone's card (`NWTurnChangesCard`) at the iPad's
+- **"Edited N files" card** (iPadReview): the phone's card (`SHTurnChangesCard`) at the iPad's
   column width: the 36pt tile, "Edited 5 files" (15/600) over "+200 −8", Undo and Review, then
   "ledger/outbox.go" rows at 14 ("new" before a created file's stat) and "2 more". Its rules are
   the phone's (iPhone: Thread).
@@ -201,7 +201,7 @@ selected thread, or the Overview when none is. Other screens push over the detai
   Five rows show before the list scrolls.
 - **Argument hints.** After a command's name, its arguments in mono `textTertiary`
   ("/resume [session]", "/release-notes [tag]"), from the host's prompt-template hint
-  (`NativeCommand.arguments`, `NWTouchCommand.arguments`; Composer › Slash menu), on iPad and
+  (`NativeCommand.arguments`, `SHTouchCommand.arguments`; Composer › Slash menu), on iPad and
   iPhone alike.
 
 ## Up next and steering (iPadQueue, iPadSteer)
@@ -218,7 +218,7 @@ Up next follows iOS (and Composer › Up next); on iPad it is a card above the c
 - **Rows** (50pt, a hairline above each, 14pt leading and 8pt trailing inset, 12pt gap):
   - A steering row (the fallback's, as on the Mac), first, on `runningTint`: `arrow.turn.down.right` 15 in `running`, the text at
     15 on one line, the "Steering" pill after it (24pt, radius 6, `runningTint`, `running` 12.5/500
-    with its 12pt glyph; `NWTouchQueueRow(wide: true)`, where the phone puts "↳ Steering" under
+    with its 12pt glyph; `SHTouchQueueRow(wide: true)`, where the phone puts "↳ Steering" under
     the text), and Back to the queue (a 34pt circle).
   - A queued row on `bgRaised`: its number in a 22pt circle (a 1px `lineStrong` line, mono 11.5
     `textSecondary`), then the text at 15; an image count when it carries images. The first
@@ -240,11 +240,11 @@ header's pill turns "Needs you" (attention, glowing).
 - **Card:** `bgRaised`, a 1px `lantern` line, radius 16, a 3pt `lanternTint` ring outside it;
   14×18 inset (16 at the bottom), parts 12pt apart.
 - **Head** (26pt): a 13pt glyph and "Agent is asking" at 13/600, both `lanternText`; and,
-  trailing, **Hide the question**: a 40pt circle (`.nwIcon`, a 44pt touch target) with an 18pt
+  trailing, **Hide the question**: a 40pt circle (`.shIcon`, a 44pt touch target) with an 18pt
   `chevron.down` in `textSecondary`, overhanging the head rather than growing it, which folds the
   card to read the thread and never answers it ("Hide the question" to VoiceOver). The phone's
   docked panel hides from its grabber instead.
-- **Folded** (`NWQuestionCardHiddenLine`; no board draws it, so it follows the Mac's hidden
+- **Folded** (`SHQuestionCardHiddenLine`; no board draws it, so it follows the Mac's hidden
   line, QuestionStates › hidden): the same lantern card around one row, 16pt leading and 4pt
   trailing: a 14pt glyph in `lanternText`, the question in `headline` (truncating), a secondary
   **Answer** (m), and Show the question (the same 40pt circle, `chevron.up`); either button
@@ -263,7 +263,7 @@ header's pill turns "Needs you" (attention, glowing).
 - **No note and no "Something else…".** The board draws a note field in the chosen answer and a
   last full-width "Something else…" row, but no asker takes either: pi's dialogs take neither,
   and a subagent asks its parent (the dock's What each asker takes). The components that drew
-  them (`NWQuestionNoteField`, `NWQuestionOtherCard`) were pruned, with the subagent variant.
+  them (`SHQuestionNoteField`, `SHQuestionOtherCard`) were pruned, with the subagent variant.
   Project workers' `project_question` keeps its offered option rows; the final numbered row is a
   **Say anything** input, with the same option-card styling. Pick or type, then Answer sends one native input reply. Typing clears the pick;
   picking clears the text. There is no selectable Say anything option or follow-up dialog.
@@ -286,7 +286,7 @@ shadow, the window dimmed behind it.
 - **Body** (18pt inset, parts 18pt apart):
   - The prompt at 18/1.45, at least 110pt tall, placeholder "What should the agent do?", a
     `lantern` caret.
-  - Chips (`NWSelectorChip`: 32pt capsules on `bgRaised` with a 1px `lineStrong` line, a 13pt
+  - Chips (`SHSelectorChip`: 32pt capsules on `bgRaised` with a 1px `lineStrong` line, a 13pt
     `textSecondary` glyph, the value at 13, a 10pt `textTertiary` chevron): the repo (mono,
     "shepherd"), the host (mono, "This Mac"), the model (mono), and the thinking level
     ("Medium"; only for a model that takes one). A chip whose popover is open wears a
@@ -320,7 +320,7 @@ iPadSubagents and 400pt on iPadSteer (the app lets it range 340–480, 400 ideal
 chosen (All subagents) it lists the thread's runs under a "Subagents" head with their tally.
 
 - **The tray** (iPadSteer, iPadSubagents, iPadSplitView, SubagentTray › iPad;
-  `SubagentTraySection`, `NWSubagentTray` at `.pad` size): above the composer, in one card with
+  `SubagentTraySection`, `SHSubagentTray` at `.pad` size): above the composer, in one card with
   Up next (radius 12). A 40pt header (14pt leading, 4pt trailing, a 13pt glyph, "3 subagents" at
   13/600, the cells and tally, Collapse as a 34pt circle); 44pt rows (14pt leading, 4pt
   trailing, 10pt apart): the state in a 14pt slot, the agent's name ("worker", the run's role) in
@@ -359,7 +359,7 @@ chosen (All subagents) it lists the thread's runs under a "Subagents" head with 
   10×12 inset, mono 10.5/1.6 with syntax colors, file captions as comments) and each answer's
   description (the title at 13/600 in a 150pt column, the description at 13/1.45
   `textSecondary`). A subagent's options reach the client as titles only.
-- **Transcript** (16pt inset, parts 14pt apart; `NWProseSize.small`): the parent's message as a
+- **Transcript** (16pt inset, parts 14pt apart; `SHProseSize.small`): the parent's message as a
   bubble (at most 340pt, 10×14 inset, 14) with "10:58 · from parent" under it, then the run's
   prose (15/1.55) and activity lines. iPadSteer draws "Its run" for an asking run as a summary of
   its steps ("Read the spec · 2 files", "Compared tokens · 18 names", "Asked the parent · 2m
@@ -381,7 +381,7 @@ hides the sidebar so the thread keeps a 540pt column; the app keeps the sidebar 
 (`PadShell`), so the pane narrows and its toolbar drops the viewed count, then the stat, rather
 than clip (Known gaps).
 
-- **Pane head** (52pt, a hairline under it): the side pane's tabs (`NWPadPaneHead`): "Changes 3"
+- **Pane head** (52pt, a hairline under it): the side pane's tabs (`SHPadPaneHead`): "Changes 3"
   (the file count once loaded), and Artifacts once the thread has made a file, then Full screen
   (on Changes) and Close pane. The board's Browser and Files tabs are not built on iPad (Side pane).
 - **Toolbar** (54pt, 12pt inset, 8pt gaps, a hairline under it): the scope pill (44pt, radius 6,
@@ -394,7 +394,7 @@ than clip (Known gaps).
 - **Compare row** (38pt, 12pt inset, a hairline under it, mono 12): the head in `textSecondary`,
   "vs" in `textTertiary`, the base in `textPrimary` with a chevron (Branch only: the base picker,
   a popover), and "1 of 3 viewed" trailing in `textSecondary`.
-- **File strip** (`NWTouchFileStrip`, 8pt inset, 6pt apart): 44pt chips with the file name in
+- **File strip** (`SHTouchFileStrip`, 8pt inset, 6pt apart): 44pt chips with the file name in
   mono 12 (`bgRaised`, a 1px `lineStrong` line, radius 6); the chip tapped is filled and the stack
   scrolls its file to the top; viewed files dim.
 - **Files, stacked** in one lazy list: each file's head sticks while its file scrolls (44pt on

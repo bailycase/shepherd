@@ -332,8 +332,8 @@ struct ExtensionMessageTests {
         // A namespace outside the grammar still decodes, so the server can answer it.
         (#"{"type":"designSystemRead","namespace":"Acme Web","id":9,"agentID":"a1","designID":"d1"}"#,
          .designSystemRead(id: 9, agentID: agent, designID: design, namespace: "Acme Web")),
-        (#"{"type":"designSystemWrite","system":{"namespace":"night-watch","install":true},"id":10,"agentID":"a1","designID":"d1"}"#,
-         .designSystemWrite(id: 10, agentID: agent, designID: design, system: DesignSystemWrite(namespace: "night-watch", install: true))),
+        (#"{"type":"designSystemWrite","system":{"namespace":"shepherd-design","install":true},"id":10,"agentID":"a1","designID":"d1"}"#,
+         .designSystemWrite(id: 10, agentID: agent, designID: design, system: DesignSystemWrite(namespace: "shepherd-design", install: true))),
         // markup_propose's frame; an element that isn't an id still decodes, so the server can answer it.
         (#"{"type":"designProposeComments","call":"call-7","proposals":[{"element":"A.dc.html#18:1/1/1","text":"Counts too"},{"element":"?","text":"x"}],"id":11,"agentID":"a1","designID":"d1"}"#,
          .designProposeComments(id: 11, agentID: agent, designID: design, call: "call-7",
@@ -479,7 +479,7 @@ struct ExtensionReplyTests {
                 roots: 2, root: DesignBoardCheck.Size(width: 1280, height: 800), preview: DesignBoardCheck.Size(width: 1280, height: 800),
                 frame: DesignBoardCheck.Size(width: 1280, height: 810),
                 diff: DesignTextDiff(added: 1, removed: 1, lines: ["-14 <p>old</p>", "+14 <p>new</p>"], more: 0), missingImports: ["Card"],
-                tokenSource: "night-watch", offSystem: [DesignTokenFinding(value: "#3a56d4", count: 2, lines: [14, 30], nearest: "--accent #3056d3")],
+                tokenSource: "shepherd-design", offSystem: [DesignTokenFinding(value: "#3a56d4", count: 2, lines: [14, 30], nearest: "--accent #3056d3")],
                 snapped: [DesignTokenReplacement(from: "13px", to: "var(--space-3)", line: 20, token: "12px")]))),
         .designBatchEdited(id: 38, result: DesignBatchResult(
             result: DesignWriteResult(revision: 9, changed: true, title: "Checkout funnel", boardCount: 3),
@@ -523,7 +523,7 @@ struct ExtensionReplyTests {
         ])),
         .designComment(id: 25, comment: comment),
         .designSystems(id: 26, listing: DesignSystemListing(
-            systems: [DesignSystemSummary(info: DesignSystemInfo(namespace: "night-watch", title: "Night Watch", revision: 1, createdAt: 0),
+            systems: [DesignSystemSummary(info: DesignSystemInfo(namespace: "shepherd-design", title: "Shepherd Design", revision: 1, createdAt: 0),
                                           builtIn: true, counts: DesignSystemCounts(colors: 31, type: 9, lengths: 12)), system],
             installed: [DesignSystemInstalled(namespace: "acme-web", title: "acme-web", shepherd: true, version: "3", tokens: tokens,
                                               tokensFile: "ds/acme-web/tokens.json"),

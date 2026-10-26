@@ -15,7 +15,7 @@ import Testing
 /// nothing, and motion on screen costs the app no frames. The spinner and the glow turn on the
 /// render server (a Core Animation animation on their layer); a spinner in a layout the
 /// workspace keeps mounted but hidden, or in a row a lazy stack has let go of, rests. Counted in
-/// frames the clock-driven motions draw (`NWRenderProbe`), host layout passes, and the layers
+/// frames the clock-driven motions draw (`SHRenderProbe`), host layout passes, and the layers
 /// carrying an animation, none of which a slow machine changes.
 @Suite("Idle cost", .mainActorExclusive)
 @MainActor
@@ -24,9 +24,9 @@ struct IdleCostTests {
 
     /// Clock frames drawn over `seconds` of run loop.
     static func clockFrames(over seconds: Double = 1) async -> Int {
-        NWRenderProbe.start()
+        SHRenderProbe.start()
         try? await Task.sleep(for: .seconds(seconds))
-        let counts = NWRenderProbe.stop()
+        let counts = SHRenderProbe.stop()
         return clockKeys.reduce(0) { $0 + counts[$1, default: 0] }
     }
 
@@ -36,19 +36,19 @@ struct IdleCostTests {
 
     /// Spinners in `root`, and how many of them turn.
     static func spinners(in root: NSView) -> (all: Int, turning: Int) {
-        let all = views(NWSpinnerLayerView.self, in: root)
-        return (all.count, all.filter { $0.arc.animation(forKey: NWLayerMotion.spinKey) != nil }.count)
+        let all = views(SHSpinnerLayerView.self, in: root)
+        return (all.count, all.filter { $0.arc.animation(forKey: SHLayerMotion.spinKey) != nil }.count)
     }
 
     /// Live text's shimmer bands in `root`, and how many of them move.
     static func shimmers(in root: NSView) -> (all: Int, moving: Int) {
-        let all = views(NWShimmerLayerView.self, in: root)
-        return (all.count, all.filter { $0.band.animation(forKey: NWLayerMotion.shimmerKey) != nil }.count)
+        let all = views(SHShimmerLayerView.self, in: root)
+        return (all.count, all.filter { $0.band.animation(forKey: SHLayerMotion.shimmerKey) != nil }.count)
     }
 
     static func glows(in root: NSView) -> (all: Int, pulsing: Int) {
-        let all = views(NWGlowLayerView.self, in: root)
-        return (all.count, all.filter { $0.dot.animation(forKey: NWLayerMotion.glowKey) != nil }.count)
+        let all = views(SHGlowLayerView.self, in: root)
+        return (all.count, all.filter { $0.dot.animation(forKey: SHLayerMotion.glowKey) != nil }.count)
     }
 
     /// A thread that has loaded draws no spinner: "Starting…" is gone for good, not turning
@@ -131,7 +131,7 @@ struct IdleCostTests {
                 let store = vm.threadStores.store(for: agent.agent.id)
                 return "\(index):ready=\(store.ready),starting=\(store.starting),busy=\(store.busy),running=\(store.running)"
             }
-            let ancestors = Self.views(NWSpinnerLayerView.self, in: window.host).map { spinner in
+            let ancestors = Self.views(SHSpinnerLayerView.self, in: window.host).map { spinner in
                 var view: NSView? = spinner
                 var names: [String] = []
                 while let current = view, names.count < 6 {
@@ -197,7 +197,7 @@ struct IdleCostTests {
     /// step with the clock.
     @Test func aShimmerSlidesOnTheRenderServer() async throws {
         let window = LayoutCountingWindow(size: CGSize(width: 240, height: 60),
-                                          Text("Running tests").nwShimmer(active: true).padding(10)
+                                          Text("Running tests").shShimmer(active: true).padding(10)
                                               .environment(\._accessibilityReduceMotion, false))
         defer { window.close() }
         try await eventuallyOnMain("the band to slide") { Self.shimmers(in: window.host) == (1, 1) }
@@ -213,15 +213,15 @@ struct IdleCostTests {
         if TimingTests.enabled {
             #expect(window.host.layouts == before, "\(window.host.layouts - before) host layout passes")
         }
-        let band = try #require(Self.views(NWShimmerLayerView.self, in: window.host).first)
-        let group = try #require(band.band.animation(forKey: NWLayerMotion.shimmerKey) as? CAAnimationGroup)
-        #expect(group.duration == NW.Motion.shimmer.duration && group.repeatCount == .infinity)
+        let band = try #require(Self.views(SHShimmerLayerView.self, in: window.host).first)
+        let group = try #require(band.band.animation(forKey: SHLayerMotion.shimmerKey) as? CAAnimationGroup)
+        #expect(group.duration == SH.Motion.shimmer.duration && group.repeatCount == .infinity)
     }
 
     /// Under Reduce Motion live text is plain secondary text: no band at all.
     @Test func reduceMotionDrawsLiveTextStill() {
         let window = LayoutCountingWindow(size: CGSize(width: 240, height: 60),
-                                          Text("Running tests").nwShimmer(active: true).padding(10)
+                                          Text("Running tests").shShimmer(active: true).padding(10)
                                               .environment(\._accessibilityReduceMotion, true))
         defer { window.close() }
         #expect(Self.shimmers(in: window.host).all == 0)
@@ -233,7 +233,7 @@ struct IdleCostTests {
     /// and never lays the window out again.
     @Test func aRunningSpinnerAndAGlowingDotCostTheAppNoFrames() async throws {
         let window = LayoutCountingWindow(size: CGSize(width: 120, height: 60),
-                                          HStack { ProgressView().progressViewStyle(.nwSpinner); NWStatusDot(.attention) }.padding(10)
+                                          HStack { ProgressView().progressViewStyle(.shSpinner); SHStatusDot(.attention) }.padding(10)
                                               .environment(\._accessibilityReduceMotion, false))
         defer { window.close() }
         try await Task.sleep(for: .milliseconds(300))
@@ -248,32 +248,32 @@ struct IdleCostTests {
 
     @Test func theSpinnerAndTheGlowRepeatAtTheirAnchors() async throws {
         let window = LayoutCountingWindow(size: CGSize(width: 120, height: 60),
-                                          HStack { ProgressView().progressViewStyle(.nwSpinner); NWStatusDot(.attention) }.padding(10)
+                                          HStack { ProgressView().progressViewStyle(.shSpinner); SHStatusDot(.attention) }.padding(10)
                                               .environment(\._accessibilityReduceMotion, false))
         defer { window.close() }
-        let spinner = try #require(Self.views(NWSpinnerLayerView.self, in: window.host).first)
-        let dot = try #require(Self.views(NWGlowLayerView.self, in: window.host).first)
+        let spinner = try #require(Self.views(SHSpinnerLayerView.self, in: window.host).first)
+        let dot = try #require(Self.views(SHGlowLayerView.self, in: window.host).first)
 
-        let spin = try #require(spinner.arc.animation(forKey: NWLayerMotion.spinKey) as? CABasicAnimation)
-        #expect(spin.keyPath == "transform.rotation.z" && spin.duration == NW.Motion.spin.duration && spin.repeatCount == .infinity)
+        let spin = try #require(spinner.arc.animation(forKey: SHLayerMotion.spinKey) as? CABasicAnimation)
+        #expect(spin.keyPath == "transform.rotation.z" && spin.duration == SH.Motion.spin.duration && spin.repeatCount == .infinity)
         #expect(abs(abs((spin.toValue as? Double) ?? 0) - 2 * .pi) < 1e-9, "one turn per period")
-        let glow = try #require(dot.dot.animation(forKey: NWLayerMotion.glowKey) as? CAKeyframeAnimation)
-        #expect(glow.keyPath == "opacity" && glow.duration == NW.Motion.glow.duration && glow.repeatCount == .infinity)
+        let glow = try #require(dot.dot.animation(forKey: SHLayerMotion.glowKey) as? CAKeyframeAnimation)
+        #expect(glow.keyPath == "opacity" && glow.duration == SH.Motion.glow.duration && glow.repeatCount == .infinity)
     }
 
     /// Reduce Motion, and a hidden layout, leave the arc and the dot at rest.
     @Test(arguments: ["reduce motion", "paused"]) func nothingTurnsOrGlowsAtRest(reason: String) async throws {
         let window = LayoutCountingWindow(size: CGSize(width: 120, height: 60),
-                                          HStack { ProgressView().progressViewStyle(.nwSpinner); NWStatusDot(.attention) }.padding(10)
+                                          HStack { ProgressView().progressViewStyle(.shSpinner); SHStatusDot(.attention) }.padding(10)
                                               .environment(\._accessibilityReduceMotion, reason == "reduce motion")
-                                              .environment(\.nwMotionPaused, reason == "paused"))
+                                              .environment(\.shMotionPaused, reason == "paused"))
         defer { window.close() }
 
         let spinners = Self.spinners(in: window.host), glows = Self.glows(in: window.host)
 
         #expect(spinners.all == 1 && spinners.turning == 0)
         #expect(glows.all == 1 && glows.pulsing == 0)
-        #expect(Self.views(NWGlowLayerView.self, in: window.host).first?.dot.opacity == 1, "a resting dot is fully lit")
+        #expect(Self.views(SHGlowLayerView.self, in: window.host).first?.dot.opacity == 1, "a resting dot is fully lit")
     }
 
     @MainActor @Observable final class Scheme {
@@ -284,7 +284,7 @@ struct IdleCostTests {
         let scheme: Scheme
 
         var body: some View {
-            HStack { ProgressView().progressViewStyle(.nwSpinner); NWStatusDot(.attention) }
+            HStack { ProgressView().progressViewStyle(.shSpinner); SHStatusDot(.attention) }
                 .padding(10)
                 .environment(\.colorScheme, scheme.value)
         }
@@ -296,34 +296,34 @@ struct IdleCostTests {
         let scheme = Scheme()
         let window = LayoutCountingWindow(size: CGSize(width: 120, height: 60), SchemedSpinner(scheme: scheme))
         defer { window.close() }
-        let spinner = try #require(Self.views(NWSpinnerLayerView.self, in: window.host).first)
-        let dot = try #require(Self.views(NWGlowLayerView.self, in: window.host).first)
+        let spinner = try #require(Self.views(SHSpinnerLayerView.self, in: window.host).first)
+        let dot = try #require(Self.views(SHGlowLayerView.self, in: window.host).first)
         func expected(_ color: Color, _ scheme: ColorScheme) -> CGColor {
             var environment = EnvironmentValues()
             environment.colorScheme = scheme
             return color.resolve(in: environment).cgColor
         }
-        #expect(spinner.arc.strokeColor == expected(Color.nw.running, .light))
+        #expect(spinner.arc.strokeColor == expected(Color.sh.running, .light))
         #expect(dot.dot.fillColor == expected(AgentState.attention.color, .light))
 
         scheme.value = .dark
         window.window.layoutIfNeeded()
         window.host.layoutSubtreeIfNeeded()
 
-        #expect(spinner.arc.strokeColor == expected(Color.nw.running, .dark))
+        #expect(spinner.arc.strokeColor == expected(Color.sh.running, .dark))
         #expect(dot.dot.fillColor == expected(AgentState.attention.color, .dark))
-        #expect(expected(Color.nw.running, .light) != expected(Color.nw.running, .dark), "the token has two colors")
+        #expect(expected(Color.sh.running, .light) != expected(Color.sh.running, .dark), "the token has two colors")
     }
 
-    /// Every spinner turns in step with the clock (`NWPhase`), as the timeline-drawn one did.
+    /// Every spinner turns in step with the clock (`SHPhase`), as the timeline-drawn one did.
     @Test(.timingSensitive) func aSpinnerTurnsInStepWithTheClock() async throws {
-        let window = LayoutCountingWindow(size: CGSize(width: 60, height: 60), ProgressView().progressViewStyle(.nwSpinner).padding(10))
+        let window = LayoutCountingWindow(size: CGSize(width: 60, height: 60), ProgressView().progressViewStyle(.shSpinner).padding(10))
         defer { window.close() }
-        let spinner = try #require(Self.views(NWSpinnerLayerView.self, in: window.host).first)
+        let spinner = try #require(Self.views(SHSpinnerLayerView.self, in: window.host).first)
         try await Task.sleep(for: .milliseconds(100))
 
         let angle = try #require(spinner.arc.presentation()?.value(forKeyPath: "transform.rotation.z") as? Double)
-        let expected = -2 * .pi * NWPhase.fraction(Date(), .spin)
+        let expected = -2 * .pi * SHPhase.fraction(Date(), .spin)
 
         let apart = abs(remainder(angle - expected, 2 * .pi))
         #expect(apart < 0.5, "at \(angle), the clock's phase is \(expected)")
@@ -337,7 +337,7 @@ struct IdleCostTests {
 
         var body: some View {
             Circle().trim(from: 0, to: 0.75)
-                .stroke(Color.nw.running, style: StrokeStyle(lineWidth: max(1.5, size * 0.145), lineCap: .round))
+                .stroke(Color.sh.running, style: StrokeStyle(lineWidth: max(1.5, size * 0.145), lineCap: .round))
                 .padding(max(1.5, size * 0.145) / 2)
                 .frame(width: size, height: size)
         }
@@ -345,7 +345,7 @@ struct IdleCostTests {
 
     private static func bitmap(_ view: some View, size: CGSize, dark: Bool) -> NSBitmapImageRep {
         let window = OffscreenWindow(size: size, dark: dark, view.frame(width: size.width, height: size.height)
-            .background(Color.nw.bgWindow).environment(\._accessibilityReduceMotion, true))
+            .background(Color.sh.bgWindow).environment(\._accessibilityReduceMotion, true))
         defer { window.close() }
         ListPerf.settle(window)
         let bitmap = window.host.bitmapImageRepForCachingDisplay(in: window.host.bounds)!
@@ -387,9 +387,9 @@ struct IdleCostTests {
     @Test(arguments: [false, true]) func theSpinnerDrawsTheArcItReplaced(dark: Bool) {
         let size = CGSize(width: 48, height: 48)
         let shape = Self.bitmap(ShapeArc(size: 48), size: size, dark: dark)
-        let layer = Self.bitmap(ProgressView().progressViewStyle(.nwSpinner(size: 48)), size: size, dark: dark)
+        let layer = Self.bitmap(ProgressView().progressViewStyle(.shSpinner(size: 48)), size: size, dark: dark)
 
-        let difference = Self.mismatch(shape, layer, ink: Color.nw.running, dark: dark)
+        let difference = Self.mismatch(shape, layer, ink: Color.sh.running, dark: dark)
 
         #expect(difference.ink > 500, "the arc drew: \(difference)")
         // Edge pixels vary with the renderer (CI's VM antialiases differently: 18% there, under
@@ -406,7 +406,7 @@ struct IdleCostTests {
     @Test(arguments: [false, true]) func theGlowingDotDrawsTheDotItReplaced(dark: Bool) {
         let size = CGSize(width: 24, height: 24)
         let shape = Self.bitmap(Circle().fill(AgentState.attention.color), size: size, dark: dark)
-        let layer = Self.bitmap(NWStatusDot(.attention, size: 24), size: size, dark: dark)
+        let layer = Self.bitmap(SHStatusDot(.attention, size: 24), size: size, dark: dark)
 
         let difference = Self.mismatch(shape, layer, ink: AgentState.attention.color, dark: dark)
 
@@ -445,9 +445,9 @@ struct IdleCostReport {
         for _ in 0..<3 {
             var counted = 0
             cpu.append(await MainThreadCPU.milliseconds {
-                NWRenderProbe.start()
+                SHRenderProbe.start()
                 try? await Task.sleep(for: .seconds(4))
-                counted = NWRenderProbe.stop().filter { IdleCostTests.clockKeys.contains($0.key) }.values.reduce(0, +)
+                counted = SHRenderProbe.stop().filter { IdleCostTests.clockKeys.contains($0.key) }.values.reduce(0, +)
             })
             frames.append(counted)
         }
@@ -460,8 +460,8 @@ struct IdleCostReport {
     @Test func continuousMotionIdle() async throws {
         let cases: [(String, AnyView)] = [
             ("empty window", AnyView(Color.clear.frame(width: 40, height: 40))),
-            ("one spinner", AnyView(ProgressView().progressViewStyle(.nwSpinner))),
-            ("one glowing dot", AnyView(NWStatusDot(.attention))),
+            ("one spinner", AnyView(ProgressView().progressViewStyle(.shSpinner))),
+            ("one glowing dot", AnyView(SHStatusDot(.attention))),
         ]
         for (name, view) in cases {
             var cpu: [Double] = []
@@ -502,9 +502,9 @@ struct IdleCostReport {
             try await thread.waitUntilReady()
             var counted = 0
             cpu.append(await MainThreadCPU.milliseconds {
-                NWRenderProbe.start()
+                SHRenderProbe.start()
                 try? await Task.sleep(for: .seconds(2))
-                counted = NWRenderProbe.stop().filter { IdleCostTests.clockKeys.contains($0.key) }.values.reduce(0, +)
+                counted = SHRenderProbe.stop().filter { IdleCostTests.clockKeys.contains($0.key) }.values.reduce(0, +)
             })
             frames.append(counted)
             thread.close()

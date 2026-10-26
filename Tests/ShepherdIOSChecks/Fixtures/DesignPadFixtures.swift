@@ -49,7 +49,7 @@ extension FixtureCatalog {
                               }
                               // The boards stack in one column, fitted; A picked whole wears its ring.
                               let canvas = await DesignPadFixtures.settle(app, viewport: nil)
-                              canvas.pick(NWCanvasPick(board: "A.dc.html"))
+                              canvas.pick(SHCanvasPick(board: "A.dc.html"))
                               await FixtureWindows.wait("selected board drawn", seconds: 10) { canvas.isDrawn && !canvas.selectedWhole.isEmpty }
                           }),
             // The sidebar over a thread in portrait (iPadSidebar): Designs among the
@@ -87,7 +87,7 @@ enum DesignPadFixtures {
                             systemNamespace: "acme-web", createdAt: FixtureData.start,
                             lastActiveAt: Date().timeIntervalSince1970 * 1000 - 120_000, boardCount: 4)
         let settings = Design(id: DesignID(rawValue: "design-settings"), name: "Settings redesign",
-                              systemNamespace: "night-watch", createdAt: FixtureData.start, lastActiveAt: FixtureData.start, boardCount: 6)
+                              systemNamespace: "shepherd-design", createdAt: FixtureData.start, lastActiveAt: FixtureData.start, boardCount: 6)
         var agent = FixtureData.agent(agentID, "Checkout funnel dashboard", .done)
         agent.designID = designID
         hosts[index].state.agents.append(agent)
@@ -138,7 +138,7 @@ enum DesignPadFixtures {
         let canvas = PadDesigns.of(app.hosts).canvas(largeRef)
         await FixtureWindows.wait("large canvas snapshot", seconds: 15) { canvas.snapshot != nil }
         let zoom: CGFloat = 0.5
-        canvas.viewport = NWCanvasViewport(offset: CGPoint(x: 28, y: 46), zoom: zoom)
+        canvas.viewport = SHCanvasViewport(offset: CGPoint(x: 28, y: 46), zoom: zoom)
         await FixtureWindows.wait("initial pan boards drawn", seconds: 30) { !canvas.visibleBoards.isEmpty && canvas.isDrawn }
         let most = WebViewPeak()
         let sampler = Task { @MainActor in
@@ -156,7 +156,7 @@ enum DesignPadFixtures {
             let start = canvas.viewport.offset
             for frame in 1...24 {
                 let t = Double(frame) / 24
-                canvas.viewport = NWCanvasViewport(offset: CGPoint(x: start.x + (targetX - start.x) * t, y: start.y + (targetY - start.y) * t),
+                canvas.viewport = SHCanvasViewport(offset: CGPoint(x: start.x + (targetX - start.x) * t, y: start.y + (targetY - start.y) * t),
                                                    zoom: zoom)
                 try? await Task.sleep(for: .milliseconds(16))
             }
@@ -193,7 +193,7 @@ enum DesignPadFixtures {
     /// Waits for the design on screen to draw what it shows, then puts the canvas where the board
     /// puts it. Answers the canvas.
     @MainActor @discardableResult
-    static func settle(_ app: MobileApp, viewport: NWCanvasViewport? = NWCanvasViewport(offset: CGPoint(x: 28, y: 46), zoom: 0.4),
+    static func settle(_ app: MobileApp, viewport: SHCanvasViewport? = SHCanvasViewport(offset: CGPoint(x: 28, y: 46), zoom: 0.4),
                        agent: AgentRef = agentRef) async -> PadDesignCanvas {
         let designs = PadDesigns.of(app.hosts)
         let canvas = designs.canvas(ref)
@@ -207,7 +207,7 @@ enum DesignPadFixtures {
 
     /// Taps a board as a finger would with Select, and waits for its element's ring.
     @MainActor static func select(_ canvas: PadDesignCanvas, board: String, at point: CGPoint) async {
-        canvas.pick(NWCanvasPick(board: board, point: point))
+        canvas.pick(SHCanvasPick(board: board, point: point))
         await FixtureWindows.wait("tapped element selected", seconds: 15) { !canvas.selectedElements.isEmpty }
         await FixtureWindows.wait("tweak controls", seconds: 15) { !canvas.tweak.presentation.isEmpty }
         await FixtureWindows.wait("selected element canvas drawn", seconds: 15) { canvas.isDrawn }

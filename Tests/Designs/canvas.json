@@ -585,7 +585,7 @@
       "x": 4560,
       "y": 0
     },
-    "NWAgents.dc.html": {
+    "SHAgents.dc.html": {
       "h": 1460,
       "page": "system",
       "title": "Agents & orchestration",
@@ -593,7 +593,7 @@
       "x": 0,
       "y": 7406
     },
-    "NWComposer.dc.html": {
+    "SHComposer.dc.html": {
       "h": 1467,
       "page": "system",
       "title": "Composer & menus",
@@ -601,7 +601,7 @@
       "x": 5720,
       "y": 3528
     },
-    "NWControls.dc.html": {
+    "SHControls.dc.html": {
       "h": 1502,
       "page": "system",
       "title": "Controls",
@@ -609,7 +609,7 @@
       "x": 1520,
       "y": 0
     },
-    "NWDesignTool.dc.html": {
+    "SHDesignTool.dc.html": {
       "h": 1707,
       "page": "system",
       "title": "Design tool",
@@ -617,7 +617,7 @@
       "x": 4560,
       "y": 14054
     },
-    "NWFoundations.dc.html": {
+    "SHFoundations.dc.html": {
       "h": 2808,
       "page": "system",
       "title": "Foundations",
@@ -625,7 +625,7 @@
       "x": 0,
       "y": 0
     },
-    "NWMissions.dc.html": {
+    "SHMissions.dc.html": {
       "h": 3021,
       "page": "system",
       "title": "Mission screens",
@@ -633,7 +633,7 @@
       "x": 3040,
       "y": 14054
     },
-    "NWNavigation.dc.html": {
+    "SHNavigation.dc.html": {
       "h": 1706,
       "page": "system",
       "title": "Navigation",
@@ -641,7 +641,7 @@
       "x": 4880,
       "y": 7406
     },
-    "NWStatus.dc.html": {
+    "SHStatus.dc.html": {
       "h": 1332,
       "page": "system",
       "title": "Status & feedback",
@@ -649,7 +649,7 @@
       "x": 3040,
       "y": 0
     },
-    "NWSwift.dc.html": {
+    "SHSwift.dc.html": {
       "h": 2157,
       "page": "system",
       "title": "Swift implementation",
@@ -657,7 +657,7 @@
       "x": 0,
       "y": 17795
     },
-    "NWThread.dc.html": {
+    "SHThread.dc.html": {
       "h": 1987,
       "page": "system",
       "title": "Thread",
@@ -1714,7 +1714,7 @@
     },
     "system-top": {
       "kind": "title1",
-      "text": "Components \u2014 Night Watch, Shepherd\u2019s design system. Every component and state lives here; the other pages are screens.",
+      "text": "Components \u2014 Shepherd Design, Shepherd\u2019s design system. Every component and state lives here; the other pages are screens.",
       "x": 0,
       "y": -560,
       "w": 240,
@@ -1925,30 +1925,30 @@
     "DZTweak.dc.html",
     "DZSystem.dc.html",
     "DZExport.dc.html",
-    "NWFoundations.dc.html",
-    "NWControls.dc.html",
-    "NWStatus.dc.html",
-    "NWThread.dc.html",
+    "SHFoundations.dc.html",
+    "SHControls.dc.html",
+    "SHStatus.dc.html",
+    "SHThread.dc.html",
     "ToolRows.dc.html",
     "LiveText.dc.html",
     "TurnErrors.dc.html",
-    "NWComposer.dc.html",
+    "SHComposer.dc.html",
     "QueueStates.dc.html",
     "QuestionStates.dc.html",
     "ContextIdeas.dc.html",
     "ThreadRichContent.dc.html",
-    "NWAgents.dc.html",
+    "SHAgents.dc.html",
     "SubagentTray.dc.html",
     "SkillsStates.dc.html",
-    "NWNavigation.dc.html",
+    "SHNavigation.dc.html",
     "ChangesStates.dc.html",
     "PaneStates.dc.html",
     "TerminalStates.dc.html",
     "NotifCatalog.dc.html",
     "MXVocab.dc.html",
-    "NWMissions.dc.html",
-    "NWDesignTool.dc.html",
-    "NWSwift.dc.html"
+    "SHMissions.dc.html",
+    "SHDesignTool.dc.html",
+    "SHSwift.dc.html"
   ],
   "pages": [
     {

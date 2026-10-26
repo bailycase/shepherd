@@ -50,7 +50,7 @@ struct PeerApprovalFlowTests {
             guard case .error(0, "self_control", _) = try await client.reply() else { Issue.record("registration barrier failed"); return }
         }
         let window = OffscreenWindow(size: CGSize(width: 900, height: 640), dark: true,
-                                     Color.nw.bgWindow.modifier(AppDialogs(vm: vm)))
+                                     Color.sh.bgWindow.modifier(AppDialogs(vm: vm)))
         defer { window.close() }
         for id in 1...2 {
             try leadClient.send(.sendToAgent(id: id, agentID: lead.agent.id, targetAgentID: worker.agent.id, text: "run the tests"))
@@ -70,7 +70,7 @@ struct PeerApprovalFlowTests {
         app.settings.designToolEnabled = true
         let window = OffscreenWindow(size: CGSize(width: 900, height: 1400), dark: true,
                                      ScrollView { ExtensionsSettings(settings: app.settings).padding(32) }
-                                         .background(Color.nw.bgWindow))
+                                         .background(Color.sh.bgWindow))
         defer { window.close() }
         window.layout()
         let labels = window.controls().compactMap(\.label)

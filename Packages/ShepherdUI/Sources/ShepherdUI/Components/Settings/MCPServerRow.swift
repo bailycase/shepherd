@@ -63,7 +63,7 @@ public struct MCPServerListHeader: View {
     public init() {}
 
     public var body: some View {
-        let M = NWMCPMetrics.self
+        let M = SHMCPMetrics.self
         HStack(spacing: M.columnGap) {
             Color.clear.frame(width: M.switchColumn)
             label("Server").frame(maxWidth: .infinity, alignment: .leading)
@@ -73,13 +73,13 @@ public struct MCPServerListHeader: View {
         }
         .padding(.horizontal, M.rowSides)
         .frame(height: M.headerHeight)
-        .background(Color.nw.bgSunken)
-        .overlay(alignment: .bottom) { NWHairline() }
+        .background(Color.sh.bgSunken)
+        .overlay(alignment: .bottom) { SHHairline() }
         .accessibilityHidden(true)
     }
 
     private func label(_ text: String) -> some View {
-        Text(text).nwSettingsLabel(table: true).lineLimit(1)
+        Text(text).shSettingsLabel(table: true).lineLimit(1)
     }
 }
 
@@ -116,46 +116,46 @@ public struct MCPServerRow: View, Equatable {
     }
 
     public var body: some View {
-        let _ = NWRenderProbe.tick("mcp.row")
-        let nw = Color.nw
-        let M = NWMCPMetrics.self
+        let _ = SHRenderProbe.tick("mcp.row")
+        let sh = Color.sh
+        let M = SHMCPMetrics.self
         HStack(spacing: M.columnGap) {
             Toggle(model.name, isOn: Binding(get: { model.enabled }, set: actions.toggle))
-                .toggleStyle(.nwSwitch)
+                .toggleStyle(.shSwitch)
                 .labelsHidden()
                 .frame(width: M.switchColumn)
-            VStack(alignment: .leading, spacing: NW.Space.xs) {
-                HStack(spacing: NW.Space.m) {
+            VStack(alignment: .leading, spacing: SH.Space.xs) {
+                HStack(spacing: SH.Space.m) {
                     MCPStatusDot(model.status)
                     Text(model.name)
-                        .font(.nwMono(M.nameSize, .semibold))
-                        .foregroundStyle(model.enabled ? nw.textPrimary : nw.textTertiary)
+                        .font(.shMono(M.nameSize, .semibold))
+                        .foregroundStyle(model.enabled ? sh.textPrimary : sh.textTertiary)
                         .lineLimit(1)
                     MCPKindTag(model.kind)
                 }
                 noteLine
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .opacity(model.enabled ? 1 : NWMCPMetrics.offOpacity)
+            .opacity(model.enabled ? 1 : SHMCPMetrics.offOpacity)
             signIn.frame(width: M.signInColumn, alignment: .leading)
-                .opacity(model.enabled ? 1 : NWMCPMetrics.offOpacity)
+                .opacity(model.enabled ? 1 : SHMCPMetrics.offOpacity)
             Text(model.tools.map(String.init) ?? "—")
-                .font(.nwSans(M.cellSize))
+                .font(.shSans(M.cellSize))
                 .monospacedDigit()
-                .foregroundStyle(model.tools == nil ? nw.textTertiary : nw.textSecondary)
+                .foregroundStyle(model.tools == nil ? sh.textTertiary : sh.textSecondary)
                 .frame(width: M.toolsColumn, alignment: .trailing)
-                .opacity(model.enabled ? 1 : NWMCPMetrics.offOpacity)
+                .opacity(model.enabled ? 1 : SHMCPMetrics.offOpacity)
             Image(systemName: open ? "chevron.down" : "chevron.right")
-                .font(.nwSans(M.cellSize - 1, .semibold))
-                .foregroundStyle(nw.textTertiary)
+                .font(.shSans(M.cellSize - 1, .semibold))
+                .foregroundStyle(sh.textTertiary)
                 .frame(width: M.chevronColumn)
                 .accessibilityHidden(true)
         }
         .padding(.vertical, M.rowVertical)
         .padding(.horizontal, M.rowSides)
         .frame(minHeight: M.rowMinHeight)
-        .background(open || hovering ? nw.bgHover : Color.clear)
-        .overlay(alignment: .top) { if !first { NWHairline() } }
+        .background(open || hovering ? sh.bgHover : Color.clear)
+        .overlay(alignment: .top) { if !first { SHHairline() } }
         .contentShape(Rectangle())
         .onTapGesture(perform: actions.open)
         .onHover { hovering = $0 }
@@ -165,17 +165,17 @@ public struct MCPServerRow: View, Equatable {
     }
 
     @ViewBuilder private var noteLine: some View {
-        let nw = Color.nw
-        let M = NWMCPMetrics.self
+        let sh = Color.sh
+        let M = SHMCPMetrics.self
         switch model.note {
         case .starting(let text):
-            Text(text).font(.nwSans(M.cellSize)).foregroundStyle(nw.textSecondary).lineLimit(1)
+            Text(text).font(.shSans(M.cellSize)).foregroundStyle(sh.textSecondary).lineLimit(1)
         case .error(let text):
-            Text(text).font(.nwSans(M.cellSize)).foregroundStyle(nw.failed).lineLimit(1).help(text)
+            Text(text).font(.shSans(M.cellSize)).foregroundStyle(sh.failed).lineLimit(1).help(text)
         case nil:
             Text(model.endpoint)
-                .font(.nwMono(M.endpointSize))
-                .foregroundStyle(nw.textTertiary)
+                .font(.shMono(M.endpointSize))
+                .foregroundStyle(sh.textTertiary)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .help(model.endpoint)
@@ -183,26 +183,26 @@ public struct MCPServerRow: View, Equatable {
     }
 
     @ViewBuilder private var signIn: some View {
-        let nw = Color.nw
-        let M = NWMCPMetrics.self
+        let sh = Color.sh
+        let M = SHMCPMetrics.self
         switch model.signIn {
         case .account(let account):
             cell("person.crop.circle", account)
         case .signIn:
-            Button("Sign in", action: actions.signIn).buttonStyle(.nw(.primary, size: .s))
+            Button("Sign in", action: actions.signIn).buttonStyle(.sh(.primary, size: .s))
         case .expired:
-            HStack(spacing: NW.Space.m) {
-                Text("Expired").font(.nwSans(M.cellSize)).foregroundStyle(nw.lanternText)
-                Button("Sign in", action: actions.signIn).buttonStyle(.nw(.secondary, size: .s))
+            HStack(spacing: SH.Space.m) {
+                Text("Expired").font(.shSans(M.cellSize)).foregroundStyle(sh.lanternText)
+                Button("Sign in", action: actions.signIn).buttonStyle(.sh(.secondary, size: .s))
             }
         case .moreAccess(let scopes):
-            HStack(spacing: NW.Space.m) {
+            HStack(spacing: SH.Space.m) {
                 Text(scopes.map { "+" + $0 }.joined(separator: " "))
-                    .font(.nwMono(M.endpointSize))
-                    .foregroundStyle(nw.lanternText)
+                    .font(.shMono(M.endpointSize))
+                    .foregroundStyle(sh.lanternText)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Button("Sign in again", action: actions.signIn).buttonStyle(.nw(.secondary, size: .s)).fixedSize()
+                Button("Sign in again", action: actions.signIn).buttonStyle(.sh(.secondary, size: .s)).fixedSize()
             }
         case .variable(let name):
             cell("key", name, mono: true)
@@ -211,25 +211,25 @@ public struct MCPServerRow: View, Equatable {
         case .variables(let count):
             cell("lock", count == 1 ? "1 variable" : "\(count) variables")
         case .missingSecret(let name):
-            HStack(spacing: NW.Space.s + NW.Space.xxs) {
-                Image(systemName: "lock").font(.nwSans(M.cellSize - 1)).foregroundStyle(nw.lanternText).accessibilityHidden(true)
-                Text("\(name) isn’t set").font(.nwSans(M.cellSize)).foregroundStyle(nw.lanternText).lineLimit(1)
+            HStack(spacing: SH.Space.s + SH.Space.xxs) {
+                Image(systemName: "lock").font(.shSans(M.cellSize - 1)).foregroundStyle(sh.lanternText).accessibilityHidden(true)
+                Text("\(name) isn’t set").font(.shSans(M.cellSize)).foregroundStyle(sh.lanternText).lineLimit(1)
             }
         case .unverified:
-            Text("Not checked").font(.nwSans(M.cellSize)).foregroundStyle(nw.textTertiary)
+            Text("Not checked").font(.shSans(M.cellSize)).foregroundStyle(sh.textTertiary)
         case .none:
-            Text("None").font(.nwSans(M.cellSize)).foregroundStyle(nw.textTertiary)
+            Text("None").font(.shSans(M.cellSize)).foregroundStyle(sh.textTertiary)
         }
     }
 
     private func cell(_ symbol: String, _ text: String, mono: Bool = false) -> some View {
-        let nw = Color.nw
-        let M = NWMCPMetrics.self
-        return HStack(spacing: NW.Space.s + NW.Space.xxs) {
-            Image(systemName: symbol).font(.nwSans(M.cellSize - 1)).foregroundStyle(nw.textTertiary).accessibilityHidden(true)
+        let sh = Color.sh
+        let M = SHMCPMetrics.self
+        return HStack(spacing: SH.Space.s + SH.Space.xxs) {
+            Image(systemName: symbol).font(.shSans(M.cellSize - 1)).foregroundStyle(sh.textTertiary).accessibilityHidden(true)
             Text(text)
-                .font(mono ? .nwMono(M.endpointSize) : .nwSans(M.cellSize))
-                .foregroundStyle(nw.textSecondary)
+                .font(mono ? .shMono(M.endpointSize) : .shSans(M.cellSize))
+                .foregroundStyle(sh.textSecondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
@@ -245,16 +245,16 @@ public struct MCPKindTag: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        let M = NWMCPMetrics.self
-        HStack(spacing: NW.Space.xs) {
-            Image(systemName: kind == .remote ? "globe" : "terminal").font(.nwSans(M.tagIconSize)).accessibilityHidden(true)
-            Text(kind == .remote ? "Remote" : "Local").font(.nwSans(M.tagTextSize))
+        let sh = Color.sh
+        let M = SHMCPMetrics.self
+        HStack(spacing: SH.Space.xs) {
+            Image(systemName: kind == .remote ? "globe" : "terminal").font(.shSans(M.tagIconSize)).accessibilityHidden(true)
+            Text(kind == .remote ? "Remote" : "Local").font(.shSans(M.tagTextSize))
         }
-        .foregroundStyle(nw.textSecondary)
+        .foregroundStyle(sh.textSecondary)
         .padding(.horizontal, M.tagSides)
         .frame(height: M.tagHeight)
-        .background(nw.bgSelected, in: RoundedRectangle(cornerRadius: NW.Radius.xs))
+        .background(sh.bgSelected, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
         .fixedSize()
     }
 }

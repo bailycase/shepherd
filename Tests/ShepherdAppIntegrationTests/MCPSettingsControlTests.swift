@@ -255,7 +255,7 @@ struct MCPSettingsControlTests {
         let flow = try #require(store.signIn)
         try await eventuallyOnMain("pi to print its address") { flow.authorizationURL != nil }
         var closed = 0
-        let window = OffscreenWindow(size: CGSize(width: NWMCPMetrics.sheetWidth, height: 380), dark: true,
+        let window = OffscreenWindow(size: CGSize(width: SHMCPMetrics.sheetWidth, height: 380), dark: true,
                                      MCPSignInSheetHost(flow: flow) { closed += 1; store.closeSignIn() })
         defer { window.close() }
         try await Task.sleep(for: .milliseconds(300))
@@ -272,7 +272,7 @@ struct MCPSettingsControlTests {
         store.beginSignIn("notion")
         let failing = try #require(store.signIn)
         try await eventuallyOnMain("the sign-in to fail") { failing.model.phase == .failed }
-        let failed = OffscreenWindow(size: CGSize(width: NWMCPMetrics.sheetWidth, height: 420), dark: true,
+        let failed = OffscreenWindow(size: CGSize(width: SHMCPMetrics.sheetWidth, height: 420), dark: true,
                                      MCPSignInSheetHost(flow: failing) { closed += 1 })
         defer { failed.close() }
         try await Task.sleep(for: .milliseconds(300))
@@ -289,7 +289,7 @@ struct MCPSettingsControlTests {
         store.beginSignIn("notion")
         let done = try #require(store.signIn)
         try await eventuallyOnMain("the sign-in to finish") { done.succeeded }
-        let finished = OffscreenWindow(size: CGSize(width: NWMCPMetrics.sheetWidth, height: 380), dark: true,
+        let finished = OffscreenWindow(size: CGSize(width: SHMCPMetrics.sheetWidth, height: 380), dark: true,
                                        MCPSignInSheetHost(flow: done) { closed += 1 })
         defer { finished.close() }
         try await Task.sleep(for: .milliseconds(300))

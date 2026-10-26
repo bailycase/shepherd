@@ -2,13 +2,13 @@ import SwiftUI
 
 /// Jump to a board (JumpInContext): the toolbar's field over a design, and the card it opens.
 /// Measures as the board draws them.
-public enum NWJumpMetrics {
+public enum SHJumpMetrics {
     // The toolbar's field: 260 by 30, radius 8, 10pt in, a 14pt glass, the words in 12.5 and the
     // chord in mono 10.5; a 1px `running` ring while the card is open.
     public static let fieldWidth: CGFloat = 260
     public static let fieldMinWidth: CGFloat = 80
     public static let fieldHeight: CGFloat = 30
-    public static let fieldRadius: CGFloat = NW.Radius.m
+    public static let fieldRadius: CGFloat = SH.Radius.m
     public static let fieldPadding: CGFloat = 10
     public static let fieldGlyph: CGFloat = 14
     public static let fieldTextSize: CGFloat = 12.5
@@ -34,7 +34,7 @@ public enum NWJumpMetrics {
     public static let scopeHitSlop: CGFloat = 1
     /// The list: 4pt above, 8pt at the sides and below.
     public static let listTop: CGFloat = 4
-    public static let listInset: CGFloat = NW.Space.m
+    public static let listInset: CGFloat = SH.Space.m
     /// A section's caps: mono 10.5 tracked 0.06em, 10pt in, 10pt above and 4pt below.
     public static let sectionTextSize: CGFloat = 10.5
     public static let sectionTracking: CGFloat = 0.63
@@ -44,14 +44,14 @@ public enum NWJumpMetrics {
     /// radius 4; the name in 13 (semibold while highlighted), its line in mono 10.5.
     public static let rowHeight: CGFloat = 44
     public static let rowPadding: CGFloat = 10
-    public static let rowRadius: CGFloat = NW.Radius.m
+    public static let rowRadius: CGFloat = SH.Radius.m
     public static let rowSpacing: CGFloat = 12
     public static let picture = CGSize(width: 44, height: 28)
-    public static let pictureRadius: CGFloat = NW.Radius.xs
+    public static let pictureRadius: CGFloat = SH.Radius.xs
     public static let titleSize: CGFloat = 13
     public static let metaSize: CGFloat = 10.5
     /// The highlighted row's ⏎: mono 10.5 in a 1px `lineStrong` box, radius 4, 1 by 6 padding.
-    public static let returnPaddingH: CGFloat = NW.Space.s
+    public static let returnPaddingH: CGFloat = SH.Space.s
     public static let returnPaddingV: CGFloat = 1
     /// The footer: 34pt, 14pt in, hints 14pt apart in 11.5.
     public static let footerHeight: CGFloat = 34
@@ -63,7 +63,7 @@ public enum NWJumpMetrics {
 
 /// The toolbar's "Jump to a board…" field over a design: a button that opens the card, with the
 /// chord that does the same. Lit with a `running` ring while the card is open.
-public struct NWJumpField: View {
+public struct SHJumpField: View {
     let shortcut: String?
     let isOpen: Bool
     let action: () -> Void
@@ -75,46 +75,46 @@ public struct NWJumpField: View {
     }
 
     public var body: some View {
-        let M = NWJumpMetrics.self
-        let nw = Color.nw
+        let M = SHJumpMetrics.self
+        let sh = Color.sh
         let shape = RoundedRectangle(cornerRadius: M.fieldRadius)
         Button(action: action) {
-            HStack(spacing: NW.Space.m) {
+            HStack(spacing: SH.Space.m) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: M.fieldGlyph - NWJumpMetrics.glyphInset))
+                    .font(.system(size: M.fieldGlyph - SHJumpMetrics.glyphInset))
                     .frame(width: M.fieldGlyph, height: M.fieldGlyph)
                 Text("Jump to a board…")
-                    .font(.nwSans(M.fieldTextSize))
+                    .font(.shSans(M.fieldTextSize))
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Spacer(minLength: 0)
                 if let shortcut {
                     Text(shortcut)
-                        .font(.nwMono(M.fieldChordSize))
-                        .foregroundStyle(nw.textTertiary)
+                        .font(.shMono(M.fieldChordSize))
+                        .foregroundStyle(sh.textTertiary)
                         .fixedSize()
                 }
             }
-            .foregroundStyle(nw.textSecondary)
+            .foregroundStyle(sh.textSecondary)
             .padding(.horizontal, M.fieldPadding)
             .frame(maxWidth: M.fieldWidth, minHeight: M.fieldHeight, maxHeight: M.fieldHeight)
-            .background(nw.bgRaised, in: shape)
-            .nwBorder(nw.lineStrong, in: shape)
+            .background(sh.bgRaised, in: shape)
+            .shBorder(sh.lineStrong, in: shape)
             .overlay {
-                if isOpen { shape.inset(by: -1).strokeBorder(nw.running, lineWidth: 1).allowsHitTesting(false) }
+                if isOpen { shape.inset(by: -1).strokeBorder(sh.running, lineWidth: 1).allowsHitTesting(false) }
             }
             .contentShape(shape)
         }
-        .buttonStyle(NWPlainPressStyle())
+        .buttonStyle(SHPlainPressStyle())
         .frame(minWidth: M.fieldMinWidth, maxWidth: M.fieldWidth)
         .accessibilityLabel("Jump to a board")
-        .nwHelp("Jump to a board", shortcut: shortcut)
+        .shHelp("Jump to a board", shortcut: shortcut)
     }
 }
 
 /// The card (JumpInContext): the search row with its scope pills, a rule, the list, a rule, and
-/// the footer's hints. `.nwPopover()` chrome at radius 12.
-public struct NWJumpCard<Search: View, Results: View, Footer: View>: View {
+/// the footer's hints. `.shPopover()` chrome at radius 12.
+public struct SHJumpCard<Search: View, Results: View, Footer: View>: View {
     @ViewBuilder let search: () -> Search
     @ViewBuilder let results: () -> Results
     @ViewBuilder let footer: () -> Footer
@@ -127,28 +127,28 @@ public struct NWJumpCard<Search: View, Results: View, Footer: View>: View {
     }
 
     public var body: some View {
-        let M = NWJumpMetrics.self
+        let M = SHJumpMetrics.self
         VStack(spacing: 0) {
             search()
                 .padding(.horizontal, M.searchPadding)
                 .frame(height: M.searchHeight)
-            NWHairline()
+            SHHairline()
             results()
                 .padding(.top, M.listTop)
                 .padding([.horizontal, .bottom], M.listInset)
-            NWHairline()
+            SHHairline()
             footer()
-                .font(.nwSans(M.footerTextSize))
-                .foregroundStyle(Color.nw.textTertiary)
+                .font(.shSans(M.footerTextSize))
+                .foregroundStyle(Color.sh.textTertiary)
                 .padding(.horizontal, M.searchPadding)
                 .frame(maxWidth: .infinity, minHeight: M.footerHeight, alignment: .leading)
         }
-        .nwPopover(radius: NW.Radius.l)
+        .shPopover(radius: SH.Radius.l)
     }
 }
 
 /// The search row's glass and field ("Jump to a board or a design…").
-public struct NWJumpSearchField: View {
+public struct SHJumpSearchField: View {
     let placeholder: String
     @Binding var text: String
     let focus: FocusState<Bool>.Binding
@@ -162,20 +162,20 @@ public struct NWJumpSearchField: View {
     }
 
     public var body: some View {
-        let M = NWJumpMetrics.self
+        let M = SHJumpMetrics.self
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: M.searchGlyph - NWJumpMetrics.glyphInset))
-                .foregroundStyle(.nw.textSecondary)
+                .font(.system(size: M.searchGlyph - SHJumpMetrics.glyphInset))
+                .foregroundStyle(.sh.textSecondary)
                 .frame(width: M.searchGlyph, height: M.searchGlyph)
                 .accessibilityHidden(true)
             // The board's placeholder is `textTertiary`; a plain field would draw it in the
             // field's own color.
-            TextField(placeholder, text: $text, prompt: Text(placeholder).foregroundStyle(Color.nw.textTertiary))
+            TextField(placeholder, text: $text, prompt: Text(placeholder).foregroundStyle(Color.sh.textTertiary))
                 .textFieldStyle(.plain)
-                .font(.nwSans(M.searchTextSize))
-                .foregroundStyle(.nw.textPrimary)
-                .tint(.nw.lantern)
+                .font(.shSans(M.searchTextSize))
+                .foregroundStyle(.sh.textPrimary)
+                .tint(.sh.lantern)
                 .focused(focus)
                 .onSubmit(submit)
                 .accessibilityLabel(placeholder)
@@ -185,7 +185,7 @@ public struct NWJumpSearchField: View {
 
 /// The scope pills ("This design", "All designs"): the chosen one on `bgBubble` with a
 /// `lineStrong` line in `textPrimary` medium, the others clear in `textSecondary`.
-public struct NWJumpScopes<ID: Hashable>: View {
+public struct SHJumpScopes<ID: Hashable>: View {
     let options: [(id: ID, title: String)]
     @Binding var selection: ID
 
@@ -195,25 +195,25 @@ public struct NWJumpScopes<ID: Hashable>: View {
     }
 
     public var body: some View {
-        let M = NWJumpMetrics.self
-        let nw = Color.nw
+        let M = SHJumpMetrics.self
+        let sh = Color.sh
         HStack(spacing: M.scopeSpacing) {
             ForEach(options, id: \.id) { option in
                 let on = option.id == selection
                 Button { selection = option.id } label: {
                     Text(option.title)
-                        .font(.nwSans(M.scopeTextSize, on ? .medium : .regular))
-                        .foregroundStyle(on ? nw.textPrimary : nw.textSecondary)
+                        .font(.shSans(M.scopeTextSize, on ? .medium : .regular))
+                        .foregroundStyle(on ? sh.textPrimary : sh.textSecondary)
                         .padding(.horizontal, M.scopePadding)
                         .frame(height: M.scopeHeight)
-                        .background(on ? nw.bgBubble : .clear, in: Capsule())
-                        .nwBorder(on ? nw.lineStrong : .clear, in: Capsule())
+                        .background(on ? sh.bgBubble : .clear, in: Capsule())
+                        .shBorder(on ? sh.lineStrong : .clear, in: Capsule())
                         // The pill draws 24pt; its hit area keeps the desktop's 24pt minimum
                         // with a point to spare, so rounding never takes it under.
-                        .padding(.vertical, NWJumpMetrics.scopeHitSlop)
+                        .padding(.vertical, SHJumpMetrics.scopeHitSlop)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(NWPlainPressStyle())
+                .buttonStyle(SHPlainPressStyle())
                 .accessibilityAddTraits(on ? .isSelected : [])
             }
         }
@@ -224,7 +224,7 @@ public struct NWJumpScopes<ID: Hashable>: View {
 }
 
 /// A section's caps ("RECENT", "OTHER BOARDS 3"): mono 10.5 tracked, `textTertiary`.
-public struct NWJumpSectionHeader: View {
+public struct SHJumpSectionHeader: View {
     let title: String
     let count: Int?
 
@@ -234,13 +234,13 @@ public struct NWJumpSectionHeader: View {
     }
 
     public var body: some View {
-        let M = NWJumpMetrics.self
-        HStack(spacing: NW.Space.s) {
+        let M = SHJumpMetrics.self
+        HStack(spacing: SH.Space.s) {
             Text(title).textCase(.uppercase).tracking(M.sectionTracking)
             if let count { Text("\(count)") }
         }
-        .font(.nwMono(M.sectionTextSize))
-        .foregroundStyle(.nw.textTertiary)
+        .font(.shMono(M.sectionTextSize))
+        .foregroundStyle(.sh.textTertiary)
         .lineLimit(1)
         .padding(.horizontal, M.rowPadding)
         .padding(.top, M.sectionTop)
@@ -252,15 +252,15 @@ public struct NWJumpSectionHeader: View {
 
 /// One board or design: its picture, its name over its line in mono, and, trailing, ⏎ while
 /// highlighted or its tag ("this board"). The highlight fills `bgSelected`. A button.
-public struct NWJumpRow: View {
+public struct SHJumpRow: View {
     let title: String
     let meta: String
     let tag: String?
-    let picture: NWReferenceImage?
+    let picture: SHReferenceImage?
     let highlighted: Bool
     let action: () -> Void
 
-    public init(_ title: String, meta: String, tag: String? = nil, picture: NWReferenceImage?, highlighted: Bool,
+    public init(_ title: String, meta: String, tag: String? = nil, picture: SHReferenceImage?, highlighted: Bool,
                 action: @escaping () -> Void) {
         self.title = title
         self.meta = meta
@@ -271,51 +271,51 @@ public struct NWJumpRow: View {
     }
 
     public var body: some View {
-        let M = NWJumpMetrics.self
-        let nw = Color.nw
+        let M = SHJumpMetrics.self
+        let sh = Color.sh
         let shape = RoundedRectangle(cornerRadius: M.rowRadius)
         Button(action: action) {
             HStack(spacing: M.rowSpacing) {
-                NWReferenceThumbnail(picture, size: M.picture, radius: M.pictureRadius)
+                SHReferenceThumbnail(picture, size: M.picture, radius: M.pictureRadius)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title)
-                        .font(.nwSans(M.titleSize, highlighted ? .semibold : .regular))
-                        .foregroundStyle(nw.textPrimary)
+                        .font(.shSans(M.titleSize, highlighted ? .semibold : .regular))
+                        .foregroundStyle(sh.textPrimary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                     Text(meta)
-                        .font(.nwMono(M.metaSize))
-                        .foregroundStyle(nw.textTertiary)
+                        .font(.shMono(M.metaSize))
+                        .foregroundStyle(sh.textTertiary)
                         .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 if highlighted {
                     Text("⏎")
-                        .font(.nwMono(M.metaSize))
-                        .foregroundStyle(nw.textSecondary)
+                        .font(.shMono(M.metaSize))
+                        .foregroundStyle(sh.textSecondary)
                         .padding(.horizontal, M.returnPaddingH)
                         .padding(.vertical, M.returnPaddingV)
-                        .nwBorder(nw.lineStrong, radius: NW.Radius.xs)
+                        .shBorder(sh.lineStrong, radius: SH.Radius.xs)
                         .accessibilityHidden(true)
                 } else if let tag {
                     Text(tag)
-                        .font(.nwMono(M.metaSize))
-                        .foregroundStyle(nw.textTertiary)
+                        .font(.shMono(M.metaSize))
+                        .foregroundStyle(sh.textTertiary)
                 }
             }
             .padding(.horizontal, M.rowPadding)
             .frame(maxWidth: .infinity, minHeight: M.rowHeight, alignment: .leading)
-            .background(highlighted ? nw.bgSelected : .clear, in: shape)
+            .background(highlighted ? sh.bgSelected : .clear, in: shape)
             .contentShape(shape)
         }
-        .buttonStyle(NWPlainPressStyle())
+        .buttonStyle(SHPlainPressStyle())
         .accessibilityLabel([title, meta, tag].compactMap { $0 }.joined(separator: ", "))
         .accessibilityAddTraits(highlighted ? .isSelected : [])
     }
 }
 
 /// A footer hint: its keys in mono, then what they do ("↑↓ move").
-public struct NWJumpHint: View {
+public struct SHJumpHint: View {
     let keys: String
     let label: String
 
@@ -325,8 +325,8 @@ public struct NWJumpHint: View {
     }
 
     public var body: some View {
-        HStack(spacing: NW.Space.xs) {
-            Text(keys).font(.nwMono(NWJumpMetrics.footerTextSize))
+        HStack(spacing: SH.Space.xs) {
+            Text(keys).font(.shMono(SHJumpMetrics.footerTextSize))
             Text(label)
         }
         .fixedSize()

@@ -4,7 +4,7 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
-/// The user's turn: one `NWUserBubble` per message, each with its time (touch has no hover, so
+/// The user's turn: one `SHUserBubble` per message, each with its time (touch has no hover, so
 /// times show at rest). Messages the queue delivered together open with "From the queue · N". A
 /// send pi has not read yet stands at 70%.
 struct UserTurnView: View, Equatable {
@@ -27,14 +27,14 @@ struct UserTurnView: View, Equatable {
 
     var body: some View {
         VStack(alignment: .trailing, spacing: MobileLayout.turnItemSpacing) {
-            if let fromQueue { NWQueueDivider(count: fromQueue) }
+            if let fromQueue { SHQueueDivider(count: fromQueue) }
             VStack(alignment: .trailing, spacing: MobileLayout.activitySpacing) {
                 // By position: an echo and the message pi saves for it have different entries,
                 // and the bubble must stay one view to settle in place (70% → 100%).
                 ForEach(Array(bubbles.enumerated()), id: \.offset) { _, bubble in
-                    NWUserBubble(bubble.text, attachments: Array(repeating: "Image", count: bubble.images), timestamp: bubble.caption)
+                    SHUserBubble(bubble.text, attachments: Array(repeating: "Image", count: bubble.images), timestamp: bubble.caption)
                         .opacity(bubble.pending ? 0.7 : 1)
-                        .nwAnimation(.hover, value: bubble.pending)
+                        .shAnimation(.hover, value: bubble.pending)
                 }
             }
         }
@@ -132,9 +132,9 @@ struct AgentTurnView<Proposals: View>: View, Equatable {
         case .subagents(_, let lines):
             // Where they started, and where they finished: both open the thread's subagents.
             // Adjacent, they sit together as activity lines do.
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 ForEach(lines, id: \.title) { line in
-                    NWSubagentRecordLine(title: line.title, meta: line.meta, action: actions.subagents)
+                    SHSubagentRecordLine(title: line.title, meta: line.meta, action: actions.subagents)
                 }
             }
         case .goalRecord(_, let text):
@@ -144,19 +144,19 @@ struct AgentTurnView<Proposals: View>: View, Equatable {
             ArtifactCardItem(artifact: artifact)
         case .images(_, let images):
             // The phone and the iPad do not draw a thread's images yet: how many, as the note it replaced said.
-            Text(images.count == 1 ? "Image attached" : "\(images.count) images attached").font(.nw(.caption))
-                .foregroundStyle(Color.nw.textTertiary)
+            Text(images.count == 1 ? "Image attached" : "\(images.count) images attached").font(.sh(.caption))
+                .foregroundStyle(Color.sh.textTertiary)
         case .note(_, let text):
-            Text(text).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+            Text(text).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                 .lineLimit(3).truncationMode(.tail).textSelection(.enabled)
                 .padding(.leading, MobileLayout.noteIndent)
-                .overlay(alignment: .leading) { Color.nw.lineStrong.frame(width: NWThreadMetrics.ruleWidth) }
+                .overlay(alignment: .leading) { Color.sh.lineStrong.frame(width: SHThreadMetrics.ruleWidth) }
         case .error(_, let error, let final, let folded):
             TurnErrorItem(error: error, folded: folded, retry: final ? actions.retry : nil)
         case .retrying(_, let line):
             RetryLineItem(line: line)
         case .steer(_, let text, let sentAt, let images):
-            NWUserBubble(text, attachments: Array(repeating: "Image", count: images), timestamp: sentAt.map { nativeClockText($0) },
+            SHUserBubble(text, attachments: Array(repeating: "Image", count: images), timestamp: sentAt.map { nativeClockText($0) },
                          origin: .steered)
                 .frame(maxWidth: .infinity, alignment: .trailing)
         case .compaction(let row):
@@ -175,10 +175,10 @@ struct AgentTurnView<Proposals: View>: View, Equatable {
         let undo = turnID.flatMap { id in actions.undo.map { undo in { undo(id) } } }
         let redo = turnID.flatMap { id in actions.redo.map { redo in { redo(id) } } }
         let review = turnID.flatMap { id in actions.reviewTurn.map { review in { review(id) } } } ?? actions.reviewChanges
-        return NWTurnChangesCard(
+        return SHTurnChangesCard(
             title: card.title, added: card.added, removed: card.removed,
             files: card.rows.map {
-                NWTurnChangesCard.File(path: $0.path, directory: $0.directory, name: $0.name, isNew: $0.isNew, added: $0.added, removed: $0.removed)
+                SHTurnChangesCard.File(path: $0.path, directory: $0.directory, name: $0.name, isNew: $0.isNew, added: $0.added, removed: $0.removed)
             },
             more: card.moreText, undone: card.state == .undone, busy: changesBusy,
             onUndo: card.state == .ready && card.canUndo ? undo : nil,
@@ -195,13 +195,13 @@ struct AgentTurnView<Proposals: View>: View, Equatable {
                     presentation.toolCalls > 0 ? nativeCount(presentation.toolCalls, "tool call") : nil]
             .compactMap { $0 }.joined(separator: " · ")
         let copy = presentation.copyText
-        return NWTurnFooter(
+        return SHTurnFooter(
             meta: meta,
             link: runs == 0 || actions.subagents == nil ? nil : nativeCount(runs, "subagent"),
             onLink: actions.subagents,
             onCopy: copy.isEmpty ? nil : { UIPasteboard.general.string = copy },
             onRetry: actions.retry,
-            timing: presentation.timing.map(NWResponseTimingModel.init))
+            timing: presentation.timing.map(SHResponseTimingModel.init))
     }
 }
 
@@ -211,38 +211,38 @@ struct QuestionRecordView: View {
     let row: NativeQuestionRecordRow
 
     var body: some View {
-        NWQuestionRecord(question: row.question, title: row.title, text: row.text, answered: row.answered,
+        SHQuestionRecord(question: row.question, title: row.title, text: row.text, answered: row.answered,
                          timestamp: row.caption())
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(row.accessibilityLabel)
     }
 }
 
-/// Agent prose: parsed Markdown drawn by `NWAgentProse`, inline runs styled once per text
-/// (`NWProseInline`). A host's files are not on this device, so its images show as chips.
+/// Agent prose: parsed Markdown drawn by `SHAgentProse`, inline runs styled once per text
+/// (`SHProseInline`). A host's files are not on this device, so its images show as chips.
 struct ProseView: View, Equatable {
     let blocks: [NativeMarkdownBlock]
     var writingFence = false
 
     var body: some View {
-        NWAgentProse(Self.proseBlocks(blocks), writingFence: writingFence)
+        SHAgentProse(Self.proseBlocks(blocks), writingFence: writingFence)
     }
 
-    static func proseBlocks(_ blocks: [NativeMarkdownBlock]) -> [NWProseBlock] {
+    static func proseBlocks(_ blocks: [NativeMarkdownBlock]) -> [SHProseBlock] {
         blocks.map { block in
             switch block {
-            case .heading(let level, let text): .heading(level: level, text: NWProseInline.attributed(text))
-            case .paragraph(let text): .paragraph(NWProseInline.attributed(text))
+            case .heading(let level, let text): .heading(level: level, text: SHProseInline.attributed(text))
+            case .paragraph(let text): .paragraph(SHProseInline.attributed(text))
             case .quote(let inner): .quote(proseBlocks(inner))
             case .code(let text, let language): .code(text, language: language)
             case .rule: .rule
             case .list(let ordered, let start, let items):
                 .list(ordered: ordered, start: start, items: items.map {
-                    NWProseListItem(text: NWProseInline.attributed($0.text), task: $0.task.map { $0 == .done ? .done : .open },
+                    SHProseListItem(text: SHProseInline.attributed($0.text), task: $0.task.map { $0 == .done ? .done : .open },
                                     children: proseBlocks($0.children))
                 })
             case .table(let table):
-                .table(NWProseTable(
+                .table(SHProseTable(
                     alignments: table.alignments.map {
                         switch $0 {
                         case .none, .leading: .leading
@@ -250,19 +250,19 @@ struct ProseView: View, Equatable {
                         case .trailing: .trailing
                         }
                     },
-                    header: table.header.map(NWProseInline.attributed),
-                    rows: table.rows.map { $0.map(NWProseInline.attributed) },
+                    header: table.header.map(SHProseInline.attributed),
+                    rows: table.rows.map { $0.map(SHProseInline.attributed) },
                     markdown: table.source))
-            case .image(let alt, let source): .image(NWProseImage(alt: alt, source: source))
-            case .details(let summary, let inner): .details(summary: NWProseInline.attributed(summary), blocks: proseBlocks(inner))
+            case .image(let alt, let source): .image(SHProseImage(alt: alt, source: source))
+            case .details(let summary, let inner): .details(summary: SHProseInline.attributed(summary), blocks: proseBlocks(inner))
             case .footnotes(let notes):
-                .footnotes(notes.map { NWProseFootnote(number: $0.number, text: NWProseInline.attributed($0.text)) })
+                .footnotes(notes.map { SHProseFootnote(number: $0.number, text: SHProseInline.attributed($0.text)) })
             }
         }
     }
 }
 
-/// A turn's thinking (`NWThinking`): live, or finished with its Markdown, parsed once per
+/// A turn's thinking (`SHThinking`): live, or finished with its Markdown, parsed once per
 /// change (`NativeTurnPresentation`), styled here only when this row's own inputs change. One
 /// view for both, so "Thinking…" settles into "Thought for Ns" in place.
 struct ThinkingRow: View, Equatable {
@@ -279,9 +279,9 @@ struct ThinkingRow: View, Equatable {
 
     var body: some View {
         live
-            ? NWThinking.live(since: since.map { Date(timeIntervalSince1970: $0 / 1000) }, blocks: ProseView.proseBlocks(blocks),
+            ? SHThinking.live(since: since.map { Date(timeIntervalSince1970: $0 / 1000) }, blocks: ProseView.proseBlocks(blocks),
                               isExpanded: Binding(get: { isExpanded }, set: { if $0 != isExpanded { toggle() } }))
-            : NWThinking(nativeThoughtText(seconds), blocks: ProseView.proseBlocks(blocks),
+            : SHThinking(nativeThoughtText(seconds), blocks: ProseView.proseBlocks(blocks),
                          isExpanded: Binding(get: { isExpanded }, set: { if $0 != isExpanded { toggle() } }),
                          spokenTitle: nativeThoughtSpokenText(seconds))
     }
@@ -314,7 +314,7 @@ struct ArtifactCardItem: View, Equatable {
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.artifact == rhs.artifact }
 
     var body: some View {
-        NWArtifactCard(NWArtifactRow(id: artifact.path, name: artifact.name, detail: artifact.detail(), symbol: artifact.kind.symbol),
+        SHArtifactCard(SHArtifactRow(id: artifact.path, name: artifact.name, detail: artifact.detail(), symbol: artifact.kind.symbol),
                        open: openArtifact.map { open in { open(artifact.path) } })
     }
 }
@@ -336,15 +336,15 @@ struct ActivityLineView: View, Equatable {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            NWActivityLine(kind: kind, label: burst.label, meta: burst.meta, status: status, isExpanded: expanded,
+            SHActivityLine(kind: kind, label: burst.label, meta: burst.meta, status: status, isExpanded: expanded,
                            accessibilityLabel: burst.accessibilityLabel,
                            action: opensArtifact ?? (burst.expandable ? toggle : nil), received: burst.received)
             if expanded {
-                NWActivityCalls(burst.calls.map(row), onSelect: select, onShowAll: showOutput) { row in
+                SHActivityCalls(burst.calls.map(row), onSelect: select, onShowAll: showOutput) { row in
                     if let call = burst.calls.first(where: { $0.id == row.id }) { menu(call) }
                 }
-                .padding(.vertical, NW.Space.xxs)
-                .nwTransition(.disclosure)
+                .padding(.vertical, SH.Space.xxs)
+                .shTransition(.disclosure)
             }
         }
         .sheet(item: $sheet) { ToolOutputSheet(output: $0) }
@@ -356,7 +356,7 @@ struct ActivityLineView: View, Equatable {
         return { openArtifact(artifact.path) }
     }
 
-    private var kind: NWActivityLine.Kind {
+    private var kind: SHActivityLine.Kind {
         switch burst.kind {
         case .explore: .explore
         case .edit where burst.artifact != nil: .artifact
@@ -371,7 +371,7 @@ struct ActivityLineView: View, Equatable {
         }
     }
 
-    private var status: NWActivityLine.Status {
+    private var status: SHActivityLine.Status {
         switch burst.state {
         case .done: .done
         case .failed: .failed
@@ -380,12 +380,12 @@ struct ActivityLineView: View, Equatable {
     }
 
     private func toggle() {
-        withAnimation(NW.Motion.disclosure.animation(reduceMotion: reduceMotion)) { expanded.toggle() }
+        withAnimation(SH.Motion.disclosure.animation(reduceMotion: reduceMotion)) { expanded.toggle() }
     }
 
-    private func row(_ call: NativeActivityCall) -> NWActivityCallRow {
+    private func row(_ call: NativeActivityCall) -> SHActivityCallRow {
         let open = expandedCalls.contains(call.id)
-        return NWActivityCallRow(
+        return SHActivityCallRow(
             id: call.id, label: call.label, detail: call.detail, isPath: call.isPath, stat: call.stat, failed: call.failed,
             output: open ? call.outputHead : [], moreLines: max(0, call.outputLineCount - call.outputHead.count),
             truncated: call.truncated, isExpanded: open,
@@ -397,7 +397,7 @@ struct ActivityLineView: View, Equatable {
         if call.kind == .edit, let path = call.path, let review {
             review(path)
         } else if call.expandable {
-            withAnimation(NW.Motion.disclosure.animation(reduceMotion: reduceMotion)) {
+            withAnimation(SH.Motion.disclosure.animation(reduceMotion: reduceMotion)) {
                 if expandedCalls.remove(id) == nil { expandedCalls.insert(id) }
             }
         }
@@ -439,19 +439,19 @@ struct ToolOutputSheet: View {
     var body: some View {
         NavigationStack {
             ScrollView([.vertical, .horizontal]) {
-                Text(output.text).font(.nw(.code)).lineSpacing(NWTextStyle.code.lineSpacing).foregroundStyle(Color.nw.textSecondary)
+                Text(output.text).font(.sh(.code)).lineSpacing(SHTextStyle.code.lineSpacing).foregroundStyle(Color.sh.textSecondary)
                     .textSelection(.enabled).fixedSize().padding(MobileLayout.gutter)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .safeAreaInset(edge: .bottom) {
                 if output.truncated {
                     Text("The host clipped this output; the full text is in the agent's session file.")
-                        .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary).padding(MobileLayout.gutter)
+                        .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).padding(MobileLayout.gutter)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.nw.bgWindow)
+                        .background(Color.sh.bgWindow)
                 }
             }
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
             .navigationTitle(output.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -470,11 +470,11 @@ struct LiveWaitLine: View {
     let wait: NativeLiveWait
 
     var body: some View {
-        NWLiveLine(wait.title, since: wait.since.map { Date(timeIntervalSince1970: $0 / 1000) }, help: wait.help)
+        SHLiveLine(wait.title, since: wait.since.map { Date(timeIntervalSince1970: $0 / 1000) }, help: wait.help)
     }
 }
 
-extension NWResponseTimingModel {
+extension SHResponseTimingModel {
     /// The popover's words from the reply's measured timing (`NativeResponseTimingReport`).
     init(_ report: NativeResponseTimingReport) {
         self.init(

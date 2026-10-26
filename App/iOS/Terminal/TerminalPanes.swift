@@ -18,7 +18,7 @@ struct TerminalModel: Equatable {
     let selected: TerminalPanelTab?
     let panel: MobileTerminals.Panel
     /// The tab strip's items.
-    let items: [NWTerminalTab]
+    let items: [SHTerminalTab]
 
     /// The tab on screen, its session and how far its news has got: it is marked seen whenever
     /// that changes.
@@ -46,14 +46,14 @@ struct TerminalModel: Equatable {
         let activity = terminals.activity[ref] ?? [:]
         let items = tabs.map { tab in
             let session = tab.leaf.sessionID.flatMap { terminals.existingSession(host: ref.host, id: $0) }
-            let state: NWTerminalTab.Activity
+            let state: SHTerminalTab.Activity
             if case .exited(let code)? = session?.phase { state = .exited(failed: (code ?? 0) != 0) }
             else if activity[tab.id]?.isRunning == true { state = .running }
             else if tab.id != selected?.id || !onScreen,
                     tab.leaf.sessionID.map({ terminals.hasUnseen(ref, session: $0) }) == true {
                 state = .unseen
             } else { state = .idle }
-            return NWTerminalTab(id: tab.id.rawValue, title: Self.title(activity: activity[tab.id], session: session, pane: tab.leaf),
+            return SHTerminalTab(id: tab.id.rawValue, title: Self.title(activity: activity[tab.id], session: session, pane: tab.leaf),
                                  host: host?.name, activity: state)
         }
         return TerminalModel(ref: ref, hostName: host?.name ?? "the host", connected: host?.connectedClient != nil,
@@ -106,7 +106,7 @@ struct TerminalPaneView: View {
         let host = hosts.host(ref.host)
         Group {
             if pane.isReview == true {
-                NWTerminalNotice("review open on \(host?.name ?? "the host")")
+                SHTerminalNotice("review open on \(host?.name ?? "the host")")
             } else if let id = pane.sessionID {
                 let session = terminals.session(host: ref.host, id: id)
                 let shown = session.viewer == viewer
@@ -117,20 +117,20 @@ struct TerminalPaneView: View {
                     // this thread says so instead of taking the screen from it.
                     if shown {
                         TerminalSurface(session: session)
-                            .padding(NWTerminalMetrics.contentPadding)
+                            .padding(SHTerminalMetrics.contentPadding)
                             .accessibilityLabel("Terminal on \(host?.name ?? "the host")")
                     } else if session.viewer != nil {
-                        NWTerminalNotice("open in another window")
+                        SHTerminalNotice("open in another window")
                     }
                     if shown, let notice = Self.notice(session.phase, canned: session.isCanned, connected: key.connection != nil,
                                                        held: key.active) {
-                        NWTerminalNotice(notice)
-                            .background(Color.nw.bgWindow.opacity(session.phase == .attaching ? 0 : 0.9))
+                        SHTerminalNotice(notice)
+                            .background(Color.sh.bgWindow.opacity(session.phase == .attaching ? 0 : 0.9))
                             .allowsHitTesting(false)
-                            .nwTransition(.content)
+                            .shTransition(.content)
                     }
                 }
-                .nwAnimation(.content, value: session.phase)
+                .shAnimation(.content, value: session.phase)
                 .task(id: key) {
                     guard key.active, key.connection != nil, let client = host?.connectedClient else { return }
                     await session.hold(client)
@@ -144,11 +144,11 @@ struct TerminalPaneView: View {
                 // surface and report its grid, or it never attaches and the old screen stays up.
                 .id(id)
             } else {
-                NWTerminalNotice("starting session…")
+                SHTerminalNotice("starting session…")
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .contentShape(Rectangle())
         .onAppear { visible = true }
         .onDisappear { visible = false }
@@ -173,10 +173,10 @@ struct TerminalKeys: View {
 
     var body: some View {
         let keys = TerminalKey.allCases.map { key in
-            NWTerminalKeycap(id: key.rawValue, label: key.label, spokenLabel: key.spokenLabel,
+            SHTerminalKeycap(id: key.rawValue, label: key.label, spokenLabel: key.spokenLabel,
                              isLatched: (key == .control && session.control) || (key == .option && session.option))
         }
-        NWTerminalKeyRow(keys) { id in
+        SHTerminalKeyRow(keys) { id in
             if let key = TerminalKey(rawValue: id) { session.press(key) }
         }
     }

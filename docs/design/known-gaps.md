@@ -36,21 +36,21 @@ below collects the rest, and the places those sentences point here.
     picker's "A commit…"; a commits range (touch has no ⇧); Rich preview and Open in your editor;
     a draft pull request from Commit… (`RemoteCommitOptions` has no draft).
   - A comment's author: the boards draw the initial "B"; the touch clients say "You".
-- **Thread and terminal** (NWThread, TerminalSplit, TerminalPane, TerminalStates against the app):
+- **Thread and terminal** (SHThread, TerminalSplit, TerminalPane, TerminalStates against the app):
   - The new terminal menu has no "New terminal on This Mac" for a remote thread (TerminalStates):
     a terminal of this Mac cannot join a layout its host owns. Waiting on the user's call.
-  - Consecutive activity lines sit 6pt apart (`AppLayout.activitySpacing`), as NWThread draws
+  - Consecutive activity lines sit 6pt apart (`AppLayout.activitySpacing`), as SHThread draws
     them; ToolRows and Running draw 4pt.
   - The terminal font defaults to SF Mono 12.5 (`AppSettings`); the boards set Geist Mono 12 at
     1.6.
-- **Sidebar and New thread** (NWNavigation, NavNewThread against `SidebarView.swift` and
+- **Sidebar and New thread** (SHNavigation, NavNewThread against `SidebarView.swift` and
   `NewThreadPage.swift`):
   - The New thread composer has no "/ commands" chip, and its placeholder drops ", or / for
     commands": no pi runs before the thread exists to list its commands. New design's composer
-    (DZStart, NWDesignTool › Chat composer) leaves it out for the same reason.
+    (DZStart, SHDesignTool › Chat composer) leaves it out for the same reason.
 - **iOS** (the phone and iPad boards against `App/iOS` and ShepherdUI's Fleet parts):
-  - Row dots are 7pt (`NWListMetrics.dot`), the boards' 8 on iPhone.
-  - iPhone user bubbles are the Mac's (`NWUserBubble`: at most 600pt, 10×14); the iPhone boards
+  - Row dots are 7pt (`SHListMetrics.dot`), the boards' 8 on iPhone.
+  - iPhone user bubbles are the Mac's (`SHUserBubble`: at most 600pt, 10×14); the iPhone boards
     cap them at 300. The iPad thread spaces turns 24 and parts 12 (the space scale's steps)
     against the board's 26 and 14.
   - The iPad sidebar is the system split view's: its bar's Search and sidebar toggle are the
@@ -64,5 +64,5 @@ below collects the rest, and the places those sentences point here.
 
 Deliberate exceptions stay with their rules rather than here: the layout's 1pt dividers, the
 checkbox's 1.5pt border, and the strokes of status glyphs (see Hairlines), and one-off type
-sizes outside the ramp, set with `Font.nwSans`/`Font.nwMono` (the boards' in Typography, and
+sizes outside the ramp, set with `Font.shSans`/`Font.shMono` (the boards' in Typography, and
 the empty thread's path).

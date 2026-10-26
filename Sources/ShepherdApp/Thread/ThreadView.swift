@@ -16,7 +16,7 @@ extension EnvironmentValues {
     @Entry var designCommentCards: DesignCommentCards? = nil
 }
 
-/// An agent's thread (NWThread board): an 820pt column of turns in a scroll view that follows
+/// An agent's thread (SHThread board): an 820pt column of turns in a scroll view that follows
 /// the tail, with the composer floating over its bottom edge. The store derives every row once
 /// per change; this view only lays them out.
 struct ThreadView: View {
@@ -101,10 +101,10 @@ struct ThreadView: View {
     @State private var jumpedTurn: String?
     @State private var arrivals = ThreadArrivals()
     @Environment(\.designCommentCards) private var commentCards
-    @Environment(\.nwUserBubbleMetrics) private var bubbleMetrics
+    @Environment(\.shUserBubbleMetrics) private var bubbleMetrics
 
     var body: some View {
-        let _ = NWRenderProbe.tick("thread.view")
+        let _ = SHRenderProbe.tick("thread.view")
         // A turn made only of the owner's wake-ups has no row. A mixed turn keeps its row (and identity); `turn` draws it per message.
         let origins = userOrigins
         let rows: [NativeThreadRow] = origins.runtime.isEmpty ? store.rows : store.rows.filter { !($0.isUser && origins.hides($0.turn)) }
@@ -130,16 +130,16 @@ struct ThreadView: View {
                 ScrollView {
                     // Never animated as a whole (rows, their text, and the tail anchor change on
                     // every streamed chunk): turns that arrive make their own entrance.
-                    LazyVStack(alignment: .leading, spacing: leadColumn ? NWLeadMetrics.turnGap : AppLayout.turnSpacing) {
+                    LazyVStack(alignment: .leading, spacing: leadColumn ? SHLeadMetrics.turnGap : AppLayout.turnSpacing) {
                         notices
                         if rows.isEmpty {
                             if let project = projectSend?.emptyState { project() }
-                            else if designGitChat?.opened == true { NWGitDesignIntro() }
+                            else if designGitChat?.opened == true { SHGitDesignIntro() }
                             else { emptyState }
                         }
-                        if projectSend != nil || workerStyle != nil, let at = rows.first?.turn.messages.first?.timestamp ?? rows.first?.startedAt { NWLeadDaySeparator(word: FleetFinishedDay.dayTitle(Date(timeIntervalSince1970: at / 1000), now: Date())) }
+                        if projectSend != nil || workerStyle != nil, let at = rows.first?.turn.messages.first?.timestamp ?? rows.first?.startedAt { SHLeadDaySeparator(word: FleetFinishedDay.dayTitle(Date(timeIntervalSince1970: at / 1000), now: Date())) }
                         ForEach(rows) { row in
-                            let _ = NWRenderProbe.tick("thread.rowBuilder")
+                            let _ = SHRenderProbe.tick("thread.rowBuilder")
                             // One view per row whatever it holds, so the lazy stack builds only the
                             // rows on screen: a row that could be nothing would make it evaluate
                             // every row of a long thread on each streamed chunk.
@@ -168,15 +168,15 @@ struct ThreadView: View {
                         ForEach(held.filter { !$0.waiting }) { message in
                             UserTurn(bubbles: [.init(text: message.text, images: message.images.count, caption: nil, pending: true)], note: message.note)
                                 .equatable()
-                                .environment(\.nwUserBubbleMetrics, { var metrics = bubbleMetrics; metrics.overlaysCaption = false; return metrics }())
+                                .environment(\.shUserBubbleMetrics, { var metrics = bubbleMetrics; metrics.overlaysCaption = false; return metrics }())
                         }
-                        if thinking, liveRow == nil { (projectActionCards != nil || workerStyle != nil ? AnyView(ProjectLiveLine(startedAt: nil)) : AnyView(LiveWaitLine(wait: store.liveWait))).nwArrival(settled) }
+                        if thinking, liveRow == nil { (projectActionCards != nil || workerStyle != nil ? AnyView(ProjectLiveLine(startedAt: nil)) : AnyView(LiveWaitLine(wait: store.liveWait))).shArrival(settled) }
                         if let authNotice {
                             ThreadAuthNoticeView(notice: authNotice, actions: authActions)
                                 .id(ThreadAuthNotice.rowID)
                         }
                         if let git = designGitChat, let phase = git.phase {
-                            NWGitMergeCard(phase: phase, review: git.review, retry: git.retry)
+                            SHGitMergeCard(phase: phase, review: git.review, retry: git.retry)
                                 .equatable()
                                 .id(DesignGitChat.rowID)
                         }
@@ -199,10 +199,10 @@ struct ThreadView: View {
                     .environment(\.compactionExpansion, store.compactions)
                     .environment(\.turnErrorExpansion, store.errors)
                     // A local agent's images and file links resolve in its folder; a remote agent's files are not here.
-                    .environment(\.nwProseFileRoot, workingDirectory.map {
+                    .environment(\.shProseFileRoot, workingDirectory.map {
                         URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath, isDirectory: true)
                     })
-                    .environment(\.nwProseFileLinks, .app)
+                    .environment(\.shProseFileLinks, .app)
                 }
                 .id(transcriptRevision)
                 .scrollPosition($historyAnchor.position)
@@ -211,7 +211,7 @@ struct ThreadView: View {
                 .modifier(ComposerInsetPadding(inset: composerInset, gap: leadColumn ? 0 : AppLayout.composerTranscriptGap,
                                                present: workerStyle?.composerHidden != true))
                 // A margin rather than padding so scrollTo(.top) keeps the 28pt above a turn.
-                .contentMargins(.top, workerStyle != nil ? NWLeadMetrics.paneThreadTop : leadColumn ? NWLeadMetrics.columnTopPadding : AppLayout.threadTop, for: .scrollContent)
+                .contentMargins(.top, workerStyle != nil ? SHLeadMetrics.paneThreadTop : leadColumn ? SHLeadMetrics.columnTopPadding : AppLayout.threadTop, for: .scrollContent)
                 // Target IDs are only candidates: `ThreadTailGuard` also checks native row placement
                 // before accepting cached visibility as proof that the transcript contains content.
                 .onScrollTargetVisibilityChange(idType: String.self, threshold: 0) { tailGuard.targets($0) }
@@ -336,10 +336,10 @@ struct ThreadView: View {
                 present(ImageViewerState(set: set, index: index, images: images, addToMessage: add))
             }
         }
-        .foregroundStyle(Color.nw.textPrimary)
-        .tint(Color.nw.running)
+        .foregroundStyle(Color.sh.textPrimary)
+        .tint(Color.sh.running)
         .background { ThreadInputBackground(input: input) }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .onGeometryChange(for: CGFloat.self) { AppLayout.threadGutter(width: $0.size.width) } action: { [composerInset] in composerInset.gutter = $0 }
         .onHover { hovering = $0 }
         .onAppear { installWheelMonitor() }
@@ -366,18 +366,18 @@ struct ThreadView: View {
         if row.isUser {
             let segments = userOrigins.segments(row.turn)
             if let card {
-                NWCommentCard(number: card.number, target: card.target, meta: card.meta, text: card.text,
+                SHCommentCard(number: card.number, target: card.target, meta: card.meta, text: card.text,
                               continues: row.commentAnswered)
                     .equatable()
-                    .nwArrival(arriving, .list, edge: .bottom)
+                    .shArrival(arriving, .list, edge: .bottom)
             } else if segments.count == 1, case .person(let person) = segments[0] {
                 UserTurn(turn: person)
                     .equatable()
-                    .nwArrival(arriving, .list, edge: .bottom)
+                    .shArrival(arriving, .list, edge: .bottom)
             } else {
                 ProjectUserSegments(segments: segments)
                     .equatable()
-                    .nwArrival(arriving, .list, edge: .bottom)
+                    .shArrival(arriving, .list, edge: .bottom)
             }
         } else if let presentation = row.presentation {
             AgentTurn(presentation: presentation, live: row.live, subagents: TurnSubagents(store.placements[row.id]),
@@ -470,7 +470,7 @@ struct ThreadView: View {
             }
             jumpedTurn = userTurns[target]
             follower.beginJump()
-            withNWAnimation(.scroll) { proxy.scrollTo(userTurns[target], anchor: .top) }
+            withSHAnimation(.scroll) { proxy.scrollTo(userTurns[target], anchor: .top) }
         }
     }
 
@@ -488,7 +488,7 @@ struct ThreadView: View {
         guard let row = store.rows.first(where: { $0.turn.messages.contains { $0.entryID == entryID } }) else { NSSound.beep(); return }
         jumpedTurn = nil
         follower.beginJump()
-        withNWAnimation(.scroll) { proxy.scrollTo(row.id, anchor: .top) }
+        withSHAnimation(.scroll) { proxy.scrollTo(row.id, anchor: .top) }
     }
 
     /// How far the visible bottom sits above the end of the content (`NativeScrollProbe`): 0 at
@@ -533,14 +533,14 @@ struct ThreadView: View {
     /// pi is starting; an error keeps the last transcript and shows its banner there instead.
     @ViewBuilder private var emptyState: some View {
         if store.session != nil {
-            NWEmptyState(
-                Text("New agent in \(Text(abbreviatedPath).font(Font.nwMono(AppLayout.emptyThreadPathSize, .medium)))"),
+            SHEmptyState(
+                Text("New agent in \(Text(abbreviatedPath).font(Font.shMono(AppLayout.emptyThreadPathSize, .medium)))"),
                 message: "Describe the task. Drop or paste images to attach them, or type / for commands.",
                 showsMark: false, framed: true
             )
             .padding(.top, AppLayout.emptyThreadTop)
             // Fades in when pi's history arrives empty; a thread known to be empty just shows it.
-            .nwArrival(arrivals.startedLoading)
+            .shArrival(arrivals.startedLoading)
         }
     }
 
@@ -550,7 +550,7 @@ struct ThreadView: View {
     }
 
     private func quiet(_ text: String) -> some View {
-        Text(text).font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary).textSelection(.enabled)
+        Text(text).font(Font.sh(.caption)).foregroundStyle(Color.sh.textTertiary).textSelection(.enabled)
     }
 }
 
@@ -739,7 +739,7 @@ private struct CommentAnswer: ViewModifier {
 
     func body(content: Content) -> some View {
         if inCard {
-            content.nwCommentAnswer(bridge: AppLayout.turnSpacing)
+            content.shCommentAnswer(bridge: AppLayout.turnSpacing)
         } else {
             content
         }

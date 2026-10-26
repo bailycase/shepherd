@@ -12,14 +12,14 @@ struct AppearanceSettings: View {
     var body: some View {
         SettingsPage(title: "Appearance", explanation: "How Shepherd looks. The terminal has its own font settings.") {
             SettingsGroup(title: "Theme") {
-                SettingsRow(title: "Theme", subtitle: "Night Watch ships with Shepherd, in light and dark.") {
+                SettingsRow(title: "Theme", subtitle: "Shepherd Design ships with Shepherd, in light and dark.") {
                     // One theme ships: a name, not a popup with nothing else to choose.
                     Text(ThemeStore.shared.theme.name)
-                        .font(.nw(.ui))
-                        .foregroundStyle(Color.nw.textSecondary)
+                        .font(.sh(.ui))
+                        .foregroundStyle(Color.sh.textSecondary)
                 }
                 SettingsRow(title: "Mode", subtitle: "System follows your Mac and switches with it.") {
-                    NWSegmentedPicker("Mode", selection: Binding(
+                    SHSegmentedPicker("Mode", selection: Binding(
                         get: { themes.mode },
                         set: { vm.selectAppearance($0, systemColorScheme: systemColorScheme) }
                     ), options: AppearanceMode.allCases.map { ($0, $0.title) })
@@ -36,7 +36,7 @@ struct AppearanceSettings: View {
                     }
                     SettingsRow(title: "Keep idle threads",
                                 subtitle: "Then they leave the sidebar; ⌘K still finds them. Running threads and anything waiting on you stay.") {
-                        NWPopupMenu(Self.keepIdleTitle(sidebar.sidebarKeepIdleDays)) {
+                        SHPopupMenu(Self.keepIdleTitle(sidebar.sidebarKeepIdleDays)) {
                             Picker("Keep idle threads", selection: $sidebar.sidebarKeepIdleDays) {
                                 ForEach(AppSettings.sidebarKeepIdleChoices, id: \.self) { Text(Self.keepIdleTitle($0)).tag($0) }
                             }
@@ -46,24 +46,24 @@ struct AppearanceSettings: View {
                     }
                 }
             }
-            .nwAnimation(.disclosure, value: sidebar.sidebarStyle)
+            .shAnimation(.disclosure, value: sidebar.sidebarStyle)
             SettingsGroup(title: "Layout") {
                 SettingsRow(title: "Sidebar rows", subtitle: "Compact 22 · Standard 28 · Comfortable 36 pt, for the sidebar and menus.") {
-                    NWSegmentedPicker("Sidebar rows", selection: $settings.sidebarRowDensity,
-                                      options: NWDensity.allCases.map { ($0, $0.title) })
+                    SHSegmentedPicker("Sidebar rows", selection: $settings.sidebarRowDensity,
+                                      options: SHDensity.allCases.map { ($0, $0.title) })
                 }
                 SettingsRow(title: "Density", subtitle: "Row heights across the sidebar and chrome. Lower fits more agents.") {
-                    NWValueSlider("Density", value: $settings.uiDensity, in: AppSettings.uiDensityRange, step: 0.05, neutral: 1, unit: "percent") {
+                    SHValueSlider("Density", value: $settings.uiDensity, in: AppSettings.uiDensityRange, step: 0.05, neutral: 1, unit: "percent") {
                         "\(Int(($0 * 100).rounded()))"
                     }
                 }
                 SettingsRow(title: "Text size", subtitle: "App chrome only.") {
-                    NWValueSlider("Text size", value: $settings.uiTextScale, in: AppSettings.uiTextScaleRange, step: 0.05, neutral: 1, unit: "percent") {
+                    SHValueSlider("Text size", value: $settings.uiTextScale, in: AppSettings.uiTextScaleRange, step: 0.05, neutral: 1, unit: "percent") {
                         "\(Int(($0 * 100).rounded()))"
                     }
                 }
                 SettingsRow(title: "Sidebar width") {
-                    NWValueSlider("Sidebar width", value: $settings.sidebarWidth, in: AppSettings.sidebarWidthRange, step: 1,
+                    SHValueSlider("Sidebar width", value: $settings.sidebarWidth, in: AppSettings.sidebarWidthRange, step: 1,
                                 neutral: Double(AppLayout.sidebarDefaultWidth), unit: "points") { "\(Int($0))" }
                 }
             }
@@ -80,22 +80,22 @@ struct AppearanceSettings: View {
     }
 }
 
-/// Organize by: its title and what it does over the two cards (`NWSidebarStylePicker`).
+/// Organize by: its title and what it does over the two cards (`SHSidebarStylePicker`).
 private struct OrganizeByRow: View {
-    @Binding var style: NWSidebarStyle
+    @Binding var style: SHSidebarStyle
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppLayout.settingsStackedRowSpacing) {
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 Text("Organize by")
-                    .font(.nw(.body, weight: .medium))
-                    .foregroundStyle(Color.nw.textPrimary)
-                NWMarkupText("What the sidebar lists under New thread and the destinations. Also in View ▸ Organize Sidebar By.",
-                             size: NWTextStyle.ui.size, lineHeight: NWCardRowMetrics.settingsDescriptionLineHeight)
-                    .foregroundStyle(Color.nw.textSecondary)
+                    .font(.sh(.body, weight: .medium))
+                    .foregroundStyle(Color.sh.textPrimary)
+                SHMarkupText("What the sidebar lists under New thread and the destinations. Also in View ▸ Organize Sidebar By.",
+                             size: SHTextStyle.ui.size, lineHeight: SHCardRowMetrics.settingsDescriptionLineHeight)
+                    .foregroundStyle(Color.sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            NWSidebarStylePicker(selection: $style)
+            SHSidebarStylePicker(selection: $style)
         }
         .padding(AppLayout.settingsStackedRowInsets)
         .frame(maxWidth: .infinity, alignment: .leading)

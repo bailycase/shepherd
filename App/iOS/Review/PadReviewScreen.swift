@@ -32,7 +32,7 @@ struct PadReviewScreen: View {
                             .environment(\.threadSidePaneOpen, true)
                             .paneWidth(fold?.lowerBound)
                             .padding(.trailing, fold.map { $0.upperBound - $0.lowerBound } ?? 0)
-                        NWHairline(.vertical, color: Color.nw.lineStrong)
+                        SHHairline(.vertical, color: Color.sh.lineStrong)
                         PadChangesPane(ref: ref, store: store, finalize: finalize, close: { dismiss() })
                             .paneWidth(fold == nil ? min(MobileLayout.reviewDockWidth, proxy.size.width * MobileLayout.reviewDockShare) : nil)
                     }
@@ -84,7 +84,7 @@ private struct PadChangesPane: View {
                 PadChangesToolbar(store: store, compact: true, finalize: finalize)
                 PadCompareRow(store: store)
                 if !store.entries.isEmpty {
-                    NWTouchFileStrip(store.chips, selection: store.currentFile) { id in
+                    SHTouchFileStrip(store.chips, selection: store.currentFile) { id in
                         store.clearSelection()
                         store.currentFile = id
                         scrollTarget = id
@@ -96,7 +96,7 @@ private struct PadChangesPane: View {
                 PadArtifactsPane(ref: ref, store: store, artifacts: artifacts)
             }
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .clipped()
         .accessibilityElement(children: .contain)
         .accessibilityLabel(tab == .changes ? "Changes" : "Artifacts")
@@ -113,16 +113,16 @@ private struct PadPaneHeader: View {
     let close: () -> Void
 
     var body: some View {
-        var tabs = [NWPadPaneTab(id: "changes", title: "Changes", systemImage: "plus.forwardslash.minus", count: store.loaded ? store.entries.count : nil)]
-        if artifacts > 0 { tabs.append(NWPadPaneTab(id: "artifacts", title: "Artifacts", systemImage: NWGlyph.artifact.symbolName, count: artifacts)) }
-        return NWPadPaneHead(tabs, selection: tab == .changes ? "changes" : "artifacts",
+        var tabs = [SHPadPaneTab(id: "changes", title: "Changes", systemImage: "plus.forwardslash.minus", count: store.loaded ? store.entries.count : nil)]
+        if artifacts > 0 { tabs.append(SHPadPaneTab(id: "artifacts", title: "Artifacts", systemImage: SHGlyph.artifact.symbolName, count: artifacts)) }
+        return SHPadPaneHead(tabs, selection: tab == .changes ? "changes" : "artifacts",
                              select: { store.padTab = $0 == "artifacts" ? .artifacts : .changes }, close: close) {
             if tab == .changes {
                 Button("Full screen", systemImage: "arrow.up.left.and.arrow.down.right") {
-                    withNWAnimation(.disclosure) { store.padLayout = .full }
+                    withSHAnimation(.disclosure) { store.padLayout = .full }
                 }
                 .labelStyle(.iconOnly)
-                .buttonStyle(.nwIcon(size: NW.Height.touch - NW.Space.xs))
+                .buttonStyle(.shIcon(size: SH.Height.touch - SH.Space.xs))
             }
         }
     }
@@ -136,20 +136,20 @@ private struct PadChangesToolbar: View {
     let finalize: (() -> Void)?
 
     var body: some View {
-        HStack(spacing: NW.Space.m) {
+        HStack(spacing: SH.Space.m) {
             PadScopePill(store: store)
             if store.loaded {
-                NWDiffStat(added: store.totals.added, removed: store.totals.removed, font: .nw(.mono)).fixedSize()
+                SHDiffStat(added: store.totals.added, removed: store.totals.removed, font: .sh(.mono)).fixedSize()
             }
-            Spacer(minLength: NW.Space.s)
+            Spacer(minLength: SH.Space.s)
             PadCommitButton(store: store)
             PadDiffOptions(store: store, compact: compact, finalize: finalize)
                 .labelStyle(.iconOnly)
-                .buttonStyle(.nwIcon(size: NW.Height.touch))
+                .buttonStyle(.shIcon(size: SH.Height.touch))
         }
-        .padding(.horizontal, NW.Space.l)
+        .padding(.horizontal, SH.Space.l)
         .frame(height: MobileLayout.reviewToolbarHeight)
-        .overlay(alignment: .bottom) { NWHairline() }
+        .overlay(alignment: .bottom) { SHHairline() }
     }
 }
 
@@ -158,16 +158,16 @@ private struct PadScopePill: View {
     let store: ReviewStore
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         ChangesScopeMenu(store: store, pickBase: { store.pickingBase = true }) {
-            HStack(spacing: NW.Space.s) {
-                Text(label).font(.nw(.ui)).foregroundStyle(nw.textPrimary).lineLimit(1)
-                Image(systemName: "chevron.down").imageScale(.small).foregroundStyle(nw.textSecondary)
+            HStack(spacing: SH.Space.s) {
+                Text(label).font(.sh(.ui)).foregroundStyle(sh.textPrimary).lineLimit(1)
+                Image(systemName: "chevron.down").imageScale(.small).foregroundStyle(sh.textSecondary)
             }
-            .padding(.horizontal, NW.Space.l)
-            .frame(minHeight: NW.Height.touch)
-            .background(nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.s))
-            .nwBorder(nw.lineStrong, radius: NW.Radius.s)
+            .padding(.horizontal, SH.Space.l)
+            .frame(minHeight: SH.Height.touch)
+            .background(sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+            .shBorder(sh.lineStrong, radius: SH.Radius.s)
             .fixedSize()
             .accessibilityLabel("Compare: \(store.scopeTitle)")
         }
@@ -196,7 +196,7 @@ private struct PadCommitButton: View {
             Button { CommitHooks.open(thread: store.ref, navigator: navigator, sizeClass: .regular) } label: {
                 Text("Commit\u{2026}")
             }
-            .buttonStyle(.nw(.secondary, size: .l))
+            .buttonStyle(.sh(.secondary, size: .l))
             .fixedSize()
             .disabled(!store.canCommit)
             .accessibilityHint("Choose the message and push options, then commit on the host")
@@ -205,7 +205,7 @@ private struct PadCommitButton: View {
             Button { Task { _ = await store.commit(hosts: hosts) } } label: {
                 Text("Commit\u{2026}")
             }
-            .buttonStyle(.nw(.secondary, size: .l))
+            .buttonStyle(.sh(.secondary, size: .l))
             .fixedSize()
             .disabled(!store.canCommit)
             .accessibilityHint("Asks the agent to commit these changes")
@@ -284,34 +284,34 @@ private struct PadCompareRow: View {
 
     var body: some View {
         if let compare = store.compare {
-            let nw = Color.nw
-            HStack(spacing: NW.Space.m) {
-                Text(compare.head).foregroundStyle(nw.textSecondary).lineLimit(1).truncationMode(.middle)
-                Text("vs").foregroundStyle(nw.textTertiary)
+            let sh = Color.sh
+            HStack(spacing: SH.Space.m) {
+                Text(compare.head).foregroundStyle(sh.textSecondary).lineLimit(1).truncationMode(.middle)
+                Text("vs").foregroundStyle(sh.textTertiary)
                 if compare.basePicks {
                     Button { store.pickingBase = true } label: {
-                        HStack(spacing: NW.Space.xs) {
+                        HStack(spacing: SH.Space.xs) {
                             Text(compare.base).lineLimit(1)
                             Image(systemName: "chevron.down").imageScale(.small)
                         }
-                        .foregroundStyle(nw.textPrimary)
-                        .nwTouchTarget(height: MobileLayout.reviewCompareHeight)
+                        .foregroundStyle(sh.textPrimary)
+                        .shTouchTarget(height: MobileLayout.reviewCompareHeight)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Base \(compare.base)")
                     .accessibilityHint("Compares against another branch")
                 } else {
-                    Text(compare.base).foregroundStyle(nw.textPrimary).lineLimit(1)
+                    Text(compare.base).foregroundStyle(sh.textPrimary).lineLimit(1)
                 }
-                Spacer(minLength: NW.Space.s)
+                Spacer(minLength: SH.Space.s)
                 if store.loaded {
-                    Text(store.totals.viewedText).foregroundStyle(nw.textSecondary).lineLimit(1).fixedSize()
+                    Text(store.totals.viewedText).foregroundStyle(sh.textSecondary).lineLimit(1).fixedSize()
                 }
             }
-            .font(.nw(.mono))
-            .padding(.horizontal, NW.Space.l)
+            .font(.sh(.mono))
+            .padding(.horizontal, SH.Space.l)
             .frame(height: MobileLayout.reviewCompareHeight)
-            .overlay(alignment: .bottom) { NWHairline() }
+            .overlay(alignment: .bottom) { SHHairline() }
             .accessibilityElement(children: .contain)
         }
     }
@@ -352,7 +352,7 @@ private struct PadChangesStack: View {
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: scrollTarget) { _, id in
                 guard let id else { return }
-                withNWAnimation(.disclosure) { proxy.scrollTo(id, anchor: .top) }
+                withSHAnimation(.disclosure) { proxy.scrollTo(id, anchor: .top) }
                 scrollTarget = nil
             }
         }
@@ -394,16 +394,16 @@ private struct PadFileHead: View {
     let entry: ChangesFile
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let collapsed = store.collapsed.contains(entry.id)
         let viewed = store.viewed.contains(entry.id)
         let (directory, name) = reviewPathParts(entry.path)
-        let status = NWFileStatus(ReviewFileStatus(entry.status))
-        HStack(spacing: NW.Space.m) {
-            Button { withNWAnimation(.disclosure) { store.toggleCollapsed(entry.id) } } label: {
+        let status = SHFileStatus(ReviewFileStatus(entry.status))
+        HStack(spacing: SH.Space.m) {
+            Button { withSHAnimation(.disclosure) { store.toggleCollapsed(entry.id) } } label: {
                 Text("\(name) · +\(entry.added) \u{2212}\(entry.removed)")
-                    .font(.nw(.mono))
-                    .foregroundStyle(nw.textPrimary)
+                    .font(.sh(.mono))
+                    .foregroundStyle(sh.textPrimary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -414,16 +414,16 @@ private struct PadFileHead: View {
             .accessibilityValue(collapsed ? "collapsed" : "expanded")
             .accessibilityHint(collapsed ? "Shows the file's changes" : "Hides the file's changes")
             Toggle("Viewed", isOn: Binding(get: { viewed }, set: { _ in store.toggleViewed(entry.id) }))
-                .toggleStyle(.nwCheckbox)
-                .font(.nw(.caption))
-                .foregroundStyle(nw.textSecondary)
+                .toggleStyle(.shCheckbox)
+                .font(.sh(.caption))
+                .foregroundStyle(sh.textSecondary)
                 .fixedSize()
-                .nwTouchTarget(height: NW.Height.touch)
+                .shTouchTarget(height: SH.Height.touch)
         }
-        .padding(.horizontal, NW.Space.m + NW.Space.xxs)
-        .frame(height: NW.Height.touch)
-        .background(nw.bgRaised)
-        .overlay(alignment: .bottom) { NWHairline() }
+        .padding(.horizontal, SH.Space.m + SH.Space.xxs)
+        .frame(height: SH.Height.touch)
+        .background(sh.bgRaised)
+        .overlay(alignment: .bottom) { SHHairline() }
     }
 }
 
@@ -437,39 +437,39 @@ private struct PadSendBar: View {
     var body: some View {
         VStack(spacing: 0) {
             if let error = store.actionError {
-                NWBanner(.failed, title: "Couldn't send the comments", message: error) {
-                    Button("Dismiss") { store.actionError = nil }.buttonStyle(.nw(.ghost, size: .s))
+                SHBanner(.failed, title: "Couldn't send the comments", message: error) {
+                    Button("Dismiss") { store.actionError = nil }.buttonStyle(.sh(.ghost, size: .s))
                 }
-                .padding(NW.Space.l)
+                .padding(SH.Space.l)
             }
             if !store.comments.isEmpty {
-                let nw = Color.nw
-                HStack(spacing: NW.Space.m) {
+                let sh = Color.sh
+                HStack(spacing: SH.Space.m) {
                     Text(padPendingText(store.comments))
-                        .font(.nw(.caption)).foregroundStyle(nw.textTertiary)
+                        .font(.sh(.caption)).foregroundStyle(sh.textTertiary)
                         .lineLimit(1).truncationMode(.middle)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Button("Discard") { store.discardComments() }
-                        .buttonStyle(.nw(.ghost, size: .l))
+                        .buttonStyle(.sh(.ghost, size: .l))
                         .disabled(store.submitting)
                         .accessibilityHint("Deletes the comments you haven't sent")
                     Button {
                         Task { if await store.sendComments(hosts: hosts) { close() } }
                     } label: {
-                        HStack(spacing: NW.Space.s) {
-                            if store.submitting { ProgressView().progressViewStyle(NWSpinnerStyle()) }
+                        HStack(spacing: SH.Space.s) {
+                            if store.submitting { ProgressView().progressViewStyle(SHSpinnerStyle()) }
                             Text(store.sendTitle)
                         }
                     }
-                    .buttonStyle(.nw(.primary, size: .l))
+                    .buttonStyle(.sh(.primary, size: .l))
                     .disabled(!store.canSend)
                     .accessibilityHint("Sends your comments as the agent's next message")
                 }
-                .padding(.horizontal, NW.Space.l)
-                .padding(.vertical, NW.Space.m)
+                .padding(.horizontal, SH.Space.l)
+                .padding(.vertical, SH.Space.m)
                 .frame(minHeight: MobileLayout.reviewSendBarHeight)
-                .background(nw.bgWindow)
-                .overlay(alignment: .top) { NWHairline() }
+                .background(sh.bgWindow)
+                .overlay(alignment: .top) { SHHairline() }
             }
         }
     }
@@ -507,14 +507,14 @@ private struct PadFullReview: View {
                     }
                     .paneWidth(fold?.lowerBound ?? MobileLayout.reviewFileListWidth)
                     .padding(.trailing, fold.map { $0.upperBound - $0.lowerBound } ?? 0)
-                    NWHairline(.vertical)
+                    SHHairline(.vertical)
                     PadChangesStack(store: store, scrollTarget: $scrollTarget, compact: fold != nil)
                         .frame(maxWidth: .infinity)
                 }
             }
             PadSendBar(store: store, close: close)
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .toolbar(.hidden, for: .tabBar)
         .navigationTitle("Review")
         .navigationBarTitleDisplayMode(.inline)
@@ -522,15 +522,15 @@ private struct PadFullReview: View {
         .toolbar(removing: .title)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                HStack(spacing: NW.Space.m) {
-                    Button { withNWAnimation(.disclosure) { store.padLayout = .docked } } label: {
-                        HStack(spacing: NW.Space.xs) {
-                            Image(systemName: "chevron.left").font(.nw(.ui, weight: .semibold))
+                HStack(spacing: SH.Space.m) {
+                    Button { withSHAnimation(.disclosure) { store.padLayout = .docked } } label: {
+                        HStack(spacing: SH.Space.xs) {
+                            Image(systemName: "chevron.left").font(.sh(.ui, weight: .semibold))
                             Text("Thread")
                         }
                     }
                     .accessibilityLabel("Back to the thread")
-                    Text("Review").font(.nw(.ui, weight: .semibold)).foregroundStyle(Color.nw.textPrimary)
+                    Text("Review").font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.textPrimary)
                         .accessibilityAddTraits(.isHeader)
                 }
                 .fixedSize()
@@ -549,23 +549,23 @@ private struct PadFileList: View {
     let select: (String) -> Void
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(store.summaries) { summary in
                     let selected = summary.id == store.currentFile
                     Button { select(summary.id) } label: {
-                        VStack(alignment: .leading, spacing: NW.Space.xs) {
-                            Text(summary.name).font(.nw(.code)).foregroundStyle(nw.textPrimary)
+                        VStack(alignment: .leading, spacing: SH.Space.xs) {
+                            Text(summary.name).font(.sh(.code)).foregroundStyle(sh.textPrimary)
                                 .lineLimit(1).truncationMode(.middle)
-                            Text("+\(summary.added) \u{2212}\(summary.removed)").font(.nw(.micro, weight: .regular))
-                                .foregroundStyle(nw.textTertiary)
+                            Text("+\(summary.added) \u{2212}\(summary.removed)").font(.sh(.micro, weight: .regular))
+                                .foregroundStyle(sh.textTertiary)
                         }
-                        .padding(NW.Space.l)
+                        .padding(SH.Space.l)
                         .frame(maxWidth: .infinity, minHeight: MobileLayout.reviewFileRowHeight, alignment: .leading)
                         .opacity(summary.viewed && !selected ? MobileLayout.reviewViewedOpacity : 1)
-                        .background(selected ? nw.bgSelected : .clear)
-                        .overlay(alignment: .bottom) { NWHairline() }
+                        .background(selected ? sh.bgSelected : .clear)
+                        .overlay(alignment: .bottom) { SHHairline() }
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)

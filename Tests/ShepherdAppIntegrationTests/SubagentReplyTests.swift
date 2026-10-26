@@ -78,7 +78,7 @@ struct SubagentReplyTests {
                     .equatable()
             }
         }
-        .background(Color.nw.bgWindow))
+        .background(Color.sh.bgWindow))
         defer { window.close() }
         window.layout()
 
@@ -137,7 +137,7 @@ struct SubagentReplyTests {
     private static func inspector(_ thread: Thread, run: ChildRun, draft: String = "") -> OffscreenWindow {
         OffscreenWindow(size: CGSize(width: 480, height: 560), dark: false,
                         SubagentInspector(store: thread.store, runID: run.runID, active: true, close: {}, select: { _ in }, draft: draft)
-                            .background(Color.nw.bgWindow))
+                            .background(Color.sh.bgWindow))
     }
 
     /// The inspector's field and its button say Reply for the run that asked and Steer for the

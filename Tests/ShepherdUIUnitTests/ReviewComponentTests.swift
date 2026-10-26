@@ -7,66 +7,66 @@ import Testing
 @Suite("Review components")
 struct ReviewComponentTests {
     @Test(arguments: [
-        (13, NWDiffLineKind.removed, "18–32", "+ 13 more removed lines · 18–32"),
+        (13, SHDiffLineKind.removed, "18–32", "+ 13 more removed lines · 18–32"),
         (1, .added, "7–7", "+ 1 more added line · 7–7"),
         (6, .context, "", "+ 6 more unchanged lines"),
     ])
-    @MainActor func touchFoldRowsCountTheirLinesAndRange(count: Int, kind: NWDiffLineKind, range: String, label: String) {
-        #expect(NWTouchFoldRow.label(count: count, kind: kind, range: range) == label)
+    @MainActor func touchFoldRowsCountTheirLinesAndRange(count: Int, kind: SHDiffLineKind, range: String, label: String) {
+        #expect(SHTouchFoldRow.label(count: count, kind: kind, range: range) == label)
     }
 
     @Test(arguments: [(1, "1 unmodified line"), (28, "28 unmodified lines")])
     func foldsCountTheirUnmodifiedLines(count: Int, label: String) {
-        #expect(NWDiffFold(id: "f", count: count).label == label)
+        #expect(SHDiffFold(id: "f", count: count).label == label)
     }
 
-    @Test(arguments: [(NWDiffLineKind.context, ""), (.added, "+"), (.removed, "\u{2212}")])
-    func signsUseATrueMinus(kind: NWDiffLineKind, sign: String) {
+    @Test(arguments: [(SHDiffLineKind.context, ""), (.added, "+"), (.removed, "\u{2212}")])
+    func signsUseATrueMinus(kind: SHDiffLineKind, sign: String) {
         #expect(kind.sign == sign)
     }
 
     @Test func everyStatusHasItsOwnLetter() {
-        #expect(NWFileStatus.allCases.map(\.letter) == ["M", "A", "D", "R"])
+        #expect(SHFileStatus.allCases.map(\.letter) == ["M", "A", "D", "R"])
     }
 
     @Test(arguments: [
-        (NWDiffLineKind.removed, 16 as Int?, nil as Int?, "  if let x {", "Removed line 16: if let x {"),
+        (SHDiffLineKind.removed, 16 as Int?, nil as Int?, "  if let x {", "Removed line 16: if let x {"),
         (.added, nil, 15, "Section {", "Added line 15: Section {"),
         (.context, 12, 12, "   ", "Line 12, blank"),
     ])
-    func linesReadAsOneElement(kind: NWDiffLineKind, old: Int?, new: Int?, source: String, text: String) {
-        let line = NWDiffLineContent(id: "l", key: 0, kind: kind, oldNumber: old, newNumber: new, text: AttributedString(source), source: source)
+    func linesReadAsOneElement(kind: SHDiffLineKind, old: Int?, new: Int?, source: String, text: String) {
+        let line = SHDiffLineContent(id: "l", key: 0, kind: kind, oldNumber: old, newNumber: new, text: AttributedString(source), source: source)
         #expect(line.accessibilityText == text)
     }
 
     @Test func aLineIsCitedByItsNewNumberThenItsOld() {
         let line = { (old: Int?, new: Int?) in
-            NWDiffLineContent(id: "l", key: 0, kind: .context, oldNumber: old, newNumber: new, text: "", source: "").number
+            SHDiffLineContent(id: "l", key: 0, kind: .context, oldNumber: old, newNumber: new, text: "", source: "").number
         }
         #expect(line(3, 5) == 5 && line(3, nil) == 3 && line(nil, nil) == nil)
     }
 
     @Test(arguments: [("App/iOS/FleetView.swift", "App/iOS/", "FleetView.swift"), ("README.md", "", "README.md")])
     func pathsSplitIntoDirectoryAndName(path: String, directory: String, name: String) {
-        let split = NWFileHeader.split(path)
+        let split = SHFileHeader.split(path)
         #expect(split.directory == directory && split.name == name)
     }
 
-    @Test(arguments: NWFileStatus.allCases)
-    func everyFileShowsItsStatInTheStrip(status: NWFileStatus) {
-        #expect(NWFileStrip.Item(id: "a", path: "a", status: status, added: 1, removed: 1).showsStat)
+    @Test(arguments: SHFileStatus.allCases)
+    func everyFileShowsItsStatInTheStrip(status: SHFileStatus) {
+        #expect(SHFileStrip.Item(id: "a", path: "a", status: status, added: 1, removed: 1).showsStat)
     }
 
     @Test func aChipReadsItsNameStatusAndCounts() {
-        let item = NWFileStrip.Item(id: "a", path: "App/FleetView.swift", status: .modified, added: 10, removed: 54, isViewed: true, isTouched: true)
+        let item = SHFileStrip.Item(id: "a", path: "App/FleetView.swift", status: .modified, added: 10, removed: 54, isViewed: true, isTouched: true)
         #expect(item.accessibilityText == "FleetView.swift, modified, 10 added, 54 removed, viewed, being edited")
     }
 
     @Test func rowIdentityComesFromEachKind() {
-        let line = NWDiffLineContent(id: "line", key: 1, kind: .added, oldNumber: nil, newNumber: 1, text: "", source: "")
-        let rows: [NWDiffRow] = [.hunk(id: "hunk", header: "@@"), .line(line), .fold(id: "fold", count: 2, kind: .context, range: "")]
+        let line = SHDiffLineContent(id: "line", key: 1, kind: .added, oldNumber: nil, newNumber: 1, text: "", source: "")
+        let rows: [SHDiffRow] = [.hunk(id: "hunk", header: "@@"), .line(line), .fold(id: "fold", count: 2, kind: .context, range: "")]
         #expect(rows.map(\.id) == ["hunk", "line", "fold"])
-        let changes: [NWChangesRow] = [.line(line), .pair(id: "pair", old: nil, new: line), .fold(NWDiffFold(id: "fold", count: 3)),
+        let changes: [SHChangesRow] = [.line(line), .pair(id: "pair", old: nil, new: line), .fold(SHDiffFold(id: "fold", count: 3)),
                                        .notice(id: "notice", text: "Binary file")]
         #expect(changes.map(\.id) == ["line", "pair", "fold", "notice"])
         #expect(changes.map(\.lines.count) == [1, 1, 0, 0])

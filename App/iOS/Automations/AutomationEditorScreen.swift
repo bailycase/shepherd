@@ -34,7 +34,7 @@ struct AutomationEditorScreen: View {
         Form {
             Section {
                 TextField("Name", text: $draft.name)
-                    .font(.nw(.ui))
+                    .font(.sh(.ui))
                     .focused($focused, equals: .name)
                     .submitLabel(.next)
                     .onSubmit { focused = .prompt }
@@ -44,7 +44,7 @@ struct AutomationEditorScreen: View {
             }
             Section {
                 TextEditor(text: $draft.prompt)
-                    .font(.nw(.body))
+                    .font(.sh(.body))
                     .frame(minHeight: MobileLayout.automationPromptMinHeight)
                     .focused($focused, equals: .prompt)
                     .accessibilityLabel("Prompt")
@@ -61,7 +61,7 @@ struct AutomationEditorScreen: View {
                 }
                 if folders.isEmpty {
                     Text("\(target?.name ?? "The host") has no spaces yet. Add one from New thread.")
-                        .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                        .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                 } else {
                     Picker("Folder", selection: $draft.cwd) {
                         if draft.cwd.isEmpty { Text("Choose…").tag("") }
@@ -73,26 +73,26 @@ struct AutomationEditorScreen: View {
             } header: {
                 Text("Where it runs")
             } footer: {
-                if !draft.cwd.isEmpty { Text(draft.cwd).font(.nw(.mono)) }
+                if !draft.cwd.isEmpty { Text(draft.cwd).font(.sh(.mono)) }
             }
             Section {
                 HStack {
-                    Text("Starts with Shepherd").font(.nw(.ui))
+                    Text("Starts with Shepherd").font(.sh(.ui))
                         .accessibilityHidden(true)
-                    Spacer(minLength: NW.Space.m)
-                    NWAutomationSwitch("Starts with Shepherd", isOn: draft.enabled) { draft.enabled = $0 }
+                    Spacer(minLength: SH.Space.m)
+                    SHAutomationSwitch("Starts with Shepherd", isOn: draft.enabled) { draft.enabled = $0 }
                 }
             } footer: {
                 Text("On: \(target?.name ?? "the host") starts a run each time Shepherd launches there. Run now starts one any time.")
             }
             if let error {
                 Section {
-                    Text(error).font(.nw(.caption)).foregroundStyle(Color.nw.failed)
+                    Text(error).font(.sh(.caption)).foregroundStyle(Color.sh.failed)
                 }
             }
         }
         .scrollContentBackground(.hidden)
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .navigationTitle(automation == nil ? "New automation" : "Edit automation")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -101,7 +101,7 @@ struct AutomationEditorScreen: View {
             }
             ToolbarItem(placement: .confirmationAction) {
                 if saving {
-                    ProgressView().progressViewStyle(NWSpinnerStyle())
+                    ProgressView().progressViewStyle(SHSpinnerStyle())
                 } else {
                     Button("Save") { save(host: target?.id, store: store) }.disabled(!canSave)
                 }

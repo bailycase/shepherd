@@ -208,7 +208,7 @@ final class ReviewSession: Identifiable {
 }
 
 extension DiffLine.Kind {
-    var diffKind: NWDiffLineKind {
+    var diffKind: SHDiffLineKind {
         switch self {
         case .context: .context
         case .added: .added
@@ -219,7 +219,7 @@ extension DiffLine.Kind {
 
 extension DiffFile {
     /// The strip's status letter: A new, D deleted, R renamed, otherwise M.
-    var reviewStatus: NWFileStatus {
+    var reviewStatus: SHFileStatus {
         if isNew { return .added }
         if isDeleted { return .deleted }
         if isRenamed { return .renamed }
@@ -229,7 +229,7 @@ extension DiffFile {
 
 extension ChangesScope {
     /// The toolbar's glyph for the scope.
-    var glyph: NWChangesScopeGlyph {
+    var glyph: SHChangesScopeGlyph {
         switch kind {
         case .lastTurn: .lastTurn
         case .uncommitted, .unstaged: .uncommitted
@@ -363,12 +363,12 @@ final class ReviewPaneModel {
     @ObservationIgnored private var rowCache: [String: CachedRows] = [:]
     private(set) var width: CGFloat = 0
     @ObservationIgnored private var measuredCodeWidth: (version: Int, scale: CGFloat, width: CGFloat)?
-    @ObservationIgnored private var splitScrolls: [String: NWSplitDiffScroll] = [:]
+    @ObservationIgnored private var splitScrolls: [String: SHSplitDiffScroll] = [:]
     @ObservationIgnored private var splitWidths: [String: (file: DiffFile, scale: CGFloat, old: CGFloat, new: CGFloat)] = [:]
 
-    func splitScroll(for fileID: String) -> NWSplitDiffScroll {
+    func splitScroll(for fileID: String) -> SHSplitDiffScroll {
         if let value = splitScrolls[fileID] { return value }
-        let value = NWSplitDiffScroll()
+        let value = SHSplitDiffScroll()
         splitScrolls[fileID] = value
         return value
     }
@@ -401,7 +401,7 @@ final class ReviewPaneModel {
         let truncated: Bool
         let wordDiffs: Bool
         let highlight: ReviewHighlight?
-        let rows: [NWChangesRow]
+        let rows: [SHChangesRow]
     }
 
     init(session: ReviewSession, actions: ReviewActions) {
@@ -445,7 +445,7 @@ final class ReviewPaneModel {
     /// `file`'s rows for its current layout, reveals and colors; the same array until one of
     /// them changes. Freshness is a version check; only right after a reload is a file compared
     /// line by line, so unchanged files keep their rows and colors.
-    func rows(for file: DiffFile) -> [NWChangesRow] {
+    func rows(for file: DiffFile) -> [SHChangesRow] {
         let version = session.filesVersion
         let revealed = revealed[file.id] ?? []
         let truncated = session.truncated.contains(file.id)
@@ -471,8 +471,8 @@ final class ReviewPaneModel {
     func scrollContentWidth(textScale: CGFloat) -> CGFloat {
         if layout == .split { return width }
         if measuredCodeWidth?.version != session.filesVersion || measuredCodeWidth?.scale != textScale {
-            let font = NSFont(name: "GeistMono-Regular", size: NWTextStyle.code.size * textScale)
-                ?? .monospacedSystemFont(ofSize: NWTextStyle.code.size * textScale, weight: .regular)
+            let font = NSFont(name: "GeistMono-Regular", size: SHTextStyle.code.size * textScale)
+                ?? .monospacedSystemFont(ofSize: SHTextStyle.code.size * textScale, weight: .regular)
             let widest = session.files.lazy.flatMap(\.hunks).flatMap(\.lines).reduce(CGFloat.zero) {
                 let text = NSAttributedString(string: $1.text, attributes: [.font: font])
                 return max($0, CGFloat(CTLineGetTypographicBounds(CTLineCreateWithAttributedString(text), nil, nil, nil)))
@@ -480,17 +480,17 @@ final class ReviewPaneModel {
             measuredCodeWidth = (session.filesVersion, textScale, ceil(widest))
         }
         let code = measuredCodeWidth?.width ?? 0
-        let commentSlot = NWDiffMetrics.commentSlotWidth
+        let commentSlot = SHDiffMetrics.commentSlotWidth
         let content = layout == .split
-            ? 2 * (NWDiffMetrics.splitCodeLeading + code + commentSlot) + 1
-            : NWDiffMetrics.codeLeading + code + commentSlot
+            ? 2 * (SHDiffMetrics.splitCodeLeading + code + commentSlot) + 1
+            : SHDiffMetrics.codeLeading + code + commentSlot
         return max(width, content)
     }
 
     func splitLineWidths(_ file: DiffFile, textScale: CGFloat) -> (old: CGFloat, new: CGFloat) {
         if let cached = splitWidths[file.id], cached.scale == textScale, cached.file == file { return (cached.old, cached.new) }
-        let font = NSFont(name: "GeistMono-Regular", size: NWTextStyle.code.size * textScale)
-            ?? .monospacedSystemFont(ofSize: NWTextStyle.code.size * textScale, weight: .regular)
+        let font = NSFont(name: "GeistMono-Regular", size: SHTextStyle.code.size * textScale)
+            ?? .monospacedSystemFont(ofSize: SHTextStyle.code.size * textScale, weight: .regular)
         var old: CGFloat = 0, new: CGFloat = 0
         for line in file.hunks.flatMap(\.lines) {
             let text = NSAttributedString(string: line.text, attributes: [.font: font])
@@ -544,7 +544,7 @@ final class ReviewPaneModel {
 
     /// Opens a fold: 20 lines up or down, or all of them. Lines between hunks came without the
     /// diff, so the file is fetched whole first (`ReviewActions.loadWholeFile`).
-    func reveal(_ foldID: String, _ direction: NWDiffReveal, in fileID: String) {
+    func reveal(_ foldID: String, _ direction: SHDiffReveal, in fileID: String) {
         guard let span = ChangesRows.span(ofFold: foldID) else { return }
         let lines = span.revealed(direction)
         if lines.count <= Self.easedRowLimit { disclosures += 1 }

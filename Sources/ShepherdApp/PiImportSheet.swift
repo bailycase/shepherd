@@ -77,7 +77,7 @@ struct PiImportSheetState: Identifiable, Equatable {
         var title: String
         var detail: String?
         var count: String?
-        var state: NWStepState
+        var state: SHStepState
     }
 
     /// The steps card: one row per item, pending ones with their titles alone; an item their pi
@@ -132,7 +132,7 @@ struct PiImportSheetState: Identifiable, Equatable {
         return rows
     }
 
-    static func mark(_ state: StepState) -> NWStepState {
+    static func mark(_ state: StepState) -> SHStepState {
         switch state {
         case .pending: .pending
         case .running: .now
@@ -158,10 +158,10 @@ struct PiImportSheetState: Identifiable, Equatable {
     }
 
     /// What came over, in one line (`PiImportSummary`): counts first, as the board draws them.
-    var summary: [NWImportSummary.Part] {
+    var summary: [SHImportSummary.Part] {
         let logins = report.logins.filter { if case .apiKey = $0.kind { false } else { true } }.count
         let keys = report.logins.count - logins
-        var parts: [NWImportSummary.Part] = []
+        var parts: [SHImportSummary.Part] = []
         if report.signInsUnreadable == nil {
             if logins > 0 { parts.append(.init(logins == 1 ? "login" : "logins", count: logins)) }
             if keys > 0 { parts.append(.init(keys == 1 ? "API key" : "API keys", count: keys)) }
@@ -217,9 +217,9 @@ struct PiImportSheet: View {
             case .failed: failed
             }
         }
-        .frame(width: state.stage == .newUser ? NWPiSignInMetrics.importWideWidth : NWPiSignInMetrics.importWidth)
-        .background(Color.nw.bgWindow)
-        .nwAnimation(.disclosure, value: state.stage)
+        .frame(width: state.stage == .newUser ? SHPiSignInMetrics.importWideWidth : SHPiSignInMetrics.importWidth)
+        .background(Color.sh.bgWindow)
+        .shAnimation(.disclosure, value: state.stage)
         .interactiveDismissDisabled(state.stage == .progress)
     }
 
@@ -228,9 +228,9 @@ struct PiImportSheet: View {
     }
 
     private var stepsCard: some View {
-        NWSheetCard {
+        SHSheetCard {
             ForEach(state.rows) { row in
-                NWImportStepRow(row.title, detail: row.detail, count: row.count, state: row.state)
+                SHImportStepRow(row.title, detail: row.detail, count: row.count, state: row.state)
             }
         }
     }
@@ -238,81 +238,81 @@ struct PiImportSheet: View {
     // MARK: Stages
 
     @ViewBuilder private var progress: some View {
-        NWSheetHeader("Bringing over your pi…", leading: .glyph("square.and.arrow.down", .neutral)) {
-            (Text("Once, from ") + Text(from).font(.nwMono(NWPiSignInMetrics.subtitleMonoSize)).foregroundColor(Color.nw.textPrimary)
+        SHSheetHeader("Bringing over your pi…", leading: .glyph("square.and.arrow.down", .neutral)) {
+            (Text("Once, from ") + Text(from).font(.shMono(SHPiSignInMetrics.subtitleMonoSize)).foregroundColor(Color.sh.textPrimary)
                 + Text(". The pi in your terminal isn’t changed."))
-                .nwText(size: NWPiSignInMetrics.sheetSubtitleSize, lineHeight: NWPiSignInMetrics.proseLeading)
-                .foregroundStyle(Color.nw.textSecondary)
+                .shText(size: SHPiSignInMetrics.sheetSubtitleSize, lineHeight: SHPiSignInMetrics.proseLeading)
+                .foregroundStyle(Color.sh.textSecondary)
         }
         stepsCard
-            .padding(.top, NWPiSignInMetrics.bodyTop)
-            .padding(.horizontal, NWPiSignInMetrics.sheetInset)
-            .padding(.bottom, NWPiSignInMetrics.sheetInset)
+            .padding(.top, SHPiSignInMetrics.bodyTop)
+            .padding(.horizontal, SHPiSignInMetrics.sheetInset)
+            .padding(.bottom, SHPiSignInMetrics.sheetInset)
     }
 
     @ViewBuilder private var done: some View {
-        NWSheetHeader("Your pi is in Shepherd", leading: .glyph("checkmark", .done)) {
-            NWImportSummary(state.summary)
+        SHSheetHeader("Your pi is in Shepherd", leading: .glyph("checkmark", .done)) {
+            SHImportSummary(state.summary)
         }
-        VStack(alignment: .leading, spacing: NWPiSignInMetrics.bodyGap) {
+        VStack(alignment: .leading, spacing: SHPiSignInMetrics.bodyGap) {
             Text("Shepherd now runs its own copy of pi. The pi in your terminal is untouched.")
-                .nwText(size: NWPiSignInMetrics.leadSize, lineHeight: NWPiSignInMetrics.leadLeading)
-                .foregroundStyle(Color.nw.textPrimary)
+                .shText(size: SHPiSignInMetrics.leadSize, lineHeight: SHPiSignInMetrics.leadLeading)
+                .foregroundStyle(Color.sh.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
             let extensions = state.report.copied(.extensions).count
             if extensions > 0 {
-                NWNoteCard(glyph: "puzzlepiece.extension", link: "Review extensions", action: reviewExtensions) {
-                    (Text(YourPiText.count(extensions, "extension")).fontWeight(.semibold).foregroundColor(Color.nw.textPrimary)
+                SHNoteCard(glyph: "puzzlepiece.extension", link: "Review extensions", action: reviewExtensions) {
+                    (Text(YourPiText.count(extensions, "extension")).fontWeight(.semibold).foregroundColor(Color.sh.textPrimary)
                         + Text(" came over switched off. They’re code that runs with full access, so you turn each one on yourself."))
-                        .nwText(size: NWPiSignInMetrics.noteProseSize, lineHeight: NWPiSignInMetrics.proseLeading)
-                        .foregroundStyle(Color.nw.textSecondary)
+                        .shText(size: SHPiSignInMetrics.noteProseSize, lineHeight: SHPiSignInMetrics.proseLeading)
+                        .foregroundStyle(Color.sh.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
-        .padding(.top, NW.Space.xl)
-        .padding(.leading, NWPiSignInMetrics.sheetInset + NWPiSignInMetrics.sheetTile + NWPiSignInMetrics.bodyGap)
-        .padding(.trailing, NWPiSignInMetrics.sheetInset)
-        .padding(.bottom, NWPiSignInMetrics.bodyBottom)
-        NWSheetFooter {
-            Button("Done", action: close).buttonStyle(.nw(.primary)).keyboardShortcut(.defaultAction)
+        .padding(.top, SH.Space.xl)
+        .padding(.leading, SHPiSignInMetrics.sheetInset + SHPiSignInMetrics.sheetTile + SHPiSignInMetrics.bodyGap)
+        .padding(.trailing, SHPiSignInMetrics.sheetInset)
+        .padding(.bottom, SHPiSignInMetrics.bodyBottom)
+        SHSheetFooter {
+            Button("Done", action: close).buttonStyle(.sh(.primary)).keyboardShortcut(.defaultAction)
         }
     }
 
     @ViewBuilder private var missing: some View {
-        NWSheetHeader(PiImportSheetState.missingTitle(state.missing.count),
+        SHSheetHeader(PiImportSheetState.missingTitle(state.missing.count),
                       subtitle: PiImportSheetState.missingSubtitle(state.missing.count), leading: .glyph("key", .attention))
-        VStack(alignment: .leading, spacing: NW.Space.l) {
-            NWSheetCard {
+        VStack(alignment: .leading, spacing: SH.Space.l) {
+            SHSheetCard {
                 ForEach(state.missing) { item in
-                    NWImportSignInRow(PiSignInCatalog.name(item.id), badge: PiSignInCatalog.badge(item.id), detail: item.detail,
+                    SHImportSignInRow(PiSignInCatalog.name(item.id), badge: PiSignInCatalog.badge(item.id), detail: item.detail,
                                       signedIn: state.signedIn(item.id)) { signIn(item.id, false) }
                 }
             }
-            HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
-                Image(systemName: "info.circle").font(.nwSans(NWPiSignInMetrics.smallPrintSize)).foregroundStyle(Color.nw.textTertiary).accessibilityHidden(true)
-                NWImportSummary(state.summary, size: NWPiSignInMetrics.smallPrintSize, quiet: true)
+            HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+                Image(systemName: "info.circle").font(.shSans(SHPiSignInMetrics.smallPrintSize)).foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
+                SHImportSummary(state.summary, size: SHPiSignInMetrics.smallPrintSize, quiet: true)
             }
-            .padding(.horizontal, NW.Space.xxs)
+            .padding(.horizontal, SH.Space.xxs)
         }
-        .padding(.top, NW.Space.xl)
-        .padding(.horizontal, NWPiSignInMetrics.sheetInset)
-        .padding(.bottom, NWPiSignInMetrics.bodyBottom)
-        NWSheetFooter {
-            Button("Skip for now", action: close).buttonStyle(.nw(.secondary)).keyboardShortcut(.cancelAction)
-            Button("Done", action: close).buttonStyle(.nw(.primary)).keyboardShortcut(.defaultAction)
+        .padding(.top, SH.Space.xl)
+        .padding(.horizontal, SHPiSignInMetrics.sheetInset)
+        .padding(.bottom, SHPiSignInMetrics.bodyBottom)
+        SHSheetFooter {
+            Button("Skip for now", action: close).buttonStyle(.sh(.secondary)).keyboardShortcut(.cancelAction)
+            Button("Done", action: close).buttonStyle(.sh(.primary)).keyboardShortcut(.defaultAction)
                 .disabled(!state.allSignedIn)
         }
     }
 
     @ViewBuilder private var newUser: some View {
-        NWSheetHeader("Sign in to a model provider",
+        SHSheetHeader("Sign in to a model provider",
                       subtitle: "There’s no pi on this Mac, so there’s nothing to bring over. Use a subscription you already pay for, or an API key.",
                       leading: .glyph("person.badge.key", .neutral))
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: NW.Space.m), GridItem(.flexible())], spacing: NW.Space.m) {
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: SH.Space.m), GridItem(.flexible())], spacing: SH.Space.m) {
             ForEach(PiSignInCatalog.subscriptions) { subscription in
                 Button { signIn(subscription.id, false) } label: {
-                    NWSignInChoiceTile(subscription.name, detail: subscription.plan, badge: PiSignInCatalog.badge(subscription.id))
+                    SHSignInChoiceTile(subscription.name, detail: subscription.plan, badge: PiSignInCatalog.badge(subscription.id))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Sign in to \(subscription.name)")
@@ -322,50 +322,50 @@ struct PiImportSheet: View {
                     Button(PiSignInCatalog.name(provider)) { signIn(provider, true) }
                 }
             } label: {
-                NWSignInChoiceTile("Use an API key", detail: PiSignInPage.addableSummary(PiSignInCatalog.keyProviders))
+                SHSignInChoiceTile("Use an API key", detail: PiSignInPage.addableSummary(PiSignInCatalog.keyProviders))
             }
             .menuStyle(.button)
             .buttonStyle(.plain)
             .menuIndicator(.hidden)
             .accessibilityLabel("Use an API key")
         }
-        .padding(.top, NWPiSignInMetrics.bodyTop)
-        .padding(.horizontal, NWPiSignInMetrics.sheetInset)
-        .padding(.bottom, NWPiSignInMetrics.sheetInset)
-        NWSheetFooter {
-            Text("Change these any time in Settings ▸ Pi ▸ Sign-in.").font(.nwSans(NWPiSignInMetrics.smallPrintSize)).foregroundStyle(Color.nw.textTertiary)
+        .padding(.top, SHPiSignInMetrics.bodyTop)
+        .padding(.horizontal, SHPiSignInMetrics.sheetInset)
+        .padding(.bottom, SHPiSignInMetrics.sheetInset)
+        SHSheetFooter {
+            Text("Change these any time in Settings ▸ Pi ▸ Sign-in.").font(.shSans(SHPiSignInMetrics.smallPrintSize)).foregroundStyle(Color.sh.textTertiary)
         } actions: {
-            Button("Skip", action: close).buttonStyle(.nw(.ghost)).keyboardShortcut(.cancelAction)
+            Button("Skip", action: close).buttonStyle(.sh(.ghost)).keyboardShortcut(.cancelAction)
         }
     }
 
     @ViewBuilder private var failed: some View {
         let unreadable = state.report.signInsUnreadable
-        NWSheetHeader("Couldn’t read your pi’s sign-ins", subtitle: "Everything else came over. Your file wasn’t changed.",
+        SHSheetHeader("Couldn’t read your pi’s sign-ins", subtitle: "Everything else came over. Your file wasn’t changed.",
                       leading: .glyph("exclamationmark.triangle", .failed))
-        VStack(alignment: .leading, spacing: NW.Space.l) {
-            NWFailureBox(((unreadable?.path ?? "auth.json") as NSString).abbreviatingWithTildeInPath, detail: unreadable?.reason,
+        VStack(alignment: .leading, spacing: SH.Space.l) {
+            SHFailureBox(((unreadable?.path ?? "auth.json") as NSString).abbreviatingWithTildeInPath, detail: unreadable?.reason,
                          monoTitle: true, monoDetail: true)
             Text("Fix the file and try again, or skip and sign in here instead. Agents that need a sign-in wait either way.")
-                .nwText(size: NWPiSignInMetrics.proseSize, lineHeight: NWPiSignInMetrics.leadLeading)
-                .foregroundStyle(Color.nw.textSecondary)
+                .shText(size: SHPiSignInMetrics.proseSize, lineHeight: SHPiSignInMetrics.leadLeading)
+                .foregroundStyle(Color.sh.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             stepsCard
         }
-        .padding(.top, NW.Space.xl)
-        .padding(.horizontal, NWPiSignInMetrics.sheetInset)
-        .padding(.bottom, NWPiSignInMetrics.bodyBottom)
-        NWSheetFooter {
+        .padding(.top, SH.Space.xl)
+        .padding(.horizontal, SHPiSignInMetrics.sheetInset)
+        .padding(.bottom, SHPiSignInMetrics.bodyBottom)
+        SHSheetFooter {
             Button {
                 if let path = unreadable?.path { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
             } label: {
                 Label("Show in Finder", systemImage: "folder")
             }
-            .buttonStyle(.nw(.ghost))
+            .buttonStyle(.sh(.ghost))
         } actions: {
-            Button("Skip", action: close).buttonStyle(.nw(.secondary)).keyboardShortcut(.cancelAction)
+            Button("Skip", action: close).buttonStyle(.sh(.secondary)).keyboardShortcut(.cancelAction)
             Button(action: retry) { Label("Retry", systemImage: "arrow.clockwise") }
-                .buttonStyle(.nw(.primary)).keyboardShortcut(.defaultAction)
+                .buttonStyle(.sh(.primary)).keyboardShortcut(.defaultAction)
                 .disabled(state.retrying)
         }
     }

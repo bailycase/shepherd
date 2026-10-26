@@ -2,38 +2,38 @@ import SwiftUI
 
 private enum TerminalSamples {
     static let tabs = [
-        NWTerminalTab(id: "zsh", title: "zsh", host: "build-01"),
-        NWTerminalTab(id: "psql", title: "psql payments", host: "build-01"),
-        NWTerminalTab(id: "make", title: "make dev", activity: .running),
-        NWTerminalTab(id: "logs", title: "tail -f logs", activity: .unseen),
-        NWTerminalTab(id: "test", title: "go test", activity: .exited(failed: true)),
+        SHTerminalTab(id: "zsh", title: "zsh", host: "build-01"),
+        SHTerminalTab(id: "psql", title: "psql payments", host: "build-01"),
+        SHTerminalTab(id: "make", title: "make dev", activity: .running),
+        SHTerminalTab(id: "logs", title: "tail -f logs", activity: .unseen),
+        SHTerminalTab(id: "test", title: "go test", activity: .exited(failed: true)),
     ]
 
     static let keys = [
-        NWTerminalKeycap(id: "esc", label: "esc", spokenLabel: "Escape"),
-        NWTerminalKeycap(id: "tab", label: "tab", spokenLabel: "Tab"),
-        NWTerminalKeycap(id: "ctrl", label: "ctrl", spokenLabel: "Control", isLatched: true),
-        NWTerminalKeycap(id: "opt", label: "⌥", spokenLabel: "Option"),
-        NWTerminalKeycap(id: "pipe", label: "|", spokenLabel: "Vertical bar"),
-        NWTerminalKeycap(id: "tilde", label: "~", spokenLabel: "Tilde"),
-        NWTerminalKeycap(id: "slash", label: "/", spokenLabel: "Slash"),
-        NWTerminalKeycap(id: "dash", label: "-", spokenLabel: "Hyphen"),
-        NWTerminalKeycap(id: "up", label: "↑", spokenLabel: "Up arrow"),
-        NWTerminalKeycap(id: "down", label: "↓", spokenLabel: "Down arrow"),
-        NWTerminalKeycap(id: "left", label: "←", spokenLabel: "Left arrow"),
-        NWTerminalKeycap(id: "right", label: "→", spokenLabel: "Right arrow"),
+        SHTerminalKeycap(id: "esc", label: "esc", spokenLabel: "Escape"),
+        SHTerminalKeycap(id: "tab", label: "tab", spokenLabel: "Tab"),
+        SHTerminalKeycap(id: "ctrl", label: "ctrl", spokenLabel: "Control", isLatched: true),
+        SHTerminalKeycap(id: "opt", label: "⌥", spokenLabel: "Option"),
+        SHTerminalKeycap(id: "pipe", label: "|", spokenLabel: "Vertical bar"),
+        SHTerminalKeycap(id: "tilde", label: "~", spokenLabel: "Tilde"),
+        SHTerminalKeycap(id: "slash", label: "/", spokenLabel: "Slash"),
+        SHTerminalKeycap(id: "dash", label: "-", spokenLabel: "Hyphen"),
+        SHTerminalKeycap(id: "up", label: "↑", spokenLabel: "Up arrow"),
+        SHTerminalKeycap(id: "down", label: "↓", spokenLabel: "Down arrow"),
+        SHTerminalKeycap(id: "left", label: "←", spokenLabel: "Left arrow"),
+        SHTerminalKeycap(id: "right", label: "→", spokenLabel: "Right arrow"),
     ]
 }
 
 #Preview("Terminal tab bar") {
-    NWPreviewBoth {
-        VStack(alignment: .leading, spacing: NW.Space.l) {
-            NWTerminalTabBar(TerminalSamples.tabs, selection: "zsh", select: { _ in }, close: { _ in }, newTab: {}) {
+    SHPreviewBoth {
+        VStack(alignment: .leading, spacing: SH.Space.l) {
+            SHTerminalTabBar(TerminalSamples.tabs, selection: "zsh", select: { _ in }, close: { _ in }, newTab: {}) {
                 Button {} label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }.accessibilityLabel("Maximize")
                 Button {} label: { Image(systemName: "xmark") }.accessibilityLabel("Hide terminal")
             }
             ForEach(TerminalSamples.tabs) { tab in
-                NWTerminalTabView(tab: tab, isSelected: tab.id == "psql", select: {}, close: {})
+                SHTerminalTabView(tab: tab, isSelected: tab.id == "psql", select: {}, close: {})
             }
         }
         .frame(width: 720)
@@ -41,12 +41,12 @@ private enum TerminalSamples {
 }
 
 #Preview("Terminal key row") {
-    NWPreviewBoth {
+    SHPreviewBoth {
         VStack(spacing: 0) {
-            NWTerminalNotice("attaching…").frame(height: 60)
-            NWTerminalKeyRow(TerminalSamples.keys) { _ in }
+            SHTerminalNotice("attaching…").frame(height: 60)
+            SHTerminalKeyRow(TerminalSamples.keys) { _ in }
             // A phone in portrait: two rows.
-            NWTerminalKeyRow(TerminalSamples.keys) { _ in }.frame(width: 375)
+            SHTerminalKeyRow(TerminalSamples.keys) { _ in }.frame(width: 375)
         }
         .frame(width: 720)
     }
@@ -54,15 +54,15 @@ private enum TerminalSamples {
 
 
 #Preview("Terminal panel parts") {
-    NWPreviewBoth {
-        VStack(alignment: .leading, spacing: NW.Space.l) {
-            NWTerminalFoldedThread(title: "Add refund events", state: .idle, restoreShortcut: "⇧⌘↩") {}
-            NWTerminalSelectionBar(add: {}, copy: {})
-            NWTerminalMenu {
-                NWChangesMenuRow("New terminal in the worktree", subtitle: "payments on build-01", systemImage: "terminal",
-                                 trailing: .chord("⌘D"), tallHeight: NWTerminalMetrics.menuTallRowHeight) {}
-                NWChangesMenuRow("Rename tab", systemImage: "pencil") {}
-                NWChangesMenuRow("Kill process", systemImage: "xmark", enabled: false) {}
+    SHPreviewBoth {
+        VStack(alignment: .leading, spacing: SH.Space.l) {
+            SHTerminalFoldedThread(title: "Add refund events", state: .idle, restoreShortcut: "⇧⌘↩") {}
+            SHTerminalSelectionBar(add: {}, copy: {})
+            SHTerminalMenu {
+                SHChangesMenuRow("New terminal in the worktree", subtitle: "payments on build-01", systemImage: "terminal",
+                                 trailing: .chord("⌘D"), tallHeight: SHTerminalMetrics.menuTallRowHeight) {}
+                SHChangesMenuRow("Rename tab", systemImage: "pencil") {}
+                SHChangesMenuRow("Kill process", systemImage: "xmark", enabled: false) {}
             }
         }
         .frame(width: 720)

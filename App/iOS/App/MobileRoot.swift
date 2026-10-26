@@ -36,7 +36,7 @@ struct MobileRoot: View {
         .mobileEnvironment(app, navigator: navigator, window: window)
         .background(DesignRenderAnchor().allowsHitTesting(false).accessibilityHidden(true))
         .focusedSceneValue(\.mobileNavigator, navigator)
-        .tint(Color.nw.lantern)
+        .tint(Color.sh.lantern)
         .preferredColorScheme(app.appearance.mode.colorScheme)
         .onChange(of: layout, initial: true) { _, layout in navigator.adopt(layout) }
         // The hinge reports every degree as it moves; the navigator changes only as it shuts or opens.

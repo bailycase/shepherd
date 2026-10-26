@@ -26,13 +26,13 @@ enum NewThreadPlaces {
     static let thisMac = "This Mac"
 
     /// This Mac's projects, then each connected host's, the chosen one checked.
-    static func sections(_ hosts: [Host], chosen: NewThreadPlace?) -> [NWPlaceSection] {
+    static func sections(_ hosts: [Host], chosen: NewThreadPlace?) -> [SHPlaceSection] {
         hosts.map { host in
-            NWPlaceSection(id: sectionID(host.id), title: host.name, options: (host.id == nil ? [
-                NWPlaceOption(id: "local/no-space", section: sectionID(nil), title: "No space",
+            SHPlaceSection(id: sectionID(host.id), title: host.name, options: (host.id == nil ? [
+                SHPlaceOption(id: "local/no-space", section: sectionID(nil), title: "No space",
                               detail: "Own scratch folder", isCurrent: chosen == NewThreadPlace(host: nil, space: nil))
             ] : []) + host.spaces.map { space in
-                NWPlaceOption(id: optionID(NewThreadPlace(host: host.id, space: space.id)), section: sectionID(host.id),
+                SHPlaceOption(id: optionID(NewThreadPlace(host: host.id, space: space.id)), section: sectionID(host.id),
                               title: space.name, detail: NewThreadRules.abbreviatedPath(space.path),
                               isCurrent: chosen == NewThreadPlace(host: host.id, space: space.id))
             })
@@ -71,7 +71,7 @@ enum NewThreadPlaces {
     static func optionID(_ place: NewThreadPlace) -> String { "\(sectionID(place.host))/\(place.space?.rawValue ?? "no-space")" }
 
     /// The place an option stands for.
-    static func place(_ option: NWPlaceOption) -> NewThreadPlace? {
+    static func place(_ option: SHPlaceOption) -> NewThreadPlace? {
         let parts = option.id.split(separator: "/", maxSplits: 1).map(String.init)
         guard parts.count == 2 else { return nil }
         let host = parts[0] == "local" ? nil : UUID(uuidString: parts[0])
@@ -81,7 +81,7 @@ enum NewThreadPlaces {
     }
 
     /// The host an "Add folder…" row adds to.
-    static func host(of section: NWPlaceSection) -> UUID? {
+    static func host(of section: SHPlaceSection) -> UUID? {
         section.id == "local" ? nil : UUID(uuidString: section.id)
     }
 

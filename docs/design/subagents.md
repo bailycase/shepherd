@@ -2,7 +2,7 @@
 
 > Read when you change the subagent tray, its cards, its record lines in a thread, or the side pane's Subagents tab.
 
-Subagents live in a **tray above the composer** while they run (SubagentTray, NWAgents;
+Subagents live in a **tray above the composer** while they run (SubagentTray, SHAgents;
 Subagents, SubagentsDone, SubagentsQueue): one row each, steered, stopped or opened from there,
 in the same card as Up next. The thread keeps two quiet lines for them, where they
 started and where they finished, and both open the inspector, so finished runs stay browsable.
@@ -31,31 +31,31 @@ parent's answer all draw as `queued`; a subagent never draws `attention`, which 
   their original transcript records and inspector. It sits above the composer card
   in the composer's column, grows upward as Up next does, and the thread keeps its tail in view as
   the composer grows (`SubagentMotionTests`).
-- **One card with Up next** (`NWDockStack`, SubagentsQueue, NWAgents › NWDockStack): when both
+- **One card with Up next** (`SHDockStack`, SubagentsQueue, SHAgents › SHDockStack): when both
   show, one card holds the subagents, then Up next: one `bgRaised` fill, one 1px `lineStrong`
-  line, radius `NW.Radius.m` (8), and a `lineStrong` rule between the two sections. Each section
-  draws only its contents (`NWQueueStack(framed: false)`), and each collapses on its own. Up next
+  line, radius `SH.Radius.m` (8), and a `lineStrong` rule between the two sections. Each section
+  draws only its contents (`SHQueueStack(framed: false)`), and each collapses on its own. Up next
   keeps every behavior it has alone (steer, edit, move, delete with Undo, paused, Send now; see Up
   next); the card rounds only the tray's corners, so a lifted queue row still floats past its
   edges. Alone, either one is its own card.
-- **Header** (32pt, 12pt leading, 6pt trailing, items 8pt apart): `NWBranchGlyph` at 12pt in
-  `textTertiary`, "3 subagents" in `.nwSans(12, .semibold)` `textSecondary`, one 6pt cell per run
+- **Header** (32pt, 12pt leading, 6pt trailing, items 8pt apart): `SHBranchGlyph` at 12pt in
+  `textTertiary`, "3 subagents" in `.shSans(12, .semibold)` `textSecondary`, one 6pt cell per run
   (radius 2, 2pt apart, in the state's color; queued, paused and waiting-on-parent cells are
-  `lineStrong`; at most twelve, in row order), then the tally in `.nwMono(11)`: "1 running" in
+  `lineStrong`; at most twelve, in row order), then the tally in `.shMono(11)`: "1 running" in
   `running`, "1 done" in `textTertiary`, "1 failed" in `failed`, in that order (with "queued" and
   "paused" after running, then "1 waiting on parent", all `textTertiary`), joined by " · "; "all
   done" once every run finished well. A spacer, then Collapse (`chevron.down`, a 24pt circular
   icon button; it turns to point right while collapsed). Collapsed, the tray is its header alone:
   the cells and counts still say what runs and what waits (SubagentTray · collapsed). The
   header's hairline is the first row's.
-- **A row** (`NWSubagentTrayRow`; 36pt minimum, 12pt leading, 6pt trailing, items 9pt apart, a
-  hairline above): the state in a 13pt slot (a 7pt `NWStatusDot`, glowing while it needs you; a
-  `done` checkmark or a `failed` cross once finished), the name in `.nwMono(12, .semibold)` in a
-  72pt column for legacy role-only rows, then what it is doing in `.nwSans(12.5)`, truncated at the tail, then its diff
-  stat (`NWDiffStat`, Geist Mono 11) and its time (`NWElapsedText`, Geist Mono 11 `textTertiary`),
+- **A row** (`SHSubagentTrayRow`; 36pt minimum, 12pt leading, 6pt trailing, items 9pt apart, a
+  hairline above): the state in a 13pt slot (a 7pt `SHStatusDot`, glowing while it needs you; a
+  `done` checkmark or a `failed` cross once finished), the name in `.shMono(12, .semibold)` in a
+  72pt column for legacy role-only rows, then what it is doing in `.shSans(12.5)`, truncated at the tail, then its diff
+  stat (`SHDiffStat`, Geist Mono 11) and its time (`SHElapsedText`, Geist Mono 11 `textTertiary`),
   then a 24pt trailing slot. Per state:
   - **Running:** its call in flight in the present tense in `textSecondary`, then what it acts on
-    in `.nwMono(11.5)` `textPrimary` (a path shortened to its file name, a command's deciding
+    in `.shMono(11.5)` `textPrimary` (a path shortened to its file name, a command's deciding
     part): "Editing NativeThreadPresentation.swift", "Running tests swift test", "Building",
     "Reading", "Searching", "Writing", "Listing"; the words shimmer (LiveText) while the call runs.
     Between calls the last call reads in the past ("Edited B.swift"), still; before any call,
@@ -106,8 +106,8 @@ parent's answer all draw as `queued`; a subagent never draws `attention`, which 
   resumes the child with your words and ends its question) and Stop (which closes the question
   and marks the run stopped). The dock that once drew a subagent's question, with a note and
   Something else…, is gone from the components (Composer, questions, and menus › Questions).
-- **In the thread** (`NWSubagentRecordLine`, SubagentTray › SubagentRecord): an activity line in
-  look (26pt, 12.5 `textSecondary`, the meta in `.nwMono(11)` `textTertiary`, a 13pt branch glyph
+- **In the thread** (`SHSubagentRecordLine`, SubagentTray › SubagentRecord): an activity line in
+  look (26pt, 12.5 `textSecondary`, the meta in `.shMono(11)` `textTertiary`, a 13pt branch glyph
   and a 10pt chevron; a real button with the row hover; with no run to open, no chevron, its
   place kept, and not a button). "Started 3 subagents · worker · reviewer
   · tests" (at most six names, then "+2 more") takes the first spawn call's place; later spawns
@@ -144,22 +144,22 @@ parent's answer all draw as `queued`; a subagent never draws `attention`, which 
   fourth tab (`arrow.triangle.branch`, ⌃4, after Changes, the Browser and Artifacts), the whole thread's runs where the
   tray holds only the current turn's. A remote thread has it too, from its own store; a host with no subagent
   control still lists the runs. `SubagentListPresentation` derives the list once per change of the runs
-  (`SubagentListTab`: a lazy stack with one view per head and per row; the budget is `NWRenderProbe`
+  (`SubagentListTab`: a lazy stack with one view per head and per row; the budget is `SHRenderProbe`
   "subagents.listRow"). The rows are `nativeTrayRow`'s, so a run reads alike in both places, and the sections are
   `nativeRunSections`' (this turn's runs, and any earlier run still live; every other run). Sizes are the
   board's own CSS, in tokens: 12pt padding and gaps, an 8pt trailing edge, 52pt rows, `ui` names, `caption` detail lines (the board's CSS token), `micro`
   mono for the role, tally, diff and time. The board's *picture* draws the sample detail line 209pt wide where `caption`
   draws 200 (about 12pt type); the CSS is the source of truth and the build follows it, so a detail line reads about 4% narrower
-  than the picture. The head bands and the lines are the picture's heights (`NWSubagentListMetrics.line`: Geist's natural 1.2
+  than the picture. The head bands and the lines are the picture's heights (`SHSubagentListMetrics.line`: Geist's natural 1.2
   leading in whole points), where the ramp's styles run 1.3 and 1.35.
-  - **Summary:** "5 subagents" in `.nw(.ui, .semibold)` `textPrimary`, then the tally in `micro` mono `textTertiary`, every
+  - **Summary:** "5 subagents" in `.sh(.ui, .semibold)` `textPrimary`, then the tally in `micro` mono `textTertiary`, every
     part quiet (the board colors none): "1 running · 1 waiting on parent · 2 done · 1 stopped", live phases first,
     then done, failed, stopped. A run that finished stopped (`state == "stopped"`) says "stopped", an errored one
     "failed"; the tray's own tally says "failed" for both.
   - **Section heads:** "This turn" with "started 2:41 PM" (when its first run began), "Earlier in this thread" with
     "1:58 PM" (when the first of them began). A section with no runs is not drawn.
-  - **A row** (52pt minimum; a hairline above): the state (the tray's mark: a 7pt `NWStatusDot`, a `done` checkmark, a `failed`
-    cross), the name over the detail, the role beside the name, the diff stat, the time in a 30pt column (`NWElapsedText`), and
+  - **A row** (52pt minimum; a hairline above): the state (the tray's mark: a 7pt `SHStatusDot`, a `done` checkmark, a `failed`
+    cross), the name over the detail, the role beside the name, the diff stat, the time in a 30pt column (`SHElapsedText`), and
     a 10pt `chevron.right`. The detail is the tray's words: "Editing NativeThreadPresentation.swift", "asked the parent:
     Rename the new token names, or replace the old ones everywhere?", the first sentence of what it did, the reason it
     failed (`failed`) without its exit code. Both sections read in spawn order, as the board's do.
@@ -167,7 +167,7 @@ parent's answer all draw as `queued`; a subagent never draws `attention`, which 
     (Steer or Reply, Pause or Continue, Stop, Re-run, Fork); the list draws no other control and adds none to a row's
     menu or VoiceOver actions. The inspector's ✕ goes back to the tab the pane was on.
   - **The tab's dot is a status** (the user's decision, 2026-10-13: "it should mean still working, green dot means done"; the
-    board draws a blue dot on this tab and says nothing more). It is `NWSidePaneTab.status`, drawn as a 6pt dot after the count in
+    board draws a blue dot on this tab and says nothing more). It is `SHSidePaneTab.status`, drawn as a 6pt dot after the count in
     the `AgentState` color (`color`, no tint or alpha), apart from `news`, the dot pi sets when it opens something in Changes or the
     Browser, which is unchanged. `SidePaneTabs.subagents` derives it from the runs: **running** (blue) while any run is live, which
     includes one queued, paused or waiting on its parent; else **failed** (`failed` color) when any run failed or was stopped, so a

@@ -333,7 +333,7 @@ public enum DesignReferenceFreshness: Codable, Hashable, Sendable {
     case hostOffline(cachedAt: Double)
 }
 
-/// What one "Looked at…" line says (NWActivityLine(.lookedAtDesign)): the piece, and what the
+/// What one "Looked at…" line says (SHActivityLine(.lookedAtDesign)): the piece, and what the
 /// thread's agent got of its kept copy through design_get, with each token's file.
 public struct DesignReferenceLookedAt: Codable, Hashable, Sendable {
     public struct Picture: Codable, Hashable, Sendable {

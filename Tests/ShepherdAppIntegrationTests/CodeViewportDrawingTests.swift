@@ -9,7 +9,7 @@ import ShepherdTestSupport
 struct CodeViewportDrawingTests {
     @Test(arguments: [false, true], [false, true])
     func rendererTracksTextSyntaxScaleAndSelection(dark: Bool, unicode: Bool) throws {
-        let field = NWNativeCodeText.Field(labelWithString: "")
+        let field = SHNativeCodeText.Field(labelWithString: "")
         let window = OffscreenWindow(size: CGSize(width: 520, height: 320), dark: dark)
         defer { window.close() }
         let scroll = mount(field, in: window)
@@ -18,16 +18,16 @@ struct CodeViewportDrawingTests {
         let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
         field.font = font
         var highlighted = AttributedString(code)
-        highlighted.foregroundColor = Color.nw.synKeyword
-        field.setCode(NWNativeCodeText.attributedCode(code, highlighted: highlighted, font: font, lineSpacing: 4))
+        highlighted.foregroundColor = Color.sh.synKeyword
+        field.setCode(SHNativeCodeText.attributedCode(code, highlighted: highlighted, font: font, lineSpacing: 4))
         size(field, in: scroll)
         let before = try render(field, scroll: scroll, fraction: 0.5)
-        highlighted.foregroundColor = Color.nw.synString
-        field.setCode(NWNativeCodeText.attributedCode(code, highlighted: highlighted, font: font, lineSpacing: 4))
+        highlighted.foregroundColor = Color.sh.synString
+        field.setCode(SHNativeCodeText.attributedCode(code, highlighted: highlighted, font: font, lineSpacing: 4))
         let syntax = try render(field, scroll: scroll, fraction: 0.5)
         #expect(before != syntax, "changing syntax colors must update already-created native glyph layout")
         let changed = code.replacingOccurrences(of: "sheep", with: "flock")
-        field.setCode(NWNativeCodeText.attributedCode(changed, highlighted: nil, font: font, lineSpacing: 4))
+        field.setCode(SHNativeCodeText.attributedCode(changed, highlighted: nil, font: font, lineSpacing: 4))
         let edited = try render(field, scroll: scroll, fraction: 0.5)
         #expect(syntax != edited)
         let editor = try #require(window.window.fieldEditor(true, for: field) as? NSTextView)
@@ -44,7 +44,7 @@ struct CodeViewportDrawingTests {
         #expect(try render(field, scroll: scroll, fraction: 0.5) == edited,
                 "ending a native selection must return to the same unselected drawing")
         let initialHeight = field.frame.height
-        field.setCode(NWNativeCodeText.attributedCode(changed, highlighted: nil,
+        field.setCode(SHNativeCodeText.attributedCode(changed, highlighted: nil,
                       font: .monospacedSystemFont(ofSize: 18, weight: .regular), lineSpacing: 4))
         size(field, in: scroll)
         #expect(field.frame.height > initialHeight)
@@ -55,18 +55,18 @@ struct CodeViewportDrawingTests {
     func assigningTheFontBeforeCodeUpdatesRetainedGlyphs(dark: Bool, nativeAssignment: Bool) throws {
         let window = OffscreenWindow(size: CGSize(width: 520, height: 320), dark: dark)
         defer { window.close() }
-        let field = NWNativeCodeText.Field(labelWithString: "")
+        let field = SHNativeCodeText.Field(labelWithString: "")
         let scroll = mount(field, in: window)
         let code = (0..<50).map { "let value\($0) = \($0)" }.joined(separator: "\n")
         let originalFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
         field.font = originalFont
-        field.setCode(NWNativeCodeText.attributedCode(code, highlighted: nil, font: originalFont, lineSpacing: 4))
+        field.setCode(SHNativeCodeText.attributedCode(code, highlighted: nil, font: originalFont, lineSpacing: 4))
         size(field, in: scroll)
         _ = try render(field, scroll: scroll, fraction: 0.5) // Instantiate retained glyph layout.
 
         for points in [18.0, 12.0] {
             let font = NSFont.monospacedSystemFont(ofSize: points, weight: .regular)
-            let value = NWNativeCodeText.attributedCode(code, highlighted: nil, font: font, lineSpacing: 4)
+            let value = SHNativeCodeText.attributedCode(code, highlighted: nil, font: font, lineSpacing: 4)
             field.font = font // Match updateNSView's order without assuming AppKit mutates attributes.
             if nativeAssignment { field.attributedStringValue = value }
             field.setCode(value)
@@ -85,12 +85,12 @@ struct CodeViewportDrawingTests {
     }
 
     @Test func drawsPreparedContentOutsideTheCurrentViewport() throws {
-        let field = NWNativeCodeText.Field(labelWithString: "")
+        let field = SHNativeCodeText.Field(labelWithString: "")
         let window = OffscreenWindow(size: CGSize(width: 520, height: 320), dark: false)
         defer { window.close() }
         let scroll = mount(field, in: window)
         let code = (0..<500).map { "let item\($0) = \($0)" }.joined(separator: "\n")
-        field.setCode(NWNativeCodeText.attributedCode(code, highlighted: nil,
+        field.setCode(SHNativeCodeText.attributedCode(code, highlighted: nil,
                       font: .monospacedSystemFont(ofSize: 12, weight: .regular), lineSpacing: 4))
         size(field, in: scroll)
         _ = try render(field, scroll: scroll, fraction: 0)
@@ -113,11 +113,11 @@ struct CodeViewportDrawingTests {
         ])
         var images: [Data] = []
         for optimized in [false, true] {
-            let field: NSTextField = optimized ? NWNativeCodeText.Field(labelWithString: "") : NSTextField(labelWithString: "")
+            let field: NSTextField = optimized ? SHNativeCodeText.Field(labelWithString: "") : NSTextField(labelWithString: "")
             let window = OffscreenWindow(size: CGSize(width: 520, height: 320), dark: dark)
             defer { window.close() }
             let scroll = mount(field, in: window)
-            if let field = field as? NWNativeCodeText.Field { field.setCode(value) }
+            if let field = field as? SHNativeCodeText.Field { field.setCode(value) }
             else { field.attributedStringValue = value }
             size(field, in: scroll)
             images.append(try render(field, scroll: scroll, fraction: 0))
@@ -129,24 +129,24 @@ struct CodeViewportDrawingTests {
     func visibleCodeMatchesNativePixels(dark: Bool, unicode: Bool) throws {
         let suffix = unicode ? "\"🐑 e\u{301}\" // שלום" : "\"flock\" // a comment"
         let code = (0..<100).map { "let sheep\($0) = \(suffix)" }.joined(separator: "\n")
-        NWFonts.register()
+        SHFonts.register()
         var images: [[Data]] = []
         for optimized in [false, true] {
-            let field: NSTextField = optimized ? NWNativeCodeText.Field(labelWithString: "") : NSTextField(labelWithString: "")
+            let field: NSTextField = optimized ? SHNativeCodeText.Field(labelWithString: "") : NSTextField(labelWithString: "")
             let window = OffscreenWindow(size: CGSize(width: 520, height: 320), dark: dark)
             defer { window.close() }
             let scroll = mount(field, in: window)
             var captures: [Data] = []
             let fonts = try [12.0, 18.0].flatMap { points in
                 [NSFont.monospacedSystemFont(ofSize: points, weight: .regular),
-                 try #require(NSFont(name: NWFonts.postScriptName(mono: true, weight: .regular), size: points))]
+                 try #require(NSFont(name: SHFonts.postScriptName(mono: true, weight: .regular), size: points))]
             }
             for font in fonts {
                 field.font = font
                 var highlighted = AttributedString(code)
-                highlighted.foregroundColor = Color.nw.synKeyword
-                let value = NWNativeCodeText.attributedCode(code, highlighted: highlighted, font: font, lineSpacing: 4)
-                if let field = field as? NWNativeCodeText.Field { field.setCode(value) }
+                highlighted.foregroundColor = Color.sh.synKeyword
+                let value = SHNativeCodeText.attributedCode(code, highlighted: highlighted, font: font, lineSpacing: 4)
+                if let field = field as? SHNativeCodeText.Field { field.setCode(value) }
                 else { field.attributedStringValue = value }
                 size(field, in: scroll)
                 for fraction in [0.0, 0.5, 1.0] {
@@ -163,15 +163,15 @@ struct CodeViewportDrawingTests {
     @Test(.enabled(if: ProcessInfo.processInfo.environment["SHEPHERD_PERF_REPORT"] == "1"), arguments: [50, 500, 2000])
     func paintsVisibleCodeWithoutRedrawingOffscreenLines(lines: Int) throws {
         let code = (0..<lines).map { "let item\($0) = compute(\($0), from: sheep) // ASCII fast path" }.joined(separator: "\n")
-        let value = NWNativeCodeText.attributedCode(code, highlighted: nil,
+        let value = SHNativeCodeText.attributedCode(code, highlighted: nil,
                                                    font: .monospacedSystemFont(ofSize: 12, weight: .regular), lineSpacing: 4)
         var costs: [Double] = []
         for optimized in [false, true] {
-            let field = optimized ? NWNativeCodeText.Field(labelWithString: "") : NSTextField(labelWithString: "")
+            let field = optimized ? SHNativeCodeText.Field(labelWithString: "") : NSTextField(labelWithString: "")
             let window = OffscreenWindow(size: CGSize(width: 800, height: 500), dark: false)
             defer { window.close() }
             let scroll = mount(field, in: window)
-            if let field = field as? NWNativeCodeText.Field { field.setCode(value) }
+            if let field = field as? SHNativeCodeText.Field { field.setCode(value) }
             else { field.attributedStringValue = value }
             size(field, in: scroll)
             _ = try render(field, scroll: scroll, fraction: 0)
@@ -213,10 +213,10 @@ struct CodeViewportDrawingTests {
     }
 
     private func size(_ field: NSTextField, in scroll: NSScrollView) {
-        (field as? NWNativeCodeText.Field)?.measuredSize = nil
+        (field as? SHNativeCodeText.Field)?.measuredSize = nil
         let size = field.intrinsicContentSize
         field.setFrameSize(size)
-        (field as? NWNativeCodeText.Field)?.measuredSize = size
+        (field as? SHNativeCodeText.Field)?.measuredSize = size
         scroll.layoutSubtreeIfNeeded()
     }
 

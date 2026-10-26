@@ -8,7 +8,7 @@ struct PadDesignRecentRow: View, Equatable {
     var selected = false
 
     var body: some View {
-        NWListRow(row.name, leading: .symbol("pencil.tip"), trailing: .meta(row.boards), chevron: false,
+        SHListRow(row.name, leading: .symbol("pencil.tip"), trailing: .meta(row.boards), chevron: false,
                   selected: selected, compact: true)
             .accessibilityValue("Design, \(row.boards)")
     }

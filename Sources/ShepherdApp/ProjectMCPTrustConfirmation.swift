@@ -16,16 +16,16 @@ struct ProjectMCPTrustConfirmation: View {
                             Task { if await model.approveMCPProject(project) { dismiss() } }
                         },
                     ]) {
-            VStack(alignment: .leading, spacing: NW.Space.l) {
+            VStack(alignment: .leading, spacing: SH.Space.l) {
                 Text("Pi can load this folder's MCP servers, settings, instructions, skills and executable extensions, and install its configured packages. Local MCP servers can run commands on this host. Pi also applies this approval to spaces inside this folder. Approve only a space whose contents you trust.")
-                    .font(.nw(.ui)).foregroundStyle(Color.nw.textPrimary)
+                    .font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
                 Text("Approval applies to new or restarted threads. It does not confirm server connections or tool availability. Saved OAuth credentials are separate.")
-                    .font(.nw(.caption)).foregroundStyle(Color.nw.textSecondary)
+                    .font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                if let reason = model.mcpTrustError { NWInlineProblem(reason) }
+                if let reason = model.mcpTrustError { SHInlineProblem(reason) }
             }
-            .padding(.horizontal, NWDialogMetrics.inset)
+            .padding(.horizontal, SHDialogMetrics.inset)
         }
         .disabled(model.mcpTrustSaving)
         .interactiveDismissDisabled(model.mcpTrustSaving)

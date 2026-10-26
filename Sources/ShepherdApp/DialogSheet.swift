@@ -1,9 +1,9 @@
 import SwiftUI
 import ShepherdUI
 
-/// One labeled row shared by every sheet and dialog (`NWSheetRow`): a label column, the
+/// One labeled row shared by every sheet and dialog (`SHSheetRow`): a label column, the
 /// control on the right, a hairline underneath. No form chrome, no grouped boxes.
-typealias SheetRow = NWSheetRow
+typealias SheetRow = SHSheetRow
 
 /// A footer action for `DialogSheet`. Exactly one action should be `.prominent` (the sheet's
 /// ⏎ default); `.destructive` is never the default: destroying things takes a click.
@@ -39,12 +39,12 @@ struct DialogAction: Identifiable {
 }
 
 /// The app's modal dialog, in place of system alerts and confirmation dialogs everywhere: the
-/// same anatomy as the creation sheets (`NWDialog`), so a confirmation reads like the rest of
+/// same anatomy as the creation sheets (`SHDialog`), so a confirmation reads like the rest of
 /// Shepherd.
 struct DialogSheet<Content: View>: View {
     let title: String
     var subtitle: String?
-    var width: CGFloat = NWDialogMetrics.width
+    var width: CGFloat = SHDialogMetrics.width
     /// A caption at the footer's leading edge ("Checking for unsaved work…").
     var status: String?
     let actions: [DialogAction]
@@ -53,7 +53,7 @@ struct DialogSheet<Content: View>: View {
     init(
         title: String,
         subtitle: String? = nil,
-        width: CGFloat = NWDialogMetrics.width,
+        width: CGFloat = SHDialogMetrics.width,
         status: String? = nil,
         actions: [DialogAction],
         @ViewBuilder content: @escaping () -> Content
@@ -67,10 +67,10 @@ struct DialogSheet<Content: View>: View {
     }
 
     var body: some View {
-        NWDialog(title, message: subtitle, width: width) {
+        SHDialog(title, message: subtitle, width: width) {
             content()
         } status: {
-            if let status { NWDialogStatus(status) }
+            if let status { SHDialogStatus(status) }
         } actions: {
             ForEach(actions) { button(for: $0) }
         }
@@ -81,20 +81,20 @@ struct DialogSheet<Content: View>: View {
         let button = Button(action.label, action: action.action).disabled(!action.isEnabled).help(action.help ?? "")
         switch action.kind {
         case .cancel:
-            button.buttonStyle(.nw(.ghost)).keyboardShortcut(.cancelAction)
+            button.buttonStyle(.sh(.ghost)).keyboardShortcut(.cancelAction)
         case .normal:
-            button.buttonStyle(.nw(.secondary))
+            button.buttonStyle(.sh(.secondary))
         case .prominent:
-            button.buttonStyle(.nw(.primary)).keyboardShortcut(.defaultAction)
+            button.buttonStyle(.sh(.primary)).keyboardShortcut(.defaultAction)
         case .destructive:
-            button.buttonStyle(.nw(.dangerFill))
+            button.buttonStyle(.sh(.dangerFill))
         }
     }
 }
 
 extension DialogSheet where Content == EmptyView {
     /// Text-only dialog: title, subtitle, buttons.
-    init(title: String, subtitle: String? = nil, width: CGFloat = NWDialogMetrics.width, status: String? = nil,
+    init(title: String, subtitle: String? = nil, width: CGFloat = SHDialogMetrics.width, status: String? = nil,
          actions: [DialogAction]) {
         self.init(title: title, subtitle: subtitle, width: width, status: status, actions: actions) { EmptyView() }
     }
@@ -106,24 +106,24 @@ extension View {
     /// the dialog pinned to that frame, so its title stays still instead of drifting with the
     /// window's centering, and the background fills the window from the first frame.
     func dialogSheetFrame() -> some View {
-        geometryGroup().background(Color.nw.bgWindow)
+        geometryGroup().background(Color.sh.bgWindow)
     }
 }
 
 /// A banner inside a dialog, at the dialog's margins: what a destructive action would destroy
 /// (`.attention`), or why something failed (`.failed`). Never a system alert triangle. It
 /// discloses when it arrives late (a probe's warning, a failed step): animate the dialog on
-/// what it shows (`nwAnimation(.disclosure, value:)`) so the sheet grows in step.
+/// what it shows (`shAnimation(.disclosure, value:)`) so the sheet grows in step.
 struct DialogBanner: View {
     var state: AgentState = .attention
     let title: String
     var message: String?
 
     var body: some View {
-        NWBanner(state, title: title, message: message)
-            .padding(.horizontal, NWDialogMetrics.inset)
-            .padding(.top, NW.Space.l)
-            .nwTransition(.disclosure)
+        SHBanner(state, title: title, message: message)
+            .padding(.horizontal, SHDialogMetrics.inset)
+            .padding(.top, SH.Space.l)
+            .shTransition(.disclosure)
     }
 }
 
@@ -164,9 +164,9 @@ struct RenameDialog: View {
             TextField("Name", text: $name)
                 .focused($focused)
                 .onSubmit { if canRename { onRename(name) } }
-                .nwField(focused: focused)
-                .padding(.horizontal, NWDialogMetrics.inset)
-                .padding(.top, NW.Space.xs)
+                .shField(focused: focused)
+                .padding(.horizontal, SHDialogMetrics.inset)
+                .padding(.top, SH.Space.xs)
         }
         .onAppear { focused = true }
     }
@@ -211,8 +211,8 @@ struct RevertFileDialog: View {
                     ]) {
             SheetRow("Repository") {
                 Text(repository)
-                    .font(.nw(.mono))
-                    .foregroundStyle(Color.nw.textSecondary)
+                    .font(.sh(.mono))
+                    .foregroundStyle(Color.sh.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .help(repository)
@@ -230,11 +230,11 @@ struct ActionErrorDialog: View {
     var body: some View {
         DialogSheet(title: "Agent action failed", actions: [DialogAction("OK", kind: .prominent, action: dismiss)]) {
             Text(message)
-                .nwText(.body)
-                .foregroundStyle(Color.nw.textSecondary)
+                .shText(.body)
+                .foregroundStyle(Color.sh.textSecondary)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, NWDialogMetrics.inset)
+                .padding(.horizontal, SHDialogMetrics.inset)
         }
     }
 }

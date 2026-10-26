@@ -25,7 +25,7 @@ struct InstructionsScreen: View {
                 InstructionsPhonePage(store: store)
             }
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .navigationTitle("Instructions")
         .navigationBarTitleDisplayMode(sizeClass == .regular || inColumn ? .inline : .large)
         .task { if !inColumn { await store.watch() } }
@@ -48,29 +48,29 @@ private struct InstructionsPhonePage: View {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
                 VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
                     Text(InstructionsCopy.explanation)
-                        .nwText(.caption)
-                        .foregroundStyle(Color.nw.textSecondary)
+                        .shText(.caption)
+                        .foregroundStyle(Color.sh.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, NW.Space.xs)
-                    NWListCard {
+                        .padding(.horizontal, SH.Space.xs)
+                    SHListCard {
                         SettingsSwitchRow("Same on every host", note: InstructionsCopy.scopeNote(sameEverywhere: model.sameEverywhere),
                                           isOn: model.sameEverywhere) { model.sameEverywhere = $0 }
                     }
                 }
                 if let problem = model.problem {
-                    NWBanner(.failed, title: problem) {
-                        Button("OK") { model.dismissProblem() }.buttonStyle(.nw(.secondary))
+                    SHBanner(.failed, title: problem) {
+                        Button("OK") { model.dismissProblem() }.buttonStyle(.sh(.secondary))
                     }
                 }
                 if let edited, model.files(of: edited).snapshot != nil {
                     SettingsSection("Files") {
-                        NWListCard {
+                        SHListCard {
                             ForEach(InstructionFile.allCases, id: \.self) { file in
                                 Button { navigator.open(.settings(.instructionsFile(file))) } label: {
                                     InstructionsFileRow(file: file, note: InstructionsPresentation.fileNote(file, text: model.text(file, in: hosts, selectedHost: navigator.settingsSelection.instructionsHost), sentence: true),
                                                         edited: model.isEdited(file, in: hosts, selectedHost: navigator.settingsSelection.instructionsHost))
                                 }
-                                .buttonStyle(.nwRow(radius: 0))
+                                .buttonStyle(.shRow(radius: 0))
                             }
                         }
                     }
@@ -79,16 +79,16 @@ private struct InstructionsPhonePage: View {
                 }
                 if !hosts.isEmpty {
                     SettingsSection("Hosts") {
-                        NWListCard {
+                        SHListCard {
                             ForEach(hosts) { host in
                                 InstructionsHostLine(model: model, host: host, hosts: hosts)
                             }
                         }
                         if !model.differing(in: hosts).isEmpty {
                             Button("Sync now") { Task { await model.syncNow(in: hosts) } }
-                                .buttonStyle(.nw(.secondary))
+                                .buttonStyle(.sh(.secondary))
                                 .disabled(model.busy)
-                                .padding(.top, NW.Space.xs)
+                                .padding(.top, SH.Space.xs)
                         }
                         if !model.sameEverywhere {
                             SettingsFootnote("Tap a host to edit its own files.")
@@ -102,7 +102,7 @@ private struct InstructionsPhonePage: View {
             .frame(maxWidth: .infinity)
         }
         .refreshable { await store.refresh() }
-        .nwAnimation(.content, value: model.sameEverywhere)
+        .shAnimation(.content, value: model.sameEverywhere)
     }
 }
 
@@ -114,34 +114,34 @@ private struct InstructionsFileRow: View {
     let edited: Bool
 
     var body: some View {
-        let nw = Color.nw
-        HStack(spacing: NW.Space.l) {
+        let sh = Color.sh
+        HStack(spacing: SH.Space.l) {
             Image(systemName: "doc.text")
-                .font(.nw(.ui, weight: .medium))
-                .foregroundStyle(nw.textSecondary)
-                .frame(width: NWListMetrics.leadingWidth)
+                .font(.sh(.ui, weight: .medium))
+                .foregroundStyle(sh.textSecondary)
+                .frame(width: SHListMetrics.leadingWidth)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 Text(file.fileName)
-                    .font(.nwMono(NWTextStyle.ui.size, .semibold))
-                    .foregroundStyle(nw.textPrimary)
+                    .font(.shMono(SHTextStyle.ui.size, .semibold))
+                    .foregroundStyle(sh.textPrimary)
                     .lineLimit(1)
                 Text(note)
-                    .nwText(.caption)
-                    .foregroundStyle(nw.textTertiary)
+                    .shText(.caption)
+                    .foregroundStyle(sh.textTertiary)
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if edited {
-                Text("edited").font(.nw(.caption)).foregroundStyle(nw.lanternText)
+                Text("edited").font(.sh(.caption)).foregroundStyle(sh.lanternText)
             }
             Image(systemName: "chevron.right")
-                .font(.nw(.caption, weight: .semibold))
-                .foregroundStyle(nw.textTertiary)
+                .font(.sh(.caption, weight: .semibold))
+                .foregroundStyle(sh.textTertiary)
                 .accessibilityHidden(true)
         }
-        .padding(.horizontal, NW.Space.l)
-        .padding(.vertical, NW.Space.m)
+        .padding(.horizontal, SH.Space.l)
+        .padding(.vertical, SH.Space.m)
         .frame(maxWidth: .infinity, minHeight: MobileLayout.instructionsFileRowHeight, alignment: .leading)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
@@ -164,36 +164,36 @@ private struct InstructionsHostLine: View {
             Button { navigator.settingsSelection.instructionsHost = host.id } label: {
                 line(chosen: model.edited(in: hosts, selectedHost: navigator.settingsSelection.instructionsHost)?.id == host.id)
             }
-            .buttonStyle(.nwRow(radius: 0))
+            .buttonStyle(.shRow(radius: 0))
             .accessibilityHint("Edits \(host.name)'s own files")
         }
     }
 
     private func line(chosen: Bool) -> some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let chip = state
-        return HStack(spacing: NW.Space.l) {
+        return HStack(spacing: SH.Space.l) {
             Image(systemName: "desktopcomputer")
-                .font(.nw(.caption, weight: .medium))
-                .foregroundStyle(nw.textSecondary)
-                .frame(width: NWListMetrics.leadingWidth)
+                .font(.sh(.caption, weight: .medium))
+                .foregroundStyle(sh.textSecondary)
+                .frame(width: SHListMetrics.leadingWidth)
                 .accessibilityHidden(true)
             Text(host.name)
-                .font(.nwMono(NWTextStyle.ui.size))
-                .foregroundStyle(nw.textPrimary)
+                .font(.shMono(SHTextStyle.ui.size))
+                .foregroundStyle(sh.textPrimary)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let word = chip.word {
-                Text(word).font(.nw(.caption)).foregroundStyle(chip.tone.color).lineLimit(1)
+                Text(word).font(.sh(.caption)).foregroundStyle(chip.tone.color).lineLimit(1)
             }
             if chosen {
                 Image(systemName: "checkmark")
-                    .font(.nw(.ui, weight: .semibold))
-                    .foregroundStyle(nw.lantern)
+                    .font(.sh(.ui, weight: .semibold))
+                    .foregroundStyle(sh.lantern)
                     .accessibilityLabel("Editing")
             }
         }
-        .padding(.horizontal, NW.Space.l)
+        .padding(.horizontal, SH.Space.l)
         .frame(maxWidth: .infinity, minHeight: MobileLayout.instructionsHostRowHeight, alignment: .leading)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
@@ -222,7 +222,7 @@ private struct InstructionsUnavailable: View {
         if let edited {
             switch model.files(of: edited) {
             case .checking, .loaded:
-                ProgressView().progressViewStyle(NWSpinnerStyle()).frame(maxWidth: .infinity)
+                ProgressView().progressViewStyle(SHSpinnerStyle()).frame(maxWidth: .infinity)
             case .offline:
                 SettingsFootnote("\(edited.name) is offline. Its instructions show here once it's back.")
             case .unsupported:
@@ -233,7 +233,7 @@ private struct InstructionsUnavailable: View {
         } else if hosts.isEmpty {
             SettingsFootnote("Add a host in Settings ▸ Hosts to edit its instructions here.")
         } else if hosts.contains(where: { model.files(of: $0) == .checking }) {
-            ProgressView().progressViewStyle(NWSpinnerStyle()).frame(maxWidth: .infinity)
+            ProgressView().progressViewStyle(SHSpinnerStyle()).frame(maxWidth: .infinity)
         } else if hosts.allSatisfy({ !$0.isConnected }) {
             SettingsFootnote("No host is online. The instructions show here once one is back.")
         } else {
@@ -273,33 +273,33 @@ struct InstructionsEditorScreen: View {
         }
         .safeAreaInset(edge: .top, spacing: 0) {
             if let problem = model.problem {
-                NWBanner(.failed, title: problem) {
-                    Button("OK") { model.dismissProblem() }.buttonStyle(.nw(.secondary))
+                SHBanner(.failed, title: problem) {
+                    Button("OK") { model.dismissProblem() }.buttonStyle(.sh(.secondary))
                 }
                 .padding(.horizontal, MobileLayout.gutter)
-                .padding(.vertical, NW.Space.s)
+                .padding(.vertical, SH.Space.s)
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if focus.editing { InstructionsKeyRow(focus: focus) }
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                VStack(spacing: NW.Space.xxs / 2) {
+                VStack(spacing: SH.Space.xxs / 2) {
                     Text(file.fileName)
-                        .font(.nwMono(NWTextStyle.ui.size, .semibold))
-                        .foregroundStyle(Color.nw.textPrimary)
+                        .font(.shMono(SHTextStyle.ui.size, .semibold))
+                        .foregroundStyle(Color.sh.textPrimary)
                     Text(model.scope(in: settingsHosts, selectedHost: selectedHost) + (isEdited ? " · edited" : ""))
-                        .font(.nw(.micro, weight: .regular))
-                        .foregroundStyle(Color.nw.textTertiary)
+                        .font(.sh(.micro, weight: .regular))
+                        .foregroundStyle(Color.sh.textTertiary)
                 }
                 .accessibilityElement(children: .combine)
             }
             ToolbarItem(placement: .confirmationAction) {
                 if model.busy {
-                    ProgressView().progressViewStyle(NWSpinnerStyle())
+                    ProgressView().progressViewStyle(SHSpinnerStyle())
                 } else {
                     Button("Save") { Task { await model.save(file, in: settingsHosts, selectedHost: selectedHost) } }
                         .disabled(!isEdited)
@@ -307,7 +307,7 @@ struct InstructionsEditorScreen: View {
                 }
             }
         }
-        .nwAnimation(.content, value: model.problem)
+        .shAnimation(.content, value: model.problem)
         .task { await store.watch() }
     }
 }
@@ -331,9 +331,9 @@ private struct InstructionsPadPage: View {
         VStack(alignment: .leading, spacing: MobileLayout.instructionsPadSpacing) {
             // History's popover hangs off its button, so the actions are built once: only the
             // scope wraps under its picker when the column is narrow.
-            HStack(alignment: .top, spacing: NW.Space.l) {
+            HStack(alignment: .top, spacing: SH.Space.l) {
                 // iPadSettingsInstructions: the scope control over each host's state.
-                VStack(alignment: .leading, spacing: NW.Space.s) {
+                VStack(alignment: .leading, spacing: SH.Space.s) {
                     scopePicker(model)
                     scopeState(model, hosts: hosts)
                 }
@@ -341,8 +341,8 @@ private struct InstructionsPadPage: View {
                 actions(model, hosts: hosts, ready: snapshot != nil)
             }
             if let problem = model.problem {
-                NWBanner(.failed, title: problem) {
-                    Button("OK") { model.dismissProblem() }.buttonStyle(.nw(.secondary))
+                SHBanner(.failed, title: problem) {
+                    Button("OK") { model.dismissProblem() }.buttonStyle(.sh(.secondary))
                 }
             }
             if let snapshot {
@@ -351,8 +351,8 @@ private struct InstructionsPadPage: View {
                 if !focus.editing {
                     InstructionsReadOrder(file: file)
                     Text(InstructionsCopy.readOrderNote(file))
-                        .nwText(.caption)
-                        .foregroundStyle(Color.nw.textTertiary)
+                        .shText(.caption)
+                        .foregroundStyle(Color.sh.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             } else {
@@ -363,7 +363,7 @@ private struct InstructionsPadPage: View {
         .padding(.horizontal, MobileLayout.instructionsPadSides)
         .padding(.vertical, MobileLayout.instructionsPadSpacing)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .nwAnimation(.content, value: focus.editing)
+        .shAnimation(.content, value: focus.editing)
     }
 
     /// Every host | Per host.
@@ -373,14 +373,14 @@ private struct InstructionsPadPage: View {
 
     /// Each host's state, or which host is edited.
     private func scopeState(_ model: ClientInstructions, hosts: [SettingsHost]) -> some View {
-        HStack(spacing: NW.Space.l) {
+        HStack(spacing: SH.Space.l) {
             if model.sameEverywhere {
                 if let line = model.syncLine(in: hosts) {
-                    Text(line).nwText(.caption).foregroundStyle(Color.nw.textTertiary).lineLimit(2)
+                    Text(line).shText(.caption).foregroundStyle(Color.sh.textTertiary).lineLimit(2)
                 }
                 if !model.differing(in: hosts).isEmpty {
                     Button("Sync now") { Task { await model.syncNow(in: hosts) } }
-                        .buttonStyle(.nwLink(font: .nw(.caption)))
+                        .buttonStyle(.shLink(font: .sh(.caption)))
                         .disabled(model.busy)
                 }
             } else {
@@ -401,9 +401,9 @@ private struct InstructionsPadPage: View {
     /// History and Save.
     private func actions(_ model: ClientInstructions, hosts: [SettingsHost], ready: Bool) -> some View {
         let selectedHost = navigator.settingsSelection.instructionsHost
-        return HStack(spacing: NW.Space.m) {
+        return HStack(spacing: SH.Space.m) {
             Button("History") { showsHistory = true }
-                .buttonStyle(.nw(.secondary, size: .l))
+                .buttonStyle(.sh(.secondary, size: .l))
                 .disabled(!ready)
                 .popover(isPresented: $showsHistory, arrowEdge: .top) {
                     InstructionsHistoryList(entries: model.history(file, in: hosts, selectedHost: selectedHost)) { entry in
@@ -412,7 +412,7 @@ private struct InstructionsPadPage: View {
                     }
                 }
             Button(model.saveTitle(in: hosts, selectedHost: selectedHost)) { Task { await model.save(file, in: hosts, selectedHost: selectedHost) } }
-                .buttonStyle(.nw(.primary, size: .l))
+                .buttonStyle(.sh(.primary, size: .l))
                 .disabled(!model.isEdited(file, in: hosts, selectedHost: selectedHost) || model.busy)
         }
         .fixedSize()
@@ -420,24 +420,24 @@ private struct InstructionsPadPage: View {
 
     /// The editor card: the file's path and "● edited" over the file.
     private func editor(_ model: ClientInstructions, hosts: [SettingsHost], path: String) -> some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let selectedHost = navigator.settingsSelection.instructionsHost
         return VStack(spacing: 0) {
-            HStack(spacing: NW.Space.m) {
+            HStack(spacing: SH.Space.m) {
                 Text(path)
-                    .font(.nw(.mono))
-                    .foregroundStyle(nw.textSecondary)
+                    .font(.sh(.mono))
+                    .foregroundStyle(sh.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.head)
-                Spacer(minLength: NW.Space.m)
+                Spacer(minLength: SH.Space.m)
                 if model.isEdited(file, in: hosts, selectedHost: selectedHost) {
-                    Text("● edited").font(.nw(.caption)).foregroundStyle(nw.lanternText)
+                    Text("● edited").font(.sh(.caption)).foregroundStyle(sh.lanternText)
                 }
             }
-            .padding(.vertical, NW.Space.m)
-            .padding(.horizontal, NW.Space.l)
-            .background(nw.bgSunken)
-            NWHairline()
+            .padding(.vertical, SH.Space.m)
+            .padding(.horizontal, SH.Space.l)
+            .background(sh.bgSunken)
+            SHHairline()
             InstructionsTextEditor(
                 text: Binding(get: { model.text(file, in: hosts, selectedHost: selectedHost) }, set: { model.setText($0, file: file, in: hosts, selectedHost: selectedHost) }),
                 saved: model.saved(file, in: hosts, selectedHost: selectedHost) ?? "",
@@ -445,9 +445,9 @@ private struct InstructionsPadPage: View {
             )
             .frame(minHeight: MobileLayout.instructionsEditorMinHeight, maxHeight: .infinity)
         }
-        .background(nw.bgWindow)
-        .clipShape(RoundedRectangle(cornerRadius: NW.Radius.l))
-        .nwBorder(nw.lineSubtle, radius: NW.Radius.l)
+        .background(sh.bgWindow)
+        .clipShape(RoundedRectangle(cornerRadius: SH.Radius.l))
+        .shBorder(sh.lineSubtle, radius: SH.Radius.l)
     }
 }
 
@@ -457,15 +457,15 @@ private struct InstructionsScopePicker: View {
     @Binding var sameEverywhere: Bool
 
     var body: some View {
-        HStack(spacing: NW.Space.xxs) {
+        HStack(spacing: SH.Space.xxs) {
             segment("Every host", chosen: sameEverywhere) { sameEverywhere = true }
             segment("Per host", chosen: !sameEverywhere) { sameEverywhere = false }
         }
-        .padding(NW.Space.xxs)
+        .padding(SH.Space.xxs)
         .frame(width: MobileLayout.instructionsScopeWidth)
-        .background(Color.nw.bgSunken, in: RoundedRectangle(cornerRadius: MobileLayout.instructionsScopeRadius))
-        .nwBorder(Color.nw.lineSubtle, radius: MobileLayout.instructionsScopeRadius)
-        .nwAnimation(.content, value: sameEverywhere)
+        .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: MobileLayout.instructionsScopeRadius))
+        .shBorder(Color.sh.lineSubtle, radius: MobileLayout.instructionsScopeRadius)
+        .shAnimation(.content, value: sameEverywhere)
         .accessibilityRepresentation {
             Picker("Instructions", selection: $sameEverywhere) {
                 Text("Every host").tag(true)
@@ -476,14 +476,14 @@ private struct InstructionsScopePicker: View {
     }
 
     private func segment(_ title: String, chosen: Bool, action: @escaping () -> Void) -> some View {
-        let nw = Color.nw
+        let sh = Color.sh
         return Button(action: action) {
             Text(title)
-                .font(.nwSans(MobileLayout.instructionsScopeTextSize, .regular))
-                .foregroundStyle(nw.textPrimary)
+                .font(.shSans(MobileLayout.instructionsScopeTextSize, .regular))
+                .foregroundStyle(sh.textPrimary)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, minHeight: MobileLayout.instructionsScopeSegmentHeight)
-                .background(chosen ? nw.bgRaised : .clear, in: RoundedRectangle(cornerRadius: MobileLayout.instructionsScopeSegmentRadius))
+                .background(chosen ? sh.bgRaised : .clear, in: RoundedRectangle(cornerRadius: MobileLayout.instructionsScopeSegmentRadius))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -503,19 +503,19 @@ private struct InstructionsFileTabs: View {
             }
             Spacer(minLength: 0)
         }
-        .background(alignment: .bottom) { NWHairline() }
+        .background(alignment: .bottom) { SHHairline() }
     }
 
     private func tab(_ option: InstructionFile) -> some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let chosen = option == file
         return Button { file = option } label: {
             Text(option.fileName)
-                .font(.nwMono(MobileLayout.instructionsTabTextSize, .regular))
-                .foregroundStyle(chosen ? nw.textPrimary : nw.textTertiary)
-                .frame(minHeight: NW.Height.touch)
+                .font(.shMono(MobileLayout.instructionsTabTextSize, .regular))
+                .foregroundStyle(chosen ? sh.textPrimary : sh.textTertiary)
+                .frame(minHeight: SH.Height.touch)
                 .overlay(alignment: .bottom) {
-                    if chosen { Rectangle().fill(nw.lantern).frame(height: MobileLayout.instructionsTabUnderline) }
+                    if chosen { Rectangle().fill(sh.lantern).frame(height: MobileLayout.instructionsTabUnderline) }
                 }
                 .contentShape(Rectangle())
         }
@@ -535,13 +535,13 @@ private struct InstructionsReadOrder: View {
     ]
 
     var body: some View {
-        let nw = Color.nw
-        VStack(alignment: .leading, spacing: NW.Space.s) {
-            Text("Read in this order · later wins").nwSectionLabel()
-            NWWrapStack(spacing: NW.Space.s, lineSpacing: NW.Space.s) {
+        let sh = Color.sh
+        VStack(alignment: .leading, spacing: SH.Space.s) {
+            Text("Read in this order · later wins").shSectionLabel()
+            SHWrapStack(spacing: SH.Space.s, lineSpacing: SH.Space.s) {
                 ForEach(Array(Self.steps.enumerated()), id: \.offset) { index, step in
                     if index > 0 {
-                        Text("→").font(.nw(.caption)).foregroundStyle(nw.textTertiary).accessibilityHidden(true)
+                        Text("→").font(.sh(.caption)).foregroundStyle(sh.textTertiary).accessibilityHidden(true)
                     }
                     chip(step.title, marked: step.file == file)
                 }
@@ -552,14 +552,14 @@ private struct InstructionsReadOrder: View {
     }
 
     private func chip(_ title: String, marked: Bool) -> some View {
-        let nw = Color.nw
+        let sh = Color.sh
         return Text(title)
-            .font(.nw(.micro, weight: .regular))
-            .foregroundStyle(marked ? nw.textPrimary : nw.textSecondary)
-            .padding(.vertical, NW.Space.xs)
-            .padding(.horizontal, NW.Space.m)
-            .background(marked ? nw.lanternTint : .clear, in: RoundedRectangle(cornerRadius: NW.Radius.s))
-            .nwBorder(marked ? nw.lanternText : nw.lineSubtle, radius: NW.Radius.s)
+            .font(.sh(.micro, weight: .regular))
+            .foregroundStyle(marked ? sh.textPrimary : sh.textSecondary)
+            .padding(.vertical, SH.Space.xs)
+            .padding(.horizontal, SH.Space.m)
+            .background(marked ? sh.lanternTint : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+            .shBorder(marked ? sh.lanternText : sh.lineSubtle, radius: SH.Radius.s)
     }
 }
 
@@ -570,46 +570,46 @@ private struct InstructionsHistoryList: View {
     let restore: (InstructionHistoryEntry) -> Void
 
     var body: some View {
-        let nw = Color.nw
-        VStack(alignment: .leading, spacing: NW.Space.m) {
-            Text("History").font(.nw(.headline)).foregroundStyle(nw.textPrimary)
+        let sh = Color.sh
+        VStack(alignment: .leading, spacing: SH.Space.m) {
+            Text("History").font(.sh(.headline)).foregroundStyle(sh.textPrimary)
             if entries.isEmpty {
                 Text("No saves yet. Each save is kept here, to restore.")
-                    .nwText(.caption).foregroundStyle(nw.textTertiary)
+                    .shText(.caption).foregroundStyle(sh.textTertiary)
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
-                            if index > 0 { NWHairline() }
+                            if index > 0 { SHHairline() }
                             row(entry, current: index == 0)
                         }
                     }
                 }
             }
         }
-        .padding(NW.Space.l)
+        .padding(SH.Space.l)
         .frame(width: MobileLayout.instructionsHistoryWidth)
         .frame(maxHeight: MobileLayout.instructionsHistoryMaxHeight)
-        .background(nw.bgRaised)
+        .background(sh.bgRaised)
     }
 
     private func row(_ entry: InstructionHistoryEntry, current: Bool) -> some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let when = InstructionsPresentation.historyDate(entry.savedAt)
-        return HStack(spacing: NW.Space.m) {
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                Text(entry.summary).font(.nw(.ui)).foregroundStyle(nw.textPrimary).lineLimit(2)
+        return HStack(spacing: SH.Space.m) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                Text(entry.summary).font(.sh(.ui)).foregroundStyle(sh.textPrimary).lineLimit(2)
                 Text(entry.origin.map { "\(when) · from \($0)" } ?? when)
-                    .font(.nw(.caption)).foregroundStyle(nw.textTertiary)
+                    .font(.sh(.caption)).foregroundStyle(sh.textTertiary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if current {
-                Text("current").font(.nw(.caption)).foregroundStyle(nw.textTertiary)
+                Text("current").font(.sh(.caption)).foregroundStyle(sh.textTertiary)
             } else {
-                Button("Restore") { restore(entry) }.buttonStyle(.nw(.secondary, size: .s))
+                Button("Restore") { restore(entry) }.buttonStyle(.sh(.secondary, size: .s))
             }
         }
-        .padding(.vertical, NW.Space.m)
+        .padding(.vertical, SH.Space.m)
     }
 }
 
@@ -636,11 +636,11 @@ extension InstructionsChip.Tone {
     /// The chip's color: `done`, `lanternText`, `textTertiary`, `running` or `failed`.
     @MainActor var color: Color {
         switch self {
-        case .done: Color.nw.done
-        case .attention: Color.nw.lanternText
-        case .quiet: Color.nw.textTertiary
-        case .working: Color.nw.running
-        case .failed: Color.nw.failed
+        case .done: Color.sh.done
+        case .attention: Color.sh.lanternText
+        case .quiet: Color.sh.textTertiary
+        case .working: Color.sh.running
+        case .failed: Color.sh.failed
         }
     }
 }

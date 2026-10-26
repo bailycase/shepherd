@@ -192,7 +192,7 @@ struct DesignReferenceThreadTests {
         #expect(DesignReferenceChips.state(.updatedSince(latest: 26, changes: [])) == .updated("updated since · now v26"))
         #expect(DesignReferenceChips.state(.deleted) == .deleted("design deleted · the copy sent here is kept"))
         #expect(DesignReferenceChips.changes(.updatedSince(latest: 26, changes: ["padding 24px → 20px"]), version: 23)
-            == NWReferenceChanges(title: "Changed since v23 · now v26", lines: ["padding 24px → 20px"]))
+            == SHReferenceChanges(title: "Changed since v23 · now v26", lines: ["padding 24px → 20px"]))
         #expect(DesignReferenceChips.changes(.current, version: 23) == nil)
     }
 

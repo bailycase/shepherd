@@ -35,19 +35,19 @@ struct NewWorktreeSheet: View {
     }
 
     var body: some View {
-        NWDialog("New worktree",
+        SHDialog("New worktree",
                  message: "Creates a git worktree beside \(space.name) on a new branch and starts an agent in it.",
                  width: AppLayout.newWorktreeSheetWidth) {
             SheetRow("Branch") {
-                TextField("Branch", text: $branch, prompt: Text("branch name").foregroundStyle(Color.nw.textTertiary))
+                TextField("Branch", text: $branch, prompt: Text("branch name").foregroundStyle(Color.sh.textTertiary))
                     .focused($branchFocused)
-                    .nwField(focused: branchFocused, mono: true)
+                    .shField(focused: branchFocused, mono: true)
                     .onSubmit(create)
             }
             SheetRow("Base") {
-                HStack(spacing: NW.Space.m) {
-                    TextField("Base", text: $base, prompt: Text("resolving…").foregroundStyle(Color.nw.textTertiary))
-                        .textFieldStyle(.nw(mono: true))
+                HStack(spacing: SH.Space.m) {
+                    TextField("Base", text: $base, prompt: Text("resolving…").foregroundStyle(Color.sh.textTertiary))
+                        .textFieldStyle(.sh(mono: true))
                         .frame(maxWidth: AppLayout.baseFieldMaxWidth)
                     SheetLinkButton(label: "Choose…") { choosing = true }
                         .disabled(creating)
@@ -61,17 +61,17 @@ struct NewWorktreeSheet: View {
                             } close: { choosing = false }
                         }
                     Text(baseNote)
-                        .font(.nw(.caption))
-                        .foregroundStyle(Color.nw.textTertiary)
+                        .font(.sh(.caption))
+                        .foregroundStyle(Color.sh.textTertiary)
                         .lineLimit(1)
-                        .nwContentTransition(.crossFade)
+                        .shContentTransition(.crossFade)
                 }
-                .nwComponentAnimation(.content, value: baseNote)
+                .shComponentAnimation(.content, value: baseNote)
             }
             SheetRow("Checkout") {
                 Text(destination)
-                    .font(.nw(.mono))
-                    .foregroundStyle(Color.nw.textTertiary)
+                    .font(.sh(.mono))
+                    .foregroundStyle(Color.sh.textTertiary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .help(destination)
@@ -81,19 +81,19 @@ struct NewWorktreeSheet: View {
                 DialogBanner(state: .failed, title: "Couldn't create the worktree", message: errorText)
             }
         } status: {
-            if creating { NWDialogStatus("Creating the worktree…") }
+            if creating { SHDialogStatus("Creating the worktree…") }
         } actions: {
             Button("Cancel") { vm.worktreeSheetTarget = nil }
-                .buttonStyle(.nw(.ghost))
+                .buttonStyle(.sh(.ghost))
                 .keyboardShortcut(.cancelAction)
             Button(creating ? "Creating…" : "Create and open") { create() }
-                .buttonStyle(.nw(.primary))
+                .buttonStyle(.sh(.primary))
                 .keyboardShortcut(.defaultAction)
                 .disabled(creating || trimmedBranch.isEmpty || !baseResolved)
         }
         // Creating… shows in the footer and the button; a failure discloses as a banner.
-        .nwAnimation(.content, value: creating)
-        .nwAnimation(.disclosure, value: errorText)
+        .shAnimation(.content, value: creating)
+        .shAnimation(.disclosure, value: errorText)
         .onAppear { branchFocused = true }
         .task { await resolveBase() }
     }

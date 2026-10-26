@@ -5,7 +5,7 @@ import SwiftUI
 import Testing
 
 /// The Browser's tab chrome (BrowserTabs boards), pressed the way VoiceOver presses
-/// (`ControlPress`), over `NWBrowserTabsBoard`, which feeds the components plain values. This proves
+/// (`ControlPress`), over `SHBrowserTabsBoard`, which feeds the components plain values. This proves
 /// each control is a control, is enabled in the state its board draws, calls its action and has a
 /// 24pt hit area. It does not prove what the model does with the action: the app's tabs are not
 /// wired in yet. Each scenario runs in its own process (the accessibility tree is process-wide).
@@ -26,10 +26,10 @@ struct BrowserTabsControlTests {
     @MainActor final class Log { var lines: [String] = [] }
 
     @MainActor
-    private static func open(_ scene: NWBrowserTabsBoard.Scene, _ log: Log) -> OffscreenWindow {
+    private static func open(_ scene: SHBrowserTabsBoard.Scene, _ log: Log) -> OffscreenWindow {
         AccessibilityNode.enable()
-        return OffscreenWindow(size: CGSize(width: NWBrowserTabsBoard.paneWidth, height: 560), dark: true,
-                               NWBrowserTabsBoard(scene) { log.lines.append($0) })
+        return OffscreenWindow(size: CGSize(width: SHBrowserTabsBoard.paneWidth, height: 560), dark: true,
+                               SHBrowserTabsBoard(scene) { log.lines.append($0) })
     }
 
     @MainActor

@@ -31,7 +31,7 @@ struct ChangesScrollFrameReport {
         var draws: [Double] = []
         var moved: CGFloat = 0
         var direction: CGFloat = 1
-        NWRenderProbe.start()
+        SHRenderProbe.start()
         for _ in 0..<360 {
             try await clock.sleep(until: next)
             let start = clock.now
@@ -47,7 +47,7 @@ struct ChangesScrollFrameReport {
             // Keep the requested 120Hz pace without catch-up loops after a missed deadline.
             next = max(next + budget, clock.now)
         }
-        let counts = NWRenderProbe.stop()
+        let counts = SHRenderProbe.stop()
         let gaps = zip(starts.dropFirst(), starts).map { ListPerf.milliseconds($0 - $1) }
         func percentile(_ values: [Double], _ fraction: Double) -> Double {
             let sorted = values.sorted()

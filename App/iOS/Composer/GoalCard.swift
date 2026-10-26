@@ -6,7 +6,7 @@ import ShepherdRemote
 struct ThreadGoalCard: View {
     let store: NativeThreadStore
     let active: Bool
-    var size: NWGoalSize = .touch
+    var size: SHGoalSize = .touch
     var framed = true
     @State private var editing = false
     @State private var text = ""
@@ -19,7 +19,7 @@ struct ThreadGoalCard: View {
 
     var body: some View {
         if let goal = store.goal {
-            NWGoalCard(state: goal.cardState, time: goal.timeLabel, meta: goal.metaLabel, text: goal.text,
+            SHGoalCard(state: goal.cardState, time: goal.timeLabel, meta: goal.metaLabel, text: goal.text,
                        size: size, framed: framed, resumeEnabled: store.dialogs.isEmpty,
                        confirmationRequired: goal.confirmationRequired == true, checkedBy: goal.checkedBy,
                        confirmedByUser: goal.confirmedByUser == true, clockStart: goal.clockStart,
@@ -34,19 +34,19 @@ struct ThreadGoalCard: View {
                 .onChange(of: store.goalID) { _, _ in editing = false }
                 .sheet(isPresented: $editing) {
                     NavigationStack {
-                        VStack(alignment: .leading, spacing: NW.Space.m) {
+                        VStack(alignment: .leading, spacing: SH.Space.m) {
                             TextField("Goal condition", text: $text, axis: .vertical)
-                                .font(.nw(.body))
-                                .foregroundStyle(Color.nw.textPrimary)
+                                .font(.sh(.body))
+                                .foregroundStyle(Color.sh.textPrimary)
                                 .focused($focused)
                                 .accessibilityLabel("Goal condition")
                             if let notice = store.notice {
-                                Text(notice).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                                Text(notice).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                             }
                             Spacer()
                         }
                         .padding(MobileLayout.gutter)
-                        .background(Color.nw.bgWindow)
+                        .background(Color.sh.bgWindow)
                         .navigationTitle("Edit goal")
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbar {
@@ -87,36 +87,36 @@ struct GoalRecordLine: View {
     init(text: String) { record = NativeGoalRecord(text) }
 
     var body: some View {
-        VStack(spacing: NW.Space.s) {
-            HStack(spacing: NW.Space.m) {
-                NWHairline().frame(minWidth: NW.Space.l)
-                Text(record.line).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+        VStack(spacing: SH.Space.s) {
+            HStack(spacing: SH.Space.m) {
+                SHHairline().frame(minWidth: SH.Space.l)
+                Text(record.line).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                     .multilineTextAlignment(.center)
                     .lineLimit(record.isClosing ? 2 : nil)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                     .layoutPriority(1)
-                NWHairline().frame(minWidth: NW.Space.l)
+                SHHairline().frame(minWidth: SH.Space.l)
             }
             if let evidence = record.evidence {
                 DisclosureGroup {
-                    Text(evidence).font(.nw(.mono)).foregroundStyle(Color.nw.textSecondary)
+                    Text(evidence).font(.sh(.mono)).foregroundStyle(Color.sh.textSecondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
                 } label: {
                     if record.showsDetails { Text("Details") } else { Text("Evidence") }
                 }
-                .font(.nw(.caption))
-                .foregroundStyle(Color.nw.textTertiary)
-                .tint(Color.nw.textSecondary)
+                .font(.sh(.caption))
+                .foregroundStyle(Color.sh.textTertiary)
+                .tint(Color.sh.textSecondary)
             }
         }
-        .padding(.vertical, NW.Space.xs)
+        .padding(.vertical, SH.Space.xs)
     }
 }
 
 extension NativeGoal {
-    var cardState: NWGoalState {
+    var cardState: SHGoalState {
         switch state {
         case .working: .working
         case .checking: .checking

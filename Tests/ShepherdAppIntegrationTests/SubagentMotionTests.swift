@@ -80,7 +80,7 @@ struct SubagentMotionTests {
         var body: some View {
             SubagentInspector(store: store, runID: model.runID, active: true, close: {}, select: { model.runID = $0.runID })
                 .frame(width: SubagentMotionTests.width, height: SubagentMotionTests.column.height)
-                .background(Color.nw.bgWindow)
+                .background(Color.sh.bgWindow)
         }
     }
 

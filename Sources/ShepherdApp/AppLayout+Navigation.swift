@@ -2,7 +2,7 @@ import SwiftUI
 import ShepherdUI
 
 /// The window, its dividers and workspace, the sidebar, toolbar, right pane, and palette
-/// (Navigation board). Row heights come from `NWDensity` (Settings ▸ Appearance ▸ Sidebar rows)
+/// (Navigation board). Row heights come from `SHDensity` (Settings ▸ Appearance ▸ Sidebar rows)
 /// through the environment.
 extension AppLayout {
     // Window
@@ -32,12 +32,12 @@ extension AppLayout {
     static let sidebarDefaultWidth: CGFloat = 232
     static let sidebarMinWidth: CGFloat = 190
     static let sidebarMaxWidth: CGFloat = 340
-    static let sidebarPadding: CGFloat = NWSidebarMetrics.listInset
-    static let sidebarRowSpacing: CGFloat = NWSidebarMetrics.rowSpacing
+    static let sidebarPadding: CGFloat = SHSidebarMetrics.listInset
+    static let sidebarRowSpacing: CGFloat = SHSidebarMetrics.rowSpacing
     /// An overlaid sidebar leaves this much of the window uncovered.
     static let sidebarOverlayMargin: CGFloat = 48
 
-    // Destination pages (NavNewThread, NavAutomations, NavHosts); the header is `NWPageMetrics`'.
+    // Destination pages (NavNewThread, NavAutomations, NavHosts); the header is `SHPageMetrics`'.
     /// New thread: the column's gaps and padding, the heading (Geist 26 semibold, tracked −2%),
     /// the 720pt composer and the Continue card's row under it.
     static let newThreadGap: CGFloat = 24
@@ -61,12 +61,12 @@ extension AppLayout {
     static let panePlaceholderPadding: CGFloat = 10
 
     // Toolbar
-    static let headerHeight: CGFloat = NWToolbarMetrics.height
-    static let headerPadding: CGFloat = NWToolbarMetrics.leadingPadding
+    static let headerHeight: CGFloat = SHToolbarMetrics.height
+    static let headerPadding: CGFloat = SHToolbarMetrics.leadingPadding
 
     // Side pane (its tabs, or the subagent inspector over them; PaneStates)
     static let paneDefaultWidth: CGFloat = 600
-    /// Under 480 the tab strip drops its labels (`NWSidePaneMetrics.labelsMinWidth`).
+    /// Under 480 the tab strip drops its labels (`SHSidePaneMetrics.labelsMinWidth`).
     static let paneMinWidth: CGFloat = 380
     static let paneMaxFraction: CGFloat = 0.5
     /// The Browser (PaneStates › viewport): a chosen width's frame sits this far from the pane's
@@ -85,10 +85,10 @@ extension AppLayout {
     static let threadMinWidth: CGFloat = 400
 
     // Palette
-    static let paletteWidth: CGFloat = NWPaletteMetrics.width
-    static let paletteSearchHeight: CGFloat = NWPaletteMetrics.searchHeight
+    static let paletteWidth: CGFloat = SHPaletteMetrics.width
+    static let paletteSearchHeight: CGFloat = SHPaletteMetrics.searchHeight
     /// Standard-density palette rows; the palette itself follows the density setting.
-    @MainActor static var paletteRowHeight: CGFloat { NWDensity.standard.rowHeight }
+    @MainActor static var paletteRowHeight: CGFloat { SHDensity.standard.rowHeight }
 }
 
 /// The window's adaptive rules (resizability review): when the sidebar docks or overlays and

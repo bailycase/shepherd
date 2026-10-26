@@ -12,7 +12,7 @@
 - **`SHEPHERD_MCP_CONFIG`** moves the MCP servers file (Settings ▸ MCP servers) away from
   `~/.config/mcp/mcp.json`. Test isolation points it at a scratch file; setting it in the Dev
   scheme keeps Dev's servers apart from the everyday app's.
-- **`SHEPHERD_THEME=night-watch-dark|night-watch-light`** forces an appearance at launch (the
+- **`SHEPHERD_THEME=shepherd-design-dark|shepherd-design-light`** forces an appearance at launch (the
   older `shepherd-dark` still means dark), which is handy for screenshots. Resetting settings
   returns to it.
 - **Set by the app for pi, never read from the user's environment:**

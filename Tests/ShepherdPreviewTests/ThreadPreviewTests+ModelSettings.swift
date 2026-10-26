@@ -8,15 +8,15 @@ import Testing
 @testable import ShepherdApp
 
 extension ThreadPreviewTests {
-    /// NWModelSettings as the board draws it (gpt-6.1-sol with a Fast tier, claude-opus without):
+    /// SHModelSettings as the board draws it (gpt-6.1-sol with a Fast tier, claude-opus without):
     /// Low to Extra high and the chosen speed.
     @MainActor static func modelSettings(speed: String, levels: [String] = ["low", "medium", "high", "xhigh"], current: String = "xhigh",
                                          tiers: Bool = true) -> some View {
-        NWModelSettings(models: [NWModelOption(id: "openai/gpt-6.1-sol", title: "gpt-6.1-sol", isCurrent: true, fast: tiers),
-                                 NWModelOption(id: "anthropic/claude-opus", title: "claude-opus")],
+        SHModelSettings(models: [SHModelOption(id: "openai/gpt-6.1-sol", title: "gpt-6.1-sol", isCurrent: true, fast: tiers),
+                                 SHModelOption(id: "anthropic/claude-opus", title: "claude-opus")],
                         thinking: thinkingOptions(levels), currentThinking: current,
-                        speeds: tiers ? [NWSpeedOption(id: "standard", title: "Standard", detail: "Default speed and price"),
-                                         NWSpeedOption(id: "fast", title: "Fast", detail: "Faster responses, billed at a higher rate", boosted: true)] : [],
+                        speeds: tiers ? [SHSpeedOption(id: "standard", title: "Standard", detail: "Default speed and price"),
+                                         SHSpeedOption(id: "fast", title: "Fast", detail: "Faster responses, billed at a higher rate", boosted: true)] : [],
                         currentSpeed: speed, chooseModel: { _ in }, chooseThinking: { _ in }, chooseSpeed: { _ in }, allModels: {}, close: {})
     }
 
@@ -36,7 +36,7 @@ extension ThreadPreviewTests {
             }
             .padding(32)
             .frame(width: size.width, height: size.height, alignment: .topLeading)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
     }
 

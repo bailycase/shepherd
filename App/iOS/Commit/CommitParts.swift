@@ -17,7 +17,7 @@ struct CommitMessageCard: View {
     var fill: Color? = nil
 
     var body: some View {
-        NWCommitMessageEditor(title: $store.title, message: $store.body,
+        SHCommitMessageEditor(title: $store.title, message: $store.body,
                               source: store.drafting ? .drafting : store.drafted ? .drafted : .written,
                               mentionsUntickedFiles: store.mentionsUntickedFiles, radius: MobileLayout.cardRadius, fill: fill)
     }
@@ -31,8 +31,8 @@ struct CommitFileList: View {
         LazyVStack(spacing: 0) {
             ForEach(store.rows) { row in
                 VStack(spacing: 0) {
-                    if row.id != store.rows.first?.id { NWHairline() }
-                    NWCommitFileRow(NWCommitFileRow.Item(row), showsDirectory: false) { store.toggle(row.id) }.equatable()
+                    if row.id != store.rows.first?.id { SHHairline() }
+                    SHCommitFileRow(SHCommitFileRow.Item(row), showsDirectory: false) { store.toggle(row.id) }.equatable()
                 }
             }
         }
@@ -45,11 +45,11 @@ struct CommitOptions: View {
 
     var body: some View {
         if let info = store.info {
-            NWCommitOptionRow("Push after commit", detail: reviewCommitPushDetail(info), monoDetail: true,
+            SHCommitOptionRow("Push after commit", detail: reviewCommitPushDetail(info), monoDetail: true,
                               isOn: Binding(get: { store.push || store.pullRequest }, set: { store.push = $0 }))
                 .disabled(store.pullRequest || !reviewCommitCanPush(info))
-            NWHairline()
-            NWCommitOptionRow("Open a pull request instead", detail: reviewCommitPullRequestDetail(info, title: store.title),
+            SHHairline()
+            SHCommitOptionRow("Open a pull request instead", detail: reviewCommitPullRequestDetail(info, title: store.title),
                               isOn: $store.pullRequest)
                 .disabled(!reviewCommitCanOpenPullRequest(info))
         }
@@ -62,22 +62,22 @@ struct CommitNotices: View {
 
     var body: some View {
         if let blocked = store.info?.blocked {
-            NWBanner(.failed, title: "Can't commit here", message: blocked)
+            SHBanner(.failed, title: "Can't commit here", message: blocked)
         } else if store.info?.agentWorking == true {
-            VStack(alignment: .leading, spacing: NW.Space.s) {
-                NWBanner(.attention, title: "The agent is working",
+            VStack(alignment: .leading, spacing: SH.Space.s) {
+                SHBanner(.attention, title: "The agent is working",
                          message: "Its files may still change. The host commits them as they were when this opened, and stops if one changed since.")
                 Toggle("Commit while it works", isOn: $store.confirmedWhileWorking)
-                    .toggleStyle(.nwCheckbox)
-                    .font(.nw(.ui))
-                    .foregroundStyle(Color.nw.textPrimary)
-                    .frame(minHeight: NW.Height.touch)
-                    .padding(.horizontal, NW.Space.xs)
+                    .toggleStyle(.shCheckbox)
+                    .font(.sh(.ui))
+                    .foregroundStyle(Color.sh.textPrimary)
+                    .frame(minHeight: SH.Height.touch)
+                    .padding(.horizontal, SH.Space.xs)
             }
         }
         if let error = store.error, store.stage == .form {
-            NWBanner(.failed, title: "Nothing was committed", message: error) {
-                Button("Dismiss") { store.error = nil }.buttonStyle(.nw(.ghost, size: .s))
+            SHBanner(.failed, title: "Nothing was committed", message: error) {
+                Button("Dismiss") { store.error = nil }.buttonStyle(.sh(.ghost, size: .s))
             }
         }
     }
@@ -90,33 +90,33 @@ struct CommitProgress: View {
     var body: some View {
         VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
             if store.steps.isEmpty {
-                HStack(spacing: NW.Space.m) {
-                    ProgressView().progressViewStyle(NWSpinnerStyle())
-                    Text("Starting on the host…").font(.nw(.ui)).foregroundStyle(Color.nw.textSecondary)
+                HStack(spacing: SH.Space.m) {
+                    ProgressView().progressViewStyle(SHSpinnerStyle())
+                    Text("Starting on the host…").font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
                 }
-                .frame(minHeight: NW.Height.touch)
+                .frame(minHeight: SH.Height.touch)
             } else {
-                NWGroupCard {
+                SHGroupCard {
                     ForEach(store.steps) { step in
                         CommitStepRow(step: step)
                     }
                 }
             }
             if case .failed(let message)? = store.outcome {
-                NWBanner(.failed, title: "Stopped", message: message)
+                SHBanner(.failed, title: "Stopped", message: message)
             }
             if let error = store.error {
-                NWBanner(.attention, title: "Outcome not yet known", message: error)
+                SHBanner(.attention, title: "Outcome not yet known", message: error)
             }
             if let url = store.operation?.prURL, let link = URL(string: url) {
                 Link(destination: link) {
                     Label(url, systemImage: "arrow.up.forward.square")
-                        .font(.nw(.mono))
+                        .font(.sh(.mono))
                         .lineLimit(1)
                         .truncationMode(.middle)
-                        .frame(minHeight: NW.Height.touch)
+                        .frame(minHeight: SH.Height.touch)
                 }
-                .foregroundStyle(Color.nw.running)
+                .foregroundStyle(Color.sh.running)
             }
         }
     }
@@ -127,24 +127,24 @@ private struct CommitStepRow: View {
     let step: FinalizeStep
 
     var body: some View {
-        HStack(alignment: .top, spacing: NW.Space.m) {
-            NWStateGlyph(state).padding(.top, NW.Space.xxs)
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+        HStack(alignment: .top, spacing: SH.Space.m) {
+            SHStateGlyph(state).padding(.top, SH.Space.xxs)
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 Text(step.label.prefix(1).uppercased() + step.label.dropFirst())
-                    .font(.nw(.ui))
-                    .foregroundStyle(step.state == .pending ? Color.nw.textTertiary : Color.nw.textPrimary)
+                    .font(.sh(.ui))
+                    .foregroundStyle(step.state == .pending ? Color.sh.textTertiary : Color.sh.textPrimary)
                 if let detail {
-                    Text(detail).font(.nw(.caption))
-                        .foregroundStyle(failed ? Color.nw.failed : Color.nw.textSecondary)
+                    Text(detail).font(.sh(.caption))
+                        .foregroundStyle(failed ? Color.sh.failed : Color.sh.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                 }
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, NW.Space.xl)
-        .padding(.vertical, NW.Space.m)
-        .frame(minHeight: NW.Height.touch)
+        .padding(.horizontal, SH.Space.xl)
+        .padding(.vertical, SH.Space.m)
+        .frame(minHeight: SH.Height.touch)
         .accessibilityElement(children: .combine)
     }
 
@@ -182,9 +182,9 @@ private struct CommitStepRow: View {
     }
 }
 
-extension NWCommitFileRow.Item {
+extension SHCommitFileRow.Item {
     init(_ row: ReviewCommitFileRow) {
-        self.init(id: row.id, name: row.name, directory: row.directory, status: NWFileStatus(row.status), added: row.added,
+        self.init(id: row.id, name: row.name, directory: row.directory, status: SHFileStatus(row.status), added: row.added,
                   removed: row.removed, selected: row.selected)
     }
 }

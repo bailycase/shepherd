@@ -1,6 +1,6 @@
 # Navigation sidebar checklist
 
-Reference: [NWNavigation.png](NWNavigation.png), revision 420, with its [HTML](NWNavigation.html).
+Reference: [SHNavigation.png](SHNavigation.png), revision 420, with its [HTML](SHNavigation.html).
 User clarification: Done is first when nonempty. Pinned follows it and keeps every pinned thread, regardless of status.
 
 - Keep the 44pt top bar, Search and Hide sidebar, fixed destinations, and user footer.

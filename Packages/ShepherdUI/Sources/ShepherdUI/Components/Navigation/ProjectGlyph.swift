@@ -5,8 +5,8 @@ import SwiftUI
 /// The boards export every icon as a 40-unit contour. This is that contour for the Project mark, point for point
 /// (the boards' own `viewBox="0 0 40 40"`, even-odd), not a redrawn approximation. The platform's `square.stack`
 /// is the same idea at 0.756 width over height; the supplied contour is 0.801, so the symbol was not used. The
-/// geometry is recreated here as a `Shape`: no board code is copied. Draw it through `NWGlyph.project`.
-public struct NWProjectGlyph: Shape {
+/// geometry is recreated here as a `Shape`: no board code is copied. Draw it through `SHGlyph.project`.
+public struct SHProjectGlyph: Shape {
     public init() {}
 
     /// The contours, in the boards' 40-unit grid: the outer body, its inner opening, and the two caps.
@@ -39,17 +39,17 @@ public struct NWProjectGlyph: Shape {
 }
 
 /// The Project glyph at the sidebar's size, filled (the contour is the outline's own shape), tinted by the caller.
-public struct NWProjectGlyphView: View {
+public struct SHProjectGlyphView: View {
     let tint: Color
     let size: CGFloat
 
-    public init(tint: Color, size: CGFloat = NWSidebarMetrics.projectGlyphBox) {
+    public init(tint: Color, size: CGFloat = SHSidebarMetrics.projectGlyphBox) {
         self.tint = tint
         self.size = size
     }
 
     public var body: some View {
-        NWProjectGlyph()
+        SHProjectGlyph()
             .fill(tint, style: FillStyle(eoFill: true))
             .frame(width: size, height: size)
             .accessibilityHidden(true)

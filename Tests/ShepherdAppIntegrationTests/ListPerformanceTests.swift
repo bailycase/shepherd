@@ -11,7 +11,7 @@ import Testing
 @testable import ShepherdUI
 
 /// Budgets for the long lists (docs/design/performance.md › Performance), over realistic large fixtures in
-/// off-screen windows. The budgets count row bodies (`NWRenderProbe`), which a slower machine
+/// off-screen windows. The budgets count row bodies (`SHRenderProbe`), which a slower machine
 /// doesn't change: a list that builds rows off screen, or redraws every row for a highlight, a
 /// selection, or one row's change, fails whatever the hardware. `ListPerformanceReport` prints the
 /// timings behind them.
@@ -24,7 +24,7 @@ struct ListPerformanceTests {
 
     /// How many rows fit the window, with a row's height and spacing.
     private static var sidebarRowsOnScreen: Int {
-        Int(sidebarSize.height / (NWDensity.standard.rowHeight + AppLayout.sidebarRowSpacing)) + 1
+        Int(sidebarSize.height / (SHDensity.standard.rowHeight + AppLayout.sidebarRowSpacing)) + 1
     }
 
     /// The fleet in an off-screen sidebar, settled.
@@ -65,11 +65,11 @@ struct ListPerformanceTests {
         let (_, window) = try await openSidebar(app)
         defer { window.close() }
         let scroll = try #require(ListPerf.scrollView(in: window))
-        let step = NWDensity.standard.rowHeight * 4
+        let step = SHDensity.standard.rowHeight * 4
 
         var moved: CGFloat = 0
         let rows = ListPerf.counting { moved = ListPerf.scroll(window, scroll, step: step, steps: 20).distance }
-        let arriving = Int(moved / (NWDensity.standard.rowHeight + AppLayout.sidebarRowSpacing)) + 1
+        let arriving = Int(moved / (SHDensity.standard.rowHeight + AppLayout.sidebarRowSpacing)) + 1
         #expect(moved > 0)
         #expect(rows["sidebar.row", default: 0] <= 2 * (arriving + Self.sidebarRowsOnScreen), "\(rows)")
         #expect(rows["sidebar.lists", default: 0] == 0, "scrolling derives nothing: \(rows)")
@@ -310,11 +310,11 @@ struct ListPerformanceTests {
         let (_, window) = try await openProjectsSidebar(app)
         defer { window.close() }
         let scroll = try #require(ListPerf.scrollView(in: window))
-        let step = NWDensity.standard.rowHeight * 4
+        let step = SHDensity.standard.rowHeight * 4
 
         var moved: CGFloat = 0
         let rows = ListPerf.counting { moved = ListPerf.scroll(window, scroll, step: step, steps: 20).distance }
-        let arriving = Int(moved / (NWDensity.standard.rowHeight + AppLayout.sidebarRowSpacing)) + 1
+        let arriving = Int(moved / (SHDensity.standard.rowHeight + AppLayout.sidebarRowSpacing)) + 1
         #expect(moved > 0)
         #expect(rows["sidebar.row", default: 0] + rows["sidebar.project", default: 0] <= 2 * (arriving + Self.sidebarRowsOnScreen),
                 "\(rows)")
@@ -369,11 +369,11 @@ struct ListPerformanceTests {
 
     private static let designsSize = CGSize(width: 1200, height: 800)
     /// A card's height: its thumbnail and its three lines, with the gap under it.
-    private static let designRowHeight = NWDesignMetrics.cardThumbnailHeight + 80 + NWPageMetrics.columnGap
+    private static let designRowHeight = SHDesignMetrics.cardThumbnailHeight + 80 + SHPageMetrics.columnGap
 
     /// Rows of cards that fit the page under its header.
     private static var designRowsOnScreen: Int {
-        Int((designsSize.height - NWPageMetrics.headerHeight) / designRowHeight) + 1
+        Int((designsSize.height - SHPageMetrics.headerHeight) / designRowHeight) + 1
     }
 
     /// The Designs page over 120 designs (no boards, so no thumbnails to render), and what opens
@@ -479,7 +479,7 @@ struct ListPerformanceTests {
             ListPerf.settle(window)
         }
         defer { window.close() }
-        let shown = Int(NWDesignMetrics.exportVisibleRows)
+        let shown = Int(SHDesignMetrics.exportVisibleRows)
         #expect(opening["design.exportRow", default: 0] > 0)
         #expect(opening["design.exportRow", default: 0] <= 2 * (shown + 2), "\(opening)")
 
@@ -495,7 +495,7 @@ struct ListPerformanceTests {
     // MARK: Design systems
 
     /// A system card's height (its 12pt padding and two lines) with the gap under it.
-    private static let systemRowHeight: CGFloat = 2 * NWDesignMetrics.cardPaddingVertical + 32 + NWPageMetrics.columnGap
+    private static let systemRowHeight: CGFloat = 2 * SHDesignMetrics.cardPaddingVertical + 32 + SHPageMetrics.columnGap
 
     /// `count` systems in the server's store, as folders it lists (the store's cap is 100), each
     /// with `colors` colors.
@@ -532,7 +532,7 @@ struct ListPerformanceTests {
             ListPerf.settle(window)
         }
         defer { window.close() }
-        let onScreen = (Int((Self.designsSize.height - NWPageMetrics.headerHeight) / Self.systemRowHeight) + 1) * DesignsPageModel.systemColumns
+        let onScreen = (Int((Self.designsSize.height - SHPageMetrics.headerHeight) / Self.systemRowHeight) + 1) * DesignsPageModel.systemColumns
         #expect(counts["design.systemCard", default: 0] > 0)
         #expect(counts["design.systemCard", default: 0] <= 2 * (onScreen + DesignsPageModel.systemColumns), "\(counts)")
         #expect(counts["design.systemCard", default: 0] < DesignSystemStore.maxSystems)
@@ -557,7 +557,7 @@ struct ListPerformanceTests {
         defer { window.close() }
         // A color is a row of its table (DesignSystemColors): at least a control's height, so no more than
         // the window's height over that are on screen at once.
-        let onScreen = Int(Self.designsSize.height / NW.Height.controlM) + 1
+        let onScreen = Int(Self.designsSize.height / SH.Height.controlM) + 1
         #expect(counts["design.referenceColor", default: 0] > 0)
         #expect(counts["design.referenceColor", default: 0] <= 2 * onScreen, "\(counts)")
         #expect(counts["design.referenceColor", default: 0] < 300)
@@ -605,8 +605,8 @@ struct ListPerformanceTests {
 
     // MARK: Browser console
 
-    private static let consoleSize = CGSize(width: 600, height: NWBrowserMetrics.consoleBarHeight + NWBrowserMetrics.consoleListHeight)
-    private static var consoleRowsOnScreen: Int { Int(NWBrowserMetrics.consoleListHeight / NWBrowserMetrics.consoleRowHeight) + 1 }
+    private static let consoleSize = CGSize(width: 600, height: SHBrowserMetrics.consoleBarHeight + SHBrowserMetrics.consoleListHeight)
+    private static var consoleRowsOnScreen: Int { Int(SHBrowserMetrics.consoleListHeight / SHBrowserMetrics.consoleRowHeight) + 1 }
 
     /// A console holding its most lines (a chatty dev server), in its drawer.
     private func openConsole() -> (BrowserConsoleLog, OffscreenWindow) {
@@ -668,14 +668,14 @@ struct ListPerformanceTests {
                 && abs(document.bounds.height - scroll.contentView.bounds.maxY + scroll.contentInsets.bottom) < 2
         }
 
-        NWRenderProbe.start()
+        SHRenderProbe.start()
         for index in 0..<5 {
             let live = ListFixtures.message("live", "assistant", String(repeating: "Streaming sentence \(index). ", count: index + 1))
             snapshot = ListFixtures.threadSnapshot(turns: 500, running: true, revision: UInt64(index + 2), provisional: [live])
             await store.refresh()
             ListPerf.settle(window)
         }
-        let rows = NWRenderProbe.stop()
+        let rows = SHRenderProbe.stop()
         // A 800pt window shows a dozen turns; five chunks may build each a few times (about 90
         // here, at any speed). On macOS 26 (CI) the builder ran for every row on each chunk, 4,999
         // times, while still redrawing only the streaming turn.
@@ -713,10 +713,10 @@ struct ListPerformanceTests {
 
     /// Row bodies counted while `work` runs, with the window settled after it.
     private func counting(_ window: OffscreenWindow, _ work: () async throws -> Void) async rethrows -> [String: Int] {
-        NWRenderProbe.start()
+        SHRenderProbe.start()
         try await work()
         ListPerf.settle(window)
-        return NWRenderProbe.stop()
+        return SHRenderProbe.stop()
     }
 
     /// A thread of sixty turns under its toolbar, loaded and at rest.
@@ -799,17 +799,17 @@ struct ListPerformanceTests {
         defer { thread.close() }
         try await thread.waitUntilReady()
         ListPerf.settle(thread.window)
-        NWRenderProbe.start()
+        SHRenderProbe.start()
         let rows: [String: Int]
         do {
             try await eventuallyOnMain("two local card and header clock ticks", timeout: .seconds(10)) {
                 ListPerf.settle(thread.window)
-                let counts = NWRenderProbe.counts
+                let counts = SHRenderProbe.counts
                 return counts["goal.clock", default: 0] >= 2 && counts["goal.headerClock", default: 0] >= 2
             }
-            rows = NWRenderProbe.stop()
+            rows = SHRenderProbe.stop()
         } catch {
-            _ = NWRenderProbe.stop()
+            _ = SHRenderProbe.stop()
             throw error
         }
         for key in ["goal.card", "composer.body", "composer.chips", "queue.body", "queue.row", "thread.view", "thread.rowBuilder", "thread.agentTurn", "thread.userTurn"] {
@@ -1079,14 +1079,14 @@ struct ListPerformanceTests {
         let table = MarkdownFixtures.largeTable(rows: rows)
         let turn = ThreadFixture.history(2) + [ThreadFixture.user("u", "List the calls")]
         // Counting from before the window opens: the thread may load in its first frames.
-        NWRenderProbe.start()
+        SHRenderProbe.start()
         let thread = FakeThread(ThreadFixture.snapshot(turn, provisional: [ThreadFixture.streaming(table + "\n\nIn")], running: true),
                                 size: CGSize(width: 1180, height: 900))
         defer { thread.close() }
         try await thread.waitUntilReady()
         try await Task.sleep(for: .milliseconds(200))
         ListPerf.settle(thread.window)
-        let first = NWRenderProbe.stop()
+        let first = SHRenderProbe.stop()
         #expect(first["prose.tableCell", default: 0] > 0, "the table was built: \(first)")
         #expect(first["prose.tableCell", default: 0] <= (rows + 1) * 3, "each cell built at most once: \(first)")
 
@@ -1246,9 +1246,9 @@ struct ListPerformanceTests {
         result.counts["40 pt steps"] = ListPerf.counting { _ = workspace.scroll(step: 40, steps: 40) }
         result.counts["keystrokes"] = ListPerf.counting { workspace.type(24) }
         result.counts["status reports"] = ListPerf.counting { workspace.reportStatus(20) }
-        NWRenderProbe.start()
+        SHRenderProbe.start()
         try await workspace.stream()
-        result.counts["a streamed reply"] = NWRenderProbe.stop()
+        result.counts["a streamed reply"] = SHRenderProbe.stop()
         return result
     }
 
@@ -1305,7 +1305,7 @@ struct ListPerformanceTests {
         let snapshot = Self.spawned(runs)
         let store = NativeThreadStore()
         var window: OffscreenWindow!
-        NWRenderProbe.start()
+        SHRenderProbe.start()
         window = OffscreenWindow(size: CGSize(width: 900, height: 800), dark: true,
                                  ThreadView(store: store, active: true, isFocused: false, request: { _ in .snapshot(value: snapshot) },
                                             commandKey: "tray", inspectSubagent: { _ in }))
@@ -1315,7 +1315,7 @@ struct ListPerformanceTests {
         }
         try await eventuallyOnMain("the thread to load") { store.ready && store.tray != nil }
         ListPerf.settle(window)
-        let rows = NWRenderProbe.stop()
+        let rows = SHRenderProbe.stop()
 
         #expect(rows["tray.row", default: 0] > 0, "the tray shows: \(rows)")
         #expect(rows["tray.row", default: 0] <= 8, "\(rows)")
@@ -1497,7 +1497,7 @@ struct ListPerformanceTests {
         #expect(rows["review.fileChip", default: 0] > 0, "\(rows)")
         #expect(rows["diff.line", default: 0] > 0, "\(rows)")
         #expect(rows["review.fileChip", default: 0] <= 24, "\(rows)")
-        #expect(rows["diff.line", default: 0] <= 2 * Int(800 / NWDiffMetrics.lineHeight), "\(rows)")
+        #expect(rows["diff.line", default: 0] <= 2 * Int(800 / SHDiffMetrics.lineHeight), "\(rows)")
     }
 
     /// Every line can be commented on, but a line builds its `+` only while it is hovered.
@@ -1517,12 +1517,12 @@ struct ListPerformanceTests {
     @Test func aHoveredLinesPlusBringsNoAppKitView() throws {
         func views(_ view: NSView) -> Int { 1 + view.subviews.reduce(0) { $0 + views($1) } }
         let lines = ListFixtures.diffFile("Big.swift", lines: 30).hunks[0].lines.map { line in
-            NWDiffLineContent(id: "\(line.id)", key: line.id, kind: line.kind.diffKind, oldNumber: line.oldLine, newNumber: line.newLine,
+            SHDiffLineContent(id: "\(line.id)", key: line.id, kind: line.kind.diffKind, oldNumber: line.oldLine, newNumber: line.newLine,
                               text: AttributedString(line.text), source: line.text)
         }
         func window(hovering: Bool) -> OffscreenWindow {
             OffscreenWindow(size: CGSize(width: 600, height: 800), dark: true, VStack(spacing: 0) {
-                ForEach(lines) { NWDiffLine($0, onComment: {}, hovering: hovering) }
+                ForEach(lines) { SHDiffLine($0, onComment: {}, hovering: hovering) }
             })
         }
         var rest: OffscreenWindow!, hovered: OffscreenWindow!
@@ -1590,7 +1590,7 @@ struct ListPerformanceTests {
         let step: CGFloat = 88
         var moved: CGFloat = 0
         let rows = ListPerf.counting { moved = ListPerf.scroll(window, scroll, step: step, steps: 100).distance }
-        let linesIntoView = Int(moved / NWDiffMetrics.lineHeight)
+        let linesIntoView = Int(moved / SHDiffMetrics.lineHeight)
         #expect(moved > 5000, "the diff scrolled \(moved) pt")
         #expect(rows["diff.row", default: 0] <= linesIntoView + 10, "\(linesIntoView) lines came into view: \(rows)")
         #expect(rows["review.comment", default: 0] == 0, "\(rows)")
@@ -1611,7 +1611,7 @@ struct ListPerformanceTests {
 
         var moved: CGFloat = 0
         let rows = ListPerf.counting { moved = ListPerf.scroll(window, scroll, step: 88, steps: 60).distance }
-        let pairsIntoView = Int(moved / NWDiffMetrics.lineHeight)
+        let pairsIntoView = Int(moved / SHDiffMetrics.lineHeight)
         #expect(moved > 3000, "the diff scrolled \(moved) pt")
         #expect(rows["diff.row", default: 0] <= pairsIntoView + 10, "\(pairsIntoView) rows came into view: \(rows)")
         #expect(rows["review.toolbar", default: 0] == 0 && rows["review.fileChip", default: 0] == 0, "the chrome stays: \(rows)")
@@ -1646,7 +1646,7 @@ struct ListPerformanceTests {
 
         let rows = ListPerf.counting { ListPerf.time(window) { _ = model.handleKey("u", option: true) } }
         #expect(model.layout == .unified)
-        #expect(rows["diff.row", default: 0] <= 2 * Int(800 / NWDiffMetrics.lineHeight), "\(rows)")
+        #expect(rows["diff.row", default: 0] <= 2 * Int(800 / SHDiffMetrics.lineHeight), "\(rows)")
     }
 
     /// The right pane casts its shadow only while it floats over the thread, and from its fill
@@ -1662,8 +1662,8 @@ struct ListPerformanceTests {
         let all = ListPerf.shadowedLayers(in: window)
         // The file header pinned at the top of the diff casts its own short shadow (ChangesSplit),
         // from its fill too.
-        let headers = all.filter { $0.layer.bounds.height == NWFileHeader.height }
-        let shadows = all.filter { $0.layer.bounds.height != NWFileHeader.height }
+        let headers = all.filter { $0.layer.bounds.height == SHFileHeader.height }
+        let shadows = all.filter { $0.layer.bounds.height != SHFileHeader.height }
         #expect(shadows.count == (floating ? 1 : 0), "\(shadows.map(\.layer))")
         #expect(headers.count == 1, "\(headers.map(\.layer))")
         #expect(all.allSatisfy { $0.subtree == 1 }, "a shadow over the pane's content: \(all.map(\.subtree))")
@@ -1699,7 +1699,7 @@ struct ListPerformanceTests {
 
     private func palette(_ items: [PaletteItem], query: String, highlight: PaletteHighlight = PaletteHighlight()) -> OffscreenWindow {
         OffscreenWindow(size: CGSize(width: 900, height: 700), dark: true,
-                        Color.clear.nwCommandPalette(isPresented: .constant(true)) {
+                        Color.clear.shCommandPalette(isPresented: .constant(true)) {
                             PaletteCard(items: items, run: { _ in }, close: {}, initialQuery: query, highlight: highlight)
                         })
     }
@@ -1712,7 +1712,7 @@ struct ListPerformanceTests {
         }
         defer { window.close() }
         // At most 14 rows fit; each may be built twice while the card settles.
-        #expect(rows["palette.row", default: 0] <= 2 * NWPaletteMetrics.maxVisibleRows, "\(rows)")
+        #expect(rows["palette.row", default: 0] <= 2 * SHPaletteMetrics.maxVisibleRows, "\(rows)")
     }
 
     @Test func movingThePaletteHighlightRedrawsOnlyTheRowsItLeavesAndLandsOn() throws {
@@ -1725,7 +1725,7 @@ struct ListPerformanceTests {
             for index in 1...20 { _ = ListPerf.time(window) { highlight.move(to: index) } }
         }
         // Two rows per move, plus the rows the highlight scrolls into view.
-        #expect(rows["palette.row", default: 0] <= 20 * 2 + NWPaletteMetrics.maxVisibleRows, "\(rows)")
+        #expect(rows["palette.row", default: 0] <= 20 * 2 + SHPaletteMetrics.maxVisibleRows, "\(rows)")
     }
 
     /// Lazy rows still let the card hug a short list, and a long one stops at the cap.
@@ -1737,9 +1737,9 @@ struct ListPerformanceTests {
         ListPerf.settle(window)
         let scroll = try #require(ListPerf.scrollView(in: window))
 
-        let row = NWDensity.standard.rowHeight
-        let cap = NWPaletteMetrics.placement(in: CGSize(width: 900, height: 700), rowHeight: row).maxListHeight
-        let natural = NWPaletteMetrics.sectionHeight + CGFloat(count) * row
+        let row = SHDensity.standard.rowHeight
+        let cap = SHPaletteMetrics.placement(in: CGSize(width: 900, height: 700), rowHeight: row).maxListHeight
+        let natural = SHPaletteMetrics.sectionHeight + CGFloat(count) * row
         #expect(abs(scroll.frame.height - min(natural, cap)) < 1, "list \(scroll.frame.height), rows \(natural), cap \(cap)")
     }
 
@@ -1753,6 +1753,6 @@ struct ListPerformanceTests {
         ListPerf.time(window) { highlight.move(to: 200) }
 
         let visible = scroll.contentView.bounds
-        #expect(visible.minY > CGFloat(150) * NWDensity.standard.rowHeight, "scrolled to \(visible.minY)")
+        #expect(visible.minY > CGFloat(150) * SHDensity.standard.rowHeight, "scrolled to \(visible.minY)")
     }
 }

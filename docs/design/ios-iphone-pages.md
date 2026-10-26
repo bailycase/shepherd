@@ -9,13 +9,13 @@ connected hosts, newest first.
 
 - **Header:** the large title "Needs you", then "4 things are waiting on you" ("1 thing is waiting
   on you"). On `bgWindow`, 14pt sides, cards 10pt apart. Pull to refresh.
-- **A card** (`NWAttentionCard`): `bgRaised`, 1px `lineSubtle`, 12pt corners, 10×14 padding, 6pt
+- **A card** (`SHAttentionCard`): `bgRaised`, 1px `lineSubtle`, 12pt corners, 10×14 padding, 6pt
   apart inside:
   - The origin line: a 14pt `lanternText` glyph (a bolt for an automation run, a folded map for a
     mission; a glowing 8pt `lantern` dot for a thread) and
     "A thread", "A run of the automation Triage new Sentry issues" (12
     `textTertiary`), with the time since trailing ("now", "2m", "14m", "1h"). The app adds the
-    host's badge when there are several hosts (`NWAttentionCard`).
+    host's badge when there are several hosts (`SHAttentionCard`).
   - The title (15/600): the thread's name. An automation's card is
     titled by its question ("Is this a regression from #231?") over the asker's context ("NilPointer
     in PlaceOrder started 40 minutes after #231 merged.").
@@ -35,7 +35,7 @@ connected hosts, newest first.
 `Search/MobileSearchScreen.swift`, pushed from Home's Search. No navigation bar and no tab bar; the
 keyboard is up while the query is empty.
 
-- **Field row:** 58pt from the top, 14pt sides, 10pt gap: the field (`NWTouchSearchField`: 40pt,
+- **Field row:** 58pt from the top, 14pt sides, 10pt gap: the field (`SHTouchSearchField`: 40pt,
   10pt corners, `bgSelected`, a 15pt magnifier and a 12pt clear ×, both `textTertiary`, the query at
   16 with a `lantern` caret; placeholder "Search threads"), then Cancel (16 `running`).
 - **Results:** sections 8pt apart, each a head and a card of 52pt rows (a 16pt glyph in a 20pt
@@ -60,7 +60,7 @@ keyboard is up while the query is empty.
 `Home/MoreScreen.swift`, pushed from Home's More.
 
 - **Hosts:** the head "Hosts" with "Add host" (13 `running`) trailing, then a card per host
-  (`NWHostCard`; 12×14 padding, 6pt apart, 10pt between cards):
+  (`SHHostCard`; 12×14 padding, 6pt apart, 10pt between cards):
   - A 15pt display glyph in `textSecondary`, the name (mono 15/600), what it is ("Shepherd app · agent
     0.87", 12 `textTertiary`), and the connection trailing (a 7pt dot and "Connected" in `done`,
     "Unreachable" in `failed`, 12). The app shows the address and port where the board has what it
@@ -81,7 +81,7 @@ keyboard is up while the query is empty.
   puzzle glyph: the settings host's bundled extensions that are on and its installed ones, once it
   has answered), which opens Settings ▸ Extensions (the bundled and installed pi extensions each
   host loads). The card shows while any host is set up.
-- **Not built yet:** the card's Design systems ("2 · acme-web, Night Watch", a palette glyph) and
+- **Not built yet:** the card's Design systems ("2 · acme-web, Shepherd Design", a palette glyph) and
   Archive ("41 threads", a box glyph) rows, each pushing its list; they wait for the Mac.
 
 ## iPhone: Settings (MobileSettings)
@@ -115,9 +115,9 @@ keyboard is up while the query is empty.
 No board draws these pages: they are the Mac's Settings ▸ Agents, Worktrees and Pi (SettingsAgents,
 SettingsWorktrees, SettingsPi) as a host keeps them (`hostSettings.v1`), in iOS Settings' anatomy
 (`Settings/HostSettingsScreens.swift`): a large title and an explanation (`.caption`,
-`textSecondary`), then `SettingsSection` heads over `NWListCard`s of rows, each the title at `ui`
+`textSecondary`), then `SettingsSection` heads over `SHListCard`s of rows, each the title at `ui`
 over a note (12.5/1.45 `textTertiary`, its `code` and **names** marked as the Mac marks them,
-`NWMarkupText`) with its control trailing: an `.nwSwitch`, or a menu naming the current value
+`SHMarkupText`) with its control trailing: an `.shSwitch`, or a menu naming the current value
 beside up-down chevrons.
 
 - **Which host:** with several hosts, a first card, Host, whose menu lists them ("horizon ·
@@ -184,7 +184,7 @@ host keeps Shepherd's own copies in its support folder and serves them over `ins
   drafts last until saved, or until the app quits.
 - **The app's editor** (`InstructionsTextEditor`, TextKit) draws as the Mac's does: its
   highlighting, and every line changed since the last save tinted, not only the one being typed;
-  its sizes follow Dynamic Type up to 22pt. The key row is the terminal's (`NWTerminalKeyRow`);
+  its sizes follow Dynamic Type up to 22pt. The key row is the terminal's (`SHTerminalKeyRow`);
   `` ` `` and `**` wrap a selection, and Tab indents two spaces. Save reads "Save" whatever the scope
   (VoiceOver hears "Save to 3 hosts"), and a spinner takes its place while it writes; a failed save
   shows its reason in a banner over the file.
@@ -206,7 +206,7 @@ SettingsSkills): every host's agent skills, the same on every host, over `skills
   track in `lineStrong`). Under the card: "horizon is offline. It gets changes when it’s back."
   (12.5/1.5 `textTertiary`).
 - **In the app** the page is `bgWindow` with 16pt sides; the field is the touch search field
-  (`NWTouchSearchField`); Installed · 8 and Update 2 are the lists' header and link; "Updating"
+  (`SHTouchSearchField`); Installed · 8 and Update 2 are the lists' header and link; "Updating"
   shimmers in a row while its update goes; and several hosts away read "horizon, build-02 are
   offline. They get changes when they’re back." A tap on a row opens the skill, its switch turns it
   on or off on every host, and Update N installs every newer commit. Removing a skill (from its
