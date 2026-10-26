@@ -27,6 +27,28 @@ struct ThreadControlsPreviewTests {
         }
     }
 
+    @Test func aStandaloneThreadAndItsPlaceMenu() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        try await workspace.seed(ShepherdState(spaces: [Space(name: "shepherd", path: workspace.dir.path)]))
+        vm.openNewThread()
+        vm.newThread.choose(host: nil, space: nil, vm: vm)
+        try await eventuallyOnMain("standalone models to load") { !vm.newThread.loadingDefaults }
+        vm.newThread.prompt = "Compare approaches to organizing research notes"
+        #expect(vm.newThread.blocker(vm) == nil)
+        try await Preview.renderMatrix("standalone-new-thread", size: CGSize(width: 1000, height: 700)) {
+            NewThreadPage(vm: vm, chrome: PageHeaderChrome())
+        }
+        try await Preview.renderMatrix("standalone-place-menu", size: CGSize(width: 380, height: 260)) {
+            NWPlaceMenu(sections: NewThreadPlaces.sections(NewThreadState.hosts(vm), chosen: vm.newThread.place), worktree: nil,
+                        onChoose: { _ in }, onAdd: { _ in }, onWorktree: { _ in }, onClose: {}) { _ in EmptyView() }
+                .padding(NW.Space.l)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .background(Color.nw.bgWindow)
+        }
+    }
+
     @Test func idleWithNothingTyped() async throws { try await thread("controls-idle", running: false, draft: "") }
     @Test func workingWithNothingTyped() async throws { try await thread("controls-working-empty", running: true, draft: "") }
     @Test func workingWithWords() async throws { try await thread("controls-working-typed", running: true, draft: "Also check the migration.") }

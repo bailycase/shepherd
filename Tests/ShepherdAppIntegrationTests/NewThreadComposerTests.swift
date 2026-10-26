@@ -16,6 +16,35 @@ struct NewThreadComposerTests {
                                      thinkingLevels: ["openai/gpt-5": ["off", "low", "medium", "high", "xhigh", "max"]],
                                      serviceTiers: ["openai/gpt-5": ["standard", "fast"]], contexts: ["openai/gpt-5": "400K"])
 
+    @Test(arguments: [false, true])
+    func aThreadCanStartWithoutASpaceAndRemainInActivity(hasSpace: Bool) async throws {
+        try StubPi.installAsEngine()
+        let app = try AppHarness(modelCatalog: { Self.models })
+        defer { app.stop() }
+        let spaces = hasSpace ? [Fixture.space(path: app.dir.path)] : []
+        let vm = try await app.start(with: ShepherdState(spaces: spaces))
+        vm.openNewThread()
+        let draft = vm.newThread
+        draft.choose(host: nil, space: nil, vm: vm)
+        try await eventuallyOnMain("standalone defaults to load") { !draft.loadingDefaults }
+        #expect(draft.place == NewThreadPlace(host: nil, space: nil))
+        #expect(!draft.offersWorktree(vm))
+        draft.prompt = "tools:0 Research without a project"
+        #expect(draft.blocker(vm) == nil)
+        draft.send(vm)
+        try await eventuallyOnMain("standalone creation to finish") { vm.selectedAgentID != nil && !draft.starting }
+        #expect(draft.error == nil)
+        let agent = try #require(vm.state.agents.first)
+        let storage = try #require(vm.state.spaces.first { $0.id == agent.spaceID })
+        let pane = try #require(vm.state.tabs.first { $0.id == agent.tabID }?.layout.leaves.first)
+        #expect(storage.holdsThreads && storage.hidden)
+        #expect(vm.visibleSpaces == spaces, "no user space is registered")
+        #expect(pane.cwd.hasSuffix("/threads/\(agent.id.rawValue)"))
+        #expect(vm.sidebarLists.activity.contains { $0.id == .local(agent.id) })
+        vm.openNewThread()
+        #expect(draft.place == NewThreadPlace(host: nil, space: nil), "reopening keeps No space")
+    }
+
     @Test func creationKeepsTheModelsFullThinkingSetAndTheChosenSpeed() async throws {
         try StubPi.installAsEngine()
         let app = try AppHarness(modelCatalog: { Self.models })
