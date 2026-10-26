@@ -51,10 +51,12 @@ struct AgentSettings: View {
             SettingsGroup(title: "Session naming") {
                 SettingsRow(title: "Session naming model",
                             subtitle: "Sessions are named automatically from their first prompt. Your manual renames are never overwritten. Automatic prefers a low-cost model you’re signed in to.") {
-                    NWPopupMenu(Self.namingTitle(settings.namingModel), minWidth: AppLayout.settingsPopupWidth) {
+                    NWPopupMenu(settings.namingModel.isEmpty ? "Automatic" : settings.namingModel,
+                                mono: !settings.namingModel.isEmpty, minWidth: AppLayout.settingsPopupWidth) {
                         Button("Automatic") { settings.namingModel = "" }
-                        ForEach(Self.namingModels, id: \.id) { choice in
-                            Button(choice.title) { settings.namingModel = choice.id }
+                        Divider()
+                        ForEach(modelOptions, id: \.self) { id in
+                            Button(id) { settings.namingModel = id }
                         }
                     }
                     .accessibilityLabel("Session naming model")
@@ -115,16 +117,4 @@ struct AgentSettings: View {
     }
 
     static let explanation = "Defaults and behavior for your agents. Existing agents keep their model, thinking level and speed."
-
-    /// The namer's own cheapest-first list (shepherd-namer.ts), as the popup names them.
-    static let namingModels: [(id: String, title: String)] = [
-        ("anthropic/claude-haiku-4-5", "Claude Haiku 4.5 · Anthropic"),
-        ("openai/gpt-5.1-codex-mini", "Codex Mini · OpenAI"),
-        ("google/gemini-2.5-flash", "Gemini 2.5 Flash · Google"),
-    ]
-
-    /// The popup's value: "Automatic", a listed model's name, or a stored id the list lacks.
-    static func namingTitle(_ id: String) -> String {
-        id.isEmpty ? "Automatic" : namingModels.first { $0.id == id }?.title ?? id
-    }
 }

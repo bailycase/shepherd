@@ -189,9 +189,10 @@ shell they run."
 - **Session naming:**
   - Session naming model, "Sessions are named automatically from their first prompt. Your manual
     renames are never overwritten. Automatic prefers a low-cost model you’re signed in to.": a popup,
-    Automatic (default) · Claude Haiku 4.5 · Anthropic · Codex Mini · OpenAI · Gemini 2.5 Flash ·
-    Google (`AppSettings.namingModel`, "" for Automatic). A chosen model reaches the namer as
-    `SHEPHERD_NAMER_MODELS`, tried first; the namer still falls back to the agent's own model.
+    Automatic (default), then the same live provider/model catalog as Default model, including
+    signed-in and custom providers (`AppSettings.namingModel`, "" for Automatic). A chosen model
+    reaches the namer as `SHEPHERD_NAMER_MODELS`, tried first; the namer still falls back to the
+    agent's own model.
     Automatic is the namer's own cheapest-first list. Naming is always on: there is no switch here
     or on a remote client (the user's decision, 2026-10-07). A name the user types stays final.
 - **While the agent is working** (the queue's setting; QueueStates' Settings card still draws the
