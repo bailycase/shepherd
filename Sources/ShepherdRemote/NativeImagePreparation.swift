@@ -22,7 +22,7 @@ public enum NativeImagePreparation {
         public var description: String {
             switch self {
             case .unreadable(let name): "\(name) isn't an image Shepherd can send."
-            case .tooLarge(let name): "\(name) is over \(NativeImage.maxBytes / 1024 / 1024) MiB after resizing."
+            case .tooLarge(let name): "\(name) is still too large after resizing."
             case .full: "A message carries at most \(NativeImage.maxPerSend) images."
             }
         }
@@ -36,28 +36,35 @@ public enum NativeImagePreparation {
     /// How many more images a message holding `count` can take.
     public static func room(_ count: Int) -> Int { max(0, NativeImage.maxPerSend - count) }
 
-    /// `data` resized and encoded for a send. A JPEG that is still too large steps its quality
-    /// down; a PNG that is too large is sent as a JPEG instead, as a photo would be.
-    public static func prepare(_ data: Data, name: String, maxEdge: Int = maxEdge) throws -> NativeImage {
+    /// `data` resized and encoded for a send. A tighter byte budget accounts for the remote
+    /// frame, including its text and other images. Keep PNG when it fits; otherwise try JPEG
+    /// quality levels, then smaller dimensions.
+    public static func prepare(_ data: Data, name: String, maxEdge: Int = maxEdge, maxBytes: Int = NativeImage.maxBytes) throws -> NativeImage {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let type = CGImageSourceGetType(source) as String?,
               CGImageSourceGetCount(source) > 0 else { throw Failure.unreadable(name) }
         let jpeg = UTType(type).map(sendsAsJPEG) == true
-        let options: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: min(maxEdge, longestEdge(source) ?? maxEdge),
-            kCGImageSourceShouldCacheImmediately: true,
-        ]
-        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { throw Failure.unreadable(name) }
+        let limit = min(maxBytes, NativeImage.maxBytes)
         let base = (name as NSString).deletingPathExtension.isEmpty ? "Image" : (name as NSString).deletingPathExtension
-        if !jpeg, let png = encode(image, as: .png), png.count <= NativeImage.maxBytes {
-            return NativeImage(mimeType: "image/png", data: png, name: base + ".png")
-        }
-        for quality in [0.85, 0.7, 0.5, 0.35] {
-            if let data = encode(image, as: .jpeg, quality: quality), data.count <= NativeImage.maxBytes {
-                return NativeImage(mimeType: "image/jpeg", data: data, name: base + ".jpg")
+        var edge = min(maxEdge, longestEdge(source) ?? maxEdge)
+        guard limit > 0 else { throw Failure.tooLarge(name) }
+        while edge > 0 {
+            let options: [CFString: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: edge,
+                kCGImageSourceShouldCacheImmediately: true,
+            ]
+            guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { throw Failure.unreadable(name) }
+            if !jpeg, let png = encode(image, as: .png), png.count <= limit {
+                return NativeImage(mimeType: "image/png", data: png, name: base + ".png")
             }
+            for quality in [0.85, 0.7, 0.5, 0.35] {
+                if let data = encode(image, as: .jpeg, quality: quality), data.count <= limit {
+                    return NativeImage(mimeType: "image/jpeg", data: data, name: base + ".jpg")
+                }
+            }
+            edge /= 2
         }
         throw Failure.tooLarge(name)
     }
