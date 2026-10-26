@@ -37,7 +37,14 @@ const server = http.createServer(async (req, res) => {
     res.write(chunk({ tool_calls: [{ index: 0, id: "call_" + name, type: "function", function: { name, arguments: JSON.stringify(args) } }] }));
     return finish("tool_calls");
   }
-  if (last.role === "tool") {
+  const recoveryTools = body.messages.slice(body.messages.findLastIndex(message => message.role === "user") + 1)
+    .filter(message => message.role === "tool").length;
+  if (text === "slow after tool failure" && recoveryTools < 2) {
+    res.write(chunk({ tool_calls: [{ index: 0, id: `recovery_${recoveryTools}`, type: "function",
+      function: { name: "bash", arguments: JSON.stringify({ command: recoveryTools ? "echo recovered" : "exit 1" }) } }] }));
+    return finish("tool_calls");
+  }
+  if (last.role === "tool" && text !== "slow after tool failure") {
     res.write(chunk({ content: "tool done" }));
     return finish("stop");
   }

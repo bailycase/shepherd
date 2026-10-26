@@ -74,6 +74,11 @@
     ride `agentAction` behind `terminal.control.v1`: `renameTerminal` (Rename tab) and
     `killTerminalProcess` (Kill process), each refused on the agent's thread. An older
     client's `typeInTerminal` (Run in terminal, since removed) is answered `unsupported`.
+    `startTerminal(paneID:)`, behind `terminal.start.v1`, demands only the selected auxiliary
+    terminal, without selecting its host thread or starting siblings. Clients demand on activation
+    even with a persisted session ID (it may predate a host restart); repeated demand is idempotent.
+    Primary, review, deleted and foreign panes are refused. Hidden views and `terminals` activity
+    polls never demand processes; clients of older hosts keep the existing attach-only path.
   - **Terminal compatibility** (no wire or capability change; docs/agent-coordination.md ›
     Terminals and compatibility): a current client's +, ⌘D and ⌘J send the same `openPane` they
     always did, naming the thread as `relativeTo` (axis horizontal, `TerminalPanel.newTabAnchor`).
@@ -99,8 +104,11 @@
   - `pushRegistration` / `pushUnregister` (`push.notifications.v1`): an opted-in mobile client
     registers or removes a relay destination over the authenticated connection, answered with `ok`.
     Registration carries only its opaque ID and scoped send credential. The APNs device token
-    and revocation credential stay with the phone and relay. Alerts contain fixed text and opaque
-    routing IDs, never thread contents. Hosts without this capability cannot register destinations.
+    and revocation credential stay with the phone and relay. Alerts include the current thread title
+    and a short final reply, error, or explicit question preview by default, with generic text when
+    unavailable. The relay receives optional `title` (100 Unicode scalars) and `preview` (240),
+    whitespace-normalized and credential-redacted before truncation; redaction cannot detect every
+    secret. Thinking and tool logs are not preview sources. Hosts without this capability cannot register destinations.
   - `hostSettings` (`hostSettings.v1`): what the host's Settings ▸ Agents, Worktrees and Pi set,
     the pi packages its pi loads, and its Shepherd and pi versions; one change per request
     (`HostSettingChange`), applied as the Mac's own Settings would. The additive

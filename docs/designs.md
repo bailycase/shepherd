@@ -202,8 +202,7 @@ with its SHA-256, listed or not), `designBoard(_:path:)`, `designVersions(_:path
 ## The design agent
 
 A design is drawn by a pi agent whose `Agent.designID` names it. Its launch adds
-`-e shepherd-design.ts` and two variables: `SHEPHERD_DESIGN_ID` (the extension is inert without
-it) and `SHEPHERD_DESIGN_SKILL_DIR`. It lives in the reserved designs space, and its working
+`-e shepherd-design.ts` and two variables: `SHEPHERD_DESIGN_ID` and `SHEPHERD_DESIGN_SKILL_DIR`. It lives in the reserved designs space, and its working
 directory is the design's own folder (`<support>/designs/<id>/`): a design has no repository,
 and its agent works through its design tools. A system build's agent works in the project it
 reads, with its ordinary read tools. An agent an older state.json started in a project keeps
@@ -444,10 +443,18 @@ through it:
 ### Design agents and ordinary threads
 
 An agent draws a design while its `designID` names one in the workspace
-(`ShepherdState.isDesignAgent`). Its thread is that design's Chat tab and nothing else. Only it
-gets `shepherd-design.ts`, the design skill, the design facts in its prompt,
-`SHEPHERD_DESIGN_ID` and `SHEPHERD_DESIGN_SKILL_DIR`. A thread with no design never gets any of
-them, whether the experiment is on or off. The rule holds in both directions:
+(`ShepherdState.isDesignAgent`). Its thread is that design's Chat tab and nothing else.
+Only it gets `SHEPHERD_DESIGN_ID` and design facts in its prompt. With the Design experiment on,
+ordinary interactive threads also load `shepherd-design.ts` and the design skill, enabled by
+`SHEPHERD_DESIGN_TOOLS=1`. They use `design_list()` (`designList` request/reply) to find canvases
+and must pass `designID` on every other design tool call. No live design content is added to their
+prompts automatically. Their tools follow the Defer rarely used tools setting. Automations and
+project coordinators do not receive these tools.
+
+The server authenticates each request as the calling pi process. Design agents remain scoped to
+their own design; ordinary threads can explicitly target existing canvases, not system builds.
+`comment_reply` and `markup_propose` remain owner-only, including at the socket boundary, so a
+thread cannot speak as the design's agent. Other boundaries remain:
 
 - **Peers.** A design agent launches without the panes extension, so it has no `terminal_*`,
   `agent_*`, `automation_*` or `notify` tools. The server also refuses `listAgents`,
@@ -469,9 +476,8 @@ them, whether the experiment is on or off. The rule holds in both directions:
 - **A forgotten design.** Deleting a design, or startup forgetting one whose folder is gone,
   takes the agents that drew it (Undo brings them back with it, still drawing it). Clearing their `designID` instead would turn the design's chat,
   fences and all, into an ordinary thread.
-- **The one way in.** A thread gets a piece of a design only when the user hands it one: a
-  design reference (Design references, below). Nothing else of a design reaches a thread, and a
-  reference never reaches a design's agent.
+- **References.** A design reference still gives a thread a pinned copy (Design references,
+  below), separate from the live-design tools. A reference never reaches a design's agent.
 
 ### Comments
 

@@ -55,9 +55,9 @@ enum PushRelay {
         }
     }
 
-    /// Send and manage tokens must be non-empty hex (the relay issues 64-char hex strings).
+    /// Send and manage tokens are exactly 32 bytes encoded as hex.
     private static func validateHexToken(_ token: String) throws {
-        guard !token.isEmpty, token.count <= 256,
+        guard token.utf8.count == 64,
               token.utf8.allSatisfy({ (48...57).contains($0) || (65...70).contains($0) || (97...102).contains($0) }) else {
             throw PushError.network("Relay returned an invalid credential.")
         }
@@ -75,7 +75,10 @@ enum PushRelay {
 
     /// POST a new registration. Only on explicit user opt-in per host.
     static func register(deviceToken: String, environment: PushEnvironment, hostID: UUID,
+                         credential: PushKeychain.Credential,
                          session: URLSession? = nil) async throws -> Registration {
+        _ = try validated(Registration(id: credential.registrationID, sendToken: credential.sendToken,
+                                       manageToken: credential.manageToken))
         let s = session ?? defaultSession
         var request = URLRequest(url: base.appendingPathComponent("api/push/registrations"))
         request.httpMethod = "POST"
@@ -84,18 +87,27 @@ enum PushRelay {
             "deviceToken": deviceToken,
             "environment": environment.rawValue,
             "hostID": hostID.uuidString.lowercased(),
+            "id": credential.registrationID,
+            "sendToken": credential.sendToken,
+            "manageToken": credential.manageToken,
         ]
         request.httpBody = try JSONEncoder().encode(body)
         let (data, response) = try await s.data(for: request)
         try check(response)
         // Decode bound only — URLSession buffers the full response in memory; the 10s
         // resource timeout is the transport bound.
-        return try validated(decodeBounded(Registration.self, from: data))
+        let registration = try validated(decodeBounded(Registration.self, from: data))
+        guard registration.id == credential.registrationID,
+              registration.sendToken == credential.sendToken,
+              registration.manageToken == credential.manageToken else {
+            throw PushError.network("Relay returned unexpected credentials.")
+        }
+        return registration
     }
 
     /// PATCH an existing registration (token refresh or periodic renew within 90d expiry).
     /// Returns `true` on success (2xx), `false` on 401 (expired/invalidated — caller should
-    /// clear the stale credential and re-register). Other errors throw.
+    /// re-register with the persisted identity). Other errors throw.
     @discardableResult
     static func update(registrationID: String, manageToken: String,
                        deviceToken: String, environment: PushEnvironment,

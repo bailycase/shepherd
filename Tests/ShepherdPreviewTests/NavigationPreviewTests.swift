@@ -722,18 +722,22 @@ extension PreviewTests {
         }
     }
 
-    /// The workplace chip's menu: This Mac's projects (nested ones flat), a host's, Add folder…
-    /// on each, and the worktree option.
+    /// The workplace chip's menu: the search field, This Mac's projects as a tree (the chosen
+    /// one's parents open, another parent closed), a host's, Add folder… on each, and the
+    /// worktree option.
     @Test func newThreadPlaceMenu() async throws {
         let mac = SHPlaceSection(id: "local", title: "This Mac", options: [
-            SHPlaceOption(id: "local/a", section: "local", title: "shepherd", detail: "~/Developer/Shepherd", isCurrent: true),
-            SHPlaceOption(id: "local/b", section: "local", title: "sub-project", detail: "~/Developer/Shepherd/sub"),
-            SHPlaceOption(id: "local/c", section: "local", title: "dashboard-web", detail: "~/code/dashboard-web"),
+            SHPlaceOption(id: "local/a", section: "local", title: "shepherd", detail: "~/Developer/Shepherd"),
+            SHPlaceOption(id: "local/b", section: "local", title: "sub-project", detail: "~/Developer/Shepherd/sub", isCurrent: true,
+                          ancestors: ["local/a"]),
+            SHPlaceOption(id: "local/e", section: "local", title: "docs", detail: "~/Developer/Shepherd/docs", ancestors: ["local/a"]),
+            SHPlaceOption(id: "local/c", section: "local", title: "rain.gg", detail: "~/Developer/rain.gg"),
+            SHPlaceOption(id: "local/f", section: "local", title: "ms-chat", detail: "~/Developer/rain.gg/ms-chat", ancestors: ["local/c"]),
         ])
         let host = SHPlaceSection(id: "host", title: "build-01", options: [
             SHPlaceOption(id: "host/d", section: "host", title: "orders-svc", detail: "~/src/orders-svc"),
         ])
-        try await Preview.render("new-thread-place-menu", size: CGSize(width: 360, height: 300)) {
+        try await Preview.renderMatrix("new-thread-place-menu", size: CGSize(width: 360, height: 380)) {
             SHPlaceMenu(sections: [mac, host], worktree: SHPlaceWorktree(isOn: false, caption: NewThreadRules.worktreeCaption(base: "")),
                         onChoose: { _ in }, onAdd: { _ in }, onWorktree: { _ in }, onClose: {}) { _ in EmptyView() }
                 .padding(SH.Space.l)

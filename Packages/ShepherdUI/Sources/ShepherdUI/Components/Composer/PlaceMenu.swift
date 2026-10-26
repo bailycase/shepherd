@@ -1,8 +1,9 @@
 import SwiftUI
 
 // The workplace chip's menu (NavNewThread): where a new thread runs, as the composer's menus
-// look (radius 12, raised, the popover shadow, 28pt rows). One section per host with its
-// projects, each section ending in "Add folder…"; then the worktree option.
+// look (radius 12, raised, the popover shadow, 28pt rows). A search field, then one section per
+// host with its projects as a tree (nested ones fold under their parent), each section ending in
+// "Add folder…"; then the worktree option.
 
 /// A project the menu offers: its name and path, on a host.
 public struct SHPlaceOption: Identifiable, Equatable, Sendable {
@@ -13,13 +14,17 @@ public struct SHPlaceOption: Identifiable, Equatable, Sendable {
     /// Its path, in mono `textTertiary`.
     public var detail: String?
     public var isCurrent: Bool
+    /// The ids of the options it nests under, outermost first; they come before it in the section.
+    public var ancestors: [String]
 
-    public init(id: String, section: String, title: String, detail: String? = nil, isCurrent: Bool = false) {
+    public init(id: String, section: String, title: String, detail: String? = nil, isCurrent: Bool = false,
+                ancestors: [String] = []) {
         self.id = id
         self.section = section
         self.title = title
         self.detail = detail
         self.isCurrent = isCurrent
+        self.ancestors = ancestors
     }
 }
 
@@ -59,11 +64,18 @@ public enum SHPlaceMenuMetrics {
     /// The Base row's branch (as the project rows' paths) and its chevron (as All models…).
     static let baseFont: CGFloat = 11
     static let baseChevron: CGFloat = 10
+    /// A nested project's indent per level, and its disclosure chevron's box.
+    static let indent: CGFloat = 14
+    static let disclosure: CGFloat = 10
+    /// The search row's glyph and text, as the model picker's (ModelPicker).
+    static let searchGlyph: CGFloat = 12
+    static let searchFont: CGFloat = 13
 }
 
-/// The workplace menu: sections of projects (a check on the chosen one, its path trailing),
-/// "Add folder…" per host, and the worktree switch. ↑↓ move, ⏎ chooses, esc closes. Each
-/// project row carries `rowMenu` as its context menu.
+/// The workplace menu: a search field, sections of projects as trees (a check on the chosen one,
+/// its path trailing), "Add folder…" per host, and the worktree switch. Typing filters every
+/// project, nested or not, by name or path. ↑↓ move, → opens a parent, ← closes it (or goes to its
+/// parent), ⏎ chooses, esc closes. Each project row carries `rowMenu` as its context menu.
 public struct SHPlaceMenu<RowMenu: View>: View {
     let sections: [SHPlaceSection]
     let worktree: SHPlaceWorktree?
@@ -75,6 +87,9 @@ public struct SHPlaceMenu<RowMenu: View>: View {
     let onClose: () -> Void
     @ViewBuilder let rowMenu: (SHPlaceOption) -> RowMenu
     @State private var selection: Int
+    @State private var query = ""
+    /// The parents shown open; the chosen project's ancestors start open.
+    @State private var expanded: Set<String>
     @FocusState private var focused: Bool
 
     public init(sections: [SHPlaceSection], worktree: SHPlaceWorktree?, maxHeight: CGFloat? = nil,
@@ -90,25 +105,112 @@ public struct SHPlaceMenu<RowMenu: View>: View {
         self.onChooseBase = onChooseBase
         self.onClose = onClose
         self.rowMenu = rowMenu
-        let options = sections.flatMap(\.options)
-        _selection = State(initialValue: options.firstIndex(where: \.isCurrent) ?? 0)
+        let all = sections.flatMap(\.options)
+        let open = Set(all.first(where: \.isCurrent)?.ancestors ?? [])
+        _expanded = State(initialValue: open)
+        let shown = Self.visible(sections, query: "", expanded: open).flatMap(\.options)
+        _selection = State(initialValue: shown.firstIndex(where: \.isCurrent) ?? 0)
     }
 
-    private var options: [SHPlaceOption] { sections.flatMap(\.options) }
+    /// What the menu lists: with a query, every project whose name or path holds it, flat, and
+    /// only the sections with one; without, each project whose ancestors are all open.
+    public static func visible(_ sections: [SHPlaceSection], query: String, expanded: Set<String>) -> [SHPlaceSection] {
+        let query = query.trimmingCharacters(in: .whitespaces)
+        guard query.isEmpty else {
+            return sections.compactMap { section in
+                var section = section
+                section.options = section.options.filter {
+                    $0.title.localizedCaseInsensitiveContains(query) || $0.detail?.localizedCaseInsensitiveContains(query) == true
+                }.map { var option = $0; option.ancestors = []; return option }
+                section.addTitle = nil
+                return section.options.isEmpty ? nil : section
+            }
+        }
+        return sections.map { section in
+            var section = section
+            section.options = section.options.filter { $0.ancestors.allSatisfy(expanded.contains) }
+            return section
+        }
+    }
+
+    private var shown: [SHPlaceSection] { Self.visible(sections, query: query, expanded: expanded) }
 
     public var body: some View {
         let sh = Color.sh
+        let shown = shown
+        let options = shown.flatMap(\.options)
+        let parents = Set(sections.flatMap(\.options).compactMap(\.ancestors.last))
+        // Rows line up with their siblings' chevrons once any project nests.
+        let disclosures = query.isEmpty && !parents.isEmpty
         let showsBase = worktree?.isOn == true && worktree?.base != nil
         let rowCount = options.count + (showsBase ? 1 : 0)
         let indexByID = Dictionary(options.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
         VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: SH.Space.m) {
+                Image(systemName: "magnifyingglass").font(.system(size: SHPlaceMenuMetrics.searchGlyph, weight: .medium)).foregroundStyle(sh.textTertiary)
+                TextField(text: $query, prompt: Text("Search spaces").foregroundStyle(sh.textTertiary)) { Text("Search spaces") }
+                    .textFieldStyle(.plain)
+                    .font(.shSans(SHPlaceMenuMetrics.searchFont))
+                    .foregroundStyle(sh.textPrimary)
+                    .focused($focused)
+                    .onKeyPress(.downArrow) { selection = min(max(0, rowCount - 1), selection + 1); return .handled }
+                    .onKeyPress(.upArrow) { selection = max(0, selection - 1); return .handled }
+                    .onKeyPress(.rightArrow) {
+                        guard query.isEmpty, options.indices.contains(selection), parents.contains(options[selection].id) else { return .ignored }
+                        expanded.insert(options[selection].id)
+                        return .handled
+                    }
+                    .onKeyPress(.leftArrow) {
+                        guard query.isEmpty, options.indices.contains(selection) else { return .ignored }
+                        let option = options[selection]
+                        if expanded.contains(option.id) {
+                            expanded.remove(option.id)
+                        } else if let parent = option.ancestors.last, let index = indexByID[parent] {
+                            selection = index
+                        } else {
+                            return .ignored
+                        }
+                        return .handled
+                    }
+                    .onKeyPress(.return) {
+                        if options.indices.contains(selection) { onChoose(options[selection]) }
+                        else if showsBase, selection == options.count { onChooseBase() }
+                        return .handled
+                    }
+                    .onKeyPress(.escape) { onClose(); return .handled }
+                    .accessibilityLabel("Search spaces")
+            }
+            .padding(.horizontal, SH.Space.m)
+            .frame(height: SHComposerMetrics.modelSearchHeight)
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(sections) { section in
+                    if shown.isEmpty {
+                        Text("No matching spaces").font(.sh(.caption)).foregroundStyle(sh.textTertiary)
+                            .padding(.horizontal, SH.Space.m)
+                            .frame(height: SHComposerMetrics.menuRowHeight)
+                    }
+                    ForEach(shown) { section in
                         SHMenuHeader(section.title)
                         ForEach(section.options) { option in
                             let index = indexByID[option.id] ?? 0
+                            let isParent = parents.contains(option.id)
+                            let isOpen = expanded.contains(option.id)
                             SHMenuRow(highlighted: index == selection, action: { onChoose(option) }, onHover: { selection = index }) {
+                                if disclosures {
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: SHPlaceMenuMetrics.baseChevron, weight: .semibold))
+                                        .foregroundStyle(sh.textTertiary)
+                                        .rotationEffect(.degrees(isOpen ? 90 : 0))
+                                        .frame(width: SHPlaceMenuMetrics.disclosure)
+                                        .opacity(isParent ? 1 : 0)
+                                        .contentShape(Rectangle())
+                                        .onTapGesture {
+                                            guard isParent else { return onChoose(option) }
+                                            if isOpen { expanded.remove(option.id) } else { expanded.insert(option.id) }
+                                        }
+                                        .accessibilityHidden(true)
+                                        .padding(.leading, CGFloat(option.ancestors.count) * SHPlaceMenuMetrics.indent)
+                                }
                                 Text(option.title).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textPrimary).lineLimit(1)
                                 if let detail = option.detail {
                                     Text(detail).font(.shMono(11)).foregroundStyle(sh.textTertiary).lineLimit(1)
@@ -120,7 +222,14 @@ public struct SHPlaceMenu<RowMenu: View>: View {
                                 }
                             }
                             .contextMenu { rowMenu(option) }
-                            .accessibilityLabel(option.title + (option.isCurrent ? ", current" : ""))
+                            .accessibilityLabel(option.title + (option.isCurrent ? ", current" : "") + (isParent ? (isOpen ? ", expanded" : ", collapsed") : ""))
+                            .accessibilityActions {
+                                if isParent {
+                                    Button(isOpen ? "Collapse" : "Expand") {
+                                        if isOpen { expanded.remove(option.id) } else { expanded.insert(option.id) }
+                                    }
+                                }
+                            }
                         }
                         if let add = section.addTitle {
                             SHMenuRow(highlighted: false, action: { onAdd(section) }, onHover: {}) {
@@ -134,7 +243,9 @@ public struct SHPlaceMenu<RowMenu: View>: View {
                 }
             }
             .scrollIndicators(.hidden)
-            .frame(maxHeight: maxHeight.map { max(0, $0 - (worktree == nil ? 0 : SHComposerMetrics.menuRowHeight * 2)) })
+            .frame(maxHeight: maxHeight.map {
+                max(0, $0 - SHComposerMetrics.modelSearchHeight - (worktree == nil ? 0 : SHComposerMetrics.menuRowHeight * 2))
+            })
             .fixedSize(horizontal: false, vertical: maxHeight == nil)
             if let worktree {
                 SHHairline().padding(.vertical, SH.Space.xs)
@@ -162,18 +273,13 @@ public struct SHPlaceMenu<RowMenu: View>: View {
             }
         }
         .modifier(SHMenuSurface(width: SHPlaceMenuMetrics.width))
-        .focusable()
-        .focusEffectDisabled()
-        .focused($focused)
-        .onKeyPress(.downArrow) { selection = min(max(0, rowCount - 1), selection + 1); return .handled }
-        .onKeyPress(.upArrow) { selection = max(0, selection - 1); return .handled }
-        .onKeyPress(.return) {
-            if options.indices.contains(selection) { onChoose(options[selection]) }
-            else if showsBase, selection == options.count { onChooseBase() }
-            return .handled
+        .task {
+            // As the model picker: let the chip's focus release finish before claiming the field.
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            focused = true
         }
-        .onKeyPress(.escape) { onClose(); return .handled }
-        .onAppear { focused = true }
+        .onChange(of: query) { _, _ in selection = 0 }
         .onChange(of: rowCount) { _, count in selection = min(selection, max(0, count - 1)) }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Where the thread runs")

@@ -3,7 +3,7 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
-/// Settings ▸ Notifications: per-host push opt-in with data disclosure.
+/// Settings ▸ Notifications: per-host push opt-in.
 /// Default off. Each host gets its own toggle; all event types enabled together.
 /// One flat list — every host appears regardless of connection state so error/retry
 /// rows stay visible even when the host goes offline.
@@ -15,27 +15,10 @@ struct NotificationsScreen: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
-                VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
-                    Text("Get notified when a thread finishes, hits an error, or needs your answer, even when Shepherd isn't open.")
-                        .shText(.caption)
-                        .foregroundStyle(Color.sh.textSecondary)
-                        .padding(.horizontal, SH.Space.xs)
-                    SHListCard {
-                        HStack(spacing: SH.Space.l) {
-                            Image(systemName: "lock.shield")
-                                .font(.sh(.ui, weight: .medium))
-                                .foregroundStyle(Color.sh.textSecondary)
-                                .frame(width: SHListMetrics.leadingWidth)
-                                .accessibilityHidden(true)
-                            Text("Apple and Cloudflare receive your device token, event type, and opaque routing IDs. No thread content is sent.")
-                                .font(.sh(.caption))
-                                .foregroundStyle(Color.sh.textSecondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .padding(.horizontal, SH.Space.l)
-                        .padding(.vertical, SH.Space.m)
-                    }
-                }
+                Text("Get notified when a thread finishes, hits an error, or needs your answer, even when Shepherd isn't open.")
+                    .shText(.caption)
+                    .foregroundStyle(Color.sh.textSecondary)
+                    .padding(.horizontal, SH.Space.xs)
 
                 if hosts.hosts.isEmpty {
                     SettingsFootnote("Add a host in Settings ▸ Hosts to enable push notifications.")

@@ -80,6 +80,7 @@ extension SessionServer {
     /// (GitDesignStates › While the agent draws).
     private func refuseWhileDrawing(_ designID: DesignID) async throws {
         let working = await enqueueValueForGit {
+            if self.activeDesignRequests.values.contains(designID) { return true }
             guard let design = self.store.state.designs.first(where: { $0.id == designID }) else { return false }
             let agent = self.store.state.agents.first(where: { $0.id == design.agentID }) ?? self.store.state.agents.first { $0.designID == designID }
             guard let agent else { return false }

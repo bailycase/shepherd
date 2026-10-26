@@ -40,8 +40,8 @@ final class AppHarness {
     }
 
     /// Seeds `state` (if any), then builds the view model and waits until it has adopted the
-    /// server's snapshot. `restoringAgents` starts every seeded agent's pi at once, as a launch
-    /// does; otherwise an agent's pi starts when a test asks for its pane's session (most tests
+    /// server's snapshot. `restoringAgents` leaves settled agents dormant and starts selected or
+    /// recoverable work, as a launch does; otherwise pi starts when asked for a pane session (most tests
     /// seed agents only to look at them, with no pi on PATH). `readingCheckouts` turns on the
     /// header's checkout reads, which would otherwise change the workspace under a test that
     /// seeded a repository.
