@@ -108,6 +108,11 @@ struct AgentRecoveryTests {
         let h = try ScratchServer.fresh()
         let pi = try await PiAgent.launch(on: h)
         _ = try await pi.ready()
+        // This fixture binds after pi bootstraps; record the session as the production
+        // extension does before testing startup's conversation-identity check.
+        var agent = try #require(h.server.state.agents.first { $0.id == pi.agent.id })
+        agent.piSessionID = "stub-session"
+        try await h.server.updateAgent(agent)
         h.stop(keepFiles: true)
         try store(h).save(.init(sessionID: "stub-session", active: true, items: [], pending: [], paused: paused,
                                mode: .oneAtATime, attempts: previousAttempts), for: pi.agent.id)

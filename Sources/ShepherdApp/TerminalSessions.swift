@@ -24,12 +24,12 @@ enum TerminalSessionStoreError: Error, CustomStringConvertible {
 /// external connect/bootstrap dance: the store adopts
 /// the persisted state at init and every pane renders against live sessions.
 /// On relaunch all previously bound sessions are dead (they died with the
-/// app), so each pane respawns fresh — `pi --mode rpc` for an agent's primary
-/// pane, a login shell for everything else.
+/// app), so a requested pane respawns fresh: `pi --mode rpc` for an agent's primary
+/// pane, a login shell for everything else. Unrequested restored panes stay dormant.
 @MainActor
 final class TerminalSessionStore {
 
-    /// One pane's session. Views observe only `phase`; everything else is attach and replay
+    /// One pane's session. Views observe phase and dormancy; everything else is attach and replay
     /// bookkeeping, and the terminal model is built lazily while a view renders.
     @MainActor
     @Observable
@@ -64,6 +64,8 @@ final class TerminalSessionStore {
             )
         }()
         var phase: Phase = .connecting
+        /// A restored, unrequested pane has neither a process nor a terminal surface.
+        fileprivate(set) var isDormant = false
         @ObservationIgnored var sessionID: SessionID?
         struct BufferedOutput {
             let data: Data
@@ -335,7 +337,7 @@ final class TerminalSessionStore {
     /// configuration without replacing the NSView, so no detach or replay is
     /// involved and Pi's simultaneous repaint cannot race a screen snapshot.
     func updateAppearance(_ terminal: ShepherdTheme.Terminal) {
-        for session in sessions.values where !session.isRPC {
+        for session in sessions.values where !session.isRPC && session.hasTerminalModel {
             session.terminal.updateAppearance(terminal)
         }
     }
@@ -344,7 +346,7 @@ final class TerminalSessionStore {
     /// keybind unbinds). Like updateAppearance, ghostty applies the config
     /// without replacing the NSView — no detach, no replay, no blank pane.
     func updateSurfaceConfiguration() {
-        for session in sessions.values where !session.isRPC {
+        for session in sessions.values where !session.isRPC && session.hasTerminalModel {
             session.terminal.updateConfiguration(
                 fontSize: AppSettings.shared.terminalFontSize,
                 fontFamily: AppSettings.shared.resolvedTerminalFontFamily,
@@ -498,9 +500,14 @@ final class TerminalSessionStore {
     /// SwiftUI structural changes (splits collapsing, panes moving in the
     /// tree) recreate the ghostty NSView; the fresh surface starts blank, so
     /// re-pull the server's current-screen replay into it.
-    private func makeSession(paneID: PaneID, isRPC: Bool = false) -> PaneSession {
+    private func makeSession(paneID: PaneID, isRPC: Bool = false, isDormant: Bool = false) -> PaneSession {
         let session = PaneSession(paneID: paneID, isRPC: isRPC)
-        if isRPC { return session }
+        session.isDormant = isDormant
+        if !isRPC, !isDormant { configureTerminal(session) }
+        return session
+    }
+
+    private func configureTerminal(_ session: PaneSession) {
         session.terminal.onInput = { [weak self, weak session] data in
             guard let self, let session, let sessionID = session.sessionID else { return }
             self.server.write(sessionID: sessionID, data: data)
@@ -527,7 +534,6 @@ final class TerminalSessionStore {
                 self.attachIfNeeded(session, sessionID: sessionID)
             }
         }
-        return session
     }
 
     func session(for pane: LeafPane, in tab: Tab) -> PaneSession {
@@ -542,7 +548,7 @@ final class TerminalSessionStore {
             // kind can never serve this pane.
             detachPane(pane.id)
         }
-        let session = makeSession(paneID: pane.id, isRPC: rpc)
+        let session = makeSession(paneID: pane.id, isRPC: rpc, isDormant: dormantPanes.contains(pane.id))
         sessions[pane.id] = session
         scheduleStart(session, pane: pane, tab: tab)
         return session
@@ -580,6 +586,8 @@ final class TerminalSessionStore {
 
     private func activatePane(_ pane: LeafPane, in tab: Tab) {
         if dormantPanes.remove(pane.id) != nil, let session = sessions[pane.id] {
+            session.isDormant = false
+            if !session.isRPC, !session.hasTerminalModel { configureTerminal(session) }
             scheduleStart(session, pane: pane, tab: tab)
         } else {
             _ = session(for: pane, in: tab)

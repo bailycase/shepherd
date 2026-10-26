@@ -67,7 +67,16 @@ final class ShepherdViewModel {
     /// This Mac's spaces whose folder is gone (`checkMissingSpaces`): the sidebar marks them and
     /// no thread starts in them. Live state, never persisted.
     var missingSpaces: Set<SpaceID> = []
-    var selectedAgentID: AgentID?
+    var selectedAgentID: AgentID? {
+        didSet {
+            // Fallback selections after removal also wake their terminals. Initial restoration
+            // must classify dormant panes before starting the selected agent.
+            if didStartRestoredAgents, selectedAgentID != oldValue,
+               selectedRemoteAgent == nil, destination == nil, let selectedAgentID {
+                sessions.startAhead(selectedAgentID)
+            }
+        }
+    }
     /// The page the main column shows in place of a thread (New thread, Automations, Hosts);
     /// nil while a thread shows. Picking a row clears it. Ephemeral, like all selection state.
     var destination: MainDestination?

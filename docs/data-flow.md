@@ -48,7 +48,8 @@
   running turn or pending message. Revision subscriptions cover these opening threads even
   when their views are not mounted; no timer or extra polling loop runs.
 - A new agent's pi spawns with its creation. At launch settled restored agents and their terminals
-  stay dormant, even when their hidden layouts mount. Selection starts that agent and its terminals;
+  stay dormant without terminal models or Ghostty surfaces, even when their hidden layouts mount.
+  Selection starts that agent and its terminals;
   native/remote thread demand starts only its pi. The selected agent starts first; unfinished ordinary
   work starts a few at a time through `AgentStartQueue`. Explicit design/worktree starts still launch
   without selection. Ordinary agents recover unfinished authorized work and
