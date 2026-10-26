@@ -19,8 +19,8 @@ python3 scripts/design_section.py --docs docs "<heading>"  # one section of any 
 ```
 
 App builds and engine staging: [docs/build-and-run.md](docs/build-and-run.md). Run the Mac app from
-`Shepherd.xcodeproj` (`Shepherd (Dev)`, My Mac), not `swift run`. [PR CI](docs/testing.md#ci) runs
-unit, smoke and affected suites; docs alone run no Swift.
+`Shepherd.xcodeproj` (`Shepherd (Dev)`, My Mac), not `swift run`. [PR CI](docs/testing.md#ci) runs only for PRs targeting `master`.
+Docs alone run no Swift.
 
 ## Map
 
@@ -51,7 +51,7 @@ How it fits together: [ARCHITECTURE.md](ARCHITECTURE.md).
   Unit tests use no processes, sockets, windows, git or sleeps. Integration tests use
   `Tests/ShepherdTestSupport` and wait with `eventually`, never a fixed sleep.
 - Run the smallest relevant checks. Expand for shared changes or wider regressions, not every edit.
-  Report actual results and gaps; required PR CI still gates merging.
+  Report actual results and gaps; required CI still gates PRs into `master`.
 - Fix only docs the change makes wrong. Don't write new docs for a feature unless asked.
 - Keep tool output small (`| head`, `--stat`, a file by range). Hand a broad search or a long log
   to a helper (`shepherd_child_start`).

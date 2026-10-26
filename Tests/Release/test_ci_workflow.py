@@ -60,6 +60,11 @@ JOBS = jobs(WORKFLOW)
 
 
 class WorkflowShapeTests(unittest.TestCase):
+    def test_pull_request_ci_targets_only_master(self):
+        trigger = re.search(r"(?ms)^  pull_request:\n(.*?)(?=^  [a-z_]+:)", WORKFLOW)
+        self.assertIsNotNone(trigger)
+        self.assertRegex(trigger.group(1), r"(?m)^    branches: \[master\]$")
+
     def test_no_path_filter_can_stop_ci_from_reporting(self):
         # A workflow filtered out by paths never reports `CI`, so a pull request would wait for it for ever.
         self.assertNotRegex(WORKFLOW, r"(?m)^\s+paths(-ignore)?:")
