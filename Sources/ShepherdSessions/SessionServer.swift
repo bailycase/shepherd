@@ -94,6 +94,7 @@ public final class SessionServer: @unchecked Sendable {
     /// Design extension requests in flight, by token: their connection waits here (server queue)
     /// while the design store reads or writes.
     private var designRequestClients: [Int: ExtensionConnection] = [:]
+    var activeDesignRequests: [Int: DesignID] = [:]
     private var nextDesignRequest = 0
 
     private final class ExtensionConnection {
@@ -3561,6 +3562,22 @@ public final class SessionServer: @unchecked Sendable {
             routeReviewRequest(.start(agentID: agentID, cwd: cwd, reference: reference), requestID: id, client: client)
         case .suggestInstruction(let id, let agentID, let line, let reason, let file):
             suggestInstruction(id: id, agentID: agentID, line: line, reason: reason, file: file, client: client)
+        case .designList(let id, let agentID):
+            guard designsServed else {
+                reply(.error(id: id, code: "design_disabled", message: "The Design tool experiment is off."), to: client)
+                return
+            }
+            guard let agent = store.state.agents.first(where: { $0.id == agentID }) else {
+                reply(.error(id: id, code: "no_such_agent", message: "no such agent"), to: client)
+                return
+            }
+            guard agent.designID != nil || isOrdinaryDesignToolUser(agent) else {
+                reply(.error(id: id, code: "not_a_thread", message: "Design tools require an interactive thread."), to: client)
+                return
+            }
+            reply(.designList(id: id, designs: store.state.designs.filter {
+                !$0.buildsSystem && (agent.designID == $0.id || (agent.designID == nil && !store.state.isDesignAgent(agent)))
+            }), to: client)
         case .designRead(let id, let agentID, let designID, let path):
             designRequest(id: id, agentID: agentID, designID: designID, path: path, client: client) { server, path in
                 if let path { return .designBoard(id: id, board: try await server.designBoard(designID, path: path)) }
@@ -3613,7 +3630,7 @@ public final class SessionServer: @unchecked Sendable {
                 .designComments(id: id, comments: try await server.designComments(designID))
             }
         case .designCommentReply(let id, let agentID, let designID, let commentID, let text):
-            designRequest(id: id, agentID: agentID, designID: designID, path: nil, client: client) { server, _ in
+            designRequest(id: id, agentID: agentID, designID: designID, path: nil, client: client, ownerOnly: true) { server, _ in
                 guard let comment = UUID(uuidString: commentID) else { throw DesignStoreError.noSuchComment(commentID) }
                 let outcome = try await server.replyToDesignComment(designID, commentID: comment, text: text, author: .agent)
                 return .designComment(id: id, comment: outcome.comment)
@@ -3628,7 +3645,7 @@ public final class SessionServer: @unchecked Sendable {
                 .designSystemWritten(id: id, result: try await server.writeDesignSystem(system, for: designID))
             }
         case .designProposeComments(let id, let agentID, let designID, let call, let proposals):
-            designRequest(id: id, agentID: agentID, designID: designID, path: nil, client: client) { server, _ in
+            designRequest(id: id, agentID: agentID, designID: designID, path: nil, client: client, ownerOnly: true) { server, _ in
                 .designProposals(id: id, proposals: try await server.proposeDesignComments(designID, call: call, proposals: proposals))
             }
         case .designGet(let id, let agentID, let reference, let what):
@@ -3881,17 +3898,28 @@ public final class SessionServer: @unchecked Sendable {
         hopToMain { [weak self] in self?.onDesignThreadNotesChanged?(designID) }
     }
 
-    /// Server queue: one design extension request. Only the agent drawing the design may read or
-    /// write it, and a board path is checked against the grammar before anything is read. The
+    private func isOrdinaryDesignToolUser(_ agent: Agent) -> Bool {
+        agent.designID == nil && agent.coordinatorFor == nil && !store.state.isDesignAgent(agent)
+            && !Self.automationRunAgentIDs(in: store.state).contains(agent.id)
+    }
+
+    /// Server queue: one explicitly targeted design request. Design agents stay scoped to their
+    /// own design; ordinary threads may work on existing canvases. Paths are checked before reads. The
     /// files are read and written on the design store's queue; the reply comes back here.
-    private func designRequest(id: Int, agentID: AgentID, designID: DesignID, path: String?, client: ExtensionConnection,
+    private func designRequest(id: Int, agentID: AgentID, designID: DesignID, path: String?, client: ExtensionConnection, ownerOnly: Bool = false,
                                _ body: @escaping @Sendable (SessionServer, DesignPath?) async throws -> ExtensionReply) {
         guard let agent = store.state.agents.first(where: { $0.id == agentID }) else {
             reply(.error(id: id, code: "no_such_agent", message: "no such agent"), to: client)
             return
         }
-        guard agent.designID == designID, store.state.designs.contains(where: { $0.id == designID }) else {
-            reply(.error(id: id, code: "not_your_design", message: "this agent does not draw design \(designID)"), to: client)
+        let ownDesign = agent.designID == designID
+        guard store.state.designs.contains(where: { $0.id == designID && (ownDesign || !$0.buildsSystem) }),
+              ownDesign || (!ownerOnly && isOrdinaryDesignToolUser(agent)) else {
+            reply(.error(id: id, code: "not_your_design", message: "this agent cannot access design \(designID)"), to: client)
+            return
+        }
+        guard ownDesign || designsServed else {
+            reply(.error(id: id, code: "design_disabled", message: "The Design tool experiment is off."), to: client)
             return
         }
         var boardPath: DesignPath?
@@ -3906,6 +3934,7 @@ public final class SessionServer: @unchecked Sendable {
         nextDesignRequest += 1
         let token = nextDesignRequest
         designRequestClients[token] = client
+        activeDesignRequests[token] = designID
         Task { [weak self] in
             guard let self else { return }
             let answer: ExtensionReply
@@ -3923,6 +3952,7 @@ public final class SessionServer: @unchecked Sendable {
                 answer = .error(id: id, code: "design_failed", message: String(describing: error))
             }
             self.queue.async {
+                self.activeDesignRequests.removeValue(forKey: token)
                 guard let client = self.designRequestClients.removeValue(forKey: token) else { return }
                 self.reply(answer, to: client)
             }
@@ -4534,6 +4564,7 @@ public final class SessionServer: @unchecked Sendable {
              .agentRequest(let id, _, _, _),
              .agentResult(let id, _),
              .suggestion(let id, _),
+             .designList(let id, _),
              .design(let id, _),
              .designBoard(let id, _),
              .designWritten(let id, _),

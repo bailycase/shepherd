@@ -7,16 +7,17 @@ import ShepherdTestSupport
 
 /// The design agent's tools against a real server: `shepherd-design.ts` reads and writes its
 /// design over the extension socket, a write reaches the design's files and one broadcast, and
-/// only the agent that draws the design may touch it.
+/// design agents remain scoped to their own design.
 @Suite("Design agent", .integrationTimeLimit)
 struct DesignAgentTests {
-    /// A space with a design, the agent that draws it, and an agent that doesn't.
+    /// A space with a design, its agent, and an agent scoped to a different design.
     private func workspace(_ h: ScratchServer) async throws -> (design: DesignID, drawer: AgentID, stranger: AgentID) {
         let space = Fixture.space()
         let designID = DesignID()
         var drawer = Fixture.agent(in: space, name: "Checkout funnel")
         drawer.agent.designID = designID
-        let stranger = Fixture.agent(in: space, name: "worker")
+        var stranger = Fixture.agent(in: space, name: "another design agent")
+        stranger.agent.designID = DesignID()
         try await h.seed(Fixture.workspace([drawer, stranger], space: space))
         _ = try await h.server.createDesign(Design(id: designID, name: "Checkout funnel",
                                                    agentID: drawer.agent.id, createdAt: 1_000))
@@ -90,7 +91,81 @@ struct DesignAgentTests {
         #expect(h.broadcasts.current.isEmpty)
     }
 
-    @Test func onlyTheDrawingAgentReachesTheDesign() async throws {
+    @Test func ordinaryThreadsCanListReadAndEditExplicitDesignsButNotSpeakAsTheirAgent() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let space = Fixture.space()
+        let design = DesignID()
+        h.server.setDesignsServed(true)
+        let worker = Fixture.agent(in: space, name: "implementation")
+        try await h.seed(Fixture.workspace([worker], space: space))
+        _ = try await h.server.createDesign(Design(id: design, name: "Checkout funnel", createdAt: 1_000))
+        let client = try ExtensionClient(path: h.socketPath)
+        try client.send(.designList(id: 1, agentID: worker.agent.id))
+        guard case .designList(1, let listed) = try await client.reply() else { Issue.record("no designs"); return }
+        #expect(listed.map(\.id) == [design])
+        try client.send(.designRead(id: 2, agentID: worker.agent.id, designID: design, path: nil))
+        guard case .design(2, let snapshot) = try await client.reply() else { Issue.record("no canvas"); return }
+        try client.send(.designWriteBoard(id: 3, agentID: worker.agent.id, designID: design, path: "A.dc.html",
+                                         source: DesignTests.board(), baseRevision: snapshot.revision))
+        guard case .designWritten(3, let write) = try await client.reply() else { Issue.record("no write"); return }
+        try client.send(.designEditBoard(id: 4, agentID: worker.agent.id, designID: design, path: "A.dc.html",
+                                        edits: [.init(find: "<x-dc>", replace: "<x-dc>\n<!-- updated -->")],
+                                        baseRevision: write.revision, tokens: nil))
+        guard case .designEdited(4, _, _) = try await client.reply() else { Issue.record("no edit"); return }
+        #expect(try await h.server.designBoard(design, path: DesignPath.validate("A.dc.html")).source.contains("<!-- updated -->"))
+        try client.send(.designWriteBoard(id: 5, agentID: worker.agent.id, designID: design, path: "A.dc.html",
+                                         source: DesignTests.board(), baseRevision: snapshot.revision))
+        guard case .error(5, "stale_revision", _) = try await client.reply() else { Issue.record("stale write accepted"); return }
+        try client.send(.designCommentReply(id: 6, agentID: worker.agent.id, designID: design, commentID: UUID().uuidString, text: "Done"))
+        guard case .error(6, "not_your_design", _) = try await client.reply() else { Issue.record("thread spoke as design agent"); return }
+        try client.send(.designProposeComments(id: 10, agentID: worker.agent.id, designID: design, call: "proposal", proposals: []))
+        guard case .error(10, "not_your_design", _) = try await client.reply() else { Issue.record("thread proposed as design agent"); return }
+        let build = DesignID()
+        _ = try await h.server.createDesign(Design(id: build, name: "System build", createdAt: 1_000, buildsSystem: true, sourceSpaceID: space.id))
+        try client.send(.designList(id: 11, agentID: worker.agent.id))
+        guard case .designList(11, let canvases) = try await client.reply() else { Issue.record("no canvases"); return }
+        #expect(canvases.map(\.id) == [design])
+        try client.send(.designRead(id: 12, agentID: worker.agent.id, designID: build, path: nil))
+        guard case .error(12, "not_your_design", _) = try await client.reply() else { Issue.record("thread read system build"); return }
+        let renderReply = Locked<((Result<DesignRendered, DesignRenderFailure>) -> Void)?>(nil)
+        h.server.onDesignRender = { _, respond in renderReply.withValue { $0 = respond } }
+        try client.send(.designRender(id: 13, agentID: worker.agent.id, designID: design, request: .init(path: "A.dc.html")))
+        try await eventually("the ordinary thread's render") { renderReply.current != nil }
+        await #expect(throws: DesignGitError.agentWorking) {
+            try await h.server.commitDesign(design, message: "during design operation", push: false)
+        }
+        renderReply.current?(.success(.init(image: BrowserImage(data: "iVBORw0KGgo=", mimeType: "image/png"), text: "rendered")))
+        guard case .designRendered(13, _, _) = try await client.reply() else { Issue.record("render did not finish"); return }
+        h.server.setDesignsServed(false)
+        try client.send(.designList(id: 7, agentID: worker.agent.id))
+        guard case .error(7, "design_disabled", _) = try await client.reply() else { Issue.record("listed with experiment off"); return }
+        try client.send(.designRead(id: 8, agentID: worker.agent.id, designID: design, path: nil))
+        guard case .error(8, "design_disabled", _) = try await client.reply() else { Issue.record("read with experiment off"); return }
+        h.server.setDesignsServed(true)
+        h.server.extensionPeerCheck = { _, _ in false }
+        try client.send(.designList(id: 9, agentID: worker.agent.id))
+        guard case .error(9, "wrong_process", _) = try await client.reply() else { Issue.record("unauthenticated listing"); return }
+    }
+
+    @Test func automationRunsCannotUseLiveDesignTools() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        var space = Fixture.space()
+        space.hidden = true
+        let run = Fixture.agent(in: space)
+        try await h.seed(Fixture.workspace([run], space: space))
+        h.server.setDesignsServed(true)
+        let design = DesignID()
+        _ = try await h.server.createDesign(Design(id: design, name: "Checkout", createdAt: 1_000))
+        let client = try ExtensionClient(path: h.socketPath)
+        try client.send(.designList(id: 1, agentID: run.agent.id))
+        guard case .error(1, "not_a_thread", _) = try await client.reply() else { Issue.record("automation listed designs"); return }
+        try client.send(.designRead(id: 2, agentID: run.agent.id, designID: design, path: nil))
+        guard case .error(2, "not_your_design", _) = try await client.reply() else { Issue.record("automation read design"); return }
+    }
+
+    @Test func designAgentsCannotReachOtherDesigns() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
         let (design, drawer, stranger) = try await workspace(h)

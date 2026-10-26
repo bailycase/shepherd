@@ -17,7 +17,8 @@ struct DesignToolsSocketTests {
         let designID = DesignID()
         var drawer = Fixture.agent(in: space, name: "Checkout funnel")
         drawer.agent.designID = designID
-        let stranger = Fixture.agent(in: space, name: "worker")
+        var stranger = Fixture.agent(in: space, name: "another design agent")
+        stranger.agent.designID = DesignID()
         try await h.seed(Fixture.workspace([drawer, stranger], space: space))
         _ = try await h.server.createDesign(Design(id: designID, name: "Checkout funnel", agentID: drawer.agent.id, createdAt: 1_000))
         _ = try await h.server.writeDesignBoards(designID, sources: [T.a: T.chips(), T.b: T.chips()])
@@ -102,7 +103,7 @@ struct DesignToolsSocketTests {
         #expect(edited.report?.diff?.lines.count == 2 && edited.report?.offSystem.isEmpty == true)
     }
 
-    @Test func onlyTheDrawingAgentIsServedAndEveryFailureIsAnsweredWithItsCode() async throws {
+    @Test func otherDesignAgentsAreRefusedAndEveryFailureIsAnsweredWithItsCode() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
         let (design, drawer, stranger) = try await workspace(h)

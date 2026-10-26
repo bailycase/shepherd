@@ -785,7 +785,7 @@
     {
       "path": "dist/core/shepherd-checkpoint-recovery.js",
       "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "after": "1ec3b7379fcfabe61a9810bb439578806eb87b49c6d8da19555cd020d9fc31fb",
+      "after": "a6b4c8cefa779c0fa429fefd1bd070e19d1972a6eb3ccb8ec041b1eb71a5d2be",
       "source": "checkpoint-recovery.js"
     },
     {
