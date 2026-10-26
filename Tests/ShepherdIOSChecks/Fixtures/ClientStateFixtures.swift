@@ -206,7 +206,7 @@ enum ClientStateChecks {
         let bytes = Data("other host".utf8), sha = RemoteDesignCache.sha256(bytes)
         libraries.cache.store(bytes, sha256: sha, in: kept)
         libraries.cache.setPaths(["kept": sha], for: kept)
-        do { try app.forget(host: ref.host) } catch { check(false, "fixture full host Forget succeeded"); return }
+        do { try await app.forget(host: ref.host) } catch { check(false, "fixture full host Forget succeeded"); return }
         check(canvas == nil, "full Forget releases the unmounted iPad canvas")
         check(phone.indexes[ref] == nil && phone.comments[ref] == nil && phone.source(ref) == nil,
               "full Forget evicts phone indexes/comments/source")
