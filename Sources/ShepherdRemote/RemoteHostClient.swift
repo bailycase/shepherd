@@ -333,13 +333,13 @@ public final class RemoteHostClient: @unchecked Sendable {
         if worktreeBranch != nil, !capabilities.contains(RemoteProtocol.worktreeActionsCapability) {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to create worktree agents.")
         }
-        let images = initialImages.isEmpty ? nil : initialImages
-        if images != nil, Self.overFrame(.createAgent(id: 0, spaceID: spaceID, cwd: cwd, model: model, thinking: thinking,
-                                                      initialPrompt: initialPrompt, worktreeBranch: worktreeBranch,
-                                                      worktreeBase: worktreeBase, worktreeFetchFirst: worktreeFetchFirst,
-                                                      initialImages: images, serviceTier: serviceTier)) {
-            throw RemoteHostClientError.rejected(code: "too_large", message: Self.imagesTooLarge)
+        let prepared = try await Self.preparingImages(initialImages) { images in
+            .createAgent(id: Int.max, spaceID: spaceID, cwd: cwd, model: model, thinking: thinking,
+                         initialPrompt: initialPrompt, worktreeBranch: worktreeBranch,
+                         worktreeBase: worktreeBase, worktreeFetchFirst: worktreeFetchFirst,
+                         initialImages: images, serviceTier: serviceTier)
         }
+        let images = prepared.isEmpty ? nil : prepared
         let reply = try await request(timeout: 120) { id in
             .createAgent(
                 id: id,
@@ -487,23 +487,17 @@ public final class RemoteHostClient: @unchecked Sendable {
     }
 
     public func nativeThread(agentID: AgentID, request original: NativeThreadRequest) async throws -> NativeThreadResult {
-        let command = Self.outgoing(original, capabilities: capabilities)
+        let outgoing = Self.outgoing(original, capabilities: capabilities)
         guard capabilities.contains(RemoteProtocol.nativeThreadCapability) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to view native threads.")
         }
-        if let missing = Self.missingCapability(command, capabilities: capabilities) {
+        if let missing = Self.missingCapability(outgoing, capabilities: capabilities) {
             throw RemoteHostClientError.rejected(code: "update_required", message: missing)
         }
-        if let references = command.designReferences, !references.isEmpty {
+        if let references = outgoing.designReferences, !references.isEmpty {
             throw RemoteHostClientError.rejected(code: "design_references_local", message: Self.designReferencesRefusal)
         }
-        switch command {
-        case .send where !command.images.isEmpty:
-            if Self.overFrame(.nativeThread(id: 0, agentID: agentID, request: command)) {
-                throw RemoteHostClientError.rejected(code: "too_large", message: Self.imagesTooLarge)
-            }
-        default: break
-        }
+        let command = try await Self.preparingImages(outgoing) { .nativeThread(id: Int.max, agentID: agentID, request: $0) }
         let reply: RemoteReply
         do {
             let timeout: TimeInterval = if case .queue(_, _, _, .subagent) = command { 65 } else { 15 }
@@ -762,9 +756,8 @@ public final class RemoteHostClient: @unchecked Sendable {
             if let references = native.designReferences, !references.isEmpty {
                 throw RemoteHostClientError.rejected(code: "design_references_local", message: Self.designReferencesRefusal)
             }
-            if Self.overFrame(.logicalProjectRuntime(id: 0, request: request)) {
-                throw RemoteHostClientError.rejected(code: "too_large", message: native.images.isEmpty
-                    ? "The thread request is too large for the remote connection. Nothing was sent." : Self.imagesTooLarge)
+            if native.images.isEmpty, Self.overFrame(.logicalProjectRuntime(id: 0, request: request)) {
+                throw RemoteHostClientError.rejected(code: "too_large", message: "The thread request is too large for the remote connection. Nothing was sent.")
             }
         }
         if case .action(_, _, .assign(_, _, _, _, let host, _, _)) = request, let host, host != .local,
@@ -778,12 +771,10 @@ public final class RemoteHostClient: @unchecked Sendable {
             guard capabilities.contains(RemoteProtocol.projectMessageImagesCapability) else {
                 throw RemoteHostClientError.rejected(code: "update_required", message: "Update the Project owner before sending images.")
             }
-            if Self.overFrame(.logicalProjectRuntime(id: 0, request: request)) {
-                throw RemoteHostClientError.rejected(code: "too_large", message: Self.imagesTooLarge)
-            }
         }
+        let prepared = try await Self.preparingImages(request)
         let reply: RemoteReply
-        do { reply = try await self.request({ .logicalProjectRuntime(id: $0, request: request) }) }
+        do { reply = try await self.request({ .logicalProjectRuntime(id: $0, request: prepared) }) }
         catch RemoteHostClientError.timeout {
             throw RemoteHostClientError.outcomeUnknown(message: "Project request timed out. Refresh before acting; do not automatically retry.")
         } catch RemoteHostClientError.disconnected {

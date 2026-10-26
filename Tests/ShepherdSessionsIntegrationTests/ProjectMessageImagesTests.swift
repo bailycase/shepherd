@@ -258,6 +258,33 @@ struct ProjectMessageImagesTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: outside.path).isEmpty)
     }
 
+    @Test func oversizedRemoteScreenshotsReachTheProjectWithoutDuplicateDelivery() async throws {
+        let rig = try Rig(); defer { rig.stop() }
+        let project = try await rig.create()
+        let server = rig.host.server
+        server.onProjectRuntimeRequest = { [weak server] request, done in
+            guard let server, case .action(let id, let revision, let action) = request else { done(.failure(WireError("action"))); return }
+            Task { do { done(.success(.project(try await server.projectRuntime(id, expectedRevision: revision, request: action)))) } catch { done(.failure(error)) } }
+        }
+        defer { server.onProjectRuntimeRequest = nil }
+        let tokenURL = rig.host.dir.appendingPathComponent("remote-token")
+        let port = try server.startRemoteListener(port: 0, tokenURL: tokenURL)
+        let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        let client = RemoteHostClient(); defer { client.disconnect() }
+        _ = try await client.connect(host: "127.0.0.1", port: port, token: token, clientName: "images")
+        let images = Array(repeating: ThreadImagesTests.nativeImage(ThreadImagesTests.png(side: 48, bytes: 900_000)), count: 4)
+        let operation = UUID()
+        let request = ProjectRuntimeTransport.action(projectID: project.id, expectedRevision: project.revision,
+            request: .message(operationID: operation, text: "screenshots", images: images))
+        _ = try await client.projectRuntime(request)
+        _ = try await client.projectRuntime(request)
+        let pi = try await coordinator(rig, project.id)
+        let prompt = try await pi.waitForStdin("prompt")
+        #expect((prompt["images"] as? [[String: Any]])?.count == 4)
+        #expect(pi.stdin("prompt").count == 1)
+        #expect(server.state.projects.first?.messages.count == 1)
+    }
+
     @Test func remoteFramesAreBoundedBeforeSendingAndOnlyTheAuthenticatedOwnerReceivesBytes() async throws {
         let owner = try Rig(); defer { owner.stop() }
         let viewer = try Rig(); defer { viewer.stop() }
@@ -275,9 +302,9 @@ struct ProjectMessageImagesTests {
         let client = RemoteHostClient(); defer { client.disconnect() }
         _ = try await client.connect(host: "127.0.0.1", port: port, token: token, clientName: "viewer")
         #expect(client.capabilities.contains(RemoteProtocol.projectMessageImagesCapability))
-        let over = NativeImage(mimeType: "image/png", data: Data(count: 800_000))
         do {
-            _ = try await client.projectRuntime(.action(projectID: p.id, expectedRevision: p.revision, request: .message(operationID: UUID(), text: "", images: [over])))
+            _ = try await client.projectRuntime(.action(projectID: p.id, expectedRevision: p.revision,
+                request: .message(operationID: UUID(), text: String(repeating: "x", count: NDJSON.maxPayloadBytes), images: [Self.image])))
             Issue.record("Expected frame refusal")
         } catch let error as RemoteHostClientError { if case .rejected(let code, _) = error { #expect(code == "too_large") } else { Issue.record("\(error)") } }
         #expect(calls.current == 0 && server.state.projects.first?.messages.isEmpty == true)
