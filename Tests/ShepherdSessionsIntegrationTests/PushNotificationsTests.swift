@@ -81,6 +81,64 @@ struct PushNotificationsTests {
         #expect(requests.current.count == 16, "no retries")
     }
 
+    @Test func previewsUseOnlyThisRunsFinalTextAndSanitizeActualPayload() async throws {
+        let host = try ScratchServer.fresh()
+        defer { host.stop() }
+        let pi = try await PiAgent.launch(on: host)
+        _ = try await pi.ready()
+        let bodies = Locked<[[String: String]]>([])
+        try host.server.queue.sync {
+            let pushes = host.server.pushNotifications
+            try pushes.register(registration())
+            pushes.transport = { request, finished in
+                let body = (try? JSONDecoder().decode([String: String].self, from: request.httpBody!)) ?? [:]
+                bodies.withValue { $0.append(body) }
+                finished(nil)
+                return {}
+            }
+            let thread = try #require(host.server.rpcThread(forAgent: pi.agent.id))
+            // Feed real RPC event types; history and message_end must not become a final preview.
+            thread.handle(.agentStart)
+            thread.handle(.agentEnd(messages: [.init(role: "assistant", content: [.text("old reply")], stopReason: "stop")], willRetry: false))
+            #expect(thread.pushFinalText == "old reply")
+            thread.handle(.agentStart)
+            #expect(thread.pushFinalText == nil)
+            thread.handle(.messageEnd(message: .init(role: "assistant", content: [.text("intermediate"), .thinking("private reasoning")], stopReason: "toolUse")))
+            #expect(thread.pushFinalText == nil)
+            thread.handle(.agentEnd(messages: [
+                .init(role: "assistant", content: [.text("intermediate")], stopReason: "toolUse"),
+                .init(role: "toolResult", content: [.text("private tool log")]),
+                .init(role: "assistant", content: [.thinking("private reasoning"), .text("Final\n\t answer")], stopReason: "stop")
+            ], willRetry: false))
+            pushes.send(agentID: pi.agent.id, kind: .done, title: "Current\n title", preview: thread.pushFinalText)
+            thread.handle(.agentStart)
+            thread.handle(.agentEnd(messages: [.init(role: "assistant", content: [.thinking("private reasoning")], stopReason: "stop")], willRetry: false))
+            pushes.send(agentID: pi.agent.id, kind: .done, preview: thread.pushFinalText)
+            thread.handle(.agentStart)
+            thread.handle(.agentEnd(messages: [], willRetry: false))
+            #expect(thread.pushFinalText == nil)
+            pushes.send(agentID: pi.agent.id, kind: .done,
+                title: String(repeating: "😀", count: 101),
+                preview: String(repeating: "e\u{301}", count: 121))
+            pushes.send(agentID: pi.agent.id, kind: .error, title: "\u{0}\n ", preview:
+                "password=short token='two words' Authorization: Bearer abc " +
+                "ghp_abcdefghijklmnopqrstuvwxyz -----BEGIN PRIVATE KEY-----\nsecret\n-----END PRIVATE KEY----- " +
+                "sk-abcdefghijklmnopqrstuvwxyz")
+            pushes.send(agentID: pi.agent.id, kind: .needsAnswer, preview:
+                "safe\u{0} text\n-----BEGIN PRIVATE KEY-----unterminated secret")
+        }
+        let values = bodies.current
+        #expect(values.count == 5)
+        #expect(values[0]["title"] == "Current title")
+        #expect(values[0]["preview"] == "Final answer")
+        #expect(values[1]["preview"] == nil)
+        #expect(values[2]["title"]?.unicodeScalars.count == 100)
+        #expect(values[2]["preview"]?.unicodeScalars.count == 240)
+        #expect(values[3]["title"] == nil)
+        #expect(values[3]["preview"] == Array(repeating: "[redacted]", count: 6).joined(separator: " "))
+        #expect(values[4]["preview"] == "safe text [redacted]")
+    }
+
     @Test func relayNeverFollowsRedirects() throws {
         let url = URL(string: "https://api.useshepherd.app/api/push/registrations/id/events")!
         let task = PushHTTP.session.dataTask(with: url) // Never resumed: no network.
@@ -161,13 +219,14 @@ struct PushNotificationsTests {
         #expect(callbacks.current.count == 16, "revocation never retries")
     }
 
-    private func record(_ server: SessionServer) throws -> Locked<[String]> {
+    private func record(_ server: SessionServer, payloads: Locked<[[String: String]]>? = nil) throws -> Locked<[String]> {
         let events = Locked<[String]>([])
         try server.queue.sync {
             try server.pushNotifications.register(registration())
             server.pushNotifications.transport = { request, finished in
                 let body = try? JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any]
                 events.withValue { $0.append(body?["kind"] as? String ?? "invalid") }
+                payloads?.withValue { $0.append(body as? [String: String] ?? [:]) }
                 finished(nil)
                 return {}
             }
@@ -178,23 +237,71 @@ struct PushNotificationsTests {
     @Test func openingPromptQuestionsSettledCompletionAndProcessFailure() async throws {
         let host = try ScratchServer.fresh()
         defer { host.stop() }
-        let events = try record(host.server)
+        let payloads = Locked<[[String: String]]>([])
+        let events = try record(host.server, payloads: payloads)
         let pi = try await PiAgent.launch(on: host)
         _ = try await pi.ready()
         #expect(events.current.isEmpty, "startup history must not replay")
+        try await host.server.renameAgent(pi.agent.id, to: "Current thread title")
         await host.server.sendOpeningPrompt(try #require(OpeningPrompt("ask", agentID: pi.agent.id)), sessionID: pi.sessionID)
         let asked = try await pi.snapshot("opening prompt asks") { !$0.dialogs.isEmpty }
         try await eventually("one needsAnswer") { events.current == ["needsAnswer"] }
+        #expect(payloads.current[0]["title"] == "Current thread title")
+        #expect(payloads.current[0]["preview"] == asked.dialogs.first?.title)
         _ = try await pi.request(.answer(expectedSessionID: asked.piSessionID, generation: asked.generation, operationID: UUID(), dialogID: "uuid-2", answer: .confirm(value: true)))
         try await eventually("settled answer") { events.current == ["needsAnswer", "done"] }
+        #expect(payloads.current[1]["preview"] == nil, "this legacy stub reply has no final stopReason")
         _ = try await pi.snapshot()
         #expect(events.current == ["needsAnswer", "done"], "status revisions do not duplicate")
         _ = try await pi.send("provider-error", from: try await pi.ready())
         _ = try await pi.snapshot { $0.running }
         try Data().write(to: host.dir.appendingPathComponent("fail-turn"))
         try await eventually("settled provider failure") { events.current == ["needsAnswer", "done", "error"] }
+        #expect(payloads.current[2]["preview"] == "529 overloaded")
         _ = try? await pi.send("die", from: try await pi.ready())
         try await eventually("unexpected process failure") { events.current == ["needsAnswer", "done", "error", "error"] }
+        #expect(payloads.current[3]["preview"] == nil, "never reuse the previous run's failure")
+    }
+
+    @Test func childQuestionExplicitlyAskedByParentUsesParentTitleAndQuestionOnce() async throws {
+        let host = try ScratchServer.fresh()
+        defer { host.stop() }
+        let payloads = Locked<[[String: String]]>([])
+        let events = try record(host.server, payloads: payloads)
+        let pi = try await PiAgent.launch(on: host)
+        _ = try await pi.ready()
+        try await host.server.renameAgent(pi.agent.id, to: "Parent thread")
+        host.server.queue.sync {
+            let thread = host.server.rpcThread(forAgent: pi.agent.id)!
+            thread.pushRunArmed = true
+            // Child attention alone isn't a human question. The parent's explicit dialog is.
+            thread.setSubagents([ChildRun(runID: "child", label: "Child", state: "running", needsAttention: true, attentionText: "Choose retention")])
+            #expect(events.current.isEmpty)
+            host.server.applyAgentQuestion(agentID: pi.agent.id, question: "Child asks: keep logs for 30 days?", reason: "retention?")
+            host.server.applyAgentQuestion(agentID: pi.agent.id, question: "Child asks: keep logs for 30 days?", reason: "retention?")
+        }
+        #expect(events.current == ["needsAnswer"])
+        #expect(payloads.current[0]["title"] == "Parent thread")
+        #expect(payloads.current[0]["preview"] == "Child asks: keep logs for 30 days?")
+    }
+
+    @Test func settledSenderUsesLatestReplyAndTitleWhileThreadIsWatched() async throws {
+        let host = try ScratchServer.fresh()
+        defer { host.stop() }
+        let payloads = Locked<[[String: String]]>([])
+        let events = try record(host.server, payloads: payloads)
+        let pi = try await PiAgent.launch(on: host)
+        try await host.server.renameAgent(pi.agent.id, to: "First title")
+        _ = try await pi.send("tools:0 first", from: try await pi.ready())
+        try await eventually("first run push") { events.current == ["done"] }
+        #expect(payloads.current[0]["title"] == "First title")
+        #expect(payloads.current[0]["preview"] == "Reply to tools:0 first")
+        try await host.server.renameAgent(pi.agent.id, to: "Renamed title")
+        _ = try await pi.send("tools:0 second", from: try await pi.ready())
+        _ = try await pi.snapshot("watch the current thread") { !$0.running }
+        try await eventually("second run push") { events.current == ["done", "done"] }
+        #expect(payloads.current[1]["title"] == "Renamed title")
+        #expect(payloads.current[1]["preview"] == "Reply to tools:0 second")
     }
 
     @Test func retryInsideATurnDoesNotNotifyUntilFinalSettlement() async throws {

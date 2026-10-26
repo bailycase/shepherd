@@ -79,13 +79,15 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate, UNUserNotification
     // MARK: - UNUserNotificationCenterDelegate
 
     /// Notification arrived while app is in foreground — show banner for both remote pushes
-    /// and local goal notifications.
+    /// and local goal notifications, including the thread currently being viewed.
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
-        [.banner, .sound]
+        Self.foregroundPresentation
     }
+
+    nonisolated static var foregroundPresentation: UNNotificationPresentationOptions { [.banner, .list, .sound] }
 
     /// User tapped a notification. If the router is wired and a window is ready, route now;
     /// otherwise buffer the payload until `flushPending()`.
