@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
@@ -76,6 +77,110 @@ struct RemoteHostTests {
         }
         #expect(hostLayout()?.leaf(withID: agent.piPane.id)?.title == nil)
         _ = vm
+    }
+
+    @Test func selectedVisibleRemoteTerminalDemandsOnlyItsOwnProcess() async throws {
+        try StubPi.installAsEngine()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
+        defer { local.stop(); remote.stop() }
+        let space = Fixture.space(path: remote.host.dir.path)
+        let agent = Fixture.agent(in: space, auxiliary: 2)
+        let original = Fixture.state(spaces: [space], agents: [agent])
+        let vm = try await local.start()
+        let hostVM = try await remote.host.start(with: original)
+        hostVM.sessions.restoreAgents([agent.agent.id], first: [], in: original)
+        let connection = try await remote.connect(local.remoteHosts)
+        vm.selectRemoteAgent(hostID: connection.id, agentID: agent.agent.id)
+        let ref = try #require(vm.selectedRemoteAgent)
+        let target = try #require(vm.terminalTarget)
+        vm.terminalPanels.update(target.key) { $0.shown = false }
+        let window = OffscreenWindow(size: CGSize(width: 1000, height: 700), dark: true,
+                                     WorkspaceView(vm: vm).environment(\.scenePhase, .active))
+        defer { window.close() }
+        try await eventuallyOnMain("the visible remote native thread to serve") {
+            vm.remoteThreadStores.store(for: ref).ready
+        }
+        #expect(await remote.host.server.terminalActivity(agentID: agent.agent.id).isEmpty,
+                "a hidden panel must not demand any auxiliary terminal")
+
+        vm.selectTerminalTab(target.tabs[0], target: target)
+        vm.terminalPanels.update(target.key) { $0.shown = true }
+        try await eventuallyOnMain("the selected visible remote terminal to start") {
+            hostVM.sessions.liveSession(forPane: target.tabs[0].id) != nil
+        }
+        #expect(hostVM.sessions.liveSession(forPane: target.tabs[1].id) == nil,
+                "the hidden sibling must stay dormant")
+        #expect(Set(await remote.host.server.terminalActivity(agentID: agent.agent.id).map(\.paneID)) == [target.tabs[0].id])
+
+        vm.selectTerminalTab(target.tabs[1], target: target)
+        try await eventuallyOnMain("selecting the sibling to demand its process") {
+            hostVM.sessions.liveSession(forPane: target.tabs[1].id) != nil
+        }
+        #expect(Set(await remote.host.server.terminalActivity(agentID: agent.agent.id).map(\.paneID)) == Set(target.tabs.map(\.id)))
+    }
+
+    @Test(arguments: [false, true], [false, true])
+    func remoteTerminalDemandStartsOnlyTheRequestedRestoredShell(staleBinding: Bool, olderHost: Bool) async throws {
+        let local = try AppHarness(), remote = try RemoteHostHarness()
+        defer { local.stop(); remote.stop() }
+        let space = Fixture.space(path: remote.host.dir.path)
+        var agent = Fixture.agent(in: space, auxiliary: 4)
+        let foreign = Fixture.agent("foreign", in: space, order: 1, auxiliary: 1)
+        let shell = agent.auxiliary[0].id
+        let review = agent.auxiliary[2].id
+        let deleted = agent.auxiliary[3].id
+        agent.tab.layout = try #require(agent.tab.layout.closing(pane: deleted))
+        agent.tab.layout = agent.tab.layout.updatingLeaf(review) { $0.isReview = true }
+        if staleBinding {
+            agent.tab.layout = agent.tab.layout.updatingLeaf(shell) { $0.sessionID = SessionID() }
+        }
+        let original = Fixture.state(spaces: [space], agents: [agent, foreign])
+        try await local.start()
+        let hostVM = try await remote.host.start(with: original)
+        // Use the same restoration classification, with no local selection demand.
+        hostVM.sessions.restoreAgents(original.agents.map(\.id), first: [], in: original)
+        let selected = hostVM.selectedAgentID
+        let focused = hostVM.focusedPaneID
+        if olderHost {
+            remote.host.server.advertisedCapabilities.removeAll { $0 == RemoteProtocol.terminalStartCapability }
+        }
+        let connection = try await remote.connect(local.remoteHosts)
+        #expect(connection.supportsTerminalStart == !olderHost)
+        let target = RemoteAgentRef(hostID: connection.id, agentID: agent.agent.id)
+        _ = try await local.remoteHosts.agentQuery(target, query: .terminals)
+        #expect(await remote.host.server.listSessions().isEmpty, "activity is read-only")
+        if olderHost {
+            await #expect(throws: (any Error).self) {
+                try await local.remoteHosts.agentAction(target, action: .startTerminal(paneID: shell))
+            }
+            #expect(await remote.host.server.listSessions().isEmpty)
+            return
+        }
+
+        for refused in [agent.piPane.id, foreign.auxiliary[0].id, review, deleted] {
+            await #expect(throws: (any Error).self) {
+                try await local.remoteHosts.agentAction(target, action: .startTerminal(paneID: refused))
+            }
+        }
+        #expect(await remote.host.server.listSessions().isEmpty)
+        try await local.remoteHosts.agentAction(target, action: .startTerminal(paneID: shell))
+        try await local.remoteHosts.agentAction(target, action: .startTerminal(paneID: shell))
+        try await eventuallyOnMain("only the requested shell to start") {
+            hostVM.sessions.liveSession(forPane: shell) != nil
+        }
+        let sessionID = try #require(hostVM.sessions.liveSession(forPane: shell))
+        try await local.remoteHosts.agentAction(target, action: .startTerminal(paneID: shell))
+        #expect(hostVM.sessions.liveSession(forPane: shell) == sessionID)
+        #expect(await remote.host.server.listSessions().filter(\.isAlive).map(\.id) == [sessionID])
+        #expect(hostVM.sessions.liveSession(forPane: agent.piPane.id) == nil)
+        #expect(hostVM.sessions.liveSession(forPane: agent.auxiliary[1].id) == nil)
+        #expect(hostVM.selectedAgentID == selected && hostVM.focusedPaneID == focused)
+        try await eventuallyOnMain("the fresh binding to reach the client") {
+            connection.state.tabs.first { $0.id == agent.tab.id }?.layout.leaf(withID: shell)?.sessionID == sessionID
+        }
+        let pane = try #require(local.remoteHosts.paneSession(connection: connection, sessionID: sessionID))
+        pane.noteGrid(cols: 80, rows: 24)
+        try await eventuallyOnMain("the demanded terminal to attach") { pane.phase == .live }
     }
 
     @Test(arguments: ["available", "hostRemoved", "agentGone"])

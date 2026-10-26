@@ -23,7 +23,7 @@
 //
 // Never cleared: user messages, assistant text, thinking text, the compaction summary, the newest calls, and
 // the call's own name and path. The transcript, the session file and the thread keep every result in full: only
-// the request changes.
+// the request changes. Compaction uses the same clipping and remembered clearing boundary for its summary inputs.
 //
 // Inert without SHEPHERD_EXT_CONTEXT (the app sets it while Settings ▸ Agents ▸ Trim old tool output is on). The
 // numbers move with SHEPHERD_CONTEXT_CLIP_TOKENS, _TRIGGER_PERCENT, _TARGET_PERCENT, _KEEP_CALLS and _GAP_CALLS
@@ -367,6 +367,19 @@ function readState(ctx: any): State | undefined {
 export default function shepherdContext(pi: ExtensionAPI) {
   if (!process.env.SHEPHERD_EXT_CONTEXT) return;
   const limits = limitsFrom(process.env);
+  pi.on("session_before_compact", (event, ctx) => {
+    try {
+      // Pi summarizes stored history without firing `context`, otherwise resurrecting cleared HTML/tool output.
+      const boundary = readState(ctx)?.before ?? 0;
+      const preparation = event.preparation;
+      const messages = trimContext(preparation.messagesToSummarize, boundary, limits);
+      const prefix = trimContext(preparation.turnPrefixMessages, boundary, limits);
+      preparation.messagesToSummarize = messages;
+      preparation.turnPrefixMessages = prefix;
+    } catch {
+      // Leave Pi's default compaction available if its preparation contract changes.
+    }
+  });
   pi.on("context", (event, ctx) => {
     try {
       const messages = event?.messages;

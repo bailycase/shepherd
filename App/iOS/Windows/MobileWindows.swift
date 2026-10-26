@@ -21,6 +21,17 @@ final class MobileWindows {
     private(set) var open: [Window] = []
     /// Each window's scene phase: it moves the connections, never what a view draws.
     @ObservationIgnored private var phases: [UUID: WindowPhase] = [:]
+    @ObservationIgnored private var activationOrder: [UUID] = []
+
+    /// Prefer an active scene, then the last active scene while a system alert obscures it.
+    /// Never route into a merely registered cold-launch or background window.
+    var notificationWindow: Window? {
+        for phase in [WindowPhase.active, .inactive] {
+            if let id = activationOrder.reversed().first(where: { phases[$0] == phase }),
+               let window = open.first(where: { $0.seed.id == id }) { return window }
+        }
+        return nil
+    }
 
     func register(_ seed: MobileWindowSeed, navigator: MobileNavigator) {
         if let index = open.firstIndex(where: { $0.seed.id == seed.id }) {
@@ -35,6 +46,7 @@ final class MobileWindows {
         guard open.contains(where: { $0.seed.id == id }) else { return }
         open.removeAll { $0.seed.id == id }
         phases[id] = nil
+        activationOrder.removeAll { $0 == id }
         apply(hosts)
     }
 
@@ -42,6 +54,10 @@ final class MobileWindows {
     /// system alerts and the app switcher), and only once every window is there.
     func setPhase(_ id: UUID, _ phase: ScenePhase, hosts: MobileHosts) {
         phases[id] = WindowPhase(phase)
+        if phase == .active {
+            activationOrder.removeAll { $0 == id }
+            activationOrder.append(id)
+        }
         apply(hosts)
     }
 

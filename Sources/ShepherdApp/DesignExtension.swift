@@ -7,7 +7,7 @@ import ShepherdProtocol
 /// canvas_update, design_check, the comment tools, system_read and system_write) and the bundled
 /// design skill it hands pi, both from embedded
 /// literals into the support directory. Only an agent that draws a design loads them
-/// (`SHEPHERD_DESIGN_ID`); the user's `~/.pi/agent` is never touched.
+/// (`SHEPHERD_DESIGN_ID`), or an ordinary thread explicitly targeting designs (`SHEPHERD_DESIGN_TOOLS`); the user's `~/.pi/agent` is never touched.
 enum DesignExtension {
     static func installedPath() throws -> String {
         let directory = ShepherdPaths.supportDirectory()

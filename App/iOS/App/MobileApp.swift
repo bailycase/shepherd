@@ -51,8 +51,7 @@ final class MobileApp {
     /// Forgets a host everywhere: its token and record, its open screens, its threads.
     func forget(host: UUID) async throws {
         // Revoke push before removing host connectivity.
-        try await push.forget(host: host)
-        try hosts.forget(host)
+        try await push.forget(host: host) { try hosts.forget(host) }
         navigator.forget(host: host)
         windows.forget(host: host)
         threads.forget(host: host)

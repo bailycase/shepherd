@@ -103,6 +103,7 @@ final class RPCThreadState {
     var onServable: (() -> Void)?
     var onDiagnosticDuration: ((String, Double) -> Void)?
     var onDiagnosticActivity: ((String) -> Void)?
+    var onDiagnosticActivityDetails: ((String, DiagnosticFailureDetails) -> Void)?
     private var diagnosticTimings: [String: (String, ContinuousClock.Instant)] = [:]
     private var announcedServable = false
     /// A new agent's opening prompt, held until the thread serves (`sendOpeningPrompt`).
@@ -448,6 +449,8 @@ final class RPCThreadState {
     /// snapshots of the working tree (`ChangesService`). Called on the session queue.
     var onTurnEvent: ((TurnEvent) -> Void)?
     private(set) var lastTurnAssistant: NativeThreadMessage?
+    /// Only the final successful assistant reply supplied by this run's agent_end, never history.
+    private(set) var pushFinalText: String?
     var projectResultDeliveryID: UUID?
     private(set) var lastTurnResult: ProjectVisibleResult?
     private(set) var lastTurnResultDeliveryID: UUID?
@@ -683,6 +686,7 @@ final class RPCThreadState {
             diagnosticTimings.removeAll(keepingCapacity: true)
             beginDiagnostic("agent.turn", operation: "agent.turn")
             lastTurnAssistant = nil
+            pushFinalText = nil
             lastTurnResult = nil
             lastTurnResultDeliveryID = nil
             // A compaction that stopped or failed says so until the next run.
@@ -700,6 +704,15 @@ final class RPCThreadState {
                 onUserInputWhileRunning?()
             }
         case .agentEnd(let messages, _):
+            pushFinalText = nil
+            if let final = messages.last(where: { $0.role == "assistant" }),
+               final.stopReason == "stop", final.content.allSatisfy({
+                   switch $0 { case .text, .thinking: true; default: false }
+               }) {
+                pushFinalText = final.content.compactMap { block -> String? in
+                    if case .text(let text) = block { return text }; return nil
+                }.joined(separator: "\n")
+            }
             if let message = messages.last(where: { $0.role == "assistant" }) {
                 if lastTurnAssistant == nil { lastTurnAssistant = Self.project(entryID: liveEntryID(for: message), message: message) }
                 captureResult(message, final: true)
@@ -802,7 +815,7 @@ final class RPCThreadState {
             requestEnded(message)
             runFailed = message.stopReason == "error"
             runError = runFailed ? message.errorMessage : nil
-            if runFailed, !stopRequested { onDiagnosticActivity?("model.failed") }
+            if runFailed, !stopRequested { diagnosticActivity("model.failed", details: failureDetails(message.errorMessage)) }
             var ended = message
             if runFailed, stopRequested {
                 ended.stopReason = "aborted"
@@ -824,7 +837,7 @@ final class RPCThreadState {
             // The ring moves once per reply, never per token.
             refreshStats()
         case .toolExecutionStart(let id, let name, let args, _):
-            let operation = name.hasPrefix("mcp__") ? "tool.mcp" : (["read", "bash", "write", "edit"].contains(name) ? "tool." + name : "tool.other")
+            let operation = "tool." + DiagnosticFailureDetails.ToolKind(name: name).rawValue
             beginDiagnostic("tool:" + id, operation: operation)
             if Self.asksUser(name) {
                 askingCalls.removeAll { $0.id == id }
@@ -837,7 +850,9 @@ final class RPCThreadState {
         case .toolExecutionEnd(let id, let name, let result, let isError, _):
             endDiagnostic("tool:" + id)
             let stopped = isError && stopRequested
-            if isError, !stopRequested { onDiagnosticActivity?("tool.failed") }
+            if isError, !stopRequested {
+                diagnosticActivity("tool.failed", details: .init(category: .other, toolKind: .init(name: name)))
+            }
             askingCalls.removeAll { $0.id == id }
             if stopped { stoppedCalls.insert(id) }
             upsertTool(id: id, name: name, args: nil, content: result?.content ?? [], isError: isError, status: stopped ? "aborted" : "complete", projectAction: result?.projectAction)
@@ -847,7 +862,7 @@ final class RPCThreadState {
         case .extensionUIRequest(let request):
             handleUIRequest(request)
         case .extensionError(let path, let event, let error):
-            onDiagnosticActivity?("extension.failed")
+            diagnosticActivity("extension.failed")
             ShepherdLog.warning("rpc session \(session.id) extension error in \(path ?? "?") (\(event ?? "?")): \(error)")
             recordCommandFailure(path: path, event: event, error: error)
             if goalCommand != nil, event == "command", path == "command:shepherd-goal" { goalCommandFailure = error }
@@ -856,10 +871,10 @@ final class RPCThreadState {
             compactionStarted(reason: NativeCompactionReason(pi: reason))
         case .compactionEnd(let reason, let result, let aborted, let willRetry, let error):
             endDiagnostic("context.compact")
-            if error != nil, !aborted { onDiagnosticActivity?("context.compact_failed") }
+            if error != nil, !aborted { diagnosticActivity("context.compact_failed", details: failureDetails(error)) }
             compactionEnded(reason: NativeCompactionReason(pi: reason), result: result, aborted: aborted, willRetry: willRetry, error: error)
         case .autoRetryStart(let attempt, let maxAttempts, let delayMs, _):
-            onDiagnosticActivity?("model.retry")
+            diagnosticActivity("model.retry")
             retry = NativeThreadRetry(attempt: attempt, maxAttempts: maxAttempts,
                                       retryAt: (Date().timeIntervalSince1970 * 1000 + max(0, delayMs)).rounded())
         case .autoRetryEnd:
@@ -870,6 +885,18 @@ final class RPCThreadState {
             break
         }
         commit()
+    }
+
+    private func diagnosticActivity(_ name: String, details: DiagnosticFailureDetails = .init()) {
+        onDiagnosticActivity?(name)
+        onDiagnosticActivityDetails?(name, details)
+    }
+
+    private func failureDetails(_ error: String?) -> DiagnosticFailureDetails {
+        guard onDiagnosticActivityDetails != nil else { return .init() }
+        // Reuse the thread's provider-error classifier; only its fixed kind leaves this queue.
+        let kind = NativeTurnError(text: String((error ?? "").prefix(Self.textLimit))).kind
+        return .init(category: DiagnosticFailureDetails.Category(rawValue: kind.rawValue) ?? .other)
     }
 
     private func beginDiagnostic(_ key: String, operation: String) {

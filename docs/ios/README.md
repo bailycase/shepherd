@@ -58,10 +58,12 @@ The iOS client ships through TestFlight, following the Mac's channels:
 - **Build:** the job runs on the `xcode-27` runner with Xcode 27.1 for iPhone Duo's SwiftUI hinge
   and reserved-region APIs. Earlier SDK builds compile without that fold-aware spacing. It
   archives `Shepherd iOS` unsigned, and `release.py verify-ios` checks the app.
-- **Signing and upload:** `xcodebuild -exportArchive` with `App/iOS/ExportOptions.plist`,
-  `-allowProvisioningUpdates`, and the App Store Connect key. It signs with the team's
-  cloud-managed Apple Distribution certificate and uploads the build. No certificate is
-  exported and no keychain is involved.
+- **Signing and upload:** `release.py prepare-ios-signing` seals the archive with an ad-hoc
+  signature carrying its production push entitlement. `ensure-ios-push` enables Push Notifications
+  on the existing App ID if needed. `xcodebuild -exportArchive` with `App/iOS/ExportOptions.plist`,
+  `-allowProvisioningUpdates`, and the App Store Connect key cloud-signs a local IPA.
+  `verify-ios-ipa` checks the signed app and provisioning profile for production APNs before
+  `altool` uploads it. No signing certificate is exported or installed in the runner's keychain.
 - **Versions:** the build number is the workflow's run number, a numbering the Shepherd Nightly
   builds share, so it only grows. The version is the project's `MARKETING_VERSION`. The Mac
   nightly's `0.0.0-nightly.<stamp>` is not a valid iOS version.
@@ -366,7 +368,11 @@ keep the version for real breaks.
 
 Push notifications use the Cloudflare relay and APNs; enable them per host in
 Settings ▸ Notifications. They cover completed runs, terminal errors, and explicit requests
-for an answer. The Mac must be awake and running Shepherd.
+for an answer, including when that thread is open and being viewed. Titles and short final reply,
+error, or question previews are included by default and pass through Apple and Cloudflare.
+Known credentials are redacted, but sensitive prose may remain; lock-screen previews follow iOS
+settings. Thinking and tool logs are excluded; missing previews use generic text.
+The Mac must be awake and running Shepherd.
 
 The Live Activities (Watch, and Follow from a row's long press), the Dynamic Island, and the
 Home Screen, Lock Screen and Control Center widgets live in the `Shepherd Widgets` extension

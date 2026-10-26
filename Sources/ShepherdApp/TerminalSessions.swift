@@ -24,12 +24,12 @@ enum TerminalSessionStoreError: Error, CustomStringConvertible {
 /// external connect/bootstrap dance: the store adopts
 /// the persisted state at init and every pane renders against live sessions.
 /// On relaunch all previously bound sessions are dead (they died with the
-/// app), so each pane respawns fresh — `pi --mode rpc` for an agent's primary
-/// pane, a login shell for everything else.
+/// app), so a requested pane respawns fresh: `pi --mode rpc` for an agent's primary
+/// pane, a login shell for everything else. Unrequested restored panes stay dormant.
 @MainActor
 final class TerminalSessionStore {
 
-    /// One pane's session. Views observe only `phase`; everything else is attach and replay
+    /// One pane's session. Views observe phase and dormancy; everything else is attach and replay
     /// bookkeeping, and the terminal model is built lazily while a view renders.
     @MainActor
     @Observable
@@ -64,6 +64,8 @@ final class TerminalSessionStore {
             )
         }()
         var phase: Phase = .connecting
+        /// A restored, unrequested pane has neither a process nor a terminal surface.
+        fileprivate(set) var isDormant = false
         @ObservationIgnored var sessionID: SessionID?
         struct BufferedOutput {
             let data: Data
@@ -264,10 +266,15 @@ final class TerminalSessionStore {
     /// The order restored agents' pi start in, and the work that starts each one queued.
     private(set) var startQueue = AgentStartQueue()
     private var queuedStarts: [AgentID: () async -> Bool] = [:]
+    /// Restored panes may mount in the hidden layout deck without starting a process.
+    private var dormantPanes: Set<PaneID> = []
 
     init(server: SessionServer, ownershipTimeout: Duration = .seconds(3)) {
         self.server = server
         self.ownershipTimeout = ownershipTimeout
+        server.onNativeThreadDemand = { [weak self] agentID in
+            self?.activateAgent(agentID)
+        }
         server.onSequencedOutput = { [weak self] sessionID, data, sequence in
             self?.session(forSessionID: sessionID)?.receive(data, sequence: sequence)
         }
@@ -330,7 +337,7 @@ final class TerminalSessionStore {
     /// configuration without replacing the NSView, so no detach or replay is
     /// involved and Pi's simultaneous repaint cannot race a screen snapshot.
     func updateAppearance(_ terminal: ShepherdTheme.Terminal) {
-        for session in sessions.values where !session.isRPC {
+        for session in sessions.values where !session.isRPC && session.hasTerminalModel {
             session.terminal.updateAppearance(terminal)
         }
     }
@@ -339,7 +346,7 @@ final class TerminalSessionStore {
     /// keybind unbinds). Like updateAppearance, ghostty applies the config
     /// without replacing the NSView — no detach, no replay, no blank pane.
     func updateSurfaceConfiguration() {
-        for session in sessions.values where !session.isRPC {
+        for session in sessions.values where !session.isRPC && session.hasTerminalModel {
             session.terminal.updateConfiguration(
                 fontSize: AppSettings.shared.terminalFontSize,
                 fontFamily: AppSettings.shared.resolvedTerminalFontFamily,
@@ -443,7 +450,9 @@ final class TerminalSessionStore {
         }
         handledExits.insert(sessionID)
         ShepherdDiagnostics.shared.record(.processExited, code: exit.code)
-        if exit.startProblem != nil { ShepherdDiagnostics.shared.capture(.agentStartFailed, code: exit.code) }
+        if let problem = exit.startProblem {
+            ShepherdDiagnostics.shared.capture(.agentStartFailed, code: exit.code, details: .init(startupKind: problem.kind))
+        }
         // Read before the view model retires the agent: a pi that exits while it boots frees its
         // place in the launch queue now, not when its hold runs out.
         let agent = serverState?.agents.first { $0.paneID == paneID }
@@ -491,9 +500,14 @@ final class TerminalSessionStore {
     /// SwiftUI structural changes (splits collapsing, panes moving in the
     /// tree) recreate the ghostty NSView; the fresh surface starts blank, so
     /// re-pull the server's current-screen replay into it.
-    private func makeSession(paneID: PaneID, isRPC: Bool = false) -> PaneSession {
+    private func makeSession(paneID: PaneID, isRPC: Bool = false, isDormant: Bool = false) -> PaneSession {
         let session = PaneSession(paneID: paneID, isRPC: isRPC)
-        if isRPC { return session }
+        session.isDormant = isDormant
+        if !isRPC, !isDormant { configureTerminal(session) }
+        return session
+    }
+
+    private func configureTerminal(_ session: PaneSession) {
         session.terminal.onInput = { [weak self, weak session] data in
             guard let self, let session, let sessionID = session.sessionID else { return }
             self.server.write(sessionID: sessionID, data: data)
@@ -520,7 +534,6 @@ final class TerminalSessionStore {
                 self.attachIfNeeded(session, sessionID: sessionID)
             }
         }
-        return session
     }
 
     func session(for pane: LeafPane, in tab: Tab) -> PaneSession {
@@ -535,14 +548,19 @@ final class TerminalSessionStore {
             // kind can never serve this pane.
             detachPane(pane.id)
         }
-        let session = makeSession(paneID: pane.id, isRPC: rpc)
+        let session = makeSession(paneID: pane.id, isRPC: rpc, isDormant: dormantPanes.contains(pane.id))
         sessions[pane.id] = session
-        // The agent-creation flow spawns a new agent's pi and adopts this session.
-        if reservedPanes.contains(pane.id) { return session }
+        scheduleStart(session, pane: pane, tab: tab)
+        return session
+    }
+
+    private func scheduleStart(_ session: PaneSession, pane: LeafPane, tab: Tab) {
+        // Creation owns reserved panes; hidden restored layouts own no processes yet.
+        guard !reservedPanes.contains(pane.id), !dormantPanes.contains(pane.id) else { return }
         // Only an agent's first start waits its turn; a pane session made again later starts now.
-        guard rpc, let agentID = pane.agentID, !startQueue.started.contains(agentID) else {
+        guard session.isRPC, let agentID = pane.agentID, !startQueue.started.contains(agentID) else {
             Task { await start(session, pane: pane, tab: tab) }
-            return session
+            return
         }
         // An agent's pi starts in the queue's order: the ones on screen first.
         queuedStarts[agentID] = { [weak self, weak session] in
@@ -551,19 +569,52 @@ final class TerminalSessionStore {
         }
         if startQueue.enqueue(agentID) { beginStart(agentID, ahead: true) }
         pumpStarts()
-        return session
     }
 
-    /// At launch: starts every restored agent's pi (in `order`, the sidebar's), whether or not its
-    /// layout has mounted, with `first` (the agents on screen) ahead of the rest
-    /// (`AgentStartQueue`).
+    /// Classify before hidden layouts mount. Only selection, demand, or durable unfinished
+    /// ordinary work starts a restored pi; recovery never starts its auxiliary terminals.
+    func restoreAgents(_ order: [AgentID], first: [AgentID], in state: ShepherdState) {
+        let tabs = Set(state.agents.map(\.tabID))
+        dormantPanes.formUnion(state.tabs.filter { tabs.contains($0.id) }.flatMap { $0.layout.leaves.map(\.id) })
+        for id in first { startAhead(id) }
+        Task { [weak self] in
+            guard let self else { return }
+            let recovery = await server.agentsNeedingStartupRecovery()
+            for id in order where recovery.contains(id) { activateAgent(id) }
+        }
+    }
+
+    private func activatePane(_ pane: LeafPane, in tab: Tab) {
+        if dormantPanes.remove(pane.id) != nil, let session = sessions[pane.id] {
+            session.isDormant = false
+            if !session.isRPC, !session.hasTerminalModel { configureTerminal(session) }
+            scheduleStart(session, pane: pane, tab: tab)
+        } else {
+            _ = session(for: pane, in: tab)
+        }
+    }
+
+    /// Remote demand starts only this validated auxiliary pane, without selecting its agent.
+    func activateTerminal(_ pane: LeafPane, in tab: Tab) {
+        activatePane(pane, in: tab)
+    }
+
+    /// Explicit native/remote demand starts the primary thread, not hidden terminals.
+    func activateAgent(_ agentID: AgentID) {
+        guard let state = serverState, let agent = state.agents.first(where: { $0.id == agentID }),
+              let paneID = agent.paneID, let tab = state.tabs.first(where: { $0.id == agent.tabID }),
+              let pane = tab.layout.leaf(withID: paneID) else { return }
+        activatePane(pane, in: tab)
+    }
+
+    /// Explicit design/worktree restoration starts the requested agents in queue order.
     func startRestoredAgents(_ order: [AgentID], first: [AgentID], in state: ShepherdState) {
         for agentID in first { startAhead(agentID) }
         for agentID in first + order {
             guard let agent = state.agents.first(where: { $0.id == agentID }), let paneID = agent.paneID,
                   let tab = state.tabs.first(where: { $0.id == agent.tabID }),
                   let pane = tab.layout.leaf(withID: paneID) else { continue }
-            _ = session(for: pane, in: tab)
+            activatePane(pane, in: tab)
         }
     }
 
@@ -573,6 +624,13 @@ final class TerminalSessionStore {
         // A new agent's pi is its creation's to spawn, never queued.
         if let paneID = serverState?.agents.first(where: { $0.id == agentID })?.paneID, reservedPanes.contains(paneID) { return }
         if startQueue.startAhead(agentID) { beginStart(agentID, ahead: true) }
+        activateAgent(agentID)
+        if let state = serverState, let agent = state.agents.first(where: { $0.id == agentID }),
+           let tab = state.tabs.first(where: { $0.id == agent.tabID }) {
+            for pane in tab.layout.leaves where dormantPanes.contains(pane.id) {
+                activatePane(pane, in: tab)
+            }
+        }
     }
 
     /// Holds every queued agent start (`AgentStartQueue.hold`): the first launch's copy from the
@@ -1139,6 +1197,8 @@ final class TerminalSessionStore {
             instructions: (try InstructionsExtension.installedPath(), ShepherdPaths.instructionsDirectory().path),
             suggestFiles: suggestFiles.map(\.fileName),
             design: try agent.designID.map { (try DesignExtension.installedPath(), $0, try DesignExtension.installedSkillDirectory()) },
+            designTools: settings.designToolEnabled && agent.designID == nil && agent.coordinatorFor == nil && !isAutomation
+                ? (try DesignExtension.installedPath(), try DesignExtension.installedSkillDirectory()) : nil,
             designReferences: Self.wantsDesignReferences(for: agent, enabled: settings.piDesignReferences,
                                                          designTool: settings.designToolEnabled)
                 ? (try DesignReferencesExtension.installedPath(), !agent.designGrants.isEmpty) : nil,
