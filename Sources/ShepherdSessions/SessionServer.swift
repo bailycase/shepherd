@@ -241,6 +241,8 @@ public final class SessionServer: @unchecked Sendable {
     public var onDiagnosticDuration: ((String, Double) -> Void)?
     /// Fixed outcome names only; delivered on main, never errors, tool names or session contents.
     public var onDiagnosticActivity: ((String) -> Void)?
+    /// Fixed, privacy-safe outcome labels; the string-only callback remains source-compatible.
+    public var onDiagnosticActivityDetails: ((String, DiagnosticFailureDetails) -> Void)?
     /// State was persisted. Every mutation broadcasts, including mutations
     /// initiated by the GUI. Delivered on the main actor.
     public var onStateChanged: ((ShepherdState) -> Void)?
@@ -259,6 +261,9 @@ public final class SessionServer: @unchecked Sendable {
     /// to it (whichever comes last), after the state broadcast of that binding. Delivered on
     /// the main actor, so a local thread need not wait for its next poll.
     public var onNativeThreadServable: ((AgentID) -> Void)?
+    /// A native client requested a restored thread whose process has not started yet.
+    /// Delivered on main; hidden layout mounting is not demand.
+    public var onNativeThreadDemand: ((AgentID) -> Void)?
     /// A watched agent's native thread (`watchThreadRevisions`) moved to a new revision, or its
     /// pane was bound to a pi. Delivered on the main actor, at most once per display frame
     /// (`revisionPushSpacing`): every agent revised while one delivery waits rides it, so a
@@ -1619,6 +1624,7 @@ public final class SessionServer: @unchecked Sendable {
             if let sessionID = leaf.sessionID, let code = retiredRPCSessions[sessionID] {
                 unavailable(Self.exitMessage(code))
             } else {
+                hopToMain { [weak self] in self?.onNativeThreadDemand?(agentID) }
                 completion(.failure(code: NativeThreadCode.starting, message: "The agent is starting."))
             }
             return
@@ -2166,7 +2172,7 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
             // An action of a capability this host does not offer (an older host would not know it).
-            if action.capability == RemoteProtocol.browserTunnelCapability, !offeredCapabilities.contains(action.capability) {
+            if [RemoteProtocol.browserTunnelCapability, RemoteProtocol.terminalStartCapability].contains(action.capability), !offeredCapabilities.contains(action.capability) {
                 send(.error(id: id, code: "unsupported", message: "This host does not take this action."), to: client)
                 return
             }
@@ -6965,6 +6971,12 @@ public final class SessionServer: @unchecked Sendable {
                     server.hopToMain { [weak server] in server?.onDiagnosticActivity?(activity) }
                 }
             }
+            if onDiagnosticActivityDetails != nil {
+                thread.onDiagnosticActivityDetails = { [weak serverWeak] activity, details in
+                    guard let server = serverWeak else { return }
+                    server.hopToMain { [weak server] in server?.onDiagnosticActivityDetails?(activity, details) }
+                }
+            }
             thread.onServable = { [weak serverWeak] in
                 serverWeak?.startRecords[sid]?.served()
                 guard let server = serverWeak, server.sessions[sid] != nil else { return }
@@ -7519,9 +7531,30 @@ public final class SessionServer: @unchecked Sendable {
         return nil
     }
 
+    /// Read durable recovery admission without spawning pi or consuming an attempt. Actual
+    /// restoration still checks live history and commits its attempt before any continuation.
+    public func agentsNeedingStartupRecovery() async -> Set<AgentID> {
+        (try? await enqueue {
+            Set(self.store.state.agents.compactMap { agent -> AgentID? in
+                guard self.allowsAgentRecovery(agent.id),
+                      let saved = try? self.agentRecovery.checkpoint(for: agent.id),
+                      saved.sessionID == agent.effectivePiSessionID,
+                      saved.attempts < AgentRecoveryStore.attemptLimit,
+                      saved.active || saved.operationID != nil
+                        || (!saved.paused && (!saved.items.isEmpty || !saved.pending.isEmpty))
+                else { return nil }
+                return agent.id
+            })
+        }) ?? []
+    }
+
     private func allowsAgentRecovery(_ id: AgentID, thread: RPCThreadState) -> Bool {
+        thread.goal == nil && allowsAgentRecovery(id)
+    }
+
+    private func allowsAgentRecovery(_ id: AgentID) -> Bool {
         guard let agent = store.state.agents.first(where: { $0.id == id }),
-              agent.coordinatorFor == nil, agent.designID == nil, thread.goal == nil,
+              agent.coordinatorFor == nil, agent.designID == nil,
               !store.state.isProjectWorker(id),
               !store.state.projectExecutions.contains(where: { $0.assignment?.reservedWorkerID == id }),
               !Self.automationRunAgentIDs(in: store.state).contains(id) else { return false }

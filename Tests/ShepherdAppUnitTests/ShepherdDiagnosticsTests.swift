@@ -76,6 +76,7 @@ struct ShepherdDiagnosticsTests {
         #expect(!options.enableNetworkTracking && !options.enableFileIOTracing && !options.enableCoreDataTracing)
         #expect(options.enableAppHangTracking && options.appHangTimeoutInterval == 5)
         #expect(options.enableCrashHandler && options.enableUncaughtNSExceptionReporting)
+        #expect(options.swiftAsyncStacktraces)
         #expect(options.urlSession === session)
     }
 
@@ -181,6 +182,64 @@ struct ShepherdDiagnosticsTests {
         #expect(clean.stacktrace?.frames.last?.instructionAddress == "299")
         #expect(clean.threads?.count == 128)
         #expect(clean.threads?.first?.threadId == 149)
+    }
+
+    @Test(arguments: [
+        ("SWIFT TASK CONTINUATION MISUSE: PRIVATE_SECRET", "continuationMisuse"),
+        ("Fatal error: Duplicate values for key: PRIVATE_SECRET", "duplicateKey"),
+        ("Fatal error: Index out of range PRIVATE_SECRET", "indexOutOfRange"),
+        ("Unexpectedly found nil while unwrapping an Optional value PRIVATE_SECRET", "unexpectedNil"),
+        ("Shepherd's resource bundle has no Extensions/PRIVATE_SECRET", "missingEmbeddedResource"),
+        ("Precondition failed: PRIVATE_SECRET", "precondition"),
+        ("PRIVATE_SECRET", "")
+    ])
+    func assertionEvidenceKeepsOnlyFixedCategories(reason: String, category: String) throws {
+        let source = Event(level: .fatal)
+        source.exceptions = [Exception(value: reason, type: "EXC_BREAKPOINT")]
+        source.tags = ["crash.assertion": "PRIVATE_SECRET"]
+        let clean = ShepherdDiagnostics.sanitized(source)
+        #expect(clean.tags?["crash.assertion"] == (category.isEmpty ? nil : category))
+        #expect(clean.exceptions?.first?.value == nil)
+        let json = try JSONSerialization.data(withJSONObject: clean.serialize())
+        #expect(!String(decoding: json, as: UTF8.self).contains("PRIVATE_SECRET"))
+        #expect(ShepherdDiagnostics.sanitized(clean).tags?["crash.assertion"] == clean.tags?["crash.assertion"])
+    }
+
+    @Test(arguments: [1, 3])
+    func crashSanitizationPreservesEveryFrameOfShortStacks(count: Int) {
+        let frames = (0..<count).map { index in
+            let frame = Frame()
+            frame.instructionAddress = "0x\(index)"
+            frame.function = "frame\(index)"
+            return frame
+        }
+        let source = Event(level: .fatal)
+        let exception = Exception(value: "PRIVATE_SECRET", type: "EXC_BREAKPOINT")
+        exception.stacktrace = SentryStacktrace(frames: frames, registers: [:])
+        source.exceptions = [exception]
+        let clean = ShepherdDiagnostics.sanitized(source)
+        #expect(clean.exceptions?.first?.stacktrace?.frames.map(\.instructionAddress) == frames.map(\.instructionAddress))
+        #expect(clean.exceptions?.first?.stacktrace?.frames.map(\.function) == frames.map(\.function))
+    }
+
+    @Test func failureMetadataIsAllowlistedInEventsAndBreadcrumbs() {
+        let source = Event(level: .error)
+        source.tags = ["shepherd.failure": "agent.start_failed", "startup.kind": "engineMissing",
+                       "startup.stage": "launch", "failure.category": "PRIVATE_SECRET", "tool.kind": "PRIVATE_TOOL"]
+        let crumb = Breadcrumb(level: .info, category: "shepherd")
+        crumb.message = "tool.failed"
+        crumb.setData(value: "mcp", key: "tool.kind")
+        crumb.setData(value: "other", key: "failure.category")
+        crumb.setData(value: "PRIVATE_PATH", key: "startup.stage")
+        source.breadcrumbs = [crumb]
+        let clean = ShepherdDiagnostics.sanitized(source)
+        #expect(clean.tags?["startup.kind"] == "engineMissing")
+        #expect(clean.tags?["startup.stage"] == "launch")
+        #expect(clean.tags?["failure.category"] == nil)
+        #expect(clean.tags?["tool.kind"] == nil)
+        #expect(clean.breadcrumbs?.first?.data?["tool.kind"] as? String == "mcp")
+        #expect(clean.breadcrumbs?.first?.data?["failure.category"] as? String == "other")
+        #expect(clean.breadcrumbs?.first?.data?["startup.stage"] == nil)
     }
 
     @Test func privateEventContentIsDroppedButCrashAddressesAndImageIDsSurvive() throws {

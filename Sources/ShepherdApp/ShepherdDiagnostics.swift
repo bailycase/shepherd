@@ -26,6 +26,21 @@ final class ShepherdDiagnostics {
         case orphanProcesses = "resources.orphan_processes"
     }
 
+    enum AssertionCategory: String, CaseIterable {
+        case continuationMisuse, duplicateKey, indexOutOfRange, unexpectedNil, missingEmbeddedResource, precondition
+
+        static func classify(_ reason: String) -> Self? {
+            let text = String(reason.prefix(16 * 1024)).lowercased()
+            if text.contains("continuation misuse") { return .continuationMisuse }
+            if text.contains("duplicate values for key") { return .duplicateKey }
+            if text.contains("index out of range") { return .indexOutOfRange }
+            if text.contains("unexpectedly found nil while unwrapping an optional value") { return .unexpectedNil }
+            if text.contains("shepherd's resource bundle has no extensions/") { return .missingEmbeddedResource }
+            if text.contains("precondition failed") { return .precondition }
+            return nil
+        }
+    }
+
     var configured: Bool { endpoint != nil }
     private(set) var isActive = false
     private let endpoint: String?
@@ -233,20 +248,21 @@ final class ShepherdDiagnostics {
         try? FileManager.default.removeItem(at: root)
     }
 
-    func record(_ activity: Activity, code: Int32? = nil) {
+    func record(_ activity: Activity, code: Int32? = nil, details: DiagnosticFailureDetails = .init()) {
         guard options != nil else { return }
         let crumb = Breadcrumb(level: .info, category: "shepherd")
         crumb.message = activity.rawValue
+        for (key, value) in details.attributes { crumb.setData(value: value, key: key) }
         if let code { crumb.setData(value: code, key: "exit_code") }
         SentrySDK.addBreadcrumb(crumb)
         let warning = [.modelFailed, .toolFailed, .modelRetry, .compactionFailed, .extensionFailed].contains(activity)
             || (activity == .processExited && code != nil && code != 0)
         let level: SentryLog.Level = warning ? .warn : .info
-        telemetry.log(activity.rawValue, level: level, code: code)
+        telemetry.log(activity.rawValue, level: level, code: code, details: details)
         telemetry.metric("shepherd." + activity.rawValue, value: .counter(1))
     }
 
-    func capture(_ failure: Failure, code: Int32? = nil) {
+    func capture(_ failure: Failure, code: Int32? = nil, details: DiagnosticFailureDetails = .init()) {
         guard options != nil else { return }
         if profilingEnabled, failure != .agentStartFailed, gate.accept(kind: .profile) {
             SentrySDK.startProfiler()
@@ -254,11 +270,12 @@ final class ShepherdDiagnostics {
             // Its main-run-loop timer can be delayed by a hang. Startup never resumes it.
             SentrySDK.stopProfiler()
         }
-        telemetry.log(failure.rawValue, level: failure == .agentStartFailed ? .error : .warn, code: code)
+        telemetry.log(failure.rawValue, level: failure == .agentStartFailed ? .error : .warn, code: code, details: details)
         telemetry.metric("shepherd." + failure.rawValue, value: .counter(1))
         SentrySDK.capture(message: failure.rawValue) { scope in
             scope.setLevel(.error)
             scope.setTag(value: failure.rawValue, key: "shepherd.failure")
+            for (key, value) in details.attributes { scope.setTag(value: value, key: key) }
             if let code { scope.setTag(value: String(code), key: "exit_code") }
         }
     }
@@ -285,6 +302,7 @@ final class ShepherdDiagnostics {
         options.sendDefaultPii = false
         options.enableMemoryIntrospection = false
         options.enableUncaughtNSExceptionReporting = true
+        options.swiftAsyncStacktraces = true
         options.enableAutoBreadcrumbTracking = false
         options.enableNetworkBreadcrumbs = false
         options.enableCaptureFailedRequests = false
@@ -328,7 +346,8 @@ final class ShepherdDiagnostics {
         event.platform = "cocoa"
         if let failure = source.tags?["shepherd.failure"], Failure(rawValue: failure) != nil {
             event.message = SentryMessage(formatted: failure)
-            event.tags = ["shepherd.failure": failure]
+            event.tags = DiagnosticFailureDetails.sanitized(source.tags ?? [:])
+            event.tags?["shepherd.failure"] = failure
             if let code = source.tags?["exit_code"], Int32(code) != nil { event.tags?["exit_code"] = code }
         }
         for key in ["shepherd.installation", "shepherd.run"] {
@@ -336,6 +355,13 @@ final class ShepherdDiagnostics {
                 if event.tags == nil { event.tags = [:] }
                 event.tags?[key] = id.uuidString
             }
+        }
+        let assertion = (source.exceptions ?? []).prefix(8).compactMap { original in
+            original.value.flatMap(AssertionCategory.classify)
+        }.first ?? (source.tags?["crash.assertion"]).flatMap(AssertionCategory.init(rawValue:))
+        if let assertion {
+            if event.tags == nil { event.tags = [:] }
+            event.tags?["crash.assertion"] = assertion.rawValue
         }
         event.context = [:]
         for (name, keys) in ["os": ["name", "version", "build", "kernel_version"],
@@ -393,6 +419,8 @@ final class ShepherdDiagnostics {
             let crumb = Breadcrumb(level: .info, category: "shepherd")
             crumb.message = message
             crumb.timestamp = original.timestamp
+            let strings = (original.data ?? [:]).compactMapValues { $0 as? String }
+            for (key, value) in DiagnosticFailureDetails.sanitized(strings) { crumb.setData(value: value, key: key) }
             if let code = original.data?["exit_code"] as? Int32 { crumb.setData(value: code, key: "exit_code") }
             return crumb
         }
@@ -500,7 +528,7 @@ struct DiagnosticsSamplingBudget {
 /// Rebuild from retained trusted values, not from ambient scope or caller-supplied attributes.
 private final class DiagnosticsTelemetry: @unchecked Sendable {
     private enum Payload {
-        case log(String, SentryLog.Level, Int32?)
+        case log(String, SentryLog.Level, Int32?, DiagnosticFailureDetails)
         case metric(String, SentryMetricValue, SentryUnit?)
     }
     private let gate: DiagnosticsGate
@@ -519,9 +547,9 @@ private final class DiagnosticsTelemetry: @unchecked Sendable {
         }
     }
 
-    @MainActor func log(_ body: String, level: SentryLog.Level, code: Int32?) {
+    @MainActor func log(_ body: String, level: SentryLog.Level, code: Int32?, details: DiagnosticFailureDetails = .init()) {
         guard ShepherdDiagnostics.Activity(rawValue: body) != nil || ShepherdDiagnostics.Failure(rawValue: body) != nil else { return }
-        emit(.log(body, level, code)) { token in
+        emit(.log(body, level, code, details)) { token in
             let attributes: [String: Any] = [Self.tokenKey: token]
             switch level {
             case .warn: SentrySDK.logger.warn(body, attributes: attributes)
@@ -577,12 +605,13 @@ private final class DiagnosticsTelemetry: @unchecked Sendable {
     }
 
     func sanitized(_ source: SentryLog) -> SentryLog? {
-        guard case let .log(body, level, code) = take(source.attributes[Self.tokenKey]?.value as? String),
+        guard case let .log(body, level, code, details) = take(source.attributes[Self.tokenKey]?.value as? String),
               gate.accept(kind: .log) else { return nil }
         let clean = SentryLog(level: level, body: body)
         clean.traceId = SentryId()
         clean.attributes = lock.withLock { metadata.mapValues { SentryAttribute(string: $0) } }
         if let code { clean.attributes["exit_code"] = SentryAttribute(integer: Int(code)) }
+        for (key, value) in details.attributes { clean.attributes[key] = SentryAttribute(string: value) }
         return clean
     }
 

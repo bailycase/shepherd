@@ -101,6 +101,12 @@ struct TerminalPaneView: View {
         var active: Bool
     }
 
+    private struct DemandKey: Equatable {
+        var paneID: PaneID
+        var connection: UUID?
+        var active: Bool
+    }
+
     var body: some View {
         let terminals = MobileTerminals.shared
         let host = hosts.host(ref.host)
@@ -152,6 +158,14 @@ struct TerminalPaneView: View {
         .contentShape(Rectangle())
         .onAppear { visible = true }
         .onDisappear { visible = false }
+        .task(id: DemandKey(paneID: pane.id, connection: host?.connectedClient == nil ? nil : host?.session,
+                            active: visible && scenePhase == .active && host?.supports(RemoteProtocol.terminalStartCapability) == true)) {
+            guard visible, scenePhase == .active, pane.isReview != true, pane.agentID == nil,
+                  host?.supports(RemoteProtocol.terminalStartCapability) == true,
+                  let client = host?.connectedClient else { return }
+            // A non-nil binding can belong to the previous host process; demand is idempotent.
+            try? await client.agentAction(agentID: ref.agent, action: .startTerminal(paneID: pane.id))
+        }
     }
 
     /// `held`: the terminal is attached while it shows, so a refused attach is being retried.

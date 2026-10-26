@@ -13,6 +13,12 @@ struct ResourceDiagnosticsTests {
         let events = Locked([(String, Double)]())
         host.server.onDiagnosticDuration = { operation, seconds in events.withValue { $0.append((operation, seconds)) } }
         let activities = Locked([String]())
+        let details = Locked([String]())
+        host.server.onDiagnosticActivityDetails = { activity, labels in
+            #expect(Thread.isMainThread)
+            #expect(labels.attributes.isEmpty)
+            details.withValue { $0.append(activity) }
+        }
         host.server.onDiagnosticActivity = { activity in
             #expect(Thread.isMainThread)
             activities.withValue { $0.append(activity) }
@@ -26,6 +32,7 @@ struct ResourceDiagnosticsTests {
         let prompt = try #require(OpeningPrompt("/session-name fail PRIVATE_SENTINEL", agentID: .init()))
         await host.server.sendOpeningPrompt(prompt, sessionID: session.id)
         try await eventually("a fixed extension failure on main") { activities.withValue { $0 == ["extension.failed"] } }
+        try await eventually("the detailed diagnostic callback on main") { details.withValue { $0 == ["extension.failed"] } }
         host.server.killSession(session.id)
         try await eventually("the stop timing") { events.withValue { $0.contains { $0.0 == "agent.stop" } } }
         let final = await host.server.resourceState()
@@ -49,8 +56,10 @@ struct ResourceDiagnosticsTests {
         let thread = try ThreadEventTests.Thread(bootstrap: false)
         defer { thread.stop() }
         let recorded = Locked([String]())
+        let labels = Locked([DiagnosticFailureDetails]())
         thread.queue.sync {
             thread.state.onDiagnosticActivity = { activity in recorded.withValue { $0.append(activity) } }
+            thread.state.onDiagnosticActivityDetails = { _, details in labels.withValue { $0.append(details) } }
         }
         let modelFailure = #"{"type":"message_end","message":{"role":"assistant","content":[],"stopReason":"error","errorMessage":"PRIVATE_SENTINEL"}}"#
         let toolFailure = #"{"type":"tool_execution_end","toolCallId":"PRIVATE_SENTINEL","toolName":"PRIVATE_SENTINEL","result":{"content":[{"type":"text","text":"PRIVATE_SENTINEL"}]},"isError":true}"#
@@ -62,6 +71,10 @@ struct ResourceDiagnosticsTests {
             #"{"type":"extension_error","extensionPath":"/PRIVATE_SENTINEL","event":"PRIVATE_SENTINEL","error":"PRIVATE_SENTINEL"}"#)
         let expected = ["model.failed", "tool.failed", "model.retry", "context.compact_failed", "extension.failed"]
         #expect(recorded.withValue { $0 } == expected)
+        let expectedLabels: [DiagnosticFailureDetails] = [
+            .init(category: .other), .init(category: .other, toolKind: .other), .init(), .init(category: .other), .init()
+        ]
+        #expect(labels.withValue { $0 } == expectedLabels)
         thread.queue.sync { thread.state.stopRequested = true }
         try await thread.feed(
             modelFailure, toolFailure,
@@ -73,9 +86,29 @@ struct ResourceDiagnosticsTests {
             #"{"type":"tool_execution_end","toolCallId":"PRIVATE_SENTINEL","toolName":"PRIVATE_SENTINEL","result":{"content":[]},"isError":false}"#,
             #"{"type":"compaction_end","reason":"manual","aborted":false,"willRetry":false}"#)
         #expect(recorded.withValue { $0 } == expected)
-        thread.queue.sync { thread.state.onDiagnosticActivity = nil }
+        #expect(labels.withValue { $0 } == expectedLabels)
+        thread.queue.sync {
+            thread.state.onDiagnosticActivity = nil
+            thread.state.onDiagnosticActivityDetails = nil
+        }
         try await thread.feed(modelFailure, toolFailure)
         #expect(recorded.withValue { $0 } == expected)
+    }
+
+    @Test func failuresReuseProviderCategoriesAndOnlyExposeToolKinds() async throws {
+        let thread = try ThreadEventTests.Thread(bootstrap: false)
+        defer { thread.stop() }
+        let recorded = Locked([DiagnosticFailureDetails]())
+        thread.queue.sync {
+            thread.state.onDiagnosticActivityDetails = { _, details in recorded.withValue { $0.append(details) } }
+        }
+        try await thread.feed(
+            #"{"type":"message_end","message":{"role":"assistant","content":[],"stopReason":"error","errorMessage":"429 rate limit PRIVATE_SECRET"}}"#,
+            #"{"type":"compaction_end","reason":"manual","aborted":false,"willRetry":false,"errorMessage":"maximum context length PRIVATE_SECRET"}"#,
+            #"{"type":"tool_execution_end","toolCallId":"PRIVATE_ID","toolName":"mcp__PRIVATE_SERVER__PRIVATE_TOOL","result":{"content":[{"type":"text","text":"PRIVATE_SECRET"}]},"isError":true}"#)
+        #expect(recorded.withValue { $0 } == [
+            .init(category: .rateLimit), .init(category: .contextTooLong), .init(category: .other, toolKind: .mcp)
+        ])
     }
 
     @Test func aSessionSwitchDiscardsUnfinishedDiagnosticTimings() async throws {

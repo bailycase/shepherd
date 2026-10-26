@@ -10,7 +10,8 @@ DSN cannot enable reporting. iOS does not initialize the SDK.
 The app sends native crash stacks, image UUIDs and addresses for symbolication, app release,
 OS version, hardware class and memory fields supplied by the SDK. Fixed breadcrumbs record
 app startup, selecting a local thread and process exits, with numeric exit codes. Agent-start
-failures send a fixed error code. Random installation and run UUIDs permit correlation; they
+failures send a fixed error code, the existing allowlisted startup problem kind and its inferred stage
+(preflight, launch, initialization, resume, or unknown). Random installation and run UUIDs permit correlation; they
 are not account, device serial, agent or project identifiers.
 
 `Sources/ShepherdApp/ShepherdDiagnostics.swift` is the only production file that imports
@@ -19,7 +20,11 @@ storage and a URLSession configuration for isolated runtime tests. Callers use S
 enums and numbers. Do not pass arbitrary errors or logs to
 it. The pre-send filter reconstructs the event and drops exception messages, unknown exception
 names, user information, requests, extra fields, thread names, registers, source lines and
-absolute binary paths. It retains symbols and image metadata needed for symbolication.
+absolute binary paths. It retains symbols and image metadata needed for symbolication. Swift async
+stack traces are enabled so native crash evidence can include async callers. Before dropping exception
+reasons, the filter recognizes only fixed assertion categories (continuation misuse, duplicate key,
+index out of range, unexpected nil, missing embedded extension resource, precondition); unknown reasons
+produce no category. These labels improve evidence, not diagnose or fix the underlying crash.
 
 Performance reporting adds explicit, fixed-name transactions for agent start/stop/turns, model responses,
 history refresh, compaction and tool categories (`read`, `bash`, `write`, `edit`, `mcp`, `other`). These
@@ -29,8 +34,11 @@ and crashes through the sanitized scope. Dedicated Sentry metrics also record re
 operation-duration distributions and lifecycle/outcome counters. Duration metrics have their own budget
 and do not depend on a trace being sampled. Fixed structured logs identify app startup, process exits,
 agent-start failures, model failures/retries, tool failures, extension failures and compaction failures.
-They contain no error messages, tool names or raw application/agent logs. Logs and metrics retain only
-app-owned release, environment, random installation/run IDs and numeric exit codes. One-use emission
+They contain no error messages, tool names or raw application/agent logs. Failure logs and breadcrumbs add
+bounded provider-error categories and tool kinds; startup reports and logs add startup kind/stage. Categories
+reuse the thread's provider-error classifier; unrecognized errors and tool failures use `other`. A generic
+startup exit has `unknown` stage rather than guessing. Logs and metrics otherwise retain only app-owned
+release, environment, random installation/run IDs and numeric exit codes. One-use emission
 receipts reject arbitrary SDK calls, even if they reuse our public event names.
 Memory-pressure notifications and observed orphan processes
 produce fixed, rate-limited anomaly reports. App hangs lasting at least five seconds use the same sanitized

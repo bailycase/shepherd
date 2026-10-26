@@ -24,6 +24,18 @@ extension ShepherdViewModel {
         return (tab, leaf)
     }
 
+    /// Re-read committed ownership: stale client panes and review/primary panes cannot start.
+    func startTerminalPane(_ paneID: PaneID, of agentID: AgentID) throws {
+        let current = server.state
+        guard let agent = current.agents.first(where: { $0.id == agentID }),
+              let tab = current.tabs.first(where: { $0.id == agent.tabID }),
+              let pane = tab.layout.leaf(withID: paneID),
+              pane.agentID == nil, pane.id != agent.paneID, pane.isReview != true else {
+            throw TerminalControlError("That is not an auxiliary terminal of this agent.")
+        }
+        sessions.activateTerminal(pane, in: tab)
+    }
+
     /// Names a tab (its terminal); a blank name goes back to what it runs.
     func renameTerminalPane(_ paneID: PaneID, of agentID: AgentID, to title: String?) throws {
         let (tab, _) = try terminalLeaf(paneID, of: agentID)

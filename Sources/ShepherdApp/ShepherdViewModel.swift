@@ -67,7 +67,16 @@ final class ShepherdViewModel {
     /// This Mac's spaces whose folder is gone (`checkMissingSpaces`): the sidebar marks them and
     /// no thread starts in them. Live state, never persisted.
     var missingSpaces: Set<SpaceID> = []
-    var selectedAgentID: AgentID?
+    var selectedAgentID: AgentID? {
+        didSet {
+            // Fallback selections after removal also wake their terminals. Initial restoration
+            // must classify dormant panes before starting the selected agent.
+            if didStartRestoredAgents, selectedAgentID != oldValue,
+               selectedRemoteAgent == nil, destination == nil, let selectedAgentID {
+                sessions.startAhead(selectedAgentID)
+            }
+        }
+    }
     /// The page the main column shows in place of a thread (New thread, Automations, Hosts);
     /// nil while a thread shows. Picking a row clears it. Ephemeral, like all selection state.
     var destination: MainDestination?
@@ -564,7 +573,7 @@ final class ShepherdViewModel {
     @ObservationIgnored var parkSweepTimer: Timer?
     /// One-shot launch guard for autoStartAutomations.
     var didAutoStartAutomations = false
-    /// The first adoption starts every restored agent's pi (`TerminalSessionStore.startRestoredAgents`).
+    /// The first adoption starts selected/restorable work, leaving settled agents dormant.
     /// Off in harnesses that seed agents only to draw them: their pi then starts when a layout
     /// mounts or a test asks, as before.
     @ObservationIgnored let restoresAgentsAtLaunch: Bool
@@ -842,6 +851,7 @@ final class ShepherdViewModel {
                     case .deleteKeepingWorktree: try await self.deleteAgentPersisted(agentID)
                     case .renameTerminal(let paneID, let title): try self.renameTerminalPane(paneID, of: agentID, to: title)
                     case .killTerminalProcess(let paneID): try await self.killTerminalProcess(paneID, of: agentID)
+                    case .startTerminal(let paneID): try self.startTerminalPane(paneID, of: agentID)
                     case .openTerminal(let cwd, let command): try await self.startCommandForRemote(agentID, cwd: cwd, command: command)
                     }
                     completion(.success(()))
@@ -1214,11 +1224,11 @@ final class ShepherdViewModel {
                 selectedSpaceID = agent.spaceID
             }
         }
-        // First adoption of the restored workspace: every agent's pi starts now, not when its
-        // layout mounts, the one on screen first and the rest a few at a time, in Recents order.
+        // Classify restored panes before hidden layouts mount. Selected and unfinished ordinary
+        // work start now; settled threads wait for selection or explicit native/remote demand.
         if restoresAgentsAtLaunch, !didStartRestoredAgents {
             didStartRestoredAgents = true
-            sessions.startRestoredAgents(localRecentsOrder + state.agents.map(\.id),
+            sessions.restoreAgents(localRecentsOrder + state.agents.map(\.id),
                                          first: selectedAgentID.map { [$0] } ?? [], in: state)
         }
         focusMemory.prune(liveTabs: Set(state.tabs.map(\.id)))
