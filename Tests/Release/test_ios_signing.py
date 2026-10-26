@@ -126,6 +126,9 @@ class IOSPushCapabilityTests(unittest.TestCase):
         self.assertTrue(all(call.args[0] == "GET" for call in self.client.request.call_args_list))
         self.assertIn("filter%5Bidentifier%5D=com.bailycase.shepherd.ios",
                       self.client.request.call_args_list[0].args[1])
+        # This relationship endpoint rejects pagination parameters, including limit.
+        self.assertEqual(self.client.request.call_args_list[1].args, (
+            "GET", release.ASC_API + "/v1/bundleIds/existing-id/bundleIdCapabilities"))
 
     def test_missing_push_is_enabled_on_only_the_existing_app_and_verified(self):
         self.client.request.side_effect = [self.app, {"data": []}, {}, self.enabled]
