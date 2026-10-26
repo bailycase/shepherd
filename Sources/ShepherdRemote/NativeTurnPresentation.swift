@@ -369,8 +369,11 @@ public func nativeTurnPresentation(
             items[items.count - 1] = .error(id: id, error: error, final: true, folded: false)
         } else if let retry = errors.retry {
             items[items.count - 1] = .retrying(id: id, line: NativeRetryLine(
-                title: error.retryTitle, glyph: error.kind == .timeout ? "hourglass" : "arrow.clockwise",
+                title: error.recoveryTitle, glyph: error.kind == .timeout ? "hourglass" : "arrow.clockwise",
                 attempt: retry.attempt, maxAttempts: retry.maxAttempts, retryAt: retry.retryAt))
+        } else if error.canRecoverWhileLive {
+            // Retry events follow the failed message. Don't flash a red card between them.
+            items.removeLast()
         } else {
             items[items.count - 1] = .error(id: id, error: error, final: false, folded: false)
         }

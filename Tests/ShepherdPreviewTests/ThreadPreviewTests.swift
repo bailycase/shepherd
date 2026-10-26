@@ -510,6 +510,25 @@ struct ThreadPreviewTests {
         }
     }
 
+    @Test(arguments: ["waiting", "retrying", "exhausted"])
+    func threadEmptyResponseRecovery(_ phase: String) async throws {
+        var snapshot = ActivityThreads.providerError
+        snapshot.messages.removeLast(2)
+        snapshot.messages.append(ActivityThreads.failure("empty-response",
+            "The provider returned no answer or tool call. Retry to continue the interrupted turn.",
+            at: ActivityThreads.now))
+        snapshot.running = phase != "exhausted"
+        snapshot.retry = phase == "retrying"
+            ? NativeThreadRetry(attempt: 1, maxAttempts: 3, retryAt: Date.now.timeIntervalSince1970 * 1000 + 8_400)
+            : nil
+        let fixture = ThreadFixture(snapshot)
+        defer { fixture.store.stop() }
+        try await Preview.render("thread-empty-response-\(phase)", size: CGSize(width: 1180, height: 700),
+                                 ready: { fixture.store.ready && !fixture.store.rows.isEmpty }) {
+            fixture.thread(title: "Request recovery")
+        }
+    }
+
     /// Retry is on the latest turn only: the latest failed turn's card offers it, and an earlier
     /// turn that failed another way shows its card without it.
     @Test func threadRetryLatestFailed() async throws {
@@ -551,8 +570,8 @@ struct ThreadPreviewTests {
                 NWTurnError(auth, retry: {})
                 NWTurnError(auth, detailsOpen: true, retry: {})
                 NWTurnError(auth, folded: true)
-                NWRetryLine(count: "2 of 3") { _ in "OpenAI is overloaded · retrying in 8s" }
-                NWRetryLine(glyph: "hourglass", count: "2 of 3") { _ in "OpenAI didn’t respond in time · retrying" }
+                NWRetryLine(count: "2 of 3") { _ in "Reconnecting to OpenAI · retrying in 8s" }
+                NWRetryLine(glyph: "hourglass", count: "2 of 3") { _ in "Reconnecting to OpenAI · retrying" }
                 NWTurnError(card("Request timed out.", attempts: 3, span: 1_860_000), retry: {})
                 NWTurnError(card(#"529 {"type":"error","error":{"type":"overloaded_error","message":"Overloaded. Please try again shortly."}}"#,
                                  attempts: 3, span: 100_000), retry: {})
