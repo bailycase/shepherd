@@ -321,6 +321,7 @@ struct NewThreadPage: View {
             sections: NewThreadPlaces.sections(hosts, chosen: draft.place),
             worktree: offers ? NWPlaceWorktree(isOn: draft.worktree, caption: NewThreadRules.worktreeCaption(base: draft.worktreeBase ?? ""),
                                                base: draft.place?.host == nil ? draft.worktreeBase ?? "Default" : nil) : nil,
+            maxHeight: NWComposerMetrics.modelPickerMaxHeight,
             onChoose: { option in
                 if let place = NewThreadPlaces.place(option) { draft.choose(host: place.host, space: place.space, vm: vm) }
                 menu = nil
