@@ -8,18 +8,21 @@ import ShepherdRemote
 /// Local iPhone alerts from threads the client is already watching. This is not APNs:
 /// disconnected, suspended, and never-opened threads have no live goal updates here.
 @MainActor
-final class GoalNotifications: NSObject, UNUserNotificationCenterDelegate {
+final class GoalNotifications: NSObject {
     static let shared = GoalNotifications()
     private var watching: Set<AgentRef> = []
     private var previous: [AgentRef: NativeGoal] = [:]
     private var wasLive: [AgentRef: Bool] = [:]
+    /// When push is enabled for a host, skip local goal alerts for its agents to avoid duplicates.
+    var pushEnabledHosts: Set<UUID> = []
     // The fixture app must never prompt for permission or post a real notification.
     private let available = Bundle.main.bundleIdentifier == "com.bailycase.shepherd.ios"
         && UIDevice.current.userInterfaceIdiom == .phone
 
     override init() {
         super.init()
-        if available { UNUserNotificationCenter.current().delegate = self }
+        // The notification center delegate is set by PushAppDelegate,
+        // which consolidates both push and local goal notification handling.
     }
 
     func watch(_ store: NativeThreadStore, hosts: MobileHosts, ref: AgentRef) {
@@ -51,7 +54,9 @@ final class GoalNotifications: NSObject, UNUserNotificationCenterDelegate {
         // A first snapshot is a baseline, not a newly completed goal. Reconnecting must not
         // replay an old alert, and elapsed/metadata revisions must not post another one.
         guard live, previouslyLive, let goal, let old, old.id == goal.id, old.state != goal.state,
-              goal.state == .met || goal.state == .needsYou else { return }
+              goal.state == .met || goal.state == .needsYou,
+              // Skip local alert if push is enabled for this host (push delivers it instead).
+              !pushEnabledHosts.contains(ref.host) else { return }
         Task { [weak self, weak store, weak hosts] in
             guard let self else { return }
             let center = UNUserNotificationCenter.current()
@@ -74,8 +79,4 @@ final class GoalNotifications: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
-                                            willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        [.banner, .sound]
-    }
 }

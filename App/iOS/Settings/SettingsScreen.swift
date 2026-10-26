@@ -52,6 +52,7 @@ private struct SettingsList: View {
                     }
                 }
                 SHListCard {
+                    row(.notifications, trailing: SHListRow.Trailing.none)
                     row(.experiments, trailing: value(store.experimentsValue))
                 }
                 SettingsSection("About") {
@@ -159,6 +160,7 @@ struct SettingsPageView: View {
         case .instructions: InstructionsScreen()
         case .skills: SkillsScreen()
         case .hosts: HostsScreen()
+        case .notifications: NotificationsScreen()
         case .experiments: ExperimentsScreen()
         }
     }

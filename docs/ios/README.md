@@ -364,8 +364,11 @@ keep the version for real breaks.
   back in the chat with Apply both and Keep as comments (hosts that offer `design.markup.v1`).
   Details: docs/designs.md › On iPad, › Pencil markup.
 
+Push notifications use the Cloudflare relay and APNs; enable them per host in
+Settings ▸ Notifications. They cover completed runs, terminal errors, and explicit requests
+for an answer. The Mac must be awake and running Shepherd.
+
 ## Not in the first release
 
-Push notifications and Live Activities (they need a relay: the phone's socket drops in the
-background), QR pairing and TLS, and everything waiting on the Mac (Missions,
+Live Activities, QR pairing and TLS, and everything waiting on the Mac (Missions,
 daemon hosts).

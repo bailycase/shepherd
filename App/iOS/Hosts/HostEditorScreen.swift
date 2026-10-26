@@ -126,11 +126,13 @@ struct HostEditorScreen: View {
 
     private func forget() {
         guard let id = hostID else { return }
-        do {
-            try app?.forget(host: id)
-            dismiss()
-        } catch {
-            self.error = error.localizedDescription
+        Task {
+            do {
+                try await app?.forget(host: id)
+                dismiss()
+            } catch {
+                self.error = error.localizedDescription
+            }
         }
     }
 }

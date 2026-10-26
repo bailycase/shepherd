@@ -194,7 +194,8 @@ final class FixtureRunner {
         let tokens = HostTokens.memory(Dictionary(uniqueKeysWithValues: records.map { ($0.id, FixtureHostData.token) }))
         let appearance = MobileAppearance(defaults: defaults)
         appearance.mode = environment["FIXTURE_SCHEME"] == "light" ? .light : .dark
-        app = MobileApp(hosts: MobileHosts(defaults: defaults, tokens: tokens, clientName: "Shepherd fixture"), appearance: appearance)
+        app = MobileApp(hosts: MobileHosts(defaults: defaults, tokens: tokens, clientName: "Shepherd fixture"), appearance: appearance,
+                        push: PushManager(defaults: defaults, keychain: .memory(), isFixture: true))
     }
 
     func run() async {

@@ -30,6 +30,7 @@ enum SettingsRoute: Hashable, Codable {
     /// Add skills from a repository, looking up the one given at once.
     case skillsRepo(String?)
     case experiments
+    case notifications
     /// A suggested line waiting on a host: edit it, choose its file, add it or dismiss it.
     case suggestion(UUID)
 }
@@ -53,6 +54,7 @@ struct SettingsDestination: View {
         case .skillResult(let skill): SkillResultScreen(skill: skill)
         case .skillsRepo(let repo): AddSkillsScreen(initialRepo: repo)
         case .experiments: ExperimentsScreen()
+        case .notifications: NotificationsScreen()
         case .suggestion(let id): SuggestionScreen(id: id)
         }
     }
@@ -62,7 +64,7 @@ struct SettingsDestination: View {
 /// (iPadSettingsInstructions). The iPad's list names two of them as the Mac does ("Agents",
 /// "Pi"); the phone's rows say what they hold ("Defaults", "Extensions").
 enum SettingsPage: String, CaseIterable, Hashable, Codable {
-    case appearance, defaults, worktrees, pi, instructions, skills, hosts, experiments
+    case appearance, defaults, worktrees, pi, instructions, skills, hosts, notifications, experiments
 
     var title: String {
         switch self {
@@ -73,6 +75,7 @@ enum SettingsPage: String, CaseIterable, Hashable, Codable {
         case .instructions: "Instructions"
         case .skills: "Skills"
         case .hosts: "Hosts"
+        case .notifications: "Notifications"
         case .experiments: "Experiments"
         }
     }
@@ -95,6 +98,7 @@ enum SettingsPage: String, CaseIterable, Hashable, Codable {
         case .instructions: "doc.text"
         case .skills: "graduationcap"
         case .hosts: "desktopcomputer"
+        case .notifications: "bell"
         case .experiments: "flask"
         }
     }
@@ -109,6 +113,7 @@ enum SettingsPage: String, CaseIterable, Hashable, Codable {
         case .instructions: .instructions
         case .skills: .skills
         case .hosts: .hosts
+        case .notifications: .notifications
         case .experiments: .experiments
         }
     }

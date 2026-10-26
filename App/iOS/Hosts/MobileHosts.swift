@@ -86,6 +86,8 @@ final class MobileHosts {
     @ObservationIgnored private let makeClient: () -> RemoteHostClient
     @ObservationIgnored private let pause: (Duration) async throws -> Void
     @ObservationIgnored private(set) var foreground = false
+    /// Called when a host transitions to `.connected`. Used by PushManager to renew on reconnect.
+    @ObservationIgnored var onHostConnected: ((MobileHost) -> Void)?
 
     init(defaults: UserDefaults = .standard, tokens: HostTokens = .keychain, clientName: String = "Shepherd iOS",
          makeClient: @escaping () -> RemoteHostClient = { RemoteHostClient() },
@@ -306,6 +308,7 @@ final class MobileHosts {
                 host.session = UUID()
                 host.set(.connected)
                 host.backoff.reset()
+                self?.onHostConnected?(host)
             } catch {
                 client.disconnect()
                 guard !Task.isCancelled, let self, let host else { return }

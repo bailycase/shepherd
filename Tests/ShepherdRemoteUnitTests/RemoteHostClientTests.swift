@@ -62,6 +62,14 @@ struct RemoteHostClientTests {
         } == "update_required")
     }
 
+    @Test func pushRegistrationRequiresAnUpdatedHostBeforeSending() async {
+        let client = RemoteHostClient()
+        #expect(await code {
+            try await client.registerPush(RemotePushRegistration(id: UUID().uuidString, sendToken: String(repeating: "a", count: 64)))
+        } == "unsupported")
+        #expect(await code { try await client.unregisterPush(UUID().uuidString) } == "unsupported")
+    }
+
     @Test func aNewClientAdvertisesNoCapabilities() {
         #expect(RemoteHostClient().capabilities.isEmpty)
     }

@@ -43,7 +43,10 @@ struct MobileRoot: View {
         .onHingeClosedChange { closed in if navigator.hingeClosed != closed { navigator.hingeClosed = closed } }
         // Done's reading: opening another thread marks the one read before seen, as the Mac's sidebar does.
         .onChange(of: navigator.selectedThread, initial: true) { _, thread in SidebarThreads.of(app.hosts).select(thread) }
-        .onAppear { app.windows.register(window, navigator: navigator) }
+        .onAppear {
+            app.windows.register(window, navigator: navigator)
+            app.pushRouter.drainPending(hosts: app.hosts, windows: app.windows)
+        }
         .onDisappear { app.windows.unregister(window.id, hosts: app.hosts) }
         .onChange(of: scenePhase, initial: true) { _, phase in
             // The first phase can arrive before onAppear: the window counts only once registered.

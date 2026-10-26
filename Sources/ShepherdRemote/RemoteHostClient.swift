@@ -698,6 +698,30 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
     }
 
+    public func registerPush(_ registration: RemotePushRegistration) async throws {
+        guard capabilities.contains(RemoteProtocol.pushNotificationsCapability) else {
+            throw RemoteHostClientError.rejected(code: "unsupported", message: "Update Shepherd on this Mac to enable push notifications.")
+        }
+        let reply = try await request { .pushRegistration(id: $0, registration: registration) }
+        switch reply {
+        case .ok: return
+        case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
+        default: throw RemoteHostClientError.rejected(code: "protocol", message: "Unexpected push registration reply")
+        }
+    }
+
+    public func unregisterPush(_ registrationID: String) async throws {
+        guard capabilities.contains(RemoteProtocol.pushNotificationsCapability) else {
+            throw RemoteHostClientError.rejected(code: "unsupported", message: "This host does not support push notifications.")
+        }
+        let reply = try await request { .pushUnregister(id: $0, registrationID: registrationID) }
+        switch reply {
+        case .ok: return
+        case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
+        default: throw RemoteHostClientError.rejected(code: "protocol", message: "Unexpected push removal reply")
+        }
+    }
+
     /// Poll after reconnect or while an operation is in flight. Never automatically retry install.
     public func hostUpdate(_ request: RemoteHostUpdateRequest = .status) async throws -> HostUpdateStatus {
         guard capabilities.contains(RemoteProtocol.hostUpdateCapability) else {

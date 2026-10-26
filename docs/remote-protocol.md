@@ -96,6 +96,11 @@
   - `suggestions` (`suggestions.v1`): Settings ▸ Experiments ▸ Suggested instructions on the host
     (fetch, configure, add as edited and retargeted, add all, dismiss, undo), answered with the
     experiment's settings and its lines
+  - `pushRegistration` / `pushUnregister` (`push.notifications.v1`): an opted-in mobile client
+    registers or removes a relay destination over the authenticated connection, answered with `ok`.
+    Registration carries only its opaque ID and scoped send credential. The APNs device token
+    and revocation credential stay with the phone and relay. Alerts contain fixed text and opaque
+    routing IDs, never thread contents. Hosts without this capability cannot register destinations.
   - `hostSettings` (`hostSettings.v1`): what the host's Settings ▸ Agents, Worktrees and Pi set,
     the pi packages its pi loads, and its Shepherd and pi versions; one change per request
     (`HostSettingChange`), applied as the Mac's own Settings would. The additive
