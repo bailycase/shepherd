@@ -67,11 +67,16 @@ struct BlockedInputTests {
         defer { t.stop() }
         _ = try await t.ready()
         let prompt = refused ? "preflight-compact-refuse" : "preflight-compact"
-        let completions = Locked(0)
+        let completions = Locked(0), retired = Locked<[UUID]>([])
+        let dispatchID = UUID()
         let failure: NativeThreadResult? = await withCheckedContinuation { continuation in
             t.queue.async {
+                t.state.onUnconsumedDispatchRetired = { id in retired.withValue { $0.append(id) } }
+                t.state.dispatches.append(.init(id: dispatchID, text: prompt, parts: nil, items: [], expectsMessage: true))
                 t.state.requestInput(prompt: prompt, images: [], delivery: .followUp, timeout: 1) {
                     completions.withValue { $0 += 1 }
+                    if let i = t.state.dispatches.firstIndex(where: { $0.id == dispatchID }) { t.state.dispatches[i].responded = true }
+                    t.state.confirmDispatch(dispatchID)
                     continuation.resume(returning: $0)
                 }
             }
@@ -85,6 +90,8 @@ struct BlockedInputTests {
             t.queue.async { t.session.request(.getState) { continuation.resume(returning: $0) } }
         }
         #expect(try state.get().success)
+        #expect(t.queue.sync { t.state.dispatches.contains { $0.id == dispatchID } })
+        #expect(retired.current.isEmpty, "idle cannot retire a prompt whose preflight is still uncertain")
         try Data().write(to: t.dir.appendingPathComponent("preflight-go"))
         try await eventually("compaction to finish before the prompt answers") {
             try await t.snapshot().context?.compacting == nil
@@ -103,6 +110,10 @@ struct BlockedInputTests {
         try await eventually("the matching late response to unlock sending") {
             t.queue.sync { !t.state.inputOutcomeUnknown }
         }
+        try await eventually("the original dispatch to retire or be consumed") {
+            t.queue.sync { !t.state.dispatches.contains { $0.id == dispatchID } }
+        }
+        if refused { #expect(retired.current == [dispatchID]) }
         let next: NativeThreadResult? = await withCheckedContinuation { continuation in
             t.queue.async {
                 t.state.requestInput(prompt: "/session-name info next input", images: [], delivery: .followUp) {

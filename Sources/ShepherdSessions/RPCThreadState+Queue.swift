@@ -581,15 +581,18 @@ extension RPCThreadState {
     }
 
     /// pi answered a prompt that has not started a message yet: if pi is not working, it never
-    /// will (an input handler took it, or it ran as a command), so its row goes.
-    private func confirmDispatch(_ id: UUID) {
+    /// will (an input handler took it, or it ran as a command), so its row goes. A timed-out
+    /// preflight can still start later: wait for its matching response before trusting idle.
+    func confirmDispatch(_ id: UUID) {
         guard dispatches.contains(where: { $0.id == id }) else { return }
+        let generation = generation
         session.request(.getState) { [weak self] result in
-            guard let self, case .success(let response) = result, response.success,
-                  response.data?["isStreaming"]?.boolValue == false,
+            guard let self, self.generation == generation, case .success(let response) = result, response.success,
+                  response.data?["isStreaming"]?.boolValue == false, !self.inputOutcomeUnknown,
                   self.dispatches.contains(where: { $0.id == id && $0.responded }) else { return }
             self.dropDispatch(id)
             self.discardPreparedTurn?()
+            self.onUnconsumedDispatchRetired?(id)
             self.commit()
             self.drainIfReady()
             self.idleAfterQueue()
@@ -876,7 +879,10 @@ extension RPCThreadState {
     /// `agent_settled`: pi is idle. Prompts it accepted but never started are over; steering it
     /// never read (queued after its last look) is reclaimed; then the queue goes.
     func settled() {
-        for dispatch in dispatches where dispatch.responded { dropDispatch(dispatch.id) }
+        for dispatch in dispatches where dispatch.responded && !inputOutcomeUnknown {
+            dropDispatch(dispatch.id)
+            onUnconsumedDispatchRetired?(dispatch.id)
+        }
         if runFailed, !stopRequested, !items.isEmpty {
             paused = true
             queueNotice = "The agent's turn ended with an error, so the queue is waiting."

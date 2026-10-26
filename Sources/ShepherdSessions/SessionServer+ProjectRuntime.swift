@@ -944,6 +944,27 @@ extension SessionServer {
         }
     }
 
+    func projectPromptRetired(agentID: AgentID, deliveryID: UUID, thread: RPCThreadState) {
+        guard let operation = projectPromptInFlight[agentID], !projectStartedPrompts.contains(agentID),
+              let p = store.state.projects.first(where: { $0.coordinatorAgentID == agentID }),
+              p.messages.contains(where: { $0.id == operation && ($0.nativeDeliveryID ?? $0.id) == deliveryID
+                  && ($0.phase == .delivering || $0.phase == .unknown) }) else { return }
+        // Native delivery has retired on idle evidence. Keep its uncertain outcome, but do not fence later human input.
+        let generation = thread.generation
+        changeRuntimeProject(p.id, { p in
+            guard self.rpcThread(forAgent: agentID) === thread, thread.generation == generation,
+                  self.projectPromptInFlight[agentID] == operation, !self.projectStartedPrompts.contains(agentID) else { return }
+            if let i = p.messages.firstIndex(where: { $0.id == operation && $0.phase == .delivering }) {
+                p.messages[i].phase = .unknown
+            }
+        }) { p in
+            guard self.rpcThread(forAgent: agentID) === thread, thread.generation == generation,
+                  self.projectPromptInFlight[agentID] == operation, !self.projectStartedPrompts.contains(agentID) else { return }
+            self.projectPromptInFlight[agentID] = nil
+            if p.paused { self.finishProjectInterruption(p.id) } else { self.pumpProject(p.id) }
+        }
+    }
+
     func projectRuntimeExited(agentID: AgentID) {
         guard (try? requireStarted()) != nil, let p = store.state.projects.first(where: { $0.coordinatorAgentID == agentID || $0.tasks.contains { $0.workerAgentID == agentID && $0.phase.occupiesSlot } }) else { return }
         projectPromptInFlight[agentID] = nil; projectStartedPrompts.remove(agentID)
