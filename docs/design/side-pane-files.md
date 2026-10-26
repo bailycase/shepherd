@@ -1,5 +1,7 @@
 # Side pane: Files
 
+> Read when changing the Files browser, source viewer, word wrap or Markdown preview.
+
 The selected direction is the user-supplied [FileOpenSplit board](boards/FileOpenSplit.png).
 Files sits after Browser in the existing side pane. Its fixed shortcut is ⌃5, preserving
 Artifacts on ⌃3 and Subagents on ⌃4. The existing pane controls resize, maximize and close it.
