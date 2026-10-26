@@ -503,6 +503,8 @@ public final class SessionServer: @unchecked Sendable {
     private let skillsQueue = DispatchQueue(label: "shepherd.skills", qos: .userInitiated)
 
     let queue = DispatchQueue(label: "shepherd.sessions")
+    lazy var pushNotifications = PushNotifications(
+        file: store.url.deletingLastPathComponent().appendingPathComponent("push-registrations.json"), queue: queue)
     let logicalProjectFiles = DispatchQueue(label: "shepherd.logical-project-files", qos: .utility)
     let projectHistoryReads = DispatchQueue(label: "shepherd.project-history-reads", qos: .utility)
     var logicalProjectCreates: Set<ProjectID> = []
@@ -1399,6 +1401,7 @@ public final class SessionServer: @unchecked Sendable {
 
     private func stopOnQueue() {
         isStarted = false
+        pushNotifications.stop()
         logicalProjectEpoch &+= 1
         automationStarts.removeAll()
         executionPending.removeAll()
@@ -1634,10 +1637,6 @@ public final class SessionServer: @unchecked Sendable {
             completion(.failure(code: "native_limit", message: "Native request limit exceeded."))
             return
         }
-        switch request {
-        case .send: noteAgentSend(agentID)
-        default: break
-        }
         // The user's send hands a browser they took over back once the thread accepts it (a stale
         // or refused send changes nothing).
         let isSend: Bool = { if case .send = request { return true } else { return false } }()
@@ -1683,10 +1682,21 @@ public final class SessionServer: @unchecked Sendable {
         if case .retry = request, !recoveryAuthorization() {
             completion(.failure(code: "recovery_scope", message: "Continue is available only on this authorized ordinary thread and its current Space binding.")); return
         }
+        // Arm before dispatch: pi can exit before acknowledging a prompt.
+        let previousPush = (thread.pushRunArmed, thread.pushAwaitingStart)
+        if isSend {
+            thread.pushRunArmed = true
+            thread.pushAwaitingStart = !thread.running
+        }
         thread.handle(request, olderClient: olderClient, startupDialogs: startupDialogs,
                       recoveryBinding: CheckpointRecoveryBinding(agentID: agentID, spaceID: agent.spaceID, tabID: agent.tabID, paneID: paneID),
                       recoveryAuthorization: recoveryAuthorization) { [weak self] result in
+            if isSend, case .failure = result, self?.sessions[sessionID]?.isAlive == true {
+                thread.pushRunArmed = previousPush.0
+                thread.pushAwaitingStart = previousPush.1
+            }
             if isSend, case .accepted = result {
+                self?.noteAgentSend(agentID)
                 self?.hopToMain { [weak self] in self?.onUserMessage?(agentID) }
                 self?.pushToBrowserOwner(agentID, .handBack(agentID: agentID))
             }
@@ -1937,7 +1947,8 @@ public final class SessionServer: @unchecked Sendable {
         do {
             request = try NDJSON.decode(RemoteRequest.self, from: line)
         } catch {
-            ShepherdLog.warning("undecodable remote request on fd \(client.fd): \(error)")
+            // Decode errors can contain credential values; never log remote payloads.
+            ShepherdLog.warning("undecodable remote request on fd \(client.fd)")
             // A request this host does not know (a kind or an action a client from another
             // version sends) is refused like any unsupported one once the client has said hello.
             // A frame without an id has no reply to take, so it still closes the connection.
@@ -1980,6 +1991,28 @@ public final class SessionServer: @unchecked Sendable {
         }
 
         switch request {
+        case .pushRegistration(let id, let registration):
+            guard offeredCapabilities.contains(RemoteProtocol.pushNotificationsCapability),
+                  client.clientCapabilities.contains(RemoteProtocol.pushNotificationsCapability) else {
+                send(.error(id: id, code: "unsupported", message: "Push notifications are unavailable."), to: client); return
+            }
+            do {
+                try pushNotifications.register(registration)
+                send(.ok(id: id), to: client)
+            } catch {
+                send(.error(id: id, code: "push_registration", message: "Could not save push registration."), to: client)
+            }
+        case .pushUnregister(let id, let registrationID):
+            guard offeredCapabilities.contains(RemoteProtocol.pushNotificationsCapability),
+                  client.clientCapabilities.contains(RemoteProtocol.pushNotificationsCapability) else {
+                send(.error(id: id, code: "unsupported", message: "Push notifications are unavailable."), to: client); return
+            }
+            do {
+                try pushNotifications.unregister(registrationID)
+                send(.ok(id: id), to: client)
+            } catch {
+                send(.error(id: id, code: "push_registration", message: "Could not remove push registration."), to: client)
+            }
         case .nativeThread(let id, let agentID, let request):
             if store.state.isProjectCoordinator(agentID), !client.clientCapabilities.contains(RemoteProtocol.logicalProjectRuntimeCapability) {
                 send(.error(id: id, code: "project_scope", message: "Use a Project-capable client."), to: client); return
@@ -4655,7 +4688,15 @@ public final class SessionServer: @unchecked Sendable {
     /// written on its own (nor ever to state.json).
     func applyAgentQuestion(agentID: AgentID, question: String?, reason: String? = nil) {
         guard let index = store.state.agents.firstIndex(where: { $0.id == agentID }) else { return }
-        let goal = rpcThread(forAgent: agentID)?.goal
+        let thread = rpcThread(forAgent: agentID)
+        if let question, let thread, thread.pushRunArmed, !thread.stopRequested,
+           thread.pushQuestion != question {
+            thread.pushQuestion = question
+            pushNotifications.send(agentID: agentID, kind: .needsAnswer)
+        } else if question == nil {
+            thread?.pushQuestion = nil
+        }
+        let goal = thread?.goal
         let question = question ?? (goal?.state == .needsYou ? goal?.metaLabel : nil)
         let reason = question == nil ? nil : reason
         let agent = store.state.agents[index]
@@ -4675,6 +4716,10 @@ public final class SessionServer: @unchecked Sendable {
     /// Server queue: a message was sent to the agent, which moves it up Recents.
     private func noteAgentSend(_ agentID: AgentID) {
         guard let index = store.state.agents.firstIndex(where: { $0.id == agentID }) else { return }
+        if let thread = rpcThread(forAgent: agentID) {
+            thread.pushRunArmed = true
+            thread.pushAwaitingStart = !thread.running
+        }
         let now = Self.nowMilliseconds()
         store.updateLive { $0.agents[index].lastActiveAt = now }
         let committedState = store.state
@@ -6717,6 +6762,7 @@ public final class SessionServer: @unchecked Sendable {
             self.clearAgentRecovery(sessionID: sessionID)
             self.startRecords[sessionID]?.requestStop()
             ShepherdLog.info("rpc session \(sessionID) stop requested; its agent stays")
+            self.sessions[sessionID]?.thread?.pushRunArmed = false
             session.kill()
         }
     }
@@ -6944,11 +6990,13 @@ public final class SessionServer: @unchecked Sendable {
                 server.projectWorkerSettled(agentID: agentID)
                 server.executionSettled(agentID: agentID, thread: thread)
                 server.scheduleAutomationCleanup(agentID: agentID)
+                server.pushIfSettled(agentID: agentID, thread: thread)
             }
             thread.onTurnEvent = { [weak serverWeak] event in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
                 switch event {
                 case .started:
+                    server.rpcThread(forAgent: agentID)?.pushAwaitingStart = false
                     server.changes.turnStarted(agentID: agentID)
                 case .message(let timestamp, let text): server.changes.turnMessage(agentID: agentID, timestamp: timestamp, text: text)
                 case .settled:
@@ -7165,6 +7213,7 @@ public final class SessionServer: @unchecked Sendable {
         clearAgentRecovery(sessionID: sessionID)
         guard let session = sessions[sessionID] else { return }
         if session.isAlive {
+            session.thread?.pushRunArmed = false
             if onDiagnosticDuration != nil, session.thread != nil, diagnosticStops[sessionID] == nil {
                 diagnosticStops[sessionID] = .now
             }
@@ -7293,6 +7342,10 @@ public final class SessionServer: @unchecked Sendable {
         }
         peerDeliveries = peerDeliveries.filter { $0.value.sessionID != sessionID }
         if let agent = agentID(forSession: sessionID) {
+            if let thread = sessions[sessionID]?.thread, thread.pushRunArmed, !thread.stopRequested, isStarted {
+                thread.pushRunArmed = false
+                pushNotifications.send(agentID: agent, kind: .error)
+            }
             projectRuntimeExited(agentID: agent)
             executionExited(agentID: agent)
             designMergeAgentExited(agentID: agent)
@@ -7520,11 +7573,26 @@ public final class SessionServer: @unchecked Sendable {
         checkpointAgentRecovery(sessionID: sessionID, thread: thread)
     }
 
+    private func pushIfSettled(agentID: AgentID, thread: RPCThreadState) {
+        guard thread.pushRunArmed else { return }
+        if thread.stopRequested { thread.pushRunArmed = false; return }
+        guard !thread.pushAwaitingStart, thread.actualTurnSettled, !thread.piBusy else { return }
+        guard !thread.continuesAfterSettle, thread.items.isEmpty, thread.dialogs.isEmpty,
+              store.state.agents.first(where: { $0.id == agentID })?.waitingOn == nil,
+              thread.goal?.isActive != true, thread.goal?.state != .needsYou,
+              thread.subagents.allSatisfy({ $0.isTerminal && $0.state != "paused" && !$0.needsAttention }) else { return }
+        thread.pushRunArmed = false
+        thread.pushQuestion = nil
+        pushNotifications.send(agentID: agentID, kind: thread.turnFailure == nil ? .done : .error)
+    }
+
     /// Server queue: tell the app a watched agent's thread revised, coalescing everything up to a
     /// frame after the last delivery into one hop. The delivery is a hint to pull, so unlike
     /// `hopToMain` it need not keep its place among the other callbacks.
     private func threadRevised(sessionID: SessionID) {
-        guard let agentID = agentID(forSession: sessionID), let deadline = revisedThreads.insert(agentID) else { return }
+        guard let agentID = agentID(forSession: sessionID) else { return }
+        if let thread = rpcThread(forAgent: agentID) { pushIfSettled(agentID: agentID, thread: thread) }
+        guard let deadline = revisedThreads.insert(agentID) else { return }
         DispatchQueue.main.asyncAfter(deadline: deadline) { [weak self] in
             guard let self else { return }
             for agentID in self.revisedThreads.drain() {

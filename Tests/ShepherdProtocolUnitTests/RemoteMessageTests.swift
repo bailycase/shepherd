@@ -287,16 +287,18 @@ struct RemoteRequestTests {
     /// `samplesCoverEveryCase` fails until it has a sample.
     static func caseName(_ request: RemoteRequest) -> String {
         switch request {
-        case .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
+        case .pushRegistration, .pushUnregister, .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
              .closePane, .resizePaneSplit, .listDir, .listModels, .addSpace, .createAgent, .upload,
              .creationOptions, .agentQuery, .agentAction, .automation, .instructions, .suggestions, .hostSettings, .hostUpdate, .skills, .projects, .logicalProjects, .projectExecution, .design,
              .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 34
+    static let caseCount = 36
 
     static let samples: [RemoteRequest] = [
+        .pushRegistration(id: 93, registration: RemotePushRegistration(id: "11111111-2222-3333-4444-555555555555", sendToken: String(repeating: "a", count: 64))),
+        .pushUnregister(id: 94, registrationID: "11111111-2222-3333-4444-555555555555"),
         .hostUpdate(id: 90, request: .status),
         .hostUpdate(id: 91, request: .check),
         .hostUpdate(id: 92, request: .install(offerID: S.op, authorized: true)),
