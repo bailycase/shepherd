@@ -107,8 +107,14 @@ for (const entry of ["dist/index.js", "dist/bundle/index.js"]) test(`${entry}: r
   uncertain.appendMessage(call);
   const unsafe = await open(uncertain);
   assert.equal(unsafe.getRestartRecoveryState().refusal, "recovery_uncertain_tool");
+  uncertain.appendMessage({ role: "user", content: "Fresh input does not settle a missing tool result", timestamp: 1001.5 });
+  assert.equal(unsafe.getRestartRecoveryState().refusal, "recovery_uncertain_tool");
   uncertain.appendMessage({ role: "toolResult", toolCallId: "unknown", toolName: "effect", content: [{ type: "text", text: "failed after possible effect" }], isError: true, timestamp: 1002 });
   assert.equal(unsafe.getRestartRecoveryState().refusal, "recovery_uncertain_tool");
+  uncertain.appendMessage({ ...call, content: [{ type: "toolCall", id: "handled", name: "effect", arguments: {} }], timestamp: 1003 });
+  assert.equal(unsafe.getRestartRecoveryState().refusal, "recovery_uncertain_tool", "a later decision does not excuse an unresolved call");
+  uncertain.appendMessage({ role: "toolResult", toolCallId: "handled", toolName: "effect", content: [{ type: "text", text: "completed" }], isError: false, timestamp: 1004 });
+  assert(unsafe.getRestartRecoveryState().checkpoint, "an earlier tool error already handled by a later model decision must not block restart");
   assert.equal(executions, 1);
 
   // An accepted operation persisted before a crash must never be implicitly replayed.
@@ -120,7 +126,21 @@ for (const entry of ["dist/index.js", "dist/bundle/index.js"]) test(`${entry}: r
   const blocked = await open(sdk.SessionManager.open(unknown.getSessionFile()));
   assert.equal(blocked.getRecoveryOperation(unknownID)?.state, "unknown");
   assert.equal(blocked.getRestartRecoveryState().refusal, "recovery_unknown");
+  blocked.sessionManager.appendMessage({ role: "user", content: "New explicit work after checking the interrupted operation", timestamp: 2001 });
+  blocked.dispose();
+  const authorized = await open(sdk.SessionManager.open(unknown.getSessionFile()));
+  const authorizedCheckpoint = authorized.getRestartRecoveryState().checkpoint;
+  assert(authorizedCheckpoint, "an old unknown receipt must not poison work explicitly authorized afterward");
+  assert.equal(authorized.getRecoveryOperation(unknownID)?.state, "unknown");
+  assert.throws(() => authorized.resumeSession(authorizedCheckpoint.token, unknownID), /recovery_operation_conflict/,
+    "new input never authorizes replaying the old operation");
   assert.equal(requests.length, 4);
+  const authorizedID = randomUUID();
+  authorized.resumeSession(authorizedCheckpoint.token, authorizedID);
+  await until("fresh authorized work", () => authorized.getRecoveryOperation(authorizedID)?.state === "settled");
+  assert.equal(requests.length, 5);
+  assert.equal(requests.at(-1).messages.filter(m => m.role === "user").at(-1).content,
+    "New explicit work after checking the interrupted operation");
 
   // Durable authority is not merely a leaf id or permission to accept any new runtime token.
   const changed = sdk.SessionManager.create(dir, path.join(dir, "changed"));
@@ -150,5 +170,5 @@ for (const entry of ["dist/index.js", "dist/bundle/index.js"]) test(`${entry}: r
   const changedSchema = schemas.getRestartRecoveryState().checkpoint;
   assert.equal(changedSchema.leafID, originalSchema.leafID);
   assert.notEqual(changedSchema.fence, originalSchema.fence, "declarative tool authority is also part of the durable fence");
-  assert.equal(requests.length, 4);
+  assert.equal(requests.length, 5);
 });

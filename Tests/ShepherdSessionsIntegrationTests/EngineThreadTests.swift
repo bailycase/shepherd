@@ -18,6 +18,37 @@ import ShepherdTestSupport
 @Suite("The bundled pi engine, through the thread", .integrationTimeLimit,
        .enabled(if: EngineSmoke.engine != nil, "set SHEPHERD_ENGINE_SMOKE to a built Shepherd.app or a staged engine"))
 struct EngineThreadTests {
+    @Test(arguments: ["slow recovery", "slow after tool failure"])
+    func anInterruptedRealEngineTurnResumesAfterTheHostRestarts(prompt: String) async throws {
+        let pi = try await RealPi.launch(engine: #require(EngineSmoke.engine))
+        defer { pi.stop() }
+        _ = try await pi.send(prompt, from: try await pi.ready())
+        _ = try await pi.snapshot("the interrupted response") { s in
+            s.running && s.provisional.contains { $0.role == "assistant" && $0.blocks.first?.text.contains("word1") == true }
+        }
+        let setup = pi.host.server.pi
+        pi.host.stop(keepFiles: true)
+        let restarted = try ScratchServer(dir: pi.host.dir, pi: setup)
+        defer { restarted.stop() }
+        let cwd = pi.host.dir.appendingPathComponent("project").path
+        let line = try PiLaunch.agent(home: setup.files, cwd: cwd, sessionID: pi.sessionID, model: nil, thinking: nil, extensions: [])
+        let session = try await restarted.server.createSession(params: CreateSessionParams(
+            cwd: cwd, command: line.argv,
+            env: ["SHEPHERD_AGENT_ID": pi.agent.agent.id.rawValue, "HOME": setup.userHome,
+                  "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"], runtime: .rpc), resuming: pi.sessionID)
+        var tab = try #require(restarted.server.state.tabs.first { $0.id == pi.agent.agent.tabID })
+        tab.layout = tab.layout.updatingLeaf(try #require(pi.agent.agent.paneID)) { $0.sessionID = session.id }
+        try await restarted.server.updateTab(tab)
+        let restored = PiAgent(host: restarted, agent: pi.agent.agent, sessionID: session.id,
+                               log: restarted.dir.appendingPathComponent("unused.log"))
+        let settled = try await restored.snapshot("the automatic continuation", timeout: .seconds(20)) {
+            !$0.running && $0.messages.last?.blocks.first?.text.contains("word59") == true
+        }
+        #expect(settled.messages.filter { $0.role == "user" }.count == 1)
+        #expect(settled.messages.filter { $0.role == "toolResult" }.count == (prompt == "slow after tool failure" ? 2 : 0),
+                "Restart must not execute completed tool calls again")
+    }
+
     @Test @MainActor func aStartupQuestionCanBeAnsweredBeforeReadinessEvenWithASendWaiting() async throws {
         let fixtures = try makeScratchDirectory("startup-question")
         defer { try? FileManager.default.removeItem(at: fixtures) }

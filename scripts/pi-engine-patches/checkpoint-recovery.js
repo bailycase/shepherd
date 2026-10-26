@@ -201,25 +201,33 @@ export function restartRecoveryState(session, cwd) {
         if (!session.isIdle || session.isBashRunning || session.pendingMessageCount || session._recoveryPrompts ||
             session._isEmittingAgentSettled || session._pendingNextTurnMessages.length || session._pendingCustomMessages.length ||
             session._pendingBashMessages.length || session._branchSummaryAbortController) throw Error("recovery_busy");
-        const latest = new Map(receipts(session).map(e => [e.data.operationID, e.data]));
+        const branch = session.sessionManager.getBranch();
+        // Fresh user input supersedes old recovery intent, not the old operation's receipt.
+        // Otherwise one interrupted recovery permanently blocks every later turn in this session.
+        const lastInput = branch.findLastIndex(e => e.type === "message" && e.message.role === "user");
+        const currentEntries = new Set(branch.slice(lastInput + 1).map(e => e.id));
+        const latest = new Map(receipts(session).filter(e => currentEntries.has(e.id)).map(e => [e.data.operationID, e.data]));
         if ([...latest.values()].some(r => r.state === "accepted" || unconfirmedOperations.get(session)?.has(r.operationID))) {
             throw Error("recovery_unknown");
         }
-        const branch = session.sessionManager.getBranch();
         const messages = branch.flatMap(sessionEntryToContextMessages);
         const last = messages.filter(m => m.role !== "system").at(-1);
         if (!last || last.role === "assistant" && last.stopReason === "stop") throw Error("recovery_completed");
         if (!["user", "toolResult", "assistant"].includes(last.role)) throw Error("recovery_uncertain_context");
         const pending = new Map();
-        let start = messages.findLastIndex(m => m.role === "assistant" && m.stopReason === "stop") + 1;
-        for (const message of messages.slice(start)) {
+        const start = messages.findLastIndex(m => m.role === "assistant" && m.stopReason === "stop") + 1;
+        const turn = messages.slice(start);
+        // A later completed model decision has already handled earlier tool failures. They
+        // must not poison the whole turn; unresolved calls and the latest failures still stop it.
+        const lastDecision = turn.findLastIndex(m => m.role === "assistant" && m.stopReason === "toolUse");
+        for (const [index, message] of turn.entries()) {
             if (message.role === "assistant") {
                 for (const call of message.content.filter(p => p.type === "toolCall")) {
                     if (pending.has(call.id)) throw Error("recovery_uncertain_tool");
                     pending.set(call.id, call.name);
                 }
             } else if (message.role === "toolResult") {
-                if (pending.get(message.toolCallId) !== message.toolName || message.isError ||
+                if (pending.get(message.toolCallId) !== message.toolName || message.isError && index > lastDecision ||
                     message.nestedCalls && (!message.nestedCalls.complete || message.nestedCalls.calls.some(c => c.status !== "ok"))) {
                     throw Error("recovery_uncertain_tool");
                 }

@@ -133,8 +133,9 @@ patched modular runtime. No dependency was added; the modular SDK and its locked
 already ship. The checkpoint-recovery helper also exposes `get_restart_recovery` / `resume_session` for
 host-authorized restart continuation. Both SDK variants continue the existing session without
 synthetic user/custom messages; a durable accepted receipt precedes any provider call. Incomplete
-or failed tool evidence and unknown accepted operations refuse continuation. This does not relax
-manual Continue's failed-turn executable seal.
+or unhandled failed tool evidence and unknown accepted operations since the latest explicit user
+input refuse continuation. Old receipts remain unknown after new input; they are never replayed.
+This does not relax manual Continue's failed-turn executable seal.
 
 Native children still launch `dist/bundle/cli.js`, and SDK-only sign-in and
 definition-discovery imports still use `bundle/index.js`; provider patches cover both runtimes.
