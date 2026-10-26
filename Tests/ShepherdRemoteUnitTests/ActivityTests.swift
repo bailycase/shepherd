@@ -756,7 +756,9 @@ struct TurnPresentationTests {
         guard case .error(_, let error, _, _) = finished.items.last else { return }
         #expect(error.title == "The provider is overloaded" && error.tries == "Tried 2 times")
         #expect(kinds(nativeTurnPresentation([failed(), F.assistant("Recovered.")], live: false)) == ["error:folded", "prose"])
-        #expect(kinds(nativeTurnPresentation([failed()], live: true)) == ["error"])
+        let waiting = nativeTurnPresentation([failed()], live: true)
+        #expect(kinds(waiting).isEmpty && waiting.betweenTools)
+        #expect(kinds(nativeTurnPresentation([F.assistant("401 authentication failed", status: "error")], live: true)) == ["error"])
     }
 
     @Test func itemIDsAreStableAsTheTurnGrows() {

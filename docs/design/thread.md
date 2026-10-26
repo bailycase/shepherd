@@ -332,10 +332,14 @@ the turn has finished, the changes card and the footer end it. A running turn ha
     A click opens the card. An error pi retried past, the turn going on, folds the same way.
   - **While pi retries** (`NWRetryLine`; the snapshot's `retry`, from pi's `auto_retry_start`
     until `auto_retry_end` or it settles): the live turn ends in one 26pt line, the only thing
-    moving: `arrow.clockwise` (an `hourglass` for a timeout) in `textSecondary`, "OpenAI is
-    overloaded · retrying in 8s" shimmering (counting down each second, then "· retrying"), and
+    moving: `arrow.clockwise` (an `hourglass` for a timeout) in `textSecondary`, "Reconnecting
+    to OpenAI · retrying in 8s" ("Waiting for OpenAI" for rate limits) shimmering (counting down
+    each second, then "· retrying"), and
     "2 of 3" in mono 11 tertiary. The failed tries merge into one error, so the card that shows once
     the retries are used up says "Tried 3 times over 1m 40s" (from the first try to the last).
+    A live transient failure, including an empty completion, stays in the working state until
+    retry progress arrives or the turn settles; no red card flashes between those events.
+    Permanent failures remain visible, and every settled failure still shows the full card.
   - **Touch sizes** (TurnErrors › Touch sizes; iPhone and iPad alike): radius 12, a 14pt inset,
     the title at 15/600 and the message at 14; the time joins the facts line ("gpt-5 · OpenAI ·
     5:54 PM"); Retry is secondary `l` (32pt) and Copy a 32pt circle; the folded line is 36pt at

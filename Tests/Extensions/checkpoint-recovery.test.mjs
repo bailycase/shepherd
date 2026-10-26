@@ -98,15 +98,20 @@ test("stale checkpoints and successful tails refuse without a provider request",
   });
 });
 
-for (const api of ["openai-completions", "openai-responses"]) test(`${api}: an empty reply not marked failed is not silently reclassified for recovery`, { timeout: 60000 }, async t => {
+for (const api of ["openai-completions", "openai-responses"]) test(`${api}: the engine marks empty completions failed even with retries and extensions disabled`, { timeout: 60000 }, async t => {
   await withPi(t, { ...options, api, onRequest: ({ index }) => index === 0 ? { outputText: "" } : {} }, async pi => {
     await pi.prompt("empty failure");
     const before = await entries(pi);
-    assert(before.some(e => e.message?.role === "assistant" && e.message.stopReason === "stop"));
-    assert.equal((await recovery(pi)).refusal, "recovery_not_failed");
-    assert.equal((await pi.request({ type: "recover_checkpoint", token: "a".repeat(64), operationID: randomUUID() })).success, false);
-    assertRecordedRefusal(await entries(pi), before, "recovery_not_failed");
-    assert.equal(pi.provider.requests.length, 1);
+    const failed = before.find(e => e.message?.role === "assistant" && e.message.stopReason === "error");
+    assert(failed);
+    assert.match(failed.message.errorMessage, /provider returned no answer or tool call/);
+    const checkpoint = (await recovery(pi)).checkpoint;
+    assert.equal(checkpoint.failedEntryID, failed.id);
+    assert.equal(pi.provider.requests.length, 1, "disabled retries issue no automatic request");
+    assert.equal((await recover(pi, checkpoint)).response.success, true);
+    assert.equal(pi.provider.requests.length, 2);
+    assert.deepEqual(users(await entries(pi)), users(before));
+    assert.deepEqual((await entries(pi)).find(e => e.id === failed.id), failed);
   });
 });
 
