@@ -799,7 +799,7 @@ struct RemoteProtocolConstantTests {
     }
 
     @Test func hostAdvertisesEveryNamedCapabilityOnce() {
-        let named = [RemoteProtocol.projectResultCapability, RemoteProtocol.moveThreadCapability, RemoteProtocol.projectConversationThinkingCapability,
+        let named = [RemoteProtocol.pushNotificationsCapability, RemoteProtocol.projectResultCapability, RemoteProtocol.moveThreadCapability, RemoteProtocol.projectConversationThinkingCapability,
             RemoteProtocol.logicalProjectsCapability, RemoteProtocol.logicalProjectAutomationsCapability,
             RemoteProtocol.logicalProjectRuntimeCapability, RemoteProtocol.projectExecutionCapability,
             RemoteProtocol.projectPlacementCapability, RemoteProtocol.logicalProjectFilesCapability, RemoteProtocol.projectWorkerCapability, RemoteProtocol.projectMessageImagesCapability, RemoteProtocol.projectPublicationsCapability,
@@ -819,7 +819,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.instructionsCapability, RemoteProtocol.suggestionsCapability,
             RemoteProtocol.hostUpdateCapability, RemoteProtocol.hostSettingsCapability, RemoteProtocol.skillsCapability, RemoteProtocol.projectsV2Capability, RemoteProtocol.projectDetailsCapability,
             RemoteProtocol.projectMCPCapability, RemoteProtocol.projectTrustCapability, RemoteProtocol.piSkillsCapability,
-            RemoteProtocol.terminalControlCapability,
+            RemoteProtocol.terminalControlCapability, RemoteProtocol.terminalStartCapability,
             RemoteProtocol.designContextCapability,
             RemoteProtocol.nativeRetryCapability,
             RemoteProtocol.checkpointRecoveryCapability,
@@ -856,6 +856,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.paneControlCapability == "pane.control.v1")
         #expect(RemoteProtocol.uploadCapability == "session.upload.v1")
         #expect(RemoteProtocol.terminalActivityCapability == "terminal.activity.v1")
+        #expect(RemoteProtocol.terminalStartCapability == "terminal.start.v1")
         #expect(RemoteProtocol.reviewCommitCapability == "review.commit.v1")
         #expect(RemoteProtocol.automationsCapability == "automations.v1")
         #expect(RemoteProtocol.thinkingLevelsCapability == "thinking.levels.v1")

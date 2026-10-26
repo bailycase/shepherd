@@ -119,8 +119,8 @@ struct RemoteHostTests {
         #expect(Set(await remote.host.server.terminalActivity(agentID: agent.agent.id).map(\.paneID)) == Set(target.tabs.map(\.id)))
     }
 
-    @Test(arguments: [false, true])
-    func remoteTerminalDemandStartsOnlyTheRequestedRestoredShell(staleBinding: Bool) async throws {
+    @Test(arguments: [false, true], [false, true])
+    func remoteTerminalDemandStartsOnlyTheRequestedRestoredShell(staleBinding: Bool, olderHost: Bool) async throws {
         let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let space = Fixture.space(path: remote.host.dir.path)
@@ -141,19 +141,21 @@ struct RemoteHostTests {
         hostVM.sessions.restoreAgents(original.agents.map(\.id), first: [], in: original)
         let selected = hostVM.selectedAgentID
         let focused = hostVM.focusedPaneID
+        if olderHost {
+            remote.host.server.advertisedCapabilities.removeAll { $0 == RemoteProtocol.terminalStartCapability }
+        }
         let connection = try await remote.connect(local.remoteHosts)
-        #expect(connection.supportsTerminalStart)
+        #expect(connection.supportsTerminalStart == !olderHost)
         let target = RemoteAgentRef(hostID: connection.id, agentID: agent.agent.id)
         _ = try await local.remoteHosts.agentQuery(target, query: .terminals)
         #expect(await remote.host.server.listSessions().isEmpty, "activity is read-only")
-        remote.host.server.advertisedCapabilities = RemoteProtocol.capabilities.filter { $0 != RemoteProtocol.terminalStartCapability }
-        try await eventuallyOnMain("an older host's capabilities") { !connection.supportsTerminalStart }
-        await #expect(throws: (any Error).self) {
-            try await local.remoteHosts.agentAction(target, action: .startTerminal(paneID: shell))
+        if olderHost {
+            await #expect(throws: (any Error).self) {
+                try await local.remoteHosts.agentAction(target, action: .startTerminal(paneID: shell))
+            }
+            #expect(await remote.host.server.listSessions().isEmpty)
+            return
         }
-        #expect(await remote.host.server.listSessions().isEmpty)
-        remote.host.server.advertisedCapabilities = RemoteProtocol.capabilities
-        try await eventuallyOnMain("terminal demand capability") { connection.supportsTerminalStart }
 
         for refused in [agent.piPane.id, foreign.auxiliary[0].id, review, deleted] {
             await #expect(throws: (any Error).self) {
