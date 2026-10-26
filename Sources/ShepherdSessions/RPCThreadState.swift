@@ -122,6 +122,10 @@ final class RPCThreadState {
     var restoringRecovery = true
     var recoveryAtLaunch: AgentRecoveryStore.Checkpoint?
     var recoveryDispatchID: UUID?
+    var recoveryToken: String?
+    var recoveryFence: String?
+    var recoveryResumePending = false
+    var restartRequestID: UUID?
     var recoveryWaiting: Bool { !dialogs.isEmpty || !askingCalls.isEmpty }
     /// Called on the session queue when pi finishes a tool call, with the tool's name.
     var onToolFinished: ((String) -> Void)?
@@ -680,7 +684,13 @@ final class RPCThreadState {
             refreshState()
             refreshStats()
         case .agentSettled:
-            if !runFailed, !stopRequested { recoveryAttempts = 0 }
+            recoveryResumePending = false
+            if !runFailed, !stopRequested {
+                recoveryAttempts = 0
+                recoveryDispatchID = nil
+                recoveryToken = nil
+                recoveryFence = nil
+            }
             endDiagnostic("agent.turn")
             diagnosticTimings.removeAll(keepingCapacity: true)
             running = false
@@ -1771,6 +1781,14 @@ final class RPCThreadState {
         context = nil
         retryDispatch = nil
         checkpointRecovery = nil
+        restartRequestID = nil
+        recoveryResumePending = false
+        recoveryDispatchID = nil
+        recoveryToken = nil
+        recoveryFence = nil
+        recoveryAttempts = 0
+        recoveryAtLaunch = nil
+        restoringRecovery = false
         resetQueueForNewSession()
         signature = 0
         bumpRevision()

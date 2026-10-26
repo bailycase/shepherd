@@ -7279,6 +7279,9 @@ public final class SessionServer: @unchecked Sendable {
                 deferred.active = false
                 deferred.paused = true
                 deferred.pending = []
+                deferred.operationID = nil
+                deferred.token = nil
+                deferred.fence = nil
                 try agentRecovery.save(deferred, for: id)
                 thread.recoveryAtLaunch = deferred
                 return true
@@ -7334,6 +7337,11 @@ public final class SessionServer: @unchecked Sendable {
         guard let thread = sessions[sessionID]?.thread else { return }
         thread.stopRequested = true
         thread.paused = true
+        thread.restartRequestID = nil
+        thread.recoveryResumePending = false
+        thread.recoveryDispatchID = nil
+        thread.recoveryToken = nil
+        thread.recoveryFence = nil
         thread.recoveryAtLaunch = nil
         thread.restoringRecovery = false
         checkpointAgentRecovery(sessionID: sessionID, thread: thread)

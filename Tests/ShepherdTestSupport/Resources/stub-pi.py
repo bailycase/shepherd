@@ -650,6 +650,8 @@ def recovery_checkpoint(streaming=False):
 
 
 def recover_checkpoint_turn(operation_id):
+    if gate := os.environ.get("STUB_PI_RESUME_GATE"):
+        wait_for_file(gate)
     emit({"type": "agent_start"})
     emit({"type": "turn_start"})
     original = next(m for m in reversed(MESSAGES) if m.get("role") == "user")
@@ -731,7 +733,8 @@ def gate(name):
 
 
 def text_of(message):
-    return "".join(b.get("text", "") for b in message["content"] if b.get("type") == "text")
+    content = message["content"]
+    return content if isinstance(content, str) else "".join(b.get("text", "") for b in content if b.get("type") == "text")
 
 
 def agent_run(first):
@@ -1350,8 +1353,32 @@ for raw in sys.stdin.buffer:
             respond(cmd, t, success=False, error="Switched history unavailable")
         else:
             respond(cmd, t, data={"messages": MESSAGES})
+    elif t == "get_restart_recovery":
+        state = {"version": 1, "checkpoint": {"token": os.environ.get("STUB_PI_RESTART_TOKEN", "a" * 64),
+                 "fence": os.environ.get("STUB_PI_RESTART_FENCE", "b" * 64), "leafID": "stub-leaf"}}
+        if reason := os.environ.get("STUB_PI_RESTART_REFUSAL"):
+            state = {"version": 1, "refusal": reason}
+        if gate := os.environ.get("STUB_PI_RESTART_CHECK_GATE"):
+            def delayed_restart_check(command=cmd, data=state, filename=gate):
+                wait_for_file(filename)
+                respond(command, "get_restart_recovery", data=data)
+            threading.Thread(target=delayed_restart_check, daemon=True).start()
+        else:
+            respond(cmd, t, data=state)
+    elif t == "resume_session":
+        operation_id = cmd["operationID"]
+        receipt = dict(operationID=operation_id, token=cmd["token"], sessionID=STATE["sessionId"],
+                       kind="restart", state="accepted", failedEntryID="stub-leaf", leafID="stub-leaf")
+        RECOVERY_RECEIPTS[operation_id] = receipt
+        respond(cmd, t, data=receipt)
+        streaming = True
+        turn_thread = threading.Thread(target=recover_checkpoint_turn, args=(operation_id,), daemon=True)
+        turn_thread.start()
     elif t == "get_recovery_operation":
-        respond(cmd, t, data={"receipt": RECOVERY_RECEIPTS.get(cmd.get("operationID"))})
+        receipt = RECOVERY_RECEIPTS.get(cmd.get("operationID"))
+        if state := os.environ.get("STUB_PI_RESTART_RECEIPT_STATE"):
+            receipt = dict(operationID=cmd["operationID"], token="a" * 64, sessionID=STATE["sessionId"], kind="restart", state=state)
+        respond(cmd, t, data={"receipt": receipt})
     elif t == "recover_checkpoint":
         operation_id = cmd.get("operationID")
         previous = RECOVERY_RECEIPTS.get(operation_id)
