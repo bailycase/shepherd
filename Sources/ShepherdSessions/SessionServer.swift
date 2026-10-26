@@ -4692,7 +4692,8 @@ public final class SessionServer: @unchecked Sendable {
         if let question, let thread, thread.pushRunArmed, !thread.stopRequested,
            thread.pushQuestion != question {
             thread.pushQuestion = question
-            pushNotifications.send(agentID: agentID, kind: .needsAnswer)
+            pushNotifications.send(agentID: agentID, kind: .needsAnswer,
+                title: store.state.agents[index].name, preview: question)
         } else if question == nil {
             thread?.pushQuestion = nil
         }
@@ -7344,7 +7345,9 @@ public final class SessionServer: @unchecked Sendable {
         if let agent = agentID(forSession: sessionID) {
             if let thread = sessions[sessionID]?.thread, thread.pushRunArmed, !thread.stopRequested, isStarted {
                 thread.pushRunArmed = false
-                pushNotifications.send(agentID: agent, kind: .error)
+                pushNotifications.send(agentID: agent, kind: .error,
+                    title: store.state.agents.first(where: { $0.id == agent })?.name,
+                    preview: thread.pushAwaitingStart ? nil : thread.turnFailure?.message)
             }
             projectRuntimeExited(agentID: agent)
             executionExited(agentID: agent)
@@ -7583,7 +7586,9 @@ public final class SessionServer: @unchecked Sendable {
               thread.subagents.allSatisfy({ $0.isTerminal && $0.state != "paused" && !$0.needsAttention }) else { return }
         thread.pushRunArmed = false
         thread.pushQuestion = nil
-        pushNotifications.send(agentID: agentID, kind: thread.turnFailure == nil ? .done : .error)
+        pushNotifications.send(agentID: agentID, kind: thread.turnFailure == nil ? .done : .error,
+            title: store.state.agents.first(where: { $0.id == agentID })?.name,
+            preview: thread.turnFailure == nil ? thread.pushFinalText : thread.turnFailure?.message)
     }
 
     /// Server queue: tell the app a watched agent's thread revised, coalescing everything up to a

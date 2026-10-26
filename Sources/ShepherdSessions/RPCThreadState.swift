@@ -448,6 +448,8 @@ final class RPCThreadState {
     /// snapshots of the working tree (`ChangesService`). Called on the session queue.
     var onTurnEvent: ((TurnEvent) -> Void)?
     private(set) var lastTurnAssistant: NativeThreadMessage?
+    /// Only the final successful assistant reply supplied by this run's agent_end, never history.
+    private(set) var pushFinalText: String?
     var projectResultDeliveryID: UUID?
     private(set) var lastTurnResult: ProjectVisibleResult?
     private(set) var lastTurnResultDeliveryID: UUID?
@@ -683,6 +685,7 @@ final class RPCThreadState {
             diagnosticTimings.removeAll(keepingCapacity: true)
             beginDiagnostic("agent.turn", operation: "agent.turn")
             lastTurnAssistant = nil
+            pushFinalText = nil
             lastTurnResult = nil
             lastTurnResultDeliveryID = nil
             // A compaction that stopped or failed says so until the next run.
@@ -700,6 +703,15 @@ final class RPCThreadState {
                 onUserInputWhileRunning?()
             }
         case .agentEnd(let messages, _):
+            pushFinalText = nil
+            if let final = messages.last(where: { $0.role == "assistant" }),
+               final.stopReason == "stop", final.content.allSatisfy({
+                   switch $0 { case .text, .thinking: true; default: false }
+               }) {
+                pushFinalText = final.content.compactMap { block -> String? in
+                    if case .text(let text) = block { return text }; return nil
+                }.joined(separator: "\n")
+            }
             if let message = messages.last(where: { $0.role == "assistant" }) {
                 if lastTurnAssistant == nil { lastTurnAssistant = Self.project(entryID: liveEntryID(for: message), message: message) }
                 captureResult(message, final: true)
