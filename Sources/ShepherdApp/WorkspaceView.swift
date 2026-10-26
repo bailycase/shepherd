@@ -660,40 +660,39 @@ struct LiveTerminalPane: View {
     var addToMessage: ((String) -> Void)? = nil
 
     var body: some View {
-        // "starting session…" fades off the surface once it is live; a failed or exited
-        // session's placeholder cross-fades with it. The surface itself never moves (it is
-        // `shInstant`).
-        ZStack {
-            switch session.phase {
-            case .connecting, .live:
-                // Keep one Ghostty view mounted across the connecting → live
-                // transition. Replacing it here discards the just-replayed screen.
-                ZStack(alignment: .topLeading) {
-                    AppTerminalView(model: session.terminal, isFocused: isFocused, isRendering: isRendering)
-                    if case .connecting = session.phase {
-                        PanePlaceholder(text: "starting session…")
-                            .allowsHitTesting(false)
-                            .shTransition(.content)
+        // A hidden restored pane mounts its surface only on first demand. Once activated,
+        // it stays mounted across selection changes and connecting → live transitions.
+        if !session.isDormant {
+            ZStack {
+                switch session.phase {
+                case .connecting, .live:
+                    ZStack(alignment: .topLeading) {
+                        AppTerminalView(model: session.terminal, isFocused: isFocused, isRendering: isRendering)
+                        if case .connecting = session.phase {
+                            PanePlaceholder(text: "starting session…")
+                                .allowsHitTesting(false)
+                                .shTransition(.content)
+                        }
+                        if let addToMessage {
+                            TerminalSelectionOverlay(terminal: session.terminal, add: addToMessage)
+                        }
                     }
-                    if let addToMessage {
-                        TerminalSelectionOverlay(terminal: session.terminal, add: addToMessage)
-                    }
+                case .failed(let reason):
+                    PanePlaceholder(text: "session unavailable · \(reason)")
+                        .shTransition(.content)
+                case .exited(let code):
+                    PanePlaceholder(text: code.map { "session exited (\($0))" } ?? "session exited")
+                        .shTransition(.content)
+                case .stopped:
+                    // Only an agent's own pane stops; a shell never does.
+                    PanePlaceholder(text: "session stopped")
+                        .shTransition(.content)
                 }
-            case .failed(let reason):
-                PanePlaceholder(text: "session unavailable · \(reason)")
-                    .shTransition(.content)
-            case .exited(let code):
-                PanePlaceholder(text: code.map { "session exited (\($0))" } ?? "session exited")
-                    .shTransition(.content)
-            case .stopped:
-                // Only an agent's own pane stops; a shell never does.
-                PanePlaceholder(text: "session stopped")
-                    .shTransition(.content)
             }
+            .shAnimation(.content, value: session.phase)
+            .onAppear { session.terminal.onFocusAcquired = onFocusAcquired }
+            .onDisappear { session.terminal.onFocusAcquired = nil }
         }
-        .shAnimation(.content, value: session.phase)
-        .onAppear { session.terminal.onFocusAcquired = onFocusAcquired }
-        .onDisappear { session.terminal.onFocusAcquired = nil }
     }
 }
 
@@ -921,6 +920,15 @@ private struct RemotePaneLeafView: View {
     var hasThread = false
     var active = true
 
+    @State private var visible = false
+    @Environment(\.scenePhase) private var scenePhase
+
+    private struct TerminalDemand: Equatable {
+        var paneID: PaneID
+        var transport: UUID
+        var active: Bool
+    }
+
     /// What the leaf shows, for its cross-fade.
     private enum Showing: Equatable {
         case thread, review, loadingReview, terminal(SessionID), starting
@@ -969,6 +977,16 @@ private struct RemotePaneLeafView: View {
         .background(Color.sh.bgWindow)
         .contentShape(Rectangle())
         .simultaneousGesture(TapGesture().onEnded { vm.remoteFocusedPaneID = leaf.id })
+        .onAppear { visible = true }
+        .onDisappear { visible = false }
+        .task(id: TerminalDemand(paneID: leaf.id, transport: connection.transportID,
+                                 active: visible && active && scenePhase == .active && !vm.showSettings && vm.selectedRemoteAgent == ref && connection.phase == .connected && connection.supportsTerminalStart)) {
+            guard visible, active, scenePhase == .active, !vm.showSettings, vm.selectedRemoteAgent == ref, connection.phase == .connected,
+                  connection.supportsTerminalStart, agent == nil, leaf.isReview != true else { return }
+            // Bootstrap retains last run's sessionID. Demand must not depend on it being nil.
+            do { try await vm.remoteHosts.agentAction(ref, action: .startTerminal(paneID: leaf.id)) }
+            catch { vm.remoteActionError = String(describing: error) }
+        }
     }
 }
 

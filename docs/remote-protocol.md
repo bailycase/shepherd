@@ -74,6 +74,11 @@
     ride `agentAction` behind `terminal.control.v1`: `renameTerminal` (Rename tab) and
     `killTerminalProcess` (Kill process), each refused on the agent's thread. An older
     client's `typeInTerminal` (Run in terminal, since removed) is answered `unsupported`.
+    `startTerminal(paneID:)`, behind `terminal.start.v1`, demands only the selected auxiliary
+    terminal, without selecting its host thread or starting siblings. Clients demand on activation
+    even with a persisted session ID (it may predate a host restart); repeated demand is idempotent.
+    Primary, review, deleted and foreign panes are refused. Hidden views and `terminals` activity
+    polls never demand processes; clients of older hosts keep the existing attach-only path.
   - **Terminal compatibility** (no wire or capability change; docs/agent-coordination.md ›
     Terminals and compatibility): a current client's +, ⌘D and ⌘J send the same `openPane` they
     always did, naming the thread as `relativeTo` (axis horizontal, `TerminalPanel.newTabAnchor`).

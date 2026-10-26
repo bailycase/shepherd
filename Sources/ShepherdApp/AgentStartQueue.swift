@@ -8,7 +8,7 @@ import ShepherdCore
 /// start at once, "ahead" of the queue, and the rest wait until those serve or exit (or
 /// `aheadHold` passes), then start `limit` at a time, each holding its slot until its pi serves, exits, or
 /// `slotTimeout` passes. Selecting an agent that is still waiting starts it ahead at once.
-/// Every agent still starts. `TerminalSessionStore` drives it; this is the bookkeeping, pure so
+/// Every queued agent still starts. `TerminalSessionStore` drives it; this is the bookkeeping, pure so
 /// it can be tested without processes.
 ///
 /// At the first launch of a build with Shepherd's own pi the queue is `held` until the copy from
