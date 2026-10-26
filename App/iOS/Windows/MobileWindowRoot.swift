@@ -18,7 +18,7 @@ struct MobileWindowRoot: View {
             if ready {
                 MobileRoot(app: app, navigator: navigator, window: seed)
             } else {
-                Color.nw.bgWindow.ignoresSafeArea()
+                Color.sh.bgWindow.ignoresSafeArea()
             }
         }
         .onAppear(perform: start)

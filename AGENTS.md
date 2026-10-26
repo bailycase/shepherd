@@ -32,7 +32,7 @@ Docs alone run no Swift.
 | `Sources/ShepherdSessions` | `SessionServer`, RPC and PTY sessions, pi launch, Changes engine |
 | `Sources/ShepherdApp` | the Mac app: views, view model, settings, `AppLayout+*`, `Thread/` |
 | `Sources/TerminalSurfaceKit`, `DesignSurfaceKit` | Ghostty and design-board web view adapters |
-| `Packages/ShepherdUI` | Night Watch tokens and `NW*` components; imports no Shepherd module |
+| `Packages/ShepherdUI` | Shepherd Design tokens and `SH*` components; imports no Shepherd module |
 | `App/`, `App/iOS` | Mac launcher shim, entitlements, Info.plist; the iPhone and iPad client |
 | `Extensions/` | canonical pi extensions and scripts, shipped as bundle resources |
 | `Tests/` | `*UnitTests`, `*IntegrationTests`, `ShepherdPreviewTests`, `Release` (Python) |
@@ -73,8 +73,8 @@ How it fits together: [ARCHITECTURE.md](ARCHITECTURE.md).
   existing-component changes directly.
 - Find the surface's spec with `python3 scripts/design_section.py --boards | grep -i <word>` and
   print only that section. Don't read whole spec files.
-- Use ShepherdUI tokens and components: `Color.nw.<role>`, `Font.nw(_:)`, `NW.Space`/`Radius`/`Height`,
-  status colors from `AgentState`, a shared glyph as an `NWGlyph` case. Never hardcode a color,
+- Use ShepherdUI tokens and components: `Color.sh.<role>`, `Font.sh(_:)`, `SH.Space`/`Radius`/`Height`,
+  status colors from `AgentState`, a shared glyph as an `SHGlyph` case. Never hardcode a color,
   font size, dimension, duration or chord. `DesignRulesTests` catches the literals.
 - Render affected surfaces and states in light and dark from real data and inspect the PNGs.
   A control works or you disclose the gap. App-only behavior needs appropriate integration or manual

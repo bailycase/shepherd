@@ -545,7 +545,7 @@ at all, but (a)'s result is only established on 27.
   server as the host's), when: another program on this Mac already listens on it (found by
   connecting to both loopback addresses first, so an IPv6-only Vite and a wildcard listener count);
   another thread's page holds it ("already forwarded from build-02"); or it is below 1024. The pane
-  says so under the toolbar (`NWBrowserNotice`, until dismissed or the next load).
+  says so under the toolbar (`SHBrowserNotice`, until dismissed or the next load).
   Conversely, while a page holds 5173, a server the user starts on this Mac's 5173 cannot bind it.
 - **The listener is this Mac's loopback port**, so any program or page on this Mac reaches the
   host's port through it while it is held, as with `ssh -L`. It reaches only that host, only for that

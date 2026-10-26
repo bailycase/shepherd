@@ -22,7 +22,7 @@ public struct NativeCardLayout: Equatable, Hashable, Sendable {
     }
 }
 
-/// An agent turn as the thread draws it (NWThread board): thinking, prose, activity lines,
+/// An agent turn as the thread draws it (SHThread board): thinking, prose, activity lines,
 /// the subagent record (where they started and where they finished), notes and errors, then
 /// the changes card and the footer. Built once per turn change; views only read it.
 public struct NativeTurnPresentation: Equatable, Sendable {
@@ -37,7 +37,7 @@ public struct NativeTurnPresentation: Equatable, Sendable {
         case thinking(id: String, text: String, blocks: [NativeMarkdownBlock], seconds: Double?, live: Bool, since: Double?)
         /// `openFence`: the text ends inside a fence still open (the block a reply is writing).
         case prose(id: String, text: String, blocks: [NativeMarkdownBlock], openFence: Bool)
-        /// Consecutive activity lines, one per burst of work (NWThread: "one quiet line per
+        /// Consecutive activity lines, one per burst of work (SHThread: "one quiet line per
         /// burst"), between prose, notes, errors, steers and the subagent record. `id` follows
         /// the first burst.
         case activity(id: String, bursts: [NativeActivityBurst])
@@ -49,7 +49,7 @@ public struct NativeTurnPresentation: Equatable, Sendable {
         /// Images a tool returned (a screenshot, a chart), where the call ended: the host names each one and a client fetches it
         /// (`NativeThreadImages`). A client that cannot draw them shows how many.
         case images(id: String, images: [NativeImageRef])
-        /// A file the agent made, as a card (NWArtifactCard), after the words that follow its "Made an artifact" line, or at the turn's end.
+        /// A file the agent made, as a card (SHArtifactCard), after the words that follow its "Made an artifact" line, or at the turn's end.
         case artifact(id: String, artifact: NativeArtifact)
         /// Goal set and completion checks divide stretches of automatic work.
         case goalRecord(id: String, text: String)

@@ -81,7 +81,7 @@ struct DesignViewRecordTests {
 
     /// Every element of every golden board the grammar can name has an id a view record carries,
     /// printed as the golden numbering has it; one nested past it has none.
-    @Test(arguments: ["Minimal.dc.html", "Edges.dc.html", "DZStart.dc.html", "NWDesignTool.dc.html", "ThreadRichContent.dc.html"])
+    @Test(arguments: ["Minimal.dc.html", "Edges.dc.html", "DZStart.dc.html", "SHDesignTool.dc.html", "ThreadRichContent.dc.html"])
     func everyGoldenElementHasAnIDARecordAccepts(_ name: String) throws {
         let data = try Data(contentsOf: DesignElementIDTests.designs.appendingPathComponent("element-ids.json"))
         let boards = try #require((try JSONSerialization.jsonObject(with: data) as? [String: Any])?["boards"] as? [String: [String]])

@@ -22,10 +22,10 @@ struct ComposerTextField: NSViewRepresentable {
         let editor: NSTextView
         var composing: Bool { editor.hasMarkedText() }
         func lineBreak() -> KeyPress.Result? {
-            switch NWReturnKey.action(modifiers: modifiers, composing: composing) {
+            switch SHReturnKey.action(modifiers: modifiers, composing: composing) {
             case .submit: nil
             case .system: .ignored
-            case .lineBreak: NWReturnKey.insertLineBreak(in: editor) ? .handled : .ignored
+            case .lineBreak: SHReturnKey.insertLineBreak(in: editor) ? .handled : .ignored
             }
         }
     }
@@ -62,7 +62,7 @@ struct ComposerTextField: NSViewRepresentable {
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
-        field.maximumNumberOfLines = NWComposerMetrics.fieldMaxLines
+        field.maximumNumberOfLines = SHComposerMetrics.fieldMaxLines
         field.lineBreakMode = .byWordWrapping
         field.cell?.wraps = true
         field.cell?.isScrollable = false
@@ -101,16 +101,16 @@ struct ComposerTextField: NSViewRepresentable {
         field.updating = true
         defer { field.updating = false }
         let _ = appearance
-        NWFonts.register()
-        field.font = NSFont(name: "\(NWFonts.sansFamily)-Regular", size: NWTextStyle.body.size * ThemeStore.shared.textScale)
-            ?? .systemFont(ofSize: NWTextStyle.body.size * ThemeStore.shared.textScale)
-        field.textColor = NSColor(Color.nw.textPrimary)
+        SHFonts.register()
+        field.font = NSFont(name: "\(SHFonts.sansFamily)-Regular", size: SHTextStyle.body.size * ThemeStore.shared.textScale)
+            ?? .systemFont(ofSize: SHTextStyle.body.size * ThemeStore.shared.textScale)
+        field.textColor = NSColor(Color.sh.textPrimary)
         field.placeholderAttributedString = NSAttributedString(string: placeholder, attributes: [
-            .font: field.font!, .foregroundColor: NSColor(Color.nw.textTertiary)
+            .font: field.font!, .foregroundColor: NSColor(Color.sh.textTertiary)
         ])
         field.isEnabled = enabled
         field.setAccessibilityLabel(label)
-        field.editor.insertionPointColor = NSColor(Color.nw.lantern)
+        field.editor.insertionPointColor = NSColor(Color.sh.lantern)
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = lineSpacing
         field.editor.defaultParagraphStyle = paragraph

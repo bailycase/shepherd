@@ -5,9 +5,9 @@ import AppKit
 import UIKit
 #endif
 
-/// The thread's own dimensions (NWThread board): activity lines, their calls, the live tail,
+/// The thread's own dimensions (SHThread board): activity lines, their calls, the live tail,
 /// bubbles and the prose measure.
-public enum NWThreadMetrics {
+public enum SHThreadMetrics {
     /// An activity line's minimum height.
     public static let activityHeight: CGFloat = touchable(26)
     public static let activityIcon: CGFloat = 13
@@ -76,14 +76,14 @@ public enum NWThreadMetrics {
     /// A row someone taps: the Mac's height, or the touch minimum on iOS.
     static func touchable(_ height: CGFloat) -> CGFloat {
         #if os(iOS)
-        max(height, NW.Height.touch)
+        max(height, SH.Height.touch)
         #else
         height
         #endif
     }
 }
 
-enum NWPasteboard {
+enum SHPasteboard {
     static func copy(_ text: String) {
         #if canImport(AppKit)
         NSPasteboard.general.clearContents()
@@ -95,7 +95,7 @@ enum NWPasteboard {
 }
 
 /// "+58 −41": additions in `done`, removals in `failed`, mono, with a true minus sign.
-public struct NWDiffStat: View {
+public struct SHDiffStat: View {
     let added: Int
     let removed: Int
     let font: Font?
@@ -107,11 +107,11 @@ public struct NWDiffStat: View {
     }
 
     public var body: some View {
-        HStack(spacing: NW.Space.s) {
-            Text("+\(added)").foregroundStyle(.nw.done)
-            Text("\u{2212}\(removed)").foregroundStyle(.nw.failed)
+        HStack(spacing: SH.Space.s) {
+            Text("+\(added)").foregroundStyle(.sh.done)
+            Text("\u{2212}\(removed)").foregroundStyle(.sh.failed)
         }
-        .font(font ?? .nw(.mono))
+        .font(font ?? .sh(.mono))
         .monospacedDigit()
         .fixedSize()
         .accessibilityElement(children: .ignore)
@@ -120,26 +120,26 @@ public struct NWDiffStat: View {
 }
 
 /// Code in prose: mono 12 on `bgSunken` with a 1px line, radius 4.
-public struct NWInlineCode: View {
+public struct SHInlineCode: View {
     let text: String
 
     public init(_ text: String) { self.text = text }
 
     public var body: some View {
         Text(text)
-            .font(.nwMono(12))
-            .foregroundStyle(.nw.textPrimary)
+            .font(.shMono(12))
+            .foregroundStyle(.sh.textPrimary)
             .padding(.horizontal, 5)
             .padding(.vertical, 1)
-            .background(Color.nw.bgSunken, in: RoundedRectangle(cornerRadius: NW.Radius.xs))
-            .nwBorder(.nw.lineSubtle, radius: NW.Radius.xs)
+            .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
+            .shBorder(.sh.lineSubtle, radius: SH.Radius.xs)
     }
 }
 
 /// Above the messages the queue delivered as one turn (Queue & steer boards · In the thread): a
 /// hairline each side of the queue glyph and "From the queue · 2" in caption tertiary, or "From
 /// the queue" for one.
-public struct NWQueueDivider: View {
+public struct SHQueueDivider: View {
     let count: Int
 
     public init(count: Int) { self.count = count }
@@ -147,28 +147,28 @@ public struct NWQueueDivider: View {
     private var label: String { count > 1 ? "From the queue · \(count)" : "From the queue" }
 
     public var body: some View {
-        HStack(spacing: NW.Space.m) {
-            NWHairline()
-            HStack(spacing: NW.Space.xs) {
-                NWQueueGlyph(size: NWThreadMetrics.queueGlyph)
+        HStack(spacing: SH.Space.m) {
+            SHHairline()
+            HStack(spacing: SH.Space.xs) {
+                SHQueueGlyph(size: SHThreadMetrics.queueGlyph)
                 Text(label)
             }
-            .font(.nw(.caption))
-            .foregroundStyle(.nw.textTertiary)
+            .font(.sh(.caption))
+            .foregroundStyle(.sh.textTertiary)
             .fixedSize()
-            NWHairline()
+            SHHairline()
         }
-        .padding(.vertical, NW.Space.xs)
+        .padding(.vertical, SH.Space.xs)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
     }
 }
 
-/// A file or image with a message (NWThread board): 26pt, a 1px strong line, radius 6. Files
+/// A file or image with a message (SHThread board): 26pt, a 1px strong line, radius 6. Files
 /// lead with a document glyph; images with their 20pt thumbnail. In the composer it has a
 /// remove button; in a sent bubble it has none. `.compact` is the queue's read-only chip: 22pt,
 /// a 16pt thumbnail (or a photo glyph where the bytes stayed on another Mac), radius 4.
-public struct NWAttachmentChip: View {
+public struct SHAttachmentChip: View {
     public enum Size: Sendable { case regular, compact }
 
     let name: String
@@ -197,25 +197,25 @@ public struct NWAttachmentChip: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let compact = size == .compact
-        let side = compact ? NWQueueMetrics.chipThumbnail : NWThreadMetrics.attachmentThumbnail
-        HStack(spacing: compact ? NW.Space.xs : NW.Space.s) {
+        let side = compact ? SHQueueMetrics.chipThumbnail : SHThreadMetrics.attachmentThumbnail
+        HStack(spacing: compact ? SH.Space.xs : SH.Space.s) {
             if let thumbnail {
                 let picture = thumbnail
                     .resizable()
                     .aspectRatio(contentMode: .fill)
                     .frame(width: side, height: side)
-                    .background(nw.bgSunken)
-                    .clipShape(RoundedRectangle(cornerRadius: compact ? NWQueueMetrics.chipThumbnailRadius : NW.Radius.xs))
+                    .background(sh.bgSunken)
+                    .clipShape(RoundedRectangle(cornerRadius: compact ? SHQueueMetrics.chipThumbnailRadius : SH.Radius.xs))
                 if let open {
                     // The picture stays the board's 20pt; the press area is the Mac's 24pt.
                     Button(action: open) { picture }
                         .buttonStyle(.plain)
-                        .frame(width: NW.Height.controlS, height: NW.Height.controlS)
+                        .frame(width: SH.Height.controlS, height: SH.Height.controlS)
                         .contentShape(Rectangle())
-                        .padding(.horizontal, -NW.Space.xxs)
-                        .nwFocusRing(radius: NW.Radius.xs)
+                        .padding(.horizontal, -SH.Space.xxs)
+                        .shFocusRing(radius: SH.Radius.xs)
                         .accessibilityLabel("Open \(name)")
                 } else {
                     picture.accessibilityHidden(true)
@@ -223,36 +223,36 @@ public struct NWAttachmentChip: View {
             } else {
                 Image(systemName: compact ? "photo" : "doc")
                     .font(.system(size: compact ? 11 : 10, weight: .medium))
-                    .foregroundStyle(nw.textSecondary)
+                    .foregroundStyle(sh.textSecondary)
                     .frame(width: 12, height: 12)
                     .accessibilityHidden(true)
             }
             HStack(spacing: 0) {
-                if let prefix { Text(prefix).foregroundStyle(nw.textTertiary) }
-                Text(name).foregroundStyle(nw.textPrimary)
+                if let prefix { Text(prefix).foregroundStyle(sh.textTertiary) }
+                Text(name).foregroundStyle(sh.textPrimary)
             }
-            .font(.nwSans(compact ? 11 : 12))
+            .font(.shSans(compact ? 11 : 12))
             .lineLimit(1)
             .truncationMode(.middle)
             if let detail {
-                Text(detail).font(.nw(.micro)).foregroundStyle(problem ? nw.failed : nw.textTertiary).lineLimit(1)
+                Text(detail).font(.sh(.micro)).foregroundStyle(problem ? sh.failed : sh.textTertiary).lineLimit(1)
             }
             if let remove {
                 Button(action: remove) {
-                    Image(systemName: "xmark").font(.system(size: 8, weight: .semibold)).foregroundStyle(nw.textTertiary)
-                        .frame(width: NW.Height.controlS, height: NW.Height.controlS)
+                    Image(systemName: "xmark").font(.system(size: 8, weight: .semibold)).foregroundStyle(sh.textTertiary)
+                        .frame(width: SH.Height.controlS, height: SH.Height.controlS)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 // The x is drawn 14pt; its press area is the Mac's 24pt, so it takes the room its padding left.
-                .padding(.horizontal, -NW.Space.xs)
+                .padding(.horizontal, -SH.Space.xs)
                 .accessibilityLabel("Remove \(name)")
             }
         }
-        .padding(.leading, thumbnail == nil ? (compact ? NW.Space.s : NW.Space.m) : 3)
-        .padding(.trailing, compact ? NW.Space.s : remove == nil && thumbnail != nil ? NW.Space.xs : NW.Space.m)
-        .frame(height: compact ? NWQueueMetrics.chipHeight : NWThreadMetrics.attachmentHeight)
-        .nwBorder(problem ? nw.failed : nw.lineStrong, radius: compact ? NW.Radius.xs : NW.Radius.s)
+        .padding(.leading, thumbnail == nil ? (compact ? SH.Space.s : SH.Space.m) : 3)
+        .padding(.trailing, compact ? SH.Space.s : remove == nil && thumbnail != nil ? SH.Space.xs : SH.Space.m)
+        .frame(height: compact ? SHQueueMetrics.chipHeight : SHThreadMetrics.attachmentHeight)
+        .shBorder(problem ? sh.failed : sh.lineStrong, radius: compact ? SH.Radius.xs : SH.Radius.s)
         .fixedSize(horizontal: compact, vertical: false)
         .accessibilityElement(children: .contain)
     }
@@ -262,7 +262,7 @@ public struct NWAttachmentChip: View {
 /// its tail (`action` set). It grows in from the bottom and leaves the same way; its motion is
 /// its own, so the rows behind it never animate with it. On iOS its hit area is the 44pt touch
 /// minimum around the drawn capsule.
-public struct NWJumpToLatest: View {
+public struct SHJumpToLatest: View {
     let action: (() -> Void)?
 
     /// nil hides it.
@@ -271,24 +271,24 @@ public struct NWJumpToLatest: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         ZStack {
             if let action {
                 Button(action: action) {
                     Label("Jump to latest", systemImage: "arrow.down")
-                        .font(Font.nw(.caption, weight: .medium)).foregroundStyle(nw.textSecondary)
+                        .font(Font.sh(.caption, weight: .medium)).foregroundStyle(sh.textSecondary)
                         // Grows with the text on iOS, whose type scales.
-                        .padding(.horizontal, NW.Space.l).padding(.vertical, NW.Space.xs)
-                        .frame(minHeight: NW.Height.controlM)
-                        .background(nw.bgRaised, in: Capsule())
-                        .nwBorder(nw.lineStrong, in: Capsule())
-                        .nwTouchTarget(height: NW.Height.controlM)
+                        .padding(.horizontal, SH.Space.l).padding(.vertical, SH.Space.xs)
+                        .frame(minHeight: SH.Height.controlM)
+                        .background(sh.bgRaised, in: Capsule())
+                        .shBorder(sh.lineStrong, in: Capsule())
+                        .shTouchTarget(height: SH.Height.controlM)
                 }
                 .buttonStyle(.plain)
-                .nwTransition(.overlay, anchor: .bottom)
+                .shTransition(.overlay, anchor: .bottom)
                 .accessibilityLabel("Jump to latest")
             }
         }
-        .nwAnimation(.overlay, value: action != nil)
+        .shAnimation(.overlay, value: action != nil)
     }
 }

@@ -5,7 +5,7 @@ import ShepherdUI
 
 /// The sidebar organized by project (Sidebar — Projects: SidebarTree, SidebarProjects,
 /// SidebarProjectsHosts): Projects with its +, or a section per host while grouped, each project a
-/// folder row (`NWProjectRow`) with its threads under it (`NWSidebarRow`, nested).
+/// folder row (`SHProjectRow`) with its threads under it (`SHSidebarRow`, nested).
 ///
 /// One lazy stack, as Recents is: each element is a plain value compared before it redraws, so a
 /// status report redraws its row and its project's, and opening a project builds the rows it
@@ -20,13 +20,13 @@ struct SidebarProjectsList: View {
     /// first built with (they compare without them), so those read state, never a captured value.
     @State private var pitch: CGFloat = 0
     @FocusState private var focused: Bool
-    @Environment(\.nwDensity) private var density
+    @Environment(\.shDensity) private var density
 
     var body: some View {
         let items = vm.presentedSidebarTree
         let hidden = vm.sidebarTree.hiddenProjects
         let plan = drag.flatMap { ProjectDrop.plan($0, items: items, pitch: pitch) }
-        LazyVStack(alignment: .leading, spacing: NWProjectMetrics.listSpacing) {
+        LazyVStack(alignment: .leading, spacing: SHProjectMetrics.listSpacing) {
             ForEach(items) { item in
                 SidebarTreeItemView(
                     vm: vm, item: item, hiddenProjects: Self.isProjectsHeader(item) ? hidden : [],
@@ -41,7 +41,7 @@ struct SidebarProjectsList: View {
                         drag = nil
                     })
                 .equatable()
-                .nwTransition(.list)
+                .shTransition(.list)
             }
         }
         // Focused only by a click on a project (never by a click on a thread, which hands the
@@ -51,9 +51,9 @@ struct SidebarProjectsList: View {
         .focusEffectDisabled()
         .onKeyPress(.leftArrow) { disclose(false) }
         .onKeyPress(.rightArrow) { disclose(true) }
-        .onChange(of: density.rowHeight, initial: true) { pitch = density.rowHeight + NWProjectMetrics.listSpacing }
+        .onChange(of: density.rowHeight, initial: true) { pitch = density.rowHeight + SHProjectMetrics.listSpacing }
         // Rows arriving, leaving, and moving up animate; the key is the rows' ids, never the rows.
-        .nwAnimation(.list, value: items.map(\.id))
+        .shAnimation(.list, value: items.map(\.id))
     }
 
     /// ← and →: the project last clicked, else the one holding the row on screen.
@@ -154,25 +154,25 @@ private struct SidebarTreeItemView: View, Equatable {
         VStack(spacing: 0) {
             switch item {
             case .leadHeader:
-                NWProjectsHeader("Projects", add: { vm.showNewProject() })
+                SHProjectsHeader("Projects", add: { vm.showNewProject() })
             case .leadProject(let project):
                 LogicalProjectSidebarRow(vm: vm, project: project, spaces: true)
             case .leadTask(let ref, let task):
                 LogicalProjectTaskRow(vm: vm, ref: ref, task: task)
             case .header(.pinnedSpaces):
-                NWProjectsHeader("Pinned", hasMenu: false) { EmptyView() }
+                SHProjectsHeader("Pinned", hasMenu: false) { EmptyView() }
             case .header(.projects):
                 // The folder tree is Spaces. The board draws no + here; adding a Space lives in
                 // Settings ▸ Spaces and the project menus, and hidden ones come back from the menu.
-                NWProjectsHeader("Spaces", hasMenu: !hiddenProjects.isEmpty, menu: { ProjectsAddMenu(vm: vm, hidden: hiddenProjects) })
+                SHProjectsHeader("Spaces", hasMenu: !hiddenProjects.isEmpty, menu: { ProjectsAddMenu(vm: vm, hidden: hiddenProjects) })
             case .header(.host(let name, _, let unreachable)):
-                NWSidebarSection(.host(name, unreachable: unreachable))
+                SHSidebarSection(.host(name, unreachable: unreachable))
             case .project(let project):
                 projectRow(project)
             case .row(let row):
-                NWSidebarRow(row.title, leading: row.leading, selected: row.selected, dimmed: row.offline,
+                SHSidebarRow(row.title, leading: row.leading, selected: row.selected, dimmed: row.offline,
                              accessory: row.accessory, hasGoal: row.hasGoal, nested: true)
-                    .padding(.leading, CGFloat(row.projectDepth) * (NWProjectMetrics.chevronSlot + NWProjectMetrics.gap))
+                    .padding(.leading, CGFloat(row.projectDepth) * (SHProjectMetrics.chevronSlot + SHProjectMetrics.gap))
                     .help(row.help)
                     .sidebarTapRow { vm.selectSidebarRow(row.id) }
                     .accessibilityLabel(row.accessibilityLabel)
@@ -183,16 +183,16 @@ private struct SidebarTreeItemView: View, Equatable {
         }
         .overlay(alignment: drop == .bottom ? .bottom : .top) {
             if let drop {
-                NWDropIndicator()
-                    .padding(.horizontal, NW.Space.xs)
-                    .offset(y: (drop == .top ? -1 : 1) * (NWDropIndicator.thickness + NWProjectMetrics.listSpacing) / 2)
+                SHDropIndicator()
+                    .padding(.horizontal, SH.Space.xs)
+                    .offset(y: (drop == .top ? -1 : 1) * (SHDropIndicator.thickness + SHProjectMetrics.listSpacing) / 2)
             }
         }
     }
 
     private func projectRow(_ project: SidebarProjectRow) -> some View {
         let id = project.id
-        return NWProjectRow(project.name, count: project.count, expanded: project.expanded, rollup: project.rollup,
+        return SHProjectRow(project.name, count: project.count, expanded: project.expanded, rollup: project.rollup,
                             dimmed: project.dimmed, missing: project.missing, pinned: project.pinned,
                             toggle: {
                                 focus(id)
@@ -203,16 +203,16 @@ private struct SidebarTreeItemView: View, Equatable {
         }
         .help(project.missing ? "Folder not found: \(project.path)" : project.path)
         .contextMenu { SidebarProjectMenu(vm: vm, project: project) }
-        .opacity(dragging ? NWProjectMetrics.draggedOpacity : 1)
-        .background(threadDropTargeted ? Color.nw.bgSelected : Color.clear, in: RoundedRectangle(cornerRadius: NW.Radius.m))
+        .opacity(dragging ? SHProjectMetrics.draggedOpacity : 1)
+        .background(threadDropTargeted ? Color.sh.bgSelected : Color.clear, in: RoundedRectangle(cornerRadius: SH.Radius.m))
         .dropDestination(for: String.self) { payloads, _ in
             vm.dropThread(payloads, on: id)
         } isTargeted: { threadDropTargeted = $0 }
-        .gesture(DragGesture(minimumDistance: NW.Space.xs)
+        .gesture(DragGesture(minimumDistance: SH.Space.xs)
             .onChanged { dragChanged(id, $0.translation.height) }
             .onEnded { dragEnded(id, $0.translation.height) },
                  isEnabled: project.movable)
-        .padding(.leading, CGFloat(project.depth) * (NWProjectMetrics.chevronSlot + NWProjectMetrics.gap))
+        .padding(.leading, CGFloat(project.depth) * (SHProjectMetrics.chevronSlot + SHProjectMetrics.gap))
     }
 }
 
@@ -234,7 +234,7 @@ private struct ProjectsAddMenu: View {
     }
 }
 
-/// The project menu (SidebarTree, `NWProjectMenu`): right-click a project, or ··· on hover.
+/// The project menu (SidebarTree, `SHProjectMenu`): right-click a project, or ··· on hover.
 /// Missions are not built, so there is no New Mission.
 struct SidebarProjectMenu: View {
     var vm: ShepherdViewModel

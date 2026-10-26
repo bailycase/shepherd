@@ -38,7 +38,7 @@ struct RemoteSettings: View {
                 if store.connections.isEmpty {
                     SettingsRow(title: "No remote hosts",
                                 subtitle: "Add a Mac running Shepherd below. Its agents appear in the sidebar under its name.") { EmptyView() }
-                        .nwTransition(.list)
+                        .shTransition(.list)
                 }
                 ForEach(store.connections, id: \.id) { connection in
                     RemoteHostRow(connection: connection) {
@@ -54,7 +54,7 @@ struct RemoteSettings: View {
                         draftPort = String(config.port)
                         draftToken = config.token
                     }
-                    .nwTransition(.list)
+                    .shTransition(.list)
                 }
             }
 
@@ -79,11 +79,11 @@ struct RemoteSettings: View {
                 }
                 SettingsActionRow {
                     if editingID != nil {
-                        Button("Cancel") { cancelEdit() }.buttonStyle(.nw(.ghost, size: .s))
-                            .nwTransition(.content)
+                        Button("Cancel") { cancelEdit() }.buttonStyle(.sh(.ghost, size: .s))
+                            .shTransition(.content)
                     }
                     Button(editingID == nil ? "Add host" : "Save") { save() }
-                        .buttonStyle(.nw(.secondary, size: .s))
+                        .buttonStyle(.sh(.secondary, size: .s))
                         .disabled(!draftValid)
                 }
             }
@@ -104,10 +104,10 @@ struct RemoteSettings: View {
         }
         // Hosts arrive and leave as rows; the form swaps between adding and editing in place;
         // a bind failure discloses under the listener, and its status fades to the new port.
-        .nwAnimation(.list, value: store.connections.map(\.id))
-        .nwAnimation(.content, value: editingID)
-        .nwAnimation(.disclosure, value: vm.remoteListenerProblem)
-        .nwAnimation(.content, value: vm.remoteListenerStatus)
+        .shAnimation(.list, value: store.connections.map(\.id))
+        .shAnimation(.content, value: editingID)
+        .shAnimation(.disclosure, value: vm.remoteListenerProblem)
+        .shAnimation(.content, value: vm.remoteListenerStatus)
     }
 
     private func save() {
@@ -197,38 +197,38 @@ struct RemoteHostRow: View {
         let (word, state) = status
         let agents = connection.phase == .connected ? " · \(connection.state.agents.count) agents" : ""
         SettingsActionRow {
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                Text(config.name).font(.nw(.body, weight: .medium)).foregroundStyle(Color.nw.textPrimary)
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                Text(config.name).font(.sh(.body, weight: .medium)).foregroundStyle(Color.sh.textPrimary)
                 // The address in mono, then the connection's word in its state's color (no dot, as
                 // SettingsRemote draws it); the rest in the description's Geist.
                 Group {
-                    Text("\(Text(verbatim: "\(config.host):\(String(config.port))").font(.nwMono(AppLayout.settingsAddressSize)))\(Text(verbatim: " · "))\(Text(word).foregroundStyle(state.textColor))\(Text(agents))")
-                        .foregroundStyle(Color.nw.textSecondary)
-                        .nwText(size: NWTextStyle.ui.size, lineHeight: NWCardRowMetrics.settingsDescriptionLineHeight)
+                    Text("\(Text(verbatim: "\(config.host):\(String(config.port))").font(.shMono(AppLayout.settingsAddressSize)))\(Text(verbatim: " · "))\(Text(word).foregroundStyle(state.textColor))\(Text(agents))")
+                        .foregroundStyle(Color.sh.textSecondary)
+                        .shText(size: SHTextStyle.ui.size, lineHeight: SHCardRowMetrics.settingsDescriptionLineHeight)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                        .nwContentTransition(.crossFade)
+                        .shContentTransition(.crossFade)
                 }
                 // Connecting… → connected · 5 agents, or unreachable: the words fade.
-                .nwComponentAnimation(.content, value: state)
+                .shComponentAnimation(.content, value: state)
                 if let failure = connection.phase.failure {
-                    NWInlineProblem(failure.message(host: config.name), help: failure.detail)
-                        .padding(.top, NW.Space.xs - NW.Space.xxs)
+                    SHInlineProblem(failure.message(host: config.name), help: failure.detail)
+                        .padding(.top, SH.Space.xs - SH.Space.xxs)
                 }
                 if connection.supportsHostUpdate, connection.phase == .connected {
                     RemoteHostUpdateRow(connection: connection)
-                        .padding(.top, NW.Space.xs)
+                        .padding(.top, SH.Space.xs)
                 }
             }
             // A new reason discloses under the status line and the row grows with it.
-            .nwAnimation(.disclosure, value: connection.phase.failure?.kind)
+            .shAnimation(.disclosure, value: connection.phase.failure?.kind)
             .accessibilityElement(children: .combine)
         } actions: {
-            Button("Edit", action: edit).buttonStyle(.nw(.secondary, size: .s))
+            Button("Edit", action: edit).buttonStyle(.sh(.secondary, size: .s))
                 .accessibilityLabel("Edit \(config.name)")
-            Button("Reconnect", action: reconnect).buttonStyle(.nw(.secondary, size: .s))
+            Button("Reconnect", action: reconnect).buttonStyle(.sh(.secondary, size: .s))
                 .accessibilityLabel("Reconnect \(config.name)")
-            Button("Remove", action: remove).buttonStyle(.nw(.danger, size: .s))
+            Button("Remove", action: remove).buttonStyle(.sh(.danger, size: .s))
                 .accessibilityLabel("Remove \(config.name)")
         }
     }
@@ -247,51 +247,51 @@ struct HostUpdateContent: View {
     @State private var confirmingInstall = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NW.Space.xs) {
+        VStack(alignment: .leading, spacing: SH.Space.xs) {
             if let status {
-                HStack(spacing: NW.Space.s) {
+                HStack(spacing: SH.Space.s) {
                     Text(HostSettingsPresentation.versionLine(status))
-                        .font(.nwMono(AppLayout.settingsAddressSize))
-                        .foregroundStyle(Color.nw.textSecondary)
-                    Text("·").foregroundStyle(Color.nw.textTertiary)
+                        .font(.shMono(AppLayout.settingsAddressSize))
+                        .foregroundStyle(Color.sh.textSecondary)
+                    Text("·").foregroundStyle(Color.sh.textTertiary)
                     Text(HostSettingsPresentation.updateSummary(status))
                         .foregroundStyle(HostSettingsPresentation.updateTone(status).agentState.textColor)
                     if polling { ProgressView().controlSize(.small) }
                 }
-                .font(.nw(.ui))
+                .font(.sh(.ui))
                 .lineLimit(1)
-                HStack(spacing: NW.Space.s) {
+                HStack(spacing: SH.Space.s) {
                     if HostSettingsPresentation.canCheck(status) {
                         Button("Check for update") { onCheck?() }
-                            .buttonStyle(.nw(.ghost, size: .s))
+                            .buttonStyle(.sh(.ghost, size: .s))
                             .disabled(polling)
                     }
                     if HostSettingsPresentation.canInstall(status) {
                         Button("Update and restart\u{2026}") { confirmingInstall = true }
-                            .buttonStyle(.nw(.secondary, size: .s))
+                            .buttonStyle(.sh(.secondary, size: .s))
                             .disabled(polling)
                     }
                     if let reason = HostSettingsPresentation.installBlockReason(status) {
-                        Text(reason).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                        Text(reason).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                     }
                 }
             } else {
-                HStack(spacing: NW.Space.s) {
+                HStack(spacing: SH.Space.s) {
                     if polling {
                         ProgressView().controlSize(.small)
                         Text("Checking update status\u{2026}")
                     } else {
                         Text("Update status unavailable.")
                         Button("Retry") { onRetry?() }
-                            .buttonStyle(.nw(.ghost, size: .s))
+                            .buttonStyle(.sh(.ghost, size: .s))
                     }
                 }
-                .font(.nw(.caption))
-                .foregroundStyle(Color.nw.textTertiary)
+                .font(.sh(.caption))
+                .foregroundStyle(Color.sh.textTertiary)
             }
             if let error {
-                NWInlineProblem(error)
-                    .padding(.top, NW.Space.xxs)
+                SHInlineProblem(error)
+                    .padding(.top, SH.Space.xxs)
             }
         }
         .confirmationDialog(

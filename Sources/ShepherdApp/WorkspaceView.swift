@@ -48,7 +48,7 @@ struct WorkspaceView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
             .onGeometryChange(for: CGSize.self) { $0.size } action: { column.size = $0 }
             .background { LiveResizeColumn.WindowReader(column: column) }
         }
@@ -66,7 +66,7 @@ struct WorkspaceView: View {
         // run-loop turn. Keyed on there being any, so layouts that start waiting after this
         // view first drew (the restored workspace adopted late) still mount.
         .task(id: vm.pendingMountTabIDs.isEmpty) { await vm.drainPendingMounts() }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         // Window-level file/image drop routing for terminal panes; per-pane
         // SwiftUI .onDrop cannot coexist with permanently mounted hidden
         // layouts (see TerminalDropOverlay.swift).
@@ -238,7 +238,7 @@ struct AgentLayoutView: View, Equatable {
     }
 
     var body: some View {
-        let _ = NWRenderProbe.tick("layout.agentLayout")
+        let _ = SHRenderProbe.tick("layout.agentLayout")
         let thread = model.thread
         let inspecting = model.inspectingRunID
         let sideTab = model.sideTab
@@ -273,12 +273,12 @@ struct AgentLayoutView: View, Equatable {
                         }, review: { [vm] in vm.openReview(agentID: agentID, path: $0) },
                         focusSteer: vm.subagentInspector.steerRun == inspecting, steerFocused: { [vm] in vm.subagentInspector.steerRun = nil })
                         // The inspector keys its run itself, so a run switch nudges in from its side.
-                        .nwTransition(.content)
+                        .shTransition(.content)
                     } else if let sideTab {
                         SidePaneView(vm: vm, owner: owner, tab: sideTab, news: model.sideNews, review: model.review, store: store,
                                      maximized: model.sideMaximized, active: model.isVisible,
                                      inspect: { [vm] in vm.subagentInspector.runByAgent[agentID] = $0.runID })
-                            .nwTransition(.content)
+                            .shTransition(.content)
                     }
                 }
                 // The pane belongs to the thread: a click in it takes focus from a terminal pane.
@@ -409,7 +409,7 @@ struct PaneTreeView: View {
         let target = ShepherdViewModel.TerminalTarget(key: key, layout: tab.layout, thread: thread.paneID, remote: nil,
                                                       focused: model.focusedPaneID)
         return GeometryReader { geo in
-            let _ = NWRenderProbe.tick("layout.paneTreeGeo")
+            let _ = SHRenderProbe.tick("layout.paneTreeGeo")
             let selected = TerminalPanel.selected(TerminalPanel.tabs(in: tab.layout, thread: thread.paneID), chosen: panel.chosenTab,
                                                   focused: model.focusedPaneID)
             let geometry = terminalPanelGeometry(for: tab.layout, thread: thread.paneID, selected: selected, shown: panel.shown,
@@ -447,7 +447,7 @@ struct PaneTreeView: View {
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
-            .nwAnimation(.content, value: panel.shown)
+            .shAnimation(.content, value: panel.shown)
         }
         .coordinateSpace(.named(containerSpace))
         .modifier(TerminalActivityPoll(vm: vm, key: key, agent: thread.agentID, remote: nil,
@@ -459,7 +459,7 @@ struct PaneTreeView: View {
 
     private var tree: some View {
         GeometryReader { geo in
-            let _ = NWRenderProbe.tick("layout.paneTreeGeo")
+            let _ = SHRenderProbe.tick("layout.paneTreeGeo")
             let geometry = paneTreeGeometry(for: tab.layout, in: geo.size)
             ZStack(alignment: .topLeading) {
                 ForEach(geometry.leaves, id: \.pane.id) { leaf in
@@ -580,7 +580,7 @@ struct PaneLeafView: View, Equatable {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .contentShape(Rectangle())
         .simultaneousGesture(TapGesture().onEnded { [vm] in vm.focusedPaneID = pane.id })
     }
@@ -628,13 +628,13 @@ struct AgentThreadPane: View {
                            designChat: designChat, allowsLocalFiles: true, retainedInput: input)
             case .failed(let reason):
                 PanePlaceholder(text: "session unavailable · \(reason)")
-                    .nwTransition(.content)
+                    .shTransition(.content)
             case .exited(let code):
                 PanePlaceholder(text: code.map { "session exited (\($0))" } ?? "session exited")
-                    .nwTransition(.content)
+                    .shTransition(.content)
             }
         }
-        .nwAnimation(.content, value: session.phase.isRunning)
+        .shAnimation(.content, value: session.phase.isRunning)
     }
 }
 
@@ -662,7 +662,7 @@ struct LiveTerminalPane: View {
     var body: some View {
         // "starting session…" fades off the surface once it is live; a failed or exited
         // session's placeholder cross-fades with it. The surface itself never moves (it is
-        // `nwInstant`).
+        // `shInstant`).
         ZStack {
             switch session.phase {
             case .connecting, .live:
@@ -673,7 +673,7 @@ struct LiveTerminalPane: View {
                     if case .connecting = session.phase {
                         PanePlaceholder(text: "starting session…")
                             .allowsHitTesting(false)
-                            .nwTransition(.content)
+                            .shTransition(.content)
                     }
                     if let addToMessage {
                         TerminalSelectionOverlay(terminal: session.terminal, add: addToMessage)
@@ -681,17 +681,17 @@ struct LiveTerminalPane: View {
                 }
             case .failed(let reason):
                 PanePlaceholder(text: "session unavailable · \(reason)")
-                    .nwTransition(.content)
+                    .shTransition(.content)
             case .exited(let code):
                 PanePlaceholder(text: code.map { "session exited (\($0))" } ?? "session exited")
-                    .nwTransition(.content)
+                    .shTransition(.content)
             case .stopped:
                 // Only an agent's own pane stops; a shell never does.
                 PanePlaceholder(text: "session stopped")
-                    .nwTransition(.content)
+                    .shTransition(.content)
             }
         }
-        .nwAnimation(.content, value: session.phase)
+        .shAnimation(.content, value: session.phase)
         .onAppear { session.terminal.onFocusAcquired = onFocusAcquired }
         .onDisappear { session.terminal.onFocusAcquired = nil }
     }
@@ -730,7 +730,7 @@ private struct RemoteAgentPaneContent: View {
                 HostAwayBanner(name: connection.config.name, lastSeen: connection.lastSeen ?? Date()) {
                     vm.remoteHosts.reconnect(id: connection.id)
                 }
-                .nwTransition(.content)
+                .shTransition(.content)
             } else {
                 switch connection.phase {
                 case .connected:
@@ -754,21 +754,21 @@ private struct RemoteAgentPaneContent: View {
                         .id(tab.id)
                     } else {
                         PanePlaceholder(text: "agent has no layout on \(connection.config.name)")
-                            .nwTransition(.content)
+                            .shTransition(.content)
                     }
                 case .connecting:
                     PanePlaceholder(text: "connecting to \(connection.config.name)…")
-                        .nwTransition(.content)
+                        .shTransition(.content)
                 case .failed(let failure):
                     PanePlaceholder(text: failure.message(host: connection.config.name))
-                        .nwTransition(.content)
+                        .shTransition(.content)
                 case .disconnected:
                     PanePlaceholder(text: "\(connection.config.name) disconnected")
-                        .nwTransition(.content)
+                        .shTransition(.content)
                 }
             }
         }
-        .nwAnimation(.content, value: connection.phase.kind)
+        .shAnimation(.content, value: connection.phase.kind)
     }
 }
 
@@ -802,12 +802,12 @@ private struct RemoteAgentLayoutView: View {
                         review: { [vm, ref] in vm.openRemoteReview(ref, path: $0) },
                         focusSteer: vm.subagentInspector.steerRun == inspecting, steerFocused: { [vm] in vm.subagentInspector.steerRun = nil })
                         // The inspector keys its run itself, so a run switch nudges in from its side.
-                        .nwTransition(.content)
+                        .shTransition(.content)
                     } else if let sideTab {
                         SidePaneView(vm: vm, owner: owner, tab: sideTab, news: panes.news[owner] ?? [], review: review, store: store,
                                      maximized: panes.maximized.contains(owner),
                                      inspect: { [vm, ref] in vm.subagentInspector.remoteRuns[ref] = $0.runID })
-                            .nwTransition(.content)
+                            .shTransition(.content)
                     }
                 }
                 .simultaneousGesture(TapGesture().onEnded { [vm] in vm.remoteFocusedPaneID = threadPaneID })
@@ -945,11 +945,11 @@ private struct RemotePaneLeafView: View {
             } else if let target = reviewTarget {
                 if let review {
                     ReviewPane(session: review, actions: vm.reviewActions(for: review, remote: true), chrome: .header)
-                        .nwTransition(.content)
+                        .shTransition(.content)
                 } else {
                     PanePlaceholder(text: "loading host review…")
                         .task { vm.openRemoteHostReview(target, pane: leaf) }
-                        .nwTransition(.content)
+                        .shTransition(.content)
                 }
             } else if let terminal {
                 RemoteTerminalPane(pane: terminal.pane,
@@ -961,12 +961,12 @@ private struct RemotePaneLeafView: View {
                     .transition(.identity)
             } else {
                 PanePlaceholder(text: "starting remote terminal…")
-                    .nwTransition(.content)
+                    .shTransition(.content)
             }
         }
-        .nwAnimation(.content, value: showing)
+        .shAnimation(.content, value: showing)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .contentShape(Rectangle())
         .simultaneousGesture(TapGesture().onEnded { vm.remoteFocusedPaneID = leaf.id })
     }
@@ -1040,28 +1040,28 @@ private struct RemoteTerminalPane: View {
                     AppTerminalView(model: pane.terminal, isFocused: isFocused, isRendering: true)
                     if case .connecting = pane.phase {
                         PanePlaceholder(text: "attaching…").allowsHitTesting(false)
-                            .nwTransition(.content)
+                            .shTransition(.content)
                     }
                     if let addToMessage {
                         TerminalSelectionOverlay(terminal: pane.terminal, add: addToMessage)
                     }
                 }
-                .background(Color.nw.bgWindow)
+                .background(Color.sh.bgWindow)
             case .failed(let reason):
                 PanePlaceholder(text: "remote session unavailable · \(reason)")
-                    .nwTransition(.content)
+                    .shTransition(.content)
             case .exited(let code):
                 PanePlaceholder(text: code.map { "remote session exited (\($0))" } ?? "remote session exited")
-                    .nwTransition(.content)
+                    .shTransition(.content)
             }
         }
-        .nwAnimation(.content, value: pane.phase)
+        .shAnimation(.content, value: pane.phase)
         .onAppear { pane.terminal.onFocusAcquired = onFocusAcquired }
         .onDisappear { pane.terminal.onFocusAcquired = nil }
     }
 }
 
-/// Whether a remote agent's pane says its host is reconnecting (NWStatus): the host was
+/// Whether a remote agent's pane says its host is reconnecting (SHStatus): the host was
 /// connected earlier this launch and Shepherd is trying it again. A host that never connected, or
 /// a failure that won't retry (a refused token, another protocol), keeps its own placeholder.
 enum HostAway {
@@ -1080,7 +1080,7 @@ enum HostAway {
     }
 }
 
-/// A remote agent's pane while its host is away (NWStatus › A host reconnecting): a running banner
+/// A remote agent's pane while its host is away (SHStatus › A host reconnecting): a running banner
 /// with when the host was last seen, and Retry now, which skips the wait before the next try.
 struct HostAwayBanner: View {
     let name: String
@@ -1090,10 +1090,10 @@ struct HostAwayBanner: View {
     var body: some View {
         // The age moves on by itself ("just now", then "1m ago").
         TimelineView(.periodic(from: .now, by: 60)) { context in
-            NWBanner(.running, title: "\(name) reconnecting", message: HostAway.message(lastSeen: lastSeen, now: context.date),
+            SHBanner(.running, title: "\(name) reconnecting", message: HostAway.message(lastSeen: lastSeen, now: context.date),
                      systemImage: "point.topleft.down.to.point.bottomright.curvepath") {
                 Button("Retry now", action: retry)
-                    .buttonStyle(.nw(.secondary, size: .s))
+                    .buttonStyle(.sh(.secondary, size: .s))
             }
         }
         .frame(maxWidth: AppLayout.threadMaxWidth)
@@ -1107,8 +1107,8 @@ struct PanePlaceholder: View {
 
     var body: some View {
         Text(text)
-            .font(Font.nw(.micro, weight: .regular))
-            .foregroundStyle(Color.nw.textTertiary)
+            .font(Font.sh(.micro, weight: .regular))
+            .foregroundStyle(Color.sh.textTertiary)
             .padding(AppLayout.panePlaceholderPadding)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -1121,12 +1121,12 @@ struct TerminalSelectionOverlay: View {
     let terminal: AppTerminalModel
     let add: (String) -> Void
     @State private var selection: AppTerminalModel.Selection?
-    @State private var barHeight: CGFloat = NW.Height.controlS + 2 * NWTerminalMetrics.selectionBarPadding
+    @State private var barHeight: CGFloat = SH.Height.controlS + 2 * SHTerminalMetrics.selectionBarPadding
 
     var body: some View {
         GeometryReader { geo in
             if let selection {
-                NWTerminalSelectionBar(add: {
+                SHTerminalSelectionBar(add: {
                     add(selection.text)
                     self.selection = nil
                 }, copy: {
@@ -1135,19 +1135,19 @@ struct TerminalSelectionOverlay: View {
                 })
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { barHeight = $0 }
                 .frame(maxWidth: .infinity, alignment: .trailing)
-                .padding(.trailing, NWTerminalMetrics.selectionBarInset)
+                .padding(.trailing, SHTerminalMetrics.selectionBarInset)
                 .offset(y: Self.top(selection, barHeight: barHeight, in: geo.size.height))
-                .nwTransition(.overlay, edge: .top)
+                .shTransition(.overlay, edge: .top)
             }
         }
-        .nwAnimation(.overlay, value: selection == nil)
+        .shAnimation(.overlay, value: selection == nil)
         .onAppear { terminal.onSelectionChange = { selection = $0 } }
         .onDisappear { terminal.onSelectionChange = nil }
     }
 
     /// Under the selection's last line, else over its first, never outside the pane.
     static func top(_ selection: AppTerminalModel.Selection, barHeight: CGFloat, in height: CGFloat) -> CGFloat {
-        let gap = NWTerminalMetrics.selectionBarPadding
+        let gap = SHTerminalMetrics.selectionBarPadding
         let below = selection.origin.y + CGFloat(selection.lineCount) * selection.lineHeight + gap
         if below + barHeight <= height { return below }
         return max(0, min(height - barHeight, selection.origin.y - barHeight - gap))

@@ -25,13 +25,13 @@ struct HostEditorScreen: View {
             if let host = hostID.flatMap(hosts.host) {
                 Section {
                     LabeledContent("Connection") {
-                        NWStatusPill(host.phase.isConnected ? .done : host.phase == .connecting ? .running : .failed,
+                        SHStatusPill(host.phase.isConnected ? .done : host.phase == .connecting ? .running : .failed,
                                      label: host.phase.word)
                     }
                     if let failure = host.phase.failure {
-                        VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                            Text(failure.message(host: host.name)).font(.nw(.caption)).foregroundStyle(Color.nw.textSecondary)
-                            Text(failure.detail).font(.nw(.mono)).foregroundStyle(Color.nw.textTertiary)
+                        VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                            Text(failure.message(host: host.name)).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+                            Text(failure.detail).font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary)
                                 .textSelection(.enabled)
                         }
                     }
@@ -44,7 +44,7 @@ struct HostEditorScreen: View {
                 } else if host.phase.isConnected {
                     Section {
                         Text("Update Shepherd on \(host.name) to manage updates here.")
-                            .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                            .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                     }
                 }
             }
@@ -54,19 +54,19 @@ struct HostEditorScreen: View {
                 }
                 LabeledContent("Address") {
                     TextField("hostname or IP", text: $address)
-                        .keyboardType(.URL).font(.nw(.mono)).multilineTextAlignment(.trailing)
+                        .keyboardType(.URL).font(.sh(.mono)).multilineTextAlignment(.trailing)
                 }
                 LabeledContent("Port") {
                     TextField(String(RemoteHostRecord.defaultPort), text: $port)
-                        .keyboardType(.numberPad).font(.nw(.mono)).multilineTextAlignment(.trailing)
+                        .keyboardType(.numberPad).font(.sh(.mono)).multilineTextAlignment(.trailing)
                 }
                 LabeledContent("Token") {
                     SecureField(hasToken ? "Saved" : "Required", text: $token)
-                        .privacySensitive().font(.nw(.mono)).multilineTextAlignment(.trailing)
+                        .privacySensitive().font(.sh(.mono)).multilineTextAlignment(.trailing)
                 }
             } footer: {
                 Text("Turn on Settings ▸ Remote ▸ Serve this Mac in Shepherd on the host and copy its token. Use a trusted LAN or VPN: there is no TLS.")
-                    .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                    .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
             }
             if hostID != nil {
                 Section {
@@ -74,12 +74,12 @@ struct HostEditorScreen: View {
                 }
             }
         }
-        .listRowBackground(Color.nw.bgRaised)
+        .listRowBackground(Color.sh.bgRaised)
         .textInputAutocapitalization(.never)
         .autocorrectionDisabled()
-        .font(.nw(.ui))
+        .font(.sh(.ui))
         .scrollContentBackground(.hidden)
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .navigationTitle(hostID == nil ? "Add host" : "Host")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -161,15 +161,15 @@ private struct MobileHostUpdateSection: View {
             if let status {
                 LabeledContent("Version") {
                     Text(HostSettingsPresentation.versionLine(status))
-                        .font(.nw(.mono)).foregroundStyle(Color.nw.textSecondary)
+                        .font(.sh(.mono)).foregroundStyle(Color.sh.textSecondary)
                 }
                 LabeledContent("Status") {
-                    HStack(spacing: NW.Space.xs) {
+                    HStack(spacing: SH.Space.xs) {
                         Text(HostSettingsPresentation.updateSummary(status))
                             .foregroundStyle(Self.toneColor(status))
                         if polling { ProgressView().controlSize(.small) }
                     }
-                    .font(.nw(.ui))
+                    .font(.sh(.ui))
                 }
                 if HostSettingsPresentation.canCheck(status) {
                     Button("Check for update") { Task { await check() } }
@@ -180,10 +180,10 @@ private struct MobileHostUpdateSection: View {
                         .disabled(polling)
                 }
                 if let reason = HostSettingsPresentation.installBlockReason(status) {
-                    Text(reason).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                    Text(reason).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                 }
             } else {
-                HStack(spacing: NW.Space.s) {
+                HStack(spacing: SH.Space.s) {
                     if polling {
                         ProgressView().controlSize(.small)
                         Text("Checking update status\u{2026}")
@@ -192,17 +192,17 @@ private struct MobileHostUpdateSection: View {
                         Button("Retry") { Task { await fetchStatus() } }
                     }
                 }
-                .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
             }
             if let error {
-                Text(error).font(.nw(.caption)).foregroundStyle(Color.nw.failed)
+                Text(error).font(.sh(.caption)).foregroundStyle(Color.sh.failed)
             }
         } header: {
             Text("Software Update")
         } footer: {
             if status?.phase == .available {
                 Text("Updating downloads, verifies and installs the update, then restarts Shepherd on \(host.name). All connected clients disconnect while it restarts.")
-                    .font(.nw(.caption))
+                    .font(.sh(.caption))
             }
         }
         .confirmationDialog(

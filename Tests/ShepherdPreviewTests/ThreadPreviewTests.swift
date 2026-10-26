@@ -10,8 +10,8 @@ import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
 
-/// The thread and composer surfaces of the NWThread, "Activity line states", Running, Main and
-/// NWComposer boards, in light and dark:
+/// The thread and composer surfaces of the SHThread, "Activity line states", Running, Main and
+/// SHComposer boards, in light and dark:
 ///
 ///     SHEPHERD_PREVIEW_DIR=/tmp/previews swift test --filter ThreadPreviewTests
 @Suite("Thread previews", .serialized, .mainActorExclusive, .enabled(if: Preview.enabled && !Preview.liveModel, "set SHEPHERD_PREVIEW_DIR (without SHEPHERD_LIVE_MODEL) to render previews"))
@@ -162,15 +162,15 @@ struct ThreadPreviewTests {
                         EmptyView()
                     }
                 }
-                NWHairline()
-                NWThinking.live()
-                NWThinking("Thought for 10s", blocks: [], isExpanded: .constant(false), spokenTitle: "Thought for 10 seconds")
+                SHHairline()
+                SHThinking.live()
+                SHThinking("Thought for 10s", blocks: [], isExpanded: .constant(false), spokenTitle: "Thought for 10 seconds")
                 ThinkingRow(seconds: 4, blocks: [.paragraph("Check the labels first.")], live: false, isExpanded: false) {}
                 Spacer(minLength: 0)
             }
             .padding(32)
             .frame(width: size.width, height: size.height, alignment: .topLeading)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
     }
 
@@ -443,7 +443,7 @@ struct ThreadPreviewTests {
         }
     }
 
-    /// Failed test runs stay red; a turn that failed as a whole ends in NWTurnError with Retry.
+    /// Failed test runs stay red; a turn that failed as a whole ends in SHTurnError with Retry.
     @Test func threadActivityFailed() async throws {
         try await render("thread-activity-failed", ActivityThreads.failed)
     }
@@ -560,36 +560,36 @@ struct ThreadPreviewTests {
     @Test func turnErrors() async throws {
         let size = CGSize(width: 900, height: 1900)
         let at = ActivityThreads.now
-        func card(_ text: String, provider: String = "openai", attempts: Int = 1, span: Double = 0) -> NWTurnError.Content {
-            NWTurnError.Content(NativeTurnError(text: text, provider: provider, model: "gpt-6-astra", host: "build-01", attempts: attempts,
+        func card(_ text: String, provider: String = "openai", attempts: Int = 1, span: Double = 0) -> SHTurnError.Content {
+            SHTurnError.Content(NativeTurnError(text: text, provider: provider, model: "gpt-6-astra", host: "build-01", attempts: attempts,
                                                 firstAt: at - span, at: at))
         }
         let auth = card(ActivityThreads.authError)
         try await Preview.render("turn-errors", size: size) {
             VStack(alignment: .leading, spacing: 20) {
-                NWTurnError(auth, retry: {})
-                NWTurnError(auth, detailsOpen: true, retry: {})
-                NWTurnError(auth, folded: true)
-                NWRetryLine(count: "2 of 3") { _ in "Reconnecting to OpenAI · retrying in 8s" }
-                NWRetryLine(glyph: "hourglass", count: "2 of 3") { _ in "Reconnecting to OpenAI · retrying" }
-                NWTurnError(card("Request timed out.", attempts: 3, span: 1_860_000), retry: {})
-                NWTurnError(card(#"529 {"type":"error","error":{"type":"overloaded_error","message":"Overloaded. Please try again shortly."}}"#,
+                SHTurnError(auth, retry: {})
+                SHTurnError(auth, detailsOpen: true, retry: {})
+                SHTurnError(auth, folded: true)
+                SHRetryLine(count: "2 of 3") { _ in "Reconnecting to OpenAI · retrying in 8s" }
+                SHRetryLine(glyph: "hourglass", count: "2 of 3") { _ in "Reconnecting to OpenAI · retrying" }
+                SHTurnError(card("Request timed out.", attempts: 3, span: 1_860_000), retry: {})
+                SHTurnError(card(#"529 {"type":"error","error":{"type":"overloaded_error","message":"Overloaded. Please try again shortly."}}"#,
                                  attempts: 3, span: 100_000), retry: {})
-                NWTurnError(card(#"500: {"message":"The server had an error while processing your request. Sorry about that!","type":"server_error"}"#,
+                SHTurnError(card(#"500: {"message":"The server had an error while processing your request. Sorry about that!","type":"server_error"}"#,
                                  attempts: 3, span: 45_000), retry: {})
-                NWTurnError(card("429 Rate limit reached for gpt-6-astra on tokens per min (TPM): limit 2,000,000, used 1,998,412. Please try again in 1.2s.",
+                SHTurnError(card("429 Rate limit reached for gpt-6-astra on tokens per min (TPM): limit 2,000,000, used 1,998,412. Please try again in 1.2s.",
                                  attempts: 3, span: 120_000), retry: {})
-                NWTurnError(card("request to https://api.openai.com/v1/responses failed, reason: read ECONNRESET", attempts: 3, span: 20_000),
+                SHTurnError(card("request to https://api.openai.com/v1/responses failed, reason: read ECONNRESET", attempts: 3, span: 20_000),
                             retry: {})
-                NWTurnError(card(#"400: {"message":"This model's maximum context length is 400,000 tokens. Your messages resulted in 412,380 tokens.","type":"invalid_request_error","code":"context_length_exceeded"}"#),
+                SHTurnError(card(#"400: {"message":"This model's maximum context length is 400,000 tokens. Your messages resulted in 412,380 tokens.","type":"invalid_request_error","code":"context_length_exceeded"}"#),
                             retry: {})
-                NWTurnError(card("502 Unexpected end of JSON input"), retry: {})
+                SHTurnError(card("502 Unexpected end of JSON input"), retry: {})
                 Spacer(minLength: 0)
             }
             .frame(width: 760)
             .padding(32)
             .frame(width: size.width, height: size.height, alignment: .topLeading)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
     }
 
@@ -626,56 +626,56 @@ struct ThreadPreviewTests {
         let size = CGSize(width: 760, height: 520)
         try await Preview.render("activity-line-states", size: size) {
             VStack(alignment: .leading, spacing: AppLayout.activitySpacing) {
-                Text("DONE").nwSectionLabel()
+                Text("DONE").shSectionLabel()
                 ForEach(bursts.filter { $0.state == .done }) { burst in
                     ActivityLineView(burst: burst, review: { _ in }, expanded: burst.kind == .edit)
                 }
-                Text("FAILED").nwSectionLabel().padding(.top, NW.Space.s)
+                Text("FAILED").shSectionLabel().padding(.top, SH.Space.s)
                 ActivityLineView(burst: failed)
-                Text("LIVE").nwSectionLabel().padding(.top, NW.Space.s)
+                Text("LIVE").shSectionLabel().padding(.top, SH.Space.s)
                 ActivityLineView(burst: live)
                 Spacer(minLength: 0)
             }
             .padding(32)
             .frame(width: size.width, height: size.height, alignment: .topLeading)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
     }
 
-    /// The NWThread board's parts: bubbles (hovered, showing its time, and steered), attachment
+    /// The SHThread board's parts: bubbles (hovered, showing its time, and steered), attachment
     /// chips, thinking open and live, the changes card, a hovered turn's footer and a turn error.
     @Test func threadParts() async throws {
-        let changes = NWChangesCard(title: "Edited 4 files", added: 149, removed: 63, files: [
-            NWChangedFile(path: "Sources/ShepherdApp/DesktopNativeThreadView.swift", directory: "Sources/ShepherdApp/", name: "DesktopNativeThreadView.swift", status: .modified, added: 58, removed: 41),
-            NWChangedFile(path: "Sources/ShepherdApp/ToolRow.swift", directory: "Sources/ShepherdApp/", name: "ToolRow.swift", status: .modified, added: 12, removed: 4),
-            NWChangedFile(path: "App/iOS/ThreadView.swift", directory: "App/iOS/", name: "ThreadView.swift", status: .modified, added: 31, removed: 18),
-            NWChangedFile(path: "Tests/ShepherdAppTests/ToolPreviewTests.swift", directory: "Tests/ShepherdAppTests/", name: "ToolPreviewTests.swift", status: .added, added: 48, removed: 0),
+        let changes = SHChangesCard(title: "Edited 4 files", added: 149, removed: 63, files: [
+            SHChangedFile(path: "Sources/ShepherdApp/DesktopNativeThreadView.swift", directory: "Sources/ShepherdApp/", name: "DesktopNativeThreadView.swift", status: .modified, added: 58, removed: 41),
+            SHChangedFile(path: "Sources/ShepherdApp/ToolRow.swift", directory: "Sources/ShepherdApp/", name: "ToolRow.swift", status: .modified, added: 12, removed: 4),
+            SHChangedFile(path: "App/iOS/ThreadView.swift", directory: "App/iOS/", name: "ThreadView.swift", status: .modified, added: 31, removed: 18),
+            SHChangedFile(path: "Tests/ShepherdAppTests/ToolPreviewTests.swift", directory: "Tests/ShepherdAppTests/", name: "ToolPreviewTests.swift", status: .added, added: 48, removed: 0),
         ], onReview: {}, onOpen: { _ in }, onUndo: {})
         let size = CGSize(width: 900, height: 900)
         try await Preview.render("thread-parts", size: size) {
             VStack(alignment: .leading, spacing: 20) {
-                NWUserBubble("Restyle the thread view to the spec and split the work however you like.", timestamp: "2:41 PM",
+                SHUserBubble("Restyle the thread view to the spec and split the work however you like.", timestamp: "2:41 PM",
                              revealed: true)
-                NWUserBubble("Also bump the tool row height to 28.", timestamp: "2:44 PM", revealed: true, origin: .steered)
-                HStack(spacing: NW.Space.s) {
-                    NWAttachmentChip("Spec.dc.html") {}
-                    NWAttachmentChip("screenshot.png", thumbnail: Image(systemName: "photo"))
+                SHUserBubble("Also bump the tool row height to 28.", timestamp: "2:44 PM", revealed: true, origin: .steered)
+                HStack(spacing: SH.Space.s) {
+                    SHAttachmentChip("Spec.dc.html") {}
+                    SHAttachmentChip("screenshot.png", thumbnail: Image(systemName: "photo"))
                 }
-                NWThinking("Thought for 6s", text: "The tool summary row is 28pt elsewhere. I’ll keep it a minimum, not a fixed height, so large text sizes still fit.",
+                SHThinking("Thought for 6s", text: "The tool summary row is 28pt elsewhere. I’ll keep it a minimum, not a fixed height, so large text sizes still fit.",
                            isExpanded: .constant(true))
-                NWThinking("Thought for 4s", text: "Check the labels first.", isExpanded: .constant(false))
-                NWThinking("Thought for 10s", text: "", isExpanded: .constant(false), spokenTitle: "Thought for 10 seconds")
-                NWThinking.live()
+                SHThinking("Thought for 4s", text: "Check the labels first.", isExpanded: .constant(false))
+                SHThinking("Thought for 10s", text: "", isExpanded: .constant(false), spokenTitle: "Thought for 10 seconds")
+                SHThinking.live()
                 changes
-                NWTurnFooter(meta: "2:44 PM · 3m 12s · 23 tool calls", link: "3 subagents", onLink: {}, onCopy: {}, onRetry: {},
+                SHTurnFooter(meta: "2:44 PM · 3m 12s · 23 tool calls", link: "3 subagents", onLink: {}, onCopy: {}, onRetry: {},
                              revealed: true)
-                NWTurnError(NWTurnError.Content(NativeTurnError(text: "529 overloaded", provider: "anthropic", model: "claude-opus-4-5",
+                SHTurnError(SHTurnError.Content(NativeTurnError(text: "529 overloaded", provider: "anthropic", model: "claude-opus-4-5",
                                                                 at: 1_790_281_471_000)), retry: {})
                 Spacer(minLength: 0)
             }
             .padding(32)
             .frame(width: size.width, height: size.height, alignment: .topLeading)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
     }
 
@@ -706,7 +706,7 @@ struct ThreadPreviewTests {
             }
             .padding(32)
             .frame(width: size.width, height: size.height, alignment: .topLeading)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
     }
 
@@ -740,7 +740,7 @@ struct ThreadPreviewTests {
             }
             .padding(32)
             .frame(width: size.width, height: size.height, alignment: .topLeading)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
     }
 
@@ -750,39 +750,39 @@ struct ThreadPreviewTests {
                      answer: { _ in }, setHidden: { _ in })
     }
 
-    /// NWComposer board: idle, focused with text, running, with an attachment; and its menus.
+    /// SHComposer board: idle, focused with text, running, with an attachment; and its menus.
     @Test func composerStates() async throws {
         func controls(stop: Bool = false, enabled: Bool = false) -> some View {
             Group {
-                Button {} label: { Image(systemName: "paperclip") }.buttonStyle(.nwIcon(size: NWComposerMetrics.chipHeight))
-                Button {} label: { NWModelSettingsLabel(model: "claude-opus", thinking: "Medium") }
-                    .buttonStyle(.nwComposerChip())
+                Button {} label: { Image(systemName: "paperclip") }.buttonStyle(.shIcon(size: SHComposerMetrics.chipHeight))
+                Button {} label: { SHModelSettingsLabel(model: "claude-opus", thinking: "Medium") }
+                    .buttonStyle(.shComposerChip())
                 Spacer(minLength: 8)
                 BranchChipMenu(branch: AgentBranchLabel(kind: .worktree, branch: "agent/swiftui-previews", changedFiles: 3),
                                directory: nil, showChanges: nil)
-                NWComposerActionButton(stop ? .stop : .send, enabled: stop || enabled) {}
+                SHComposerActionButton(stop ? .stop : .send, enabled: stop || enabled) {}
             }
         }
         func field(_ text: String, placeholder: Bool) -> some View {
-            Text(text).font(.nw(.body)).foregroundStyle(placeholder ? Color.nw.textTertiary : Color.nw.textPrimary)
+            Text(text).font(.sh(.body)).foregroundStyle(placeholder ? Color.sh.textTertiary : Color.sh.textPrimary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         let size = CGSize(width: 1450, height: 880)
         try await Preview.render("composer-states", size: size) {
             HStack(alignment: .top, spacing: 32) {
                 VStack(alignment: .leading, spacing: 24) {
-                    NWComposer(isFocused: false) { field("Follow up, or / for commands…", placeholder: true) } controls: { controls() }
-                    NWComposer(isFocused: true) { field("Make the reviewer check dark mode too", placeholder: false) } controls: { controls(enabled: true) }
-                    NWComposer(isFocused: false) { field("Follow up, or / for commands…", placeholder: true) } controls: { controls(stop: true) }
-                    NWComposer(isFocused: false) {
-                        NWAttachmentChip("thread-spacing.png", thumbnail: Image(systemName: "photo")) {}
+                    SHComposer(isFocused: false) { field("Follow up, or / for commands…", placeholder: true) } controls: { controls() }
+                    SHComposer(isFocused: true) { field("Make the reviewer check dark mode too", placeholder: false) } controls: { controls(enabled: true) }
+                    SHComposer(isFocused: false) { field("Follow up, or / for commands…", placeholder: true) } controls: { controls(stop: true) }
+                    SHComposer(isFocused: false) {
+                        SHAttachmentChip("thread-spacing.png", thumbnail: Image(systemName: "photo")) {}
                     } field: { field("Match the spacing in this screenshot", placeholder: false) } controls: { controls(enabled: true) }
                 }
                 .frame(width: 600)
                 VStack(alignment: .leading, spacing: 24) {
-                    NWSlashMenu(commands: Self.slashCommands, total: 23, query: "re", selection: .constant(0)) { _ in }
+                    SHSlashMenu(commands: Self.slashCommands, total: 23, query: "re", selection: .constant(0)) { _ in }
                     HStack(alignment: .top, spacing: 24) {
-                        NWModelPicker(query: .constant(""), sections: Self.boardModels, selection: .constant(0), shortcut: "⇧⌘M",
+                        SHModelPicker(query: .constant(""), sections: Self.boardModels, selection: .constant(0), shortcut: "⇧⌘M",
                                       onChoose: { _ in }, onClose: {})
                         VStack(alignment: .leading, spacing: 24) {
                             Self.modelSettings(speed: "fast")
@@ -790,12 +790,12 @@ struct ThreadPreviewTests {
                         }
                     }
                 }
-                .frame(width: NWComposerMetrics.modelPickerWidth + 24 + NWComposerMetrics.modelSettingsWidth)
+                .frame(width: SHComposerMetrics.modelPickerWidth + 24 + SHComposerMetrics.modelSettingsWidth)
                 Spacer(minLength: 0)
             }
             .padding(32)
             .frame(width: size.width, height: size.height, alignment: .topLeading)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
     }
 }
@@ -824,7 +824,7 @@ private struct RetryFootersThread: View {
         .padding(.horizontal, AppLayout.gutter)
         .padding(.top, AppLayout.threadTop)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
     }
 }
 
@@ -847,7 +847,7 @@ private struct HoveredReplyThread: View {
         .padding(.horizontal, AppLayout.gutter)
         .padding(.top, AppLayout.threadTop)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
     }
 }
 
@@ -876,7 +876,7 @@ private struct DetachedThread: View {
             Composer(store: store, input: ThreadInput(), active: true, isFocused: false, agentName: "Investigate", hasTurns: true,
                      gutter: AppLayout.gutter, jumpToLatest: {})
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
     }
 }
 
@@ -1199,7 +1199,7 @@ enum ActivityThreads {
         ])
     }
 
-    /// The NWThread board's prose sample.
+    /// The SHThread board's prose sample.
     static var prose: NativeThreadSnapshot {
         let t0 = now - 2 * 60_000
         return snapshot([

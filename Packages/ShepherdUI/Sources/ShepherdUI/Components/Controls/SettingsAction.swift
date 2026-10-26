@@ -1,41 +1,41 @@
 import SwiftUI
 
 /// Project Browser's text-only delete actions and its two confirmation buttons.
-public struct NWSettingsActionStyle: ButtonStyle {
+public struct SHSettingsActionStyle: ButtonStyle {
     public enum Kind { case quietDanger, cancel, confirm }
     let kind: Kind
 
     public init(_ kind: Kind) { self.kind = kind }
 
     public func makeBody(configuration: Configuration) -> some View {
-        NWSettingsAction(configuration: configuration, kind: kind)
+        SHSettingsAction(configuration: configuration, kind: kind)
     }
 }
 
-private struct NWSettingsAction: View {
+private struct SHSettingsAction: View {
     let configuration: ButtonStyleConfiguration
-    let kind: NWSettingsActionStyle.Kind
+    let kind: SHSettingsActionStyle.Kind
     @Environment(\.isEnabled) private var enabled
     @State private var hovering = false
 
     var body: some View {
         let quiet = kind == .quietDanger
-        let radius = quiet ? NW.Radius.s : NWSettingsControlMetrics.radius
+        let radius = quiet ? SH.Radius.s : SHSettingsControlMetrics.radius
         let fill: Color = switch kind {
-        case .quietDanger: hovering && enabled ? .nw.failedTint : .clear
-        case .cancel: hovering && enabled ? .nw.bgHover : .nw.bgRaised
-        case .confirm: hovering && enabled ? .nw.projectCookieConfirmHover : .nw.projectCookieConfirm
+        case .quietDanger: hovering && enabled ? .sh.failedTint : .clear
+        case .cancel: hovering && enabled ? .sh.bgHover : .sh.bgRaised
+        case .confirm: hovering && enabled ? .sh.projectCookieConfirmHover : .sh.projectCookieConfirm
         }
         configuration.label
-            .font(.nwSans(NWSettingsNavMetrics.subTextSize, .medium))
-            .foregroundStyle(kind == .quietDanger ? Color.nw.projectCookieDanger : kind == .confirm ? (hovering && enabled ? Color.nw.projectCookieConfirmTextHover : Color.nw.textOnRunning) : Color.nw.textPrimary)
-            .padding(.horizontal, quiet ? NWSettingsControlMetrics.fieldPadding : NW.Space.l + (kind == .cancel ? NWSettingsNavMetrics.borderWidth : 0))
-            .frame(minHeight: quiet ? NW.Height.controlM : NWSettingsControlMetrics.controlHeight)
+            .font(.shSans(SHSettingsNavMetrics.subTextSize, .medium))
+            .foregroundStyle(kind == .quietDanger ? Color.sh.projectCookieDanger : kind == .confirm ? (hovering && enabled ? Color.sh.projectCookieConfirmTextHover : Color.sh.textOnRunning) : Color.sh.textPrimary)
+            .padding(.horizontal, quiet ? SHSettingsControlMetrics.fieldPadding : SH.Space.l + (kind == .cancel ? SHSettingsNavMetrics.borderWidth : 0))
+            .frame(minHeight: quiet ? SH.Height.controlM : SHSettingsControlMetrics.controlHeight)
             .background(fill, in: RoundedRectangle(cornerRadius: radius))
-            .nwBorder(kind == .cancel ? Color.nw.lineStrong : .clear, radius: radius, width: NWSettingsNavMetrics.borderWidth)
+            .shBorder(kind == .cancel ? Color.sh.lineStrong : .clear, radius: radius, width: SHSettingsNavMetrics.borderWidth)
             .contentShape(RoundedRectangle(cornerRadius: radius))
-            .nwEnabledOpacity(enabled)
+            .shEnabledOpacity(enabled)
             .onHover { hovering = $0 }
-            .nwFocusRing(radius: radius, color: .nw.running)
+            .shFocusRing(radius: radius, color: .sh.running)
     }
 }

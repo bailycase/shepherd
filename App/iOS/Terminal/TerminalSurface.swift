@@ -3,7 +3,7 @@ import UIKit
 import SwiftTerm
 import ShepherdUI
 
-/// A host terminal session's screen: SwiftTerm's iOS `TerminalView`, on Night Watch's terminal
+/// A host terminal session's screen: SwiftTerm's iOS `TerminalView`, on Shepherd Design's terminal
 /// colors in Geist Mono. The view belongs to its `MobileTerminalSession`, so a tab shown again
 /// reuses it; what it shows always comes from the host (the attach replay, then live output),
 /// and what is typed into it goes to the host.
@@ -67,7 +67,7 @@ final class TerminalSurfaceView: TerminalView, TerminalViewDelegate {
     /// The code size of the type ramp, following Dynamic Type up to a size that still leaves a
     /// usable grid.
     func applyFont() {
-        let base = NWTextStyle.code.size
+        let base = SHTextStyle.code.size
         let size = UIFontMetrics(forTextStyle: .callout).scaledValue(for: base, compatibleWith: traitCollection)
         let clamped = min(size, MobileLayout.terminalMaximumFontSize)
         guard clamped != fontSize else { return }
@@ -80,7 +80,7 @@ final class TerminalSurfaceView: TerminalView, TerminalViewDelegate {
         setFonts(normal: regular, bold: bold, italic: regular, boldItalic: bold)
     }
 
-    /// Night Watch's terminal palette for the appearance: its window surface, text, lantern cursor,
+    /// Shepherd Design's terminal palette for the appearance: its window surface, text, lantern cursor,
     /// selection, and the 16 ANSI colors.
     func apply(colorScheme: ColorScheme) {
         guard scheme != colorScheme else { return }

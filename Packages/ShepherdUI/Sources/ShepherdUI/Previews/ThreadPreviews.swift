@@ -1,22 +1,22 @@
 import SwiftUI
 
 #Preview("Messages") {
-    NWPreviewBoth {
-        VStack(alignment: .leading, spacing: NW.Space.xl) {
-            NWUserBubble("Restyle the thread view to the spec and split the work however you like.", timestamp: "2:41 PM",
+    SHPreviewBoth {
+        VStack(alignment: .leading, spacing: SH.Space.xl) {
+            SHUserBubble("Restyle the thread view to the spec and split the work however you like.", timestamp: "2:41 PM",
                          revealed: true)
-            NWQueueDivider(count: 2)
-            NWUserBubble("Also bump the tool row height to 28.", timestamp: "2:44 PM", revealed: true)
-            NWUserBubble("Use table-driven tests, like ledger_test.go.", timestamp: "2:47 PM", revealed: true, origin: .steered)
-            HStack(spacing: NW.Space.s) {
-                NWAttachmentChip("Spec.dc.html") {}
-                NWAttachmentChip("screenshot.png", thumbnail: Image(systemName: "photo"))
+            SHQueueDivider(count: 2)
+            SHUserBubble("Also bump the tool row height to 28.", timestamp: "2:44 PM", revealed: true)
+            SHUserBubble("Use table-driven tests, like ledger_test.go.", timestamp: "2:47 PM", revealed: true, origin: .steered)
+            HStack(spacing: SH.Space.s) {
+                SHAttachmentChip("Spec.dc.html") {}
+                SHAttachmentChip("screenshot.png", thumbnail: Image(systemName: "photo"))
             }
-            NWAgentProse([
+            SHAgentProse([
                 .paragraph("Tool rows now derive a `ToolPreview` once from the call's arguments. Three things changed:"),
                 .list(ordered: false, start: 1, items: [
-                    NWProseListItem(text: "Bash rows show the command, truncated at the tail."),
-                    NWProseListItem(text: "Read and edit rows show the path, truncated at the head."),
+                    SHProseListItem(text: "Bash rows show the command, truncated at the tail."),
+                    SHProseListItem(text: "Read and edit rows show the path, truncated at the head."),
                 ]),
                 .code("enum ToolPreview {\n  case command(String)\n}", language: "swift"),
             ])
@@ -26,65 +26,65 @@ import SwiftUI
 }
 
 #Preview("Question record") {
-    NWPreviewBoth {
-        VStack(alignment: .leading, spacing: NW.Space.xl) {
-            NWQuestionRecord(question: "How should I handle Horizon’s uncommitted edits?",
+    SHPreviewBoth {
+        VStack(alignment: .leading, spacing: SH.Space.xl) {
+            SHQuestionRecord(question: "How should I handle Horizon’s uncommitted edits?",
                              title: "Compare, keep what’s unique, then go through GitHub", answered: true,
                              timestamp: "2:51 PM · answered", revealed: true)
-            NWQuestionRecord(question: "Name for the release branch?", text: "release/2026-09", answered: true,
+            SHQuestionRecord(question: "Name for the release branch?", text: "release/2026-09", answered: true,
                              timestamp: "2:53 PM · answered", revealed: true)
-            NWQuestionRecord(question: "Clear the session?", answered: false)
+            SHQuestionRecord(question: "Clear the session?", answered: false)
         }
         .frame(width: 640)
     }
 }
 
 #Preview("Rich prose") {
-    NWPreviewBoth {
-        NWAgentProse([
-            .table(NWProseTable(
+    SHPreviewBoth {
+        SHAgentProse([
+            .table(SHProseTable(
                 alignments: [.leading, .trailing],
                 header: ["Area", "Tools"],
-                rows: [["Terminals", NWProseInline.attributed("`terminal_list`, `terminal_open`, `terminal_run`")],
-                       ["Notifications and review", NWProseInline.attributed("`notify`, `review_diff`")]],
+                rows: [["Terminals", SHProseInline.attributed("`terminal_list`, `terminal_open`, `terminal_run`")],
+                       ["Notifications and review", SHProseInline.attributed("`notify`, `review_diff`")]],
                 markdown: "| Area | Tools |")),
             .list(ordered: false, start: 1, items: [
-                NWProseListItem(text: "Parse tables", task: .done),
-                NWProseListItem(text: "Nest lists", task: .open, children: [
-                    .list(ordered: true, start: 1, items: [NWProseListItem(text: "to any depth")]),
+                SHProseListItem(text: "Parse tables", task: .done),
+                SHProseListItem(text: "Nest lists", task: .open, children: [
+                    .list(ordered: true, start: 1, items: [SHProseListItem(text: "to any depth")]),
                 ]),
             ]),
-            .image(NWProseImage(alt: "Build status", source: "https://ci.example.com/badge.png")),
+            .image(SHProseImage(alt: "Build status", source: "https://ci.example.com/badge.png")),
             .details(summary: "Full log", blocks: [.paragraph("41 tests passed.")]),
             .code("graph TD\n  A --> B", language: "mermaid"),
-            .footnotes([NWProseFootnote(number: 1, text: "Gathered at the end of the message.")]),
+            .footnotes([SHProseFootnote(number: 1, text: "Gathered at the end of the message.")]),
         ])
         .frame(width: 640)
     }
 }
 
 #Preview("Thinking, footer, error") {
-    NWPreviewBoth {
-        VStack(alignment: .leading, spacing: NW.Space.xl) {
-            NWThinking("Thought for 4s", text: "Check the labels first.", isExpanded: .constant(false))
-            NWThinking("Thought for 10s", text: "", isExpanded: .constant(false), spokenTitle: "Thought for 10 seconds")
-            NWThinking("Thought for 6s", text: "I'll keep it a minimum, not a fixed height, so large text sizes still fit.", isExpanded: .constant(true))
-            NWThinking("Thought", blocks: [
+    SHPreviewBoth {
+        VStack(alignment: .leading, spacing: SH.Space.xl) {
+            SHThinking("Thought for 4s", text: "Check the labels first.", isExpanded: .constant(false))
+            SHThinking("Thought for 10s", text: "", isExpanded: .constant(false), spokenTitle: "Thought for 10 seconds")
+            SHThinking("Thought for 6s", text: "I'll keep it a minimum, not a fixed height, so large text sizes still fit.", isExpanded: .constant(true))
+            SHThinking("Thought", blocks: [
                 .paragraph(AttributedString("Inspecting SSH config", attributes: AttributeContainer().inlinePresentationIntent(.stronglyEmphasized))),
                 .paragraph(AttributedString("Checking ~/.ssh/config for the runner host…")),
             ], isExpanded: .constant(true))
-            NWThinking.live()
-            NWTurnFooter(meta: "2:44 PM · 3m 12s · 23 tool calls", link: "3 subagents", onLink: {}, onCopy: {}, onRetry: {},
+            SHThinking.live()
+            SHTurnFooter(meta: "2:44 PM · 3m 12s · 23 tool calls", link: "3 subagents", onLink: {}, onCopy: {}, onRetry: {},
                          revealed: true)
-            NWJumpToLatest {}
+            SHJumpToLatest {}
         }
         .frame(width: 480)
     }
 }
 
-extension NWTurnError.Content {
+extension SHTurnError.Content {
     /// OpenAI refusing a key (TurnErrors › The error card).
-    static let previewAuth = NWTurnError.Content(
+    static let previewAuth = SHTurnError.Content(
         title: "OpenAI rejected the API key",
         message: [.text("Incorrect API key provided: "), .code("sk-svcac…fvMA"), .text(". You can find your API key at "),
                   .link(display: "platform.openai.com/account/api-keys", url: "https://platform.openai.com/account/api-keys"), .text(".")],
@@ -100,35 +100,35 @@ extension NWTurnError.Content {
 }
 
 #Preview("Turn errors") {
-    NWPreviewBoth {
-        VStack(alignment: .leading, spacing: NW.Space.xl) {
-            NWTurnError(.previewAuth, retry: {})
-            NWTurnError(.previewAuth, detailsOpen: true, retry: {})
-            NWTurnError(.previewAuth, folded: true)
-            NWTurnError(NWTurnError.Content(glyph: "hourglass", title: "OpenAI didn’t respond in time", message: [.text("Request timed out.")],
+    SHPreviewBoth {
+        VStack(alignment: .leading, spacing: SH.Space.xl) {
+            SHTurnError(.previewAuth, retry: {})
+            SHTurnError(.previewAuth, detailsOpen: true, retry: {})
+            SHTurnError(.previewAuth, folded: true)
+            SHTurnError(SHTurnError.Content(glyph: "hourglass", title: "OpenAI didn’t respond in time", message: [.text("Request timed out.")],
                                             chips: ["timeout"], source: "gpt-6-astra · OpenAI", tries: "Tried 3 times over 31m", time: "6:02 PM"),
                         retry: {})
-            NWRetryLine(count: "2 of 3") { _ in "OpenAI is overloaded · retrying in 8s" }
+            SHRetryLine(count: "2 of 3") { _ in "OpenAI is overloaded · retrying in 8s" }
         }
         .frame(width: 760)
     }
 }
 
 #Preview("Activity lines") {
-    NWPreviewBoth {
-        VStack(alignment: .leading, spacing: NW.Space.s) {
-            NWActivityLine(kind: .explore, label: "Explored 7 files", meta: "read 5 · search 2 · 0.9s") {}
-            NWActivityLine(kind: .edit, label: "Edited 3 files", meta: "+67 −46", isExpanded: true) {}
-            NWActivityCalls([
-                NWActivityCallRow(id: "1", label: "edit", detail: "Sources/ShepherdApp/DesktopNativeThreadView.swift", isPath: true, stat: "+58 −41"),
-                NWActivityCallRow(id: "2", label: "edit", detail: "App/iOS/ThreadView.swift", isPath: true, stat: "+0 −4"),
-                NWActivityCallRow(id: "3", label: "edit", detail: "Tests/ShepherdAppTests/NativePresentationTests.swift", isPath: true, stat: "+9 −1"),
+    SHPreviewBoth {
+        VStack(alignment: .leading, spacing: SH.Space.s) {
+            SHActivityLine(kind: .explore, label: "Explored 7 files", meta: "read 5 · search 2 · 0.9s") {}
+            SHActivityLine(kind: .edit, label: "Edited 3 files", meta: "+67 −46", isExpanded: true) {}
+            SHActivityCalls([
+                SHActivityCallRow(id: "1", label: "edit", detail: "Sources/ShepherdApp/DesktopNativeThreadView.swift", isPath: true, stat: "+58 −41"),
+                SHActivityCallRow(id: "2", label: "edit", detail: "App/iOS/ThreadView.swift", isPath: true, stat: "+0 −4"),
+                SHActivityCallRow(id: "3", label: "edit", detail: "Tests/ShepherdAppTests/NativePresentationTests.swift", isPath: true, stat: "+9 −1"),
             ], onSelect: { _ in }, onShowAll: { _ in })
-            NWActivityLine(kind: .run, label: "Ran tests", meta: "swift test · exit 1 · 8.4s", status: .failed) {}
-            NWActivityLine(kind: .run, label: "Building", meta: "xcodebuild -scheme 'Shepherd (Dev)' build",
+            SHActivityLine(kind: .run, label: "Ran tests", meta: "swift test · exit 1 · 8.4s", status: .failed) {}
+            SHActivityLine(kind: .run, label: "Building", meta: "xcodebuild -scheme 'Shepherd (Dev)' build",
                            status: .live(since: Date().addingTimeInterval(-12), tail: ["CompileSwift ThreadView.swift", "Linking Shepherd …"]))
-            NWActivityLine(kind: .drew, label: "Drew 4 boards", meta: "3 directions + phone") {}
-            NWActivityLine(kind: .checked, label: "Checked against acme-web", meta: "0 off-system values") {}
+            SHActivityLine(kind: .drew, label: "Drew 4 boards", meta: "3 directions + phone") {}
+            SHActivityLine(kind: .checked, label: "Checked against acme-web", meta: "0 off-system values") {}
         }
         .frame(width: 560)
     }
@@ -136,13 +136,13 @@ extension NWTurnError.Content {
 
 /// A label wider than the line truncates (and drops its meta) instead of widening the thread.
 #Preview("Activity lines, long labels") {
-    NWPreviewBoth {
-        VStack(alignment: .leading, spacing: NW.Space.s) {
-            NWActivityLine(kind: .edit, label: "Updated withdrawals-mobile-approve, withdrawals-desktop-approve and withdrawals-claims-details",
+    SHPreviewBoth {
+        VStack(alignment: .leading, spacing: SH.Space.s) {
+            SHActivityLine(kind: .edit, label: "Updated withdrawals-mobile-approve, withdrawals-desktop-approve and withdrawals-claims-details",
                            meta: "edited") {}
-            NWActivityLine(kind: .browser, label: "Opened localhost:5173/checkout/withdrawals/mobile/approve/review/summary in Browser", meta: "1.2s") {}
-            NWActivityLine(kind: .other, label: "Used shepherd_child_message", meta: #"{"id":"native-48c1466f-3255-4d0a-9c1e-5b7f1e2a6b10","delivered":true}"#) {}
-            NWActivityLine(kind: .explore, label: "Search failed", meta: "menuOpen|has-next-page|width:390px|<table|summary-row · invalid regular expression",
+            SHActivityLine(kind: .browser, label: "Opened localhost:5173/checkout/withdrawals/mobile/approve/review/summary in Browser", meta: "1.2s") {}
+            SHActivityLine(kind: .other, label: "Used shepherd_child_message", meta: #"{"id":"native-48c1466f-3255-4d0a-9c1e-5b7f1e2a6b10","delivered":true}"#) {}
+            SHActivityLine(kind: .explore, label: "Search failed", meta: "menuOpen|has-next-page|width:390px|<table|summary-row · invalid regular expression",
                            status: .failed) {}
         }
         .frame(width: 388)
@@ -150,30 +150,30 @@ extension NWTurnError.Content {
 }
 
 #Preview("Changes card") {
-    NWPreviewBoth {
-        NWChangesCard(title: "2 files changed", added: 70, removed: 45, files: [
-            NWChangedFile(path: "Sources/ShepherdApp/ToolRow.swift", directory: "Sources/ShepherdApp/", name: "ToolRow.swift", status: .modified, added: 12, removed: 4),
-            NWChangedFile(path: "Tests/ToolPreviewTests.swift", directory: "Tests/", name: "ToolPreviewTests.swift", status: .added, added: 58, removed: 41),
+    SHPreviewBoth {
+        SHChangesCard(title: "2 files changed", added: 70, removed: 45, files: [
+            SHChangedFile(path: "Sources/ShepherdApp/ToolRow.swift", directory: "Sources/ShepherdApp/", name: "ToolRow.swift", status: .modified, added: 12, removed: 4),
+            SHChangedFile(path: "Tests/ToolPreviewTests.swift", directory: "Tests/", name: "ToolPreviewTests.swift", status: .added, added: 58, removed: 41),
         ], onReview: {}, onOpen: { _ in })
         .frame(width: 560)
     }
 }
 
 #Preview("Response visibility") {
-    NWPreviewBoth {
-        HStack(alignment: .top, spacing: NW.Space.xxl) {
-            VStack(alignment: .leading, spacing: NW.Space.s) {
-                NWLiveLine("Waiting for response", since: .now.addingTimeInterval(-4), help: "Request sent. No reply from the model yet.")
-                NWThinking.live(since: .now.addingTimeInterval(-18))
-                NWThinking.live(since: .now.addingTimeInterval(-30), blocks: [.paragraph("**Choosing a screen for the composer**"),
+    SHPreviewBoth {
+        HStack(alignment: .top, spacing: SH.Space.xxl) {
+            VStack(alignment: .leading, spacing: SH.Space.s) {
+                SHLiveLine("Waiting for response", since: .now.addingTimeInterval(-4), help: "Request sent. No reply from the model yet.")
+                SHThinking.live(since: .now.addingTimeInterval(-18))
+                SHThinking.live(since: .now.addingTimeInterval(-30), blocks: [.paragraph("**Choosing a screen for the composer**"),
                                                                              .paragraph("Compared keeping the composer under the thread.")],
                                 isExpanded: .constant(true))
-                NWActivityLine(kind: .edit, label: "Writing", meta: "App/iOS/Thread/DuoComposerPlacement.swift",
+                SHActivityLine(kind: .edit, label: "Writing", meta: "App/iOS/Thread/DuoComposerPlacement.swift",
                                status: .live(since: .now.addingTimeInterval(-6), tail: []), received: "18 KB received")
-                NWRetryLine(count: "2 of 3") { _ in "Anthropic returned 529 overloaded · retrying in 8s" }
+                SHRetryLine(count: "2 of 3") { _ in "Anthropic returned 529 overloaded · retrying in 8s" }
             }
             .frame(width: 520)
-            NWResponseTiming(NWResponseTimingModel(
+            SHResponseTiming(SHResponseTimingModel(
                 source: "claude-opus-4-5 · Anthropic", total: "45.0s", totalSeconds: 45, axisEnd: "45s",
                 segments: [.init(label: "Waiting for response", value: "1.4s", seconds: 1.4, tone: .waiting),
                            .init(label: "Thinking", value: "30.4s", seconds: 30.4, tone: .thinking),
@@ -183,7 +183,7 @@ extension NWTurnError.Content {
                         .init(label: "Response ended", value: "45.0s")],
                 usage: "14.2k in · 2.9k out",
                 note: "The phases follow one another, so they add up to the total. Times are what this Mac saw."))
-            .nwPopover()
+            .shPopover()
         }
     }
 }

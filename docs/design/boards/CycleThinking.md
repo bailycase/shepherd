@@ -5,7 +5,7 @@ User requirement: Shift-Tab cycles through thinking levels, and Settings > Keybo
 ## Implementation checklist
 
 - Add "Cycle thinking level" after "Choose model…" in Settings > Keyboard > Thread. The title comes from `ShortcutAction.cycleThinkingLevel.sentenceTitle`; the keycaps come from `KeybindingsStore.display`.
-- Default keycaps are ⇧ and ⇥, using the existing `NWKeycap` styling. No new glyphs, colors, sizes, spacing or radii.
+- Default keycaps are ⇧ and ⇥, using the existing `SHKeycap` styling. No new glyphs, colors, sizes, spacing or radii.
 - Keep the existing shortcut recorder, "Press keys…", conflict feedback, individual Reset and Reset all shortcuts. Shift-Tab is accepted only for this action; other custom chords still need Command.
 - Explain the exception with "Click a shortcut to record a new one. Shortcuts must include ⌘, except ⇧⇥ for cycling thinking levels."
 - Cycle in the focused existing-thread, New thread and New design composers. Use the levels offered by their real store or draft, in menu order, wrapping to the first level. Count every press when SwiftUI combines input into one view update.

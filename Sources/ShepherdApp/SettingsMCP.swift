@@ -19,27 +19,27 @@ struct MCPSettings: View {
     @State private var sheet: MCPSheet?
     @State private var removing: String?
     @State private var importing: [MCPServerEntry]?
-    @State private var toast: NWToast?
+    @State private var toast: SHToast?
 
     var body: some View {
         let rows = store.rows(filter: filter, query: query)
         VStack(alignment: .leading, spacing: AppLayout.mcpBlockSpacing) {
             header
             HStack(alignment: .top, spacing: AppLayout.mcpColumnSpacing) {
-                VStack(alignment: .leading, spacing: NW.Space.l) {
+                VStack(alignment: .leading, spacing: SH.Space.l) {
                     toolbar
                     if let invalid = store.invalidMessage {
-                        HStack(spacing: NW.Space.m) {
-                            NWInlineProblem("\(invalid). Fix it to edit servers here.")
-                            Button("Open mcp.json") { NSWorkspace.shared.open(store.dependencies.file.url) }.buttonStyle(.nwLink)
+                        HStack(spacing: SH.Space.m) {
+                            SHInlineProblem("\(invalid). Fix it to edit servers here.")
+                            Button("Open mcp.json") { NSWorkspace.shared.open(store.dependencies.file.url) }.buttonStyle(.shLink)
                         }
-                        .nwTransition(.disclosure)
+                        .shTransition(.disclosure)
                     } else if let problem = store.problem {
-                        HStack(spacing: NW.Space.m) {
-                            NWInlineProblem(problem)
-                            Button("Dismiss") { store.problem = nil }.buttonStyle(.nwLink)
+                        HStack(spacing: SH.Space.m) {
+                            SHInlineProblem(problem)
+                            Button("Dismiss") { store.problem = nil }.buttonStyle(.shLink)
                         }
-                        .nwTransition(.disclosure)
+                        .shTransition(.disclosure)
                     }
                     ScrollView(.vertical) {
                         MCPServerList(rows: rows, details: store.details, editable: store.isEditable,
@@ -57,9 +57,9 @@ struct MCPSettings: View {
             }
             .frame(maxHeight: .infinity, alignment: .top)
         }
-        .nwAnimation(.disclosure, value: expanded)
-        .nwAnimation(.list, value: rows.map(\.id))
-        .nwAnimation(.disclosure, value: store.problem)
+        .shAnimation(.disclosure, value: expanded)
+        .shAnimation(.list, value: rows.map(\.id))
+        .shAnimation(.disclosure, value: store.problem)
         .onAppear {
             store.reload()
             store.refreshIfStale()
@@ -106,17 +106,17 @@ struct MCPSettings: View {
                             DialogAction("Replace them", kind: .prominent) { finishImport(batch.entries, replace: true) },
                         ]) { EmptyView() }
         }
-        .nwToast(item: $toast)
+        .shToast(item: $toast)
     }
 
     private var header: some View {
-        HStack(alignment: .bottom, spacing: NW.Space.xl) {
+        HStack(alignment: .bottom, spacing: SH.Space.xl) {
             SettingsHeader(title: "MCP servers",
                            explanation: "Tools from other services the agent can call: your issue tracker, error tracker, database, "
                                + "browser. Global: every thread and automation gets the same servers.")
                 .frame(maxWidth: AppLayout.mcpExplanationWidth, alignment: .leading)
-            Spacer(minLength: NW.Space.l)
-            HStack(spacing: NW.Space.m) {
+            Spacer(minLength: SH.Space.l)
+            HStack(spacing: SH.Space.m) {
                 Menu {
                     Button("From a JSON file…") { importFile() }
                     Button("Paste JSON…") { sheet = .paste }
@@ -125,7 +125,7 @@ struct MCPSettings: View {
                 }
                 .menuStyle(.button)
                 .menuIndicator(.hidden)
-                .buttonStyle(.nw(.secondary))
+                .buttonStyle(.sh(.secondary))
                 .fixedSize()
                 .disabled(!store.isEditable)
                 MCPAddServerButton(editable: store.isEditable) { sheet = .add(.remote) }
@@ -135,10 +135,10 @@ struct MCPSettings: View {
     }
 
     private var toolbar: some View {
-        HStack(spacing: NW.Space.m + NW.Space.xxs) {
-            NWSearchField("Filter servers", text: $query)
+        HStack(spacing: SH.Space.m + SH.Space.xxs) {
+            SHSearchField("Filter servers", text: $query)
                 .frame(width: AppLayout.mcpFilterWidth)
-            NWSegmentedPicker("Show", selection: $filter, options: [
+            SHSegmentedPicker("Show", selection: $filter, options: [
                 (.all, "All \(store.count(.all))"),
                 (.connected, "Connected \(store.count(.connected))"),
                 (.needsYou, "Needs you \(store.count(.needsYou))"),
@@ -179,7 +179,7 @@ struct MCPSettings: View {
         .init(signIn: { store.beginSignIn(name) }, signOut: { store.signOut(name) },
               setDirect: { store.setExposure(name, $0 ? .direct : .proxy) }, chooseTools: { sheet = .tools(name) },
               edit: { sheet = .edit(name) }, reconnect: { store.refresh() },
-              copyJSON: { store.copyJSON(name); toast = NWToast(.done, message: "Copied \(name)’s JSON") },
+              copyJSON: { store.copyJSON(name); toast = SHToast(.done, message: "Copied \(name)’s JSON") },
               remove: { removing = name })
     }
 
@@ -195,7 +195,7 @@ struct MCPSettings: View {
         importing = nil
         do {
             let added = try store.importEntries(entries, replace: replace)
-            toast = NWToast(.done, message: added == 0 ? "Nothing new to import" : "Imported \(added) server\(added == 1 ? "" : "s")")
+            toast = SHToast(.done, message: added == 0 ? "Nothing new to import" : "Imported \(added) server\(added == 1 ? "" : "s")")
         } catch {
             store.problem = "\(error)"
         }
@@ -235,7 +235,7 @@ struct MCPAddServerButton: View {
 
     var body: some View {
         Button(action: action) { Label("Add server", systemImage: "plus") }
-            .buttonStyle(.nw(.primary))
+            .buttonStyle(.sh(.primary))
             .disabled(!editable)
     }
 }
@@ -254,15 +254,15 @@ struct MCPServerList: View {
     let detailActions: (String) -> MCPServerDetail.Actions
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         LazyVStack(spacing: 0) {
             MCPServerListHeader()
             if rows.isEmpty {
                 Text(empty)
-                    .font(.nwSans(AppLayout.mcpNoteSize))
-                    .foregroundStyle(nw.textTertiary)
-                    .frame(maxWidth: .infinity, minHeight: NWMCPMetrics.rowMinHeight)
-                    .nwTransition(.disclosure)
+                    .font(.shSans(AppLayout.mcpNoteSize))
+                    .foregroundStyle(sh.textTertiary)
+                    .frame(maxWidth: .infinity, minHeight: SHMCPMetrics.rowMinHeight)
+                    .shTransition(.disclosure)
             }
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                 let open = expanded == row.id
@@ -273,14 +273,14 @@ struct MCPServerList: View {
                     if open, let detail = details[row.name] {
                         MCPServerDetail(detail, actions: detailActions(row.name))
                             .disabled(!editable)
-                            .nwTransition(.disclosure)
+                            .shTransition(.disclosure)
                     }
                 }
             }
         }
-        .background(nw.bgWindow)
+        .background(sh.bgWindow)
         .clipShape(RoundedRectangle(cornerRadius: AppLayout.mcpCardRadius))
-        .nwBorder(nw.lineSubtle, radius: AppLayout.mcpCardRadius)
+        .shBorder(sh.lineSubtle, radius: AppLayout.mcpCardRadius)
     }
 
 }
@@ -297,60 +297,60 @@ private struct MCPRail: View {
     }
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         VStack(alignment: .leading, spacing: AppLayout.mcpRailSpacing) {
-            VStack(alignment: .leading, spacing: NW.Space.m) {
-                NWSectionHeader("How the agent uses them", style: .settings).padding(.horizontal, NW.Space.xxs)
+            VStack(alignment: .leading, spacing: SH.Space.m) {
+                SHSectionHeader("How the agent uses them", style: .settings).padding(.horizontal, SH.Space.xxs)
                 Text("Servers start with each thread and stop with it, and a running thread keeps the ones it started with. Their tools "
                     + "wait behind a search until the agent needs one; a server set to Direct declares them all up front. Remote servers "
                     + "that use OAuth need you to sign in once; pi keeps the token fresh.")
-                    .nwText(size: AppLayout.mcpRailTextSize, lineHeight: AppLayout.mcpRailLineHeight)
-                    .foregroundStyle(nw.textSecondary)
+                    .shText(size: AppLayout.mcpRailTextSize, lineHeight: AppLayout.mcpRailLineHeight)
+                    .foregroundStyle(sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, NW.Space.xxs)
+                    .padding(.horizontal, SH.Space.xxs)
                 MCPBudget(tokens: store.budget.tokens, fraction: store.budget.fraction, note: store.budget.note)
                     .help("The context meter counts this as part of the system prompt.")
             }
             VStack(alignment: .leading, spacing: 0) {
-                NWSectionHeader("Options", style: .settings).padding(.horizontal, NW.Space.xxs).padding(.bottom, NW.Space.m)
+                SHSectionHeader("Options", style: .settings).padding(.horizontal, SH.Space.xxs).padding(.bottom, SH.Space.m)
                 option("Same servers on every host", note: "Adds, edits and removals go to all hosts. For now, only this Mac.",
                        isOn: $settings.mcpSameEverywhere)
                 option("Also use a repo’s .mcp.json", note: "Off: only the servers on this page, in every repo.",
                        isOn: $settings.mcpProjectConfig)
             }
-            VStack(alignment: .leading, spacing: NW.Space.s) {
-                NWSectionHeader("Hosts", style: .settings) {
+            VStack(alignment: .leading, spacing: SH.Space.s) {
+                SHSectionHeader("Hosts", style: .settings) {
                     Text(store.configPath)
-                        .font(.nwMono(AppLayout.mcpPathSize))
-                        .foregroundStyle(nw.textTertiary)
+                        .font(.shMono(AppLayout.mcpPathSize))
+                        .foregroundStyle(sh.textTertiary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .help(store.dependencies.file.url.path)
                 }
-                .padding(.horizontal, NW.Space.xxs)
-                NWHostStateRow("This Mac", detail: "\(store.connectedCount) connected", mark: .done)
-                    .padding(.horizontal, NW.Space.xxs)
+                .padding(.horizontal, SH.Space.xxs)
+                SHHostStateRow("This Mac", detail: "\(store.connectedCount) connected", mark: .done)
+                    .padding(.horizontal, SH.Space.xxs)
             }
         }
     }
 
     private func option(_ title: String, note: String, isOn: Binding<Bool>) -> some View {
-        let nw = Color.nw
-        return HStack(alignment: .top, spacing: NW.Space.l + NW.Space.xxs) {
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+        let sh = Color.sh
+        return HStack(alignment: .top, spacing: SH.Space.l + SH.Space.xxs) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 Text(title)
-                    .font(.nwSans(AppLayout.mcpOptionTitleSize, .medium))
-                    .foregroundStyle(nw.textPrimary)
+                    .font(.shSans(AppLayout.mcpOptionTitleSize, .medium))
+                    .foregroundStyle(sh.textPrimary)
                 Text(note)
-                    .nwText(size: AppLayout.mcpNoteSize, lineHeight: AppLayout.mcpNoteLineHeight)
-                    .foregroundStyle(nw.textTertiary)
+                    .shText(size: AppLayout.mcpNoteSize, lineHeight: AppLayout.mcpNoteLineHeight)
+                    .foregroundStyle(sh.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
-            Toggle(title, isOn: isOn).toggleStyle(.nwSwitch).labelsHidden()
+            Toggle(title, isOn: isOn).toggleStyle(.shSwitch).labelsHidden()
         }
-        .padding(.vertical, NW.Space.m + NW.Space.xxs)
-        .overlay(alignment: .top) { NWHairline() }
+        .padding(.vertical, SH.Space.m + SH.Space.xxs)
+        .overlay(alignment: .top) { SHHairline() }
     }
 }
 
@@ -399,18 +399,18 @@ struct MCPChooseToolsSheet: View {
                             close()
                         },
                     ]) {
-            VStack(alignment: .leading, spacing: NW.Space.m) {
-                Toggle("All tools, including ones it adds later", isOn: $all).toggleStyle(.nwCheckbox)
+            VStack(alignment: .leading, spacing: SH.Space.m) {
+                Toggle("All tools, including ones it adds later", isOn: $all).toggleStyle(.shCheckbox)
                 ScrollView(.vertical) {
-                    LazyVStack(alignment: .leading, spacing: NW.Space.s) {
+                    LazyVStack(alignment: .leading, spacing: SH.Space.s) {
                         ForEach(tools, id: \.self) { tool in
                             Toggle(isOn: Binding(get: { all || chosen.contains(tool) }, set: { on in
                                 all = false
                                 if on { chosen.insert(tool) } else { chosen.remove(tool) }
                             })) {
-                                Text(tool).font(.nwMono(AppLayout.mcpNoteSize)).foregroundStyle(Color.nw.textPrimary)
+                                Text(tool).font(.shMono(AppLayout.mcpNoteSize)).foregroundStyle(Color.sh.textPrimary)
                             }
-                            .toggleStyle(.nwCheckbox)
+                            .toggleStyle(.shCheckbox)
                         }
                     }
                 }

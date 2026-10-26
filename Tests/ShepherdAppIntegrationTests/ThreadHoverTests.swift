@@ -22,7 +22,7 @@ struct ThreadHoverTests {
             .padding(24)
             .frame(width: Self.width, alignment: .topLeading)
             .frame(maxHeight: .infinity, alignment: .top)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
     }
 
     private func userTurn(_ hover: MessageHover, note: String?) -> some View {
@@ -30,7 +30,7 @@ struct ThreadHoverTests {
             .padding(24)
             .frame(width: Self.width, alignment: .topLeading)
             .frame(maxHeight: .infinity, alignment: .top)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
     }
 
     /// Waits for the window to come to rest (fonts, first layout) before recording.
@@ -100,11 +100,11 @@ struct ThreadHoverTests {
     /// response, Retry turn, the subagents link) show at rest exactly as they do on hover.
     @Test(.timingSensitive) func underVoiceOverTheFootersControlsShowAtRest() async throws {
         func footer(revealed: Bool, voiceOver: Bool) -> some View {
-            NWTurnFooter(meta: "2:44 PM · 3m 12s · 23 tool calls", link: "3 subagents", onLink: {}, onCopy: {}, onRetry: {},
+            SHTurnFooter(meta: "2:44 PM · 3m 12s · 23 tool calls", link: "3 subagents", onLink: {}, onCopy: {}, onRetry: {},
                          revealed: revealed, voiceOver: voiceOver)
                 .padding(12)
                 .frame(width: 420, height: 48, alignment: .leading)
-                .background(Color.nw.bgWindow)
+                .background(Color.sh.bgWindow)
         }
         func render(_ view: some View) async -> MotionRecording.Frame {
             let window = OffscreenWindow(size: CGSize(width: 420, height: 48), dark: false, view)
@@ -154,7 +154,7 @@ private struct EndingTurn: View {
             .padding(24)
             .frame(width: ThreadHoverTests.width, alignment: .topLeading)
             .frame(maxHeight: .infinity, alignment: .top)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
     }
 }
 

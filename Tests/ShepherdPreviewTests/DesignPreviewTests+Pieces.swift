@@ -77,7 +77,7 @@ extension DesignPreviewTests {
             screen.setSelection([.init(board: card)])
             screen.paneTab = .chat
         }
-        let view = NWCanvasViewport(offset: CGPoint(x: NWDesignMetrics.fitLeading, y: -1085), zoom: 0.65)
+        let view = SHCanvasViewport(offset: CGPoint(x: SHDesignMetrics.fitLeading, y: -1085), zoom: 0.65)
         try await Preview.render("app-window-design-piece-\(state)", size: CGSize(width: 1440, height: 900), ready: {
             if screen.snapshot != nil, screen.viewport != view { screen.viewport = view }
             let drawn = [card, home, menu].allSatisfy { screen.host?.image($0) != nil }

@@ -760,7 +760,7 @@ Wired over the owner's Phase 3 contracts (nothing here is typed in or invented):
   host the owner knows, "This Mac only", "Any connected host". "This Mac" is the owner's machine, so a remote owner's own name replaces
   it. A binding the owner no longer knows reads "an unknown host". Choosing saves `hostPolicy`/`allowedHosts` against the revision shown.
   It does not claim cross-host placement; that is the execution adapter's.
-- **Space offer card** (`NWLeadSpaceOffer`): drawn only for a proposal still `pending`. "Add to project" is `decideSpace(accept: true)`,
+- **Space offer card** (`SHLeadSpaceOffer`): drawn only for a proposal still `pending`. "Add to project" is `decideSpace(accept: true)`,
   "Not now" is `accept: false` (consumed as denied), both against the proposal's own revision.
 - **pendingAnswer**: a held answer is said in words ("Answer queued · Sends when the project resumes.", "Answering", "Answer failed",
   "Answer unconfirmed"), its task is not asked again, and the envelope is never read, shown or logged.
@@ -800,8 +800,8 @@ Wired over the merged producers (nothing typed in, nothing from a title or prose
 - **Images**: the paperclip, paste and drop ask the Project's owner (`projectCarriesImages`), not the coordinator's thread, so they exist
   before the first message; an image alone is a first message; `sendMessage` carries images and clears only what it submitted.
 - **Held messages**: a message the owner accepted but the transcript has not taken in is drawn in exactly one place, chosen by its phase
-  (`ProjectHeldMessages`). `queued` and `delivering` wait in the composer's own Up next: the same `QueueStackView`, `NWQueueStack` and
-  `NWQueueRow` an ordinary thread draws, fed by the owner's queue instead of the native one, numbered in the owner's order, with the header's
+  (`ProjectHeldMessages`). `queued` and `delivering` wait in the composer's own Up next: the same `QueueStackView`, `SHQueueStack` and
+  `SHQueueRow` an ordinary thread draws, fed by the owner's queue instead of the native one, numbered in the owner's order, with the header's
   Paused ("Sends when the project resumes") while the Project is paused. That holds while the coordinator is busy, idle, starting or offline:
   only the owner sends, so nothing there looks sent. The rows are read-only (`QueueStackView(readOnly:)`): no Steer or Send now, Edit, Delete,
   reorder, row keys or options menu, because the owner offers no queue mutation. An image shows by the name the owner holds, with no

@@ -6,7 +6,7 @@ import SwiftUI
 import Testing
 @testable import ShepherdApp
 
-/// An activity line's meta, beside a label that takes the room it needs (`NWActivityWords`): all
+/// An activity line's meta, beside a label that takes the room it needs (`SHActivityWords`): all
 /// of a short one at every width its label leaves room for, a long one cut at its tail, and none
 /// when what is left could not show a few characters of it (a letter cut in half is noise).
 @Suite("Activity line meta", .serialized, .mainActorExclusive)
@@ -16,9 +16,9 @@ struct ActivityLineWordsTests {
     static func ink(label: String, meta: String, width: CGFloat) throws -> Int {
         let window = OffscreenWindow(size: CGSize(width: width, height: 60), dark: false)
         defer { window.close() }
-        window.show(NWActivityLine(kind: .run, label: label, meta: meta) {}
+        window.show(SHActivityLine(kind: .run, label: label, meta: meta) {}
             .frame(width: width, height: 60, alignment: .leading)
-            .background(Color.nw.bgWindow))
+            .background(Color.sh.bgWindow))
         ListPerf.settle(window)
         let host = window.host
         let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))

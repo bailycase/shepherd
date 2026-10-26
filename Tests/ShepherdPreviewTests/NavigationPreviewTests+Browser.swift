@@ -24,13 +24,13 @@ extension PreviewTests {
     /// The pane as the workspace draws it: the tab strip on Browser, then the tab.
     private func browserPane(_ workspace: PreviewWorkspace, _ session: BrowserSession, store: NativeThreadStore) -> some View {
         VStack(spacing: 0) {
-            NWSidePaneTabs(SidePaneTabs.items(news: [], changedFiles: 2), selection: SidePaneTab.browser.rawValue, select: { _ in },
+            SHSidePaneTabs(SidePaneTabs.items(news: [], changedFiles: 2), selection: SidePaneTab.browser.rawValue, select: { _ in },
                            closeShortcut: "⇧⌘B", close: {}) {
                 Button("Reset Width") {}
             }
             BrowserPane(vm: workspace.vm, session: session, store: store, active: false)
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         // The pane's size, as `RightPaneSplit` gives it.
         .frame(width: Self.paneSize.width, height: Self.paneSize.height)
     }
@@ -95,7 +95,7 @@ extension PreviewTests {
             if !seeded.done {
                 seeded.done = true
                 session.console.clear()
-                for (level, text) in [(NWConsoleLevel.log, "[vite] hmr update /src/components/Checkout.tsx"),
+                for (level, text) in [(SHConsoleLevel.log, "[vite] hmr update /src/components/Checkout.tsx"),
                                       (.log, "[vite] hmr update /src/components/PromoField.tsx"),
                                       (.warning, "Each child in a list should have a unique \"key\" prop.  PromoList.tsx:12")] {
                     session.console.append(level, text, at: Date(timeIntervalSince1970: 1_790_280_131))
@@ -161,13 +161,13 @@ extension PreviewTests {
         let tip = try #require(SidePaneTabs.tip(opened: session.openedByAgent))
         try await Preview.render("browser-remote-agent-opened-tab", size: CGSize(width: 600, height: 150)) {
             VStack(spacing: 0) {
-                NWSidePaneTabs(SidePaneTabs.items(news: [.browser], changedFiles: 2, browserTip: tip), selection: SidePaneTab.changes.rawValue,
+                SHSidePaneTabs(SidePaneTabs.items(news: [.browser], changedFiles: 2, browserTip: tip), selection: SidePaneTab.changes.rawValue,
                                select: { _ in }, closeShortcut: "⇧⌘B", close: {}) {
                     Button("Reset Width") {}
                 }
                 Spacer(minLength: 0)
             }
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
     }
 
@@ -198,7 +198,7 @@ extension PreviewTests {
             if !seeded.done {
                 seeded.done = true
                 session.handle(.pick(Self.pay, rect: CGRect(x: 76, y: 380, width: 240, height: 44)))
-                for (level, text) in [(NWConsoleLevel.log, "[vite] connected."), (.log, "[vite] hmr update /src/components/Checkout.tsx"),
+                for (level, text) in [(SHConsoleLevel.log, "[vite] connected."), (.log, "[vite] hmr update /src/components/Checkout.tsx"),
                                       (.log, "[vite] hmr update /src/components/PromoField.tsx"),
                                       (.warning, "Each child in a list should have a unique \"key\" prop.  PromoList.tsx:12"),
                                       (.error, "TypeError: cart.items is undefined  Summary.tsx:31")] {
@@ -283,24 +283,24 @@ extension PreviewTests {
     /// opened a tab): the Browser tab takes its dot and a brief tip hangs under it; and the header's
     /// button, with the pane closed, says the same.
     @Test func browserAgentOpenedATab() async throws {
-        let tip = NWSidePaneTabTip(text: "localhost:5173/checkout", openedAt: Date().addingTimeInterval(-10))
+        let tip = SHSidePaneTabTip(text: "localhost:5173/checkout", openedAt: Date().addingTimeInterval(-10))
         try await Preview.render("browser-agent-opened-tab", size: CGSize(width: 600, height: 150)) {
             VStack(spacing: 0) {
-                NWSidePaneTabs(SidePaneTabs.items(news: [.browser], changedFiles: 2, browserTip: tip), selection: SidePaneTab.changes.rawValue,
+                SHSidePaneTabs(SidePaneTabs.items(news: [.browser], changedFiles: 2, browserTip: tip), selection: SidePaneTab.changes.rawValue,
                                select: { _ in }, closeShortcut: "⇧⌘B", close: {}) {
                     Button("Reset Width") {}
                 }
                 Spacer(minLength: 0)
             }
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
         try await Preview.render("browser-agent-opened-button", size: CGSize(width: 420, height: 110)) {
             HStack {
                 Spacer()
-                NWPaneNewsTip(SidePaneTab.browser.newsText, shortcut: "⇧⌘B")
+                SHPaneNewsTip(SidePaneTab.browser.newsText, shortcut: "⇧⌘B")
             }
-            .padding(NW.Space.xl)
-            .background(Color.nw.bgWindow)
+            .padding(SH.Space.xl)
+            .background(Color.sh.bgWindow)
         }
     }
 

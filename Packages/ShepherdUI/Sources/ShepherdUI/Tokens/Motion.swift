@@ -5,8 +5,8 @@ import AppKit
 import UIKit
 #endif
 
-extension NW {
-    /// Night Watch motion. The Foundations board's durations are the anchors (hover 120ms, panes
+extension SH {
+    /// Shepherd Design motion. The Foundations board's durations are the anchors (hover 120ms, panes
     /// 180ms, sheets 240ms, the glow 1.6s, the shimmer 1.8s; the spinner 1s and a placeholder's
     /// pulse 1.4s); every one-shot motion runs on a spring at its anchor, so an interrupted change
     /// retargets from where it is instead of restarting. Only attention glows, and live text
@@ -101,7 +101,7 @@ extension NW {
         // MARK: Transitions
 
         /// How far a disclosed or listed row travels as it fades in.
-        public static let nudge: CGFloat = NW.Space.s
+        public static let nudge: CGFloat = SH.Space.s
         /// The scale an overlay grows from.
         public static let overlayScale: CGFloat = 0.96
         /// The scale a popped view grows from.
@@ -115,7 +115,7 @@ extension NW {
             case slide(Edge)
             /// Moves in from the edge while fading (a toast, an in-window sheet).
             case rise(Edge)
-            /// Fades in from `NW.Motion.nudge` points toward the edge (a disclosed or new row).
+            /// Fades in from `SH.Motion.nudge` points toward the edge (a disclosed or new row).
             case nudge(Edge)
             /// Grows from `overlayScale` at the anchor while fading (the palette, a menu).
             case grow(UnitPoint)
@@ -162,21 +162,21 @@ extension NW {
     }
 }
 
-extension NW.Motion.TransitionStyle {
+extension SH.Motion.TransitionStyle {
     public var transition: AnyTransition {
         switch self {
         case .fade: .opacity
         case .slide(let edge): .move(edge: edge)
         case .rise(let edge): .move(edge: edge).combined(with: .opacity)
-        case .nudge(let edge): .offset(NW.Motion.nudgeOffset(edge)).combined(with: .opacity)
-        case .grow(let anchor): .scale(scale: NW.Motion.overlayScale, anchor: anchor).combined(with: .opacity)
-        case .pop: .scale(scale: NW.Motion.popScale).combined(with: .opacity)
+        case .nudge(let edge): .offset(SH.Motion.nudgeOffset(edge)).combined(with: .opacity)
+        case .grow(let anchor): .scale(scale: SH.Motion.overlayScale, anchor: anchor).combined(with: .opacity)
+        case .pop: .scale(scale: SH.Motion.popScale).combined(with: .opacity)
         case .identity: .identity
         }
     }
 }
 
-extension NW.Motion {
+extension SH.Motion {
     static func nudgeOffset(_ edge: Edge) -> CGSize {
         switch edge {
         case .top: CGSize(width: 0, height: -nudge)
@@ -200,7 +200,7 @@ private extension UnitPoint {
 
 // MARK: Content transitions
 
-extension NW {
+extension SH {
     /// How a view's content changes in place. Under Reduce Motion the ones that move (rolling
     /// digits, symbol replacement) become a cross-fade.
     public enum ContentMotion: Equatable, Sendable {
@@ -231,71 +231,71 @@ extension View {
     /// Watch motion, honoring Reduce Motion. The way to animate state that a view model or a
     /// store changes (a pane opening from a menu, the palette's ⌘K): the view attaches the
     /// motion, so every path that flips the value animates the same way.
-    public func nwAnimation<V: Equatable>(_ motion: NW.Motion, value: V) -> some View {
-        modifier(NWAnimationModifier(motion: motion, value: value))
+    public func shAnimation<V: Equatable>(_ motion: SH.Motion, value: V) -> some View {
+        modifier(SHAnimationModifier(motion: motion, value: value))
     }
 
     /// This view comes and goes with `motion`'s transition, from `edge` (see
-    /// `NW.Motion.transitionStyle`), cross-fading under Reduce Motion. Pair it with
-    /// `nwAnimation` on the container, or change the state in `withNWAnimation`.
-    public func nwTransition(_ motion: NW.Motion, edge: Edge? = nil) -> some View {
-        modifier(NWTransitionModifier(motion: motion, edge: edge, anchor: nil))
+    /// `SH.Motion.transitionStyle`), cross-fading under Reduce Motion. Pair it with
+    /// `shAnimation` on the container, or change the state in `withSHAnimation`.
+    public func shTransition(_ motion: SH.Motion, edge: Edge? = nil) -> some View {
+        modifier(SHTransitionModifier(motion: motion, edge: edge, anchor: nil))
     }
 
     /// An overlay growing from `anchor`.
-    public func nwTransition(_ motion: NW.Motion, anchor: UnitPoint) -> some View {
-        modifier(NWTransitionModifier(motion: motion, edge: nil, anchor: anchor))
+    public func shTransition(_ motion: SH.Motion, anchor: UnitPoint) -> some View {
+        modifier(SHTransitionModifier(motion: motion, edge: nil, anchor: anchor))
     }
 
     /// Comes from `insertion` and goes toward `removal` (a queued message rises from the bottom
     /// of its stack and leaves toward the thread when pi takes it).
-    public func nwTransition(_ motion: NW.Motion, insertion: Edge, removal: Edge) -> some View {
-        modifier(NWAsymmetricTransitionModifier(motion: motion, insertion: insertion, removal: removal))
+    public func shTransition(_ motion: SH.Motion, insertion: Edge, removal: Edge) -> some View {
+        modifier(SHAsymmetricTransitionModifier(motion: motion, insertion: insertion, removal: removal))
     }
 
     /// How this view's content changes in place, honoring Reduce Motion. The change still
-    /// needs an animation (`nwAnimation(.content, value:)`) to be seen.
-    public func nwContentTransition(_ motion: NW.ContentMotion) -> some View {
-        modifier(NWContentTransitionModifier(motion: motion))
+    /// needs an animation (`shAnimation(.content, value:)`) to be seen.
+    public func shContentTransition(_ motion: SH.ContentMotion) -> some View {
+        modifier(SHContentTransitionModifier(motion: motion))
     }
 
     /// A small bounce each time `trigger` changes (the emphasis motion); nothing under Reduce
     /// Motion. For an SF Symbol prefer `.symbolEffect(.bounce, value:)`.
-    public func nwPop<T: Equatable>(trigger: T) -> some View {
-        modifier(NWPopModifier(trigger: trigger))
+    public func shPop<T: Equatable>(trigger: T) -> some View {
+        modifier(SHPopModifier(trigger: trigger))
     }
 
     /// Changes in this subtree apply at once, whatever animation the change arrived with (an
-    /// ancestor's `nwAnimation`, a `withNWAnimation`). For what must never animate: terminal
+    /// ancestor's `shAnimation`, a `withSHAnimation`). For what must never animate: terminal
     /// surfaces (SwiftUI resizes a hosted NSView every frame of an animated layout change, and
     /// each is a PTY resize), streaming text, and anything keyboard navigation moves. Motion
-    /// attached inside the subtree with `nwAnimation` still runs, so put it on what must not
+    /// attached inside the subtree with `shAnimation` still runs, so put it on what must not
     /// move rather than on a whole pane.
-    public func nwInstant() -> some View {
+    public func shInstant() -> some View {
         transaction { $0.animation = nil }
     }
 }
 
-/// Runs `body` with a Night Watch motion, for state changed by an action (a click, a key)
+/// Runs `body` with a Shepherd Design motion, for state changed by an action (a click, a key)
 /// rather than observed by a view. Reads Reduce Motion from the system, since there is no
 /// environment here.
 @MainActor
 @discardableResult
-public func withNWAnimation<Result>(_ motion: NW.Motion, _ body: () throws -> Result) rethrows -> Result {
-    try withAnimation(motion.animation(reduceMotion: NW.Motion.systemReduceMotion), body)
+public func withSHAnimation<Result>(_ motion: SH.Motion, _ body: () throws -> Result) rethrows -> Result {
+    try withAnimation(motion.animation(reduceMotion: SH.Motion.systemReduceMotion), body)
 }
 
-/// `withNWAnimation` with a completion, called once the motion has finished (at once when
+/// `withSHAnimation` with a completion, called once the motion has finished (at once when
 /// Reduce Motion drops it).
 @MainActor
 @discardableResult
-public func withNWAnimation<Result>(_ motion: NW.Motion, _ body: () throws -> Result,
+public func withSHAnimation<Result>(_ motion: SH.Motion, _ body: () throws -> Result,
                                     completion: @escaping () -> Void) rethrows -> Result {
-    try withAnimation(motion.animation(reduceMotion: NW.Motion.systemReduceMotion), completionCriteria: .removed, body,
+    try withAnimation(motion.animation(reduceMotion: SH.Motion.systemReduceMotion), completionCriteria: .removed, body,
                       completion: completion)
 }
 
-extension NW.Motion {
+extension SH.Motion {
     /// The system's Reduce Motion setting, for code outside a view's environment.
     @MainActor public static var systemReduceMotion: Bool {
         #if os(macOS)
@@ -306,8 +306,8 @@ extension NW.Motion {
     }
 }
 
-private struct NWAnimationModifier<V: Equatable>: ViewModifier {
-    let motion: NW.Motion
+private struct SHAnimationModifier<V: Equatable>: ViewModifier {
+    let motion: SH.Motion
     let value: V
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -316,8 +316,8 @@ private struct NWAnimationModifier<V: Equatable>: ViewModifier {
     }
 }
 
-private struct NWTransitionModifier: ViewModifier {
-    let motion: NW.Motion
+private struct SHTransitionModifier: ViewModifier {
+    let motion: SH.Motion
     let edge: Edge?
     let anchor: UnitPoint?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -329,8 +329,8 @@ private struct NWTransitionModifier: ViewModifier {
     }
 }
 
-private struct NWAsymmetricTransitionModifier: ViewModifier {
-    let motion: NW.Motion
+private struct SHAsymmetricTransitionModifier: ViewModifier {
+    let motion: SH.Motion
     let insertion: Edge
     let removal: Edge
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -341,8 +341,8 @@ private struct NWAsymmetricTransitionModifier: ViewModifier {
     }
 }
 
-private struct NWContentTransitionModifier: ViewModifier {
-    let motion: NW.ContentMotion
+private struct SHContentTransitionModifier: ViewModifier {
+    let motion: SH.ContentMotion
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
@@ -350,7 +350,7 @@ private struct NWContentTransitionModifier: ViewModifier {
     }
 }
 
-private struct NWPopModifier<T: Equatable>: ViewModifier {
+private struct SHPopModifier<T: Equatable>: ViewModifier {
     let trigger: T
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -359,15 +359,15 @@ private struct NWPopModifier<T: Equatable>: ViewModifier {
         content.keyframeAnimator(initialValue: 1.0, trigger: trigger) { view, scale in
             view.scaleEffect(reduceMotion ? 1 : scale)
         } keyframes: { _ in
-            SpringKeyframe(NWPop.peak, duration: NW.Motion.emphasis.duration / 3, spring: .snappy)
+            SpringKeyframe(SHPop.peak, duration: SH.Motion.emphasis.duration / 3, spring: .snappy)
             // No duration: the segment runs until the spring settles. Cut at the anchor it
             // would leave the view at a scale a hair off 1, with soft edges, until the next pop.
-            SpringKeyframe(1.0, spring: NW.Motion.emphasis.spring ?? .bouncy)
+            SpringKeyframe(1.0, spring: SH.Motion.emphasis.spring ?? .bouncy)
         }
     }
 }
 
-enum NWPop {
+enum SHPop {
     /// How far a pop swells before settling back.
     static let peak: Double = 1.12
 }
@@ -376,18 +376,18 @@ extension EnvironmentValues {
     /// True under a subtree that stays mounted but is not on screen (an agent layout the
     /// workspace keeps while another one shows): the continuous motions (the spinner, the glow,
     /// the shimmer, the pulse) stop drawing frames there. It changes only when visibility flips.
-    @Entry public var nwMotionPaused: Bool = false
+    @Entry public var shMotionPaused: Bool = false
 }
 
 /// Time-driven phase for the continuous motions. The spinner, the glow and the shimmer are Core
-/// Animation animations started at the clock's phase (`NWLayerMotion`), so every one on screen
+/// Animation animations started at the clock's phase (`SHLayerMotion`), so every one on screen
 /// moves in step and costs the app nothing per frame; the pulse is a timeline that reads the
 /// phase each frame. Either way Reduce Motion can toggle while one is on screen: the animation is removed
-/// or the timeline pauses. Both also stop under `nwMotionPaused`, and the timeline while its view
+/// or the timeline pauses. Both also stop under `shMotionPaused`, and the timeline while its view
 /// is off screen (`onDisappear`), so motion no one sees costs nothing.
-enum NWPhase {
+enum SHPhase {
     /// 0..<1 through one period of `motion`.
-    static func fraction(_ date: Date, _ motion: NW.Motion) -> Double {
+    static func fraction(_ date: Date, _ motion: SH.Motion) -> Double {
         let t = date.timeIntervalSinceReferenceDate
         return t.truncatingRemainder(dividingBy: motion.duration) / motion.duration
     }

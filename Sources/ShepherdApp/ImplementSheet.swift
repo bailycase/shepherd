@@ -27,16 +27,16 @@ final class ImplementSheetModel {
     }
 
     let selection: DesignReferenceSelection
-    var picture: NWReferenceImage?
+    var picture: SHReferenceImage?
     /// The piece pinned at the design's revision now, and what a send of it carries; nil while
     /// the host reads it.
     private(set) var prepared: PreparedDesignReference?
-    var mode: NWImplementMode = .existing
+    var mode: SHImplementMode = .existing
     var query = "" {
         didSet { if query != oldValue { filter() } }
     }
     /// The threads the search leaves, most recently active first.
-    private(set) var shownThreads: [NWImplementThread] = []
+    private(set) var shownThreads: [SHImplementThread] = []
     var thread: String?
     var message = ""
     var opensThread: Bool
@@ -47,7 +47,7 @@ final class ImplementSheetModel {
     var error: String?
 
     init(selection: DesignReferenceSelection, threads: [Thread], projects: [Project], project: SpaceID?, opensThread: Bool,
-         picture: NWReferenceImage? = nil) {
+         picture: SHReferenceImage? = nil) {
         self.selection = selection
         self.threads = threads
         self.projects = projects
@@ -80,7 +80,7 @@ final class ImplementSheetModel {
         guard let prepared else { return Text(error ?? "Reading what it sends…") }
         let words = DesignReferencePresentation.sends(prepared.outline)
         if let system = prepared.outline.system, let range = words.range(of: " from \(system).") {
-            return NWImplementSheet<EmptyView>.sends(String(words[..<range.lowerBound]) + " from ", mono: system, after: ".")
+            return SHImplementSheet<EmptyView>.sends(String(words[..<range.lowerBound]) + " from ", mono: system, after: ".")
         }
         return Text(words)
     }
@@ -106,7 +106,7 @@ final class ImplementSheetModel {
             let text = [thread.name, thread.project ?? ""].joined(separator: " ")
                 .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
             return words.allSatisfy(text.contains)
-        }.map { NWImplementThread(id: $0.id.rawValue, name: $0.name, project: $0.project, age: $0.age) }
+        }.map { SHImplementThread(id: $0.id.rawValue, name: $0.name, project: $0.project, age: $0.age) }
         if next != shownThreads { shownThreads = next }
         if let thread, !next.contains(where: { $0.id == thread }) { self.thread = next.first?.id }
         if thread == nil { thread = next.first?.id }
@@ -150,23 +150,23 @@ struct ImplementSheetView: View {
 
     var body: some View {
         // The canvas's picture of the piece, once its board has drawn (it may not have yet).
-        NWImplementSheet(picture: vm.implementPicture(model.selection) ?? model.picture, title: model.title, crumbs: model.crumbs, version: model.version, mode: $model.mode,
+        SHImplementSheet(picture: vm.implementPicture(model.selection) ?? model.picture, title: model.title, crumbs: model.crumbs, version: model.version, mode: $model.mode,
                          sends: model.sends, canSend: model.canSend, sending: model.sending,
                          close: { vm.closeImplementSheet() }, send: { vm.sendImplementSheet(model) }) {
             if model.mode == .existing {
-                VStack(alignment: .leading, spacing: NW.Space.m) {
-                    NWSearchField("Search threads", text: $model.query)
+                VStack(alignment: .leading, spacing: SH.Space.m) {
+                    SHSearchField("Search threads", text: $model.query)
                     if model.shownThreads.isEmpty {
                         Text(model.threads.isEmpty ? "No threads yet. Start one in a space." : "No thread matches “\(model.query)”.")
-                            .font(.nwSans(NWImplementMetrics.rowMetaSize))
-                            .foregroundStyle(Color.nw.textTertiary)
-                            .frame(maxWidth: .infinity, minHeight: NWImplementMetrics.rowHeight)
+                            .font(.shSans(SHImplementMetrics.rowMetaSize))
+                            .foregroundStyle(Color.sh.textTertiary)
+                            .frame(maxWidth: .infinity, minHeight: SHImplementMetrics.rowHeight)
                     } else {
-                        NWImplementThreadList(threads: model.shownThreads, selection: $model.thread)
+                        SHImplementThreadList(threads: model.shownThreads, selection: $model.thread)
                     }
                 }
             } else {
-                NWImplementField("Space") {
+                SHImplementField("Space") {
                     Menu {
                         ForEach(model.projects) { project in
                             Button {
@@ -176,7 +176,7 @@ struct ImplementSheetView: View {
                             }
                         }
                     } label: {
-                        NWImplementProjectLabel(project: model.chosenProject?.name ?? "Choose a space", host: "This Mac")
+                        SHImplementProjectLabel(project: model.chosenProject?.name ?? "Choose a space", host: "This Mac")
                     }
                     .menuStyle(.button)
                     .buttonStyle(.plain)
@@ -184,24 +184,24 @@ struct ImplementSheetView: View {
                     .disabled(model.projects.isEmpty)
                     if let project = model.chosenProject {
                         if project.isRepo {
-                            NWImplementBranchLine("Starts on a new worktree,", branch: model.branch)
+                            SHImplementBranchLine("Starts on a new worktree,", branch: model.branch)
                         } else {
-                            NWImplementBranchLine("Starts in the space: it isn’t a git repository, so no worktree.")
+                            SHImplementBranchLine("Starts in the space: it isn’t a git repository, so no worktree.")
                         }
                     }
                 }
             }
-            NWImplementField("Message") {
-                NWImplementMessageField(text: $model.message, focused: $messageFocused)
+            SHImplementField("Message") {
+                SHImplementMessageField(text: $model.message, focused: $messageFocused)
             }
             Toggle(isOn: $model.opensThread) {
                 Text("Open the thread after sending")
-                    .font(.nwSans(NWImplementMetrics.checkLabelSize))
-                    .foregroundStyle(Color.nw.textSecondary)
+                    .font(.shSans(SHImplementMetrics.checkLabelSize))
+                    .foregroundStyle(Color.sh.textSecondary)
             }
-            .toggleStyle(.nwCheckbox)
+            .toggleStyle(.shCheckbox)
             if let error = model.error, model.prepared != nil {
-                Text(error).font(.nwSans(NWImplementMetrics.rowMetaSize)).foregroundStyle(Color.nw.failed)
+                Text(error).font(.shSans(SHImplementMetrics.rowMetaSize)).foregroundStyle(Color.sh.failed)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -217,19 +217,19 @@ struct ImplementSheetOverlay: View {
     var body: some View {
         ZStack {
             if let model = vm.implementSheet {
-                Color.nw.sheetScrim
+                Color.sh.sheetScrim
                     .contentShape(Rectangle())
                     .onTapGesture {}
                     .accessibilityHidden(true)
-                    .nwTransition(.content)
+                    .shTransition(.content)
                 ImplementSheetView(vm: vm, model: model)
-                    .nwTransition(.overlay, anchor: .center)
+                    .shTransition(.overlay, anchor: .center)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
         .allowsHitTesting(vm.implementSheet != nil)
-        .nwAnimation(.overlay, value: vm.implementSheet != nil)
+        .shAnimation(.overlay, value: vm.implementSheet != nil)
     }
 }
 
@@ -263,19 +263,19 @@ struct DesignReferenceToastLayer: View {
                 Group {
                     switch toast.kind {
                     case .sent(let thread, let name):
-                        NWReferenceToast(.sent, message: Text("Sent \(toast.piece) to \(Text(name).fontWeight(.semibold))."),
+                        SHReferenceToast(.sent, message: Text("Sent \(toast.piece) to \(Text(name).fontWeight(.semibold))."),
                                          actionTitle: "Open thread", actionSymbol: "text.bubble",
                                          action: { vm.referenceToast = nil; vm.selectAgent(thread) },
                                          dismiss: { vm.referenceToast = nil })
                     case .copied:
-                        NWReferenceToast(.copied, message: Text(DesignReferencePresentation.copied(toast.piece)),
+                        SHReferenceToast(.copied, message: Text(DesignReferencePresentation.copied(toast.piece)),
                                          dismiss: { vm.referenceToast = nil })
                     }
                 }
-                .padding(.horizontal, NW.Space.xl)
-                .padding(.bottom, NWReferenceMetrics.toastBottom)
+                .padding(.horizontal, SH.Space.xl)
+                .padding(.bottom, SHReferenceMetrics.toastBottom)
                 .id(toast.id)
-                .nwTransition(.sheet, edge: .bottom)
+                .shTransition(.sheet, edge: .bottom)
                 .task(id: toast.id) {
                     // Only a toast that stayed its time goes by itself; leaving the canvas keeps it.
                     guard (try? await Task.sleep(for: DesignReferenceToast.lifetime)) != nil else { return }
@@ -284,6 +284,6 @@ struct DesignReferenceToastLayer: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        .nwAnimation(.sheet, value: vm.referenceToast?.id)
+        .shAnimation(.sheet, value: vm.referenceToast?.id)
     }
 }

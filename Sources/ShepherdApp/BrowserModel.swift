@@ -121,8 +121,8 @@ enum BrowserViewport: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    var option: NWViewportOption {
-        NWViewportOption(id: rawValue, title: title, width: width.map { String(Int($0)) })
+    var option: SHViewportOption {
+        SHViewportOption(id: rawValue, title: title, width: width.map { String(Int($0)) })
     }
 
     struct Layout: Equatable {
@@ -149,8 +149,8 @@ enum BrowserViewport: String, CaseIterable, Identifiable, Sendable {
 /// server reads them too; this is how Nothing open draws one.
 extension DevServer {
     /// "Start on This Mac", or "Start on build-01" for a remote thread's host.
-    func item(startTitle: String) -> NWDevServerItem {
-        NWDevServerItem(id: id, command: command, detail: detail, startTitle: startTitle)
+    func item(startTitle: String) -> SHDevServerItem {
+        SHDevServerItem(id: id, command: command, detail: detail, startTitle: startTitle)
     }
 }
 
@@ -159,7 +159,7 @@ extension DevServer {
 /// A message from the page's scripts (`BrowserScripts`), parsed.
 enum BrowserScriptMessage: Equatable {
     /// A console line, or an error the page threw.
-    case console(level: NWConsoleLevel, text: String)
+    case console(level: SHConsoleLevel, text: String)
     /// Resources the page loaded so far, its document included.
     case network(count: Int)
     /// Select an element picked `element`, at `rect` (CSS pixels in the page's viewport).
@@ -174,7 +174,7 @@ enum BrowserScriptMessage: Equatable {
     /// Nil for anything malformed; `page` is the page's URL for a pick.
     init?(console body: Any) {
         guard let body = body as? [String: Any], let text = body["text"] as? String else { return nil }
-        let level: NWConsoleLevel = switch body["level"] as? String {
+        let level: SHConsoleLevel = switch body["level"] as? String {
         case "warning": .warning
         case "error": .error
         default: .log
@@ -225,7 +225,7 @@ final class BrowserConsoleLog {
     nonisolated static let maxLines = 500
     nonisolated static let maxTextLength = 2000
 
-    private(set) var lines: [NWConsoleLine] = []
+    private(set) var lines: [SHConsoleLine] = []
     private(set) var warnings = 0
     private(set) var network = 0
     @ObservationIgnored private var nextID = 0
@@ -234,7 +234,7 @@ final class BrowserConsoleLog {
     /// errors and warnings not merged, and every error ever counted, across new documents.
     struct Entry: Equatable {
         var time: String
-        var level: NWConsoleLevel
+        var level: SHConsoleLevel
         var text: String
     }
     @ObservationIgnored private(set) var entries: [Entry] = []
@@ -242,10 +242,10 @@ final class BrowserConsoleLog {
 
     /// The page's own errors show as warning rows too: no board draws a separate error count or
     /// red rows (the user's decision, 2026-09-29).
-    func append(_ level: NWConsoleLevel, _ text: String, at date: Date = Date()) {
+    func append(_ level: SHConsoleLevel, _ text: String, at date: Date = Date()) {
         nextID += 1
-        let shown: NWConsoleLevel = level == .error ? .warning : level
-        lines.append(NWConsoleLine(id: nextID, time: Self.time(date), text: text, level: shown))
+        let shown: SHConsoleLevel = level == .error ? .warning : level
+        lines.append(SHConsoleLine(id: nextID, time: Self.time(date), text: text, level: shown))
         if lines.count > Self.maxLines { lines.removeFirst(lines.count - Self.maxLines) }
         if shown == .warning { warnings += 1 }
         entries.append(Entry(time: Self.time(date), level: level, text: text))

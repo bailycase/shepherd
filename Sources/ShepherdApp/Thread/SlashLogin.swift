@@ -66,7 +66,7 @@ enum SlashLogin {
     struct Choice: Equatable, Identifiable {
         var id: String
         var plan: String
-        var state: NWSlashCommand.Status
+        var state: SHSlashCommand.Status
 
         /// Not signed in comes first: that's what /login is for.
         var needsSignIn: Bool { state.tone == .tertiary || state.tone == .attention }
@@ -81,7 +81,7 @@ enum SlashLogin {
         for provider in providers where seen.insert(provider).inserted {
             let row = rows.first { $0.id == provider }
             let plan = PiSignInCatalog.subscription(provider)?.plan ?? "\(PiSignInCatalog.name(provider)) API key"
-            let state: NWSlashCommand.Status
+            let state: SHSlashCommand.Status
             switch row?.auth {
             case .signedIn?: state = .init("Signed in", tone: .done)
             case .expired?: state = .init("Expired", tone: .attention)
@@ -112,8 +112,8 @@ enum SlashLogin {
         return prefixed + containing
     }
 
-    static func row(_ choice: Choice, verb: Verb) -> NWSlashCommand {
-        NWSlashCommand(name: choice.id, description: choice.plan, lead: "/" + verb.rawValue, status: choice.state)
+    static func row(_ choice: Choice, verb: Verb) -> SHSlashCommand {
+        SHSlashCommand(name: choice.id, description: choice.plan, lead: "/" + verb.rawValue, status: choice.state)
     }
 
     /// The argument menu's header.

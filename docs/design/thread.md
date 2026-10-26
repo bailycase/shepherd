@@ -4,24 +4,24 @@
 
 `ThreadView` (`Thread/ThreadView.swift`) lays out the rows `NativeThreadStore` derives once per
 change (`NativeTurnPresentation`, `NativeActivity` in ShepherdRemote); the views only draw them.
-Dimensions are in `AppLayout+Thread.swift` and ShepherdUI's `NWThreadMetrics`.
+Dimensions are in `AppLayout+Thread.swift` and ShepherdUI's `SHThreadMetrics`.
 
-The Night Watch Thread boards are the authority for every part below: NWThread in dark, and
-NWThreadLight, the same parts on the light roles with nothing else changed. Main (a thread at
+The Shepherd Design Thread boards are the authority for every part below: SHThread in dark, and
+SHThreadLight, the same parts on the light roles with nothing else changed. Main (a thread at
 rest) and Running (a thread while pi works) show the parts assembled in the window, and ToolRows
 the activity line's states. Main and Running draw some parts at other sizes (prose at 15,
 bubbles at 14 with 12×16 padding, times and footer meta in mono 11, 28pt footer buttons) and
-their meta in a gray that is no Night Watch role (`#767c85`); where they differ, NWThread's
+their meta in a gray that is no Shepherd Design role (`#767c85`); where they differ, SHThread's
 values, below, are the rule. Main (and the Subagents board's inspector) still draw the stretch
 summary the component boards dropped in v97 ("Worked for 2m 12s · explored 1 file · …"):
-NWThread, ToolRows and LiveText, one line per burst, are the rule.
+SHThread, ToolRows and LiveText, one line per burst, are the rule.
 
 - **Layout:** a scroll view with the column centered, at most 820pt wide with 32pt gutters (16pt
   in a thread narrower than the column and both gutters, 884pt; `AppLayout.threadGutter`). User
   bubbles are at most 600pt and agent prose keeps a 640pt measure inside it; there are no speaker
   labels. 28pt top margin, 28pt between turns, 14pt between a turn's parts, 10pt between blocks
   inside one part ("From the queue" above its bubbles), 6pt between
-  one turn's bubbles, and 6pt between consecutive activity lines (NWThread; ToolRows and Running
+  one turn's bubbles, and 6pt between consecutive activity lines (SHThread; ToolRows and Running
   draw 4pt, see Known gaps).
 - **Following:** the thread follows the tail only while the reader is within 80pt of the bottom
   (`NativeScrollFollower`). Only a live scroll gesture or a wheel tick detaches it; content
@@ -82,7 +82,7 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   recovery attempts. An earlier failed repair must not disable them for later turns. While a
   gesture is live, layout changes never move the view either: a drag up measures the rows it
   reveals, and landing on the tail then would pull the thread out from under the finger. "↓ Jump to latest"
-  (`NWJumpToLatest`, a `bgRaised` capsule above the composer) appears while detached if the
+  (`SHJumpToLatest`, a `bgRaised` capsule above the composer) appears while detached if the
   agent runs or unseen output arrived: new rows or the last one growing, never the content
   height alone (a scroll or a turn jump measures the rows it reveals). The composer draws it
   over the fade it lays on the thread and under its card and menus, so the fade never washes it
@@ -156,13 +156,13 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   retires as before. Remote viewers read it from the host's snapshot
   (`NativeThreadSnapshot.startProblem`), without Retry, since starting pi belongs to the host: a
   Mac draws the same banner, and iPhone and iPad say it in the thread's notice line.
-- **Waiting to continue** (`NWAgentWaitingLine`; PiImportProgress, PiAuthStates): while the first
-  launch's copy holds a restored agent, its thread ends with one static line, `NW.Space.l` under
+- **Waiting to continue** (`SHAgentWaitingLine`; PiImportProgress, PiAuthStates): while the first
+  launch's copy holds a restored agent, its thread ends with one static line, `SH.Space.l` under
   the last turn in the thread's column: a card (`bgSunken`, radius 10, `lineSubtle`, 10×14) with
   a `clock` 14pt in `textSecondary`, "Waiting to continue" in 13/500 over "It picks up once your
   pi is brought over." in 12.5 `textSecondary`, and "restored 9:41 AM" in mono 11 `textTertiary`
   trailing. It goes, with no motion, when the agent picks up.
-- **Not signed in** (`NWAgentNotSignedInCard`; AgentNotSignedIn, PiAuthStates): a pi that can't
+- **Not signed in** (`SHAgentNotSignedInCard`; AgentNotSignedIn, PiAuthStates): a pi that can't
   start because no sign-in covers its model shows a card at the end of the thread instead of the
   composer's Can't start banner: `lantern` at 28% for its line and 5% for its fill, radius 10,
   14×16, 12 between its parts. A 30pt `lanternTint` tile at radius 10 with `key` 18pt
@@ -178,20 +178,20 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   conversation that resumes). The
   message (a new agent's opening prompt pi never read) is kept either way. When the sign-in
   lands the agent starts again by itself; the card goes when pi does.
-- **Empty thread:** a framed `NWEmptyState` (a dashed `lineStrong` border, no crook): "New
+- **Empty thread:** a framed `SHEmptyState` (a dashed `lineStrong` border, no crook): "New
   agent in `~/path`" (the path in Geist Mono 15 medium within the 17pt title), with "Describe
   the task. Drop or paste images to attach them, or type / for commands." A new agent is known
   to be empty, so it shows from the first frame, with the composer ready, while pi boots behind
   it. While a thread's history is not known yet (a resuming agent without a readable session
   file) the thread stays blank until pi sends it; an empty history then fades the state in.
 
-**User turn** (`UserTurn` in `Thread/ThreadTurns.swift`, on `NWUserBubble`):
+**User turn** (`UserTurn` in `Thread/ThreadTurns.swift`, on `SHUserBubble`):
 
 - Right-aligned, at most 600pt, `bgBubble` with a 1px `lineStrong` line, radius 8, 10×14
   padding, body text (13.5) at a 1.5 line height, selectable. No avatar and no name.
 - The time ("2:41 PM") sits 5pt beneath in mono 10.5 tertiary, only while the turn is hovered
   (see **Details on hover** below): at rest it keeps its line and draws nothing.
-- **Attachments** (`NWAttachmentChip`, NWThread) sit above the text inside the bubble, 6pt apart
+- **Attachments** (`SHAttachmentChip`, SHThread) sit above the text inside the bubble, 6pt apart
   and 8pt above it. A chip is 26pt with a 1px `lineStrong` line and radius 6, its name in 12pt
   `textPrimary` truncating in the middle, 6pt gaps. An image chip leads with its 20pt thumbnail
   (radius 4, 3pt from the chip's edges); a file chip leads with the `doc` glyph in
@@ -211,7 +211,7 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   while pi works never enters the thread early: it waits in the composer's **Up next** (see
   Composer) and joins the thread only when pi reads it, where pi read it.
 - **From the queue:** messages the queue delivered together (one turn for pi) open with
-  `NWQueueDivider`, "From the queue · 2" (just "From the queue" for one) in caption tertiary
+  `SHQueueDivider`, "From the queue · 2" (just "From the queue" for one) in caption tertiary
   with the queue glyph between two hairlines, then one bubble per message, 6pt apart, each with
   the time it was sent (on hover, like any bubble's).
 - **Steered:** a message steered into a running turn stands inside that turn where pi read it
@@ -226,7 +226,7 @@ thinking, prose, activity lines, subagent cards where their spawn calls were, no
 in the order they happened (each stretch of work between prose opens with its thinking). Once
 the turn has finished, the changes card and the footer end it. A running turn has no footer.
 
-- **Prose** (`Prose` in `Thread/ThreadMarkdown.swift`, on `NWAgentProse`): body 13.5/1.6 in
+- **Prose** (`Prose` in `Thread/ThreadMarkdown.swift`, on `SHAgentProse`): body 13.5/1.6 in
   `textPrimary` at the 640pt measure, blocks 12pt apart, selectable, with no speaker label.
   Markdown is parsed once per turn:
   - headings at `headline`, with 4pt more above them
@@ -239,7 +239,7 @@ the turn has finished, the changes card and the footer end it. A running turn ha
   - rules as hairlines, 4pt above and below
   - tables, task lists, images, disclosures, footnotes and inline HTML as in **Rich content in
     prose** below
-- **Code blocks** (`HighlightedCodeBlock` on `NWCodeBlock`): `bgSunken`, a 1px `lineSubtle` line,
+- **Code blocks** (`HighlightedCodeBlock` on `SHCodeBlock`): `bgSunken`, a 1px `lineSubtle` line,
   radius 8, as wide as the prose measure. A 28pt header (12pt leading, 6pt trailing, a hairline
   beneath) holds the language (or "code") in mono 10.5 tertiary and a 22pt copy button (`doc.on.doc`
   in `textSecondary`) that appears on hover or
@@ -251,7 +251,7 @@ the turn has finished, the changes card and the footer end it. A running turn ha
   Tree-sitter colors it off the main actor in the block's task (Swift, Python, Go, Rust, JavaScript, TypeScript/TSX, C,
   C++, shell, Ruby, JSON); the first frame is plain, results are cached, and a block that grows
   while streaming keeps its last colors until the new ones are ready.
-- **Thinking** (`NWThinking`): the thinking in one stretch of work (between prose blocks) folds
+- **Thinking** (`SHThinking`): the thinking in one stretch of work (between prose blocks) folds
   into one block at the start of that stretch, so per-call reasoning never splits the activity
   lines.
   - Collapsed: a 10pt chevron (pointing right, turning down as it opens) and "Thought for 4s" in
@@ -286,20 +286,20 @@ the turn has finished, the changes card and the footer end it. A running turn ha
        reasoning."
     3. No readable text and no such time: no row.
 
-    The NWThread board draws only the first; the other two are app states it does not draw.
+    The SHThread board draws only the first; the other two are app states it does not draw.
 - **Notes** ("Image attached", "Output truncated", extension messages) render as caption
   tertiary text on a 2pt rule (three lines, full text on hover).
-- **Errors** (TurnErrors, ThreadError, ThreadErrorDetails; `NWTurnError`, `Thread/TurnErrors.swift`,
+- **Errors** (TurnErrors, ThreadError, ThreadErrorDetails; `SHTurnError`, `Thread/TurnErrors.swift`,
   read by `NativeTurnError` in ShepherdRemote once per change): a request to the model that failed
   (pi's assistant message with `stopReason` `error` and its `errorMessage`), the error itself,
   readable. Tool failures stay in their activity lines.
   - **The card** spans the column (not the prose measure): `bgRaised`, a 1px `lineStrong` line,
-    radius 10 (`NWTurnErrorMetrics`), 14×16 inset. A 28pt tile at radius 8 on `failedTint` holds
+    radius 10 (`SHTurnErrorMetrics`), 14×16 inset. A 28pt tile at radius 8 on `failedTint` holds
     the kind's 14pt glyph in `failed` (`exclamationmark.triangle`; `hourglass` for a timeout,
     `wifi.slash` for the network, `arrow.down.right.and.arrow.up.left` for a thread too long);
     12pt right of it, 5pt apart: the **title** (Geist 14/600, and the time in mono 11 tertiary at
     the trailing edge), the **message** (13 `textSecondary`), the **facts** (2pt more above: the
-    status and type as mono 10.5 chips, `NWTag`, then "gpt-5 · OpenAI" and "· Tried 3 times over
+    status and type as mono 10.5 chips, `SHTag`, then "gpt-5 · OpenAI" and "· Tried 3 times over
     31m" in 12 tertiary), and the **actions** (6pt more above): Retry (secondary `s`, when it
     ended the latest turn; tooltip "Retry this turn"), Copy (a 26pt icon circle), and "Details ›" (12.5 `textSecondary`) at the
     trailing edge. It rises in like a row (`list`).
@@ -328,11 +328,11 @@ the turn has finished, the changes card and the footer end it. A running turn ha
     (`NativeTurnErrorExpansion`), so a row the list rebuilds keeps them.
   - **Copy** puts the whole error on the pasteboard as text, redacted the same way: the title,
     the message, the facts line, each fact, and the body.
-  - **Folded** (`NWTurnError(folded:)`): when the next reply fails the same way (the same kind,
+  - **Folded** (`SHTurnError(folded:)`): when the next reply fails the same way (the same kind,
     title and chips), the earlier card folds to one 26pt line: the 13pt glyph in `failed`, the
     title in 12.5 `textPrimary`, "401 · 5:52 PM" in mono 11 tertiary, and a 10pt `chevron.right`.
     A click opens the card. An error pi retried past, the turn going on, folds the same way.
-  - **While pi retries** (`NWRetryLine`; the snapshot's `retry`, from pi's `auto_retry_start`
+  - **While pi retries** (`SHRetryLine`; the snapshot's `retry`, from pi's `auto_retry_start`
     until `auto_retry_end` or it settles): the live turn ends in one 26pt line, the only thing
     moving: `arrow.clockwise` (an `hourglass` for a timeout) in `textSecondary`, "Reconnecting
     to OpenAI · retrying in 8s" ("Waiting for OpenAI" for rate limits) shimmering (counting down
@@ -379,7 +379,7 @@ the turn has finished, the changes card and the footer end it. A running turn ha
     working: a steering message in Up next waits still (Up next).
   - A counting timer is motion enough: the running call's clock ticks beside its shimmer in
     `textTertiary`. Under Reduce Motion the shimmer is plain `textSecondary` text.
-- **Footer** (`NWTurnFooter`), after a finished turn that didn't end in an error: copy (the turn's prose; tooltip "Copy the
+- **Footer** (`SHTurnFooter`), after a finished turn that didn't end in an error: copy (the turn's prose; tooltip "Copy the
   reply", VoiceOver "Copy response", then a check for 1.5s) and retry (the turn again in its
   place, only on the latest turn and only while the agent is idle; tooltip "Retry this turn",
   VoiceOver "Retry turn"; Main's labels) as 24pt icon buttons 4pt apart, then, 4pt further, "2:44 PM · 3m 12s · 23 tool
@@ -412,8 +412,8 @@ row) shows them.
   unchanged under Reduce Motion). A turn measures the same hovered or not.
 - **Also shown** while one of the footer's controls has keyboard focus, for the moment a copy
   confirms, and whenever VoiceOver runs, so Copy response, Retry turn, the subagents link, and
-  the time are always reachable (`NWMessageDetails`).
-  - **Not built yet.** A user bubble with keyboard focus shows its time too, as NWThread says
+  the time are always reachable (`SHMessageDetails`).
+  - **Not built yet.** A user bubble with keyboard focus shows its time too, as SHThread says
     ("hovered or focused"). Today a bubble takes no focus, so its time shows only on hover or
     with VoiceOver.
 - **Per message.** Each turn owns its pointer state (`MessageHover` in `ThreadTurns.swift`), and
@@ -425,7 +425,7 @@ row) shows them.
   in beside it.
 
 **Activity lines** (`ActivityLinesView` and `ActivityLineView` in `Thread/ThreadTools.swift`, on
-`NWActivityLine` and `NWActivityCalls`; NWThread, ToolRows). One quiet line per burst of work
+`SHActivityLine` and `SHActivityCalls`; SHThread, ToolRows). One quiet line per burst of work
 instead of a card per call: consecutive calls of one kind merge into one line
 (`nativeActivityBursts`), the lines sit inline with the prose in the order the work took, and
 nothing folds them into a summary. A failed call and the running call each stand alone; other
@@ -483,7 +483,7 @@ tools merge only with the same tool. Consecutive lines form one part of the turn
   failures still fails.
 - **Live** (LiveText): only the current call is live, on a 26pt line with no hover fill and no
   chevron: the tool's own 13pt glyph, still, in `textSecondary` (nothing spins); the progressive
-  verb (`ui`) and the command or path (mono 11) shimmering (`.nwShimmer(active:)`); and its
+  verb (`ui`) and the command or path (mono 11) shimmering (`.shShimmer(active:)`); and its
   elapsed time in mono 11 `textTertiary` ("3s", "1m 20s"), 8pt apart. Its last three output lines
   sit 4pt beneath, 21pt in (under the label), in mono 11 at 1.6: the older ones `textTertiary`,
   the newest `textSecondary`. When the call ends the live line cross-fades into its finished
@@ -495,7 +495,7 @@ tools merge only with the same tool. Consecutive lines form one part of the turn
     rest of the arguments (a write's whole body) is never drawn or held by the thread. The line
     goes on as the running call, one clock, in place; if the request is stopped or fails before
     the call runs, the line leaves and nothing stays behind.
-- **Calls** (expanded, `NWActivityCalls`): an indented list on the rail, 24pt rows in mono 11
+- **Calls** (expanded, `SHActivityCalls`): an indented list on the rail, 24pt rows in mono 11
   with no gap between them and 10pt between a row's columns: the kind in `textTertiary` in a
   32pt column that widens for a longer name ("read", "edit", "bash", "spawn"; at most 22
   characters wide, a longer name truncates), the path
@@ -520,7 +520,7 @@ tools merge only with the same tool. Consecutive lines form one part of the turn
   - ⌥-click or the context menu's Show Call still opens the raw arguments; the menu also has
     Review <file>, Open Output, and Copy Output.
 
-**Changes card** (`NWChangesCard`, ChangesCard(turn.changes); Main, NWThread): every finished turn
+**Changes card** (`SHChangesCard`, ChangesCard(turn.changes); Main, SHThread): every finished turn
 that edited files ends with one. It comes from the turn the host recorded (`ChangesTurn`, carried
 by the thread's rows as `recordedTurn`): the files as the repository saw them, however they were
 written. A host without Changes (or a directory that is no repository) gets the card from the
@@ -528,7 +528,7 @@ turn's edit and write calls, without Undo.
 
 - A card on `bgWindow`, radius 10, 1px `lineSubtle`. Its head (10pt padding, 12pt leading, 10pt
   gaps): a 30pt tile (`bgSunken`, radius 8, a `lineSubtle` line) with `plus.forwardslash.minus`,
-  "Edited 5 files" (Geist 13 semibold) over the turn's diff stat in mono 11 (`NWDiffStat`, a true
+  "Edited 5 files" (Geist 13 semibold) over the turn's diff stat in mono 11 (`SHDiffStat`, a true
   minus), then **Undo** (ghost `s`, the undo glyph after it) and **Review** (secondary `s`).
 - The first three files as 30pt rows between hairlines, 12pt sides: the folder in `textTertiary`
   and the file name in `textPrimary` (`ui`, truncated at the head), "new" (or "deleted") in 11
@@ -547,7 +547,7 @@ turn's edit and write calls, without Undo.
   `textSecondary`, and **Redo** (ghost `s`) until the next turn starts.
 
 **Compactions** (ContextIdeas › In the thread, ContextCompacted; `CompactionItem` in
-`Thread/ContextMeter.swift`, on ShepherdUI's `NWCompactionDivider` and `NWCompactionSummary`;
+`Thread/ContextMeter.swift`, on ShepherdUI's `SHCompactionDivider` and `SHCompactionSummary`;
 `NativeCompactionRow` in ShepherdRemote). A compaction leaves one line where it happened, like
 other thread events, inside the reply it happened in: a `lineSubtle` rule on each side, 12pt
 from the words, which are 7pt apart — an arrows-in glyph in `textTertiary`, what happened in 12
@@ -573,7 +573,7 @@ The ring's Show summary opens the same card.
 
 The supplied **Goal card** board, with **MobileGoal** and **iPadGoal**, is the authority for this card.
 The [second safety review](goal-safety-review.md) amends its controls and model disclosure; its
-[revision-301 image](boards/GoalStates.png) is saved here. `NWGoalCard` has five states:
+[revision-301 image](boards/GoalStates.png) is saved here. `SHGoalCard` has five states:
 Working, Checking, Met, Paused, and Needs you. All headers use the reference's two-ring goal
 glyph. Working has a pulsing blue dot, Checking a blue spinner, Met a green checkmark,
 Paused a gray pause mark, and Needs you an amber dot. Reduced motion disables animation.
@@ -638,22 +638,22 @@ Agents write more than paragraphs and lists; everything they commonly write draw
 the same on the Mac, iPhone and iPad. One parser in ShepherdRemote (`nativeMarkdownParse` in
 `NativeMarkdown.swift`) splits a reply into blocks once per change, in the store
 (`NativeTurnPresentation`), never in a view's `body`. The app maps them onto ShepherdUI's
-`NWProseBlock` (`Prose` on the Mac, `ProseView` on iOS), and ShepherdUI draws them (`Prose.swift`,
+`SHProseBlock` (`Prose` on the Mac, `ProseView` on iOS), and ShepherdUI draws them (`Prose.swift`,
 `ProseTable.swift`, `ProseParts.swift`). Inline runs are styled once per text and text scale by
-`NWProseInline`. Nothing the parser does not understand is dropped or shown as markup: it reads as
+`SHProseInline`. Nothing the parser does not understand is dropped or shown as markup: it reads as
 text.
 
-- **Tables** (`NWProseTableView`): GitHub pipe tables with their delimiter row. A card with
-  radius 8 (`NW.Radius.m`) and a 1px `lineSubtle` border, no fill of its own. The header row
+- **Tables** (`SHProseTableView`): GitHub pipe tables with their delimiter row. A card with
+  radius 8 (`SH.Radius.m`) and a 1px `lineSubtle` border, no fill of its own. The header row
   sits on `bgSunken` in `ui` semibold `textSecondary`. Cells are in the prose size (`body`, at
-  `headline`'s 1.35 line height) in `textPrimary`, with 8×12 padding (`NW.Space.m` ×
-  `NW.Space.l`). Rows are split by 1px `lineSubtle` hairlines; there are no column lines.
+  `headline`'s 1.35 line height) in `textPrimary`, with 8×12 padding (`SH.Space.m` ×
+  `SH.Space.l`). Rows are split by 1px `lineSubtle` hairlines; there are no column lines.
   - Columns follow the delimiter row's alignment (`:--`, `:-:`, `--:`).
   - Cells keep their inline Markdown: code spans as the thread styles them, bold, italic,
     links, strikethrough. An escaped pipe (`\|`) stays in its cell, and a pipe inside a code
     span never splits one. Rows of uneven length are padded, and no cell is ever dropped.
-  - **Sizing** (`NWTableLayout`): a column takes its widest cell's width up to
-    `NWThreadMetrics.tableColumnMax` (360pt, 260pt on iOS), then wraps. A table narrower than
+  - **Sizing** (`SHTableLayout`): a column takes its widest cell's width up to
+    `SHThreadMetrics.tableColumnMax` (360pt, 260pt on iOS), then wraps. A table narrower than
     the prose measure hugs its content; given room, wrapped columns grow toward their content.
     When the columns do not fit, each gives up its share down to its floor: the larger of
     `tableColumnMin` (88pt) and its widest word, so a wrapped cell breaks between words and
@@ -670,7 +670,7 @@ text.
   blocks, tables and quotes inside items; two spaces of indent nest, as agents write them.
   Bullets change by depth (•, ◦, ▪). Quotes hold blocks too, in italic `textSecondary`.
 - **Images:** an image on its own line (`![alt](src)` or `<img>`). A local file that this
-  device can read (the agent's working directory, `nwProseFileRoot`, is here) draws as a
+  device can read (the agent's working directory, `shProseFileRoot`, is here) draws as a
   thumbnail within 360×240 (`proseImageMaxWidth`, `proseImageMaxHeight`), radius 8 with a 1px
   `lineSubtle` border, decoded off the main actor at the size drawn. Clicking it opens the file.
   Absolute paths and paths relative to the agent's folder both work. A web image is **never
@@ -680,16 +680,16 @@ text.
   A remote host's agent (and every agent on iOS) shows local images as chips too, because
   its files are not on this device. An image inside a sentence reads as its alt text.
 - **File links:** a link to a local path (`[plan](temporal/PLAN.md)`, `./`, `~/`, absolute,
-  `file://`) resolves against the agent's folder (`nwProseFileRoot`). A click opens it in the
+  `file://`) resolves against the agent's folder (`shProseFileRoot`). A click opens it in the
   editor chosen in Settings ▸ Advanced; a right-click offers Open in <editor>, Open With, Reveal in
-  Finder and Copy Path (`nwProseFileLinks`). A remote agent's file link is plain words: it never
+  Finder and Copy Path (`shProseFileLinks`). A remote agent's file link is plain words: it never
   opens a same-named file on this Mac. Web links open in the browser as before.
 - **Footnotes:** `[^label]` references become superscript numbers in `running` (mono 10.5),
   numbered in the order they are first cited. The notes gather after the message's last block,
   below a hairline: each number in caption tertiary where a list marker sits, its text in
   caption `textSecondary`. A reference with no note reads as written.
 - **HTML is never rendered raw.** `<details><summary>` becomes a disclosure
-  (`NWProseDetails`), collapsed: a 10pt chevron and the summary in body medium, the whole line
+  (`SHProseDetails`), collapsed: a 10pt chevron and the summary in body medium, the whole line
   a button. Open, its blocks sit 12pt past a 2pt `lineStrong` rule, as expanded thinking does.
   One with nothing inside is its summary alone, where the chevron's row puts it: no chevron,
   not a button.

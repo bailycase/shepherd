@@ -3,10 +3,10 @@ import SwiftUI
 // Subagent runs for touch (MobileSubagents, MobileSubagent, iPadSteer, iPadSubagents boards):
 // the run card on the subagents screen, the rows of earlier runs, the run header and the tabs
 // between sibling runs. The phone and iPad ramp, 44pt targets, nothing on hover. In a thread,
-// runs live in the tray above the composer (`NWSubagentTray`), as on the Mac.
+// runs live in the tray above the composer (`SHSubagentTray`), as on the Mac.
 
 /// The touch run components' own measures.
-public enum NWRunTouchMetrics {
+public enum SHRunTouchMetrics {
     /// The state pill.
     public static let pillHeight: CGFloat = 22
     /// Glyphs in rows and headers.
@@ -22,7 +22,7 @@ public enum NWRunTouchMetrics {
 }
 
 /// Everything a run card shows, as values.
-public struct NWRunCardValue: Identifiable, Equatable, Sendable {
+public struct SHRunCardValue: Identifiable, Equatable, Sendable {
     public var id: String
     public var name: String
     /// "background · fable-5-1".
@@ -84,7 +84,7 @@ public struct NWRunCardValue: Identifiable, Equatable, Sendable {
 /// A run's state pill with its time: "37m" counting while it runs, "Waiting on parent · 2m" while
 /// it waits on its parent's answer, "4m 02s" once finished; a queued or paused run shows its
 /// word, outlined.
-public struct NWRunPill: View {
+public struct SHRunPill: View {
     let state: AgentState
     let label: String?
     let since: Date?
@@ -99,22 +99,22 @@ public struct NWRunPill: View {
     }
 
     public var body: some View {
-        HStack(spacing: NW.Space.s) {
-            NWStatusDot(state)
+        HStack(spacing: SH.Space.s) {
+            SHStatusDot(state)
             HStack(spacing: 0) {
                 if let label { Text(label) }
                 if let label, since != nil, !label.isEmpty { Text(" · ") }
-                if let since { NWElapsedText(since: since, until: until, style: until == nil ? .short : .long) }
+                if let since { SHElapsedText(since: since, until: until, style: until == nil ? .short : .long) }
             }
-            .font(.nw(.caption, weight: .medium))
+            .font(.sh(.caption, weight: .medium))
             .foregroundStyle(state.textColor)
             .lineLimit(1)
             .monospacedDigit()
         }
-        .padding(.horizontal, NW.Space.m)
-        .frame(minHeight: NWRunTouchMetrics.pillHeight)
-        .background(state.tint ?? .clear, in: RoundedRectangle(cornerRadius: NW.Radius.xs))
-        .nwBorder(state.tint == nil ? Color.nw.lineStrong : .clear, radius: NW.Radius.xs)
+        .padding(.horizontal, SH.Space.m)
+        .frame(minHeight: SHRunTouchMetrics.pillHeight)
+        .background(state.tint ?? .clear, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
+        .shBorder(state.tint == nil ? Color.sh.lineStrong : .clear, radius: SH.Radius.xs)
         .fixedSize()
         .accessibilityElement(children: .combine)
     }
@@ -123,8 +123,8 @@ public struct NWRunPill: View {
 /// One run as a card (MobileSubagents board): the branch glyph, name, tags and the timed pill;
 /// then per state its step, context bar, tokens and last call; the question it put to its parent;
 /// what it did and its diff; or why it failed, with Re-run. Tapping the card opens the run.
-public struct NWRunCard: View, Equatable {
-    let run: NWRunCardValue
+public struct SHRunCard: View, Equatable {
+    let run: SHRunCardValue
     let isSelected: Bool
     let isEnabled: Bool
     let open: (() -> Void)?
@@ -134,7 +134,7 @@ public struct NWRunCard: View, Equatable {
 
     /// `isEnabled` gates Re-run (opening always works). A nil `open` draws the card as a header
     /// that opens nothing (the run already on screen); a nil `rerun` hides Re-run.
-    public init(_ run: NWRunCardValue, isSelected: Bool = false, isEnabled: Bool = true, open: (() -> Void)?,
+    public init(_ run: SHRunCardValue, isSelected: Bool = false, isEnabled: Bool = true, open: (() -> Void)?,
                 rerun: (() -> Void)? = nil) {
         self.run = run
         self.isSelected = isSelected
@@ -144,14 +144,14 @@ public struct NWRunCard: View, Equatable {
         actionShape = [open != nil, rerun != nil]
     }
 
-    public nonisolated static func == (a: NWRunCard, b: NWRunCard) -> Bool {
+    public nonisolated static func == (a: SHRunCard, b: SHRunCard) -> Bool {
         a.run == b.run && a.isSelected == b.isSelected && a.isEnabled == b.isEnabled && a.actionShape == b.actionShape
     }
 
     public var body: some View {
-        let nw = Color.nw
-        let shape = RoundedRectangle(cornerRadius: NW.Radius.l)
-        VStack(alignment: .leading, spacing: NW.Space.m) {
+        let sh = Color.sh
+        let shape = RoundedRectangle(cornerRadius: SH.Radius.l)
+        VStack(alignment: .leading, spacing: SH.Space.m) {
             if let open {
                 Button(action: open) { summary }
                     .buttonStyle(.plain)
@@ -165,24 +165,24 @@ public struct NWRunCard: View, Equatable {
                     .accessibilityLabel(run.accessibilityLabel)
                     .accessibilityValue(progressValue)
             }
-            if let question = run.question { NWRunQuestion(question, options: run.options) }
+            if let question = run.question { SHRunQuestion(question, options: run.options) }
             if run.state == .failed, let rerun {
-                Button("Re-run", action: rerun).buttonStyle(.nw(.secondary, size: .l)).disabled(!isEnabled)
+                Button("Re-run", action: rerun).buttonStyle(.sh(.secondary, size: .l)).disabled(!isEnabled)
                     .accessibilityLabel("Re-run \(run.name)")
             }
         }
-        .padding(NW.Space.l)
+        .padding(SH.Space.l)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(nw.bgRaised, in: shape)
-        .nwBorder(isSelected ? nw.running : nw.lineSubtle, radius: NW.Radius.l)
+        .background(sh.bgRaised, in: shape)
+        .shBorder(isSelected ? sh.running : sh.lineSubtle, radius: SH.Radius.l)
         .background {
             if isSelected {
-                RoundedRectangle(cornerRadius: NW.Radius.l + NWRunTouchMetrics.ring).fill(nw.runningTint)
-                    .padding(-NWRunTouchMetrics.ring)
+                RoundedRectangle(cornerRadius: SH.Radius.l + SHRunTouchMetrics.ring).fill(sh.runningTint)
+                    .padding(-SHRunTouchMetrics.ring)
             }
         }
-        .nwAnimation(.content, value: run.state)
-        .nwAnimation(.hover, value: isSelected)
+        .shAnimation(.content, value: run.state)
+        .shAnimation(.hover, value: isSelected)
         .accessibilityElement(children: .contain)
     }
 
@@ -208,68 +208,68 @@ public struct NWRunCard: View, Equatable {
     }
 
     private var summary: some View {
-        let nw = Color.nw
-        return VStack(alignment: .leading, spacing: NW.Space.m) {
+        let sh = Color.sh
+        return VStack(alignment: .leading, spacing: SH.Space.m) {
             // At accessibility sizes the header stacks: the name keeps its line, the tags and
             // the pill take the next.
             if dynamicType.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: NW.Space.s) {
-                    HStack(spacing: NW.Space.m) {
-                        NWBranchGlyph(run.state, size: NWRunTouchMetrics.glyph)
+                VStack(alignment: .leading, spacing: SH.Space.s) {
+                    HStack(spacing: SH.Space.m) {
+                        SHBranchGlyph(run.state, size: SHRunTouchMetrics.glyph)
                         name
                     }
                     pillView
                     if let tags = run.tags { tagsText(tags).lineLimit(2) }
                 }
             } else {
-                HStack(spacing: NW.Space.m) {
-                    NWBranchGlyph(run.state, size: NWRunTouchMetrics.glyph)
+                HStack(spacing: SH.Space.m) {
+                    SHBranchGlyph(run.state, size: SHRunTouchMetrics.glyph)
                     name.layoutPriority(2)
                     if let tags = run.tags { tagsText(tags).lineLimit(1).layoutPriority(0) }
-                    Spacer(minLength: NW.Space.s)
+                    Spacer(minLength: SH.Space.s)
                     pillView.layoutPriority(3)
                 }
             }
             switch run.state {
             case .running:
                 if dynamicType.isAccessibilitySize, run.step != nil || run.progress != nil || run.tokens != nil {
-                    VStack(alignment: .leading, spacing: NW.Space.s) {
-                        HStack(spacing: NW.Space.m) {
+                    VStack(alignment: .leading, spacing: SH.Space.s) {
+                        HStack(spacing: SH.Space.m) {
                             if let step = run.step { Text(step) }
-                            Spacer(minLength: NW.Space.s)
+                            Spacer(minLength: SH.Space.s)
                             if let tokens = run.tokens { Text(tokens) }
                         }
                         if let progress = run.progress {
-                            ProgressView(value: progress).progressViewStyle(.nwBar)
+                            ProgressView(value: progress).progressViewStyle(.shBar)
                                 .accessibilityLabel(run.progressLabel ?? "Progress")
                         }
                     }
-                    .font(.nw(.mono))
-                    .foregroundStyle(nw.textTertiary)
+                    .font(.sh(.mono))
+                    .foregroundStyle(sh.textTertiary)
                     .lineLimit(1)
                 } else if run.step != nil || run.progress != nil || run.tokens != nil {
-                    HStack(spacing: NW.Space.m) {
+                    HStack(spacing: SH.Space.m) {
                         if let step = run.step { Text(step) }
                         if let progress = run.progress {
-                            ProgressView(value: progress).progressViewStyle(.nwBar)
+                            ProgressView(value: progress).progressViewStyle(.shBar)
                                 .accessibilityLabel(run.progressLabel ?? "Progress")
                         } else {
                             Spacer(minLength: 0)
                         }
                         if let tokens = run.tokens { Text(tokens) }
                     }
-                    .font(.nw(.mono))
-                    .foregroundStyle(nw.textTertiary)
+                    .font(.sh(.mono))
+                    .foregroundStyle(sh.textTertiary)
                     .lineLimit(1)
                 }
                 detailLine
             case .done:
-                HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
-                    Text(run.detail).font(.nw(.ui, weight: .regular)).foregroundStyle(nw.textPrimary).lineLimit(2)
-                    if let added = run.added, let removed = run.removed { NWDiffStat(added: added, removed: removed) }
+                HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+                    Text(run.detail).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textPrimary).lineLimit(2)
+                    if let added = run.added, let removed = run.removed { SHDiffStat(added: added, removed: removed) }
                 }
             case .failed:
-                Text(run.detail).font(.nw(.ui, weight: .regular)).foregroundStyle(nw.failed).lineLimit(3)
+                Text(run.detail).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.failed).lineLimit(3)
             default:
                 detailLine
             }
@@ -279,27 +279,27 @@ public struct NWRunCard: View, Equatable {
     }
 
     private var name: some View {
-        Text(run.name).font(.nwMono(NWTextStyle.ui.size, .semibold)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
+        Text(run.name).font(.shMono(SHTextStyle.ui.size, .semibold)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
     }
 
     private func tagsText(_ tags: String) -> Text {
-        Text(tags).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+        Text(tags).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
     }
 
     private var pillView: some View {
         let pill = pill
-        return NWRunPill(run.state, label: pill.label, since: pill.since, until: pill.until)
+        return SHRunPill(run.state, label: pill.label, since: pill.since, until: pill.until)
     }
 
     private var detailLine: some View {
-        Text(run.detail).font(.nw(.mono)).foregroundStyle(Color.nw.textSecondary)
+        Text(run.detail).font(.sh(.mono)).foregroundStyle(Color.sh.textSecondary)
             .lineLimit(dynamicType.isAccessibilitySize ? 3 : 1).truncationMode(.middle)
     }
 }
 
 /// The question a run put to its parent, to read: the question and the answers it offered. No
 /// control answers it: its parent does, or asks the user in its own thread.
-public struct NWRunQuestion: View {
+public struct SHRunQuestion: View {
     let question: String
     let options: [String]
 
@@ -309,16 +309,16 @@ public struct NWRunQuestion: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: NW.Space.s) {
-            NWInlineText(text: question, codeSize: NWTextStyle.caption.size).equatable()
-                .nwText(.body)
-                .foregroundStyle(Color.nw.textPrimary)
+        VStack(alignment: .leading, spacing: SH.Space.s) {
+            SHInlineText(text: question, codeSize: SHTextStyle.caption.size).equatable()
+                .shText(.body)
+                .foregroundStyle(Color.sh.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if !options.isEmpty {
                 Text("It offered: " + options.joined(separator: " · "))
-                    .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                    .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -328,7 +328,7 @@ public struct NWRunQuestion: View {
 }
 
 /// A finished run in the list of earlier runs.
-public struct NWRunHistoryRow: Identifiable, Equatable, Sendable {
+public struct SHRunHistoryRow: Identifiable, Equatable, Sendable {
     public var id: String
     public var name: String
     public var state: AgentState
@@ -351,59 +351,59 @@ public struct NWRunHistoryRow: Identifiable, Equatable, Sendable {
 
 /// Earlier runs in one grouped card (MobileSubagents board): the outcome's glyph, the name over
 /// "what it did · 1h ago", the diff, and a chevron. A row opens the run.
-public struct NWRunHistoryList: View, Equatable {
-    let rows: [NWRunHistoryRow]
+public struct SHRunHistoryList: View, Equatable {
+    let rows: [SHRunHistoryRow]
     let select: (String) -> Void
 
-    public init(_ rows: [NWRunHistoryRow], select: @escaping (String) -> Void) {
+    public init(_ rows: [SHRunHistoryRow], select: @escaping (String) -> Void) {
         self.rows = rows
         self.select = select
     }
 
-    public nonisolated static func == (a: NWRunHistoryList, b: NWRunHistoryList) -> Bool { a.rows == b.rows }
+    public nonisolated static func == (a: SHRunHistoryList, b: SHRunHistoryList) -> Bool { a.rows == b.rows }
 
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         LazyVStack(spacing: 0) {
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                 VStack(spacing: 0) {
-                    if index > 0 { NWHairline() }
+                    if index > 0 { SHHairline() }
                     Button { select(row.id) } label: { label(row) }
-                        .buttonStyle(.nwRow(radius: 0))
+                        .buttonStyle(.shRow(radius: 0))
                         .accessibilityLabel([row.name, row.state.label, row.summary].filter { !$0.isEmpty }.joined(separator: ", "))
                         .accessibilityHint("Opens the run")
                 }
             }
         }
-        .background(nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.l))
-        .clipShape(RoundedRectangle(cornerRadius: NW.Radius.l))
-        .nwBorder(nw.lineSubtle, radius: NW.Radius.l)
+        .background(sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.l))
+        .clipShape(RoundedRectangle(cornerRadius: SH.Radius.l))
+        .shBorder(sh.lineSubtle, radius: SH.Radius.l)
     }
 
-    private func label(_ row: NWRunHistoryRow) -> some View {
-        let nw = Color.nw
-        return HStack(spacing: NW.Space.l) {
-            NWStateGlyph(row.state, size: NWRunTouchMetrics.glyph)
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                Text(row.name).font(.nwMono(NWTextStyle.ui.size, .medium)).foregroundStyle(nw.textPrimary).lineLimit(1)
+    private func label(_ row: SHRunHistoryRow) -> some View {
+        let sh = Color.sh
+        return HStack(spacing: SH.Space.l) {
+            SHStateGlyph(row.state, size: SHRunTouchMetrics.glyph)
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                Text(row.name).font(.shMono(SHTextStyle.ui.size, .medium)).foregroundStyle(sh.textPrimary).lineLimit(1)
                 HStack(spacing: 0) {
                     Text(row.summary).lineLimit(1).truncationMode(.tail)
                     if let finishedAt = row.finishedAt {
                         Text(" · ")
-                        NWElapsedText(since: finishedAt)
+                        SHElapsedText(since: finishedAt)
                         Text(" ago")
                     }
                 }
-                .font(.nw(.caption))
-                .foregroundStyle(nw.textTertiary)
+                .font(.sh(.caption))
+                .foregroundStyle(sh.textTertiary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            if let added = row.added, let removed = row.removed { NWDiffStat(added: added, removed: removed) }
-            Image(systemName: "chevron.right").font(.nw(.caption)).foregroundStyle(nw.textTertiary).accessibilityHidden(true)
+            if let added = row.added, let removed = row.removed { SHDiffStat(added: added, removed: removed) }
+            Image(systemName: "chevron.right").font(.sh(.caption)).foregroundStyle(sh.textTertiary).accessibilityHidden(true)
         }
-        .padding(.horizontal, NW.Space.l)
-        .padding(.vertical, NW.Space.m)
-        .frame(minHeight: NWRunTouchMetrics.historyRowHeight)
+        .padding(.horizontal, SH.Space.l)
+        .padding(.vertical, SH.Space.m)
+        .frame(minHeight: SHRunTouchMetrics.historyRowHeight)
         .contentShape(Rectangle())
     }
 }
@@ -411,7 +411,7 @@ public struct NWRunHistoryList: View, Equatable {
 /// The header of one run beside the thread (iPadSubagents board): the branch glyph in its state,
 /// "tests · 3 of 3", a mono line ending in a state-colored accent ("done 11:02"), and the
 /// caller's controls.
-public struct NWRunHeader<Trailing: View>: View {
+public struct SHRunHeader<Trailing: View>: View {
     let title: String
     let position: String?
     let state: AgentState
@@ -431,18 +431,18 @@ public struct NWRunHeader<Trailing: View>: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let accentText = accent.map { meta.isEmpty ? $0 : " · \($0)" } ?? ""
-        let titleBlock = HStack(spacing: NW.Space.m) {
-            NWBranchGlyph(state, size: NWRunTouchMetrics.glyph)
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                Text("\(Text(title).font(.nw(.ui, weight: .semibold)).foregroundStyle(nw.textPrimary))\(Text(position.map { " · \($0)" } ?? "").font(.nw(.ui, weight: .regular)).foregroundStyle(nw.textSecondary))")
+        let titleBlock = HStack(spacing: SH.Space.m) {
+            SHBranchGlyph(state, size: SHRunTouchMetrics.glyph)
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                Text("\(Text(title).font(.sh(.ui, weight: .semibold)).foregroundStyle(sh.textPrimary))\(Text(position.map { " · \($0)" } ?? "").font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary))")
                     .lineLimit(dynamicType.isAccessibilitySize ? 2 : 1)
                     .accessibilityAddTraits(.isHeader)
                 if !meta.isEmpty || accent != nil {
                     Text("\(Text(meta))\(Text(accentText).foregroundStyle(state.textColor))")
-                        .font(.nw(.mono))
-                        .foregroundStyle(nw.textTertiary)
+                        .font(.sh(.mono))
+                        .foregroundStyle(sh.textTertiary)
                         .lineLimit(dynamicType.isAccessibilitySize ? 3 : 1)
                 }
             }
@@ -451,32 +451,32 @@ public struct NWRunHeader<Trailing: View>: View {
         Group {
             // At accessibility sizes the controls take a line of their own under the title.
             if dynamicType.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: NW.Space.xs) {
+                VStack(alignment: .leading, spacing: SH.Space.xs) {
                     titleBlock
-                    HStack(spacing: NW.Space.xxs) {
+                    HStack(spacing: SH.Space.xxs) {
                         Spacer(minLength: 0)
                         trailing()
                     }
                 }
-                .padding(.vertical, NW.Space.s)
+                .padding(.vertical, SH.Space.s)
             } else {
-                HStack(spacing: NW.Space.m) {
+                HStack(spacing: SH.Space.m) {
                     titleBlock
-                    Spacer(minLength: NW.Space.m)
-                    HStack(spacing: NW.Space.xxs) { trailing() }
+                    Spacer(minLength: SH.Space.m)
+                    HStack(spacing: SH.Space.xxs) { trailing() }
                 }
             }
         }
-        .padding(.leading, NW.Space.l)
-        .padding(.trailing, NW.Space.s)
-        .frame(maxWidth: .infinity, minHeight: NW.Height.touch + NW.Space.m)
-        .background(nw.bgWindow)
-        .overlay(alignment: .bottom) { NWHairline() }
+        .padding(.leading, SH.Space.l)
+        .padding(.trailing, SH.Space.s)
+        .frame(maxWidth: .infinity, minHeight: SH.Height.touch + SH.Space.m)
+        .background(sh.bgWindow)
+        .overlay(alignment: .bottom) { SHHairline() }
     }
 }
 
 /// Tabs between sibling runs (iPadSteer board): one segment per run, the selected one raised.
-public struct NWRunTabs: View {
+public struct SHRunTabs: View {
     @Binding var selection: String
     let tabs: [(id: String, title: String)]
 
@@ -486,26 +486,26 @@ public struct NWRunTabs: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        HStack(spacing: NW.Space.xxs) {
+        let sh = Color.sh
+        HStack(spacing: SH.Space.xxs) {
             ForEach(tabs, id: \.id) { tab in
                 let selected = tab.id == selection
                 Button { selection = tab.id } label: {
                     Text(tab.title)
-                        .font(.nw(.caption, weight: selected ? .semibold : .medium))
-                        .foregroundStyle(selected ? nw.textPrimary : nw.textSecondary)
+                        .font(.sh(.caption, weight: selected ? .semibold : .medium))
+                        .foregroundStyle(selected ? sh.textPrimary : sh.textSecondary)
                         .lineLimit(1)
-                        .frame(maxWidth: .infinity, minHeight: NWRunTouchMetrics.tabHeight)
-                        .background(selected ? nw.bgRaised : .clear, in: RoundedRectangle(cornerRadius: NW.Radius.s))
+                        .frame(maxWidth: .infinity, minHeight: SHRunTouchMetrics.tabHeight)
+                        .background(selected ? sh.bgRaised : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .nwTouchTarget(height: NWRunTouchMetrics.tabHeight)
+                .shTouchTarget(height: SHRunTouchMetrics.tabHeight)
                 .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
             }
         }
-        .padding(NW.Space.xxs)
-        .background(nw.bgSunken, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-        .nwAnimation(.content, value: selection)
+        .padding(SH.Space.xxs)
+        .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+        .shAnimation(.content, value: selection)
     }
 }

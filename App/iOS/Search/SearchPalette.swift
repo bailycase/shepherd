@@ -20,8 +20,8 @@ struct SearchPalette: View {
     var body: some View {
         @Bindable var store = store
         VStack(spacing: 0) {
-            HStack(spacing: NW.Space.m) {
-                NWTouchSearchField("Search threads and actions", text: $store.query, focus: $focused, large: true) {
+            HStack(spacing: SH.Space.m) {
+                SHTouchSearchField("Search threads and actions", text: $store.query, focus: $focused, large: true) {
                     if let entry = store.selected { activate(entry) }
                 }
                 .onKeyPress(keys: [.upArrow, .downArrow], phases: [.down, .repeat]) { press in
@@ -33,29 +33,29 @@ struct SearchPalette: View {
                     return .handled
                 }
                 Button { navigator.dismissPresented() } label: {
-                    NWKeycap("esc").nwTouchTarget(height: NW.Height.controlS, width: NW.Height.controlS)
+                    SHKeycap("esc").shTouchTarget(height: SH.Height.controlS, width: SH.Height.controlS)
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut(.cancelAction)
                 .accessibilityLabel("Close")
-                .padding(.trailing, NW.Space.l)
+                .padding(.trailing, SH.Space.l)
             }
-            NWHairline()
+            SHHairline()
             HStack(spacing: 0) {
                 PaletteResults(sections: store.sections, selection: store.selectionID, status: store.status, idle: store.isIdle,
                                query: store.query, select: { store.select($0) }, activate: activate)
                     .frame(width: MobileLayout.paletteListWidth)
-                NWHairline(.vertical)
+                SHHairline(.vertical)
                 PalettePreviewPane(entry: store.selected, state: preview.state, activate: activate)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Color.nw.bgRaised)
+        .background(Color.sh.bgRaised)
         .toolbar(.hidden, for: .navigationBar)
         .presentationSizing(PaletteSizing())
         .presentationCornerRadius(MobileLayout.paletteRadius)
-        .presentationBackground(Color.nw.bgRaised)
+        .presentationBackground(Color.sh.bgRaised)
         .task {
             if store.query.isEmpty, !initialQuery.isEmpty { store.query = initialQuery }
             store.attach(hosts, thread: navigator.selectedThread)
@@ -119,8 +119,8 @@ private struct PaletteResults: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(sections) { section in
-                        NWPaletteSectionHeader(section.title)
-                            .padding(.top, NW.Space.s)
+                        SHPaletteSectionHeader(section.title)
+                            .padding(.top, SH.Space.s)
                         ForEach(section.entries) { entry in
                             PaletteRow(entry: entry, selected: entry.id == selection, select: select, activate: activate)
                                 .equatable()
@@ -129,15 +129,15 @@ private struct PaletteResults: View {
                     }
                     if !idle && sections.allSatisfy({ $0.kind == .actions }) && status.searching == nil {
                         Text("No threads match “\(query)”.")
-                            .font(.nw(.caption))
-                            .foregroundStyle(Color.nw.textTertiary)
-                            .padding(NW.Space.m)
+                            .font(.sh(.caption))
+                            .foregroundStyle(Color.sh.textTertiary)
+                            .padding(SH.Space.m)
                     }
                     SearchStatusView(status: status)
-                        .padding(.horizontal, NW.Space.m)
-                        .padding(.vertical, NW.Space.s)
+                        .padding(.horizontal, SH.Space.m)
+                        .padding(.vertical, SH.Space.s)
                 }
-                .padding(NW.Space.s)
+                .padding(SH.Space.s)
             }
             .onChange(of: selection) { _, id in
                 guard let id else { return }
@@ -158,9 +158,9 @@ private struct PaletteRow: View, Equatable {
 
     var body: some View {
         Button { activate(entry) } label: {
-            NWSearchResultRow(leading: entry.leading, title: entry.title, detail: entry.detail, tag: entry.host,
+            SHSearchResultRow(leading: entry.leading, title: entry.title, detail: entry.detail, tag: entry.host,
                               shortcut: selected ? "↩" : nil, selected: selected, dimmed: entry.dimmed,
-                              minHeight: NWSearchMetrics.compactRowHeight)
+                              minHeight: SHSearchMetrics.compactRowHeight)
         }
         .buttonStyle(.plain)
         .contextMenu {
@@ -185,64 +185,64 @@ private struct PalettePreviewPane: View {
     @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NW.Space.l) {
+        VStack(alignment: .leading, spacing: SH.Space.l) {
             if let entry {
                 if let thread = state.thread {
-                    HStack(spacing: NW.Space.m) {
-                        NWStateGlyph(thread.state)
-                        Text(thread.title).font(.nw(.title)).foregroundStyle(Color.nw.textPrimary).lineLimit(2)
+                    HStack(spacing: SH.Space.m) {
+                        SHStateGlyph(thread.state)
+                        Text(thread.title).font(.sh(.title)).foregroundStyle(Color.sh.textPrimary).lineLimit(2)
                     }
-                    HStack(spacing: NW.Space.m) {
-                        NWStatusPill(thread.state)
-                        Text(thread.meta).font(.nw(.mono)).foregroundStyle(Color.nw.textTertiary).lineLimit(1)
+                    HStack(spacing: SH.Space.m) {
+                        SHStatusPill(thread.state)
+                        Text(thread.meta).font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
                     }
                     PaletteExcerpt(lines: state.lines, loading: state.loading, note: state.note)
                 } else {
-                    Label { Text(entry.title.map(\.text).joined()).font(.nw(.title)) } icon: {
+                    Label { Text(entry.title.map(\.text).joined()).font(.sh(.title)) } icon: {
                         if case .symbol(let name) = entry.leading { Image(systemName: name) }
                     }
-                    .foregroundStyle(Color.nw.textPrimary)
+                    .foregroundStyle(Color.sh.textPrimary)
                 }
                 if let caption = Self.caption(entry) {
-                    NWHighlightedText(caption, style: .caption, color: .secondary, lines: 3)
+                    SHHighlightedText(caption, style: .caption, color: .secondary, lines: 3)
                 }
                 // Windows/ (iPadPalette board): Open in new window beside Open, for a thread; under
                 // it when the two don't fit side by side (large text).
                 ViewThatFits(in: .horizontal) {
-                    HStack(spacing: NW.Space.m) { actions(entry) }
-                    VStack(alignment: .leading, spacing: NW.Space.m) { actions(entry) }
+                    HStack(spacing: SH.Space.m) { actions(entry) }
+                    VStack(alignment: .leading, spacing: SH.Space.m) { actions(entry) }
                 }
             } else {
-                Text("Nothing selected").font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                Text("Nothing selected").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
             }
         }
-        .padding(NW.Space.l + NW.Space.xxs)
+        .padding(SH.Space.l + SH.Space.xxs)
     }
 
     @ViewBuilder private func actions(_ entry: SearchEntry) -> some View {
         Button { activate(entry) } label: {
-            HStack(spacing: NW.Space.s) {
+            HStack(spacing: SH.Space.s) {
                 Text(Self.verb(entry))
-                NWKeycap("↩")
+                SHKeycap("↩")
             }
         }
-        .buttonStyle(.nw(Self.destructive(entry) ? .danger : .primary, size: .l))
-        .nwTouchTarget(height: NW.Height.controlL)
+        .buttonStyle(.sh(Self.destructive(entry) ? .danger : .primary, size: .l))
+        .shTouchTarget(height: SH.Height.controlL)
         if case .open(let ref) = entry.action {
             OpenInNewWindowButton(thread: ref, prominent: true) { navigator.dismissPresented() }
         }
     }
 
-    private static func caption(_ entry: SearchEntry) -> [NWHighlightRun]? {
+    private static func caption(_ entry: SearchEntry) -> [SHHighlightRun]? {
         switch entry.action {
         case .open: entry.snippet == nil ? nil : entry.detail
-        case .rename: [NWHighlightRun("Give this thread a name of your own. The host keeps it; the agent won’t rename it again.")]
-        case .move(_, let direction): [NWHighlightRun("Moves this thread one place \(direction == .up ? "up" : "down") in its space on every device.")]
-        case .delete: [NWHighlightRun("Stops the agent and closes its thread. You confirm on the next screen.")]
-        case .newThread: [NWHighlightRun("Start an agent on any connected host.")]
-        case .settings: [NWHighlightRun("Hosts, instructions, skills, experiments, and each host’s settings.")]
+        case .rename: [SHHighlightRun("Give this thread a name of your own. The host keeps it; the agent won’t rename it again.")]
+        case .move(_, let direction): [SHHighlightRun("Moves this thread one place \(direction == .up ? "up" : "down") in its space on every device.")]
+        case .delete: [SHHighlightRun("Stops the agent and closes its thread. You confirm on the next screen.")]
+        case .newThread: [SHHighlightRun("Start an agent on any connected host.")]
+        case .settings: [SHHighlightRun("Hosts, instructions, skills, experiments, and each host’s settings.")]
         case .openDesign: entry.detail
-        case .newDesign: [NWHighlightRun("A design agent draws it as boards on the host.")]
+        case .newDesign: [SHHighlightRun("A design agent draws it as boards on the host.")]
         }
     }
 
@@ -272,44 +272,44 @@ private struct PaletteExcerpt: View {
     let note: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NW.Space.m) {
+        VStack(alignment: .leading, spacing: SH.Space.m) {
             if let note {
-                Text(note).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                Text(note).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
             }
             ForEach(lines) { line in
                 switch line.kind {
                 case .user:
                     Text(line.text)
-                        .font(.nw(.caption))
-                        .foregroundStyle(Color.nw.textPrimary)
+                        .font(.sh(.caption))
+                        .foregroundStyle(Color.sh.textPrimary)
                         .lineLimit(3)
-                        .padding(.horizontal, NW.Space.m)
-                        .padding(.vertical, NW.Space.s)
-                        .background(Color.nw.bgBubble, in: RoundedRectangle(cornerRadius: NW.Radius.m))
+                        .padding(.horizontal, SH.Space.m)
+                        .padding(.vertical, SH.Space.s)
+                        .background(Color.sh.bgBubble, in: RoundedRectangle(cornerRadius: SH.Radius.m))
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 case .assistant:
                     Text(line.text)
-                        .font(.nw(.caption))
-                        .foregroundStyle(Color.nw.textSecondary)
+                        .font(.sh(.caption))
+                        .foregroundStyle(Color.sh.textSecondary)
                         .lineLimit(4)
                 case .activity:
-                    Label(line.text, systemImage: line.failed ? NWGlyph.failedStep.symbolName : "chevron.right")
-                        .font(.nw(.mono))
-                        .foregroundStyle(line.failed ? Color.nw.failed : Color.nw.textTertiary)
+                    Label(line.text, systemImage: line.failed ? SHGlyph.failedStep.symbolName : "chevron.right")
+                        .font(.sh(.mono))
+                        .foregroundStyle(line.failed ? Color.sh.failed : Color.sh.textTertiary)
                         .lineLimit(1)
                 }
             }
             if loading && lines.isEmpty {
-                ProgressView().progressViewStyle(NWSpinnerStyle()).frame(maxWidth: .infinity)
+                ProgressView().progressViewStyle(SHSpinnerStyle()).frame(maxWidth: .infinity)
             }
         }
-        .padding(NW.Space.l)
+        .padding(SH.Space.l)
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(maxHeight: MobileLayout.palettePreviewHeight, alignment: .bottom)
         .fixedSize(horizontal: false, vertical: true)
         .clipped()
-        .background(Color.nw.bgWindow, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-        .nwBorder(Color.nw.lineSubtle, radius: NW.Radius.m)
+        .background(Color.sh.bgWindow, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+        .shBorder(Color.sh.lineSubtle, radius: SH.Radius.m)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Latest in this thread")
     }

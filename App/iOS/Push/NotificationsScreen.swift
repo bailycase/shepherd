@@ -17,30 +17,30 @@ struct NotificationsScreen: View {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
                 VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
                     Text("Get notified when a thread finishes, hits an error, or needs your answer, even when Shepherd isn't open.")
-                        .nwText(.caption)
-                        .foregroundStyle(Color.nw.textSecondary)
-                        .padding(.horizontal, NW.Space.xs)
-                    NWListCard {
-                        HStack(spacing: NW.Space.l) {
+                        .shText(.caption)
+                        .foregroundStyle(Color.sh.textSecondary)
+                        .padding(.horizontal, SH.Space.xs)
+                    SHListCard {
+                        HStack(spacing: SH.Space.l) {
                             Image(systemName: "lock.shield")
-                                .font(.nw(.ui, weight: .medium))
-                                .foregroundStyle(Color.nw.textSecondary)
-                                .frame(width: NWListMetrics.leadingWidth)
+                                .font(.sh(.ui, weight: .medium))
+                                .foregroundStyle(Color.sh.textSecondary)
+                                .frame(width: SHListMetrics.leadingWidth)
                                 .accessibilityHidden(true)
                             Text("Apple and Cloudflare receive your device token, event type, and opaque routing IDs. No thread content is sent.")
-                                .font(.nw(.caption))
-                                .foregroundStyle(Color.nw.textSecondary)
+                                .font(.sh(.caption))
+                                .foregroundStyle(Color.sh.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
-                        .padding(.horizontal, NW.Space.l)
-                        .padding(.vertical, NW.Space.m)
+                        .padding(.horizontal, SH.Space.l)
+                        .padding(.vertical, SH.Space.m)
                     }
                 }
 
                 if hosts.hosts.isEmpty {
                     SettingsFootnote("Add a host in Settings ▸ Hosts to enable push notifications.")
                 } else {
-                    NWListCard {
+                    SHListCard {
                         ForEach(hosts.hosts) { host in
                             PushHostRow(host: host)
                         }
@@ -53,7 +53,7 @@ struct NotificationsScreen: View {
             .frame(maxWidth: MobileLayout.homeMaxWidth)
             .frame(maxWidth: .infinity)
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .navigationTitle("Notifications")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -67,23 +67,23 @@ private struct PushHostRow: View {
     var body: some View {
         let state = push.hostStates[host.id] ?? PushManager.HostPushState()
         let supported = push.hostSupportsPush(host)
-        VStack(alignment: .leading, spacing: NW.Space.xxs) {
-            HStack(spacing: NW.Space.l) {
-                VStack(alignment: .leading, spacing: NW.Space.xxs) {
+        VStack(alignment: .leading, spacing: SH.Space.xxs) {
+            HStack(spacing: SH.Space.l) {
+                VStack(alignment: .leading, spacing: SH.Space.xxs) {
                     Text(host.name)
-                        .font(.nw(.ui, weight: .medium))
-                        .foregroundStyle(Color.nw.textPrimary)
+                        .font(.sh(.ui, weight: .medium))
+                        .foregroundStyle(Color.sh.textPrimary)
                     if !supported && host.phase.isConnected {
                         Text("Update Shepherd on this Mac")
-                            .font(.nw(.caption))
-                            .foregroundStyle(Color.nw.textTertiary)
+                            .font(.sh(.caption))
+                            .foregroundStyle(Color.sh.textTertiary)
                     } else if !host.phase.isConnected {
                         Text("Offline")
-                            .font(.nw(.caption))
-                            .foregroundStyle(Color.nw.textTertiary)
+                            .font(.sh(.caption))
+                            .foregroundStyle(Color.sh.textTertiary)
                     }
                 }
-                Spacer(minLength: NW.Space.m)
+                Spacer(minLength: SH.Space.m)
                 if state.registering {
                     ProgressView()
                         .controlSize(.small)
@@ -91,7 +91,7 @@ private struct PushHostRow: View {
                     Button("Retry") {
                         Task { await push.retryRevoke(host: host) }
                     }
-                    .buttonStyle(.nw(.secondary))
+                    .buttonStyle(.sh(.secondary))
                 } else {
                     Toggle(host.name, isOn: Binding(
                         get: { state.enabled },
@@ -102,21 +102,21 @@ private struct PushHostRow: View {
                             }
                         }
                     ))
-                    .toggleStyle(.nwSwitch)
+                    .toggleStyle(.shSwitch)
                     .labelsHidden()
                     .disabled(!supported && !state.enabled)
                 }
             }
             if let error = state.error {
                 Text(error)
-                    .font(.nw(.caption))
-                    .foregroundStyle(Color.nw.failed)
+                    .font(.sh(.caption))
+                    .foregroundStyle(Color.sh.failed)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(.horizontal, NW.Space.l)
-        .padding(.vertical, NW.Space.m)
-        .frame(minHeight: NWListMetrics.twoLineRowHeight)
+        .padding(.horizontal, SH.Space.l)
+        .padding(.vertical, SH.Space.m)
+        .frame(minHeight: SHListMetrics.twoLineRowHeight)
         .accessibilityElement(children: .combine)
     }
 }

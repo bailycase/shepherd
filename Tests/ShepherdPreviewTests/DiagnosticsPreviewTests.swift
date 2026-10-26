@@ -19,7 +19,7 @@ struct DiagnosticsPreviewTests {
             }
             .padding(AppLayout.settingsWideSides)
             .frame(width: 800, height: 440, alignment: .topLeading)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
     }
 }

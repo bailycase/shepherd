@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The turn error's own measures (TurnErrors): the Mac card, and the touch card iPhone and iPad
 /// share.
-public enum NWTurnErrorMetrics {
+public enum SHTurnErrorMetrics {
     #if os(iOS)
     public static let radius: CGFloat = 12
     public static let horizontalPadding: CGFloat = 14
@@ -53,7 +53,7 @@ public enum NWTurnErrorMetrics {
 /// and type as chips beside the model and provider, then Retry, Copy and Details, which opens
 /// in place on everything the provider sent back. Folded (an earlier error the next turn
 /// repeated, or one pi retried past), it is one line that opens the card.
-public struct NWTurnError: View {
+public struct SHTurnError: View {
     public enum Span: Equatable, Sendable {
         case text(String)
         /// A key cut to its ends, a host, a quoted name: mono, in the primary color.
@@ -153,27 +153,27 @@ public struct NWTurnError: View {
     // MARK: Folded
 
     private var foldedLine: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         return Button {
             if let unfoldState { unfoldState.wrappedValue = true } else { ownOpened = true }
         } label: {
-            HStack(spacing: NW.Space.m) {
-                Image(systemName: content.glyph).font(.system(size: NWTurnErrorMetrics.lineGlyph - 1, weight: .medium))
-                    .foregroundStyle(nw.failed)
-                    .frame(width: NWTurnErrorMetrics.lineGlyph, height: NWTurnErrorMetrics.lineGlyph)
-                Text(content.title).font(.nwSans(NWTurnErrorMetrics.foldedSize)).foregroundStyle(nw.textPrimary)
+            HStack(spacing: SH.Space.m) {
+                Image(systemName: content.glyph).font(.system(size: SHTurnErrorMetrics.lineGlyph - 1, weight: .medium))
+                    .foregroundStyle(sh.failed)
+                    .frame(width: SHTurnErrorMetrics.lineGlyph, height: SHTurnErrorMetrics.lineGlyph)
+                Text(content.title).font(.shSans(SHTurnErrorMetrics.foldedSize)).foregroundStyle(sh.textPrimary)
                     .lineLimit(1).truncationMode(.tail)
                 if !content.foldedMeta.isEmpty {
-                    Text(content.foldedMeta).font(.nwMono(11)).foregroundStyle(nw.textTertiary).lineLimit(1).fixedSize()
+                    Text(content.foldedMeta).font(.shMono(11)).foregroundStyle(sh.textTertiary).lineLimit(1).fixedSize()
                 }
-                Image(systemName: "chevron.right").font(.system(size: NWThreadMetrics.chevron - 1, weight: .semibold))
-                    .foregroundStyle(nw.textTertiary)
+                Image(systemName: "chevron.right").font(.system(size: SHThreadMetrics.chevron - 1, weight: .semibold))
+                    .foregroundStyle(sh.textTertiary)
             }
-            .frame(minHeight: NWTurnErrorMetrics.foldedHeight)
+            .frame(minHeight: SHTurnErrorMetrics.foldedHeight)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .nwHelp("Show the error")
+        .shHelp("Show the error")
         .accessibilityLabel("\(content.title), \(content.foldedMeta)")
         .accessibilityHint("Shows the error")
     }
@@ -181,53 +181,53 @@ public struct NWTurnError: View {
     // MARK: Card
 
     private var card: some View {
-        let nw = Color.nw
-        let shape = RoundedRectangle(cornerRadius: NWTurnErrorMetrics.radius)
+        let sh = Color.sh
+        let shape = RoundedRectangle(cornerRadius: SHTurnErrorMetrics.radius)
         return VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: NWTurnErrorMetrics.tileGap) {
+            HStack(alignment: .top, spacing: SHTurnErrorMetrics.tileGap) {
                 tile
-                VStack(alignment: .leading, spacing: NWTurnErrorMetrics.lineGap) {
+                VStack(alignment: .leading, spacing: SHTurnErrorMetrics.lineGap) {
                     titleRow
                     message
-                    facts.padding(.top, NWTurnErrorMetrics.factsTop)
-                    actions.padding(.top, NWTurnErrorMetrics.actionsTop)
+                    facts.padding(.top, SHTurnErrorMetrics.factsTop)
+                    actions.padding(.top, SHTurnErrorMetrics.actionsTop)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.vertical, NWTurnErrorMetrics.verticalPadding)
-            .padding(.horizontal, NWTurnErrorMetrics.horizontalPadding)
+            .padding(.vertical, SHTurnErrorMetrics.verticalPadding)
+            .padding(.horizontal, SHTurnErrorMetrics.horizontalPadding)
             if detailsOpen {
-                NWHairline()
+                SHHairline()
                 details
-                    .nwTransition(.content)
+                    .shTransition(.content)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(nw.bgRaised, in: shape)
+        .background(sh.bgRaised, in: shape)
         .clipShape(shape)
-        .nwBorder(nw.lineStrong, radius: NWTurnErrorMetrics.radius)
-        .nwAnimation(.content, value: detailsOpen)
+        .shBorder(sh.lineStrong, radius: SHTurnErrorMetrics.radius)
+        .shAnimation(.content, value: detailsOpen)
         .accessibilityElement(children: .contain)
     }
 
     private var tile: some View {
         Image(systemName: content.glyph)
-            .font(.system(size: NWTurnErrorMetrics.tileGlyph - 1, weight: .medium))
-            .foregroundStyle(Color.nw.failed)
-            .frame(width: NWTurnErrorMetrics.tile, height: NWTurnErrorMetrics.tile)
-            .background(Color.nw.failedTint, in: RoundedRectangle(cornerRadius: NW.Radius.m))
+            .font(.system(size: SHTurnErrorMetrics.tileGlyph - 1, weight: .medium))
+            .foregroundStyle(Color.sh.failed)
+            .frame(width: SHTurnErrorMetrics.tile, height: SHTurnErrorMetrics.tile)
+            .background(Color.sh.failedTint, in: RoundedRectangle(cornerRadius: SH.Radius.m))
             .accessibilityHidden(true)
     }
 
     private var titleRow: some View {
-        HStack(alignment: .firstTextBaseline, spacing: NWTurnErrorMetrics.titleGap) {
-            Text(content.title).font(.nwSans(NWTurnErrorMetrics.titleSize, .semibold)).foregroundStyle(Color.nw.textPrimary)
+        HStack(alignment: .firstTextBaseline, spacing: SHTurnErrorMetrics.titleGap) {
+            Text(content.title).font(.shSans(SHTurnErrorMetrics.titleSize, .semibold)).foregroundStyle(Color.sh.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
             #if !os(iOS)
             Spacer(minLength: 0)
             if let time = content.time {
-                Text(time).font(.nwMono(11)).foregroundStyle(Color.nw.textTertiary).fixedSize()
+                Text(time).font(.shMono(11)).foregroundStyle(Color.sh.textTertiary).fixedSize()
             }
             #endif
         }
@@ -235,123 +235,123 @@ public struct NWTurnError: View {
 
     /// The provider's words: code spans in mono, links in the link color with their arrow.
     private var message: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         var text = Text(verbatim: "")
         for span in content.message {
             switch span {
             case .text(let value):
                 text = Text("\(text)\(Text(verbatim: value))")
             case .code(let value):
-                text = Text("\(text)\(Text(verbatim: value).font(.nwMono(NWTurnErrorMetrics.messageSize - 0.5)).foregroundStyle(nw.textPrimary))")
+                text = Text("\(text)\(Text(verbatim: value).font(.shMono(SHTurnErrorMetrics.messageSize - 0.5)).foregroundStyle(sh.textPrimary))")
             case .link(let display, let url):
                 var link = AttributedString(display)
                 link.link = URL(string: url)
-                let arrow = Text(Image(systemName: "arrow.up.right.square")).font(.system(size: NWTurnErrorMetrics.linkGlyph - 1))
-                text = Text("\(text)\(Text(link).font(.nwSans(NWTurnErrorMetrics.linkSize)).foregroundStyle(nw.running)) \(arrow.foregroundStyle(nw.running))")
+                let arrow = Text(Image(systemName: "arrow.up.right.square")).font(.system(size: SHTurnErrorMetrics.linkGlyph - 1))
+                text = Text("\(text)\(Text(link).font(.shSans(SHTurnErrorMetrics.linkSize)).foregroundStyle(sh.running)) \(arrow.foregroundStyle(sh.running))")
             }
         }
         return text
-            .font(.nwSans(NWTurnErrorMetrics.messageSize))
-            .foregroundStyle(nw.textSecondary)
-            .lineSpacing(NWTurnErrorMetrics.messageSize * 0.5 - 3)
-            .tint(nw.running)
+            .font(.shSans(SHTurnErrorMetrics.messageSize))
+            .foregroundStyle(sh.textSecondary)
+            .lineSpacing(SHTurnErrorMetrics.messageSize * 0.5 - 3)
+            .tint(sh.running)
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
     }
 
     /// "401" "authentication_error" gpt-5 · OpenAI · Tried 3 times over 31m.
     private var facts: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         #if os(iOS)
         let source = [content.source, content.time].compactMap { $0 }.joined(separator: " · ")
         #else
         let source = content.source ?? ""
         #endif
-        return NWFlowLayout(spacing: NW.Space.s, lineSpacing: NW.Space.xs) {
+        return SHFlowLayout(spacing: SH.Space.s, lineSpacing: SH.Space.xs) {
             ForEach(Array(content.chips.enumerated()), id: \.offset) { _, chip in
-                NWTag(chip, mono: true)
+                SHTag(chip, mono: true)
             }
             if !source.isEmpty {
-                Text(source).font(.nwSans(12)).foregroundStyle(nw.textTertiary).lineLimit(1)
+                Text(source).font(.shSans(12)).foregroundStyle(sh.textTertiary).lineLimit(1)
             }
             if let tries = content.tries {
-                Text((source.isEmpty ? "" : "· ") + tries).font(.nwSans(12)).foregroundStyle(nw.textTertiary).lineLimit(1)
+                Text((source.isEmpty ? "" : "· ") + tries).font(.shSans(12)).foregroundStyle(sh.textTertiary).lineLimit(1)
             }
         }
     }
 
     private var actions: some View {
-        HStack(spacing: NWTurnErrorMetrics.actionGap) {
+        HStack(spacing: SHTurnErrorMetrics.actionGap) {
             if let retry {
                 Button(action: retry) { Label("Retry", systemImage: "arrow.clockwise") }
                     #if os(iOS)
-                    .buttonStyle(.nw(.secondary, size: .l))
+                    .buttonStyle(.sh(.secondary, size: .l))
                     #else
-                    .buttonStyle(.nw(.secondary, size: .s))
+                    .buttonStyle(.sh(.secondary, size: .s))
                     #endif
-                    .nwHelp("Retry this turn")
-                    .nwTransition(.content)
+                    .shHelp("Retry this turn")
+                    .shTransition(.content)
             }
             Button {
-                NWPasteboard.copy(content.copyText)
+                SHPasteboard.copy(content.copyText)
                 copied = true
                 copies += 1
                 Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
-            } label: { NWCopyGlyph(copied: copied, copies: copies) }
-                .buttonStyle(.nwIcon(size: NWTurnErrorMetrics.copyButton))
-                .nwHelp("Copy the error")
+            } label: { SHCopyGlyph(copied: copied, copies: copies) }
+                .buttonStyle(.shIcon(size: SHTurnErrorMetrics.copyButton))
+                .shHelp("Copy the error")
                 .accessibilityLabel(copied ? "Copied" : "Copy error")
             Spacer(minLength: 0)
             Button {
                 toggleDetails()
             } label: {
                 HStack(spacing: 5) {
-                    Text("Details").font(.nwSans(NWTurnErrorMetrics.detailsSize)).foregroundStyle(Color.nw.textSecondary)
+                    Text("Details").font(.shSans(SHTurnErrorMetrics.detailsSize)).foregroundStyle(Color.sh.textSecondary)
                     Image(systemName: detailsOpen ? "chevron.down" : "chevron.right")
-                        .font(.system(size: NWThreadMetrics.chevron - 1, weight: .semibold))
-                        .foregroundStyle(Color.nw.textTertiary)
-                        .frame(width: NWThreadMetrics.chevron)
+                        .font(.system(size: SHThreadMetrics.chevron - 1, weight: .semibold))
+                        .foregroundStyle(Color.sh.textTertiary)
+                        .frame(width: SHThreadMetrics.chevron)
                 }
-                .frame(minHeight: NWTurnErrorMetrics.copyButton)
+                .frame(minHeight: SHTurnErrorMetrics.copyButton)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .nwHelp("Everything the provider sent back")
+            .shHelp("Everything the provider sent back")
             .accessibilityLabel(detailsOpen ? "Hide details" : "Show details")
         }
-        .nwAnimation(.content, value: retry != nil)
+        .shAnimation(.content, value: retry != nil)
     }
 
     // MARK: Details
 
     private var details: some View {
         #if os(iOS)
-        VStack(alignment: .leading, spacing: NW.Space.l) {
+        VStack(alignment: .leading, spacing: SH.Space.l) {
             factGrid
             if !content.body.isEmpty { rawBody }
         }
-        .padding(EdgeInsets(top: NW.Space.l, leading: NWTurnErrorMetrics.horizontalPadding,
-                            bottom: NWTurnErrorMetrics.verticalPadding, trailing: NWTurnErrorMetrics.horizontalPadding))
+        .padding(EdgeInsets(top: SH.Space.l, leading: SHTurnErrorMetrics.horizontalPadding,
+                            bottom: SHTurnErrorMetrics.verticalPadding, trailing: SHTurnErrorMetrics.horizontalPadding))
         #else
-        HStack(alignment: .top, spacing: NWTurnErrorMetrics.detailsGap) {
-            factGrid.frame(width: NWTurnErrorMetrics.factsWidth, alignment: .leading)
+        HStack(alignment: .top, spacing: SHTurnErrorMetrics.detailsGap) {
+            factGrid.frame(width: SHTurnErrorMetrics.factsWidth, alignment: .leading)
             if !content.body.isEmpty { rawBody }
         }
-        .padding(EdgeInsets(top: NWTurnErrorMetrics.verticalPadding, leading: NWTurnErrorMetrics.detailsLeading,
-                            bottom: NW.Space.xl, trailing: NWTurnErrorMetrics.horizontalPadding))
+        .padding(EdgeInsets(top: SHTurnErrorMetrics.verticalPadding, leading: SHTurnErrorMetrics.detailsLeading,
+                            bottom: SH.Space.xl, trailing: SHTurnErrorMetrics.horizontalPadding))
         #endif
     }
 
     private var factGrid: some View {
-        let nw = Color.nw
-        return Grid(alignment: .leading, horizontalSpacing: NW.Space.l, verticalSpacing: NWTurnErrorMetrics.factRowGap) {
+        let sh = Color.sh
+        return Grid(alignment: .leading, horizontalSpacing: SH.Space.l, verticalSpacing: SHTurnErrorMetrics.factRowGap) {
             ForEach(Array(content.facts.enumerated()), id: \.offset) { _, fact in
                 GridRow {
-                    Text(fact.label).font(.nwSans(NWTurnErrorMetrics.factSize)).foregroundStyle(nw.textTertiary)
-                        .frame(width: NWTurnErrorMetrics.factLabelWidth, alignment: .leading)
+                    Text(fact.label).font(.shSans(SHTurnErrorMetrics.factSize)).foregroundStyle(sh.textTertiary)
+                        .frame(width: SHTurnErrorMetrics.factLabelWidth, alignment: .leading)
                     Text(fact.value)
-                        .font(fact.mono ? .nwMono(NWTurnErrorMetrics.factSize - 0.5) : .nwSans(NWTurnErrorMetrics.factSize))
-                        .foregroundStyle(nw.textSecondary)
+                        .font(fact.mono ? .shMono(SHTurnErrorMetrics.factSize - 0.5) : .shSans(SHTurnErrorMetrics.factSize))
+                        .foregroundStyle(sh.textSecondary)
                         .lineLimit(1).truncationMode(.tail)
                         .textSelection(.enabled)
                         .help(fact.value)
@@ -363,7 +363,7 @@ public struct NWTurnError: View {
     /// Everything the provider sent back, pretty-printed: keys and strings in the syntax colors,
     /// a cut key on a faint fill, addresses underlined.
     private var rawBody: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         var text = AttributedString()
         for token in content.body {
             switch token {
@@ -371,42 +371,42 @@ public struct NWTurnError: View {
                 text += AttributedString(value)
             case .key(let value):
                 var part = AttributedString(value)
-                part.foregroundColor = nw.synFunction
+                part.foregroundColor = sh.synFunction
                 text += part
             case .string(let value):
                 var part = AttributedString(value)
-                part.foregroundColor = nw.synString
+                part.foregroundColor = sh.synString
                 text += part
             case .redacted(let value):
                 var part = AttributedString(value)
-                part.foregroundColor = nw.synString
-                part.backgroundColor = nw.bgSelected
+                part.foregroundColor = sh.synString
+                part.backgroundColor = sh.bgSelected
                 text += part
             case .link(let value):
                 var part = AttributedString(value)
-                part.foregroundColor = nw.running
+                part.foregroundColor = sh.running
                 part.underlineStyle = .single
                 text += part
             }
         }
         return Text(text)
-            .font(.nwMono(NWTurnErrorMetrics.bodySize))
-            .foregroundStyle(nw.textSecondary)
-            .lineSpacing(NWTurnErrorMetrics.bodySize * 0.6 - 3)
+            .font(.shMono(SHTurnErrorMetrics.bodySize))
+            .foregroundStyle(sh.textSecondary)
+            .lineSpacing(SHTurnErrorMetrics.bodySize * 0.6 - 3)
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.vertical, 10)
-            .padding(.horizontal, NW.Space.l)
+            .padding(.horizontal, SH.Space.l)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(nw.bgSunken, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-            .nwBorder(nw.lineSubtle, radius: NW.Radius.m)
+            .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+            .shBorder(sh.lineSubtle, radius: SH.Radius.m)
     }
 }
 
 /// pi retrying a request that failed (TurnErrors › While it retries): the kind's glyph, "OpenAI
 /// is overloaded · retrying in 8s" shimmering, the only thing moving, and "2 of 3". `text` gives
 /// the words at a moment; until `countdownEnds` passes they are redrawn each second.
-public struct NWRetryLine: View {
+public struct SHRetryLine: View {
     let glyph: String
     let count: String?
     let countdownEnds: Date?
@@ -420,17 +420,17 @@ public struct NWRetryLine: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        HStack(spacing: NW.Space.m) {
-            Image(systemName: glyph).font(.system(size: NWTurnErrorMetrics.lineGlyph - 1, weight: .medium))
-                .foregroundStyle(nw.textSecondary)
-                .frame(width: NWTurnErrorMetrics.lineGlyph, height: NWTurnErrorMetrics.lineGlyph)
+        let sh = Color.sh
+        HStack(spacing: SH.Space.m) {
+            Image(systemName: glyph).font(.system(size: SHTurnErrorMetrics.lineGlyph - 1, weight: .medium))
+                .foregroundStyle(sh.textSecondary)
+                .frame(width: SHTurnErrorMetrics.lineGlyph, height: SHTurnErrorMetrics.lineGlyph)
             words
             if let count {
-                Text(count).font(.nwMono(11)).foregroundStyle(nw.textTertiary).monospacedDigit().fixedSize()
+                Text(count).font(.shMono(11)).foregroundStyle(sh.textTertiary).monospacedDigit().fixedSize()
             }
         }
-        .frame(minHeight: NWThreadMetrics.liveHeight)
+        .frame(minHeight: SHThreadMetrics.liveHeight)
         .accessibilityElement(children: .combine)
     }
 
@@ -447,9 +447,9 @@ public struct NWRetryLine: View {
     private func line(_ value: String) -> some View {
         #if os(iOS)
         // The observed status must not truncate the retry countdown in a narrow scene.
-        Text(value).font(.nw(.ui, weight: .regular)).fixedSize(horizontal: false, vertical: true).nwShimmer(active: true)
+        Text(value).font(.sh(.ui, weight: .regular)).fixedSize(horizontal: false, vertical: true).shShimmer(active: true)
         #else
-        Text(value).font(.nw(.ui, weight: .regular)).lineLimit(1).truncationMode(.tail).nwShimmer(active: true)
+        Text(value).font(.sh(.ui, weight: .regular)).lineLimit(1).truncationMode(.tail).shShimmer(active: true)
         #endif
     }
 }

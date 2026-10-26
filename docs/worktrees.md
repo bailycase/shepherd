@@ -103,7 +103,7 @@ Finalize Worktree… and Delete Worktree Agent….
 
 **Finalize Worktree…** is in a worktree agent's context menu. The sheet goes through these
 phases: checking → setup (only if a check fails) → input → running → done or failed. It is an
-`NWDialog` like every sheet ([docs/design/dialogs-and-palette.md](design/dialogs-and-palette.md)): the checks and the
+`SHDialog` like every sheet ([docs/design/dialogs-and-palette.md](design/dialogs-and-palette.md)): the checks and the
 pipeline steps are checklist rows, each a state glyph, a label, and a one-line detail.
 
 ### Setup checks

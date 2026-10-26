@@ -54,10 +54,10 @@ struct ThreadAuthNoticeView: View {
     var body: some View {
         switch notice {
         case .waiting(let restoredAt):
-            NWAgentWaitingLine(message: ThreadAuthNotice.waitingMessage, trailing: ThreadAuthNotice.restored(restoredAt))
+            SHAgentWaitingLine(message: ThreadAuthNotice.waitingMessage, trailing: ThreadAuthNotice.restored(restoredAt))
         case .notSignedIn(let provider, let model, let at, let skipped):
             let usable = models.filter { provider == nil || !$0.hasPrefix(provider! + "/") }
-            NWAgentNotSignedInCard(provider: ThreadAuthNotice.providerName(provider), model: model,
+            SHAgentNotSignedInCard(provider: ThreadAuthNotice.providerName(provider), model: model,
                                    reason: ThreadAuthNotice.reason(provider: provider, skipped: skipped),
                                    time: at.formatted(date: .omitted, time: .shortened), signIn: { actions?.signIn(provider) }) {
                 if usable.isEmpty {

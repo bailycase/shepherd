@@ -131,7 +131,7 @@ struct DesignBoardActionsTests {
         screen.applyComments(DesignComments(revision: 1, comments: [comment]))
         screen.paneTab = .comments
         screen.present(Self.a)
-        screen.viewport = NWCanvasViewport(offset: CGPoint(x: -10_000, y: -10_000), zoom: 1)
+        screen.viewport = SHCanvasViewport(offset: CGPoint(x: -10_000, y: -10_000), zoom: 1)
         #expect(!screen.visibleBoards.contains(Self.system))
 
         screen.revealComment(comment.id)
@@ -177,13 +177,13 @@ struct DesignBoardActionsTests {
         let host = CanvasHost(try Self.index())
         let screen = await screen(host)
         for step in 1...8 {
-            screen.move(NWBoardMove(board: "A.dc.html", offset: CGSize(width: Double(step) * 10.3, height: -Double(step)), ended: false))
+            screen.move(SHBoardMove(board: "A.dc.html", offset: CGSize(width: Double(step) * 10.3, height: -Double(step)), ended: false))
         }
         #expect(host.patches.isEmpty, "nothing is written while dragging")
         #expect(screen.boards.first { $0.id == "A.dc.html" }?.frame.origin == CGPoint(x: 82.4, y: -8))
         #expect(screen.boards.first { $0.id == "B.dc.html" }?.frame.origin == CGPoint(x: 1360, y: 0), "only the dragged board moves")
 
-        let write = screen.move(NWBoardMove(board: "A.dc.html", offset: CGSize(width: 90.6, height: -9.4), ended: true))
+        let write = screen.move(SHBoardMove(board: "A.dc.html", offset: CGSize(width: 90.6, height: -9.4), ended: true))
         #expect(screen.boards.first { $0.id == "A.dc.html" }?.frame.origin == CGPoint(x: 91, y: -9), "it stays where it landed")
         await write?.value
         #expect(host.index.boards[Self.a]?.x == 91 && screen.movedTo.isEmpty)
@@ -197,8 +197,8 @@ struct DesignBoardActionsTests {
     @Test func aDragThatEndsWhereItBeganWritesNothing() async throws {
         let host = CanvasHost(try Self.index())
         let screen = await screen(host)
-        screen.move(NWBoardMove(board: "A.dc.html", offset: CGSize(width: 40, height: 0), ended: false))
-        #expect(screen.move(NWBoardMove(board: "A.dc.html", offset: CGSize(width: 0.2, height: -0.3), ended: true)) == nil)
+        screen.move(SHBoardMove(board: "A.dc.html", offset: CGSize(width: 40, height: 0), ended: false))
+        #expect(screen.move(SHBoardMove(board: "A.dc.html", offset: CGSize(width: 0.2, height: -0.3), ended: true)) == nil)
         #expect(host.patches.isEmpty && screen.moving == nil)
     }
 
@@ -208,7 +208,7 @@ struct DesignBoardActionsTests {
         let host = CanvasHost(try Self.index())
         let screen = await screen(host)
         host.agentWrites = 1
-        await screen.move(NWBoardMove(board: "B.dc.html", offset: CGSize(width: 0, height: 200), ended: true))?.value
+        await screen.move(SHBoardMove(board: "B.dc.html", offset: CGSize(width: 0, height: 200), ended: true))?.value
         #expect(host.index.boards[Self.b]?.y == 200)
         #expect(host.patches.map(\.base) == [1, 2])
         #expect(host.reports.isEmpty)

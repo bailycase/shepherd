@@ -58,11 +58,11 @@ struct NewDesignScreen: View {
                     }
                 }
                 if let problem {
-                    Section { Text(problem).foregroundStyle(Color.nw.failed) }
+                    Section { Text(problem).foregroundStyle(Color.sh.failed) }
                 }
             }
             .scrollContentBackground(.hidden)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
             .navigationTitle("New design")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

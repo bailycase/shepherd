@@ -39,8 +39,8 @@ struct TerminalPanelGeometryTests {
     @Test func theThreadSitsOverThePanelWhoseSelectedTabShowsItsTerminal() throws {
         let g = geometry()
         #expect(g.thread == CGRect(x: 0, y: 0, width: 1000, height: 570))
-        #expect(g.tabBar == CGRect(x: 0, y: 570, width: 1000, height: NWTerminalMetrics.tabBarHeight))
-        let top = 570 + NWTerminalMetrics.tabBarHeight
+        #expect(g.tabBar == CGRect(x: 0, y: 570, width: 1000, height: SHTerminalMetrics.tabBarHeight))
+        let top = 570 + SHTerminalMetrics.tabBarHeight
         #expect(g.content == CGRect(x: 0, y: top, width: 1000, height: 900 - top))
         #expect(g.tabs.map(\.id) == [shell.id, psql.id])
         // One terminal a tab: it fills the panel's content, with no header and no divider.
@@ -71,9 +71,9 @@ struct TerminalPanelGeometryTests {
     @Test func maximizedThePanelTakesTheLayoutAndTheThreadFoldsAwayAtItsSize() throws {
         let g = geometry(maximized: true)
         // The thread keeps one line above the strip (TerminalStates).
-        #expect(g.fold == CGRect(x: 0, y: 0, width: 1000, height: NWTerminalMetrics.foldedThreadHeight))
-        #expect(g.tabBar?.minY == NWTerminalMetrics.foldedThreadHeight)
-        #expect(g.content?.height == 900 - NWTerminalMetrics.foldedThreadHeight - NWTerminalMetrics.tabBarHeight)
+        #expect(g.fold == CGRect(x: 0, y: 0, width: 1000, height: SHTerminalMetrics.foldedThreadHeight))
+        #expect(g.tabBar?.minY == SHTerminalMetrics.foldedThreadHeight)
+        #expect(g.content?.height == 900 - SHTerminalMetrics.foldedThreadHeight - SHTerminalMetrics.tabBarHeight)
         #expect(geometry().fold == nil && geometry(shown: false, maximized: true).fold == nil)
         let threadLeaf = try leaf(thread, g)
         #expect(!threadLeaf.shown && threadLeaf.rect.height == 570)

@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Where the canvas looks: the screen position of the canvas's origin and the zoom. Boards are
 /// laid out in canvas points (a board's CSS pixels); the screen shows them `zoom` times as large.
-public struct NWCanvasViewport: Equatable, Sendable {
+public struct SHCanvasViewport: Equatable, Sendable {
     public var offset: CGPoint
     public var zoom: CGFloat
 
@@ -57,20 +57,20 @@ public struct NWCanvasViewport: Equatable, Sendable {
     /// The boards' bounds fitted into a view of `size`, never larger than 100%: their
     /// top-leading corner 44pt in, and the top row's labels 52pt down (its frames 76pt down), so
     /// the board actions have room above those labels (DZCanvas). 52pt stays free below.
-    public static func fitting(_ bounds: CGRect, in size: CGSize) -> NWCanvasViewport {
-        let M = NWDesignMetrics.self
+    public static func fitting(_ bounds: CGRect, in size: CGSize) -> SHCanvasViewport {
+        let M = SHDesignMetrics.self
         guard !bounds.isNull, bounds.width > 0, bounds.height > 0, size.width > 0, size.height > 0 else {
-            return NWCanvasViewport(offset: CGPoint(x: M.fitLeading, y: M.fitFrameTop), zoom: 1)
+            return SHCanvasViewport(offset: CGPoint(x: M.fitLeading, y: M.fitFrameTop), zoom: 1)
         }
         let room = CGSize(width: size.width - M.fitLeading * 2, height: size.height - M.fitFrameTop - M.fitTop)
         let zoom = clamp(min(1, max(room.width, 1) / bounds.width, max(room.height, 1) / bounds.height))
-        return NWCanvasViewport(offset: CGPoint(x: M.fitLeading - bounds.minX * zoom, y: M.fitFrameTop - bounds.minY * zoom), zoom: zoom)
+        return SHCanvasViewport(offset: CGPoint(x: M.fitLeading - bounds.minX * zoom, y: M.fitFrameTop - bounds.minY * zoom), zoom: zoom)
     }
 }
 
-/// The canvas toolbar's tools (NWCanvasToolbar): Select picks a board, Comment pins a comment
+/// The canvas toolbar's tools (SHCanvasToolbar): Select picks a board, Comment pins a comment
 /// (not built: drawn disabled), Pan drags the canvas.
-public enum NWCanvasTool: String, CaseIterable, Sendable {
+public enum SHCanvasTool: String, CaseIterable, Sendable {
     case select, comment, pan
 
     public var symbol: String {
@@ -91,7 +91,7 @@ public enum NWCanvasTool: String, CaseIterable, Sendable {
 }
 
 /// One board on the canvas as its frame draws it.
-public struct NWCanvasBoard: Identifiable, Equatable, Sendable {
+public struct SHCanvasBoard: Identifiable, Equatable, Sendable {
     public let id: String
     /// Where it sits, in canvas points.
     public var frame: CGRect
@@ -103,13 +103,13 @@ public struct NWCanvasBoard: Identifiable, Equatable, Sendable {
     /// Moves whenever what the frame's slot shows changes (a new snapshot, a live view coming or
     /// going): a frame redraws only when its board does.
     public var content: Int
-    /// The room its label has among the boards around it (`NWLabelRoom.rooms`).
-    public var labelRoom: NWLabelRoom
+    /// The room its label has among the boards around it (`SHLabelRoom.rooms`).
+    public var labelRoom: SHLabelRoom
     /// "used in 3 boards", for a shared piece other boards import; nil for any other board.
     public var usage: String?
 
     public init(id: String, frame: CGRect, title: String, size: String, isSelected: Bool = false, content: Int = 0,
-                labelRoom: NWLabelRoom = .open, usage: String? = nil) {
+                labelRoom: SHLabelRoom = .open, usage: String? = nil) {
         self.id = id
         self.frame = frame
         self.title = title
@@ -121,12 +121,12 @@ public struct NWCanvasBoard: Identifiable, Equatable, Sendable {
     }
 
     /// Where its label is drawn on screen at `viewport`; nil where it isn't drawn.
-    public func labelRect(in viewport: NWCanvasViewport) -> CGRect? {
+    public func labelRect(in viewport: SHCanvasViewport) -> CGRect? {
         let frame = viewport.screen(self.frame)
         let label = labelRoom.layout(width: frame.width, zoom: viewport.zoom)
         guard label.shown else { return nil }
-        return CGRect(x: frame.minX, y: frame.minY - label.gap - NWDesignMetrics.labelHeight,
-                      width: label.width, height: NWDesignMetrics.labelHeight)
+        return CGRect(x: frame.minX, y: frame.minY - label.gap - SHDesignMetrics.labelHeight,
+                      width: label.width, height: SHDesignMetrics.labelHeight)
     }
 
     /// "1280 × 800", the board's CSS pixel size.
@@ -140,14 +140,14 @@ public struct NWCanvasBoard: Identifiable, Equatable, Sendable {
 /// The room a board's label has, in canvas points, so that at a low zoom (rows 120 apart are
 /// about 20pt at 17%) no label lies over another board: how far up the nearest board above it is,
 /// and how far along its top edge the next board in its row starts.
-public struct NWLabelRoom: Equatable, Sendable {
+public struct SHLabelRoom: Equatable, Sendable {
     /// Clear canvas points between the board's top and the nearest board above its label; nil
     /// when nothing is above.
     public var above: CGFloat?
     /// Canvas points from the board's leading edge to the next board beside it; nil when none.
     public var along: CGFloat?
 
-    public static let open = NWLabelRoom()
+    public static let open = SHLabelRoom()
 
     public init(above: CGFloat? = nil, along: CGFloat? = nil) {
         self.above = above
@@ -158,20 +158,20 @@ public struct NWLabelRoom: Equatable, Sendable {
     /// wide it runs, and its gap to the frame. It keeps its 8pt gap where the room allows, moves
     /// down toward the frame where it doesn't, and isn't drawn where not even a 2pt gap fits.
     public func layout(width: CGFloat, zoom: CGFloat) -> (shown: Bool, width: CGFloat, gap: CGFloat) {
-        var labelWidth = Swift.max(width, NWDesignMetrics.labelMinWidth)
-        if let along { labelWidth = Swift.min(labelWidth, along * zoom - NWDesignMetrics.labelSpacing) }
-        guard let above else { return (labelWidth > 0, labelWidth, NWDesignMetrics.labelGap) }
-        let room = above * zoom - NWDesignMetrics.labelHeight
-        guard room >= NWDesignMetrics.labelMinGap, labelWidth > 0 else { return (false, Swift.max(labelWidth, 0), NWDesignMetrics.labelGap) }
-        return (true, labelWidth, Swift.min(NWDesignMetrics.labelGap, room))
+        var labelWidth = Swift.max(width, SHDesignMetrics.labelMinWidth)
+        if let along { labelWidth = Swift.min(labelWidth, along * zoom - SHDesignMetrics.labelSpacing) }
+        guard let above else { return (labelWidth > 0, labelWidth, SHDesignMetrics.labelGap) }
+        let room = above * zoom - SHDesignMetrics.labelHeight
+        guard room >= SHDesignMetrics.labelMinGap, labelWidth > 0 else { return (false, Swift.max(labelWidth, 0), SHDesignMetrics.labelGap) }
+        return (true, labelWidth, Swift.min(SHDesignMetrics.labelGap, room))
     }
 
     /// Each board's room among `frames` (canvas points, by id). `along` is the nearest board that
     /// starts further along and overlaps the board's height; `above`, the nearest board wholly
     /// above that overlaps the stretch the label can run over.
-    public static func rooms(_ frames: [String: CGRect]) -> [String: NWLabelRoom] {
+    public static func rooms(_ frames: [String: CGRect]) -> [String: SHLabelRoom] {
         let all = Array(frames)
-        var rooms: [String: NWLabelRoom] = [:]
+        var rooms: [String: SHLabelRoom] = [:]
         for (id, frame) in all {
             var along: CGFloat?
             for (other, rect) in all where other != id && rect.minX > frame.minX
@@ -184,17 +184,17 @@ public struct NWLabelRoom: Equatable, Sendable {
                 && rect.minX < reach && rect.maxX > frame.minX {
                 above = Swift.min(above ?? .infinity, frame.minY - rect.maxY)
             }
-            rooms[id] = NWLabelRoom(above: above, along: along)
+            rooms[id] = SHLabelRoom(above: above, along: along)
         }
         return rooms
     }
 }
 
 /// A board element the canvas rings: the selection, or the one under the pointer.
-public struct NWCanvasElement: Identifiable, Equatable, Sendable {
+public struct SHCanvasElement: Identifiable, Equatable, Sendable {
     /// Its id (`File.dc.html#tid:path`).
     public let id: String
-    /// The board it is on (`NWCanvasBoard.id`).
+    /// The board it is on (`SHCanvasBoard.id`).
     public var board: String
     /// Where it is drawn, in the board's own points from its top left.
     public var rect: CGRect
@@ -209,9 +209,9 @@ public struct NWCanvasElement: Identifiable, Equatable, Sendable {
     }
 }
 
-/// A pin on the canvas, on its element's top-trailing corner: a comment's (`NWCommentPin`), or a
-/// thread's note (`NWThreadNotePin`), which stands just after a comment's pin on the same corner.
-public struct NWCanvasPin: Identifiable, Equatable, Sendable {
+/// A pin on the canvas, on its element's top-trailing corner: a comment's (`SHCommentPin`), or a
+/// thread's note (`SHThreadNotePin`), which stands just after a comment's pin on the same corner.
+public struct SHCanvasPin: Identifiable, Equatable, Sendable {
     public enum Style: Equatable, Sendable {
         case comment
         /// A note a thread left, naming the thread (its help).
@@ -220,7 +220,7 @@ public struct NWCanvasPin: Identifiable, Equatable, Sendable {
 
     /// The comment's id, or the note's.
     public let id: String
-    /// The board it is on (`NWCanvasBoard.id`).
+    /// The board it is on (`SHCanvasBoard.id`).
     public var board: String
     /// Where its element is drawn, in the board's own points.
     public var rect: CGRect
@@ -238,7 +238,7 @@ public struct NWCanvasPin: Identifiable, Equatable, Sendable {
 
 /// One item of the canvas's right-click menu (CanvasContextMenu): its words, glyph, the chord it
 /// shows, and whether it is destructive. A `divider` item draws the hairline between sections.
-public struct NWCanvasMenuItem: Identifiable, Sendable {
+public struct SHCanvasMenuItem: Identifiable, Sendable {
     public let id: String
     public var title: String
     public var symbol: String?
@@ -262,28 +262,28 @@ public struct NWCanvasMenuItem: Identifiable, Sendable {
     }
 
     /// The hairline between two sections.
-    public static func divider(_ id: String) -> NWCanvasMenuItem {
-        NWCanvasMenuItem(id: "divider." + id, title: "", action: {})
+    public static func divider(_ id: String) -> SHCanvasMenuItem {
+        SHCanvasMenuItem(id: "divider." + id, title: "", action: {})
     }
 
     public var isDivider: Bool { id.hasPrefix("divider.") }
 }
 
-/// The board actions over one board (`NWBoardActions`): which board, and what each does.
-public struct NWCanvasActions {
-    /// The board they float over (`NWCanvasBoard.id`).
+/// The board actions over one board (`SHBoardActions`): which board, and what each does.
+public struct SHCanvasActions {
+    /// The board they float over (`SHCanvasBoard.id`).
     public var board: String
-    public var actions: NWBoardActions.Actions
+    public var actions: SHBoardActions.Actions
 
-    public init(board: String, actions: NWBoardActions.Actions) {
+    public init(board: String, actions: SHBoardActions.Actions) {
         self.board = board
         self.actions = actions
     }
 }
 
 /// A board being dragged to a new place on the canvas.
-public struct NWBoardMove: Equatable, Sendable {
-    /// The board (`NWCanvasBoard.id`).
+public struct SHBoardMove: Equatable, Sendable {
+    /// The board (`SHCanvasBoard.id`).
     public var board: String
     /// How far it has moved since the drag began, in canvas points.
     public var offset: CGSize
@@ -298,7 +298,7 @@ public struct NWBoardMove: Equatable, Sendable {
 }
 
 /// Where a click or the pointer landed on the canvas.
-public struct NWCanvasPick: Equatable, Sendable {
+public struct SHCanvasPick: Equatable, Sendable {
     /// The board under it, front-most first; nil over the empty canvas.
     public var board: String?
     /// The point on that board in its own points; nil when it landed on the board's label.
@@ -313,34 +313,34 @@ public struct NWCanvasPick: Equatable, Sendable {
     }
 }
 
-extension Array where Element == NWCanvasBoard {
+extension Array where Element == SHCanvasBoard {
     /// What is under a screen point: a board (the front-most), and where on it, or its label.
-    public func pick(at point: CGPoint, viewport: NWCanvasViewport, extending: Bool = false) -> NWCanvasPick {
+    public func pick(at point: CGPoint, viewport: SHCanvasViewport, extending: Bool = false) -> SHCanvasPick {
         if let board = board(at: point, viewport: viewport) {
             let origin = viewport.screen(board.frame.origin)
-            return NWCanvasPick(board: board.id, point: CGPoint(x: (point.x - origin.x) / viewport.zoom, y: (point.y - origin.y) / viewport.zoom),
+            return SHCanvasPick(board: board.id, point: CGPoint(x: (point.x - origin.x) / viewport.zoom, y: (point.y - origin.y) / viewport.zoom),
                                 extending: extending)
         }
         for board in reversed() where board.labelRect(in: viewport)?.contains(point) == true {
-            return NWCanvasPick(board: board.id, extending: extending)
+            return SHCanvasPick(board: board.id, extending: extending)
         }
-        return NWCanvasPick(extending: extending)
+        return SHCanvasPick(extending: extending)
     }
 
     /// The boards a view of `size` shows at `viewport`, with room for their labels, back to
     /// front as given.
-    public func visible(in viewport: NWCanvasViewport, size: CGSize) -> [NWCanvasBoard] {
+    public func visible(in viewport: SHCanvasViewport, size: CGSize) -> [SHCanvasBoard] {
         let bounds = CGRect(origin: .zero, size: size)
         return filter { board in
             var rect = viewport.screen(board.frame)
-            rect.origin.y -= NWDesignMetrics.labelHeight + NWDesignMetrics.labelGap
-            rect.size.height += NWDesignMetrics.labelHeight + NWDesignMetrics.labelGap
-            return rect.insetBy(dx: -NWDesignMetrics.ringWidth, dy: -NWDesignMetrics.ringWidth).intersects(bounds)
+            rect.origin.y -= SHDesignMetrics.labelHeight + SHDesignMetrics.labelGap
+            rect.size.height += SHDesignMetrics.labelHeight + SHDesignMetrics.labelGap
+            return rect.insetBy(dx: -SHDesignMetrics.ringWidth, dy: -SHDesignMetrics.ringWidth).intersects(bounds)
         }
     }
 
     /// The front-most board under a screen point.
-    public func board(at point: CGPoint, viewport: NWCanvasViewport) -> NWCanvasBoard? {
+    public func board(at point: CGPoint, viewport: SHCanvasViewport) -> SHCanvasBoard? {
         let canvasPoint = viewport.canvas(point)
         return last { $0.frame.contains(canvasPoint) }
     }

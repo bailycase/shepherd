@@ -49,20 +49,20 @@ struct PadCommitPopover: View {
     var body: some View {
         let store = CommitStores.shared.store(for: ref, hosts: hosts)
         ScrollView {
-            VStack(alignment: .leading, spacing: NW.Space.l) {
+            VStack(alignment: .leading, spacing: SH.Space.l) {
                 PadCommitTitle(store: store)
                 switch store.stage {
                 case .loading:
-                    HStack(spacing: NW.Space.m) {
-                        ProgressView().progressViewStyle(NWSpinnerStyle())
-                        Text("Reading the changes on the host…").font(.nw(.ui)).foregroundStyle(Color.nw.textSecondary)
+                    HStack(spacing: SH.Space.m) {
+                        ProgressView().progressViewStyle(SHSpinnerStyle())
+                        Text("Reading the changes on the host…").font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
                     }
-                    .frame(minHeight: NW.Height.touch)
+                    .frame(minHeight: SH.Height.touch)
                 case .unavailable(let message):
-                    NWBanner(.failed, title: "Can't commit from here", message: message)
+                    SHBanner(.failed, title: "Can't commit from here", message: message)
                 case .form:
                     CommitNotices(store: store)
-                    CommitMessageCard(store: store, fill: Color.nw.bgWindow)
+                    CommitMessageCard(store: store, fill: Color.sh.bgWindow)
                     PadCommitChecks(store: store)
                         .disabled(store.info?.blocked != nil)
                 case .operation:
@@ -70,11 +70,11 @@ struct PadCommitPopover: View {
                 }
                 footer(store)
             }
-            .padding(NW.Space.xl)
+            .padding(SH.Space.xl)
         }
         .scrollBounceBehavior(.basedOnSize)
         .frame(width: MobileLayout.commitPopoverWidth)
-        .background(Color.nw.bgRaised)
+        .background(Color.sh.bgRaised)
         .task { await store.begin() }
         .task(id: store.operationID) {
             guard store.operationID != nil else { return }
@@ -83,15 +83,15 @@ struct PadCommitPopover: View {
     }
 
     @ViewBuilder private func footer(_ store: ReviewCommitStore) -> some View {
-        VStack(alignment: .trailing, spacing: NW.Space.s) {
+        VStack(alignment: .trailing, spacing: SH.Space.s) {
             if store.stage == .form, let problem = store.problem, store.info?.blocked == nil {
-                Text(problem).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                Text(problem).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
-            HStack(spacing: NW.Space.m) {
+            HStack(spacing: SH.Space.m) {
                 if store.stage == .form {
                     Button("Ask agent", action: askAgent)
-                        .buttonStyle(.nw(.ghost, size: .l))
+                        .buttonStyle(.sh(.ghost, size: .l))
                         .accessibilityLabel("Ask agent to commit")
                         .accessibilityHint("Sends the agent a turn asking it to commit these changes instead")
                 }
@@ -99,16 +99,16 @@ struct PadCommitPopover: View {
                 switch store.stage {
                 case .operation:
                     if store.operation?.finished == true {
-                        Button("Done", action: close).buttonStyle(.nw(.primary, size: .l))
+                        Button("Done", action: close).buttonStyle(.sh(.primary, size: .l))
                     } else {
-                        Button("Close", action: close).buttonStyle(.nw(.secondary, size: .l))
+                        Button("Close", action: close).buttonStyle(.sh(.secondary, size: .l))
                             .accessibilityHint("The commit continues on the host")
                     }
                 default:
-                    Button("Cancel", action: close).buttonStyle(.nw(.secondary, size: .l))
+                    Button("Cancel", action: close).buttonStyle(.sh(.secondary, size: .l))
                     if store.stage == .form {
                         Button(store.actionTitle) { Task { await store.commit() } }
-                            .buttonStyle(.nw(.primary, size: .l))
+                            .buttonStyle(.sh(.primary, size: .l))
                             .disabled(!store.canCommit)
                     }
                 }
@@ -133,12 +133,12 @@ private struct PadCommitTitle: View {
     let store: ReviewCommitStore
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
+        HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
             Text(commitTitle(store))
-                .font(.nw(.headline))
-                .foregroundStyle(Color.nw.textPrimary)
+                .font(.sh(.headline))
+                .foregroundStyle(Color.sh.textPrimary)
             if store.outcome == nil, let branch = store.info?.branch {
-                Text("to \(branch)").font(.nw(.mono)).foregroundStyle(Color.nw.textTertiary).lineLimit(1).truncationMode(.middle)
+                Text("to \(branch)").font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary).lineLimit(1).truncationMode(.middle)
             }
         }
         .accessibilityElement(children: .combine)
@@ -152,7 +152,7 @@ private struct PadCommitChecks: View {
 
     var body: some View {
         if let info = store.info {
-            VStack(alignment: .leading, spacing: NW.Space.m) {
+            VStack(alignment: .leading, spacing: SH.Space.m) {
                 check("Push to \(info.pushRemote ?? "origin")", detail: reviewCommitPushDetail(info),
                       isOn: Binding(get: { store.push || store.pullRequest }, set: { store.push = $0 }))
                     .disabled(store.pullRequest || !reviewCommitCanPush(info))
@@ -164,12 +164,12 @@ private struct PadCommitChecks: View {
 
     private func check(_ title: String, detail: String, isOn: Binding<Bool>) -> some View {
         Toggle(isOn: isOn) {
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                Text(title).font(.nw(.ui)).foregroundStyle(Color.nw.textPrimary)
-                Text(detail).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary).fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                Text(title).font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary)
+                Text(detail).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).fixedSize(horizontal: false, vertical: true)
             }
         }
-        .toggleStyle(.nwCheckbox)
-        .frame(minHeight: NW.Height.touch, alignment: .leading)
+        .toggleStyle(.shCheckbox)
+        .frame(minHeight: SH.Height.touch, alignment: .leading)
     }
 }

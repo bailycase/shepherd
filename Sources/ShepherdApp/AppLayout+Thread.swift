@@ -1,8 +1,8 @@
 import ShepherdUI
 import SwiftUI
 
-/// The thread column and its composer (NWThread and NWComposer boards). The components' own
-/// sizes are `NWThreadMetrics` and `NWComposerMetrics` in ShepherdUI.
+/// The thread column and its composer (SHThread and SHComposer boards). The components' own
+/// sizes are `SHThreadMetrics` and `SHComposerMetrics` in ShepherdUI.
 extension AppLayout {
     // Thread
     /// The column's widest (Navigation board: "thread column · max 820 · prose 640").
@@ -23,7 +23,7 @@ extension AppLayout {
     static let activitySpacing: CGFloat = 6
     /// Between blocks inside one part (subagent cards in a stack).
     static let blockSpacing: CGFloat = 10
-    /// A note's text sits this far past its rule (`NWThreadMetrics.ruleWidth`).
+    /// A note's text sits this far past its rule (`SHThreadMetrics.ruleWidth`).
     static let noteIndent: CGFloat = 10
 
     // Starting
@@ -51,18 +51,18 @@ extension AppLayout {
     /// Space under the composer card, and the fade above it.
     static let composerBottom: CGFloat = 16
     /// Extra breathing room between the transcript tail and the floating composer.
-    static let composerTranscriptGap: CGFloat = NW.Space.xxl
+    static let composerTranscriptGap: CGFloat = SH.Space.xxl
     static let composerFade: CGFloat = 48
     /// A menu opens this far above the card, and keeps this far from the thread's top edge.
     static let menuGap: CGFloat = 8
     static let menuMargin: CGFloat = 8
     /// A chip's symbol, as big as the Fast bolt.
-    static let chipSymbol = NWComposerMetrics.chipSymbol
+    static let chipSymbol = SHComposerMetrics.chipSymbol
     /// Half the narrowest width a real layout ever proposes the control row (the narrowest
     /// thread column less the composer's compact gutters and the row's own side paddings, 352pt).
     /// A narrower proposal is the window's minimum-size pass, which asks at no width or the
     /// paddings' (`ComposerControlsMinimum`); halving leaves a margin on both sides.
-    static let composerControlsNarrowest: CGFloat = (threadMinWidth - 2 * gutterCompact - 2 * NW.Space.s) / 2
+    static let composerControlsNarrowest: CGFloat = (threadMinWidth - 2 * gutterCompact - 2 * SH.Space.s) / 2
     /// Holding Send this long while pi works opens the Send menu (as a right-click does).
     static let sendHoldDelay: Duration = .milliseconds(500)
 

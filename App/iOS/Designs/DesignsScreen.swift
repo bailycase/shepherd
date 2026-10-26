@@ -17,20 +17,20 @@ struct DesignsScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: MobileDesignLayout.sectionSpacing) {
                 if !model.available {
-                    NWEmptyState(Text("No designs here"), message: RemoteHostClient.designsRefusal, showsMark: false)
+                    SHEmptyState(Text("No designs here"), message: RemoteHostClient.designsRefusal, showsMark: false)
                         .frame(maxWidth: .infinity)
-                        .padding(.top, NW.Space.xxxl)
+                        .padding(.top, SH.Space.xxxl)
                 } else if model.tiles.isEmpty && model.systems.isEmpty {
-                    NWEmptyState(Text("No designs yet"), message: "Start one with New design; its boards show here.", showsMark: false)
+                    SHEmptyState(Text("No designs yet"), message: "Start one with New design; its boards show here.", showsMark: false)
                         .frame(maxWidth: .infinity)
-                        .padding(.top, NW.Space.xxxl)
+                        .padding(.top, SH.Space.xxxl)
                 }
                 if !model.tiles.isEmpty {
                     VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-                        NWListHeader("Recent", count: nil)
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: NWPhoneDesignMetrics.gridColumnSpacing,
+                        SHListHeader("Recent", count: nil)
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: SHPhoneDesignMetrics.gridColumnSpacing,
                                                                      alignment: .top), count: 2),
-                                  spacing: NWPhoneDesignMetrics.gridRowSpacing) {
+                                  spacing: SHPhoneDesignMetrics.gridRowSpacing) {
                             ForEach(model.tiles) { tile in
                                 DesignTileView(tile: tile, source: designs.source(tile.ref)) {
                                     DesignsHooks.open(tile.ref, navigator: navigator)
@@ -42,7 +42,7 @@ struct DesignsScreen: View {
                 }
                 if !model.systems.isEmpty {
                     VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-                        NWListHeader("Design systems", count: nil)
+                        SHListHeader("Design systems", count: nil)
                         DesignSystemsCard(rows: model.systems, swatches: designs.swatches)
                     }
                 }
@@ -52,7 +52,7 @@ struct DesignsScreen: View {
             .frame(maxWidth: MobileLayout.homeMaxWidth)
             .frame(maxWidth: .infinity)
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .refreshable { await designs.refresh() }
         .task { await designs.refresh() }
         .navigationTitle("Designs")
@@ -65,7 +65,7 @@ struct DesignsScreen: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("New design", systemImage: "plus") { DesignsHooks.create(navigator: navigator) }
                     .buttonStyle(.glassProminent)
-                    .tint(Color.nw.lantern)
+                    .tint(Color.sh.lantern)
                     .disabled(designs.serving.isEmpty)
             }
         }
@@ -82,7 +82,7 @@ struct DesignTileView: View, Equatable {
     static func == (a: DesignTileView, b: DesignTileView) -> Bool { a.tile == b.tile && (a.source == nil) == (b.source == nil) }
 
     var body: some View {
-        NWDesignTile(name: tile.name, detail: tile.detail, host: tile.hostTag, action: open) {
+        SHDesignTile(name: tile.name, detail: tile.detail, host: tile.hostTag, action: open) {
             GeometryReader { proxy in
                 if let first = tile.firstBoard {
                     let size = CGSize(width: first.width, height: first.height)
@@ -104,13 +104,13 @@ struct DesignSystemsCard: View {
     @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
-        NWListCard {
+        SHListCard {
             ForEach(rows) { row in
                 Button { navigator.open(.designs(.system(host: row.host, namespace: row.namespace))) } label: {
-                    NWDesignSystemRow(name: row.name, source: [row.source, row.hostTag].compactMap { $0 }.joined(separator: " · "),
+                    SHDesignSystemRow(name: row.name, source: [row.source, row.hostTag].compactMap { $0 }.joined(separator: " · "),
                                       colors: (swatches[row.id] ?? []).map { Color(light: $0, dark: $0) })
                 }
-                .buttonStyle(.nwRow(radius: 0))
+                .buttonStyle(.shRow(radius: 0))
             }
         }
     }

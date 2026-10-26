@@ -14,7 +14,7 @@ import Testing
 /// serves, and `BrowserPane`. A capture can't draw a web view, so the page area renders blank; what is
 /// drawn is the chrome with the real titles, addresses and notice words. Every page is on this Mac's
 /// loopback, so each tile is the loopback color: the other tile colors are in `browser-tabs-board-*`
-/// (plain values, `NWBrowserTabsBoard`).
+/// (plain values, `SHBrowserTabsBoard`).
 ///
 ///     SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter PreviewTests/browserTabs
 extension PreviewTests {
@@ -93,11 +93,11 @@ extension PreviewTests {
     private func renderTabs(_ name: String, _ workspace: PreviewWorkspace, _ root: BrowserSession, listOpen: Bool = false) async throws {
         try await Preview.renderMatrix("browser-tabs-\(name)", size: Self.tabsPaneSize) {
             VStack(spacing: 0) {
-                NWSidePaneTabs(SidePaneTabs.items(news: [], changedFiles: 2), selection: SidePaneTab.browser.rawValue, select: { _ in },
+                SHSidePaneTabs(SidePaneTabs.items(news: [], changedFiles: 2), selection: SidePaneTab.browser.rawValue, select: { _ in },
                                closeShortcut: "⇧⌘B", close: {}) { Button("Reset Width") {} }
                 BrowserPane(vm: workspace.vm, session: root, store: NativeThreadStore(), active: false, listOpen: listOpen)
             }
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
             .frame(width: Self.tabsPaneSize.width, height: Self.tabsPaneSize.height)
         }
     }
@@ -160,12 +160,12 @@ extension PreviewTests {
 
     /// The same chrome from plain values: the board's tile colors, which no real page on loopback can show.
     @Test(.enabled(if: Preview.enabled), arguments: [
-        ("two", NWBrowserTabsBoard.Scene.two), ("full", .full), ("opened", .opened), ("popup", .popup),
+        ("two", SHBrowserTabsBoard.Scene.two), ("full", .full), ("opened", .opened), ("popup", .popup),
         ("agent", .agent), ("elsewhere", .elsewhere), ("single", .single),
     ])
-    @MainActor func browserTabsBoard(name: String, scene: NWBrowserTabsBoard.Scene) async throws {
-        try await Preview.renderMatrix("browser-tabs-board-\(name)", size: CGSize(width: NWBrowserTabsBoard.paneWidth, height: 560)) {
-            NWBrowserTabsBoard(scene)
+    @MainActor func browserTabsBoard(name: String, scene: SHBrowserTabsBoard.Scene) async throws {
+        try await Preview.renderMatrix("browser-tabs-board-\(name)", size: CGSize(width: SHBrowserTabsBoard.paneWidth, height: 560)) {
+            SHBrowserTabsBoard(scene)
         }
     }
 }

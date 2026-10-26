@@ -63,10 +63,10 @@ extension DesignPreviewTests {
     /// and the thread's pin.
     @Test func designReferenceStates() async throws {
         try await Preview.render("design-reference-states", size: CGSize(width: 1260, height: 2320)) {
-            NWDesignReferenceSpecimens()
-                .padding(NW.Space.xxl)
+            SHDesignReferenceSpecimens()
+                .padding(SH.Space.xxl)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .background(Color.nw.bgWindow)
+                .background(Color.sh.bgWindow)
         }
     }
 
@@ -90,13 +90,13 @@ extension DesignPreviewTests {
         }
         let items = screen.menuItems(designName: checkout.name, keys: vm.keybindings)
         try await Preview.render("design-ref-menus", size: CGSize(width: 720, height: 300)) {
-            HStack(alignment: .top, spacing: NW.Space.xl) {
+            HStack(alignment: .top, spacing: SH.Space.xl) {
                 CanvasMenuLookalike(items: items)
                 CanvasMenuLookalike(items: [], menu: vm.designMenu(.local(checkout.id), context: .toolbar))
             }
-            .padding(NW.Space.xl)
+            .padding(SH.Space.xl)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
         #expect(items.filter { !$0.isDivider }.map(\.title) == ["Comment", "Tweak", "Implement in a Thread…", "Copy Reference", "Duplicate"])
     }
@@ -246,44 +246,44 @@ extension DesignPreviewTests {
 
 /// A native menu's items as the boards draw them, for a capture (a real menu is its own window).
 private struct CanvasMenuLookalike: View {
-    let items: [NWCanvasMenuItem]
+    let items: [SHCanvasMenuItem]
     var menu: DesignMenu? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let menu {
                 ForEach(Array(menu.sections.enumerated()), id: \.offset) { index, section in
-                    if index > 0 { NWHairline().padding(.vertical, NW.Space.xs) }
+                    if index > 0 { SHHairline().padding(.vertical, SH.Space.xs) }
                     ForEach(section) { item in row(item.title, symbol: item.symbol, chord: nil, destructive: item.destructive) }
                 }
             } else {
                 ForEach(items) { item in
                     if item.isDivider {
-                        NWHairline().padding(.vertical, NW.Space.xs)
+                        SHHairline().padding(.vertical, SH.Space.xs)
                     } else {
                         row(item.title, symbol: item.symbol ?? "circle", chord: chord(item), destructive: item.destructive)
                     }
                 }
             }
         }
-        .padding(NW.Space.s)
+        .padding(SH.Space.s)
         .frame(width: 300, alignment: .leading)
-        .nwPopover(radius: NW.Radius.l)
+        .shPopover(radius: SH.Radius.l)
     }
 
-    private func chord(_ item: NWCanvasMenuItem) -> String? {
+    private func chord(_ item: SHCanvasMenuItem) -> String? {
         guard let key = item.key else { return nil }
         return (item.shift ? "⇧" : "") + (item.command ? "⌘" : "") + (key == "\r" ? "↩" : key.uppercased())
     }
 
     private func row(_ title: String, symbol: String, chord: String?, destructive: Bool) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: symbol).font(.nwSans(13)).foregroundStyle(destructive ? Color.nw.failed : Color.nw.textSecondary).frame(width: 13)
-            Text(title).font(.nwSans(12.5)).foregroundStyle(destructive ? Color.nw.failed : Color.nw.textPrimary)
-            Spacer(minLength: NW.Space.m)
-            if let chord { Text(chord).font(.nwMono(11)).foregroundStyle(Color.nw.textTertiary) }
+            Image(systemName: symbol).font(.shSans(13)).foregroundStyle(destructive ? Color.sh.failed : Color.sh.textSecondary).frame(width: 13)
+            Text(title).font(.shSans(12.5)).foregroundStyle(destructive ? Color.sh.failed : Color.sh.textPrimary)
+            Spacer(minLength: SH.Space.m)
+            if let chord { Text(chord).font(.shMono(11)).foregroundStyle(Color.sh.textTertiary) }
         }
-        .frame(minHeight: NW.Height.controlM)
-        .padding(.horizontal, NW.Space.m)
+        .frame(minHeight: SH.Height.controlM)
+        .padding(.horizontal, SH.Space.m)
     }
 }

@@ -44,19 +44,19 @@ extension ThreadPreviewTests {
         let size = CGSize(width: 760, height: 520)
         try await Preview.render("question-record-states", size: size) {
             VStack(alignment: .leading, spacing: 28) {
-                NWQuestionRecord(question: "How should I handle Horizon’s uncommitted edits?",
+                SHQuestionRecord(question: "How should I handle Horizon’s uncommitted edits?",
                                  title: "Compare, keep what’s unique, then go through GitHub", answered: true,
                                  timestamp: "2:51 PM · answered", revealed: true)
-                NWQuestionRecord(question: "Clear the session?", title: "Yes", answered: true, timestamp: "2:52 PM · answered",
+                SHQuestionRecord(question: "Clear the session?", title: "Yes", answered: true, timestamp: "2:52 PM · answered",
                                  revealed: true)
-                NWQuestionRecord(question: "Name for the release branch?", text: "release/2026-09", answered: true,
+                SHQuestionRecord(question: "Name for the release branch?", text: "release/2026-09", answered: true,
                                  timestamp: "2:53 PM · answered", revealed: true)
-                NWQuestionRecord(question: "Which host should get the new Traefik config?", answered: false)
+                SHQuestionRecord(question: "Which host should get the new Traefik config?", answered: false)
                 Spacer(minLength: 0)
             }
             .padding(32)
             .frame(width: size.width, height: size.height, alignment: .topLeading)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
     }
 }
@@ -81,7 +81,7 @@ private struct QuestionThreadRows: View {
         .padding(.horizontal, AppLayout.gutter)
         .padding(.top, AppLayout.threadTop)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
     }
 }
 

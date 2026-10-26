@@ -31,7 +31,7 @@ struct DesignMenuItem: Hashable, Identifiable {
     let title: String
     let symbol: String
     var destructive = false
-    /// Off, with the reason under it ("Night Watch is built into Shepherd…").
+    /// Off, with the reason under it ("Shepherd Design is built into Shepherd…").
     var disabledReason: String?
 
     var id: DesignMenuAction { action }

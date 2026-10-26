@@ -37,8 +37,8 @@ struct InstructionsEditor: NSViewRepresentable {
         textView.drawsBackground = true
         textView.project = project
         textView.plain = plain
-        textView.backgroundColor = NSColor(project ? Color.nw.projectEditorBackground : Color.nw.bgWindow)
-        textView.insertionPointColor = NSColor(Color.nw.lantern)
+        textView.backgroundColor = NSColor(project ? Color.sh.projectEditorBackground : Color.sh.bgWindow)
+        textView.insertionPointColor = NSColor(Color.sh.lantern)
         textView.textContainerInset = NSSize(width: 0, height: project ? AppLayout.projectEditorInset : AppLayout.instructionsEditorInset)
         textView.textContainer?.lineFragmentPadding = 0
         textView.textContainer?.widthTracksTextView = false
@@ -151,20 +151,20 @@ struct InstructionsEditorStyles {
         let offset = max(0, (lineHeight - (font.ascender - font.descender)) / 2)
         base = [
             .font: font,
-            .foregroundColor: NSColor(plain ? Color.nw.textPrimary : project ? Color.nw.projectInstructionText : Color.nw.textSecondary),
+            .foregroundColor: NSColor(plain ? Color.sh.textPrimary : project ? Color.sh.projectInstructionText : Color.sh.textSecondary),
             .paragraphStyle: paragraph,
             .baselineOffset: offset,
         ]
-        heading = [.font: project ? font : bold, .foregroundColor: NSColor(project ? Color.nw.projectMarkdownHeading : Color.nw.textPrimary)]
-        headingMarker = project ? heading : [.foregroundColor: NSColor(Color.nw.textTertiary)]
-        bullet = [.foregroundColor: NSColor(project ? Color.nw.settingsMuted : Color.nw.lanternText)]
-        code = [.foregroundColor: NSColor(project ? Color.nw.projectMarkdownCode : Color.nw.synString)]
+        heading = [.font: project ? font : bold, .foregroundColor: NSColor(project ? Color.sh.projectMarkdownHeading : Color.sh.textPrimary)]
+        headingMarker = project ? heading : [.foregroundColor: NSColor(Color.sh.textTertiary)]
+        bullet = [.foregroundColor: NSColor(project ? Color.sh.settingsMuted : Color.sh.lanternText)]
+        code = [.foregroundColor: NSColor(project ? Color.sh.projectMarkdownCode : Color.sh.synString)]
         let numberSize = (project ? AppLayout.projectsPathSize : AppLayout.instructionsNumberSize) * scale
         let right = NSMutableParagraphStyle()
         right.alignment = .right
         numbers = [
             .font: NSFont(name: "GeistMono-Regular", size: numberSize) ?? .monospacedSystemFont(ofSize: numberSize, weight: .regular),
-            .foregroundColor: NSColor(Color.nw.textTertiary),
+            .foregroundColor: NSColor(Color.sh.textTertiary),
             .paragraphStyle: right,
         ]
     }
@@ -211,7 +211,7 @@ final class InstructionsTextView: NSTextView {
         guard let layoutManager else { return }
         let styles = InstructionsEditorStyles(scale: ThemeStore.shared.textScale, project: project, plain: plain)
         if project, !plain {
-            NSColor(Color.nw.projectEditorBackground).setFill()
+            NSColor(Color.sh.projectEditorBackground).setFill()
             NSRect(x: 0, y: rect.minY, width: gutter, height: rect.height).fill()
         }
         let origin = textContainerOrigin
@@ -237,7 +237,7 @@ final class InstructionsTextView: NSTextView {
     private func drawLine(_ index: Int, in lineRect: NSRect, styles: InstructionsEditorStyles) {
         if plain { return }
         if !project, changedLines.contains(index) {
-            NSColor(Color.nw.lanternTint).setFill()
+            NSColor(Color.sh.lanternTint).setFill()
             NSRect(x: 0, y: lineRect.minY, width: bounds.width, height: lineRect.height).fill()
         }
         let numberHeight = (styles.numbers[.font] as? NSFont).map { $0.ascender - $0.descender } ?? 12

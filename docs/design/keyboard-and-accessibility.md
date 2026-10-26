@@ -16,7 +16,7 @@ in UserDefaults under `shepherd.keybindings`).
   be ⌘,, an app-switching chord (⌘⇥ or ⇧⌘⇥), or a plain ⌘ system or terminal chord
   (⌘Q, ⌘H, ⌘M, ⌘C, ⌘V, ⌘X, ⌘A, ⌘Z), and must not be
   another action's chord.
-- **Keycaps** (`NWKeycap`; Controls, Composer & menus): one cap per key, modifiers first in
+- **Keycaps** (`SHKeycap`; Controls, Composer & menus): one cap per key, modifiers first in
   Apple's order (⌃⌥⇧⌘), each at least 18pt, mono 10.5 `textSecondary` on `bgRaised` with a
   `lineStrong` line (heavier along the bottom), radius 4, 3pt apart. Arrows and ↩ draw as
   glyphs. Settings ▸ Keyboard draws the same caps (the SettingsKeyboard board's 22pt caps are a
@@ -97,9 +97,9 @@ The Changes pane's keys are listed with the pane (Side pane › Changes).
 - **Color:** status color is always paired with a word or a glyph shape, and contrast follows the
   rules above.
 - **Focus:** keyboard focus shows the running focus ring (2pt, 2pt outside the control); a click
-  never does. Every Night Watch control style and custom control turns off the system's effect
-  (`.focusEffectDisabled()`) and draws `.nwFocusRing()`; a control left in its system style
-  keeps the system's ring (NWSwift).
+  never does. Every Shepherd Design control style and custom control turns off the system's effect
+  (`.focusEffectDisabled()`) and draws `.shFocusRing()`; a control left in its system style
+  keeps the system's ring (SHSwift).
 - **Reduce Motion:** nothing moves (see Motion). The glow, spinners, and pulse are static, and
   live text is plain `textSecondary`;
   panes, sheets, overlays, and expanding or arriving rows cross-fade in place (120ms); rolling
@@ -107,9 +107,9 @@ The Changes pane's keys are listed with the pane (Side pane › Changes).
   Hover and content fades are unchanged.
 - **Menu bar:** every terminal and agent action exists in the menu bar, with its shortcut where
   it has one (File, View, Terminal, Space, Agent, Machines, Appearance), so every action is reachable
-  from the keyboard (NWSwift).
+  from the keyboard (SHSwift).
 - **Text size:** the Mac's type doesn't follow Dynamic Type; it scales with Settings ▸
   Appearance ▸ Text size (85–130%). On iOS every style follows Dynamic Type (`relativeTo:`), and
-  controls keep a 44pt hit area (`NW.Height.touch`) (NWFoundations, NWSwift).
+  controls keep a 44pt hit area (`SH.Height.touch`) (SHFoundations, SHSwift).
 - **Both appearances:** every component is checked in light and dark (its preview and the
   preview renders), and the contrast rules hold in both.

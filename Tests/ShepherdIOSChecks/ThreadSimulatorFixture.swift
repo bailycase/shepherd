@@ -56,14 +56,14 @@ private struct FixturePrimaryWindow: View {
 
     var body: some View {
         let split = FixtureWindows.shared.split
-        HStack(spacing: split == nil ? 0 : NW.Space.xs) {
+        HStack(spacing: split == nil ? 0 : SH.Space.xs) {
             MobileRoot(app: app)
                 // Rounded beside a split's second window; alone it clips nothing, so a shot keeps
                 // the bars the system draws in the safe area (iPhone Duo's side bar).
-                .clipShape(BleedClip(clips: split != nil, cornerRadius: NW.Radius.l))
+                .clipShape(BleedClip(clips: split != nil, cornerRadius: SH.Radius.l))
             if let split {
                 MobileWindowRoot(app: app, seed: split)
-                    .clipShape(RoundedRectangle(cornerRadius: NW.Radius.l))
+                    .clipShape(RoundedRectangle(cornerRadius: SH.Radius.l))
             }
         }
         .background(Color.black.ignoresSafeArea())

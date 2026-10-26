@@ -5,7 +5,7 @@ import SwiftUI
 // projects, each section ending in "Add folder…"; then the worktree option.
 
 /// A project the menu offers: its name and path, on a host.
-public struct NWPlaceOption: Identifiable, Equatable, Sendable {
+public struct SHPlaceOption: Identifiable, Equatable, Sendable {
     public var id: String
     /// The section (host) it belongs to.
     public var section: String
@@ -24,14 +24,14 @@ public struct NWPlaceOption: Identifiable, Equatable, Sendable {
 }
 
 /// A host's projects.
-public struct NWPlaceSection: Identifiable, Equatable, Sendable {
+public struct SHPlaceSection: Identifiable, Equatable, Sendable {
     public var id: String
     public var title: String
-    public var options: [NWPlaceOption]
+    public var options: [SHPlaceOption]
     /// "Add folder…" at the section's end; nil where the host cannot add one.
     public var addTitle: String?
 
-    public init(id: String, title: String, options: [NWPlaceOption], addTitle: String? = "Add folder…") {
+    public init(id: String, title: String, options: [SHPlaceOption], addTitle: String? = "Add folder…") {
         self.id = id
         self.title = title
         self.options = options
@@ -41,7 +41,7 @@ public struct NWPlaceSection: Identifiable, Equatable, Sendable {
 
 /// The worktree option under the projects: a switch with what it does, and while it is on a Base
 /// row naming the branch it starts from ("Default" until one is picked). `base` nil draws no row.
-public struct NWPlaceWorktree: Equatable, Sendable {
+public struct SHPlaceWorktree: Equatable, Sendable {
     public var isOn: Bool
     public var caption: String
     public var base: String?
@@ -53,7 +53,7 @@ public struct NWPlaceWorktree: Equatable, Sendable {
     }
 }
 
-public enum NWPlaceMenuMetrics {
+public enum SHPlaceMenuMetrics {
     /// The menu's width: a project's name and its path side by side.
     public static let width: CGFloat = 320
     /// The Base row's branch (as the project rows' paths) and its chevron (as All models…).
@@ -64,23 +64,23 @@ public enum NWPlaceMenuMetrics {
 /// The workplace menu: sections of projects (a check on the chosen one, its path trailing),
 /// "Add folder…" per host, and the worktree switch. ↑↓ move, ⏎ chooses, esc closes. Each
 /// project row carries `rowMenu` as its context menu.
-public struct NWPlaceMenu<RowMenu: View>: View {
-    let sections: [NWPlaceSection]
-    let worktree: NWPlaceWorktree?
+public struct SHPlaceMenu<RowMenu: View>: View {
+    let sections: [SHPlaceSection]
+    let worktree: SHPlaceWorktree?
     let maxHeight: CGFloat?
-    let onChoose: (NWPlaceOption) -> Void
-    let onAdd: (NWPlaceSection) -> Void
+    let onChoose: (SHPlaceOption) -> Void
+    let onAdd: (SHPlaceSection) -> Void
     let onWorktree: (Bool) -> Void
     let onChooseBase: () -> Void
     let onClose: () -> Void
-    @ViewBuilder let rowMenu: (NWPlaceOption) -> RowMenu
+    @ViewBuilder let rowMenu: (SHPlaceOption) -> RowMenu
     @State private var selection: Int
     @FocusState private var focused: Bool
 
-    public init(sections: [NWPlaceSection], worktree: NWPlaceWorktree?, maxHeight: CGFloat? = nil,
-                onChoose: @escaping (NWPlaceOption) -> Void, onAdd: @escaping (NWPlaceSection) -> Void,
+    public init(sections: [SHPlaceSection], worktree: SHPlaceWorktree?, maxHeight: CGFloat? = nil,
+                onChoose: @escaping (SHPlaceOption) -> Void, onAdd: @escaping (SHPlaceSection) -> Void,
                 onWorktree: @escaping (Bool) -> Void, onChooseBase: @escaping () -> Void = {}, onClose: @escaping () -> Void,
-                @ViewBuilder rowMenu: @escaping (NWPlaceOption) -> RowMenu) {
+                @ViewBuilder rowMenu: @escaping (SHPlaceOption) -> RowMenu) {
         self.sections = sections
         self.worktree = worktree
         self.maxHeight = maxHeight
@@ -94,10 +94,10 @@ public struct NWPlaceMenu<RowMenu: View>: View {
         _selection = State(initialValue: options.firstIndex(where: \.isCurrent) ?? 0)
     }
 
-    private var options: [NWPlaceOption] { sections.flatMap(\.options) }
+    private var options: [SHPlaceOption] { sections.flatMap(\.options) }
 
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let showsBase = worktree?.isOn == true && worktree?.base != nil
         let rowCount = options.count + (showsBase ? 1 : 0)
         let indexByID = Dictionary(options.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -105,27 +105,27 @@ public struct NWPlaceMenu<RowMenu: View>: View {
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(sections) { section in
-                        NWMenuHeader(section.title)
+                        SHMenuHeader(section.title)
                         ForEach(section.options) { option in
                             let index = indexByID[option.id] ?? 0
-                            NWMenuRow(highlighted: index == selection, action: { onChoose(option) }, onHover: { selection = index }) {
-                                Text(option.title).font(.nw(.ui, weight: .regular)).foregroundStyle(nw.textPrimary).lineLimit(1)
+                            SHMenuRow(highlighted: index == selection, action: { onChoose(option) }, onHover: { selection = index }) {
+                                Text(option.title).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textPrimary).lineLimit(1)
                                 if let detail = option.detail {
-                                    Text(detail).font(.nwMono(11)).foregroundStyle(nw.textTertiary).lineLimit(1)
+                                    Text(detail).font(.shMono(11)).foregroundStyle(sh.textTertiary).lineLimit(1)
                                         .truncationMode(.head)
                                 }
                                 Spacer(minLength: 0)
                                 if option.isCurrent {
-                                    Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(nw.running)
+                                    Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(sh.running)
                                 }
                             }
                             .contextMenu { rowMenu(option) }
                             .accessibilityLabel(option.title + (option.isCurrent ? ", current" : ""))
                         }
                         if let add = section.addTitle {
-                            NWMenuRow(highlighted: false, action: { onAdd(section) }, onHover: {}) {
-                                Image(systemName: "plus").font(.system(size: 11, weight: .medium)).foregroundStyle(nw.textSecondary)
-                                Text(add).font(.nw(.ui, weight: .regular)).foregroundStyle(nw.textSecondary)
+                            SHMenuRow(highlighted: false, action: { onAdd(section) }, onHover: {}) {
+                                Image(systemName: "plus").font(.system(size: 11, weight: .medium)).foregroundStyle(sh.textSecondary)
+                                Text(add).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary)
                                 Spacer(minLength: 0)
                             }
                             .accessibilityLabel("\(add) on \(section.title)")
@@ -134,34 +134,34 @@ public struct NWPlaceMenu<RowMenu: View>: View {
                 }
             }
             .scrollIndicators(.hidden)
-            .frame(maxHeight: maxHeight.map { max(0, $0 - (worktree == nil ? 0 : NWComposerMetrics.menuRowHeight * 2)) })
+            .frame(maxHeight: maxHeight.map { max(0, $0 - (worktree == nil ? 0 : SHComposerMetrics.menuRowHeight * 2)) })
             .fixedSize(horizontal: false, vertical: maxHeight == nil)
             if let worktree {
-                NWHairline().padding(.vertical, NW.Space.xs)
-                HStack(spacing: NW.Space.m) {
+                SHHairline().padding(.vertical, SH.Space.xs)
+                HStack(spacing: SH.Space.m) {
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("New worktree").font(.nw(.ui, weight: .regular)).foregroundStyle(nw.textPrimary)
-                        Text(worktree.caption).font(.nwSans(11)).foregroundStyle(nw.textTertiary).lineLimit(2)
+                        Text("New worktree").font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textPrimary)
+                        Text(worktree.caption).font(.shSans(11)).foregroundStyle(sh.textTertiary).lineLimit(2)
                     }
-                    Spacer(minLength: NW.Space.m)
+                    Spacer(minLength: SH.Space.m)
                     Toggle("New worktree", isOn: Binding(get: { worktree.isOn }, set: onWorktree))
-                        .toggleStyle(.nwSwitch)
+                        .toggleStyle(.shSwitch)
                         .labelsHidden()
                 }
-                .padding(.horizontal, NW.Space.m)
-                .padding(.vertical, NW.Space.xs)
+                .padding(.horizontal, SH.Space.m)
+                .padding(.vertical, SH.Space.xs)
                 if worktree.isOn, let base = worktree.base {
-                    NWMenuRow(highlighted: selection == options.count, action: onChooseBase, onHover: { selection = options.count }) {
-                        Text("Base").font(.nw(.ui, weight: .regular)).foregroundStyle(nw.textPrimary)
-                        Spacer(minLength: NW.Space.m)
-                        Text(base).font(.nwMono(NWPlaceMenuMetrics.baseFont)).foregroundStyle(nw.textTertiary).lineLimit(1).truncationMode(.middle)
-                        Image(systemName: "chevron.right").font(.system(size: NWPlaceMenuMetrics.baseChevron, weight: .semibold)).foregroundStyle(nw.textTertiary)
+                    SHMenuRow(highlighted: selection == options.count, action: onChooseBase, onHover: { selection = options.count }) {
+                        Text("Base").font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textPrimary)
+                        Spacer(minLength: SH.Space.m)
+                        Text(base).font(.shMono(SHPlaceMenuMetrics.baseFont)).foregroundStyle(sh.textTertiary).lineLimit(1).truncationMode(.middle)
+                        Image(systemName: "chevron.right").font(.system(size: SHPlaceMenuMetrics.baseChevron, weight: .semibold)).foregroundStyle(sh.textTertiary)
                     }
                     .accessibilityLabel("Base branch: \(base)")
                 }
             }
         }
-        .modifier(NWMenuSurface(width: NWPlaceMenuMetrics.width))
+        .modifier(SHMenuSurface(width: SHPlaceMenuMetrics.width))
         .focusable()
         .focusEffectDisabled()
         .focused($focused)
@@ -182,7 +182,7 @@ public struct NWPlaceMenu<RowMenu: View>: View {
 
 /// The workplace chip (NavNewThread): a repo glyph and the project in mono, a `textTertiary`
 /// "·", a display glyph and the host in mono, and a chevron, as a composer chip.
-public struct NWPlaceChipLabel: View {
+public struct SHPlaceChipLabel: View {
     let project: String
     let host: String
 
@@ -192,13 +192,13 @@ public struct NWPlaceChipLabel: View {
     }
 
     public var body: some View {
-        HStack(spacing: NW.Space.s) {
-            Image(systemName: "folder").font(.system(size: 11, weight: .regular)).foregroundStyle(.nw.textSecondary)
-            Text(project).font(.nwMono(12)).lineLimit(1)
-            Text("·").foregroundStyle(.nw.textTertiary)
-            Image(systemName: "display").font(.system(size: 11, weight: .regular)).foregroundStyle(.nw.textSecondary)
-            Text(host).font(.nwMono(12)).lineLimit(1)
-            NWChipChevron()
+        HStack(spacing: SH.Space.s) {
+            Image(systemName: "folder").font(.system(size: 11, weight: .regular)).foregroundStyle(.sh.textSecondary)
+            Text(project).font(.shMono(12)).lineLimit(1)
+            Text("·").foregroundStyle(.sh.textTertiary)
+            Image(systemName: "display").font(.system(size: 11, weight: .regular)).foregroundStyle(.sh.textSecondary)
+            Text(host).font(.shMono(12)).lineLimit(1)
+            SHChipChevron()
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Where it runs: \(project) on \(host)")

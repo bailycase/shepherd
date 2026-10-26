@@ -93,7 +93,7 @@ struct DesignStyleEditTests {
         .appendingPathComponent("Designs")
 
     /// Every board in `Tests/Designs/boards`: three from Shepherd's own canvas and two synthetic.
-    static let fixtureBoards = ["DZStart.dc.html", "NWDesignTool.dc.html", "ThreadRichContent.dc.html", "Edges.dc.html", "Minimal.dc.html"]
+    static let fixtureBoards = ["DZStart.dc.html", "SHDesignTool.dc.html", "ThreadRichContent.dc.html", "Edges.dc.html", "Minimal.dc.html"]
 
     /// Every styled element of a real board takes a new padding (set where it has one, added
     /// where not) in one splice: only the style attributes change, every element keeps its tid

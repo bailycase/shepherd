@@ -48,7 +48,7 @@ Only live `goalState` is mirrored on `Agent` for the sidebar. Working and Checki
 
 ## Card
 
-`NWGoalCard` renders the Goal card, MobileGoal and iPadGoal states above the composer, including while a question replaces the field. Goal, Subagents and Up next share one framed dock in that order. The header pill exists only while active; the iPhone keeps its lifecycle dot and word beside it. The sidebar adds the two-ring glyph without replacing ask/reason/time accessories.
+`SHGoalCard` renders the Goal card, MobileGoal and iPadGoal states above the composer, including while a question replaces the field. Goal, Subagents and Up next share one framed dock in that order. The header pill exists only while active; the iPhone keeps its lifecycle dot and word beside it. The sidebar adds the two-ring glyph without replacing ask/reason/time accessories.
 
 The base desktop/touch anatomy is 70/92pt with 32/40pt headers and 10/12pt corners. All iOS action targets remain 44pt. Requested model disclosure adds a line and may grow the card; larger text/crowded headers reflow rather than clip controls. Working pulses, Checking spins, and reduced motion disables both. An incomplete-evidence candidate offers Confirm instead of Resume; questions disable both.
 

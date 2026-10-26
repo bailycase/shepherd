@@ -34,9 +34,9 @@ enum SidePaneTab: String, CaseIterable, Hashable, Sendable {
         switch self {
         case .changes: "plus.forwardslash.minus"
         case .browser: "globe"
-        case .artifacts: NWGlyph.artifact.symbolName
-        case .subagents: NWGlyph.gitBranch.symbolName
-        case .files: NWGlyph.document.symbolName
+        case .artifacts: SHGlyph.artifact.symbolName
+        case .subagents: SHGlyph.gitBranch.symbolName
+        case .files: SHGlyph.document.symbolName
         }
     }
 

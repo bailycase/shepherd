@@ -145,10 +145,10 @@ final class TerminalPanels {
     /// The tab strip's items for a layout: the running command or the program at the prompt, a
     /// spinner while a command runs, and a dot for output printed while the tab was off screen.
     func items(_ key: TerminalPanelKey, tabs: [TerminalPanelTab], selected: TerminalPanelTab?, onScreen: Bool,
-               host: String?) -> [NWTerminalTab] {
+               host: String?) -> [SHTerminalTab] {
         let rows = activity[key] ?? [:]
         return tabs.map { tab in
-            let state: NWTerminalTab.Activity
+            let state: SHTerminalTab.Activity
             if rows[tab.id]?.isRunning == true {
                 state = .running
             } else if tab.id != selected?.id || !onScreen, let session = tab.leaf.sessionID, hasUnseen(key, session: session) {
@@ -156,7 +156,7 @@ final class TerminalPanels {
             } else {
                 state = .idle
             }
-            return NWTerminalTab(id: tab.id.rawValue, title: Self.title(row: rows[tab.id], pane: tab.leaf), host: host,
+            return SHTerminalTab(id: tab.id.rawValue, title: Self.title(row: rows[tab.id], pane: tab.leaf), host: host,
                                  activity: state)
         }
     }

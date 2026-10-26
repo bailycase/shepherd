@@ -8,7 +8,7 @@ import ShepherdUI
 
 // An image open full size (ThreadImageOpen, docs/design/thread-images.md): the images of one
 // message or composer, shown one at a time over the window. The state is values only; the host
-// view draws `NWImageViewer` and carries out Copy, Add to message and Show in Finder.
+// view draws `SHImageViewer` and carries out Copy, Add to message and Show in Finder.
 
 /// The window's stable identity, rather than a new captured closure on every shell resize.
 struct ImageViewerPresenter: Equatable {
@@ -222,7 +222,7 @@ struct ImageViewerOverlay: View {
     var vm: ShepherdViewModel
     @FocusState private var focused: Bool
 
-    private func content(_ slot: ViewerSlot) -> NWImageViewer.Content {
+    private func content(_ slot: ViewerSlot) -> SHImageViewer.Content {
         switch slot {
         case .ready(let image): image.picture.map { .picture(Image(nsImage: $0)) } ?? .failed("This image can't be shown.")
         case .loading: .loading
@@ -235,7 +235,7 @@ struct ImageViewerOverlay: View {
             if let state = vm.imageViewer, let slot = state.currentSlot {
                 let actions = vm.imageViewerActions
                 let image = state.current
-                NWImageViewer(
+                SHImageViewer(
                     name: slot.name, facts: image?.facts ?? "", position: state.position,
                     content: content(slot),
                     caption: "\(state.origin) · Esc to close",
@@ -261,11 +261,11 @@ struct ImageViewerOverlay: View {
                         .onKeyPress(.rightArrow) { state.next(); return .handled }
                         .accessibilityHidden(true)
                 }
-                .nwTransition(.overlay)
+                .shTransition(.overlay)
             }
         }
         .allowsHitTesting(vm.imageViewer != nil)
-        .nwAnimation(.overlay, value: vm.imageViewer != nil)
+        .shAnimation(.overlay, value: vm.imageViewer != nil)
     }
 }
 
@@ -277,7 +277,7 @@ struct DiagramViewerOverlay: View {
     var body: some View {
         ZStack {
             if let source = vm.diagramViewer {
-                NWMermaidViewer(source) { vm.diagramViewer = nil }
+                SHMermaidViewer(source) { vm.diagramViewer = nil }
                     .id(source)
                     .background {
                         Color.clear
@@ -288,11 +288,11 @@ struct DiagramViewerOverlay: View {
                             .onKeyPress(.escape) { vm.diagramViewer = nil; return .handled }
                             .accessibilityHidden(true)
                     }
-                    .nwTransition(.overlay)
+                    .shTransition(.overlay)
             }
         }
         .allowsHitTesting(vm.diagramViewer != nil)
-        .nwAnimation(.overlay, value: vm.diagramViewer != nil)
+        .shAnimation(.overlay, value: vm.diagramViewer != nil)
     }
 }
 
@@ -305,25 +305,25 @@ struct ComposerImageStrip: View {
 
     var body: some View {
         if !attachments.isEmpty || attachments.error != nil {
-            VStack(alignment: .leading, spacing: NW.Space.s) {
-                NWFlowLayout(spacing: NW.Space.s, lineSpacing: NW.Space.s) {
+            VStack(alignment: .leading, spacing: SH.Space.s) {
+                SHFlowLayout(spacing: SH.Space.s, lineSpacing: SH.Space.s) {
                     ForEach(attachments.items) { attachment in
-                        NWAttachmentChip(attachment.name, thumbnail: attachment.thumbnail, detail: attachment.sizeLabel,
+                        SHAttachmentChip(attachment.name, thumbnail: attachment.thumbnail, detail: attachment.sizeLabel,
                                          problem: attachment.isOversize, open: { open(attachment) }, remove: { remove(attachment.id) })
-                            .nwTransition(.list, edge: .leading)
+                            .shTransition(.list, edge: .leading)
                     }
                 }
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel("Images to send")
                 if let error = attachments.error {
-                    Text(error).font(.nw(.caption)).foregroundStyle(AgentState.failed.textColor)
+                    Text(error).font(.sh(.caption)).foregroundStyle(AgentState.failed.textColor)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
-                        .nwTransition(.list, edge: .bottom)
+                        .shTransition(.list, edge: .bottom)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, NW.Space.xs)
+            .padding(.horizontal, SH.Space.xs)
         }
     }
 }

@@ -104,7 +104,7 @@ public struct DesignSystemInfo: Hashable, Sendable, Codable {
     }
 }
 
-/// A design system as a list shows it: its record, whether Shepherd ships it (Night Watch), and
+/// A design system as a list shows it: its record, whether Shepherd ships it (Shepherd Design), and
 /// how many tokens of each kind it has.
 public struct DesignSystemSummary: Hashable, Sendable, Codable {
     public var info: DesignSystemInfo

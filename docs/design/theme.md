@@ -3,18 +3,18 @@
 > Read when you add or change a color, a theme, an AgentState look, or build on ShepherdUI's tokens.
 
 All design values live in **ShepherdUI**. It is SwiftUI only and holds no app state. Views
-read colors from `Color.nw`, fonts from `Font.nw(_:)`, and sizes from `NW.Space`, `NW.Radius`,
-and `NW.Height`, plus the app's own surface dimensions in `AppLayout`. **Never hardcode a color,
+read colors from `Color.sh`, fonts from `Font.sh(_:)`, and sizes from `SH.Space`, `SH.Radius`,
+and `SH.Height`, plus the app's own surface dimensions in `AppLayout`. **Never hardcode a color,
 font size, or dimension in a view.**
 
-The token boards are **NWFoundations** (every color, type style, space, radius, height,
-elevation, motion, icon, and the mark, with its Swift name) and **NWSwift** (how they map onto
-SwiftUI, the component inventory, the package), each drawn dark and light (NWFoundationsLight,
-NWSwiftLight). A pair carries the same tokens and text; only the rendered appearance differs.
-The light boards call the light variant "Day Watch"; the app has one theme, Night Watch, with
-`night-watch-dark` and `night-watch-light` variants.
+The token boards are **SHFoundations** (every color, type style, space, radius, height,
+elevation, motion, icon, and the mark, with its Swift name) and **SHSwift** (how they map onto
+SwiftUI, the component inventory, the package), each drawn dark and light (SHFoundationsLight,
+SHSwiftLight). A pair carries the same tokens and text; only the rendered appearance differs.
+The light boards call the light variant "Day Watch"; the app has one theme, Shepherd Design, with
+`shepherd-design-dark` and `shepherd-design-light` variants.
 
-The canvas's older `tokens.json` is Option A, superseded by Night Watch (its Foundations and
+The canvas's older `tokens.json` is Option A, superseded by Shepherd Design (its Foundations and
 Components boards are gone from the canvas). Take no value, name, or component from them: IBM
 Plex Sans and JetBrains Mono, the 2px spacing base, 7pt and 10pt radii, 32pt sidebar rows with a 22pt indent,
 a 7px status dot, the composer's and the segmented thumb's shadows, a 3px composer focus ring,
@@ -26,7 +26,7 @@ future user themes go through the same model:
 
 ```text
 ThemeDefinition { id, name, light: ThemeVariant, dark: ThemeVariant }
-ThemeVariant    { colors:   ThemeColors     // the Night Watch roles below (#RRGGBB or #RRGGBBAA)
+ThemeVariant    { colors:   ThemeColors     // the Shepherd Design roles below (#RRGGBB or #RRGGBBAA)
                   syntax:   SyntaxColors    // code blocks and diffs
                   terminal: TerminalColors  // Ghostty: background, foreground, cursor,
                                             // selection, 16-color ANSI
@@ -34,33 +34,33 @@ ThemeVariant    { colors:   ThemeColors     // the Night Watch roles below (#RRG
 ```
 
 - **`ThemeStore.shared`** (`@Observable`) holds the selected theme, the text scale, and the
-  density. It resolves each theme once into an immutable `NWPalette` (every `Color` built when
-  the theme changes) and each text scale into an `NWTypeRamp`, so a token read is a
+  density. It resolves each theme once into an immutable `SHPalette` (every `Color` built when
+  the theme changes) and each text scale into an `SHTypeRamp`, so a token read is a
   stored-property load.
 - **Colors are dynamic:** every palette color resolves against the appearance of the view
   drawing it, so light and dark are never stored and never need a re-render.
-- **Views never branch on `colorScheme` for a color** (NWSwift): light and dark come from the
+- **Views never branch on `colorScheme` for a color** (SHSwift): light and dark come from the
   token layer. Read `colorScheme` only to force the appearance (`preferredColorScheme`) and to
   hand resolved colors to what SwiftUI doesn't draw: the Core Animation spinner and glow layers,
   the iOS terminal's UIKit view, and, through `ThemeManager`, Ghostty and the external editor variant marker.
 - **`ThemeManager`** (app) owns only the appearance mode: System (the default; "System follows
   your Mac and switches with it."), Light, or Dark, set in Settings ▸ Appearance ▸ Mode or the
-  Appearance menu. The board's rule: follow the system, and let Settings force either (NWSwift).
-  `SHEPHERD_THEME=night-watch-dark` or `night-watch-light` forces one at launch (the older
+  Appearance menu. The board's rule: follow the system, and let Settings force either (SHSwift).
+  `SHEPHERD_THEME=shepherd-design-dark` or `shepherd-design-light` forces one at launch (the older
   `shepherd-dark` still means dark), and Reset returns to it.
 - **What `ThemeManager` pushes:** the resolved variant goes to what cannot follow appearance on
   its own. That is Ghostty surfaces (a live `setTheme`, never a remount or replay) and the
-  `shepherd-active-theme` variant marker (`night-watch-dark|light`), which external editors such
+  `shepherd-active-theme` variant marker (`shepherd-design-dark|light`), which external editors such
   as Neovim watch. The marker's spelling is an external contract. pi keeps its own theme.
 - **Fonts:** Geist and Geist Mono (SIL OFL, `Resources/Fonts/OFL.txt`) ship in the package
   bundle: Geist Regular, Medium, SemiBold, and Bold, each with its italic, and Geist Mono
   Regular, Medium, SemiBold, and Bold. They are registered for the process at launch on the Mac
-  and iOS (`NWFonts.register()`), with no Info.plist entry (see departures). PostScript names
+  and iOS (`SHFonts.register()`), with no Info.plist entry (see departures). PostScript names
   are `Geist-<Weight>` and `GeistMono-<Weight>`. Terminals keep their own font setting.
 
-## Roles (`ThemeColors`, read as `Color.nw.<role>`)
+## Roles (`ThemeColors`, read as `Color.sh.<role>`)
 
-Values are the NWFoundations board's, as `NightWatch.swift` holds them, dark · light. The board
+Values are the SHFoundations board's, as `ShepherdDesign.swift` holds them, dark · light. The board
 writes translucent roles as rgba; the theme stores them as `#RRGGBBAA`, rounded to the nearest
 alpha byte: `bgHover` white at 4.5% · black at 4%, `bgSelected` white at 8% · black at 6.5%,
 `lanternTint` `#f2a93b` at 13% · `#d98a12` at 13%, and each other tint its own state color at
@@ -99,17 +99,17 @@ board's, plus where the app also uses the role.
 | | `synComment` | `#5f656e` | `#9a9ea5` | Comments |
 | | `synVariable`, `synOperator`, `synPunctuation` | `#e8e9ec`, `#9aa0a9`, `#9aa0a9` | `#151618`, `#5f636b`, `#5f636b` | Names and punctuation: the text colors. Not on the board, which colors only the six roles above |
 
-**Derived colors** live on `NWPalette`, not in the theme:
+**Derived colors** live on `SHPalette`, not in the theme:
 
 - `focusRing`: running at 60% (dark) / 50% (light)
 - `focusDivider`: running at 34% in both appearances, for a divider beside a focused pane (no view
   draws it now that terminals are tabs)
-- `popoverShadow`: `.nwPopover()`'s shadow color: black at 55% (dark), `#141414` at 12% (light)
+- `popoverShadow`: `.shPopover()`'s shadow color: black at 55% (dark), `#141414` at 12% (light)
 - `scrim`: black at 30% in both appearances, behind the command palette
 - `textOnFailed`: white, for labels on a `failed` fill
 - `knobOn`, `knobOff`, `knobShadow`: the switch and slider knobs
 - `lanternHover`, `lanternPressed`, `failedPressed`: the filled buttons' hover and pressed fills,
-  the Controls board's hexes (`NWButtonFills`): primary lifts to `#f7b84f` · `#eca63a` and sinks
+  the Controls board's hexes (`SHButtonFills`): primary lifts to `#f7b84f` · `#eca63a` and sinks
   to `#d9922a` · `#cf8a1c`; dangerFill stays put on hover and sinks to `#d24f4b` · `#bf3a35`
   (dark · light). The labels on them reach 4.5:1, except white on the dark pressed dangerFill
   (4.23), as the board draws it
@@ -125,14 +125,14 @@ Ghostty wants opaque colors.
 
 `AgentState` (`running`, `attention`, `done`, `failed`, `stuck`, `queued`, `idle`) gives every
 status surface its color, tint, word, and glyph: pills, dots, glyphs, step strips, banners, and
-toasts each take a state (NWSwift: "All driven by AgentState"), and the spinner and the bar draw
+toasts each take a state (SHSwift: "All driven by AgentState"), and the spinner and the bar draw
 in `running` unless given a color. The app maps its lifecycles onto it in
 `AgentStateMapping.swift` (agent status, subagent runs, tool calls). Only `attention` animates:
 a 1.6s glow, the dot's opacity easing 1 → 0.35 → 1, static under Reduce Motion. Draw state with
-`NWStatusDot` (6pt), `NWStateGlyph`, or `NWStatusPill`, never with a view's own
+`SHStatusDot` (6pt), `SHStateGlyph`, or `SHStatusPill`, never with a view's own
 `repeatForever`: the glow and the spinner run on the render server (see Motion and departures).
 
-| `AgentState` | Word | Color | Pill fill | Glyph (`NWStateGlyph`) | App meaning |
+| `AgentState` | Word | Color | Pill fill | Glyph (`SHStateGlyph`) | App meaning |
 | --- | --- | --- | --- | --- | --- |
 | `running` | Running | `running` | `runningTint` | spinner | agent working, a live run or call |
 | `attention` | Needs you | `lantern` (words `lanternText`) | `lanternTint` | `exclamationmark.circle` | agent blocked on a question, a run asking |
@@ -169,86 +169,86 @@ surface they sit on):
   `SyntaxColors`, and `TerminalColors` for both variants (the memberwise
   initializers make the compiler enforce completeness). Add it to the list the ShepherdUI unit
   tests iterate and fix values until they pass. Then teach `ThemeManager` and the app's
-  `ShepherdTheme` to resolve it for Ghostty and the editor variant marker; today they resolve Night Watch
+  `ShepherdTheme` to resolve it for Ghostty and the editor variant marker; today they resolve Shepherd Design
   only. Keep the variant marker's `<theme>-dark|light` spelling.
 - **A role:** add a field to `ThemeColors`, a value in every theme's light and dark variant, a
-  property on `NWPalette`, and a contrast rule if it carries text.
+  property on `SHPalette`, and a contrast rule if it carries text.
 
 ## Building on ShepherdUI
 
-The NWSwift board is the implementation plan. ShepherdUI is its `ShepherdDesign` package
+The SHSwift board is the implementation plan. ShepherdUI is its `ShepherdDesign` package
 (renamed; see departures), shared by the Mac app and the iOS client:
 
 ```text
 Packages/ShepherdUI/Sources/ShepherdUI/
-  Tokens/       Colors (NWPalette, Color.nw), Typography (NWTextStyle, Font.nw, NWFonts),
-                Metrics (NW.Space, NW.Radius, NW.Height), Motion, Elevation, AgentState,
-                ThemeDefinition, NightWatch, ThemeStore, HexColor, Platform
+  Tokens/       Colors (SHPalette, Color.sh), Typography (SHTextStyle, Font.sh, SHFonts),
+                Metrics (SH.Space, SH.Radius, SH.Height), Motion, Elevation, AgentState,
+                ThemeDefinition, ShepherdDesign, ThemeStore, HexColor, Platform
   Resources/    Fonts/: Geist-*.otf, GeistMono-*.otf, OFL.txt (no asset catalog)
   Components/   Controls, Status, Containers, Navigation, Thread, Composer, Agents, Review,
                 Dialogs, Automations, Fleet, Terminal
   Previews/     a file per domain (and its touch variants); every component in both appearances
-  Diagnostics/  NWRenderProbe (debug builds only)
+  Diagnostics/  SHRenderProbe (debug builds only)
 ```
 
-- **Tokens in Swift:** `Color.nw.<role>` (one per Foundations color), `Font.nw(.<style>)` over
-  the bundled faces, `NW.Space`, `NW.Radius`, `NW.Height` (including `touch 44`), `NW.Motion`,
+- **Tokens in Swift:** `Color.sh.<role>` (one per Foundations color), `Font.sh(.<style>)` over
+  the bundled faces, `SH.Space`, `SH.Radius`, `SH.Height` (including `touch 44`), `SH.Motion`,
   and hairlines at `1 / displayScale`. No view branches on `colorScheme` for a color (Theme
   model).
-- **Controls are styles on native controls:** `.buttonStyle(.nw(_:size:))` and `.nwIcon`,
-  `.toggleStyle(.nwSwitch)` and `.nwCheckbox`, `.textFieldStyle(.nw)` and `.nwSearch`,
-  `.progressViewStyle(.nwSpinner)` and `.nwBar`; plus `NWKeycap`, `NWCountBadge`, `NWTag`. The
-  board's `PickerStyle` `.nwSegmented` and `.nwPopup` are views, `NWSegmentedPicker` and
-  `NWPopupMenu`, because SwiftUI has no public custom `PickerStyle`; they present themselves to
+- **Controls are styles on native controls:** `.buttonStyle(.sh(_:size:))` and `.shIcon`,
+  `.toggleStyle(.shSwitch)` and `.shCheckbox`, `.textFieldStyle(.sh)` and `.shSearch`,
+  `.progressViewStyle(.shSpinner)` and `.shBar`; plus `SHKeycap`, `SHCountBadge`, `SHTag`. The
+  board's `PickerStyle` `.shSegmented` and `.shPopup` are views, `SHSegmentedPicker` and
+  `SHPopupMenu`, because SwiftUI has no public custom `PickerStyle`; they present themselves to
   accessibility as the native segmented `Picker` and a native `Menu`.
-- **Status:** `NWStatusPill`, `NWStatusDot`, `.nwSpinner`, `.nwBar`, `NWStepStrip`,
-  `NWSparkline`, `NWBanner`, `.nwToast(item:)`, `NWEmptyState`, `.nwShimmer()`, and live text's
-  `.nwShimmer(active:)`. Whatever shows a
+- **Status:** `SHStatusPill`, `SHStatusDot`, `.shSpinner`, `.shBar`, `SHStepStrip`,
+  `SHSparkline`, `SHBanner`, `.shToast(item:)`, `SHEmptyState`, `.shShimmer()`, and live text's
+  `.shShimmer(active:)`. Whatever shows a
   state takes an `AgentState` (see One status enum).
 - **Thread:** prose is Markdown; inline markup goes through `AttributedString(markdown:)`
   (inline only, whitespace kept), with blocks split by the thread's own renderer. Consecutive
   calls of one kind merge into one activity line.
 - **Composer and menus:** the composer's menus are overlays that float over the thread, left-aligned
-  above the composer card and growing from it (`.nwTransition(.overlay, anchor: .bottomLeading)`);
+  above the composer card and growing from it (`.shTransition(.overlay, anchor: .bottomLeading)`);
   context menus are native `.contextMenu`.
-- **Review:** diff lines sit in a `LazyVStack` as `NW.Height.rowCompact` rows (22pt at 100%
+- **Review:** diff lines sit in a `LazyVStack` as `SH.Height.rowCompact` rows (22pt at 100%
   Density), for fast scrolling.
 - **Layout:** the Mac window lays itself out (minimum 720×600): the sidebar and the side pane
   dock when they fit and overlay below (Window and adaptive layout). The iPad client uses
   `NavigationSplitView` with `.inspector`.
 - **Light and dark:** both follow the system, and Settings ▸ Appearance can force either. Every
-  component has a preview in both appearances (`NWPreviewBoth` draws them side by side), and the
+  component has a preview in both appearances (`SHPreviewBoth` draws them side by side), and the
   preview tests render every surface in both.
 - **Icons:** SF Symbols only, `.symbolRenderingMode(.monochrome)`, weight `.medium` (see Icons).
 - **Keyboard:** every action is reachable from the keyboard: on the Mac as a menu-bar item, with
   a `.keyboardShortcut` whose chord comes from `KeybindingsStore` where the action has one.
-  Custom controls draw their own focus ring after `.focusEffectDisabled()` (`.nwFocusRing()`).
-- **iOS and iPadOS:** the same package. Controls grow their hit area to 44pt (`NW.Height.touch`,
-  `.nwTouchTarget(height:)`), and fonts follow Dynamic Type through `relativeTo:`.
+  Custom controls draw their own focus ring after `.focusEffectDisabled()` (`.shFocusRing()`).
+- **iOS and iPadOS:** the same package. Controls grow their hit area to 44pt (`SH.Height.touch`,
+  `.shTouchTarget(height:)`), and fonts follow Dynamic Type through `relativeTo:`.
 - **Nothing else:** no permission or approval components, and nothing under the composer but its
   controls.
 
-**Not built yet** (NWSwift's inventory for the future boards; each surface's own section or
+**Not built yet** (SHSwift's inventory for the future boards; each surface's own section or
 board holds its spec, and its parts go in a `Components/<Domain>/` folder of their own):
 
-- Agents: `NWMissionNode`, `NWInboxItem`, and `NWClaimRow` (NWAgents, NWSwift; specified under
+- Agents: `SHMissionNode`, `SHInboxItem`, and `SHClaimRow` (SHAgents, SHSwift; specified under
   Mission components). Experimental surfaces reuse the same parts. The iPhone and iPad Needs you
-  lists (MobileInbox, iPadInbox) are built from `NWAttentionCard` instead, with no state-colored
-  leading rule; `NWInboxItem` itself is not built.
-- Missions map (`Components/MissionMap/`): `NWMissionMap`, `NWStation`, `NWTerminus` (MXVocab),
-  `NWFlowWire`, `NWDataWire`, `NWForkBar`, `NWJoinBar`, `NWLane`, `NWFog`, `NWFrontierChip`,
-  `NWOutcomeChip`, `NWPinRow`. A `Canvas` draws the wires and the stations are views on top. Layout
+  lists (MobileInbox, iPadInbox) are built from `SHAttentionCard` instead, with no state-colored
+  leading rule; `SHInboxItem` itself is not built.
+- Missions map (`Components/MissionMap/`): `SHMissionMap`, `SHStation`, `SHTerminus` (MXVocab),
+  `SHFlowWire`, `SHDataWire`, `SHForkBar`, `SHJoinBar`, `SHLane`, `SHFog`, `SHFrontierChip`,
+  `SHOutcomeChip`, `SHPinRow`. A `Canvas` draws the wires and the stations are views on top. Layout
   is automatic: rows from time order, columns from lanes.
-- Mission screens (`Components/Missions/`): `NWMissionHeader`, `NWPhaseBar`, `NWBudgetMeter`,
-  `NWHostChip`, `NWChoiceCard`, the mission question card (NWSwift's `NWQuestionCard`, which needs
-  its own name: the phone's agent question already has it), `NWPlannerNote`, `NWAttemptRow`,
-  `NWCheckpointRow`, `NWSpendBar`, `NWTrainCard`, `NWTrainGateRow`, `NWTrainRuleRow`,
-  `NWRepoTimeline`, `NWPathLockRow`, `NWContractRow`, `NWDiffAnnotation`, `NWTraceSpan`,
-  `NWMergeActions` (NWMissions), `NWRollbackRow`, `NWTemplateInput`. A mission asks through
-  `NWChoiceCard` lists with one planner's pick; none of it is a permission prompt.
-- Design tool (`Components/DesignTool/`): `NWDesignCanvas`, `NWBoardFrame`, `NWSelectionRing`,
-  `NWCommentPin`, `NWCommentCard`, `NWCommentThread`, `NWBoardActions`, `NWCanvasToolbar`,
-  `NWTweakRow`, `NWTokenChip`, `NWDesignSystemChip`, `NWTokenSwatch`, `NWExportFormatCard`,
-  `NWLiveLinkField`. Boards render in a `WKWebView` per frame; everything around them is native.
-- iPhone extras: `NWMissionLiveActivity`, `NWMissionNotification`, `NWLaneStrip`. ActivityKit
+- Mission screens (`Components/Missions/`): `SHMissionHeader`, `SHPhaseBar`, `SHBudgetMeter`,
+  `SHHostChip`, `SHChoiceCard`, the mission question card (SHSwift's `SHQuestionCard`, which needs
+  its own name: the phone's agent question already has it), `SHPlannerNote`, `SHAttemptRow`,
+  `SHCheckpointRow`, `SHSpendBar`, `SHTrainCard`, `SHTrainGateRow`, `SHTrainRuleRow`,
+  `SHRepoTimeline`, `SHPathLockRow`, `SHContractRow`, `SHDiffAnnotation`, `SHTraceSpan`,
+  `SHMergeActions` (SHMissions), `SHRollbackRow`, `SHTemplateInput`. A mission asks through
+  `SHChoiceCard` lists with one planner's pick; none of it is a permission prompt.
+- Design tool (`Components/DesignTool/`): `SHDesignCanvas`, `SHBoardFrame`, `SHSelectionRing`,
+  `SHCommentPin`, `SHCommentCard`, `SHCommentThread`, `SHBoardActions`, `SHCanvasToolbar`,
+  `SHTweakRow`, `SHTokenChip`, `SHDesignSystemChip`, `SHTokenSwatch`, `SHExportFormatCard`,
+  `SHLiveLinkField`. Boards render in a `WKWebView` per frame; everything around them is native.
+- iPhone extras: `SHMissionLiveActivity`, `SHMissionNotification`, `SHLaneStrip`. ActivityKit
   shows progress, and answers are `UNNotificationAction`s, so replying never opens the app.

@@ -60,12 +60,12 @@ extension PreviewTests {
 
     /// Organized by project at each row density: shepherd open, the others closed and rolled up
     /// (amber while something waits, a running dot while something runs, quiet).
-    @Test(arguments: [NWDensity.standard, .compact])
-    func sidebarProjects(density: NWDensity) async throws {
+    @Test(arguments: [SHDensity.standard, .compact])
+    func sidebarProjects(density: SHDensity) async throws {
         let workspace = try await projectsWorkspace()
         defer { workspace.stop() }
         try await Preview.render("sidebar-projects-\(density.rawValue)", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 640)) {
-            SidebarView(vm: workspace.vm).nwDensity(density)
+            SidebarView(vm: workspace.vm).shDensity(density)
         }
     }
 
@@ -110,43 +110,43 @@ extension PreviewTests {
         try await Preview.render("sidebar-project-rows", size: CGSize(width: 3 * (AppLayout.sidebarDefaultWidth + 24) + 24, height: 260)) {
             HStack(alignment: .top, spacing: 24) {
                 VStack(alignment: .leading, spacing: AppLayout.sidebarRowSpacing) {
-                    NWProjectRow("shepherd", count: 3, expanded: true, toggle: {}, newThread: {}) { EmptyView() }
-                    NWSidebarRow("Dock review pane", state: .attention, accessory: .reason("approve plan"), nested: true)
-                    NWSidebarRow("Investigate SwiftUI live preview", state: .running, selected: true,
+                    SHProjectRow("shepherd", count: 3, expanded: true, toggle: {}, newThread: {}) { EmptyView() }
+                    SHSidebarRow("Dock review pane", state: .attention, accessory: .reason("approve plan"), nested: true)
+                    SHSidebarRow("Investigate SwiftUI live preview", state: .running, selected: true,
                                  accessory: .elapsed(since: started), nested: true)
-                    NWSidebarRow("Plan shepherd extensions", state: .running, nested: true)
-                    NWProjectRow("dashboard-web", count: 2, expanded: false, rollup: .waiting, toggle: {}, newThread: {}) { EmptyView() }
-                    NWProjectRow("shepherd-daemon", count: 3, expanded: false, rollup: .running, toggle: {}, newThread: {}) { EmptyView() }
-                    NWProjectRow("dotfiles", count: 1, expanded: false, toggle: {}, newThread: {}) { EmptyView() }
-                    NWProjectRow("case-battles-release-monitor", count: 4, expanded: false, pinned: true, toggle: {}, newThread: {}) { EmptyView() }
+                    SHSidebarRow("Plan shepherd extensions", state: .running, nested: true)
+                    SHProjectRow("dashboard-web", count: 2, expanded: false, rollup: .waiting, toggle: {}, newThread: {}) { EmptyView() }
+                    SHProjectRow("shepherd-daemon", count: 3, expanded: false, rollup: .running, toggle: {}, newThread: {}) { EmptyView() }
+                    SHProjectRow("dotfiles", count: 1, expanded: false, toggle: {}, newThread: {}) { EmptyView() }
+                    SHProjectRow("case-battles-release-monitor", count: 4, expanded: false, pinned: true, toggle: {}, newThread: {}) { EmptyView() }
                 }
                 .frame(width: AppLayout.sidebarDefaultWidth)
                 VStack(alignment: .leading, spacing: AppLayout.sidebarRowSpacing) {
-                    NWProjectRow("shepherd", count: 1, expanded: true, hovered: true, toggle: {}, newThread: {}) { EmptyView() }
-                    NWSidebarRow("Investigate SwiftUI live preview", state: .running, selected: true, nested: true)
-                    Color.clear.frame(height: NW.Space.l)
-                    NWProjectRow("dashboard-web", count: 2, expanded: false, rollup: .waiting, toggle: {}, newThread: {}) { EmptyView() }
-                    NWProjectRow("shepherd", count: 9, expanded: false, rollup: .waiting, toggle: {}, newThread: {}) { EmptyView() }
+                    SHProjectRow("shepherd", count: 1, expanded: true, hovered: true, toggle: {}, newThread: {}) { EmptyView() }
+                    SHSidebarRow("Investigate SwiftUI live preview", state: .running, selected: true, nested: true)
+                    Color.clear.frame(height: SH.Space.l)
+                    SHProjectRow("dashboard-web", count: 2, expanded: false, rollup: .waiting, toggle: {}, newThread: {}) { EmptyView() }
+                    SHProjectRow("shepherd", count: 9, expanded: false, rollup: .waiting, toggle: {}, newThread: {}) { EmptyView() }
                         .overlay(alignment: .top) {
-                            NWDropIndicator().padding(.horizontal, NW.Space.xs)
-                                .offset(y: -(NWDropIndicator.thickness + AppLayout.sidebarRowSpacing) / 2)
+                            SHDropIndicator().padding(.horizontal, SH.Space.xs)
+                                .offset(y: -(SHDropIndicator.thickness + AppLayout.sidebarRowSpacing) / 2)
                         }
-                    NWProjectRow("dotfiles", count: 1, expanded: false, toggle: {}, newThread: {}) { EmptyView() }
-                        .opacity(NWProjectMetrics.draggedOpacity)
+                    SHProjectRow("dotfiles", count: 1, expanded: false, toggle: {}, newThread: {}) { EmptyView() }
+                        .opacity(SHProjectMetrics.draggedOpacity)
                 }
                 .frame(width: AppLayout.sidebarDefaultWidth)
                 VStack(alignment: .leading, spacing: AppLayout.sidebarRowSpacing) {
-                    NWSidebarSection(.host("This Mac", unreachable: false))
-                    NWProjectRow("shepherd", count: 5, expanded: false, rollup: .waiting, toggle: {}, newThread: {}) { EmptyView() }
-                    NWSidebarSection(.host("horizon", unreachable: true))
-                    NWProjectRow("shepherd", count: 2, expanded: false, dimmed: true, toggle: {}, newThread: nil) { EmptyView() }
-                    NWProjectRow("case-battles-release-monitor", count: 1, expanded: false, missing: true, toggle: {}, newThread: nil) { EmptyView() }
+                    SHSidebarSection(.host("This Mac", unreachable: false))
+                    SHProjectRow("shepherd", count: 5, expanded: false, rollup: .waiting, toggle: {}, newThread: {}) { EmptyView() }
+                    SHSidebarSection(.host("horizon", unreachable: true))
+                    SHProjectRow("shepherd", count: 2, expanded: false, dimmed: true, toggle: {}, newThread: nil) { EmptyView() }
+                    SHProjectRow("case-battles-release-monitor", count: 1, expanded: false, missing: true, toggle: {}, newThread: nil) { EmptyView() }
                 }
                 .frame(width: AppLayout.sidebarDefaultWidth)
             }
             .padding(24)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Color.nw.bgBase)
+            .background(Color.sh.bgBase)
         }
     }
 }

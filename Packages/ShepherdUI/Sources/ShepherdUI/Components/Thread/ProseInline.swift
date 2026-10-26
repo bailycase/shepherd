@@ -11,7 +11,7 @@ import SwiftUI
 ///   `<b>`, `<i>`, `<s>`, `<code>`, `<sup>`, `<sub>` and `<a href>` style their text, other
 ///   HTML tags are dropped, and anything that only looks like a tag (`Array<Int>`) stays text
 @MainActor
-public enum NWProseInline {
+public enum SHProseInline {
     private struct Key: Hashable {
         var text: String
         var scale: CGFloat
@@ -30,7 +30,7 @@ public enum NWProseInline {
     }
 
     /// The footnote references' link scheme, inside this styler only.
-    private static let footnoteScheme = "nw-footnote"
+    private static let footnoteScheme = "sh-footnote"
 
     /// `text` styled, uncached.
     static func styled(_ text: String) -> AttributedString {
@@ -38,7 +38,7 @@ public enum NWProseInline {
         guard let parsed = try? AttributedString(markdown: source, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) else {
             return AttributedString(text)
         }
-        let nw = Color.nw
+        let sh = Color.sh
         var result = AttributedString()
         var open: [HTMLTag] = []
         for run in parsed.runs {
@@ -53,7 +53,7 @@ public enum NWProseInline {
                     case "img":
                         if let alt = tag.attribute("alt"), !alt.isEmpty {
                             var image = AttributedString(alt)
-                            image.foregroundColor = nw.running
+                            image.foregroundColor = sh.running
                             if let src = tag.attribute("src"), let url = URL(string: src), ["http", "https"].contains(url.scheme ?? "") {
                                 image.link = url
                             }
@@ -80,7 +80,7 @@ public enum NWProseInline {
 
     private static func style(_ piece: inout AttributedString, intent: InlinePresentationIntent,
                               run: AttributedString.Runs.Run, open: [HTMLTag]) {
-        let nw = Color.nw
+        let sh = Color.sh
         var intent = intent
         for tag in open {
             switch tag.name {
@@ -95,41 +95,41 @@ public enum NWProseInline {
         }
         if intent != (run.inlinePresentationIntent ?? []) { piece.inlinePresentationIntent = intent }
         if intent.contains(.code) {
-            piece.font = Font.nw(.code)
-            piece.backgroundColor = nw.lineSubtle
+            piece.font = Font.sh(.code)
+            piece.backgroundColor = sh.lineSubtle
         }
         if intent.contains(.strikethrough) {
             piece.strikethroughStyle = .single
         }
         if let url = run.imageURL {
             // An inline image reads as its alt text; only a web image is a link.
-            piece.foregroundColor = nw.running
+            piece.foregroundColor = sh.running
             if ["http", "https"].contains(url.scheme ?? "") { piece.link = url }
         }
         if let url = piece.link {
             if url.scheme == footnoteScheme {
                 piece.link = nil
-                piece.font = Font.nw(.micro)
-                piece.baselineOffset = NWTextStyle.body.size * 0.35
-                piece.foregroundColor = nw.running
+                piece.font = Font.sh(.micro)
+                piece.baselineOffset = SHTextStyle.body.size * 0.35
+                piece.foregroundColor = sh.running
             } else {
-                piece.foregroundColor = nw.running
+                piece.foregroundColor = sh.running
             }
         }
         for tag in open {
             switch tag.name {
             case "kbd":
-                piece.font = Font.nw(.ui)
-                piece.foregroundColor = nw.textPrimary
-                piece.backgroundColor = nw.bgSelected
+                piece.font = Font.sh(.ui)
+                piece.foregroundColor = sh.textPrimary
+                piece.backgroundColor = sh.bgSelected
             case "sup":
-                piece.font = Font.nw(.caption)
-                piece.baselineOffset = NWTextStyle.body.size * 0.35
+                piece.font = Font.sh(.caption)
+                piece.baselineOffset = SHTextStyle.body.size * 0.35
             case "sub":
-                piece.font = Font.nw(.caption)
-                piece.baselineOffset = -NWTextStyle.body.size * 0.2
+                piece.font = Font.sh(.caption)
+                piece.baselineOffset = -SHTextStyle.body.size * 0.2
             case "mark":
-                piece.backgroundColor = nw.lanternTint
+                piece.backgroundColor = sh.lanternTint
             case "u", "ins":
                 piece.underlineStyle = .single
             default: break

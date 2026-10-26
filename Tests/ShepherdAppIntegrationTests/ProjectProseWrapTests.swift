@@ -6,7 +6,7 @@ import Testing
 @testable import ShepherdApp
 
 /// A fictional paragraph exercises greedy wrapping in the 447pt worker pane. SwiftUI's `Text`
-/// avoids a one-word last line; Project prose uses `NWPlainParagraph` to match greedy CSS wrapping.
+/// avoids a one-word last line; Project prose uses `SHPlainParagraph` to match greedy CSS wrapping.
 /// Ordinary threads retain SwiftUI's wrapping.
 @Suite("Project prose wraps as the boards do", .mainActorExclusive)
 @MainActor
@@ -20,8 +20,8 @@ struct ProjectProseWrapTests {
         defer { ThemeStore.shared.textScale = original }
         let window = OffscreenWindow(size: CGSize(width: width + 40, height: 160), dark: dark,
                                      Prose(text: Self.words, maxWidth: width).equatable()
-                                         .environment(\.nwProseHalfLeading, halfLeading)
-                                         .padding(20).frame(width: width + 40, height: 160).background(Color.nw.bgWindow)
+                                         .environment(\.shProseHalfLeading, halfLeading)
+                                         .padding(20).frame(width: width + 40, height: 160).background(Color.sh.bgWindow)
                                          .environment(\.colorScheme, dark ? .dark : .light))
         defer { window.close() }
         window.layout()
@@ -54,7 +54,7 @@ struct ProjectProseWrapTests {
 
     @Test(arguments: [(false, CGFloat(1)), (true, CGFloat(1)), (false, CGFloat(1.3)), (true, CGFloat(1.3))])
     func aWorkerParagraphFillsItsFirstLineAsCoreTextDoesAndAnOrdinaryThreadsIsUnchanged(dark: Bool, scale: CGFloat) {
-        _ = NWFonts.isAvailable ? () : NWFonts.register()
+        _ = SHFonts.isAvailable ? () : SHFonts.register()
         let expected = greedyFirstLine(width: 447, scale: scale)
         let project = lineEdges(halfLeading: true, width: 447, dark: dark, scale: scale)
         #expect(project.count >= 2, "wraps (dark \(dark), scale \(scale)): \(project)")
@@ -74,17 +74,17 @@ struct ProjectProseWrapTests {
     private static func labelScenario() async {
         AccessibilityNode.enable()
         let window = OffscreenWindow(size: CGSize(width: 487, height: 200), dark: true,
-                                     Prose(text: words, maxWidth: 447).equatable().environment(\.nwProseHalfLeading, true).padding(20))
+                                     Prose(text: words, maxWidth: 447).equatable().environment(\.shProseHalfLeading, true).padding(20))
         defer { window.close() }
         let texts = window.elements().filter { $0.role == "AXStaticText" && $0.value == words }
         #expect(texts.count == 1, "one static text carrying the words: \(window.elements().map { "\($0.role ?? "")|\($0.value ?? "")" })")
         let wide = window.elements().first { $0.value == words }?.frame.height ?? 0
-        window.show(Prose(text: words, maxWidth: 200).equatable().environment(\.nwProseHalfLeading, true).padding(20))
+        window.show(Prose(text: words, maxWidth: 200).equatable().environment(\.shProseHalfLeading, true).padding(20))
         let tall = window.elements().first { $0.value == words }?.frame.height ?? 0
         #expect(tall > wide, "it wraps to more lines when the column narrows: \(wide) then \(tall)")
         // One unbroken token far wider than the column (a path, a hash) wraps inside it; it is never measured at its own width.
         let token = String(repeating: "x", count: 300)
-        window.show(Prose(text: token, maxWidth: 200).equatable().environment(\.nwProseHalfLeading, true).padding(20))
+        window.show(Prose(text: token, maxWidth: 200).equatable().environment(\.shProseHalfLeading, true).padding(20))
         let node = window.elements().first { $0.value == token }
         #expect((node?.frame.width ?? .infinity) <= 200, "the label stays in its column: \(String(describing: node?.frame))")
         #expect((node?.frame.height ?? 0) > tall, "and wraps over more lines than the sentence: \(String(describing: node?.frame.height))")

@@ -14,18 +14,18 @@ extension EnvironmentValues {
     @Entry var compactionExpansion: NativeCompactionExpansion? = nil
 }
 
-extension NWContextRingState {
+extension SHContextRingState {
     init(_ ring: NativeContextMeter.Ring) {
         switch ring {
         case .empty: self = .empty
         case .compacting: self = .compacting
         case .estimated: self = .estimated
-        case .fill(let fraction, let tone): self = .fill(fraction, NWContextTone(tone))
+        case .fill(let fraction, let tone): self = .fill(fraction, SHContextTone(tone))
         }
     }
 }
 
-extension NWContextTone {
+extension SHContextTone {
     init(_ tone: NativeContextMeter.Tone) {
         switch tone {
         case .calm: self = .calm
@@ -35,7 +35,7 @@ extension NWContextTone {
     }
 }
 
-extension NWContextDetailsModel {
+extension SHContextDetailsModel {
     init(_ details: NativeContextDetails) {
         let variant: Variant = switch details.variant {
         case .empty: .empty
@@ -96,7 +96,7 @@ struct ContextMeterButton: View, Equatable {
         if let meter = store.contextMeter {
             // The numbers are in the sheet: touch has no hover, and the composer never shows
             // text for the ring. A pointer over it on iPad shows them as on the Mac.
-            NWContextMeterButton(NWContextRingState(meter.ring), expanded: expanded, help: meter.helpText,
+            SHContextMeterButton(SHContextRingState(meter.ring), expanded: expanded, help: meter.helpText,
                                  accessibilityLabel: meter.accessibilityLabel, action: open)
                 .accessibilityHint("Shows what fills the context")
         }
@@ -120,7 +120,7 @@ struct ContextDetailsSheet: View {
         let compacting = store.contextMeter?.ring == .compacting
         ScrollView {
             if let details = store.contextDetails {
-                NWContextDetails(NWContextDetailsModel(details), actions: NWContextDetailsActions(
+                SHContextDetails(SHContextDetailsModel(details), actions: SHContextDetailsActions(
                     compact: { keep in Task { await store.compact(instructions: keep) } },
                     find: { id in
                         dismiss()
@@ -145,13 +145,13 @@ struct ContextDetailsSheet: View {
             }
         }
         .scrollBounceBehavior(.basedOnSize)
-        .background(Color.nw.bgRaised)
+        .background(Color.sh.bgRaised)
         // As tall as the details (a keyboard for what to keep lifts the sheet), or the whole
         // screen when they are taller.
         .presentationDetents(height > 0 ? [.height(height), .large] : [.medium, .large], selection: $detent)
         .presentationSizing(.form.fitted(horizontal: false, vertical: true))
         .presentationDragIndicator(.visible)
-        .presentationBackground(Color.nw.bgRaised)
+        .presentationBackground(Color.sh.bgRaised)
         .onChange(of: compacting) { was, now in if was && !now { dismiss() } }
         .onChange(of: store.contextMeter == nil) { _, gone in if gone { dismiss() } }
         // Esc on a hardware keyboard closes it, as on the Mac.
@@ -173,26 +173,26 @@ struct CompactionItem: View {
 
     var body: some View {
         let open = expanded && !row.sections.isEmpty
-        VStack(alignment: .leading, spacing: NWCompactionMetrics.openGap) {
-            NWCompactionDivider(
+        VStack(alignment: .leading, spacing: SHCompactionMetrics.openGap) {
+            SHCompactionDivider(
                 title: row.title, tokens: row.tokens,
-                tone: NWCompactionDivider.Tone(row.tone),
+                tone: SHCompactionDivider.Tone(row.tone),
                 running: row.running, expanded: row.sections.isEmpty ? nil : open, help: row.error) {
                 if let expansion { expansion.toggle(row.id) } else { ownExpanded.toggle() }
             }
             if open {
-                NWCompactionSummary(size: row.summarySize,
-                                    sections: row.sections.map { NWSummarySection(id: $0.id, title: $0.title, text: $0.text, files: $0.files) }) {
+                SHCompactionSummary(size: row.summarySize,
+                                    sections: row.sections.map { SHSummarySection(id: $0.id, title: $0.title, text: $0.text, files: $0.files) }) {
                     UIPasteboard.general.string = row.summary ?? ""
                 }
-                .nwTransition(.content)
+                .shTransition(.content)
             }
         }
-        .nwAnimation(.disclosure, value: open)
+        .shAnimation(.disclosure, value: open)
     }
 }
 
-extension NWCompactionDivider.Tone {
+extension SHCompactionDivider.Tone {
     init(_ tone: NativeCompactionRow.Tone) {
         switch tone {
         case .normal: self = .normal

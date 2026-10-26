@@ -4,7 +4,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-/// The ⌘K palette (Composer board, `.nwCommandPalette`): a 620pt card 18% from the top over the
+/// The ⌘K palette (Composer board, `.shCommandPalette`): a 620pt card 18% from the top over the
 /// scrim, capped to the window. A 44pt search row with All · Commands · Agents scopes, then
 /// results under mono caps headers — Commands, This thread, Subagents, and Agents/Spaces once
 /// there is a query. Rows show an icon, the label, dim context, and the real shortcut.
@@ -52,7 +52,7 @@ struct PaletteCard: View {
     /// only move the highlight.
     @State private var results = PaletteResults()
     @FocusState private var fieldFocused: Bool
-    @Environment(\.nwPaletteMaxListHeight) private var maxListHeight
+    @Environment(\.shPaletteMaxListHeight) private var maxListHeight
 
     /// `highlight` lets a test move the highlight as ↑↓ and hover do.
     init(items: [PaletteItem], run: @escaping (PaletteItem) -> Void, close: @escaping () -> Void,
@@ -69,17 +69,17 @@ struct PaletteCard: View {
     }
 
     var body: some View {
-        NWPaletteCard {
-            NWPaletteSearchRow("Search commands, agents, subagents…", text: $query, focus: $fieldFocused, submit: runSelected) {
-                NWSegmentedPicker("Scope", selection: $scope, options: PaletteItem.Scope.allCases.map { ($0, $0.title) }, size: .s)
-                    .nwHelp("Switch scope", shortcut: "⇥")
+        SHPaletteCard {
+            SHPaletteSearchRow("Search commands, agents, subagents…", text: $query, focus: $fieldFocused, submit: runSelected) {
+                SHSegmentedPicker("Scope", selection: $scope, options: PaletteItem.Scope.allCases.map { ($0, $0.title) }, size: .s)
+                    .shHelp("Switch scope", shortcut: "⇥")
             }
         } results: {
             resultsList
         }
         // Rows arrive, leave, and reorder as the query or scope changes, and the card follows
         // their height; moving the highlight (↑↓, hover) changes no row, so it lands at once.
-        .nwAnimation(.list, value: results.layout)
+        .shAnimation(.list, value: results.layout)
         .onAppear {
             query = initialQuery
             fieldFocused = true
@@ -131,14 +131,14 @@ struct PaletteCard: View {
                         PaletteEntryRow(entry: entry, highlighted: entry.index == highlighted, run: run,
                                         hover: { highlight.move(to: $0) })
                             .equatable()
-                            .nwTransition(.list)
+                            .shTransition(.list)
                     }
                     if results.rows.isEmpty {
                         Text(query.isEmpty ? "Nothing here yet" : "No matches")
-                            .font(Font.nw(.caption))
-                            .foregroundStyle(Color.nw.textTertiary)
-                            .frame(maxWidth: .infinity, minHeight: NWPaletteMetrics.sectionHeight * 2)
-                            .nwTransition(.content)
+                            .font(Font.sh(.caption))
+                            .foregroundStyle(Color.sh.textTertiary)
+                            .frame(maxWidth: .infinity, minHeight: SHPaletteMetrics.sectionHeight * 2)
+                            .shTransition(.content)
                     }
                 }
             }
@@ -285,7 +285,7 @@ private struct PaletteEntryRow: View, Equatable {
         VStack(spacing: 0) {
             switch entry {
             case .header(let section):
-                NWPaletteSectionHeader(section.title)
+                SHPaletteSectionHeader(section.title)
             case .row(let index, let item, let snippet):
                 PaletteRow(item: item, selected: highlighted, snippet: snippet) { run(item) }
                     .onHover { if $0 { hover(index) } }
@@ -302,14 +302,14 @@ private struct PaletteRow: View {
     let action: () -> Void
 
     var body: some View {
-        NWPaletteRow(item.title, systemImage: item.icon, context: item.subtitle, shortcut: item.shortcut,
+        SHPaletteRow(item.title, systemImage: item.icon, context: item.subtitle, shortcut: item.shortcut,
                      highlighted: selected, iconColor: iconColor, action: action) {
             if let snippet {
                 snippetText(snippet)
-                    .font(Font.nw(.caption))
+                    .font(Font.sh(.caption))
                     .lineLimit(1)
-                    .padding(.leading, NWPaletteMetrics.titleInset)
-                    .padding(.bottom, NW.Space.xs)
+                    .padding(.leading, SHPaletteMetrics.titleInset)
+                    .padding(.bottom, SH.Space.xs)
             }
         }
     }
@@ -326,10 +326,10 @@ private struct PaletteRow: View {
 
     /// Snippet with the matched term emphasized; the rest stays dim.
     private func snippetText(_ snippet: PaletteSnippet) -> Text {
-        let before = Text(snippet.before).foregroundStyle(Color.nw.textTertiary)
+        let before = Text(snippet.before).foregroundStyle(Color.sh.textTertiary)
         guard !snippet.match.isEmpty else { return before }
-        let match = Text(snippet.match).foregroundStyle(Color.nw.textPrimary).bold()
-        let after = Text(snippet.after).foregroundStyle(Color.nw.textTertiary)
+        let match = Text(snippet.match).foregroundStyle(Color.sh.textPrimary).bold()
+        let after = Text(snippet.after).foregroundStyle(Color.sh.textTertiary)
         return Text("\(before)\(match)\(after)")
     }
 }

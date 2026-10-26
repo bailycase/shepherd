@@ -15,12 +15,12 @@ files, read at the start of every session Shepherd starts: `AGENTS.md` for how y
 `APPEND_SYSTEM.md` for rules that override everything else. Repos can still add their own
 AGENTS.md." (file names in mono; see the departures).
 
-- **Same on every host:** a flat card (`NWGroupCard` on `bgWindow`) holding one settings row: "Same
+- **Same on every host:** a flat card (`SHGroupCard` on `bgWindow`) holding one settings row: "Same
   on every host", under it "Save once; Shepherd writes both files to every host. Offline hosts
   catch up when they're back.", and the switch trailing. On by default, and remembered.
 - **Host chips** under it, 8pt apart and wrapping (`InstructionsHostChip`): one per machine, This
   Mac and then each remote host in the sidebar's order. A chip is at least 34pt, radius `m`,
-  `NW.Space.l` side padding and 8pt gaps: a 13pt `desktopcomputer` glyph in `textSecondary`, the
+  `SH.Space.l` side padding and 8pt gaps: a 13pt `desktopcomputer` glyph in `textSecondary`, the
   host's name in mono 12.5, a 7pt state dot, and its state word in Geist 11 in the state's color
   (`InstructionsPresentation.hostChip`). With Same on every host on, the chips report the sync and
   pick nothing: This Mac says "synced" once every connected host matches ("not synced" in
@@ -70,7 +70,7 @@ AGENTS.md." (file names in mono; see the departures).
     `textTertiary`: "horizon is offline. Its files show here once it's connected.", "horizon runs
     a Shepherd from before Instructions. Update it there to edit its files from here.", "Reading
     horizon's files…" over a spinner, or "Couldn't read horizon's files: …" with Try again.
-  - A save, copy or restore that fails says so under the card (`NWInlineProblem`).
+  - A save, copy or restore that fails says so under the card (`SHInlineProblem`).
 - **How the agent reads them** (the side column, 330pt): five steps in order, each a small card (radius
   `m`, a `lineSubtle` line, `bgRaised`, 8pt × 10pt padding) joined by a 10pt connector (a 1.5pt
   `lineStrong` line 17pt in, under the number column): the step number in mono 10.5 `textTertiary`
@@ -106,7 +106,7 @@ switch's row "Off: each host keeps its own files. Pick a host to edit it."
   dot alone.
 - **Comparing a host that differs:** the editor card's header reads "build-01 compared with This
   Mac" (both names in mono, "compared with" in `textTertiary`, Geist 12.5), with a small segmented
-  control (`NWSegmentedPicker` s, 20pt) trailing: Diff · build-01's file. Diff shows the whole file
+  control (`SHSegmentedPicker` s, 20pt) trailing: Diff · build-01's file. Diff shows the whole file
   as a diff from This Mac's copy to the host's, scrolled to its first difference: mono 12 on 22pt
   lines, a 34pt number gutter 8pt before a 14pt sign column: removed lines `−` in `failed` on
   `failedTint`, added lines `+` in `done` on `doneTint`, context in `textSecondary` with a blank

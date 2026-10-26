@@ -4,7 +4,7 @@ import SwiftUI
 /// browser at 1x: points are CSS pixels), never rounded to a nearby token. Each is named for the thing it sizes.
 /// Where a value equals an existing token the token is used at the call site; what is here has none.
 
-public enum NWLeadMetrics {
+public enum SHLeadMetrics {
     // MARK: Sidebar (ProjectLead-Paused, -Question)
 
     /// A task thread under its Project: its dot sits at 38pt (the row's 8 + 26 + 4), so the row leads 26pt in.
@@ -118,7 +118,7 @@ public enum NWLeadMetrics {
     public static let taskTitleSize: CGFloat = 12.5
     public static let taskStatusSize: CGFloat = 11.5
     /// A task reference in prose (ProjectLead-Question `.pc-link`): 4pt sides, a 6pt dot and 4pt gap before the title, radius 4
-    /// (`NW.Radius.xs`), `runningTint`, the line box tall.
+    /// (`SH.Radius.xs`), `runningTint`, the line box tall.
     public static let taskLinkPad: CGFloat = 4
     public static let taskLinkDot: CGFloat = 6
     public static let taskLinkGap: CGFloat = 4
@@ -244,7 +244,7 @@ public enum NWLeadMetrics {
     public static let steps: CGFloat = 66
     public static let stepsRadius: CGFloat = 12
     public static let stepsPadding: CGFloat = 12
-    /// The 12pt padding is inside the 1pt border (the markup's border-box is 66 = 1 + 12 + 17 + 6 + 17 + 12 + 1); `nwBorder` draws over it.
+    /// The 12pt padding is inside the 1pt border (the markup's border-box is 66 = 1 + 12 + 17 + 6 + 17 + 12 + 1); `shBorder` draws over it.
     public static let stepsBorder: CGFloat = 1
     public static let fileChipRadius: CGFloat = 8
 }

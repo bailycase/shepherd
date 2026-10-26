@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// A pill after a design header's title: a system's sync state ("Synced", done).
-public struct NWDesignHeaderStatus: Equatable, Sendable {
+public struct SHDesignHeaderStatus: Equatable, Sendable {
     public let state: AgentState
     public let label: String
 
@@ -17,7 +17,7 @@ public struct NWDesignHeaderStatus: Equatable, Sendable {
 /// on a system's page), a spacer and the trailing controls, 8pt apart. As a page (New design) it
 /// takes the page header's height and inset; over a design, the toolbar's. The section goes back
 /// to the Designs page. Its empty area drags the window.
-public struct NWDesignHeader<Trailing: View>: View {
+public struct SHDesignHeader<Trailing: View>: View {
     public enum Style: Sendable {
         /// A destination page's header (52pt).
         case page
@@ -25,7 +25,7 @@ public struct NWDesignHeader<Trailing: View>: View {
         case toolbar
     }
 
-    public typealias Status = NWDesignHeaderStatus
+    public typealias Status = SHDesignHeaderStatus
 
     let title: String
     let style: Style
@@ -55,65 +55,65 @@ public struct NWDesignHeader<Trailing: View>: View {
     }
 
     public var body: some View {
-        HStack(spacing: NW.Space.l) {
+        HStack(spacing: SH.Space.l) {
             if let sidebar {
                 Button(action: sidebar) { Image(systemName: "sidebar.left") }
-                    .buttonStyle(.nwIcon)
-                    .nwHelp("Show sidebar", shortcut: sidebarShortcut)
+                    .buttonStyle(.shIcon)
+                    .shHelp("Show sidebar", shortcut: sidebarShortcut)
                     .accessibilityLabel("Show sidebar")
             }
-            HStack(spacing: NW.Space.m) {
+            HStack(spacing: SH.Space.m) {
                 Image(systemName: "pencil.tip")
-                    .font(.nwSans(NWDesignMetrics.headerGlyph))
-                    .foregroundStyle(Color.nw.textTertiary)
+                    .font(.shSans(SHDesignMetrics.headerGlyph))
+                    .foregroundStyle(Color.sh.textTertiary)
                     .accessibilityHidden(true)
                 Button(action: designs) {
-                    Text(section).foregroundStyle(Color.nw.textTertiary)
+                    Text(section).foregroundStyle(Color.sh.textTertiary)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(section)
                 Text("/")
-                    .foregroundStyle(Color.nw.textTertiary)
+                    .foregroundStyle(Color.sh.textTertiary)
                     .accessibilityHidden(true)
                 Text(title)
-                    .font(.nwSans(NWDesignMetrics.headerTextSize, .semibold))
-                    .foregroundStyle(Color.nw.textPrimary)
+                    .font(.shSans(SHDesignMetrics.headerTextSize, .semibold))
+                    .foregroundStyle(Color.sh.textPrimary)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .help(title)
                     .accessibilityAddTraits(.isHeader)
-                    .nwContentTransition(.crossFade)
-                    .nwAnimation(.content, value: title)
+                    .shContentTransition(.crossFade)
+                    .shAnimation(.content, value: title)
                 if let status {
-                    NWStatusPill(status.state, label: status.label)
-                        .nwTransition(.content)
+                    SHStatusPill(status.state, label: status.label)
+                        .shTransition(.content)
                 }
             }
-            .font(.nwSans(NWDesignMetrics.headerTextSize))
-            .nwAnimation(.content, value: status)
-            Spacer(minLength: NW.Space.l)
+            .font(.shSans(SHDesignMetrics.headerTextSize))
+            .shAnimation(.content, value: status)
+            Spacer(minLength: SH.Space.l)
             // The board's field sits between two equal spacers; it narrows (to 80pt) before
             // the breadcrumb or the trailing controls give way.
             if let center {
                 center.layoutPriority(0.5)
-                Spacer(minLength: NW.Space.l)
+                Spacer(minLength: SH.Space.l)
             }
-            HStack(spacing: NW.Space.m) { trailing }
+            HStack(spacing: SH.Space.m) { trailing }
                 .fixedSize()
                 .layoutPriority(1)
         }
-        .padding(.leading, (style == .page ? NWPageMetrics.headerLeading : NWToolbarMetrics.leadingPadding) + leadingInset)
-        .padding(.trailing, style == .page ? NWPageMetrics.headerTrailing : NW.Space.l)
-        .frame(height: style == .page ? NWPageMetrics.headerHeight : NWToolbarMetrics.height)
+        .padding(.leading, (style == .page ? SHPageMetrics.headerLeading : SHToolbarMetrics.leadingPadding) + leadingInset)
+        .padding(.trailing, style == .page ? SHPageMetrics.headerTrailing : SH.Space.l)
+        .frame(height: style == .page ? SHPageMetrics.headerHeight : SHToolbarMetrics.height)
         .frame(maxWidth: .infinity)
-        .background(Color.nw.bgWindow)
-        .overlay(alignment: .bottom) { NWHairline() }
+        .background(Color.sh.bgWindow)
+        .overlay(alignment: .bottom) { SHHairline() }
         .contentShape(Rectangle())
-        .nwWindowDrag()
+        .shWindowDrag()
     }
 }
 
-extension NWDesignHeader where Trailing == EmptyView {
+extension SHDesignHeader where Trailing == EmptyView {
     public init(_ title: String, style: Style, section: String = "Designs", status: Status? = nil, leadingInset: CGFloat = 0,
                 sidebar: (() -> Void)? = nil, sidebarShortcut: String? = nil, designs: @escaping () -> Void) {
         self.init(title, style: style, section: section, status: status, leadingInset: leadingInset, sidebar: sidebar,
@@ -126,7 +126,7 @@ extension NWDesignHeader where Trailing == EmptyView {
 /// 2pt `textPrimary` underline, the others `textSecondary`, a count in mono 10 `textTertiary`.
 /// On iPad (`.touch`, iPadDesign) the tabs are 44pt tall in 14, 16pt in, their counts in the
 /// tab's own type ("Comments 3").
-public struct NWDesignPaneTabs: View {
+public struct SHDesignPaneTabs: View {
     public enum Size: Sendable {
         case regular, touch
     }
@@ -157,33 +157,33 @@ public struct NWDesignPaneTabs: View {
 
     public var body: some View {
         let touch = size == .touch
-        HStack(spacing: touch ? 0 : NWDesignMetrics.paneTabSpacing) {
+        HStack(spacing: touch ? 0 : SHDesignMetrics.paneTabSpacing) {
             ForEach(tabs) { tab in
                 let current = tab.id == selection
                 Button { select(tab.id) } label: {
-                    HStack(spacing: NW.Space.xs) {
+                    HStack(spacing: SH.Space.xs) {
                         if touch {
                             Text(tab.count.map { "\(tab.title) \($0)" } ?? tab.title)
-                                .font(.nwSans(NWDesignMetrics.touchPaneTabTextSize, .regular))
-                                .foregroundStyle(current ? Color.nw.textPrimary : Color.nw.textSecondary)
+                                .font(.shSans(SHDesignMetrics.touchPaneTabTextSize, .regular))
+                                .foregroundStyle(current ? Color.sh.textPrimary : Color.sh.textSecondary)
                         } else {
                             Text(tab.title)
-                                .font(.nwSans(NWDesignMetrics.paneTabTextSize, current ? .semibold : .regular))
-                                .foregroundStyle(current ? Color.nw.textPrimary : Color.nw.textSecondary)
+                                .font(.shSans(SHDesignMetrics.paneTabTextSize, current ? .semibold : .regular))
+                                .foregroundStyle(current ? Color.sh.textPrimary : Color.sh.textSecondary)
                             if let count = tab.count {
                                 Text("\(count)")
-                                    .font(.nwMono(NWDesignMetrics.paneTabCountSize))
-                                    .foregroundStyle(Color.nw.textTertiary)
+                                    .font(.shMono(SHDesignMetrics.paneTabCountSize))
+                                    .foregroundStyle(Color.sh.textTertiary)
                             }
                         }
                     }
                     // iPadDesign: the touch tabs share the pane's width under a lantern line.
                     .frame(maxWidth: touch ? .infinity : nil)
-                    .frame(height: touch ? NWDesignMetrics.touchPaneTabHeight : nil)
+                    .frame(height: touch ? SHDesignMetrics.touchPaneTabHeight : nil)
                     .frame(maxHeight: touch ? nil : .infinity)
                     .overlay(alignment: .bottom) {
                         if current {
-                            Rectangle().fill(touch ? Color.nw.lantern : Color.nw.textPrimary).frame(height: NWDesignMetrics.paneTabUnderline)
+                            Rectangle().fill(touch ? Color.sh.lantern : Color.sh.textPrimary).frame(height: SHDesignMetrics.paneTabUnderline)
                         }
                     }
                     .contentShape(Rectangle())
@@ -193,9 +193,9 @@ public struct NWDesignPaneTabs: View {
             }
             if !touch { Spacer(minLength: 0) }
         }
-        .padding(.leading, touch ? 0 : NWDesignMetrics.paneTabsLeading)
-        .padding(.trailing, touch ? 0 : NW.Space.l)
-        .frame(height: touch ? nil : NWDesignMetrics.paneTabsHeight, alignment: .bottom)
-        .overlay(alignment: .bottom) { NWHairline() }
+        .padding(.leading, touch ? 0 : SHDesignMetrics.paneTabsLeading)
+        .padding(.trailing, touch ? 0 : SH.Space.l)
+        .frame(height: touch ? nil : SHDesignMetrics.paneTabsHeight, alignment: .bottom)
+        .overlay(alignment: .bottom) { SHHairline() }
     }
 }

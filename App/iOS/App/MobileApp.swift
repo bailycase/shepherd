@@ -18,7 +18,7 @@ final class MobileApp {
     let pushRouter = PushRouter()
 
     init(hosts: MobileHosts, appearance: MobileAppearance, push: PushManager? = nil) {
-        NWFonts.register()
+        SHFonts.register()
         self.hosts = hosts
         self.push = push ?? PushManager()
         projects = MobileProjects(hosts: hosts)

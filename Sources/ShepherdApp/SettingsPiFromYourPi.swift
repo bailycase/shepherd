@@ -27,7 +27,7 @@ struct FromYourPiSettings: View {
                 }
             }
         }
-        .padding(.top, NW.Space.l)
+        .padding(.top, SH.Space.l)
         .task { await model.refresh() }
     }
 
@@ -35,34 +35,34 @@ struct FromYourPiSettings: View {
 
     private func source(_ survey: YourPiSurvey, folder: String) -> some View {
         let url = URL(fileURLWithPath: folder, isDirectory: true)
-        return NWGroupCard(fill: Color.nw.bgWindow, radius: NWCardRowMetrics.settingsCardRadius) {
+        return SHGroupCard(fill: Color.sh.bgWindow, radius: SHCardRowMetrics.settingsCardRadius) {
             SettingsActionRow {
-                VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                    HStack(spacing: NW.Space.m) {
-                        Text("Source").font(.nw(.body, weight: .medium)).foregroundStyle(Color.nw.textPrimary)
-                        Text((folder as NSString).abbreviatingWithTildeInPath).font(.nwMono(NWPiSignInMetrics.proseMonoSize)).foregroundStyle(Color.nw.textPrimary)
+                VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                    HStack(spacing: SH.Space.m) {
+                        Text("Source").font(.sh(.body, weight: .medium)).foregroundStyle(Color.sh.textPrimary)
+                        Text((folder as NSString).abbreviatingWithTildeInPath).font(.shMono(SHPiSignInMetrics.proseMonoSize)).foregroundStyle(Color.sh.textPrimary)
                             .help(folder)
                     }
-                    Text("The pi in your terminal, found through your login shell.").font(.nw(.ui)).foregroundStyle(Color.nw.textSecondary)
-                    if let problem = survey.problems.first { NWInlineProblem(problem) }
+                    Text("The pi in your terminal, found through your login shell.").font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
+                    if let problem = survey.problems.first { SHInlineProblem(problem) }
                 }
             } actions: {
                 Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-                    .buttonStyle(.nw(.secondary, size: .s))
+                    .buttonStyle(.sh(.secondary, size: .s))
                     .accessibilityLabel("Show your pi in Finder")
             }
             SettingsActionRow {
-                VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                    Text("Last brought over").font(.nw(.body, weight: .medium)).foregroundStyle(Color.nw.textPrimary)
-                    Text(Self.lastBroughtOver(survey.copiedAt)).font(.nw(.ui)).foregroundStyle(Color.nw.textSecondary)
+                VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                    Text("Last brought over").font(.sh(.body, weight: .medium)).foregroundStyle(Color.sh.textPrimary)
+                    Text(Self.lastBroughtOver(survey.copiedAt)).font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
                 }
             } actions: {
                 Button("Re-import all") { Task { await model.reimportAll() } }
-                    .buttonStyle(.nw(.secondary, size: .s))
+                    .buttonStyle(.sh(.secondary, size: .s))
                     .disabled(!model.busy.isEmpty)
             }
         }
-        .nwControlScale(.settings)
+        .shControlScale(.settings)
     }
 
     // MARK: Brought over
@@ -71,7 +71,7 @@ struct FromYourPiSettings: View {
         let logins = survey.logins.filter { $0.yours != nil }
         return SettingsGroup(title: "Brought over", footnote: "Copies. Re-import replaces Shepherd’s copy with your pi’s; your pi is never written to.") {
             if !logins.isEmpty {
-                NWCardLabel("Logins")
+                SHCardLabel("Logins")
                 ForEach(logins) { login in
                     reimportRow(PiSignInCatalog.name(login.provider), badge: PiSignInCatalog.badge(login.provider),
                                 detail: Self.loginDetail(login, survey: survey), item: .login(login.provider),
@@ -80,7 +80,7 @@ struct FromYourPiSettings: View {
                                     ? survey.yourSignInsChanged.map { "Your pi’s sign-in changed on \(Self.day($0))." } : nil)
                 }
             }
-            NWCardLabel("Settings")
+            SHCardLabel("Settings")
             reimportRow("Custom providers", detail: survey.customProviders.isEmpty ? [.init("None in your pi.")]
                             : [.init("models.json", mono: true), .init("· " + survey.customProviders.joined(separator: ", "))],
                         item: .customProviders, freshness: survey.freshness["customProviders"], enabled: !survey.customProviders.isEmpty)
@@ -95,10 +95,10 @@ struct FromYourPiSettings: View {
         }
     }
 
-    private func reimportRow(_ title: String, badge: String? = nil, detail: [NWReimportRow.Detail], item: YourPiImport.Item,
+    private func reimportRow(_ title: String, badge: String? = nil, detail: [SHReimportRow.Detail], item: YourPiImport.Item,
                              freshness: PiFreshness?, why: String? = nil, enabled: Bool = true) -> some View {
         let row = YourPiModel.rowID(item)
-        return NWReimportRow(title, badge: badge, detail: detail, why: why,
+        return SHReimportRow(title, badge: badge, detail: detail, why: why,
                              freshness: model.busy.contains(row) ? .reimporting : model.reimported.contains(row) ? .reimported
                                 : freshness.map(Self.freshness),
                              problem: model.problems[row], reimport: enabled ? { Task { await model.reimport(item) } } : nil)
@@ -111,17 +111,17 @@ struct FromYourPiSettings: View {
             copiedRow("Instructions", detail: YourPiText.instructions(survey), kind: .instructions) {
                 // Settings ▸ Instructions edits Shepherd's own files, not this copy (departures).
                 Button("Show in Finder") { reveal(survey.copies(.instructions).first, fallback: "AGENTS.md") }
-                    .buttonStyle(.nw(.secondary, size: .s))
+                    .buttonStyle(.sh(.secondary, size: .s))
             }
             copiedRow("Skills", detail: YourPiText.skills(survey.copies(.skills)), kind: .skills) {
-                Button("Show in Finder") { reveal(survey.copies(.skills).first, fallback: "skills") }.buttonStyle(.nw(.secondary, size: .s))
+                Button("Show in Finder") { reveal(survey.copies(.skills).first, fallback: "skills") }.buttonStyle(.sh(.secondary, size: .s))
             }
             copiedRow("Prompts", detail: nil, chips: survey.copies(.prompts).map { "/" + $0.name }, kind: .prompts) {
-                Button("Show in Finder") { reveal(survey.copies(.prompts).first, fallback: "prompts") }.buttonStyle(.nw(.secondary, size: .s))
+                Button("Show in Finder") { reveal(survey.copies(.prompts).first, fallback: "prompts") }.buttonStyle(.sh(.secondary, size: .s))
             }
             if !survey.copies(.themes).isEmpty {
                 copiedRow("Themes", detail: nil, chips: survey.copies(.themes).map(\.name), kind: .themes) {
-                    Button("Show in Finder") { reveal(survey.copies(.themes).first, fallback: "themes") }.buttonStyle(.nw(.secondary, size: .s))
+                    Button("Show in Finder") { reveal(survey.copies(.themes).first, fallback: "themes") }.buttonStyle(.sh(.secondary, size: .s))
                 }
             }
         }
@@ -131,29 +131,29 @@ struct FromYourPiSettings: View {
                                          @ViewBuilder action: () -> Action) -> some View {
         let row = YourPiModel.rowID(.files(kind))
         return SettingsActionRow {
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                Text(title).font(.nw(.body, weight: .medium)).foregroundStyle(Color.nw.textPrimary)
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                Text(title).font(.sh(.body, weight: .medium)).foregroundStyle(Color.sh.textPrimary)
                 if let detail {
-                    NWMarkupText(detail, size: NWTextStyle.ui.size, codeSize: 11.5, lineHeight: 1.45).foregroundStyle(Color.nw.textSecondary)
+                    SHMarkupText(detail, size: SHTextStyle.ui.size, codeSize: 11.5, lineHeight: 1.45).foregroundStyle(Color.sh.textSecondary)
                 }
                 if !chips.isEmpty {
-                    HStack(spacing: NW.Space.xs) {
-                        ForEach(chips.prefix(6), id: \.self) { NWTag($0, mono: true) }
-                        if chips.count > 6 { NWTag("+\(chips.count - 6)") }
+                    HStack(spacing: SH.Space.xs) {
+                        ForEach(chips.prefix(6), id: \.self) { SHTag($0, mono: true) }
+                        if chips.count > 6 { SHTag("+\(chips.count - 6)") }
                     }
                 } else if detail == nil {
-                    Text("None copied.").font(.nw(.ui)).foregroundStyle(Color.nw.textSecondary)
+                    Text("None copied.").font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
                 }
-                if let problem = model.problems[row] { NWInlineProblem(problem) }
+                if let problem = model.problems[row] { SHInlineProblem(problem) }
             }
         } actions: {
             action()
             Button("Re-import") { Task { await model.reimport(.files(kind)) } }
-                .buttonStyle(.nw(.ghost, size: .s))
+                .buttonStyle(.sh(.ghost, size: .s))
                 .disabled(model.busy.contains(row))
                 .accessibilityLabel("Re-import \(title.lowercased()) from your pi")
         }
-        .nwControlScale(.standard)
+        .shControlScale(.standard)
     }
 
     private func reveal(_ copy: YourPiCopy?, fallback: String) {
@@ -164,11 +164,11 @@ struct FromYourPiSettings: View {
     // MARK: Extensions
 
     private func extensions(_ survey: YourPiSurvey, folder: String) -> some View {
-        VStack(alignment: .leading, spacing: NW.Space.m) {
+        VStack(alignment: .leading, spacing: SH.Space.m) {
             SettingsGroup(title: "Imported extensions",
                           trailing: "\(survey.extensions.count) in \((folder as NSString).abbreviatingWithTildeInPath)/extensions") {
             ForEach(survey.extensions) { item in
-                NWExtensionRow(item.copy.name, path: YourPiText.extensionPath(item), summary: item.summary,
+                SHExtensionRow(item.copy.name, path: YourPiText.extensionPath(item), summary: item.summary,
                                state: item.failure.map { .failed($0, lines: item.failureLines) } ?? (item.on ? .on : .off),
                                isOn: Binding(get: { item.on }, set: { on in Task { await model.setExtension(item.copy.destination, on: on) } })) {
                     Task { await model.setExtension(item.copy.destination, on: true) }
@@ -179,7 +179,7 @@ struct FromYourPiSettings: View {
                             : "Copies your extensions again, keeping each one's switch.",
                         problem: model.problems[YourPiModel.rowID(.files(.extensions))]) {
                 Button("Re-import") { Task { await model.reimport(.files(.extensions)) } }
-                    .buttonStyle(.nw(.secondary, size: .s))
+                    .buttonStyle(.sh(.secondary, size: .s))
                     .disabled(model.busy.contains(YourPiModel.rowID(.files(.extensions))))
             }
             }
@@ -187,17 +187,17 @@ struct FromYourPiSettings: View {
             HStack(spacing: 0) {
                 SettingsNote(text: "Code, so each one came over switched off. Shepherd's bundled extensions are on ")
                 Button("Extensions", action: openExtensions)
-                    .buttonStyle(.nwLink(font: .nwSans(AppLayout.settingsFootnoteSize)))
+                    .buttonStyle(.shLink(font: .shSans(AppLayout.settingsFootnoteSize)))
                     .underline()
                 SettingsNote(text: ".")
             }
-            .padding(.horizontal, NW.Space.xs)
+            .padding(.horizontal, SH.Space.xs)
         }
     }
 
     // MARK: Words
 
-    static func freshness(_ freshness: PiFreshness) -> NWFreshness {
+    static func freshness(_ freshness: PiFreshness) -> SHFreshness {
         switch freshness {
         case .sameAsYourPi: .same
         case .newerInYourPi: .newer
@@ -206,7 +206,7 @@ struct FromYourPiSettings: View {
     }
 
     /// "Subscription · Claude Pro or Max", "API key · sk-••••91c2".
-    static func loginDetail(_ login: YourPiSurvey.Login, survey: YourPiSurvey) -> [NWReimportRow.Detail] {
+    static func loginDetail(_ login: YourPiSurvey.Login, survey: YourPiSurvey) -> [SHReimportRow.Detail] {
         switch login.yours {
         case .subscription?: [.init("Subscription · " + (PiSignInCatalog.subscription(login.provider)?.plan ?? "signed in"))]
         case .apiKey?:
@@ -222,16 +222,16 @@ struct FromYourPiSettings: View {
         }
     }
 
-    static func defaultModelDetail(_ survey: YourPiSurvey) -> [NWReimportRow.Detail] {
+    static func defaultModelDetail(_ survey: YourPiSurvey) -> [SHReimportRow.Detail] {
         guard let theirs = survey.defaultModel else { return [.init("None set in your pi.")] }
         guard let mine = survey.shepherdDefaultModel, mine != theirs else { return [.init(NativeModelChoices.shortName(theirs), mono: true)] }
         return [.init(NativeModelChoices.shortName(mine), mono: true), .init("here")]
     }
 
     /// "4 folders · ~/code/shepherd and 3 more".
-    static func trustDetail(_ survey: YourPiSurvey) -> [NWReimportRow.Detail] {
+    static func trustDetail(_ survey: YourPiSurvey) -> [SHReimportRow.Detail] {
         guard survey.trustedFolders > 0 else { return [.init("None in your pi.")] }
-        var parts: [NWReimportRow.Detail] = [.init(YourPiText.count(survey.trustedFolders, "folder") + (survey.trustedFolderPaths.isEmpty ? "" : " ·"))]
+        var parts: [SHReimportRow.Detail] = [.init(YourPiText.count(survey.trustedFolders, "folder") + (survey.trustedFolderPaths.isEmpty ? "" : " ·"))]
         if let first = survey.trustedFolderPaths.first {
             parts.append(.init((first as NSString).abbreviatingWithTildeInPath, mono: true))
             if survey.trustedFolderPaths.count > 1 { parts.append(.init("and \(survey.trustedFolderPaths.count - 1) more")) }

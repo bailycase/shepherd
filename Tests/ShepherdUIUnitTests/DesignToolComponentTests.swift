@@ -8,15 +8,15 @@ import Testing
 @Suite("Design tool components")
 struct DesignToolComponentTests {
     private static let boards = [
-        NWCanvasBoard(id: "A.dc.html", frame: CGRect(x: 0, y: 0, width: 1280, height: 800), title: "A · Funnel first", size: "1280 × 800"),
-        NWCanvasBoard(id: "B.dc.html", frame: CGRect(x: 1360, y: 0, width: 1280, height: 800), title: "B", size: "1280 × 800"),
-        NWCanvasBoard(id: "A-phone.dc.html", frame: CGRect(x: 0, y: 920, width: 390, height: 844), title: "A · phone", size: "390 × 844"),
+        SHCanvasBoard(id: "A.dc.html", frame: CGRect(x: 0, y: 0, width: 1280, height: 800), title: "A · Funnel first", size: "1280 × 800"),
+        SHCanvasBoard(id: "B.dc.html", frame: CGRect(x: 1360, y: 0, width: 1280, height: 800), title: "B", size: "1280 × 800"),
+        SHCanvasBoard(id: "A-phone.dc.html", frame: CGRect(x: 0, y: 920, width: 390, height: 844), title: "A · phone", size: "390 × 844"),
         // Over A: the front-most board wins a click.
-        NWCanvasBoard(id: "Top.dc.html", frame: CGRect(x: 100, y: 100, width: 200, height: 200), title: "Top", size: "200 × 200"),
+        SHCanvasBoard(id: "Top.dc.html", frame: CGRect(x: 100, y: 100, width: 200, height: 200), title: "Top", size: "200 × 200"),
     ]
 
     @Test func canvasPointsAndScreenPointsRoundTrip() {
-        let viewport = NWCanvasViewport(offset: CGPoint(x: 44, y: 52), zoom: 0.5)
+        let viewport = SHCanvasViewport(offset: CGPoint(x: 44, y: 52), zoom: 0.5)
         #expect(viewport.screen(CGPoint(x: 100, y: 200)) == CGPoint(x: 94, y: 152))
         #expect(viewport.canvas(CGPoint(x: 94, y: 152)) == CGPoint(x: 100, y: 200))
         #expect(viewport.screen(CGRect(x: 0, y: 0, width: 1280, height: 800)) == CGRect(x: 44, y: 52, width: 640, height: 400))
@@ -24,11 +24,11 @@ struct DesignToolComponentTests {
 
     @Test(arguments: [(1.0, "100%"), (0.42, "42%"), (0.725, "73%"), (2, "200%")])
     func zoomReadsAsAPercentage(zoom: Double, text: String) {
-        #expect(NWCanvasViewport(zoom: zoom).percent == text)
+        #expect(SHCanvasViewport(zoom: zoom).percent == text)
     }
 
     @Test func zoomingKeepsThePointUnderThePointerStill() {
-        var viewport = NWCanvasViewport(offset: CGPoint(x: 10, y: 20), zoom: 0.5)
+        var viewport = SHCanvasViewport(offset: CGPoint(x: 10, y: 20), zoom: 0.5)
         let anchor = CGPoint(x: 300, y: 200)
         let before = viewport.canvas(anchor)
         viewport.zoom(by: 2, about: anchor)
@@ -38,11 +38,11 @@ struct DesignToolComponentTests {
 
     @Test(arguments: [(CGFloat(100), CGFloat(4)), (0.0001, 0.05), (.infinity, 1)])
     func zoomStaysInItsRange(requested: CGFloat, expected: CGFloat) {
-        #expect(NWCanvasViewport(zoom: requested).zoom == expected)
+        #expect(SHCanvasViewport(zoom: requested).zoom == expected)
     }
 
     @Test func panningMovesTheOrigin() {
-        var viewport = NWCanvasViewport(offset: .zero, zoom: 1)
+        var viewport = SHCanvasViewport(offset: .zero, zoom: 1)
         viewport.pan(by: CGSize(width: -30, height: 12))
         #expect(viewport.offset == CGPoint(x: -30, y: 12))
     }
@@ -50,28 +50,28 @@ struct DesignToolComponentTests {
     @Test func onlyBoardsOnScreenAreShown() {
         let size = CGSize(width: 800, height: 600)
         // At 100% from the origin only A (and the board over it) reach the view.
-        #expect(Self.boards.visible(in: NWCanvasViewport(zoom: 1), size: size).map(\.id) == ["A.dc.html", "Top.dc.html"])
+        #expect(Self.boards.visible(in: SHCanvasViewport(zoom: 1), size: size).map(\.id) == ["A.dc.html", "Top.dc.html"])
         // Zoomed out, all of them do.
-        #expect(Self.boards.visible(in: NWCanvasViewport(zoom: 0.2), size: size).count == 4)
+        #expect(Self.boards.visible(in: SHCanvasViewport(zoom: 0.2), size: size).count == 4)
         // Panned right past A: B alone.
-        let panned = NWCanvasViewport(offset: CGPoint(x: -1400, y: 0), zoom: 1)
+        let panned = SHCanvasViewport(offset: CGPoint(x: -1400, y: 0), zoom: 1)
         #expect(Self.boards.visible(in: panned, size: size).map(\.id) == ["B.dc.html"])
     }
 
     /// A board just below the view still shows while its label reaches in.
     @Test func aBoardWhoseLabelIsOnScreenIsShown() throws {
-        let viewport = NWCanvasViewport(offset: CGPoint(x: 0, y: -760), zoom: 1)
+        let viewport = SHCanvasViewport(offset: CGPoint(x: 0, y: -760), zoom: 1)
         let size = CGSize(width: 400, height: 150)
         let phone = try #require(Self.boards.first { $0.id == "A-phone.dc.html" })
         #expect(!viewport.screen(phone.frame).intersects(CGRect(origin: .zero, size: size)),
                 "the board itself must be entirely below the viewport")
         #expect(Self.boards.visible(in: viewport, size: size).map(\.id).contains(phone.id))
-        let below = NWCanvasViewport(offset: CGPoint(x: 0, y: -700), zoom: 1)
+        let below = SHCanvasViewport(offset: CGPoint(x: 0, y: -700), zoom: 1)
         #expect(!Self.boards.visible(in: below, size: size).map(\.id).contains(phone.id))
     }
 
     @Test func aClickPicksTheFrontMostBoardUnderIt() {
-        let viewport = NWCanvasViewport(offset: .zero, zoom: 0.5)
+        let viewport = SHCanvasViewport(offset: .zero, zoom: 0.5)
         #expect(Self.boards.board(at: CGPoint(x: 100, y: 100), viewport: viewport)?.id == "Top.dc.html")
         #expect(Self.boards.board(at: CGPoint(x: 20, y: 20), viewport: viewport)?.id == "A.dc.html")
         #expect(Self.boards.board(at: CGPoint(x: 660, y: 10), viewport: viewport) == nil)
@@ -88,102 +88,102 @@ struct DesignToolComponentTests {
     ]
 
     @Test func aLabelsRoomIsTheGapToTheRowAboveAndTheNextBoardAlong() {
-        let rooms = NWLabelRoom.rooms(Self.grid)
-        #expect(rooms["A.dc.html"] == NWLabelRoom(above: nil, along: 1360))
-        #expect(rooms["B.dc.html"] == NWLabelRoom(above: nil, along: nil))
-        #expect(rooms["A-phone.dc.html"] == NWLabelRoom(above: 120, along: 470))
-        #expect(rooms["B-phone.dc.html"] == NWLabelRoom(above: 120, along: nil))
+        let rooms = SHLabelRoom.rooms(Self.grid)
+        #expect(rooms["A.dc.html"] == SHLabelRoom(above: nil, along: 1360))
+        #expect(rooms["B.dc.html"] == SHLabelRoom(above: nil, along: nil))
+        #expect(rooms["A-phone.dc.html"] == SHLabelRoom(above: 120, along: 470))
+        #expect(rooms["B-phone.dc.html"] == SHLabelRoom(above: 120, along: nil))
     }
 
     /// The canvas opens near 17% on the skill's grid, where rows are 20pt apart: the second row's
     /// labels move down toward their boards instead of over the first row, and past a zoom where
     /// even that doesn't fit they aren't drawn.
     @Test(arguments: [
-        (CGFloat(1), true, NWDesignMetrics.labelGap),
-        (0.17, true, 120 * 0.17 - NWDesignMetrics.labelHeight),
-        (0.14, false, NWDesignMetrics.labelGap),
+        (CGFloat(1), true, SHDesignMetrics.labelGap),
+        (0.17, true, 120 * 0.17 - SHDesignMetrics.labelHeight),
+        (0.14, false, SHDesignMetrics.labelGap),
     ])
     func aLabelNeverLiesOverTheRowAbove(zoom: CGFloat, shown: Bool, gap: CGFloat) {
-        let room = NWLabelRoom.rooms(Self.grid)["A-phone.dc.html"]!
+        let room = SHLabelRoom.rooms(Self.grid)["A-phone.dc.html"]!
         let label = room.layout(width: 390 * zoom, zoom: zoom)
         #expect(label.shown == shown)
         #expect(abs(label.gap - gap) < 0.001)
         if label.shown {
             // The label's top stays below the row above's bottom.
             let rowAbove = 800 * zoom
-            let labelTop = 920 * zoom - label.gap - NWDesignMetrics.labelHeight
+            let labelTop = 920 * zoom - label.gap - SHDesignMetrics.labelHeight
             #expect(labelTop >= rowAbove)
         }
-        #expect(NWLabelRoom.rooms(Self.grid)["A.dc.html"]!.layout(width: 1280 * zoom, zoom: zoom).shown, "nothing above the first row")
+        #expect(SHLabelRoom.rooms(Self.grid)["A.dc.html"]!.layout(width: 1280 * zoom, zoom: zoom).shown, "nothing above the first row")
     }
 
     /// A phone's label runs past its narrow board at a low zoom, but stops short of the next one.
     @Test func aLabelStopsBeforeTheNextBoardAlong() {
-        let room = NWLabelRoom.rooms(Self.grid)["A-phone.dc.html"]!
+        let room = SHLabelRoom.rooms(Self.grid)["A-phone.dc.html"]!
         let label = room.layout(width: 390 * 0.2, zoom: 0.2)
-        #expect(label.width == 470 * 0.2 - NWDesignMetrics.labelSpacing)
+        #expect(label.width == 470 * 0.2 - SHDesignMetrics.labelSpacing)
         #expect(room.layout(width: 390, zoom: 1).width == 390)
     }
 
     @Test func aPickNamesTheBoardThePointOnItOrItsLabel() {
-        let rooms = NWLabelRoom.rooms(Self.grid)
+        let rooms = SHLabelRoom.rooms(Self.grid)
         let boards = Self.grid.keys.sorted().map { id in
-            NWCanvasBoard(id: id, frame: Self.grid[id]!, title: id, size: "", labelRoom: rooms[id]!)
+            SHCanvasBoard(id: id, frame: Self.grid[id]!, title: id, size: "", labelRoom: rooms[id]!)
         }
-        let viewport = NWCanvasViewport(offset: CGPoint(x: 44, y: 52), zoom: 0.5)
+        let viewport = SHCanvasViewport(offset: CGPoint(x: 44, y: 52), zoom: 0.5)
         let onA = boards.pick(at: CGPoint(x: 44 + 100, y: 52 + 60), viewport: viewport, extending: true)
-        #expect(onA == NWCanvasPick(board: "A.dc.html", point: CGPoint(x: 200, y: 120), extending: true))
+        #expect(onA == SHCanvasPick(board: "A.dc.html", point: CGPoint(x: 200, y: 120), extending: true))
         let label = boards.pick(at: CGPoint(x: 44 + 10, y: 52 - 12), viewport: viewport)
-        #expect(label == NWCanvasPick(board: "A.dc.html"), "a label picks its board whole")
-        #expect(boards.pick(at: CGPoint(x: 44 + 660, y: 52 + 10), viewport: viewport) == NWCanvasPick())
+        #expect(label == SHCanvasPick(board: "A.dc.html"), "a label picks its board whole")
+        #expect(boards.pick(at: CGPoint(x: 44 + 660, y: 52 + 10), viewport: viewport) == SHCanvasPick())
     }
 
     @Test func aFittedCanvasPutsTheBoardsTopLeadingCornerInItsInsetsAndNeverEnlarges() {
         let bounds = Self.boards.bounds
         #expect(bounds == CGRect(x: 0, y: 0, width: 2640, height: 1764))
-        let fitted = NWCanvasViewport.fitting(bounds, in: CGSize(width: 1100, height: 800))
+        let fitted = SHCanvasViewport.fitting(bounds, in: CGSize(width: 1100, height: 800))
         // DZCanvas: the top row's labels 52pt down, its frames 76pt down.
-        #expect(NWDesignMetrics.fitFrameTop == 76)
-        #expect(fitted.screen(bounds.origin) == CGPoint(x: NWDesignMetrics.fitLeading, y: NWDesignMetrics.fitFrameTop))
+        #expect(SHDesignMetrics.fitFrameTop == 76)
+        #expect(fitted.screen(bounds.origin) == CGPoint(x: SHDesignMetrics.fitLeading, y: SHDesignMetrics.fitFrameTop))
         #expect(fitted.zoom < 1)
         let screen = fitted.screen(bounds)
-        #expect(screen.maxX <= 1100 - NWDesignMetrics.fitLeading + 0.001 && screen.maxY <= 800 - NWDesignMetrics.fitTop + 0.001)
+        #expect(screen.maxX <= 1100 - SHDesignMetrics.fitLeading + 0.001 && screen.maxY <= 800 - SHDesignMetrics.fitTop + 0.001)
         // Fitted by its height, the boards still keep the room above and below.
-        let tall = NWCanvasViewport.fitting(bounds, in: CGSize(width: 4000, height: 600))
-        #expect(tall.screen(bounds.origin).y == NWDesignMetrics.fitFrameTop)
-        #expect(abs(tall.screen(bounds).maxY - (600 - NWDesignMetrics.fitTop)) < 0.001)
-        let small = NWCanvasViewport.fitting(CGRect(x: 10, y: 10, width: 200, height: 100), in: CGSize(width: 1100, height: 800))
+        let tall = SHCanvasViewport.fitting(bounds, in: CGSize(width: 4000, height: 600))
+        #expect(tall.screen(bounds.origin).y == SHDesignMetrics.fitFrameTop)
+        #expect(abs(tall.screen(bounds).maxY - (600 - SHDesignMetrics.fitTop)) < 0.001)
+        let small = SHCanvasViewport.fitting(CGRect(x: 10, y: 10, width: 200, height: 100), in: CGSize(width: 1100, height: 800))
         #expect(small.zoom == 1)
         // Nothing drawn yet: the origin at the insets, at 100%.
-        #expect(NWCanvasViewport.fitting(.null, in: CGSize(width: 1100, height: 800)).zoom == 1)
+        #expect(SHCanvasViewport.fitting(.null, in: CGSize(width: 1100, height: 800)).zoom == 1)
     }
 
-    @Test(arguments: [(CGSize(width: 1280, height: 800), NWDesignCardBoard.desktop),
+    @Test(arguments: [(CGSize(width: 1280, height: 800), SHDesignCardBoard.desktop),
                       (CGSize(width: 390, height: 844), .phone), (CGSize.zero, .none)])
-    func aCardDrawsItsFirstBoardAsDesktopOrPhone(size: CGSize, board: NWDesignCardBoard) {
-        #expect(NWDesignCardBoard(size: size) == board)
-        #expect(NWDesignCardBoard(size: nil) == .none)
+    func aCardDrawsItsFirstBoardAsDesktopOrPhone(size: CGSize, board: SHDesignCardBoard) {
+        #expect(SHDesignCardBoard(size: size) == board)
+        #expect(SHDesignCardBoard(size: nil) == .none)
     }
 
     @Test func aBoardsSizeReadsInCSSPixels() {
-        #expect(NWCanvasBoard.sizeLabel(CGSize(width: 1280, height: 800)) == "1280 × 800")
-        #expect(NWCanvasBoard.sizeLabel(CGSize(width: 389.6, height: 844.2)) == "390 × 844")
-        #expect(NWCanvasBoard.sizeLabel(CGSize(width: 1e100, height: 300)) == "1e+100 × 300")
-        #expect(NWCanvasBoard.sizeLabel(CGSize(width: CGFloat.infinity, height: 300)) == "inf × 300")
+        #expect(SHCanvasBoard.sizeLabel(CGSize(width: 1280, height: 800)) == "1280 × 800")
+        #expect(SHCanvasBoard.sizeLabel(CGSize(width: 389.6, height: 844.2)) == "390 × 844")
+        #expect(SHCanvasBoard.sizeLabel(CGSize(width: 1e100, height: 300)) == "1e+100 × 300")
+        #expect(SHCanvasBoard.sizeLabel(CGSize(width: CGFloat.infinity, height: 300)) == "inf × 300")
     }
 
     /// A comment's age as the boards say it: "now", then minutes, hours and days, never "ago".
     @Test(arguments: [(0.0, "now"), (59, "now"), (60, "1m"), (125, "2m"), (3_600, "1h"), (86_399, "23h"), (86_400, "1d"), (-30, "now")])
     func aCommentsAgeReadsTheBoardsWay(secondsAgo: Double, text: String) {
         let now = Date(timeIntervalSince1970: 1_000_000)
-        #expect(nwCommentAge(since: (1_000_000 - secondsAgo) * 1000, now: now) == text)
+        #expect(shCommentAge(since: (1_000_000 - secondsAgo) * 1000, now: now) == text)
     }
 
     /// The card split around an answer leaves its open edge unlined, so the two rows read as one card.
     @Test(arguments: [(VerticalEdge.bottom, CGFloat(40)), (.top, 0)])
     func anOpenCardOutlineRunsFromOneEndOfItsOpenEdgeToTheOther(open: VerticalEdge, y: CGFloat) {
         let rect = CGRect(x: 0, y: 0, width: 100, height: 40)
-        let path = NWOpenCardOutline(radius: 10, open: open).path(in: rect)
+        let path = SHOpenCardOutline(radius: 10, open: open).path(in: rect)
         var start: CGPoint?
         path.forEach { if case .move(let point) = $0 { start = point } }
         #expect(start == CGPoint(x: 0, y: y) && path.currentPoint == CGPoint(x: 100, y: y))
@@ -197,9 +197,9 @@ struct DesignToolComponentTests {
     @Test func theBoardActionsSitOverTheBoardsLabelFromItsMiddle() throws {
         let bar = CGSize(width: 375, height: 32)
         let canvas = CGSize(width: 1000, height: 700)
-        let origin = try #require(NWBoardActions.origin(over: CGRect(x: 44, y: 200, width: 538, height: 336), bar: bar, canvas: canvas))
+        let origin = try #require(SHBoardActions.origin(over: CGRect(x: 44, y: 200, width: 538, height: 336), bar: bar, canvas: canvas))
         #expect(origin == CGPoint(x: 313, y: 200 - 24 - 2 - 32))
-        #expect(NWBoardActions.origin(over: CGRect(x: 1200, y: 20, width: 538, height: 336), bar: bar, canvas: canvas) == nil)
+        #expect(SHBoardActions.origin(over: CGRect(x: 1200, y: 20, width: 538, height: 336), bar: bar, canvas: canvas) == nil)
     }
 
     /// Where the room above the label runs out, the bar flips 2pt under the board (above the
@@ -214,7 +214,7 @@ struct DesignToolComponentTests {
         (CGRect(x: 44, y: -400, width: 538, height: 1400), CGPoint(x: 313, y: 4)),
     ])
     func theBoardActionsFlipUnderABoardWithNoRoomAboveAndClampWhenNeitherFits(board: CGRect, expected: CGPoint) throws {
-        let origin = try #require(NWBoardActions.origin(over: board, bar: CGSize(width: 375, height: 32), canvas: CGSize(width: 1000, height: 700)))
+        let origin = try #require(SHBoardActions.origin(over: board, bar: CGSize(width: 375, height: 32), canvas: CGSize(width: 1000, height: 700)))
         #expect(origin == expected)
     }
 
@@ -223,7 +223,7 @@ struct DesignToolComponentTests {
         let bar = CGSize(width: 375, height: 32)
         let board = CGRect(x: 44, y: 200, width: 538, height: 336)
         let label = CGRect(x: 400, y: 160, width: 160, height: 16)
-        let origin = try #require(NWBoardActions.origin(over: board, bar: bar, canvas: CGSize(width: 1000, height: 700), labels: [label]))
+        let origin = try #require(SHBoardActions.origin(over: board, bar: bar, canvas: CGSize(width: 1000, height: 700), labels: [label]))
         #expect(origin == CGPoint(x: 313, y: 538))
         #expect(!CGRect(origin: origin, size: bar).intersects(label))
     }
@@ -238,22 +238,22 @@ struct DesignToolComponentTests {
             "C.dc.html": CGRect(x: 2720, y: 0, width: 1280, height: 800),
             "A-phone.dc.html": CGRect(x: 0, y: 920, width: 390, height: 844),
         ]
-        let rooms = NWLabelRoom.rooms(frames)
-        let boards = frames.keys.sorted().map { NWCanvasBoard(id: $0, frame: frames[$0]!, title: $0, size: "", labelRoom: rooms[$0]!) }
+        let rooms = SHLabelRoom.rooms(frames)
+        let boards = frames.keys.sorted().map { SHCanvasBoard(id: $0, frame: frames[$0]!, title: $0, size: "", labelRoom: rooms[$0]!) }
         let canvas = CGSize(width: 786, height: 848)
-        let viewport = NWCanvasViewport.fitting(boards.bounds, in: canvas)
+        let viewport = SHCanvasViewport.fitting(boards.bounds, in: canvas)
         let labels = boards.compactMap { $0.labelRect(in: viewport) }
         #expect(labels.count == 4)
-        let bar = CGSize(width: 375, height: NWDesignMetrics.compactActionsHeight)
-        let origin = try #require(NWBoardActions.origin(over: viewport.screen(frames[selected]!), bar: bar, canvas: canvas, labels: labels))
-        #expect(origin.y == NWDesignMetrics.fitTop - NWDesignMetrics.actionsGap - NWDesignMetrics.compactActionsHeight)
+        let bar = CGSize(width: 375, height: SHDesignMetrics.compactActionsHeight)
+        let origin = try #require(SHBoardActions.origin(over: viewport.screen(frames[selected]!), bar: bar, canvas: canvas, labels: labels))
+        #expect(origin.y == SHDesignMetrics.fitTop - SHDesignMetrics.actionsGap - SHDesignMetrics.compactActionsHeight)
         #expect(origin.y == 18)
         #expect(!labels.contains { $0.intersects(CGRect(origin: origin, size: bar)) })
     }
 
     @Test func theDirectionTileFollowsTheLastBoard36PointsOn() {
         // DZCanvas: A · phone at 626 × 480, 164 wide on screen, and the tile at 826.
-        #expect(NWDirectionTile.origin(after: CGRect(x: 626, y: 480, width: 164, height: 354)) == CGPoint(x: 826, y: 480))
+        #expect(SHDirectionTile.origin(after: CGRect(x: 626, y: 480, width: 164, height: 354)) == CGPoint(x: 826, y: 480))
     }
 
     @Test(arguments: [
@@ -263,34 +263,34 @@ struct DesignToolComponentTests {
         (CGSize(width: 200, height: 100), CGSize(width: 1000, height: 700), CGFloat(1)),
     ])
     func aPresentedBoardFitsTheView(_ board: CGSize, _ view: CGSize, _ zoom: CGFloat) {
-        #expect(abs(NWBoardPresentation<EmptyView>.zoom(for: board, in: view) - zoom) < 0.0001)
+        #expect(abs(SHBoardPresentation<EmptyView>.zoom(for: board, in: view) - zoom) < 0.0001)
     }
 
     // MARK: Design references
 
     @Test(arguments: [
         ("Implemented in #142 on `agent/checkout-funnel`.",
-         [NWThreadNoteText.Run.words("Implemented in "), .number("#142"), .words(" on "), .code("agent/checkout-funnel"), .words(".")]),
+         [SHThreadNoteText.Run.words("Implemented in "), .number("#142"), .words(" on "), .code("agent/checkout-funnel"), .words(".")]),
         ("Bars use `--accent`; counts reuse the cell.", [.words("Bars use "), .code("--accent"), .words("; counts reuse the cell.")]),
         ("issue#12 and `` and # alone", [.words("issue#12 and `` and # alone")]),
     ])
-    func aNotesCodeAndPullRequestNumbersAreItsOnlyMarkup(_ text: String, _ runs: [NWThreadNoteText.Run]) {
-        #expect(NWThreadNoteText.runs(text) == runs)
+    func aNotesCodeAndPullRequestNumbersAreItsOnlyMarkup(_ text: String, _ runs: [SHThreadNoteText.Run]) {
+        #expect(SHThreadNoteText.runs(text) == runs)
     }
 
     @Test func aSearchUnderlinesTheWordsItFoundInTheTitle() {
         let title = "Checkout funnel dashboard"
-        let ranges = NWMentionRowView.matchRanges(title, words: ["FUNNEL", "missing"])
+        let ranges = SHMentionRowView.matchRanges(title, words: ["FUNNEL", "missing"])
         #expect(ranges.map { String(title[$0]) } == ["funnel"])
     }
 
     @Test func thePickerShowsAtMostEightRowsAndFitsTheRoomAboveTheCard() {
-        let M = NWMentionMetrics.self
-        let rows = (0..<20).map { NWMentionRow(id: "\($0)", kind: .design, title: "D\($0)", trailing: .drill) }
-        let section = [NWMentionSection(id: "designs", title: "Designs", rows: rows)]
-        #expect(NWMentionPicker.listHeight(section, room: nil) == M.headerHeight + 8 * M.rowHeight)
-        #expect(NWMentionPicker.listHeight([NWMentionSection(id: "d", title: "Designs", rows: Array(rows.prefix(2)))], room: nil)
+        let M = SHMentionMetrics.self
+        let rows = (0..<20).map { SHMentionRow(id: "\($0)", kind: .design, title: "D\($0)", trailing: .drill) }
+        let section = [SHMentionSection(id: "designs", title: "Designs", rows: rows)]
+        #expect(SHMentionPicker.listHeight(section, room: nil) == M.headerHeight + 8 * M.rowHeight)
+        #expect(SHMentionPicker.listHeight([SHMentionSection(id: "d", title: "Designs", rows: Array(rows.prefix(2)))], room: nil)
             == M.headerHeight + 2 * M.rowHeight)
-        #expect(NWMentionPicker.listHeight(section, room: 200) == 200)
+        #expect(SHMentionPicker.listHeight(section, room: 200) == 200)
     }
 }

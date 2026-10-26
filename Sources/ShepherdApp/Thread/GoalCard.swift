@@ -20,7 +20,7 @@ struct ThreadGoalCard: View {
     var body: some View {
         if let goal = store.goal {
             VStack(spacing: 0) {
-                NWGoalCard(state: goal.cardState, time: goal.timeLabel, meta: goal.metaLabel, text: goal.text, framed: framed,
+                SHGoalCard(state: goal.cardState, time: goal.timeLabel, meta: goal.metaLabel, text: goal.text, framed: framed,
                            resumeEnabled: store.dialogs.isEmpty,
                            confirmationRequired: goal.confirmationRequired == true, checkedBy: goal.checkedBy,
                            confirmedByUser: goal.confirmedByUser == true, clockStart: goal.clockStart,
@@ -34,30 +34,30 @@ struct ThreadGoalCard: View {
                            }, clear: { act(.clear, goal: goal) })
                     .disabled(!enabled)
                 if editing {
-                    VStack(alignment: .leading, spacing: NW.Space.s) {
+                    VStack(alignment: .leading, spacing: SH.Space.s) {
                         TextField("Goal condition", text: $text, axis: .vertical)
                             .textFieldStyle(.plain)
-                            .font(.nw(.body))
-                            .foregroundStyle(Color.nw.textPrimary)
-                            .lineLimit(1...NWComposerMetrics.fieldMaxLines)
+                            .font(.sh(.body))
+                            .foregroundStyle(Color.sh.textPrimary)
+                            .lineLimit(1...SHComposerMetrics.fieldMaxLines)
                             .focused($focused)
                             .accessibilityLabel("Goal condition")
-                        HStack(spacing: NW.Space.s) {
+                        HStack(spacing: SH.Space.s) {
                             Spacer()
                             Button("Cancel") { editing = false }
-                                .buttonStyle(.nw(.ghost, size: .s))
+                                .buttonStyle(.sh(.ghost, size: .s))
                             Button("Save") {
                                 guard let displayed = editedGoal else { return }
                                 let action = NativeGoalAction.edit(text: text)
                                 Task { if await store.goalAction(action, displayedGoal: displayed) { editing = false } }
                             }
-                            .buttonStyle(.nw(.secondary, size: .s))
+                            .buttonStyle(.sh(.secondary, size: .s))
                             .disabled(!canSave(goal))
                         }
                     }
-                    .padding(NW.Space.l)
-                    .background(Color.nw.bgRaised)
-                    .overlay(alignment: .top) { NWHairline() }
+                    .padding(SH.Space.l)
+                    .background(Color.sh.bgRaised)
+                    .overlay(alignment: .top) { SHHairline() }
                     .onKeyPress(.escape) { editing = false; return .handled }
                 }
             }
@@ -79,7 +79,7 @@ struct ThreadGoalCard: View {
 }
 
 extension NativeGoal {
-    var cardState: NWGoalState {
+    var cardState: SHGoalState {
         switch state {
         case .working: .working
         case .checking: .checking
@@ -97,31 +97,31 @@ struct GoalRecordLine: View {
     init(text: String) { record = NativeGoalRecord(text) }
 
     var body: some View {
-        VStack(spacing: NW.Space.s) {
-            HStack(spacing: NW.Space.m) {
-                NWHairline().frame(minWidth: NW.Space.l)
-                Text(record.line).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+        VStack(spacing: SH.Space.s) {
+            HStack(spacing: SH.Space.m) {
+                SHHairline().frame(minWidth: SH.Space.l)
+                Text(record.line).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                     .multilineTextAlignment(.center)
                     .lineLimit(record.isClosing ? 2 : nil)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                     .layoutPriority(1)
-                NWHairline().frame(minWidth: NW.Space.l)
+                SHHairline().frame(minWidth: SH.Space.l)
             }
             if let evidence = record.evidence {
                 DisclosureGroup {
-                    Text(evidence).font(.nw(.mono)).foregroundStyle(Color.nw.textSecondary)
+                    Text(evidence).font(.sh(.mono)).foregroundStyle(Color.sh.textSecondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
                 } label: {
                     if record.showsDetails { Text("Details") } else { Text("Evidence") }
                 }
-                .font(.nw(.caption))
-                .foregroundStyle(Color.nw.textTertiary)
-                .tint(Color.nw.textSecondary)
+                .font(.sh(.caption))
+                .foregroundStyle(Color.sh.textTertiary)
+                .tint(Color.sh.textSecondary)
             }
         }
-        .padding(.vertical, NW.Space.xs)
+        .padding(.vertical, SH.Space.xs)
     }
 }
 
@@ -130,6 +130,6 @@ struct ThreadGoalHeader: View {
     let store: NativeThreadStore
 
     var body: some View {
-        if let goal = store.goal, goal.isActive { NWGoalHeaderPill(time: goal.timeLabel, clockStart: goal.clockStart) }
+        if let goal = store.goal, goal.isActive { SHGoalHeaderPill(time: goal.timeLabel, clockStart: goal.clockStart) }
     }
 }

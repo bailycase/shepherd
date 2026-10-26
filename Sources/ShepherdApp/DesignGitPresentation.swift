@@ -10,7 +10,7 @@ import ShepherdUI
 enum DesignGitPresentation {
     struct Chip: Equatable {
         var label: String
-        var tone: NWGitTone
+        var tone: SHGitTone
         var hint: String
     }
 
@@ -23,7 +23,7 @@ enum DesignGitPresentation {
         guard let state else { return Chip(label: "Share with Git", tone: .primary, hint: shareHint) }
         let s = state.status
         let branch = s.branch
-        func chip(_ text: String, _ tone: NWGitTone) -> Chip { Chip(label: "\(branch) · \(text)", tone: tone, hint: statusHint) }
+        func chip(_ text: String, _ tone: SHGitTone) -> Chip { Chip(label: "\(branch) · \(text)", tone: tone, hint: statusHint) }
         switch state.merge?.phase {
         case .conflict?, .stopped?, .failed?: return chip("Pull paused", .attention)
         case .running?: return chip("Merging", .running)
@@ -84,7 +84,7 @@ enum DesignGitPresentation {
         var drawing: Bool
         var working: Bool
         var selected: String?
-        var preview: NWGitPanelState.Preview?
+        var preview: SHGitPanelState.Preview?
         var boards: [DesignPath: DesignIndex.Board]
         var lastChecked: Double?
         /// The last Git action's failure, shown in the panel's notice.
@@ -94,7 +94,7 @@ enum DesignGitPresentation {
     }
 
     /// The Git panel (GitDesignChanges): one of its modes, from the engine's state.
-    static func panel(_ input: PanelInput) -> NWGitPanelState {
+    static func panel(_ input: PanelInput) -> SHGitPanelState {
         let s = input.state.status
         let merge = input.state.merge
         let reviewing = merge?.phase == .ready
@@ -102,7 +102,7 @@ enum DesignGitPresentation {
         let failed = s.pushFailed != nil && s.ahead > 0
         let incoming = s.behind > 0 && s.isClean && merge == nil
         let sync: String
-        let syncTone: NWGitTone
+        let syncTone: SHGitTone
         if reviewing {
             sync = "Merge prepared · not committed"; syncTone = .attention
         } else if s.offline {
@@ -124,7 +124,7 @@ enum DesignGitPresentation {
             : !s.isClean ? "Commit local changes before pulling"
             : "Nothing to pull"
 
-        var notice: NWGitPanelState.Notice?
+        var notice: SHGitPanelState.Notice?
         if let failure = input.failure {
             notice = .init(title: "Git couldn't finish", text: failure, tone: .attention)
         } else if s.offline {
@@ -140,11 +140,11 @@ enum DesignGitPresentation {
                            text: "The remote could not be reached. Check your connection and Git access, then try pushing again.", tone: .attention)
         }
 
-        var changes: NWGitPanelState.Changes?
+        var changes: SHGitPanelState.Changes?
         let files = reviewing ? input.state.mergeFiles : s.files
         if reviewing || !s.isClean {
             // Boards by name (A, then A-phone), then the canvas and the rest, as the board lists them.
-            let rows = files.map { NWGitPanelState.File(id: shown($0.path), letter: $0.letter, label: label($0.path, boards: input.boards)) }
+            let rows = files.map { SHGitPanelState.File(id: shown($0.path), letter: $0.letter, label: label($0.path, boards: input.boards)) }
                 .sorted { order($0.id) < order($1.id) }
             let blocked = drawing || input.working
             changes = .init(title: reviewing ? "Review merge" : "Local changes",
@@ -156,16 +156,16 @@ enum DesignGitPresentation {
                             canPush: !blocked && !rows.isEmpty && input.hasMessage && !s.offline)
         }
         let incomingCard = incoming ? s.incoming.map {
-            NWGitPanelState.Incoming(subject: $0.subject, author: $0.author, hash: $0.hash, files: $0.files.map(shown))
+            SHGitPanelState.Incoming(subject: $0.subject, author: $0.author, hash: $0.hash, files: $0.files.map(shown))
         } : nil
         let push: String? = !reviewing && s.isClean && s.ahead > 0 && s.behind == 0 && !s.offline ? (failed ? "Retry push" : "Push") : nil
-        return NWGitPanelState(branch: s.branch, repository: repository(s.remoteURL), sync: sync, syncTone: syncTone,
+        return SHGitPanelState(branch: s.branch, repository: repository(s.remoteURL), sync: sync, syncTone: syncTone,
                                canPull: canPull, pullHint: pullHint, notice: notice, changes: changes, incoming: incomingCard,
                                pushTitle: push, working: input.working)
     }
 
     /// The merge's card in the design chat, while the merge is the agent's.
-    static func mergePhase(_ merge: DesignGitMerge?) -> NWGitMergePhase? {
+    static func mergePhase(_ merge: DesignGitMerge?) -> SHGitMergePhase? {
         switch merge?.phase {
         case .running?: .running
         case .ready?: .ready
@@ -181,17 +181,17 @@ enum DesignGitPresentation {
     }
 
     /// The merge dialog's two commits. The local one is the user's own: "You" (GitDesignConflict).
-    static func commit(_ c: DesignGitStatus.Commit, local: Bool = false) -> NWGitMergeCommit {
-        NWGitMergeCommit(subject: c.subject, author: local ? "You" : c.author, hash: c.hash, files: c.files.map(shown).sorted { order($0) < order($1) })
+    static func commit(_ c: DesignGitStatus.Commit, local: Bool = false) -> SHGitMergeCommit {
+        SHGitMergeCommit(subject: c.subject, author: local ? "You" : c.author, hash: c.hash, files: c.files.map(shown).sorted { order($0) < order($1) })
     }
 
     /// A one-line preview of a board's text for the panel's two columns: the first words that
     /// changed, else the file's first line of text.
-    static func preview(path: String, before: String?, after: String?, boards: [DesignPath: DesignIndex.Board], merge: Bool) -> NWGitPanelState.Preview {
+    static func preview(path: String, before: String?, after: String?, boards: [DesignPath: DesignIndex.Board], merge: Bool) -> SHGitPanelState.Preview {
         // The board's own title ("A · Funnel first"), else the file.
         let board = boards.first { $0.key.rawValue == shown(path) }?.value.title
         let (a, b) = firstDifference(before ?? "", after ?? "")
-        return NWGitPanelState.Preview(title: board ?? shown(path),
+        return SHGitPanelState.Preview(title: board ?? shown(path),
                                        beforeTitle: merge ? "Your version" : "Committed", before: before == nil ? "New file" : a,
                                        afterTitle: merge ? "Merge result" : "Working copy", after: after == nil ? "Deleted" : b)
     }

@@ -1,71 +1,71 @@
 import SwiftUI
 
-/// The design canvas (NWDesignCanvas; DZCanvas): `bgBase` with 1px `lineStrong` dots every
+/// The design canvas (SHDesignCanvas; DZCanvas): `bgBase` with 1px `lineStrong` dots every
 /// 22pt, the boards at their canvas positions in their frames, and the canvas toolbar in the
 /// bottom-leading corner. It pans (two-finger scroll, the Pan tool, space-drag) and zooms (pinch,
-/// ⌘-scroll) about the pointer; on iPad a drag pans and a pinch zooms (`NWCanvasTouchInput`). With Select or Comment, a click reports what it landed on (`pick`:
+/// ⌘-scroll) about the pointer; on iPad a drag pans and a pinch zooms (`SHCanvasTouchInput`). With Select or Comment, a click reports what it landed on (`pick`:
 /// a point on a board, a board's label, or the empty canvas; shift extends), and the pointer's
 /// moves over the boards are reported too (`point`); the selected and hovered elements are ringed
-/// over their boards (`NWSelectionRing`) from the rects the boards reported.
+/// over their boards (`SHSelectionRing`) from the rects the boards reported.
 ///
-/// Comments' pins (`NWCommentPin`) sit on their elements' top-trailing corners over the boards,
+/// Comments' pins (`SHCommentPin`) sit on their elements' top-trailing corners over the boards,
 /// and one thing may open beside a pin, under its element (`popover`: a comment's thread, or the
 /// editor for a new one), kept inside the canvas.
 ///
 /// Notes (titles and stickies) sit on the canvas under the boards, read-only. With Select, a drag
 /// that starts on a board's label, or on a board selected whole, moves the board (`move`: its
 /// offset in canvas points as it goes, then once more when it ends); any other drag pans. The
-/// board actions (`NWBoardActions`) float over one board, and "Ask for another direction"
-/// (`NWDirectionTile`) follows the last board.
+/// board actions (`SHBoardActions`) float over one board, and "Ask for another direction"
+/// (`SHDirectionTile`) follows the last board.
 ///
-/// Only the boards on screen are built, each an `NWBoardFrame` compared by value, so a pan
+/// Only the boards on screen are built, each an `SHBoardFrame` compared by value, so a pan
 /// moves frames without redrawing them and a change to one board redraws that board alone. The
 /// slot draws a board's page (a live view or a snapshot); the canvas takes every event, so
 /// nothing inside a board is interactive. Pins and the popover take their own.
-public struct NWDesignCanvas<Slot: View, Popover: View>: View {
-    let boards: [NWCanvasBoard]
-    @Binding var viewport: NWCanvasViewport
-    @Binding var tool: NWCanvasTool
-    let disabledTools: Set<NWCanvasTool>
-    let selection: [NWCanvasElement]
-    let hover: NWCanvasElement?
-    let pick: (NWCanvasPick) -> Void
+public struct SHDesignCanvas<Slot: View, Popover: View>: View {
+    let boards: [SHCanvasBoard]
+    @Binding var viewport: SHCanvasViewport
+    @Binding var tool: SHCanvasTool
+    let disabledTools: Set<SHCanvasTool>
+    let selection: [SHCanvasElement]
+    let hover: SHCanvasElement?
+    let pick: (SHCanvasPick) -> Void
     /// Where the pointer is over the canvas with Select, as it moves; nil once it leaves.
-    let point: (NWCanvasPick?) -> Void
+    let point: (SHCanvasPick?) -> Void
     /// The canvas's size, as it changes.
     let resized: (CGSize) -> Void
     /// True while a zoom gesture runs (a pinch, a burst of ⌘-scroll), false once it rests: live
     /// views stand still while the canvas scales, and re-render at the zoom it lands on.
     let zooming: (Bool) -> Void
-    let pins: [NWCanvasPin]
+    let pins: [SHCanvasPin]
     /// A pin was clicked: its comment's id.
     let openPin: (String) -> Void
     /// The element the popover opens under (its board and rect), or nil for none.
-    let popoverAnchor: NWCanvasElement?
-    let notes: [NWCanvasNote]
+    let popoverAnchor: SHCanvasElement?
+    let notes: [SHCanvasNote]
     /// The board the actions float over, and what they do; nil for none.
-    let actions: NWCanvasActions?
+    let actions: SHCanvasActions?
     /// "Ask for another direction", after the last board; nil draws no tile.
     let anotherDirection: (() -> Void)?
     /// A board being dragged: nil when boards don't move.
-    let move: ((NWBoardMove) -> Void)?
+    let move: ((SHBoardMove) -> Void)?
     /// A right-click (or a control-click) with Select or Comment: the items of the menu it opens
     /// for what it landed on, once the host has picked it (CanvasContextMenu); nil opens none.
-    let contextMenu: ((NWCanvasPick) async -> [NWCanvasMenuItem])?
-    let slot: (NWCanvasBoard) -> Slot
+    let contextMenu: ((SHCanvasPick) async -> [SHCanvasMenuItem])?
+    let slot: (SHCanvasBoard) -> Slot
     let popover: () -> Popover
     @State private var size: CGSize = .zero
     @State private var popoverHeight: CGFloat = 0
     @State private var actionsSize: CGSize = .zero
 
-    public init(boards: [NWCanvasBoard], viewport: Binding<NWCanvasViewport>, tool: Binding<NWCanvasTool>,
-                disabledTools: Set<NWCanvasTool> = [], selection: [NWCanvasElement] = [], hover: NWCanvasElement? = nil,
-                pins: [NWCanvasPin] = [], openPin: @escaping (String) -> Void = { _ in }, popoverAnchor: NWCanvasElement? = nil,
-                notes: [NWCanvasNote] = [], actions: NWCanvasActions? = nil, anotherDirection: (() -> Void)? = nil,
-                move: ((NWBoardMove) -> Void)? = nil, contextMenu: ((NWCanvasPick) async -> [NWCanvasMenuItem])? = nil,
-                pick: @escaping (NWCanvasPick) -> Void, point: @escaping (NWCanvasPick?) -> Void = { _ in },
+    public init(boards: [SHCanvasBoard], viewport: Binding<SHCanvasViewport>, tool: Binding<SHCanvasTool>,
+                disabledTools: Set<SHCanvasTool> = [], selection: [SHCanvasElement] = [], hover: SHCanvasElement? = nil,
+                pins: [SHCanvasPin] = [], openPin: @escaping (String) -> Void = { _ in }, popoverAnchor: SHCanvasElement? = nil,
+                notes: [SHCanvasNote] = [], actions: SHCanvasActions? = nil, anotherDirection: (() -> Void)? = nil,
+                move: ((SHBoardMove) -> Void)? = nil, contextMenu: ((SHCanvasPick) async -> [SHCanvasMenuItem])? = nil,
+                pick: @escaping (SHCanvasPick) -> Void, point: @escaping (SHCanvasPick?) -> Void = { _ in },
                 resized: @escaping (CGSize) -> Void = { _ in }, zooming: @escaping (Bool) -> Void = { _ in },
-                @ViewBuilder slot: @escaping (NWCanvasBoard) -> Slot, @ViewBuilder popover: @escaping () -> Popover) {
+                @ViewBuilder slot: @escaping (SHCanvasBoard) -> Slot, @ViewBuilder popover: @escaping () -> Popover) {
         self.boards = boards
         _viewport = viewport
         _tool = tool
@@ -90,13 +90,13 @@ public struct NWDesignCanvas<Slot: View, Popover: View>: View {
 
     public var body: some View {
         let zoom = viewport.zoom
-        let lift = NWDesignMetrics.labelHeight + NWDesignMetrics.labelGap
+        let lift = SHDesignMetrics.labelHeight + SHDesignMetrics.labelGap
         ZStack(alignment: .topLeading) {
-            NWDotGrid(spacing: NWDesignMetrics.gridSpacing, phase: viewport.offset)
+            SHDotGrid(spacing: SHDesignMetrics.gridSpacing, phase: viewport.offset)
             noteLayer
             ForEach(boards.visible(in: viewport, size: size)) { board in
                 let origin = viewport.screen(board.frame.origin)
-                NWBoardFrame(board: board, zoom: zoom) { slot(board) }
+                SHBoardFrame(board: board, zoom: zoom) { slot(board) }
                     .equatable()
                     .fixedSize()
                     .placed(x: origin.x, y: origin.y - lift)
@@ -110,11 +110,11 @@ public struct NWDesignCanvas<Slot: View, Popover: View>: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .overlay(alignment: .bottomLeading) {
-            NWCanvasToolbar(tool: $tool, zoom: viewport.percent, disabled: disabledTools)
-                .padding(NWDesignMetrics.toolbarInset)
+            SHCanvasToolbar(tool: $tool, zoom: viewport.percent, disabled: disabledTools)
+                .padding(SHDesignMetrics.toolbarInset)
         }
         .clipped()
-        .background(Color.nw.bgBase)
+        .background(Color.sh.bgBase)
         .onGeometryChange(for: CGSize.self) { $0.size } action: { new in
             size = new
             resized(new)
@@ -124,8 +124,8 @@ public struct NWDesignCanvas<Slot: View, Popover: View>: View {
     }
 
     private struct Ring: Identifiable {
-        let element: NWCanvasElement
-        let style: NWSelectionRing.Style
+        let element: SHCanvasElement
+        let style: SHSelectionRing.Style
         var id: String { element.id }
     }
 
@@ -138,7 +138,7 @@ public struct NWDesignCanvas<Slot: View, Popover: View>: View {
         return ForEach(rings) { ring in
             let board = frames[ring.element.board] ?? .null
             let rect = board.isNull ? .zero : viewport.screen(ring.element.rect.offsetBy(dx: board.minX, dy: board.minY))
-            NWSelectionRing(ring.style, tag: ring.element.tag)
+            SHSelectionRing(ring.style, tag: ring.element.tag)
                 .frame(width: max(rect.width, 1), height: max(rect.height, 1))
                 .placed(x: rect.minX, y: rect.minY)
                 .opacity(board.isNull ? 0 : 1)
@@ -151,7 +151,7 @@ public struct NWDesignCanvas<Slot: View, Popover: View>: View {
         let shown = notes.filter { viewport.screen($0.bounds).intersects(bounds) }
         return ForEach(shown) { note in
             let origin = viewport.screen(note.origin)
-            NWCanvasNoteView(note: note, zoom: viewport.zoom)
+            SHCanvasNoteView(note: note, zoom: viewport.zoom)
                 .equatable()
                 .placed(x: origin.x, y: origin.y)
         }
@@ -162,10 +162,10 @@ public struct NWDesignCanvas<Slot: View, Popover: View>: View {
     /// "Ask for another direction", 36pt after the last board, while it is on screen.
     @ViewBuilder private var directionTile: some View {
         if let anotherDirection, let last = boards.last {
-            let origin = NWDirectionTile.origin(after: viewport.screen(last.frame))
-            let rect = CGRect(origin: origin, size: NWDesignMetrics.directionTileSize)
+            let origin = SHDirectionTile.origin(after: viewport.screen(last.frame))
+            let rect = CGRect(origin: origin, size: SHDesignMetrics.directionTileSize)
             if rect.intersects(CGRect(origin: .zero, size: size)) {
-                NWDirectionTile(action: anotherDirection)
+                SHDirectionTile(action: anotherDirection)
                     .placed(x: origin.x, y: origin.y)
             }
         }
@@ -174,9 +174,9 @@ public struct NWDesignCanvas<Slot: View, Popover: View>: View {
     /// The board actions over their board, clear of every label on screen, kept inside the canvas.
     @ViewBuilder private var actionsLayer: some View {
         if let actions, let board = boards.first(where: { $0.id == actions.board }),
-           let origin = NWBoardActions.origin(over: viewport.screen(board.frame), bar: actionsSize, canvas: size,
+           let origin = SHBoardActions.origin(over: viewport.screen(board.frame), bar: actionsSize, canvas: size,
                                               labels: boards.visible(in: viewport, size: size).compactMap { $0.labelRect(in: viewport) }) {
-            NWBoardActions(size: .compact, actions: actions.actions)
+            SHBoardActions(size: .compact, actions: actions.actions)
                 .fixedSize()
                 .onGeometryChange(for: CGSize.self) { $0.size } action: { actionsSize = $0 }
                 .placed(x: origin.x, y: origin.y)
@@ -192,11 +192,11 @@ public struct NWDesignCanvas<Slot: View, Popover: View>: View {
     /// Where a pin's center is on screen: its element's top-trailing corner, a thread's note just
     /// after a comment's pin on the same element (RefNoteBack), so the note's card, opening beside
     /// it, leaves the comment's pin in sight. Nil when its board isn't on the canvas.
-    private func pinCorner(_ pin: NWCanvasPin, frames: [String: CGRect]) -> CGPoint? {
+    private func pinCorner(_ pin: SHCanvasPin, frames: [String: CGRect]) -> CGPoint? {
         guard let rect = screenRect(of: pin.rect, on: pin.board, frames: frames) else { return nil }
         var corner = CGPoint(x: rect.maxX, y: rect.minY)
         if pin.style != .comment, pins.contains(where: { $0.style == .comment && $0.board == pin.board && $0.rect == pin.rect }) {
-            corner.x += NWDesignMetrics.pinSize + NW.Space.xs
+            corner.x += SHDesignMetrics.pinSize + SH.Space.xs
         }
         return corner
     }
@@ -205,17 +205,17 @@ public struct NWDesignCanvas<Slot: View, Popover: View>: View {
     /// note stands just after a comment's pin on the same element.
     private var pinLayer: some View {
         let frames = Dictionary(boards.map { ($0.id, $0.frame) }, uniquingKeysWith: { a, _ in a })
-        let half = NWDesignMetrics.pinSize / 2
+        let half = SHDesignMetrics.pinSize / 2
         let bounds = CGRect(origin: .zero, size: size).insetBy(dx: -half, dy: -half)
-        let shown = pins.compactMap { pin -> (NWCanvasPin, CGPoint)? in
+        let shown = pins.compactMap { pin -> (SHCanvasPin, CGPoint)? in
             guard let corner = pinCorner(pin, frames: frames) else { return nil }
             return bounds.contains(corner) ? (pin, corner) : nil
         }
         return ForEach(shown, id: \.0.id) { pin, corner in
             Button { openPin(pin.id) } label: {
                 switch pin.style {
-                case .comment: NWCommentPin(pin.number)
-                case .threadNote: NWThreadNotePin()
+                case .comment: SHCommentPin(pin.number)
+                case .threadNote: SHThreadNotePin()
                 }
             }
             .buttonStyle(.plain)
@@ -224,7 +224,7 @@ public struct NWDesignCanvas<Slot: View, Popover: View>: View {
         }
     }
 
-    private static func help(_ pin: NWCanvasPin) -> String {
+    private static func help(_ pin: SHCanvasPin) -> String {
         switch pin.style {
         case .comment: "Comment \(pin.number)"
         case .threadNote(let thread): "Note from \(thread)"
@@ -237,22 +237,22 @@ public struct NWDesignCanvas<Slot: View, Popover: View>: View {
         let frames = Dictionary(boards.map { ($0.id, $0.frame) }, uniquingKeysWith: { a, _ in a })
         if let anchor = popoverAnchor, let pin = pins.first(where: { $0.id == anchor.id && $0.style != .comment }),
            let corner = pinCorner(pin, frames: frames) {
-            let inset = NWDesignMetrics.toolbarInset
-            let half = NWDesignMetrics.pinSize / 2
-            let width = NWReferenceMetrics.noteWidth
-            let beside = corner.x + half + NWReferenceMetrics.noteGap
-            let x = beside + width + inset <= size.width ? beside : max(inset, corner.x - half - NWReferenceMetrics.noteGap - width)
-            let y = min(max(inset, corner.y - half - NWReferenceMetrics.noteGap), max(inset, size.height - popoverHeight - inset))
+            let inset = SHDesignMetrics.toolbarInset
+            let half = SHDesignMetrics.pinSize / 2
+            let width = SHReferenceMetrics.noteWidth
+            let beside = corner.x + half + SHReferenceMetrics.noteGap
+            let x = beside + width + inset <= size.width ? beside : max(inset, corner.x - half - SHReferenceMetrics.noteGap - width)
+            let y = min(max(inset, corner.y - half - SHReferenceMetrics.noteGap), max(inset, size.height - popoverHeight - inset))
             popover()
                 .fixedSize()
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { popoverHeight = $0 }
                 .placed(x: x, y: y)
         } else if let anchor = popoverAnchor, let rect = screenRect(of: anchor.rect, on: anchor.board, frames: frames) {
-            let width = NWDesignMetrics.threadWidth
-            let inset = NWDesignMetrics.toolbarInset
-            let trailing = rect.maxX + NWDesignMetrics.pinSize / 2
+            let width = SHDesignMetrics.threadWidth
+            let inset = SHDesignMetrics.toolbarInset
+            let trailing = rect.maxX + SHDesignMetrics.pinSize / 2
             let x = min(max(trailing - width, inset), max(inset, size.width - width - inset))
-            let below = rect.maxY + NWDesignMetrics.threadGap
+            let below = rect.maxY + SHDesignMetrics.threadGap
             let y = min(below, max(inset, size.height - popoverHeight - inset))
             popover()
                 .fixedSize(horizontal: false, vertical: true)
@@ -264,7 +264,7 @@ public struct NWDesignCanvas<Slot: View, Popover: View>: View {
 
     @ViewBuilder private var input: some View {
         #if os(macOS)
-        NWCanvasInput(tool: tool, handlers: NWCanvasInput.Handlers(
+        SHCanvasInput(tool: tool, handlers: SHCanvasInput.Handlers(
             pan: { viewport.pan(by: $0) },
             zoom: { factor, anchor in viewport.zoom(by: factor, about: anchor) },
             click: { location, extending in pick(boards.pick(at: location, viewport: viewport, extending: extending)) },
@@ -276,7 +276,7 @@ public struct NWDesignCanvas<Slot: View, Popover: View>: View {
                 return found.point == nil || board.isSelected ? id : nil
             },
             drag: { id, translation, ended in
-                move?(NWBoardMove(board: id, offset: CGSize(width: translation.width / viewport.zoom,
+                move?(SHBoardMove(board: id, offset: CGSize(width: translation.width / viewport.zoom,
                                                             height: translation.height / viewport.zoom), ended: ended))
             },
             move: { location in
@@ -289,7 +289,7 @@ public struct NWDesignCanvas<Slot: View, Popover: View>: View {
                 { location in await menu(boards.pick(at: location, viewport: viewport)) }
             }))
         #elseif os(iOS)
-        NWCanvasTouchInput(tool: tool, handlers: NWCanvasTouchInput.Handlers(
+        SHCanvasTouchInput(tool: tool, handlers: SHCanvasTouchInput.Handlers(
             pan: { viewport.pan(by: $0) },
             zoom: { factor, anchor in viewport.zoom(by: factor, about: anchor) },
             tap: { location in pick(boards.pick(at: location, viewport: viewport)) },
@@ -300,7 +300,7 @@ public struct NWDesignCanvas<Slot: View, Popover: View>: View {
                 return found.point == nil || board.isSelected ? id : nil
             },
             drag: { id, translation, ended in
-                move?(NWBoardMove(board: id, offset: CGSize(width: translation.width / viewport.zoom,
+                move?(SHBoardMove(board: id, offset: CGSize(width: translation.width / viewport.zoom,
                                                             height: translation.height / viewport.zoom), ended: ended))
             },
             zooming: zooming))
@@ -319,15 +319,15 @@ extension View {
     }
 }
 
-extension NWDesignCanvas where Popover == EmptyView {
-    public init(boards: [NWCanvasBoard], viewport: Binding<NWCanvasViewport>, tool: Binding<NWCanvasTool>,
-                disabledTools: Set<NWCanvasTool> = [], selection: [NWCanvasElement] = [], hover: NWCanvasElement? = nil,
-                pins: [NWCanvasPin] = [], openPin: @escaping (String) -> Void = { _ in },
-                notes: [NWCanvasNote] = [], actions: NWCanvasActions? = nil, anotherDirection: (() -> Void)? = nil,
-                move: ((NWBoardMove) -> Void)? = nil,
-                pick: @escaping (NWCanvasPick) -> Void, point: @escaping (NWCanvasPick?) -> Void = { _ in },
+extension SHDesignCanvas where Popover == EmptyView {
+    public init(boards: [SHCanvasBoard], viewport: Binding<SHCanvasViewport>, tool: Binding<SHCanvasTool>,
+                disabledTools: Set<SHCanvasTool> = [], selection: [SHCanvasElement] = [], hover: SHCanvasElement? = nil,
+                pins: [SHCanvasPin] = [], openPin: @escaping (String) -> Void = { _ in },
+                notes: [SHCanvasNote] = [], actions: SHCanvasActions? = nil, anotherDirection: (() -> Void)? = nil,
+                move: ((SHBoardMove) -> Void)? = nil,
+                pick: @escaping (SHCanvasPick) -> Void, point: @escaping (SHCanvasPick?) -> Void = { _ in },
                 resized: @escaping (CGSize) -> Void = { _ in }, zooming: @escaping (Bool) -> Void = { _ in },
-                @ViewBuilder slot: @escaping (NWCanvasBoard) -> Slot) {
+                @ViewBuilder slot: @escaping (SHCanvasBoard) -> Slot) {
         self.init(boards: boards, viewport: viewport, tool: tool, disabledTools: disabledTools, selection: selection,
                   hover: hover, pins: pins, openPin: openPin, popoverAnchor: nil, notes: notes, actions: actions,
                   anotherDirection: anotherDirection, move: move, pick: pick, point: point, resized: resized,
@@ -336,7 +336,7 @@ extension NWDesignCanvas where Popover == EmptyView {
 }
 
 /// The canvas's dots: one device pixel each, every `spacing` points, moving with the canvas.
-public struct NWDotGrid: View {
+public struct SHDotGrid: View {
     let spacing: CGFloat
     let phase: CGPoint
     @Environment(\.displayScale) private var displayScale
@@ -347,8 +347,8 @@ public struct NWDotGrid: View {
     }
 
     public var body: some View {
-        let dot = NW.hairline(displayScale)
-        let color = Color.nw.lineStrong
+        let dot = SH.hairline(displayScale)
+        let color = Color.sh.lineStrong
         Canvas { context, size in
             let start = CGPoint(x: Self.remainder(phase.x, spacing), y: Self.remainder(phase.y, spacing))
             var path = Path()
@@ -379,7 +379,7 @@ import AppKit
 /// Every event over the canvas: scroll pans (⌘ zooms), a pinch zooms, a drag pans with the Pan
 /// tool or while space is held, and a click selects. On top of the boards, so none of their
 /// pages ever takes an event.
-struct NWCanvasInput: NSViewRepresentable {
+struct SHCanvasInput: NSViewRepresentable {
     struct Handlers {
         var pan: (CGSize) -> Void
         var zoom: (CGFloat, CGPoint) -> Void
@@ -394,10 +394,10 @@ struct NWCanvasInput: NSViewRepresentable {
         var move: (CGPoint?) -> Void
         var zooming: (Bool) -> Void
         /// A right-click or control-click with Select or Comment: the menu's items for that point.
-        var contextMenu: ((CGPoint) async -> [NWCanvasMenuItem])? = nil
+        var contextMenu: ((CGPoint) async -> [SHCanvasMenuItem])? = nil
     }
 
-    let tool: NWCanvasTool
+    let tool: SHCanvasTool
     let handlers: Handlers
 
     func makeNSView(context: Context) -> InputView { InputView() }
@@ -416,7 +416,7 @@ struct NWCanvasInput: NSViewRepresentable {
 
     final class InputView: NSView {
         var handlers: Handlers?
-        var tool: NWCanvasTool = .select
+        var tool: SHCanvasTool = .select
         private var dragOrigin: CGPoint?
         /// Where a drag began, and the board it moves (nil: it pans).
         private var dragStart: CGPoint?
@@ -571,7 +571,7 @@ struct NWCanvasInput: NSViewRepresentable {
             }
         }
 
-        static func menu(_ items: [NWCanvasMenuItem]) -> NSMenu {
+        static func menu(_ items: [SHCanvasMenuItem]) -> NSMenu {
             let menu = NSMenu()
             menu.autoenablesItems = false
             for item in items {

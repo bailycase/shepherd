@@ -10,7 +10,7 @@ import Testing
 
 /// The Automations page's table is a long list too (docs/design/performance.md › Performance): it builds the
 /// rows on screen, and one automation changing or the selection moving redraws only the rows
-/// they touch. Counted in row bodies (`NWRenderProbe`), like `ListPerformanceTests`.
+/// they touch. Counted in row bodies (`SHRenderProbe`), like `ListPerformanceTests`.
 @Suite("Automations page performance", .mainActorExclusive)
 @MainActor
 struct AutomationsPagePerformanceTests {
@@ -19,8 +19,8 @@ struct AutomationsPagePerformanceTests {
     /// How many table rows fit under the header and the column labels (a row is at least a
     /// switch's minimum hit area tall plus its padding).
     private static var rowsOnScreen: Int {
-        let row = max(NWAutomationMetrics.switchSize.height, NW.Height.controlS) + 2 * NWPageMetrics.rowVertical
-        return Int((size.height - NWPageMetrics.headerHeight) / row) + 1
+        let row = max(SHAutomationMetrics.switchSize.height, SH.Height.controlS) + 2 * SHPageMetrics.rowVertical
+        return Int((size.height - SHPageMetrics.headerHeight) / row) + 1
     }
 
     /// Two hundred automations, off, so the first adoption starts no run; their run logs read.

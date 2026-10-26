@@ -12,7 +12,7 @@ import ShepherdUI
 /// the model and level chosen, and opens its canvas.
 ///
 /// The one card is the design system the boards are drawn in: the one picked from its menu, else
-/// the most recently changed system built here, else Night Watch. It names the project a system
+/// the most recently changed system built here, else Shepherd Design. It names the project a system
 /// was read from as information; a design belongs to no project. The Capture a page and From a
 /// screenshot starting points come later.
 struct NewDesignPage: View {
@@ -30,33 +30,33 @@ struct NewDesignPage: View {
     private var draft: NewDesignState { vm.newDesign }
 
     var body: some View {
-        let _ = NWRenderProbe.tick("newDesign.page")
+        let _ = SHRenderProbe.tick("newDesign.page")
         VStack(spacing: 0) {
-            NWDesignHeader("New design", style: .page, leadingInset: chrome.leadingInset, sidebar: chrome.showSidebar,
+            SHDesignHeader("New design", style: .page, leadingInset: chrome.leadingInset, sidebar: chrome.showSidebar,
                            sidebarShortcut: KeybindingsStore.shared.display(.toggleSidebar),
                            designs: { vm.openDestination(.designs) })
             VStack(spacing: AppLayout.newDesignGap) {
                 VStack(spacing: AppLayout.newDesignSubtitleSpacing) {
                     Text("What do you want to design?")
-                        .font(.nwSans(AppLayout.newThreadHeadingSize, .semibold))
+                        .font(.shSans(AppLayout.newThreadHeadingSize, .semibold))
                         .tracking(AppLayout.newThreadHeadingTracking)
-                        .foregroundStyle(Color.nw.textPrimary)
+                        .foregroundStyle(Color.sh.textPrimary)
                         .multilineTextAlignment(.center)
                         .accessibilityAddTraits(.isHeader)
                     Text("Describe the page or flow. The design agent draws it as HTML boards in your design system, "
                          + "and you refine it on the canvas.")
-                        .font(.nw(.body))
-                        .foregroundStyle(Color.nw.textSecondary)
+                        .font(.sh(.body))
+                        .foregroundStyle(Color.sh.textSecondary)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: AppLayout.newDesignSubtitleWidth)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                VStack(alignment: .leading, spacing: NW.Space.m) {
+                VStack(alignment: .leading, spacing: SH.Space.m) {
                     composer
                         .zIndex(1)
                     if let notice = draft.notice {
-                        Text(notice).font(.nw(.caption)).foregroundStyle(Color.nw.failed)
-                            .nwTransition(.content)
+                        Text(notice).font(.sh(.caption)).foregroundStyle(Color.sh.failed)
+                            .shTransition(.content)
                     }
                 }
                 .frame(maxWidth: AppLayout.newDesignComposerWidth)
@@ -70,8 +70,8 @@ struct NewDesignPage: View {
             .contentShape(Rectangle())
             .onTapGesture { if menu != nil { menu = nil } }
         }
-        .background(Color.nw.bgWindow)
-        .nwAnimation(.content, value: draft.notice)
+        .background(Color.sh.bgWindow)
+        .shAnimation(.content, value: draft.notice)
         .onChange(of: draft.focusRequest, initial: true) { composing = true }
         .onChange(of: menu != nil, initial: true) { _, open in
             let menu = $menu
@@ -91,12 +91,12 @@ struct NewDesignPage: View {
     /// The composer's card, drawn focused: the standard composer's row at its regular size.
     private var composer: some View {
         let blocker = draft.blocker(vm)
-        return NWComposer(isFocused: true) {
+        return SHComposer(isFocused: true) {
             ForEach(draft.attachments.items) { attachment in
-                NWAttachmentChip(attachment.name, thumbnail: attachment.thumbnail) {
+                SHAttachmentChip(attachment.name, thumbnail: attachment.thumbnail) {
                     draft.attachments.remove(attachment.id)
                 }
-                .nwTransition(.list, edge: .leading)
+                .shTransition(.list, edge: .leading)
             }
         } field: {
             ComposerTextField(text: Binding(get: { draft.brief }, set: { draft.brief = $0 }),
@@ -120,29 +120,29 @@ struct NewDesignPage: View {
             .accessibilityLabel("What do you want to design?")
         } controls: {
             Button { picking = true } label: { Image(systemName: "paperclip") }
-                .buttonStyle(.nwIcon(size: NWComposerMetrics.chipHeight))
+                .buttonStyle(.shIcon(size: SHComposerMetrics.chipHeight))
                 .disabled(draft.attachments.isFull)
                 .help("Attach a screenshot or file")
                 .accessibilityLabel("Attach a screenshot or file")
             Button { menu = menu == .settings ? nil : .settings } label: {
-                NWModelSettingsLabel(model: NewThreadRules.shortModel(draft.model),
+                SHModelSettingsLabel(model: NewThreadRules.shortModel(draft.model),
                                      thinking: draft.thinkingLevels().isEmpty ? nil : draft.thinking.clamped(to: draft.thinkingLevels()).title)
             }
-            .buttonStyle(.nwComposerChip(active: menu == .settings || menu == .models))
+            .buttonStyle(.shComposerChip(active: menu == .settings || menu == .models))
             .background { ComposerMenuRegion(dismissal: dismissal) }
             .help(draft.model.isEmpty ? "Model settings: the default" : "Model settings: \(draft.model)")
-            Spacer(minLength: NW.Space.m)
+            Spacer(minLength: SH.Space.m)
             if draft.starting {
-                ProgressView().progressViewStyle(.nwSpinner(color: Color.nw.textTertiary))
-                    .frame(width: NWComposerMetrics.actionSize, height: NWComposerMetrics.actionSize)
+                ProgressView().progressViewStyle(.shSpinner(color: Color.sh.textTertiary))
+                    .frame(width: SHComposerMetrics.actionSize, height: SHComposerMetrics.actionSize)
                     .accessibilityLabel("Starting")
             } else {
-                NWComposerActionButton(.send, enabled: blocker == nil) { draft.send(vm) }
+                SHComposerActionButton(.send, enabled: blocker == nil) { draft.send(vm) }
                     .help(blocker ?? "Send (\(KeybindingsStore.shared.sendDisplay))")
             }
         }
-        .nwAnimation(.list, value: draft.attachments.ids)
-        .nwAnimation(.content, value: draft.starting)
+        .shAnimation(.list, value: draft.attachments.ids)
+        .shAnimation(.content, value: draft.starting)
         .onDrop(of: [.image, .fileURL], isTargeted: $dropTargeted) { providers in
             draft.attach(providers)
             return true
@@ -159,19 +159,19 @@ struct NewDesignPage: View {
             switch menu {
             case .models:
                 if let picker {
-                    ModelPicker(state: picker, maxHeight: NWComposerMetrics.modelPickerMaxHeight) { id in
+                    ModelPicker(state: picker, maxHeight: SHComposerMetrics.modelPickerMaxHeight) { id in
                         menu = nil
                         composing = true
                         RecentModels.record(id, thread: nil)
                         draft.setModel(id)
                     } close: { menu = nil; composing = true }
-                    .nwTransition(.overlay, anchor: .topLeading)
+                    .shTransition(.overlay, anchor: .topLeading)
                 }
             case .settings:
                 let levels = draft.thinkingLevels()
-                NWModelSettings(models: ModelCatalog.settingsModels(catalog: draft.catalog, current: draft.model, recent: RecentModels.load().map(\.id)),
+                SHModelSettings(models: ModelCatalog.settingsModels(catalog: draft.catalog, current: draft.model, recent: RecentModels.load().map(\.id)),
                                 thinking: NativeThinkingLevel.levels(levels.map(\.rawValue)).map {
-                                    NWThinkingOption(id: $0.id, title: $0.title, note: $0.note)
+                                    SHThinkingOption(id: $0.id, title: $0.title, note: $0.note)
                                 }, currentThinking: draft.thinking.clamped(to: levels).rawValue, speeds: [], currentSpeed: "standard",
                                 chooseModel: { model in
                                     RecentModels.record(model.id, thread: nil)
@@ -181,7 +181,7 @@ struct NewDesignPage: View {
                                 }, chooseThinking: { id in
                                     if let level = ThinkingLevel(rawValue: id) { draft.setThinking(level) }
                                 }, chooseSpeed: { _ in }, allModels: openModels, close: { menu = nil; composing = true })
-                    .nwTransition(.overlay, anchor: .topLeading)
+                    .shTransition(.overlay, anchor: .topLeading)
             case nil:
                 EmptyView()
             }
@@ -189,7 +189,7 @@ struct NewDesignPage: View {
         .fixedSize()
         .background { ComposerMenuRegion(dismissal: dismissal) }
         .alignmentGuide(.bottom) { $0[.top] - AppLayout.menuGap }
-        .nwAnimation(.overlay, value: menu)
+        .shAnimation(.overlay, value: menu)
     }
 
     private func openModels() {
@@ -206,7 +206,7 @@ struct NewDesignPage: View {
     /// another system; the import opens the picker for a Claude Design ZIP or folder.
     private var startingPoints: some View {
         VStack(alignment: .leading, spacing: AppLayout.newDesignCardsLabelGap) {
-            Text("Design system & starting point").nwSectionLabel()
+            Text("Design system & starting point").shSectionLabel()
                 .accessibilityAddTraits(.isHeader)
             GeometryReader { proxy in
                 let width = (proxy.size.width - AppLayout.newDesignCardsGap * (AppLayout.newDesignCardsPerRow - 1))
@@ -215,7 +215,7 @@ struct NewDesignPage: View {
                     systemCard
                         .frame(width: max(0, width))
                     Button { vm.chooseDesignProject() } label: {
-                        NWDesignStartCard(symbol: "square.and.arrow.down", title: "Import a project", line: "from Claude Design",
+                        SHDesignStartCard(symbol: "square.and.arrow.down", title: "Import a project", line: "from Claude Design",
                                           note: "a ZIP or folder you exported", chosen: false)
                     }
                     .buttonStyle(.plain)
@@ -231,7 +231,7 @@ struct NewDesignPage: View {
     @ViewBuilder private var systemCard: some View {
         let systems = vm.designSystems.summaries
         let words = NewDesignState.card(system: draft.chosenSystem(in: systems), spaces: vm.state.spaces)
-        let card = NWDesignStartCard(symbol: "pencil.tip", title: words.title, line: words.line, note: words.note, chosen: true)
+        let card = SHDesignStartCard(symbol: "pencil.tip", title: words.title, line: words.line, note: words.note, chosen: true)
         if systems.count > 1 {
             Menu {
                 Section("Design systems") {

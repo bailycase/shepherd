@@ -74,9 +74,9 @@ struct MermaidRenderingTests {
 
             // The existing callback remains an override, including beneath a window state.
             var received: String?
-            window.show(NWMermaidBlock(source)
-                .environment(\.nwDiagramPresentation, presentation)
-                .environment(\.nwPresentDiagram) { received = $0 })
+            window.show(SHMermaidBlock(source)
+                .environment(\.shDiagramPresentation, presentation)
+                .environment(\.shPresentDiagram) { received = $0 })
             try await eventuallyOnMain("the legacy full-screen callback control") {
                 window.layout()
                 return window.controls().contains { $0.label == "Open diagram full screen" }
@@ -94,10 +94,10 @@ struct MermaidRenderingTests {
         window.window.contentView = renderer.webView
         renderer.webView.frame = CGRect(x: 0, y: 0, width: 640, height: 480)
         defer { renderer.stop(); window.close() }
-        var status = NWMermaidStatus.loading
+        var status = SHMermaidStatus.loading
         renderer.onStatus = { status = $0; _ = $1 }
-        let colors = ThemeDefinition.nightWatch.light.colors
-        renderer.render(source: "flowchart LR\n A[Request] --> B[Review]", colors: colors, fontSize: NWTextStyle.body.size)
+        let colors = ThemeDefinition.shepherdDesign.light.colors
+        renderer.render(source: "flowchart LR\n A[Request] --> B[Review]", colors: colors, fontSize: SHTextStyle.body.size)
         try await eventuallyOnMain("Mermaid rendered") { status == .ready }
         #expect(try await renderer.webView.evaluateJavaScript("document.querySelectorAll('#chart svg').length") as? Int == 1)
         #expect(!renderer.webView.configuration.websiteDataStore.isPersistent)
@@ -117,36 +117,36 @@ struct MermaidRenderingTests {
             ("erDiagram\nPROJECT ||--o{ TASK : contains\nTASK {\n string title\n}", "title")
         ] {
             status = .loading
-            renderer.render(source: source, colors: colors, fontSize: NWTextStyle.body.size)
+            renderer.render(source: source, colors: colors, fontSize: SHTextStyle.body.size)
             try await eventuallyOnMain("Mermaid sequence/ER chart") { status == .ready }
             let text = try await renderer.webView.evaluateJavaScript("document.querySelector('#chart svg').textContent") as? String
             #expect(text?.contains(label) == true)
             if label == "Review request" {
                 #expect(try await renderer.webView.evaluateJavaScript("getComputedStyle(document.querySelector('#chart .messageText')).fontFamily.includes('Geist')") as? Bool == true)
                 let messageSize = try await renderer.webView.evaluateJavaScript("parseFloat(getComputedStyle(document.querySelector('#chart .messageText')).fontSize)") as? Double
-                #expect(messageSize == Double(NWTextStyle.body.size))
+                #expect(messageSize == Double(SHTextStyle.body.size))
             }
         }
         status = .loading
-        renderer.render(source: "not a diagram", colors: colors, fontSize: NWTextStyle.body.size)
+        renderer.render(source: "not a diagram", colors: colors, fontSize: SHTextStyle.body.size)
         try await eventuallyOnMain("Mermaid parse error") { status == .failed }
         status = .loading
-        renderer.render(source: "%%{init: {'securityLevel':'loose'}}%%\nflowchart LR\nA-->B", colors: colors, fontSize: NWTextStyle.body.size)
+        renderer.render(source: "%%{init: {'securityLevel':'loose'}}%%\nflowchart LR\nA-->B", colors: colors, fontSize: SHTextStyle.body.size)
         try await eventuallyOnMain("Mermaid directive rendered safely") { status == .ready }
         #expect(try await renderer.webView.evaluateJavaScript("mermaid.mermaidAPI.getConfig().securityLevel") as? String == "strict")
         status = .loading
-        renderer.render(source: "---\ntitle: Safe title\nconfig:\n  securityLevel: loose\n---\nflowchart LR\nA-->B", colors: colors, fontSize: NWTextStyle.body.size)
+        renderer.render(source: "---\ntitle: Safe title\nconfig:\n  securityLevel: loose\n---\nflowchart LR\nA-->B", colors: colors, fontSize: SHTextStyle.body.size)
         try await eventuallyOnMain("Mermaid frontmatter") { status == .ready }
         #expect(try await renderer.webView.evaluateJavaScript("mermaid.mermaidAPI.getConfig().securityLevel") as? String == "strict")
         status = .loading
-        renderer.render(source: "flowchart LR\nOld-->Result", colors: colors, fontSize: NWTextStyle.body.size)
-        renderer.render(source: "flowchart LR\nCurrent-->Result", colors: ThemeDefinition.nightWatch.dark.colors, fontSize: NWTextStyle.body.size * 1.3)
+        renderer.render(source: "flowchart LR\nOld-->Result", colors: colors, fontSize: SHTextStyle.body.size)
+        renderer.render(source: "flowchart LR\nCurrent-->Result", colors: ThemeDefinition.shepherdDesign.dark.colors, fontSize: SHTextStyle.body.size * 1.3)
         try await eventuallyOnMain("latest Mermaid render") { status == .ready }
         let text = try await renderer.webView.evaluateJavaScript("document.getElementById('chart').textContent") as? String
         #expect(text?.contains("Current") == true)
         #expect(text?.contains("Old") == false)
         status = .loading
-        renderer.render(source: String(repeating: "x", count: NWMermaidMetrics.maximumSourceBytes + 1), colors: colors, fontSize: NWTextStyle.body.size)
+        renderer.render(source: String(repeating: "x", count: SHMermaidMetrics.maximumSourceBytes + 1), colors: colors, fontSize: SHTextStyle.body.size)
         try await eventuallyOnMain("oversized diagram source rejected") { status == .failed }
     }
 
@@ -159,10 +159,10 @@ struct MermaidRenderingTests {
             window.window.contentView = renderer.webView
             renderer.webView.frame = CGRect(x: 0, y: 0, width: 640, height: 480)
             defer { renderer.stop(); window.close() }
-            var status = NWMermaidStatus.loading
+            var status = SHMermaidStatus.loading
             renderer.onStatus = { status = $0; _ = $1 }
             renderer.render(source: "flowchart LR\nA[Request] --> B[Review] --> C[Approved]",
-                            colors: ThemeDefinition.nightWatch.light.colors, fontSize: NWTextStyle.body.size, viewer: viewer)
+                            colors: ThemeDefinition.shepherdDesign.light.colors, fontSize: SHTextStyle.body.size, viewer: viewer)
             try await eventuallyOnMain("chart rendered") { status == .ready }
             func wheel(_ dx: Double, _ dy: Double, meta: Bool = false) async throws -> Bool {
                 let script = """
@@ -173,7 +173,7 @@ struct MermaidRenderingTests {
                 return try await renderer.webView.callAsyncJavaScript(script, arguments: [:], in: nil, contentWorld: .page) as? Bool == true
             }
             func zoom() async throws -> [String: Double] {
-                try #require(try await renderer.webView.evaluateJavaScript("window.nwZoom.state()") as? [String: Double])
+                try #require(try await renderer.webView.evaluateJavaScript("window.shZoom.state()") as? [String: Double])
             }
             #expect(try await wheel(0, 40) == viewer, "an unzoomed scroll passes to the thread only inline")
             #expect(try await zoom()["s"] == 1)
@@ -188,7 +188,7 @@ struct MermaidRenderingTests {
             #expect(try await wheel(0, 100_000, meta: true))
             #expect(try await zoom()["s"] == 1, "zooming out stops at the fitted size")
             #expect(try await wheel(0, -100_000, meta: true))
-            #expect(try await zoom()["s"] == Double(NWMermaidMetrics.maximumZoom))
+            #expect(try await zoom()["s"] == Double(SHMermaidMetrics.maximumZoom))
         }
     }
 
@@ -197,7 +197,7 @@ struct MermaidRenderingTests {
         let closed = nativeMarkdownParse("```mermaid\nflowchart LR\nA-->B\n```\n", streaming: true)
         #expect(open.endsInOpenFence)
         #expect(!closed.endsInOpenFence)
-        #expect(NWProseBlock.lastCodePath(Prose.proseBlocks(closed.blocks)) == [0])
+        #expect(SHProseBlock.lastCodePath(Prose.proseBlocks(closed.blocks)) == [0])
         let repeated = nativeMarkdownParse("```mermaid\nflowchart LR\nA-->B\n```\n```mermaid\nflowchart LR\nA-->B", streaming: true)
         let window = OffscreenWindow(Prose(blocks: repeated.blocks, writingFence: repeated.endsInOpenFence))
         defer { window.close() }
@@ -242,8 +242,8 @@ struct MermaidPreviewTests {
             let window = OffscreenWindow(size: CGSize(width: 680, height: 620), dark: dark,
                 Prose(blocks: blocks).padding()
                     .frame(width: 680, height: 620, alignment: .topLeading)
-                    .background(Color.nw.bgWindow)
-                    .environment(\.nwPresentDiagram) { _ in }
+                    .background(Color.sh.bgWindow)
+                    .environment(\.shPresentDiagram) { _ in }
                     .environment(\.colorScheme, dark ? .dark : .light))
             defer { window.close() }
 
@@ -256,7 +256,7 @@ struct MermaidPreviewTests {
                 try await eventually("Markdown Mermaid SVG and layout") { @Sendable @MainActor in
                     window.layout()
                     guard let height = try? await chart.evaluateJavaScript("document.querySelector('#chart svg') && document.getElementById('chart').getBoundingClientRect().height") as? Double else { return false }
-                    return height > 0 && abs(chart.frame.height - min(CGFloat(height), NWMermaidMetrics.maximumHeight)) < 1
+                    return height > 0 && abs(chart.frame.height - min(CGFloat(height), SHMermaidMetrics.maximumHeight)) < 1
                 }
                 snapshots.append((chart, try await chart.takeSnapshot(configuration: nil)))
             }
@@ -288,9 +288,9 @@ struct MermaidPreviewTests {
         for dark in [false, true] {
             let size = CGSize(width: 900, height: 640)
             let window = OffscreenWindow(size: size, dark: dark,
-                NWMermaidViewer(source) {}
+                SHMermaidViewer(source) {}
                     .frame(width: size.width, height: size.height)
-                    .background(Color.nw.bgWindow)
+                    .background(Color.sh.bgWindow)
                     .environment(\.colorScheme, dark ? .dark : .light))
             defer { window.close() }
             var chart: WKWebView?

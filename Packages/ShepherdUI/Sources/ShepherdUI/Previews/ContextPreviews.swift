@@ -3,7 +3,7 @@ import SwiftUI
 // The context meter (ContextIdeas, ContextDetails, ContextFull, ContextCompacted) and compactions
 // in the thread.
 
-private let previewSplit = NWContextDetailsModel(
+private let previewSplit = SHContextDetailsModel(
     variant: .split, title: "Context", meta: "claude-opus · 200k", total: "42k", ofWindow: "of 200k", trailing: "21%",
     segments: [.init(part: .system, fraction: 0.034), .init(part: .instructions, fraction: 0.007),
                .init(part: .messages, fraction: 0.0455), .init(part: .toolResults, fraction: 0.124)],
@@ -16,7 +16,7 @@ private let previewSplit = NWContextDetailsModel(
             .init(id: "c", kind: .file, label: "ThreadView.swift", value: "3.4k")],
     footnote: "The total is the agent’s. The split is Shepherd’s estimate from the messages.")
 
-private let previewFull = NWContextDetailsModel(
+private let previewFull = SHContextDetailsModel(
     variant: .almostFull, title: "Context almost full", total: "178k", ofWindow: "of 200k", trailing: "89%",
     segments: [.init(part: .system, fraction: 0.034), .init(part: .instructions, fraction: 0.007),
                .init(part: .messages, fraction: 0.158), .init(part: .toolResults, fraction: 0.691)],
@@ -24,65 +24,65 @@ private let previewFull = NWContextDetailsModel(
     note: "Tool results are 138k of it. The agent will compact on its own at 184k, before its next reply. Compact now to say what the summary should keep.")
 
 #Preview("Context ring") {
-    NWPreviewBoth {
-        HStack(spacing: NW.Space.xl) {
-            ForEach(Array([NWContextRingState.empty, .fill(0.21, .calm), .fill(0.68, .warning), .fill(0.89, .critical), .compacting, .estimated]
+    SHPreviewBoth {
+        HStack(spacing: SH.Space.xl) {
+            ForEach(Array([SHContextRingState.empty, .fill(0.21, .calm), .fill(0.68, .warning), .fill(0.89, .critical), .compacting, .estimated]
                 .enumerated()), id: \.offset) { _, state in
-                NWContextMeterButton(state, expanded: false, help: "", accessibilityLabel: "Context") {}
+                SHContextMeterButton(state, expanded: false, help: "", accessibilityLabel: "Context") {}
             }
         }
     }
 }
 
 #Preview("Context details") {
-    NWPreviewBoth {
-        HStack(alignment: .top, spacing: NW.Space.xl) {
-            NWContextDetails(previewSplit, actions: NWContextDetailsActions())
-            NWContextDetails(previewFull, actions: NWContextDetailsActions())
-            NWContextDetails(NWContextDetailsModel(
+    SHPreviewBoth {
+        HStack(alignment: .top, spacing: SH.Space.xl) {
+            SHContextDetails(previewSplit, actions: SHContextDetailsActions())
+            SHContextDetails(previewFull, actions: SHContextDetailsActions())
+            SHContextDetails(SHContextDetailsModel(
                 variant: .compacted, title: "Context", meta: "just compacted", total: "~23k", ofWindow: "of 200k", trailing: "estimate",
                 segments: [.init(part: nil, fraction: 0.115)],
                 note: "The agent reports the exact number after its next reply. Was 184k.", showsSummary: true),
-                             actions: NWContextDetailsActions())
+                             actions: SHContextDetailsActions())
         }
     }
 }
 
 #Preview("Context details, sheet") {
     // iPad and iPhone: the details as a sheet, as wide as it is.
-    NWPreviewBoth {
-        HStack(alignment: .top, spacing: NW.Space.xl) {
-            NWContextDetails(previewSplit, actions: NWContextDetailsActions(), presentation: .sheet)
-            NWContextDetails(previewFull, actions: NWContextDetailsActions(), presentation: .sheet)
+    SHPreviewBoth {
+        HStack(alignment: .top, spacing: SH.Space.xl) {
+            SHContextDetails(previewSplit, actions: SHContextDetailsActions(), presentation: .sheet)
+            SHContextDetails(previewFull, actions: SHContextDetailsActions(), presentation: .sheet)
         }
         .frame(width: 780)
-        .background(Color.nw.bgRaised)
+        .background(Color.sh.bgRaised)
     }
 }
 
 #Preview("Compaction, narrow") {
     // A phone's width: the rules go, then Show summary moves under the words.
-    NWPreviewBoth {
-        VStack(spacing: NW.Space.l) {
-            NWCompactionDivider(title: "Compacted automatically", tokens: "184k → 23k", expanded: false)
-            NWCompactionDivider(title: "Context overflowed · compacted and retried", tokens: "203k → 21k", tone: .warning, expanded: false)
-            NWCompactionSummary(size: "2.1k", sections: [NWSummarySection(id: 0, title: "Goal", text: "Make native thread rows match the spec.")]) {}
+    SHPreviewBoth {
+        VStack(spacing: SH.Space.l) {
+            SHCompactionDivider(title: "Compacted automatically", tokens: "184k → 23k", expanded: false)
+            SHCompactionDivider(title: "Context overflowed · compacted and retried", tokens: "203k → 21k", tone: .warning, expanded: false)
+            SHCompactionSummary(size: "2.1k", sections: [SHSummarySection(id: 0, title: "Goal", text: "Make native thread rows match the spec.")]) {}
         }
         .frame(width: 340)
     }
 }
 
 #Preview("Compaction") {
-    NWPreviewBoth {
-        VStack(spacing: NW.Space.l) {
-            NWCompactionDivider(title: "Compacting context…", tokens: "184k", running: true, expanded: nil)
-            NWCompactionDivider(title: "Compacted automatically", tokens: "184k → 23k", expanded: true)
-            NWCompactionSummary(size: "2.1k", sections: [
-                NWSummarySection(id: 0, title: "Goal", text: "Make native thread rows match the spec."),
-                NWSummarySection(id: 1, title: "Files changed", text: "", files: ["ThreadView.swift", "NativePresentationTests.swift"]),
+    SHPreviewBoth {
+        VStack(spacing: SH.Space.l) {
+            SHCompactionDivider(title: "Compacting context…", tokens: "184k", running: true, expanded: nil)
+            SHCompactionDivider(title: "Compacted automatically", tokens: "184k → 23k", expanded: true)
+            SHCompactionSummary(size: "2.1k", sections: [
+                SHSummarySection(id: 0, title: "Goal", text: "Make native thread rows match the spec."),
+                SHSummarySection(id: 1, title: "Files changed", text: "", files: ["ThreadView.swift", "NativePresentationTests.swift"]),
             ]) {}
-            NWCompactionDivider(title: "Context overflowed · compacted and retried", tokens: "203k → 21k", tone: .warning, expanded: false)
-            NWCompactionDivider(title: "Compaction stopped · nothing changed", tokens: nil, tone: .quiet, expanded: nil)
+            SHCompactionDivider(title: "Context overflowed · compacted and retried", tokens: "203k → 21k", tone: .warning, expanded: false)
+            SHCompactionDivider(title: "Compaction stopped · nothing changed", tokens: nil, tone: .quiet, expanded: nil)
         }
         .frame(width: 640)
     }

@@ -4,7 +4,7 @@ import SwiftUI
 // pages under the side pane's tabs, the list of every tab, a note under the strip, and the two
 // ways the agent shows it is using a page. All of it takes plain values; the app owns the pages.
 
-public enum NWBrowserTabsMetrics {
+public enum SHBrowserTabsMetrics {
     /// The strip under the pane's tabs.
     public static let stripHeight: CGFloat = 38
     public static let tabHeight: CGFloat = 26
@@ -30,7 +30,7 @@ public enum NWBrowserTabsMetrics {
     public static let noteGlyph: CGFloat = 13
     public static let noteDismiss: CGFloat = 24
     /// The agent's bar over the console, and the chip when it is on another tab.
-    public static let agentBarHeight: CGFloat = NWBrowserMetrics.consoleBarHeight
+    public static let agentBarHeight: CGFloat = SHBrowserMetrics.consoleBarHeight
     public static let agentSpinner: CGFloat = 11
     public static let agentChipSpinner: CGFloat = 12
     public static let agentTakeOverGlyph: CGFloat = 12
@@ -40,15 +40,15 @@ public enum NWBrowserTabsMetrics {
 /// loopback is `running`; any other host gets one of the other three by a fixed hash of its site name,
 /// so a site keeps its color. The board colors by brand and the app knows no brands, so a site can
 /// land on a different one of the three than the board gave it.
-public enum NWBrowserTabTint: Int, CaseIterable, Sendable {
+public enum SHBrowserTabTint: Int, CaseIterable, Sendable {
     case running, done, violet, orange
 
-    public func color(_ nw: NWPalette) -> Color {
+    public func color(_ sh: SHPalette) -> Color {
         switch self {
-        case .running: nw.running
-        case .done: nw.done
-        case .violet: nw.tabTileViolet
-        case .orange: nw.tabTileOrange
+        case .running: sh.running
+        case .done: sh.done
+        case .violet: sh.tabTileViolet
+        case .orange: sh.tabTileOrange
         }
     }
 
@@ -78,24 +78,24 @@ public enum NWBrowserTabTint: Int, CaseIterable, Sendable {
         return name.first { $0.isLetter || $0.isNumber }.map { String($0).uppercased() } ?? "·"
     }
 
-    public static func forHost(_ host: String) -> NWBrowserTabTint {
+    public static func forHost(_ host: String) -> SHBrowserTabTint {
         let bare = withoutPort(host)
         if bare.isEmpty || bare == "localhost" || bare == "[::1]" || bare.hasPrefix("127.") { return .running }
-        let others: [NWBrowserTabTint] = [.done, .violet, .orange]
+        let others: [SHBrowserTabTint] = [.done, .violet, .orange]
         let sum = siteName(host: host).unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0xFFFF }
         return others[sum % others.count]
     }
 }
 
 /// The outline cross that closes a tab and dismisses the note under the strip: one place for the two uses.
-/// It is not an `NWGlyph` case: the registry polices a raw `"xmark"` everywhere, and the app has 45 older
+/// It is not an `SHGlyph` case: the registry polices a raw `"xmark"` everywhere, and the app has 45 older
 /// uses of it that are not this view's to change.
-struct NWBrowserTabClose: View {
+struct SHBrowserTabClose: View {
     var body: some View { Image(systemName: "xmark") }
 }
 
 /// How a tab came to be, as the list's trailing tag says it.
-public enum NWBrowserTabSource: Sendable {
+public enum SHBrowserTabSource: Sendable {
     case user, agent, link
 
     public var tag: String? {
@@ -117,20 +117,20 @@ public enum NWBrowserTabSource: Sendable {
 }
 
 /// One page, as the strip and the list draw it.
-public struct NWBrowserTabItem: Identifiable, Equatable, Sendable {
+public struct SHBrowserTabItem: Identifiable, Equatable, Sendable {
     public let id: UUID
     public let title: String
     /// The address as the field shows it ("localhost:3000/checkout"); empty for a page not yet opened.
     public let address: String
     public let letter: String
-    public let tint: NWBrowserTabTint
-    public let source: NWBrowserTabSource
+    public let tint: SHBrowserTabTint
+    public let source: SHBrowserTabSource
     /// The agent is using this page now: a spinner stands in for the favicon.
     public let agentActive: Bool
     /// The agent opened it and nobody has looked yet: a 6pt dot.
     public let unseen: Bool
 
-    public init(id: UUID, title: String, address: String, letter: String, tint: NWBrowserTabTint, source: NWBrowserTabSource = .user,
+    public init(id: UUID, title: String, address: String, letter: String, tint: SHBrowserTabTint, source: SHBrowserTabSource = .user,
                 agentActive: Bool = false, unseen: Bool = false) {
         self.id = id
         self.title = title
@@ -154,7 +154,7 @@ public struct NWBrowserTabItem: Identifiable, Equatable, Sendable {
 
 // MARK: The strip
 
-public struct NWBrowserTabStrip: View {
+public struct SHBrowserTabStrip: View {
     public struct Actions {
         public var select: (UUID) -> Void
         public var close: (UUID) -> Void
@@ -170,14 +170,14 @@ public struct NWBrowserTabStrip: View {
         }
     }
 
-    let items: [NWBrowserTabItem]
+    let items: [SHBrowserTabItem]
     let selection: UUID?
     let canAdd: Bool
     let listOpen: Bool
     let newShortcut: String?
     let actions: Actions
 
-    public init(items: [NWBrowserTabItem], selection: UUID?, canAdd: Bool, listOpen: Bool, newShortcut: String? = nil, actions: Actions) {
+    public init(items: [SHBrowserTabItem], selection: UUID?, canAdd: Bool, listOpen: Bool, newShortcut: String? = nil, actions: Actions) {
         self.items = items
         self.selection = selection
         self.canAdd = canAdd
@@ -187,34 +187,34 @@ public struct NWBrowserTabStrip: View {
     }
 
     public var body: some View {
-        HStack(spacing: NW.Space.xxs) {
-            HStack(spacing: NW.Space.xxs) {
+        HStack(spacing: SH.Space.xxs) {
+            HStack(spacing: SH.Space.xxs) {
                 ForEach(items) { item in
-                    Tab(item: item, selected: item.id == selection, showClose: items.count <= NWBrowserTabsMetrics.roomyTabs,
+                    Tab(item: item, selected: item.id == selection, showClose: items.count <= SHBrowserTabsMetrics.roomyTabs,
                         select: { actions.select(item.id) }, close: { actions.close(item.id) })
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Pages in this thread")
-            Button(action: actions.new) { Image(systemName: "plus").font(.system(size: NWBrowserTabsMetrics.stripGlyph)) }
-                .buttonStyle(.nwIcon(size: NW.Height.controlS))
+            Button(action: actions.new) { Image(systemName: "plus").font(.system(size: SHBrowserTabsMetrics.stripGlyph)) }
+                .buttonStyle(.shIcon(size: SH.Height.controlS))
                 .disabled(!canAdd)
-                .nwHelp(canAdd ? "New tab" : "This thread has the most tabs it keeps", shortcut: canAdd ? newShortcut : nil)
+                .shHelp(canAdd ? "New tab" : "This thread has the most tabs it keeps", shortcut: canAdd ? newShortcut : nil)
                 .accessibilityLabel("New tab")
-            Button(action: actions.toggleList) { Image(systemName: "chevron.down").font(.system(size: NWBrowserTabsMetrics.stripGlyph)) }
-                .buttonStyle(.nwIcon(size: NW.Height.controlS))
-                .nwHelp("All tabs")
+            Button(action: actions.toggleList) { Image(systemName: "chevron.down").font(.system(size: SHBrowserTabsMetrics.stripGlyph)) }
+                .buttonStyle(.shIcon(size: SH.Height.controlS))
+                .shHelp("All tabs")
                 .accessibilityLabel("All tabs")
                 .accessibilityValue(listOpen ? "open" : "closed")
         }
-        .padding(.horizontal, NW.Space.m)
-        .frame(height: NWBrowserTabsMetrics.stripHeight)
-        .overlay(alignment: .bottom) { NWHairline() }
+        .padding(.horizontal, SH.Space.m)
+        .frame(height: SHBrowserTabsMetrics.stripHeight)
+        .overlay(alignment: .bottom) { SHHairline() }
     }
 
     private struct Tab: View {
-        let item: NWBrowserTabItem
+        let item: SHBrowserTabItem
         let selected: Bool
         let showClose: Bool
         let select: () -> Void
@@ -222,76 +222,76 @@ public struct NWBrowserTabStrip: View {
         @State private var hovering = false
 
         var body: some View {
-            let nw = Color.nw
+            let sh = Color.sh
             HStack(spacing: 0) {
                 Button(action: select) {
-                    HStack(spacing: NW.Space.s) {
+                    HStack(spacing: SH.Space.s) {
                         if item.agentActive {
-                            ProgressView().progressViewStyle(.nwSpinner(size: NWBrowserTabsMetrics.favicon)).accessibilityHidden(true)
-                                .frame(width: NWBrowserTabsMetrics.favicon, height: NWBrowserTabsMetrics.favicon)
+                            ProgressView().progressViewStyle(.shSpinner(size: SHBrowserTabsMetrics.favicon)).accessibilityHidden(true)
+                                .frame(width: SHBrowserTabsMetrics.favicon, height: SHBrowserTabsMetrics.favicon)
                         } else {
-                            NWBrowserFavicon(letter: item.letter, tint: item.tint)
+                            SHBrowserFavicon(letter: item.letter, tint: item.tint)
                         }
                         Text(item.title)
-                            .font(.nw(.ui, weight: selected ? .medium : .regular))
-                            .foregroundStyle(selected ? nw.textPrimary : nw.textSecondary)
+                            .font(.sh(.ui, weight: selected ? .medium : .regular))
+                            .foregroundStyle(selected ? sh.textPrimary : sh.textSecondary)
                             .lineLimit(1)
                             .truncationMode(.tail)
                         if item.unseen {
-                            Circle().fill(nw.running).frame(width: NWBrowserTabsMetrics.unseenDot, height: NWBrowserTabsMetrics.unseenDot)
+                            Circle().fill(sh.running).frame(width: SHBrowserTabsMetrics.unseenDot, height: SHBrowserTabsMetrics.unseenDot)
                                 .accessibilityHidden(true)
                         }
                     }
-                    .padding(.leading, NW.Space.m)
-                    .padding(.trailing, NW.Space.s)
+                    .padding(.leading, SH.Space.m)
+                    .padding(.trailing, SH.Space.s)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .frame(height: NWBrowserTabsMetrics.tabHeight)
+                    .frame(height: SHBrowserTabsMetrics.tabHeight)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .nwFocusRing()
-                .nwHelp(item.tooltip.isEmpty ? item.title : item.tooltip)
+                .shFocusRing()
+                .shHelp(item.tooltip.isEmpty ? item.title : item.tooltip)
                 .accessibilityLabel(item.spoken)
                 .accessibilityAddTraits(selected ? .isSelected : [])
                 if selected || showClose || hovering {
                     Button(action: close) {
-                        NWBrowserTabClose().font(.system(size: NWBrowserTabsMetrics.closeGlyph, weight: .medium))
-                            .foregroundStyle(hovering ? nw.textPrimary : nw.textTertiary)
-                            .frame(width: NWBrowserTabsMetrics.closeWidth, height: NWBrowserTabsMetrics.tabHeight)
+                        SHBrowserTabClose().font(.system(size: SHBrowserTabsMetrics.closeGlyph, weight: .medium))
+                            .foregroundStyle(hovering ? sh.textPrimary : sh.textTertiary)
+                            .frame(width: SHBrowserTabsMetrics.closeWidth, height: SHBrowserTabsMetrics.tabHeight)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .nwFocusRing()
-                    .nwHelp("Close tab")
+                    .shFocusRing()
+                    .shHelp("Close tab")
                     .accessibilityLabel("Close \(item.title)")
                 }
             }
-            .frame(minWidth: NWBrowserTabsMetrics.tabMinWidth, maxWidth: NWBrowserTabsMetrics.tabMaxWidth)
-            .background(selected ? nw.bgSelected : hovering ? nw.bgHover : .clear, in: RoundedRectangle(cornerRadius: NW.Radius.s))
+            .frame(minWidth: SHBrowserTabsMetrics.tabMinWidth, maxWidth: SHBrowserTabsMetrics.tabMaxWidth)
+            .background(selected ? sh.bgSelected : hovering ? sh.bgHover : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
             .layoutPriority(selected ? 1 : 0)
             .onHover { hovering = $0 }
-            .nwAnimation(.hover, value: hovering)
+            .shAnimation(.hover, value: hovering)
         }
     }
 }
 
 /// A page's tile: its first letter on a themed square.
-public struct NWBrowserFavicon: View {
+public struct SHBrowserFavicon: View {
     let letter: String
-    let tint: NWBrowserTabTint
+    let tint: SHBrowserTabTint
 
-    public init(letter: String, tint: NWBrowserTabTint) {
+    public init(letter: String, tint: SHBrowserTabTint) {
         self.letter = letter
         self.tint = tint
     }
 
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         Text(letter.prefix(1).uppercased())
-            .font(.nwSans(NWBrowserTabsMetrics.faviconLetter, .semibold))
-            .foregroundStyle(nw.bgBase)
-            .frame(width: NWBrowserTabsMetrics.favicon, height: NWBrowserTabsMetrics.favicon)
-            .background(tint.color(nw), in: RoundedRectangle(cornerRadius: NW.Radius.xs))
+            .font(.shSans(SHBrowserTabsMetrics.faviconLetter, .semibold))
+            .foregroundStyle(sh.bgBase)
+            .frame(width: SHBrowserTabsMetrics.favicon, height: SHBrowserTabsMetrics.favicon)
+            .background(tint.color(sh), in: RoundedRectangle(cornerRadius: SH.Radius.xs))
             .accessibilityHidden(true)
     }
 }
@@ -300,15 +300,15 @@ public struct NWBrowserFavicon: View {
 
 /// Every tab, the chosen one checked, with Close other tabs under a divider and the count and the
 /// sign-in line at its foot (BrowserTabsFull).
-public struct NWBrowserTabMenu: View {
-    let items: [NWBrowserTabItem]
+public struct SHBrowserTabMenu: View {
+    let items: [SHBrowserTabItem]
     let selection: UUID?
     let maxTabs: Int
     let select: (UUID) -> Void
     let closeOthers: () -> Void
     @State private var rowsHeight: CGFloat = 0
 
-    public init(items: [NWBrowserTabItem], selection: UUID?, maxTabs: Int, select: @escaping (UUID) -> Void,
+    public init(items: [SHBrowserTabItem], selection: UUID?, maxTabs: Int, select: @escaping (UUID) -> Void,
                 closeOthers: @escaping () -> Void) {
         self.items = items
         self.selection = selection
@@ -318,7 +318,7 @@ public struct NWBrowserTabMenu: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         VStack(alignment: .leading, spacing: 0) {
             // Rows keep their height; a menu taller than the pane scrolls instead of squeezing them.
             ScrollView {
@@ -330,62 +330,62 @@ public struct NWBrowserTabMenu: View {
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { rowsHeight = $0 }
             }
             .scrollBounceBehavior(.basedOnSize)
-            .frame(height: min(rowsHeight, NWBrowserTabsMetrics.menuListMaxHeight))
-            NWChangesMenuDivider()
+            .frame(height: min(rowsHeight, SHBrowserTabsMetrics.menuListMaxHeight))
+            SHChangesMenuDivider()
             Button(action: closeOthers) {
-                Text("Close other tabs").font(.nw(.ui, weight: .regular))
-                    .foregroundStyle(items.count > 1 ? nw.textPrimary : nw.textTertiary)
-                    .padding(.horizontal, NW.Space.m)
-                    .frame(maxWidth: .infinity, minHeight: NWBrowserTabsMetrics.menuRowMinHeight, alignment: .leading)
+                Text("Close other tabs").font(.sh(.ui, weight: .regular))
+                    .foregroundStyle(items.count > 1 ? sh.textPrimary : sh.textTertiary)
+                    .padding(.horizontal, SH.Space.m)
+                    .frame(maxWidth: .infinity, minHeight: SHBrowserTabsMetrics.menuRowMinHeight, alignment: .leading)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.nwRow())
+            .buttonStyle(.shRow())
             .disabled(items.count < 2)
             Text("\(items.count) of \(maxTabs) tabs · sign-ins shared across the space")
-                .font(.nw(.micro, weight: .regular))
-                .foregroundStyle(nw.textTertiary)
+                .font(.sh(.micro, weight: .regular))
+                .foregroundStyle(sh.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, NW.Space.m)
-                .padding(.top, NW.Space.s)
-                .padding(.bottom, NW.Space.xs)
+                .padding(.horizontal, SH.Space.m)
+                .padding(.top, SH.Space.s)
+                .padding(.bottom, SH.Space.xs)
         }
-        .padding(NW.Space.s)
-        .frame(width: NWBrowserTabsMetrics.menuWidth)
-        .nwPopover()
+        .padding(SH.Space.s)
+        .frame(width: SHBrowserTabsMetrics.menuWidth)
+        .shPopover()
         .accessibilityElement(children: .contain)
         .accessibilityLabel("All tabs")
     }
 
     private struct Row: View {
-        let item: NWBrowserTabItem
+        let item: SHBrowserTabItem
         let checked: Bool
         let action: () -> Void
 
         var body: some View {
-            let nw = Color.nw
+            let sh = Color.sh
             Button(action: action) {
-                HStack(spacing: NW.Space.m) {
-                    Image(systemName: "checkmark").font(.system(size: NWBrowserTabsMetrics.menuCheckGlyph, weight: .semibold))
-                        .foregroundStyle(nw.textPrimary).opacity(checked ? 1 : 0)
-                        .frame(width: NWBrowserTabsMetrics.menuCheckWidth)
+                HStack(spacing: SH.Space.m) {
+                    Image(systemName: "checkmark").font(.system(size: SHBrowserTabsMetrics.menuCheckGlyph, weight: .semibold))
+                        .foregroundStyle(sh.textPrimary).opacity(checked ? 1 : 0)
+                        .frame(width: SHBrowserTabsMetrics.menuCheckWidth)
                         .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                        Text(item.title).font(.nw(.ui, weight: .regular)).foregroundStyle(nw.textPrimary).lineLimit(1)
+                    VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                        Text(item.title).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textPrimary).lineLimit(1)
                         if !item.address.isEmpty {
-                            Text(item.address).font(.nw(.micro, weight: .regular)).foregroundStyle(nw.textTertiary).lineLimit(1).truncationMode(.tail)
+                            Text(item.address).font(.sh(.micro, weight: .regular)).foregroundStyle(sh.textTertiary).lineLimit(1).truncationMode(.tail)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     if let tag = item.source.tag {
-                        Text(tag).font(.nw(.micro, weight: .regular)).foregroundStyle(nw.textTertiary)
+                        Text(tag).font(.sh(.micro, weight: .regular)).foregroundStyle(sh.textTertiary)
                     }
                 }
-                .padding(.horizontal, NW.Space.m)
-                .padding(.vertical, NW.Space.s)
-                .frame(minHeight: NWBrowserTabsMetrics.menuRowMinHeight)
+                .padding(.horizontal, SH.Space.m)
+                .padding(.vertical, SH.Space.s)
+                .frame(minHeight: SHBrowserTabsMetrics.menuRowMinHeight)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.nwRow(selected: false))
+            .buttonStyle(.shRow(selected: false))
             .accessibilityLabel([item.title, item.address.isEmpty ? nil : item.address, item.source.tag].compactMap { $0 }.joined(separator: ", "))
             .accessibilityAddTraits(checked ? .isSelected : [])
         }
@@ -396,7 +396,7 @@ public struct NWBrowserTabMenu: View {
 
 /// A line under the strip on `bgSunken` (BrowserTabsOpened, -Popup, -Full): a 13pt glyph, the
 /// words in `caption`, an optional action, and a dismiss button. The app supplies the words.
-public struct NWBrowserTabsNote: View {
+public struct SHBrowserTabsNote: View {
     public struct Action {
         public let title: String
         public let run: () -> Void
@@ -416,7 +416,7 @@ public struct NWBrowserTabsNote: View {
     public static let capGlyph = "exclamationmark.triangle"
     public static let globeGlyph = "globe"
 
-    public init(message: String, glyph: String = NWBrowserTabsNote.globeGlyph, action: Action? = nil, dismiss: @escaping () -> Void) {
+    public init(message: String, glyph: String = SHBrowserTabsNote.globeGlyph, action: Action? = nil, dismiss: @escaping () -> Void) {
         self.message = message
         self.glyph = glyph
         self.action = action
@@ -424,27 +424,27 @@ public struct NWBrowserTabsNote: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        HStack(spacing: NW.Space.m) {
-            Image(systemName: glyph).font(.system(size: NWBrowserTabsMetrics.noteGlyph)).foregroundStyle(nw.textSecondary)
+        let sh = Color.sh
+        HStack(spacing: SH.Space.m) {
+            Image(systemName: glyph).font(.system(size: SHBrowserTabsMetrics.noteGlyph)).foregroundStyle(sh.textSecondary)
                 .accessibilityHidden(true)
-            Text(message).font(.nw(.caption, weight: .regular)).foregroundStyle(nw.textSecondary)
+            Text(message).font(.sh(.caption, weight: .regular)).foregroundStyle(sh.textSecondary)
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let action {
-                Button(action.title, action: action.run).buttonStyle(.nw(.secondary, size: .s)).fixedSize()
+                Button(action.title, action: action.run).buttonStyle(.sh(.secondary, size: .s)).fixedSize()
             }
-            Button(action: dismiss) { NWBrowserTabClose().font(.system(size: NWBrowserTabsMetrics.closeGlyph, weight: .medium)) }
-                .buttonStyle(.nwIcon(size: NWBrowserTabsMetrics.noteDismiss, tint: nw.textTertiary))
-                .padding(.vertical, -NW.Space.xxs)
-                .nwHelp("Dismiss")
+            Button(action: dismiss) { SHBrowserTabClose().font(.system(size: SHBrowserTabsMetrics.closeGlyph, weight: .medium)) }
+                .buttonStyle(.shIcon(size: SHBrowserTabsMetrics.noteDismiss, tint: sh.textTertiary))
+                .padding(.vertical, -SH.Space.xxs)
+                .shHelp("Dismiss")
                 .accessibilityLabel("Dismiss")
         }
-        .padding(.horizontal, NW.Space.l)
-        .padding(.vertical, NW.Space.s)
+        .padding(.horizontal, SH.Space.l)
+        .padding(.vertical, SH.Space.s)
         .frame(maxWidth: .infinity)
-        .background(nw.bgSunken)
-        .overlay(alignment: .bottom) { NWHairline() }
+        .background(sh.bgSunken)
+        .overlay(alignment: .bottom) { SHHairline() }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(message)
     }
@@ -454,7 +454,7 @@ public struct NWBrowserTabsNote: View {
 
 /// "Agent is filling the checkout form" with Take over, a bar over the console (BrowserTabsAgent):
 /// `runningTint`, a hairline above, the words in `caption`, an 11pt `running` spinner.
-public struct NWAgentBar: View {
+public struct SHAgentBar: View {
     public static let glyph = "hand.raised"
 
     let note: String
@@ -466,25 +466,25 @@ public struct NWAgentBar: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        HStack(spacing: NW.Space.m) {
-            ProgressView().progressViewStyle(.nwSpinner(size: NWBrowserTabsMetrics.agentSpinner))
-                .frame(width: NWBrowserTabsMetrics.agentSpinner, height: NWBrowserTabsMetrics.agentSpinner)
+        let sh = Color.sh
+        HStack(spacing: SH.Space.m) {
+            ProgressView().progressViewStyle(.shSpinner(size: SHBrowserTabsMetrics.agentSpinner))
+                .frame(width: SHBrowserTabsMetrics.agentSpinner, height: SHBrowserTabsMetrics.agentSpinner)
                 .accessibilityHidden(true)
-            Text("Agent is \(note)").font(.nw(.caption, weight: .regular)).foregroundStyle(nw.textPrimary)
+            Text("Agent is \(note)").font(.sh(.caption, weight: .regular)).foregroundStyle(sh.textPrimary)
                 .lineLimit(1).truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Button(action: takeOver) {
                 Label("Take over", systemImage: Self.glyph)
             }
-            .buttonStyle(.nw(.secondary, size: .s))
+            .buttonStyle(.sh(.secondary, size: .s))
             .fixedSize()
         }
-        .padding(.leading, NW.Space.l)
-        .padding(.trailing, NW.Space.s)
-        .frame(height: NWBrowserTabsMetrics.agentBarHeight)
-        .background(nw.runningTint)
-        .overlay(alignment: .top) { NWHairline() }
+        .padding(.leading, SH.Space.l)
+        .padding(.trailing, SH.Space.s)
+        .frame(height: SHBrowserTabsMetrics.agentBarHeight)
+        .background(sh.runningTint)
+        .overlay(alignment: .top) { SHHairline() }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Agent is \(note)")
     }
@@ -492,7 +492,7 @@ public struct NWAgentBar: View {
 
 /// "Agent is in Checkout", over the page's lower trailing corner while the agent works in a tab
 /// that is not the one shown (BrowserTabsElsewhere). Pressing it shows that tab.
-public struct NWAgentElsewhere: View {
+public struct SHAgentElsewhere: View {
     let title: String
     let show: () -> Void
 
@@ -503,16 +503,16 @@ public struct NWAgentElsewhere: View {
 
     public var body: some View {
         Button(action: show) {
-            HStack(spacing: NW.Space.s) {
-                ProgressView().progressViewStyle(.nwSpinner(size: NWBrowserTabsMetrics.agentChipSpinner))
-                    .frame(width: NWBrowserTabsMetrics.agentChipSpinner, height: NWBrowserTabsMetrics.agentChipSpinner)
+            HStack(spacing: SH.Space.s) {
+                ProgressView().progressViewStyle(.shSpinner(size: SHBrowserTabsMetrics.agentChipSpinner))
+                    .frame(width: SHBrowserTabsMetrics.agentChipSpinner, height: SHBrowserTabsMetrics.agentChipSpinner)
                     .accessibilityHidden(true)
                 Text("Agent is in \(title)").lineLimit(1).truncationMode(.tail)
             }
         }
-        .buttonStyle(.nw(.secondary, size: .s))
+        .buttonStyle(.sh(.secondary, size: .s))
         .fixedSize()
-        .nwHelp("Show the tab the agent is using")
+        .shHelp("Show the tab the agent is using")
         .accessibilityLabel("Agent is in \(title). Show it")
     }
 }

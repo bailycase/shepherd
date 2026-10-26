@@ -63,15 +63,15 @@ In priority order:
    its own indicator (LiveText).
 5. **Nothing in the default view that isn't useful.** No key-hint rows, no status text that
    repeats what the thread and the sidebar row already say, no footers in menus, and nothing
-   under the composer but its controls: no working directory, no hints (NWSwift).
+   under the composer but its controls: no working directory, no hints (SHSwift).
 
 And the rules that follow from them:
 
 - **Flat surfaces separated by 1px lines.** Surfaces step from `bgBase` (chrome) to `bgWindow`
   (the thread) to `bgRaised` (cards, the composer, menus), with `bgSunken` for code and headers.
   Separation is a hairline, never a shadow.
-- **One shadow.** `.nwPopover()` (menus, the palette, popovers) carries the system's only
-  shadow. The sidebar and the side pane borrow it (`.nwFloatShadow(_:)`) only while they float
+- **One shadow.** `.shPopover()` (menus, the palette, popovers) carries the system's only
+  shadow. The sidebar and the side pane borrow it (`.shFloatShadow(_:)`) only while they float
   over the window, and the switch and slider knobs have a small knob shadow. No vibrancy, no
   translucency, no gradients except the fade above the composer.
 - **Honest affordances.** Never show a control that does nothing, a shortcut that isn't wired,
@@ -86,9 +86,9 @@ And the rules that follow from them:
 - **The sidebar is the primary navigation.** The command palette is a secondary jump
   surface and never the only way to reach something.
 - **One primary action per surface.** A destructive action is never the ⏎ default.
-- **Native controls, Night Watch styles.** A control is a Night Watch style on a native
+- **Native controls, Shepherd Design styles.** A control is a Shepherd Design style on a native
   `Button`, `Toggle`, `Picker`, or `TextField`, so accessibility and keyboard behavior come for
   free. Where SwiftUI has no custom style (segmented, popup, slider, stepper), it is a view that
   presents itself to accessibility as the native control. Context menus are native
-  `.contextMenu`. Every shared view is `NW`-prefixed, so it never collides with a system view
-  (NWSwift; see Building on ShepherdUI).
+  `.contextMenu`. Every shared view is `SH`-prefixed, so it never collides with a system view
+  (SHSwift; see Building on ShepherdUI).

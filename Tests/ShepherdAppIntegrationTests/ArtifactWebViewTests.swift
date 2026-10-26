@@ -20,10 +20,10 @@ struct ArtifactWebViewTests {
         Issue.record("timed out waiting for \(what)")
     }
 
-    private func load(_ html: String) async throws -> NWArtifactWebRenderer {
-        let renderer = NWArtifactWebRenderer()
+    private func load(_ html: String) async throws -> SHArtifactWebRenderer {
+        let renderer = SHArtifactWebRenderer()
         renderer.webView.frame = CGRect(x: 0, y: 0, width: 400, height: 300)
-        renderer.load(NWArtifactHTML.document(html))
+        renderer.load(SHArtifactHTML.document(html))
         try await until("the page to load") {
             guard (try? await renderer.webView.evaluateJavaScript("document.readyState")) as? String == "complete" else { return false }
             return (try? await renderer.webView.evaluateJavaScript("document.body ? document.body.innerText : ''")) as? String != ""
@@ -64,8 +64,8 @@ struct ArtifactWebViewTests {
     }
 
     @Test func theDocumentKeepsItsDoctypeAndTheMargin() {
-        #expect(NWArtifactHTML.document("<!doctype html><html><head><title>t</title></head><body>x</body></html>").hasPrefix("<!doctype html><html><head><style>"))
-        #expect(NWArtifactHTML.document("<h1>bare</h1>").contains("<body><h1>bare</h1></body>"))
-        #expect(NWArtifactHTML.document("<html><body>x</body></html>").contains("<html><head><style>"))
+        #expect(SHArtifactHTML.document("<!doctype html><html><head><title>t</title></head><body>x</body></html>").hasPrefix("<!doctype html><html><head><style>"))
+        #expect(SHArtifactHTML.document("<h1>bare</h1>").contains("<body><h1>bare</h1></body>"))
+        #expect(SHArtifactHTML.document("<html><body>x</body></html>").contains("<html><head><style>"))
     }
 }

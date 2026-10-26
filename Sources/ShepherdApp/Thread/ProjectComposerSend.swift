@@ -31,7 +31,7 @@ struct ProjectComposerSend {
     /// never by its text.
     var runtimeOperations: Set<UUID> = []
     /// The column's width: a Project's conversation is 680pt (ProjectLead boards), not an ordinary thread's 820.
-    var columnWidth: CGFloat = NWLeadMetrics.columnWidth
+    var columnWidth: CGFloat = SHLeadMetrics.columnWidth
     /// The conversation's main model. The same chip and picker as any thread; see `ProjectConversationModel`.
     var model: ProjectConversationModel? = nil
 
@@ -125,10 +125,10 @@ struct ProjectUserSegments: View, Equatable {
     let segments: [ProjectUserOrigins.Segment]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NWLeadMetrics.turnGap) {
+        VStack(alignment: .leading, spacing: SHLeadMetrics.turnGap) {
             ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
                 switch segment {
-                case .assignment(let text): Prose(text: text, maxWidth: NWLeadMetrics.columnWidth).equatable()
+                case .assignment(let text): Prose(text: text, maxWidth: SHLeadMetrics.columnWidth).equatable()
                 case .person(let turn): UserTurn(turn: turn).equatable()
                 }
             }
@@ -143,8 +143,8 @@ struct ProjectWorkerThreadStyle: Equatable {
     var assignmentOperations: Set<UUID> = []
     /// The pane's own thread column sits 16pt from the pane's left edge, and its composer card 16pt in and 32pt from the right
     /// (ProjectLead-ThreadRunning: prose x 1137...1584, card 1137...1568 in a pane 1121...1600).
-    var gutter: CGFloat = NWLeadMetrics.paneThreadGutter
-    var composerTrailing: CGFloat = NWLeadMetrics.paneComposerTrailing
+    var gutter: CGFloat = SHLeadMetrics.paneThreadGutter
+    var composerTrailing: CGFloat = SHLeadMetrics.paneComposerTrailing
     /// A resolved task takes no more messages: its thread draws no composer at all (the resolved footer card stands in), and the
     /// transcript reaches the bottom of the pane.
     var composerHidden = false
@@ -197,9 +197,9 @@ struct ProjectLiveLine: View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             if let text = ProjectRunStatus.text(startingThreads: cards?.startingThreads == true || justAssigned, worker: worker != nil,
                                                 startedAt: startedAt, now: context.date) {
-                NWLeadStatusLine(text)
+                SHLeadStatusLine(text)
             } else {
-                NWThinking.live()
+                SHThinking.live()
             }
         }
     }

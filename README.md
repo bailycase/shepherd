@@ -54,7 +54,7 @@ coherent over covering every use case.
   agents over an authenticated TCP listener, off by default, meant for a VPN or trusted network.
 - **Keyboard-first.** A command palette (⌘K) with transcript search across all your agents,
   plus rebindable shortcuts.
-- **Night Watch.** Shepherd's design system, in light and dark, set in Geist and Geist Mono, and
+- **Shepherd Design.** Shepherd's design system, in light and dark, set in Geist and Geist Mono, and
   also applied to terminals. Pi run by hand keeps its own theme.
 
 Nothing runs in the background without the app. Quit Shepherd and every agent stops. Relaunch it
@@ -166,7 +166,7 @@ Shepherd agent when you want those.
 - [ARCHITECTURE.md](ARCHITECTURE.md): modules, runtime ownership, data flow, remote, and
   persistence.
 - [DESIGN.md](DESIGN.md): the rules for UI changes. [docs/design/](docs/design/README.md) has the
-  spec of every surface built on Night Watch, Shepherd's design system.
+  spec of every surface built on Shepherd Design, Shepherd's design system.
 - [docs/native-thread.md](docs/native-thread.md): how an agent's `pi --mode rpc` process
   becomes its thread.
 - [docs/native-subagents.md](docs/native-subagents.md): the bundled subagent runtime.

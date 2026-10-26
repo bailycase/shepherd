@@ -2,7 +2,7 @@
 
 `App/iOS` is a remote-only iPhone and iPad client for Macs running Shepherd. It is being built
 for its first release: a foundation (this page) and six feature tracks, each with its own folder
-([CONTRACTS.md](CONTRACTS.md) is the map). It is built on Night Watch (ShepherdUI) and
+([CONTRACTS.md](CONTRACTS.md) is the map). It is built on Shepherd Design (ShepherdUI) and
 `@Observable` stores, like the Mac.
 
 The client connects to a Mac host over the same bearer-token TCP protocol another Mac uses (see
@@ -212,7 +212,7 @@ keep the version for real breaks.
   agent runs). It follows its tail as the Mac's thread does (`NativeScrollFollower`): only a
   finger dragging it up detaches, while replies, the composer or keyboard resizing, and rows
   re-wrapping beside a docked review keep the last turn above the composer. Detached while the
-  agent runs or new output arrived, "↓ Jump to latest" (`NWJumpToLatest`) sits above the
+  agent runs or new output arrived, "↓ Jump to latest" (`SHJumpToLatest`) sits above the
   composer.
 - **Composer (`ThreadComposer`, `Composer/`):** on iPhone a paperclip beside a capsule field,
   with the commands, model and thinking chips above it while it is in use; on iPad the Mac's
@@ -321,7 +321,7 @@ keep the version for real breaks.
   the thread's options (Terminal) open them full screen, and the screen opens a terminal as it
   appears when there is none and goes back with its last terminal. There is no empty panel and
   no Split: a terminal that fails to open with no panel up gives a haptic. Each terminal is
-  SwiftTerm's view on Night Watch's terminal palette, attached (`attach`) while it is on
+  SwiftTerm's view on Shepherd Design's terminal palette, attached (`attach`) while it is on
   screen, the app is active and the host connected, and detached a second after it leaves; the
   host replays its screen on every attach and sizes the PTY to its smallest viewer. A refused
   attach is retried with backoff (1 s doubling to 30 s) while the terminal stays on screen, and a
