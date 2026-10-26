@@ -8,14 +8,15 @@ import Testing
 @Suite("Side pane")
 struct SidePaneTests {
     @Test func theStripShowsOnlyTheTabsShepherdHas() {
-        #expect(SidePaneTab.allCases == [.changes, .browser, .artifacts, .subagents], "Files is not built, so it has no tab")
-        #expect(SidePaneTabs.items(news: [], changedFiles: nil).map(\.title) == ["Changes", "Browser"], "Artifacts and Subagents wait for a first file and a first run")
-        #expect(SidePaneTabs.items(news: [], changedFiles: nil, browser: false).map(\.title) == ["Changes"],
+        #expect(SidePaneTab.allCases == [.changes, .browser, .artifacts, .subagents, .files])
+        #expect(SidePaneTabs.items(news: [], changedFiles: nil).map(\.title) == ["Changes", "Browser", "Files"],
+                "Artifacts and Subagents wait for a first file and a first run; Files is always shown")
+        #expect(SidePaneTabs.items(news: [], changedFiles: nil, browser: false).map(\.title) == ["Changes", "Files"],
                 "a remote thread on a host with no tunnels (an older one) has no Browser, as before")
         #expect(SidePaneTabs.items(news: [], changedFiles: 2, artifacts: 3, subagents: (1, .running)).map(\.title)
-                == ["Changes", "Browser", "Artifacts", "Subagents"])
-        #expect(SidePaneTab.tabs(browser: true) == [.changes, .browser, .artifacts, .subagents])
-        #expect(SidePaneTab.tabs(browser: false) == [.changes, .artifacts, .subagents])
+                == ["Changes", "Browser", "Files", "Artifacts", "Subagents"])
+        #expect(SidePaneTab.tabs(browser: true) == [.changes, .browser, .files, .artifacts, .subagents])
+        #expect(SidePaneTab.tabs(browser: false) == [.changes, .files, .artifacts, .subagents])
     }
 
     @Test func artifactsIsThePageGlyphOnControlThreeAndCountsItsFiles() throws {
@@ -25,14 +26,15 @@ struct SidePaneTests {
     }
 
     @Test func theDigitsFollowTheBoardAndAHostWithoutTunnelsKeepsThem() {
-        #expect(SidePaneTab.allCases.map(\.digit) == [1, 2, 3, 4])
-        #expect(SidePaneTab.allCases.map(\.shortcutDisplay) == ["⌃1", "⌃2", "⌃3", "⌃4"])
-        #expect(SidePaneTab.artifacts.digit == 3, "PaneStates: Artifacts is ⌃3; Subagents moved to ⌃4")
+        #expect(SidePaneTab.allCases.map(\.digit) == [1, 2, 3, 4, 5])
+        #expect(SidePaneTab.allCases.map(\.shortcutDisplay) == ["⌃1", "⌃2", "⌃3", "⌃4", "⌃5"])
+        #expect(SidePaneTab.artifacts.digit == 3, "PaneStates: Artifacts is ⌃3; Subagents is ⌃4; Files is ⌃5")
+        #expect(SidePaneTab.files.digit == 5)
     }
 
     @Test func theBrowserIsGlobeOnControlTwoAndCarriesPisDot() throws {
-        let tab = try #require(SidePaneTabs.items(news: [.browser], changedFiles: 3).last)
-        #expect(tab.id == "browser" && tab.systemImage == "globe" && tab.shortcut == "⌃2")
+        let tab = try #require(SidePaneTabs.items(news: [.browser], changedFiles: 3).first { $0.id == "browser" })
+        #expect(tab.systemImage == "globe" && tab.shortcut == "⌃2")
         #expect(tab.news && tab.count == nil)
         #expect(SidePaneTab.button(open: false, inspecting: false, news: [.browser]).news == "Agent opened a page in Browser")
         #expect(SidePaneTab.button(open: false, inspecting: false, news: [.browser, .changes]).news == "Agent opened a review in Changes",

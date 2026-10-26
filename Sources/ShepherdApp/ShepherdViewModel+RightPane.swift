@@ -5,9 +5,9 @@ import ShepherdCore
 import ShepherdRemote
 import ShepherdUI
 
-/// A tab of the side pane beside a thread (docs/design/side-pane-changes.md › Side pane). Only the tabs Shepherd has
-/// are here; Files joins as a case when it is built, with its content in `SidePaneView` and its ⌃ digit following its place.
-/// Artifacts takes ⌃3 as PaneStates draws it, and Subagents (SubagentList) follows it.
+/// A tab of the side pane beside a thread (docs/design/side-pane-changes.md › Side pane, FileOpenSplit board for Files).
+/// Artifacts takes ⌃3 as PaneStates draws it, Subagents ⌃4, and Files ⌃5. The digit is fixed per tab (not derived
+/// from CaseIterable index) so adding a tab never shifts existing chords.
 enum SidePaneTab: String, CaseIterable, Hashable, Sendable {
     case changes
     /// A thread's Browser (PaneBrowser): a local thread's, or a remote one's whose host carries
@@ -17,6 +17,8 @@ enum SidePaneTab: String, CaseIterable, Hashable, Sendable {
     case artifacts
     /// Every subagent of the thread, this turn's and the earlier ones (SubagentList).
     case subagents
+    /// The space's file browser (FileOpenSplit board): read-only tree and viewer.
+    case files
 
     var title: String {
         switch self {
@@ -24,6 +26,7 @@ enum SidePaneTab: String, CaseIterable, Hashable, Sendable {
         case .browser: "Browser"
         case .artifacts: "Artifacts"
         case .subagents: "Subagents"
+        case .files: "Files"
         }
     }
 
@@ -33,19 +36,31 @@ enum SidePaneTab: String, CaseIterable, Hashable, Sendable {
         case .browser: "globe"
         case .artifacts: NWGlyph.artifact.symbolName
         case .subagents: NWGlyph.gitBranch.symbolName
+        case .files: NWGlyph.document.symbolName
         }
     }
 
-    /// The tabs a thread's pane shows: Changes, the Browser where the thread has one (a remote
-    /// thread's host that carries no tunnels has none), Artifacts once the thread has one, and Subagents once it has a run.
-    /// `SidePaneTabs.items` and `ShepherdViewModel.sidePaneTabs(for:)` drop the last two while they have nothing.
+    /// The tabs a thread's pane shows: Changes, Browser, Files (always, for local; the tab itself
+    /// shows unavailable for remote), Artifacts once the thread has one, and Subagents once it has a run.
+    /// `SidePaneTabs.items` and `ShepherdViewModel.sidePaneTabs(for:)` drop conditional ones while they have nothing.
     static func tabs(browser: Bool) -> [SidePaneTab] {
-        browser ? allCases : allCases.filter { $0 != .browser }
+        let base: [SidePaneTab] = browser ? [.changes, .browser, .files, .artifacts, .subagents]
+                                          : [.changes, .files, .artifacts, .subagents]
+        return base
     }
 
-    /// Its fixed chord: ⌃1 for the first tab, and so on (⌃1–4 are the pane's). A tab keeps its digit when
-    /// the Browser is out (a host with no tunnels), so ⌃3 is always Artifacts and ⌃4 Subagents.
-    var digit: Int { (Self.allCases.firstIndex(of: self) ?? 0) + 1 }
+    /// Fixed chord digits: ⌃1 Changes, ⌃2 Browser, ⌃3 Artifacts, ⌃4 Subagents, ⌃5 Files.
+    /// A tab keeps its digit regardless of which tabs are visible, so adding Files
+    /// never shifts Artifacts (⌃3) or Subagents (⌃4).
+    var digit: Int {
+        switch self {
+        case .changes: 1
+        case .browser: 2
+        case .artifacts: 3
+        case .subagents: 4
+        case .files: 5
+        }
+    }
     var shortcutDisplay: String { "⌃\(digit)" }
 
     /// What the header button's tip says when pi opened something here with the pane closed.
@@ -57,6 +72,8 @@ enum SidePaneTab: String, CaseIterable, Hashable, Sendable {
         case .artifacts: "Agent made an artifact"
         // Nothing marks this tab as news: the dot is pi opening something, and a subagent opens nothing in the pane.
         case .subagents: "Agent started a subagent"
+        // Files is user-driven; the agent never opens it.
+        case .files: "Files changed in the workspace"
         }
     }
 }
@@ -132,6 +149,7 @@ extension ShepherdViewModel {
         panes.clearNews(owner, shown)
         switch shown {
         case .changes: ensureReview(owner)
+        case .files: ensureFileTree(owner)
         case .browser, .artifacts, .subagents: break
         }
     }
@@ -214,6 +232,33 @@ extension ShepherdViewModel {
             }
         case .remote(let target):
             if remoteReviews[target] == nil { openRemoteReview(target, pullRequest: false) }
+        }
+    }
+
+    /// The Files tab's tree for `owner`, created lazily. Replaces the model if the
+    /// agent's cwd has changed (e.g. moved to a different worktree).
+    func ensureFileTree(_ owner: SidePaneOwner) {
+        guard case .local(let agentID) = owner else { return }
+        guard let agent = state.agents.first(where: { $0.id == agentID }) else { return }
+        let cwd = agentCwd(agent)
+        if let existing = fileTrees[agentID], existing.rootPath == cwd { return }
+        // New or changed root: replace model, prune stale tabs
+        fileTrees[agentID] = FileTreeModel(rootPath: cwd)
+    }
+
+    /// Reading from a view never creates stores or mutates observed state.
+    func fileTree(for agentID: AgentID) -> FileTreeModel? { fileTrees[agentID] }
+
+    /// Reconcile retained browsers on adoption, including moves while Files is open.
+    func pruneFileTrees() {
+        let agents = Dictionary(uniqueKeysWithValues: state.agents.map { ($0.id, $0) })
+        for (id, model) in fileTrees {
+            guard let agent = agents[id] else {
+                fileTrees.removeValue(forKey: id)
+                continue
+            }
+            let cwd = agentCwd(agent)
+            if model.rootPath != cwd { fileTrees[id] = FileTreeModel(rootPath: cwd) }
         }
     }
 

@@ -583,9 +583,9 @@ extension TerminalConfiguration {
         "shift+cmd+s", "shift+cmd+b", "shift+cmd+m", "cmd+period", "cmd+i",
         // ⇧⌘I Import Claude Design Project….
         "shift+cmd+i",
-        // ⌃1–4: the side pane's Changes, Browser, Artifacts and Subagents tabs.
+        // ⌃1–5: the side pane's Changes, Browser, Artifacts, Subagents and Files tabs.
         "ctrl+one", "ctrl+physical:one", "ctrl+two", "ctrl+physical:two", "ctrl+three", "ctrl+physical:three",
-        "ctrl+four", "ctrl+physical:four",
+        "ctrl+four", "ctrl+physical:four", "ctrl+five", "ctrl+physical:five",
         // ⌘L the Browser's address bar · ⇧⌘C select an element · ⌘T a new Browser tab.
         "cmd+l", "shift+cmd+c", "cmd+t",
         // ⌘1–9: the first nine Recents rows.

@@ -118,19 +118,19 @@ struct SubagentListTests {
         #expect(none.allSatisfy { $0.status == nil }, "no runs: no dot")
         // News is pi's: Changes and Browser take it as before, and never take a status.
         let news = SidePaneTabs.items(news: [.changes, .browser], changedFiles: 2, subagents: (3, .done))
-        #expect(news.map(\.news) == [true, true, false] && news.map(\.status) == [nil, nil, .done])
+        #expect(news.map(\.news) == [true, true, false, false] && news.map(\.status) == [nil, nil, nil, .done])
         #expect(SidePaneTabs.items(news: [.subagents], changedFiles: 2, subagents: (3, .done)).last?.news == true,
                 "the pane's news still marks any tab it is told to")
     }
 
     @Test func theTabSitsAfterTheBrowserWithItsGlyphChordAndCount() throws {
         let tabs = SidePaneTabs.items(news: [], changedFiles: 5, subagents: (5, .running))
-        #expect(tabs.map(\.title) == ["Changes", "Browser", "Subagents"])
+        #expect(tabs.map(\.title) == ["Changes", "Browser", "Files", "Subagents"])
         let tab = try #require(tabs.last)
         #expect(tab.systemImage == "arrow.triangle.branch" && tab.shortcut == "⌃4" && tab.count == 5)
-        #expect(SidePaneTabs.items(news: [], changedFiles: 5, subagents: nil).map(\.title) == ["Changes", "Browser"])
+        #expect(SidePaneTabs.items(news: [], changedFiles: 5, subagents: nil).map(\.title) == ["Changes", "Browser", "Files"])
         let noBrowser = SidePaneTabs.items(news: [], changedFiles: 5, browser: false, subagents: (1, .done))
-        #expect(noBrowser.map(\.title) == ["Changes", "Subagents"], "a host with no tunnels has no Browser")
+        #expect(noBrowser.map(\.title) == ["Changes", "Files", "Subagents"], "a host with no tunnels has no Browser")
         #expect(noBrowser.last?.shortcut == "⌃4", "and Subagents keeps ⌃4, after Artifacts (PaneStates: Artifacts is ⌃3)")
     }
 }

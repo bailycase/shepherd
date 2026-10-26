@@ -3,9 +3,10 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
-/// The side pane's tab strip over the current tab (PaneStates, Review, ArtifactList, SubagentList): Changes, with
-/// its count of changed files, a local thread's Browser, Artifacts, with its count of files, and Subagents, with its count of runs.
-/// Files is not built, so it has no tab and no placeholder; it joins `SidePaneTab` and the switch below when it is. The subagent inspector is not a tab: it takes the
+/// The side pane's tab strip over the current tab (PaneStates, Review, ArtifactList, SubagentList, FilesTab): Changes, with
+/// its count of changed files, a local thread's Browser, Files with the space's file browser,
+/// Artifacts with its count of files, and Subagents with its count of runs.
+/// The subagent inspector is not a tab: it takes the
 /// whole pane over while a run is inspected (`AgentLayoutView`), and the Subagents tab is the list
 /// that opens it.
 struct SidePaneView: View {
@@ -51,11 +52,33 @@ struct SidePaneView: View {
                 case .subagents:
                     SubagentListTab(store: store, inspect: inspect)
                         .nwTransition(.content)
+                case .files:
+                    filesContent
+                        .nwTransition(.content)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(Color.nw.bgWindow)
+    }
+
+    @ViewBuilder
+    private var filesContent: some View {
+        switch owner {
+        case .local(let agentID):
+            if let model = vm.fileTree(for: agentID) {
+                FilesTab(model: model)
+                    .id(model.rootPath)
+            } else {
+                Text("Loading files…")
+                    .font(.nw(.caption))
+                    .foregroundStyle(Color.nw.textTertiary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .task { vm.ensureFileTree(owner) }
+            }
+        case .remote:
+            FilesUnavailableView()
+        }
     }
 
     private var isRemote: Bool { owner.isRemote }
@@ -112,6 +135,7 @@ enum SidePaneTabs {
             let count: Int? = switch tab {
             case .changes: changedFiles
             case .browser: nil
+            case .files: nil
             case .artifacts: artifacts
             case .subagents: subagents?.count
             }
