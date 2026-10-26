@@ -231,6 +231,23 @@ final class RPCThreadState {
     /// by the message's pi timestamp so history projected later keeps "Thought for Ns".
     private var thinkingSpans: [Int: (start: Double, end: Double?)] = [:]
     private var thinkingByTimestamp: [Double: Double] = [:]
+    /// The model request in flight (ResponseTiming): what pi's provider hooks reported of it
+    /// (`recordResponseMark`) and what its stream showed. `requestSeq` is the hooks' number for it,
+    /// `requestKey` the live assistant message it became once pi started that. nil between requests.
+    private var request: NativeResponseTiming?
+    private var requestSeq: Int?
+    private var requestKey: Int?
+    private struct ResponseMarks {
+        var timing = NativeResponseTiming()
+        var timestamp: Double?
+    }
+    /// Bounded correlation records for the independently delivered hook and RPC channels.
+    private var responseMarks: [Int: ResponseMarks] = [:]
+    /// Finished requests' timing, by the assistant message's pi timestamp, so history projected
+    /// later keeps it. In memory only, and bounded (`timingLimit`): a thread reopened after a
+    /// restart has none, and says so by offering none.
+    private var timingByTimestamp: [Double: NativeResponseTiming] = [:]
+    static let timingLimit = 512
     private(set) var dialogs: [NativeThreadDialog] = [] {
         didSet {
             dialogsHash = dialogs.hashValue
@@ -614,6 +631,11 @@ final class RPCThreadState {
             endDiagnostic("agent.turn")
             diagnosticTimings.removeAll(keepingCapacity: true)
             running = false
+            request = nil
+            requestKey = nil
+            requestSeq = nil
+            // Socket marks can arrive after stdout settles or starts the next run. Keep the
+            // bounded correlation records until session reset (a new process owns a new state).
             retry = nil
             dropStreamingCalls()
             askingCalls.removeAll()
@@ -648,18 +670,22 @@ final class RPCThreadState {
             beginDiagnostic("model.response", operation: "model.response")
             sequence += 1
             currentAssistant = sequence
+            requestStarted(key: sequence, timestamp: message.timestamp)
             upsertAssistant(message, ended: false)
         case .messageUpdate(let delta):
             guard let key = currentAssistant, let index = live.firstIndex(where: { $0.kind == .assistant(key) }), let current = live[index].raw else {
                 // message_start was missed (spawned mid-turn); start accumulating now.
                 sequence += 1
                 currentAssistant = sequence
+                requestStarted(key: sequence)
                 var raw = RPCMessage(role: "assistant", content: [])
                 Self.apply(delta, to: &raw)
                 upsertAssistant(raw, ended: false)
+                observeStream(delta)
                 streamToolCall(delta, in: raw)
                 break
             }
+            observeStream(delta)
             // A call's argument fragments change nothing the reply shows, only the call's row.
             if delta.type == "toolcall_delta" {
                 streamToolCall(delta, in: current)
@@ -679,7 +705,10 @@ final class RPCThreadState {
             if currentAssistant == nil {
                 sequence += 1
                 currentAssistant = sequence
+                requestStarted(key: sequence, timestamp: message.timestamp)
+                upsertAssistant(message, ended: false)
             }
+            requestEnded(message)
             runFailed = message.stopReason == "error"
             runError = runFailed ? message.errorMessage : nil
             var ended = message
@@ -688,6 +717,7 @@ final class RPCThreadState {
                 if let time = message.timestamp { stoppedReplies.insert(time) }
             }
             upsertAssistant(ended, ended: true)
+            requestDone()
             lastTurnAssistant = live.last(where: { $0.value.role == "assistant" })?.value
             currentAssistant = nil
             // A reply pi stopped, or that failed, runs none of its calls: those still being
@@ -1381,7 +1411,10 @@ final class RPCThreadState {
                 if let id = message.toolCallId, message.role == "toolResult", self.stoppedCalls.contains(id) {
                     value.status = "aborted"
                 }
-                if message.role == "assistant", let time = message.timestamp { value.thinkingSeconds = self.thinkingByTimestamp[time] }
+                if message.role == "assistant", let time = message.timestamp {
+                    value.thinkingSeconds = self.thinkingByTimestamp[time]
+                    value.timing = self.timingByTimestamp[time]
+                }
                 if message.role == "user" {
                     let text = message.content.compactMap { block -> String? in
                         if case .text(let text) = block { return text }
@@ -1576,6 +1609,11 @@ final class RPCThreadState {
         streamingCalls.removeAll()
         thinkingSpans.removeAll()
         thinkingByTimestamp.removeAll()
+        timingByTimestamp.removeAll()
+        request = nil
+        requestKey = nil
+        requestSeq = nil
+        responseMarks.removeAll()
         stoppedCalls.removeAll()
         stoppedReplies.removeAll()
         widgets.removeAll()
@@ -1722,8 +1760,10 @@ final class RPCThreadState {
             value.thinkingSeconds = seconds
             if ended, let time = raw.timestamp { thinkingByTimestamp[time] = seconds }
         }
+        let existing = live.firstIndex(where: { $0.kind == .assistant(key) })
+        value.timing = existing.flatMap { live[$0].value.timing } ?? raw.timestamp.flatMap { timingByTimestamp[$0] } ?? (key == requestKey ? request : nil)
         let item = LiveItem(kind: .assistant(key), value: value, raw: raw, ended: ended)
-        if let index = live.firstIndex(where: { $0.kind == .assistant(key) }) {
+        if let index = existing {
             live[index] = item
         } else {
             live.append(item)
@@ -1731,7 +1771,8 @@ final class RPCThreadState {
         }
     }
 
-    private func upsertTool(id: String, name: String, args: JSONValue?, content: [RPCContentBlock], isError: Bool?, status: String, projectAction: NativeProjectAction? = nil) {
+    private func upsertTool(id: String, name: String, args: JSONValue?, content: [RPCContentBlock], isError: Bool?, status: String,
+                            projectAction: NativeProjectAction? = nil, argumentBytes: Int? = nil) {
         let index = live.firstIndex { $0.kind == .tool(id) }
         let previous = index.map { live[$0].value }
         var value = Self.project(
@@ -1741,6 +1782,8 @@ final class RPCThreadState {
         )
         if value.argumentsText == nil { value.argumentsText = previous?.argumentsText }
         value.status = status
+        // Only while the model writes the call: once it runs, its arguments are whole.
+        value.argumentBytes = status == "streaming" ? argumentBytes ?? previous?.argumentBytes : nil
         // One clock for the call: from when the host first saw it, which is when the model named
         // it, through its run into history.
         if toolStarts[id] == nil { toolStarts[id] = Date().timeIntervalSince1970 * 1000 }
@@ -1753,6 +1796,157 @@ final class RPCThreadState {
             live.append(LiveItem(kind: .tool(id), value: value, raw: nil, ended: false))
             trimLive()
         }
+    }
+
+    // MARK: - Response timing
+
+    /// Server queue: a moment of a model request as the agent's pi reported it (the status
+    /// extension's provider hooks). The extension socket and pi's stdout are two channels, so a
+    /// mark may land after the stream it describes has started; `seq` keeps it on its request.
+    /// `at` is pi's clock, which is this host's.
+    func recordResponseMark(_ mark: ResponseTimingMark, seq: Int, at: Double) {
+        guard at.isFinite, at > 0, seq > 0 else { return }
+        if responseMarks[seq] == nil, responseMarks.count >= Self.timingLimit,
+           let oldest = responseMarks.keys.min() { responseMarks[oldest] = nil }
+        var marks = responseMarks[seq] ?? ResponseMarks()
+        switch mark {
+        case .sent:
+            guard marks.timing.sentAt == nil else { return }
+            marks.timing.sentAt = at
+            if seq >= (requestSeq ?? 0) {
+                requestSeq = seq
+                // Only an unbound live message may provisionally take a send. The message
+                // correlation below corrects it even if stdout is a whole request ahead.
+                if var current = request, current.sentAt == nil, requestKey != nil {
+                    current.sentAt = at
+                    request = current
+                } else {
+                    request = marks.timing
+                    requestKey = nil
+                }
+            }
+        case .headers, .firstEvent:
+            Self.apply(mark, at: at, to: &marks.timing)
+            if seq == requestSeq, var current = request {
+                Self.apply(mark, at: at, to: &current)
+                request = current
+            }
+        case .message:
+            marks.timestamp = at
+        }
+        responseMarks[seq] = marks
+        if let time = marks.timestamp {
+            let index = live.firstIndex { $0.value.role == "assistant" && $0.raw?.timestamp == time }
+            let historyIndex = history.firstIndex { $0.role == "assistant" && $0.timestamp == time }
+            var timing = index.flatMap { live[$0].value.timing } ?? historyIndex.flatMap { history[$0].timing }
+                ?? timingByTimestamp[time] ?? NativeResponseTiming()
+            // An evicted/incomplete correlation record must not erase already measured marks.
+            timing.sentAt = marks.timing.sentAt ?? timing.sentAt
+            timing.headersAt = marks.timing.headersAt ?? timing.headersAt
+            if let first = marks.timing.firstEventAt { Self.apply(.firstEvent, at: first, to: &timing) }
+            if let index {
+                live[index].value.timing = timing
+                if !live[index].ended, seq == requestSeq, case .assistant(let key) = live[index].kind {
+                    request = timing
+                    requestKey = key
+                }
+            }
+            if let historyIndex, history[historyIndex].timing != timing {
+                // History may have replaced the provisional row before the socket was read.
+                // Its observer invalidates encoded row sizes; the version notifies clients.
+                history[historyIndex].timing = timing
+                historyVersion += 1
+            }
+            if timingByTimestamp[time] == nil, timingByTimestamp.count >= Self.timingLimit,
+               let oldest = timingByTimestamp.keys.min() { timingByTimestamp[oldest] = nil }
+            timingByTimestamp[time] = timing
+            if timing.endedAt != nil, seq == requestSeq { request = nil; requestKey = nil }
+        } else {
+            applyRequestToLive()
+        }
+        commit()
+    }
+
+    /// A headers or first-event mark: the first headers stand, and the earlier first event (pi's
+    /// stream, as this host read it, may have shown one first).
+    static func apply(_ mark: ResponseTimingMark, at: Double, to timing: inout NativeResponseTiming) {
+        switch mark {
+        case .sent, .message: break
+        case .headers: if timing.headersAt == nil { timing.headersAt = at }
+        case .firstEvent: timing.firstEventAt = min(timing.firstEventAt ?? at, at)
+        }
+    }
+
+    /// pi started an assistant message: the request in flight made it. One that started before
+    /// its send was reported (or with no hooks at all) is timed from here on without a send.
+    private func requestStarted(key: Int, timestamp: Double? = nil) {
+        if let timestamp, let linked = responseMarks.first(where: { $0.value.timestamp == timestamp }) {
+            // The socket may be ahead by several requests. Never consume a newer send for
+            // the older assistant whose stdout is only now being read.
+            if linked.key == requestSeq { requestKey = key; request = linked.value.timing }
+            return
+        }
+        if request == nil || requestKey != nil {
+            request = NativeResponseTiming()
+            requestSeq = nil
+        }
+        requestKey = key
+    }
+
+    /// The first event, thinking and visible text of the response, as pi's stream showed them.
+    /// Once each is set this is a few comparisons per delta: no clock is read.
+    private func observeStream(_ delta: RPCAssistantDelta) {
+        guard let key = currentAssistant, let index = live.firstIndex(where: { $0.kind == .assistant(key) }),
+              var timing = live[index].value.timing else { return }
+        let thinking = delta.type == "thinking_start" || delta.type == "thinking_delta"
+        let text = delta.type == "text_delta" && timing.firstTextAt == nil && (delta.delta ?? "").contains { !$0.isWhitespace }
+        let mixed = timing.mixedPhases != true && (delta.type == "toolcall_start" || (thinking && timing.firstTextAt != nil))
+        guard timing.firstEventAt == nil || (thinking && timing.firstThinkingAt == nil) || text || mixed else { return }
+        let now = Date().timeIntervalSince1970 * 1000
+        if timing.firstEventAt == nil { timing.firstEventAt = now }
+        if thinking, timing.firstThinkingAt == nil { timing.firstThinkingAt = now }
+        if text { timing.firstTextAt = now }
+        if mixed { timing.mixedPhases = true }
+        live[index].value.timing = timing
+        if requestKey == key { request = timing }
+    }
+
+    /// The response ended: its timing joins the message for good, with the usage and ids the
+    /// provider reported.
+    private func requestEnded(_ message: RPCMessage) {
+        guard let key = currentAssistant, let index = live.firstIndex(where: { $0.kind == .assistant(key) }),
+              var timing = live[index].value.timing else { return }
+        timing.endedAt = Date().timeIntervalSince1970 * 1000
+        timing.inputTokens = message.usage?.prompt
+        timing.outputTokens = message.usage?.output.flatMap { Int(reportedCount: $0) }.flatMap { $0 > 0 ? $0 : nil }
+        timing.provider = message.provider.flatMap { $0.isEmpty ? nil : String($0.prefix(64)) }
+        timing.model = message.model.flatMap { $0.isEmpty ? nil : String($0.prefix(128)) }
+        live[index].value.timing = timing
+        if requestKey == key { request = timing }
+        if let time = message.timestamp {
+            if timingByTimestamp.count >= Self.timingLimit, let oldest = timingByTimestamp.keys.min() { timingByTimestamp[oldest] = nil }
+            timingByTimestamp[time] = timing
+        }
+    }
+
+    /// After `upsertAssistant` used it for the ended message: nothing is in flight.
+    private func requestDone() {
+        if requestKey == currentAssistant {
+            request = nil
+            requestKey = nil
+        }
+    }
+
+    /// The live message the request made shows its timing as it changes.
+    private func applyRequestToLive() {
+        guard let key = requestKey, let index = live.firstIndex(where: { $0.kind == .assistant(key) }),
+              live[index].value.timing != request else { return }
+        live[index].value.timing = request
+    }
+
+    /// The request in flight, for the thread's live line; nil when none is, or the agent is idle.
+    var liveRequest: NativeResponseTiming? {
+        running && request?.endedAt == nil ? request : nil
     }
 
     // MARK: - Tool calls being written
@@ -1772,9 +1966,14 @@ final class RPCThreadState {
             upsertTool(id: id, name: name, args: nil, content: [], isError: nil, status: "streaming")
         case "toolcall_delta":
             guard let index = delta.contentIndex, message.content.indices.contains(index),
-                  case .toolCall(let id, let name, _) = message.content[index],
-                  streamingCalls[id]?.append(delta.delta ?? "") == true, let args = streamingCalls[id]?.arguments else { return }
-            upsertTool(id: id, name: name, args: args, content: [], isError: nil, status: "streaming")
+                  case .toolCall(let id, let name, _) = message.content[index], streamingCalls[id] != nil else { return }
+            let before = streamingCalls[id]?.shownBytes
+            let grew = streamingCalls[id]?.append(delta.delta ?? "") == true
+            let shown = streamingCalls[id]?.shownBytes
+            // The row changes when a field it names grew or its count reached the next step; most
+            // fragments do neither, and cost only their own length.
+            guard grew || shown != before else { return }
+            upsertTool(id: id, name: name, args: streamingCalls[id]?.arguments, content: [], isError: nil, status: "streaming", argumentBytes: shown)
         case "toolcall_end":
             guard case .toolCall(let id, let name, let arguments?)? = delta.toolCall, streamingCalls[id] != nil,
                   let args = StreamingToolArguments.named(in: arguments) else { return }
@@ -1998,6 +2197,7 @@ final class RPCThreadState {
         hasher.combine(subagentsHash)
         hasher.combine(turnChangesHash)
         hasher.combine(retry)
+        hasher.combine(liveRequest)
         hasher.combine(queueHash())
         #if DEBUG
         bytesHashedByLastCommit = bytesHashedSinceCommit
@@ -2066,7 +2266,7 @@ final class RPCThreadState {
             runtime: "rpc", stats: stats, commands: commands, subagents: snapshotSubagents, context: context,
             turnChanges: snapshotTurnChanges, retry: retry,
             serviceTier: serviceTier.rawValue, serviceTiers: serviceTiers.map(\.rawValue), goal: goal,
-            clips: clips.isEmpty ? nil : clips
+            clips: clips.isEmpty ? nil : clips, liveRequest: liveRequest
         )
         // The rest encodes without the queue, which adds `,"queue":` and its cached size.
         let queue = queueValue

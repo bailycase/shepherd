@@ -32,19 +32,29 @@ public struct NWActivityLine: View {
     let isExpanded: Bool
     let accessibilityText: String
     let action: (() -> Void)?
+    /// A call the model is still writing: "18 KB received" of its arguments, before its clock.
+    var received: String?
     /// At the accessibility text sizes (iOS) the label wraps rather than widening the thread.
     @Environment(\.dynamicTypeSize) private var typeSize
 
     /// `action` toggles the calls; nil for a line with nothing behind it.
     public init(kind: Kind, label: String, meta: String, status: Status = .done, isExpanded: Bool = false,
-                accessibilityLabel: String? = nil, action: (() -> Void)? = nil) {
+                accessibilityLabel: String? = nil, action: (() -> Void)? = nil, received: String? = nil) {
         self.kind = kind
         self.label = label
         self.meta = meta
         self.status = status
         self.isExpanded = isExpanded
-        self.accessibilityText = accessibilityLabel ?? [label, meta].filter { !$0.isEmpty }.joined(separator: ", ")
+        let text = accessibilityLabel ?? [label, meta].filter { !$0.isEmpty }.joined(separator: ", ")
+        self.accessibilityText = received.map { text + ", " + $0 } ?? text
         self.action = action
+        self.received = received
+    }
+
+    /// What "18 KB received" means, on hover.
+    static func receivedHelp(_ received: String) -> String {
+        let amount = received.replacingOccurrences(of: " received", with: "")
+        return "\(amount) of this call’s arguments have arrived from the model. Nothing is written to disk until the call runs."
     }
 
     /// When the call ends, the live line cross-fades into its finished line in place and its
@@ -157,8 +167,13 @@ public struct NWActivityLine: View {
                         .nwShimmer(active: true)
                 }
             }
-            if let since {
-                NWElapsedText(since: since, style: .long).font(.nwMono(11)).foregroundStyle(nw.textTertiary).fixedSize()
+            if received != nil || since != nil {
+                HStack(spacing: 0) {
+                    if let received { Text(received + (since == nil ? "" : " · ")) }
+                    if let since { NWElapsedText(since: since, style: .long) }
+                }
+                .font(.nwMono(11)).foregroundStyle(nw.textTertiary).fixedSize()
+                .help(received.map(Self.receivedHelp) ?? "")
             }
         }
         .frame(minHeight: NWThreadMetrics.liveHeight)

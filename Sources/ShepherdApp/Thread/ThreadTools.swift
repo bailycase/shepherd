@@ -134,9 +134,10 @@ struct ActivityLineView: View, Equatable {
 
     private var line: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // A call the model is still writing says how much of its arguments came (ResponseVisibility › A).
             NWActivityLine(kind: kind, label: burst.label, meta: burst.meta, status: status, isExpanded: expanded,
                            accessibilityLabel: burst.accessibilityLabel,
-                           action: burst.expandable ? toggle : nil)
+                           action: burst.expandable ? toggle : nil, received: burst.received)
             if expanded {
                 NWActivityCalls(burst.calls.flatMap { call -> [NWActivityCallRow] in
                     if var input = inputRows["\(call.id):input"] {

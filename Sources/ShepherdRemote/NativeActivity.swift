@@ -353,6 +353,9 @@ public struct NativeActivityCall: Equatable, Sendable, Identifiable {
     public var truncated: Bool
     /// Raw JSON arguments ("Show Call").
     public var arguments: String?
+    /// A call the model is still writing: the bytes of its arguments received so far, as the
+    /// host rounded them (`NativeThreadMessage.argumentBytes`).
+    public var argumentBytes: Int?
 
     public static let outputHeadLines = 12
     public static let tailLines = 3
@@ -428,6 +431,7 @@ extension NativeActivityCall {
         self.tail = tail
         self.truncated = message.truncated
         self.arguments = message.argumentsText
+        self.argumentBytes = message.status == "streaming" ? message.argumentBytes : nil
 
         switch name {
         case "read":
@@ -712,6 +716,12 @@ public struct NativeActivityBurst: Equatable, Sendable, Identifiable {
     public var startedAt: Double? { state == .running ? calls.first?.startedAt : nil }
     /// A running call's last output lines.
     public var tail: [String] { state == .running ? calls.first?.tail ?? [] : [] }
+    /// A call the model is still writing: "18 KB received" of its arguments. Nothing is on disk
+    /// until the call runs.
+    public var received: String? {
+        guard state == .running, let bytes = calls.first?.argumentBytes else { return nil }
+        return nativeReceivedText(bytes)
+    }
     public var expandable: Bool { state != .running }
     /// A drawing burst that only rewrote boards: it reads "Updated A and A · phone" and wears the
     /// edit glyph rather than the nib.

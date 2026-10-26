@@ -152,8 +152,9 @@ struct AgentTurn: View, Equatable {
     var recordedTurn: ChangesTurn? = nil
     var turnActions: TurnChangesActions? = nil
     /// The live turn is between tools (`NativeThreadStore.showsThinking`): it ends in the live
-    /// "Thinking…" (LiveText).
+    /// line (LiveText), which says what `wait` does ("Waiting for response" and its clock).
     var thinking = false
+    var wait = NativeLiveWait()
     /// The turn just arrived in a thread on screen: its first parts make their entrance too.
     /// Read only when the turn is created; not part of equality.
     var arriving = false
@@ -176,8 +177,8 @@ struct AgentTurn: View, Equatable {
     init(presentation: NativeTurnPresentation, live: Bool, subagents: TurnSubagents = TurnSubagents(),
          subagentActions: SubagentActions? = nil, startedAt: Double? = nil, retry: (() -> Void)? = nil, review: ((String) -> Void)? = nil,
          recordedTurn: ChangesTurn? = nil, turnActions: TurnChangesActions? = nil,
-         thinking: Bool = false, arriving: Bool = false, settled: Bool = true, footer: Bool = true,
-         cards: [ProjectActionResolver.Card?] = [], hover: MessageHover? = nil) {
+         thinking: Bool = false, wait: NativeLiveWait = NativeLiveWait(), arriving: Bool = false, settled: Bool = true, footer: Bool = true,
+         cards: [ProjectActionResolver.Card?] = [], hover: MessageHover? = nil, openThinking: Set<String> = []) {
         self.presentation = presentation
         self.live = live
         self.subagents = subagents
@@ -188,11 +189,13 @@ struct AgentTurn: View, Equatable {
         self.recordedTurn = recordedTurn
         self.turnActions = turnActions
         self.thinking = thinking
+        self.wait = wait
         self.arriving = arriving
         self.settled = settled
         self.footer = footer
         self.cards = cards
         _hover = State(initialValue: hover ?? MessageHover())
+        _openThinking = State(initialValue: openThinking)
     }
 
     /// A transcript with no store behind it (the subagent inspector): the presentation is
@@ -204,7 +207,7 @@ struct AgentTurn: View, Equatable {
 
     static func == (lhs: AgentTurn, rhs: AgentTurn) -> Bool {
         lhs.presentation == rhs.presentation && lhs.live == rhs.live && lhs.subagents == rhs.subagents
-            && lhs.startedAt == rhs.startedAt && lhs.thinking == rhs.thinking && lhs.recordedTurn == rhs.recordedTurn
+            && lhs.startedAt == rhs.startedAt && lhs.thinking == rhs.thinking && lhs.wait == rhs.wait && lhs.recordedTurn == rhs.recordedTurn
             && lhs.footer == rhs.footer && lhs.cards == rhs.cards
             && (lhs.turnActions == nil) == (rhs.turnActions == nil)
             && (lhs.retry == nil) == (rhs.retry == nil) && (lhs.review == nil) == (rhs.review == nil)
@@ -250,9 +253,9 @@ struct AgentTurn: View, Equatable {
         .onAppear { shown.appeared = true }
     }
 
-    /// "Thinking…", or in a Project thread its typed status line (ProjectRunStatus).
+    /// "Waiting for response" and its clock, or in a Project thread its typed status line (ProjectRunStatus).
     @ViewBuilder private var liveLine: some View {
-        if projectCards != nil || workerStyle != nil { ProjectLiveLine(startedAt: startedAt, justAssigned: ProjectRunStatus.justAssigned(presentation)) } else { NWThinking.live() }
+        if projectCards != nil || workerStyle != nil { ProjectLiveLine(startedAt: startedAt, justAssigned: ProjectRunStatus.justAssigned(presentation)) } else { LiveWaitLine(wait: wait) }
     }
 
     /// The call that carries this turn's latest explicit plan: the Steps card is drawn there and nowhere else.
@@ -272,8 +275,8 @@ struct AgentTurn: View, Equatable {
 
     @ViewBuilder private func itemView(_ item: NativeTurnPresentation.Item) -> some View {
         switch item {
-        case .thinking(let id, _, let blocks, let seconds, let live, _):
-            ThinkingRow(seconds: seconds, blocks: blocks, live: live, isExpanded: openThinking.contains(id)) {
+        case .thinking(let id, _, let blocks, let seconds, let live, let since):
+            ThinkingRow(seconds: seconds, blocks: blocks, live: live, since: since, isExpanded: openThinking.contains(id)) {
                 if openThinking.remove(id) == nil { openThinking.insert(id) }
             }
             .equatable()
@@ -359,7 +362,37 @@ struct AgentTurn: View, Equatable {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(copy, forType: .string)
             },
-            onRetry: retry)
+            onRetry: retry,
+            timing: presentation.timing.map(NWResponseTimingModel.init))
+    }
+}
+
+/// The thread's live line while nothing moves (ResponseVisibility › A): what the host saw of the
+/// request in flight, its clock from the send.
+struct LiveWaitLine: View {
+    let wait: NativeLiveWait
+
+    var body: some View {
+        NWLiveLine(wait.title, since: wait.since.map { Date(timeIntervalSince1970: $0 / 1000) }, help: wait.help)
+    }
+}
+
+extension NWResponseTimingModel {
+    /// The popover's words from the reply's measured timing (`NativeResponseTimingReport`).
+    init(_ report: NativeResponseTimingReport) {
+        self.init(
+            source: report.source, total: report.total, totalSeconds: report.totalSeconds, axisEnd: report.axisEnd,
+            segments: report.segments.map { segment in
+                let tone: Tone = switch segment.phase {
+                case .waiting: .waiting
+                case .thinking: .thinking
+                case .writing: .writing
+                case .starting, .responding: .other
+                }
+                return Segment(label: segment.phase.label, value: segment.text, seconds: segment.seconds, tone: tone)
+            },
+            marks: report.marks.map { Mark(label: $0.label, value: $0.value, measured: $0.measured) },
+            usage: report.usage, note: report.note)
     }
 }
 
@@ -419,9 +452,10 @@ private struct TurnFooter: View {
     let onLink: (() -> Void)?
     let onCopy: (() -> Void)?
     let onRetry: (() -> Void)?
+    let timing: NWResponseTimingModel?
 
     var body: some View {
-        NWTurnFooter(meta: meta, link: link, onLink: onLink, onCopy: onCopy, onRetry: onRetry, revealed: hover.hovering)
+        NWTurnFooter(meta: meta, link: link, onLink: onLink, onCopy: onCopy, onRetry: onRetry, timing: timing, revealed: hover.hovering)
     }
 }
 

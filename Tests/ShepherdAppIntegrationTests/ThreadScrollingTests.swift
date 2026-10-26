@@ -446,6 +446,72 @@ struct ThreadScrollingTests {
         #expect(!thread.showsJumpPill)
     }
 
+    @Test func aDetachedReaderStaysPutWhileALiveThinkingSummaryGrowsAndFinishes() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
+            await completingScenario { try await Self.growingAnOpenLiveSummary() }
+        }
+        expectScenarioCompleted(result)
+    }
+
+    private static func growingAnOpenLiveSummary() async throws {
+        AccessibilityNode.enable()
+        let thread = ThreadHarness(messages: 25, running: true, paragraphs: 12)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        var snapshot = thread.snapshot
+        snapshot.revision += 1
+        let now = Date.now.timeIntervalSince1970 * 1000
+        var reply = NativeThreadMessage(entryID: "live-summary", role: "assistant",
+            blocks: [NativeThreadBlock(kind: .thinking, text: "**Choosing a screen**")], status: "streaming", timestamp: now)
+        reply.timing = NativeResponseTiming(sentAt: now - 1_000, firstEventAt: now, firstThinkingAt: now)
+        snapshot.provisional = [reply]
+        await thread.publish(snapshot)
+        try thread.window.press("Thinking")
+        try await eventuallyOnMain("the live summary to open before reading history") {
+            thread.window.controls().first { $0.label == "Thinking" }?.value == "Expanded"
+        }
+        try await thread.detach()
+        // A short live tail can leave the newest user turn within the follower's sticky band.
+        thread.command(.previousTurn)
+        try await thread.settle()
+        #expect(thread.distanceFromBottom > NativeScrollFollower.threshold)
+        // Lazy-stack estimates can change the absolute content offset while preserving the
+        // visible row. Measure the reader's actual row, not the document's estimate.
+        func markers(_ view: NSView) -> [ThreadTailGuard.RowMarker] {
+            (view as? ThreadTailGuard.RowMarker).map { [$0] } ?? view.subviews.flatMap(markers)
+        }
+        let clip = thread.scrollView.contentView
+        let marker = try #require(markers(thread.window.host).first {
+            let y = $0.convert($0.bounds, to: clip).minY
+            return y >= clip.bounds.minY && y < clip.bounds.maxY
+        })
+        let rowID = marker.rowID
+        let before = marker.convert(marker.bounds, to: clip).minY - clip.bounds.minY
+        func readerY() throws -> CGFloat {
+            let current = try #require(markers(thread.window.host).first { $0.rowID == rowID })
+            return current.convert(current.bounds, to: clip).minY - clip.bounds.minY
+        }
+        for revision in 3...5 {
+            snapshot.revision = UInt64(revision)
+            reply.blocks[0].text += "\n\nCompared the thread and trailing pane."
+            snapshot.provisional = [reply]
+            await thread.publish(snapshot)
+            try await thread.settle()
+            #expect(abs(try readerY() - before) < 2, "streaming a summary must not move detached history")
+        }
+        snapshot.revision += 1
+        snapshot.running = false
+        reply.status = "stop"
+        reply.thinkingSeconds = 30
+        reply.blocks.append(NativeThreadBlock(kind: .text, text: "Put the composer on the trailing screen."))
+        snapshot.provisional = []
+        snapshot.messages.append(reply)
+        await thread.publish(snapshot)
+        try await thread.settle()
+        let after = try readerY()
+        #expect(abs(after - before) < 2, "completion moved row \(rowID) from \(before) to \(after); clip \(clip.bounds.minY)")
+    }
+
     /// ⌥⌘↑ jumps to an earlier turn and detaches: growth no longer pulls the reader down, and
     /// the pill offers the way back while pi runs.
     @Test func jumpingToAnEarlierTurnDetachesFromTheTail() async throws {

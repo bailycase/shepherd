@@ -92,17 +92,18 @@ struct ThreadComponentTests {
         #expect(first !== second, "an entry over the estimated byte budget is owned only by its live view")
     }
 
-    /// Only thinking with something to open is a disclosure with a chevron: live "Thinking…"
-    /// and a thought the model kept back are plain lines, whatever they carry.
+    /// Only thinking with something to open is a disclosure with a chevron: live "Thinking…" with
+    /// nothing shared yet and a thought the model kept back are plain lines; live thinking whose
+    /// summary arrived opens onto it (ResponseVisibility › B).
     @Test(arguments: [
         (live: true, blocks: [], kind: .live),
-        (live: true, blocks: [.paragraph("hmm")], kind: .live),
+        (live: true, blocks: [.paragraph("hmm")], kind: .liveDisclosure),
         (live: false, blocks: [], kind: .plain),
         (live: false, blocks: [.paragraph("**Inspecting SSH config**")], kind: .disclosure),
     ] as [(live: Bool, blocks: [NWProseBlock], kind: NWThinking.Kind)])
     func thinkingOpensOnlyOntoText(live: Bool, blocks: [NWProseBlock], kind: NWThinking.Kind) {
         #expect(NWThinking.Kind(live: live, blocks: blocks) == kind)
-        #expect(NWThinking.Kind(live: live, blocks: blocks).opens == (kind == .disclosure))
+        #expect(NWThinking.Kind(live: live, blocks: blocks).opens == (kind == .disclosure || kind == .liveDisclosure))
     }
 
     /// Plain-text thinking (no Markdown read) is a paragraph per blank-line run, with no empty

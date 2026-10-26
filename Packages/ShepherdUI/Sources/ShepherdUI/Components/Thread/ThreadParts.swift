@@ -42,6 +42,10 @@ public enum NWThreadMetrics {
     public static let codeHeaderHeight: CGFloat = touchable(28)
     /// The copy and retry buttons under a turn, and the code block's copy.
     public static let footerButton: CGFloat = 24
+    /// The footer buttons' glyphs (copy, retry, Response timing).
+    public static let footerGlyph: CGFloat = 12
+    /// A live line's clock, in mono (LiveText, ResponseVisibility › A).
+    public static let liveClock: CGFloat = 11
     public static let codeCopyButton: CGFloat = 22
     public static let bubbleMaxWidth: CGFloat = 600
     /// Agent prose measure.

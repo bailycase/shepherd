@@ -111,7 +111,7 @@ extension FixtureCatalog {
             // The model picker, from the host's catalog: each model's thinking levels under its name.
             FixtureScreen(name: "models", hosts: ThreadFixtures.levels(ThreadFixtures.hosts()), routes: [.thread(preview)],
                           prepare: { app in app.navigator.composerPresentation.state(for: preview).choosingModel = true }),
-        ]
+        ] + ResponseVisibilityFixtures.screens
     }
 }
 

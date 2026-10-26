@@ -216,6 +216,19 @@ export default function shepherdStatus(pi: ExtensionAPI) {
     }
   }
 
+  // Response timing (Shepherd's thread: "Waiting for response", and a reply's Response timing):
+  // when each model request left, when its headers came back, and its first stream event, by
+  // this process's clock. Only the moment is sent: never the payload, a header or a credential.
+  // Dropped while disconnected; the thread then says what it did not measure.
+  function sendTiming(seq: number, mark: "sent" | "headers" | "firstEvent" | "message", at = Date.now()) {
+    if (!connected || !socket) return;
+    try {
+      socket.write(JSON.stringify({ type: "responseTiming", agentID, seq, mark, at }) + "\n");
+    } catch {
+      // Swallow; timing is never worth a failed request.
+    }
+  }
+
   function send(next: Status) {
     if (next === status) return;
     status = next;
@@ -409,12 +422,49 @@ export default function shepherdStatus(pi: ExtensionAPI) {
     } catch {}
   });
 
+  // One listener for the first stream event of each request, removed as soon as it fires, so
+  // the rest of the stream runs with no handler of ours on it (pi awaits each in stream order).
+  let requestSeq = 0;
+  let stopWatchingStream: (() => void) | undefined;
+  pi.on("before_provider_request", (_event, ctx) => {
+    try {
+      // An idle prompt-cache refresh is no request the user is waiting on.
+      if (ctx?.isIdle?.()) return undefined;
+      const seq = ++requestSeq;
+      sendTiming(seq, "sent");
+      stopWatchingStream?.();
+      const stop = pi.on("provider_stream_event", () => {
+        stop();
+        if (stopWatchingStream === stop) stopWatchingStream = undefined;
+        sendTiming(seq, "firstEvent");
+      });
+      stopWatchingStream = stop;
+    } catch {
+      // Swallow; the request goes as it was.
+    }
+    return undefined;
+  });
+
+  // The socket and RPC stdout can be read in either order. Link the marks to pi's stable
+  // assistant timestamp so late marks cannot be mistaken for the next request or retry.
+  pi.on("message_start", (event) => {
+    if (event.message.role === "assistant" && requestSeq > 0 && Number.isFinite(event.message.timestamp)) {
+      sendTiming(requestSeq, "message", event.message.timestamp);
+    }
+  });
+
+  pi.on("after_provider_response", () => {
+    if (requestSeq > 0 && stopWatchingStream) sendTiming(requestSeq, "headers");
+  });
+
   pi.on("agent_start", () => {
     pendingWaits.clear();
     send("working");
   });
 
   pi.on("agent_settled", () => {
+    stopWatchingStream?.();
+    stopWatchingStream = undefined;
     pendingWaits.clear();
     send("done");
   });

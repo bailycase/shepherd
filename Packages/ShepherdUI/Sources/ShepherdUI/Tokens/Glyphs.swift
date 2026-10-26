@@ -32,6 +32,8 @@ public enum NWGlyph: CaseIterable, Sendable {
     case gitBranch
     /// A pinned space (the user's request, 2026-10-16; no board): the outline pin beside its name.
     case pin
+    /// Response visibility: the finished reply’s measured timing.
+    case responseTiming
 
     /// The SF Symbol that draws it, fill variant included.
     public var symbolName: String {
@@ -45,6 +47,7 @@ public enum NWGlyph: CaseIterable, Sendable {
         case .failedStep: "xmark.circle"
         case .gitBranch: "arrow.triangle.branch"
         case .pin: "pin"
+        case .responseTiming: "stopwatch"
         }
     }
 

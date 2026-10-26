@@ -950,7 +950,8 @@ The pure derivations live in ShepherdRemote:
 
 - **`NativeTurnPresentation`:** a reply's items, built once per turn change, in the order they
   happened: thinking (folded into one block at the start of each stretch of work between
-  prose; finished text parsed as Markdown once, memoised by the store, live thinking never),
+  prose; readable text parsed as Markdown once per change, memoised by the store, including a
+  provider-exposed live thinking summary),
   prose (Markdown parsed once), activity lines, the subagent record lines (the spawn
   calls they stand for leave the activity), notes, errors, steers (`.steer`: a message the user
   steered in, where pi read it), and question records (`.question`, `NativeQuestionRecordRow`:
@@ -985,7 +986,8 @@ components ([docs/design/thread.md](design/thread.md) specifies their look):
 - **`ThreadView`:** the scroll view, tail following, turn jumps (⌥⌘↑/↓), notices, and the empty
   thread.
 - **`ThreadTurns`:** the user bubble, the agent turn (its parts, then the changes card and the
-  footer with copy and retry, the latest turn only; see Retry), and, between tools, the live "Thinking…" (docs/design/thread.md › Thread ›
+  footer with Copy, Retry (the latest turn only; see Retry), and measured Response timing), and,
+  between tools, the observed live response phase (docs/design/thread.md › Thread ›
   Live text). A turn tracks the pointer over it
   (`MessageHover`): its time and footer show only while it is hovered.
 - **`ThreadTools`:** activity lines, their calls, and the sheet for a call's full output or raw

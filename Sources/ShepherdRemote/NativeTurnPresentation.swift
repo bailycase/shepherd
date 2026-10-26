@@ -31,8 +31,9 @@ public struct NativeTurnPresentation: Equatable, Sendable {
         /// only what the reader can read, normalized, "" when the model shared none: then the
         /// finished row is a plain "Thought for Ns" line, and it is left out when it was not
         /// timed either. `blocks` is finished text parsed as Markdown (reasoning summaries are
-        /// Markdown: "**Inspecting SSH config**"); live thinking is never parsed, since it shows
-        /// no text.
+        /// Markdown: "**Inspecting SSH config**"). Live thinking is parsed too once the provider
+        /// shared readable text (ResponseVisibility › B: the live disclosure), and `since` is when
+        /// the host saw it start (ms), for its clock; nil from older hosts.
         case thinking(id: String, text: String, blocks: [NativeMarkdownBlock], seconds: Double?, live: Bool, since: Double?)
         /// `openFence`: the text ends inside a fence still open (the block a reply is writing).
         case prose(id: String, text: String, blocks: [NativeMarkdownBlock], openFence: Bool)
@@ -84,8 +85,11 @@ public struct NativeTurnPresentation: Equatable, Sendable {
     /// When the turn's last message landed (ms).
     public var endedAt: Double?
     /// The live turn has nothing moving (LiveText): no call running, no thinking streaming, and
-    /// no reply being written. pi is between tools, so the thread ends in "Thinking…".
+    /// no reply being written. pi is between tools, so the thread ends in its live line
+    /// ("Waiting for response", `NativeLiveWait`).
     public var betweenTools: Bool
+    /// The finished turn's Response timing: its last model request, when the host measured it.
+    public var timing: NativeResponseTimingReport?
 
     /// The turn ended in a failed request: its error card carries Retry and Copy, so the turn
     /// has no footer (ThreadError).
@@ -95,13 +99,14 @@ public struct NativeTurnPresentation: Equatable, Sendable {
     }
 
     public init(items: [Item], changes: NativeTurnChanges?, toolCalls: Int, copyText: String, endedAt: Double?,
-                betweenTools: Bool = false) {
+                betweenTools: Bool = false, timing: NativeResponseTimingReport? = nil) {
         self.items = items
         self.changes = changes
         self.toolCalls = toolCalls
         self.copyText = copyText
         self.endedAt = endedAt
         self.betweenTools = betweenTools
+        self.timing = timing
     }
 }
 
@@ -179,7 +184,7 @@ public func nativeTurnPresentation(
             switch block.kind {
             case .thinking:
                 raw.append(.thinking(block.text, message.thinkingSeconds, message: message.entryID,
-                                     since: message.status == "streaming" ? message.timestamp : nil))
+                                     since: message.status == "streaming" ? message.timing?.firstThinkingAt : nil))
             case .unsupportedImage:
                 // An image the host names is drawn; one it does not offer stays the quiet note.
                 if let ref = block.image {
@@ -338,8 +343,10 @@ public func nativeTurnPresentation(
     placeFinish()
     flushStretch()
     if case .thinking(let text, let seconds, _, let since)? = liveThinking {
-        items.append(.thinking(id: nextID("thinking"), text: RPCContentBlock.normalizedThinking(text), blocks: [], seconds: seconds,
-                               live: true, since: since))
+        // Only what the provider shared, parsed as it grows; with none, the live line stays a line.
+        let shared = RPCContentBlock.normalizedThinking(text)
+        items.append(.thinking(id: nextID("thinking"), text: shared, blocks: nativeThinkingIsReadable(shared) ? thinking(shared) : [],
+                               seconds: seconds, live: true, since: since))
     }
     // An error the turn ends with shows in full: with Retry once the turn is over, as the
     // retry line while pi retries it. One the turn went on from was retried: it folds.
@@ -348,7 +355,7 @@ public func nativeTurnPresentation(
             items[items.count - 1] = .error(id: id, error: error, final: true, folded: false)
         } else if let retry = errors.retry {
             items[items.count - 1] = .retrying(id: id, line: NativeRetryLine(
-                title: error.title, glyph: error.kind == .timeout ? "hourglass" : "arrow.clockwise",
+                title: error.retryTitle, glyph: error.kind == .timeout ? "hourglass" : "arrow.clockwise",
                 attempt: retry.attempt, maxAttempts: retry.maxAttempts, retryAt: retry.retryAt))
         } else {
             items[items.count - 1] = .error(id: id, error: error, final: false, folded: false)
@@ -360,11 +367,24 @@ public func nativeTurnPresentation(
     case .error?, .retrying?: endsInError = true
     default: break
     }
+    // The request that wrote the reply: the turn's last answer pi finished, when the host timed it.
+    var timing: NativeResponseTimingReport?
+    if !live, !endsInError {
+        let replies = messages.filter { $0.role == "assistant" && $0.question == nil }
+        if let last = replies.last, last.status != "error", last.status != "aborted", let measured = last.timing {
+            timing = NativeResponseTimingReport(measured, hasText: last.blocks.contains { $0.kind == .text && nativeThinkingIsReadable($0.text) },
+                                                requests: replies.count)
+            if errors.host != nil, var report = timing {
+                report.note = report.note.replacingOccurrences(of: "this Mac", with: "the agent’s host")
+                timing = report
+            }
+        }
+    }
     return NativeTurnPresentation(items: items, changes: live ? nil : nativeTurnChanges(calls), toolCalls: toolCalls,
                                   // A question's record is stamped when it was answered, not when pi worked.
                                   copyText: copy.joined(separator: "\n\n"),
                                   endedAt: messages.filter { $0.question == nil }.compactMap(\.timestamp).max(),
-                                  betweenTools: betweenTools && !endsInError)
+                                  betweenTools: betweenTools && !endsInError, timing: timing)
 }
 
 /// What a turn's errors need beyond its messages: the machine the agent runs on (Details'

@@ -319,10 +319,13 @@ public func nativeTurns(_ messages: [NativeThreadMessage], aliases: [String: Str
     // pi's system entries (prompt-section updates) and blank messages have nothing to read; kept,
     // they render as stray notes and stretch the turn's duration to the next system update.
     // User messages always stay: they are the turn boundaries. So does finished thinking the
-    // host timed, though the model shared none of it: it reads "Thought for Ns".
+    // host timed, though the model shared none of it: it reads "Thought for Ns". And the thread's
+    // last message thinking now with nothing shared yet: it is the live "Thinking…"
+    // (ResponseVisibility › A), the model's own thinking event, not the wait before any.
     for message in messages where message.role == "user" || message.compaction != nil || message.question != nil || (message.role != "system" && (message.toolName != nil
         || message.role == "toolResult" || message.truncated || message.status == "error" || message.status == "aborted"
         || message.blocks.contains { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || $0.kind == .unsupportedImage }
+        || (message.status == "streaming" && message.blocks.last?.kind == .thinking && message.entryID == messages.last?.entryID)
         || (message.status != "streaming" && nativeThoughtIsTimed(message.thinkingSeconds) && message.blocks.contains { $0.kind == .thinking }))) {
         let isUser = message.role == "user"
         if isUser, message.origin == .steered, let last = turns.last, !last.isUser {

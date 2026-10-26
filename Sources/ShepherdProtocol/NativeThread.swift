@@ -583,6 +583,10 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
     public var serviceTiers: [String]?
     /// Absent from older hosts. The extension, not a turn's lifecycle status, owns completion.
     public var goal: NativeGoal?
+    /// The model request in flight while the agent runs: when this host saw it sent and its first
+    /// event (`NativeResponseTiming`), for the thread's "Waiting for response" clock. nil between
+    /// requests, while idle, and from older hosts.
+    public var liveRequest: NativeResponseTiming?
 
     public var isRPC: Bool { runtime == "rpc" }
 
@@ -594,7 +598,7 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
         commands: [NativeCommand]? = nil, subagents: [NativeSubagent]? = nil, queue: NativeQueue? = nil,
         context: NativeThreadContext? = nil, turnChanges: [ChangesTurn]? = nil, retry: NativeThreadRetry? = nil,
         startProblem: NativeStartProblem? = nil, serviceTier: String? = nil, serviceTiers: [String]? = nil, goal: NativeGoal? = nil,
-        clips: NativeThreadClips? = nil
+        clips: NativeThreadClips? = nil, liveRequest: NativeResponseTiming? = nil
     ) {
         self.piSessionID = piSessionID
         self.generation = generation
@@ -624,6 +628,7 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
         self.serviceTiers = serviceTiers
         self.goal = goal
         self.clips = clips
+        self.liveRequest = liveRequest
     }
 }
 
@@ -712,6 +717,13 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
     public var browserElements: [BrowserElement]?
     /// Safe typed receipt for a Project action card; absent on ordinary tools and older hosts.
     public var projectAction: NativeProjectAction?
+    /// Assistant messages: what this host measured of the request that made it (`NativeResponseTiming`).
+    /// Absent from older hosts, and for history the host never saw stream.
+    public var timing: NativeResponseTiming?
+    /// A tool call the model is still writing (status "streaming"): how many bytes of its
+    /// arguments have arrived so far, counted as they streamed and rounded down to the step the
+    /// thread shows. Absent from older hosts and once the call runs.
+    public var argumentBytes: Int?
 
     public init(
         entryID: String, role: String, blocks: [NativeThreadBlock], toolName: String? = nil, toolCallID: String? = nil,
@@ -719,7 +731,7 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
         startedAt: Double? = nil, thinkingSeconds: Double? = nil, origin: NativeMessageOrigin? = nil, operationID: UUID? = nil,
         compaction: NativeCompaction? = nil, question: NativeQuestionRecord? = nil, provider: String? = nil, model: String? = nil,
         designReferences: [DesignReferenceRecord]? = nil, browserElements: [BrowserElement]? = nil, customType: String? = nil,
-        projectAction: NativeProjectAction? = nil
+        projectAction: NativeProjectAction? = nil, timing: NativeResponseTiming? = nil, argumentBytes: Int? = nil
     ) {
         self.entryID = entryID
         self.role = role
@@ -743,12 +755,14 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
         self.designReferences = designReferences
         self.browserElements = browserElements
         self.projectAction = projectAction
+        self.timing = timing
+        self.argumentBytes = argumentBytes
     }
 
     private enum CodingKeys: String, CodingKey {
         case entryID, role, customType, blocks, toolName, toolCallID, argumentsText, status, isError, truncated
         case timestamp, startedAt, thinkingSeconds, origin, operationID, compaction, question, provider, model
-        case designReferences, browserElements, projectAction
+        case designReferences, browserElements, projectAction, timing, argumentBytes
     }
 
     public init(from decoder: Decoder) throws {
@@ -776,6 +790,53 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
         browserElements = try c.decodeIfPresent([BrowserElement].self, forKey: .browserElements)
         // Optional display metadata must never make an otherwise readable older transcript fail.
         projectAction = try? c.decodeIfPresent(NativeProjectAction.self, forKey: .projectAction)
+        timing = try? c.decodeIfPresent(NativeResponseTiming.self, forKey: .timing)
+        argumentBytes = try? c.decodeIfPresent(Int.self, forKey: .argumentBytes)
+    }
+}
+
+/// What a host measured of one model request, each moment in ms since the epoch on the host's
+/// clock. Only moments it observed are set: `sentAt`, `headersAt` and `firstEventAt` come from the
+/// agent's pi (the status extension's provider hooks), the rest from pi's RPC stream as the host
+/// read it. Usage is what the provider reported at the end, never estimated. Local only: no
+/// prompt, header, credential or tool argument is kept.
+public struct NativeResponseTiming: Codable, Hashable, Sendable {
+    /// The request left for the provider (pi's `before_provider_request`).
+    public var sentAt: Double?
+    /// The provider answered with its headers (`after_provider_response`).
+    public var headersAt: Double?
+    /// The first event of the response stream: the provider's first parsed event, or the first
+    /// thinking, text or tool call event pi passed on, whichever came first.
+    public var firstEventAt: Double?
+    /// The first thinking event of the response.
+    public var firstThinkingAt: Double?
+    /// Tool arguments or thinking after visible text made a simple thinking→writing split dishonest.
+    public var mixedPhases: Bool?
+    /// The first text the reader could see.
+    public var firstTextAt: Double?
+    /// The response ended (`message_end`).
+    public var endedAt: Double?
+    /// The usage the provider reported for the request, when it did.
+    public var inputTokens: Int?
+    public var outputTokens: Int?
+    /// pi's provider and model ids for the request ("anthropic", "claude-opus-4-5").
+    public var provider: String?
+    public var model: String?
+
+    public init(sentAt: Double? = nil, headersAt: Double? = nil, firstEventAt: Double? = nil, firstThinkingAt: Double? = nil,
+                firstTextAt: Double? = nil, endedAt: Double? = nil, inputTokens: Int? = nil, outputTokens: Int? = nil,
+                provider: String? = nil, model: String? = nil, mixedPhases: Bool? = nil) {
+        self.mixedPhases = mixedPhases
+        self.sentAt = sentAt
+        self.headersAt = headersAt
+        self.firstEventAt = firstEventAt
+        self.firstThinkingAt = firstThinkingAt
+        self.firstTextAt = firstTextAt
+        self.endedAt = endedAt
+        self.inputTokens = inputTokens
+        self.outputTokens = outputTokens
+        self.provider = provider
+        self.model = model
     }
 }
 

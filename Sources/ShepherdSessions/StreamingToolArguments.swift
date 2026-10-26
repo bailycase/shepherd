@@ -20,6 +20,20 @@ struct StreamingToolArguments {
 
     /// The kept fields so far.
     private(set) var values: [String: String] = [:]
+    /// Bytes of the arguments' JSON text received so far (UTF-8), counted as each fragment goes by:
+    /// the activity line's "18 KB received". Nothing else of the skipped text is held.
+    private(set) var receivedBytes = 0
+
+    /// `receivedBytes` as the thread shows it: nil under 1 KB, then rounded down to a step that
+    /// keeps the row's updates few (1 KB to 100 KB, 10 KB to 1 MB, 100 KB past it), so a big write
+    /// changes its row a few hundred times at most, never per fragment.
+    var shownBytes: Int? { Self.shown(receivedBytes) }
+
+    static func shown(_ bytes: Int) -> Int? {
+        guard bytes >= 1024 else { return nil }
+        let step = bytes < 100 * 1024 ? 1024 : bytes < 1024 * 1024 ? 10 * 1024 : 100 * 1024
+        return bytes / step * step
+    }
 
     private enum Phase { case beforeKey, afterKey, beforeValue, inValue }
     private enum Reading: Equatable {
@@ -46,6 +60,7 @@ struct StreamingToolArguments {
 
     /// Reads the next fragment. True when a kept field grew.
     mutating func append(_ fragment: String) -> Bool {
+        receivedBytes += fragment.utf8.count
         var changed = false
         for scalar in fragment.unicodeScalars {
             if let reading {

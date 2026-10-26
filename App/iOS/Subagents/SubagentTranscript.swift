@@ -210,8 +210,8 @@ private struct SubagentTurnItem: View {
 
     var body: some View {
         switch item {
-        case .thinking(_, _, let blocks, let seconds, let live, _):
-            ThinkingRow(seconds: seconds, blocks: blocks, live: live, isExpanded: openThinking) { openThinking.toggle() }
+        case .thinking(_, _, let blocks, let seconds, let live, let since):
+            ThinkingRow(seconds: seconds, blocks: blocks, live: live, since: since, isExpanded: openThinking) { openThinking.toggle() }
                 .equatable()
         case .prose(_, _, let blocks, let openFence):
             NWAgentProse(ProseView.proseBlocks(blocks), writingFence: live && openFence)
@@ -256,7 +256,8 @@ struct SubagentActivityLine: View {
         VStack(alignment: .leading, spacing: 0) {
             NWActivityLine(kind: kind, label: burst.label, meta: burst.meta, status: status, isExpanded: expanded,
                            accessibilityLabel: burst.accessibilityLabel,
-                           action: burst.expandable ? { withAnimation(NW.Motion.disclosure.animation(reduceMotion: reduceMotion)) { expanded.toggle() } } : nil)
+                           action: burst.expandable ? { withAnimation(NW.Motion.disclosure.animation(reduceMotion: reduceMotion)) { expanded.toggle() } } : nil,
+                           received: burst.received)
             if expanded {
                 NWActivityCalls(burst.calls.map { call in
                     NWActivityCallRow(id: call.id, label: call.label, detail: call.detail, isPath: call.isPath, stat: call.stat,

@@ -75,6 +75,7 @@ struct AgentTurnView<Proposals: View>: View, Equatable {
     /// The live turn is between tools (`NativeThreadStore.showsThinking`): it ends in the live
     /// "Thinking…" (LiveText).
     var thinking = false
+    var wait = NativeLiveWait()
     /// The "Edited N files" card, once the turn is over.
     var changes: NativeChangesCard?
     /// Its Undo or Redo is on its way to the host.
@@ -83,12 +84,13 @@ struct AgentTurnView<Proposals: View>: View, Equatable {
     var proposals: NativeMarkupProposals?
     var actions = AgentTurnActions()
     @ViewBuilder var proposalsView: () -> Proposals
-    @State private var openThinking: Set<String> = []
+    @Environment(MobileNavigator.self) private var navigator
+    private var expansion: ComposerPresentation { navigator.composerPresentation.state(for: thread) }
 
     static func == (lhs: AgentTurnView, rhs: AgentTurnView) -> Bool {
         lhs.thread == rhs.thread && lhs.presentation == rhs.presentation && lhs.live == rhs.live
             && lhs.subagents == rhs.subagents && lhs.startedAt == rhs.startedAt && lhs.thinking == rhs.thinking
-            && lhs.changes == rhs.changes && lhs.changesBusy == rhs.changesBusy && lhs.proposals == rhs.proposals
+            && lhs.wait == rhs.wait && lhs.changes == rhs.changes && lhs.changesBusy == rhs.changesBusy && lhs.proposals == rhs.proposals
             && (lhs.actions.undo == nil) == (rhs.actions.undo == nil)
             && (lhs.actions.retry == nil) == (rhs.actions.retry == nil)
             && (lhs.actions.review == nil) == (rhs.actions.review == nil)
@@ -102,7 +104,7 @@ struct AgentTurnView<Proposals: View>: View, Equatable {
                 itemView(item)
             }
             if proposals != nil, !live { proposalsView() }
-            if thinking { NWThinking.live() }
+            if thinking { LiveWaitLine(wait: wait) }
             if !live, !presentation.items.isEmpty {
                 if let changes { changesCard(changes) }
                 if !presentation.endsInError { footer }
@@ -114,9 +116,9 @@ struct AgentTurnView<Proposals: View>: View, Equatable {
 
     @ViewBuilder private func itemView(_ item: NativeTurnPresentation.Item) -> some View {
         switch item {
-        case .thinking(let id, _, let blocks, let seconds, let live, _):
-            ThinkingRow(seconds: seconds, blocks: blocks, live: live, isExpanded: openThinking.contains(id)) {
-                if openThinking.remove(id) == nil { openThinking.insert(id) }
+        case .thinking(let id, _, let blocks, let seconds, let live, let since):
+            ThinkingRow(seconds: seconds, blocks: blocks, live: live, since: since, isExpanded: expansion.openThinking.contains(id)) {
+                if expansion.openThinking.remove(id) == nil { expansion.openThinking.insert(id) }
             }
             .equatable()
         case .prose(_, _, let blocks, let openFence):
@@ -195,7 +197,8 @@ struct AgentTurnView<Proposals: View>: View, Equatable {
             link: runs == 0 || actions.subagents == nil ? nil : nativeCount(runs, "subagent"),
             onLink: actions.subagents,
             onCopy: copy.isEmpty ? nil : { UIPasteboard.general.string = copy },
-            onRetry: actions.retry)
+            onRetry: actions.retry,
+            timing: presentation.timing.map(NWResponseTimingModel.init))
     }
 }
 
@@ -263,16 +266,18 @@ struct ThinkingRow: View, Equatable {
     let seconds: Double?
     let blocks: [NativeMarkdownBlock]
     let live: Bool
+    var since: Double? = nil
     let isExpanded: Bool
     let toggle: () -> Void
 
     static func == (lhs: ThinkingRow, rhs: ThinkingRow) -> Bool {
-        lhs.seconds == rhs.seconds && lhs.live == rhs.live && lhs.isExpanded == rhs.isExpanded && lhs.blocks == rhs.blocks
+        lhs.seconds == rhs.seconds && lhs.live == rhs.live && lhs.since == rhs.since && lhs.isExpanded == rhs.isExpanded && lhs.blocks == rhs.blocks
     }
 
     var body: some View {
         live
-            ? NWThinking.live()
+            ? NWThinking.live(since: since.map { Date(timeIntervalSince1970: $0 / 1000) }, blocks: ProseView.proseBlocks(blocks),
+                              isExpanded: Binding(get: { isExpanded }, set: { if $0 != isExpanded { toggle() } }))
             : NWThinking(nativeThoughtText(seconds), blocks: ProseView.proseBlocks(blocks),
                          isExpanded: Binding(get: { isExpanded }, set: { if $0 != isExpanded { toggle() } }),
                          spokenTitle: nativeThoughtSpokenText(seconds))
@@ -316,7 +321,7 @@ struct ActivityLineView: View, Equatable {
         VStack(alignment: .leading, spacing: 0) {
             NWActivityLine(kind: kind, label: burst.label, meta: burst.meta, status: status, isExpanded: expanded,
                            accessibilityLabel: burst.accessibilityLabel,
-                           action: burst.expandable ? toggle : nil)
+                           action: burst.expandable ? toggle : nil, received: burst.received)
             if expanded {
                 NWActivityCalls(burst.calls.map(row), onSelect: select, onShowAll: showOutput) { row in
                     if let call = burst.calls.first(where: { $0.id == row.id }) { menu(call) }
@@ -434,5 +439,32 @@ struct ToolOutputSheet: View {
                 }
             }
         }
+    }
+}
+
+struct LiveWaitLine: View {
+    let wait: NativeLiveWait
+
+    var body: some View {
+        NWLiveLine(wait.title, since: wait.since.map { Date(timeIntervalSince1970: $0 / 1000) }, help: wait.help)
+    }
+}
+
+extension NWResponseTimingModel {
+    /// The popover's words from the reply's measured timing (`NativeResponseTimingReport`).
+    init(_ report: NativeResponseTimingReport) {
+        self.init(
+            source: report.source, total: report.total, totalSeconds: report.totalSeconds, axisEnd: report.axisEnd,
+            segments: report.segments.map { segment in
+                let tone: Tone = switch segment.phase {
+                case .waiting: .waiting
+                case .thinking: .thinking
+                case .writing: .writing
+                case .starting, .responding: .other
+                }
+                return Segment(label: segment.phase.label, value: segment.text, seconds: segment.seconds, tone: tone)
+            },
+            marks: report.marks.map { Mark(label: $0.label, value: $0.value, measured: $0.measured) },
+            usage: report.usage, note: report.note)
     }
 }

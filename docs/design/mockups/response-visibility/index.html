@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Response visibility · Shepherd design mock</title>
+<style>
+@font-face{font-family:Geist;src:url(Geist-Regular.otf) format("opentype");font-weight:400}
+@font-face{font-family:Geist;src:url(Geist-Italic.otf) format("opentype");font-weight:400;font-style:italic}
+@font-face{font-family:Geist;src:url(Geist-Medium.otf) format("opentype");font-weight:500}
+@font-face{font-family:Geist;src:url(Geist-SemiBold.otf) format("opentype");font-weight:600}
+@font-face{font-family:"Geist Mono";src:url(GeistMono-Regular.otf) format("opentype");font-weight:400}
+@font-face{font-family:"Geist Mono";src:url(GeistMono-Medium.otf) format("opentype");font-weight:500}
+
+/* Night Watch roles, verbatim from Packages/ShepherdUI/.../Tokens/NightWatch.swift */
+:root[data-theme=light]{
+  --bgBase:#f2f2f0;--bgWindow:#fbfbfa;--bgRaised:#ffffff;--bgSunken:#f5f5f3;--bgBubble:#efefec;
+  --bgHover:#0000000a;--bgSelected:#00000011;--lineSubtle:#e7e7e3;--lineStrong:#d6d6d1;
+  --textPrimary:#151618;--textSecondary:#5f636b;--textTertiary:#9a9ea5;--textOnLantern:#1a1206;
+  --lantern:#e39a26;--lanternText:#945b00;--lanternTint:#d98a1221;--running:#2f6fe0;--runningTint:#2f6fe01a;
+  --done:#1f9d5b;--failed:#d9443f;--failedTint:#d9443f17;
+  --synKeyword:#8a3fb5;--synFunction:#2a62c9;--cyan:#0f7c8a;--synType:#1a7f55;
+  --popoverShadow:rgba(20,20,20,.12);--pageBg:#e6e6e2;--pageText:#5f636b;
+}
+:root[data-theme=dark]{
+  --bgBase:#0a0b0c;--bgWindow:#0d0e10;--bgRaised:#15171a;--bgSunken:#111316;--bgBubble:#1a1d21;
+  --bgHover:#ffffff0b;--bgSelected:#ffffff14;--lineSubtle:#1f2226;--lineStrong:#2c3035;
+  --textPrimary:#e8e9ec;--textSecondary:#9aa0a9;--textTertiary:#5f656e;--textOnLantern:#17120a;
+  --lantern:#f2a93b;--lanternText:#f7c16e;--lanternTint:#f2a93b21;--running:#7aa7ff;--runningTint:#7aa7ff21;
+  --done:#46c37b;--failed:#f0625e;--failedTint:#f0625e1f;
+  --synKeyword:#d7a6ff;--synFunction:#8fc1ff;--cyan:#5fcfdb;--synType:#7ee0b5;
+  --popoverShadow:rgba(0,0,0,.55);--pageBg:#1b1c1f;--pageText:#9aa0a9;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0}
+body{background:var(--pageBg);color:var(--pageText);font:13.5px/1.5 Geist,-apple-system,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+:focus-visible{outline:2px solid var(--running);outline-offset:2px;border-radius:6px}
+.mono{font-family:"Geist Mono",ui-monospace,monospace}
+svg.i{width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+
+/* ── review chrome (outside the app frame) ───────────────────────── */
+.review{max-width:1280px;margin:0 auto;padding:20px 24px 14px;display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px}
+.review h1{font-size:15px;font-weight:600;margin:0;color:var(--textPrimary)}
+.review .mocktag{font:500 10.5px "Geist Mono";letter-spacing:.02em;color:var(--textTertiary);border:1px solid var(--lineStrong);border-radius:4px;padding:2px 6px}
+.review .spacer{flex:1}
+.seg{display:inline-flex;background:var(--bgSunken);border:1px solid var(--lineSubtle);border-radius:6px;padding:2px;gap:2px}
+.seg button{height:24px;padding:0 10px;border-radius:4px;font-size:12px;font-weight:500;color:var(--textSecondary);border:1px solid transparent}
+.seg button[aria-pressed=true]{background:var(--bgSelected);border-color:var(--lineStrong);color:var(--textPrimary);font-weight:600}
+.ctl{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--textTertiary)}
+.stage-wrap{max-width:1280px;margin:0 auto;padding:0 24px}
+.stage{width:1280px;height:800px;transform-origin:top left}
+.notes{max-width:1280px;margin:0 auto;padding:18px 24px 40px;display:grid;grid-template-columns:1fr 1fr;gap:8px 40px;font-size:12.5px;line-height:1.55}
+.notes h2{grid-column:1/-1;margin:0 0 2px;font-size:13.5px;font-weight:600;color:var(--textPrimary)}
+.notes ul{margin:0;padding-left:16px}
+.notes li{margin:0 0 4px}
+.notes code{font:11.5px "Geist Mono"}
+
+/* ── the window ─────────────────────────────────────────────────── */
+.window{width:1280px;height:800px;display:flex;border-radius:12px;overflow:hidden;border:1px solid var(--lineStrong);box-shadow:0 22px 60px var(--popoverShadow);background:var(--bgWindow);position:relative}
+.sidebar{width:232px;flex:none;background:var(--bgBase);border-right:1px solid var(--lineSubtle);display:flex;flex-direction:column}
+.sb-top{height:44px;display:flex;align-items:center;padding:0 10px 0 16px;gap:8px}
+.lights{display:flex;gap:8px}.lights i{width:12px;height:12px;border-radius:50%;display:block;background:var(--lineStrong)}
+.sb-top .spacer{flex:1}
+.iconbtn{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;color:var(--textSecondary)}
+.iconbtn:hover{background:var(--bgHover)}
+.sb-list{flex:1;overflow:hidden;padding:4px 8px}
+.row{height:28px;display:flex;align-items:center;gap:9px;padding:0 8px;border-radius:8px;font-size:13px;color:var(--textPrimary);white-space:nowrap}
+.row .slot{width:14px;display:grid;place-items:center;flex:none;color:var(--textSecondary)}
+.row .t{flex:1;overflow:hidden;text-overflow:ellipsis}
+.row.sel{background:var(--bgSelected);font-weight:600}
+.row .trail{font:10px "Geist Mono";color:var(--textTertiary)}
+.dot{width:6px;height:6px;border-radius:50%;display:block}
+.dot.running{background:var(--running)}.dot.done{background:var(--done)}.dot.lantern{background:var(--lantern);box-shadow:0 0 6px var(--lantern)}
+.dot.idle{border:1.2px solid var(--textTertiary);width:7px;height:7px}
+.keys{display:flex;gap:3px}.keys span{font:500 10.5px "Geist Mono";color:var(--textTertiary);border:1px solid var(--lineStrong);border-radius:4px;min-width:16px;height:16px;display:grid;place-items:center}
+.gh{display:flex;align-items:center;gap:6px;height:26px;margin-top:10px;padding:0 6px;font-size:11.5px;font-weight:500;color:var(--textSecondary)}
+.gh .n{font:10.5px "Geist Mono";color:var(--textTertiary)}
+.gh.you,.gh.you .n{color:var(--lanternText)}
+.gh svg{width:9px;height:9px;color:var(--textTertiary)}
+.reason{font:10px "Geist Mono";color:var(--lanternText)}
+.sb-foot{height:52px;border-top:1px solid var(--lineSubtle);display:flex;align-items:center;gap:10px;padding:0 10px 0 12px}
+.initial{width:24px;height:24px;border-radius:50%;background:var(--bgSelected);display:grid;place-items:center;font-size:11.5px;font-weight:600;color:var(--textPrimary)}
+.who b{display:block;font-size:12.5px;font-weight:500;color:var(--textPrimary);line-height:1.2}
+.who span{font:10.5px "Geist Mono";color:var(--textTertiary)}
+
+.main{flex:1;min-width:0;display:flex;flex-direction:column;position:relative;background:var(--bgWindow)}
+.toolbar{height:44px;flex:none;display:flex;align-items:center;gap:8px;padding:0 8px 0 14px;border-bottom:1px solid var(--lineSubtle)}
+.crumb-space{font-size:13px;color:var(--textSecondary)}.crumb-sep{color:var(--textTertiary);font-size:13px}
+.crumb-title{font-size:13px;font-weight:600;color:var(--textPrimary)}
+.toolbar .spacer{flex:1}
+.toolbar .tb{display:flex;gap:4px}
+
+.thread{flex:1;overflow-y:auto;scrollbar-width:none}
+.thread::-webkit-scrollbar{display:none}
+.col{max-width:820px;margin:0 auto;padding:28px 32px 190px;display:flex;flex-direction:column;gap:28px}
+.turn{display:flex;flex-direction:column;gap:14px;position:relative}
+.user{align-self:flex-end;max-width:600px;display:flex;flex-direction:column;align-items:flex-end;gap:5px}
+.bubble{background:var(--bgBubble);border:1px solid var(--lineStrong);border-radius:8px;padding:10px 14px;color:var(--textPrimary);font-size:13.5px;line-height:1.5}
+.utime{font:10.5px "Geist Mono";color:var(--textTertiary);height:15px;visibility:hidden}
+.prose{max-width:640px;color:var(--textPrimary);font-size:13.5px;line-height:1.6}
+.prose p{margin:0}.prose p+p,.prose p+ul,.prose ul+p{margin-top:12px}
+.prose ul{margin:0;padding-left:20px}.prose li+li{margin-top:4px}
+.prose code,.think-body code{font:12px "Geist Mono";background:var(--lineSubtle);border-radius:4px;padding:1px 4px}
+.acts{display:flex;flex-direction:column;gap:6px;margin-left:-4px}
+.act{height:26px;display:inline-flex;align-items:center;gap:8px;padding:0 8px 0 4px;border-radius:6px;align-self:flex-start;max-width:100%;white-space:nowrap}
+button.act:hover{background:var(--bgHover)}
+.act .g{width:13px;height:13px;color:var(--textTertiary)}
+.act .lbl{font-size:12.5px;color:var(--textSecondary)}
+.act .meta{font:11px "Geist Mono";color:var(--textTertiary);overflow:hidden;text-overflow:ellipsis}
+.act .chev{width:10px;height:10px;color:var(--textTertiary)}
+.act.live .g{color:var(--textSecondary)}
+.act.live .path{font:11px "Geist Mono"}
+.think{display:flex;flex-direction:column;gap:8px}
+.think-label{display:inline-flex;align-items:center;gap:6px;height:26px;align-self:flex-start;font-size:12px;font-style:italic;color:var(--textSecondary);border-radius:6px;padding-right:6px}
+.think-label .chev{width:10px;height:10px;color:var(--textSecondary);transition:transform 180ms cubic-bezier(.2,.8,.2,1)}
+.think-label[aria-expanded=true] .chev{transform:rotate(90deg)}
+.think-body{max-width:640px;border-left:2px solid var(--lineStrong);padding-left:12px;font-size:12.5px;font-style:italic;line-height:1.55;color:var(--textSecondary)}
+.think-body p{margin:0}.think-body p+p{margin-top:8px}.think-body strong{font-weight:600;font-style:normal;color:var(--textSecondary)}
+.think-src{margin-top:8px;font-size:11.5px;font-style:normal;color:var(--textTertiary)}
+.livephase{height:26px;display:flex;align-items:center;gap:8px;padding-left:16px}
+.livephase .w{font-size:12.5px}
+.livephase .w.it{font-style:italic}
+.clock{font:11px "Geist Mono";color:var(--textTertiary)}
+.footer{display:flex;align-items:center;gap:4px;height:24px;margin-left:-4px;position:relative}
+.fbtn{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;color:var(--textSecondary)}
+.fbtn svg{width:13px;height:13px}
+.fbtn:hover{background:var(--bgHover)}.fbtn[aria-expanded=true]{background:var(--bgSelected);color:var(--textPrimary)}
+.fmeta{font:10.5px "Geist Mono";color:var(--textTertiary);margin-left:4px}
+.hidden-at-rest{visibility:hidden}
+
+/* shimmer: live text only, 1.8s, never spins */
+.shimmer{background:linear-gradient(100deg,var(--textSecondary) 0 38%,var(--textPrimary) 50%,var(--textSecondary) 62% 100%);background-size:260% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:shimmer 1.8s linear infinite}
+@keyframes shimmer{from{background-position:100% 0}to{background-position:0 0}}
+@media (prefers-reduced-motion:reduce){.shimmer{animation:none;background:none;color:var(--textSecondary)}.think-label .chev{transition:none}}
+
+/* timing popover (.nwPopover: bgRaised, radius 12, lineStrong, the one shadow) */
+.pop{position:absolute;left:52px;bottom:32px;width:300px;background:var(--bgRaised);border:1px solid var(--lineStrong);border-radius:12px;box-shadow:0 12px 32px var(--popoverShadow);padding:12px 14px 12px;z-index:5;font-size:12px;color:var(--textSecondary)}
+.pop[hidden]{display:none}
+.pop-h{display:flex;align-items:baseline;justify-content:space-between}
+.pop-h b{font-size:12.5px;font-weight:600;color:var(--textPrimary)}
+.pop-h span{font:10.5px "Geist Mono";color:var(--textTertiary)}
+.total{display:flex;align-items:baseline;gap:6px;margin:6px 0 10px}
+.total b{font-size:22px;font-weight:600;letter-spacing:-.44px;color:var(--textPrimary)}
+.bar{display:flex;gap:1.5px;height:8px;border-radius:4px;overflow:hidden;background:var(--lineSubtle);position:relative}
+.bar i{display:block;height:100%}
+.sw-wait{background:var(--textTertiary)}.sw-think{background:var(--cyan)}.sw-text{background:var(--synFunction)}
+.axis{display:flex;justify-content:space-between;font:10px "Geist Mono";color:var(--textTertiary);margin-top:4px;position:relative}
+.mh{font:500 10.5px "Geist Mono";letter-spacing:.06em;text-transform:uppercase;color:var(--textTertiary);margin:12px 0 4px;padding-top:10px;border-top:1px solid var(--lineSubtle)}
+.kv{display:flex;align-items:center;gap:8px;height:22px}
+.kv .k{flex:1;color:var(--textSecondary)}
+.kv .v{font:11.5px "Geist Mono";color:var(--textPrimary)}
+.kv .sw{width:8px;height:8px;border-radius:2px;flex:none}
+.kv .sub{font:10.5px "Geist Mono";color:var(--textTertiary)}
+.pop-foot{margin-top:10px;font-size:11.5px;line-height:1.45;color:var(--textTertiary)}
+
+/* composer */
+.fade{position:absolute;left:0;right:0;bottom:118px;height:48px;background:linear-gradient(to bottom,transparent,var(--bgWindow));pointer-events:none}
+.composer-wrap{position:absolute;left:0;right:0;bottom:16px;padding:0 32px}
+.composer{max-width:756px;margin:0 auto;background:var(--bgRaised);border:1px solid var(--lineStrong);border-radius:8px}
+.field{padding:12px 14px 4px;min-height:56px;color:var(--textTertiary);font-size:13.5px}
+.crow{display:flex;align-items:center;gap:2px;padding:4px 6px 6px;height:38px}
+.chip{height:26px;display:inline-flex;align-items:center;gap:6px;padding:0 8px;border-radius:6px;font-size:12px;color:var(--textSecondary)}
+.chip:hover{background:var(--bgHover)}
+.chip .m{font:12px "Geist Mono"}.chip .d{color:var(--textTertiary)}
+.chip .br{font:11.5px "Geist Mono"}.chip .cnt{font:10.5px "Geist Mono";color:var(--lanternText)}
+.chip svg.c{width:9px;height:9px;color:var(--textTertiary)}
+.crow .spacer{flex:1}
+.ring{width:32px;height:32px;margin:-2px 0;border-radius:50%;display:grid;place-items:center}
+.ring:hover{background:var(--bgHover)}
+.action{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;margin-left:6px}
+.action.send{background:var(--lantern);color:var(--textOnLantern);opacity:.35}
+.action.stop{background:var(--failed)}
+.action.stop i{width:9px;height:9px;border-radius:2px;background:#fff;display:block}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-search" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3.5 3.5"/></symbol>
+  <symbol id="i-sidebar-l" viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="2"/><path d="M6 2.5v11M3.3 5h1M3.3 7h1"/></symbol>
+  <symbol id="i-sidebar-r" viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="2"/><path d="M10 2.5v11M11.8 5h1M11.8 7h1"/></symbol>
+  <symbol id="i-ellipsis" viewBox="0 0 16 16"><circle cx="3.5" cy="8" r=".6"/><circle cx="8" cy="8" r=".6"/><circle cx="12.5" cy="8" r=".6"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></symbol>
+  <symbol id="i-designs" viewBox="0 0 16 16"><path d="M8 2 4 14M8 2l4 12M6 9h4"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 16 16"><path d="M9 1.5 3.5 9H8l-1 5.5L12.5 7H8z"/></symbol>
+  <symbol id="i-chev-r" viewBox="0 0 10 10"><path d="m3.5 2 3 3-3 3"/></symbol>
+  <symbol id="i-chev-d" viewBox="0 0 10 10"><path d="m2 3.5 3 3 3-3"/></symbol>
+  <symbol id="i-magnify" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3.5 3.5"/></symbol>
+  <symbol id="i-pencil" viewBox="0 0 16 16"><path d="M11 2.5 13.5 5 6 12.5 3 13l.5-3z"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="2"/><path d="m4.5 6 2 2-2 2M8 10h3"/></symbol>
+  <symbol id="i-retry" viewBox="0 0 16 16"><path d="M13 8a5 5 0 1 1-1.5-3.6"/><path d="M12 1.8v3h-3"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 16 16"><rect x="5" y="5" width="8.5" height="8.5" rx="1.5"/><path d="M3 10.5V3.5A1 1 0 0 1 4 2.5h6.5"/></symbol>
+  <symbol id="i-timer" viewBox="0 0 16 16"><circle cx="8" cy="9" r="5"/><path d="M8 9V6.5M6.5 1.8h3"/></symbol>
+  <symbol id="i-clip" viewBox="0 0 16 16"><path d="m13 7.5-5 5a3 3 0 0 1-4.3-4.3l5.5-5.4a2 2 0 0 1 2.8 2.8L6.6 11a1 1 0 0 1-1.4-1.4l4.6-4.6"/></symbol>
+  <symbol id="i-worktree" viewBox="0 0 16 16"><rect x="5" y="5" width="8.5" height="8.5" rx="1.5"/><path d="M3 10.5V3.5A1 1 0 0 1 4 2.5h6.5"/></symbol>
+  <symbol id="i-up" viewBox="0 0 16 16"><path d="M8 13V3M4 7l4-4 4 4"/></symbol>
+</svg>
+
+<header class="review">
+  <h1>Response visibility</h1>
+  <span class="mocktag">Design mock · illustrative timings and summary</span>
+  <span class="spacer"></span>
+  <div class="ctl"><span>State</span>
+    <div class="seg" role="group" aria-label="State" id="stateSeg">
+      <button data-state="A" aria-pressed="true">A · Live phase</button>
+      <button data-state="B" aria-pressed="false">B · Thinking summary</button>
+      <button data-state="C" aria-pressed="false">C · Response timing</button>
+    </div>
+  </div>
+  <div class="ctl" id="phaseCtl"><span>Phase</span>
+    <div class="seg" role="group" aria-label="Live phase" id="phaseSeg">
+      <button data-phase="wait" aria-pressed="true">Waiting</button>
+      <button data-phase="think" aria-pressed="false">Thinking</button>
+      <button data-phase="generate" aria-pressed="false">Generating</button>
+      <button data-phase="retry" aria-pressed="false">Retrying</button>
+    </div>
+  </div>
+  <div class="ctl"><span>Theme</span>
+    <div class="seg" role="group" aria-label="Theme" id="themeSeg">
+      <button data-theme="dark" aria-pressed="true">Dark</button>
+      <button data-theme="light" aria-pressed="false">Light</button>
+    </div>
+  </div>
+</header>
+
+<div class="stage-wrap" id="stageWrap"><div class="stage" id="stage">
+<div class="window" role="img" aria-roledescription="mock window" aria-label="Shepherd window, mock">
+  <aside class="sidebar">
+    <div class="sb-top">
+      <div class="lights"><i></i><i></i><i></i></div><span class="spacer"></span>
+      <span class="iconbtn"><svg class="i"><use href="#i-search"/></svg></span>
+      <span class="iconbtn"><svg class="i"><use href="#i-sidebar-l"/></svg></span>
+    </div>
+    <div class="sb-list" id="sidebarList"></div>
+    <div class="sb-foot"><span class="initial">A</span><span class="who"><b>Alex</b><span>This Mac · demo-mac</span></span><span style="flex:1"></span><span class="iconbtn"><svg class="i" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M3.6 12.4l1.1-1.1M11.3 4.7l1.1-1.1"/></svg></span></div>
+  </aside>
+
+  <section class="main">
+    <div class="toolbar">
+      <span class="crumb-space">shepherd</span><span class="crumb-sep">/</span>
+      <span class="crumb-title">Optimize Shepherd for iPhone Duo</span>
+      <span class="spacer"></span>
+      <span class="tb"><span class="iconbtn"><svg class="i"><use href="#i-sidebar-r"/></svg></span><span class="iconbtn"><svg class="i"><use href="#i-ellipsis"/></svg></span></span>
+    </div>
+
+    <div class="thread" id="thread"><div class="col">
+
+      <!-- Turn 1 (finished, footer hidden at rest) -->
+      <div class="turn">
+        <div class="user"><div class="bubble">Make Shepherd work well on iPhone Duo: folded on one screen, and open across both.</div><div class="utime">2:38 PM</div></div>
+      </div>
+      <div class="turn">
+        <div class="think"><button class="think-label" aria-expanded="false"><svg class="i chev"><use href="#i-chev-r"/></svg>Thought for 12s</button></div>
+        <div class="acts"><button class="act"><svg class="i g"><use href="#i-magnify"/></svg><span class="lbl">Explored 9 files</span><span class="meta">read 7 · search 2 · 1.1s</span><svg class="i chev"><use href="#i-chev-r"/></svg></button></div>
+        <div class="prose"><p>Folded, the Duo is one 390pt screen, so the thread already fits. Open, the hinge cuts the window into two panes and the thread’s column straddles it.</p></div>
+        <div class="acts">
+          <button class="act"><svg class="i g"><use href="#i-pencil"/></svg><span class="lbl">Edited 3 files</span><span class="meta">+142 −38</span><svg class="i chev"><use href="#i-chev-r"/></svg></button>
+          <button class="act"><svg class="i g"><use href="#i-terminal"/></svg><span class="lbl">Ran tests</span><span class="meta">41 passed · 18.4s</span><svg class="i chev"><use href="#i-chev-r"/></svg></button>
+        </div>
+        <div class="prose"><p>Open, the thread now keeps to the left screen and the side pane takes the right one. Folded, nothing changes.</p></div>
+      </div>
+
+      <!-- Turn 2: the response states B and C inspect -->
+      <div class="turn">
+        <div class="user"><div class="bubble">Before you change the composer: should it live on the right screen when the Duo is open?</div><div class="utime">2:51 PM</div></div>
+      </div>
+      <div class="turn" id="turn2">
+        <div class="think" id="think2">
+          <button class="think-label" id="think2Btn" aria-expanded="false" aria-controls="think2Body"><svg class="i chev"><use href="#i-chev-r"/></svg>Thought for 30s</button>
+          <div class="think-body" id="think2Body" hidden>
+            <p><strong>Choosing a screen for the composer</strong></p>
+            <p>Compared keeping the composer under the thread with moving it to the trailing screen. Held open, the trailing screen sits under the right thumb, and the thread reads better without a card over its tail.</p>
+            <p>Checked that <code>DuoPaneLayout</code> already reports which pane leads, so no new layout is needed.</p>
+            <div class="think-src">Summary shared by the model. Its full reasoning isn’t shown.</div>
+          </div>
+        </div>
+        <div class="prose">
+          <p>Yes. Put the composer on the right screen, under the side pane, and keep the thread on the left.</p>
+          <ul>
+            <li>Held open, your right thumb is already on that screen, so the field is where you type.</li>
+            <li>The thread gets the whole left screen for reading, with no card over its tail.</li>
+            <li><code>DuoPaneLayout</code> already knows which screen is which, so this is one placement, not a new layout.</li>
+          </ul>
+          <p>Folded, the composer stays where it is today. Want me to make the change?</p>
+        </div>
+        <div class="footer" id="footer2">
+          <button class="fbtn" title="Copy the reply" aria-label="Copy response"><svg class="i"><use href="#i-copy"/></svg></button>
+          <button class="fbtn" title="Retry this turn" aria-label="Retry turn"><svg class="i"><use href="#i-retry"/></svg></button>
+          <button class="fbtn" id="timingBtn" title="Response timing" aria-label="Response timing" aria-expanded="false" aria-controls="timingPop"><svg class="i"><use href="#i-timer"/></svg></button>
+          <span class="fmeta">2:51 PM · 45s</span>
+          <div class="pop" id="timingPop" role="dialog" aria-label="Response timing" hidden>
+            <div class="pop-h"><b>Response timing</b><span>opus-5.5 · Anthropic</span></div>
+            <div class="total"><b>45.0s</b><span>request sent to response ended</span></div>
+            <div class="bar" aria-hidden="true"><i class="sw-wait" style="flex:1.4"></i><i class="sw-think" style="flex:30.4"></i><i class="sw-text" style="flex:13.2"></i></div>
+            <div class="axis" aria-hidden="true"><span>0s</span><span>45s</span></div>
+            <div class="mh">Phases</div>
+            <div class="kv"><span class="sw sw-wait"></span><span class="k">Waiting for response</span><span class="v">1.4s</span></div>
+            <div class="kv"><span class="sw sw-think"></span><span class="k">Thinking</span><span class="v">30.4s</span></div>
+            <div class="kv"><span class="sw sw-text"></span><span class="k">Writing the reply</span><span class="v">13.2s</span></div>
+            <div class="mh">Since the request was sent</div>
+            <div class="kv"><span class="k">Request sent</span><span class="v">0s</span></div>
+            <div class="kv"><span class="k">Headers received</span><span class="v">1.2s</span></div>
+            <div class="kv"><span class="k">First model event</span><span class="v">1.4s</span></div>
+            <div class="kv"><span class="k">First visible text</span><span class="v">31.8s</span></div>
+            <div class="kv"><span class="k">Response ended</span><span class="v">45.0s</span></div>
+            <div class="mh">Usage</div>
+            <div class="kv"><span class="k">Reported at the end</span><span class="sub">14.2k in · 2.9k out</span></div>
+            <div class="pop-foot">The phases follow one another, so they add up to the total. Times are what this Mac saw.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- State A only: the next turn, live -->
+      <div class="turn" id="turn3user" hidden>
+        <div class="user"><div class="bubble">Go ahead. Move it to the right screen and keep the thread on the left.</div><div class="utime">2:53 PM</div></div>
+      </div>
+      <div class="turn" id="turn3" hidden aria-live="off"></div>
+
+    </div></div>
+
+    <div class="fade"></div>
+    <div class="composer-wrap">
+      <div class="composer">
+        <div class="field">Follow up, or / for commands…</div>
+        <div class="crow">
+          <span class="iconbtn" style="width:26px;height:26px"><svg class="i"><use href="#i-clip"/></svg></span>
+          <span class="chip"><span class="m">opus-5.5</span><span class="d">·</span><span>Xhigh</span><svg class="i c"><use href="#i-chev-d"/></svg></span>
+          <span class="spacer"></span>
+          <span class="chip"><svg class="i" style="width:13px;height:13px"><use href="#i-worktree"/></svg><span class="br">agent/iphone-duo</span><span class="cnt">●4</span><svg class="i c"><use href="#i-chev-d"/></svg></span>
+          <span class="ring" title="29k of 200k · 15%"><svg width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="7.4" fill="none" stroke="var(--lineStrong)" stroke-width="2.2"/><circle cx="9" cy="9" r="7.4" fill="none" stroke="var(--textSecondary)" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="6.97 46.5" transform="rotate(-90 9 9)"/></svg></span>
+          <span class="action" id="action"></span>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+</div></div>
+
+<section class="notes" id="notes"></section>
+
+<script>
+const $ = s => document.querySelector(s);
+const state = {view: "A", phase: "wait", theme: "dark"};
+let tick = 0, timer = null;
+
+function press(seg, attr, val){ seg.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset[attr] === val))); }
+
+const sidebarRows = view => {
+  const duoWorking = view === "A" || view === "B";
+  const duo = (dot) => `<div class="row sel"><span class="slot"><span class="dot ${dot}"></span></span><span class="t">Optimize Shepherd for iPhone Duo</span></div>`;
+  const spark = `<svg width="30" height="10" viewBox="0 0 30 10" aria-hidden="true"><polyline points="0,7 5,6 9,8 13,3 17,6 21,2 25,5 30,4" fill="none" stroke="var(--running)" stroke-width="1.2"/></svg>`;
+  const gh = (name, n, cls="") => `<div class="gh ${cls}"><svg class="i"><use href="#i-chev-d"/></svg>${name} <span class="n">${n}</span></div>`;
+  return `
+    <div class="row"><span class="slot"><svg class="i"><use href="#i-plus"/></svg></span><span class="t">New thread</span><span class="keys"><span>⌘</span><span>N</span></span></div>
+    <div class="row"><span class="slot"><svg class="i"><use href="#i-designs"/></svg></span><span class="t">Designs</span></div>
+    <div class="row"><span class="slot"><svg class="i"><use href="#i-bolt"/></svg></span><span class="t">Automations</span></div>
+    ${gh("Needs you", 1, "you")}
+    <div class="row"><span class="slot"><span class="dot lantern"></span></span><span class="t">Review hinge-aware paging</span><span class="reason">approve plan</span></div>
+    ${gh("Working", duoWorking ? 2 : 1)}
+    ${duoWorking ? duo("running").replace("</div>", "") + `<span class="trail">${spark}</span></div>` : ""}
+    <div class="row"><span class="slot"><span class="dot running"></span></span><span class="t">Fix remote subagent deletion</span><span class="trail">${spark}</span></div>
+    ${gh("Done", 1)}
+    <div class="row"><span class="slot"><span class="dot done"></span></span><span class="t">Bump the Sparkle feed</span><span class="trail">4m ago</span></div>
+    ${gh("Recents", duoWorking ? 2 : 3)}
+    ${duoWorking ? "" : duo("idle")}
+    <div class="row"><span class="slot"><span class="dot idle"></span></span><span class="t">Migrate invoices to v2</span></div>
+    <div class="row"><span class="slot"><span class="dot idle"></span></span><span class="t">Fix agent deletion workflow</span></div>`;
+};
+
+function liveTail(){
+  const c = n => `<span class="clock" data-clock="${n}">${fmt(n + tick)}</span>`;
+  switch (state.phase) {
+    case "wait":
+      return `<div class="livephase" title="Request sent. No reply from the model yet."><span class="w shimmer">Waiting for response</span>${c(4)}</div>`;
+    case "think":
+      return `<div class="livephase"><span class="w it shimmer">Thinking…</span>${c(18)}</div>`;
+    case "generate":
+      return `<div class="think"><button class="think-label" aria-expanded="false"><svg class="i chev"><use href="#i-chev-r"/></svg>Thought for 9s</button></div>
+        <div class="prose"><p>Moving the composer into the right pane now.</p></div>
+        <div class="acts"><div class="act live"><svg class="i g"><use href="#i-pencil"/></svg><span class="lbl shimmer">Writing</span><span class="path shimmer">App/iOS/Thread/DuoComposerPlacement.swift</span><span class="meta" title="18 KB of this call’s arguments have arrived from the model. Nothing is written to disk until the call runs.">18 KB received · <span data-clock="6">${fmt(6 + tick)}</span></span></div></div>`;
+    case "retry": {
+      const left = Math.max(0, 8 - tick);
+      return `<div class="acts"><div class="act live"><svg class="i g"><use href="#i-retry"/></svg><span class="lbl shimmer" id="retryText">${retryText(left)}</span><span class="meta">2 of 3</span></div></div>`;
+    }
+  }
+}
+const retryText = left => left > 0 ? `Anthropic returned 529 overloaded · retrying in ${left}s` : `Anthropic returned 529 overloaded · retrying`;
+const fmt = s => s < 60 ? `${s}s` : `${Math.floor(s/60)}m ${String(s%60).padStart(2,"0")}s`;
+
+const NOTES = {
+  A: `<h2>A · Live phase row: one quiet line that says what the request is doing</h2>
+    <ul><li><b>Waiting for response</b> is the live line from the moment the request is sent until the first model event. It replaces “Thinking…” there: the client has not yet observed a model event, so it cannot say whether the provider is queuing, processing input, or thinking. Its clock runs from the send.</li>
+    <li><b>Thinking…</b> is today’s live thinking line, with one addition: its clock (mono 11, <code>textTertiary</code>), so a long Xhigh think reads as progress, not a hang.</li></ul>
+    <ul><li><b>Generating</b> is today’s live activity line while the model writes a call. “18 KB received” counts the call’s <i>arguments</i> streamed from the model. Nothing is on disk until the call runs (the tooltip says so).</li>
+    <li><b>Retrying</b> is today’s <code>NWRetryLine</code>, stating the status that came back, not guessing a cause. Nothing spins. Only the words shimmer, and the clock ticks. With Reduce Motion the words are plain.</li></ul>`,
+  B: `<h2>B · Expanded thinking summary</h2>
+    <ul><li>The existing <code>NWThinking</code> disclosure, available while thinking is still in progress. Click “Thinking… · 30s” to fold it.</li>
+    <li>Only summary text the provider has already exposed is drawn. It is never the private chain of thought.</li></ul>
+    <ul><li>A caption explains the source: “Summary shared by the model. Its full reasoning isn’t shown.” This does not claim the summary describes all 30 seconds.</li>
+    <li>If no summary text has arrived, show only the live thinking line and clock, without an empty disclosure. This mock holds the clock at 30s for review.</li></ul>`,
+  C: `<h2>C · Response timing, anchored to the finished response</h2>
+    <ul><li>The footer gains one 24pt icon button (Response timing) after Copy and Retry. It shows with the rest of the footer on hover or focus (pinned here for review). Click it to toggle the popover. Esc closes it.</li>
+    <li>It uses the standard <code>.nwPopover</code> chrome at 300pt, like the context details popover.</li></ul>
+    <ul><li><b>Phases</b> are back to back (1.4 + 30.4 + 13.2 = 45.0s). <b>Marks</b> are moments measured from the send, never added together. Headers at 1.2s fall inside the wait.</li>
+    <li>Usage appears only once the provider reports it at the end. No token rate is estimated.</li></ul>`
+};
+
+function render(){
+  const v = state.view;
+  document.documentElement.dataset.theme = state.theme;
+  $("#phaseCtl").style.visibility = v === "A" ? "visible" : "hidden";
+  $("#sidebarList").innerHTML = sidebarRows(v);
+  $("#notes").innerHTML = NOTES[v];
+
+  const live = v === "A";
+  $("#turn3user").hidden = !live;
+  $("#turn3").hidden = !live;
+  if (live) $("#turn3").innerHTML = liveTail();
+
+  const open = v === "B";
+  $("#think2Btn").innerHTML = `<svg class="i chev"><use href="#i-chev-r"/></svg>${open ? 'Thinking… · 30s' : 'Thought for 30s'}`;
+  $("#think2Btn").setAttribute("aria-expanded", String(open));
+  $("#think2Body").hidden = !open;
+  $("#turn2 > .prose").hidden = open;
+  $("#footer2").hidden = open;
+
+  const showFooter = v === "C";
+  $("#footer2").classList.toggle("hidden-at-rest", !showFooter);
+  setPop(v === "C");
+
+  $("#action").className = "action " + (live || open ? "stop" : "send");
+  $("#action").innerHTML = live || open ? "<i></i>" : `<svg class="i"><use href="#i-up"/></svg>`;
+  $("#action").title = live || open ? "Stop the agent’s turn" : "Send (↩)";
+
+  const t = $("#thread");
+  requestAnimationFrame(() => {
+    t.scrollTop = v === "B" ? $("#turn2").offsetTop - 120 : t.scrollHeight;
+  });
+}
+
+function setPop(open){
+  $("#timingPop").hidden = !open;
+  $("#timingBtn").setAttribute("aria-expanded", String(open));
+}
+
+function restartClock(){
+  tick = 0; clearInterval(timer);
+  timer = setInterval(() => {
+    if (state.view !== "A") return;
+    tick++;
+    document.querySelectorAll("[data-clock]").forEach(el => el.textContent = fmt(+el.dataset.clock + tick));
+    const r = $("#retryText"); if (r) r.textContent = retryText(Math.max(0, 8 - tick));
+  }, 1000);
+}
+
+$("#stateSeg").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; state.view = b.dataset.state; press($("#stateSeg"), "state", state.view); restartClock(); render(); });
+$("#phaseSeg").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; state.phase = b.dataset.phase; press($("#phaseSeg"), "phase", state.phase); restartClock(); render(); });
+$("#themeSeg").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; state.theme = b.dataset.theme; press($("#themeSeg"), "theme", state.theme); document.documentElement.dataset.theme = state.theme; });
+$("#think2Btn").addEventListener("click", () => { const o = $("#think2Btn").getAttribute("aria-expanded") !== "true"; $("#think2Btn").setAttribute("aria-expanded", String(o)); $("#think2Body").hidden = !o; });
+$("#timingBtn").addEventListener("click", () => setPop($("#timingPop").hidden));
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("#timingPop").hidden) { setPop(false); $("#timingBtn").focus(); } });
+
+// Fit the 1280×800 window to narrower viewports without reflowing it.
+function fit(){
+  const avail = $("#stageWrap").clientWidth - 48, s = Math.min(1, avail / 1280);
+  $("#stage").style.transform = `scale(${s})`;
+  $("#stageWrap").style.height = (800 * s) + "px";
+}
+addEventListener("resize", fit);
+
+// Deep links: ?state=C&theme=light&phase=generate
+const q = new URLSearchParams(location.search);
+if (q.get("state")) state.view = q.get("state");
+if (q.get("phase")) state.phase = q.get("phase");
+if (q.get("theme")) state.theme = q.get("theme");
+press($("#stateSeg"), "state", state.view); press($("#phaseSeg"), "phase", state.phase); press($("#themeSeg"), "theme", state.theme);
+fit(); restartClock(); render();
+</script>
+</body>
+</html>

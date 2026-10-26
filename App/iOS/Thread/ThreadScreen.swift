@@ -128,13 +128,14 @@ struct ThreadTranscript: View {
     @Environment(\.composerDesignChat) private var designChat
     @Environment(\.designMarkupCanvas) private var markupCanvas
     /// Follows the tail until the reader drags away from it (docs/design/thread.md › Thread › Following).
-    @State private var follower = NativeScrollFollower()
+    private var presentation: ComposerPresentation { navigator.composerPresentation.state(for: ref) }
+    private var follower: NativeScrollFollower { presentation.scrollFollower }
     @State private var historyPaging = NativeHistoryPaging()
-    @State private var visibleTurn: String?
 
     private static let bottomID = "thread-bottom"
 
     var body: some View {
+        @Bindable var presentation = presentation
         let rows = store.rows
         let running = store.running
         let thinking = store.showsThinking
@@ -161,7 +162,7 @@ struct ThreadTranscript: View {
                         .turnTransfer(row, thread: ref)
                         .id(row.id)
                     }
-                    if thinking, liveRow == nil { NWThinking.live() }
+                    if thinking, liveRow == nil { LiveWaitLine(wait: store.liveWait) }
                     Color.clear.frame(height: 1).id(Self.bottomID)
                 }
                 .scrollTargetLayout()
@@ -186,10 +187,10 @@ struct ThreadTranscript: View {
             }
             // Open at the tail and stay pinned while it grows; only the reader's own drag
             // detaches, and sending re-attaches.
-            .scrollPosition(id: $visibleTurn, anchor: .top)
+            .scrollPosition(id: $presentation.visibleTurn, anchor: .top)
             .onChange(of: historyEnabled) { _, _ in loadVisibleHistory() }
             .onChange(of: store.sessionKey) { _, _ in loadVisibleHistory() }
-            .defaultScrollAnchor(.bottom, for: .initialOffset)
+            .defaultScrollAnchor(follower.sticky ? .bottom : .top, for: .initialOffset)
             .defaultScrollAnchor(follower.sticky ? .bottom : nil, for: .sizeChanges)
             .onScrollGeometryChange(for: NativeScrollProbe.self, of: Self.probe) { old, new in
                 // The size-change anchor follows neither the composer's nor the keyboard's inset,
@@ -253,7 +254,7 @@ struct ThreadTranscript: View {
     private func loadVisibleHistory() {
         guard historyPaging.takeRequest(session: store.sessionKey, cursor: store.olderCursor, enabled: historyEnabled) else { return }
         // ScrollViewReader jumps can leave the native position binding nil at the boundary.
-        if visibleTurn == nil { visibleTurn = store.rows.first?.id }
+        if presentation.visibleTurn == nil { presentation.visibleTurn = store.rows.first?.id }
         Task { await store.loadOlder() }
     }
 
@@ -277,7 +278,7 @@ struct ThreadTranscript: View {
     private func follow(_ change: (inout NativeScrollFollower) -> Bool) -> Bool {
         var next = follower
         let result = change(&next)
-        if next != follower { follower = next }
+        if next != follower { presentation.scrollFollower = next }
         return result
     }
 
@@ -300,7 +301,7 @@ struct ThreadTranscript: View {
             let proposals = designChat && markupCanvas != nil ? row.markupProposals : nil
             AgentTurnView(thread: ref, presentation: presentation, live: row.live,
                           subagents: store.placements[row.id]?.all.count ?? 0,
-                          startedAt: row.startedAt, thinking: thinking,
+                          startedAt: row.startedAt, thinking: thinking, wait: thinking ? store.liveWait : NativeLiveWait(),
                           changes: row.changes,
                           changesBusy: row.changes?.turnID.map { TurnUndoStore.shared.busy.contains($0) } ?? false,
                           proposals: proposals,

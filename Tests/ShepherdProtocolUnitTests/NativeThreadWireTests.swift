@@ -249,6 +249,31 @@ struct NativeThreadWireTests {
         #expect(offered.serviceTier == "fast" && offered.serviceTiers == ["standard", "fast", "ultra"], "an unknown tier is the client's to ignore")
     }
 
+    /// Response timing (ResponseVisibility): a host that measured a request sends its moments on
+    /// the message and the request in flight on the snapshot; an older host sends neither, and a
+    /// malformed timing never fails the message.
+    @Test func responseTimingRoundTripsAndAnOlderHostSendsNone() throws {
+        let timing = NativeResponseTiming(sentAt: 1_000, headersAt: 2_200, firstEventAt: 2_400, firstThinkingAt: 2_500,
+                                          firstTextAt: 32_800, endedAt: 46_000, inputTokens: 14_200, outputTokens: 2_900,
+                                          provider: "anthropic", model: "claude-opus-4-5")
+        let reply = NativeThreadMessage(entryID: "a1", role: "assistant", blocks: [], timing: timing)
+        let call = NativeThreadMessage(entryID: "provisional:tool:c1", role: "toolResult", blocks: [], toolName: "write", status: "streaming",
+                                       argumentBytes: 18_432)
+        let snapshot = NativeThreadSnapshot(piSessionID: "s", generation: "g", revision: 2, running: true, supportedActions: [],
+                                            dialogsSupported: true, dialogs: [], messages: [reply], provisional: [call], clipped: false,
+                                            liveRequest: NativeResponseTiming(sentAt: 50_000))
+        #expect(try Wire.roundTrip(NativeThreadResult.snapshot(value: snapshot)) == .snapshot(value: snapshot))
+        #expect(Set(try Wire.object(NativeResponseTiming(sentAt: 1)).keys) == ["sentAt"], "unmeasured moments stay off the wire")
+
+        let older = try Wire.decode(NativeThreadSnapshot.self, Self.v1Snapshot)
+        #expect(older.liveRequest == nil)
+        let plain = try Wire.decode(NativeThreadMessage.self, #"{"entryID":"a","role":"assistant","blocks":[],"truncated":false}"#)
+        #expect(plain.timing == nil && plain.argumentBytes == nil)
+        let odd = try Wire.decode(NativeThreadMessage.self,
+                                  #"{"entryID":"a","role":"assistant","blocks":[],"truncated":false,"timing":"soon","argumentBytes":"many"}"#)
+        #expect(odd.timing == nil && odd.argumentBytes == nil)
+    }
+
     /// What a snapshot shortened round trips, an older host's snapshot says nothing of it (the client
     /// then reads `clipped` alone), and a fact that is not set stays off the wire.
     @Test func whatASnapshotClippedRoundTripsAndStaysOffTheWireWhenNothingWas() throws {
