@@ -166,7 +166,7 @@ struct ViewCommands: Commands {
             Button(menu.rightPaneOpen ? "Hide Side Pane" : "Show Side Pane") { later { vm.toggleRightPane() } }
                 .keyboardShortcut(keys.shortcut(.toggleRightPane))
                 .disabled(!menu.hasVisibleThread)
-            // ⌃1–4 pick the side pane's tabs: fixed, like ⌃⇧1–9 (no ⌘, so never rebound).
+            // ⌃1–5 pick the side pane's tabs: fixed, like ⌃⇧1–9 (no ⌘, so never rebound).
             ForEach(SidePaneTab.allCases, id: \.self) { tab in
                 Button(tab.title) { later { vm.selectSidePaneTab(tab) } }
                     .keyboardShortcut(KeyEquivalent(Character("\(tab.digit)")), modifiers: .control)
