@@ -320,12 +320,11 @@ enum GitWorktree {
         }
     }
 
-    /// Tear down what `add` created: `git worktree remove --force` on the
-    /// derived destination, then delete the branch. Only the confirmed
-    /// Delete Worktree Agent dialog calls this.
-    static func remove(repo: String, branch: String, worktree: String? = nil, fingerprint: String? = nil) throws {
+    /// Remove the confirmed checkout and its original branch, if it still exists.
+    /// A checkout switched after merging keeps its new branch.
+    static func remove(repo: String, branch: String, worktree: String? = nil, fingerprint: String? = nil, checkoutBranch: String? = nil) throws {
         let path = worktree ?? destination(repo: repo, branch: branch)
-        try verifyIdentity(worktree: path, repo: repo, branch: branch)
+        try verifyIdentity(worktree: path, repo: repo, branch: checkoutBranch ?? branch)
         if let fingerprint, try deletionFingerprint(worktree: path) != fingerprint {
             throw Failure(message: "Checkout contents changed. Checkout was kept.")
         }
@@ -334,7 +333,10 @@ enum GitWorktree {
             "-C", repoPath, "worktree", "remove", "--force",
             worktree ?? destination(repo: repo, branch: branch),
         ])
-        try run(["-C", repoPath, "branch", "-D", branch])
+        let branches = try run(["-C", repoPath, "for-each-ref", "--format=%(refname)", "refs/heads/"])
+        if branches.split(separator: "\n").contains(Substring("refs/heads/\(branch)")) {
+            try run(["-C", repoPath, "branch", "-D", "--", branch])
+        }
     }
 
     /// Run git, returning stdout; nonzero exit throws stderr as `Failure`.

@@ -147,17 +147,26 @@ struct GitWorktreeTests {
         #expect(try sandbox.branches() == ["main"])
     }
 
-    @Test func removalRefusesACheckoutThatChangedSinceItWasConfirmed() throws {
+    @Test(arguments: [false, true])
+    func removalRefusesACheckoutThatChangedSinceItWasConfirmed(branchChanged: Bool) throws {
         let sandbox = try WorktreeSandbox()
         defer { sandbox.remove() }
         let path = try GitWorktree.add(repo: sandbox.repo.path, branch: "agent/moving")
         let fingerprint = try GitWorktree.deletionFingerprint(worktree: path)
-        try "late edit".write(toFile: path + "/late.txt", atomically: true, encoding: .utf8)
+        if branchChanged {
+            try git(["switch", "-qc", "another-branch"], in: URL(fileURLWithPath: path))
+        } else {
+            try "late edit".write(toFile: path + "/late.txt", atomically: true, encoding: .utf8)
+        }
 
         #expect(throws: GitWorktree.Failure.self) {
-            try GitWorktree.remove(repo: sandbox.repo.path, branch: "agent/moving", worktree: path, fingerprint: fingerprint)
+            try GitWorktree.remove(repo: sandbox.repo.path, branch: "agent/moving", worktree: path, fingerprint: fingerprint, checkoutBranch: "agent/moving")
         }
-        #expect(FileManager.default.fileExists(atPath: path + "/late.txt"))
+        #expect(FileManager.default.fileExists(atPath: path))
+        #expect(try sandbox.branches().contains("agent/moving"))
+        if !branchChanged {
+            #expect(try String(contentsOfFile: path + "/late.txt", encoding: .utf8) == "late edit")
+        }
     }
 
     /// Ignored build output (a SwiftPM dependency checkout is a nested repository) neither
@@ -305,6 +314,50 @@ struct WorktreeAgentTests {
                 && (try? sandbox.branches()) == ["main"]
         }
         #expect(vm.remoteActionError == nil)
+    }
+
+    @Test(arguments: [false, true])
+    func deletingASwitchedWorktreePreservesItsCurrentBranch(originalBranchDeleted: Bool) async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let sandbox = try WorktreeSandbox()
+        defer { sandbox.remove() }
+        let branch = "worktree/merged"
+        let agent = try worktreeAgent(in: sandbox, branch: branch)
+        let checkout = URL(fileURLWithPath: sandbox.path(branch))
+        try git(["switch", "-qc", "nightly"], in: checkout)
+        if originalBranchDeleted {
+            try git(["branch", "-D", branch], in: sandbox.repo)
+        }
+        let vm = try await app.start(with: Fixture.state(spaces: [agent.space], agents: [agent]))
+
+        vm.deleteWorktreeAgent(agent.agent.id, removeWorktree: true)
+
+        try await eventuallyOnMain("the switched checkout to be removed, keeping nightly") {
+            !FileManager.default.fileExists(atPath: checkout.path) && app.server.state.agents.isEmpty
+                && (try? sandbox.branches()) == ["main", "nightly"]
+        }
+        #expect(vm.remoteActionError == nil)
+    }
+
+    @Test func deletingAForeignCheckoutKeepsTheAgentAndBothWorktrees() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let sandbox = try WorktreeSandbox(), foreign = try WorktreeSandbox()
+        defer { sandbox.remove(); foreign.remove() }
+        let branch = "worktree/wrong-repo"
+        var agent = try worktreeAgent(in: sandbox, branch: branch)
+        let foreignPath = try GitWorktree.add(repo: foreign.repo.path, branch: branch)
+        agent.agent.worktreePath = foreignPath
+        let vm = try await app.start(with: Fixture.state(spaces: [agent.space], agents: [agent]))
+        let original = app.server.state
+
+        vm.deleteWorktreeAgent(agent.agent.id, removeWorktree: true)
+
+        try await eventuallyOnMain("the repository mismatch to be reported before retiring the agent") { vm.remoteActionError != nil }
+        #expect(app.server.state == original && vm.state == original)
+        #expect(FileManager.default.fileExists(atPath: sandbox.path(branch)))
+        #expect(FileManager.default.fileExists(atPath: foreignPath))
     }
 
     @Test func deletingAWorktreeAgentButKeepingTheCheckoutLeavesItsWork() async throws {
