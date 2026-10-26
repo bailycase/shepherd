@@ -9,6 +9,28 @@ import ShepherdTestSupport
 struct ProjectMessageFailureTests {
     typealias Rig = ProjectRuntimeTests.Rig
 
+    @Test func inputHandledWithoutUserTurnDoesNotFenceLaterMessages() async throws {
+        let rig = try Rig(); defer { rig.stop() }
+        let p = try await rig.create(), uncertain = UUID()
+        let sent = try await rig.perform(p.id, .message(operationID: uncertain, text: "/session-name info handled"))
+        let id = try #require(sent.coordinatorAgentID)
+        let next = UUID()
+        _ = try await rig.perform(p.id, .message(operationID: next, text: "after unconfirmed delivery"))
+        try await eventually("unconfirmed prompt retired from idle native thread") {
+            try await rig.host.server.enqueue {
+                rig.host.server.state.projects.first?.messages.first?.phase == .unknown
+                    && rig.host.server.rpcThread(forAgent: id)?.piBusy == false
+            }
+        }
+        try await eventually("next explicit message delivered") {
+            rig.host.server.state.projects.first?.messages.first(where: { $0.id == next })?.phase == .delivered
+        }
+        let pi = try #require(rig.agents.current[id])
+        #expect(pi.stdin("prompt").filter { $0["message"] as? String == "/session-name info handled" }.count == 1)
+        #expect(pi.stdin("prompt").filter { $0["message"] as? String == "after unconfirmed delivery" }.count == 1)
+        #expect(rig.host.server.state.projects.first?.messages.first(where: { $0.id == uncertain })?.phase == .unknown)
+    }
+
     @Test(arguments: [false, true])
     func configurationTimeoutDoesNotFenceLaterMessages(thinking: Bool) async throws {
         let rig = try Rig(); defer { rig.stop() }
