@@ -63,6 +63,15 @@ templates ride the same watcher and refresh: Shepherd's `prompts` folder, a trus
 `.shepherd/prompts` and `.pi/prompts`, and configured prompt paths, so a `git pull` that adds
 templates updates the `/` menu without a restart.
 
+Ordinary owned-worktree threads also load skills and prompts from their trusted owning Space's
+`.shepherd` and `.pi` folders, even with MCP disabled. The host binds this grant to the exact
+managed or Git-verified checkout. Resources stay in the owning Space; nothing is copied and
+no checkout trust decision is saved. Separately trusted checkout resources win name collisions;
+otherwise `.shepherd` wins over `.pi` in the inherited files. This grant does not load settings,
+extensions or packages. Ownership and trust are checked at thread start; changing them requires
+a thread restart. Coordinators, native children, design agents and automations keep their existing
+isolated resource policies.
+
 The pinned engine's `refresh_skills` RPC operation reparses skills and prompt templates only. It preserves session
 history, tools, providers, extension state and the existing trust decision. It neither installs
 packages nor runs skill code nor sends model requests. Loaded package, command-line and

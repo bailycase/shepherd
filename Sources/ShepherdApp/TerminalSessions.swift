@@ -655,6 +655,7 @@ final class TerminalSessionStore {
             let command = try problem.map(Self.refusedCommand)
                 ?? Self.rpcAgentCommand(for: agent, cwd: cwd, pi: server.pi, sessionIsFresh: fresh, isAutomation: isAutomation,
                                         project: state.projectContext(for: agent.id),
+                                        worktreeOwningSpace: StatusExtension.worktreeOwningSpace(agent: agent, cwd: cwd, state: state, verifiedWorktree: verifiedWorktree),
                                         suggestFiles: suggestionFiles(isAutomation: isAutomation),
                                         modelOverride: modelOverrides.removeValue(forKey: agent.id),
                                         mcp: { [mcpLaunch] in try mcpLaunch()?.sharingProject(parent, agent: agent, cwd: cwd, state: state, verifiedWorktree: verifiedWorktree) })
@@ -914,6 +915,7 @@ final class TerminalSessionStore {
                 command = try problem.map(Self.refusedCommand)
                     ?? Self.rpcAgentCommand(for: agent, cwd: cwd, pi: server.pi, sessionIsFresh: fresh,
                                             project: serverState?.projectContext(for: agent.id),
+                                            worktreeOwningSpace: StatusExtension.worktreeOwningSpace(agent: agent, cwd: cwd, state: state, verifiedWorktree: verifiedWorktree),
                                             suggestFiles: suggestionFiles(isAutomation: false),
                                             modelOverride: modelOverrides.removeValue(forKey: agent.id),
                                             mcp: { [mcpLaunch] in try mcpLaunch()?.sharingProject(parent, agent: agent, cwd: cwd, state: state, verifiedWorktree: verifiedWorktree) })
@@ -1111,7 +1113,7 @@ final class TerminalSessionStore {
     /// and namer extensions; an agent that draws a design gets the design tools instead of panes. Model and
     /// thinking flags go only to a fresh session.
     private static func rpcAgentCommand(for agent: Agent, cwd: String, pi: PiSetup, sessionIsFresh: Bool, isAutomation: Bool = false,
-                                        project: Project? = nil,
+                                        project: Project? = nil, worktreeOwningSpace: String? = nil,
                                         suggestFiles: [InstructionFile] = [], modelOverride: String? = nil,
                                         mcp: () throws -> MCPLaunch?) throws -> SessionCommand {
         let settings = AppSettings.shared
@@ -1141,6 +1143,7 @@ final class TerminalSessionStore {
                                                          designTool: settings.designToolEnabled)
                 ? (try DesignReferencesExtension.installedPath(), !agent.designGrants.isEmpty) : nil,
             mcp: agent.coordinatorFor == nil ? try mcp() : nil,
+            worktreeOwningSpace: worktreeOwningSpace,
             browserExtensionPath: Self.wantsBrowser(for: agent, enabled: settings.piBrowserExtension) ? try BrowserExtension.installedPath() : nil,
             contextExtensionPath: settings.trimToolOutput ? try ContextExtension.installedPath() : nil,
             projectContext: try project.map { (try ProjectContextExtension.installedPath(), try ProjectContextExtension.context($0), agent.coordinatorFor != nil) },
