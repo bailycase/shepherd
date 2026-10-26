@@ -54,6 +54,7 @@ public struct ShepherdMacApp: App {
             NSLog("Shepherd: failed to start session server: \(error)")
             exit(EXIT_FAILURE)
         }
+        AppUpdater.shared.connectRemoteUpdates(to: SessionServer.shared)
         let resourceSampler = SessionResourceSampler()
         ShepherdDiagnostics.shared.start(settings: .shared, resourceSampler: {
             await resourceSampler.sample(SessionServer.shared.resourceState())
@@ -167,7 +168,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Quitting kills every agent process (sessions die with the app), so a quit while agents
     /// are mid-turn asks first, in a dialog on the main window (`QuitConfirmation`).
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        QuitConfirmation.shared.shouldTerminate(agents: SessionServer.shared.state.agents)
+        if let reply = AppUpdater.shared.remoteTerminationReply { return reply }
+        return QuitConfirmation.shared.shouldTerminate(agents: SessionServer.shared.state.agents)
     }
 
     func applicationWillTerminate(_ notification: Notification) {

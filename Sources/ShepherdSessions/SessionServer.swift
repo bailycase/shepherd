@@ -357,6 +357,73 @@ public final class SessionServer: @unchecked Sendable {
     /// A remote client reads or changes this host's settings (`RemoteRequest.hostSettings`): the
     /// GUI owns them, so a server without it (headless, tests) rejects the request. Called on the
     /// main actor.
+    public var onRemoteHostUpdate: ((RemoteHostUpdateRequest, @escaping () async -> Bool, @escaping (HostUpdateStatus) -> Void) -> Void)?
+    private var hostUpdateReserved = false
+    private var hostUpdateRequests: [Int32: UUID] = [:]
+
+    public func reserveHostUpdate() async -> Bool {
+        (try? await enqueue {
+            guard !self.hostUpdateReserved, !self.hostUpdateBusy else { return false }
+            self.hostUpdateReserved = true
+            return true
+        }) ?? false
+    }
+
+    public func releaseHostUpdate() {
+        queue.async { self.hostUpdateReserved = false }
+    }
+
+    /// The accepted install reply must leave our write queues before Sparkle may restart.
+    /// Bounded, nonblocking and fail closed if a client stops reading.
+    public func hostUpdateCanRestart() async -> Bool {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        while ContinuousClock.now < deadline {
+            let result = try? await enqueue { () -> Int in
+                guard self.hostUpdateReserved, !self.hostUpdateBusy else { return -1 }
+                return !self.hostUpdateRequests.isEmpty
+                    || self.clients.values.contains { $0.isRemote && !$0.pendingReplies.isEmpty } ? 0 : 1
+            }
+            if result == 1 { return true }
+            if result == -1 || result == nil { return false }
+            do { try await Task.sleep(for: .milliseconds(10)) } catch { return false }
+        }
+        return false
+    }
+
+    /// Deliberately replies on the server queue: AppKit's termination modal loop does not
+    /// drain the main dispatch queue. The app returns this result through a common-mode source.
+    public func checkHostUpdateTermination(_ completion: @escaping (Bool) -> Void) {
+        queue.async {
+            completion(self.hostUpdateReserved && !self.hostUpdateBusy
+                && self.hostUpdateRequests.isEmpty
+                && !self.clients.values.contains { $0.isRemote && !$0.pendingReplies.isEmpty })
+        }
+    }
+
+    public func hostUpdateIsIdle() async -> Bool {
+        (try? await enqueue { !self.hostUpdateBusy }) ?? false
+    }
+
+    private var hostUpdateBusy: Bool {
+        store.state.agents.contains { $0.status == .working || $0.status == .blocked || $0.waitingOn != nil }
+            || store.state.projects.contains { project in
+                !project.paused || project.tasks.contains { [.reserved, .running, .waiting, .unknown].contains($0.phase) }
+            }
+            || store.state.projectExecutions.contains { $0.phase.active || $0.phase == .unknown }
+            || !movingThreads.isEmpty || !peerDeliveries.isEmpty
+            || !automationStarts.isEmpty || !projectLaunches.isEmpty || !projectPromptInFlight.isEmpty
+            || !publicationPending.isEmpty || !publicationTransfers.isEmpty || !publicationTransferQueue.isEmpty
+            || !executionPending.isEmpty || !executionSending.isEmpty || !executionInterrupts.isEmpty
+            || projectRuntimeWriterBusy || projectFolderOperation || projectInputWriteCount > 0
+            || sessions.values.contains { session in
+                if let thread = session.thread {
+                    return thread.piBusy || thread.continuesAfterSettle || !thread.items.isEmpty || !thread.dispatches.isEmpty
+                        || thread.retryDispatch != nil || thread.recoveryPending != nil || !thread.isServable
+                }
+                return session.isAlive
+            }
+    }
+
     public var onRemoteHostSettings: ((RemoteHostSettingsRequest, @escaping (Result<HostSettings, RemoteCreateAgentError>) -> Void) -> Void)?
     /// A remote client saved or restored this host's root instructions: the GUI's Settings page
     /// follows. Delivered on the main actor.
@@ -759,6 +826,7 @@ public final class SessionServer: @unchecked Sendable {
                 && (isStarted && onProjectExecutionLaunch != nil || $0 != RemoteProtocol.projectExecutionCapability)
                 && ($0 != RemoteProtocol.projectPublicationsCapability || (isStarted && (onProjectPlacement != nil || onProjectExecutionLaunch != nil || onProjectRuntimeLaunch != nil)))
                 && ($0 != RemoteProtocol.projectPlacementCapability || (isStarted && (onProjectPlacement != nil || onProjectExecutionLaunch != nil)))
+                && ($0 != RemoteProtocol.hostUpdateCapability || onRemoteHostUpdate != nil)
                 && (designsServed && designs || !RemoteProtocol.designCapabilities.contains($0))
                 && (tunnelsServed || ($0 != RemoteProtocol.browserTunnelCapability && $0 != RemoteProtocol.browserDriveCapability))
         }
@@ -1500,6 +1568,7 @@ public final class SessionServer: @unchecked Sendable {
         completion: @escaping (NativeOutcome) -> Void
     ) {
         let unavailable = { (message: String) in completion(.failure(code: NativeThreadCode.unavailable, message: message)) }
+        guard !hostUpdateReserved else { unavailable("Host update in progress. Try again after reconnecting."); return }
         guard let agent = store.state.agents.first(where: { $0.id == agentID }) else {
             unavailable("The agent no longer exists.")
             return
@@ -2238,6 +2307,43 @@ public final class SessionServer: @unchecked Sendable {
                 }
             }
             if request.requiresMCP { client.projectMCPRequests[id] = task }
+        case .hostUpdate(let id, let request):
+            guard offeredCapabilities.contains(RemoteProtocol.hostUpdateCapability), let handler = onRemoteHostUpdate else {
+                send(.error(id: id, code: "unsupported", message: "Remote updates are unavailable."), to: client)
+                return
+            }
+            guard hostUpdateRequests[client.fd] == nil else {
+                send(.error(id: id, code: "busy", message: "An update request is pending."), to: client)
+                return
+            }
+            let generation = UUID()
+            hostUpdateRequests[client.fd] = generation
+            let finish: (HostUpdateStatus?) -> Void = { [weak self, weak client] status in
+                guard let self, let client else { return }
+                self.queue.async {
+                    guard self.hostUpdateRequests[client.fd] == generation else { return }
+                    self.hostUpdateRequests[client.fd] = nil
+                    guard self.clients[client.fd] === client, client.authenticated else { return }
+                    if let status { self.send(.hostUpdate(id: id, status: status), to: client) }
+                    else { self.send(.error(id: id, code: "timeout", message: "Update handler timed out."), to: client) }
+                }
+            }
+            queue.asyncAfter(deadline: .now() + 10) { finish(nil) }
+            hopToMain { [weak self, weak client] in
+                guard let self, let client else { return }
+                self.queue.async {
+                    guard self.clients[client.fd] === client, client.authenticated,
+                          self.hostUpdateRequests[client.fd] == generation else { return }
+                    let authorized: () async -> Bool = { [weak self, weak client] in
+                        guard let self, let client else { return false }
+                        return (try? await self.enqueue {
+                            self.clients[client.fd] === client && client.authenticated
+                                && self.hostUpdateRequests[client.fd] == generation
+                        }) ?? false
+                    }
+                    self.hopToMain { handler(request, authorized) { finish($0) } }
+                }
+            }
         case .hostSettings(let id, let request):
             guard let handler = onRemoteHostSettings else {
                 send(.error(id: id, code: "unavailable", message: "This host has no settings to share."), to: client)
@@ -3078,6 +3184,7 @@ public final class SessionServer: @unchecked Sendable {
 
     private func disconnect(_ client: ExtensionConnection) {
         guard clients[client.fd] === client else { return }
+        hostUpdateRequests[client.fd] = nil
         clients.removeValue(forKey: client.fd)
         for (token, request) in agentRequests where !request.deletionConfirmed && (request.caller === client || request.target === client) {
             finishAgentRequest(token, result: .init(text: "agent connection closed", code: "disconnected"))
@@ -6591,6 +6698,7 @@ public final class SessionServer: @unchecked Sendable {
 
     private func makeSessionOnQueue(params: CreateSessionParams, resuming: String? = nil) throws -> SessionInfo {
         try requireStarted()
+        guard !hostUpdateReserved else { throw ProjectFileError("host_updating", "Host update in progress.") }
         guard !projectFolderOperation else { throw ProjectFileError("project_busy", "A project folder operation is in progress. Retry after it completes.") }
         let server = self
         weak let serverWeak = server
@@ -6630,6 +6738,7 @@ public final class SessionServer: @unchecked Sendable {
             let sid = session.id
             session.beforeOffQueueDecode = beforeOffQueueDecode
             let thread = RPCThreadState(session: session, queue: sessionQueue, originStore: originStore)
+            thread.workAdmission = { [weak self] in self?.hostUpdateReserved == false }
             if let id = session.launchAgentID {
                 do { thread.recoveryAtLaunch = try agentRecovery.checkpoint(for: id) }
                 catch { ShepherdLog.warning("Could not read agent recovery checkpoint") }

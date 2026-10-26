@@ -4,6 +4,7 @@ import Sparkle
 import SwiftUI
 import ShepherdUI
 import ShepherdProtocol
+import ShepherdSessions
 
 /// The update channel an app rides; each maps to a feed on gh-pages. Feed names are a contract
 /// with the release workflow (`scripts/release.py`).
@@ -168,7 +169,13 @@ final class AppUpdater {
     /// the list, not a fixed release, is the stable link.
     static let nightlyDownloadURL = URL(string: "https://github.com/bailycase/shepherd/releases?q=nightly&expanded=true")!
 
-    private let controller: SPUStandardUpdaterController
+    private let updater: SPUUpdater
+    private let remoteDriver: RemoteUpdateDriver
+    private weak var server: SessionServer?
+    private var handlingRemoteRequest = false
+    private var started = false
+    private var terminationCheckID: UUID?
+    private var terminationDeadline: Timer?
     private let store: UpdateChannelStore
 
     /// Sparkle refuses to run without a feed + signing key; a dev build
@@ -187,7 +194,9 @@ final class AppUpdater {
         #if DEBUG
         available = false
         #else
-        available = info?["SUFeedURL"] != nil && info?["SUPublicEDKey"] != nil
+        available = [ShepherdEdition.mainBundleIdentifier, ShepherdEdition.nightlyBundleIdentifier].contains(Bundle.main.bundleIdentifier ?? "")
+            && (info?["SUFeedURL"] as? String).flatMap(URL.init(string:))?.scheme == "https"
+            && !(info?["SUPublicEDKey"] as? String ?? "").isEmpty
         #endif
         edition = .current
         store = UpdateChannelStore(defaults: .standard, edition: edition)
@@ -199,16 +208,20 @@ final class AppUpdater {
             channel = UpdateChannel.choices(for: edition)[0]
             nightlyMovedNoticePending = false
         }
-        controller = SPUStandardUpdaterController(
-            startingUpdater: available,
-            updaterDelegate: ChannelDelegate.shared,
-            userDriverDelegate: nil
-        )
+        remoteDriver = RemoteUpdateDriver(status: HostUpdateStatus(
+            version: version, build: info?["CFBundleVersion"] as? String ?? "",
+            channel: store.resolveWithoutMigrating(version: version).rawValue, phase: available ? .idle : .unsupported))
+        updater = SPUUpdater(hostBundle: .main, applicationBundle: .main,
+                             userDriver: remoteDriver, delegate: ChannelDelegate.shared)
+        if available {
+            do { try updater.start(); started = true }
+            catch { remoteDriver.status.phase = .unsupported; remoteDriver.status.error = error.localizedDescription }
+        }
     }
 
     /// Switches channel; a channel this app doesn't offer is ignored.
     func select(_ channel: UpdateChannel) {
-        guard channel != self.channel, store.select(channel) else { return }
+        guard !remoteDriver.remote, channel != self.channel, store.select(channel) else { return }
         self.channel = channel
     }
 
@@ -222,21 +235,119 @@ final class AppUpdater {
         dismissNightlyMovedNotice()
     }
 
-    var canCheck: Bool { available && controller.updater.canCheckForUpdates }
+    var canCheck: Bool { available && started && !remoteDriver.installationHandedOff && updater.canCheckForUpdates }
 
     func checkForUpdates() {
-        controller.checkForUpdates(nil)
+        guard canCheck else { return }
+        updater.checkForUpdates()
+    }
+
+    /// Installed once by the app lifecycle, never by a view or a headless server.
+    func connectRemoteUpdates(to server: SessionServer) {
+        self.server = server
+        guard available, started else { return }
+        remoteDriver.onEnd = { [weak server] in server?.releaseHostUpdate() }
+        ChannelDelegate.shared.didDownload = { [weak remoteDriver] in remoteDriver?.preflightBeforeExtraction() }
+        ChannelDelegate.shared.didFinish = { [weak remoteDriver] in remoteDriver?.updateCycleFinished() }
+        remoteDriver.beforeRestart = { [weak server] in
+            guard let server else { return false }
+            return await server.hostUpdateCanRestart()
+        }
+        server.onRemoteHostUpdate = { [weak self] request, authorized, completion in
+            guard let self else { return }
+            Task { completion(await self.remoteUpdate(request, authorized: authorized)) }
+        }
+    }
+
+    private func remoteUpdate(_ request: RemoteHostUpdateRequest, authorized: @escaping () async -> Bool) async -> HostUpdateStatus {
+        guard available, started, await authorized(), let server else { return remoteDriver.status }
+        if request == .status {
+            var status = remoteDriver.status
+            let idle = await server.hostUpdateIsIdle()
+            status.canInstall = status.canInstall && idle
+            return status
+        }
+        guard !handlingRemoteRequest else {
+            var status = remoteDriver.status
+            status.error = "An update request is already in progress."
+            return status
+        }
+        handlingRemoteRequest = true
+        defer { handlingRemoteRequest = false }
+        switch request {
+        case .status: break
+        case .check:
+            guard canCheck else { return remoteDriver.status }
+            remoteDriver.status.channel = channel.rawValue
+            remoteDriver.begin()
+            updater.checkForUpdates()
+        case .install(let offerID, let consent):
+            guard consent, remoteDriver.status.phase == .available,
+                  remoteDriver.status.offerID == offerID else {
+                var status = remoteDriver.status
+                status.error = "Confirm the current update before installing and restarting."
+                return status
+            }
+            guard await server.reserveHostUpdate() else {
+                var status = remoteDriver.status
+                status.canInstall = false
+                status.error = "Host is busy. Stop active agents and tasks, pause Projects, and close terminals before updating."
+                return status
+            }
+            guard await authorized() else {
+                server.releaseHostUpdate()
+                return remoteDriver.status
+            }
+            if !remoteDriver.install(offerID: offerID) { server.releaseHostUpdate() }
+        }
+        return remoteDriver.status
+    }
+
+    /// Remote updates never open QuitConfirmation. A busy host cancels termination instead.
+    var remoteTerminationReply: NSApplication.TerminateReply? {
+        guard remoteDriver.remote, remoteDriver.restartAuthorized else { return nil }
+        guard let server else { return .terminateCancel }
+        guard terminationCheckID == nil else { return .terminateCancel }
+        let checkID = UUID()
+        terminationCheckID = checkID
+        let finish: @MainActor @Sendable (Bool) -> Void = { [weak self] safe in
+            guard let self, self.terminationCheckID == checkID else { return }
+            self.terminationCheckID = nil
+            self.terminationDeadline?.invalidate()
+            if !safe {
+                self.remoteDriver.fail("Restart was refused or timed out. Installation outcome is unknown.")
+            }
+            NSApp.reply(toApplicationShouldTerminate: safe)
+        }
+        // Neither the server reply nor the timeout depends on a main-queue Task running
+        // inside AppKit's termination modal loop. Late replies are fenced by checkID.
+        let timer = Timer(timeInterval: 5, repeats: false) { _ in
+            MainActor.assumeIsolated { finish(false) }
+        }
+        terminationDeadline = timer
+        RunLoop.main.add(timer, forMode: .common)
+        server.checkHostUpdateTermination { safe in
+            Self.performDuringTermination { finish(safe) }
+        }
+        return .terminateLater
+    }
+
+    nonisolated static func performDuringTermination(_ body: @escaping @MainActor @Sendable () -> Void) {
+        CFRunLoopPerformBlock(CFRunLoopGetMain(), RunLoop.Mode.common.rawValue as CFString) {
+            MainActor.assumeIsolated(body)
+        }
+        CFRunLoopWakeUp(CFRunLoopGetMain())
     }
 
     /// Stored by Sparkle, so its reads and writes are reported to observers by hand.
     var automaticallyChecks: Bool {
         get {
             access(keyPath: \.automaticallyChecks)
-            return controller.updater.automaticallyChecksForUpdates
+            return updater.automaticallyChecksForUpdates
         }
         set {
             withMutation(keyPath: \.automaticallyChecks) {
-                controller.updater.automaticallyChecksForUpdates = newValue
+                updater.automaticallyChecksForUpdates = newValue
             }
         }
     }
@@ -246,6 +357,16 @@ final class AppUpdater {
 /// Shepherd Nightly build reads Shepherd Nightly's feed even if its SUFeedURL were wrong.
 private final class ChannelDelegate: NSObject, SPUUpdaterDelegate {
     static let shared = ChannelDelegate()
+    var didDownload: (@MainActor () -> Void)?
+    var didFinish: (@MainActor () -> Void)?
+
+    func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: Error?) {
+        MainActor.assumeIsolated { didFinish?() }
+    }
+
+    func updater(_ updater: SPUUpdater, didDownloadUpdate item: SUAppcastItem) {
+        MainActor.assumeIsolated { didDownload?() }
+    }
 
     /// What the app resolved at launch, read again without writing: after the launch migration
     /// that is the stored channel.
