@@ -5,14 +5,13 @@
 How Shepherd reaches you outside its window, on iPhone, iPad and Mac. The authority is the
 Notifications page (NotifCatalog, NotifPhoneBanner, NotifPhoneStacks, NotifPhoneRich,
 NotifPhoneReply, NotifPhoneReview, NotifPhoneSummary, NotifSettings, NotifiPadBanner,
-NotifiPadCenter, NotifMac) and the lock-screen boards (MobileLock, MobileAnswer, MobileLiveLock,
-MobileIsland, iPadLock).
+NotifiPadCenter, NotifMac), MobileAnswer, and the glance boards (GlanceWatch, GlanceFollow,
+GlanceIsland, GlanceLock, GlanceHome, GlanceiPad, GlanceControls).
 
-**What is built:** only the Mac's notifications, for its own agents and every connected host's
+**What is built:** the Mac's notifications, for its own agents and every connected host's
 (`AgentNotifications`, worded by `AgentBanners`, posted by `ShepherdViewModel+Notifications.swift`;
-On the Mac today, below). The iOS client posts no notifications and has no Live
-Activities or widgets: it drops every host's connection in the background, and a push needs a relay
-that doesn't exist yet ([docs/ios](../ios/README.md) › Not in the first release). On iPhone and
+On the Mac today, below); the iPhone's opt-in push alerts through the relay ([docs/ios](../ios/README.md));
+and the glance surfaces, updated while the app is in front (Glance, below). On iPhone and
 iPad, Home's Needs you inbox stands in: questions and blocked threads across hosts, answered in
 place when short. Everything else in this section is **not built yet**, and several kinds wait on
 features that don't exist either (Missions, plan approval, token budgets, Designs).
@@ -334,102 +333,89 @@ On the Mac, Shepherd has no notification settings page today and no board draws 
 Terminals and agent tools switch (the `panes` extension) in Settings ▸ Pi governs the `notify`
 tool (On the Mac today).
 
-## Live Activities
+## Glance: Live Activities and widgets
 
-**Not built yet** (MobileLiveLock, MobileLock, iPadLock; the Dynamic Island below). Running work
-shows its progress on the Lock Screen: a thread, a thread with subagents, an automation, a mission.
-A notification marks only a change that needs you, or an end (Rules).
+**Partial** (GlanceWatch, GlanceFollow, GlanceIsland, GlanceLock, GlanceHome, GlanceiPad,
+GlanceControls; they replace MobileLiveLock, MobileLock, MobileIsland and iPadLock). Running
+work shows on the Lock Screen, in the Dynamic Island, and in widgets on the Home Screen, the Lock
+Screen and in Control Center. A notification still marks only a change that needs you, or an end
+(Rules).
 
-**The card:** `bgRaised`, radius 22, padding 13 × 15, its lines 9pt apart (MobileLock's mission
-card: 14 × 16 and 10pt); cards stack 8pt apart (10pt on iPad, in its 440pt column). They use Night
-Watch roles and follow the device's appearance (the boards draw dark); only the island is always
-dark. Sizes the iOS ramp doesn't name are set with `Font.shSans` and `Font.shMono` at the board's
-size.
+**Built:** every surface below, drawn by `SHGlance*` in ShepherdUI (`Components/Glance/`) from
+one `SHGlance`. The app publishes it (`GlanceBridge`) from Home's feed while it is in front: to
+the widget extension's app group (`GlanceStore`), and to the Live Activities it starts. **Not
+built:** updates while the app is in the background. The phone drops its host connections there
+and the push relay sends only alerts, so a surface goes stale `SHGlance.staleAfter` (5 minutes)
+after the app leaves the foreground. Push updates need relay support for Live Activity pushes and
+a decision on what crosses the relay (Delivery).
 
-- **Header** (every card): a leading glyph, the title (14pt semibold, `textPrimary`, one line), and
-  trailing meta in mono 11.5pt `textTertiary`. The glyph says what it is and how it's going: a 14pt
-  spinner in `running` for a working thread, `SHBranchGlyph` (15pt) for a thread with subagents (in
-  `lanternText` while one needs you), a bolt in `running` for an automation, the crook (`SHCrook`,
-  15pt, in `lantern`) for a mission. The meta is the elapsed time for a thread (counting live:
-  "4:12", "37m"), the host for an automation ("This Mac"), elapsed over the time budget for a
-  mission ("1h38 / 4h").
-- **A thread** (MobileLiveLock, iPadLock): what it's doing now (13.5pt, `textPrimary`: "Running
-  tests") with the command in mono 11.5pt `textTertiary` ("swift test --filter toolPreview"); then
-  its changes and where it runs (12pt, `textSecondary`: "Edited 3 files", `SHDiffStat` in mono 11pt,
-  "· This Mac" in `textTertiary`); then **Steer** and **Stop**.
-- **A thread with subagents** ("Restyle native UI · 3 subagents"): one row per subagent (13pt): its
-  state (an 11pt spinner in `running`, the glowing 7pt `attention` dot, or a 12pt checkmark in
-  `done`), its label in mono semibold (a 70pt column), then what it's doing in `textSecondary`
-  ("step 1 of 3 · restyling ThreadView", "14 of 14 pass") or its question in `lanternText` ("Replace
-  the old token names everywhere?"). While one asks, the buttons are its options: the first primary,
-  the second secondary ("Replace everywhere", "Rename new ones").
-- **An automation** ("Merge PR #24 after CI"): what it waits on (13.5pt: "Waiting for CI") with its
-  progress in mono `textTertiary` ("3 of 5 checks · ~4m"); an `SHStepStrip` of 5pt segments 4pt
-  apart (done, running, then pending in `lineStrong`); and what happens next (12pt, `textSecondary`:
-  "Merges into main when all checks are green."). No buttons.
-- **A mission** (MobileLock, iPadLock): one `SHLaneStrip` row per lane (the label in mono 11pt
-  `textSecondary` in a 104pt column, a 130pt three-stop track, where it is in mono 10.5pt; the
-  stuck-lane view's colors, iPhone above), 20pt rows 10pt apart (9pt on iPad). On iPhone a footer
-  says what needs you and what's next (12.5pt: the glowing 7pt `attention` dot, "orders needs you"
-  in `lanternText`, "· then validator, ~40m" in `textTertiary`); on iPad it has buttons instead:
-  **Retry with hint** (primary) and **Open**. SHMissions names it `SHMissionLiveActivity` and
-  draws it smaller (Missions: iPhone and iPad: radius 18, 12×14 padding, 8pt apart, 18pt rows,
-  an 80pt label column in mono 10.5, the step in mono 10, the title at 13/600). The two boards
-  disagree; settle one set of measures before building.
-- **Buttons:** 34pt capsules (radius 17) sharing the card's width, 8pt apart, 13.5pt semibold.
-  Secondary is `bgSelected` with `textPrimary`; Stop is `bgSelected` with `failed` text; primary is
-  `lantern` with `textOnLantern`. At most one primary. **Steer** takes a message for the thread
-  without opening Shepherd; **Stop** stops the turn and asks nothing (MobileIsland).
+**The model.** `SHGlance` lists every host's threads with a state: needs you, failed, running,
+done (finished today). Items rank most urgent first: needs you (oldest question first), failed
+(newest first), running (longest first), done (newest first). Automation runs count as running
+under the automation's name. Project threads keep their question, answered only in the app.
+Subagents never ask you, so no surface carries a subagent's question. A Live Activity's content
+keeps the four most urgent items and only counts the rest (`forActivity`), to stay under
+ActivityKit's 4 KB.
 
-**Platform limits** to settle before building: a Live Activity can't hold a text field, so Steer
-can't take text in place; a button runs an App Intent, which runs while the device is locked only if
-the intent's authentication policy allows it; and an update pushed from the host can't be encrypted,
-so what it carries (a command, a question's text) would cross the push relay in the clear.
+**Stale, never frozen.** Past `staleAfter` every surface says when it last heard and which hosts
+it cannot reach ("Last update 6m ago · This Mac unreachable"). A running thread then shows
+"Was running" and a hollow dot instead of a spinner and a timer. Buttons become **Open**.
 
-## Dynamic Island
+### Live Activities (GlanceWatch, GlanceFollow)
 
-**Not built yet** (MobileIsland). Every Live Activity has three sizes. The island is always black,
-so its colors don't change with the theme: text is white (the board's `#f4f5f7`) and 55% white for
-secondary, buttons are 14% white, and the state colors are Shepherd Design's dark values (`running`,
-`lantern`, `done`, `failed`). These whites are not roles yet; add them as roles before building
-(Adding a theme or a role).
+- **Watch:** one activity for every host, started when the app is in front and something runs
+  or waits, and ended 15 minutes after nothing does. Its header counts ("3 need you · 4
+  working"), with the online hosts on the right. The most urgent thread leads with its time and
+  what it runs, asks or ended with; below it, up to three rows, or one under a question's
+  buttons, then "+N more". Swiping it away keeps it gone until nothing runs.
+- **Follow:** one thread, started from a row's long press (Follow on Lock Screen, Stop
+  Following). It shows the call running now, a live timer, the subagent line ("1 running · 1
+  waiting on parent · 1 done"), the goal and its state, the latest turn's diff, the queue and the
+  host. It ends when the thread finishes or fails, showing the result.
+- **Buttons:** 34pt capsules sharing the row, at most one primary. A question offers its first
+  two options (the first in lantern) and **Reply…**; a running thread offers **Steer** and
+  **Stop**; a finished one **Review**; a failed one **Open**. Answers and Stop run App Intents
+  in the app over the host's own connection, or over one made for the request and closed after.
+  Both need an unlocked device. Reply…, Steer, Review and Open are `shepherd://` links into the
+  app.
+- The card is the system's, filled `bgRaised`, padded 12 × 16; it follows the appearance.
 
-- **Compact** (a 36pt pill beside the camera, 12pt inside):
-  - Thread: a spinner and the current command (mono 11.5pt, 55% white: "swift test"), elapsed on the
-    right (mono 12.5pt semibold, `running`: "4:12").
-  - Subagents: the crook and how many are running ("3", white), the board adds a lantern dot (8pt)
-    and how many need you ("1", `lantern`), which Shepherd would not draw: a subagent never needs you.
-  - Automation: a bolt and "CI", and on the right an 18pt ring that fills as checks pass (`running`
-    over 18% white).
-  - Design agent: a pen-nib glyph and the design ("Onboarding", 55% white), boards drawn so far on
-    the right ("2/4").
-  - Finished thread: a checkmark in `done`, "Pushed" and the branch ("main", 55% white). It stays 4
-    seconds, then the activity ends.
-- **Minimal** (two at once): the newer activity keeps a compact pill (a spinner and "4:12"), and the
-  older shrinks to a 36pt dot; a 9pt lantern dot in it means something there needs you.
-- **Expanded** (a long press; radius 40, padding 20 × 24, lines 10pt apart):
-  - Thread: a spinner, the title (15pt semibold) and elapsed (mono 12.5pt, `running`); "Running
-    tests" (13.5pt) with the command (mono 11.5pt, 55%); "Edited 3 files · +67 −48 · This Mac"
-    (12.5pt, 55%, the counts in `done` and `failed`); then **Steer** and **Stop** (38pt capsules,
-    radius 19, 14% white, 14pt semibold; Stop's text `failed`). Steer opens a text field without
-    launching the app; Stop asks nothing.
-  - Subagents (as the board draws it; not for Shepherd, whose subagents never ask you): the crook, "reviewer needs you" (15pt semibold) and the thread ("Restyle native UI",
-    12pt, 55%); the question (13.5pt, code in mono 12pt: "Two token names collide with
-    `Tokens.textSecondary`. Rename the new ones, or replace the old ones everywhere?"); its options
-    as buttons, the first primary (`lantern`, `textOnLantern`: "Replace all"), then "Rename new
-    ones". The board answers a subagent's question in place.
-  - Design agent: the pen nib, "Onboarding flow" and "2 of 4"; the boards as 62pt tiles (radius 8,
-    8pt apart), filling in as they're drawn: a drawn board's thumbnail, the one being drawn
-    shimmering on 12% white with a small spinner, the rest empty at 6% white; then **Open boards**.
+### Dynamic Island (GlanceIsland)
 
-## Lock-screen widget (iPad)
+Always black. Its text is `islandText` (#f4f5f7), secondary text `islandSecondary` (55% white),
+buttons `islandFill` (14% white); state colors are the dark appearance's.
 
-**Not built yet** (iPadLock). A Shepherd widget under the clock: counts only, and a tap opens the
-Overview. 340pt wide, radius 22, padding 16 × 18, on the system's lock-screen glass (the board's 10%
-white). Its header is the crook (14pt) and "Shepherd" (13pt semibold, 72% white). Three counts sit
-22pt apart, each a figure (34pt semibold) over its label (12.5pt, 72% white): "4" in `lantern` over
-"need you", "6" over "running", "3" over "merged today". Its last line is the hosts: "build-01 and
-This Mac online · horizon offline".
+- **Compact:** the most urgent state's mark on the left (a still spinner arc, the crook in
+  lantern, a check, a cross; a clock when stale). On the right, how many need you (a lantern dot
+  and count), else how many run, or a followed thread's timer, "Done" or "Failed".
+- **Minimal:** one 9pt dot in the most urgent state's color.
+- **Expanded:** the state's mark and word on the left, the timer or "host · 2m" on the right,
+  then the thread, what it runs or asks, and the card's buttons at 38pt.
+
+### Widgets (GlanceHome, GlanceiPad, GlanceLock, GlanceControls)
+
+One widget in every size, the sidebar in miniature: Needs you (lantern tags), Failed, Working
+(minutes running), Done today, each group head counting. A row opens its thread.
+
+- **Small:** the most urgent thread, or the one thread the widget shows: its state, title, the
+  question, call or result, and its host.
+- **Medium:** the groups, five rows shared out most urgent first.
+- **Large:** a "Shepherd" header with the scope, twelve rows with Done today, and the hosts
+  line ("This Mac, build-01 online · horizon offline").
+- **Extra large (iPad):** a column per host; an offline host says so.
+- **Lock Screen:** circular, how many need you with a ring while any do (the Lock Screen draws in
+  one tint, so the ring says it), else how many run; rectangular, the counts then the top thread
+  and why; inline, the counts beside the date.
+- **Scope** (the widget's edit sheet): All work, a host, or one thread.
+- **Empty:** "Nothing running or waiting" and the hosts line.
+- **Control Center:** **New thread** opens the composer; **Needs you** shows how many wait and
+  opens them.
+
+**Departures from the boards** (the user's to settle): running rows show minutes, not a
+sparkline (the phone reads no activity history); Failed offers Open, not Retry (a retry needs the
+failure's checkpoint); the goal line is the goal and its state, not "step 1 of 1 · 62%" (a goal
+has no steps); widget scope has no project yet; Stop asks for an unlocked device, like answers,
+because the host's token is readable only then.
 
 ## Delivery
 
@@ -441,6 +427,6 @@ interruption level, a relevance score, `mutable-content`, and the host and stati
 a host daemon (`shepherd-d`) that Shepherd doesn't have: sessions live in the app (AGENTS.md), so
 the app is what sends.
 
-**Previews:** when these are built, each surface gets a preview render like every other: the Live
-Activity cards and the island's sizes, the iPad widget, Settings ▸ Notifications, and the rich
-views, in both appearances (the island in dark only).
+**Previews:** `GlancePreviewTests` renders the Live Activity cards, the island's sizes (dark in
+both appearances) and the widgets in light and dark. Settings ▸ Notifications and the rich views
+get theirs when they are built.

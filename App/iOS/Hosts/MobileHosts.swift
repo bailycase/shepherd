@@ -88,6 +88,8 @@ final class MobileHosts {
     @ObservationIgnored private(set) var foreground = false
     /// Called when a host transitions to `.connected`. Used by PushManager to renew on reconnect.
     @ObservationIgnored var onHostConnected: ((MobileHost) -> Void)?
+    /// The app came to the foreground or left it (`setForeground`).
+    @ObservationIgnored var onForegroundChanged: ((Bool) -> Void)?
 
     init(defaults: UserDefaults = .standard, tokens: HostTokens = .keychain, clientName: String = "Shepherd iOS",
          makeClient: @escaping () -> RemoteHostClient = { RemoteHostClient() },
@@ -210,6 +212,7 @@ final class MobileHosts {
         for host in hosts {
             if active { retry(host.id) } else { disconnect(host) }
         }
+        onForegroundChanged?(active)
     }
 
     /// Reconnects now, with the backoff reset.

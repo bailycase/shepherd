@@ -368,7 +368,12 @@ Push notifications use the Cloudflare relay and APNs; enable them per host in
 Settings ▸ Notifications. They cover completed runs, terminal errors, and explicit requests
 for an answer. The Mac must be awake and running Shepherd.
 
+The Live Activities (Watch, and Follow from a row's long press), the Dynamic Island, and the
+Home Screen, Lock Screen and Control Center widgets live in the `Shepherd Widgets` extension
+(`App/Widgets`, with what it shares with the app in `App/Glance`). The app updates them while it
+is in front; they go stale five minutes after it leaves (docs/design/notifications.md › Glance).
+
 ## Not in the first release
 
-Live Activities, QR pairing and TLS, and everything waiting on the Mac (Missions,
-daemon hosts).
+Live Activity updates while the app is in the background (they need Live Activity pushes from
+the relay), QR pairing and TLS, and everything waiting on the Mac (Missions, daemon hosts).

@@ -54,7 +54,7 @@ struct DesignViolation: Hashable, Sendable {
 
 enum DesignRules {
     /// Where the scan looks: the Mac app, ShepherdUI's components, and the iPhone and iPad client.
-    static let roots = ["Sources/ShepherdApp", "Packages/ShepherdUI/Sources", "App/iOS"]
+    static let roots = ["Sources/ShepherdApp", "Packages/ShepherdUI/Sources", "App/iOS", "App/Glance", "App/Widgets"]
 
     /// Folders the rules do not apply to, each with why.
     static let exempt: [(prefix: String, reason: String)] = [

@@ -90,6 +90,12 @@ public final class SHPalette: Sendable {
     public let sheetScrim: Color
     /// Labels on a `failed` fill (the dangerFill button, the failed count badge).
     public let textOnFailed: Color
+    /// The Dynamic Island is always black, whatever the appearance (GlanceIsland): its text, its
+    /// secondary text (55% white) and its buttons' fill (14% white). Its state colors are the dark
+    /// variant's, by drawing it in the dark appearance.
+    public let islandText: Color
+    public let islandSecondary: Color
+    public let islandFill: Color
     /// The design canvas's selection handles: white squares on a `running` line (SHDesignTool).
     public let selectionHandle: Color
     /// The primary button's fill lifted on hover and sunk while pressed, and the dangerFill
@@ -215,6 +221,10 @@ public final class SHPalette: Sendable {
         let sheetBlack = HexColor(red: 0, green: 0, blue: 0, alpha: 0.55)
         sheetScrim = Color(light: sheetBlack, dark: sheetBlack)
         textOnFailed = Color(light: "#ffffff", dark: "#ffffff")
+        islandText = Color(light: "#f4f5f7", dark: "#f4f5f7")
+        let islandWhite = { (alpha: Double) in HexColor(red: 1, green: 1, blue: 1, alpha: alpha) }
+        islandSecondary = Color(light: islandWhite(0.55), dark: islandWhite(0.55))
+        islandFill = Color(light: islandWhite(0.14), dark: islandWhite(0.14))
         selectionHandle = Color(light: "#ffffff", dark: "#ffffff")
         lanternHover = Color(light: SHButtonFills.lanternHover.light, dark: SHButtonFills.lanternHover.dark)
         lanternPressed = Color(light: SHButtonFills.lanternPressed.light, dark: SHButtonFills.lanternPressed.dark)
