@@ -161,35 +161,13 @@ struct ServiceTierTests {
         let ready = try await pi.ready()
         #expect(ready.serviceTiers == [] && ready.serviceTier == "fast", "a thread keeps its tier under a model that ignores it")
         for (model, tiers) in [("openai/gpt-6-luna", ["standard", "fast"]), ("openai-codex/gpt-6-sol", ["standard", "fast"]),
-                               ("cliproxyapi/claude-opus-5", []), ("anthropic/claude-sonnet-4-20250514", [])] as [(String, [String])] {
+                               ("cliproxyapi/gpt-6-sol", []), ("cliproxyapi/claude-opus-5", []), ("anthropic/claude-sonnet-4-20250514", [])] as [(String, [String])] {
             let current = try await pi.snapshot { !$0.piSessionID.isEmpty }
             _ = try await pi.request(.setModel(expectedSessionID: current.piSessionID, generation: current.generation, operationID: UUID(), model: model))
             let next = try await pi.snapshot("\(model) to be the model") { $0.model == model }
             #expect(next.serviceTiers == tiers, "\(model)")
             #expect(next.serviceTier == "fast")
         }
-    }
-
-    @Test func aCLIProxyAPIModelIsOfferedByItsOwner() async throws {
-        let h = try ScratchServer.fresh()
-        defer { h.stop() }
-        // The connection file Settings keeps in the pi home: who owns each model it serves.
-        let connection = h.server.pi.home.appendingPathComponent(CLIProxyAPIStore.fileName)
-        try FileManager.default.createDirectory(at: h.server.pi.home, withIntermediateDirectories: true)
-        try Data(#"{"enabled":true,"baseURL":"http://127.0.0.1:1/v1","apiKey":"k","updatedAt":1,"models":[{"id":"gpt-6-sol","owned_by":"openai"},{"id":"claude-opus-5","owned_by":"anthropic"}]}"#.utf8)
-            .write(to: connection)
-        let (pi, _, _) = try await Self.agent(on: h, model: #"{"provider":"cliproxyapi","id":"gpt-6-sol","api":"openai-responses"}"#)
-        let ready = try await pi.ready()
-        #expect(ready.serviceTiers == ["standard", "fast"], "owned by openai")
-        // The same id under another owner is not OpenAI's: the listing is what says.
-        try Data(#"{"enabled":true,"baseURL":"http://127.0.0.1:1/v1","apiKey":"k","updatedAt":2,"models":[{"id":"gpt-6-sol","owned_by":"antigravity"}]}"#.utf8)
-            .write(to: connection)
-        _ = try await pi.request(.setModel(expectedSessionID: ready.piSessionID, generation: ready.generation, operationID: UUID(), model: "openai/gpt-6-luna"))
-        _ = try await pi.snapshot { $0.model == "openai/gpt-6-luna" }
-        let again = try await pi.snapshot { !$0.piSessionID.isEmpty }
-        _ = try await pi.request(.setModel(expectedSessionID: again.piSessionID, generation: again.generation, operationID: UUID(), model: "cliproxyapi/gpt-6-sol"))
-        let other = try await pi.snapshot("the proxy model again") { $0.model == "cliproxyapi/gpt-6-sol" }
-        #expect(other.serviceTiers == [], "now owned by antigravity")
     }
 
     // MARK: A remote client

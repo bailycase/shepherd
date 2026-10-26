@@ -25,7 +25,7 @@ change.
 `Extensions/design-skill/`. `Sources/ShepherdSessions/Extensions` is a symlink to it, declared as a
 processed resource. SwiftPM flattens the filenames into `Shepherd_ShepherdSessions.bundle`;
 `EmbeddedExtensions.source(name)` resolves logical paths by basename. Each `*Extension.swift` installs its file into the support directory (or the private pi
-home, for `CLIProxyAPIExtension`, `GoalExtension` and `ServiceTierExtension`) and rewrites it when
+home, for `GoalExtension` and `ServiceTierExtension`) and rewrites it when
 the content differs. Editing a `.ts` file is the whole change.
 
 - Extensions stay dependency-free and inert without their environment variables.

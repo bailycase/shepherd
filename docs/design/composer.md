@@ -134,10 +134,9 @@ metrics (the boards draw the Design tool's composers at their own scale).
   process.", with the error and Reconnect: only for a pi that was serving and went away, one
   that failed, or one that never started.
 - **Model blocked:** a `failed` `NWBanner` above the card, "Message wasn't sent.", names the
-  saved CLIProxyAPI model and says the message was not sent. "Choose model" opens the existing
-  picker. The draft and attachments stay; Send retries only on the user's press. The host tries
-  the exact saved provider/model once before rejecting it, never a similarly named model or a
-  different provider. See [RestoredModelSend](boards/RestoredModelSend.md).
+  saved model and says the message was not sent. "Choose model" opens the existing
+  picker. The draft and attachments stay; Send retries only on the user's press.
+  This presentation handles a host's `model_unavailable` failure; it does not recover a provider.
 - **Can't start:** a `failed` `NWBanner` in the Error banner's place above the card, for a pi
   that stopped before it served (Thread › Can't start), except one not signed in on this Mac,
   whose card in the thread says so instead (Thread › Not signed in; the composer stays as it is). Its title names the cause and its message

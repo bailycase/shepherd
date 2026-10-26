@@ -3,7 +3,7 @@ import Testing
 
 @Suite("Subagent model field")
 struct SubagentModelFieldTests {
-    private let ids = ["cliproxyapi/gemini-flash-2", "cliproxyapi/claude-opus-1", "openai/gpt-5"]
+    private let ids = ["custom/gemini-flash-2", "custom/claude-opus-1", "openai/gpt-5"]
 
     @Test func anEmptyQueryListsInheritFirstThenEveryModel() {
         let options = SubagentModelField.sections(choices: ids, query: "  ", current: nil)[0].options

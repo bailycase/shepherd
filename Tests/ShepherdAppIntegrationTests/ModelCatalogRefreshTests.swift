@@ -17,8 +17,8 @@ import ShepherdTestSupport
                          home: root.appendingPathComponent("pi"), userHome: root.path)
         try Data("provider model context thinking\nfixture old 128K no\n".utf8).write(to: table)
         #expect(await ModelCatalog.loadLocal(from: pi.catalog).models.map(\.id) == ["fixture/old"])
-        try Data("provider model context thinking\ncliproxyapi added 200K yes\n".utf8).write(to: table)
-        try Data("{}".utf8).write(to: pi.home.appendingPathComponent(CLIProxyAPIStore.fileName))
-        #expect(await ModelCatalog.loadLocal(from: pi.catalog).models.map(\.id) == ["cliproxyapi/added"])
+        try Data("provider model context thinking\nfixture added 200K yes\n".utf8).write(to: table)
+        try Data("{}".utf8).write(to: pi.home.appendingPathComponent("models.json"))
+        #expect(await ModelCatalog.loadLocal(from: pi.catalog).models.map(\.id) == ["fixture/added"])
     }
 }

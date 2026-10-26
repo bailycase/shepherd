@@ -79,7 +79,6 @@ public struct PiHome: Equatable, Sendable {
     public var pins: [(String, String)] {
         var pins = [("PI_CODING_AGENT_DIR", directory.path)]
         if let package = engine.packageDirectory { pins.append(("PI_PACKAGE_DIR", package)) }
-        pins.append(("SHEPHERD_CLIPROXYAPI_CONFIG", directory.appendingPathComponent(CLIProxyAPIStore.fileName).path))
         pins += [("PI_OFFLINE", "1"), ("PI_SKIP_VERSION_CHECK", "1"), ("PI_TELEMETRY", "0")]
         return pins
     }
@@ -161,7 +160,7 @@ public struct PiHome: Equatable, Sendable {
 
             """
         script += "if [[ ${1-} == mcp ]]; then exec \(engine.command.map(q).joined(separator: " ")) \"$@\"; fi\n"
-        script += "exec \(engine.command.map(q).joined(separator: " ")) -e \(q(directory.appendingPathComponent("shepherd-cliproxyapi.ts").path)) \"$@\"\n"
+        script += "exec \(engine.command.map(q).joined(separator: " ")) \"$@\"\n"
         return script
     }
 
@@ -209,7 +208,6 @@ public struct PiHome: Equatable, Sendable {
         guard Self.isInside(Self.canonical(bin), Self.canonical(directory.path)) else {
             throw PiHomeError("\(bin) leads outside Shepherd's pi home, so Shepherd won't write its launcher there")
         }
-        _ = try CLIProxyAPIExtension.install(in: self)
         try ServiceTierExtension.install(in: self)
         try GoalExtension.install(in: self)
         try Self.write(Data(Self.markerText.utf8), to: marker, mode: 0o644)

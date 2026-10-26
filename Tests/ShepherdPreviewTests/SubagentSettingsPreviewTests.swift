@@ -43,11 +43,11 @@ struct SubagentSettingsPreviewTests {
         }
     }
 
-    /// A CLIProxyAPI-sized catalog: the editor's Model field, and the picker it opens, unfiltered and searched.
+    /// A Large custom-provider catalog: the editor's Model field, and the picker it opens, unfiltered and searched.
     @Test func theModelPickerSearchesAThousandProxyModels() async throws {
         let ids = (0..<1000).map { i in
             let provider = ["claude", "gpt", "gemini", "qwen", "glm"][i % 5]
-            return "cliproxyapi/\(provider)-\(["opus", "sonnet", "haiku", "mini", "pro", "flash"][i % 6])-\(i / 6)"
+            return "custom/\(provider)-\(["opus", "sonnet", "haiku", "mini", "pro", "flash"][i % 6])-\(i / 6)"
         }
         let workspace = try PreviewWorkspace()
         defer { workspace.stop() }

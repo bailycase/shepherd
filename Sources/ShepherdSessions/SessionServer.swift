@@ -517,8 +517,6 @@ public final class SessionServer: @unchecked Sendable {
     private let modelCatalog: ModelCatalog
     /// Which pi this server's agents run, and its home (`PiSetup`).
     public let pi: PiSetup
-    /// Which tiers each thread's model offers (`ServiceTierSupport`, and CLIProxyAPI's owners).
-    private let serviceTierOffers: ServiceTierOffers
     /// Where each delivered message came from, per pi session (support directory).
     private let originStore: ThreadOriginStore
     private let agentRecovery: AgentRecoveryStore
@@ -822,7 +820,6 @@ public final class SessionServer: @unchecked Sendable {
                                              home: URL(fileURLWithPath: pi.userHome, isDirectory: true), sessions: pi.sessionsRoot,
                                              systems: stateURL.deletingLastPathComponent().appendingPathComponent("design-systems"),
                                              globalDirectories: { [pi.home] + [pi.yourPi.resolve()?.agentDirectory].compactMap { $0 } }, pi: pi)
-        self.serviceTierOffers = ServiceTierOffers(home: pi.files)
         self.modelCatalog = modelCatalog ?? SessionServer.piModelCatalog(pi)
         self.originStore = ThreadOriginStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("thread-origins", isDirectory: true))
         self.agentRecovery = AgentRecoveryStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("agent-recovery", isDirectory: true))
@@ -6603,8 +6600,6 @@ public final class SessionServer: @unchecked Sendable {
             thread.hiddenCommands = hiddenSlashCommands
             thread.setGoalsEnabled(goalsEnabled, notifyController: false)
             thread.onCommandsListed = { [weak serverWeak] listed in serverWeak?.mergeSlashCommands(listed) }
-            let offers = serviceTierOffers
-            thread.serviceTierOffer = { offers.tiers(for: $0) }
             thread.applyServiceTier = { [weak serverWeak] tier, done in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { done("The agent is gone."); return }
                 do {
