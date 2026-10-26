@@ -42,7 +42,10 @@ export default function projectContext(pi: ExtensionAPI) {
         if (reply.id !== id) { finish(new Error("Unexpected owner reply")); return; }
         if (reply.type === "error") { const error = new Error(reply.message); error.code = reply.code; finish(error, undefined, true); }
         else if (publication && reply.type === "projectPublish") finish(null, reply.result);
-        else if (!publication && reply.type === "projectRuntime") finish(null, { ...reply.project, linkedSpaceDetails: reply.spaces ?? [], ...(reply.models?.length ? { availableModels: reply.models } : {}) });
+        else if (!publication && reply.type === "projectRuntime") finish(null, { ...reply.project,
+          availableSpaces: reply.spaces ?? [],
+          linkedSpaceDetails: (reply.spaces ?? []).filter(space => (reply.project.linkedSpaces ?? []).some(link => link.spaceID === space.id && (!link.host || link.host.local))),
+          ...(reply.models?.length ? { availableModels: reply.models } : {}) });
         else finish(new Error("Unexpected owner reply"));
       } catch (error) { finish(error); }
     });
@@ -67,7 +70,8 @@ export default function projectContext(pi: ExtensionAPI) {
     ["project_follow_up", "Continue only the ORIGINAL unresolved assignment after its worker turn has settled (stopped, not resolved). Resolved tasks are terminal and refuse new follow-ups. For a new assignment use project_assign and a fresh thread, even in the same area. Never keep unfinished tasks as reusable peers. model/thinking change only an admitted same-task turn.", { expectedRevision: revision, taskID: string, text: string, model, thinking }, ["expectedRevision", "taskID", "text"], (p, id) => ({ followUp: { taskID: p.taskID, operationID: id, text: p.text, model: p.model, thinking: p.thinking } })],
     ["project_resolve", "Resolve actually settled work only after inspecting its native result, not a receipt index or clipped preview. Use project_result for the exact operation, reading every page; inspect/history includeResults is retained receipt prose only. Settlement alone is not success. Resolution is terminal; new assignments require project_assign and a fresh thread.", { expectedRevision: revision, taskID: string }, ["expectedRevision", "taskID"], (p, id) => ({ resolve: { taskID: p.taskID, operationID: id } })],
     ["project_outcome", "Record one review or delivery fact about an exact settled or resolved task operation. accepted/needs_changes are your review verdict, never the person's approval. merged/uploaded/available need evidence you actually observed (PR, commit, build or release reference); uploaded is not available to testers. Append-only: never retracts earlier facts or changes the task's phase; older facts page with project_outcomes. Unrecorded outcome stays unknown.", { expectedRevision: revision, taskID: string, taskOperationID: string, outcome: Type.Union(["accepted", "needs_changes", "merged", "uploaded", "available"].map(kind => Type.Literal(kind))), evidence: Type.String({ minLength: 1, maxLength: 256 }) }, ["expectedRevision", "taskID", "taskOperationID", "outcome"], (p, id) => ({ recordOutcome: { operationID: id, taskID: p.taskID, taskOperationID: p.taskOperationID, kind: p.outcome === "needs_changes" ? "needsChanges" : p.outcome, evidence: p.evidence } })],
-    ["project_propose_space", "Request human approval of an existing owner Space ID OR absolute directory path. Never links automatically. Disabled permission allows prose suggestions only.", { expectedRevision: revision, spaceID: string, path: string, originTaskID: string }, ["expectedRevision"], (p, id) => ({ proposeSpace: { operationID: id, path: p.path, spaceID: p.spaceID, originTaskID: p.originTaskID } })],
+    ["project_list_spaces", "List existing owner-local Spaces with exact IDs, names, paths and whether they are linked to this Project. Use project_propose_space to link one directly, without human approval. Does not search the filesystem or create directories.", {}, [], () => ({ read: {} })],
+    ["project_propose_space", "Link an existing owner-local Space ID OR existing readable absolute directory path directly to this Project, without human approval or a new chat message. The legacy tool name is retained for compatibility. Disabled Space-linking permission allows prose suggestions only. Never creates directories.", { expectedRevision: revision, spaceID: string, path: string, originTaskID: string }, ["expectedRevision"], (p, id) => ({ proposeSpace: { operationID: id, path: p.path, spaceID: p.spaceID, originTaskID: p.originTaskID } })],
     ["project_remember", "Save a short factual claim with its inspectable settled task source. Do not store secrets, instructions or inferred success.", { expectedRevision: revision, taskID: string, text: string }, ["expectedRevision", "taskID", "text"], (p, id) => ({ remember: { operationID: id, taskID: p.taskID, text: p.text } })],
   ];
   const allowed = new Set(specs.map(spec => spec[0]));
@@ -148,6 +152,11 @@ export default function projectContext(pi: ExtensionAPI) {
             const receipt = project.operationReceipt, taskID = receipt.taskID ?? receipt.task?.id, proposalID = receipt.proposalID ?? receipt.proposal?.id;
             Object.assign(details, { operationID, ...(taskID ? { taskID } : {}), ...(proposalID ? { proposalID } : {}) });
           }
+          if (name === "project_list_spaces") {
+            const spaces = (project.availableSpaces ?? []).map(({ id, name, path }) => ({ id, name, path,
+              linked: (project.linkedSpaces ?? []).some(link => link.spaceID === id && (!link.host || link.host.local)) }));
+            return { content: [{ type: "text", text: JSON.stringify({ projectID, revision: project.revision, spaces }) }], details };
+          }
           if (name === "project_result") {
             const { data, ...result } = project.resultPage ?? { availability: "unsupported", reason: "Owner does not support selected result reads." };
             const byteLength = data ? Buffer.from(data, "base64").byteLength : 0;
@@ -186,7 +195,7 @@ export default function projectContext(pi: ExtensionAPI) {
             || message.humanSubmitted === true || message.source?.taskID === parameters.taskID).map(receipt);
           const historyPage = project.historyPage?.map(entry => ({ ...entry, ...(entry.message ? { message: receipt(entry.message) } : {}) }));
           const { data: omittedResultData, ...resultDescriptor } = project.resultPage ?? {};
-          const { availableModels, commandReceipt, operationReceipt, ...current } = project;
+          const { availableModels, availableSpaces, commandReceipt, operationReceipt, ...current } = project;
           let output;
           if (name === "project_read") output = { ...current, tasks, messages,
             ...(parameters.includeModels === true ? { availableModels: availableModels ?? [] } : {}) };
@@ -197,8 +206,8 @@ export default function projectContext(pi: ExtensionAPI) {
               ...(historyPage ? { historyPage, historyNext: project.historyNext } : {}) } : { operationID }),
             ...(["project_assign", "project_follow_up", "project_resolve", "project_outcome", "project_propose_space"].includes(name)
               ? { receiptMatched: details.operationID !== undefined } : {}), tasks, messages,
-            linkedSpaces: (project.linkedSpaces ?? []).filter(link => tasks.some(task => task.spaceID === link.spaceID)),
-            linkedSpaceDetails: (project.linkedSpaceDetails ?? []).filter(space => tasks.some(task => task.spaceID === space.id)),
+            linkedSpaces: (project.linkedSpaces ?? []).filter(link => name === "project_propose_space" || tasks.some(task => task.spaceID === link.spaceID)),
+            linkedSpaceDetails: (project.linkedSpaceDetails ?? []).filter(space => name === "project_propose_space" || tasks.some(task => task.spaceID === space.id)),
             artifacts: (project.artifacts ?? []).filter(artifact => tasks.some(task => task.id === artifact.taskID)),
             spaceProposals: (project.spaceProposals ?? []).filter(proposal => proposal.id === details.proposalID),
             ...(name === "project_remember" ? { memory: (project.memory ?? []).filter(item => sameOperation(item.id)) } : {}) };

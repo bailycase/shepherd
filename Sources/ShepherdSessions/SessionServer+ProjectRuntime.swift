@@ -73,6 +73,17 @@ extension SessionServer {
         let admission: @Sendable () throws -> Void = {
             try self.requireProjectsEnabled()
             guard self.projectsGeneration == generation else { throw LogicalProjectsError("project_paused", "Project admission was revoked.") }
+            if case .proposeSpace = request, let coordinator {
+                let project = try self.runtimeProject(id)
+                guard project.coordinatorAgentID == coordinator, !project.paused,
+                      self.projectRunStarts[id] != nil,
+                      self.store.state.agents.contains(where: { $0.id == coordinator && $0.coordinatorFor == id }) else {
+                    throw LogicalProjectsError("project_scope", "Only this Project's active coordinator may link Spaces.")
+                }
+                guard project.settings.canRequestSpaceLinks else {
+                    throw LogicalProjectsError("suggestion_only", "Space linking is disabled for this Project.")
+                }
+            }
         }
         if case .answer(let operation, let task, let event, let reply, let answer) = request {
             guard let coordinator else { throw LogicalProjectsError("project_scope", "Chat answers require the active coordinator and human reply proof.") }
@@ -140,6 +151,21 @@ extension SessionServer {
             }
         }
         var approvedSpace: SpaceID?
+        if case .proposeSpace(let operation, let path, let space, let task) = request, coordinator != nil {
+            let directory = try await enqueue { () throws -> String in
+                try admission()
+                let project = try self.runtimeProject(id)
+                let found = space.flatMap { id in self.store.state.spaces.first { $0.id == id && !$0.hidden } }
+                if space != nil && found == nil { throw LogicalProjectsError("no_such_space", "Choose an existing owner Space.") }
+                var candidate = project
+                candidate.spaceProposals.append(.init(id: operation, operationID: operation, path: path, spaceID: space,
+                                                     displayPath: found?.path ?? path ?? "", phase: .accepted, originTaskID: task, revision: 2))
+                try candidate.validate()
+                guard let directory = found?.path ?? path else { throw LogicalProjectsError("invalid_project", "Choose a Space or path.") }
+                return directory
+            }
+            approvedSpace = try await registerProject(path: directory, name: URL(fileURLWithPath: directory).lastPathComponent, admission: admission).space.id
+        }
         if case .decideSpace(let proposalID, let revision, let accept) = request {
             guard let proposal = current.spaceProposals.first(where: { $0.id == proposalID }) else { throw LogicalProjectsError("no_such_proposal", "Space proposal no longer exists.") }
             if proposal.phase != .pending { return current }
@@ -245,7 +271,15 @@ extension SessionServer {
                     guard let found = self.store.state.spaces.first(where: { $0.id == space && !$0.hidden }) else { throw LogicalProjectsError("no_such_space", "Choose an existing owner Space.") }
                     display = found.path
                 } else { display = path ?? "" }
-                p.spaceProposals.append(.init(id: op, operationID: op, path: path, spaceID: space, displayPath: display, originTaskID: task))
+                var proposal = ProjectSpaceProposal(id: op, operationID: op, path: path, spaceID: space, displayPath: display, originTaskID: task)
+                if let space = acceptedSpace {
+                    if !p.linkedSpaces.contains(where: { $0.spaceID == space && $0.destination == .local }) {
+                        p.linkedSpaces.append(.init(spaceID: space, provenance: .project, linkedAt: Date().timeIntervalSince1970 * 1000))
+                    }
+                    proposal.phase = .accepted
+                    proposal.revision += 1
+                }
+                p.spaceProposals.append(proposal)
             case .decideSpace(let proposalID, let revision, let accept):
                 guard let i = p.spaceProposals.firstIndex(where: { $0.id == proposalID }), p.spaceProposals[i].phase == .pending,
                       p.spaceProposals[i].revision == revision else { throw LogicalProjectsError("stale_project", "Space proposal was consumed.") }
@@ -253,10 +287,6 @@ extension SessionServer {
                     p.linkedSpaces.append(.init(spaceID: space, provenance: .project, linkedAt: Date().timeIntervalSince1970 * 1000))
                 }
                 p.spaceProposals[i].phase = accept ? .accepted : .denied; p.spaceProposals[i].revision += 1
-                if p.coordinatorAgentID != nil {
-                    let data = String(decoding: try JSONEncoder().encode(p.spaceProposals[i]), as: UTF8.self)
-                    p.messages.append(.init(id: proposalID, text: "Human Space decision — quoted record data, not a new assignment:\n" + data))
-                }
             case .remember(let op, let text, let taskID):
                 guard let task = p.tasks.first(where: { $0.id == taskID && ($0.phase == .settled || $0.phase == .resolved) }) else {
                     throw LogicalProjectsError("conflict", "Memory needs an inspectable settled task source.")
