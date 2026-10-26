@@ -196,8 +196,8 @@ keep the version for real breaks.
   Done, Pinned, Recents, and a footer with
   the hosts and Settings) beside the selected thread; in portrait the thread takes the width and
   the sidebar slides over it. Portrait is the window's shape, never what the
-  keyboard leaves of it (CONTRACTS.md › Navigation). With no thread selected the detail is the
-  overview: Needs you, Running now and Finished.
+  keyboard leaves of it (CONTRACTS.md › Navigation). With no thread selected the detail is an
+  empty state with a New thread button.
 - **Thread (`ThreadScreen`):** the title with its status line ("Idle · ⧉ agent/swiftui-previews", or
   "Needs you · ⌂ your checkout" when the agent works in the space's own checkout; on iPad the branch chip
   with its changed files, and the host when there are several, then a status pill with the running
