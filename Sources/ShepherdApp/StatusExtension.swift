@@ -40,17 +40,12 @@ struct MCPLaunch: Equatable {
     /// names an MCP source; it never approves the checkout's executable project resources.
     func sharingProject(_ parent: String?, agent: Agent, cwd: String, state: ShepherdState, verifiedWorktree: Bool = false,
                         install: () throws -> String = MCPParentExtension.installedPath) rethrows -> MCPLaunch {
-        guard agent.worktreeBranch != nil || agent.worktreePath != nil || verifiedWorktree,
-              let space = state.spaces.first(where: { $0.id == agent.spaceID }),
-              !PiLaunch.isHomeFolder(space.path, userHome: NSHomeDirectory()),
-              !PiLaunch.isHomeFolder(cwd, userHome: NSHomeDirectory()),
-              PiHome.canonical(space.path) != PiHome.canonical(cwd),
-              agent.worktreePath.map({ PiHome.canonical($0) == PiHome.canonical(cwd) }) ?? true else {
+        guard let owner = StatusExtension.worktreeOwningSpace(agent: agent, cwd: cwd, state: state, verifiedWorktree: verifiedWorktree) else {
             return try sharingParent(parent, install: install)
         }
         var launch = self
         launch.extensions.append(try install())
-        launch.environment["SHEPHERD_MCP_OWNING_SPACE"] = PiHome.canonical(space.path)
+        launch.environment["SHEPHERD_MCP_OWNING_SPACE"] = owner
         launch.environment["SHEPHERD_MCP_WORKTREE_CWD"] = PiHome.canonical(cwd)
         return launch
     }
@@ -71,6 +66,17 @@ struct MCPLaunch: Equatable {
 /// Application Support and passed to pi via `-e`, reporting agent lifecycle
 /// status to the app's extension socket.
 enum StatusExtension {
+    /// The registered Space for a managed or Git-verified worktree, never a same-named sibling.
+    static func worktreeOwningSpace(agent: Agent, cwd: String, state: ShepherdState, verifiedWorktree: Bool = false) -> String? {
+        guard agent.worktreeBranch != nil || agent.worktreePath != nil || verifiedWorktree,
+              let space = state.spaces.first(where: { $0.id == agent.spaceID }),
+              !PiLaunch.isHomeFolder(space.path, userHome: NSHomeDirectory()),
+              !PiLaunch.isHomeFolder(cwd, userHome: NSHomeDirectory()),
+              PiHome.canonical(space.path) != PiHome.canonical(cwd),
+              agent.worktreePath.map({ PiHome.canonical($0) == PiHome.canonical(cwd) }) ?? true else { return nil }
+        return PiHome.canonical(space.path)
+    }
+
     /// Write the extension source to Application Support (idempotent) and
     /// return its filesystem path.
     static func installedPath() throws -> String {
@@ -114,6 +120,7 @@ enum StatusExtension {
         design: (extensionPath: String, designID: DesignID, skillDirectory: String)? = nil,
         designReferences: (extensionPath: String, granted: Bool)? = nil,
         mcp: MCPLaunch? = nil,
+        worktreeOwningSpace: String? = nil,
         browserExtensionPath: String? = nil,
         contextExtensionPath: String? = nil,
         projectContext: (path: String, json: String, coordinator: Bool)? = nil,
@@ -146,6 +153,10 @@ enum StatusExtension {
             "SHEPHERD_SOCKET": socketPath,
             "SHEPHERD_EXT_STATUS": extensionPath,
         ]
+        if let worktreeOwningSpace, design == nil, !isAutomation, projectContext?.coordinator != true {
+            env["SHEPHERD_RESOURCE_OWNING_SPACE"] = worktreeOwningSpace
+            env["SHEPHERD_RESOURCE_WORKTREE_CWD"] = PiHome.canonical(cwd)
+        }
         if let instructions { env["SHEPHERD_INSTRUCTIONS_DIR"] = instructions.directory }
         // Settings ▸ Experiments ▸ Suggested instructions, while on for this agent: the files its
         // suggest_instruction may draft a line for.

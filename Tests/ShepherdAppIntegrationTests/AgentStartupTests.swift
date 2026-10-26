@@ -66,6 +66,8 @@ struct AgentStartupTests {
         let launch = try #require(StubPi.launches().last { PiHome.canonical($0.cwd) == PiHome.canonical(checkout.path) })
         #expect(launch.env["SHEPHERD_MCP_OWNING_SPACE"] == (mcpEnabled ? PiHome.canonical(owner.path) : nil))
         #expect(launch.env["SHEPHERD_MCP_WORKTREE_CWD"] == (mcpEnabled ? PiHome.canonical(checkout.path) : nil))
+        #expect(launch.env["SHEPHERD_RESOURCE_OWNING_SPACE"] == PiHome.canonical(owner.path))
+        #expect(launch.env["SHEPHERD_RESOURCE_WORKTREE_CWD"] == PiHome.canonical(checkout.path))
         #expect(!launch.argv.contains("--approve"))
         #expect(launch.env["SHEPHERD_EXT_MCP_PROJECT"] == nil, "Shared .mcp.json keeps its independent opt-in")
         #expect(vm.state.agents.first?.spaceID == space.id)
@@ -101,6 +103,8 @@ struct AgentStartupTests {
         }
         let launch = try #require(StubPi.launches().last { PiHome.canonical($0.cwd) == PiHome.canonical(checkout) })
         #expect(launch.env["SHEPHERD_MCP_OWNING_SPACE"] == (unrelated ? nil : PiHome.canonical(sandbox.repo.path)))
+        #expect(launch.env["SHEPHERD_RESOURCE_OWNING_SPACE"] == (unrelated ? nil : PiHome.canonical(sandbox.repo.path)))
+        #expect(launch.env["SHEPHERD_RESOURCE_WORKTREE_CWD"] == (unrelated ? nil : PiHome.canonical(checkout)))
         #expect(vm.state.agents.first?.worktreePath == nil, "MCP inheritance does not grant worktree-management metadata")
     }
 

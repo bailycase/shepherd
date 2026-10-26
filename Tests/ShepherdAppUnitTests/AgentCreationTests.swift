@@ -189,6 +189,7 @@ struct AgentLaunchCommandTests {
         isAutomation: Bool = false,
         goalCrossProviderEvaluation: Bool = false,
         goalsEnabled: Bool = false,
+        worktreeOwningSpace: String? = nil,
         model: String? = nil,
         thinking: ThinkingLevel? = nil
     ) -> SessionCommand {
@@ -201,8 +202,19 @@ struct AgentLaunchCommandTests {
             childrenExtensionPath: path(4), childEnvironment: ["SHEPHERD_CHILD_CONCURRENCY": "7"],
             goalCrossProviderEvaluation: goalCrossProviderEvaluation, goalsEnabled: goalsEnabled,
             namerExtensionPath: path(3), needsName: needsName, isAutomation: isAutomation,
+            worktreeOwningSpace: worktreeOwningSpace,
             model: model, thinking: thinking
         )
+    }
+
+    @Test func worktreeResourcesHaveAnExactCheckoutGrantIndependentOfMCP() {
+        let launch = command(worktreeOwningSpace: "/tmp/owner")
+        #expect(launch.env["SHEPHERD_RESOURCE_OWNING_SPACE"] == "/tmp/owner")
+        #expect(launch.env["SHEPHERD_RESOURCE_WORKTREE_CWD"] == PiHome.canonical("/tmp/project"))
+        #expect(launch.env["SHEPHERD_MCP_OWNING_SPACE"] == nil)
+        #expect(!launch.argv.contains("--approve"))
+        #expect(command().env["SHEPHERD_RESOURCE_OWNING_SPACE"] == nil)
+        #expect(command(isAutomation: true, worktreeOwningSpace: "/tmp/owner").env["SHEPHERD_RESOURCE_OWNING_SPACE"] == nil)
     }
 
     @Test(arguments: [ProjectExecutionReceipt.Phase.reserved, .sendReserved, .sent, .waiting, .interruptPending, .settled, .cancelled, .failed, .unknown])
