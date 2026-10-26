@@ -24,6 +24,7 @@ final class PushManager {
     @ObservationIgnored private let authorize: () async throws -> Bool
     @ObservationIgnored private let registerToken: @MainActor () -> Void
     @ObservationIgnored private var renewedThisSession: Set<UUID> = []
+    @ObservationIgnored private var forgottenHosts: Set<UUID> = []
     @ObservationIgnored private var foregroundGeneration = 0
     @ObservationIgnored private var inflight: Set<UUID> = []
     @ObservationIgnored private var queues: [UUID: [CheckedContinuation<Void, Never>]] = [:]
@@ -76,6 +77,7 @@ final class PushManager {
         guard !isFixture else { return }
         await acquire(host.id)
         defer { release(host.id) }
+        guard !forgottenHosts.contains(host.id) else { return }
         hostStates[host.id, default: HostPushState()].registering = true
         defer { hostStates[host.id]?.registering = false }
         do {
@@ -149,6 +151,7 @@ final class PushManager {
         do {
             markRevoking(host)
             try await revoke(host)
+            forgottenHosts.insert(host)
             hostStates[host] = nil
             renewedThisSession.remove(host)
             persistEnabledHosts()

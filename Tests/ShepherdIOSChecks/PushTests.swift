@@ -84,6 +84,10 @@ struct PushTests {
         await manager.disable(hostID: hostID)
         assert(!manager.isEnabled(host: hostID) && enabled.isEmpty && memory.read(host: hostID) == nil)
 
+        try await manager.forget(host: hostID)
+        await manager.enable(host: host)
+        assert(manager.hostStates[hostID] == nil, "a stale window must not re-enable a forgotten host")
+
         memory.save(credential, host: hostID)
         var locked = PushKeychainAccess.memory(memory)
         locked.remove = { _ in throw PushError.keychainFailure("locked") }
