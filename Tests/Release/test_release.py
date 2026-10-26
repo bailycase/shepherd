@@ -984,8 +984,11 @@ class ContractTests(unittest.TestCase):
                 self.assertEqual(self.setting(block, "INFOPLIST_KEY_ITSAppUsesNonExemptEncryption"), "NO")
                 self.assertEqual(self.setting(block, "PRODUCT_NAME"), "$(TARGET_NAME)")
                 # Automatic signing picks these; a pinned one breaks the cloud-signed export.
-                for pinned in ("CODE_SIGN_IDENTITY", "PROVISIONING_PROFILE_SPECIFIER", "CODE_SIGN_ENTITLEMENTS"):
+                for pinned in ("CODE_SIGN_IDENTITY", "PROVISIONING_PROFILE_SPECIFIER"):
                     self.assertNotIn(pinned, block)
+                self.assertEqual(self.setting(block, "CODE_SIGN_ENTITLEMENTS"), "App/iOS/ShepherdIOS.entitlements")
+                self.assertEqual(self.setting(block, "APS_ENVIRONMENT"),
+                                 "development" if self.setting(block, "name") == "Debug" else "production")
                 # The Mac target is found by its INFOPLIST_FILE; the iOS target must not share it.
                 self.assertNotRegex(block, r"\bINFOPLIST_FILE = ")
 
@@ -1010,11 +1013,23 @@ class ContractTests(unittest.TestCase):
                    for t in manifest["NSPrivacyAccessedAPITypes"]}
         self.assertEqual(reasons, {"NSPrivacyAccessedAPICategoryUserDefaults": ["CA92.1"]})
 
-    def test_the_export_uploads_a_cloud_signed_internal_testflight_build(self):
+    def test_ios_signing_preparation_and_verification_gate_upload(self):
+        workflow = self.read(".github", "workflows", "release.yml")
+        prepare = workflow.index("release.py prepare-ios-signing")
+        export = workflow.index("xcodebuild -exportArchive", prepare)
+        verify = workflow.index("release.py verify-ios-ipa", export)
+        upload = workflow.index("altool --upload-app", verify)
+        self.assertLess(prepare, export)
+        self.assertLess(workflow.index("release.py ensure-ios-push"), export)
+        self.assertLess(export, verify)
+        self.assertLess(verify, upload)
+        self.assertNotIn("continue-on-error: true", workflow[prepare:upload])
+
+    def test_the_export_locally_stages_a_cloud_signed_internal_testflight_build(self):
         export = plistlib.loads(self.read(*release.IOS.export_options.split("/")).encode())
         self.assertEqual(export, {
             "method": "app-store-connect",
-            "destination": "upload",
+            "destination": "export",
             "signingStyle": "automatic",
             "teamID": "4J6D7M7D79",
             # Keeps CFBundleVersion the workflow's run number.
