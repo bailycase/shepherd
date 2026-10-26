@@ -131,14 +131,16 @@ test("live recipient read, control, cancellable wait and deletion request", asyn
     handle = (f) => {
       if (f.type === "createAutomation") connection.write(JSON.stringify({ type: "ok", id: f.id }) + "\n");
     };
-    await run("automation_create", { name: "watch", prompt: "Watch CI", cwd: dir, replyToCreator: true });
+    await run("automation_create", { name: "watch", prompt: "Watch CI", cwd: dir, replyToCreator: true, deleteAfterRun: true });
     const reporting = frames.findLast((f) => f.type === "createAutomation");
+    assert.equal(reporting.deleteAfterRun, true);
     assert.ok(reporting.prompt.startsWith("Watch CI\n\n"));
     assert.match(reporting.prompt, /agent_send with agentID "recipient", delivery "report"/);
     assert.match(reporting.prompt, /success, failure, or a blocked watch/);
     assert.match(reporting.prompt, /creator no longer exists/);
     await run("automation_create", { name: "plain", prompt: "Notify only", cwd: dir });
     assert.equal(frames.findLast((f) => f.type === "createAutomation").prompt, "Notify only");
+    assert.equal(frames.findLast((f) => f.type === "createAutomation").deleteAfterRun, false);
 
     const automationTools = new Map();
     const automationEvents = new Map();

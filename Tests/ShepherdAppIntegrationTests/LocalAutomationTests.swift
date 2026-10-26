@@ -13,6 +13,21 @@ import Testing
 @Suite("Local automations", .mainActorExclusive)
 @MainActor
 struct LocalAutomationTests {
+    @Test(arguments: [false, true])
+    func oneShotNeverAutoStartsEvenWhenEnabled(enabled: Bool) async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        var state = ShepherdState()
+        let automation = Automation(name: "one shot", prompt: "watch", cwd: app.dir.path,
+                                    enabled: enabled, deleteAfterRun: true)
+        state.automations = [automation]
+        let vm = try await app.start(with: state)
+        vm.autoStartAutomations()
+        await app.settle()
+        #expect(app.server.state.agents.isEmpty)
+        #expect(app.server.state.automations == [automation])
+    }
+
     @Test func aStartingRunReadsLiveARefusedRunNowSaysSoAndStopLeavesTheHiddenSpace() async throws {
         let app = try AppHarness()
         defer { app.stop() }
