@@ -1,6 +1,7 @@
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 
 /// Owned by SessionServer's queue. Only registrations persist; deliveries are best-effort,
 /// bounded, never retried or replayed. The injected transport returns a cancellation closure.
@@ -11,6 +12,8 @@ final class PushNotifications: @unchecked Sendable {
         let eventID = UUID()
         let agentID: AgentID
         let kind: Kind
+        let title: String?
+        let preview: String?
     }
     private struct Delivery {
         let registrationID: String
@@ -86,13 +89,39 @@ final class PushNotifications: @unchecked Sendable {
         deliveries.removeAll()
     }
 
-    func send(agentID: AgentID, kind: Kind) {
+    /// Best-effort credential redaction, not a guarantee that arbitrary prose contains no secrets.
+    static func notificationText(_ text: String?, limit: Int) -> String? {
+        guard let text, text.utf8.count <= 1_048_576 else { return nil }
+        // Remove invisible controls before matching so they cannot split a credential marker.
+        let visible = String(String.UnicodeScalarView(text.unicodeScalars.filter {
+            !CharacterSet.controlCharacters.contains($0) || CharacterSet.whitespacesAndNewlines.contains($0)
+        }))
+        var clean = visible
+        for pattern in secretPatterns {
+            clean = pattern.stringByReplacingMatches(in: clean, range: NSRange(clean.startIndex..., in: clean), withTemplate: "[redacted]")
+        }
+        clean = NativeRedaction.projectData(clean)
+        clean = clean.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        guard !clean.isEmpty else { return nil }
+        return String(String.UnicodeScalarView(clean.unicodeScalars.prefix(limit)))
+    }
+
+    private static let secretPatterns = [
+        #"(?s)-----BEGIN [A-Z0-9 ]+-----.*?(?:-----END [A-Z0-9 ]+-----|$)"#,
+        #"(?i)\b(?:bearer|basic)\s+[A-Za-z0-9+/=._-]+"#,
+        #"(?i)\b(?:password|passwd|secret|api[_-]?key|(?:access[_-]?|refresh[_-]?)?token|authorization|cookie|set-cookie)\b[\\\"']*\s*[:=]\s*(?:\"[^\"]*\"|'[^']*'|[^\s,;}]+)"#,
+        #"\b(?:gh[pousr]_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+|xox[baprs]-[A-Za-z0-9-]+|(?:AKIA|ASIA)[A-Z0-9]{16}|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)"#,
+        #"(?i)\b[a-z][a-z0-9+.-]*://[^\s/@]+:[^\s/@]+@"#
+    ].map { try! NSRegularExpression(pattern: $0) }
+
+    func send(agentID: AgentID, kind: Kind, title: String? = nil, preview: String? = nil) {
         guard !registrations.isEmpty else { return }
         let now = now()
         if now.timeIntervalSince(window) >= 60 { window = now; eventCount = 0 }
         guard eventCount < 30 else { return }
         eventCount += 1
-        guard let body = try? JSONEncoder().encode(Event(agentID: agentID, kind: kind)) else { return }
+        guard let body = try? JSONEncoder().encode(Event(agentID: agentID, kind: kind,
+            title: Self.notificationText(title, limit: 100), preview: Self.notificationText(preview, limit: 240))) else { return }
         // No pending queue: overload drops deliveries rather than growing memory or replaying later.
         for registration in registrations.values where deliveries.count < 16 {
             let id = UUID()

@@ -1,4 +1,5 @@
 import Foundation
+import UserNotifications
 import ShepherdCore
 import ShepherdRemote
 
@@ -126,6 +127,8 @@ struct PushTests {
         router.drainPending(hosts: hosts, windows: windows)
         assert(router.pending == nil && secondNavigator.selectedThread == payload.agentRef)
         assert(navigator.selectedThread == nil)
+        assert(PushAppDelegate.foregroundPresentation == [.banner, .list, .sound],
+               "foreground pushes still present while their matching thread is visible")
         windows.setPhase(firstWindow.id, .active, hosts: hosts)
         navigator.open(.settings(.root))
         delegate.receive(payload)

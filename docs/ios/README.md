@@ -368,7 +368,11 @@ keep the version for real breaks.
 
 Push notifications use the Cloudflare relay and APNs; enable them per host in
 Settings ▸ Notifications. They cover completed runs, terminal errors, and explicit requests
-for an answer. The Mac must be awake and running Shepherd.
+for an answer, including when that thread is open and being viewed. Titles and short final reply,
+error, or question previews are included by default and pass through Apple and Cloudflare.
+Known credentials are redacted, but sensitive prose may remain; lock-screen previews follow iOS
+settings. Thinking and tool logs are excluded; missing previews use generic text.
+The Mac must be awake and running Shepherd.
 
 ## Not in the first release
 

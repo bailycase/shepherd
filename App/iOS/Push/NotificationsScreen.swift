@@ -27,7 +27,7 @@ struct NotificationsScreen: View {
                                 .foregroundStyle(Color.sh.textSecondary)
                                 .frame(width: SHListMetrics.leadingWidth)
                                 .accessibilityHidden(true)
-                            Text("Apple and Cloudflare receive your device token, event type, and opaque routing IDs. No thread content is sent.")
+                            Text("Notifications include thread titles and short reply, error, or question previews by default. Apple and Cloudflare receive this text, your device token, event type, and routing IDs. Known credentials are redacted, but previews may still contain sensitive text. Lock-screen previews follow iOS settings.")
                                 .font(.sh(.caption))
                                 .foregroundStyle(Color.sh.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)

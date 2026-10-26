@@ -99,8 +99,11 @@
   - `pushRegistration` / `pushUnregister` (`push.notifications.v1`): an opted-in mobile client
     registers or removes a relay destination over the authenticated connection, answered with `ok`.
     Registration carries only its opaque ID and scoped send credential. The APNs device token
-    and revocation credential stay with the phone and relay. Alerts contain fixed text and opaque
-    routing IDs, never thread contents. Hosts without this capability cannot register destinations.
+    and revocation credential stay with the phone and relay. Alerts include the current thread title
+    and a short final reply, error, or explicit question preview by default, with generic text when
+    unavailable. The relay receives optional `title` (100 Unicode scalars) and `preview` (240),
+    whitespace-normalized and credential-redacted before truncation; redaction cannot detect every
+    secret. Thinking and tool logs are not preview sources. Hosts without this capability cannot register destinations.
   - `hostSettings` (`hostSettings.v1`): what the host's Settings ▸ Agents, Worktrees and Pi set,
     the pi packages its pi loads, and its Shepherd and pi versions; one change per request
     (`HostSettingChange`), applied as the Mac's own Settings would. The additive
