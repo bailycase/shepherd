@@ -213,7 +213,7 @@ extension ShepherdViewModel {
     /// adopted. Runs died with the previous app instance; enabled means the
     /// user wants the watch standing.
     func autoStartAutomations() {
-        let pending = state.automations.filter { $0.projectID == nil && $0.enabled && $0.agentID == nil }
+        let pending = state.automations.filter { $0.projectID == nil && $0.enabled && !$0.deleteAfterRun && $0.agentID == nil }
         guard !pending.isEmpty else { return }
         Task { @MainActor in
             for automation in pending {

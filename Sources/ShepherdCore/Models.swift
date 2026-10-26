@@ -352,12 +352,13 @@ public struct Automation: Codable, Hashable, Sendable, Identifiable {
     public var prompt: String
     /// Working directory the agent runs in; resolved to a space at start.
     public var cwd: String
-    /// Enabled unscoped automations auto-start on app launch. Project-owned automations
+    /// Enabled unscoped automations auto-start on app launch unless deleteAfterRun is set. Project-owned automations
     /// require an explicit admitted Project action; enabling or resuming never starts one.
     public var enabled: Bool
+    /// Remove the unscoped automation after its watcher settles; never auto-start on relaunch.
+    public var deleteAfterRun: Bool
     /// The agent currently running this automation, nil when stopped.
-    /// Cleared at server startup (sessions die with the app) unless the
-    /// automation is enabled and restarts.
+    /// Cleared at server startup (sessions die with the app).
     public var agentID: AgentID?
 
     public init(
@@ -367,7 +368,8 @@ public struct Automation: Codable, Hashable, Sendable, Identifiable {
         cwd: String,
         enabled: Bool = true,
         agentID: AgentID? = nil,
-        projectID: ProjectID? = nil
+        projectID: ProjectID? = nil,
+        deleteAfterRun: Bool = false
     ) {
         self.id = id
         self.projectID = projectID
@@ -376,6 +378,23 @@ public struct Automation: Codable, Hashable, Sendable, Identifiable {
         self.cwd = cwd
         self.enabled = enabled
         self.agentID = agentID
+        self.deleteAfterRun = deleteAfterRun
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, projectID, name, prompt, cwd, enabled, agentID, deleteAfterRun
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(AutomationID.self, forKey: .id)
+        projectID = try c.decodeIfPresent(ProjectID.self, forKey: .projectID)
+        name = try c.decode(String.self, forKey: .name)
+        prompt = try c.decode(String.self, forKey: .prompt)
+        cwd = try c.decode(String.self, forKey: .cwd)
+        enabled = try c.decode(Bool.self, forKey: .enabled)
+        agentID = try c.decodeIfPresent(AgentID.self, forKey: .agentID)
+        deleteAfterRun = try c.decodeIfPresent(Bool.self, forKey: .deleteAfterRun) ?? false
     }
 }
 

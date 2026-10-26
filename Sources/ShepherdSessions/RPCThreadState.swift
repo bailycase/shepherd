@@ -478,6 +478,9 @@ final class RPCThreadState {
     var captureSettledTurn: ((@escaping () -> Void) -> Void)?
     var onUserMessageConsumed: ((UUID?, String) -> Void)?
     var onActualTurnSettled: (() -> Void)?
+    /// Unlike startup idle or agent_end, pi has actually settled this turn.
+    private(set) var actualTurnSettled = false
+    private var turnSequence = 0
     var discardPreparedTurn: (() -> Void)?
     var settleCapture: UUID?
     var preparingPrompts: [UUID: (NativeThreadResult) -> Void] = [:]
@@ -667,6 +670,8 @@ final class RPCThreadState {
         case .skillsWatchError(let error):
             ShepherdLog.warning("Skill file observation failed for session \(session.id): \(error)")
         case .agentStart:
+            turnSequence += 1
+            actualTurnSettled = false
             diagnosticTimings.removeAll(keepingCapacity: true)
             beginDiagnostic("agent.turn", operation: "agent.turn")
             lastTurnAssistant = nil
@@ -716,11 +721,13 @@ final class RPCThreadState {
             dropStreamingCalls()
             askingCalls.removeAll()
             let token = UUID()
+            let settledSequence = turnSequence
             settleCapture = token
             if let captureSettledTurn {
                 captureSettledTurn { [weak self] in
                     guard let self, self.settleCapture == token else { return }
                     self.settleCapture = nil
+                    self.actualTurnSettled = self.turnSequence == settledSequence
                     self.onActualTurnSettled?()
                     self.drainIfReady()
                     self.idleAfterQueue()
@@ -728,6 +735,7 @@ final class RPCThreadState {
             } else {
                 onTurnEvent?(.settled)
                 settleCapture = nil
+                actualTurnSettled = true
                 onActualTurnSettled?()
             }
             settled()

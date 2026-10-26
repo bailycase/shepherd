@@ -77,6 +77,7 @@ struct ExtensionMessageTests {
                        result: AgentCoordinationResult(text: "live activity snapshot", idle: true, sessionID: "s1", connectionID: "c1")),
         .cancelAgentRequest(id: 19, agentID: agent),
         .createAutomation(id: 9, name: "pr-watch", prompt: "watch it", cwd: "/tmp/repo", enabled: false, start: false),
+        .createAutomation(id: 10, name: "one-shot", prompt: "watch it", cwd: "/tmp/repo", enabled: true, start: true, deleteAfterRun: true),
         .listAutomations(id: 10),
         .updateAutomation(id: 11, automationID: automation, name: "renamed", prompt: "p", cwd: "/c", enabled: false),
         .deleteAutomation(id: 13, automationID: automation),

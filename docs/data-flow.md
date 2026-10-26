@@ -112,6 +112,13 @@ variables are blanked, as are pi's `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSI
 - **A run** spawns an ordinary agent, in a reserved hidden space when the automation's cwd
   matches no user space. It is launched with `SHEPHERD_AUTOMATION=1`, which keeps the terminal and
   notify tools but withholds the `automation_*` tools.
+- **One-shot watchers:** `automation_create(deleteAfterRun: true)` (default false) saves the flag
+  and deletes the unscoped automation after the watcher's actual terminal turn settles, including
+  a settled failure. This is the watcher finishing, not the creator receiving or answering its
+  report. Startup idle, blocked questions, live retries, start failure and explicit Stop do not
+  trigger cleanup. Queued turns must settle first. Cleanup keeps the agent and its transcript,
+  so notifications and reports are not cut short; like ordinary deletion, it prunes the
+  automation's run log. Project-owned records are never removed through this legacy path.
 - **Management:** agent requests arrive as `AutomationRequest` through
   `SessionServer.onAutomationRequest` and are served by `ShepherdViewModel+Automations.swift`.
   The Automations sidebar section is their only surface on the host. Remote clients change them
@@ -136,6 +143,7 @@ variables are blanked, as are pi's `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSI
 - **At startup:** the previous run's agents and their layouts are dropped
   (`SessionServer.automationRunAgentIDs`: every agent in the automations' hidden space, never
   the designs space's, plus any agent an automation still points at), every automation's `agentID` is cleared, and enabled automations
-  start fresh runs once the workspace is adopted. Never keep a run agent across launches.
+  start fresh runs once the workspace is adopted, except `deleteAfterRun` automations, which
+  never auto-start after relaunch even when enabled. Never keep a run agent across launches.
 - **Changing them** touches `ShepherdCore`, the extension-message enums, `SessionServer`, the
   panes extension (canonical and embedded), and their tests.

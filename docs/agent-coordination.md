@@ -361,6 +361,12 @@ older-host row is the only place a client meets one.
 
 ## Automation completion reports
 
+`automation_create(deleteAfterRun: true, …)` optionally removes the saved automation when the
+watcher's turn actually settles (success or terminal failure), not while idle at startup,
+blocked, retrying, or explicitly stopped. Default false. It never auto-starts after an app
+restart, even if enabled. Cleanup leaves the watcher agent/transcript and report delivery intact,
+not waiting for the creator to answer; ordinary automation deletion removes its run-log entries.
+
 `automation_create(replyToCreator: true, …)` appends instructions to the saved watch prompt
 asking it to call `agent_send` with `delivery: "report"` and the creating agent's exact ID when it succeeds, fails, or
 is blocked, as well as `notify`. Automation agents have `agent_send` and no other `agent_*` tool;

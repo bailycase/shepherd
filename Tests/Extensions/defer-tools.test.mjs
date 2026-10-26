@@ -123,6 +123,11 @@ for (const [label, query, family, use, answer] of FAMILIES) {
       assert.equal(requests.length, 3, "the search, the call, the answer");
       for (const name of family) assert.ok(!names(requests[0]).includes(name), `${name} is not in the first request`);
       for (const name of family) assert.ok(names(requests[1]).includes(name), `${name} is declared after the search`);
+      if (family === AUTOMATIONS) {
+        const create = requests[1].body.tools.find((tool) => tool.name === "automation_create");
+        assert.equal(create.parameters.properties.deleteAfterRun.type, "boolean");
+        assert.ok(!create.parameters.required.includes("deleteAfterRun"));
+      }
       const found = outputs(requests[1])[0];
       const loaded = names(requests[1]).filter((name) => !names(requests[0]).includes(name));
       assert.match(found, new RegExp(`^Loaded ${loaded.length} tools?\\.`), "the count it says is the count that loaded: " + found.slice(0, 120));

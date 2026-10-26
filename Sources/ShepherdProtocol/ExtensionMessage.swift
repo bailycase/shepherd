@@ -112,7 +112,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     /// Create a persisted automation. Unlike pane control this may come from
     /// any pi session (the automation skill), so `agentID` is optional —
     /// there may be no Shepherd agent behind the caller.
-    case createAutomation(id: Int, name: String, prompt: String, cwd: String, enabled: Bool, start: Bool)
+    case createAutomation(id: Int, name: String, prompt: String, cwd: String, enabled: Bool, start: Bool, deleteAfterRun: Bool = false)
     /// All saved automations with their run state.
     case listAutomations(id: Int)
     /// Update fields by automation id; nil fields keep their value.
@@ -218,7 +218,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case type, id, agentID, status, name, piSessionID, sessionID, children
         case paneID, axis, cwd, relativeTo, command, text, submit, reference
         case title, body
-        case prompt, enabled, start, automationID, targetAgentID, request, requestID, result, delivery, spaceID, deliveryID
+        case prompt, enabled, start, deleteAfterRun, automationID, targetAgentID, request, requestID, result, delivery, spaceID, deliveryID
         case error
         case line, reason, file
         case designID, path, source, baseRevision, changes, commentID, edits, tokens, query, options
@@ -428,7 +428,8 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
                 prompt: try c.decode(String.self, forKey: .prompt),
                 cwd: try c.decode(String.self, forKey: .cwd),
                 enabled: try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true,
-                start: try c.decodeIfPresent(Bool.self, forKey: .start) ?? true
+                start: try c.decodeIfPresent(Bool.self, forKey: .start) ?? true,
+                deleteAfterRun: try c.decodeIfPresent(Bool.self, forKey: .deleteAfterRun) ?? false
             )
         case .listAutomations:
             self = .listAutomations(id: try c.decode(Int.self, forKey: .id))
@@ -770,7 +771,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(Kind.cancelAgentRequest, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(agentID, forKey: .agentID)
-        case .createAutomation(let id, let name, let prompt, let cwd, let enabled, let start):
+        case .createAutomation(let id, let name, let prompt, let cwd, let enabled, let start, let deleteAfterRun):
             try c.encode(Kind.createAutomation, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(name, forKey: .name)
@@ -778,6 +779,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(cwd, forKey: .cwd)
             try c.encode(enabled, forKey: .enabled)
             try c.encode(start, forKey: .start)
+            try c.encode(deleteAfterRun, forKey: .deleteAfterRun)
         case .listAutomations(let id):
             try c.encode(Kind.listAutomations, forKey: .type)
             try c.encode(id, forKey: .id)
