@@ -742,6 +742,27 @@ extension PreviewTests {
         }
     }
 
+    /// Many spaces across hosts: the menu scrolls and the worktree controls stay reachable.
+    @Test func newThreadPlaceMenuOverflow() async throws {
+        let locals = (1...8).map { i in
+            NWPlaceOption(id: "local/\(i)", section: "local", title: "project-\(i)", detail: "~/Developer/project-\(i)")
+        }
+        let remotes = (1...6).map { i in
+            NWPlaceOption(id: "host/\(i)", section: "host", title: "service-\(i)", detail: "~/src/service-\(i)")
+        }
+        let mac = NWPlaceSection(id: "local", title: "This Mac", options: locals)
+        let host = NWPlaceSection(id: "host", title: "build-01", options: remotes, addTitle: "Add folder…")
+        try await Preview.renderMatrix("new-thread-place-menu-overflow", size: CGSize(width: 360, height: 420)) {
+            NWPlaceMenu(sections: [mac, host],
+                        worktree: NWPlaceWorktree(isOn: true, caption: "Creates a temporary branch", base: "main"),
+                        maxHeight: NWComposerMetrics.modelPickerMaxHeight,
+                        onChoose: { _ in }, onAdd: { _ in }, onWorktree: { _ in }, onChooseBase: {}, onClose: {}) { _ in EmptyView() }
+                .padding(NW.Space.l)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .background(Color.nw.bgWindow)
+        }
+    }
+
     // MARK: Palette
 
     /// The palette over a full window, and in a short one where its list is capped.
