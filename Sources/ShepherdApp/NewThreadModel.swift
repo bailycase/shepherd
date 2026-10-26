@@ -13,7 +13,7 @@ struct NewThreadPlace: Hashable {
 }
 
 /// The New thread page's workplace chip and its menu, as plain values (NavNewThread): every
-/// host's projects (its spaces, nested ones flattened), "Add folder…" on each, and the chip's
+/// host's projects (its spaces as a tree, each nested one after its parent), "Add folder…" on each, and the chip's
 /// "project · host". Pure.
 enum NewThreadPlaces {
     struct Host: Equatable {
@@ -31,12 +31,24 @@ enum NewThreadPlaces {
             SHPlaceSection(id: sectionID(host.id), title: host.name, options: (host.id == nil ? [
                 SHPlaceOption(id: "local/no-space", section: sectionID(nil), title: "No space",
                               detail: "Own scratch folder", isCurrent: chosen == NewThreadPlace(host: nil, space: nil))
-            ] : []) + host.spaces.map { space in
+            ] : []) + tree(host.spaces).map { space, ancestors in
                 SHPlaceOption(id: optionID(NewThreadPlace(host: host.id, space: space.id)), section: sectionID(host.id),
                               title: space.name, detail: NewThreadRules.abbreviatedPath(space.path),
-                              isCurrent: chosen == NewThreadPlace(host: host.id, space: space.id))
+                              isCurrent: chosen == NewThreadPlace(host: host.id, space: space.id),
+                              ancestors: ancestors.map { optionID(NewThreadPlace(host: host.id, space: $0)) })
             })
         }
+    }
+
+    /// Spaces depth first, in their given order, each with its ancestors (outermost first), as the
+    /// sidebar nests them (`ProjectNesting`).
+    static func tree(_ spaces: [Space]) -> [(Space, [SpaceID])] {
+        let parents = ProjectNesting.parents(in: spaces)
+        let children = Dictionary(grouping: spaces.filter { parents[$0.id] != nil }, by: { parents[$0.id]! })
+        func walk(_ space: Space, _ ancestors: [SpaceID]) -> [(Space, [SpaceID])] {
+            [(space, ancestors)] + (children[space.id] ?? []).flatMap { walk($0, ancestors + [space.id]) }
+        }
+        return spaces.filter { parents[$0.id] == nil }.flatMap { walk($0, []) }
     }
 
     /// The chip's words: the project and its host ("shepherd", "This Mac").
