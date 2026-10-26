@@ -24,7 +24,6 @@ struct ThreadComposer: View {
     @Environment(ThreadStores.self) private var threads
     @Environment(MobileHosts.self) private var hosts
     @Environment(\.horizontalSizeClass) private var sizeClass
-    @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(MobileNavigator.self) private var navigator
     /// A design's chat (iPadDesign): the card without "/", the model's short name (DesignPad/).
     @Environment(\.composerDesignChat) private var designChat
@@ -191,17 +190,18 @@ struct ThreadComposer: View {
             field(store: store, placeholder: designChat ? MobileLayout.padDesignComposerPlaceholder : store.running ? "Queue a follow-up…"
                   : store.commands.isEmpty ? "Follow up…" : "Follow up, or / for commands…", command: state.matches != nil)
         } controls: {
-            if typeSize.isAccessibilitySize {
-                // At the accessibility sizes the row outgrows the card: it scrolls rather than
-                // truncating every chip, and Send stays put.
+            // Where the row outgrows the card (a narrow column, as beside iPhone Duo's fold, or
+            // the accessibility sizes) it scrolls rather than truncating every chip, and Send
+            // stays put.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: NW.Space.xxs) { cardControls(store: store, state: state, live: live) }
                 ScrollView(.horizontal) {
                     HStack(spacing: NW.Space.xxs) { cardControls(store: store, state: state, live: live) }
                 }
                 .scrollIndicators(.hidden)
-            } else {
-                cardControls(store: store, state: state, live: live)
-                Spacer(minLength: NW.Space.m)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.trailing, NW.Space.m)
             // The ring and Send keep their place whatever the chips do.
             HStack(spacing: 0) {
                 contextMeter(store: store, state: state)
