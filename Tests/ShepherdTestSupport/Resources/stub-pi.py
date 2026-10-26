@@ -1406,7 +1406,10 @@ for raw in sys.stdin.buffer:
         else:
             STATE["model"] = dict(STATE["model"], id=cmd.get("modelId"), provider=cmd.get("provider"),
                                   api=apis.get(key, STATE["model"].get("api")))
-            respond(cmd, t, data=STATE["model"])
+            if os.path.exists("ignore-model-response-once"):
+                os.unlink("ignore-model-response-once")
+            else:
+                respond(cmd, t, data=STATE["model"])
     elif t == "get_available_models":
         respond(cmd, t, data={"models": [
             {"provider": "anthropic", "id": "claude-opus-4-5", "api": "anthropic-messages", "contextWindow": 200000, "reasoning": True},
@@ -1426,7 +1429,10 @@ for raw in sys.stdin.buffer:
             respond(cmd, t, data={"levels": levels})
     elif t == "set_thinking_level":
         STATE["thinkingLevel"] = cmd.get("level")
-        respond(cmd, t)
+        if os.path.exists("ignore-thinking-response-once"):
+            os.unlink("ignore-thinking-response-once")
+        else:
+            respond(cmd, t)
     elif t == "abort" and os.path.exists("refuse-abort"):
         respond(cmd, t, success=False, error="refused by the stub")
     elif t == "abort":

@@ -171,6 +171,11 @@ struct LogicalProjectConversationTests {
         expectScenarioCompleted(result)
     }
 
+    @Test func anExitedCoordinatorsNextMessagesRestartItAndLeaveStarting() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.coordinatorRelaunch() } }
+        expectScenarioCompleted(result)
+    }
+
     @Test func aHeldOffCoordinatorsModelAndReasoningAreTheProjectsOwnSettingsAndItsNextLaunchUsesThem() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.heldOffModelAndReasoning() } }
         expectScenarioCompleted(result)
@@ -1668,6 +1673,34 @@ private static func chipsAndLinks() async throws {
             return live?.ready == true || live?.startProblem != nil
         }
         #expect(r.vm.threadStores.existing(for: real)?.isLive == true, "and it keeps polling")
+    }
+
+    private static func coordinatorRelaunch() async throws {
+        let r = try await rig()
+        defer { r.app.stop() }
+        r.vm.openLogicalProject(r.ref)
+        let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
+        defer { window.close() }
+        #expect(await r.vm.logicalProjects.sendMessage(r.ref, text: "hello"))
+        try await eventuallyOnMain("first message delivered") {
+            window.layout()
+            return r.app.server.state.projects.first?.messages.first?.phase == .delivered
+        }
+        let coordinator = try #require(r.app.server.state.projects.first?.coordinatorAgentID)
+        let agent = try #require(r.vm.state.agents.first { $0.id == coordinator })
+        let pane = try #require(agent.paneID)
+        let oldSession = try #require(r.vm.sessions.liveSession(forPane: pane))
+        await r.app.server.stopKeepingAgent(sessionID: oldSession)
+        try await eventuallyOnMain("coordinator exits") { r.vm.sessions.liveSession(forPane: pane) == nil }
+        #expect(await r.vm.logicalProjects.sendMessage(r.ref, text: "second message"))
+        #expect(await r.vm.logicalProjects.sendMessage(r.ref, text: "third message"))
+        try await eventuallyOnMain("queued messages delivered after coordinator relaunch", timeout: .seconds(40)) {
+            window.layout()
+            return r.app.server.state.projects.first?.messages.allSatisfy { $0.phase == .delivered } == true
+        }
+        let store = r.vm.threadStores.store(for: coordinator)
+        try await eventuallyOnMain("the same conversation leaves starting") { window.layout(); return store.ready && !store.awaitingPi }
+        #expect(r.vm.sessions.liveSession(forPane: pane) != oldSession)
     }
 
     // MARK: Cold launch of a saved conversation
