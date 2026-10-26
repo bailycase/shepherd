@@ -3,6 +3,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
+import SwiftUI
 import Testing
 @testable import ShepherdApp
 
@@ -322,7 +323,7 @@ struct SidebarDestinationTests {
     }
 }
 
-/// The New thread page's workplace chip: every host's projects (nested spaces flattened), the
+/// The New thread page's workplace chip: every host's projects (nested spaces as a tree), the
 /// chosen one checked, "Add folder…" on each host.
 @Suite("New thread workplace")
 struct NewThreadPlacesTests {
@@ -346,6 +347,29 @@ struct NewThreadPlacesTests {
         #expect(NewThreadPlaces.place(sections[1].options[0]) == NewThreadPlace(host: hostID, space: web.id))
         #expect(NewThreadPlaces.host(of: sections[0]) == nil)
         #expect(NewThreadPlaces.host(of: sections[1]) == hostID)
+    }
+
+    @Test func nestedSpacesFoldUnderTheirParentAndSearchFindsThemFlat() {
+        let other = Fixture.space("other", path: "/Users/dev/other")
+        let deep = Fixture.space("deep", path: "/Users/dev/mono/sub/deep")
+        // Given out of tree order: the sub space still lands under its parent.
+        let tree = [NewThreadPlaces.Host(id: nil, name: "This Mac", spaces: [sub, other, mono, deep])]
+        let sections = NewThreadPlaces.sections(tree, chosen: nil)
+        #expect(sections[0].options.map(\.title) == ["No space", "other", "mono", "sub", "deep"])
+        let monoID = sections[0].options[2].id
+        // Folder nesting takes the outermost project as parent, as the sidebar does.
+        #expect(sections[0].options[3].ancestors == [monoID] && sections[0].options[4].ancestors == [monoID])
+
+        let closed = SHPlaceMenu<EmptyView>.visible(sections, query: "", expanded: [])
+        #expect(closed[0].options.map(\.title) == ["No space", "other", "mono"])
+        let open = SHPlaceMenu<EmptyView>.visible(sections, query: "", expanded: [monoID])
+        #expect(open[0].options.map(\.title) == ["No space", "other", "mono", "sub", "deep"])
+
+        let found = SHPlaceMenu<EmptyView>.visible(sections, query: "DEEP", expanded: [])
+        #expect(found[0].options.map(\.title) == ["deep"])
+        #expect(found[0].options[0].ancestors.isEmpty && found[0].addTitle == nil)
+        #expect(SHPlaceMenu<EmptyView>.visible(sections, query: "mono/sub", expanded: []).flatMap(\.options).map(\.title) == ["sub", "deep"])
+        #expect(SHPlaceMenu<EmptyView>.visible(sections, query: "nothing", expanded: []).isEmpty)
     }
 
     @Test func noSpaceCanBeChosenAndSurvivesReopeningWithSpacesAvailable() {

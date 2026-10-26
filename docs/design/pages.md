@@ -80,11 +80,13 @@ one. The New agent sheet (⇧⌘T) stays for its directory and base fields.
   mono ("shepherd"), a `textTertiary` "·", a display glyph and the host in mono ("This Mac"), and a
   10pt `textTertiary` chevron, as a 26pt chip in 12 `textSecondary`. It picks where the thread runs,
   and opens the **workplace menu** (`SHPlaceMenu`, the composer menus' anatomy, 320pt, 8pt under the
-  card): one section per host, This Mac then each connected host. This Mac starts with **No space**,
+  card): a **Search spaces** field (filters every space, nested or not, by name or path, flat),
+  then one section per host, This Mac then each connected host. This Mac starts with **No space**,
   which creates a standalone thread in `<support>/threads/<agentID>` without registering a user
   space. These threads stay in Activity and across restarts; their folders are kept when a thread
   is deleted. No worktree controls appear for No space. Each host lists its spaces (its visible
-  spaces, nested ones flat, each with its path in mono 11 `textTertiary` and a check on the chosen
+  spaces as the sidebar nests them, each nested space under a parent with a disclosure chevron,
+  closed except the chosen space's parents; → opens, ← closes, each with its path in mono 11 `textTertiary` and a check on the chosen
   one), each section ending in "Add folder…" (this Mac's directory picker, or the host's); then,
   when the chosen space is a git checkout on this Mac or on a host that makes worktrees, **New
   worktree** with its switch and "Keeps the checkout clean. Merge it from Review.". The board draws
