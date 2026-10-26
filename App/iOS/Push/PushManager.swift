@@ -96,23 +96,21 @@ final class PushManager {
     }
 
     private func resolveCredential(hostID id: UUID, tokenHex: String) async throws -> PushKeychain.Credential {
-        if let existing = try keychain.read(id),
-           try await PushRelay.update(registrationID: existing.registrationID, manageToken: existing.manageToken,
+        // Persisting a token records intent, not confirmation that the relay accepted it.
+        renewedThisSession.remove(id)
+        let existing = try keychain.read(id)
+        var credential = try existing ?? PushKeychain.makeCredential(deviceToken: tokenHex)
+        credential.deviceTokenHex = tokenHex
+        // Own the identity and current target durably before any remote mutation.
+        if credential != existing { try keychain.save(credential, id) }
+        if existing != nil,
+           try await PushRelay.update(registrationID: credential.registrationID, manageToken: credential.manageToken,
                                       deviceToken: tokenHex, environment: PushEnvironment.current, session: session) {
-            let updated = PushKeychain.Credential(registrationID: existing.registrationID, sendToken: existing.sendToken,
-                                                 manageToken: existing.manageToken, deviceTokenHex: tokenHex)
-            if existing != updated { try keychain.save(updated, id) }
-            return updated
+            return credential
         }
-        // PATCH 401: replace only after POST succeeds, never discard recoverable credentials first.
-        let relay = try await PushRelay.register(deviceToken: tokenHex, environment: PushEnvironment.current, hostID: id, session: session)
-        let credential = PushKeychain.Credential(registrationID: relay.id, sendToken: relay.sendToken,
-                                                 manageToken: relay.manageToken, deviceTokenHex: tokenHex)
-        do { try keychain.save(credential, id) }
-        catch {
-            try? await PushRelay.revoke(registrationID: relay.id, manageToken: relay.manageToken, session: session)
-            throw error
-        }
+        // A missing registration or ambiguous POST retries the same persisted identity.
+        _ = try await PushRelay.register(deviceToken: tokenHex, environment: PushEnvironment.current,
+                                         hostID: id, credential: credential, session: session)
         return credential
     }
 
@@ -144,20 +142,21 @@ final class PushManager {
         }
     }
     func retryRevoke(host: MobileHost) async { await disable(host: host) }
-    func forget(host: UUID) async throws {
-        guard !isFixture else { return }
+    func forget(host: UUID, removeHost: () throws -> Void) async throws {
+        guard !isFixture else { try removeHost(); return }
         await acquire(host)
         defer { release(host) }
         do {
             markRevoking(host)
             try await revoke(host)
-            forgottenHosts.insert(host)
-            hostStates[host] = nil
+            hostStates[host] = HostPushState()
             renewedThisSession.remove(host)
             persistEnabledHosts()
+            try removeHost()
+            forgottenHosts.insert(host)
+            hostStates[host] = nil
         } catch {
             hostStates[host, default: HostPushState()].error = error.localizedDescription
-            hostStates[host]?.revokeFailed = true
             throw error
         }
     }

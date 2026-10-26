@@ -45,8 +45,7 @@ final class PushRouter {
     /// Navigate to a thread in the foreground window. Returns true if a window was found.
     @discardableResult
     private func navigate(to ref: AgentRef, windows: MobileWindows) -> Bool {
-        // Use the first open window (the app was just tapped, so it is active).
-        guard let window = windows.open.first else { return false }
+        guard let window = windows.notificationWindow else { return false }
         window.navigator.open(.thread(ref))
         return true
     }

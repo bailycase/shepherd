@@ -30,6 +30,13 @@ final class GoalNotifications: NSObject {
         track(store, hosts: hosts, ref: ref)
     }
 
+    /// Permission may suspend while another window enables push for this host.
+    func authorizeLocalAlert(host: UUID, request: () async throws -> Bool) async throws -> Bool {
+        guard !pushEnabledHosts.contains(host) else { return false }
+        let granted = try await request()
+        return granted && !pushEnabledHosts.contains(host)
+    }
+
     private func track(_ store: NativeThreadStore, hosts: MobileHosts, ref: AgentRef) {
         guard watching.contains(ref) else { return }
         guard hosts.host(ref.host) != nil else {
@@ -61,9 +68,12 @@ final class GoalNotifications: NSObject {
             guard let self else { return }
             let center = UNUserNotificationCenter.current()
             do {
-                guard try await center.requestAuthorization(options: [.alert, .sound]) else { return }
+                guard try await authorizeLocalAlert(host: ref.host, request: {
+                    try await center.requestAuthorization(options: [.alert, .sound])
+                }) else { return }
             } catch { ShepherdLog.warning("Goal notification authorization failed: \(error.localizedDescription)"); return }
-            guard watching.contains(ref), hosts?.host(ref.host)?.phase.isConnected == true,
+            guard !pushEnabledHosts.contains(ref.host),
+                  watching.contains(ref), hosts?.host(ref.host)?.phase.isConnected == true,
                   let store, store.isLive, store.ready, store.loadError == nil,
                   store.goal?.id == goal.id, store.goal?.state == goal.state else { return }
             let content = UNMutableNotificationContent()

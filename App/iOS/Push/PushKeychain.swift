@@ -16,6 +16,20 @@ enum PushKeychain {
         var deviceTokenHex: String
     }
 
+    static func makeCredential(deviceToken: String) throws -> Credential {
+        func token() throws -> String {
+            var bytes = [UInt8](repeating: 0, count: 32)
+            let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+            guard status == errSecSuccess else { throw keychainError(status) }
+            return bytes.map { String(format: "%02x", $0) }.joined()
+        }
+        let send = try token()
+        var manage = try token()
+        while manage == send { manage = try token() }
+        return Credential(registrationID: UUID().uuidString.lowercased(), sendToken: send,
+                          manageToken: manage, deviceTokenHex: deviceToken)
+    }
+
     static func read(host: UUID) throws -> Credential? {
         let account = account(host)
         var request = query(account)
