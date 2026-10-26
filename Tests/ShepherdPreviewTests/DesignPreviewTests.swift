@@ -91,7 +91,7 @@ struct DesignPreviewTests {
         }
     }
 
-    /// The chat's composer at its compact size (NWDesignTool › Chat composer) with its model
+    /// The chat's composer at its compact size (SHDesignTool › Chat composer) with its model
     /// picker open (⇧⌘M): the picker fits over the 420pt pane, as a thread's does.
     @Test func designScreenModelPicker() async throws {
         let (workspace, checkout, agent) = try await designWorkspace()
@@ -143,7 +143,7 @@ struct DesignPreviewTests {
         }
     }
 
-    /// Select (NWSelectionRing; NWDesignTool, DZTweak): a card on A selected with its tag, the
+    /// Select (SHSelectionRing; SHDesignTool, DZTweak): a card on A selected with its tag, the
     /// bars under the pointer ringed, and B selected whole by its label. Rects are the fixture
     /// board's layout (a capture draws snapshots, so nothing live is asked).
     @Test func designScreenSelect() async throws {
@@ -162,7 +162,7 @@ struct DesignPreviewTests {
         let bars = try element(16, [1, 2], CGRect(x: 32, y: 176, width: 1216, height: 592), kind: .shape, label: nil, tag: "card")
         screen.setSelection([.init(board: try #require(DesignPath("B.dc.html"))), .init(board: a, element: card)], hover: bars)
         // Close enough on A to read the tag (the canvas opens fitted, at about 17%).
-        let close = NWCanvasViewport(offset: CGPoint(x: NWDesignMetrics.fitLeading, y: NWDesignMetrics.fitFrameTop), zoom: 0.55)
+        let close = SHCanvasViewport(offset: CGPoint(x: SHDesignMetrics.fitLeading, y: SHDesignMetrics.fitFrameTop), zoom: 0.55)
         try await Preview.render("app-window-design-select", size: Self.windowSize, ready: {
             if screen.snapshot != nil, screen.viewport != close { screen.viewport = close }
             return screen.viewport == close && screen.isDrawn
@@ -193,7 +193,7 @@ struct DesignPreviewTests {
             let host = try #require(screen.host)
             let a = try #require(DesignPath("A.dc.html"))
             screen.select(a.rawValue)
-            let close = NWCanvasViewport(offset: CGPoint(x: NWDesignMetrics.fitLeading, y: NWDesignMetrics.fitFrameTop),
+            let close = SHCanvasViewport(offset: CGPoint(x: SHDesignMetrics.fitLeading, y: SHDesignMetrics.fitFrameTop),
                                          zoom: CGFloat(percent) / 100)
             try await Preview.render("app-window-design-zoom-\(percent)", size: Self.windowSize, ready: {
                 guard screen.snapshot != nil else { return false }
@@ -211,7 +211,7 @@ struct DesignPreviewTests {
                     if let hover = screen.hover {
                         screen.setSelection([.init(board: a, element: hover)])
                     } else {
-                        screen.pointer(NWCanvasPick(board: a.rawValue, point: CGPoint(x: 100, y: 110)))
+                        screen.pointer(SHCanvasPick(board: a.rawValue, point: CGPoint(x: 100, y: 110)))
                     }
                     return false
                 }
@@ -274,9 +274,9 @@ struct DesignPreviewTests {
     }
 
     /// Close enough on A to read a pin's thread (the canvas opens fitted, at about 17%).
-    static let closeOnA = NWCanvasViewport(offset: CGPoint(x: NWDesignMetrics.fitLeading, y: NWDesignMetrics.fitFrameTop), zoom: 0.55)
+    static let closeOnA = SHCanvasViewport(offset: CGPoint(x: SHDesignMetrics.fitLeading, y: SHDesignMetrics.fitFrameTop), zoom: 0.55)
 
-    /// Comments (DZCanvas, DZTweak; NWCommentPin, NWCommentThread, NWCommentCard): two pins on A,
+    /// Comments (DZCanvas, DZTweak; SHCommentPin, SHCommentThread, SHCommentCard): two pins on A,
     /// the first's thread open with the design agent's answer, and in the chat the comment's card
     /// with the agent's turn inside it.
     @Test func designScreenComments() async throws {
@@ -355,11 +355,11 @@ struct DesignPreviewTests {
         }
         try await Preview.renderMatrix("design-comment-hover", size: CGSize(width: AppLayout.designChatWidth, height: 440)) {
             VStack(spacing: 0) {
-                NWDesignPaneTabs(DesignChatPane.tabs(open: screen.commentsTabCount, tweak: false), selection: "comments") { _ in }
+                SHDesignPaneTabs(DesignChatPane.tabs(open: screen.commentsTabCount, tweak: false), selection: "comments") { _ in }
                 DesignCommentsList(cards: screen.openCards, resolve: { screen.resolve($0) }, hovering: third.comment.id,
                                    open: { screen.revealComment($0) })
             }
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
         #expect(screen.page == "flows" && !screen.visibleBoards.contains(b))
         screen.revealComment(third.comment.id)
@@ -387,7 +387,7 @@ struct DesignPreviewTests {
         try await Preview.renderMatrix("design-comment-long-detached", size: CGSize(width: AppLayout.designChatWidth, height: 760)) {
             DesignCommentsList(cards: screen.openCards, resolve: { screen.resolve($0) }, hovering: screen.openCards.last?.id,
                                open: { screen.revealComment($0) })
-                .background(Color.nw.bgWindow)
+                .background(Color.sh.bgWindow)
         }
         for card in screen.openCards { await screen.resolve(card.id)?.value }
         try await Preview.renderMatrix("app-window-design-comment-empty", size: Self.windowSize, ready: { screen.isDrawn }) {
@@ -437,7 +437,7 @@ struct DesignPreviewTests {
         }
         screen.paneTab = .tweak
         _ = phone
-        let close = NWCanvasViewport(offset: CGPoint(x: NWDesignMetrics.fitLeading, y: NWDesignMetrics.fitFrameTop), zoom: 0.55)
+        let close = SHCanvasViewport(offset: CGPoint(x: SHDesignMetrics.fitLeading, y: SHDesignMetrics.fitFrameTop), zoom: 0.55)
         try await Preview.render("app-window-design-tweak-\(state)", size: Self.windowSize, ready: {
             if screen.snapshot != nil, screen.viewport != close { screen.viewport = close }
             let loaded = state == "empty" ? tweak.presentation.isEmpty
@@ -467,7 +467,7 @@ struct DesignPreviewTests {
         vm.selectSidebarRow(.design(checkout.id))
         let screen = vm.designScreen(checkout.id)
         let a = try #require(DesignPath("A.dc.html"))
-        let view = NWCanvasViewport(offset: CGPoint(x: NWDesignMetrics.fitLeading, y: 150), zoom: 0.24)
+        let view = SHCanvasViewport(offset: CGPoint(x: SHDesignMetrics.fitLeading, y: 150), zoom: 0.24)
         try await Preview.render("app-window-design-actions", size: Self.windowSize, ready: {
             if screen.snapshot?.index.pages?.count == 2 {
                 if screen.picks.isEmpty { screen.select(a.rawValue) }
@@ -490,7 +490,7 @@ struct DesignPreviewTests {
         vm.selectSidebarRow(.design(checkout.id))
         let screen = vm.designScreen(checkout.id)
         let a = try #require(DesignPath("A.dc.html"))
-        let view = NWCanvasViewport(offset: CGPoint(x: NWDesignMetrics.fitLeading, y: 20), zoom: zoom)
+        let view = SHCanvasViewport(offset: CGPoint(x: SHDesignMetrics.fitLeading, y: 20), zoom: zoom)
         try await Preview.render("app-window-design-actions-\(name)", size: Self.windowSize, ready: {
             if screen.snapshot != nil {
                 if screen.picks.isEmpty { screen.select(a.rawValue) }
@@ -594,13 +594,13 @@ struct DesignPreviewTests {
     // MARK: Delete and import (DesignLifecycleStates)
 
     /// A dialog as its sheet draws it: on the window's fill, at its own width.
-    private func renderDialog<V: View>(_ surface: String, width: CGFloat = NWDesignMetrics.alertWidestWidth, height: CGFloat,
+    private func renderDialog<V: View>(_ surface: String, width: CGFloat = SHDesignMetrics.alertWidestWidth, height: CGFloat,
                                        @ViewBuilder _ dialog: () -> V) async throws {
         try await Preview.render(surface, size: CGSize(width: width + 40, height: height)) {
             dialog()
-                .padding(NW.Space.xl)
+                .padding(SH.Space.xl)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .background(Color.nw.bgBase)
+                .background(Color.sh.bgBase)
         }
     }
 
@@ -623,18 +623,18 @@ struct DesignPreviewTests {
         let (workspace, checkout, _) = try await designWorkspace()
         defer { workspace.stop() }
         let vm = workspace.vm
-        workspace.server.designSystems.register(NightWatchSystem.builtIn())
+        workspace.server.designSystems.register(ShepherdDesignSystem.builtIn())
         await vm.loadDesignSystems()
         try await Preview.render("design-menus", size: CGSize(width: 1100, height: 280)) {
-            HStack(alignment: .top, spacing: NW.Space.xl) {
+            HStack(alignment: .top, spacing: SH.Space.xl) {
                 DesignMenuLookalike(menu: vm.designMenu(.local(checkout.id), context: .recents))
                 DesignMenuLookalike(menu: DesignMenu.design(.toolbar, hasSystem: true))
                 DesignMenuLookalike(menu: DesignMenu.system(name: "acme-web", builtIn: false, repo: "dashboard-web", building: false))
-                DesignMenuLookalike(menu: vm.designSystemMenu(.system("night-watch")))
+                DesignMenuLookalike(menu: vm.designSystemMenu(.system("shepherd-design")))
             }
-            .padding(NW.Space.xl)
+            .padding(SH.Space.xl)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
     }
 
@@ -663,7 +663,7 @@ struct DesignPreviewTests {
             words = DeleteDesignWords(name: checkout.name, boards: 4, versions: 23, comments: 2, system: "acme-web", agentWorking: true,
                                       drawing: 2)
         }
-        try await renderDialog("design-delete-\(state)", width: NWDesignMetrics.alertWidth, height: state == "working" ? 330 : 270) {
+        try await renderDialog("design-delete-\(state)", width: SHDesignMetrics.alertWidth, height: state == "working" ? 330 : 270) {
             DeleteDesignDialog(words: words, delete: {}, cancel: {})
         }
     }
@@ -698,7 +698,7 @@ struct DesignPreviewTests {
             ? DeleteSystemWords(name: "acme-web", components: 9, usedBy: ["Checkout funnel dashboard", "Events explorer", "Onboarding flow"],
                                 repo: "dashboard-web", building: false)
             : DeleteSystemWords(name: "acme-mobile", components: 0, usedBy: [], repo: "mobile-app", building: true)
-        try await renderDialog("system-delete-\(state)", width: NWDesignMetrics.alertWideWidth, height: state == "confirm" ? 300 : 250) {
+        try await renderDialog("system-delete-\(state)", width: SHDesignMetrics.alertWideWidth, height: state == "confirm" ? 300 : 250) {
             DeleteSystemDialog(words: words, delete: {}, cancel: {})
         }
     }
@@ -707,22 +707,22 @@ struct DesignPreviewTests {
         let toast = DesignToast(kind: .systemFailed(.system("acme-web")), name: "acme-web",
                                 reason: "Events explorer is exporting with it right now; try again when that’s done.")
         try await Preview.render("system-delete-failed", size: CGSize(width: 700, height: 120)) {
-            NWUndoToast(tone: .failed, message: Text("\(toast.words.before)\(Text(toast.name).fontWeight(.semibold))\(toast.words.after)"),
+            SHUndoToast(tone: .failed, message: Text("\(toast.words.before)\(Text(toast.name).fontWeight(.semibold))\(toast.words.after)"),
                         actionTitle: toast.actionTitle, actionSymbol: toast.actionSymbol, action: {}, dismiss: {})
                 .frame(width: 620)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.nw.bgBase)
+                .background(Color.sh.bgBase)
         }
     }
 
     /// ImportDrop: the target over Designs; ImportProgress: the card filling first among Recent
-    /// designs, its system coming dashed; and the systems a design came with and Night Watch's tag.
+    /// designs, its system coming dashed; and the systems a design came with and Shepherd Design's tag.
     @Test(arguments: ["drop", "progress", "systems"])
     func importOnDesigns(_ state: String) async throws {
         let (workspace, _, _) = try await designWorkspace()
         defer { workspace.stop() }
         let vm = workspace.vm
-        workspace.server.designSystems.register(NightWatchSystem.builtIn())
+        workspace.server.designSystems.register(ShepherdDesignSystem.builtIn())
         switch state {
         case "progress":
             vm.designImporting = DesignImporting(file: "checkout-funnel.zip", title: "Checkout funnel", done: 7, total: 12, system: "Checkout DS")
@@ -741,7 +741,7 @@ struct DesignPreviewTests {
             vm.state.designs.allSatisfy { vm.designRendering.thumbnails.image($0.id) != nil || $0.boardCount == 0 }
         }) {
             DesignsDestination(vm: vm)
-                .overlay { if state == "drop" { NWDesignsDropTarget().padding(.top, NWPageMetrics.headerHeight) } }
+                .overlay { if state == "drop" { SHDesignsDropTarget().padding(.top, SHPageMetrics.headerHeight) } }
         }
     }
 
@@ -789,22 +789,22 @@ private struct CardWithMenu: View {
     let id: DesignID
 
     var body: some View {
-        HStack(alignment: .top, spacing: NW.Space.xl) {
+        HStack(alignment: .top, spacing: SH.Space.xl) {
             if let card = vm.designsPage.cards.first(where: { $0.id == id }) {
-                NWDesignCard(name: card.name, system: card.system, detail: card.detail, edited: card.edited, board: card.board,
+                SHDesignCard(name: card.name, system: card.system, detail: card.detail, edited: card.edited, board: card.board,
                              selected: true, action: {}) {
                     DesignThumbnailSlot(image: vm.designRendering.thumbnails.image(id))
                 }
                 .overlay(alignment: .topTrailing) {
-                    NWDesignMoreButton { EmptyView() }.padding(NWDesignMetrics.cardMoreInset)
+                    SHDesignMoreButton { EmptyView() }.padding(SHDesignMetrics.cardMoreInset)
                 }
                 .frame(width: 278)
                 DesignMenuLookalike(menu: card.menu)
             }
         }
-        .padding(NW.Space.xl)
+        .padding(SH.Space.xl)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
     }
 }
 
@@ -817,35 +817,35 @@ private struct DesignMenuLookalike: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(menu.sections.enumerated()), id: \.offset) { index, section in
-                if index > 0 { NWHairline().padding(.vertical, NW.Space.xs) }
+                if index > 0 { SHHairline().padding(.vertical, SH.Space.xs) }
                 ForEach(section) { item in
-                    VStack(alignment: .leading, spacing: NW.Space.xxs) {
+                    VStack(alignment: .leading, spacing: SH.Space.xxs) {
                         HStack(spacing: 10) {
                             Image(systemName: item.symbol)
-                                .font(.nwSans(13))
-                                .foregroundStyle(item.destructive ? Color.nw.failed : Color.nw.textSecondary)
+                                .font(.shSans(13))
+                                .foregroundStyle(item.destructive ? Color.sh.failed : Color.sh.textSecondary)
                                 .frame(width: 13)
                             Text(item.title)
-                                .font(.nwSans(12.5))
-                                .foregroundStyle(item.destructive ? Color.nw.failed : Color.nw.textPrimary)
+                                .font(.shSans(12.5))
+                                .foregroundStyle(item.destructive ? Color.sh.failed : Color.sh.textPrimary)
                         }
                         .opacity(item.enabled ? 1 : 0.45)
-                        .frame(minHeight: NW.Height.controlM)
+                        .frame(minHeight: SH.Height.controlM)
                         if let reason = item.disabledReason {
                             Text(reason)
-                                .font(.nwSans(11.5))
-                                .foregroundStyle(Color.nw.textTertiary)
+                                .font(.shSans(11.5))
+                                .foregroundStyle(Color.sh.textTertiary)
                                 .padding(.leading, 23)
-                                .padding(.bottom, NW.Space.xs)
+                                .padding(.bottom, SH.Space.xs)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
-                    .padding(.horizontal, NW.Space.m)
+                    .padding(.horizontal, SH.Space.m)
                 }
             }
         }
-        .padding(NW.Space.s)
+        .padding(SH.Space.s)
         .frame(width: 256, alignment: .leading)
-        .nwPopover(radius: NW.Radius.l)
+        .shPopover(radius: SH.Radius.l)
     }
 }

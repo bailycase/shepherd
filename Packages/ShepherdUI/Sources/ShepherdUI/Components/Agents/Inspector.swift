@@ -3,7 +3,7 @@ import SwiftUI
 /// The subagent inspector's header (Agents board): the branch glyph in the run's state, its
 /// name with "· 3 of 3", a mono meta line ending in a state-colored accent ("done 11:02"), and
 /// the caller's controls on the trailing side.
-public struct NWInspectorHeader<Trailing: View>: View {
+public struct SHInspectorHeader<Trailing: View>: View {
     let title: String
     let position: String?
     let state: AgentState
@@ -25,28 +25,28 @@ public struct NWInspectorHeader<Trailing: View>: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        HStack(spacing: NW.Space.m) {
-            NWBranchGlyph(state, size: 13)
+        let sh = Color.sh
+        HStack(spacing: SH.Space.m) {
+            SHBranchGlyph(state, size: 13)
             VStack(alignment: .leading, spacing: 1) {
-                Text("\(Text(title).font(.nwSans(13, .semibold)).foregroundStyle(nw.textPrimary))\(Text(position.map { " · \($0)" } ?? "").font(.nwSans(13)).foregroundStyle(nw.textSecondary))")
+                Text("\(Text(title).font(.shSans(13, .semibold)).foregroundStyle(sh.textPrimary))\(Text(position.map { " · \($0)" } ?? "").font(.shSans(13)).foregroundStyle(sh.textSecondary))")
                     .lineLimit(1)
                     .accessibilityAddTraits(.isHeader)
                 Text("\(Text(meta))\(Text(accentText).foregroundStyle(state.textColor))")
-                    .font(.nwMono(10.5))
-                    .foregroundStyle(nw.textTertiary)
+                    .font(.shMono(10.5))
+                    .foregroundStyle(sh.textTertiary)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .help(meta + accentText)
             }
             .accessibilityElement(children: .combine)
-            Spacer(minLength: NW.Space.m)
-            HStack(spacing: NW.Space.xs) { trailing() }
+            Spacer(minLength: SH.Space.m)
+            HStack(spacing: SH.Space.xs) { trailing() }
         }
-        .padding(.leading, NW.Space.l)
-        .padding(.trailing, NW.Space.s)
+        .padding(.leading, SH.Space.l)
+        .padding(.trailing, SH.Space.s)
         .frame(maxWidth: .infinity, minHeight: minHeight)
-        .overlay(alignment: .bottom) { NWHairline() }
+        .overlay(alignment: .bottom) { SHHairline() }
     }
 
     private var accentText: String {
@@ -59,7 +59,7 @@ public struct NWInspectorHeader<Trailing: View>: View {
 /// note on the right, "step 1 / 1 · 62%"), and once it finished its RESULT in the state's color
 /// followed by the caller's file links. A run that asked its parent shows its question under
 /// "Asked the parent" in the place of the result.
-public struct NWRunBrief<Files: View>: View {
+public struct SHRunBrief<Files: View>: View {
     let goal: String
     let note: String?
     let result: String?
@@ -78,46 +78,46 @@ public struct NWRunBrief<Files: View>: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        VStack(alignment: .leading, spacing: NW.Space.m) {
+        let sh = Color.sh
+        VStack(alignment: .leading, spacing: SH.Space.m) {
             HStack(alignment: .firstTextBaseline) {
-                NWBriefLabel(text: "Goal")
-                Spacer(minLength: NW.Space.m)
+                SHBriefLabel(text: "Goal")
+                Spacer(minLength: SH.Space.m)
                 if let note {
-                    Text(note).font(.nwMono(10.5)).foregroundStyle(nw.textTertiary).monospacedDigit().lineLimit(1)
-                        .nwContentTransition(.numeric())
+                    Text(note).font(.shMono(10.5)).foregroundStyle(sh.textTertiary).monospacedDigit().lineLimit(1)
+                        .shContentTransition(.numeric())
                 }
             }
-            .nwAnimation(.content, value: note)
+            .shAnimation(.content, value: note)
             Text(goal)
-                .font(.nw(.ui, weight: .regular)).lineSpacing(NW.Space.xs)
-                .foregroundStyle(nw.textSecondary)
+                .font(.sh(.ui, weight: .regular)).lineSpacing(SH.Space.xs)
+                .foregroundStyle(sh.textSecondary)
                 .lineLimit(6)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let result {
-                VStack(alignment: .leading, spacing: NW.Space.m) {
-                    NWBriefLabel(text: resultLabel, color: resultState.textColor)
-                    NWInlineText(text: result, codeSize: 11.5).equatable()
-                        .font(.nw(.ui, weight: .regular)).lineSpacing(NW.Space.xs)
-                        .foregroundStyle(nw.textPrimary)
+                VStack(alignment: .leading, spacing: SH.Space.m) {
+                    SHBriefLabel(text: resultLabel, color: resultState.textColor)
+                    SHInlineText(text: result, codeSize: 11.5).equatable()
+                        .font(.sh(.ui, weight: .regular)).lineSpacing(SH.Space.xs)
+                        .foregroundStyle(sh.textPrimary)
                         .lineLimit(8)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     files()
                 }
-                .nwTransition(.disclosure)
+                .shTransition(.disclosure)
             }
         }
-        .nwAnimation(.disclosure, value: result != nil)
+        .shAnimation(.disclosure, value: result != nil)
         .padding(.vertical, 10)
-        .padding(.horizontal, NW.Space.l)
+        .padding(.horizontal, SH.Space.l)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(nw.bgSunken)
+        .background(sh.bgSunken)
     }
 }
 
-extension NWRunBrief where Files == EmptyView {
+extension SHRunBrief where Files == EmptyView {
     public init(goal: String, note: String? = nil, result: String? = nil, resultLabel: String = "Result",
                 resultState: AgentState = .done) {
         self.init(goal: goal, note: note, result: result, resultLabel: resultLabel, resultState: resultState) { EmptyView() }
@@ -126,7 +126,7 @@ extension NWRunBrief where Files == EmptyView {
 
 /// The bar under a finished run (Agents board): its actions (Re-run · Fork · Copy transcript)
 /// on a hairline, with an optional trailing note.
-public struct NWRunActions<Actions: View, Trailing: View>: View {
+public struct SHRunActions<Actions: View, Trailing: View>: View {
     @ViewBuilder let actions: () -> Actions
     @ViewBuilder let trailing: () -> Trailing
 
@@ -136,19 +136,19 @@ public struct NWRunActions<Actions: View, Trailing: View>: View {
     }
 
     public var body: some View {
-        HStack(spacing: NW.Space.s) {
+        HStack(spacing: SH.Space.s) {
             actions()
-            Spacer(minLength: NW.Space.m)
+            Spacer(minLength: SH.Space.m)
             trailing()
         }
         .padding(.vertical, 10)
-        .padding(.horizontal, NW.Space.l)
+        .padding(.horizontal, SH.Space.l)
         .frame(maxWidth: .infinity)
-        .overlay(alignment: .top) { NWHairline() }
+        .overlay(alignment: .top) { SHHairline() }
     }
 }
 
-extension NWRunActions where Trailing == EmptyView {
+extension SHRunActions where Trailing == EmptyView {
     public init(@ViewBuilder actions: @escaping () -> Actions) {
         self.init(actions: actions) { EmptyView() }
     }

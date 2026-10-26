@@ -14,7 +14,7 @@ struct SubagentTraySection: View {
     let tray: NativeSubagentTray
     let store: NativeThreadStore
     let state: ComposerState
-    let size: NWSubagentTraySize
+    let size: SHSubagentTraySize
     let enabled: Bool
     @Environment(MobileNavigator.self) private var navigator
     @ScaledMetric(relativeTo: .body) private var rowsMaxHeight = MobileLayout.trayRowsMaxHeight
@@ -30,8 +30,8 @@ struct SubagentTraySection: View {
         let commands = SubagentCommands(store: store, enabled: enabled && store.takesSubagentCommands)
         let selected = SubagentInspection.of(navigator).selected(in: ref)
         VStack(spacing: 0) {
-            NWSubagentTray(values.summary, size: size, collapsed: state.trayCollapsed,
-                           onToggle: { withNWAnimation(.disclosure) { state.trayCollapsed.toggle() } }) {
+            SHSubagentTray(values.summary, size: size, collapsed: state.trayCollapsed,
+                           onToggle: { withSHAnimation(.disclosure) { state.trayCollapsed.toggle() } }) {
                 VStack(spacing: 0) {
                     LazyVStack(spacing: 0) {
                         ForEach(rows) { value in
@@ -45,8 +45,8 @@ struct SubagentTraySection: View {
                     }
                     .fittedScroll(maxHeight: min(rowsMaxHeight, composerMaxHeight * MobileLayout.trayShare))
                     if long {
-                        NWSubagentTrayMoreRow(hidden: values.rows.count - shown, expanded: state.trayExpanded) {
-                            withNWAnimation(.disclosure) { state.trayExpanded.toggle() }
+                        SHSubagentTrayMoreRow(hidden: values.rows.count - shown, expanded: state.trayExpanded) {
+                            withSHAnimation(.disclosure) { state.trayExpanded.toggle() }
                         }
                     }
                 }
@@ -67,8 +67,8 @@ struct SubagentTraySection: View {
         }
     }
 
-    private func row(_ value: NWSubagentTrayRun, run: NativeSubagent, selected: Bool, commands: SubagentCommands) -> some View {
-        NWSubagentTrayRow(value, size: size, selected: selected, enabled: commands.enabled, actions: NWSubagentTrayActions(
+    private func row(_ value: SHSubagentTrayRun, run: NativeSubagent, selected: Bool, commands: SubagentCommands) -> some View {
+        SHSubagentTrayRow(value, size: size, selected: selected, enabled: commands.enabled, actions: SHSubagentTrayActions(
             open: { SubagentOpening.open(.run(ref, runID: run.runID), navigator: navigator) }))
             .contextMenu {
                 Button("Open", systemImage: "arrow.up.right") { SubagentOpening.open(.run(ref, runID: run.runID), navigator: navigator) }

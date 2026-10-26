@@ -30,7 +30,7 @@ extension View {
     }
 }
 
-/// The user's turn: one `NWUserBubble` per message, each with its time beneath while the turn
+/// The user's turn: one `SHUserBubble` per message, each with its time beneath while the turn
 /// is hovered. Messages the queue delivered together open with "From the queue · N", one bubble
 /// per message with the time it was sent. A send pi has not read yet stands at 70%. No speaker
 /// label: shape carries the role.
@@ -94,9 +94,9 @@ struct UserTurn: View, Equatable {
     }
 
     var body: some View {
-        let _ = NWRenderProbe.tick("thread.userTurn")
+        let _ = SHRenderProbe.tick("thread.userTurn")
         VStack(alignment: .trailing, spacing: AppLayout.blockSpacing) {
-            if let fromQueue { NWQueueDivider(count: fromQueue) }
+            if let fromQueue { SHQueueDivider(count: fromQueue) }
             VStack(alignment: .trailing, spacing: AppLayout.activitySpacing) {
                 // By position, not entry: an echo and the message pi saves for it have different
                 // entries, and the bubble must stay one view to settle in place (70% → 100%).
@@ -104,24 +104,24 @@ struct UserTurn: View, Equatable {
                     let last = index == bubbles.count - 1
                     // No board draws a sent message's page elements as chips (the user's decision,
                     // 2026-09-29): only the composer's chip and the queue row's stand for them.
-                    VStack(alignment: .trailing, spacing: NW.Space.s) {
+                    VStack(alignment: .trailing, spacing: SH.Space.s) {
                         // The images it carries, above its words (ThreadImagesSent), when the host names each of them.
                         if !bubble.imageRefs.isEmpty {
                             SentImages(refs: bubble.imageRefs, names: bubble.imageRefs.indices.map { "Image \($0 + 1)" }, origin: "Sent by you")
                         }
-                        NWUserBubble(bubble.text, attachments: bubble.imageRefs.isEmpty ? Array(repeating: "Image", count: bubble.images) : [],
+                        SHUserBubble(bubble.text, attachments: bubble.imageRefs.isEmpty ? Array(repeating: "Image", count: bubble.images) : [],
                                      timestamp: bubble.caption, note: last ? note : nil, revealed: hover.hovering) {
                             if !bubble.references.isEmpty { SentReferenceChips(records: bubble.references) }
                         }
                     }
                     .opacity(bubble.pending ? 0.7 : 1)
-                    .nwAnimation(.hover, value: bubble.pending)
+                    .shAnimation(.hover, value: bubble.pending)
                 }
             }
             // The neutral count of the images the turn carries (ThreadImagesSent), from the images the host actually named; a turn whose images it
             // did not name keeps its "Image" chips and says nothing here. No verb: pi's saved image has no file name and no producer.
             if sentImages > 0 {
-                NWActivityLine(kind: .images, label: nativeCount(sentImages, "image"), meta: "")
+                SHActivityLine(kind: .images, label: nativeCount(sentImages, "image"), meta: "")
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -130,7 +130,7 @@ struct UserTurn: View, Equatable {
     }
 }
 
-/// One agent turn (NWThread board): thinking, prose, activity lines, the subagent record (where
+/// One agent turn (SHThread board): thinking, prose, activity lines, the subagent record (where
 /// they started and where they finished), then, once it has finished, the changes card and the
 /// footer (shown while
 /// the turn is hovered). Everything it shows was derived once per turn change
@@ -219,9 +219,9 @@ struct AgentTurn: View, Equatable {
     /// errors) fade in, and the changes card and footer that end it rise into place. Text inside
     /// a part, and the parts a turn opens or scrolls back in with, appear at once.
     var body: some View {
-        let _ = NWRenderProbe.tick("thread.agentTurn")
+        let _ = SHRenderProbe.tick("thread.agentTurn")
         let entering = (shown.appeared || arriving) && settled
-        VStack(alignment: .leading, spacing: projectCards != nil || workerStyle != nil ? NWLeadMetrics.turnGap : AppLayout.turnItemSpacing) {
+        VStack(alignment: .leading, spacing: projectCards != nil || workerStyle != nil ? SHLeadMetrics.turnGap : AppLayout.turnItemSpacing) {
             ForEach(presentation.items) { item in
                 // Activity lines make their own entrances as they stream in. Live thinking
                 // carries on the thread's live line, so it never enters.
@@ -231,7 +231,7 @@ struct AgentTurn: View, Equatable {
                 case .thinking(_, _, _, _, true, _):
                     itemView(item)
                 default:
-                    itemView(item).nwArrival(entering, Self.entrance(item), edge: .bottom)
+                    itemView(item).shArrival(entering, Self.entrance(item), edge: .bottom)
                 }
             }
             // Between tools the turn ends in "Thinking…", which passes from the thread's tail into
@@ -244,7 +244,7 @@ struct AgentTurn: View, Equatable {
                     // column); worker threads and every ordinary thread keep theirs.
                     if footer, projectCards == nil, !presentation.endsInError { turnFooter }
                 }
-                .nwArrival(entering, .list, edge: .bottom)
+                .shArrival(entering, .list, edge: .bottom)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -268,7 +268,7 @@ struct AgentTurn: View, Equatable {
     }
 
     /// A failed request rises in like a row; everything else streaming in just fades.
-    private static func entrance(_ item: NativeTurnPresentation.Item) -> NW.Motion {
+    private static func entrance(_ item: NativeTurnPresentation.Item) -> SH.Motion {
         if case .error(_, _, _, false) = item { return .list }
         return .content
     }
@@ -282,7 +282,7 @@ struct AgentTurn: View, Equatable {
             .equatable()
         case .prose(_, _, let blocks, let openFence):
             // The fence a streaming reply is writing is colored as it grows, not on every chunk.
-            Prose(blocks: blocks, maxWidth: projectCards != nil || workerStyle != nil ? NWLeadMetrics.columnWidth : AppLayout.proseMaxWidth, writingFence: live && openFence).equatable()
+            Prose(blocks: blocks, maxWidth: projectCards != nil || workerStyle != nil ? SHLeadMetrics.columnWidth : AppLayout.proseMaxWidth, writingFence: live && openFence).equatable()
         case .activity(_, let bursts):
             ActivityLinesView(bursts: bursts, review: review, cards: projectCards, planCallID: planCallID).equatable()
         case .subagents where projectCards != nil || workerStyle != nil:
@@ -293,9 +293,9 @@ struct AgentTurn: View, Equatable {
             // Where they started, and where they finished: both open the first run in the
             // inspector, whose ‹ › browse the rest. Adjacent, they sit together as activity
             // lines do.
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 ForEach(lines, id: \.title) { line in
-                    NWSubagentRecordLine(title: line.title, meta: line.meta, action: openFirstRun)
+                    SHSubagentRecordLine(title: line.title, meta: line.meta, action: openFirstRun)
                 }
             }
         case .goalRecord(_, let text):
@@ -305,16 +305,16 @@ struct AgentTurn: View, Equatable {
             ArtifactCardItem(artifact: artifact)
         case .images(_, let images):
             // What the agent made or a tool returned, where it happened (ThreadImagesReceived): the neutral count, then the pictures.
-            VStack(alignment: .leading, spacing: NW.Space.m) {
-                NWActivityLine(kind: .images, label: nativeCount(images.count, "image"), meta: "")
+            VStack(alignment: .leading, spacing: SH.Space.m) {
+                SHActivityLine(kind: .images, label: nativeCount(images.count, "image"), meta: "")
                 ReceivedImages(refs: images)
             }
             .frame(maxWidth: AppLayout.proseMaxWidth, alignment: .leading)
         case .note(_, let text):
-            Text(text).font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+            Text(text).font(Font.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                 .lineLimit(3).truncationMode(.tail).help(text).textSelection(.enabled)
                 .padding(.leading, AppLayout.noteIndent)
-                .overlay(alignment: .leading) { Color.nw.lineStrong.frame(width: NWThreadMetrics.ruleWidth) }
+                .overlay(alignment: .leading) { Color.sh.lineStrong.frame(width: SHThreadMetrics.ruleWidth) }
                 .frame(maxWidth: AppLayout.proseMaxWidth, alignment: .leading)
         case .error(_, let error, let final, let folded):
             // Every column's width, not the prose measure (ThreadError).
@@ -366,7 +366,7 @@ struct AgentTurn: View, Equatable {
                 NSPasteboard.general.setString(copy, forType: .string)
             },
             onRetry: retry,
-            timing: presentation.timing.map(NWResponseTimingModel.init))
+            timing: presentation.timing.map(SHResponseTimingModel.init))
     }
 }
 
@@ -376,11 +376,11 @@ struct LiveWaitLine: View {
     let wait: NativeLiveWait
 
     var body: some View {
-        NWLiveLine(wait.title, since: wait.since.map { Date(timeIntervalSince1970: $0 / 1000) }, help: wait.help)
+        SHLiveLine(wait.title, since: wait.since.map { Date(timeIntervalSince1970: $0 / 1000) }, help: wait.help)
     }
 }
 
-extension NWResponseTimingModel {
+extension SHResponseTimingModel {
     /// The popover's words from the reply's measured timing (`NativeResponseTimingReport`).
     init(_ report: NativeResponseTimingReport) {
         self.init(
@@ -426,7 +426,7 @@ private struct SteeredBubble: View {
     let hover: MessageHover
 
     var body: some View {
-        NWUserBubble(text, attachments: Array(repeating: "Image", count: images), timestamp: time, revealed: hover.hovering,
+        SHUserBubble(text, attachments: Array(repeating: "Image", count: images), timestamp: time, revealed: hover.hovering,
                      origin: .steered)
             .frame(maxWidth: .infinity, alignment: .trailing)
     }
@@ -439,7 +439,7 @@ private struct QuestionRecordItem: View {
     let hover: MessageHover
 
     var body: some View {
-        NWQuestionRecord(question: row.question, title: row.title, text: row.text, answered: row.answered,
+        SHQuestionRecord(question: row.question, title: row.title, text: row.text, answered: row.answered,
                          timestamp: row.caption(), revealed: hover.hovering)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(row.accessibilityLabel)
@@ -455,10 +455,10 @@ private struct TurnFooter: View {
     let onLink: (() -> Void)?
     let onCopy: (() -> Void)?
     let onRetry: (() -> Void)?
-    let timing: NWResponseTimingModel?
+    let timing: SHResponseTimingModel?
 
     var body: some View {
-        NWTurnFooter(meta: meta, link: link, onLink: onLink, onCopy: onCopy, onRetry: onRetry, timing: timing, revealed: hover.hovering)
+        SHTurnFooter(meta: meta, link: link, onLink: onLink, onCopy: onCopy, onRetry: onRetry, timing: timing, revealed: hover.hovering)
     }
 }
 
@@ -504,11 +504,11 @@ private struct TurnChangesCard: View {
 
     var body: some View {
         let turnID = changes.turnID
-        NWChangesCard(
+        SHChangesCard(
             title: changes.title, added: changes.added, removed: changes.removed,
             files: changes.files.map {
-                NWChangedFile(path: $0.path, directory: $0.directory, name: $0.name,
-                              status: NWChangedFile.Status(rawValue: $0.status.rawValue) ?? .modified, added: $0.added, removed: $0.removed)
+                SHChangedFile(path: $0.path, directory: $0.directory, name: $0.name,
+                              status: SHChangedFile.Status(rawValue: $0.status.rawValue) ?? .modified, added: $0.added, removed: $0.removed)
             },
             total: changes.fileCount, phase: changes.undone ? .undone : .edited, busy: busy, notice: notice,
             onReview: reviewAction(turnID: turnID),

@@ -4,17 +4,17 @@ import SwiftUI
 /// viewed mark (a done check, or an empty ring), the status letter, the filename in semibold mono
 /// over its directory, the comment count, the diff stat, and a chevron where the row opens the
 /// file's diff. Equal on its values.
-public struct NWReviewFileRow: View, Equatable {
+public struct SHReviewFileRow: View, Equatable {
     public struct Item: Equatable, Sendable {
         public let name: String
         public let directory: String
-        public let status: NWFileStatus
+        public let status: SHFileStatus
         public let added: Int
         public let removed: Int
         public let comments: Int
         public let viewed: Bool
 
-        public init(name: String, directory: String, status: NWFileStatus, added: Int, removed: Int, comments: Int = 0, viewed: Bool = false) {
+        public init(name: String, directory: String, status: SHFileStatus, added: Int, removed: Int, comments: Int = 0, viewed: Bool = false) {
             self.name = name
             self.directory = directory
             self.status = status
@@ -55,26 +55,26 @@ public struct NWReviewFileRow: View, Equatable {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        HStack(spacing: NW.Space.m) {
+        let sh = Color.sh
+        HStack(spacing: SH.Space.m) {
             if showsViewed {
-                NWViewedMark(viewed: item.viewed)
+                SHViewedMark(viewed: item.viewed)
             }
             Text(item.status.letter)
-                .font(.nw(.mono, weight: .bold))
+                .font(.sh(.mono, weight: .bold))
                 .foregroundStyle(item.status.color)
             // At accessibility sizes the counts move under the name, so the name keeps the width.
             let stacked = typeSize.isAccessibilitySize
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 Text(item.name)
-                    .font(.nw(.code, weight: .semibold))
-                    .foregroundStyle(nw.textPrimary)
+                    .font(.sh(.code, weight: .semibold))
+                    .foregroundStyle(sh.textPrimary)
                     .lineLimit(stacked ? 3 : 1)
                     .truncationMode(.middle)
                 if !item.directory.isEmpty {
                     Text(item.directory)
-                        .font(.nw(.micro, weight: .regular))
-                        .foregroundStyle(nw.textTertiary)
+                        .font(.sh(.micro, weight: .regular))
+                        .foregroundStyle(sh.textTertiary)
                         .lineLimit(1)
                         .truncationMode(.head)
                 }
@@ -84,15 +84,15 @@ public struct NWReviewFileRow: View, Equatable {
             if !stacked { counts }
             if showsChevron {
                 Image(systemName: "chevron.right")
-                    .font(.nw(.caption, weight: .semibold))
-                    .foregroundStyle(nw.textTertiary)
+                    .font(.sh(.caption, weight: .semibold))
+                    .foregroundStyle(sh.textTertiary)
                     .accessibilityHidden(true)
             }
         }
-        .padding(.horizontal, NW.Space.l)
-        .padding(.vertical, NW.Space.m)
-        .frame(minHeight: NWReviewFileRow.height)
-        .background(selected ? nw.bgSelected : .clear, in: RoundedRectangle(cornerRadius: NW.Radius.l))
+        .padding(.horizontal, SH.Space.l)
+        .padding(.vertical, SH.Space.m)
+        .frame(minHeight: SHReviewFileRow.height)
+        .background(selected ? sh.bgSelected : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.l))
         .contentShape(Rectangle())
         .opacity(item.viewed && !showsViewed ? 0.6 : 1)
         .accessibilityElement(children: .ignore)
@@ -101,14 +101,14 @@ public struct NWReviewFileRow: View, Equatable {
     }
 
     private var counts: some View {
-        HStack(spacing: NW.Space.m) {
+        HStack(spacing: SH.Space.m) {
             if item.comments > 0 {
                 Label("\(item.comments)", systemImage: "text.bubble")
-                    .labelStyle(NWCompactLabelStyle())
-                    .font(.nw(.caption))
-                    .foregroundStyle(Color.nw.running)
+                    .labelStyle(SHCompactLabelStyle())
+                    .font(.sh(.caption))
+                    .foregroundStyle(Color.sh.running)
             }
-            NWDiffStat(added: item.added, removed: item.removed, font: .nw(.micro, weight: .regular))
+            SHDiffStat(added: item.added, removed: item.removed, font: .sh(.micro, weight: .regular))
         }
     }
 
@@ -117,7 +117,7 @@ public struct NWReviewFileRow: View, Equatable {
 }
 
 /// A file's viewed mark: a done check once viewed, an empty ring before.
-public struct NWViewedMark: View {
+public struct SHViewedMark: View {
     let viewed: Bool
 
     public init(viewed: Bool) { self.viewed = viewed }
@@ -126,13 +126,13 @@ public struct NWViewedMark: View {
         Group {
             if viewed {
                 Image(systemName: "checkmark")
-                    .font(.nw(.caption, weight: .bold))
-                    .foregroundStyle(.nw.done)
+                    .font(.sh(.caption, weight: .bold))
+                    .foregroundStyle(.sh.done)
             } else {
-                Circle().strokeBorder(Color.nw.lineStrong, lineWidth: 1.3)
+                Circle().strokeBorder(Color.sh.lineStrong, lineWidth: 1.3)
             }
         }
-        .frame(width: NWViewedMark.size, height: NWViewedMark.size)
+        .frame(width: SHViewedMark.size, height: SHViewedMark.size)
         .accessibilityHidden(true)
     }
 
@@ -140,9 +140,9 @@ public struct NWViewedMark: View {
 }
 
 /// Icon then title, 4pt apart, the icon a step smaller.
-private struct NWCompactLabelStyle: LabelStyle {
+private struct SHCompactLabelStyle: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: NW.Space.xs) {
+        HStack(spacing: SH.Space.xs) {
             configuration.icon.imageScale(.small)
             configuration.title
         }
@@ -151,7 +151,7 @@ private struct NWCompactLabelStyle: LabelStyle {
 
 /// The phone's bottom-bar buttons (MobileChanges board): 48pt, full width, radius 12, the
 /// body size. Primary is the lantern fill; secondary is raised with a strong line.
-public struct NWReviewBarButtonStyle: ButtonStyle {
+public struct SHReviewBarButtonStyle: ButtonStyle {
     public enum Kind: Sendable { case primary, secondary }
 
     let kind: Kind
@@ -159,60 +159,60 @@ public struct NWReviewBarButtonStyle: ButtonStyle {
     public init(_ kind: Kind = .secondary) { self.kind = kind }
 
     public func makeBody(configuration: Configuration) -> some View {
-        NWReviewBarButton(configuration: configuration, kind: kind)
+        SHReviewBarButton(configuration: configuration, kind: kind)
     }
 
     /// The boards' 48pt bar button.
     public static let height: CGFloat = 48
 }
 
-private struct NWReviewBarButton: View {
+private struct SHReviewBarButton: View {
     let configuration: ButtonStyleConfiguration
-    let kind: NWReviewBarButtonStyle.Kind
+    let kind: SHReviewBarButtonStyle.Kind
     @Environment(\.isEnabled) private var enabled
 
     var body: some View {
-        let nw = Color.nw
-        let shape = RoundedRectangle(cornerRadius: NW.Radius.l)
+        let sh = Color.sh
+        let shape = RoundedRectangle(cornerRadius: SH.Radius.l)
         let primary = kind == .primary
         configuration.label
-            .font(.nw(.body, weight: primary ? .semibold : .medium))
+            .font(.sh(.body, weight: primary ? .semibold : .medium))
             .lineLimit(1)
             .minimumScaleFactor(0.8)
-            .foregroundStyle(primary ? nw.textOnLantern : nw.textPrimary)
-            .padding(.horizontal, NW.Space.l)
-            .frame(maxWidth: .infinity, minHeight: NWReviewBarButtonStyle.height)
-            .background(primary ? (configuration.isPressed && enabled ? nw.lanternPressed : nw.lantern) : configuration.isPressed ? nw.bgSelected : nw.bgRaised,
+            .foregroundStyle(primary ? sh.textOnLantern : sh.textPrimary)
+            .padding(.horizontal, SH.Space.l)
+            .frame(maxWidth: .infinity, minHeight: SHReviewBarButtonStyle.height)
+            .background(primary ? (configuration.isPressed && enabled ? sh.lanternPressed : sh.lantern) : configuration.isPressed ? sh.bgSelected : sh.bgRaised,
                         in: shape)
-            .nwBorder(primary ? .clear : nw.lineStrong, radius: NW.Radius.l)
-            .opacity(enabled ? 1 : NWControlMetrics.disabledOpacity)
+            .shBorder(primary ? .clear : sh.lineStrong, radius: SH.Radius.l)
+            .opacity(enabled ? 1 : SHControlMetrics.disabledOpacity)
             .contentShape(shape)
     }
 }
 
-extension ButtonStyle where Self == NWReviewBarButtonStyle {
-    /// `.buttonStyle(.nwReviewBar(.primary))`.
-    public static func nwReviewBar(_ kind: NWReviewBarButtonStyle.Kind = .secondary) -> NWReviewBarButtonStyle { NWReviewBarButtonStyle(kind) }
+extension ButtonStyle where Self == SHReviewBarButtonStyle {
+    /// `.buttonStyle(.shReviewBar(.primary))`.
+    public static func shReviewBar(_ kind: SHReviewBarButtonStyle.Kind = .secondary) -> SHReviewBarButtonStyle { SHReviewBarButtonStyle(kind) }
 }
 
 #Preview("Review file rows") {
-    NWPreviewBoth {
-        VStack(spacing: NW.Space.l) {
+    SHPreviewBoth {
+        VStack(spacing: SH.Space.l) {
             VStack(spacing: 0) {
-                NWReviewFileRow(.init(name: "DesktopNativeThreadView.swift", directory: "Sources/ShepherdApp/", status: .modified,
+                SHReviewFileRow(.init(name: "DesktopNativeThreadView.swift", directory: "Sources/ShepherdApp/", status: .modified,
                                       added: 58, removed: 41, viewed: true))
-                NWHairline()
-                NWReviewFileRow(.init(name: "FleetView.swift", directory: "App/iOS/", status: .modified, added: 9, removed: 7, comments: 1))
-                NWHairline()
-                NWReviewFileRow(.init(name: "NativePresentationTests.swift", directory: "Tests/ShepherdAppTests/", status: .added,
+                SHHairline()
+                SHReviewFileRow(.init(name: "FleetView.swift", directory: "App/iOS/", status: .modified, added: 9, removed: 7, comments: 1))
+                SHHairline()
+                SHReviewFileRow(.init(name: "NativePresentationTests.swift", directory: "Tests/ShepherdAppTests/", status: .added,
                                       added: 30, removed: 0))
             }
-            .nwCard(radius: NW.Radius.l)
-            NWReviewFileRow(.init(name: "FleetView.swift", directory: "App/iOS/", status: .modified, added: 9, removed: 7, comments: 1),
+            .shCard(radius: SH.Radius.l)
+            SHReviewFileRow(.init(name: "FleetView.swift", directory: "App/iOS/", status: .modified, added: 9, removed: 7, comments: 1),
                             showsViewed: false, showsChevron: false, selected: true)
-            HStack(spacing: NW.Space.l) {
-                Button("Request changes") {}.buttonStyle(.nwReviewBar(.secondary))
-                Button("Commit") {}.buttonStyle(.nwReviewBar(.primary))
+            HStack(spacing: SH.Space.l) {
+                Button("Request changes") {}.buttonStyle(.shReviewBar(.secondary))
+                Button("Commit") {}.buttonStyle(.shReviewBar(.primary))
             }
         }
         .frame(width: 360)

@@ -3,7 +3,7 @@ import ShepherdUI
 
 extension MobileLayout {
     /// The panel under an iPad thread (iPadTerminal board), until the divider moves it.
-    static let terminalPanelHeight: CGFloat = NWTerminalMetrics.panelHeight
+    static let terminalPanelHeight: CGFloat = SHTerminalMetrics.panelHeight
     /// Dynamic Type grows the terminal's font only this far: past it the grid gets too narrow for
     /// a shell.
     static let terminalMaximumFontSize: CGFloat = 20

@@ -21,7 +21,7 @@ struct SidePaneTests {
 
     @Test func artifactsIsThePageGlyphOnControlThreeAndCountsItsFiles() throws {
         let tab = try #require(SidePaneTabs.items(news: [], changedFiles: nil, artifacts: 3).first { $0.id == "artifacts" })
-        #expect(tab.title == "Artifacts" && tab.count == 3 && tab.shortcut == "⌃3" && tab.systemImage == NWGlyph.artifact.symbolName)
+        #expect(tab.title == "Artifacts" && tab.count == 3 && tab.shortcut == "⌃3" && tab.systemImage == SHGlyph.artifact.symbolName)
         #expect(SidePaneTabs.items(news: [], changedFiles: nil, artifacts: nil).allSatisfy { $0.id != "artifacts" }, "no file, no tab")
     }
 
@@ -52,7 +52,7 @@ struct SidePaneTests {
 
     @Test(arguments: [(600, true), (480, true), (479, false), (380, false)] as [(Double, Bool)])
     func underFourHundredEightyPointsTheLabelsDrop(width: Double, labels: Bool) {
-        #expect(NWSidePaneMetrics.showsLabels(width: width) == labels)
+        #expect(SHSidePaneMetrics.showsLabels(width: width) == labels)
     }
 
     @Test(arguments: [

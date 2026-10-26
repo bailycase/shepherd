@@ -16,23 +16,23 @@ struct RecentsScreen: View {
             LazyVStack(spacing: 0) {
                 ForEach(rows) { row in
                     VStack(spacing: 0) {
-                        if row.id != rows.first?.id { NWHairline() }
+                        if row.id != rows.first?.id { SHHairline() }
                         Button { navigator.open(row.route) } label: {
                             ThreadRow(row: row, selected: row.ref.agentRef == selected).equatable()
                         }
-                        .buttonStyle(.nwRow(radius: 0))
+                        .buttonStyle(.shRow(radius: 0))
                         .contextMenu { if row.design == nil { ThreadRowMenu(thread: row.ref.agentRef) } }
                     }
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: NWListMetrics.cardRadius))
-            .nwCard(radius: NWListMetrics.cardRadius)
+            .clipShape(RoundedRectangle(cornerRadius: SHListMetrics.cardRadius))
+            .shCard(radius: SHListMetrics.cardRadius)
             .padding(.horizontal, MobileLayout.gutter)
             .padding(.bottom, MobileLayout.sectionSpacing)
             .frame(maxWidth: MobileLayout.homeMaxWidth)
             .frame(maxWidth: .infinity)
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .refreshable { await feed.refresh() }
         .task { await feed.watch() }
         .navigationTitle("Recents")

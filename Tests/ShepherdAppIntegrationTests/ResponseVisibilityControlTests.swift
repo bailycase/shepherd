@@ -56,8 +56,8 @@ struct ResponseVisibilityControlTests {
         var copied = 0
         var retried = 0
         let window = OffscreenWindow(size: CGSize(width: 820, height: 600), dark: false,
-            NWTurnFooter(meta: "45s", onCopy: { copied += 1 }, onRetry: { retried += 1 },
-                         timing: NWResponseTimingModel(report), revealed: true).padding(NW.Space.xl))
+            SHTurnFooter(meta: "45s", onCopy: { copied += 1 }, onRetry: { retried += 1 },
+                         timing: SHResponseTimingModel(report), revealed: true).padding(SH.Space.xl))
         defer { window.close() }
         let controls = window.controls()
         let copy = try #require(controls.first { $0.label == "Copy response" })

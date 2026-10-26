@@ -28,8 +28,8 @@ struct ProjectMCPTrustPreviewTests {
         await model.load([host]); await model.open(.init(host: host, project: project)); await model.navigate(.category(.mcp))
         func render(_ state: String) async throws {
             try await Preview.renderMatrix("project-mcp-legacy-remote-" + state, size: CGSize(width: 1040, height: 900)) {
-                ProjectMCPSettings(model: model, initiallyExpanded: "issues").padding(NW.Space.xxl)
-                    .frame(width: 1040, height: 900).background(Color.nw.bgWindow)
+                ProjectMCPSettings(model: model, initiallyExpanded: "issues").padding(SH.Space.xxl)
+                    .frame(width: 1040, height: 900).background(Color.sh.bgWindow)
             }
         }
         try await render("blocked-disabled")
@@ -63,8 +63,8 @@ struct ProjectMCPTrustPreviewTests {
         func render(_ name: String, narrow: Bool = false, query: String = "") async throws {
             let size = CGSize(width: narrow ? 740 : 1040, height: 900)
             try await Preview.renderMatrix("project-mcp-trust-" + name, size: size) {
-                ProjectMCPSettings(model: model, initiallyExpanded: "issues", initialQuery: query).padding(NW.Space.xxl)
-                    .frame(width: size.width, height: size.height).background(Color.nw.bgWindow)
+                ProjectMCPSettings(model: model, initiallyExpanded: "issues", initialQuery: query).padding(SH.Space.xxl)
+                    .frame(width: size.width, height: size.height).background(Color.sh.bgWindow)
             }
             if ["blocked-credentials-saved", "approved-credentials-saved"].contains(name) {
                 try await Preview.renderMatrix("project-mcp-trust-projects-page-" + name, size: CGSize(width: 1440, height: 1000)) {

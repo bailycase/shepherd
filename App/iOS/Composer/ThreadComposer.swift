@@ -37,7 +37,7 @@ struct ThreadComposer: View {
         let host = hosts.host(ref.host)
         let live = store.isLive && host?.phase.isConnected == true
         let wide = sizeClass == .regular
-        let goalSize: NWGoalSize = wide && !navigator.padSidebarOverlays ? .desktop : .touch
+        let goalSize: SHGoalSize = wide && !navigator.padSidebarOverlays ? .desktop : .touch
         VStack(alignment: .leading, spacing: MobileLayout.composerSpacing) {
             if let notice = store.notice {
                 banner(notice)
@@ -50,7 +50,7 @@ struct ThreadComposer: View {
             }
             if store.hasGoal || store.dialogs.isEmpty {
                 if store.hasGoal || store.tray != nil {
-                    NWDockStack(size: store.hasGoal && goalSize == .desktop ? .pointer : wide ? .pad : .phone, showsTray: true, showsQueue: !state.rows.isEmpty) {
+                    SHDockStack(size: store.hasGoal && goalSize == .desktop ? .pointer : wide ? .pad : .phone, showsTray: true, showsQueue: !state.rows.isEmpty) {
                         VStack(spacing: 0) {
                             if store.hasGoal {
                                 ThreadGoalCard(store: store, active: live,
@@ -60,14 +60,14 @@ struct ThreadComposer: View {
                                 SubagentTraySection(ref: ref, tray: tray, store: store, state: state,
                                                     size: wide ? .pad : .phone, enabled: live)
                                     .overlay(alignment: .top) {
-                                        if store.hasGoal { NWHairline(color: Color.nw.lineStrong) }
+                                        if store.hasGoal { SHHairline(color: Color.sh.lineStrong) }
                                     }
                             }
                         }
                     } queue: {
                         QueueSection(store: store, state: state, presentation: presentation, enabled: live, framed: false)
                     }
-                    .nwTransition(.list)
+                    .shTransition(.list)
                 } else {
                     QueueSection(store: store, state: state, presentation: presentation, enabled: live)
                 }
@@ -77,14 +77,14 @@ struct ThreadComposer: View {
                 let prompt = NativeQuestionPrompt(dialog: dialog)
                 if state.questionHiding.isHidden(key) {
                     // Folded to read the thread; it still holds the composer's place.
-                    NWQuestionCardHiddenLine(question: prompt.question) {
-                        withNWAnimation(.disclosure) { state.questionHiding.show() }
+                    SHQuestionCardHiddenLine(question: prompt.question) {
+                        withSHAnimation(.disclosure) { state.questionHiding.show() }
                     }
                     .id(key + ":hidden")
-                    .nwTransition(.content)
+                    .shTransition(.content)
                 } else {
                     QuestionPanel(prompt: prompt, count: store.dialogs.count, enabled: live && store.supports("answer"), docked: !wide,
-                                  hide: { withNWAnimation(.disclosure) { state.questionHiding.hide(key) } }) { answer in
+                                  hide: { withSHAnimation(.disclosure) { state.questionHiding.hide(key) } }) { answer in
                         guard let reply = prompt.dialogAnswer(answer) else { return }
                         Task {
                             await store.answer(dialogID: dialog.id, sessionID: session.piSessionID, generation: session.generation,
@@ -95,16 +95,16 @@ struct ThreadComposer: View {
                     // Docked on a phone, the panel runs to the screen's edges.
                     .padding(.horizontal, wide ? 0 : -MobileLayout.gutter)
                     .padding(.bottom, wide ? 0 : -MobileLayout.composerBottom)
-                    .nwTransition(.content)
+                    .shTransition(.content)
                 }
             } else {
                 if let matches = state.matches {
-                    NWTouchCommandList(commands: matches.commands.map(Self.command), total: matches.total, query: matches.query,
+                    SHTouchCommandList(commands: matches.commands.map(Self.command), total: matches.total, query: matches.query,
                                        wide: wide) { chosen in
                         store.draft = "/" + chosen.name + " "
                         focused = true
                     }
-                    .nwTransition(.content)
+                    .shTransition(.content)
                 }
                 if wide || designChat {
                     card(store: store, state: state, host: host, live: live)
@@ -114,12 +114,12 @@ struct ThreadComposer: View {
             }
         }
         .padding(.horizontal, designChat ? MobileLayout.padDesignComposerInset : wide ? MobileLayout.padThreadGutter : MobileLayout.gutter)
-        .padding(.top, designChat ? MobileLayout.padDesignComposerTop : NW.Space.m)
+        .padding(.top, designChat ? MobileLayout.padDesignComposerTop : SH.Space.m)
         .padding(.bottom, MobileLayout.composerBottom)
-        .background(Color.nw.bgWindow)
-        .nwAnimation(.content, value: store.dialogs.isEmpty)
-        .nwAnimation(.list, value: store.tray == nil)
-        .nwAnimation(.list, value: store.goalID)
+        .background(Color.sh.bgWindow)
+        .shAnimation(.content, value: store.dialogs.isEmpty)
+        .shAnimation(.list, value: store.tray == nil)
+        .shAnimation(.list, value: store.goalID)
         .onChange(of: store.sentCount) { _, _ in focused = false }
         .onChange(of: focused) { _, focused in
             if focused { navigator.focusedComposer = ref } else if navigator.focusedComposer == ref { navigator.focusedComposer = nil }
@@ -159,11 +159,11 @@ struct ThreadComposer: View {
         let inUse = focused || !store.draft.isEmpty || !state.attachments.isEmpty
         if inUse, hasChips(store, state: state) {
             ScrollView(.horizontal) {
-                HStack(spacing: NW.Space.xxs) { chips(store: store, state: state, live: live) }
-                    .buttonStyle(.nw(.ghost, size: .m))
+                HStack(spacing: SH.Space.xxs) { chips(store: store, state: state, live: live) }
+                    .buttonStyle(.sh(.ghost, size: .m))
             }
             .scrollIndicators(.hidden)
-            .nwTransition(.content)
+            .shTransition(.content)
         }
         if !state.attachments.isEmpty {
             attachments(state)
@@ -174,16 +174,16 @@ struct ThreadComposer: View {
             sendButton(store: store, state: state, live: live)
         }
         if acceptsImages(store) {
-            NWCapsuleComposer { AttachButton(state: state, enabled: live) } field: { capsuleField } action: { capsuleAction }
+            SHCapsuleComposer { AttachButton(state: state, enabled: live) } field: { capsuleField } action: { capsuleAction }
         } else {
-            NWCapsuleComposer { capsuleField } action: { capsuleAction }
+            SHCapsuleComposer { capsuleField } action: { capsuleAction }
         }
     }
 
     // MARK: iPad
 
     private func card(store: NativeThreadStore, state: ComposerState, host: MobileHost?, live: Bool) -> some View {
-        NWComposer(isFocused: focused) {
+        SHComposer(isFocused: focused) {
             if !state.attachments.isEmpty { attachmentChips(state) }
         } field: {
             // A command draft shows in mono while its list is open (iPadPortrait).
@@ -194,14 +194,14 @@ struct ThreadComposer: View {
             // the accessibility sizes) it scrolls rather than truncating every chip, and Send
             // stays put.
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: NW.Space.xxs) { cardControls(store: store, state: state, live: live) }
+                HStack(spacing: SH.Space.xxs) { cardControls(store: store, state: state, live: live) }
                 ScrollView(.horizontal) {
-                    HStack(spacing: NW.Space.xxs) { cardControls(store: store, state: state, live: live) }
+                    HStack(spacing: SH.Space.xxs) { cardControls(store: store, state: state, live: live) }
                 }
                 .scrollIndicators(.hidden)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.trailing, NW.Space.m)
+            .padding(.trailing, SH.Space.m)
             // The ring and Send keep their place whatever the chips do.
             HStack(spacing: 0) {
                 contextMeter(store: store, state: state)
@@ -212,17 +212,17 @@ struct ThreadComposer: View {
 
     @ViewBuilder private func cardControls(store: NativeThreadStore, state: ComposerState, live: Bool) -> some View {
         if acceptsImages(store) { AttachButton(state: state, enabled: live, chip: true) }
-        chips(store: store, state: state, live: live).buttonStyle(.nwComposerChip())
+        chips(store: store, state: state, live: live).buttonStyle(.shComposerChip())
     }
 
     // MARK: Parts
 
-    private func field(store: NativeThreadStore, placeholder: String, command: Bool = false, style: NWTextStyle = .body) -> some View {
+    private func field(store: NativeThreadStore, placeholder: String, command: Bool = false, style: SHTextStyle = .body) -> some View {
         @Bindable var bindable = store
         return TextField(placeholder, text: $bindable.draft, axis: .vertical)
-            .font(command ? .nw(.code) : .nw(style))
-            .foregroundStyle(Color.nw.textPrimary)
-            .lineLimit(1...NWComposerMetrics.fieldMaxLines)
+            .font(command ? .sh(.code) : .sh(style))
+            .foregroundStyle(Color.sh.textPrimary)
+            .lineLimit(1...SHComposerMetrics.fieldMaxLines)
             .focused($focused)
             .accessibilityLabel("Message to agent")
     }
@@ -272,11 +272,11 @@ struct ThreadComposer: View {
     @ViewBuilder private func sendButton(store: NativeThreadStore, state: ComposerState, live: Bool) -> some View {
         let running = store.running
         if NativeSendChoice.stopsInPlaceOfSend(running: running, hasInput: store.hasDraft || !state.attachments.isEmpty) {
-            NWComposerActionButton(.stop, enabled: live && store.supports("abort")) { Task { await store.abort() } }
+            SHComposerActionButton(.stop, enabled: live && store.supports("abort")) { Task { await store.abort() } }
                 .accessibilityLabel("Stop agent")
         } else {
             let enabled = live && store.acceptsSend && (store.hasDraft || !state.attachments.isEmpty) && !store.busy
-            NWComposerActionButton(.send, enabled: enabled) { Self.send(NativeSendChoice.wait.delivery, store: store, state: state) }
+            SHComposerActionButton(.send, enabled: enabled) { Self.send(NativeSendChoice.wait.delivery, store: store, state: state) }
                 .keyboardShortcut(.return, modifiers: .command)
                 .contextMenu {
                     if running, enabled {
@@ -317,25 +317,25 @@ struct ThreadComposer: View {
 
     private func attachments(_ state: ComposerState) -> some View {
         ScrollView(.horizontal) {
-            HStack(spacing: NW.Space.s) { attachmentChips(state) }
+            HStack(spacing: SH.Space.s) { attachmentChips(state) }
         }
         .scrollIndicators(.hidden)
     }
 
     private func attachmentChips(_ state: ComposerState) -> some View {
         ForEach(state.attachments) { attachment in
-            NWAttachmentChip(attachment.image.name ?? "Image", thumbnail: attachment.thumbnail) { state.remove(attachment.id) }
+            SHAttachmentChip(attachment.image.name ?? "Image", thumbnail: attachment.thumbnail) { state.remove(attachment.id) }
         }
     }
 
     private func banner(_ text: String, failed: Bool = false) -> some View {
-        Text(text).font(.nw(.caption)).foregroundStyle(failed ? Color.nw.failed : Color.nw.textTertiary)
+        Text(text).font(.sh(.caption)).foregroundStyle(failed ? Color.sh.failed : Color.sh.textTertiary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
     }
 
-    private static func command(_ command: NativeCommand) -> NWTouchCommand {
-        NWTouchCommand(name: command.name, description: command.description, arguments: command.arguments,
+    private static func command(_ command: NativeCommand) -> SHTouchCommand {
+        SHTouchCommand(name: command.name, description: command.description, arguments: command.arguments,
                        tag: NativeSlashMatches.tag(command))
     }
 }
@@ -346,9 +346,9 @@ private struct ComposerWidget: View {
     let text: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NW.Space.xxs) {
-            if let title { Text(title).nwSectionLabel().foregroundStyle(Color.nw.textTertiary) }
-            Text(text).font(.nw(.caption)).foregroundStyle(Color.nw.textSecondary).lineLimit(4)
+        VStack(alignment: .leading, spacing: SH.Space.xxs) {
+            if let title { Text(title).shSectionLabel().foregroundStyle(Color.sh.textTertiary) }
+            Text(text).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary).lineLimit(4)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)

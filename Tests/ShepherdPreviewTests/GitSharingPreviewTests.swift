@@ -13,7 +13,7 @@ import Testing
 struct GitSharingPreviewTests {
     private static let url = "git@github.com:acme/checkout-design.git"
 
-    private static let chips: [(id: String, label: String, tone: NWGitTone)] = [
+    private static let chips: [(id: String, label: String, tone: SHGitTone)] = [
         ("local", "Share with Git", .primary), ("clean", "main · Up to date", .done), ("changed", "main · 3 changes", .primary),
         ("incoming", "main · Pull 1", .running), ("ahead", "main · Push 1", .primary), ("conflict", "main · Pull paused", .attention),
         ("resolving", "main · Merging", .running), ("merged", "main · Merge ready", .attention), ("offline", "main · Offline", .secondary),
@@ -21,19 +21,19 @@ struct GitSharingPreviewTests {
 
     private func render<V: View>(_ name: String, size: CGSize, @ViewBuilder _ content: @escaping () -> V) async throws {
         try await Preview.renderMatrix("git-\(name)", size: size) {
-            content().padding(NW.Space.xxl)
+            content().padding(SH.Space.xxl)
                 .frame(width: size.width, height: size.height, alignment: .topLeading)
-                .background(Color.nw.bgWindow)
+                .background(Color.sh.bgWindow)
         }
     }
 
     @Test func chip() async throws {
         try await render("chip", size: CGSize(width: 260, height: 9 * 44 + 48)) {
-            VStack(alignment: .trailing, spacing: NW.Space.m) {
+            VStack(alignment: .trailing, spacing: SH.Space.m) {
                 ForEach(Self.chips, id: \.id) { chip in
-                    NWDesignGitChip(label: chip.label, tone: chip.tone, hint: "Git status for this design.", action: {})
+                    SHDesignGitChip(label: chip.label, tone: chip.tone, hint: "Git status for this design.", action: {})
                 }
-                NWDesignGitChip(label: "main · 3 changes", tone: .primary, hint: "Git status for this design.", isOpen: true, action: {})
+                SHDesignGitChip(label: "main · 3 changes", tone: .primary, hint: "Git status for this design.", isOpen: true, action: {})
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
         }
@@ -42,30 +42,30 @@ struct GitSharingPreviewTests {
     @Test(arguments: ["empty", "filled", "error", "working"])
     func share(_ state: String) async throws {
         let filled = state != "empty"
-        let error = state == "error" ? NWGitSheetError(title: "Repository unavailable",
+        let error = state == "error" ? SHGitSheetError(title: "Repository unavailable",
                                                        detail: "Check the repository URL and your Git access, then try again. Nothing was pushed.") : nil
         try await render("share-\(state)", size: CGSize(width: 700, height: 900)) {
-            NWGitShareSheet(repository: .constant(filled ? Self.url : ""), message: .constant(filled ? "Add checkout funnel design" : ""),
+            SHGitShareSheet(repository: .constant(filled ? Self.url : ""), message: .constant(filled ? "Add checkout funnel design" : ""),
                             boards: 4, error: error, working: state == "working", close: {}, share: {})
         }
     }
 
     @Test(arguments: ["filled", "error", "working"])
     func open(_ state: String) async throws {
-        let error = state == "error" ? NWGitSheetError(title: "Repository unavailable",
+        let error = state == "error" ? SHGitSheetError(title: "Repository unavailable",
                                                        detail: "Check the repository URL and your Git access, then try again. Nothing was cloned.") : nil
         try await render("open-\(state)", size: CGSize(width: 640, height: 560)) {
-            NWGitOpenSheet(repository: .constant(Self.url), error: error, working: state == "working", close: {}, clone: {})
+            SHGitOpenSheet(repository: .constant(Self.url), error: error, working: state == "working", close: {}, clone: {})
         }
     }
 
-    private static let files: [NWGitPanelState.File] = [
+    private static let files: [SHGitPanelState.File] = [
         .init(id: "A.dc.html", letter: "M", label: "Funnel first"),
         .init(id: "A-phone.dc.html", letter: "M", label: "Phone"),
         .init(id: "canvas.json", letter: "M", label: "Board placement"),
     ]
 
-    private static func changes(merge: Bool = false, canCommit: Bool = true, canPush: Bool = true) -> NWGitPanelState.Changes {
+    private static func changes(merge: Bool = false, canCommit: Bool = true, canPush: Bool = true) -> SHGitPanelState.Changes {
         .init(title: merge ? "Review merge" : "Local changes",
               note: merge ? "Both commits are preserved. Review before committing." : "Saved on this Mac. Not shared yet.",
               files: files, selected: merge ? "A-phone.dc.html" : "A.dc.html",
@@ -78,7 +78,7 @@ struct GitSharingPreviewTests {
               canCommit: canCommit, canPush: canPush)
     }
 
-    private static func panel(_ mode: String) -> (NWGitPanelState, String) {
+    private static func panel(_ mode: String) -> (SHGitPanelState, String) {
         let repo = "acme/checkout-design"
         let message = "Show absolute counts in the checkout funnel"
         switch mode {
@@ -120,20 +120,20 @@ struct GitSharingPreviewTests {
     func gitPanel(_ mode: String) async throws {
         let (state, message) = Self.panel(mode)
         try await render("panel-\(mode)", size: CGSize(width: 580, height: 1000)) {
-            NWGitPanel(state: state, message: .constant(message), close: {}, pull: {}, select: { _ in }, commit: { _ in }, push: {}, copyURL: {})
+            SHGitPanel(state: state, message: .constant(message), close: {}, pull: {}, select: { _ in }, commit: { _ in }, push: {}, copyURL: {})
         }
     }
 
     @Test func panelScrolls() async throws {
         let (state, message) = Self.panel("changed")
         try await render("panel-short", size: CGSize(width: 580, height: 560)) {
-            NWGitPanel(state: state, message: .constant(message), maxHeight: 480, close: {}, pull: {}, select: { _ in }, commit: { _ in }, push: {}, copyURL: {})
+            SHGitPanel(state: state, message: .constant(message), maxHeight: 480, close: {}, pull: {}, select: { _ in }, commit: { _ in }, push: {}, copyURL: {})
         }
     }
 
     @Test func mergeDialog() async throws {
         try await render("merge-dialog", size: CGSize(width: 752, height: 700)) {
-            NWGitMergeDialog(branch: "main", upstream: "origin/main",
+            SHGitMergeDialog(branch: "main", upstream: "origin/main",
                              local: .init(subject: "Show absolute counts in the checkout funnel", author: "You", hash: "9e340b2",
                                           files: ["A.dc.html", "A-phone.dc.html", "canvas.json"]),
                              incoming: .init(subject: "Clarify phone step labels", author: "Sam Nguyen", hash: "6bc29f1", files: ["A-phone.dc.html"]),
@@ -143,26 +143,26 @@ struct GitSharingPreviewTests {
 
     @Test func mergeCards() async throws {
         try await render("merge-card", size: CGSize(width: 760, height: 1040)) {
-            VStack(alignment: .leading, spacing: NW.Space.xxl) {
-                NWGitMergeCard(phase: .running)
-                NWGitMergeCard(phase: .ready, review: {})
-                NWGitMergeCard(phase: .stopped(nil), retry: {})
-                NWGitMergeCard(phase: .stopped("The merge took longer than its limit and was stopped."), retry: {})
-                NWGitMergeCard(phase: .failed("I couldn't verify the merged phone board. Your original design and both commits are unchanged."), retry: {})
+            VStack(alignment: .leading, spacing: SH.Space.xxl) {
+                SHGitMergeCard(phase: .running)
+                SHGitMergeCard(phase: .ready, review: {})
+                SHGitMergeCard(phase: .stopped(nil), retry: {})
+                SHGitMergeCard(phase: .stopped("The merge took longer than its limit and was stopped."), retry: {})
+                SHGitMergeCard(phase: .failed("I couldn't verify the merged phone board. Your original design and both commits are unchanged."), retry: {})
             }
         }
     }
 
     @Test func intro() async throws {
-        try await render("intro", size: CGSize(width: 560, height: 260)) { NWGitDesignIntro() }
+        try await render("intro", size: CGSize(width: 560, height: 260)) { SHGitDesignIntro() }
     }
 
     @Test func notices() async throws {
         try await render("notices", size: CGSize(width: 640, height: 280)) {
-            VStack(alignment: .leading, spacing: NW.Space.xl) {
-                NWGitCanvasNotice(.opened, title: "Opened from Git", detail: "4 boards · acme-web · 2 comments", dismiss: {})
+            VStack(alignment: .leading, spacing: SH.Space.xl) {
+                SHGitCanvasNotice(.opened, title: "Opened from Git", detail: "4 boards · acme-web · 2 comments", dismiss: {})
                     .frame(maxWidth: .infinity, alignment: .leading)
-                NWGitCanvasNotice(.paused, title: "Pull paused", detail: "Your work is safe. Resolve overlapping changes before updating the canvas.")
+                SHGitCanvasNotice(.paused, title: "Pull paused", detail: "Your work is safe. Resolve overlapping changes before updating the canvas.")
             }
         }
     }

@@ -234,7 +234,7 @@ struct AgentDeckResizeTests {
             let hiddenHosts = try state.tabs.dropFirst().map { try #require(deck.pages[$0.id]?.host) }
             let hiddenBounds = hiddenHosts.map(\.bounds)
             var cpu: [Double] = []
-            NWRenderProbe.start()
+            SHRenderProbe.start()
             for step in 0..<48 {
                 cpu.append(await MainThreadCPU.milliseconds {
                     state.sidebarWidth = CGFloat(step % 3) * 80
@@ -242,7 +242,7 @@ struct AgentDeckResizeTests {
                     ListPerf.settle(window)
                 })
             }
-            let counts = NWRenderProbe.stop()
+            let counts = SHRenderProbe.stop()
             #expect(hiddenHosts.map(\.bounds) == hiddenBounds)
             #expect(counts["deck.layout", default: 0] > 0)
             report.add("deck resize (\(hidden) hidden)", "main-thread CPU per step (median)", ms: MainThreadCPU.median(cpu))

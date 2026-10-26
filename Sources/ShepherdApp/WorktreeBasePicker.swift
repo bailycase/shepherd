@@ -32,32 +32,32 @@ struct WorktreeBasePicker: View {
 
     var body: some View {
         let options = branches.map { changesBaseOptions($0, selected: selected ?? "", query: query, includeCurrent: true) } ?? []
-        NWChangesMenu(width: NWChangesMenuMetrics.baseWidth) {
-            NWChangesMenuSearch(text: $query, prompt: "Search branches", isFocused: $searching,
+        SHChangesMenu(width: SHChangesMenuMetrics.baseWidth) {
+            SHChangesMenuSearch(text: $query, prompt: "Search branches", isFocused: $searching,
                                 onSubmit: { if let first = options.first { choose(first.name) } }, onEscape: close)
-            NWChangesMenuTitle("Branch from")
+            SHChangesMenuTitle("Branch from")
             if branches != nil {
                 ScrollView {
                     // A repository can list hundreds of branches (the engine stops at 500).
                     LazyVStack(spacing: 0) {
                         ForEach(options) { option in
-                            NWChangesMenuRow(option.name, systemImage: NWChangesScopeGlyph.branch.systemImage, titleIsMono: true,
+                            SHChangesMenuRow(option.name, systemImage: SHChangesScopeGlyph.branch.systemImage, titleIsMono: true,
                                              trailing: option.tag.map { .text($0) } ?? .none, checked: option.selected) { choose(option.name) }
                         }
                     }
                 }
                 .frame(maxHeight: ChangesMenuLayout.listMaxHeight)
                 .fixedSize(horizontal: false, vertical: true)
-                if options.isEmpty { NWChangesMenuNote("No branch matches “\(query)”.") }
+                if options.isEmpty { SHChangesMenuNote("No branch matches “\(query)”.") }
             } else if let failure {
-                NWChangesMenuNote(failure)
+                SHChangesMenuNote(failure)
             } else {
-                HStack(spacing: NW.Space.m) {
-                    ProgressView().progressViewStyle(.nwSpinner(size: AppLayout.reviewLoadingSpinner))
-                    Text("Reading branches…").font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                HStack(spacing: SH.Space.m) {
+                    ProgressView().progressViewStyle(.shSpinner(size: AppLayout.reviewLoadingSpinner))
+                    Text("Reading branches…").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                 }
-                .padding(.horizontal, NW.Space.m)
-                .frame(height: NWChangesMenuMetrics.rowHeight)
+                .padding(.horizontal, SH.Space.m)
+                .frame(height: SHChangesMenuMetrics.rowHeight)
             }
         }
         .task {

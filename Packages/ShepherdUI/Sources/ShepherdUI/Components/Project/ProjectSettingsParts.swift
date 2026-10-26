@@ -5,7 +5,7 @@ import CoreText
 /// -Automations), computed from the boards' exported markup in a browser at 1x (points are CSS pixels) and checked against the
 /// four PNGs at 2px per point. A value that equals a token (the 12pt row sides, the 6pt tab gap, radius 12) is used from the
 /// token at the call site and is not repeated here. These are scoped to Project settings: no global token changes.
-public enum NWProjectSettingsMetrics {
+public enum SHProjectSettingsMetrics {
     /// The column: 760pt, centered, 32pt in from the window's sides.
     public static let columnWidth: CGFloat = 760
     /// A board's 1pt line (the card border, the dividers, a field). Layout counts it: a card's rows start 1pt inside it.
@@ -59,29 +59,29 @@ public enum NWProjectSettingsMetrics {
     public static let editorFragmentPadding: CGFloat = 5
     /// The footnote sits 5pt under the editor (the board's inline-block baseline gap) and then its own 6pt.
     public static let editorFootnoteGap: CGFloat = 5
-    /// A pressed button sinks half a point, as the shared button does (`NWButtonStyle`).
+    /// A pressed button sinks half a point, as the shared button does (`SHButtonStyle`).
     public static let pressOffset: CGFloat = 0.5
     /// The Delete button's line: `failed` 30% over the card's fill.
     public static let dangerLineShare: Double = 0.3
 }
 
-extension NWPalette {
+extension SHPalette {
     /// The Delete… button's line (ProjectLead-SettingsGeneral: #572d2e on #15171a): `failed` at 30% over `bgRaised`, mixed in
     /// device RGB the way the board's `color-mix` is, so it is exact in both appearances and every theme.
     @MainActor public var projectSettingsDangerLine: Color {
-        failed.mix(with: bgRaised, by: 1 - NWProjectSettingsMetrics.dangerLineShare, in: .device)
+        failed.mix(with: bgRaised, by: 1 - SHProjectSettingsMetrics.dangerLineShare, in: .device)
     }
 }
 
 extension View {
     /// The Goal field's and the instructions editor's chrome: `bgSunken`, radius 8, a 1pt `lineStrong` line, the focus ring
     /// while focused.
-    public func nwProjectSettingsField(focused: Bool = false) -> some View {
-        background(Color.nw.bgSunken, in: RoundedRectangle(cornerRadius: NW.Radius.m))
+    public func shProjectSettingsField(focused: Bool = false) -> some View {
+        background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
             .overlay {
                 Color.clear
-                    .nwBorder(Color.nw.lineStrong, radius: NW.Radius.m, width: NWProjectSettingsMetrics.line)
-                    .nwFocusRing(focused, radius: NW.Radius.m)
+                    .shBorder(Color.sh.lineStrong, radius: SH.Radius.m, width: SHProjectSettingsMetrics.line)
+                    .shFocusRing(focused, radius: SH.Radius.m)
                     .allowsHitTesting(false)
             }
     }
@@ -89,7 +89,7 @@ extension View {
 
 /// Delete… on a Project settings card (ProjectLead-SettingsGeneral): the Controls board's 28pt button at radius 6 with `failed`
 /// text, the card's own fill and a `failed` 30% line; hover tints it `failedTint`, pressed `bgSelected`, disabled dims.
-public struct NWProjectSettingsDangerStyle: ButtonStyle {
+public struct SHProjectSettingsDangerStyle: ButtonStyle {
     public init() {}
 
     public func makeBody(configuration: Configuration) -> some View {
@@ -102,37 +102,37 @@ public struct NWProjectSettingsDangerStyle: ButtonStyle {
         @State private var hovering = false
 
         var body: some View {
-            let nw = Color.nw
-            let shape = RoundedRectangle(cornerRadius: NW.Radius.s)
+            let sh = Color.sh
+            let shape = RoundedRectangle(cornerRadius: SH.Radius.s)
             configuration.label
-                .font(.nw(.ui))
-                .foregroundStyle(nw.failed)
+                .font(.sh(.ui))
+                .foregroundStyle(sh.failed)
                 .lineLimit(1)
-                .padding(.horizontal, NW.Space.l - NW.Space.xxs)
-                .frame(minHeight: NW.Height.controlM)
-                .background(enabled && configuration.isPressed ? nw.bgSelected : hovering && enabled ? nw.failedTint : nw.bgRaised, in: shape)
-                .nwBorder(nw.projectSettingsDangerLine, radius: NW.Radius.s, width: NWProjectSettingsMetrics.line)
-                .offset(y: configuration.isPressed ? NWProjectSettingsMetrics.pressOffset : 0)
-                .nwEnabledOpacity(enabled)
+                .padding(.horizontal, SH.Space.l - SH.Space.xxs)
+                .frame(minHeight: SH.Height.controlM)
+                .background(enabled && configuration.isPressed ? sh.bgSelected : hovering && enabled ? sh.failedTint : sh.bgRaised, in: shape)
+                .shBorder(sh.projectSettingsDangerLine, radius: SH.Radius.s, width: SHProjectSettingsMetrics.line)
+                .offset(y: configuration.isPressed ? SHProjectSettingsMetrics.pressOffset : 0)
+                .shEnabledOpacity(enabled)
                 .contentShape(shape)
                 .onHover { hovering = $0 }
-                .nwFocusRing(radius: NW.Radius.s)
+                .shFocusRing(radius: SH.Radius.s)
         }
     }
 }
 
 /// A section label of Project settings: the Foundations label on the board's own 12.6pt line, 4pt in, 6pt above what it labels.
-public struct NWProjectSettingsLabel: View {
+public struct SHProjectSettingsLabel: View {
     let title: String
     public init(_ title: String) { self.title = title }
 
     public var body: some View {
         Text(title)
-            .nwSectionLabel()
+            .shSectionLabel()
             .lineLimit(1)
-            .frame(height: NWProjectSettingsMetrics.sectionLabelHeight)
-            .padding(.horizontal, NW.Space.xs)
-            .padding(.bottom, NW.Space.s)
+            .frame(height: SHProjectSettingsMetrics.sectionLabelHeight)
+            .padding(.horizontal, SH.Space.xs)
+            .padding(.bottom, SH.Space.s)
             .accessibilityAddTraits(.isHeader)
     }
 }
@@ -141,7 +141,7 @@ public struct NWProjectSettingsLabel: View {
 /// 2pt rule under it while `selected`. SwiftUI sizes a `Text` up to a whole point, which drifts the tab row 1pt per tab from the
 /// board's browser layout (the rule under Automations began 2pt late), so the label's width is the line's exact typographic
 /// width at the current text scale. The text keeps its own ideal width inside that frame (`fixedSize`), so it can never truncate.
-public struct NWProjectSettingsTab: View {
+public struct SHProjectSettingsTab: View {
     let title: String
     let selected: Bool
 
@@ -151,24 +151,24 @@ public struct NWProjectSettingsTab: View {
     }
 
     @MainActor static func width(of title: String) -> CGFloat {
-        let font = CTFontCreateWithName(NWFonts.postScriptName(mono: false, weight: .regular) as CFString,
-                                        NWTextStyle.ui.size * ThemeStore.shared.textScale, nil)
+        let font = CTFontCreateWithName(SHFonts.postScriptName(mono: false, weight: .regular) as CFString,
+                                        SHTextStyle.ui.size * ThemeStore.shared.textScale, nil)
         let line = CTLineCreateWithAttributedString(NSAttributedString(string: title, attributes: [.font: font]))
         return CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
     }
 
     public var body: some View {
-        let M = NWProjectSettingsMetrics.self
+        let M = SHProjectSettingsMetrics.self
         VStack(spacing: 0) {
             Text(title)
-                .font(.nw(.ui, weight: .regular))
-                .foregroundStyle(selected ? Color.nw.textPrimary : Color.nw.textSecondary)
+                .font(.sh(.ui, weight: .regular))
+                .foregroundStyle(selected ? Color.sh.textPrimary : Color.sh.textSecondary)
                 .lineLimit(1)
                 .fixedSize()
                 .frame(width: Self.width(of: title), alignment: .leading)
-                .padding(.horizontal, NW.Space.m)
+                .padding(.horizontal, SH.Space.m)
                 .frame(height: M.tabHeight)
-            Rectangle().fill(selected ? Color.nw.lantern : Color.clear).frame(height: M.tabRule)
+            Rectangle().fill(selected ? Color.sh.lantern : Color.clear).frame(height: M.tabRule)
         }
         .fixedSize()
     }
@@ -176,7 +176,7 @@ public struct NWProjectSettingsTab: View {
 
 /// The popup of Project settings (a model, Threads at once, Hosts, Add a space…): a native `Menu` drawn as the boards'
 /// 32pt control in a 40pt slot, sized to its value, with its chevrons where the board puts them.
-public struct NWProjectSettingsPopup<Content: View>: View {
+public struct SHProjectSettingsPopup<Content: View>: View {
     let title: String
     @ViewBuilder let content: () -> Content
 
@@ -186,27 +186,27 @@ public struct NWProjectSettingsPopup<Content: View>: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        let M = NWProjectSettingsMetrics.self
-        let S = NWSettingsControlMetrics.self
+        let sh = Color.sh
+        let M = SHProjectSettingsMetrics.self
+        let S = SHSettingsControlMetrics.self
         Menu(content: content) {
             Text(title)
-                .font(.nwSans(S.textSize))
-                .foregroundStyle(nw.textPrimary)
+                .font(.shSans(S.textSize))
+                .foregroundStyle(sh.textPrimary)
                 .lineLimit(1)
                 .padding(.leading, S.popupLeading)
                 .padding(.trailing, M.popupTrailing)
                 .frame(height: S.controlHeight)
-                .background(nw.bgRaised, in: RoundedRectangle(cornerRadius: S.radius))
+                .background(sh.bgRaised, in: RoundedRectangle(cornerRadius: S.radius))
                 .overlay(alignment: .trailing) {
-                    NWGlyph.popupChevrons.image
-                        .font(.nwSans(M.chevronSize))
-                        .foregroundStyle(nw.textTertiary)
+                    SHGlyph.popupChevrons.image
+                        .font(.shSans(M.chevronSize))
+                        .foregroundStyle(sh.textTertiary)
                         .frame(width: M.chevronBox, height: M.chevronBox)
                         .padding(.trailing, M.chevronTrailing)
                         .accessibilityHidden(true)
                 }
-                .nwBorder(nw.lineStrong, radius: S.radius, width: M.line)
+                .shBorder(sh.lineStrong, radius: S.radius, width: M.line)
                 .contentShape(Rectangle())
         }
         .menuStyle(.button)

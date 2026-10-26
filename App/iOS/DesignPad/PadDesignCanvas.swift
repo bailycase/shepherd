@@ -19,10 +19,10 @@ import ShepherdUI
 @Observable
 final class PadDesignCanvas {
     let ref: PadDesignRef
-    var viewport = NWCanvasViewport() {
+    var viewport = SHCanvasViewport() {
         didSet { if viewport != oldValue { viewportMoved() } }
     }
-    var tool: NWCanvasTool = .select
+    var tool: SHCanvasTool = .select
     /// What is selected, most recent last: boards picked whole, and elements.
     private(set) var picks: [Pick] = []
     private(set) var snapshot: DesignSnapshot?
@@ -69,7 +69,7 @@ final class PadDesignCanvas {
     @ObservationIgnored private var refreshAgain = false
     @ObservationIgnored private var rest: Task<Void, Never>?
     @ObservationIgnored private(set) var isActive = false
-    @ObservationIgnored private var labelRooms: [String: NWLabelRoom] = [:]
+    @ObservationIgnored private var labelRooms: [String: SHLabelRoom] = [:]
     @ObservationIgnored private var picking: Task<Void, Never>?
     /// Pins kept with no place drawn are being found (`placeUnplacedPins`).
     @ObservationIgnored private var placingPins = false
@@ -139,7 +139,7 @@ final class PadDesignCanvas {
     // MARK: Boards
 
     /// Every board of the page as the canvas draws it, back to front.
-    var boards: [NWCanvasBoard] {
+    var boards: [SHCanvasBoard] {
         guard let snapshot else { return [] }
         let tokens = host.tokens
         let whole = selectedWhole
@@ -152,9 +152,9 @@ final class PadDesignCanvas {
                 frame.origin = CGPoint(x: 0, y: top)
                 top += board.h + Self.columnGap
             }
-            return NWCanvasBoard(id: path.rawValue, frame: frame,
+            return SHCanvasBoard(id: path.rawValue, frame: frame,
                                  title: title?.isEmpty == false ? title! : path.stem,
-                                 size: NWCanvasBoard.sizeLabel(CGSize(width: board.w, height: board.h)),
+                                 size: SHCanvasBoard.sizeLabel(CGSize(width: board.w, height: board.h)),
                                  isSelected: whole.contains(path), content: tokens[path] ?? 0,
                                  labelRoom: column ? .open : labelRooms[path.rawValue] ?? .open)
         }
@@ -164,18 +164,18 @@ final class PadDesignCanvas {
     static let columnGap: Double = 120
 
     /// The page's title and sticky notes (drawings aren't drawn yet).
-    var notes: [NWCanvasNote] {
+    var notes: [SHCanvasNote] {
         guard let index = snapshot?.index else { return [] }
         return (index.notes ?? [:]).sorted { $0.key < $1.key }.compactMap { id, note in
             guard index.page(of: note) == page, let x = note.x, let y = note.y,
                   let text = note.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
-            let kind: NWCanvasNote.Kind
+            let kind: SHCanvasNote.Kind
             switch note.shown {
             case .title: kind = .title
             case .sticky: kind = .sticky
             case .drawing: return nil
             }
-            return NWCanvasNote(id: id, kind: kind, origin: CGPoint(x: x, y: y), width: note.width.map { CGFloat($0) }, text: text)
+            return SHCanvasNote(id: id, kind: kind, origin: CGPoint(x: x, y: y), width: note.width.map { CGFloat($0) }, text: text)
         }
     }
 
@@ -266,7 +266,7 @@ final class PadDesignCanvas {
         }
         if previous?.boards != next.index.boards || previous?.pages != next.index.pages {
             let shown = next.index.boards.filter { next.index.isOnPage($0.key, page) }
-            labelRooms = NWLabelRoom.rooms(Dictionary(shown.map { ($0.key.rawValue, CGRect(x: $0.value.x, y: $0.value.y,
+            labelRooms = SHLabelRoom.rooms(Dictionary(shown.map { ($0.key.rawValue, CGRect(x: $0.value.x, y: $0.value.y,
                                                                                           width: $0.value.w, height: $0.value.h)) },
                                                       uniquingKeysWith: { a, _ in a }))
         }
@@ -306,8 +306,8 @@ final class PadDesignCanvas {
         // A column opens at its top, its widest board filling the window's width.
         let inset = MobileLayout.gutter
         let widest = boards.map(\.frame.width).max() ?? canvasSize.width
-        let zoom = NWCanvasViewport.clamp(min(1, (canvasSize.width - 2 * inset) / max(1, widest)))
-        viewport = NWCanvasViewport(offset: CGPoint(x: inset, y: NWDesignMetrics.labelHeight + NWDesignMetrics.labelGap + inset), zoom: zoom)
+        let zoom = SHCanvasViewport.clamp(min(1, (canvasSize.width - 2 * inset) / max(1, widest)))
+        viewport = SHCanvasViewport(offset: CGPoint(x: inset, y: SHDesignMetrics.labelHeight + SHDesignMetrics.labelGap + inset), zoom: zoom)
     }
 
     // MARK: Selection
@@ -321,10 +321,10 @@ final class PadDesignCanvas {
     var selectedElements: [PadDesignPick] { picks.compactMap(\.element) }
     var focusBoard: DesignPath? { picks.last?.board }
 
-    /// A tap (`NWDesignCanvas`). With Select: an element when the board names one under it, the
+    /// A tap (`SHDesignCanvas`). With Select: an element when the board names one under it, the
     /// board whole on its label or where nothing is named, nothing on the empty canvas. With
     /// Comment: a new comment on the element under it. Either closes the thread that was open.
-    func pick(_ pick: NWCanvasPick) {
+    func pick(_ pick: SHCanvasPick) {
         let board = pick.board.flatMap(DesignPath.init)
         let commenting = tool == .comment
         closeComment()
@@ -341,7 +341,7 @@ final class PadDesignCanvas {
         }
     }
 
-    private func resolve(_ pick: NWCanvasPick, on board: DesignPath?, element: PadDesignPick?, commenting: Bool) {
+    private func resolve(_ pick: SHCanvasPick, on board: DesignPath?, element: PadDesignPick?, commenting: Bool) {
         if commenting {
             if let element { beginComment(on: element) }
             return
@@ -400,10 +400,10 @@ final class PadDesignCanvas {
     }
 
     /// The canvas's rings: every selected element, the latest wearing its tag.
-    var selectionRings: [NWCanvasElement] {
+    var selectionRings: [SHCanvasElement] {
         let elements = selectedElements
         return elements.enumerated().map { index, element in
-            NWCanvasElement(id: element.id.description, board: element.board.rawValue, rect: element.rect,
+            SHCanvasElement(id: element.id.description, board: element.board.rawValue, rect: element.rect,
                             tag: index == elements.count - 1 ? element.tag : nil)
         }
     }
@@ -424,14 +424,14 @@ final class PadDesignCanvas {
 
     var openComments: [DesignComment] { comments.filter(\.isOpen) }
 
-    var pins: [NWCanvasPin] {
+    var pins: [SHCanvasPin] {
         guard let snapshot else { return [] }
-        var pins = openComments.compactMap { comment -> NWCanvasPin? in
+        var pins = openComments.compactMap { comment -> SHCanvasPin? in
             guard snapshot.index.boards[comment.board] != nil else { return nil }
-            return NWCanvasPin(id: comment.id.uuidString, board: comment.board.rawValue, rect: pinRect(comment), number: comment.number)
+            return SHCanvasPin(id: comment.id.uuidString, board: comment.board.rawValue, rect: pinRect(comment), number: comment.number)
         }
         if let draft = draftElement {
-            pins.append(NWCanvasPin(id: Self.draftPin, board: draft.board.rawValue, rect: draft.rect,
+            pins.append(SHCanvasPin(id: Self.draftPin, board: draft.board.rawValue, rect: draft.rect,
                                     number: (comments.map(\.number).max() ?? 0) + 1))
         }
         return pins
@@ -445,12 +445,12 @@ final class PadDesignCanvas {
         return CGRect(x: rect.x, y: rect.y, width: rect.w, height: rect.h)
     }
 
-    var popoverAnchor: NWCanvasElement? {
+    var popoverAnchor: SHCanvasElement? {
         if let draft = draftElement {
-            return NWCanvasElement(id: Self.draftPin, board: draft.board.rawValue, rect: draft.rect)
+            return SHCanvasElement(id: Self.draftPin, board: draft.board.rawValue, rect: draft.rect)
         }
         guard let id = openComment, let comment = comments.first(where: { $0.id == id }) else { return nil }
-        return NWCanvasElement(id: id.uuidString, board: comment.board.rawValue, rect: pinRect(comment))
+        return SHCanvasElement(id: id.uuidString, board: comment.board.rawValue, rect: pinRect(comment))
     }
 
     var openThread: DesignComment? { openComment.flatMap { id in comments.first { $0.id == id } } }
@@ -630,7 +630,7 @@ final class PadDesignCanvas {
         openComments.map { comment in
             let board = nativeBoardName(comment.board.rawValue)
             let target = comment.target.map { "\(board) · \($0)" } ?? board
-            let meta = ["You · \(nwCommentAge(since: comment.createdAt, now: now))", comment.detached ? "element changed" : nil]
+            let meta = ["You · \(shCommentAge(since: comment.createdAt, now: now))", comment.detached ? "element changed" : nil]
                 .compactMap { $0 }.joined(separator: " · ")
             return PadDesignCommentCard(id: comment.id, number: comment.number, target: target, meta: meta, text: comment.text)
         }

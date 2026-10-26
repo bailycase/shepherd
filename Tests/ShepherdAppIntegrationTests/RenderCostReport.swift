@@ -68,11 +68,11 @@ struct RenderCostReport {
             let thread = FakeThread(snapshot, header: true)
             try await thread.waitUntilReady()
             try await Task.sleep(for: Self.atRest)
-            if run == 0 { NWRenderProbe.start() }
+            if run == 0 { SHRenderProbe.start() }
             hides.append(await MainThreadCPU.milliseconds { try? await thread.show(false) })
-            if run == 0 { hidden = NWRenderProbe.stop(); NWRenderProbe.start() }
+            if run == 0 { hidden = SHRenderProbe.stop(); SHRenderProbe.start() }
             shows.append(await MainThreadCPU.milliseconds { try? await thread.show(true) })
-            if run == 0 { shown = NWRenderProbe.stop() }
+            if run == 0 { shown = SHRenderProbe.stop() }
             thread.close()
         }
         report.add("thread (60 turns) under its toolbar", "switch: hide / show main-thread CPU (median of 3)",
@@ -90,7 +90,7 @@ struct RenderCostReport {
         defer { window.close() }
         try await Task.sleep(for: Self.atRest)
         var costs: [Double] = []
-        NWRenderProbe.start()
+        SHRenderProbe.start()
         for round in 0..<3 {
             for agent in agents.dropFirst().prefix(6) {
                 var next = vm.state
@@ -100,7 +100,7 @@ struct RenderCostReport {
                 costs.append(await cost(window) { vm.adopt(next) })
             }
         }
-        let counts = NWRenderProbe.stop().mapValues { $0 / costs.count }
+        let counts = SHRenderProbe.stop().mapValues { $0 / costs.count }
         report.add("workspace (\(count) layouts mounted)", "hidden agent's status report: main-thread CPU (median)",
                    ms: MainThreadCPU.median(costs))
         report.add("workspace (\(count) layouts mounted)", "hidden agent's status report: bodies each", counts: counts)
@@ -120,7 +120,7 @@ struct RenderCostReport {
             try await thread.waitUntilReady()
             try await Task.sleep(for: Self.atRest)
             var costs: [Double] = []
-            NWRenderProbe.start()
+            SHRenderProbe.start()
             let process = ProcessCPU.now()
             for chunk in 1...15 {
                 var next = thread.snapshot
@@ -132,7 +132,7 @@ struct RenderCostReport {
                 })
             }
             processPerChunk.append(ListPerf.milliseconds(ProcessCPU.now() - process) / 15)
-            renders.append(NWRenderProbe.stop()["highlight.render", default: 0])
+            renders.append(SHRenderProbe.stop()["highlight.render", default: 0])
             perChunk.append(MainThreadCPU.median(costs))
             thread.close()
         }
@@ -226,14 +226,14 @@ struct RenderCostReport {
         let (vm, agents) = try await MountedWorkspace.start(40, in: app)
         try await Task.sleep(for: Self.atRest)
         var window: OffscreenWindow!
-        NWRenderProbe.start()
+        SHRenderProbe.start()
         let start = ContinuousClock.now
         let firstCPU = await MainThreadCPU.milliseconds {
             window = OffscreenWindow(size: CGSize(width: 1200, height: 800), dark: true, WorkspaceView(vm: vm))
             ListPerf.settle(window)
         }
         let firstWall = ListPerf.milliseconds(ContinuousClock.now - start)
-        let first = NWRenderProbe.stop().filter { ["layout.agentLayout", "thread.view", "composer.body"].contains($0.key) }
+        let first = SHRenderProbe.stop().filter { ["layout.agentLayout", "thread.view", "composer.body"].contains($0.key) }
         defer { window.close() }
         let monitor = MainTurnMonitor()
         monitor.start()
@@ -262,7 +262,7 @@ struct RenderCostReport {
         var gaps: [Double] = []
         for _ in 0..<3 {
             let opened = await FrameTimer.measure(window, region: CGRect(x: 0, y: 400, width: 1200, height: 1)) {
-                withNWAnimation(.pane) { vm.openReview(agentID: agents[0].agent.id, path: nil) }
+                withSHAnimation(.pane) { vm.openReview(agentID: agents[0].agent.id, path: nil) }
             }
             gaps.append(opened.longestGap * 1000)
             let review = try #require(vm.reviewSessions.values.first)
@@ -320,12 +320,12 @@ struct RenderCostReport {
         ListPerf.settle(window)
         let parked = vm.parkedTabIDs.contains(agents[0].tab.id)
         try await Task.sleep(for: Self.atRest)
-        NWRenderProbe.start()
+        SHRenderProbe.start()
         let cpu = await MainThreadCPU.milliseconds {
             vm.selectAgent(agents[0].agent.id)
             ListPerf.settle(window)
         }
-        let counts = NWRenderProbe.stop().filter { ["layout.agentLayout", "thread.view", "composer.body", "thread.rowBuilder"].contains($0.key) }
+        let counts = SHRenderProbe.stop().filter { ["layout.agentLayout", "thread.view", "composer.body", "thread.rowBuilder"].contains($0.key) }
         report.add("returning to a thread-only agent hidden 60 s", "was parked", "\(parked)")
         report.add("returning to a thread-only agent hidden 60 s", "switch: main-thread CPU", ms: cpu)
         report.add("returning to a thread-only agent hidden 60 s", "switch: bodies", counts: counts)

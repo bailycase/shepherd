@@ -8,17 +8,17 @@ Components: `Packages/ShepherdUI/.../Components/Browser/BrowserTabs.swift`. Host
 ## Order, top to bottom
 
 1. Side pane tabs (unchanged).
-2. **Strip** `NWBrowserTabStrip`: 38pt, 8pt side padding, hairline below. Tabs (26pt, radius 6, 2pt apart, 48 to 200pt wide), then New tab and All tabs (24pt `nwIcon`).
-3. **Note** `NWBrowserTabsNote`, only when there is one: `bgSunken`, hairline below, 12pt sides, 6pt vertical.
-4. Toolbar and address field (unchanged), the page, **agent bar** `NWAgentBar` (replaces the floating card, see Departures), console drawer.
-5. Over the page, trailing bottom: **Agent is in X** chip `NWAgentElsewhere`, when the agent works in a tab that is not shown.
-6. Over everything: **tab list** `NWBrowserTabMenu`, 260pt, 12pt in from the trailing edge, 4pt under the strip.
+2. **Strip** `SHBrowserTabStrip`: 38pt, 8pt side padding, hairline below. Tabs (26pt, radius 6, 2pt apart, 48 to 200pt wide), then New tab and All tabs (24pt `shIcon`).
+3. **Note** `SHBrowserTabsNote`, only when there is one: `bgSunken`, hairline below, 12pt sides, 6pt vertical.
+4. Toolbar and address field (unchanged), the page, **agent bar** `SHAgentBar` (replaces the floating card, see Departures), console drawer.
+5. Over the page, trailing bottom: **Agent is in X** chip `SHAgentElsewhere`, when the agent works in a tab that is not shown.
+6. Over everything: **tab list** `SHBrowserTabMenu`, 260pt, 12pt in from the trailing edge, 4pt under the strip.
 
 ## Tab
 
-- Favicon 12pt tile, radius 4 (`NW.Radius.xs`), the first letter in Geist 8 semibold `bgBase`, on a theme role chosen from the host (`NWBrowserTabTint`: running, done, lantern, synKeyword, synFunction). The board colors tiles by brand; no brand color is a token.
+- Favicon 12pt tile, radius 4 (`SH.Radius.xs`), the first letter in Geist 8 semibold `bgBase`, on a theme role chosen from the host (`SHBrowserTabTint`: running, done, lantern, synKeyword, synFunction). The board colors tiles by brand; no brand color is a token.
 - Title `ui`; selected is `textPrimary` medium on `bgSelected`, others `textSecondary` regular, hover `bgHover`.
-- Agent is using the page: `nwSpinner` 12pt replaces the tile. Agent opened it and nobody looked: 6pt `running` dot after the title (no glyph; the dot plus VoiceOver "new").
+- Agent is using the page: `shSpinner` 12pt replaces the tile. Agent opened it and nobody looked: 6pt `running` dot after the title (no glyph; the dot plus VoiceOver "new").
 - Close: `xmark` 10pt medium, 24 × 26pt hit (board 20pt; 24 is the desktop minimum). Shown on the selected tab, on hover, and on all tabs while there are at most 4.
 - Tooltip: "localhost:3000/checkout · opened by the agent" / "· opened by a link".
 - VoiceOver: "Refund overview, new, agent is using it"; selected has the selected trait; close is "Close <title>".
@@ -26,14 +26,14 @@ Components: `Packages/ShepherdUI/.../Components/Browser/BrowserTabs.swift`. Host
 ## Glyphs (SF Symbol, fill)
 
 `plus` (outline) New tab · `chevron.down` (outline) All tabs · `xmark` close and dismiss · `checkmark` list check ·
-`globe` note (agent opened, popup) · `exclamationmark.triangle` note (cap) · `hand.raised` Take over (`NWAgentBar.glyph`).
-The tab close and the note's dismiss share one view, `NWBrowserTabClose` (the outline `xmark`), so the glyph is named once here. It is not an
-`NWGlyph` case: that registry rejects a raw `"xmark"` everywhere, and 45 older uses outside this change would fail it. The board's own
-spinner is the existing `nwSpinner`.
+`globe` note (agent opened, popup) · `exclamationmark.triangle` note (cap) · `hand.raised` Take over (`SHAgentBar.glyph`).
+The tab close and the note's dismiss share one view, `SHBrowserTabClose` (the outline `xmark`), so the glyph is named once here. It is not an
+`SHGlyph` case: that registry rejects a raw `"xmark"` everywhere, and 45 older uses outside this change would fail it. The board's own
+spinner is the existing `shSpinner`.
 
 ## Tokens
 
-Space: `NW.Space.xxs/s/m/l` (2, 6, 8, 12). Radius: `s` 6, `xs` 4, popover `l` 12. Heights: strip 38, tab 26, agent bar 32 (= console bar), icon buttons `controlS` 24.
+Space: `SH.Space.xxs/s/m/l` (2, 6, 8, 12). Radius: `s` 6, `xs` 4, popover `l` 12. Heights: strip 38, tab 26, agent bar 32 (= console bar), icon buttons `controlS` 24.
 Color: `bgSelected`, `bgHover`, `bgSunken`, `runningTint`, `running`, `textPrimary/Secondary/Tertiary`. Font: `ui`, `caption`, mono 10.5 (menu address, tag, footer).
 
 ## Strings, per state (producer in brackets)
@@ -42,7 +42,7 @@ Color: `bgSelected`, `bgHover`, `bgSunken`, `runningTint`, `running`, `textPrima
 | --- | --- | --- |
 | Tab title | page title, else host, else "New tab" | `BrowserSession.tabTitle` (model) |
 | List address | `BrowserAddress.display` host+path | app |
-| List tag | "Agent", "Link", none | `NWBrowserTabSource.tag` from `tabSource` |
+| List tag | "Agent", "Link", none | `SHBrowserTabSource.tag` from `tabSource` |
 | List footer | "N of 8 tabs · sign-ins shared across the space" | N = `tabs.pages.count`, 8 = `maxTabs` |
 | Opened note | "The agent opened <title> in a new tab." + Show it | `tabs.openedPage` |
 | Popup note | "A link opened a new window. Shepherd opened it as a tab." | `tabs.notice` |
@@ -91,7 +91,7 @@ Not drawn by any board and built anyway: a long title (truncates, tooltip has th
   the unseen "new" label, the agent bar and Take over on the agent's page only, "Agent is in X" and its press, the
   root's own notice staying in view on another tab (and which Dismiss clears), the address text following the
   tab, and ⌘T through the real `BrowserKeys` watcher (on, off screen, and ⇧⌘T left alone).
-- `BrowserTabsControlTests` (components over `NWBrowserTabsBoard`) passes; every control is at least 24pt.
+- `BrowserTabsControlTests` (components over `SHBrowserTabsBoard`) passes; every control is at least 24pt.
 - Renders: `browser-tabs-{two,full,opened,popup,agent,elsewhere,long,new}[-x1.3]-{light,dark}.png` from the real
   model at 2x, and `browser-tabs-board-*` from plain values (the board's tile colors). Compared by eye with the
   boards. Found and fixed: the list hung over the note's row (now under it, as board 83); list rows 3.5pt taller

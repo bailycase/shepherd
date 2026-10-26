@@ -19,7 +19,7 @@ struct QueueStackIntegrationTests {
 
     /// The stack's height over the card: its header, its rows, and the gap to the card.
     static func stackHeight(rows: Int) -> CGFloat {
-        NWQueueMetrics.headerHeight + CGFloat(rows) * NWQueueMetrics.rowHeight + AppLayout.menuGap
+        SHQueueMetrics.headerHeight + CGFloat(rows) * SHQueueMetrics.rowHeight + AppLayout.menuGap
     }
 
     @Test func theStackGrowsUpwardFromACardThatStaysPut() async throws {
@@ -55,8 +55,8 @@ struct QueueStackIntegrationTests {
         try await thread.waitUntilReady()
         let inset = thread.composerInset
         let stackTop = thread.size.height - inset
-        let row = CGRect(x: thread.columnLeading, y: stackTop + NWQueueMetrics.headerHeight + NWQueueMetrics.rowHeight,
-                         width: thread.columnTrailing - thread.columnLeading, height: NWQueueMetrics.rowHeight)
+        let row = CGRect(x: thread.columnLeading, y: stackTop + SHQueueMetrics.headerHeight + SHQueueMetrics.rowHeight,
+                         width: thread.columnTrailing - thread.columnLeading, height: SHQueueMetrics.rowHeight)
         let whole = CGRect(origin: .zero, size: thread.size)
         let before = FrameTimer.capture(thread.window, whole)
 
@@ -67,7 +67,7 @@ struct QueueStackIntegrationTests {
         let after = FrameTimer.capture(thread.window, whole)
         let changed = try #require(Pixels.bounds(differing: before, after, rows: 0..<Int(thread.size.height)), "the row changed")
         #expect(row.insetBy(dx: -1, dy: -1).contains(changed), "only the hovered row changed: \(changed) in \(row)")
-        let actions = CGRect(x: row.maxX - NW.Space.s - NWQueueMetrics.actionsWidth, y: row.minY, width: NWQueueMetrics.actionsWidth,
+        let actions = CGRect(x: row.maxX - SH.Space.s - SHQueueMetrics.actionsWidth, y: row.minY, width: SHQueueMetrics.actionsWidth,
                              height: row.height)
         let solid = try #require(Pixels.bounds(differing: before, after, rows: Int(row.minY)..<Int(row.maxY), by: 0.15))
         #expect(solid.maxX > actions.minX, "its actions show at the trailing end: \(solid)")
@@ -85,12 +85,12 @@ struct QueueStackIntegrationTests {
         let thread = QueueThread(queue: QueueFixture.messages(Self.texts), interrupts: true, running: running)
         defer { thread.close() }
         try await thread.waitUntilReady()
-        let stackTop = thread.size.height - thread.composerInset + NWQueueMetrics.headerHeight
+        let stackTop = thread.size.height - thread.composerInset + SHQueueMetrics.headerHeight
         func end(_ index: Int) -> FrameTimer.Capture {
-            FrameTimer.capture(thread.window, CGRect(x: thread.columnTrailing - 140, y: stackTop + CGFloat(index) * NWQueueMetrics.rowHeight,
-                                                     width: 128, height: NWQueueMetrics.rowHeight))
+            FrameTimer.capture(thread.window, CGRect(x: thread.columnTrailing - 140, y: stackTop + CGFloat(index) * SHQueueMetrics.rowHeight,
+                                                     width: 128, height: SHQueueMetrics.rowHeight))
         }
-        let rows = 6..<Int(NWQueueMetrics.rowHeight) - 6
+        let rows = 6..<Int(SHQueueMetrics.rowHeight) - 6
         let (first, second, third) = (end(0), end(1), end(2))
         #expect(Pixels.bounds(differing: second, third, rows: rows) == nil, "rows past the first draw nothing at rest")
         let button = Pixels.bounds(differing: first, second, rows: rows)
@@ -110,7 +110,7 @@ struct QueueStackIntegrationTests {
         try await thread.waitUntilReady()
         let inset = thread.composerInset, offset = thread.threadOffset
         let cardTop = thread.size.height - inset
-        let above = CGRect(x: 0, y: 0, width: thread.size.width, height: cardTop - NWComposerMetrics.focusRing - 1)
+        let above = CGRect(x: 0, y: 0, width: thread.size.width, height: cardTop - SHComposerMetrics.focusRing - 1)
         let before = FrameTimer.capture(thread.window, above)
         let send = try #require(thread.sendButton, "Send is the one action, and takes a right-click, while pi works with a draft")
 
@@ -122,7 +122,7 @@ struct QueueStackIntegrationTests {
                                 "the menu opened")
         #expect(abs(menu.maxX - thread.columnTrailing) <= 2, "at the card's trailing edge: \(menu)")
         #expect(abs(menu.maxY - (cardTop - AppLayout.menuGap)) <= 2, "8pt above the card: \(menu)")
-        #expect(abs(menu.width - NWQueueMetrics.sendMenuWidth) <= 2, "the menu's own width: \(menu)")
+        #expect(abs(menu.width - SHQueueMetrics.sendMenuWidth) <= 2, "the menu's own width: \(menu)")
     }
 
     /// Where the thread has room beside the card, the Send menu stands there (as the boards
@@ -147,7 +147,7 @@ struct QueueStackIntegrationTests {
         let menu = try #require(found, "the menu opened beside the card").offsetBy(dx: beside.minX, dy: 0)
         #expect(abs(menu.minX - (thread.columnTrailing + AppLayout.menuGap)) <= 2, "8pt after the card's trailing edge: \(menu)")
         #expect(abs(menu.maxY - (thread.size.height - AppLayout.composerBottom)) <= 2, "bottom-aligned with the card: \(menu)")
-        #expect(abs(menu.width - NWQueueMetrics.sendMenuWidth) <= 2, "the menu's own width: \(menu)")
+        #expect(abs(menu.width - SHQueueMetrics.sendMenuWidth) <= 2, "the menu's own width: \(menu)")
         // Only the menu's shadow may reach it.
         let covered = Pixels.bounds(differing: stackBefore, FrameTimer.capture(thread.window, stack), rows: 0..<Int(stack.height), by: 0.11)
         #expect(covered == nil, "Up next stays uncovered: \(String(describing: covered)) in \(stack)")

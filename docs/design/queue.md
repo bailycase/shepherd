@@ -3,8 +3,8 @@
 > Read when you change the queue above the composer, steering, or Send now.
 
 Messages sent while pi works stack in **Up next** (QueueStack, QueueSteer, QueueEdit, QueueStates;
-`QueueStackView` in `Thread/QueueStack.swift`, on ShepherdUI's `NWQueueStack` and `NWQueueRow`;
-sizes are `NWQueueMetrics`): a card directly above the composer card, in the same column,
+`QueueStackView` in `Thread/QueueStack.swift`, on ShepherdUI's `SHQueueStack` and `SHQueueRow`;
+sizes are `SHQueueMetrics`): a card directly above the composer card, in the same column,
 `AppLayout.menuGap` (8pt) above it, under any widgets and banners. The host holds the queue
 ([native-thread.md](../native-thread.md) › The queue; its rules are `NativeQueueRules`, shared by
 the host and every client), so every Mac viewing the agent sees and edits the same one. Nothing in
@@ -26,37 +26,37 @@ cannot stop pi, a compaction, or an older client's send.
   the composer's measured height, so the thread keeps its last turn in view
   (`QueueStackIntegrationTests`). Collapse and Show more are view state (`QueueStackState`) and
   are never saved; the stack forgets its expansion once it empties.
-- **The card:** `bgRaised`, a 1px `lineStrong` line drawn inside (`nwBorder`), radius `NW.Radius.m`
-  (8). A 32pt header (`NWQueueMetrics.headerHeight`; 12pt leading, 6pt trailing, items 8pt apart, a
-  hairline beneath): the queue glyph (`NWQueueGlyph`, 12pt, `textTertiary`: a line, then two
-  indented lines behind a play mark), "Up next" in `.nwSans(12, .semibold)` `textSecondary`, the
-  count in `.nwMono(11)` `textTertiary` (every message, steering ones included, never an Undo row;
-  it rolls, `content`), "Paused" in `.nw(.caption)` `textTertiary` while the queue waits (its
+- **The card:** `bgRaised`, a 1px `lineStrong` line drawn inside (`shBorder`), radius `SH.Radius.m`
+  (8). A 32pt header (`SHQueueMetrics.headerHeight`; 12pt leading, 6pt trailing, items 8pt apart, a
+  hairline beneath): the queue glyph (`SHQueueGlyph`, 12pt, `textTertiary`: a line, then two
+  indented lines behind a play mark), "Up next" in `.shSans(12, .semibold)` `textSecondary`, the
+  count in `.shMono(11)` `textTertiary` (every message, steering ones included, never an Undo row;
+  it rolls, `content`), "Paused" in `.sh(.caption)` `textTertiary` while the queue waits (its
   tooltip is the host's reason, else "The queue waits for you: send it, steer it in, or send a new
-  message."), a spacer, then ••• (`NWOptionsMenu("Queue options")`) and Collapse (`chevron.down`;
+  message."), a spacer, then ••• (`SHOptionsMenu("Queue options")`) and Collapse (`chevron.down`;
   tooltip "Collapse the queue", or "Expand the queue"), both 24pt circular icon buttons
-  (`NW.Height.controlS`). The chevron turns up while collapsed, and a collapsed stack is its header
+  (`SH.Height.controlS`). The chevron turns up while collapsed, and a collapsed stack is its header
   alone. Rows follow, a hairline above each but the first; they keep to the card's bottom corners.
-- **A queued row** (`NWQueueRow`; QueueStack, QueueStates · queued and hover; 40pt, not scaled by
-  Density; 8pt leading, 6pt trailing, items 8pt apart): the grip (`NWGripGlyph`, six `textTertiary`
+- **A queued row** (`SHQueueRow`; QueueStack, QueueStates · queued and hover; 40pt, not scaled by
+  Density; 8pt leading, 6pt trailing, items 8pt apart): the grip (`SHGripGlyph`, six `textTertiary`
   dots in an 8×14 slot, shown on hover or focus: the only drag handle, with the open-hand pointer,
-  closed while dragging), its number (`NWQueueNumber`: `.nwMono(10.5)` `textSecondary` in an 18pt
+  closed while dragging), its number (`SHQueueNumber`: `.shMono(10.5)` `textSecondary` in an 18pt
   `lineStrong` ring: the order it goes, not a count, never counting Steering or Deleted rows; it
-  rolls when the order changes), the text in `.nwSans(13)` `textPrimary` on one line, truncated at
+  rolls when the order changes), the text in `.shSans(13)` `textPrimary` on one line, truncated at
   the tail (a click edits it; tooltip "Edit"), its attachments (below), and an 82pt base slot
-  (`NWQueueMetrics.actionsWidth`), plus an icon and gap for Run in subagent when supported.
+  (`SHQueueMetrics.actionsWidth`), plus an icon and gap for Run in subagent when supported.
   The slot always keeps room for its actions, so hovering never
   re-truncates the text. The actions are built only while the row is hovered or focused: Steer now
-  (`arrow.turn.down.right`; **Send now** while pi is idle), Run in subagent (`NWGlyph.gitBranch`,
+  (`arrow.turn.down.right`; **Send now** while pi is idle), Run in subagent (`SHGlyph.gitBranch`,
   on capable hosts), Edit (`pencil`), and Delete (`trash`),
-  26pt circular icon buttons (`.nwIcon`: 14pt glyphs in `textSecondary`; under the pointer
+  26pt circular icon buttons (`.shIcon`: 14pt glyphs in `textSecondary`; under the pointer
   `textPrimary` on `bgHover`, and `bgSelected` while pressed) 2pt apart, with system tooltips
   saying what they do and naming their keys ("Stop the agent and send this now  ⌘↩", "Delete  ⌫").
   **The first queued row while pi works is the exception** (decided by the user, 2026-10-01; no
   board draws it): its Steer now is a labelled button that is there at rest, not an icon on
-  hover. It is `NWQueueRowActions.steerLabelled`, the row numbered 1 (a Steering row above it
+  hover. It is `SHQueueRowActions.steerLabelled`, the row numbered 1 (a Steering row above it
   does not take it) and only while the agent runs: an idle queue is as it was, with Send now on
-  hover. The button is `.nw(.secondary, size: .s)` (24pt, `bgRaised` with a `lineStrong` line,
+  hover. The button is `.sh(.secondary, size: .s)` (24pt, `bgRaised` with a `lineStrong` line,
   Geist 12 medium `textPrimary`): `arrow.turn.down.right` and "Steer now", 6pt apart, 8pt of
   padding at the sides, its tooltip the icon's ("Stop the agent and send this now  ⌘↩"). It sits
   flush at the slot's trailing edge and never moves: the slot of this row is the button's own width
@@ -72,13 +72,13 @@ cannot stop pi, a compaction, or an older client's send.
   keyboard focus it is `bgSelected` with the `focusRing` ring drawn inside it (2pt, inset 2pt,
   radius 6), since a ring outside would cover its neighbours.
 - **Attachments** (QueueStates · with attachments) ride along with the message and sit after its
-  text as compact chips (`NWAttachmentChip(size: .compact)`, 4pt apart): 22pt, a 1px `lineStrong`
-  line, radius 4, the name in `.nwSans(11)`, 6pt padding; an image leads with its 16pt thumbnail
+  text as compact chips (`SHAttachmentChip(size: .compact)`, 4pt apart): 22pt, a 1px `lineStrong`
+  line, radius 4, the name in `.shSans(11)`, 6pt padding; an image leads with its 16pt thumbnail
   (radius 3, 3pt leading), or an 11pt `photo` glyph where the bytes stayed on another Mac. The
   chips keep their width and the text truncates first. Elements picked in the Browser ride along
-  too (Side pane: Browser): an element chip (`NWElementChip(size: .compact)`) leads with an 11pt
+  too (Side pane: Browser): an element chip (`SHElementChip(size: .compact)`) leads with an 11pt
   element glyph (a dashed square with a pointer) in `textSecondary`, then its label in
-  `.nwMono(11)`, e.g. "button.pay", before any images. **Not built yet:** files; the board draws
+  `.shMono(11)`, e.g. "button.pay", before any images. **Not built yet:** files; the board draws
   no file chip.
 - **A Steering row** (QueueSteer, QueueStates · steering) is the fallback's: it shows only where
   Steer now cannot stop pi and steers the message in instead (a host without
@@ -88,52 +88,52 @@ cannot stop pi, a compaction, or an older client's send.
   focused too; focus adds the ring): the
   grip's slot stays empty, then the still 14pt steer glyph (`arrow.turn.down.right`) in `running`
   where a queued row has its number (so its text starts 4pt further left; LiveText: waiting isn't
-  working, so nothing on it moves), the text, `NWStatusPill(.running, label: "Steering", symbol:
+  working, so nothing on it moves), the text, `SHStatusPill(.running, label: "Steering", symbol:
   "arrow.turn.down.right")`, and Back to the queue (`arrow.uturn.backward`, a 26pt icon button 4pt
   after the pill), both shown at rest, not only on hover. Back to the queue returns it to the queue
   as #1 until pi reads it; if pi has already read it, the host refuses ("The agent has already read that
   message." as the composer's notice) and the message lands in the thread where pi read it. It has
   no grip, number, Edit, or Delete, its text is not a click target, and nothing drops above it.
   Stop also returns every Steering row to the queue (Composer › States).
-- **Editing** (`NWQueueEditor`; QueueEdit, QueueStates · editing): a click on the text or the
+- **Editing** (`SHQueueEditor`; QueueEdit, QueueStates · editing): a click on the text or the
   pencil, ↩ on a focused row, or ↑ in an empty composer with no menu open (for the last queued
   message) opens the row in place. The row sinks to `bgWindow` with 8pt padding (24pt leading, so
   the number keeps its column): the number top-aligned beside a field of one to six lines
-  (`.nwSans(13)` at the board's 1.5 line height, `textPrimary`, 8×10 padding, `bgRaised`, radius 6,
+  (`.shSans(13)` at the board's 1.5 line height, `textPrimary`, 8×10 padding, `bgRaised`, radius 6,
   a `lantern` line inside a 3pt `lanternTint` ring, a `lantern` caret after the text, placeholder
-  "Queued message"), and under it, trailing and 6pt apart, Cancel (`.nw(.ghost, size: .s)`) and Save
-  (`.nw(.secondary, size: .s)`, since Send stays the surface's primary; disabled while the text is
+  "Queued message"), and under it, trailing and 6pt apart, Cancel (`.sh(.ghost, size: .s)`) and Save
+  (`.sh(.secondary, size: .s)`, since Send stays the surface's primary; disabled while the text is
   empty). ↩ saves, ⇧↩ adds a line, Esc cancels. The message keeps its place and number. One editor
   is open at a time: opening another cancels the first. While it is open, the host holds the queue
   (renewed every `AppLayout.queueHoldRenewal`, a minute; a hold lapses after two), so nothing is
   delivered under you; saving unchanged text only releases the hold. If the message leaves the queue
   meanwhile (another Mac steered or deleted it), the editor closes.
-- **Deleted** (`NWQueueDeletedRow`; QueueEdit, QueueStates · deleted): the delete goes to the host
+- **Deleted** (`SHQueueDeletedRow`; QueueEdit, QueueStates · deleted): the delete goes to the host
   at once, and an Undo row takes the message's place, cross-fading in the same 40pt (34pt leading,
-  `NWQueueMetrics.secondaryInset`, so it starts under the number column; 12pt trailing): a 12pt
-  `trash` glyph, "Deleted" and the struck-through text in `.nw(.ui, weight: .regular)`
-  `textTertiary` on one line, and Undo (`.nwLink(font: .nw(.ui))`, `running`). It counts in neither
+  `SHQueueMetrics.secondaryInset`, so it starts under the number column; 12pt trailing): a 12pt
+  `trash` glyph, "Deleted" and the struck-through text in `.sh(.ui, weight: .regular)`
+  `textTertiary` on one line, and Undo (`.shLink(font: .sh(.ui))`, `running`). It counts in neither
   the header nor the numbers. It closes after `AppLayout.queueUndoWindow` (5s), counting only while
   the pointer is off it, and Undo puts the message back where it was. Clearing the queue leaves one
   such row, "Cleared 3 messages" ("Cleared 1 message"), that puts them all back. A message that
   comes back another way (Undo on another Mac, or a delete the host refused) takes its Undo row's
   place.
 - **Long stack** (QueueStates · long): up to three rows (Steering, queued, and Undo rows alike) all
-  show; past three, the first two and "Show N more" (`NWQueueMoreRow`: a 32pt row, 34pt leading,
-  `.nwLink(font: .nwSans(12))` in `running`), so the thread keeps its room. It expands the stack in
+  show; past three, the first two and "Show N more" (`SHQueueMoreRow`: a 32pt row, 34pt leading,
+  `.shLink(font: .shSans(12))` in `running`), so the thread keeps its room. It expands the stack in
   place ("Show fewer"). Expanded past six rows, the rows scroll inside a 240pt frame
-  (`NWQueueMetrics.expandedMaxRows` × 40) with "Show fewer" pinned beneath. An editor opened below
+  (`SHQueueMetrics.expandedMaxRows` × 40) with "Show fewer" pinned beneath. An editor opened below
   the fold expands it.
 - **Reordering** (QueueStates · reordering): dragging the grip lifts the row out of the stack onto a
   floating card (`bgRaised` under `bgHover`, radius 8, a `lineStrong` line, the popover's shadow
-  (`nwFloatShadow`), a 1° counter-clockwise lean, `NWQueueMetrics.liftTilt`), 22pt right of its slot
-  and 14pt past the stack's trailing edge (`NWQueueMetrics.liftInset`), over its neighbours, the
+  (`shFloatShadow`), a 1° counter-clockwise lean, `SHQueueMetrics.liftTilt`), 22pt right of its slot
+  and 14pt past the stack's trailing edge (`SHQueueMetrics.liftInset`), over its neighbours, the
   drop line, and the composer card. It keeps its grip but shows no actions, and follows the pointer
   at once, up to half a row past the first and last rows. Past the middle of a neighbour it takes
   the neighbour's side: the neighbours step aside (`list`), and a 2pt `lantern` drop line
-  (`NWDropIndicator(color: .nw.lantern)`, inset 8pt each side) tops the gap. Letting go where it
+  (`SHDropIndicator(color: .sh.lantern)`, inset 8pt each side) tops the gap. Letting go where it
   began changes nothing. Nothing drops above a Steering row. ⌥↑ ⌥↓ move a focused row one place.
-- **The ••• menu** (QueueStates · QueueOptions; native, `NWOptionsMenu`): Steer all now (stops pi
+- **The ••• menu** (QueueStates · QueueOptions; native, `SHOptionsMenu`): Steer all now (stops pi
   and sends every queued message at once, in order, as one turn; help "Stop the agent and send
   these now, in order"; `arrow.turn.down.right`; **Send all now** with `arrow.up` while pi is
   idle), a divider, the
@@ -154,7 +154,7 @@ cannot stop pi, a compaction, or an older client's send.
   row, else the previous, else the field. On a focused Steering row only ↑ ↓, Esc, and ⇥ do
   anything.
 - **Settings** (QueueStates · Settings › Agents · While the agent is working; see Settings): one row,
-  an `NWSegmentedPicker`. "When a turn ends, send the queue", subtitle "All at once arrives as one
+  an `SHSegmentedPicker`. "When a turn ends, send the queue", subtitle "All at once arrives as one
   turn, in the order you queued it.": One per turn or **All at once** (the default); it is the
   host's default for its agents, and each agent's ••• menu overrides it. There is no Return setting:
   ↩ always queues and ⌘↩ always steers now (the QueueStates board's "Return while the agent is
@@ -168,7 +168,7 @@ cannot stop pi, a compaction, or an older client's send.
   (`disclosure`). No bubble flies from the stack into the thread.
 - **In the thread** (QueueStates · In the thread, QueueSteer; Thread › From the queue and Steered):
   queued messages join the thread only when they reach pi, each keeping the time you sent it. A
-  delivery opens with `NWQueueDivider` ("From the queue · 2") and one bubble per message, then pi's
+  delivery opens with `SHQueueDivider` ("From the queue · 2") and one bubble per message, then pi's
   turn. A steer (the fallback's, or an older client's) stands where pi read it, between tool calls,
   in a bubble with a `running` outline under "Steered". No line says what a steer skipped.
 - **Limits and refusals:** the host holds at most 32 messages and 64 KiB of text. A send past that

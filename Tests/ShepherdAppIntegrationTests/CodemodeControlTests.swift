@@ -39,7 +39,7 @@ struct CodemodeControlTests {
         let burst = try #require(nativeActivityBursts(rows.map(NativeActivityCall.init)).first { $0.calls.contains { $0.name == "codemode" } })
         let window = OffscreenWindow(size: CGSize(width: 760, height: 720), dark: true)
         defer { window.close() }
-        window.show(ActivityLineView(burst: burst).padding(NW.Space.xl))
+        window.show(ActivityLineView(burst: burst).padding(SH.Space.xl))
         ListPerf.settle(window)
         try window.press(burst.accessibilityLabel)
         ListPerf.settle(window)
@@ -81,7 +81,7 @@ struct CodemodeControlTests {
         let burst = try #require(nativeActivityBursts(rows.map(NativeActivityCall.init)).first { $0.calls.contains { $0.id == "script/1" } })
         let window = OffscreenWindow(size: CGSize(width: 760, height: 720), dark: false)
         defer { window.close() }
-        window.show(ActivityLineView(burst: burst, expanded: true, expandedCalls: ["script/1"]).padding(NW.Space.xl))
+        window.show(ActivityLineView(burst: burst, expanded: true, expandedCalls: ["script/1"]).padding(SH.Space.xl))
         ListPerf.settle(window)
         let more = try #require(window.controls().first { $0.label?.contains("more lines") == true })
         #expect(ControlPress.undersized([more], minimum: .desktop).isEmpty)
@@ -105,7 +105,7 @@ struct CodemodeControlTests {
         window.show(VStack(alignment: .leading) {
             ForEach(bursts) { ActivityLineView(burst: $0) }
             Spacer()
-        }.padding(NW.Space.xl))
+        }.padding(SH.Space.xl))
         ListPerf.settle(window)
         for burst in bursts {
             let pressed = try window.press(burst.accessibilityLabel)

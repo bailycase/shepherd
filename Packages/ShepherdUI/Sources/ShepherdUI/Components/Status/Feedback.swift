@@ -2,7 +2,7 @@ import SwiftUI
 
 /// An inline banner inside the pane it concerns (Status board): a question, a failure, a
 /// reconnecting host, a finished mission. Never a modal alert for an agent event.
-public struct NWBanner<Actions: View>: View {
+public struct SHBanner<Actions: View>: View {
     let state: AgentState
     let title: String
     let message: String?
@@ -19,36 +19,36 @@ public struct NWBanner<Actions: View>: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        HStack(alignment: .top, spacing: NW.Space.l) {
+        let sh = Color.sh
+        HStack(alignment: .top, spacing: SH.Space.l) {
             Image(systemName: systemImage ?? Self.defaultSymbol(state))
                 .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(state.color)
                 .padding(.top, 2)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: NW.Space.xs) {
+            VStack(alignment: .leading, spacing: SH.Space.xs) {
                 Text(title)
-                    .font(.nwSans(13, .semibold))
-                    .foregroundStyle(state == .attention ? nw.lanternText : nw.textPrimary)
+                    .font(.shSans(13, .semibold))
+                    .foregroundStyle(state == .attention ? sh.lanternText : sh.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                 if let message {
                     Text(message)
-                        .font(.nwSans(12.5))
+                        .font(.shSans(12.5))
                         .lineSpacing(3)
-                        .foregroundStyle(nw.textSecondary)
+                        .foregroundStyle(sh.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .combine)
-            HStack(spacing: NW.Space.s) { actions() }
+            HStack(spacing: SH.Space.s) { actions() }
         }
-        .padding(.vertical, NW.Space.l)
+        .padding(.vertical, SH.Space.l)
         .padding(.horizontal, 14)
-        .background(state.tint ?? nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-        .nwBorder(nw.lineSubtle, radius: NW.Radius.m)
+        .background(state.tint ?? sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+        .shBorder(sh.lineSubtle, radius: SH.Radius.m)
         .accessibilityElement(children: .contain)
     }
 
@@ -62,15 +62,15 @@ public struct NWBanner<Actions: View>: View {
     }
 }
 
-extension NWBanner where Actions == EmptyView {
+extension SHBanner where Actions == EmptyView {
     public init(_ state: AgentState, title: String, message: String? = nil, systemImage: String? = nil) {
         self.init(state, title: title, message: message, systemImage: systemImage) { EmptyView() }
     }
 }
 
 /// A transient note about a background agent event ("worker finished · 5 files").
-/// Shown bottom-trailing by `.nwToast(item:)`, one at a time, for 4 seconds.
-public struct NWToast: Identifiable, Equatable {
+/// Shown bottom-trailing by `.shToast(item:)`, one at a time, for 4 seconds.
+public struct SHToast: Identifiable, Equatable {
     public struct Action {
         public let title: String
         public let perform: @MainActor () -> Void
@@ -96,48 +96,48 @@ public struct NWToast: Identifiable, Equatable {
         self.action = action
     }
 
-    public static func == (a: NWToast, b: NWToast) -> Bool { a.id == b.id }
+    public static func == (a: SHToast, b: SHToast) -> Bool { a.id == b.id }
 }
 
 extension View {
     /// Shows `item` bottom-trailing for 4 seconds, then clears it. A new item replaces the
     /// current one.
-    public func nwToast(item: Binding<NWToast?>) -> some View {
-        modifier(NWToastModifier(item: item))
+    public func shToast(item: Binding<SHToast?>) -> some View {
+        modifier(SHToastModifier(item: item))
     }
 }
 
-private struct NWToastModifier: ViewModifier {
-    @Binding var item: NWToast?
+private struct SHToastModifier: ViewModifier {
+    @Binding var item: SHToast?
 
     func body(content: Content) -> some View {
         content.overlay(alignment: .bottomTrailing) {
             ZStack {
                 if let toast = item {
-                    NWToastView(toast: toast) { item = nil }
-                        .padding(NW.Space.xl)
+                    SHToastView(toast: toast) { item = nil }
+                        .padding(SH.Space.xl)
                         // Keyed by id: a toast that replaces another rises in as the old one leaves.
                         .id(toast.id)
-                        .nwTransition(.sheet, edge: .bottom)
+                        .shTransition(.sheet, edge: .bottom)
                         .task(id: toast.id) {
                             try? await Task.sleep(for: .seconds(4))
                             if item?.id == toast.id { item = nil }
                         }
                 }
             }
-            .nwAnimation(.sheet, value: item?.id)
+            .shAnimation(.sheet, value: item?.id)
         }
     }
 }
 
-struct NWToastView: View {
-    let toast: NWToast
+struct SHToastView: View {
+    let toast: SHToast
     let dismiss: () -> Void
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         HStack(spacing: 10) {
-            NWStatusDot(toast.state, size: 7)
+            SHStatusDot(toast.state, size: 7)
             Group {
                 if let subject = toast.subject {
                     Text("\(Text(subject).fontWeight(.semibold)) \(toast.message)")
@@ -145,28 +145,28 @@ struct NWToastView: View {
                     Text(toast.message)
                 }
             }
-            .font(.nwSans(12.5))
-            .foregroundStyle(nw.textPrimary)
+            .font(.shSans(12.5))
+            .foregroundStyle(sh.textPrimary)
             .lineLimit(2)
             if let action = toast.action {
                 Button(action.title) {
                     action.perform()
                     dismiss()
                 }
-                .buttonStyle(.nw(.ghost, size: .s))
+                .buttonStyle(.sh(.ghost, size: .s))
             }
         }
-        .padding(.leading, NW.Space.l)
-        .padding(.trailing, NW.Space.m)
+        .padding(.leading, SH.Space.l)
+        .padding(.trailing, SH.Space.m)
         .frame(minHeight: 36)
-        .nwPopover(radius: NW.Radius.m)
+        .shPopover(radius: SH.Radius.m)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.updatesFrequently)
     }
 }
 
 /// An empty state (Status board): the crook, one title, one sentence, one or two actions.
-public struct NWEmptyState<Actions: View>: View {
+public struct SHEmptyState<Actions: View>: View {
     let title: Text
     let message: String
     let showsMark: Bool
@@ -184,74 +184,74 @@ public struct NWEmptyState<Actions: View>: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         VStack(spacing: 10) {
-            if showsMark { NWCrook().frame(width: 28, height: 28) }
+            if showsMark { SHCrook().frame(width: 28, height: 28) }
             title
-                .font(.nwSans(17, .semibold))
+                .font(.shSans(17, .semibold))
                 .tracking(-0.34)
-                .foregroundStyle(nw.textPrimary)
+                .foregroundStyle(sh.textPrimary)
                 .multilineTextAlignment(.center)
             Text(message)
-                .font(.nwSans(12.5))
+                .font(.shSans(12.5))
                 .lineSpacing(3)
-                .foregroundStyle(nw.textSecondary)
+                .foregroundStyle(sh.textSecondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 280)
                 .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: NW.Space.s) { actions() }.padding(.top, NW.Space.xs)
+            HStack(spacing: SH.Space.s) { actions() }.padding(.top, SH.Space.xs)
         }
         .padding(.vertical, 28)
-        .padding(.horizontal, NW.Space.xl)
+        .padding(.horizontal, SH.Space.xl)
         .frame(maxWidth: .infinity)
-        .nwBorder(framed ? nw.lineStrong : .clear, in: RoundedRectangle(cornerRadius: NW.Radius.m), dash: [4, 3])
+        .shBorder(framed ? sh.lineStrong : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.m), dash: [4, 3])
     }
 }
 
-extension NWEmptyState where Actions == EmptyView {
+extension SHEmptyState where Actions == EmptyView {
     public init(_ title: Text, message: String, showsMark: Bool = true, framed: Bool = false) {
         self.init(title, message: message, showsMark: showsMark, framed: framed) { EmptyView() }
     }
 }
 
-/// A list still loading (NWStatus: a remote host's list): four placeholder rows, each a 6pt dot
+/// A list still loading (SHStatus: a remote host's list): four placeholder rows, each a 6pt dot
 /// and an 8pt bar 10pt after it, the bars at 70%, 52%, 64% and 40% of the width, all in
-/// `bgSelected`, pulsing (`nwShimmer()`; static under Reduce Motion). VoiceOver hears "Loading".
-public struct NWLoadingRows: View {
+/// `bgSelected`, pulsing (`shShimmer()`; static under Reduce Motion). VoiceOver hears "Loading".
+public struct SHLoadingRows: View {
     static let widths: [CGFloat] = [0.70, 0.52, 0.64, 0.40]
 
     public init() {}
 
     public var body: some View {
-        let fill = Color.nw.bgSelected
+        let fill = Color.sh.bgSelected
         GeometryReader { geo in
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Self.widths.indices, id: \.self) { index in
                     HStack(spacing: 10) {
                         Circle().fill(fill).frame(width: 6, height: 6)
-                        RoundedRectangle(cornerRadius: NW.Radius.xs).fill(fill)
+                        RoundedRectangle(cornerRadius: SH.Radius.xs).fill(fill)
                             .frame(width: geo.size.width * Self.widths[index], height: 8)
                     }
-                    .frame(height: NW.Height.row)
+                    .frame(height: SH.Height.row)
                 }
             }
         }
-        .frame(height: NW.Height.row * CGFloat(Self.widths.count))
-        .nwShimmer()
+        .frame(height: SH.Height.row * CGFloat(Self.widths.count))
+        .shShimmer()
         .accessibilityElement()
         .accessibilityLabel("Loading")
     }
 }
 
 extension View {
-    /// Loading placeholders pulse (use with `.redacted(reason: .placeholder)`; NWStatus), the
-    /// `pulse` motion; static under Reduce Motion. Live text shimmers with `nwShimmer(active:)`.
-    public func nwShimmer() -> some View { modifier(NWPulse()) }
+    /// Loading placeholders pulse (use with `.redacted(reason: .placeholder)`; SHStatus), the
+    /// `pulse` motion; static under Reduce Motion. Live text shimmers with `shShimmer(active:)`.
+    public func shShimmer() -> some View { modifier(SHPulse()) }
 }
 
-private struct NWPulse: ViewModifier {
+private struct SHPulse: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.nwMotionPaused) private var motionPaused
+    @Environment(\.shMotionPaused) private var motionPaused
     @State private var onScreen = false
 
     func body(content: Content) -> some View {
@@ -259,8 +259,8 @@ private struct NWPulse: ViewModifier {
             content
         } else {
             TimelineView(.animation(minimumInterval: nil, paused: motionPaused || !onScreen)) { context in
-                let _ = NWRenderProbe.tick("ui.pulseFrame")
-                content.opacity(NWPhase.pulseOpacity(context.date))
+                let _ = SHRenderProbe.tick("ui.pulseFrame")
+                content.opacity(SHPhase.pulseOpacity(context.date))
             }
             .onAppear { onScreen = true }
             .onDisappear { onScreen = false }

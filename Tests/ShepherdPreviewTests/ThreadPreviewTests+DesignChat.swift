@@ -122,7 +122,7 @@ enum DesignChatThreads {
                    inspectSubagent: { _ in }, review: { _ in }, designChat: designChat)
             .environment(\.threadCommands, fixture.commands)
             .environment(\.designCommentCards, designChat ? cards() : nil)
-            .nwComposerSize(designChat ? .compact : .regular)
+            .shComposerSize(designChat ? .compact : .regular)
             .frame(width: width, height: height)
     }
 }

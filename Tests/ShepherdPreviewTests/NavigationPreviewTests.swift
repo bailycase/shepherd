@@ -66,17 +66,17 @@ extension PreviewTests {
         return (workspace, agents)
     }
 
-    /// The sidebar at each row density (NWNavigation's Standard and Compact samples).
-    @Test(arguments: NWDensity.allCases)
-    func sidebar(density: NWDensity) async throws {
+    /// The sidebar at each row density (SHNavigation's Standard and Compact samples).
+    @Test(arguments: SHDensity.allCases)
+    func sidebar(density: SHDensity) async throws {
         let (workspace, _) = try await populatedWorkspace()
         defer { workspace.stop() }
         try await Preview.render("sidebar-\(density.rawValue)", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 760)) {
-            SidebarView(vm: workspace.vm).nwDensity(density)
+            SidebarView(vm: workspace.vm).shDensity(density)
         }
     }
 
-    /// NWNavigation revision 420: all groups, independently folded groups, no Done, reading
+    /// SHNavigation revision 420: all groups, independently folded groups, no Done, reading
     /// Done, empty and long titles, through the same state, pin and completion paths as the app.
     @Test(arguments: ["full", "collapsed", "allCollapsed", "doneCollapsed", "nodone", "selectedDone", "afterReadingDone", "empty", "long"])
     func sidebarActivity(state sample: String) async throws {
@@ -119,7 +119,7 @@ extension PreviewTests {
             }
         }
         try await Preview.renderMatrix("sidebar-activity-\(sample)", size: CGSize(width: 232, height: 820)) {
-            SidebarView(vm: vm).nwDensity(.standard)
+            SidebarView(vm: vm).shDensity(.standard)
         }
     }
 
@@ -142,7 +142,7 @@ extension PreviewTests {
             #expect(workspace.vm.sidebarLists.done.count == (sample == "finished" ? 2 : 1))
         }
         try await Preview.renderMatrix("sidebar-working-subagents-\(sample)", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 650)) {
-            SidebarView(vm: workspace.vm).nwDensity(.standard)
+            SidebarView(vm: workspace.vm).shDensity(.standard)
         }
     }
 
@@ -179,7 +179,7 @@ extension PreviewTests {
         }
         try await eventuallyOnMain("the active goal in Working") { vm.sidebarLists.working.map(\.id) == [.local(id)] }
         try await Preview.renderMatrix("sidebar-goal-\(state.rawValue)", size: CGSize(width: 232, height: 820)) {
-            SidebarView(vm: vm).nwDensity(.standard)
+            SidebarView(vm: vm).shDensity(.standard)
         }
     }
 
@@ -197,11 +197,11 @@ extension PreviewTests {
         #expect(workspace.vm.sidebarLists.working.map(\.id) == [.local(id)])
         #expect(workspace.vm.sidebarLists.recents.isEmpty)
         try await Preview.renderMatrix("sidebar-opening-thread", size: CGSize(width: 232, height: 820)) {
-            SidebarView(vm: workspace.vm).nwDensity(.standard)
+            SidebarView(vm: workspace.vm).shDensity(.standard)
         }
     }
 
-    /// Needs you's reasons (NWNavigation, Main): the agent's own word or two when its asking tool
+    /// Needs you's reasons (SHNavigation, Main): the agent's own word or two when its asking tool
     /// gave one ("retention?", "approve plan"), the question cut short when it gave none, and an
     /// asking subagent's own reason ("token names?") beside one that gave none (its name).
     @Test func sidebarNeedsYouReasons() async throws {
@@ -438,7 +438,7 @@ extension PreviewTests {
             // the wrapping message would grow without bound.
             NightlyMovedNotice(download: {}, dismiss: {})
                 .frame(width: width, height: 120, alignment: .top)
-                .background(Color.nw.bgWindow)
+                .background(Color.sh.bgWindow)
         }
     }
 
@@ -453,7 +453,7 @@ extension PreviewTests {
             if !workspace.vm.sidebarOverlayShown { workspace.vm.toggleSidebar() }
             let shown = shownAt ?? .now
             shownAt = shown
-            return ContinuousClock.now - shown > .seconds(NW.Motion.pane.duration * 2)
+            return ContinuousClock.now - shown > .seconds(SH.Motion.pane.duration * 2)
         }) {
             RootView(vm: workspace.vm)
         }
@@ -615,25 +615,25 @@ extension PreviewTests {
     @Test func terminalParts() async throws {
         let size = CGSize(width: 760, height: 360)
         try await Preview.render("terminal-parts", size: size) {
-            VStack(alignment: .leading, spacing: NW.Space.l) {
-                NWTerminalFoldedThread(title: "Add refund events", state: .idle, restoreShortcut: "⇧⌘↩") {}
-                NWTerminalSelectionBar(add: {}, copy: {})
-                NWTerminalMenu {
-                    NWChangesMenuRow("New terminal in the worktree", subtitle: "payments on build-01", systemImage: "terminal",
-                                     trailing: .chord("⌘D"), tallHeight: NWTerminalMetrics.menuTallRowHeight) {}
-                    NWChangesMenuRow("Rename tab", systemImage: "pencil") {}
-                    NWChangesMenuRow("Kill process", systemImage: "xmark", enabled: false) {}
+            VStack(alignment: .leading, spacing: SH.Space.l) {
+                SHTerminalFoldedThread(title: "Add refund events", state: .idle, restoreShortcut: "⇧⌘↩") {}
+                SHTerminalSelectionBar(add: {}, copy: {})
+                SHTerminalMenu {
+                    SHChangesMenuRow("New terminal in the worktree", subtitle: "payments on build-01", systemImage: "terminal",
+                                     trailing: .chord("⌘D"), tallHeight: SHTerminalMetrics.menuTallRowHeight) {}
+                    SHChangesMenuRow("Rename tab", systemImage: "pencil") {}
+                    SHChangesMenuRow("Kill process", systemImage: "xmark", enabled: false) {}
                 }
                 ZStack(alignment: .top) {
-                    NWTerminalTabBar([NWTerminalTab(id: "zsh", title: "zsh", host: "build-01")], selection: "zsh", select: { _ in },
+                    SHTerminalTabBar([SHTerminalTab(id: "zsh", title: "zsh", host: "build-01")], selection: "zsh", select: { _ in },
                                      close: { _ in }, newTab: {}) {}
-                    Color.nw.lantern.frame(height: AppLayout.terminalDividerDragLine).offset(y: -1)
+                    Color.sh.lantern.frame(height: AppLayout.terminalDividerDragLine).offset(y: -1)
                 }
                 Spacer(minLength: 0)
             }
             .padding(24)
             .frame(width: size.width, height: size.height, alignment: .topLeading)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
     }
 
@@ -725,41 +725,41 @@ extension PreviewTests {
     /// The workplace chip's menu: This Mac's projects (nested ones flat), a host's, Add folder…
     /// on each, and the worktree option.
     @Test func newThreadPlaceMenu() async throws {
-        let mac = NWPlaceSection(id: "local", title: "This Mac", options: [
-            NWPlaceOption(id: "local/a", section: "local", title: "shepherd", detail: "~/Developer/Shepherd", isCurrent: true),
-            NWPlaceOption(id: "local/b", section: "local", title: "sub-project", detail: "~/Developer/Shepherd/sub"),
-            NWPlaceOption(id: "local/c", section: "local", title: "dashboard-web", detail: "~/code/dashboard-web"),
+        let mac = SHPlaceSection(id: "local", title: "This Mac", options: [
+            SHPlaceOption(id: "local/a", section: "local", title: "shepherd", detail: "~/Developer/Shepherd", isCurrent: true),
+            SHPlaceOption(id: "local/b", section: "local", title: "sub-project", detail: "~/Developer/Shepherd/sub"),
+            SHPlaceOption(id: "local/c", section: "local", title: "dashboard-web", detail: "~/code/dashboard-web"),
         ])
-        let host = NWPlaceSection(id: "host", title: "build-01", options: [
-            NWPlaceOption(id: "host/d", section: "host", title: "orders-svc", detail: "~/src/orders-svc"),
+        let host = SHPlaceSection(id: "host", title: "build-01", options: [
+            SHPlaceOption(id: "host/d", section: "host", title: "orders-svc", detail: "~/src/orders-svc"),
         ])
         try await Preview.render("new-thread-place-menu", size: CGSize(width: 360, height: 300)) {
-            NWPlaceMenu(sections: [mac, host], worktree: NWPlaceWorktree(isOn: false, caption: NewThreadRules.worktreeCaption(base: "")),
+            SHPlaceMenu(sections: [mac, host], worktree: SHPlaceWorktree(isOn: false, caption: NewThreadRules.worktreeCaption(base: "")),
                         onChoose: { _ in }, onAdd: { _ in }, onWorktree: { _ in }, onClose: {}) { _ in EmptyView() }
-                .padding(NW.Space.l)
+                .padding(SH.Space.l)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .background(Color.nw.bgWindow)
+                .background(Color.sh.bgWindow)
         }
     }
 
     /// Many spaces across hosts: the menu scrolls and the worktree controls stay reachable.
     @Test func newThreadPlaceMenuOverflow() async throws {
         let locals = (1...8).map { i in
-            NWPlaceOption(id: "local/\(i)", section: "local", title: "project-\(i)", detail: "~/Developer/project-\(i)")
+            SHPlaceOption(id: "local/\(i)", section: "local", title: "project-\(i)", detail: "~/Developer/project-\(i)")
         }
         let remotes = (1...6).map { i in
-            NWPlaceOption(id: "host/\(i)", section: "host", title: "service-\(i)", detail: "~/src/service-\(i)")
+            SHPlaceOption(id: "host/\(i)", section: "host", title: "service-\(i)", detail: "~/src/service-\(i)")
         }
-        let mac = NWPlaceSection(id: "local", title: "This Mac", options: locals)
-        let host = NWPlaceSection(id: "host", title: "build-01", options: remotes, addTitle: "Add folder…")
+        let mac = SHPlaceSection(id: "local", title: "This Mac", options: locals)
+        let host = SHPlaceSection(id: "host", title: "build-01", options: remotes, addTitle: "Add folder…")
         try await Preview.renderMatrix("new-thread-place-menu-overflow", size: CGSize(width: 360, height: 420)) {
-            NWPlaceMenu(sections: [mac, host],
-                        worktree: NWPlaceWorktree(isOn: true, caption: "Creates a temporary branch", base: "main"),
-                        maxHeight: NWComposerMetrics.modelPickerMaxHeight,
+            SHPlaceMenu(sections: [mac, host],
+                        worktree: SHPlaceWorktree(isOn: true, caption: "Creates a temporary branch", base: "main"),
+                        maxHeight: SHComposerMetrics.modelPickerMaxHeight,
                         onChoose: { _ in }, onAdd: { _ in }, onWorktree: { _ in }, onChooseBase: {}, onClose: {}) { _ in EmptyView() }
-                .padding(NW.Space.l)
+                .padding(SH.Space.l)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .background(Color.nw.bgWindow)
+                .background(Color.sh.bgWindow)
         }
     }
 
@@ -772,8 +772,8 @@ extension PreviewTests {
         defer { workspace.stop() }
         workspace.vm.selectAgent(agents[3].id)
         try await Preview.render(surface, size: size) {
-            Color.nw.bgWindow
-                .nwCommandPalette(isPresented: .constant(true)) {
+            Color.sh.bgWindow
+                .shCommandPalette(isPresented: .constant(true)) {
                     PaletteCard(items: workspace.vm.paletteItems, run: { _ in }, close: {}, initialQuery: "e")
                 }
         }
@@ -785,8 +785,8 @@ extension PreviewTests {
         defer { workspace.stop() }
         workspace.vm.selectAgent(agents[3].id)
         try await Preview.render("command-palette-agents", size: CGSize(width: 1000, height: 620)) {
-            Color.nw.bgWindow
-                .nwCommandPalette(isPresented: .constant(true)) {
+            Color.sh.bgWindow
+                .shCommandPalette(isPresented: .constant(true)) {
                     PaletteCard(items: workspace.vm.paletteItems, run: { _ in }, close: {}, initialQuery: "an")
                 }
         }
@@ -798,8 +798,8 @@ extension PreviewTests {
         defer { workspace.stop() }
         workspace.vm.selectAgent(agents[3].id)
         try await Preview.render("command-palette-terminal", size: CGSize(width: 1000, height: 520)) {
-            Color.nw.bgWindow
-                .nwCommandPalette(isPresented: .constant(true)) {
+            Color.sh.bgWindow
+                .shCommandPalette(isPresented: .constant(true)) {
                     PaletteCard(items: workspace.vm.paletteItems, run: { _ in }, close: {}, initialQuery: "term")
                 }
         }
@@ -837,7 +837,7 @@ extension PreviewTests {
             }
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .background(Color.nw.bgBase)
+            .background(Color.sh.bgBase)
             // No thread view drives these stores here; feed them their fixtures directly.
             .task { await running.store.run(request: running.request) }
             .task { await idle.store.run(request: idle.request) }
@@ -858,13 +858,13 @@ extension PreviewTests {
                 fixture.thread()
             } pane: {
                 VStack(spacing: 0) {
-                    NWSidePaneTabs(SidePaneTabs.items(news: news ? [.changes] : [], changedFiles: session.files.count),
+                    SHSidePaneTabs(SidePaneTabs.items(news: news ? [.changes] : [], changedFiles: session.files.count),
                                    selection: SidePaneTab.changes.rawValue, select: { _ in }, closeShortcut: "⇧⌘B", close: {}) {
                         Button("Reset Width") {}
                     }
                     ReviewPane(session: session, actions: Reviews.actions)
                 }
-                .background(Color.nw.bgWindow)
+                .background(Color.sh.bgWindow)
             }
         }
     }

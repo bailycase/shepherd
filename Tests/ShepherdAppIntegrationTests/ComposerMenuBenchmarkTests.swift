@@ -33,24 +33,24 @@ struct ComposerMenuBenchmarkTests {
         print("BENCH idle frame (layout + draw, no change): \(idle.millisecondSummary)")
 
         for round in 0..<2 {
-            NWMenuDiagnostics.rowBodies = 0
+            SHMenuDiagnostics.rowBodies = 0
             let insetBefore = thread.composerInset
             let open = await FrameTimer.measure(thread.window, region: picker) { thread.openModelPicker() }
-            print("BENCH[\(round)] picker open: \(open) · rows drawn \(NWMenuDiagnostics.rowBodies) · inset \(insetBefore) → \(thread.composerInset)")
+            print("BENCH[\(round)] picker open: \(open) · rows drawn \(SHMenuDiagnostics.rowBodies) · inset \(insetBefore) → \(thread.composerInset)")
 
             var keystrokes: [Double] = []
             var rows: [Int] = []
             for letter in ["c", "l", "a", "u", "d", "e"] {
-                NWMenuDiagnostics.rowBodies = 0
+                SHMenuDiagnostics.rowBodies = 0
                 let result = await FrameTimer.measure(thread.window, region: picker, stillFrames: 3, timeout: 2) { thread.type(letter) }
                 keystrokes.append(result.firstFrame ?? .nan)
-                rows.append(NWMenuDiagnostics.rowBodies)
+                rows.append(SHMenuDiagnostics.rowBodies)
             }
             for _ in 0..<6 {
-                NWMenuDiagnostics.rowBodies = 0
+                SHMenuDiagnostics.rowBodies = 0
                 let result = await FrameTimer.measure(thread.window, region: picker, stillFrames: 3, timeout: 2) { thread.deleteBackward() }
                 keystrokes.append(result.firstFrame ?? .nan)
-                rows.append(NWMenuDiagnostics.rowBodies)
+                rows.append(SHMenuDiagnostics.rowBodies)
             }
             print("BENCH[\(round)] picker keystroke → frame: \(keystrokes.millisecondSummary) · rows drawn \(rows)")
 
@@ -58,7 +58,7 @@ struct ComposerMenuBenchmarkTests {
                 let clip = scroll.contentView
                 let end = document.bounds.height - clip.bounds.height
                 var steps: [Double] = []
-                NWMenuDiagnostics.rowBodies = 0
+                SHMenuDiagnostics.rowBodies = 0
                 var y: CGFloat = 0
                 while y <= end {
                     steps.append(FrameTimer.time(thread.window, region: picker) {
@@ -66,9 +66,9 @@ struct ComposerMenuBenchmarkTests {
                         scroll.reflectScrolledClipView(clip)
                     })
                     try? await Task.sleep(for: .milliseconds(1))
-                    y += 3 * NWComposerMetrics.menuRowHeight
+                    y += 3 * SHComposerMetrics.menuRowHeight
                 }
-                print("BENCH[\(round)] picker scroll step (\(Int(end))pt): \(steps.millisecondSummary) · rows drawn \(NWMenuDiagnostics.rowBodies)")
+                print("BENCH[\(round)] picker scroll step (\(Int(end))pt): \(steps.millisecondSummary) · rows drawn \(SHMenuDiagnostics.rowBodies)")
             }
 
             let close = await FrameTimer.measure(thread.window, region: picker) { thread.openModelPicker() }
@@ -78,16 +78,16 @@ struct ComposerMenuBenchmarkTests {
 
         // Slash menu.
         let slashRegion = CGRect(x: thread.columnLeading, y: 0, width: 460, height: thread.cardTop)
-        NWMenuDiagnostics.rowBodies = 0
+        SHMenuDiagnostics.rowBodies = 0
         let slash = await FrameTimer.measure(thread.window, region: slashRegion) { thread.openSlashMenu() }
-        print("BENCH slash open: \(slash) · rows drawn \(NWMenuDiagnostics.rowBodies)")
+        print("BENCH slash open: \(slash) · rows drawn \(SHMenuDiagnostics.rowBodies)")
         var slashKeys: [Double] = []
         var slashRows: [Int] = []
         for draft in ["/r", "/re", "/rev", "/revi", "/revie", "/review", "/revie", "/revi", "/rev", "/re", "/r", "/"] {
-            NWMenuDiagnostics.rowBodies = 0
+            SHMenuDiagnostics.rowBodies = 0
             let result = await FrameTimer.measure(thread.window, region: slashRegion, stillFrames: 3, timeout: 2) { thread.store.draft = draft }
             slashKeys.append(result.firstFrame ?? .nan)
-            slashRows.append(NWMenuDiagnostics.rowBodies)
+            slashRows.append(SHMenuDiagnostics.rowBodies)
         }
         print("BENCH slash keystroke → frame: \(slashKeys.millisecondSummary) · rows drawn \(slashRows)")
         let slashClose = await FrameTimer.measure(thread.window, region: slashRegion) { thread.store.draft = "" }
@@ -107,12 +107,12 @@ struct ComposerMenuBenchmarkTests {
         let repeats = Int(ProcessInfo.processInfo.environment["SHEPHERD_BENCHMARK_REPEAT"] ?? "") ?? 1
         var quiet = repeats > 1
         func measure(_ label: String, _ change: () -> Void) async {
-            NWMenuDiagnostics.rowBodies = 0
-            NWRenderProbe.start()
+            SHMenuDiagnostics.rowBodies = 0
+            SHRenderProbe.start()
             let result = await FrameTimer.measure(thread.window, region: region, stillFrames: 3, timeout: 2, change: change)
-            let counts = NWRenderProbe.stop()
+            let counts = SHRenderProbe.stop()
             guard !quiet else { return }
-            print("BENCH chrome \(label): \(result) · composer \(counts["composer.body", default: 0]) · chips \(counts["composer.chips", default: 0]) · row min \(counts["layout.composerControlsMinimum", default: 0]) · row measured \(counts["layout.composerControlsMeasured", default: 0]) · thread \(counts["thread.view", default: 0]) · menu rows \(NWMenuDiagnostics.rowBodies)")
+            print("BENCH chrome \(label): \(result) · composer \(counts["composer.body", default: 0]) · chips \(counts["composer.chips", default: 0]) · row min \(counts["layout.composerControlsMinimum", default: 0]) · row measured \(counts["layout.composerControlsMeasured", default: 0]) · thread \(counts["thread.view", default: 0]) · menu rows \(SHMenuDiagnostics.rowBodies)")
         }
         // `SHEPHERD_BENCHMARK_ONLY=keystroke|slash|picker|thinking` profiles one interaction.
         let only = ProcessInfo.processInfo.environment["SHEPHERD_BENCHMARK_ONLY"]
@@ -163,9 +163,9 @@ struct ComposerMenuBenchmarkTests {
 
     /// What a hover costs: the pointer moving onto another row sets the highlight.
     @Test func hover() async throws {
-        let options = ModelCatalogFixture.entries.map { NWModelOption(id: $0.id, title: $0.id, note: $0.context) }
+        let options = ModelCatalogFixture.entries.map { SHModelOption(id: $0.id, title: $0.id, note: $0.context) }
         let sections = Dictionary(grouping: options) { String($0.id.prefix { $0 != "/" }) }.sorted { $0.key < $1.key }
-            .map { NWModelSection(title: $0.key, options: $0.value) }
+            .map { SHModelSection(title: $0.key, options: $0.value) }
         let model = PickerModel()
         let window = OffscreenWindow(size: CGSize(width: 400, height: 520), dark: false, PickerHost(model: model, sections: sections))
         defer { window.close() }
@@ -173,9 +173,9 @@ struct ComposerMenuBenchmarkTests {
         var times: [Double] = []
         var rows: [Int] = []
         for index in 1...12 {
-            NWMenuDiagnostics.rowBodies = 0
+            SHMenuDiagnostics.rowBodies = 0
             times.append(FrameTimer.time(window, region: CGRect(x: 0, y: 0, width: 400, height: 520)) { model.selection = index })
-            rows.append(NWMenuDiagnostics.rowBodies)
+            rows.append(SHMenuDiagnostics.rowBodies)
             try? await Task.sleep(for: .milliseconds(1))
         }
         print("BENCH hover → frame: \(times.millisecondSummary) · rows drawn \(rows)")
@@ -189,9 +189,9 @@ struct ComposerMenuBenchmarkTests {
 
 private struct PickerHost: View {
     @Bindable var model: PickerModel
-    let sections: [NWModelSection]
+    let sections: [SHModelSection]
     var body: some View {
-        NWModelPicker(query: $model.query, sections: sections, selection: $model.selection, onChoose: { _ in }, onClose: {})
+        SHModelPicker(query: $model.query, sections: sections, selection: $model.selection, onChoose: { _ in }, onClose: {})
             .padding(40)
             .frame(width: 400, height: 520)
     }

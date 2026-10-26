@@ -9,10 +9,10 @@ Settings page when search is empty.
 ## Implementation checklist
 
 - Keep the full-width space header, tab order, file tabs and host identity. Pi's three indented
-  navigation links stay in their existing order and use `NWSettingsNavSubRow`, including its
+  navigation links stay in their existing order and use `SHSettingsNavSubRow`, including its
   selected state and Sign-in attention dot. Searching still filters navigation.
 - Replace the MCP category's JSON editor with the same `MCPServerListHeader`, `MCPServerRow`
-  and `MCPServerDetail` used in Settings. Use `NWMCPMetrics` for columns, type, spacing and hit
+  and `MCPServerDetail` used in Settings. Use `SHMCPMetrics` for columns, type, spacing and hit
   areas, `AppLayout.mcpCardRadius` for the card and existing theme roles for fills and borders.
   Reuse the existing switch, status dot, Remote/Local badge and disclosure glyphs exactly.
   The shared switch keeps its 30 by 18 drawing inside a minimum 24pt pointer hit area.

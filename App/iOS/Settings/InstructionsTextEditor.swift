@@ -154,20 +154,20 @@ struct InstructionsEditorStyles {
         paragraph.maximumLineHeight = lineHeight
         base = [
             .font: font,
-            .foregroundColor: UIColor(Color.nw.textSecondary),
+            .foregroundColor: UIColor(Color.sh.textSecondary),
             .paragraphStyle: paragraph,
             // Centred on the line rather than sitting on its bottom.
             .baselineOffset: max(0, (lineHeight - font.lineHeight) / 2),
         ]
-        heading = [.font: bold, .foregroundColor: UIColor(Color.nw.textPrimary)]
-        headingMarker = [.foregroundColor: UIColor(Color.nw.textTertiary)]
-        bullet = [.foregroundColor: UIColor(Color.nw.lanternText)]
-        code = [.foregroundColor: UIColor(Color.nw.synString)]
+        heading = [.font: bold, .foregroundColor: UIColor(Color.sh.textPrimary)]
+        headingMarker = [.foregroundColor: UIColor(Color.sh.textTertiary)]
+        bullet = [.foregroundColor: UIColor(Color.sh.lanternText)]
+        code = [.foregroundColor: UIColor(Color.sh.synString)]
         let numberSize = metrics.numberSize * scale
         let numberFont = UIFont(name: "GeistMono-Regular", size: numberSize) ?? .monospacedSystemFont(ofSize: numberSize, weight: .regular)
         let right = NSMutableParagraphStyle()
         right.alignment = .right
-        numbers = [.font: numberFont, .foregroundColor: UIColor(Color.nw.textTertiary), .paragraphStyle: right]
+        numbers = [.font: numberFont, .foregroundColor: UIColor(Color.sh.textTertiary), .paragraphStyle: right]
         numberHeight = numberFont.lineHeight
     }
 
@@ -205,7 +205,7 @@ final class InstructionsTextView: UITextView {
         decorations.addTextContainer(container)
         super.init(frame: .zero, textContainer: container)
         backgroundColor = .clear
-        tintColor = UIColor(Color.nw.lantern)
+        tintColor = UIColor(Color.sh.lantern)
         autocorrectionType = .no
         autocapitalizationType = .none
         spellCheckingType = .no
@@ -225,7 +225,7 @@ final class InstructionsTextView: UITextView {
         decorations.numberAttributes = styles.numbers
         decorations.numberHeight = styles.numberHeight
         decorations.rowHeight = styles.lineHeight
-        decorations.tint = UIColor(Color.nw.lanternTint)
+        decorations.tint = UIColor(Color.sh.lanternTint)
         decorations.invalidateDisplay(forCharacterRange: NSRange(location: 0, length: storage.length))
         setNeedsDisplay()
     }
@@ -359,8 +359,8 @@ final class InstructionsEditorFocus {
     }
 
     /// The key row's keys.
-    static var keycaps: [NWTerminalKeycap] {
-        InstructionsKey.allCases.map { NWTerminalKeycap(id: $0.rawValue, label: $0.label, spokenLabel: $0.spokenLabel) }
+    static var keycaps: [SHTerminalKeycap] {
+        InstructionsKey.allCases.map { SHTerminalKeycap(id: $0.rawValue, label: $0.label, spokenLabel: $0.spokenLabel) }
     }
 }
 
@@ -369,7 +369,7 @@ struct InstructionsKeyRow: View {
     let focus: InstructionsEditorFocus
 
     var body: some View {
-        NWTerminalKeyRow(InstructionsEditorFocus.keycaps) { id in
+        SHTerminalKeyRow(InstructionsEditorFocus.keycaps) { id in
             if let key = InstructionsKey(rawValue: id) { focus.press(key) }
         }
         .accessibilityLabel("Markdown keys")

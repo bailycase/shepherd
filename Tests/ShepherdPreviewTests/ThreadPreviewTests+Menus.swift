@@ -8,26 +8,26 @@ import Testing
 extension ThreadPreviewTests {
     /// The slash menu's rows as the SlashMenu board draws them, with a long name and a prompt.
     static let slashCommands = [
-        NWSlashCommand(name: "review", description: "Open the review pane on working-tree changes"),
-        NWSlashCommand(name: "resume", description: "Pick a previous session to continue", arguments: "[session]"),
-        NWSlashCommand(name: "reload", description: "Reload extensions, skills and prompt templates"),
-        NWSlashCommand(name: "release-notes", description: "Draft release notes from commits since the last tag", arguments: "[tag]", tag: "prompt"),
+        SHSlashCommand(name: "review", description: "Open the review pane on working-tree changes"),
+        SHSlashCommand(name: "resume", description: "Pick a previous session to continue", arguments: "[session]"),
+        SHSlashCommand(name: "reload", description: "Reload extensions, skills and prompt templates"),
+        SHSlashCommand(name: "release-notes", description: "Draft release notes from commits since the last tag", arguments: "[tag]", tag: "prompt"),
     ]
 
     /// The ModelPicker board's list, each row's second line the levels its model takes.
     static let boardModels = [
-        NWModelSection(title: "Recent", options: [
-            NWModelOption(id: "anthropic/claude-opus", title: "claude-opus", subtitle: "Off · Low · Medium · High", note: "200K", isCurrent: true),
-            NWModelOption(id: "anthropic/claude-fable-5-1", title: "claude-fable-5-1", subtitle: "Off · Minimal · Low · Medium · High · Extra high · Max", note: "200K"),
+        SHModelSection(title: "Recent", options: [
+            SHModelOption(id: "anthropic/claude-opus", title: "claude-opus", subtitle: "Off · Low · Medium · High", note: "200K", isCurrent: true),
+            SHModelOption(id: "anthropic/claude-fable-5-1", title: "claude-fable-5-1", subtitle: "Off · Minimal · Low · Medium · High · Extra high · Max", note: "200K"),
         ]),
-        NWModelSection(title: "anthropic", options: [
-            NWModelOption(id: "anthropic/claude-sonnet", title: "claude-sonnet", subtitle: "Off · Minimal · Low · Medium · High", note: "200K", fast: true),
-            NWModelOption(id: "anthropic/claude-haiku", title: "claude-haiku", subtitle: "No thinking", note: "200K"),
+        SHModelSection(title: "anthropic", options: [
+            SHModelOption(id: "anthropic/claude-sonnet", title: "claude-sonnet", subtitle: "Off · Minimal · Low · Medium · High", note: "200K", fast: true),
+            SHModelOption(id: "anthropic/claude-haiku", title: "claude-haiku", subtitle: "No thinking", note: "200K"),
         ]),
     ]
 
-    static func thinkingOptions(_ ids: [String]) -> [NWThinkingOption] {
-        NativeThinkingLevel.levels(ids).map { NWThinkingOption(id: $0.id, title: $0.title, note: $0.note) }
+    static func thinkingOptions(_ ids: [String]) -> [SHThinkingOption] {
+        NativeThinkingLevel.levels(ids).map { SHThinkingOption(id: $0.id, title: $0.title, note: $0.note) }
     }
 
     /// The SlashMenu, ModelPicker and composer menu boards at the app's sizes: the slash menu over
@@ -38,58 +38,58 @@ extension ThreadPreviewTests {
         let column: CGFloat = 820
         let size = CGSize(width: 924, height: 1110)
         let commands = [
-            NWSlashCommand(name: "shepherd-subagents-fleet", description: "Run a fleet of subagents over the plan's steps and gather their results",
+            SHSlashCommand(name: "shepherd-subagents-fleet", description: "Run a fleet of subagents over the plan's steps and gather their results",
                            arguments: "[plan]", tag: "skill"),
-            NWSlashCommand(name: "shepherd-subagents", description: "Spawn a subagent for one task"),
-            NWSlashCommand(name: "ship-it", description: "Commit, push and open a pull request for the working tree", tag: "prompt"),
-            NWSlashCommand(name: "summarize-session", description: "Write a summary of this session into NOTES.md", tag: "prompt"),
+            SHSlashCommand(name: "shepherd-subagents", description: "Spawn a subagent for one task"),
+            SHSlashCommand(name: "ship-it", description: "Commit, push and open a pull request for the working tree", tag: "prompt"),
+            SHSlashCommand(name: "summarize-session", description: "Write a summary of this session into NOTES.md", tag: "prompt"),
         ]
         let opus = [
-            NWModelSection(title: "Recent", options: [
-                NWModelOption(id: "cpa/~anthropic/claude-opus-4-8-thinking-max", title: "~anthropic/claude-opus-4-8-thinking-max",
+            SHModelSection(title: "Recent", options: [
+                SHModelOption(id: "cpa/~anthropic/claude-opus-4-8-thinking-max", title: "~anthropic/claude-opus-4-8-thinking-max",
                               subtitle: "Off · Minimal · Low · Medium · High · Extra high · Max", note: "1M", isCurrent: true),
             ]),
-            NWModelSection(title: "AG", options: [
-                NWModelOption(id: "AG/claude-opus-4-6-thinking-extended-context", title: "claude-opus-4-6-thinking-extended-context",
+            SHModelSection(title: "AG", options: [
+                SHModelOption(id: "AG/claude-opus-4-6-thinking-extended-context", title: "claude-opus-4-6-thinking-extended-context",
                               subtitle: "Off · Minimal · Low · Medium · High", note: "200K"),
-                NWModelOption(id: "AG/claude-opus-4-6", title: "claude-opus-4-6", subtitle: "Off · Minimal · Low · Medium · High · Extra high", note: "200K"),
+                SHModelOption(id: "AG/claude-opus-4-6", title: "claude-opus-4-6", subtitle: "Off · Minimal · Low · Medium · High · Extra high", note: "200K"),
             ]),
-            NWModelSection(title: "cpa", options: [
-                NWModelOption(id: "cpa/~anthropic/claude-opus-4-5-20251101", title: "~anthropic/claude-opus-4-5-20251101",
+            SHModelSection(title: "cpa", options: [
+                SHModelOption(id: "cpa/~anthropic/claude-opus-4-5-20251101", title: "~anthropic/claude-opus-4-5-20251101",
                               subtitle: "Off · Minimal · Low · Medium · High", note: "200K"),
-                NWModelOption(id: "cpa/~openrouter/anthropic/claude-opus-4.1", title: "~openrouter/anthropic/claude-opus-4.1",
+                SHModelOption(id: "cpa/~openrouter/anthropic/claude-opus-4.1", title: "~openrouter/anthropic/claude-opus-4.1",
                               subtitle: "No thinking", note: "200K"),
             ]),
         ]
         func card(_ draft: String) -> some View {
-            NWComposer(isFocused: true) {
-                Text(draft).font(.nw(.body)).foregroundStyle(Color.nw.textPrimary).frame(maxWidth: .infinity, alignment: .leading)
+            SHComposer(isFocused: true) {
+                Text(draft).font(.sh(.body)).foregroundStyle(Color.sh.textPrimary).frame(maxWidth: .infinity, alignment: .leading)
             } controls: {
-                Button {} label: { NWModelSettingsLabel(model: "claude-opus-4-8-thinking-max", thinking: "Max") }.buttonStyle(.nwComposerChip())
+                Button {} label: { SHModelSettingsLabel(model: "claude-opus-4-8-thinking-max", thinking: "Max") }.buttonStyle(.shComposerChip())
                 Spacer(minLength: 8)
-                NWComposerActionButton(.send, enabled: true) {}
+                SHComposerActionButton(.send, enabled: true) {}
             }
         }
         func settings(_ levels: [String], current: String) -> some View {
-            NWModelSettings(models: [NWModelOption(id: "anthropic/claude-opus-4-8-thinking-max", title: "claude-opus-4-8-thinking-max", isCurrent: true),
-                                     NWModelOption(id: "anthropic/claude-opus-4-6", title: "claude-opus-4-6")],
+            SHModelSettings(models: [SHModelOption(id: "anthropic/claude-opus-4-8-thinking-max", title: "claude-opus-4-8-thinking-max", isCurrent: true),
+                                     SHModelOption(id: "anthropic/claude-opus-4-6", title: "claude-opus-4-6")],
                             thinking: Self.thinkingOptions(levels), currentThinking: current, speeds: [], currentSpeed: "standard",
                             chooseModel: { _ in }, chooseThinking: { _ in }, chooseSpeed: { _ in }, allModels: {}, close: {})
         }
         try await Preview.render("composer-menus", size: size) {
             VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: AppLayout.menuGap) {
-                    NWSlashMenu(commands: commands, total: 23, query: "s", selection: .constant(0)) { _ in }
+                    SHSlashMenu(commands: commands, total: 23, query: "s", selection: .constant(0)) { _ in }
                     card("/s")
                 }
                 .frame(width: column)
                 VStack(alignment: .leading, spacing: AppLayout.menuGap) {
-                    NWSlashMenu(commands: Self.slashCommands, total: 23, query: "re", selection: .constant(3)) { _ in }
+                    SHSlashMenu(commands: Self.slashCommands, total: 23, query: "re", selection: .constant(3)) { _ in }
                     card("/re")
                 }
                 .frame(width: column)
                 HStack(alignment: .bottom, spacing: 20) {
-                    NWModelPicker(query: .constant("opus"), sections: opus, selection: .constant(1), shortcut: "⇧⌘M",
+                    SHModelPicker(query: .constant("opus"), sections: opus, selection: .constant(1), shortcut: "⇧⌘M",
                                   onChoose: { _ in }, onClose: {})
                     VStack(alignment: .leading, spacing: 20) {
                         settings(["off", "minimal", "low", "medium", "high", "xhigh", "max"], current: "xhigh")
@@ -99,7 +99,7 @@ extension ThreadPreviewTests {
             }
             .padding(32)
             .frame(width: size.width, height: size.height, alignment: .topLeading)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
     }
 }

@@ -31,9 +31,9 @@ struct LogicalProjectSpacesTab: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NW.Space.xl) {
+        VStack(alignment: .leading, spacing: SH.Space.xl) {
             VStack(alignment: .leading, spacing: 0) {
-                NWProjectSettingsLabel("Spaces")
+                SHProjectSettingsLabel("Spaces")
                 if project.linkedSpaces.isEmpty {
                     emptyCard
                 } else {
@@ -41,7 +41,7 @@ struct LogicalProjectSpacesTab: View {
                         ForEach(rows) { row in linkRow(row) }
                     }
                 }
-                addMenu.padding(.top, NW.Space.m)
+                addMenu.padding(.top, SH.Space.m)
             }
             ProjectSettingsCard {
                 ProjectSettingsRow(title: "The project can add spaces",
@@ -49,7 +49,7 @@ struct LogicalProjectSpacesTab: View {
                     Toggle("The project can add spaces", isOn: Binding(
                         get: { project.settings.canRequestSpaceLinks },
                         set: { value in Task { _ = await model.saveSettings(ref) { $0.canRequestSpaceLinks = value } } }))
-                    .toggleStyle(.nwSwitch)
+                    .toggleStyle(.shSwitch)
                     .labelsHidden()
                     .disabled(saving)
                 }
@@ -69,7 +69,7 @@ struct LogicalProjectSpacesTab: View {
     private var hostsRow: some View {
         let hosts = ProjectHostChoices(settings: project.settings, options: hostOptions, ownerName: vm.ownerName(of: ref.home))
         return ProjectSettingsRow(title: "Hosts", subtitle: "Where threads may run. A space must be set up on a host first.") {
-            NWProjectSettingsPopup(hosts.current) {
+            SHProjectSettingsPopup(hosts.current) {
                 ForEach(hosts.choices) { choice in
                     Button(choice.title) {
                         guard choice != hosts.selected else { return }
@@ -78,7 +78,7 @@ struct LogicalProjectSpacesTab: View {
                 }
             }
             .disabled(saving)
-            .nwHelp("Hosts")
+            .shHelp("Hosts")
             .accessibilityLabel("Hosts")
             .accessibilityValue(hosts.current)
         }
@@ -87,7 +87,7 @@ struct LogicalProjectSpacesTab: View {
     private var emptyCard: some View {
         ProjectSettingsCard {
             Text("No spaces yet. Add one, or let the project ask when the work needs a folder.")
-                .font(.nw(.ui, weight: .regular)).foregroundStyle(Color.nw.textSecondary)
+                .font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textSecondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .modifier(ProjectSettingsRowFrame())
         }
@@ -102,13 +102,13 @@ struct LogicalProjectSpacesTab: View {
     }
 
     private func linkRow(_ row: ProjectSpaceLinks.Row) -> some View {
-        let M = NWProjectSettingsMetrics.self
-        return HStack(spacing: NW.Space.l) {
-            Image(systemName: "folder").font(.nwSans(M.rowGlyphSize)).foregroundStyle(Color.nw.textSecondary)
+        let M = SHProjectSettingsMetrics.self
+        return HStack(spacing: SH.Space.l) {
+            Image(systemName: "folder").font(.shSans(M.rowGlyphSize)).foregroundStyle(Color.sh.textSecondary)
                 .frame(width: M.rowGlyphBox, height: M.rowGlyphBox)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                Text(row.name).font(.nw(.ui)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                Text(row.name).font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
                 // `path · host` on one line as the board draws it; when that does not fit, the host takes its own line under the path
                 // (which shortens in the middle), so the host that tells two links apart is always read in full.
                 ViewThatFits(in: .horizontal) {
@@ -122,14 +122,14 @@ struct LogicalProjectSpacesTab: View {
                         Text(row.hostName).lineLimit(2)
                     }
                 }
-                .nwText(size: M.pathSize, mono: true, lineHeight: M.pathLineHeight)
-                .foregroundStyle(Color.nw.textTertiary)
+                .shText(size: M.pathSize, mono: true, lineHeight: M.pathLineHeight)
+                .foregroundStyle(Color.sh.textTertiary)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(row.detail)
             }
             // The text column may shrink to nothing, so a narrow window shortens it instead of widening the card.
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-            Text(Self.provenance(row.link)).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary).lineLimit(1).fixedSize()
+            Text(Self.provenance(row.link)).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).lineLimit(1).fixedSize()
             // Remove names the link's own destination: another host's Space with the same ID is a different link and is left alone.
             ProjectSettingsButton(title: "Remove", kind: .ghost) {
                 Task { _ = await model.unlink(ref, space: row.link.spaceID, host: row.link.host) }
@@ -142,7 +142,7 @@ struct LogicalProjectSpacesTab: View {
     }
 
     private var addMenu: some View {
-        NWProjectSettingsPopup("Add a space…") {
+        SHProjectSettingsPopup("Add a space…") {
             ForEach(addable) { choice in
                 Button(choice.title) { Task { _ = await model.link(ref, space: choice.space.id, host: choice.host) } }
             }
@@ -172,45 +172,45 @@ struct LogicalProjectMemoryTab: View {
     private var limit: Int { Project.maximumInstructionsLength }
 
     var body: some View {
-        let M = NWProjectSettingsMetrics.self
-        VStack(alignment: .leading, spacing: NW.Space.xl) {
+        let M = SHProjectSettingsMetrics.self
+        VStack(alignment: .leading, spacing: SH.Space.xl) {
             VStack(alignment: .leading, spacing: 0) {
-                NWProjectSettingsLabel("Project instructions")
+                SHProjectSettingsLabel("Project instructions")
                 TextEditor(text: $draft)
-                    .nwText(size: NWTextStyle.ui.size, lineHeight: NWProjectSettingsMetrics.fieldLineHeight)
-                    .foregroundStyle(Color.nw.textPrimary)
-                    .tint(Color.nw.lantern)
+                    .shText(size: SHTextStyle.ui.size, lineHeight: SHProjectSettingsMetrics.fieldLineHeight)
+                    .foregroundStyle(Color.sh.textPrimary)
+                    .tint(Color.sh.lantern)
                     .scrollContentBackground(.hidden)
                     .padding(.horizontal, M.editorInsetX - M.editorFragmentPadding + M.line)
                     .padding(.vertical, M.editorInsetY + M.line)
                     .frame(minHeight: M.editorMinHeight)
-                    .nwProjectSettingsField()
+                    .shProjectSettingsField()
                     .accessibilityLabel("Project instructions")
                     .disabled(saving)
                 Text("Sent to the conversation and to every new thread, after each space’s AGENTS.md. \(draft.count.formatted()) of \(limit.formatted()) characters.")
-                    .nwText(size: NWTextStyle.caption.size, lineHeight: NWCardRowMetrics.settingsDescriptionLineHeight)
-                    .foregroundStyle(draft.count > limit ? Color.nw.failed : Color.nw.textTertiary)
-                    .frame(minHeight: NWTextStyle.caption.size * NWCardRowMetrics.settingsDescriptionLineHeight, alignment: .top)
-                    .padding(.top, NW.Space.s + M.editorFootnoteGap)
+                    .shText(size: SHTextStyle.caption.size, lineHeight: SHCardRowMetrics.settingsDescriptionLineHeight)
+                    .foregroundStyle(draft.count > limit ? Color.sh.failed : Color.sh.textTertiary)
+                    .frame(minHeight: SHTextStyle.caption.size * SHCardRowMetrics.settingsDescriptionLineHeight, alignment: .top)
+                    .padding(.top, SH.Space.s + M.editorFootnoteGap)
                     .accessibilityLabel("\(draft.count) of \(limit) characters")
                 if draft != project.settings.instructions {
-                    HStack(spacing: NW.Space.s) {
+                    HStack(spacing: SH.Space.s) {
                         Button("Save") { save() }
-                            .buttonStyle(.nw(.primary))
+                            .buttonStyle(.sh(.primary))
                             .disabled(saving || draft.count > limit)
                         Button("Revert") { draft = project.settings.instructions }
-                            .buttonStyle(.nw(.ghost))
+                            .buttonStyle(.sh(.ghost))
                             .disabled(saving)
                     }
-                    .padding(.top, NW.Space.m)
+                    .padding(.top, SH.Space.m)
                 }
             }
             VStack(alignment: .leading, spacing: 0) {
-                NWProjectSettingsLabel("What the project remembers")
+                SHProjectSettingsLabel("What the project remembers")
                 if project.memory.isEmpty {
                     ProjectSettingsCard {
                         Text("Nothing yet. What you decide and what the project learns is kept here, and you can make it forget any of it.")
-                            .font(.nw(.ui, weight: .regular)).foregroundStyle(Color.nw.textSecondary)
+                            .font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textSecondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .modifier(ProjectSettingsRowFrame())
                     }
@@ -226,10 +226,10 @@ struct LogicalProjectMemoryTab: View {
     }
 
     private func memoryRow(_ entry: ProjectMemory) -> some View {
-        HStack(spacing: NW.Space.l) {
+        HStack(spacing: SH.Space.l) {
             Text(entry.text)
-                .nwText(size: NWTextStyle.ui.size, lineHeight: NWProjectSettingsMetrics.memoryLineHeight)
-                .foregroundStyle(Color.nw.textPrimary)
+                .shText(size: SHTextStyle.ui.size, lineHeight: SHProjectSettingsMetrics.memoryLineHeight)
+                .foregroundStyle(Color.sh.textPrimary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
             ProjectSettingsButton(title: "Forget", kind: .ghost) { Task { _ = await model.forget(ref, memory: entry.id) } }
@@ -288,10 +288,10 @@ struct LogicalProjectAutomationsTab: View {
     var body: some View {
         ProjectSettingsCard {
             if rows.isEmpty {
-                VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                    Text("No automations yet").font(.nw(.ui)).foregroundStyle(Color.nw.textPrimary)
+                VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                    Text("No automations yet").font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary)
                     Text("Automations that belong to \(project.name) show here with a switch for each.")
-                        .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary).fixedSize(horizontal: false, vertical: true)
+                        .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .modifier(ProjectSettingsRowFrame())
@@ -303,22 +303,22 @@ struct LogicalProjectAutomationsTab: View {
     }
 
     private func automationRow(_ row: ProjectAutomationSnapshot) -> some View {
-        let M = NWProjectSettingsMetrics.self
-        return HStack(spacing: NW.Space.l) {
-            NWGlyph.automation.image.font(.nwSans(M.rowGlyphSize)).foregroundStyle(Color.nw.textSecondary)
+        let M = SHProjectSettingsMetrics.self
+        return HStack(spacing: SH.Space.l) {
+            SHGlyph.automation.image.font(.shSans(M.rowGlyphSize)).foregroundStyle(Color.sh.textSecondary)
                 .frame(width: M.rowGlyphBox, height: M.rowGlyphBox)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                Text(row.automation.name).font(.nw(.ui)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                Text(row.automation.name).font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
                 Text(Self.caption(row, space: vm.ownerSpaces(of: ref.home).first { $0.path == row.automation.cwd }?.name))
-                    .nwText(size: NWTextStyle.caption.size, lineHeight: NWCardRowMetrics.settingsDescriptionLineHeight)
-                    .foregroundStyle(Color.nw.textTertiary).lineLimit(1).truncationMode(.tail)
+                    .shText(size: SHTextStyle.caption.size, lineHeight: SHCardRowMetrics.settingsDescriptionLineHeight)
+                    .foregroundStyle(Color.sh.textTertiary).lineLimit(1).truncationMode(.tail)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Toggle("Run \(row.automation.name)", isOn: Binding(
                 get: { row.automation.enabled },
                 set: { value in Task { _ = await model.automation(ref, row.automation.id, .setEnabled(value)) } }))
-            .toggleStyle(.nwSwitch)
+            .toggleStyle(.shSwitch)
             .labelsHidden()
             .disabled(saving)
         }

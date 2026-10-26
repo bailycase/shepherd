@@ -15,35 +15,35 @@ public struct MCPBudget: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        VStack(alignment: .leading, spacing: NW.Space.m) {
+        let sh = Color.sh
+        VStack(alignment: .leading, spacing: SH.Space.m) {
             HStack {
                 Text("In every prompt")
-                    .font(.nwSans(NWSkillMetrics.optionTitleSize, .medium))
-                    .foregroundStyle(nw.textPrimary)
-                Spacer(minLength: NW.Space.m)
+                    .font(.shSans(SHSkillMetrics.optionTitleSize, .medium))
+                    .foregroundStyle(sh.textPrimary)
+                Spacer(minLength: SH.Space.m)
                 Text(tokens)
-                    .font(.nwMono(NWSkillMetrics.optionNoteSize))
-                    .foregroundStyle(nw.textSecondary)
+                    .font(.shMono(SHSkillMetrics.optionNoteSize))
+                    .foregroundStyle(sh.textSecondary)
             }
             GeometryReader { proxy in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(nw.lineSubtle)
-                    Capsule().fill(nw.running)
-                        .frame(width: max(NWMCPMetrics.budgetHeight * 3, proxy.size.width * min(1, max(0, fraction))))
+                    Capsule().fill(sh.lineSubtle)
+                    Capsule().fill(sh.running)
+                        .frame(width: max(SHMCPMetrics.budgetHeight * 3, proxy.size.width * min(1, max(0, fraction))))
                 }
             }
-            .frame(height: NWMCPMetrics.budgetHeight)
+            .frame(height: SHMCPMetrics.budgetHeight)
             .accessibilityHidden(true)
             Text(note)
-                .nwText(size: NWSkillMetrics.optionNoteSize, lineHeight: NWSkillMetrics.optionNoteLineHeight)
-                .foregroundStyle(nw.textTertiary)
+                .shText(size: SHSkillMetrics.optionNoteSize, lineHeight: SHSkillMetrics.optionNoteLineHeight)
+                .foregroundStyle(sh.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.vertical, NW.Space.l)
-        .padding(.horizontal, NW.Space.l + NW.Space.xxs)
-        .background(nw.bgWindow, in: RoundedRectangle(cornerRadius: NWMCPMetrics.cardRadius))
-        .nwBorder(nw.lineSubtle, radius: NWMCPMetrics.cardRadius)
+        .padding(.vertical, SH.Space.l)
+        .padding(.horizontal, SH.Space.l + SH.Space.xxs)
+        .background(sh.bgWindow, in: RoundedRectangle(cornerRadius: SHMCPMetrics.cardRadius))
+        .shBorder(sh.lineSubtle, radius: SHMCPMetrics.cardRadius)
         .accessibilityElement(children: .combine)
     }
 }

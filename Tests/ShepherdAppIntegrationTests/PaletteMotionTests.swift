@@ -31,7 +31,7 @@ struct PaletteMotionTests {
         @Bindable var model: Model
 
         var body: some View {
-            Color.white.nwCommandPalette(isPresented: $model.open) {
+            Color.white.shCommandPalette(isPresented: $model.open) {
                 Color.black.frame(height: PaletteMotionTests.cardHeight)
             }
         }
@@ -50,7 +50,7 @@ struct PaletteMotionTests {
         defer { window.close() }
         let recording = await MotionProbe.record(window, region: Self.column) { model.open = true }
 
-        let top = Int(NWPaletteMetrics.placement(in: Self.size, rowHeight: NWDensity.standard.rowHeight).top)
+        let top = Int(SHPaletteMetrics.placement(in: Self.size, rowHeight: SHDensity.standard.rowHeight).top)
         let settled = try #require(cardRows(recording.settled))
         #expect(abs(settled.lowerBound - top) <= 1 && abs(settled.upperBound - (top + Int(Self.cardHeight) - 1)) <= 1, "\(settled)")
         let growing = recording.inBetween.compactMap(cardRows)
@@ -81,7 +81,7 @@ struct PaletteMotionTests {
     @Test func theResultsListAnimatesWhenItsRowsChange() async throws {
         let model = Model()
         model.open = true
-        let view = Color.white.nwCommandPalette(isPresented: .constant(true)) {
+        let view = Color.white.shCommandPalette(isPresented: .constant(true)) {
             PaletteCard(items: model.items, run: { _ in }, close: {})
         }
         let window = OffscreenWindow(size: Self.size, dark: false, view)

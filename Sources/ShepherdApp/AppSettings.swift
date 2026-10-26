@@ -132,7 +132,7 @@ final class AppSettings {
         static let serviceTier: ServiceTier = .standard
         static let skillsInSlashMenu = true
         static let queueDelivery: NativeQueueMode = .all
-        static let sidebarStyle: NWSidebarStyle = .activity
+        static let sidebarStyle: SHSidebarStyle = .activity
         /// Keep idle threads in the project tree for a week.
         static let sidebarKeepIdleDays = 7
         /// The user's login shell when it is a real executable, else zsh.
@@ -376,13 +376,13 @@ final class AppSettings {
 
     /// Sidebar and menu row height (Compact 22 · Standard 28 · Comfortable 36), before the
     /// density scale.
-    var sidebarRowDensity: NWDensity {
+    var sidebarRowDensity: SHDensity {
         didSet { store.set(sidebarRowDensity.rawValue, forKey: Key.sidebarRowDensity) }
     }
 
     /// Settings ▸ Appearance ▸ Sidebar ▸ Organize by (also View ▸ Organize Sidebar By): Needs you
     /// and Recents, or a folder for each project with its threads inside.
-    var sidebarStyle: NWSidebarStyle {
+    var sidebarStyle: SHSidebarStyle {
         didSet { store.set(sidebarStyle.rawValue, forKey: Key.sidebarStyle) }
     }
 
@@ -557,8 +557,8 @@ final class AppSettings {
         uiTextScale = min(max(textScale == 0 ? 1 : textScale, Self.uiTextScaleRange.lowerBound), Self.uiTextScaleRange.upperBound)
         let width = store.double(forKey: Key.sidebarWidth)
         sidebarWidth = Self.clampSidebarWidth(width == 0 ? Self.defaultSidebarWidth : width)
-        sidebarRowDensity = store.string(forKey: Key.sidebarRowDensity).flatMap(NWDensity.init(rawValue:)) ?? .standard
-        sidebarStyle = store.string(forKey: Key.sidebarStyle).flatMap(NWSidebarStyle.init(rawValue:)) ?? Defaults.sidebarStyle
+        sidebarRowDensity = store.string(forKey: Key.sidebarRowDensity).flatMap(SHDensity.init(rawValue:)) ?? .standard
+        sidebarStyle = store.string(forKey: Key.sidebarStyle).flatMap(SHSidebarStyle.init(rawValue:)) ?? Defaults.sidebarStyle
         sidebarGroupByHost = store.bool(forKey: Key.sidebarGroupByHost)
         let keep = store.object(forKey: Key.sidebarKeepIdleDays) as? Int
         sidebarKeepIdleDays = keep.flatMap { Self.sidebarKeepIdleChoices.contains($0) ? $0 : nil } ?? Defaults.sidebarKeepIdleDays

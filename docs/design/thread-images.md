@@ -9,19 +9,19 @@ Boards: ThreadImagesComposer, ThreadImageOpen, ThreadImagesSent, ThreadImagesRec
 
 Chips above the card with a thumbnail, name, size and ✕, an over-limit image kept red and holding
 Send. Specified under [composer](composer.md) › Images and files. `ComposerImageStrip` draws them
-from `ComposerAttachments`; `NWAttachmentChip(detail:problem:open:remove:)` is the chip.
+from `ComposerAttachments`; `SHAttachmentChip(detail:problem:open:remove:)` is the chip.
 
 ## Viewer (built; the user's floating modal, replacing ThreadImageOpen's full-window layout)
 
-`NWImageViewer` floats over the thread (`ImageViewerOverlay`, state in `ImageViewerState`, one at a time). The user chose this
+`SHImageViewer` floats over the thread (`ImageViewerOverlay`, state in `ImageViewerState`, one at a time). The user chose this
 over ThreadImageOpen's full-window view and over a windowed card (2026-10-17): the thread stays in view, dimmed by `sheetScrim`
 (black at 55%, as other modals), and the picture floats on it.
 
 - **Picture**, centred, at its fitted size and never enlarged, in the window less 64pt all round
-  (`NWImageViewerMetrics.margin`) after the arrows and the pill. Radius 8, a `lineSubtle` line and the popover shadow.
+  (`SHImageViewerMetrics.margin`) after the arrows and the pill. Radius 8, a `lineSubtle` line and the popover shadow.
 - **‹ ›**, with more than one image: 36pt `bgRaised` discs with a `lineSubtle` ring and a 14pt chevron, 16pt either side of the
   picture; the one with nowhere to go is drawn disabled.
-- **Pill**, 12pt under the picture, a 44pt `.nwPopover` capsule: "1 of 2" in mono `textTertiary` (only with more than one image),
+- **Pill**, 12pt under the picture, a 44pt `.shPopover` capsule: "1 of 2" in mono `textTertiary` (only with more than one image),
   then **Copy** (`doc.on.doc`), **Add to message** (`plus`), **Show in Finder** (`folder`) as 28pt ghost icons with 14pt glyphs
   and their names as tooltips, and the 28pt round **Close** (`xmark` 12pt, `lineStrong` ring). The user's call: no name, type,
   resolution or byte size is drawn. VoiceOver still reads the name, its facts and "Sent by you · Esc to close".
@@ -42,7 +42,7 @@ reload, on another Mac, and on a second client. A host without them leaves the "
   (never past its own size), radius 8, a `lineSubtle` line; a `bgSunken` field holds each place while it loads. The
   bubble's own chips go when every image is named. "Sent by you" along the bottom of the viewer.
 - **The summary line is a neutral count: "1 image", "2 images"** (the user approved this in place of boards 79 and 80's "Looked at 2
-  images" and "Made 2 images"). It is the existing activity line with the `photo` glyph (`NWActivityLine.Kind.images`), its label
+  images" and "Made 2 images"). It is the existing activity line with the `photo` glyph (`SHActivityLine.Kind.images`), its label
   `nativeCount(n, "image")` and no meta. It appears under a sent message's bubble (`UserTurn`, counting only images the host named)
   and above an agent's or a tool's pictures (the `images` item). No verb and no file names: pi's saved image block has only `type`,
   `data` and `mimeType`, so neither "Looked at" versus "Made" nor the names in the boards' lines exist in any data the host has. A message
@@ -51,7 +51,7 @@ reload, on another Mac, and on a second client. A host without them leaves the "
   apart, wrapping, under the neutral count.
 - **Source gaps, not approved by the user** (the data does not exist, so they are not drawn; they are not UI mismatches): the file
   names in the boards' summary lines, the agent's caption under each received picture (pi saves no alt text), and the board's web-image
-  chip ("grafana.internal/d/refunds.png · web image · not loaded"). `NWThreadImageChip` can draw that chip, but nothing produces one: no
+  chip ("grafana.internal/d/refunds.png · web image · not loaded"). `SHThreadImageChip` can draw that chip, but nothing produces one: no
   producer parses an agent's prose or a tool result into a web-image reference, and Shepherd never fetches a web image.
 - **Press** a thumbnail to open the viewer on that message's images at that one; ‹ › step through them and each
   is fetched as it is reached (the next one ahead of time).

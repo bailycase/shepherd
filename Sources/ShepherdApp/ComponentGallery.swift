@@ -1,7 +1,7 @@
 import SwiftUI
 import ShepherdUI
 
-/// Every shared Night Watch component in its states, laid out like the Controls and Status
+/// Every shared Shepherd Design component in its states, laid out like the Controls and Status
 /// boards, for checking the library against the spec in both appearances. Debug builds open it
 /// from the View menu (View ▸ Component Gallery).
 struct ComponentGallery: View {
@@ -18,12 +18,12 @@ struct ComponentGallery: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: NW.Space.xxxl) {
-                HStack(alignment: .firstTextBaseline, spacing: NW.Space.xl) {
-                    NWWordmark(size: .large)
-                    Text("Every block is one SwiftUI view in ShepherdUI.").font(.nw(.body)).foregroundStyle(.nw.textSecondary)
+            VStack(alignment: .leading, spacing: SH.Space.xxxl) {
+                HStack(alignment: .firstTextBaseline, spacing: SH.Space.xl) {
+                    SHWordmark(size: .large)
+                    Text("Every block is one SwiftUI view in ShepherdUI.").font(.sh(.body)).foregroundStyle(.sh.textSecondary)
                 }
-                Grid(horizontalSpacing: AppLayout.galleryColumnGap, verticalSpacing: NW.Space.xxxl) {
+                Grid(horizontalSpacing: AppLayout.galleryColumnGap, verticalSpacing: SH.Space.xxxl) {
                     GridRow(alignment: .top) {
                         column("Buttons") { buttons }
                         column("Selection") { selection }
@@ -40,12 +40,12 @@ struct ComponentGallery: View {
             .padding(.horizontal, AppLayout.galleryGutter)
             .padding(.vertical, AppLayout.galleryTop)
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
     }
 
     private func column<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: AppLayout.galleryBlockSpacing) {
-            NWSectionHeader(title)
+            SHSectionHeader(title)
             content()
         }
         .frame(width: AppLayout.galleryColumnWidth, alignment: .topLeading)
@@ -54,119 +54,119 @@ struct ComponentGallery: View {
     private var buttons: some View {
         VStack(alignment: .leading, spacing: AppLayout.galleryItemSpacing) {
             HStack(spacing: AppLayout.galleryItemSpacing) {
-                Button("Launch") {}.buttonStyle(.nw(.primary))
-                Button("Review") {}.buttonStyle(.nw(.secondary))
-                Button("Cancel") {}.buttonStyle(.nw(.ghost))
-                Button("Stop") {}.buttonStyle(.nw(.danger))
-                Button("Delete") {}.buttonStyle(.nw(.dangerFill))
+                Button("Launch") {}.buttonStyle(.sh(.primary))
+                Button("Review") {}.buttonStyle(.sh(.secondary))
+                Button("Cancel") {}.buttonStyle(.sh(.ghost))
+                Button("Stop") {}.buttonStyle(.sh(.danger))
+                Button("Delete") {}.buttonStyle(.sh(.dangerFill))
             }
             HStack(spacing: AppLayout.galleryItemSpacing) {
-                Button("Small") {}.buttonStyle(.nw(.secondary, size: .s))
-                Button("Large") {}.buttonStyle(.nw(.primary, size: .l))
-                Button("Disabled") {}.buttonStyle(.nw(.secondary)).disabled(true)
-                Button("Show all") {}.buttonStyle(.nwLink)
+                Button("Small") {}.buttonStyle(.sh(.secondary, size: .s))
+                Button("Large") {}.buttonStyle(.sh(.primary, size: .l))
+                Button("Disabled") {}.buttonStyle(.sh(.secondary)).disabled(true)
+                Button("Show all") {}.buttonStyle(.shLink)
             }
             HStack(spacing: AppLayout.galleryItemSpacing) {
-                Button {} label: { Label("Fork", systemImage: "arrow.branch") }.buttonStyle(.nw(.secondary))
-                Button {} label: { NWButtonTitle("Land", chord: "⌘↩") }.buttonStyle(.nw(.primary))
+                Button {} label: { Label("Fork", systemImage: "arrow.branch") }.buttonStyle(.sh(.secondary))
+                Button {} label: { SHButtonTitle("Land", chord: "⌘↩") }.buttonStyle(.sh(.primary))
             }
             HStack(spacing: AppLayout.galleryItemSpacing) {
-                Button {} label: { Image(systemName: "sidebar.left") }.buttonStyle(.nwIcon).accessibilityLabel("Sidebar")
-                Button {} label: { Image(systemName: "plus.forwardslash.minus") }.buttonStyle(.nwIcon(isOn: true)).accessibilityLabel("Review")
-                Button {} label: { Image(systemName: "ellipsis") }.buttonStyle(.nwIcon(bordered: true)).accessibilityLabel("Options")
+                Button {} label: { Image(systemName: "sidebar.left") }.buttonStyle(.shIcon).accessibilityLabel("Sidebar")
+                Button {} label: { Image(systemName: "plus.forwardslash.minus") }.buttonStyle(.shIcon(isOn: true)).accessibilityLabel("Review")
+                Button {} label: { Image(systemName: "ellipsis") }.buttonStyle(.shIcon(bordered: true)).accessibilityLabel("Options")
                 Spacer()
-                NWComposerActionButton(.send) {}
-                NWComposerActionButton(.send, enabled: false) {}
-                NWComposerActionButton(.stop) {}
+                SHComposerActionButton(.send) {}
+                SHComposerActionButton(.send, enabled: false) {}
+                SHComposerActionButton(.stop) {}
             }
-            HStack(spacing: NW.Space.s) {
-                Button {} label: { HStack(spacing: NW.Space.s) { Text("/").foregroundStyle(.nw.textTertiary); Text("commands") }.font(.nw(.mono)) }
-                    .buttonStyle(.nwComposerChip())
-                Button {} label: { HStack(spacing: NW.Space.s) { Text("claude-opus").font(.nw(.mono)); NWChipChevron() } }
-                    .buttonStyle(.nwComposerChip(active: true))
-                NWAttachmentChip("screenshot.png") {}
+            HStack(spacing: SH.Space.s) {
+                Button {} label: { HStack(spacing: SH.Space.s) { Text("/").foregroundStyle(.sh.textTertiary); Text("commands") }.font(.sh(.mono)) }
+                    .buttonStyle(.shComposerChip())
+                Button {} label: { HStack(spacing: SH.Space.s) { Text("claude-opus").font(.sh(.mono)); SHChipChevron() } }
+                    .buttonStyle(.shComposerChip(active: true))
+                SHAttachmentChip("screenshot.png") {}
             }
         }
     }
 
     private var selection: some View {
         VStack(alignment: .leading, spacing: AppLayout.galleryBlockSpacing) {
-            NWSegmentedPicker("Source", selection: $segment, options: [("local", "Local"), ("pr", "PR #24")])
-            NWSegmentedPicker("Mode", selection: $segment, options: [("local", "System"), ("pr", "Light"), ("dark", "Dark")], size: .s)
+            SHSegmentedPicker("Source", selection: $segment, options: [("local", "Local"), ("pr", "PR #24")])
+            SHSegmentedPicker("Mode", selection: $segment, options: [("local", "System"), ("pr", "Light"), ("dark", "Dark")], size: .s)
             HStack(spacing: AppLayout.galleryBlockSpacing) {
-                Toggle("On", isOn: $toggle).toggleStyle(.nwSwitch).labelsHidden()
-                Toggle("Off", isOn: $toggleOff).toggleStyle(.nwSwitch).labelsHidden()
-                Toggle("Done when", isOn: $check).toggleStyle(.nwCheckbox)
+                Toggle("On", isOn: $toggle).toggleStyle(.shSwitch).labelsHidden()
+                Toggle("Off", isOn: $toggleOff).toggleStyle(.shSwitch).labelsHidden()
+                Toggle("Done when", isOn: $check).toggleStyle(.shCheckbox)
             }
-            NWRadioGroup("Update channel", selection: $segment, options: [("local", "Stable"), ("pr", "Beta")])
-            HStack(spacing: NW.Space.l) {
-                NWKeycap(keys.display(.newSpace))
-                NWCountBadge(19)
-                NWCountBadge(3, tone: .attention)
-                NWCountBadge(1, tone: .failed)
-                NWTag("prompt")
-                NWTag("claude-sonnet", mono: true)
+            SHRadioGroup("Update channel", selection: $segment, options: [("local", "Stable"), ("pr", "Beta")])
+            HStack(spacing: SH.Space.l) {
+                SHKeycap(keys.display(.newSpace))
+                SHCountBadge(19)
+                SHCountBadge(3, tone: .attention)
+                SHCountBadge(1, tone: .failed)
+                SHTag("prompt")
+                SHTag("claude-sonnet", mono: true)
             }
-            HStack(spacing: NW.Space.l) {
-                NWDiffStat(added: 58, removed: 41)
-                NWInlineCode("Color.nw.lantern")
+            HStack(spacing: SH.Space.l) {
+                SHDiffStat(added: 58, removed: 41)
+                SHInlineCode("Color.sh.lantern")
             }
         }
     }
 
     private var inputs: some View {
-        VStack(alignment: .leading, spacing: NW.Space.l) {
-            TextField("Name this agent", text: $field).textFieldStyle(.nw)
-            TextField("Focused field", text: $field).nwField(focused: true)
-            TextField("Socket", text: .constant("shepherd.sock")).textFieldStyle(.nw(mono: true, error: true))
-                .nwFieldMessage("Socket path already in use")
-            NWSearchField("Search settings", text: $search, shortcut: "⌘F")
-            NWPopupMenu("claude-sonnet", mono: true) { Button("claude-opus") {}; Button("claude-sonnet") {} }
-            NWStepper("Concurrency", value: $stepper, in: 1...16)
-            NWValueSlider("Density", value: $slider, in: 0...1, step: 0.05, neutral: 0.5) { "\(Int($0 * 100))%" }
+        VStack(alignment: .leading, spacing: SH.Space.l) {
+            TextField("Name this agent", text: $field).textFieldStyle(.sh)
+            TextField("Focused field", text: $field).shField(focused: true)
+            TextField("Socket", text: .constant("shepherd.sock")).textFieldStyle(.sh(mono: true, error: true))
+                .shFieldMessage("Socket path already in use")
+            SHSearchField("Search settings", text: $search, shortcut: "⌘F")
+            SHPopupMenu("claude-sonnet", mono: true) { Button("claude-opus") {}; Button("claude-sonnet") {} }
+            SHStepper("Concurrency", value: $stepper, in: 1...16)
+            SHValueSlider("Density", value: $slider, in: 0...1, step: 0.05, neutral: 0.5) { "\(Int($0 * 100))%" }
         }
     }
 
     private var states: some View {
-        VStack(alignment: .leading, spacing: NW.Space.m) {
+        VStack(alignment: .leading, spacing: SH.Space.m) {
             ForEach(AgentState.allCases, id: \.self) { state in
                 HStack(spacing: AppLayout.galleryBlockSpacing) {
-                    NWStatusPill(state)
-                    NWStatusDot(state)
-                    NWStateGlyph(state)
-                    NWBranchGlyph(state)
+                    SHStatusPill(state)
+                    SHStatusDot(state)
+                    SHStateGlyph(state)
+                    SHBranchGlyph(state)
                 }
             }
-            ProgressView(value: 0.62).progressViewStyle(.nwBar).frame(width: AppLayout.galleryBarWidth)
-            NWStepStrip([.done, .done, .running, .attention, .failed, nil]).frame(width: AppLayout.galleryBarWidth)
-            HStack(spacing: NW.Space.l) {
-                ProgressView().progressViewStyle(.nwSpinner)
-                NWSparkline([2, 4, 3, 7, 5, 9, 4, 6, 5, 8])
+            ProgressView(value: 0.62).progressViewStyle(.shBar).frame(width: AppLayout.galleryBarWidth)
+            SHStepStrip([.done, .done, .running, .attention, .failed, nil]).frame(width: AppLayout.galleryBarWidth)
+            HStack(spacing: SH.Space.l) {
+                ProgressView().progressViewStyle(.shSpinner)
+                SHSparkline([2, 4, 3, 7, 5, 9, 4, 6, 5, 8])
             }
         }
     }
 
     private var settingsCard: some View {
-        NWGroupCard {
-            NWCardRow("Mode", description: "System follows your Mac and switches with it.") {
-                NWSegmentedPicker(selection: $segment, options: [("local", "System"), ("pr", "Light"), ("dark", "Dark")])
+        SHGroupCard {
+            SHCardRow("Mode", description: "System follows your Mac and switches with it.") {
+                SHSegmentedPicker(selection: $segment, options: [("local", "System"), ("pr", "Light"), ("dark", "Dark")])
             }
-            NWCardRow("Auto-name agents", description: "Title each agent from its opening prompt.") {
-                Toggle("Auto-name agents", isOn: $toggle).toggleStyle(.nwSwitch).labelsHidden()
+            SHCardRow("Auto-name agents", description: "Title each agent from its opening prompt.") {
+                Toggle("Auto-name agents", isOn: $toggle).toggleStyle(.shSwitch).labelsHidden()
             }
-            NWCardRow("Listener", description: "Serve this Mac to other Shepherds.", problem: "bind failed: Address already in use") {
-                Toggle("Listener", isOn: $toggleOff).toggleStyle(.nwSwitch).labelsHidden()
+            SHCardRow("Listener", description: "Serve this Mac to other Shepherds.", problem: "bind failed: Address already in use") {
+                Toggle("Listener", isOn: $toggleOff).toggleStyle(.shSwitch).labelsHidden()
             }
         }
     }
 
     private var feedback: some View {
         VStack(alignment: .leading, spacing: AppLayout.galleryBlockSpacing) {
-            NWBanner(.failed, title: "Lost connection to the agent process.") {
-                Button("Reconnect") {}.buttonStyle(.nw(.secondary, size: .s))
+            SHBanner(.failed, title: "Lost connection to the agent process.") {
+                Button("Reconnect") {}.buttonStyle(.sh(.secondary, size: .s))
             }
-            NWBanner(.attention, title: "ios asks: keep MobileTokens as an alias?", message: "Migrating touches 31 call sites.")
-            NWEmptyState(Text("New agent in \(Text("~/dev/shepherd").font(.nwMono(AppLayout.emptyThreadPathSize, .medium)))"),
+            SHBanner(.attention, title: "ios asks: keep MobileTokens as an alias?", message: "Migrating touches 31 call sites.")
+            SHEmptyState(Text("New agent in \(Text("~/dev/shepherd").font(.shMono(AppLayout.emptyThreadPathSize, .medium)))"),
                          message: "Describe the task. Drop or paste images to attach them, or type / for commands.", showsMark: false, framed: true)
         }
     }
@@ -174,16 +174,16 @@ struct ComponentGallery: View {
     /// The palette's own components, as the command palette lays them out.
     private var palette: some View {
         VStack(alignment: .leading, spacing: AppLayout.galleryBlockSpacing) {
-            NWSectionHeader("Popover")
-            NWPaletteCard {
-                NWPaletteSearchRow("Search commands, agents, subagents…", text: $search, focus: $paletteFocused, submit: {}) {
+            SHSectionHeader("Popover")
+            SHPaletteCard {
+                SHPaletteSearchRow("Search commands, agents, subagents…", text: $search, focus: $paletteFocused, submit: {}) {
                     EmptyView()
                 }
             } results: {
                 VStack(alignment: .leading, spacing: 0) {
-                    NWPaletteSectionHeader("Commands")
-                    NWPaletteRow("New agent", systemImage: "plus", shortcut: keys.display(.newAgent), highlighted: true) {}
-                    NWPaletteRow("Settings…", systemImage: "gearshape", shortcut: "⌘,") {}
+                    SHPaletteSectionHeader("Commands")
+                    SHPaletteRow("New agent", systemImage: "plus", shortcut: keys.display(.newAgent), highlighted: true) {}
+                    SHPaletteRow("Settings…", systemImage: "gearshape", shortcut: "⌘,") {}
                 }
             }
             .frame(width: AppLayout.paletteWidth)

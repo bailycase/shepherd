@@ -48,9 +48,9 @@ struct CodemodePreviewTests {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(NW.Space.xl)
+            .padding(SH.Space.xl)
             .frame(width: 760, height: 720, alignment: .topLeading)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
     }
 }

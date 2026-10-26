@@ -5,7 +5,7 @@ import SwiftUI
 // Everything here takes its words and state as values: nothing runs git.
 
 /// The boards' own measures for the Git surfaces.
-public enum NWGitMetrics {
+public enum SHGitMetrics {
     // The toolbar chip
     public static let chipHeight: CGFloat = 30
     public static let chipGlyph: CGFloat = 14
@@ -44,36 +44,36 @@ public enum NWGitMetrics {
     public static let toastShadowY: CGFloat = 8
     public static let dismissGlyph: CGFloat = 10
     /// A card's lines on the merge dialog and the chat card.
-    public static let introSpacing = NW.Space.l
+    public static let introSpacing = SH.Space.l
 }
 
-public enum NWGitTone: Sendable, Equatable { case primary, done, running, attention, secondary }
+public enum SHGitTone: Sendable, Equatable { case primary, done, running, attention, secondary }
 
-extension NWGitTone {
+extension SHGitTone {
     @MainActor var color: Color {
         switch self {
-        case .primary: Color.nw.textPrimary
+        case .primary: Color.sh.textPrimary
         case .done: AgentState.done.textColor
         case .running: AgentState.running.textColor
         case .attention: AgentState.attention.textColor
-        case .secondary: Color.nw.textSecondary
+        case .secondary: Color.sh.textSecondary
         }
     }
 }
 
-private typealias M = NWGitMetrics
+private typealias M = SHGitMetrics
 
 // MARK: Chip
 
 /// The design toolbar's Git chip (DesignGitStatus): "Share with Git", "main · Up to date", "main · 3 changes" …
-public struct NWDesignGitChip: View, Equatable {
+public struct SHDesignGitChip: View, Equatable {
     let label: String
-    let tone: NWGitTone
+    let tone: SHGitTone
     let hint: String
     let isOpen: Bool
     let action: () -> Void
 
-    public init(label: String, tone: NWGitTone, hint: String, isOpen: Bool = false, action: @escaping () -> Void) {
+    public init(label: String, tone: SHGitTone, hint: String, isOpen: Bool = false, action: @escaping () -> Void) {
         self.label = label
         self.tone = tone
         self.hint = hint
@@ -86,18 +86,18 @@ public struct NWDesignGitChip: View, Equatable {
     }
 
     public var body: some View {
-        let shape = RoundedRectangle(cornerRadius: NW.Radius.s)
+        let shape = RoundedRectangle(cornerRadius: SH.Radius.s)
         Button(action: action) {
-            HStack(spacing: NW.Space.m) {
-                Image(systemName: NWGlyph.gitBranch.symbolName).font(.system(size: M.chipGlyph, weight: .medium))
-                Text(label).font(.nw(.ui)).lineLimit(1)
+            HStack(spacing: SH.Space.m) {
+                Image(systemName: SHGlyph.gitBranch.symbolName).font(.system(size: M.chipGlyph, weight: .medium))
+                Text(label).font(.sh(.ui)).lineLimit(1)
                 Image(systemName: "chevron.down").font(.system(size: M.chipChevron, weight: .medium))
             }
             .foregroundStyle(tone.color)
-            .padding(.horizontal, NW.Space.l)
+            .padding(.horizontal, SH.Space.l)
             .frame(minHeight: M.chipHeight)
-            .background(isOpen ? Color.nw.bgSelected : Color.nw.bgRaised, in: shape)
-            .nwBorder(Color.nw.lineStrong, in: shape)
+            .background(isOpen ? Color.sh.bgSelected : Color.sh.bgRaised, in: shape)
+            .shBorder(Color.sh.lineStrong, in: shape)
             .contentShape(shape)
         }
         .buttonStyle(.plain)
@@ -117,7 +117,7 @@ private struct GitClose: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: "xmark").font(.system(size: glyph, weight: .medium))
-                .foregroundStyle(Color.nw.textSecondary)
+                .foregroundStyle(Color.sh.textSecondary)
                 .frame(width: M.closeSize, height: M.closeSize)
                 .contentShape(Rectangle())
         }
@@ -138,26 +138,26 @@ private struct GitField: View {
     var submit: () -> Void = {}
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NW.Space.s) {
-            Text(title).font(.nw(.ui))
-            let shape = RoundedRectangle(cornerRadius: NW.Radius.m)
+        VStack(alignment: .leading, spacing: SH.Space.s) {
+            Text(title).font(.sh(.ui))
+            let shape = RoundedRectangle(cornerRadius: SH.Radius.m)
             TextField(placeholder, text: $text)
                 .textFieldStyle(.plain)
-                .font(mono ? .nw(.code) : .nw(.body))
-                .foregroundStyle(Color.nw.textPrimary)
+                .font(mono ? .sh(.code) : .sh(.body))
+                .foregroundStyle(Color.sh.textPrimary)
                 .autocorrectionDisabled()
-                .padding(.horizontal, NW.Space.l)
+                .padding(.horizontal, SH.Space.l)
                 .frame(minHeight: M.fieldHeight)
-                .background(Color.nw.bgSunken, in: shape)
-                .nwBorder(Color.nw.lineStrong, in: shape)
-                // The app's focus ring, for keyboard focus only (as `NWLeadFieldStyle` draws it).
-                .nwFocusRing(radius: NW.Radius.m)
+                .background(Color.sh.bgSunken, in: shape)
+                .shBorder(Color.sh.lineStrong, in: shape)
+                // The app's focus ring, for keyboard focus only (as `SHLeadFieldStyle` draws it).
+                .shFocusRing(radius: SH.Radius.m)
                 .disabled(!enabled)
-                .nwEnabledOpacity(enabled)
+                .shEnabledOpacity(enabled)
                 .onSubmit(submit)
                 .accessibilityLabel(title)
             if let caption {
-                Text(caption).font(.nw(.caption)).foregroundStyle(Color.nw.textSecondary)
+                Text(caption).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -165,17 +165,17 @@ private struct GitField: View {
 }
 
 private struct GitErrorBox: View {
-    let error: NWGitSheetError
+    let error: SHGitSheetError
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NW.Space.xs) {
-            Text(error.title).font(.nw(.title)).foregroundStyle(AgentState.failed.textColor)
-            Text(error.detail).nwText(.caption).foregroundStyle(Color.nw.textSecondary)
+        VStack(alignment: .leading, spacing: SH.Space.xs) {
+            Text(error.title).font(.sh(.title)).foregroundStyle(AgentState.failed.textColor)
+            Text(error.detail).shText(.caption).foregroundStyle(Color.sh.textSecondary)
         }
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(NW.Space.l)
-        .background(AgentState.failed.tint ?? Color.clear, in: RoundedRectangle(cornerRadius: NW.Radius.s))
+        .padding(SH.Space.l)
+        .background(AgentState.failed.tint ?? Color.clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isStaticText)
         // The board's role=alert: VoiceOver reads it as it appears.
@@ -187,11 +187,11 @@ private struct GitErrorBox: View {
 private extension View {
     func gitBox(padding: EdgeInsets) -> some View {
         self.padding(padding).frame(maxWidth: .infinity, alignment: .leading)
-            .nwCard(radius: NW.Radius.m, fill: Color.nw.bgWindow)
+            .shCard(radius: SH.Radius.m, fill: Color.sh.bgWindow)
     }
 }
 
-public struct NWGitSheetError: Equatable, Sendable {
+public struct SHGitSheetError: Equatable, Sendable {
     public var title: String
     public var detail: String
     public init(title: String, detail: String) {
@@ -203,16 +203,16 @@ public struct NWGitSheetError: Equatable, Sendable {
 // MARK: Share sheet
 
 /// Share with Git (Git 1, GitDesignPublish).
-public struct NWGitShareSheet: View {
+public struct SHGitShareSheet: View {
     @Binding var repository: String
     @Binding var message: String
     let boards: Int
-    let error: NWGitSheetError?
+    let error: SHGitSheetError?
     let working: Bool
     let close: () -> Void
     let share: () -> Void
 
-    public init(repository: Binding<String>, message: Binding<String>, boards: Int, error: NWGitSheetError?, working: Bool,
+    public init(repository: Binding<String>, message: Binding<String>, boards: Int, error: SHGitSheetError?, working: Bool,
                 close: @escaping () -> Void, share: @escaping () -> Void) {
         _repository = repository
         _message = message
@@ -229,81 +229,81 @@ public struct NWGitShareSheet: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: NW.Space.l) {
-                Image(systemName: NWGlyph.gitBranch.symbolName).font(.system(size: M.headerGlyph, weight: .medium))
+            HStack(spacing: SH.Space.l) {
+                Image(systemName: SHGlyph.gitBranch.symbolName).font(.system(size: M.headerGlyph, weight: .medium))
                     .accessibilityHidden(true)
-                Text("Share with Git").font(.nw(.title)).accessibilityAddTraits(.isHeader)
-                Spacer(minLength: NW.Space.m)
+                Text("Share with Git").font(.sh(.title)).accessibilityAddTraits(.isHeader)
+                Spacer(minLength: SH.Space.m)
                 GitClose(label: "Close share dialog", glyph: M.closeGlyph, action: close)
             }
-            .padding(.vertical, NW.Space.xl).padding(.horizontal, NW.Space.xxl)
-            .overlay(alignment: .bottom) { NWHairline() }
+            .padding(.vertical, SH.Space.xl).padding(.horizontal, SH.Space.xxl)
+            .overlay(alignment: .bottom) { SHHairline() }
             // Whole when it fits; in a short window (or at a large text size) the middle scrolls
             // between the header and the buttons, which stay in reach.
             ViewThatFits(in: .vertical) {
                 shareBody
                 ScrollView { shareBody }
             }
-            HStack(spacing: NW.Space.m) {
+            HStack(spacing: SH.Space.m) {
                 Spacer(minLength: 0)
-                Button("Cancel", action: close).buttonStyle(.nw(.ghost, size: .l)).keyboardShortcut(.cancelAction)
+                Button("Cancel", action: close).buttonStyle(.sh(.ghost, size: .l)).keyboardShortcut(.cancelAction)
                 Button(working ? "Sharing…" : "Create commit & push", action: share)
-                    .buttonStyle(.nw(.primary, size: .l)).keyboardShortcut(.defaultAction).disabled(!canShare)
+                    .buttonStyle(.sh(.primary, size: .l)).keyboardShortcut(.defaultAction).disabled(!canShare)
             }
-            .padding(.vertical, NW.Space.xl).padding(.horizontal, NW.Space.xxl)
-            .overlay(alignment: .top) { NWHairline() }
+            .padding(.vertical, SH.Space.xl).padding(.horizontal, SH.Space.xxl)
+            .overlay(alignment: .top) { SHHairline() }
         }
         .frame(width: M.shareWidth)
-        .nwPopover(radius: NW.Radius.l)
+        .shPopover(radius: SH.Radius.l)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Share with Git")
         .accessibilityAddTraits(.isModal)
     }
 
     private var shareBody: some View {
-            VStack(alignment: .leading, spacing: NW.Space.xl) {
+            VStack(alignment: .leading, spacing: SH.Space.xl) {
                 Text("Share this design through a Git repository. Your coworkers can open the same canvas in Shepherd. Shepherd manages the local copy for everyone.")
-                    .nwText(.body).foregroundStyle(Color.nw.textSecondary)
+                    .shText(.body).foregroundStyle(Color.sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 GitField(title: "Repository URL", placeholder: "SSH or HTTPS Git URL", text: $repository, mono: true,
                          caption: "Use an empty repository you already have access to, on any Git host.", enabled: !working, submit: submitIfValid)
                 included
                 GitField(title: "First commit", placeholder: "Commit message", text: $message, enabled: !working, submit: submitIfValid)
                 Text("Your design stays in Shepherd's storage. Changes save locally and are shared only when you commit and push.")
-                    .nwText(.caption).foregroundStyle(Color.nw.textSecondary)
+                    .shText(.caption).foregroundStyle(Color.sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 if let error { GitErrorBox(error: error) }
             }
-            .padding(NW.Space.xxl)
+            .padding(SH.Space.xxl)
     }
 
     private func submitIfValid() { if canShare { share() } }
 
     private var included: some View {
-        VStack(alignment: .leading, spacing: NW.Space.l) {
-            Text("What goes in the repository").font(.nw(.headline)).accessibilityAddTraits(.isHeader)
+        VStack(alignment: .leading, spacing: SH.Space.l) {
+            Text("What goes in the repository").font(.sh(.headline)).accessibilityAddTraits(.isHeader)
             includedRow("Canvas, pages, notes and every board", trailing: boards == 1 ? "1 board" : "\(boards) boards")
             includedRow("Shared pieces, design system and local assets", trailing: nil)
             includedRow("Pinned comments and replies", trailing: nil)
             Text("Agent chat, credentials, caches and your local viewing state stay on this Mac. Review the design files for private content before sharing.")
-                .nwText(.caption).foregroundStyle(Color.nw.textSecondary)
+                .shText(.caption).foregroundStyle(Color.sh.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, NW.Space.l)
+                .padding(.top, SH.Space.l)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .overlay(alignment: .top) { NWHairline() }
+                .overlay(alignment: .top) { SHHairline() }
         }
-        .gitBox(padding: EdgeInsets(top: NW.Space.xl, leading: NW.Space.xl, bottom: NW.Space.xl, trailing: NW.Space.xl))
+        .gitBox(padding: EdgeInsets(top: SH.Space.xl, leading: SH.Space.xl, bottom: SH.Space.xl, trailing: SH.Space.xl))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("What will be shared")
     }
 
     private func includedRow(_ text: String, trailing: String?) -> some View {
-        HStack(spacing: NW.Space.m) {
+        HStack(spacing: SH.Space.m) {
             Image(systemName: "checkmark").font(.system(size: M.tickGlyph, weight: .semibold))
                 .foregroundStyle(AgentState.done.color).accessibilityHidden(true)
-            Text(text).nwText(.body).fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: NW.Space.m)
-            if let trailing { Text(trailing).font(.nw(.mono)).foregroundStyle(Color.nw.textSecondary) }
+            Text(text).shText(.body).fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: SH.Space.m)
+            if let trailing { Text(trailing).font(.sh(.mono)).foregroundStyle(Color.sh.textSecondary) }
         }
     }
 }
@@ -311,14 +311,14 @@ public struct NWGitShareSheet: View {
 // MARK: Open sheet
 
 /// Open from Git (Git 2, GitDesignOpen).
-public struct NWGitOpenSheet: View {
+public struct SHGitOpenSheet: View {
     @Binding var repository: String
-    let error: NWGitSheetError?
+    let error: SHGitSheetError?
     let working: Bool
     let close: () -> Void
     let clone: () -> Void
 
-    public init(repository: Binding<String>, error: NWGitSheetError?, working: Bool, close: @escaping () -> Void, clone: @escaping () -> Void) {
+    public init(repository: Binding<String>, error: SHGitSheetError?, working: Bool, close: @escaping () -> Void, clone: @escaping () -> Void) {
         _repository = repository
         self.error = error
         self.working = working
@@ -330,32 +330,32 @@ public struct NWGitOpenSheet: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: NW.Space.xl) {
+            VStack(alignment: .leading, spacing: SH.Space.xl) {
                 HStack {
-                    Text("Open from Git").font(.nw(.title)).accessibilityAddTraits(.isHeader)
-                    Spacer(minLength: NW.Space.m)
+                    Text("Open from Git").font(.sh(.title)).accessibilityAddTraits(.isHeader)
+                    Spacer(minLength: SH.Space.m)
                     GitClose(label: "Close dialog", glyph: M.openCloseGlyph, action: close)
                 }
                 Text("Open a shared design from its repository URL. Shepherd clones it into its own storage and adds it to Designs. Opening does not start an agent.")
-                    .nwText(.body).foregroundStyle(Color.nw.textSecondary)
+                    .shText(.body).foregroundStyle(Color.sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 GitField(title: "Repository URL", placeholder: "SSH or HTTPS Git URL", text: $repository, mono: true,
                          caption: "Uses your configured Git credentials. No folder setup needed.", enabled: !working,
                          submit: { if canClone { clone() } })
                 if let error { GitErrorBox(error: error) }
             }
-            .padding(NW.Space.xxl)
-            HStack(spacing: NW.Space.m) {
+            .padding(SH.Space.xxl)
+            HStack(spacing: SH.Space.m) {
                 Spacer(minLength: 0)
-                Button("Cancel", action: close).buttonStyle(.nw(.secondary, size: .l)).keyboardShortcut(.cancelAction)
+                Button("Cancel", action: close).buttonStyle(.sh(.secondary, size: .l)).keyboardShortcut(.cancelAction)
                 Button(working ? "Cloning…" : error != nil ? "Retry clone" : "Clone & open", action: clone)
-                    .buttonStyle(.nw(.primary, size: .l)).keyboardShortcut(.defaultAction).disabled(!canClone)
+                    .buttonStyle(.sh(.primary, size: .l)).keyboardShortcut(.defaultAction).disabled(!canClone)
             }
-            .padding(.vertical, NW.Space.xl).padding(.horizontal, NW.Space.xxl)
-            .overlay(alignment: .top) { NWHairline() }
+            .padding(.vertical, SH.Space.xl).padding(.horizontal, SH.Space.xxl)
+            .overlay(alignment: .top) { SHHairline() }
         }
         .frame(width: M.openWidth)
-        .nwPopover(radius: NW.Radius.l)
+        .shPopover(radius: SH.Radius.l)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Open from Git")
         .accessibilityAddTraits(.isModal)
@@ -364,7 +364,7 @@ public struct NWGitOpenSheet: View {
 
 // MARK: Panel
 
-public struct NWGitPanelState: Equatable, Sendable {
+public struct SHGitPanelState: Equatable, Sendable {
     public struct File: Equatable, Sendable, Identifiable {
         public var id: String
         public var letter: String
@@ -394,8 +394,8 @@ public struct NWGitPanelState: Equatable, Sendable {
     public struct Notice: Equatable, Sendable {
         public var title: String
         public var text: String
-        public var tone: NWGitTone
-        public init(title: String, text: String, tone: NWGitTone) {
+        public var tone: SHGitTone
+        public init(title: String, text: String, tone: SHGitTone) {
             self.title = title
             self.text = text
             self.tone = tone
@@ -442,7 +442,7 @@ public struct NWGitPanelState: Equatable, Sendable {
     public var branch: String
     public var repository: String
     public var sync: String
-    public var syncTone: NWGitTone
+    public var syncTone: SHGitTone
     public var canPull: Bool
     public var pullHint: String?
     public var notice: Notice?
@@ -453,7 +453,7 @@ public struct NWGitPanelState: Equatable, Sendable {
     /// A git action is running: every button is disabled.
     public var working: Bool
 
-    public init(branch: String, repository: String, sync: String, syncTone: NWGitTone, canPull: Bool, pullHint: String?, notice: Notice?,
+    public init(branch: String, repository: String, sync: String, syncTone: SHGitTone, canPull: Bool, pullHint: String?, notice: Notice?,
                 changes: Changes?, incoming: Incoming?, pushTitle: String?, working: Bool) {
         self.branch = branch
         self.repository = repository
@@ -470,8 +470,8 @@ public struct NWGitPanelState: Equatable, Sendable {
 }
 
 /// The Git panel under the chip (GitDesignChanges; Git 4 and, in merge mode, Git 7).
-public struct NWGitPanel: View {
-    let state: NWGitPanelState
+public struct SHGitPanel: View {
+    let state: SHGitPanelState
     @Binding var message: String
     let maxHeight: CGFloat
     let close: () -> Void
@@ -481,7 +481,7 @@ public struct NWGitPanel: View {
     let push: () -> Void
     let copyURL: () -> Void
 
-    public init(state: NWGitPanelState, message: Binding<String>, maxHeight: CGFloat = .infinity, close: @escaping () -> Void,
+    public init(state: SHGitPanelState, message: Binding<String>, maxHeight: CGFloat = .infinity, close: @escaping () -> Void,
                 pull: @escaping () -> Void, select: @escaping (String) -> Void, commit: @escaping (_ push: Bool) -> Void,
                 push: @escaping () -> Void, copyURL: @escaping () -> Void) {
         self.state = state
@@ -511,7 +511,7 @@ public struct NWGitPanel: View {
             }
         }
         .frame(width: M.panelWidth)
-        .nwPopover(radius: NW.Radius.l)
+        .shPopover(radius: SH.Radius.l)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Git changes for this design")
     }
@@ -529,34 +529,34 @@ public struct NWGitPanel: View {
     }
 
     private var header: some View {
-        HStack(spacing: NW.Space.m) {
-            Image(systemName: NWGlyph.gitBranch.symbolName).font(.system(size: M.panelGlyph, weight: .medium))
-                .foregroundStyle(Color.nw.textSecondary).accessibilityHidden(true)
-            Text(state.branch).font(.nw(.code)).fontWeight(.semibold).lineLimit(1)
-            Text(state.repository).font(.nw(.caption)).foregroundStyle(Color.nw.textSecondary).lineLimit(1)
-            Spacer(minLength: NW.Space.m)
+        HStack(spacing: SH.Space.m) {
+            Image(systemName: SHGlyph.gitBranch.symbolName).font(.system(size: M.panelGlyph, weight: .medium))
+                .foregroundStyle(Color.sh.textSecondary).accessibilityHidden(true)
+            Text(state.branch).font(.sh(.code)).fontWeight(.semibold).lineLimit(1)
+            Text(state.repository).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
+            Spacer(minLength: SH.Space.m)
             GitClose(label: "Close Git changes", glyph: M.closeGlyph, action: close)
         }
-        .padding(NW.Space.xl)
-        .overlay(alignment: .bottom) { NWHairline() }
+        .padding(SH.Space.xl)
+        .overlay(alignment: .bottom) { SHHairline() }
     }
 
     private var content: some View {
-        VStack(alignment: .leading, spacing: NW.Space.xl) {
-            HStack(spacing: NW.Space.l) {
-                Text(state.sync).font(.nw(.ui)).foregroundStyle(state.syncTone.color).fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: SH.Space.xl) {
+            HStack(spacing: SH.Space.l) {
+                Text(state.sync).font(.sh(.ui)).foregroundStyle(state.syncTone.color).fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
-                Button("Pull", action: pull).buttonStyle(.nw(.secondary, size: .m))
+                Button("Pull", action: pull).buttonStyle(.sh(.secondary, size: .m))
                     .disabled(!state.canPull || state.working)
                     .help(state.pullHint ?? "")
             }
             if let notice = state.notice {
-                VStack(alignment: .leading, spacing: NW.Space.s) {
-                    Text(notice.title).font(.nw(.ui)).foregroundStyle(notice.tone.color)
-                    Text(notice.text).nwText(.caption).foregroundStyle(Color.nw.textSecondary)
+                VStack(alignment: .leading, spacing: SH.Space.s) {
+                    Text(notice.title).font(.sh(.ui)).foregroundStyle(notice.tone.color)
+                    Text(notice.text).shText(.caption).foregroundStyle(Color.sh.textSecondary)
                 }
                 .fixedSize(horizontal: false, vertical: true)
-                .gitBox(padding: EdgeInsets(top: NW.Space.l, leading: NW.Space.l, bottom: NW.Space.l, trailing: NW.Space.l))
+                .gitBox(padding: EdgeInsets(top: SH.Space.l, leading: SH.Space.l, bottom: SH.Space.l, trailing: SH.Space.l))
                 .accessibilityElement(children: .combine)
             }
             if let changes = state.changes { changesSection(changes) }
@@ -564,81 +564,81 @@ public struct NWGitPanel: View {
             if let pushTitle = state.pushTitle {
                 HStack {
                     Spacer(minLength: 0)
-                    Button(pushTitle, action: push).buttonStyle(.nw(.primary, size: .l)).disabled(state.working)
+                    Button(pushTitle, action: push).buttonStyle(.sh(.primary, size: .l)).disabled(state.working)
                 }
             }
             Text("Git only shares what you commit and push. Shepherd never pushes automatically.")
-                .nwText(.caption).foregroundStyle(Color.nw.textSecondary).fixedSize(horizontal: false, vertical: true)
+                .shText(.caption).foregroundStyle(Color.sh.textSecondary).fixedSize(horizontal: false, vertical: true)
         }
-        .padding(NW.Space.xl)
+        .padding(SH.Space.xl)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var footer: some View {
-        HStack(spacing: NW.Space.m) {
-            Button("Copy repository URL", action: copyURL).buttonStyle(.nw(.ghost, size: .m))
+        HStack(spacing: SH.Space.m) {
+            Button("Copy repository URL", action: copyURL).buttonStyle(.sh(.ghost, size: .m))
             Spacer(minLength: 0)
-            Text("Managed by Shepherd").font(.nw(.caption)).foregroundStyle(Color.nw.textSecondary)
+            Text("Managed by Shepherd").font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
         }
-        .padding(.vertical, NW.Space.l).padding(.horizontal, NW.Space.xl)
-        .overlay(alignment: .top) { NWHairline() }
+        .padding(.vertical, SH.Space.l).padding(.horizontal, SH.Space.xl)
+        .overlay(alignment: .top) { SHHairline() }
     }
 
-    private func changesSection(_ changes: NWGitPanelState.Changes) -> some View {
-        VStack(alignment: .leading, spacing: NW.Space.xl) {
-            VStack(alignment: .leading, spacing: NW.Space.m) {
+    private func changesSection(_ changes: SHGitPanelState.Changes) -> some View {
+        VStack(alignment: .leading, spacing: SH.Space.xl) {
+            VStack(alignment: .leading, spacing: SH.Space.m) {
                 HStack {
-                    Text(changes.title).font(.nw(.headline)).accessibilityAddTraits(.isHeader)
-                    Spacer(minLength: NW.Space.m)
+                    Text(changes.title).font(.sh(.headline)).accessibilityAddTraits(.isHeader)
+                    Spacer(minLength: SH.Space.m)
                     Text(changes.files.count == 1 ? "1 file" : "\(changes.files.count) files")
-                        .font(.nw(.mono)).foregroundStyle(Color.nw.textSecondary)
+                        .font(.sh(.mono)).foregroundStyle(Color.sh.textSecondary)
                 }
-                Text(changes.note).nwText(.caption).foregroundStyle(Color.nw.textSecondary).fixedSize(horizontal: false, vertical: true)
+                Text(changes.note).shText(.caption).foregroundStyle(Color.sh.textSecondary).fixedSize(horizontal: false, vertical: true)
                 VStack(spacing: 0) {
                     ForEach(Array(changes.files.enumerated()), id: \.element.id) { index, file in
-                        if index > 0 { NWHairline() }
+                        if index > 0 { SHHairline() }
                         fileRow(file, selected: file.id == changes.selected)
                     }
                 }
-                .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
-                .nwCard(radius: NW.Radius.m, fill: Color.nw.bgWindow)
+                .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
+                .shCard(radius: SH.Radius.m, fill: Color.sh.bgWindow)
             }
             if let preview = changes.preview { previewBox(preview) }
-            VStack(alignment: .leading, spacing: NW.Space.s) {
-                Text("Commit message").font(.nw(.ui))
-                let shape = RoundedRectangle(cornerRadius: NW.Radius.m)
+            VStack(alignment: .leading, spacing: SH.Space.s) {
+                Text("Commit message").font(.sh(.ui))
+                let shape = RoundedRectangle(cornerRadius: SH.Radius.m)
                 TextField("", text: $message, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .font(.nw(.body))
+                    .font(.sh(.body))
                     .lineLimit(M.commitLines, reservesSpace: true)
-                    .padding(NW.Space.l)
+                    .padding(SH.Space.l)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
-                    .background(Color.nw.bgSunken, in: shape)
-                    .nwBorder(Color.nw.lineStrong, in: shape)
+                    .background(Color.sh.bgSunken, in: shape)
+                    .shBorder(Color.sh.lineStrong, in: shape)
                     .disabled(state.working)
                     .accessibilityLabel("Commit message")
             }
-            HStack(spacing: NW.Space.m) {
+            HStack(spacing: SH.Space.m) {
                 Spacer(minLength: 0)
-                Button(changes.localTitle) { commit(false) }.buttonStyle(.nw(.secondary, size: .l))
+                Button(changes.localTitle) { commit(false) }.buttonStyle(.sh(.secondary, size: .l))
                     .disabled(!changes.canCommit || state.working)
-                Button(changes.pushTitle) { commit(true) }.buttonStyle(.nw(.primary, size: .l))
+                Button(changes.pushTitle) { commit(true) }.buttonStyle(.sh(.primary, size: .l))
                     .disabled(!changes.canPush || state.working)
             }
         }
     }
 
-    private func fileRow(_ file: NWGitPanelState.File, selected: Bool) -> some View {
+    private func fileRow(_ file: SHGitPanelState.File, selected: Bool) -> some View {
         Button { select(file.id) } label: {
-            HStack(spacing: NW.Space.l) {
-                Text(file.letter).font(.nw(.micro)).foregroundStyle(AgentState.attention.textColor)
-                Text(file.id).font(.nw(.code)).foregroundStyle(Color.nw.textPrimary).lineLimit(1).truncationMode(.middle)
-                Spacer(minLength: NW.Space.m)
-                Text(file.label).font(.nw(.caption)).foregroundStyle(Color.nw.textSecondary).lineLimit(1)
+            HStack(spacing: SH.Space.l) {
+                Text(file.letter).font(.sh(.micro)).foregroundStyle(AgentState.attention.textColor)
+                Text(file.id).font(.sh(.code)).foregroundStyle(Color.sh.textPrimary).lineLimit(1).truncationMode(.middle)
+                Spacer(minLength: SH.Space.m)
+                Text(file.label).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
             }
-            .padding(.horizontal, NW.Space.l)
+            .padding(.horizontal, SH.Space.l)
             .frame(maxWidth: .infinity, minHeight: M.rowHeight, alignment: .leading)
-            .background(selected ? Color.nw.bgSelected : Color.clear)
+            .background(selected ? Color.sh.bgSelected : Color.clear)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -646,57 +646,57 @@ public struct NWGitPanel: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    private func previewBox(_ preview: NWGitPanelState.Preview) -> some View {
+    private func previewBox(_ preview: SHGitPanelState.Preview) -> some View {
         VStack(spacing: 0) {
-            Text(preview.title).font(.nw(.caption)).foregroundStyle(Color.nw.textSecondary)
-                .padding(.vertical, NW.Space.m).padding(.horizontal, NW.Space.l)
+            Text(preview.title).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+                .padding(.vertical, SH.Space.m).padding(.horizontal, SH.Space.l)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .overlay(alignment: .bottom) { NWHairline() }
+                .overlay(alignment: .bottom) { SHHairline() }
             HStack(spacing: 0) {
                 previewColumn(preview.beforeTitle, preview.before, fill: nil)
-                    .overlay(alignment: .trailing) { NWHairline(.vertical) }
+                    .overlay(alignment: .trailing) { SHHairline(.vertical) }
                 previewColumn(preview.afterTitle, preview.after, fill: AgentState.done.tint)
             }
             .fixedSize(horizontal: false, vertical: true)
         }
-        .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
-        .nwCard(radius: NW.Radius.m, fill: Color.nw.bgWindow)
+        .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
+        .shCard(radius: SH.Radius.m, fill: Color.sh.bgWindow)
         // A named group whose texts (committed and working) VoiceOver still reads.
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Selected change preview")
     }
 
     private func previewColumn(_ title: String, _ text: String, fill: Color?) -> some View {
-        VStack(alignment: .leading, spacing: NW.Space.m) {
-            Text(title).font(.nw(.caption)).foregroundStyle(Color.nw.textSecondary)
-            Text(text).nwText(.body)
+        VStack(alignment: .leading, spacing: SH.Space.m) {
+            Text(title).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+            Text(text).shText(.body)
         }
         .fixedSize(horizontal: false, vertical: true)
-        .padding(NW.Space.l)
+        .padding(SH.Space.l)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(fill ?? Color.clear)
     }
 
-    private func incomingSection(_ incoming: NWGitPanelState.Incoming) -> some View {
-        VStack(alignment: .leading, spacing: NW.Space.l) {
-            Text("Incoming update").font(.nw(.headline)).accessibilityAddTraits(.isHeader)
-            VStack(alignment: .leading, spacing: NW.Space.m) {
-                Text(incoming.subject).nwText(.body)
-                (Text("\(incoming.author) · ") + Text(incoming.hash).font(.nw(.mono)))
-                    .font(.nw(.caption)).foregroundStyle(Color.nw.textSecondary)
-                ForEach(incoming.files, id: \.self) { Text($0).font(.nw(.mono)).foregroundStyle(Color.nw.textSecondary) }
+    private func incomingSection(_ incoming: SHGitPanelState.Incoming) -> some View {
+        VStack(alignment: .leading, spacing: SH.Space.l) {
+            Text("Incoming update").font(.sh(.headline)).accessibilityAddTraits(.isHeader)
+            VStack(alignment: .leading, spacing: SH.Space.m) {
+                Text(incoming.subject).shText(.body)
+                (Text("\(incoming.author) · ") + Text(incoming.hash).font(.sh(.mono)))
+                    .font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+                ForEach(incoming.files, id: \.self) { Text($0).font(.sh(.mono)).foregroundStyle(Color.sh.textSecondary) }
             }
             .fixedSize(horizontal: false, vertical: true)
-            .gitBox(padding: EdgeInsets(top: NW.Space.xl, leading: NW.Space.xl, bottom: NW.Space.xl, trailing: NW.Space.xl))
+            .gitBox(padding: EdgeInsets(top: SH.Space.xl, leading: SH.Space.xl, bottom: SH.Space.xl, trailing: SH.Space.xl))
             Text("Pull updates the design files and reloads the canvas. Your agent chat stays on this Mac.")
-                .nwText(.caption).foregroundStyle(Color.nw.textSecondary).fixedSize(horizontal: false, vertical: true)
+                .shText(.caption).foregroundStyle(Color.sh.textSecondary).fixedSize(horizontal: false, vertical: true)
         }
     }
 }
 
 // MARK: Merge dialog
 
-public struct NWGitMergeCommit: Equatable, Sendable {
+public struct SHGitMergeCommit: Equatable, Sendable {
     public var subject: String
     public var author: String
     public var hash: String
@@ -710,11 +710,11 @@ public struct NWGitMergeCommit: Equatable, Sendable {
 }
 
 /// Pull needs a merge (Git 5, GitDesignConflict's dialog).
-public struct NWGitMergeDialog: View {
+public struct SHGitMergeDialog: View {
     let branch: String
     let upstream: String
-    let local: NWGitMergeCommit
-    let incoming: NWGitMergeCommit
+    let local: SHGitMergeCommit
+    let incoming: SHGitMergeCommit
     let keepLocal: () -> Void
     let resolve: () -> Void
     /// Why the last attempt didn't start or finish, shown above the buttons.
@@ -723,7 +723,7 @@ public struct NWGitMergeDialog: View {
     /// out of a merge the user won't resolve now, offered once it is waiting.
     let drop: (() -> Void)?
 
-    public init(branch: String, upstream: String, local: NWGitMergeCommit, incoming: NWGitMergeCommit, failure: String? = nil,
+    public init(branch: String, upstream: String, local: SHGitMergeCommit, incoming: SHGitMergeCommit, failure: String? = nil,
                 keepLocal: @escaping () -> Void, resolve: @escaping () -> Void, drop: (() -> Void)? = nil) {
         self.branch = branch
         self.upstream = upstream
@@ -735,72 +735,72 @@ public struct NWGitMergeDialog: View {
         self.drop = drop
     }
 
-    private func mono(_ text: String) -> Text { Text(text).font(.nwMono(M.bodyMono)) }
+    private func mono(_ text: String) -> Text { Text(text).font(.shMono(M.bodyMono)) }
 
     public var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: NW.Space.l) {
+            HStack(spacing: SH.Space.l) {
                 Image(systemName: "exclamationmark.triangle").font(.system(size: M.headerGlyph, weight: .medium))
                     .foregroundStyle(AgentState.attention.textColor).accessibilityHidden(true)
-                Text("Pull needs a merge").font(.nw(.title)).accessibilityAddTraits(.isHeader)
+                Text("Pull needs a merge").font(.sh(.title)).accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 0)
             }
-            .padding(.vertical, NW.Space.xl).padding(.horizontal, NW.Space.xxl)
-            .overlay(alignment: .bottom) { NWHairline() }
-            VStack(alignment: .leading, spacing: NW.Space.xl) {
+            .padding(.vertical, SH.Space.xl).padding(.horizontal, SH.Space.xxl)
+            .overlay(alignment: .bottom) { SHHairline() }
+            VStack(alignment: .leading, spacing: SH.Space.xl) {
                 (Text("Your ") + mono(branch) + Text(" and ") + mono(upstream)
                     + Text(" each have a new commit. Shepherd has not changed your design files."))
-                    .nwText(.body).fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: NW.Space.l) {
+                    .shText(.body).fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: SH.Space.l) {
                     commitCard("Your local commit", local)
                     commitCard("Incoming commit", incoming)
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 Text("Let your design agent combine both versions and check the result. Shepherd manages the merge without moving your design.")
-                    .nwText(.body).foregroundStyle(Color.nw.textSecondary).fixedSize(horizontal: false, vertical: true)
+                    .shText(.body).foregroundStyle(Color.sh.textSecondary).fixedSize(horizontal: false, vertical: true)
                 Text("The agent uses a merge copy and your current model and limits. Both original commits stay available. No commit or push without you.")
-                    .nwText(.caption).foregroundStyle(Color.nw.textSecondary).fixedSize(horizontal: false, vertical: true)
-                    .gitBox(padding: EdgeInsets(top: NW.Space.l, leading: NW.Space.xl, bottom: NW.Space.l, trailing: NW.Space.xl))
+                    .shText(.caption).foregroundStyle(Color.sh.textSecondary).fixedSize(horizontal: false, vertical: true)
+                    .gitBox(padding: EdgeInsets(top: SH.Space.l, leading: SH.Space.xl, bottom: SH.Space.l, trailing: SH.Space.xl))
                 if let failure {
-                    GitErrorBox(error: NWGitSheetError(title: "Couldn't start the merge", detail: failure))
+                    GitErrorBox(error: SHGitSheetError(title: "Couldn't start the merge", detail: failure))
                 }
             }
-            .padding(NW.Space.xxl)
-            HStack(spacing: NW.Space.m) {
-                Button("Keep working locally", action: keepLocal).buttonStyle(.nw(.ghost, size: .l)).keyboardShortcut(.cancelAction)
+            .padding(SH.Space.xxl)
+            HStack(spacing: SH.Space.m) {
+                Button("Keep working locally", action: keepLocal).buttonStyle(.sh(.ghost, size: .l)).keyboardShortcut(.cancelAction)
                 if let drop {
-                    Button("Drop merge", action: drop).buttonStyle(.nw(.ghost, size: .l))
+                    Button("Drop merge", action: drop).buttonStyle(.sh(.ghost, size: .l))
                         .help("Stop waiting on this merge. Both commits stay; pull again later.")
                 }
-                Spacer(minLength: NW.Space.m)
+                Spacer(minLength: SH.Space.m)
                 Button("Resolve with agent", systemImage: "pencil.tip", action: resolve)
-                    .buttonStyle(.nw(.primary, size: .l)).keyboardShortcut(.defaultAction)
+                    .buttonStyle(.sh(.primary, size: .l)).keyboardShortcut(.defaultAction)
             }
-            .padding(.vertical, NW.Space.xl).padding(.horizontal, NW.Space.xxl)
-            .overlay(alignment: .top) { NWHairline() }
+            .padding(.vertical, SH.Space.xl).padding(.horizontal, SH.Space.xxl)
+            .overlay(alignment: .top) { SHHairline() }
         }
         .frame(width: M.dialogWidth)
-        .nwPopover(radius: NW.Radius.l)
+        .shPopover(radius: SH.Radius.l)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Pull needs a merge")
         .accessibilityAddTraits(.isModal)
     }
 
-    private func commitCard(_ title: String, _ commit: NWGitMergeCommit) -> some View {
-        VStack(alignment: .leading, spacing: NW.Space.m) {
-            Text(title).font(.nw(.headline))
-            Text(commit.subject).nwText(.body)
-            (Text("\(commit.author) · ") + Text(commit.hash).font(.nw(.mono)))
-                .font(.nw(.caption)).foregroundStyle(Color.nw.textSecondary)
+    private func commitCard(_ title: String, _ commit: SHGitMergeCommit) -> some View {
+        VStack(alignment: .leading, spacing: SH.Space.m) {
+            Text(title).font(.sh(.headline))
+            Text(commit.subject).shText(.body)
+            (Text("\(commit.author) · ") + Text(commit.hash).font(.sh(.mono)))
+                .font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
             VStack(alignment: .leading, spacing: 0) {
-                ForEach(commit.files, id: \.self) { Text($0).font(.nw(.mono)).foregroundStyle(Color.nw.textSecondary) }
+                ForEach(commit.files, id: \.self) { Text($0).font(.sh(.mono)).foregroundStyle(Color.sh.textSecondary) }
             }
-            .padding(.top, NW.Space.m)
+            .padding(.top, SH.Space.m)
         }
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(NW.Space.xl)
-        .nwCard(radius: NW.Radius.m, fill: Color.nw.bgWindow)
+        .padding(SH.Space.xl)
+        .shCard(radius: SH.Radius.m, fill: Color.sh.bgWindow)
         .accessibilityElement(children: .combine)
     }
 }
@@ -808,15 +808,15 @@ public struct NWGitMergeDialog: View {
 // MARK: Chat
 
 /// The merge's phase in the chat. Stopped carries why when Shepherd stopped it (its time limit).
-public enum NWGitMergePhase: Equatable, Sendable { case running, ready, stopped(String? = nil), failed(String?) }
+public enum SHGitMergePhase: Equatable, Sendable { case running, ready, stopped(String? = nil), failed(String?) }
 
 /// The merge's card in the design chat (Git 6/7; GitDesignShell's agentCopy).
-public struct NWGitMergeCard: View, Equatable {
-    let phase: NWGitMergePhase
+public struct SHGitMergeCard: View, Equatable {
+    let phase: SHGitMergePhase
     let review: (() -> Void)?
     let retry: (() -> Void)?
 
-    public init(phase: NWGitMergePhase, review: (() -> Void)? = nil, retry: (() -> Void)? = nil) {
+    public init(phase: SHGitMergePhase, review: (() -> Void)? = nil, retry: (() -> Void)? = nil) {
         self.phase = phase
         self.review = review
         self.retry = retry
@@ -852,14 +852,14 @@ public struct NWGitMergeCard: View, Equatable {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: M.introSpacing) {
-            Text(title).font(.nw(.title)).accessibilityAddTraits(.isHeader)
-            if let line { Text(line).nwText(.body).foregroundStyle(Color.nw.textSecondary).fixedSize(horizontal: false, vertical: true) }
-            Text(note).nwText(.caption).foregroundStyle(Color.nw.textSecondary).fixedSize(horizontal: false, vertical: true)
+            Text(title).font(.sh(.title)).accessibilityAddTraits(.isHeader)
+            if let line { Text(line).shText(.body).foregroundStyle(Color.sh.textSecondary).fixedSize(horizontal: false, vertical: true) }
+            Text(note).shText(.caption).foregroundStyle(Color.sh.textSecondary).fixedSize(horizontal: false, vertical: true)
             switch phase {
             case .ready:
-                if let review { Button("Review merge", action: review).buttonStyle(.nw(.secondary, size: .l)) }
+                if let review { Button("Review merge", action: review).buttonStyle(.sh(.secondary, size: .l)) }
             case .stopped, .failed:
-                if let retry { Button("Try again with agent", action: retry).buttonStyle(.nw(.secondary, size: .l)) }
+                if let retry { Button("Try again with agent", action: retry).buttonStyle(.sh(.secondary, size: .l)) }
             case .running:
                 EmptyView()
             }
@@ -873,19 +873,19 @@ public struct NWGitMergeCard: View, Equatable {
 }
 
 /// The design chat before anything is said in a design opened from Git (GitDesignShell, agentCopy.none).
-public struct NWGitDesignIntro: View {
+public struct SHGitDesignIntro: View {
     public init() {}
 
     public var body: some View {
         VStack(alignment: .leading, spacing: M.introSpacing) {
-            Text("Your design agent").font(.nw(.title)).accessibilityAddTraits(.isHeader)
+            Text("Your design agent").font(.sh(.title)).accessibilityAddTraits(.isHeader)
             Text("The design is open. Ask for a change when you're ready. No agent has started.")
-                .nwText(.body).foregroundStyle(Color.nw.textSecondary)
+                .shText(.body).foregroundStyle(Color.sh.textSecondary)
             Text("The original conversation stays on its author's Mac. Your agent reads the current boards, design system and pinned comments when you send a message.")
-                .nwText(.caption).foregroundStyle(Color.nw.textSecondary)
+                .shText(.caption).foregroundStyle(Color.sh.textSecondary)
         }
         .fixedSize(horizontal: false, vertical: true)
-        .padding(NW.Space.xxl)
+        .padding(SH.Space.xxl)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -893,7 +893,7 @@ public struct NWGitDesignIntro: View {
 // MARK: Canvas notice
 
 /// A notice on the canvas: opened from Git (the toast) or a paused pull.
-public struct NWGitCanvasNotice: View {
+public struct SHGitCanvasNotice: View {
     public enum Kind: Sendable { case opened, paused }
 
     let kind: Kind
@@ -918,25 +918,25 @@ public struct NWGitCanvasNotice: View {
                     .foregroundStyle(AgentState.done.color).accessibilityHidden(true)
             }
             HStack(alignment: .firstTextBaseline, spacing: M.noticeSpacing) {
-                Text(title).foregroundStyle(kind == .paused ? AgentState.attention.textColor : Color.nw.textPrimary)
-                Text(detail).foregroundStyle(kind == .paused ? Color.nw.textPrimary : Color.nw.textSecondary)
+                Text(title).foregroundStyle(kind == .paused ? AgentState.attention.textColor : Color.sh.textPrimary)
+                Text(detail).foregroundStyle(kind == .paused ? Color.sh.textPrimary : Color.sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .font(.nw(.ui))
+            .font(.sh(.ui))
             .accessibilityElement(children: .combine)
             if let dismiss {
                 Button(action: dismiss) { Image(systemName: "xmark").font(.system(size: M.dismissGlyph, weight: .medium)) }
-                    .buttonStyle(.nwIcon(size: NW.Height.controlS))
+                    .buttonStyle(.shIcon(size: SH.Height.controlS))
                     .help("Dismiss")
                     .accessibilityLabel("Dismiss")
             }
         }
-        .padding(.vertical, NW.Space.l).padding(.horizontal, NW.Space.xl)
+        .padding(.vertical, SH.Space.l).padding(.horizontal, SH.Space.xl)
         .frame(maxWidth: kind == .paused ? M.pausedMaxWidth : nil, alignment: .leading)
         .fixedSize(horizontal: kind == .opened, vertical: true)
-        .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-        .nwBorder(Color.nw.lineStrong, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-        .shadow(color: kind == .opened ? Color.nw.bgBase : .clear, radius: M.toastShadowRadius, y: M.toastShadowY)
+        .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+        .shBorder(Color.sh.lineStrong, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+        .shadow(color: kind == .opened ? Color.sh.bgBase : .clear, radius: M.toastShadowRadius, y: M.toastShadowY)
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.updatesFrequently)
     }

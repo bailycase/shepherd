@@ -51,7 +51,7 @@ struct DesignCommentControlsTests {
         await screen.refresh()
         screen.resized(CGSize(width: 900, height: 800))
         screen.paneTab = .comments
-        screen.viewport = NWCanvasViewport(offset: CGPoint(x: -10_000, y: -10_000), zoom: 1)
+        screen.viewport = SHCanvasViewport(offset: CGPoint(x: -10_000, y: -10_000), zoom: 1)
         let first = try #require(screen.openCards.first)
         let second = try #require(screen.openCards.last)
         #expect(screen.page == "flows" && !screen.visibleBoards.contains(b))
@@ -66,7 +66,7 @@ struct DesignCommentControlsTests {
         #expect(window.controls().contains { $0.label == "Resolve comment 1" } == hovering)
         if hovering {
             let resolve = try #require(window.controls().first { $0.label == "Resolve comment 1" })
-            #expect(resolve.frame.width > NW.Height.controlS, "Resolve has room for its visible text, not just an icon")
+            #expect(resolve.frame.width > SH.Height.controlS, "Resolve has room for its visible text, not just an icon")
         }
         #expect(ControlPress.actions(onLabelContaining: "Open comment 1", under: window.host).contains("Resolve"))
         #expect(ControlPress.undersized(window.controls(), minimum: .desktop).isEmpty)
@@ -119,7 +119,7 @@ struct DesignCommentControlsTests {
         var body: some View {
             DesignCommentsList(cards: screen.openCards, resolve: { screen.resolve($0) },
                                hovering: hovering ? screen.openCards.first?.id : nil, open: { screen.revealComment($0) })
-                .background(Color.nw.bgWindow)
+                .background(Color.sh.bgWindow)
         }
     }
 }

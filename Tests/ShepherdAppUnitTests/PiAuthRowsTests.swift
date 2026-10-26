@@ -57,7 +57,7 @@ struct PiAuthRowsTests {
     }
 
     @Test func commandBackedKeysShowUnsupportedWithoutExposingTheirCommandText() {
-        #expect(NWKeySource.command("op read secret-token-inline").parts.map(\.text) == ["command not supported"])
+        #expect(SHKeySource.command("op read secret-token-inline").parts.map(\.text) == ["command not supported"])
         for display in [PiKeyDisplay(runsCommand: true), PiKeyDisplay(command: "op read secret-token-inline")] {
             let parts = PiSignInWords.keyParts(display, copied: true)
             #expect(parts.map(\.text) == ["command not supported"])

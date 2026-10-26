@@ -15,9 +15,9 @@ struct SubagentsSettings: View {
         }
         .task { await model.refresh() }
         .sheet(item: Binding(get: { model.confirmation.map { Confirmation(action: $0) } }, set: { if $0 == nil { model.cancelConfirmation() } else { model.confirmation = $0?.action } })) { prompt in
-            NWDialog(prompt.title, message: prompt.message, content: {}) {
-                Button("Cancel") { model.cancelConfirmation() }.buttonStyle(.nw(.secondary)).keyboardShortcut(.cancelAction)
-                Button(prompt.button) { Task { await model.confirm() } }.buttonStyle(.nw(.danger))
+            SHDialog(prompt.title, message: prompt.message, content: {}) {
+                Button("Cancel") { model.cancelConfirmation() }.buttonStyle(.sh(.secondary)).keyboardShortcut(.cancelAction)
+                Button(prompt.button) { Task { await model.confirm() } }.buttonStyle(.sh(.danger))
             }
         }
     }
@@ -27,67 +27,67 @@ struct SubagentsSettings: View {
             SettingsHeader(title: "Subagents", explanation: Self.explanation)
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: AppLayout.subagentToolbarGap) { filter; Spacer(minLength: 0); actions }
-                VStack(alignment: .leading, spacing: NW.Space.m) { filter; HStack { Spacer(minLength: 0); actions } }
+                VStack(alignment: .leading, spacing: SH.Space.m) { filter; HStack { Spacer(minLength: 0); actions } }
             }
             if let problem = model.problem {
-                VStack(alignment: .leading, spacing: NW.Space.m) {
-                    NWInlineProblem(problem)
-                    Button("Reload") { Task { await model.refresh() } }.buttonStyle(.nw(.secondary, size: .s)).disabled(model.busy)
+                VStack(alignment: .leading, spacing: SH.Space.m) {
+                    SHInlineProblem(problem)
+                    Button("Reload") { Task { await model.refresh() } }.buttonStyle(.sh(.secondary, size: .s)).disabled(model.busy)
                 }
             }
-            VStack(alignment: .leading, spacing: NW.Space.m) {
+            VStack(alignment: .leading, spacing: SH.Space.m) {
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: AppLayout.subagentToolbarGap) { sectionHeading; Spacer(minLength: 0); folder }
-                    VStack(alignment: .leading, spacing: NW.Space.m) { sectionHeading; folder }
-                }.padding(.horizontal, NW.Space.xs)
+                    VStack(alignment: .leading, spacing: SH.Space.m) { sectionHeading; folder }
+                }.padding(.horizontal, SH.Space.xs)
                 LazyVStack(spacing: 0) {
                     ForEach(model.visible) { definition in
                         SubagentDefinitionRow(definition: definition) { Task { await model.open(definition) } }
                     }
                     if model.visible.isEmpty {
                         Text(model.problem != nil ? "Could not read subagent definitions." : !model.loaded ? "Loading subagents…" : model.definitions.isEmpty ? "No subagents" : "No matching subagents")
-                            .font(.nw(.body)).foregroundStyle(Color.nw.textSecondary)
-                            .padding(NW.Space.xxl).frame(maxWidth: .infinity, alignment: .leading)
+                            .font(.sh(.body)).foregroundStyle(Color.sh.textSecondary)
+                            .padding(SH.Space.xxl).frame(maxWidth: .infinity, alignment: .leading)
                     }
-                }.padding(NW.Space.xs)
-                    .background(Color.nw.bgWindow, in: RoundedRectangle(cornerRadius: NWCardRowMetrics.settingsCardRadius))
-                    .nwBorder(Color.nw.projectDivider, radius: NWCardRowMetrics.settingsCardRadius, width: NWSettingsNavMetrics.borderWidth)
+                }.padding(SH.Space.xs)
+                    .background(Color.sh.bgWindow, in: RoundedRectangle(cornerRadius: SHCardRowMetrics.settingsCardRadius))
+                    .shBorder(Color.sh.projectDivider, radius: SHCardRowMetrics.settingsCardRadius, width: SHSettingsNavMetrics.borderWidth)
                     .disabled(model.busy)
             }
             if let native { native.padding(.top, AppLayout.settingsGroupSpacing - AppLayout.subagentSettingsGap) }
         }
     }
     private var filter: some View {
-        NWSettingsSearchField("Filter subagents", text: $model.filter, placement: .subagents)
+        SHSettingsSearchField("Filter subagents", text: $model.filter, placement: .subagents)
             .frame(width: AppLayout.subagentFilterWidth)
     }
     private var actions: some View {
         HStack(spacing: AppLayout.subagentToolbarGap) {
             Button("Restore defaults") { model.askRestore() }.buttonStyle(SubagentSettingsActionStyle()).disabled(model.busy || !model.loaded || model.problem != nil)
             Button { model.create() } label: {
-                HStack(spacing: NW.Space.m) { NWGlyph.Settings.subagentPlus.image.accessibilityHidden(true); Text("New subagent") }
+                HStack(spacing: SH.Space.m) { SHGlyph.Settings.subagentPlus.image.accessibilityHidden(true); Text("New subagent") }
             }.buttonStyle(SubagentSettingsActionStyle(primary: true)).disabled(model.busy || !model.loaded || model.problem != nil)
                 .accessibilityLabel("New subagent")
         }
     }
     private var sectionHeading: some View {
         HStack(spacing: AppLayout.subagentToolbarGap) {
-            Text("SUBAGENTS").font(.nwSans(AppLayout.subagentSectionSize, .semibold))
-                .tracking(AppLayout.subagentSectionSize * AppLayout.subagentSectionTracking).foregroundStyle(Color.nw.textSecondary)
-            Text(model.problem != nil && model.definitions.isEmpty ? "Unavailable" : !model.loaded ? "…" : model.definitions.count.formatted()).font(.nwMono(AppLayout.subagentMetaSize)).foregroundStyle(Color.nw.settingsMuted)
+            Text("SUBAGENTS").font(.shSans(AppLayout.subagentSectionSize, .semibold))
+                .tracking(AppLayout.subagentSectionSize * AppLayout.subagentSectionTracking).foregroundStyle(Color.sh.textSecondary)
+            Text(model.problem != nil && model.definitions.isEmpty ? "Unavailable" : !model.loaded ? "…" : model.definitions.count.formatted()).font(.shMono(AppLayout.subagentMetaSize)).foregroundStyle(Color.sh.settingsMuted)
         }
     }
     private var folder: some View {
         HStack(spacing: AppLayout.subagentToolbarGap) {
-            Text("Shepherd/pi/agents").font(.nwMono(AppLayout.subagentMetaSize)).foregroundStyle(Color.nw.settingsMuted).help(model.directory.path)
+            Text("Shepherd/pi/agents").font(.shMono(AppLayout.subagentMetaSize)).foregroundStyle(Color.sh.settingsMuted).help(model.directory.path)
             Button("Show in Finder") { model.revealFolder() }
-                .font(.nwSans(AppLayout.subagentFinderSize)).foregroundStyle(Color.nw.textSecondary)
-                .padding(.horizontal, NW.Space.m).frame(height: AppLayout.subagentFinderVisualHeight)
-                .background(Color.clear, in: RoundedRectangle(cornerRadius: NW.Radius.s))
-                .nwBorder(Color.nw.lineStrong, radius: NW.Radius.s, width: NWSettingsNavMetrics.borderWidth)
-                .frame(minHeight: NW.Height.controlS)
-                .contentShape(RoundedRectangle(cornerRadius: NW.Radius.s))
-                .buttonStyle(.nwRow(focusColor: .nw.running)).disabled(model.busy || !model.loaded)
+                .font(.shSans(AppLayout.subagentFinderSize)).foregroundStyle(Color.sh.textSecondary)
+                .padding(.horizontal, SH.Space.m).frame(height: AppLayout.subagentFinderVisualHeight)
+                .background(Color.clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+                .shBorder(Color.sh.lineStrong, radius: SH.Radius.s, width: SHSettingsNavMetrics.borderWidth)
+                .frame(minHeight: SH.Height.controlS)
+                .contentShape(RoundedRectangle(cornerRadius: SH.Radius.s))
+                .buttonStyle(.shRow(focusColor: .sh.running)).disabled(model.busy || !model.loaded)
         }
     }
 
@@ -118,38 +118,38 @@ struct SubagentDefinitionRow: View, Equatable {
 
     private var failed: Bool { definition.diagnostic != nil }
     private var details: some View {
-        VStack(alignment: .leading, spacing: NW.Space.xxs) {
-            HStack(spacing: NW.Space.m) {
-                Text(definition.name).font(.nwMono(AppLayout.subagentRowNameSize, .medium)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
+        VStack(alignment: .leading, spacing: SH.Space.xxs) {
+            HStack(spacing: SH.Space.m) {
+                Text(definition.name).font(.shMono(AppLayout.subagentRowNameSize, .medium)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
                 if failed { badge(definition.disabled == true && definition.error == nil ? "disabled" : "can’t load", failed: true) }
                 else if definition.isDefault { badge("default", failed: false) }
             }
             Text(definition.diagnostic ?? definition.description ?? "")
-                .font(.nwSans(AppLayout.subagentDescriptionSize)).foregroundStyle(failed ? AgentState.failed.color : Color.nw.textSecondary)
+                .font(.shSans(AppLayout.subagentDescriptionSize)).foregroundStyle(failed ? AgentState.failed.color : Color.sh.textSecondary)
                 .lineLimit(1).truncationMode(.tail)
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
     private var glyph: some View {
-        NWGlyph.Settings.subagentFile.image
-            .foregroundStyle(failed ? AgentState.failed.color : Color.nw.textSecondary)
+        SHGlyph.Settings.subagentFile.image
+            .foregroundStyle(failed ? AgentState.failed.color : Color.sh.textSecondary)
             .frame(width: AppLayout.subagentGlyphTile, height: AppLayout.subagentGlyphTile)
-            .background(failed ? Color.nw.subagentFailureTile : Color.nw.bgBubble, in: RoundedRectangle(cornerRadius: AppLayout.subagentGlyphRadius))
+            .background(failed ? Color.sh.subagentFailureTile : Color.sh.bgBubble, in: RoundedRectangle(cornerRadius: AppLayout.subagentGlyphRadius))
             .accessibilityHidden(true)
     }
     var body: some View {
-        let _ = NWRenderProbe.tick("settings.subagent.row")
+        let _ = SHRenderProbe.tick("settings.subagent.row")
         Button(action: open) {
-            HStack(spacing: NW.Space.l) {
+            HStack(spacing: SH.Space.l) {
                 glyph
                 details
-                Text(failed ? definition.file : definition.capability).font(.nwMono(AppLayout.subagentMetaSize)).foregroundStyle(Color.nw.settingsMuted).lineLimit(1)
-                NWGlyph.Settings.subagentNext.image.foregroundStyle(Color.nw.settingsMuted).accessibilityHidden(true)
+                Text(failed ? definition.file : definition.capability).font(.shMono(AppLayout.subagentMetaSize)).foregroundStyle(Color.sh.settingsMuted).lineLimit(1)
+                SHGlyph.Settings.subagentNext.image.foregroundStyle(Color.sh.settingsMuted).accessibilityHidden(true)
             }.padding(.horizontal, AppLayout.subagentRowPadding)
                 .frame(minHeight: AppLayout.subagentRowContentHeight)
-                .background(hovering || focused ? Color.nw.bgBubble : .clear, in: RoundedRectangle(cornerRadius: AppLayout.subagentActionRadius))
-                .nwBorder(hovering || focused ? Color.nw.lineStrong : .clear, radius: AppLayout.subagentActionRadius, width: NWSettingsNavMetrics.borderWidth)
+                .background(hovering || focused ? Color.sh.bgBubble : .clear, in: RoundedRectangle(cornerRadius: AppLayout.subagentActionRadius))
+                .shBorder(hovering || focused ? Color.sh.lineStrong : .clear, radius: AppLayout.subagentActionRadius, width: SHSettingsNavMetrics.borderWidth)
                 .contentShape(RoundedRectangle(cornerRadius: AppLayout.subagentActionRadius))
-        }.buttonStyle(.nwRow(radius: AppLayout.subagentActionRadius, focusColor: .nw.running))
+        }.buttonStyle(.shRow(radius: AppLayout.subagentActionRadius, focusColor: .sh.running))
             .focused($focused)
             .frame(minHeight: AppLayout.subagentRowHeight)
             .onHover { hovering = $0 }
@@ -158,9 +158,9 @@ struct SubagentDefinitionRow: View, Equatable {
             .accessibilityValue(definition.diagnostic ?? ((definition.description ?? "") + ", " + definition.capability))
     }
     private func badge(_ title: String, failed: Bool) -> some View {
-        Text(title).font(.nwMono(AppLayout.subagentBadgeSize)).foregroundStyle(failed ? AgentState.failed.color : Color.nw.textSecondary)
+        Text(title).font(.shMono(AppLayout.subagentBadgeSize)).foregroundStyle(failed ? AgentState.failed.color : Color.sh.textSecondary)
             .padding(.horizontal, AppLayout.subagentBadgePadding)
-            .nwBorder(failed ? Color.nw.subagentFailureBorder : Color.nw.lineStrong, radius: NW.Radius.xs, width: NWSettingsNavMetrics.borderWidth)
+            .shBorder(failed ? Color.sh.subagentFailureBorder : Color.sh.lineStrong, radius: SH.Radius.xs, width: SHSettingsNavMetrics.borderWidth)
     }
 }
 
@@ -175,16 +175,16 @@ private struct SubagentSettingsAction: View {
     @State private var hovering = false
     @Environment(\.isEnabled) private var enabled
     var body: some View {
-        let fill = primary ? (configuration.isPressed && enabled ? Color.nw.lanternPressed : hovering && enabled ? Color.nw.lanternHover : Color.nw.lantern)
-                           : (hovering && enabled ? Color.nw.bgHover : Color.nw.bgRaised)
-        configuration.label.font(.nwSans(AppLayout.subagentActionSize, primary ? .semibold : .medium))
-            .foregroundStyle(primary ? Color.nw.textOnLantern : Color.nw.textPrimary)
-            .padding(.horizontal, AppLayout.subagentActionPadding).frame(minHeight: NW.Height.controlL)
+        let fill = primary ? (configuration.isPressed && enabled ? Color.sh.lanternPressed : hovering && enabled ? Color.sh.lanternHover : Color.sh.lantern)
+                           : (hovering && enabled ? Color.sh.bgHover : Color.sh.bgRaised)
+        configuration.label.font(.shSans(AppLayout.subagentActionSize, primary ? .semibold : .medium))
+            .foregroundStyle(primary ? Color.sh.textOnLantern : Color.sh.textPrimary)
+            .padding(.horizontal, AppLayout.subagentActionPadding).frame(minHeight: SH.Height.controlL)
             .background(fill, in: RoundedRectangle(cornerRadius: AppLayout.subagentActionRadius))
-            .nwBorder(primary ? .clear : Color.nw.lineStrong, radius: AppLayout.subagentActionRadius, width: NWSettingsNavMetrics.borderWidth)
+            .shBorder(primary ? .clear : Color.sh.lineStrong, radius: AppLayout.subagentActionRadius, width: SHSettingsNavMetrics.borderWidth)
             .contentShape(RoundedRectangle(cornerRadius: AppLayout.subagentActionRadius))
-            .nwFocusRing(radius: AppLayout.subagentActionRadius, color: .nw.running)
-            .nwEnabledOpacity(enabled)
+            .shFocusRing(radius: AppLayout.subagentActionRadius, color: .sh.running)
+            .shEnabledOpacity(enabled)
             .onHover { hovering = $0 }
     }
 }

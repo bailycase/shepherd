@@ -2,7 +2,7 @@ import ShepherdCore
 import ShepherdRemote
 import ShepherdUI
 
-// The app's lifecycles projected onto Night Watch's one status enum, which drives every pill,
+// The app's lifecycles projected onto Shepherd Design's one status enum, which drives every pill,
 // dot, glyph, and strip.
 extension AgentState {
     /// An agent's reported status: working runs, blocked needs you.

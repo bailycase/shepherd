@@ -105,7 +105,7 @@ struct DesignReferenceCanvasTests {
         var implemented: [DesignReferenceSelection] = []
         let screen = try await screen(implemented: { implemented.append($0) })
         let keys = KeybindingsStore(store: ScratchDefaults())
-        let items = await screen.contextMenu(for: NWCanvasPick(board: Self.a.rawValue, point: nil, extending: false), designName: "Checkout", keys: keys)
+        let items = await screen.contextMenu(for: SHCanvasPick(board: Self.a.rawValue, point: nil, extending: false), designName: "Checkout", keys: keys)
         #expect(screen.picks.map(\.board) == [Self.a], "a right-click picks what it landed on")
         #expect(items.filter { !$0.isDivider }.map(\.title) == ["Comment", "Implement in a Thread…", "Copy Reference", "Duplicate"])
         let implement = try #require(items.first { $0.id == "implement" })
@@ -115,7 +115,7 @@ struct DesignReferenceCanvasTests {
         implement.action()
         #expect(implemented.map(\.board) == [Self.a])
 
-        let empty = await screen.contextMenu(for: NWCanvasPick(board: nil, point: nil, extending: false), designName: "Checkout", keys: keys)
+        let empty = await screen.contextMenu(for: SHCanvasPick(board: nil, point: nil, extending: false), designName: "Checkout", keys: keys)
         #expect(empty.map(\.title) == ["Implement Checkout…", "Copy Reference"], "the empty canvas offers the whole design")
     }
 

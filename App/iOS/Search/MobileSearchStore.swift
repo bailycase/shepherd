@@ -23,9 +23,9 @@ struct SearchEntry: Identifiable, Equatable {
 
     let id: String
     let action: Action
-    let leading: NWSearchResultRow.Leading
-    let title: [NWHighlightRun]
-    let detail: [NWHighlightRun]
+    let leading: SHSearchResultRow.Leading
+    let title: [SHHighlightRun]
+    let detail: [SHHighlightRun]
     let host: String?
     let dimmed: Bool
     /// What VoiceOver reads.
@@ -294,8 +294,8 @@ final class MobileSearchStore {
                            dimmed: !row.online, spoken: row.spokenText, thread: ref, snippet: snippet)
     }
 
-    private static func run(_ segment: SearchSegment) -> NWHighlightRun {
-        NWHighlightRun(segment.text, highlighted: segment.highlighted)
+    private static func run(_ segment: SearchSegment) -> SHHighlightRun {
+        SHHighlightRun(segment.text, highlighted: segment.highlighted)
     }
 
     // MARK: Hosts
@@ -365,7 +365,7 @@ extension MobileSearchStore {
             let entry = SearchEntry(id: "design:\(design.ref.host.uuidString)/\(design.ref.design.rawValue)", action: .openDesign(design.ref),
                                     leading: .symbol("pencil.tip"),
                                     title: CrossHostSearch.segments(design.name, highlighting: needle).map(run),
-                                    detail: [NWHighlightRun(detail)], host: design.hostTag, dimmed: false,
+                                    detail: [SHHighlightRun(detail)], host: design.hostTag, dimmed: false,
                                     spoken: "\(design.name), design, \(detail)", thread: nil, snippet: nil)
             ranked.append((entry, rank, index))
         }
@@ -377,8 +377,8 @@ extension MobileSearchStore {
     static func newDesign(_ query: String) -> SearchEntry {
         let brief = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return SearchEntry(id: "action:New design", action: .newDesign(brief: brief), leading: .symbol("pencil.tip"),
-                           title: [NWHighlightRun("New design")],
-                           detail: RemoteDesignPresentation.briefParts(brief).map { NWHighlightRun($0.text, highlighted: $0.highlighted) },
+                           title: [SHHighlightRun("New design")],
+                           detail: RemoteDesignPresentation.briefParts(brief).map { SHHighlightRun($0.text, highlighted: $0.highlighted) },
                            host: nil, dimmed: false, spoken: "New design, “\(brief)” as the brief", thread: nil, snippet: nil)
     }
 

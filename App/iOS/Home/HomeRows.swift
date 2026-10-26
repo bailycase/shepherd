@@ -16,7 +16,7 @@ extension AgentRef {
 }
 
 extension FleetClock {
-    var rowClock: NWRowClock {
+    var rowClock: SHRowClock {
         switch self {
         case .elapsed(let since): .elapsed(since: Date(milliseconds: since))
         case .ago(let at): .ago(Date(milliseconds: at))
@@ -32,7 +32,7 @@ extension FleetAttention {
     /// Where Open goes: the thread.
     var route: MobileRoute { .thread(ref.agentRef) }
 
-    var leading: NWListRow.Leading {
+    var leading: SHListRow.Leading {
         switch origin {
         case .thread, .project: .state(.attention)
         case .automation: .symbol("bolt", .attention)
@@ -85,7 +85,7 @@ struct ThreadRow: View, Equatable {
     var body: some View {
         // The sidebar says a failed last turn (iPadThreadError): a failed dot and "failed".
         let failed = compact && row.failed
-        NWListRow(row.title, subtitle: compact ? nil : row.detail, clock: compact ? nil : row.clock?.rowClock,
+        SHListRow(row.title, subtitle: compact ? nil : row.detail, clock: compact ? nil : row.clock?.rowClock,
                   leading: row.design != nil ? .symbol("pencil.tip") : .state(failed ? .failed : AgentState(row.status)),
                   trailing: failed ? .meta("failed") : row.hostTag.map { .host($0) } ?? .none,
                   chevron: chevron && !compact, selected: selected, dimmed: row.offline, compact: compact)
@@ -103,7 +103,7 @@ struct AttentionRow: View, Equatable {
 
     var body: some View {
         // The sidebar names the thread; its chip says who asks ("reviewer") or why.
-        NWListRow(compact ? item.thread : item.title, subtitle: compact ? nil : item.question, subtitleTone: .attention, leading: item.leading,
+        SHListRow(compact ? item.thread : item.title, subtitle: compact ? nil : item.question, subtitleTone: .attention, leading: item.leading,
                   trailing: compact ? .reason(item.reason) : item.hostTag.map { .host($0) } ?? .none,
                   chevron: !compact, selected: selected, compact: compact)
     }
@@ -126,18 +126,18 @@ struct AttentionCard: View {
         // (MobileInbox); the iPad's cards keep the name and "Thread" or "Automation" (iPadOverview).
         let pad = navigator.layout == .pad
         let asked = !pad && answers && item.symbol != nil && item.message != nil
-        NWAttentionCard(symbol: item.symbol, origin: pad ? item.shortOriginLabel : item.originLabel, title: asked ? item.question : item.title,
+        SHAttentionCard(symbol: item.symbol, origin: pad ? item.shortOriginLabel : item.originLabel, title: asked ? item.question : item.title,
                         question: asked ? (item.message ?? item.question) : item.question,
                         message: answers && !asked ? item.message : nil, since: item.since.map(Date.init(milliseconds:)), host: item.hostTag,
                         selected: selected, style: answers ? .card : .item) {
             if answers {
                 AttentionReplies(item: item, busy: busy)
                 Button("Open") { navigator.open(projects.route(item)) }
-                    .buttonStyle(.nw(item.reply == .open ? .secondary : .ghost))
+                    .buttonStyle(.sh(item.reply == .open ? .secondary : .ghost))
                     .accessibilityLabel("Open \(item.thread)")
             }
             if let failure {
-                Text(failure).nwText(.caption).foregroundStyle(Color.nw.failed)
+                Text(failure).shText(.caption).foregroundStyle(Color.sh.failed)
             }
         }
     }
@@ -149,7 +149,7 @@ struct AttentionCard: View {
 struct AttentionReplies: View {
     let item: FleetAttention
     let busy: Bool
-    var size: NWButtonStyle.Size = .m
+    var size: SHButtonStyle.Size = .m
     var pickLast = false
     @Environment(MobileHosts.self) private var hosts
 
@@ -160,13 +160,13 @@ struct AttentionReplies: View {
             let ordered = Array(options.enumerated())
             ForEach(pickLast ? ordered.reversed() : ordered, id: \.offset) { index, option in
                 Button(option) { Task { await feed.choose(item, option) } }
-                    .buttonStyle(.nw(index == 0 ? .primary : .secondary, size: size))
+                    .buttonStyle(.sh(index == 0 ? .primary : .secondary, size: size))
                     .disabled(busy)
             }
         case .confirm:
             if pickLast { no(feed) }
             Button("Yes") { Task { await feed.answer(item, .confirm(value: true)) } }
-                .buttonStyle(.nw(.primary, size: size)).disabled(busy)
+                .buttonStyle(.sh(.primary, size: size)).disabled(busy)
             if !pickLast { no(feed) }
         case .open:
             EmptyView()
@@ -175,7 +175,7 @@ struct AttentionReplies: View {
 
     private func no(_ feed: HomeFeed) -> some View {
         Button("No") { Task { await feed.answer(item, .confirm(value: false)) } }
-            .buttonStyle(.nw(.secondary, size: size)).disabled(busy)
+            .buttonStyle(.sh(.secondary, size: size)).disabled(busy)
     }
 }
 
@@ -188,34 +188,34 @@ struct HostNotice: View, Equatable {
     static func == (a: HostNotice, b: HostNotice) -> Bool { a.card == b.card }
 
     var body: some View {
-        HStack(alignment: typeSize.isAccessibilitySize ? .top : .center, spacing: NW.Space.l) {
+        HStack(alignment: typeSize.isAccessibilitySize ? .top : .center, spacing: SH.Space.l) {
             Group {
                 if card.phase == .connecting {
-                    ProgressView().progressViewStyle(.nwSpinner)
+                    ProgressView().progressViewStyle(.shSpinner)
                 } else {
-                    NWStatusDot(card.state, size: NWListMetrics.dot)
+                    SHStatusDot(card.state, size: SHListMetrics.dot)
                 }
             }
-            .frame(width: NWListMetrics.leadingWidth)
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                Text(card.name).font(.nw(.ui, weight: .medium)).foregroundStyle(Color.nw.textPrimary).lineLimit(2)
-                Text(card.summary).font(.nw(.caption)).foregroundStyle(card.state.textColor).lineLimit(3)
+            .frame(width: SHListMetrics.leadingWidth)
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                Text(card.name).font(.sh(.ui, weight: .medium)).foregroundStyle(Color.sh.textPrimary).lineLimit(2)
+                Text(card.summary).font(.sh(.caption)).foregroundStyle(card.state.textColor).lineLimit(3)
                 // At accessibility sizes Retry drops under the name rather than squeezing it.
-                if typeSize.isAccessibilitySize { retry.padding(.top, NW.Space.xs) }
+                if typeSize.isAccessibilitySize { retry.padding(.top, SH.Space.xs) }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if !typeSize.isAccessibilitySize { retry }
         }
-        .padding(.horizontal, NW.Space.l)
-        .padding(.vertical, NW.Space.m)
-        .frame(minHeight: NWListMetrics.twoLineRowHeight)
+        .padding(.horizontal, SH.Space.l)
+        .padding(.vertical, SH.Space.m)
+        .frame(minHeight: SHListMetrics.twoLineRowHeight)
         .accessibilityElement(children: .contain)
     }
 
     @ViewBuilder private var retry: some View {
         if card.canRetry {
             Button("Retry", systemImage: "arrow.clockwise") { hosts.retry(card.id) }
-                .buttonStyle(.nw(.secondary, size: .s))
+                .buttonStyle(.sh(.secondary, size: .s))
                 .accessibilityLabel("Retry \(card.name)")
         }
     }

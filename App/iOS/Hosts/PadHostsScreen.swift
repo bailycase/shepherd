@@ -22,10 +22,10 @@ struct PadHostsScreen: View {
                 let current = model.hosts.first { $0.id == chosen } ?? model.hosts[0]
                 PadListDetail(listWidth: MobileLayout.hostsListWidth) {
                     ScrollView {
-                        VStack(alignment: .leading, spacing: NW.Space.xxs) {
+                        VStack(alignment: .leading, spacing: SH.Space.xxs) {
                             ForEach(model.hosts) { card in
                                 Button { chosen = card.id } label: {
-                                    NWHostRow(name: card.name, detail: Self.detail(card, now: .now), state: card.state,
+                                    SHHostRow(name: card.name, detail: Self.detail(card, now: .now), state: card.state,
                                               selected: card.id == current.id)
                                         .equatable()
                                 }
@@ -33,11 +33,11 @@ struct PadHostsScreen: View {
                                 .contextMenu { HostMenuItems(card: card) }
                             }
                             Text("Hosts connect over your LAN or VPN. The connection has no TLS.")
-                                .nwText(.caption).foregroundStyle(Color.nw.textTertiary)
-                                .padding(.horizontal, NW.Space.l)
-                                .padding(.top, NW.Space.m)
+                                .shText(.caption).foregroundStyle(Color.sh.textTertiary)
+                                .padding(.horizontal, SH.Space.l)
+                                .padding(.top, SH.Space.m)
                         }
-                        .padding(NW.Space.m)
+                        .padding(SH.Space.m)
                     }
                     .refreshable {
                         hosts.retryAll()
@@ -61,7 +61,7 @@ struct PadHostsScreen: View {
                 }
             }
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .task { await feed.watch() }
         .navigationTitle("Hosts")
         .navigationBarTitleDisplayMode(.inline)
@@ -69,7 +69,7 @@ struct PadHostsScreen: View {
         .toolbar {
             // iPadHosts: "Hosts" leads the bar, over the list.
             ToolbarItem(placement: .topBarLeading) {
-                Text("Hosts").font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary)
+                Text("Hosts").font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary)
                     .fixedSize()
                     .accessibilityAddTraits(.isHeader)
             }
@@ -103,39 +103,39 @@ private struct PadHostDetail: View {
     @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
-                HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
-                    Text(card.name).font(.nw(.headline)).foregroundStyle(nw.textPrimary).lineLimit(1)
-                    HStack(spacing: NW.Space.s) {
-                        NWStatusDot(card.state, size: NWListMetrics.attentionDot)
-                        Text(card.phase.word).font(.nw(.caption, weight: .medium)).foregroundStyle(card.state.textColor)
+                HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+                    Text(card.name).font(.sh(.headline)).foregroundStyle(sh.textPrimary).lineLimit(1)
+                    HStack(spacing: SH.Space.s) {
+                        SHStatusDot(card.state, size: SHListMetrics.attentionDot)
+                        Text(card.phase.word).font(.sh(.caption, weight: .medium)).foregroundStyle(card.state.textColor)
                     }
-                    Text(card.address).font(.nw(.caption)).foregroundStyle(nw.textTertiary).lineLimit(1)
-                    Spacer(minLength: NW.Space.m)
+                    Text(card.address).font(.sh(.caption)).foregroundStyle(sh.textTertiary).lineLimit(1)
+                    Spacer(minLength: SH.Space.m)
                     Menu {
                         HostMenuItems(card: card)
                     } label: {
                         Image(systemName: "ellipsis")
                     }
-                    .buttonStyle(.nwIcon(bordered: true))
-                    .nwTouchTarget(height: NW.Height.controlM, width: NW.Height.controlM)
+                    .buttonStyle(.shIcon(bordered: true))
+                    .shTouchTarget(height: SH.Height.controlM, width: SH.Height.controlM)
                     .accessibilityLabel("Host options")
                 }
                 if card.phase.isConnected {
                     runningHere
                 } else {
-                    VStack(alignment: .leading, spacing: NW.Space.s) {
-                        Text(card.summary).nwText(.ui).foregroundStyle(card.state == .failed ? nw.failed : nw.textSecondary)
+                    VStack(alignment: .leading, spacing: SH.Space.s) {
+                        Text(card.summary).shText(.ui).foregroundStyle(card.state == .failed ? sh.failed : sh.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                         if let seen = card.lastSeen {
-                            Text("Last seen " + HostLastSeen.text(seen, now: .now)).nwText(.caption).foregroundStyle(nw.textTertiary)
+                            Text("Last seen " + HostLastSeen.text(seen, now: .now)).shText(.caption).foregroundStyle(sh.textTertiary)
                         }
                         if card.canRetry {
                             Button("Retry", systemImage: "arrow.clockwise") { hosts.retry(card.id) }
-                                .buttonStyle(.nw(.secondary))
-                                .padding(.top, NW.Space.xs)
+                                .buttonStyle(.sh(.secondary))
+                                .padding(.top, SH.Space.xs)
                         }
                     }
                 }
@@ -149,36 +149,36 @@ private struct PadHostDetail: View {
 
     /// "RUNNING HERE · 3": the threads and automation runs going on this host now.
     @ViewBuilder private var runningHere: some View {
-        let nw = Color.nw
-        VStack(alignment: .leading, spacing: NW.Space.s) {
+        let sh = Color.sh
+        VStack(alignment: .leading, spacing: SH.Space.s) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Running here · \(running.count + automations.count)").nwSectionLabel()
-                Spacer(minLength: NW.Space.m)
-                Text("threads and automations").font(.nw(.caption)).foregroundStyle(nw.textTertiary)
+                Text("Running here · \(running.count + automations.count)").shSectionLabel()
+                Spacer(minLength: SH.Space.m)
+                Text("threads and automations").font(.sh(.caption)).foregroundStyle(sh.textTertiary)
             }
-            .padding(.horizontal, NW.Space.xs)
+            .padding(.horizontal, SH.Space.xs)
             if running.isEmpty && automations.isEmpty {
-                Text("Nothing is running here.").nwText(.caption).foregroundStyle(nw.textTertiary)
-                    .padding(.horizontal, NW.Space.xs)
+                Text("Nothing is running here.").shText(.caption).foregroundStyle(sh.textTertiary)
+                    .padding(.horizontal, SH.Space.xs)
             } else {
-                NWListCard {
+                SHListCard {
                     // The host is this page's: rows leave its name out.
                     ForEach(running) { row in
-                        let time: NWOverviewRow.Time = if case .elapsed(let since)? = row.clock { .elapsed(since: Date(milliseconds: since)) } else { .none }
+                        let time: SHOverviewRow.Time = if case .elapsed(let since)? = row.clock { .elapsed(since: Date(milliseconds: since)) } else { .none }
                         Button { navigator.open(.thread(row.ref.agentRef)) } label: {
-                            NWOverviewRow(row.title, detail: Self.local(row).now, leading: RunningGlyph.of(row), time: time)
+                            SHOverviewRow(row.title, detail: Self.local(row).now, leading: RunningGlyph.of(row), time: time)
                                 .equatable()
                         }
-                        .buttonStyle(.nwRow(radius: 0))
+                        .buttonStyle(.shRow(radius: 0))
                     }
                     ForEach(automations) { row in
                         if let run = row.run {
                             Button { navigator.open(.thread(run.agentRef)) } label: {
-                                NWOverviewRow(row.name, detail: "\(row.stateWord) · \(row.place)", detailMono: false,
+                                SHOverviewRow(row.name, detail: "\(row.stateWord) · \(row.place)", detailMono: false,
                                               leading: .symbol("bolt", row.runStatus == .blocked ? .attention : .running))
                                     .equatable()
                             }
-                            .buttonStyle(.nwRow(radius: 0))
+                            .buttonStyle(.shRow(radius: 0))
                         }
                     }
                 }

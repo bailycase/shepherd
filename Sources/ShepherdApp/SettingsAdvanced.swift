@@ -36,17 +36,17 @@ struct AdvancedSettings: View {
                             set: { updater.automaticallyChecks = $0 }
                         ))
                     }
-                    .nwTransition(.disclosure)
+                    .shTransition(.disclosure)
                     UpdateChannelRow(edition: updater.edition, channel: Binding(
                         get: { updater.channel },
                         set: { updater.select($0) }
                     ))
-                    .nwTransition(.disclosure)
+                    .shTransition(.disclosure)
                 }
                 SettingsRow(title: "Version \(version)") {
                     if updater.available {
                         Button("Check for updates") { updater.checkForUpdates() }
-                            .buttonStyle(.nw(.secondary, size: .s))
+                            .buttonStyle(.sh(.secondary, size: .s))
                     }
                 }
             }
@@ -56,12 +56,12 @@ struct AdvancedSettings: View {
                 SettingsRow(title: "Reset settings",
                             subtitle: "Restores appearance, terminal, agent, worktree, extension, keyboard and diagnostics preferences. Spaces, agents, layouts and Remote are untouched.") {
                     Button("Reset…") { confirmingReset = true }
-                        .buttonStyle(.nw(.danger, size: .s))
+                        .buttonStyle(.sh(.danger, size: .s))
                 }
             }
         }
         // Sparkle reports whether it can update once it has started.
-        .nwAnimation(.disclosure, value: updater.available)
+        .shAnimation(.disclosure, value: updater.available)
         .sheet(isPresented: $confirmingReset) {
             ResetSettingsDialog {
                 confirmingReset = false
@@ -86,7 +86,7 @@ struct EditorSettings: View {
     var body: some View {
         SettingsGroup(title: "Editor") {
             SettingsRow(title: "Open files in", subtitle: "File links in replies, reviewed files and project files. System default uses each file's own app.") {
-                NWPopupMenu(title, minWidth: AppLayout.settingsPopupWidth) {
+                SHPopupMenu(title, minWidth: AppLayout.settingsPopupWidth) {
                     Button("System default") { settings.editor = nil }
                     Divider()
                     ForEach(editors, id: \.self) { app in
@@ -150,16 +150,16 @@ struct UpdateChannelRow: View {
             SettingsRow(title: "Update channel",
                         subtitle: "Stable: tagged releases. Beta: pre-releases, plus newer stable builds. Nightly builds are a separate app, Shepherd Nightly.") {
                 // SettingsAdvanced draws this one as the Controls board's segmented control.
-                NWSegmentedPicker("Update channel", selection: $channel,
+                SHSegmentedPicker("Update channel", selection: $channel,
                                   options: UpdateChannel.choices(for: edition).map { ($0, $0.label) })
-                    .nwControlScale(.standard)
+                    .shControlScale(.standard)
             }
         case .nightly:
             SettingsRow(title: "Update channel",
                         subtitle: "Every push to the integration branch, least tested. Tagged releases ship as Shepherd.") {
                 Text(UpdateChannel.nightly.label)
-                    .font(.nw(.ui))
-                    .foregroundStyle(Color.nw.textSecondary)
+                    .font(.sh(.ui))
+                    .foregroundStyle(Color.sh.textSecondary)
             }
         }
     }

@@ -8,7 +8,7 @@ No image was supplied. This checklist extends SettingsAdvanced using its existin
 
 - Group order: Files, Updates, Diagnostics, Reset.
 - Diagnostics uses `SettingsGroup`, `SettingsRow` and `SettingsSwitch`. No new glyphs, dimensions,
-  colors, fonts or motion. The components retain their existing Night Watch tokens and 24pt control target.
+  colors, fonts or motion. The components retain their existing Shepherd Design tokens and 24pt control target.
 - Switch label: "Share diagnostics". Default off. Its subtitle and accessibility hint come
   from `DiagnosticsSettings.disclosure`: "Send crash and hang stacks, errors, app and device details,
   process and memory counts, and operation timings to a third-party diagnostics service. No prompts,

@@ -48,7 +48,7 @@ struct AgentLayoutDeck: View, Equatable {
             AgentLayoutView(vm: page.vm, model: model)
                 .equatable()
                 // Nor draw its spinners and glows where no one sees them.
-                .environment(\.nwMotionPaused, !model.isVisible)
+                .environment(\.shMotionPaused, !model.isVisible)
         }
     }
 
@@ -65,7 +65,7 @@ struct AgentLayoutDeck: View, Equatable {
         required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
         override func layout() {
-            NWRenderProbe.tick(isHidden ? "deck.hiddenLayout" : "deck.layout")
+            SHRenderProbe.tick(isHidden ? "deck.hiddenLayout" : "deck.layout")
             // Even at fixed hidden bounds, AppKit needs this pass to remove transitioned views.
             // Avoid resize work by retaining host frames, never by skipping lifecycle callbacks.
             super.layout()
@@ -126,7 +126,7 @@ struct AgentLayoutDeck: View, Equatable {
         func makeNSView(context: Context) -> Container { Container() }
 
         func updateNSView(_ container: Container, context: Context) {
-            NWRenderProbe.tick("deck.update")
+            SHRenderProbe.tick("deck.update")
             var mounted = Set<TabID>()
             var hiding: [Host] = []
             for model in models {

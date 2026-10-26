@@ -1,7 +1,7 @@
 import Foundation
 
 /// One theme: a light and a dark variant, each filling every role. Pure data (hex strings), so
-/// the built-in Night Watch and, later, user themes loaded from JSON go through the same model.
+/// the built-in Shepherd Design and, later, user themes loaded from JSON go through the same model.
 public struct ThemeDefinition: Codable, Hashable, Sendable, Identifiable {
     public var id: String
     public var name: String
@@ -58,8 +58,8 @@ public struct ThemeVariant: Codable, Hashable, Sendable {
     }
 }
 
-/// The Night Watch roles every theme fills (the Foundations board). Views read them as
-/// `Color.nw.<role>`. Translucent roles are `#RRGGBBAA`.
+/// The Shepherd Design roles every theme fills (the Foundations board). Views read them as
+/// `Color.sh.<role>`. Translucent roles are `#RRGGBBAA`.
 public struct ThemeColors: Codable, Hashable, Sendable {
     // Surfaces
     /// Sidebar, window chrome.

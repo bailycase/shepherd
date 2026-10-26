@@ -60,40 +60,40 @@ struct ModelCatalog: Sendable {
     /// without the recent models. Each row's second line lists the levels its model takes: pi's
     /// own for the `current` model when the thread reports them (`currentLevels`), else the
     /// catalog's.
-    func list(query: String, recent: [String], current: String?, currentLevels: [String]? = nil) -> NWModelList {
+    func list(query: String, recent: [String], current: String?, currentLevels: [String]? = nil) -> SHModelList {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
         let currentLine = currentLevels.flatMap { $0.isEmpty ? nil : NativeThinkingLevel.line($0) }
         func subtitle(_ id: String, catalog: String?) -> String? {
             id == current ? currentLine ?? catalog : catalog
         }
-        func option(_ model: Model) -> NWModelOption {
-            NWModelOption(id: model.id, title: model.title, subtitle: subtitle(model.id, catalog: model.thinking), note: model.context,
+        func option(_ model: Model) -> SHModelOption {
+            SHModelOption(id: model.id, title: model.title, subtitle: subtitle(model.id, catalog: model.thinking), note: model.context,
                           isCurrent: model.id == current, fast: model.fast)
         }
-        var sections: [NWModelSection] = []
-        let recentOptions = recent.compactMap { id -> NWModelOption? in
+        var sections: [SHModelSection] = []
+        let recentOptions = recent.compactMap { id -> SHModelOption? in
             if let model = model(id) { return q.isEmpty || model.key.contains(q) ? option(model) : nil }
             return q.isEmpty
-                ? NWModelOption(id: id, title: nativeModelShortName(id), subtitle: subtitle(id, catalog: nil), isCurrent: id == current)
+                ? SHModelOption(id: id, title: nativeModelShortName(id), subtitle: subtitle(id, catalog: nil), isCurrent: id == current)
                 : nil
         }
-        if !recentOptions.isEmpty { sections.append(NWModelSection(title: "Recent", options: recentOptions)) }
+        if !recentOptions.isEmpty { sections.append(SHModelSection(title: "Recent", options: recentOptions)) }
         let recentIDs = Set(recent)
         var providers: [String] = []
-        var byProvider: [String: [NWModelOption]] = [:]
+        var byProvider: [String: [SHModelOption]] = [:]
         for model in models where !recentIDs.contains(model.id) && (q.isEmpty || model.key.contains(q)) {
             if byProvider[model.provider] == nil { providers.append(model.provider) }
             byProvider[model.provider, default: []].append(option(model))
         }
-        for provider in providers { sections.append(NWModelSection(title: provider, options: byProvider[provider] ?? [])) }
-        return NWModelList(sections: sections)
+        for provider in providers { sections.append(SHModelSection(title: provider, options: byProvider[provider] ?? [])) }
+        return SHModelList(sections: sections)
     }
 
     /// Two quick choices for the settings popover. The current model stays even if unavailable;
     /// recent choices must still exist in the host's catalog. A model that offers a Fast tier
     /// carries the bolt: the current one by what the thread or draft says (`currentOffersFast`),
     /// the others by the catalog.
-    static func settingsModels(catalog: ModelCatalog?, current: String?, recent: [String], currentOffersFast: Bool = false) -> [NWModelOption] {
+    static func settingsModels(catalog: ModelCatalog?, current: String?, recent: [String], currentOffersFast: Bool = false) -> [SHModelOption] {
         var ids = current.flatMap { $0.isEmpty ? nil : [$0] } ?? []
         for id in recent where !ids.contains(id) && catalog?.model(id) != nil {
             guard ids.count < 2 else { break }
@@ -101,7 +101,7 @@ struct ModelCatalog: Sendable {
         }
         return ids.map {
             let isCurrent = $0 == current
-            return NWModelOption(id: $0, title: nativeModelShortName($0), isCurrent: isCurrent,
+            return SHModelOption(id: $0, title: nativeModelShortName($0), isCurrent: isCurrent,
                                  fast: isCurrent ? currentOffersFast : catalog?.model($0)?.fast ?? false)
         }
     }
@@ -144,7 +144,7 @@ final class ModelPickerState {
         didSet { if query != oldValue { rebuild() } }
     }
     var selection = 0
-    private(set) var list: NWModelList
+    private(set) var list: SHModelList
     private(set) var loading: Bool
     @ObservationIgnored private var catalog: ModelCatalog
     @ObservationIgnored private let recent: [String]
@@ -174,7 +174,7 @@ final class ModelPickerState {
     }
 }
 
-/// The model picker over `NWModelPicker`: Recent (up to 4), then one section per provider, with
+/// The model picker over `SHModelPicker`: Recent (up to 4), then one section per provider, with
 /// the picker's chord in its search row. Equal while it shows the same picker in the same room:
 /// its query, highlight and list reach it through the state's observation, so a composer redraw
 /// for something else (the field losing focus to the search) leaves its list alone.
@@ -187,7 +187,7 @@ struct ModelPicker: View, Equatable {
     static func == (a: Self, b: Self) -> Bool { a.state === b.state && a.maxHeight == b.maxHeight }
 
     var body: some View {
-        NWModelPicker(query: $state.query, list: state.list, loading: state.loading, selection: $state.selection, maxHeight: maxHeight,
+        SHModelPicker(query: $state.query, list: state.list, loading: state.loading, selection: $state.selection, maxHeight: maxHeight,
                       shortcut: KeybindingsStore.shared.display(.modelPicker), onChoose: { choose($0.id) }, onClose: close)
     }
 }

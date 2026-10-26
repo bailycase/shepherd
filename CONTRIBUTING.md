@@ -64,7 +64,7 @@ configuration, sessions, or a running Shepherd.
 - Update only docs the change makes inaccurate. Don't create new feature docs unless requested.
 - When you change a protocol message, update every consumer and its round-trip test.
 - `Extensions/` is the one copy of each pi extension; the app ships it as a resource bundle.
-- Use ShepherdUI (`Color.nw`, `Font.nw`, `NW.Space`/`Radius`/`Height`) and its shared
+- Use ShepherdUI (`Color.sh`, `Font.sh`, `SH.Space`/`Radius`/`Height`) and its shared
   components, never hardcoded colors, fonts, or sizes. A screen's own dimensions go in its
   domain's `AppLayout+<Domain>.swift`. A new color role must pass the contrast tests in both
   variants.

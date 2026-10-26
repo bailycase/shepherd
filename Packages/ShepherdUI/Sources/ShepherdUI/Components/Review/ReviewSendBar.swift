@@ -6,7 +6,7 @@ import SwiftUI
 /// else is said in the thread. Only there while there are unsent comments. The Mac's bar is 48pt
 /// with small buttons; the touch bar is 58pt with medium ones. At the accessibility sizes the
 /// buttons move under the text.
-public struct NWReviewSendBar: View {
+public struct SHReviewSendBar: View {
     public enum Size: Sendable { case regular, touch }
 
     let count: String
@@ -28,36 +28,36 @@ public struct NWReviewSendBar: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let stacked = typeSize.isAccessibilitySize
-        let buttons: NWButtonStyle.Size = size == .touch ? .m : .s
-        let layout = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: NW.Space.m)) : AnyLayout(HStackLayout(spacing: 10))
+        let buttons: SHButtonStyle.Size = size == .touch ? .m : .s
+        let layout = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: SH.Space.m)) : AnyLayout(HStackLayout(spacing: 10))
         layout {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Image(systemName: "text.bubble")
-                    .font(.nw(.ui))
-                    .foregroundStyle(nw.running)
+                    .font(.sh(.ui))
+                    .foregroundStyle(sh.running)
                     .accessibilityHidden(true)
-                Text("\(Text(count).fontWeight(.semibold).foregroundStyle(nw.textPrimary)) \(Text(detail).foregroundStyle(nw.textSecondary))")
-                    .font(.nw(.ui))
+                Text("\(Text(count).fontWeight(.semibold).foregroundStyle(sh.textPrimary)) \(Text(detail).foregroundStyle(sh.textSecondary))")
+                    .font(.sh(.ui))
                     .lineLimit(stacked ? nil : 1)
                     .truncationMode(.middle)
             }
             .accessibilityElement(children: .combine)
-            if !stacked { Spacer(minLength: NW.Space.m) }
-            HStack(spacing: NW.Space.s) {
+            if !stacked { Spacer(minLength: SH.Space.m) }
+            HStack(spacing: SH.Space.s) {
                 Button("Discard", action: onDiscard)
-                    .buttonStyle(.nw(.ghost, size: buttons))
+                    .buttonStyle(.sh(.ghost, size: buttons))
                     .disabled(sending)
                     .accessibilityHint("Deletes the comments you haven't sent")
                 Button(action: onSend) {
-                    HStack(spacing: NW.Space.s) {
-                        if sending { ProgressView().progressViewStyle(.nwSpinner(size: 10)) }
+                    HStack(spacing: SH.Space.s) {
+                        if sending { ProgressView().progressViewStyle(.shSpinner(size: 10)) }
                         // The Mac's main action draws its chord; touch has no ⌘↩ to teach.
-                        if size == .regular { NWButtonTitle("Send to agent", chord: "⌘↩") } else { Text("Send to agent") }
+                        if size == .regular { SHButtonTitle("Send to agent", chord: "⌘↩") } else { Text("Send to agent") }
                     }
                 }
-                .buttonStyle(.nw(.primary, size: buttons))
+                .buttonStyle(.sh(.primary, size: buttons))
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(sending)
                 .help("Send your comments as the agent's next message (⌘↩)")
@@ -67,20 +67,20 @@ public struct NWReviewSendBar: View {
         }
         .padding(.leading, 14)
         .padding(.trailing, 10)
-        .padding(.vertical, stacked ? NW.Space.s : 0)
-        .frame(maxWidth: .infinity, minHeight: size == .touch ? NWChangesMetrics.touchSendBarHeight : NWChangesMetrics.sendBarHeight,
+        .padding(.vertical, stacked ? SH.Space.s : 0)
+        .frame(maxWidth: .infinity, minHeight: size == .touch ? SHChangesMetrics.touchSendBarHeight : SHChangesMetrics.sendBarHeight,
                alignment: .leading)
-        .background(nw.bgRaised)
-        .overlay(alignment: .top) { NWHairline(color: nw.lineStrong) }
+        .background(sh.bgRaised)
+        .overlay(alignment: .top) { SHHairline(color: sh.lineStrong) }
         .accessibilityElement(children: .contain)
     }
 }
 
 #Preview("Review send bar") {
-    NWPreviewBoth {
+    SHPreviewBoth {
         VStack(spacing: 0) {
-            NWReviewSendBar(count: "1 comment", detail: "on outbox.go, not sent yet", onDiscard: {}, onSend: {})
-            NWReviewSendBar(count: "1 comment", detail: "on outbox.go, not sent yet", size: .touch, onDiscard: {}, onSend: {})
+            SHReviewSendBar(count: "1 comment", detail: "on outbox.go, not sent yet", onDiscard: {}, onSend: {})
+            SHReviewSendBar(count: "1 comment", detail: "on outbox.go, not sent yet", size: .touch, onDiscard: {}, onSend: {})
         }
         .frame(width: 620)
     }

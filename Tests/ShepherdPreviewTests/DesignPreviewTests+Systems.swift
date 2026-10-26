@@ -10,7 +10,7 @@ import Testing
 @testable import ShepherdApp
 
 /// Design systems (DZSystem, NavDesigns, DZStart): a system built from a repository on its build's
-/// page beside the build agent's chat, a build still reading its project, Night Watch on the
+/// page beside the build agent's chat, a build still reading its project, Shepherd Design on the
 /// Design systems page, the Designs page's systems grid, and New design's card. Specimens are drawn by the board renderer
 /// off screen and shown from their snapshots.
 extension DesignPreviewTests {
@@ -99,14 +99,14 @@ extension DesignPreviewTests {
     }
 
     /// A project with acme-web's stylesheet, its build (a live stub agent), the system that agent
-    /// wrote, a design drawn in it, and Night Watch.
+    /// wrote, a design drawn in it, and Shepherd Design.
     private func systemWorkspace(written: Bool = true) async throws -> (workspace: PreviewWorkspace, build: Design, agent: Agent) {
         let workspace = try PreviewWorkspace()
         workspace.settings.designToolEnabled = true
         let vm = workspace.vm
         vm.designNetwork = .none
         vm.designLiveCap = 0
-        workspace.server.designSystems.register(NightWatchSystem.builtIn())
+        workspace.server.designSystems.register(ShepherdDesignSystem.builtIn())
         let project = workspace.dir.appendingPathComponent("dashboard-web", isDirectory: true)
         let stylesheet = project.appendingPathComponent("web/static/tokens.css")
         try FileManager.default.createDirectory(at: stylesheet.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -192,11 +192,11 @@ extension DesignPreviewTests {
         }
     }
 
-    /// Shepherd UI as the user's system holds it, written as a design's agent writes it: Night Watch's values in
+    /// Shepherd UI as the user's system holds it, written as a design's agent writes it: Shepherd Design's values in
     /// light and dark, steps that say what they are for, the page copy its tokens.json carries, and components, three
     /// of them with a specimen. What the boards draw for it comes from this write, never from strings in a view.
     static func shepherdUIWrite() throws -> DesignSystemWrite {
-        var tokens = NightWatchSystem.tokens()
+        var tokens = ShepherdDesignSystem.tokens()
         tokens.name = "Shepherd UI"
         tokens.namespace = "shepherd-ui"
         let uses = ["--radius-xs": "pills, keycaps", "--radius-s": "buttons, fields, rows", "--radius-m": "cards, composer, code",
@@ -233,7 +233,7 @@ extension DesignPreviewTests {
             "summary": .string("Shepherd UI is what the Shepherd app draws with: the colors, type and spacing of its native views, "
                 + "and the components every board in this design imports. A board links its tokens and bundle once, then draws a "
                 + "component by name."),
-            "source": .string("Made in Shepherd chat UI from the app’s Night Watch values. Not read from a repository, so there is "
+            "source": .string("Made in Shepherd chat UI from the app’s Shepherd Design values. Not read from a repository, so there is "
                 + "nothing to re-sync."),
             "principles": .array([
                 ["Readable measure.", "The thread column is at most 820pt and agent prose 640pt."],
@@ -356,7 +356,7 @@ extension DesignPreviewTests {
         }
     }
 
-    /// NavDesigns' systems: acme-web with its swatches and source, Night Watch, and "Build one
+    /// NavDesigns' systems: acme-web with its swatches and source, Shepherd Design, and "Build one
     /// from a repo".
     @Test func designsPageSystems() async throws {
         let (workspace, _, _) = try await systemWorkspace()

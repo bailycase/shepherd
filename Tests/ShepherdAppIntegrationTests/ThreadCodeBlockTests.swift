@@ -11,7 +11,7 @@ struct ThreadCodeBlockTests {
     func codeStaysSelectableAndUnwrappedWhenTheColumnNarrows(dark: Bool, long: Bool) throws {
         let code = "let sheep = \"🐑\"\n" + String(repeating: "value = 42; ", count: long ? 80 : 1)
         let window = OffscreenWindow(size: CGSize(width: 480, height: 320), dark: dark,
-                                     NWCodeBlock(code, language: "swift", highlighted: AttributedString(code)))
+                                     SHCodeBlock(code, language: "swift", highlighted: AttributedString(code)))
         defer { window.close() }
         ListPerf.settle(window)
         let field = try #require(codeField(in: window.window.contentView!, code: code))
@@ -33,7 +33,7 @@ struct ThreadCodeBlockTests {
 
     @Test func aColumnNarrowerThanTheCodeScrollsSidewaysInsteadOfWrapping() throws {
         let code = "let sheep = \"🐑\"\nlet count = 42"
-        let window = OffscreenWindow(size: CGSize(width: 480, height: 320), dark: false, NWCodeBlock(code, language: "swift"))
+        let window = OffscreenWindow(size: CGSize(width: 480, height: 320), dark: false, SHCodeBlock(code, language: "swift"))
         defer { window.close() }
         ListPerf.settle(window)
         let height = try #require(codeField(in: window.host, code: code)).frame.height
@@ -53,7 +53,7 @@ struct ThreadCodeBlockTests {
 
     @Test func aSelectionSurvivesTheNextCodeChunk() throws {
         let code = "let sheep = \"🐑\""
-        let window = OffscreenWindow(NWCodeBlock(code, language: "swift"))
+        let window = OffscreenWindow(SHCodeBlock(code, language: "swift"))
         defer { window.close() }
         ListPerf.settle(window)
         let field = try #require(codeField(in: window.host, code: code))
@@ -85,7 +85,7 @@ struct ThreadCodeBlockTests {
         editor.setSelectedRange(selection)
         let initialHeight = field.frame.height
         let grown = code + "\nlet count = 42"
-        window.show(NWCodeBlock(grown, language: "swift"))
+        window.show(SHCodeBlock(grown, language: "swift"))
         ListPerf.settle(window)
         #expect(editor.string == grown)
         #expect(field.frame.height > initialHeight, "adding a line invalidates the cached intrinsic size")
@@ -97,12 +97,12 @@ struct ThreadCodeBlockTests {
         #expect(codeField(in: window.host, code: grown) === field)
         #expect(editor.selectedRange() == selection && field.currentEditor() === editor)
         var colored = AttributedString(grown)
-        colored.foregroundColor = Color.nw.synKeyword
-        window.show(NWCodeBlock(grown, language: "swift", highlighted: colored))
+        colored.foregroundColor = Color.sh.synKeyword
+        window.show(SHCodeBlock(grown, language: "swift", highlighted: colored))
         ListPerf.settle(window)
         #expect(editor.string == grown && editor.selectedRange() == selection)
         let shortened = "let sh"
-        window.show(NWCodeBlock(shortened, language: "swift"))
+        window.show(SHCodeBlock(shortened, language: "swift"))
         ListPerf.settle(window)
         #expect(editor.string == shortened && editor.selectedRange() == NSRange(location: 4, length: 2))
         #expect(field.frame.height == initialHeight, "removing a line invalidates the cached intrinsic size")
@@ -112,14 +112,14 @@ struct ThreadCodeBlockTests {
     func unchangedCodeKeepsItsNativeAttributesThroughResizeAndAppearanceChanges(lines: Int) throws {
         let code = (0..<lines).map { "let sheep\($0) = \"🐑\"" }.joined(separator: "\n")
         let window = OffscreenWindow(size: CGSize(width: 480, height: 320), dark: false,
-                                     NWCodeBlock(code, language: "swift").environment(\.colorScheme, .light))
+                                     SHCodeBlock(code, language: "swift").environment(\.colorScheme, .light))
         defer { window.close() }
         ListPerf.settle(window)
         let field = try #require(codeField(in: window.host, code: code))
         let counts = ListPerf.counting {
             for step in 0..<8 {
                 window.window.setContentSize(CGSize(width: 480 + step * 8, height: 320))
-                window.show(NWCodeBlock(code, language: "swift")
+                window.show(SHCodeBlock(code, language: "swift")
                     .environment(\.colorScheme, step.isMultiple(of: 2) ? .light : .dark))
                 ListPerf.settle(window)
                 _ = field.intrinsicContentSize // AppKit may ask directly, bypassing the SwiftUI hook.
@@ -138,11 +138,11 @@ struct ThreadCodeBlockTests {
         let code = (0..<500).map { "// recreated row \($0) 🐑" }.joined(separator: "\n")
         let window = OffscreenWindow(size: CGSize(width: 520, height: 300), dark: true)
         defer { window.close() }
-        window.show(NWCodeBlock(code, language: "swift").id(0))
+        window.show(SHCodeBlock(code, language: "swift").id(0))
         let original = try #require(codeField(in: window.host, code: code))
         let counts = ListPerf.counting {
             for identity in 1...6 {
-                window.show(NWCodeBlock(code, language: "swift").id(identity))
+                window.show(SHCodeBlock(code, language: "swift").id(identity))
                 ListPerf.settle(window)
             }
         }
@@ -156,14 +156,14 @@ struct ThreadCodeBlockTests {
     @Test func syntaxOnlyChangesUpdateRetainedCode() throws {
         let code = "let sheep = 1"
         var highlighted = AttributedString(code)
-        highlighted.foregroundColor = Color.nw.synKeyword
-        let window = OffscreenWindow(NWCodeBlock(code, language: "swift", highlighted: highlighted))
+        highlighted.foregroundColor = Color.sh.synKeyword
+        let window = OffscreenWindow(SHCodeBlock(code, language: "swift", highlighted: highlighted))
         defer { window.close() }
         ListPerf.settle(window)
         let field = try #require(codeField(in: window.host, code: code))
         let original = field.attributedStringValue
-        highlighted.foregroundColor = Color.nw.synString
-        window.show(NWCodeBlock(code, language: "swift", highlighted: highlighted))
+        highlighted.foregroundColor = Color.sh.synString
+        window.show(SHCodeBlock(code, language: "swift", highlighted: highlighted))
         ListPerf.settle(window)
         #expect(codeField(in: window.host, code: code) === field)
         #expect(field.attributedStringValue != original, "syntax-only changes must invalidate cached attributes")
@@ -176,7 +176,7 @@ struct ThreadCodeBlockTests {
         defer { ThemeStore.shared.select(theme); ThemeStore.shared.textScale = scale }
         let code = "let sheep = \"🐑\""
         let window = OffscreenWindow(size: CGSize(width: 480, height: 320), dark: false,
-                                     NWCodeBlock(code, language: "swift"))
+                                     SHCodeBlock(code, language: "swift"))
         defer { window.close() }
         ListPerf.settle(window)
         let field = try #require(codeField(in: window.host, code: code))

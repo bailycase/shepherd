@@ -9,13 +9,13 @@ extension MobileLayout {
     /// The list column.
     static let settingsListWidth: CGFloat = 300
     /// Around the list's rows.
-    static let settingsListInset: CGFloat = NW.Space.m + NW.Space.xxs
+    static let settingsListInset: CGFloat = SH.Space.m + SH.Space.xxs
     /// Between the list's rows.
-    static let settingsListRowSpacing: CGFloat = NW.Space.xxs
+    static let settingsListRowSpacing: CGFloat = SH.Space.xxs
     /// A list row's selection.
     static let settingsListRowRadius: CGFloat = 10
     /// Above a page shown beside the list, under the bar.
-    static let settingsColumnTop: CGFloat = NW.Space.xl
+    static let settingsColumnTop: CGFloat = SH.Space.xl
 
     // MARK: Rows
 
@@ -46,16 +46,16 @@ extension MobileLayout {
     /// Line numbers, in the gutter.
     static let instructionsNumberSize: CGFloat = 10.5
     /// Between the numbers and the text, and after the text.
-    static let instructionsGutterGap: CGFloat = NW.Space.m
+    static let instructionsGutterGap: CGFloat = SH.Space.m
     /// Above the first line and below the last.
-    static let instructionsEditorInset: CGFloat = NW.Space.m + NW.Space.xxs
+    static let instructionsEditorInset: CGFloat = SH.Space.m + SH.Space.xxs
     /// Dynamic Type grows the editor's text this far, so a line still holds a sentence.
     static let instructionsMaximumTextSize: CGFloat = 22
     /// The iPad's editor at its shortest.
     static let instructionsEditorMinHeight: CGFloat = 250
     /// The iPad page's sides, and between its blocks.
     static let instructionsPadSides: CGFloat = 20
-    static let instructionsPadSpacing: CGFloat = NW.Space.xl
+    static let instructionsPadSpacing: CGFloat = SH.Space.xl
     /// Every host | Per host: a 300pt track at radius 9, 30pt segments at radius 7, 13pt.
     static let instructionsScopeWidth: CGFloat = 300
     static let instructionsScopeRadius: CGFloat = 9
@@ -86,10 +86,10 @@ extension MobileLayout {
     static let skillRowHeight: CGFloat = 58
     static let skillNameSize: CGFloat = 15
     /// The chevron's column at a skill row's end (the row opens the skill).
-    static let skillChevronSlot: CGFloat = NW.Space.l
+    static let skillChevronSlot: CGFloat = SH.Space.l
     static let skillSummarySize: CGFloat = 12.5
     static let skillLineSpacing: CGFloat = 3
-    /// The switch at a row's end (`NWSwitch` is 30pt wide), kept clear of the row's text.
+    /// The switch at a row's end (`SHSwitch` is 30pt wide), kept clear of the row's text.
     static let skillSwitchSlot: CGFloat = 30
     /// A search result's status at its end: Install, Installed, Update, or "1 of 3 hosts".
     static let skillStatusSlot: CGFloat = 96

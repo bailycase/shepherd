@@ -66,8 +66,8 @@ struct AutomationsPageTests {
         let runs = [AutomationRun(startedAt: night - 86_400, settledAt: night - 86_400 + 40, endedAt: night - 86_400 + 60, result: .finished),
                     AutomationRun(startedAt: night, endedAt: night + 660, result: .interrupted)]
         let last = make(hosts, runs: [key: runs]).rows.first?.lastRun
-        #expect(last == NWRunOutcome("interrupted", state: .failed, clock: .ago(Date(timeIntervalSince1970: night + 660))))
-        #expect(make(hosts, runs: [key: []]).rows.first?.lastRun == NWRunOutcome("not run yet"))
+        #expect(last == SHRunOutcome("interrupted", state: .failed, clock: .ago(Date(timeIntervalSince1970: night + 660))))
+        #expect(make(hosts, runs: [key: []]).rows.first?.lastRun == SHRunOutcome("not run yet"))
         #expect(make(hosts, runs: [key: [AutomationRun(startedAt: night, endedAt: night + 5, result: .stopped)]]).rows.first?.lastRun?.state == nil,
                 "a stopped run is quiet")
     }
@@ -97,7 +97,7 @@ struct AutomationsPageTests {
         let a = Automation(name: "a", prompt: "p", cwd: "/tmp"), b = Automation(name: "b", prompt: "p", cwd: "/tmp")
         let offline = make([host(remoteID, "horizon", automations: [a], connected: false)])
         let row = offline.rows.first
-        #expect(row?.lastRun == NWRunOutcome("host offline"))
+        #expect(row?.lastRun == SHRunOutcome("host offline"))
         #expect(row?.canToggle == false && row?.canRun == false && row?.canEdit == false)
         #expect(offline.detail?.readOnlyReason == "Host offline")
         #expect(offline.detail?.runsNote == "Runs aren't available from this host.")
@@ -173,13 +173,13 @@ struct HostsPageTests {
         #expect(card.id == .local && card.name == "This Mac")
         #expect(card.subtitle == "Shepherd app · agent 0.8.2")
         #expect(card.status == "Connected" && card.state == .done)
-        #expect(card.facts == [NWHostFact("Running", "2 threads"), NWHostFact("Worktrees", "1"),
-                               NWHostFact("Repos", "shepherd, dashboard-web")])
+        #expect(card.facts == [SHHostFact("Running", "2 threads"), SHHostFact("Worktrees", "1"),
+                               SHHostFact("Repos", "shepherd, dashboard-web")])
         #expect(!card.canRetry && !card.canRemove)
         #expect(model.subtitle == "1 host" && model.offlineCount == 0)
         #expect(HostsPageModel.make(local: ShepherdState(), agentVersion: nil, remotes: []).cards.first?.subtitle == "Shepherd app")
         #expect(HostsPageModel.make(local: ShepherdState(), agentVersion: nil, remotes: []).cards.first?.facts
-            == [NWHostFact("Running", "none")])
+            == [SHHostFact("Running", "none")])
     }
 
     @Test func aConnectedHostSaysWhatRunsThereAndWhereItIs() {
@@ -202,8 +202,8 @@ struct HostsPageTests {
                                                   remote("studio", phase: .connected)], timeZone: utc, locale: locale)
         let card = model.cards[1]
         #expect(card.status == "Unreachable" && card.state == .failed)
-        #expect(card.facts == [NWHostFact("Waiting", "2 threads, 1 automation"), NWHostFact("Last seen", "Sep 24 07:12"),
-                               NWHostFact("Address", "horizon.local:7433")])
+        #expect(card.facts == [SHHostFact("Waiting", "2 threads, 1 automation"), SHHostFact("Last seen", "Sep 24 07:12"),
+                               SHHostFact("Address", "horizon.local:7433")])
         #expect(card.offlineSince == seen)
         #expect(card.note == nil, "unreachable says it all")
         #expect(card.canRetry && card.canRemove)
@@ -224,7 +224,7 @@ struct HostsPageTests {
         #expect(HostsPageModel.isOffline(phase) == (model.offlineCount == 1), "More ▸ Hosts counts as the page does")
         #expect(card.canRetry == retry)
         #expect((card.note != nil) == note)
-        #expect(card.facts == [NWHostFact("Address", "horizon.local:7433")], "nothing known waits there, and it was never seen")
+        #expect(card.facts == [SHHostFact("Address", "horizon.local:7433")], "nothing known waits there, and it was never seen")
     }
 
     @Test func cardsLayOutThreeToARow() {

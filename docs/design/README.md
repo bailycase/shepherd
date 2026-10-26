@@ -26,7 +26,7 @@ A block over 250 lines prints as an outline of its parts; read one with a path a
 
 **Reading a spec.**
 
-- A rule names its board in parentheses, for example (NWFoundations).
+- A rule names its board in parentheses, for example (SHFoundations).
 - A spec marked **Not built yet.** is a design for later: build it to that spec when asked,
   and skip it when working on shipped UI.
 - The places Shepherd deliberately departs from the boards are in
@@ -36,7 +36,7 @@ A block over 250 lines prints as an outline of its parts; read one with a path a
   `Packages/ShepherdUI` (module `ShepherdUI`), the Mac app's own surface dimensions in
   `AppLayout`, split by domain into `Sources/ShepherdApp/AppLayout+<Domain>.swift`.
 - The design canvas, "Shepherd chat UI", has the pages macOS, iOS, iPadOS, Notifications,
-  Missions, Design tool and Design system · Night Watch. The last is **Night Watch**,
+  Missions, Design tool and Design system · Shepherd Design. The last is **Shepherd Design**,
   Shepherd's design system: Foundations, Controls, Status & feedback, Thread, Composer &
   menus, Navigation, Agents & orchestration, Review, Swift implementation, Missions map,
   Mission screens and Design tool, each drawn dark and light. A UI decision changes the specs
@@ -49,7 +49,7 @@ the app has. Light variants share their dark board's row. **Built** means the ap
 board as specified here, give or take what Known gaps and the departures table list;
 **Partial** means some of it is built and the rest is marked **Not built yet** where it is
 specified; **Not built yet** means none of its surface exists. A board is judged on its own
-subject: the destinations sidebar that most macOS boards draw around it is NWNavigation's and
+subject: the destinations sidebar that most macOS boards draw around it is SHNavigation's and
 NavNewThread's, the Settings nav's Instructions, Skills and Experiments rows are those boards', and a
 full-window board's larger sizes and second lines give way to the component boards (Composer,
 questions, and menus), except SlashMenu's and ModelPicker's, which specify their menus.
@@ -254,25 +254,25 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | SystemCardMenu, SystemBuiltIn, SystemDeleteConfirm, SystemDeleteBuilding, SystemDeleteFailed | [design-tool-references](design-tool-references.md) | Design tool › Delete and import (a system's menu, DeleteSystemDialog) | Built |
 | ImportFileMenu, ImportNewDesign, ImportDrop, ImportProgress, ImportDone, ImportFailed, ImportAgain | [design-tool-references](design-tool-references.md) | Design tool › Delete and import (Import) | Built, without New Design, New Mission and Export… in the File menu |
 
-**Design system · Night Watch**
+**Design system · Shepherd Design**
 
 | Board | Files | Specified in | Status |
 | --- | --- | --- | --- |
-| NWFoundations, NWFoundationsLight | [theme](theme.md), [foundations](foundations.md), [motion](motion.md) | Theme model; Typography; Space, radius, height, elevation; Motion | Built |
-| NWControls, NWControlsLight | [components](components.md) | Components › Controls | Built |
-| NWStatus, NWStatusLight | [components](components.md) | Components › Status and feedback; Status language | Partial |
-| NWThread, NWThreadLight | [thread](thread.md) | Thread | Partial |
+| SHFoundations, SHFoundationsLight | [theme](theme.md), [foundations](foundations.md), [motion](motion.md) | Theme model; Typography; Space, radius, height, elevation; Motion | Built |
+| SHControls, SHControlsLight | [components](components.md) | Components › Controls | Built |
+| SHStatus, SHStatusLight | [components](components.md) | Components › Status and feedback; Status language | Partial |
+| SHThread, SHThreadLight | [thread](thread.md) | Thread | Partial |
 | TurnErrors | [thread](thread.md) | Thread › Errors (every kind, the retry line, touch sizes) | Partial |
 | LiveText | [thread](thread.md), [motion](motion.md), [queue](queue.md), [subagents](subagents.md) | Thread › Live text, Activity lines (Live), Thinking (Live); Motion (`shimmer`); Up next (a steering row waits still); Subagents (a running tray row's words) | Built |
-| NWComposer, NWComposerLight | [composer](composer.md), [dialogs-and-palette](dialogs-and-palette.md) | Composer, questions, and menus; Command palette | Built |
+| SHComposer, SHComposerLight | [composer](composer.md), [dialogs-and-palette](dialogs-and-palette.md) | Composer, questions, and menus; Command palette | Built |
 | ContextIdeas | [composer](composer.md), [thread](thread.md) | Composer, questions, and menus › Context meter; Thread › Compactions | Built |
-| NWNavigation, NWNavigationLight | [window-and-toolbar](window-and-toolbar.md), [sidebar](sidebar.md) | Window and adaptive layout; Sidebar; Toolbar | Partial |
-| NWAgents, NWAgentsLight | [subagents](subagents.md), [ios-ipad-pages](ios-ipad-pages.md) | Subagents; Side pane › Subagent inspector; Mission components | Built |
+| SHNavigation, SHNavigationLight | [window-and-toolbar](window-and-toolbar.md), [sidebar](sidebar.md) | Window and adaptive layout; Sidebar; Toolbar | Partial |
+| SHAgents, SHAgentsLight | [subagents](subagents.md), [ios-ipad-pages](ios-ipad-pages.md) | Subagents; Side pane › Subagent inspector; Mission components | Built |
 | ChangesStates | [ios-ipad-pages](ios-ipad-pages.md), [thread](thread.md), [settings](settings.md) | Side pane › Changes; Thread › Changes card; Keyboard | Partial |
 | SubagentTray | [subagents](subagents.md), [ios-iphone](ios-iphone.md), [ios-ipad](ios-ipad.md) | Subagents; iPhone: Subagents; iOS: iPad › Subagents | Partial |
 | SubagentList | [subagents](subagents.md) | Subagents › The Subagents tab | Built (Mac: the side pane's third tab, current and earlier runs, each opening the inspector; the tab's dot is the run status the user chose (blue working, green done); not iPad, whose side pane has no tabs) |
-| NWSwift, NWSwiftLight | [theme](theme.md) | Theme model › Building on ShepherdUI | Partial |
-| NWDesignTool, NWDesignToolLight | [design-tool-references](design-tool-references.md) | Design tool › Design components | Partly built: the canvas, board frame, toolbar, system chip and chat composer |
+| SHSwift, SHSwiftLight | [theme](theme.md) | Theme model › Building on ShepherdUI | Partial |
+| SHDesignTool, SHDesignToolLight | [design-tool-references](design-tool-references.md) | Design tool › Design components | Partly built: the canvas, board frame, toolbar, system chip and chat composer |
 
 ## Files
 

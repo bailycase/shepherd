@@ -11,10 +11,10 @@ extension ShepherdViewModel {
     // MARK: Style
 
     /// Settings ▸ Appearance ▸ Sidebar ▸ Organize by.
-    var sidebarStyle: NWSidebarStyle { settings.sidebarStyle }
+    var sidebarStyle: SHSidebarStyle { settings.sidebarStyle }
 
     /// View ▸ Organize Sidebar By: the thread on screen stays selected and scrolls into view.
-    func setSidebarStyle(_ style: NWSidebarStyle) {
+    func setSidebarStyle(_ style: SHSidebarStyle) {
         guard settings.sidebarStyle != style else { return }
         settings.sidebarStyle = style
         sidebarRevealRequest += 1

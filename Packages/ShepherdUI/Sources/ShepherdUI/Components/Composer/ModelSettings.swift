@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// The single model · thinking button on NWComposer: the model's name in mono, a dot, the
-/// thinking level, and a bolt only while speed is Fast (`NWFastBolt`). Standard draws nothing, a
+/// The single model · thinking button on SHComposer: the model's name in mono, a dot, the
+/// thinking level, and a bolt only while speed is Fast (`SHFastBolt`). Standard draws nothing, a
 /// model without thinking has no level, and a model without speed has no bolt.
-public struct NWModelSettingsLabel: View {
+public struct SHModelSettingsLabel: View {
   let model: String
   let thinking: String?
   let fast: Bool
@@ -17,21 +17,21 @@ public struct NWModelSettingsLabel: View {
   }
 
   public var body: some View {
-    HStack(spacing: NW.Space.s) {
-      Text(model.isEmpty ? "Default" : model).font(.nwMono(12)).lineLimit(1).truncationMode(.middle)
+    HStack(spacing: SH.Space.s) {
+      Text(model.isEmpty ? "Default" : model).font(.shMono(12)).lineLimit(1).truncationMode(.middle)
       if let thinking {
-        Text("·").foregroundStyle(Color.nw.textTertiary)
+        Text("·").foregroundStyle(Color.sh.textTertiary)
         Text(thinking).fixedSize()
       }
-      if fast { NWFastBolt() }
-      if changeable { NWChipChevron() }
+      if fast { SHFastBolt() }
+      if changeable { SHChipChevron() }
     }
   }
 }
 
 /// The quiet worktree chip in the composer's trailing controls: the glyph, the branch in mono,
 /// a lantern ●n for changed files, and the chevron, all in the chip's `textSecondary`.
-public struct NWComposerBranchLabel: View {
+public struct SHComposerBranchLabel: View {
   let branch: String
   let changes: Int
   let checkout: Bool
@@ -45,29 +45,29 @@ public struct NWComposerBranchLabel: View {
   }
 
   public var body: some View {
-    HStack(spacing: NW.Space.s) {
+    HStack(spacing: SH.Space.s) {
       Image(systemName: checkout ? "house" : "square.on.square")
-        .font(.nwSans(NWComposerMetrics.branchSymbol, .medium))
-      Text(branch).font(.nwMono(NWComposerMetrics.branchText))
+        .font(.shSans(SHComposerMetrics.branchSymbol, .medium))
+      Text(branch).font(.shMono(SHComposerMetrics.branchText))
         .lineLimit(1).truncationMode(.middle).layoutPriority(-1)
       if changes > 0 {
-        Text("●\(changes)").font(.nwMono(NWComposerMetrics.branchCount)).foregroundStyle(
-          Color.nw.lanternText
+        Text("●\(changes)").font(.shMono(SHComposerMetrics.branchCount)).foregroundStyle(
+          Color.sh.lanternText
         )
-        .fixedSize().nwContentTransition(.numeric())
+        .fixedSize().shContentTransition(.numeric())
       }
       if let host {
-        Text(host).font(.nwMono(NWComposerMetrics.branchCount)).foregroundStyle(
-          Color.nw.textTertiary)
+        Text(host).font(.shMono(SHComposerMetrics.branchCount)).foregroundStyle(
+          Color.sh.textTertiary)
       }
-      NWChipChevron()
+      SHChipChevron()
     }
   }
 }
 
 /// Where ↑↓ stop in the popover, top to bottom: each model, All models…, each thinking level,
 /// each speed. ↩ chooses the stop, and the pointer moves it too.
-struct NWModelSettingsStops: Equatable {
+struct SHModelSettingsStops: Equatable {
   enum Stop: Equatable {
     case model(Int)
     case allModels
@@ -104,7 +104,7 @@ struct NWModelSettingsStops: Equatable {
   }
 }
 
-/// NWComposer's one popover (NWModelSettings): the model, the thinking level and the speed. The
+/// SHComposer's one popover (SHModelSettings): the model, the thinking level and the speed. The
 /// button that opens it reads model · thinking, plus a bolt when speed is Fast.
 ///
 /// MODEL lists the current model and one recent (a bolt marks a model with a Fast tier, a check
@@ -112,17 +112,17 @@ struct NWModelSettingsStops: Equatable {
 /// takes, and SPEED a segmented control of its tiers (Standard | Fast). Only what the model really
 /// offers appears: no Speed row for a model without a raised tier. A model choice closes the
 /// popover; a level or a speed can change while it stays open. ↑↓ move, ↩ chooses, esc closes.
-public struct NWModelSettings: View {
-  let models: [NWModelOption]
-  let thinking: [NWThinkingOption]
+public struct SHModelSettings: View {
+  let models: [SHModelOption]
+  let thinking: [SHThinkingOption]
   let currentThinking: String?
-  let speeds: [NWSpeedOption]
+  let speeds: [SHSpeedOption]
   let currentSpeed: String
   let modelEnabled: Bool
   let thinkingEnabled: Bool
   let speedEnabled: Bool
   let maxHeight: CGFloat?
-  let chooseModel: (NWModelOption) -> Void
+  let chooseModel: (SHModelOption) -> Void
   let chooseThinking: (String) -> Void
   let chooseSpeed: (String) -> Void
   let allModels: () -> Void
@@ -131,10 +131,10 @@ public struct NWModelSettings: View {
   @FocusState private var focused: Bool
 
   public init(
-    models: [NWModelOption], thinking: [NWThinkingOption], currentThinking: String?,
-    speeds: [NWSpeedOption], currentSpeed: String, modelEnabled: Bool = true,
+    models: [SHModelOption], thinking: [SHThinkingOption], currentThinking: String?,
+    speeds: [SHSpeedOption], currentSpeed: String, modelEnabled: Bool = true,
     thinkingEnabled: Bool = true, speedEnabled: Bool = true, maxHeight: CGFloat? = nil,
-    chooseModel: @escaping (NWModelOption) -> Void, chooseThinking: @escaping (String) -> Void,
+    chooseModel: @escaping (SHModelOption) -> Void, chooseThinking: @escaping (String) -> Void,
     chooseSpeed: @escaping (String) -> Void, allModels: @escaping () -> Void,
     close: @escaping () -> Void
   ) {
@@ -154,8 +154,8 @@ public struct NWModelSettings: View {
     self.close = close
   }
 
-  private var stops: NWModelSettingsStops {
-    NWModelSettingsStops(models: models.count, thinking: thinking.count, speeds: speeds.count)
+  private var stops: SHModelSettingsStops {
+    SHModelSettingsStops(models: models.count, thinking: thinking.count, speeds: speeds.count)
   }
 
   public var body: some View {
@@ -163,27 +163,27 @@ public struct NWModelSettings: View {
     ScrollViewReader { proxy in
       ScrollView {
         VStack(spacing: 0) {
-          NWMenuHeader("Model")
+          SHMenuHeader("Model")
           modelRows(stops)
           if !thinking.isEmpty {
-            NWHairline().padding(.vertical, NW.Space.xs)
-            NWMenuHeader("Thinking")
-            NWModelSettingsSegments(
+            SHHairline().padding(.vertical, SH.Space.xs)
+            SHMenuHeader("Thinking")
+            SHModelSettingsSegments(
               label: "Thinking",
               segments: thinking.map {
-                NWModelSettingsSegment(id: $0.id, title: $0.title, note: $0.note)
+                SHModelSettingsSegment(id: $0.id, title: $0.title, note: $0.note)
               },
               current: currentThinking, highlighted: highlighted(.thinking(0), in: stops, count: thinking.count),
               enabled: thinkingEnabled, start: stops.index(of: .thinking(0)),
               hover: { selection = stops.index(of: .thinking($0)) }, choose: chooseThinking)
           }
           if !speeds.isEmpty {
-            NWHairline().padding(.vertical, NW.Space.xs)
-            NWMenuHeader("Speed")
-            NWModelSettingsSegments(
+            SHHairline().padding(.vertical, SH.Space.xs)
+            SHMenuHeader("Speed")
+            SHModelSettingsSegments(
               label: "Speed",
               segments: speeds.map {
-                NWModelSettingsSegment(
+                SHModelSettingsSegment(
                   id: $0.id, title: $0.title, note: $0.detail, bolt: $0.boosted)
               },
               current: currentSpeed, highlighted: highlighted(.speed(0), in: stops, count: speeds.count),
@@ -191,13 +191,13 @@ public struct NWModelSettings: View {
               hover: { selection = stops.index(of: .speed($0)) }, choose: chooseSpeed)
           }
         }
-        .padding(NW.Space.s)
+        .padding(SH.Space.s)
       }
       .scrollBounceBehavior(.basedOnSize)
-      .frame(width: NWComposerMetrics.modelSettingsWidth)
+      .frame(width: SHComposerMetrics.modelSettingsWidth)
       .frame(maxHeight: maxHeight)
       .fixedSize(horizontal: false, vertical: true)
-      .nwPopover()
+      .shPopover()
       // The popover takes the keyboard, not its scroll view (which would scroll on ↑↓ itself),
       // as every composer menu does.
       .focusable().focusEffectDisabled().focused($focused)
@@ -228,42 +228,42 @@ public struct NWModelSettings: View {
   }
 
   /// The model rows and All models…, which share one enabled state.
-  private func modelRows(_ stops: NWModelSettingsStops) -> some View {
+  private func modelRows(_ stops: SHModelSettingsStops) -> some View {
     Group {
       ForEach(Array(models.enumerated()), id: \.element.id) { index, model in
-        NWMenuRow(
+        SHMenuRow(
           highlighted: selection == index, action: { if modelEnabled { chooseModel(model) } },
           onHover: { selection = index }
         ) {
-          Text(model.title).font(.nwMono(12)).foregroundStyle(Color.nw.textPrimary)
+          Text(model.title).font(.shMono(12)).foregroundStyle(Color.sh.textPrimary)
             .lineLimit(1).truncationMode(.middle)
-          Spacer(minLength: NW.Space.m)
-          if model.fast { NWFastBolt() }
+          Spacer(minLength: SH.Space.m)
+          if model.fast { SHFastBolt() }
           if model.isCurrent {
             Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold))
-              .foregroundStyle(Color.nw.running)
+              .foregroundStyle(Color.sh.running)
           }
         }
         .id(index)
         .accessibilityLabel(
           model.title + (model.isCurrent ? ", current" : "") + (model.fast ? ", offers Fast" : ""))
       }
-      NWMenuRow(
+      SHMenuRow(
         highlighted: selection == models.count, action: { if modelEnabled { allModels() } },
         onHover: { selection = models.count }
       ) {
-        Text("All models…").font(.nw(.ui)).foregroundStyle(Color.nw.textSecondary)
+        Text("All models…").font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
         Spacer(minLength: 0)
         Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
-          .foregroundStyle(Color.nw.textTertiary)
+          .foregroundStyle(Color.sh.textTertiary)
       }
       .id(models.count)
     }
-    .nwEnabledOpacity(modelEnabled)
+    .shEnabledOpacity(modelEnabled)
   }
 
   /// Which of `count` segments starting at `first` ↑↓ or the pointer is on, if any.
-  private func highlighted(_ first: NWModelSettingsStops.Stop, in stops: NWModelSettingsStops, count: Int) -> Int? {
+  private func highlighted(_ first: SHModelSettingsStops.Stop, in stops: SHModelSettingsStops, count: Int) -> Int? {
     let index = selection - stops.index(of: first)
     return (0..<count).contains(index) ? index : nil
   }
@@ -280,7 +280,7 @@ public struct NWModelSettings: View {
 }
 
 /// One choice of a segmented row: a level or a speed.
-struct NWModelSettingsSegment: Equatable {
+struct SHModelSettingsSegment: Equatable {
   var id: String
   var title: String
   /// What it means, a tooltip ("quick", "Faster responses, billed at a higher rate").
@@ -296,9 +296,9 @@ struct NWModelSettingsSegment: Equatable {
 /// A segment is not a `Button`, as no menu row is: the popover keeps the keyboard, and the whole
 /// segment answers a click (the content shape), not just its words. A `Button` with a clear
 /// background answered only over its label: 39×16pt of a 147×24pt Fast segment.
-struct NWModelSettingsSegments: View {
+struct SHModelSettingsSegments: View {
   let label: String
-  let segments: [NWModelSettingsSegment]
+  let segments: [SHModelSettingsSegment]
   let current: String?
   /// The segment ↑↓ or the pointer is on.
   let highlighted: Int?
@@ -321,18 +321,18 @@ struct NWModelSettingsSegments: View {
   }
 
   var body: some View {
-    VStack(spacing: NW.Space.xxs) {
+    VStack(spacing: SH.Space.xxs) {
       ForEach(Self.rows(of: segments.count), id: \.lowerBound) { range in
-        HStack(spacing: NW.Space.xxs) {
+        HStack(spacing: SH.Space.xxs) {
           ForEach(range, id: \.self) { index in segment(index) }
         }
       }
     }
-    .padding(NW.Space.xxs)
-    .background(Color.nw.bgSunken, in: RoundedRectangle(cornerRadius: NW.Radius.s))
-    .nwBorder(Color.nw.lineSubtle, radius: NW.Radius.s)
-    .nwEnabledOpacity(enabled)
-    .padding(.horizontal, NW.Space.m).padding(.bottom, NW.Space.s)
+    .padding(SH.Space.xxs)
+    .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+    .shBorder(Color.sh.lineSubtle, radius: SH.Radius.s)
+    .shEnabledOpacity(enabled)
+    .padding(.horizontal, SH.Space.m).padding(.bottom, SH.Space.s)
     .accessibilityElement(children: .contain)
     .accessibilityLabel(label)
   }
@@ -341,20 +341,20 @@ struct NWModelSettingsSegments: View {
     let option = segments[index]
     let selected = option.id == current
     let lit = highlighted == index
-    return HStack(spacing: NW.Space.xs) {
-      if option.bolt { NWFastBolt() }
+    return HStack(spacing: SH.Space.xs) {
+      if option.bolt { SHFastBolt() }
       Text(option.title).lineLimit(1).fixedSize(horizontal: true, vertical: false)
     }
-    .font(.nwSans(12, selected ? .semibold : .medium))
-    .foregroundStyle(selected ? Color.nw.textPrimary : Color.nw.textSecondary)
-    .frame(maxWidth: .infinity).frame(height: NW.Height.controlS)
+    .font(.shSans(12, selected ? .semibold : .medium))
+    .foregroundStyle(selected ? Color.sh.textPrimary : Color.sh.textSecondary)
+    .frame(maxWidth: .infinity).frame(height: SH.Height.controlS)
     .background(
-      selected ? Color.nw.bgSelected : lit ? Color.nw.runningTint : .clear,
-      in: RoundedRectangle(cornerRadius: NW.Radius.xs)
+      selected ? Color.sh.bgSelected : lit ? Color.sh.runningTint : .clear,
+      in: RoundedRectangle(cornerRadius: SH.Radius.xs)
     )
-    .nwBorder(
-      lit && selected ? Color.nw.running : selected ? Color.nw.lineStrong : .clear,
-      radius: NW.Radius.xs
+    .shBorder(
+      lit && selected ? Color.sh.running : selected ? Color.sh.lineStrong : .clear,
+      radius: SH.Radius.xs
     )
     .contentShape(Rectangle())
     .onTapGesture { if enabled { choose(option.id) } }

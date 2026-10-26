@@ -106,9 +106,9 @@ struct LogicalProjectPreviewTests {
                         }
                     }
                 }
-                .padding(NW.Space.l)
+                .padding(SH.Space.l)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                .background(Color.nw.bgWindow)
+                .background(Color.sh.bgWindow)
             }
         }
     }
@@ -165,14 +165,14 @@ struct LogicalProjectPreviewTests {
         for expanded in [false, true] {
             try await Preview.renderMatrix("lead-outcomes-strip-\(expanded ? "expanded" : "collapsed")", size: CGSize(width: 700, height: 420), scales: [1, 1.3]) {
                 ProjectSummaryStrip(vm: vm, ref: ref, summary: presentation.summary ?? "", rows: presentation.rows, expanded: expanded)
-                    .padding(NW.Space.l)
+                    .padding(SH.Space.l)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                    .background(Color.nw.bgWindow)
+                    .background(Color.sh.bgWindow)
             }
         }
         try await Preview.renderMatrix("lead-outcomes-pane", size: CGSize(width: 420, height: 640), scales: [1, 1.3]) {
             LogicalProjectPane(vm: vm, ref: ref, project: project, presentation: presentation)
-                .frame(width: 420, height: 640).background(Color.nw.bgWindow)
+                .frame(width: 420, height: 640).background(Color.sh.bgWindow)
         }
     }
 
@@ -189,9 +189,9 @@ struct LogicalProjectPreviewTests {
         let summary = try #require(presentation.summary)
         try await Preview.renderMatrix("lead-task-summary-five", size: CGSize(width: 700, height: 400), scales: [1, 1.3]) {
             ProjectSummaryStrip(vm: world.vm, ref: ref, summary: summary, rows: presentation.rows, expanded: true)
-                .padding(NW.Space.l)
+                .padding(SH.Space.l)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                .background(Color.nw.bgWindow)
+                .background(Color.sh.bgWindow)
         }
     }
 
@@ -201,7 +201,7 @@ struct LogicalProjectPreviewTests {
         let vm = world.vm
         let ready: @MainActor () -> Bool = { vm.state.projects.first.flatMap { $0.coordinatorAgentID }.flatMap { vm.projectCoordinator.conversationStore(agentID: $0) }?.rows.isEmpty == false }
         try await Preview.renderMatrix("lead-started", size: CGSize(width: 1368, height: 900), scales: [1], ready: ready) {
-            LogicalProjectDestination(vm: vm).frame(width: 1368).background(Color.nw.bgWindow)
+            LogicalProjectDestination(vm: vm).frame(width: 1368).background(Color.sh.bgWindow)
         }
     }
 
@@ -229,7 +229,7 @@ struct LogicalProjectPreviewTests {
         vm.logicalProjectPaneOpen = false
         try await Preview.renderMatrix("lead-question", size: CGSize(width: 1368, height: 900), scales: [1], ready: ready) {
             HStack(spacing: 0) {
-                SidebarView(vm: vm).frame(width: 232).background(Color.nw.bgBase)
+                SidebarView(vm: vm).frame(width: 232).background(Color.sh.bgBase)
                 LogicalProjectDestination(vm: vm).frame(width: 1368 - 232)
             }
         }
@@ -249,7 +249,7 @@ struct LogicalProjectPreviewTests {
         vm.collapsedProjects = Set(vm.state.spaces.map { SidebarProjectID.local($0.id).key })
         try await Preview.renderMatrix("lead-paused", size: CGSize(width: 1368, height: 900), scales: [1]) {
             HStack(spacing: 0) {
-                SidebarView(vm: vm).frame(width: 232).background(Color.nw.bgBase)
+                SidebarView(vm: vm).frame(width: 232).background(Color.sh.bgBase)
                 LogicalProjectDestination(vm: vm).frame(width: 1368 - 232)
             }
         }
@@ -277,21 +277,21 @@ struct LogicalProjectPreviewTests {
             vm.state.projects.first.flatMap { $0.coordinatorAgentID }.flatMap { vm.projectCoordinator.conversationStore(agentID: $0) }?.rows.isEmpty == false
         }
         try await Preview.renderMatrix("lead-paused-queue", size: CGSize(width: 1136, height: 700), scales: [1, 1.3], ready: ready) {
-            LogicalProjectDestination(vm: vm).frame(width: 1136).background(Color.nw.bgWindow)
+            LogicalProjectDestination(vm: vm).frame(width: 1136).background(Color.sh.bgWindow)
         }
     }
 
     // MARK: Full window (1600 x 900, the boards' own frame): the sidebar and the Project page side by side
 
-    func window(_ vm: ShepherdViewModel, style: NWSidebarStyle) -> some View {
+    func window(_ vm: ShepherdViewModel, style: SHSidebarStyle) -> some View {
         vm.settings.sidebarStyle = style
         // The boards draw Designs in the navigation: the Design tool experiment is on, through its real setting.
         vm.settings.designToolEnabled = true
         vm.collapsedProjects = Set(vm.state.spaces.map { SidebarProjectID.local($0.id).key })
         return HStack(spacing: 0) {
             // The boards' 232pt sidebar includes its own 1pt trailing edge, so the page begins at 232.
-            SidebarView(vm: vm).frame(width: 232).background(Color.nw.bgBase)
-                .overlay(alignment: .trailing) { Rectangle().fill(Color.nw.lineSubtle).frame(width: 1) }
+            SidebarView(vm: vm).frame(width: 232).background(Color.sh.bgBase)
+                .overlay(alignment: .trailing) { Rectangle().fill(Color.sh.lineSubtle).frame(width: 1) }
             LogicalProjectDestination(vm: vm).frame(width: 1600 - 232)
         }
         .frame(width: 1600, height: 900)
@@ -338,8 +338,8 @@ struct LogicalProjectPreviewTests {
         try await Preview.renderMatrix("lead-pane-wide", size: CGSize(width: 1600, height: 900), ready: ready) { window(vm, style: .projects) }
         try await Preview.renderMatrix("lead-pane-narrow", size: CGSize(width: 1100, height: 900), ready: ready) {
             HStack(spacing: 0) {
-                SidebarView(vm: vm).frame(width: 232).background(Color.nw.bgBase)
-                    .overlay(alignment: .trailing) { Rectangle().fill(Color.nw.lineSubtle).frame(width: 1) }
+                SidebarView(vm: vm).frame(width: 232).background(Color.sh.bgBase)
+                    .overlay(alignment: .trailing) { Rectangle().fill(Color.sh.lineSubtle).frame(width: 1) }
                 LogicalProjectDestination(vm: vm).frame(width: 1100 - 232)
             }
         }
@@ -525,7 +525,7 @@ extension LogicalProjectPreviewTests {
         defer { ordinary.store.stop() }
         try await Preview.renderMatrix("project-composer-model-held-off", size: CGSize(width: 1500, height: 560),
                                        ready: { ordinary.store.ready }) {
-            HStack(alignment: .bottom, spacing: NW.Space.xl) {
+            HStack(alignment: .bottom, spacing: SH.Space.xl) {
                 ThreadView(store: held, active: true, isFocused: false, request: { _ in .failure(code: NativeThreadCode.starting, message: "held off") },
                            agentName: "Sample App", listModels: { catalog }, modelSettingsOpen: true)
                     .environment(\.projectComposerSend, send)
@@ -536,8 +536,8 @@ extension LogicalProjectPreviewTests {
                            showChanges: {}, listModels: { catalog }, modelSettingsOpen: true)
                     .frame(width: 720)
             }
-            .padding(NW.Space.l)
-            .background(Color.nw.bgWindow)
+            .padding(SH.Space.l)
+            .background(Color.sh.bgWindow)
         }
     }
 }

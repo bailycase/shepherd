@@ -21,7 +21,7 @@ struct ControlMotionTests {
         var state = AgentState.running
         var label = "Running · 0:01"
         var value = 0.2
-        var toast: NWToast?
+        var toast: SHToast?
     }
 
     // MARK: Segmented picker
@@ -30,11 +30,11 @@ struct ControlMotionTests {
         let model: Model
 
         var body: some View {
-            NWSegmentedPicker("Scope", selection: Binding(get: { model.choice }, set: { model.choice = $0 }),
+            SHSegmentedPicker("Scope", selection: Binding(get: { model.choice }, set: { model.choice = $0 }),
                               options: [(0, "Alpha"), (1, "Bravo"), (2, "Charlie")])
                 .padding(Self.inset)
                 .frame(width: 300, height: 48, alignment: .topLeading)
-                .background(Color.nw.bgWindow)
+                .background(Color.sh.bgWindow)
         }
 
         static let inset: CGFloat = 10
@@ -49,7 +49,7 @@ struct ControlMotionTests {
                                      Picker(model: model).environment(\._accessibilityReduceMotion, reduceMotion))
         defer { window.close() }
         // Inside the pill, above the labels: the track's fill or the pill's.
-        let strip = CGRect(x: 0, y: Picker.inset + NW.Space.xxs + 3, width: 300, height: 1)
+        let strip = CGRect(x: 0, y: Picker.inset + SH.Space.xxs + 3, width: 300, height: 1)
         let recording = await MotionProbe.record(window, region: strip) { model.choice = 2 }
 
         let changed = recording.settled.runs(differingFrom: recording.before)
@@ -74,7 +74,7 @@ struct ControlMotionTests {
         let model = Model()
         let window = OffscreenWindow(size: CGSize(width: 300, height: 48), dark: false, LoadingPicker(model: model))
         defer { window.close() }
-        let strip = CGRect(x: 0, y: Picker.inset + NW.Space.xxs + 12, width: 300, height: 1)
+        let strip = CGRect(x: 0, y: Picker.inset + SH.Space.xxs + 12, width: 300, height: 1)
         let recording = await MotionProbe.record(window, region: strip) { model.disabled = true }
 
         #expect(!recording.settled.matches(recording.before), "the picker dimmed")
@@ -89,10 +89,10 @@ struct ControlMotionTests {
         var body: some View {
             Toggle("Switch", isOn: Binding(get: { model.on }, set: { model.on = $0 }))
                 .labelsHidden()
-                .toggleStyle(.nwSwitch)
+                .toggleStyle(.shSwitch)
                 .padding(10)
                 .frame(width: 80, height: 40, alignment: .topLeading)
-                .background(Color.nw.bgWindow)
+                .background(Color.sh.bgWindow)
         }
     }
 
@@ -119,11 +119,11 @@ struct ControlMotionTests {
 
         var body: some View {
             Button(model.disabled ? "Go" : "Start the agent") {}
-                .buttonStyle(.nw(.primary))
+                .buttonStyle(.sh(.primary))
                 .disabled(model.disabled)
                 .padding(10)
                 .frame(width: 200, height: 50, alignment: .topLeading)
-                .background(Color.nw.bgWindow)
+                .background(Color.sh.bgWindow)
         }
     }
 
@@ -153,10 +153,10 @@ struct ControlMotionTests {
         let model: Model
 
         var body: some View {
-            NWStatusPill(model.state, label: model.label)
+            SHStatusPill(model.state, label: model.label)
                 .padding(10)
                 .frame(width: 200, height: 40, alignment: .topLeading)
-                .background(Color.nw.bgWindow)
+                .background(Color.sh.bgWindow)
         }
     }
 
@@ -184,9 +184,9 @@ struct ControlMotionTests {
         let model: Model
 
         var body: some View {
-            Color.nw.bgWindow
+            Color.sh.bgWindow
                 .frame(width: 420, height: 140)
-                .nwToast(item: Binding(get: { model.toast }, set: { model.toast = $0 }))
+                .shToast(item: Binding(get: { model.toast }, set: { model.toast = $0 }))
         }
     }
 
@@ -199,9 +199,9 @@ struct ControlMotionTests {
                                      ToastHost(model: model).environment(\._accessibilityReduceMotion, reduceMotion))
         defer { window.close() }
         // A column through the toast, left of its text.
-        let strip = CGRect(x: 420 - NW.Space.xl - 150, y: 0, width: 1, height: 140)
+        let strip = CGRect(x: 420 - SH.Space.xl - 150, y: 0, width: 1, height: 140)
         let recording = await MotionProbe.record(window, region: strip) {
-            model.toast = NWToast(.done, subject: "worker", message: "finished · 5 files")
+            model.toast = SHToast(.done, subject: "worker", message: "finished · 5 files")
         }
 
         let rest = try #require(recording.settled.centroid(differingFrom: recording.before))
@@ -243,7 +243,7 @@ struct ControlMotionTests {
         let toOne = await MotionProbe.record(window, region: strip, timeout: 1) { vm.selectAgent(one) }
         #expect(toOne.inBetween.isEmpty, "nor does switching back")
         let riding = await MotionProbe.record(window, region: strip, timeout: 1) {
-            withNWAnimation(.overlay) { vm.selectAgent(two) }
+            withSHAnimation(.overlay) { vm.selectAgent(two) }
         }
         #expect(riding.inBetween.isEmpty, "nor a switch that rides an animation (the palette closing)")
         vm.selectAgent(one)
@@ -259,11 +259,11 @@ struct ControlMotionTests {
         let model: Model
 
         var body: some View {
-            NWValueSlider("Density", value: Binding(get: { model.value }, set: { model.value = $0 }), in: 0...1, step: 0.05,
+            SHValueSlider("Density", value: Binding(get: { model.value }, set: { model.value = $0 }), in: 0...1, step: 0.05,
                           neutral: 0.5) { "\(Int(($0 * 100).rounded()))%" }
                 .padding(10)
                 .frame(width: 300, height: 36, alignment: .topLeading)
-                .background(Color.nw.bgWindow)
+                .background(Color.sh.bgWindow)
         }
     }
 
@@ -356,7 +356,7 @@ struct SettingsMotionTests {
                                      WorktreeSettings(settings: app.settings)
                                          .padding(20)
                                          .frame(width: size.width, height: size.height, alignment: .topLeading)
-                                         .background(Color.nw.bgWindow)
+                                         .background(Color.sh.bgWindow)
                                          .environment(\._accessibilityReduceMotion, reduceMotion))
         defer { window.close() }
         // A column through the rows' titles and the footnote under the card.
@@ -379,15 +379,15 @@ struct SettingsMotionTests {
         let model: SheetModel
 
         var body: some View {
-            NWDialog("Delete worktree agent", message: "Stops the agent.") {
+            SHDialog("Delete worktree agent", message: "Stops the agent.") {
                 SheetRow("Worktree") { Text("~/Developer/shepherd-fix-login") }
                 if model.open {
                     DialogBanner(title: "Unreconciled work", message: "2 uncommitted files will be lost with the worktree.")
                 }
             } actions: {
-                Button("Delete") {}.buttonStyle(.nw(.dangerFill))
+                Button("Delete") {}.buttonStyle(.sh(.dangerFill))
             }
-            .nwAnimation(.disclosure, value: model.open)
+            .shAnimation(.disclosure, value: model.open)
         }
     }
 
@@ -399,14 +399,14 @@ struct SettingsMotionTests {
         let closed = NSHostingView(rootView: GrowingDialog(model: model).dialogSheetFrame()).fittingSize
         let window = OffscreenWindow(size: closed, dark: false, GrowingDialog(model: model).dialogSheetFrame())
         defer { window.close() }
-        let title = CGRect(x: 0, y: NWDialogMetrics.inset + 8, width: closed.width, height: 1)
+        let title = CGRect(x: 0, y: SHDialogMetrics.inset + 8, width: closed.width, height: 1)
         let still = await MotionProbe.record(window, region: title, timeout: 1) { model.open = true }
 
         #expect(window.host.bounds.height > closed.height + 20, "the window grew to the banner")
         #expect(still.frames.allSatisfy { $0.matches(still.before) }, "the title never moves")
 
         _ = await MotionProbe.record(window) { model.open = false }
-        let column = CGRect(x: NWDialogMetrics.inset + 4, y: 0, width: 1, height: closed.height)
+        let column = CGRect(x: SHDialogMetrics.inset + 4, y: 0, width: 1, height: closed.height)
         let growth = await MotionProbe.record(window, region: column) { model.open = true }
         #expect(!growth.inBetween.isEmpty, "the banner discloses in steps")
     }
@@ -425,10 +425,10 @@ struct SettingsMotionTests {
         let window = OffscreenWindow(size: size, dark: false,
                                      WorktreeSetupChecklist(model: model) {}
                                          .frame(width: size.width, height: size.height, alignment: .top)
-                                         .background(Color.nw.bgWindow))
+                                         .background(Color.sh.bgWindow))
         defer { window.close() }
         // A column through the check titles and the section below them.
-        let strip = CGRect(x: NWDialogMetrics.inset + 30, y: 0, width: 1, height: size.height)
+        let strip = CGRect(x: SHDialogMetrics.inset + 30, y: 0, width: 1, height: size.height)
         let recording = await MotionProbe.record(window, region: strip) { Task { await model.runAll() } }
 
         #expect(model.states[.identity] == .fail("user.email not set"))

@@ -4,7 +4,7 @@ import AppKit
 import ShepherdUI
 
 /// The active theme variant: a theme definition plus the light/dark side currently in effect.
-/// App chrome never reads this for colors (views use `Color.nw`, which follows each view's own
+/// App chrome never reads this for colors (views use `Color.sh`, which follows each view's own
 /// appearance); it drives what cannot follow appearance on its own — Ghostty surfaces and the
 /// variant marker for external editors.
 struct ShepherdTheme: Identifiable, Equatable {
@@ -13,16 +13,16 @@ struct ShepherdTheme: Identifiable, Equatable {
     let definition: ThemeDefinition
     let isDark: Bool
 
-    /// "night-watch-dark" / "night-watch-light": written to the variant marker file Neovim
+    /// "shepherd-design-dark" / "shepherd-design-light": written to the variant marker file Neovim
     /// watches, so the spelling is an external contract.
     var id: String { "\(definition.id)-\(isDark ? "dark" : "light")" }
     var name: String { "\(definition.name) \(isDark ? "Dark" : "Light")" }
     var variant: ThemeVariant { definition.variant(dark: isDark) }
     var terminal: TerminalColors { variant.terminal }
 
-    static let nightWatchDark = ShepherdTheme(definition: .nightWatch, isDark: true)
-    static let nightWatchLight = ShepherdTheme(definition: .nightWatch, isDark: false)
-    static let all: [ShepherdTheme] = [.nightWatchDark, .nightWatchLight]
+    static let shepherdDesignDark = ShepherdTheme(definition: .shepherdDesign, isDark: true)
+    static let shepherdDesignLight = ShepherdTheme(definition: .shepherdDesign, isDark: false)
+    static let all: [ShepherdTheme] = [.shepherdDesignDark, .shepherdDesignLight]
 }
 
 enum AppearanceMode: String, CaseIterable, Identifiable {
@@ -131,16 +131,16 @@ final class ThemeManager {
 
     private static func theme(for mode: AppearanceMode, systemColorScheme: ColorScheme) -> ShepherdTheme {
         switch mode {
-        case .light: return .nightWatchLight
-        case .dark: return .nightWatchDark
-        case .system: return systemColorScheme == .dark ? .nightWatchDark : .nightWatchLight
+        case .light: return .shepherdDesignLight
+        case .dark: return .shepherdDesignDark
+        case .system: return systemColorScheme == .dark ? .shepherdDesignDark : .shepherdDesignLight
         }
     }
 
     private static func mode(forThemeID id: String?) -> AppearanceMode? {
         switch id {
-        case "night-watch-light": return .light
-        case "night-watch-dark", "shepherd-dark": return .dark
+        case "shepherd-design-light": return .light
+        case "shepherd-design-dark", "shepherd-dark": return .dark
         default: return nil
         }
     }

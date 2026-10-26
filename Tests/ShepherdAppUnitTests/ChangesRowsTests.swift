@@ -42,11 +42,11 @@ private enum Outbox {
 
     static var file: DiffFile { GitDiff.parse(diff)[0] }
 
-    static func rows(_ layout: ChangesLayout, revealed: IndexSet = []) -> [NWChangesRow] {
+    static func rows(_ layout: ChangesLayout, revealed: IndexSet = []) -> [SHChangesRow] {
         ChangesRows.rows(file, layout: layout, revealed: revealed, truncated: false, colors: nil, words: nil, tints: (.green, .red))
     }
 
-    static func folds(_ rows: [NWChangesRow]) -> [NWDiffFold] {
+    static func folds(_ rows: [SHChangesRow]) -> [SHDiffFold] {
         rows.compactMap { if case .fold(let fold) = $0 { fold } else { nil } }
     }
 }
@@ -59,7 +59,7 @@ private enum WholeFile {
         return Fixture.diffFile("whole.txt", hunks: [DiffHunk(header: "@@ -1,60 +1,61 @@", lines: lines)])
     }
 
-    static func rows(revealed: IndexSet = []) -> [NWChangesRow] {
+    static func rows(revealed: IndexSet = []) -> [SHChangesRow] {
         ChangesRows.rows(file, layout: .unified, revealed: revealed, truncated: false, colors: nil, words: nil, tints: (.green, .red))
     }
 }
@@ -114,9 +114,9 @@ struct ChangesRowsTests {
     }
 
     @Test(arguments: [
-        (NWDiffReveal.up, 16...35), (.down, 8...27), (.all, 8...35),
-    ] as [(NWDiffReveal, ClosedRange<Int>)])
-    func aRevealShowsTwentyLinesAtAnEdgeOrAll(reveal: NWDiffReveal, lines: ClosedRange<Int>) {
+        (SHDiffReveal.up, 16...35), (.down, 8...27), (.all, 8...35),
+    ] as [(SHDiffReveal, ClosedRange<Int>)])
+    func aRevealShowsTwentyLinesAtAnEdgeOrAll(reveal: SHDiffReveal, lines: ClosedRange<Int>) {
         #expect(ChangesFoldSpan(lines: 8...35, loaded: false).revealed(reveal) == lines)
     }
 
@@ -149,7 +149,7 @@ struct ChangesRowsTests {
         let file = Outbox.file
         let words = DiffWords.changes(in: file)
         let rows = ChangesRows.rows(file, layout: .unified, revealed: [], truncated: false, colors: nil, words: words, tints: (.green, .red))
-        let added = try #require(rows.lazy.compactMap { row -> NWDiffLineContent? in
+        let added = try #require(rows.lazy.compactMap { row -> SHDiffLineContent? in
             if case .line(let line) = row, line.newNumber == 101 { line } else { nil }
         }.first)
         let tinted = added.text.runs.filter { $0.backgroundColor != nil }.map { String(added.text[$0.range].characters) }

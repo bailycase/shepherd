@@ -600,7 +600,7 @@ public struct FleetModel: Equatable, Sendable {
 
 /// The text of a Needs you row's reason chip, shared by the Mac's sidebar and the iPad's.
 public enum NeedsYouReason {
-    /// The longest chip ("approve plan"); the Mac reads it as `NWSidebarMetrics.reasonLength`.
+    /// The longest chip ("approve plan"); the Mac reads it as `SHSidebarMetrics.reasonLength`.
     public static let length = 14
 
     /// One line, at most `limit` characters: cut at a word where one ends past the middle, with

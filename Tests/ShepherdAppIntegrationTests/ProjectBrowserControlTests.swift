@@ -29,7 +29,7 @@ struct ProjectBrowserControlTests {
     }
 
     @Test @MainActor func fractionalFontsKeepTheBoardsTextWidths() {
-        NWFonts.register()
+        SHFonts.register()
         let scale = ThemeStore.shared.textScale
         defer { ThemeStore.shared.textScale = scale }
         ThemeStore.shared.textScale = 1
@@ -37,7 +37,7 @@ struct ProjectBrowserControlTests {
         let font = CTFontCreateWithName("Geist-Regular" as CFString, 13.5, nil)
         let line = CTLineCreateWithAttributedString(NSAttributedString(string: sample, attributes: [.font: font]))
         let expected = CTLineGetTypographicBounds(line, nil, nil, nil)
-        let host = NSHostingView(rootView: Text(sample).font(.nwSans(13.5)).fixedSize())
+        let host = NSHostingView(rootView: Text(sample).font(.shSans(13.5)).fixedSize())
         #expect(abs(host.fittingSize.width - expected) <= 1)
         #expect(expected < 610, "13.5pt Geist must not round up to 14pt")
     }

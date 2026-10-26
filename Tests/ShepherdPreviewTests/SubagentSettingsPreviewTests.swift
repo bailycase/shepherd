@@ -65,7 +65,7 @@ struct SubagentSettingsPreviewTests {
         for (name, query) in [("all", ""), ("search", "gemini-flash")] {
             let sections = SubagentModelField.sections(choices: ids, query: query, current: ids[7])
             try await Preview.renderMatrix("subagents-model-picker-\(name)", size: CGSize(width: 480, height: 520), ready: { true }) {
-                NWModelPicker(query: .constant(query), sections: sections, selection: .constant(0), onChoose: { _ in }, onClose: {})
+                SHModelPicker(query: .constant(query), sections: sections, selection: .constant(0), onChoose: { _ in }, onClose: {})
                     .padding()
             }
         }

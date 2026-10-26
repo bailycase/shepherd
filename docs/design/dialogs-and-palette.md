@@ -6,33 +6,33 @@
 
 ⌘K (the rebindable `commandPalette`) opens `CommandPaletteView` (`CommandPaletteView.swift`, items
 in `ShepherdViewModel+Palette.swift`, matching in `CommandPalette.swift`) through
-`.nwCommandPalette(isPresented:)` (NWComposer › Command palette; CommandPalette). It is a jump
+`.shCommandPalette(isPresented:)` (SHComposer › Command palette; CommandPalette). It is a jump
 surface: every destination and command in it is also in the sidebar or the menus.
 
-- **Placement:** a 620pt `NWPaletteCard` (`.nwPopover()`, radius 12), or the window's width less
+- **Placement:** a 620pt `SHPaletteCard` (`.shPopover()`, radius 12), or the window's width less
   16pt margins, 18% down the window over the 30% `scrim`, and never taller than the window leaves
-  room for (at most 14 rows, then the list scrolls; `NWPaletteMetrics.placement`). The card grows
+  room for (at most 14 rows, then the list scrolls; `SHPaletteMetrics.placement`). The card grows
   from its top edge (`overlay`) and the scrim fades (`content`). Clicking the scrim or Esc closes
   it; VoiceOver stays inside it.
 - **Search row (44pt):** a 15pt `magnifyingglass` in `textSecondary`, the field in Geist 15
   `textPrimary` with a `lantern` caret ("Search commands, agents, subagents…"), and, trailing, the
-  scope control All · Commands · Agents (`NWSegmentedPicker`, small: 20pt; tooltip "Switch scope"
+  scope control All · Commands · Agents (`SHSegmentedPicker`, small: 20pt; tooltip "Switch scope"
   with ⇥). A hairline divides it from the results, which sit 6pt inside the card.
 - **Scopes:** All lists Commands, This thread, and Subagents with no query, and every section once
   there is one; Commands lists Commands and This thread; Agents lists Subagents, Agents, Spaces, and
   Found in conversations, with or without a query.
-- **Sections**, in this order, under `NWPaletteSectionHeader` (24pt, mono 10 medium caps, tracked,
+- **Sections**, in this order, under `SHPaletteSectionHeader` (24pt, mono 10 medium caps, tracked,
   `textTertiary`):
   - **Commands:** New thread ("in <space>/", the space the New thread page last chose, once it
     has chosen one; ⌘N), New agent with options… (⇧⌘T), New space… (⇧⌘N),
     New space on <host>… ("remote", one per connected host), Hide or Show sidebar (⇧⌘S), Settings…
     (⌘,), and Check remote worktree operation (its host) while one is pending. **Not built yet:**
-    New mission… (NWComposer; it waits for Missions).
+    New mission… (SHComposer; it waits for Missions).
   - **This thread** (the agent on screen): Rename ("<title>", ⌘R), Pin thread or Unpin thread
     (`pin`, `pin.slash`; named for what it does now, no chord; only for a thread the sidebar can pin:
     not an automation's run, and not in the space tree), Choose model… ("<model>", ⇧⌘M),
     Toggle fast mode ("Switch this thread between Standard and Fast", the filled Fast bolt,
-    `bolt.fill` through `NWGlyph.fastBolt`, not the automations' outline `bolt`; ComposerSpeed;
+    `bolt.fill` through `SHGlyph.fastBolt`, not the automations' outline `bolt`; ComposerSpeed;
     listed only while the thread's model offers a service tier, and it switches the tier as the
     model-settings popover's Speed control would, with no popover), Review diff ("working tree · 4 files", the checkout's changed files as the branch chip counts
     them; ⇧⌘B, the side pane's chord), Review PR changes ("PR #24" once the agent's review has
@@ -57,10 +57,10 @@ surface: every destination and command in it is also in the sidebar or the menus
 - **Matching:** a title that starts with the query ranks first, then one with a word that does, then
   one that contains it, then one that holds its letters in order; a match in the context ranks below
   any match in a title. Rows sort by rank within a section; sections keep their order.
-- **Rows** (`NWPaletteRow`, the sidebar's row height, radius 6, 8pt side padding): a 13pt stroke
+- **Rows** (`SHPaletteRow`, the sidebar's row height, radius 6, 8pt side padding): a 13pt stroke
   icon in a 14pt column in `textSecondary`, 10pt, the label in the sidebar row's title font (12.5;
   12 at Compact) in `textPrimary`, dim context in Geist 12 `textTertiary`, and the real shortcut as
-  `NWKeycap`s from `KeybindingsStore`. The highlight is `runningTint` with a `running` icon.
+  `SHKeycap`s from `KeybindingsStore`. The highlight is `runningTint` with a `running` icon.
   Subagent rows wear their run's state color.
 - **Keys:** ↑↓ (and the pointer) move the highlight, ↩ runs it, ⇥ cycles the scope, Esc closes. A
   new query or scope moves the highlight to the top. With nothing to list: "Nothing here yet", or
@@ -74,43 +74,43 @@ surface: every destination and command in it is also in the sidebar or the menus
 
 Creation sheets (New Agent, New Worktree, Finalize Worktree, the directory picker, the remote
 worktree sheet, the automation editor, the review's Commit…) and every
-confirmation share one anatomy, `NWDialog` (`NWDialogMetrics`), flat on `bgWindow`, built from
+confirmation share one anatomy, `SHDialog` (`SHDialogMetrics`), flat on `bgWindow`, built from
 the Controls and Status & feedback parts (no board draws a Mac dialog). The creation sheets and
 Delete Worktree Agent take `.dialogSheetFrame()`: the window is `bgWindow` from the first frame,
 and the title stays still while rows disclose.
 
-- **Width:** 460pt by default (`NWDialogMetrics.width`); Rename 420
+- **Width:** 460pt by default (`SHDialogMetrics.width`); Rename 420
   (`AppLayout.renameSheetWidth`), Delete Worktree Agent 520 (`confirmSheetWideWidth`), and the
   creation sheets their own (`AppLayout+Settings.swift`: New Agent 560, New Worktree 520,
   Finalize 560, the remote worktree sheet 620, a remote automation 560, the directory picker
   480, Commit… 520).
-- **Header:** a 24pt inset (`NWDialogMetrics.inset`) above and at both sides, 12pt below; the
+- **Header:** a 24pt inset (`SHDialogMetrics.inset`) above and at both sides, 12pt below; the
   title in `title`/`textPrimary` (a header to VoiceOver), and 4pt under it an optional
   explanation in `body`/`textSecondary`. Both wrap.
-- **Labeled rows** (`NWSheetRow`, aliased `SheetRow`): a 96pt label column in `ui`/
+- **Labeled rows** (`SHSheetRow`, aliased `SheetRow`): a 96pt label column in `ui`/
   `textSecondary`, 12pt, then the control filling the rest; 8pt vertical padding, at least 44pt
   (a 28pt control with 8pt above and below), and a hairline underneath from the 24pt inset to
   the trailing edge. `alignment: .firstTextBaseline` for a control that wraps. A read-only value
   (a path, a branch) is `mono`/`textSecondary`, selectable, truncated in the middle with the
   whole value as its tooltip. No form chrome and no grouped boxes.
-- **Lists of steps or checks** (`NWChecklistRow`): at least 28pt (`NW.Height.row`): the 14pt
-  state glyph (`NWStateGlyph`: spinner, check, cross, ring), 8pt, the label in `ui`
+- **Lists of steps or checks** (`SHChecklistRow`): at least 28pt (`SH.Height.row`): the 14pt
+  state glyph (`SHStateGlyph`: spinner, check, cross, ring), 8pt, the label in `ui`
   (`textPrimary` while running or asking, `textSecondary` once done, `failed` when failed,
   `textTertiary` while pending), and a trailing `caption` detail (`textTertiary`, `failed` when
   failed; middle-truncated, the whole as its tooltip). A failed check's remedy discloses
   underneath, indented past the glyph. The glyph pops once when a step passes, and the row
   reads "label, state, detail" to VoiceOver.
 - **Footer:** 16pt above, the 24pt inset around: an optional status on the leading edge
-  (`NWDialogStatus`: `caption`/`textSecondary`, `failed` for an error, two lines at most,
+  (`SHDialogStatus`: `caption`/`textSecondary`, `failed` for an error, two lines at most,
   selectable: "Checking for unsaved work…", "Creating the worktree…"), and the actions
   trailing, 8pt apart. Actions never truncate; the status wraps instead.
-- **Actions** (`DialogAction`): exactly one primary (`.prominent`: `.nw(.primary)`, the ⏎ default);
-  Cancel is `.nw(.ghost)` with ⎋, as every board that draws a Cancel has it; any other
+- **Actions** (`DialogAction`): exactly one primary (`.prominent`: `.sh(.primary)`, the ⏎ default);
+  Cancel is `.sh(.ghost)` with ⎋, as every board that draws a Cancel has it; any other
   action secondary. A destructive action is the `dangerFill` button (`.destructive`) and never the
   default: destroying things takes a click. While an action runs, its button says so ("Starting…",
   "Creating…") and is disabled.
 - **Banners:** anything a destructive action would destroy is called out in an attention
-  banner (`DialogBanner`: an `NWBanner` at the 24pt margins, 12pt below what precedes it,
+  banner (`DialogBanner`: an `SHBanner` at the 24pt margins, 12pt below what precedes it,
   disclosing when it arrives late); an error is a `failed` banner. Never a system alert.
 - **Acting after dismissal:** a confirmation that tears down a mounted layout (Delete Worktree
   Agent, Remove Space, an agent's delete) lets its sheet finish dismissing (300ms) before it
@@ -131,7 +131,7 @@ titled by phase: "Finalize worktree", "Set up Finalize", "Worktree finalized", "
 
 - **Checking:** "Checking prerequisites…", with a spinner and "Checking git, origin and the GitHub
   CLI…" in the footer and Cancel.
-- **Set up** (when a check fails): an `NWChecklistRow` per prerequisite (Git installed, Git
+- **Set up** (when a check fails): an `SHChecklistRow` per prerequisite (Git installed, Git
   identity, Origin reachable, GitHub CLI, GitHub CLI signed in), each failing row growing its
   remedy (install the command line tools, name and email fields with Apply, "brew install gh"
   with Copy, "Open a terminal for gh login…"), and "Recommended GitHub repo settings"
@@ -220,7 +220,7 @@ after that the two pis are independent.
   wait until the sheet closes, whichever way. An existing user whose logins came over never
   clicks for the agents those logins cover.
 - **In progress**: "Bringing over your pi…", "Once, from `~/.pi/agent`. The pi in your terminal
-  isn’t changed." A card (`bgSunken`, radius 10, `lineSubtle`) of `NWImportStepRow`s, one per
+  isn’t changed." A card (`bgSunken`, radius 10, `lineSubtle`) of `SHImportStepRow`s, one per
   item, 40pt at the least, 6×14 padding, 12 between parts, hairlines between: an 18pt mark, the
   title in Geist 13 over its detail in 12 `textTertiary`, and, once done, a count in mono 11.5
   `textSecondary` trailing. The items: Logins (the subscriptions' names; "3 subscriptions"),
@@ -231,7 +231,7 @@ after that the two pis are independent.
   title shimmering (nothing spins); pending, a `lineStrong` ring with the title in
   `textTertiary`; failed, an `xmark` on `failedTint` with the detail in `failed`. An item your pi
   has none of is left out once the copy knows. No footer while it runs, and ⎋ does nothing.
-- **Done**: "Your pi is in Shepherd", and the `NWImportSummary` in place of the subtitle: what
+- **Done**: "Your pi is in Shepherd", and the `SHImportSummary` in place of the subtitle: what
   came over in one line, counts in 600 `textPrimary`, the rest `textSecondary`, "·" in
   `textTertiary` between ("**3** logins · **2** API keys · custom providers · default model
   `claude-opus` · **4** trusted folders · instructions, **12** skills, **5** prompts"). The body,
@@ -242,7 +242,7 @@ after that the two pis are independent.
   that closes the sheet and opens Settings ▸ Pi ▸ From your pi). Footer: Done (primary, ⏎; ⎋ too).
 - **Something missing**: "Two sign-ins need you" ("A sign-in needs you" for one), "Everything
   else came over. These two didn’t work in Shepherd’s copy of pi, so sign in to them here." A
-  card of `NWImportSignInRow`s (10×14, a 28pt badge, the name in 13.5/500 over why in 12
+  card of `SHImportSignInRow`s (10×14, a 28pt badge, the name in 13.5/500 over why in 12
   `textTertiary`, a small button trailing): only providers that still need a sign-in, each with
   Sign in (primary, small), which opens the sign-in sheet over this one; once signed in, the row
   says "Signed in" with a `done` check and its button goes. Under the card the summary in 12
@@ -254,7 +254,7 @@ after that the two pis are independent.
   copied".
 - **New user** (no pi of theirs): "Sign in to a model provider", "There’s no pi on this Mac, so
   there’s nothing to bring over. Use a subscription you already pay for, or an API key." A
-  two-column grid, 8pt apart, of tiles (`NWSignInChoiceTile`: 11×12 padding, radius 10,
+  two-column grid, 8pt apart, of tiles (`SHSignInChoiceTile`: 11×12 padding, radius 10,
   `bgSunken` in `lineSubtle`, a 30pt badge, the name over the plan, a `chevron.right`): the
   subscriptions in Sign-in's order, then Use an API key (a dashed `lineStrong` line, a `key`
   tile, "OpenAI, OpenRouter and 30 more"), whose menu lists the key providers. A tile opens the
@@ -284,7 +284,7 @@ into the home's `auth.json`, and nothing of it crosses to the app. pi's TUI neve
   code instead of the browser hand-off") in 13 `textSecondary`; a 28pt circular close button
   (`xmark`, `lineStrong` line) trailing, which cancels. Body 18×22, footer as the import
   sheet's.
-- **Steps** (`NWSignInStepRow`, in a `bgSunken` card at radius 10, 14×16, 14 apart): a done step
+- **Steps** (`SHSignInStepRow`, in a `bgSunken` card at radius 10, 14×16, 14 apart): a done step
   (`checkmark` on `doneTint`), the live one (a `running` ring and dot, its title shimmering, its
   note under it in 12 `textTertiary`), pending ones (a `lineStrong` ring, `textTertiary`), a
   failed one (`xmark` on `failedTint`, its note the provider's reason).
@@ -316,7 +316,7 @@ into the home's `auth.json`, and nothing of it crosses to the app. pi's TUI neve
   again for a new one."). Footer: Open claude.ai again (ghost) leading; Cancel and Continue
   (primary, ⏎, enabled with a code).
 - **Device code** (GitHub Copilot, xAI, Kimi): "Enter this code at `github.com/login/device`.
-  It’s already on your clipboard." Then the code, large (`NWDeviceCode`: mono 26/600 tracked
+  It’s already on your clipboard." Then the code, large (`SHDeviceCode`: mono 26/600 tracked
   12%, centered in a `bgSunken` box at radius 10, 16 high padding), with Copy (ghost, small) and
   Open GitHub (secondary, small) under it; then the live step "Waiting for you to enter the
   code", "The code works until 10:02 AM." Footer: Cancel. Done: the code dims, "Signed in",

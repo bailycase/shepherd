@@ -1,15 +1,15 @@
 import SwiftUI
 
-// Tool activity (NWThread, ToolRows, LiveText): one quiet line per burst of work, its calls on a
+// Tool activity (SHThread, ToolRows, LiveText): one quiet line per burst of work, its calls on a
 // hairline rail, and the changes card that ends a turn with edits.
 
 /// One burst of tool work: "Explored 7 files · read 5 · search 2 · 0.9s". 26pt, the label in
 /// 12.5 `textSecondary`, the meta in mono 11 `textTertiary`, a 10pt chevron; a real button
 /// with a hover fill that expands the burst into its calls. A failed burst turns `failed` and
 /// stays visible. A live one is the thread's live indicator (LiveText): the tool's own glyph in
-/// `textSecondary`, the verb and the command shimmering (`nwShimmer(active:)`), its elapsed time
+/// `textSecondary`, the verb and the command shimmering (`shShimmer(active:)`), its elapsed time
 /// in mono 11 `textTertiary`, and its last output lines. Nothing spins.
-public struct NWActivityLine: View {
+public struct SHActivityLine: View {
     /// Which glyph leads the line: the tool's own, live or done.
     /// `drew` and `checked` are the design agent's verbs ("Drew 4 boards", "Checked against
     /// acme-web"): the nib and the shield. `lookedAtDesign` is a thread reading a design piece it
@@ -62,15 +62,15 @@ public struct NWActivityLine: View {
     /// must not watch them shrink.
     public var body: some View {
         let live: (since: Date?, tail: [String])? = if case .live(let since, let tail) = status { (since, tail) } else { nil }
-        VStack(alignment: .leading, spacing: NW.Space.xs) {
+        VStack(alignment: .leading, spacing: SH.Space.xs) {
             ZStack(alignment: .leading) {
                 if let live {
-                    liveHeader(since: live.since).nwTransition(.content)
+                    liveHeader(since: live.since).shTransition(.content)
                 } else {
-                    finished.nwTransition(.content)
+                    finished.shTransition(.content)
                 }
             }
-            .nwAnimation(.content, value: live == nil)
+            .shAnimation(.content, value: live == nil)
             if let tail = live?.tail, !tail.isEmpty { liveTail(tail) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -82,12 +82,12 @@ public struct NWActivityLine: View {
         case .explore: "magnifyingglass"
         case .edit: "pencil"
         case .run: "terminal"
-        case .subagents: NWGlyph.gitBranch.symbolName
+        case .subagents: SHGlyph.gitBranch.symbolName
         case .drew, .lookedAtDesign: "pencil.tip"
         case .checked: "checkmark.shield"
         case .browser: "globe"
         case .images: "photo"
-        case .artifact: NWGlyph.artifact.symbolName
+        case .artifact: SHGlyph.artifact.symbolName
         case .other: "wrench.adjustable"
         }
     }
@@ -98,7 +98,7 @@ public struct NWActivityLine: View {
         Group {
             if let action {
                 Button(action: action) { finishedLabel }
-                    .buttonStyle(.nwRow())
+                    .buttonStyle(.shRow())
                     .accessibilityLabel(accessibilityText)
                     .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
                     .accessibilityHint("Shows the calls")
@@ -108,92 +108,92 @@ public struct NWActivityLine: View {
                     .accessibilityLabel(accessibilityText)
             }
         }
-        .padding(.leading, -NW.Space.xs)
+        .padding(.leading, -SH.Space.xs)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var finishedLabel: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let failed = status == .failed
-        return HStack(spacing: NW.Space.m) {
+        return HStack(spacing: SH.Space.m) {
             Image(systemName: symbol)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(failed ? nw.failed : nw.textTertiary)
-                .frame(width: NWThreadMetrics.activityIcon, height: NWThreadMetrics.activityIcon)
-            NWActivityWords(metaMinimum: NWThreadMetrics.activityMetaMinimum * ThemeStore.shared.textScale) {
+                .foregroundStyle(failed ? sh.failed : sh.textTertiary)
+                .frame(width: SHThreadMetrics.activityIcon, height: SHThreadMetrics.activityIcon)
+            SHActivityWords(metaMinimum: SHThreadMetrics.activityMetaMinimum * ThemeStore.shared.textScale) {
                 Text(label)
-                    .font(.nw(.ui, weight: .regular))
-                    .foregroundStyle(failed ? nw.failed : nw.textSecondary)
+                    .font(.sh(.ui, weight: .regular))
+                    .foregroundStyle(failed ? sh.failed : sh.textSecondary)
                     .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
                     .truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: true)
-                    .nwContentTransition(.numeric())
+                    .shContentTransition(.numeric())
                 if !meta.isEmpty {
                     Text(meta)
-                        .font(.nwMono(11))
-                        .foregroundStyle(nw.textTertiary)
+                        .font(.shMono(11))
+                        .foregroundStyle(sh.textTertiary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .monospacedDigit()
-                        .nwContentTransition(.numeric())
+                        .shContentTransition(.numeric())
                 }
             }
             // Only a line with something behind it wears the chevron; its place stays.
-            NWThreadChevron(isExpanded: isExpanded, shown: action != nil).foregroundStyle(nw.textTertiary)
+            SHThreadChevron(isExpanded: isExpanded, shown: action != nil).foregroundStyle(sh.textTertiary)
         }
         // A finished call joining the line counts up ("Explored 6 files").
-        .nwAnimation(.content, value: [label, meta])
-        .padding(.leading, NW.Space.xs)
-        .padding(.trailing, NW.Space.m)
-        .frame(minHeight: NWThreadMetrics.activityHeight)
+        .shAnimation(.content, value: [label, meta])
+        .padding(.leading, SH.Space.xs)
+        .padding(.trailing, SH.Space.m)
+        .frame(minHeight: SHThreadMetrics.activityHeight)
     }
 
     /// The running call (LiveText): its own glyph, still, in `textSecondary`; the verb and the
     /// command shimmer; the clock ticks beside them in tertiary.
     private func liveHeader(since: Date?) -> some View {
-        let nw = Color.nw
-        return HStack(spacing: NW.Space.m) {
+        let sh = Color.sh
+        return HStack(spacing: SH.Space.m) {
             Image(systemName: symbol)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(nw.textSecondary)
-                .frame(width: NWThreadMetrics.activityIcon, height: NWThreadMetrics.activityIcon)
-            NWActivityWords(metaMinimum: NWThreadMetrics.activityMetaMinimum * ThemeStore.shared.textScale) {
-                Text(label).font(.nw(.ui, weight: .regular))
+                .foregroundStyle(sh.textSecondary)
+                .frame(width: SHThreadMetrics.activityIcon, height: SHThreadMetrics.activityIcon)
+            SHActivityWords(metaMinimum: SHThreadMetrics.activityMetaMinimum * ThemeStore.shared.textScale) {
+                Text(label).font(.sh(.ui, weight: .regular))
                     .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
                     .truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: true)
-                    .nwShimmer(active: true)
+                    .shShimmer(active: true)
                 if !meta.isEmpty {
-                    Text(meta).font(.nwMono(11)).lineLimit(1).truncationMode(.tail)
-                        .nwShimmer(active: true)
+                    Text(meta).font(.shMono(11)).lineLimit(1).truncationMode(.tail)
+                        .shShimmer(active: true)
                 }
             }
             if received != nil || since != nil {
                 HStack(spacing: 0) {
                     if let received { Text(received + (since == nil ? "" : " · ")) }
-                    if let since { NWElapsedText(since: since, style: .long) }
+                    if let since { SHElapsedText(since: since, style: .long) }
                 }
-                .font(.nwMono(11)).foregroundStyle(nw.textTertiary).fixedSize()
+                .font(.shMono(11)).foregroundStyle(sh.textTertiary).fixedSize()
                 .help(received.map(Self.receivedHelp) ?? "")
             }
         }
-        .frame(minHeight: NWThreadMetrics.liveHeight)
+        .frame(minHeight: SHThreadMetrics.liveHeight)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
     }
 
     private func liveTail(_ tail: [String]) -> some View {
-        let nw = Color.nw
-        return VStack(alignment: .leading, spacing: NWThreadMetrics.tailLineSpacing) {
+        let sh = Color.sh
+        return VStack(alignment: .leading, spacing: SHThreadMetrics.tailLineSpacing) {
             ForEach(Array(tail.enumerated()), id: \.offset) { index, line in
                 Text(line)
-                    .font(.nwMono(11))
-                    .foregroundStyle(index == tail.count - 1 ? nw.textSecondary : nw.textTertiary)
+                    .font(.shMono(11))
+                    .foregroundStyle(index == tail.count - 1 ? sh.textSecondary : sh.textTertiary)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
         }
-        .padding(.leading, NWThreadMetrics.liveTailIndent)
+        .padding(.leading, SHThreadMetrics.liveTailIndent)
         .accessibilityHidden(true)
     }
 }
@@ -202,7 +202,7 @@ public struct NWActivityLine: View {
 /// takes the room it needs and truncates only when the line has no more, so a label naming boards
 /// or a page never widens the thread. The meta takes what is left, and leaves when that is not
 /// room for a few characters, since a letter cut in half is only noise.
-struct NWActivityWords: Layout {
+struct SHActivityWords: Layout {
     /// The least room the meta gets.
     let metaMinimum: CGFloat
 
@@ -216,7 +216,7 @@ struct NWActivityWords: Layout {
                           proposal: ProposedViewSize(width: parts.label.width, height: nil))
         guard subviews.count > 1 else { return }
         if parts.meta > 0 {
-            subviews[1].place(at: CGPoint(x: bounds.minX + parts.label.width + NW.Space.m, y: bounds.midY), anchor: .leading,
+            subviews[1].place(at: CGPoint(x: bounds.minX + parts.label.width + SH.Space.m, y: bounds.midY), anchor: .leading,
                               proposal: ProposedViewSize(width: parts.meta, height: nil))
         } else {
             subviews[1].place(at: CGPoint(x: bounds.minX, y: bounds.midY), anchor: .leading, proposal: .zero)
@@ -227,13 +227,13 @@ struct NWActivityWords: Layout {
     private func measure(_ width: CGFloat?, _ subviews: Subviews) -> (size: CGSize, label: CGSize, meta: CGFloat) {
         let label = subviews[0].sizeThatFits(ProposedViewSize(width: width, height: nil))
         guard subviews.count > 1 else { return (label, label, 0) }
-        let metaSize = subviews[1].sizeThatFits(ProposedViewSize(width: width.map { max(0, $0 - label.width - NW.Space.m) }, height: nil))
-        let room = width.map { $0 - label.width - NW.Space.m }
+        let metaSize = subviews[1].sizeThatFits(ProposedViewSize(width: width.map { max(0, $0 - label.width - SH.Space.m) }, height: nil))
+        let room = width.map { $0 - label.width - SH.Space.m }
         // All of it when it fits; else what is left, unless that is too little to read.
         // All of it when it fits; else what is left, unless that is too little to read.
         let meta = room.map { metaSize.width <= $0 + 0.01 || $0 >= metaMinimum ? min(metaSize.width, $0) : 0 } ?? metaSize.width
         guard meta > 0 else { return (label, label, 0) }
-        return (CGSize(width: label.width + NW.Space.m + meta, height: max(label.height, metaSize.height)), label, meta)
+        return (CGSize(width: label.width + SH.Space.m + meta, height: max(label.height, metaSize.height)), label, meta)
     }
 }
 
@@ -241,7 +241,7 @@ struct NWActivityWords: Layout {
 /// turns to point down as it opens, under whatever motion the expansion runs with. Under Reduce
 /// Motion nothing turns: the two positions cross-fade. A row with nothing to open keeps the
 /// chevron's place but draws none (`shown: false`), so labels line up with rows that have one.
-struct NWThreadChevron: View {
+struct SHThreadChevron: View {
     let isExpanded: Bool
     var shown = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -249,7 +249,7 @@ struct NWThreadChevron: View {
     var body: some View {
         Group {
             if !shown {
-                Color.clear.frame(width: NWThreadMetrics.chevron, height: NWThreadMetrics.chevron)
+                Color.clear.frame(width: SHThreadMetrics.chevron, height: SHThreadMetrics.chevron)
             } else if reduceMotion {
                 ZStack {
                     glyph.opacity(isExpanded ? 0 : 1)
@@ -265,14 +265,14 @@ struct NWThreadChevron: View {
     private var glyph: some View {
         Image(systemName: "chevron.right")
             .font(.system(size: 8, weight: .semibold))
-            .frame(width: NWThreadMetrics.chevron, height: NWThreadMetrics.chevron)
+            .frame(width: SHThreadMetrics.chevron, height: SHThreadMetrics.chevron)
     }
 }
 
-/// What a "Looked at…" line opens to (NWActivityLine(.lookedAtDesign) · expanded): on the calls'
+/// What a "Looked at…" line opens to (SHActivityLine(.lookedAtDesign) · expanded): on the calls'
 /// rail, one 22pt mono row per part the agent got — `pic` the picture and its size, `html` the
 /// page and its weight, `css` the styles, `tok` the tokens with the file and lines they live in.
-public struct NWLookedAtDetails: View {
+public struct SHLookedAtDetails: View {
     public struct Row: Identifiable, Equatable, Sendable {
         public var id: String { label }
         /// "pic", "html", "css", "tok".
@@ -293,32 +293,32 @@ public struct NWLookedAtDetails: View {
     public init(_ rows: [Row]) { self.rows = rows }
 
     public var body: some View {
-        let nw = Color.nw
-        let M = NWReferenceMetrics.self
+        let sh = Color.sh
+        let M = SHReferenceMetrics.self
         VStack(alignment: .leading, spacing: 0) {
             ForEach(rows) { row in
-                HStack(spacing: NW.Space.m + 2) {
-                    Text(row.label).foregroundStyle(nw.textTertiary).frame(width: M.detailLabelWidth, alignment: .leading)
-                    Text(row.detail).foregroundStyle(nw.textSecondary).lineLimit(1).truncationMode(.tail)
-                    Spacer(minLength: NW.Space.m)
-                    if let trailing = row.trailing { Text(trailing).foregroundStyle(nw.textTertiary).lineLimit(1).fixedSize() }
+                HStack(spacing: SH.Space.m + 2) {
+                    Text(row.label).foregroundStyle(sh.textTertiary).frame(width: M.detailLabelWidth, alignment: .leading)
+                    Text(row.detail).foregroundStyle(sh.textSecondary).lineLimit(1).truncationMode(.tail)
+                    Spacer(minLength: SH.Space.m)
+                    if let trailing = row.trailing { Text(trailing).foregroundStyle(sh.textTertiary).lineLimit(1).fixedSize() }
                 }
-                .font(.nwMono(11))
+                .font(.shMono(11))
                 .frame(height: M.detailRowHeight)
                 .accessibilityElement(children: .combine)
             }
         }
-        .padding(.vertical, NW.Space.xxs)
+        .padding(.vertical, SH.Space.xxs)
         .padding(.leading, M.detailRail)
-        .overlay(alignment: .leading) { NWHairline(.vertical, color: nw.lineStrong) }
+        .overlay(alignment: .leading) { SHHairline(.vertical, color: sh.lineStrong) }
         .padding(.leading, M.detailIndent)
-        .padding(.top, -NW.Space.xs)
-        .padding(.bottom, NW.Space.xxs)
+        .padding(.top, -SH.Space.xs)
+        .padding(.bottom, SH.Space.xxs)
     }
 }
 
 /// One call behind an activity line.
-public struct NWActivityCallRow: Identifiable, Equatable, Sendable {
+public struct SHActivityCallRow: Identifiable, Equatable, Sendable {
     public var id: String
     /// The kind column: "read", "edit", "bash".
     public var label: String
@@ -353,18 +353,18 @@ public struct NWActivityCallRow: Identifiable, Equatable, Sendable {
     }
 }
 
-/// An expanded line's calls (NWThread board): an indented list on a hairline rail, 22pt mono 11
+/// An expanded line's calls (SHThread board): an indented list on a hairline rail, 22pt mono 11
 /// rows of kind · path or command · stat. A row opens its file or its output (`onSelect`);
 /// an expanded row shows its first lines on `bgSunken`, and "… n more lines" (or, for output
 /// the host clipped, "Output truncated · open") asks for the rest.
-public struct NWActivityCalls<Menu: View>: View {
-    let rows: [NWActivityCallRow]
+public struct SHActivityCalls<Menu: View>: View {
+    let rows: [SHActivityCallRow]
     let onSelect: (String) -> Void
     let onShowAll: (String) -> Void
-    let menu: (NWActivityCallRow) -> Menu
+    let menu: (SHActivityCallRow) -> Menu
 
-    public init(_ rows: [NWActivityCallRow], onSelect: @escaping (String) -> Void, onShowAll: @escaping (String) -> Void,
-                @ViewBuilder menu: @escaping (NWActivityCallRow) -> Menu) {
+    public init(_ rows: [SHActivityCallRow], onSelect: @escaping (String) -> Void, onShowAll: @escaping (String) -> Void,
+                @ViewBuilder menu: @escaping (SHActivityCallRow) -> Menu) {
         self.rows = rows
         self.onSelect = onSelect
         self.onShowAll = onShowAll
@@ -374,22 +374,22 @@ public struct NWActivityCalls<Menu: View>: View {
     public var body: some View {
         // Geist Mono advances 0.6em: the column fits the longest kind, never less than 32pt and
         // never more than its cap (a longer name truncates).
-        let longest = min(rows.map(\.label.count).max() ?? 0, NWThreadMetrics.callLabelMaxCharacters)
-        let labelWidth = max(NWThreadMetrics.callLabelWidth, (CGFloat(longest) * 11 * 0.6 * ThemeStore.shared.textScale).rounded(.up))
-        NWActivityRail {
+        let longest = min(rows.map(\.label.count).max() ?? 0, SHThreadMetrics.callLabelMaxCharacters)
+        let labelWidth = max(SHThreadMetrics.callLabelWidth, (CGFloat(longest) * 11 * 0.6 * ThemeStore.shared.textScale).rounded(.up))
+        SHActivityRail {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(rows) { row in
-                    NWActivityCallRowView(row: row, labelWidth: labelWidth, onSelect: onSelect, onShowAll: onShowAll, menu: menu)
+                    SHActivityCallRowView(row: row, labelWidth: labelWidth, onSelect: onSelect, onShowAll: onShowAll, menu: menu)
                 }
             }
-            .padding(.vertical, NW.Space.xxs)
+            .padding(.vertical, SH.Space.xxs)
         }
     }
 }
 
 /// What an expanded line holds (its calls), indented on a `lineStrong` hairline rail that runs
 /// under the line's glyph.
-struct NWActivityRail<Content: View>: View {
+struct SHActivityRail<Content: View>: View {
     let content: Content
 
     init(@ViewBuilder content: () -> Content) {
@@ -398,79 +398,79 @@ struct NWActivityRail<Content: View>: View {
 
     var body: some View {
         content
-            .padding(.leading, NWThreadMetrics.railPadding)
-            .overlay(alignment: .leading) { NWHairline(.vertical, color: .nw.lineStrong) }
-            .padding(.leading, NWThreadMetrics.railInset)
+            .padding(.leading, SHThreadMetrics.railPadding)
+            .overlay(alignment: .leading) { SHHairline(.vertical, color: .sh.lineStrong) }
+            .padding(.leading, SHThreadMetrics.railInset)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .contain)
     }
 }
 
-extension NWActivityCalls where Menu == EmptyView {
-    public init(_ rows: [NWActivityCallRow], onSelect: @escaping (String) -> Void, onShowAll: @escaping (String) -> Void) {
+extension SHActivityCalls where Menu == EmptyView {
+    public init(_ rows: [SHActivityCallRow], onSelect: @escaping (String) -> Void, onShowAll: @escaping (String) -> Void) {
         self.init(rows, onSelect: onSelect, onShowAll: onShowAll) { _ in EmptyView() }
     }
 }
 
-private struct NWActivityCallRowView<Menu: View>: View {
-    let row: NWActivityCallRow
+private struct SHActivityCallRowView<Menu: View>: View {
+    let row: SHActivityCallRow
     let labelWidth: CGFloat
     let onSelect: (String) -> Void
     let onShowAll: (String) -> Void
-    let menu: (NWActivityCallRow) -> Menu
+    let menu: (SHActivityCallRow) -> Menu
 
     var body: some View {
-        let nw = Color.nw
-        VStack(alignment: .leading, spacing: NW.Space.xs) {
+        let sh = Color.sh
+        VStack(alignment: .leading, spacing: SH.Space.xs) {
             Button { onSelect(row.id) } label: {
                 HStack(spacing: 10) {
-                    Text(row.label).foregroundStyle(nw.textTertiary).lineLimit(1).frame(width: labelWidth, alignment: .leading)
-                    Text(row.detail).foregroundStyle(nw.textSecondary).lineLimit(1)
+                    Text(row.label).foregroundStyle(sh.textTertiary).lineLimit(1).frame(width: labelWidth, alignment: .leading)
+                    Text(row.detail).foregroundStyle(sh.textSecondary).lineLimit(1)
                         .truncationMode(row.isPath ? .head : .tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     if let stat = row.stat {
-                        Text(stat).foregroundStyle(row.failed ? nw.failed : nw.textTertiary).lineLimit(1).fixedSize().monospacedDigit()
+                        Text(stat).foregroundStyle(row.failed ? sh.failed : sh.textTertiary).lineLimit(1).fixedSize().monospacedDigit()
                     }
                 }
-                .font(.nwMono(11))
-                .padding(.horizontal, NW.Space.xs)
-                .frame(minHeight: NWThreadMetrics.callRowHeight)
+                .font(.shMono(11))
+                .padding(.horizontal, SH.Space.xs)
+                .frame(minHeight: SHThreadMetrics.callRowHeight)
             }
-            .buttonStyle(.nwRow(radius: NW.Radius.xs))
-            .padding(.horizontal, -NW.Space.xs)
+            .buttonStyle(.shRow(radius: SH.Radius.xs))
+            .padding(.horizontal, -SH.Space.xs)
             .contextMenu { menu(row) }
             .help(row.detail)
             .accessibilityLabel(row.accessibilityLabel)
             .accessibilityValue(row.output.isEmpty ? "" : row.isExpanded ? "Expanded" : "Collapsed")
             if row.isExpanded, !row.output.isEmpty {
-                VStack(alignment: .leading, spacing: NW.Space.xs) {
+                VStack(alignment: .leading, spacing: SH.Space.xs) {
                     Text(row.output.joined(separator: "\n"))
-                        .font(.nwMono(11))
-                        .lineSpacing(NWThreadMetrics.tailLineSpacing)
-                        .foregroundStyle(nw.textSecondary)
+                        .font(.shMono(11))
+                        .lineSpacing(SHThreadMetrics.tailLineSpacing)
+                        .foregroundStyle(sh.textSecondary)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                     if row.moreLines > 0 {
                         Button { onShowAll(row.id) } label: {
                             Text("… \(row.moreLines) more line\(row.moreLines == 1 ? "" : "s")")
-                                .frame(minHeight: NWThreadMetrics.callRowHeight, alignment: .leading)
+                                .frame(minHeight: SHThreadMetrics.callRowHeight, alignment: .leading)
                         }
-                        .buttonStyle(.nwLink(font: .nwMono(11)))
+                        .buttonStyle(.shLink(font: .shMono(11)))
                     } else if row.truncated {
                         Button { onShowAll(row.id) } label: {
                             Text("Output truncated · open")
-                                .frame(minHeight: NWThreadMetrics.callRowHeight, alignment: .leading)
+                                .frame(minHeight: SHThreadMetrics.callRowHeight, alignment: .leading)
                         }
-                        .buttonStyle(.nwLink(font: .nwMono(11)))
+                        .buttonStyle(.shLink(font: .shMono(11)))
                     }
                 }
-                .padding(.vertical, NW.Space.m)
+                .padding(.vertical, SH.Space.m)
                 .padding(.horizontal, 10)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(nw.bgSunken, in: RoundedRectangle(cornerRadius: NW.Radius.s))
+                .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.s))
                 .padding(.leading, labelWidth + 10)
-                .padding(.bottom, NW.Space.xs)
-                .nwTransition(.disclosure)
+                .padding(.bottom, SH.Space.xs)
+                .shTransition(.disclosure)
             }
         }
     }
@@ -479,7 +479,7 @@ private struct NWActivityCallRowView<Menu: View>: View {
 // MARK: Changes card
 
 /// One file in a changes card.
-public struct NWChangedFile: Identifiable, Equatable, Sendable {
+public struct SHChangedFile: Identifiable, Equatable, Sendable {
     public enum Status: String, Sendable { case modified = "M", added = "A", deleted = "D" }
     public var id: String { path }
     public var path: String
@@ -500,12 +500,12 @@ public struct NWChangedFile: Identifiable, Equatable, Sendable {
     }
 }
 
-/// Ends every turn that edited files (ChangesCard(turn.changes), NWThread, Main): a header with
+/// Ends every turn that edited files (ChangesCard(turn.changes), SHThread, Main): a header with
 /// a 30pt tile, "Edited 5 files" over its diff stat, Undo and Review; then the first three files
 /// as plain paths (the folder dims, the name reads first, "new" on a created file) and "N more".
 /// Review and the rows open the Changes pane on this turn. After Undo the card is one dashed line,
 /// "Undid the agent’s edits to 5 files", with Redo (ChangesCard · after Undo).
-public struct NWChangesCard: View {
+public struct SHChangesCard: View {
     public enum Phase: Equatable, Sendable {
         case edited
         case undone
@@ -514,7 +514,7 @@ public struct NWChangesCard: View {
     let title: String
     let added: Int
     let removed: Int
-    let files: [NWChangedFile]
+    let files: [SHChangedFile]
     let total: Int
     let phase: Phase
     let busy: Bool
@@ -527,7 +527,7 @@ public struct NWChangesCard: View {
     /// `total` counts every file the turn changed (the card lists the first three); without it,
     /// `files` are all of them. `onUndo` and `onRedo` are left out where they can't apply (not the
     /// last turn, an older host); `busy` holds them while one runs; `notice` says why one refused.
-    public init(title: String, added: Int, removed: Int, files: [NWChangedFile], total: Int? = nil, phase: Phase = .edited,
+    public init(title: String, added: Int, removed: Int, files: [SHChangedFile], total: Int? = nil, phase: Phase = .edited,
                 busy: Bool = false, notice: String? = nil, onReview: (() -> Void)? = nil, onOpen: ((String) -> Void)? = nil,
                 onUndo: (() -> Void)? = nil, onRedo: (() -> Void)? = nil) {
         self.title = title
@@ -545,39 +545,39 @@ public struct NWChangesCard: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: NW.Space.s) {
+        VStack(alignment: .leading, spacing: SH.Space.s) {
             switch phase {
             case .edited: edited
             case .undone: undone
             }
             if let notice {
                 Text(notice)
-                    .font(.nw(.caption))
-                    .foregroundStyle(Color.nw.failed)
+                    .font(.sh(.caption))
+                    .foregroundStyle(Color.sh.failed)
                     .fixedSize(horizontal: false, vertical: true)
-                    .nwTransition(.content)
+                    .shTransition(.content)
             }
         }
-        .nwAnimation(.content, value: phase)
-        .nwAnimation(.content, value: notice)
+        .shAnimation(.content, value: phase)
+        .shAnimation(.content, value: notice)
     }
 
     private var edited: some View {
-        let nw = Color.nw
-        let shown = Array(files.prefix(NWThreadMetrics.changesShownFiles))
+        let sh = Color.sh
+        let shown = Array(files.prefix(SHThreadMetrics.changesShownFiles))
         let more = total - shown.count
         return VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Image(systemName: "plus.forwardslash.minus")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(nw.textSecondary)
-                    .frame(width: NWThreadMetrics.changesTile, height: NWThreadMetrics.changesTile)
-                    .background(nw.bgSunken, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-                    .nwBorder(nw.lineSubtle, radius: NW.Radius.m)
+                    .foregroundStyle(sh.textSecondary)
+                    .frame(width: SHThreadMetrics.changesTile, height: SHThreadMetrics.changesTile)
+                    .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+                    .shBorder(sh.lineSubtle, radius: SH.Radius.m)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.nwSans(13, .semibold)).foregroundStyle(nw.textPrimary).lineLimit(1)
-                    NWDiffStat(added: added, removed: removed, font: .nwMono(11))
+                    Text(title).font(.shSans(13, .semibold)).foregroundStyle(sh.textPrimary).lineLimit(1)
+                    SHDiffStat(added: added, removed: removed, font: .shMono(11))
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityElement(children: .combine)
@@ -588,77 +588,77 @@ public struct NWChangesCard: View {
                             Image(systemName: "arrow.uturn.backward").font(.system(size: 10, weight: .medium))
                         }
                     }
-                    .buttonStyle(.nw(.ghost, size: .s))
+                    .buttonStyle(.sh(.ghost, size: .s))
                     .disabled(busy)
                     .help("Put back this turn’s edits in the worktree")
                     .accessibilityLabel("Undo the agent’s edits to \(total) file\(total == 1 ? "" : "s")")
                 }
                 if let onReview {
                     Button("Review", action: onReview)
-                        .buttonStyle(.nw(.secondary, size: .s))
+                        .buttonStyle(.sh(.secondary, size: .s))
                         .accessibilityLabel("Review \(title)")
                 }
             }
             .padding(.vertical, 10)
-            .padding(.leading, NW.Space.l)
+            .padding(.leading, SH.Space.l)
             .padding(.trailing, 10)
             ForEach(shown) { file in
-                NWHairline()
+                SHHairline()
                 row(file)
             }
             if more > 0 {
-                NWHairline()
+                SHHairline()
                 moreRow(more)
             }
         }
         .frame(maxWidth: .infinity)
-        .background(nw.bgWindow, in: RoundedRectangle(cornerRadius: NWThreadMetrics.changesRadius))
-        .clipShape(RoundedRectangle(cornerRadius: NWThreadMetrics.changesRadius))
-        .nwBorder(nw.lineSubtle, radius: NWThreadMetrics.changesRadius)
+        .background(sh.bgWindow, in: RoundedRectangle(cornerRadius: SHThreadMetrics.changesRadius))
+        .clipShape(RoundedRectangle(cornerRadius: SHThreadMetrics.changesRadius))
+        .shBorder(sh.lineSubtle, radius: SHThreadMetrics.changesRadius)
         .accessibilityElement(children: .contain)
     }
 
     private var undone: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         return HStack(spacing: 10) {
-            Image(systemName: "arrow.uturn.backward").font(.system(size: 11, weight: .medium)).foregroundStyle(nw.textSecondary)
+            Image(systemName: "arrow.uturn.backward").font(.system(size: 11, weight: .medium)).foregroundStyle(sh.textSecondary)
                 .accessibilityHidden(true)
-            Text(title).font(.nw(.ui, weight: .regular)).foregroundStyle(nw.textSecondary)
+            Text(title).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textSecondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let onRedo {
                 Button("Redo", action: onRedo)
-                    .buttonStyle(.nw(.ghost, size: .s))
+                    .buttonStyle(.sh(.ghost, size: .s))
                     .disabled(busy)
                     .help("Put the agent’s edits back")
             }
         }
         .padding(.vertical, 10)
-        .padding(.horizontal, NW.Space.l)
+        .padding(.horizontal, SH.Space.l)
         .overlay {
-            RoundedRectangle(cornerRadius: NWThreadMetrics.changesRadius)
-                .strokeBorder(nw.lineStrong, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+            RoundedRectangle(cornerRadius: SHThreadMetrics.changesRadius)
+                .strokeBorder(sh.lineStrong, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
         }
         .accessibilityElement(children: .contain)
     }
 
-    @ViewBuilder private func row(_ file: NWChangedFile) -> some View {
-        let nw = Color.nw
-        let content = HStack(spacing: NW.Space.m) {
-            Text("\(Text(file.directory).foregroundStyle(nw.textTertiary))\(Text(file.name).foregroundStyle(nw.textPrimary))")
-                .font(.nw(.ui, weight: .regular)).lineLimit(1).truncationMode(.head)
+    @ViewBuilder private func row(_ file: SHChangedFile) -> some View {
+        let sh = Color.sh
+        let content = HStack(spacing: SH.Space.m) {
+            Text("\(Text(file.directory).foregroundStyle(sh.textTertiary))\(Text(file.name).foregroundStyle(sh.textPrimary))")
+                .font(.sh(.ui, weight: .regular)).lineLimit(1).truncationMode(.head)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if file.status != .modified {
-                Text(file.status == .added ? "new" : "deleted").font(.nwSans(11)).foregroundStyle(nw.textTertiary)
+                Text(file.status == .added ? "new" : "deleted").font(.shSans(11)).foregroundStyle(sh.textTertiary)
             }
-            NWDiffStat(added: file.added, removed: file.removed, font: .nwMono(11))
+            SHDiffStat(added: file.added, removed: file.removed, font: .shMono(11))
         }
-        .padding(.horizontal, NW.Space.l)
-        .frame(minHeight: NWThreadMetrics.changesRowHeight)
+        .padding(.horizontal, SH.Space.l)
+        .frame(minHeight: SHThreadMetrics.changesRowHeight)
         .contentShape(Rectangle())
         let label = "\(file.path), \(statusWord(file.status)), \(file.added) added, \(file.removed) removed"
         if let onOpen {
             Button { onOpen(file.path) } label: { content }
-                .buttonStyle(.nwRow(radius: 0))
+                .buttonStyle(.shRow(radius: 0))
                 .accessibilityLabel(label)
                 .accessibilityHint("Opens the file in the Changes pane")
         } else {
@@ -667,13 +667,13 @@ public struct NWChangesCard: View {
     }
 
     @ViewBuilder private func moreRow(_ count: Int) -> some View {
-        let label = Text("\(count) more").font(.nwSans(12)).foregroundStyle(Color.nw.textSecondary)
-            .padding(.horizontal, NW.Space.l)
-            .frame(maxWidth: .infinity, minHeight: NWThreadMetrics.changesRowHeight, alignment: .leading)
+        let label = Text("\(count) more").font(.shSans(12)).foregroundStyle(Color.sh.textSecondary)
+            .padding(.horizontal, SH.Space.l)
+            .frame(maxWidth: .infinity, minHeight: SHThreadMetrics.changesRowHeight, alignment: .leading)
             .contentShape(Rectangle())
         if let onReview {
             Button(action: onReview) { label }
-                .buttonStyle(.nwRow(radius: 0))
+                .buttonStyle(.shRow(radius: 0))
                 .accessibilityLabel("\(count) more files")
                 .accessibilityHint("Opens the Changes pane")
         } else {
@@ -681,7 +681,7 @@ public struct NWChangesCard: View {
         }
     }
 
-    private func statusWord(_ status: NWChangedFile.Status) -> String {
+    private func statusWord(_ status: SHChangedFile.Status) -> String {
         switch status {
         case .modified: "modified"
         case .added: "added"

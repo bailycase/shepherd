@@ -58,8 +58,8 @@ What follows from them:
 - **Flat surfaces, 1px lines.** Surfaces step `bgBase` (chrome), `bgWindow` (thread),
   `bgRaised` (cards, composer, menus), `bgSunken` (code, headers). A hairline separates them,
   never a shadow.
-- **One shadow**, `.nwPopover()`, for menus, palette, popovers and toasts. The sidebar and side
-  pane borrow it (`.nwFloatShadow`) only while they float. No vibrancy, translucency or gradients.
+- **One shadow**, `.shPopover()`, for menus, palette, popovers and toasts. The sidebar and side
+  pane borrow it (`.shFloatShadow`) only while they float. No vibrancy, translucency or gradients.
 - **Honest affordances.** Never draw a control that does nothing, a shortcut that isn't wired,
   or sample data in place of real data. Hide what is unsupported, or say why.
 - **Keep the reader's position.** Growth and completion follow the tail only while the reader
@@ -75,9 +75,9 @@ What follows from them:
   Spaces layout, pinned spaces appear once in Pinned, below Projects and above Spaces, regardless
   of their stored parent. Unpin restores their ordinary nesting.
 - **One primary action per surface.** A destructive action is never the ⏎ default.
-- **Native controls, Night Watch styles.** A control is a Night Watch style on a native
+- **Native controls, Shepherd Design styles.** A control is a Shepherd Design style on a native
   `Button`, `Toggle`, `Picker` or `TextField`. Context menus are native `.contextMenu`. Shared
-  views are `NW`-prefixed.
+  views are `SH`-prefixed.
 
 ## Matching a design
 
@@ -113,14 +113,14 @@ Settings", revision 1083) is the source of truth for every Settings page.
 
 Each page's contents: [settings.md](docs/design/settings.md) and its `settings-*` files.
 
-## Night Watch
+## Shepherd Design
 
 Never hardcode a color, font size, dimension, duration or curve in a view. Use a shared
 ShepherdUI component before hand-rolling chrome. A reusable part goes in `Packages/ShepherdUI`
 with a `#Preview` in both appearances. Full detail: [theme](docs/design/theme.md),
 [foundations](docs/design/foundations.md), [motion](docs/design/motion.md).
 
-**Color** is `Color.nw.<role>`, dynamic per appearance (values in `NightWatch.swift`):
+**Color** is `Color.sh.<role>`, dynamic per appearance (values in `ShepherdDesign.swift`):
 
 | Group | Roles and use |
 | --- | --- |
@@ -131,15 +131,15 @@ with a `#Preview` in both appearances. Full detail: [theme](docs/design/theme.md
 | Syntax | `syn*` for code blocks and diffs |
 
 - Views never branch on `colorScheme` for a color. A new color is a role on `ThemeColors`,
-  filled in both variants, with a `NWPalette` property and a contrast rule if it carries text.
+  filled in both variants, with a `SHPalette` property and a contrast rule if it carries text.
 - Borders and hovers are theme roles, never ad-hoc alphas. Status colors come from
   `AgentState`: `textColor` for the word, `color` for dots and glyphs, `tint` for the fill.
-  Never apply `.opacity(…)` to a role. Draw state with `NWStatusDot`, `NWStateGlyph` or
-  `NWStatusPill`.
+  Never apply `.opacity(…)` to a role. Draw state with `SHStatusDot`, `SHStateGlyph` or
+  `SHStatusPill`.
 
 **Type** is Geist for prose and chrome, and Geist Mono for anything the agent touched. Use only
-`Font.nw(_:)` or `.nwText(_:)`, which follow Settings ▸ Appearance ▸ Text size on the Mac and
-Dynamic Type on iOS. Use `Font.nwSans`/`nwMono` only for a size a board gives outside the ramp.
+`Font.sh(_:)` or `.shText(_:)`, which follow Settings ▸ Appearance ▸ Text size on the Mac and
+Dynamic Type on iOS. Use `Font.shSans`/`shMono` only for a size a board gives outside the ramp.
 
 | Style | Mac | Use |
 | --- | --- | --- |
@@ -147,29 +147,29 @@ Dynamic Type on iOS. Use `Font.nwSans`/`nwMono` only for a size a board gives ou
 | `body` · `ui` · `caption` | 13.5/400 · 12.5/500 · 11.5/400 | prose, bubbles, composer · rows, buttons · secondary info |
 | `code` · `mono` · `micro` | Mono 12 · 11.5 · 10.5/500 | code, output · paths, commands · section labels, counts |
 
-**Space** (`NW.Space`, 4pt grid): 2, 4, 6, 8, 12, 16, 24, 32. **Radius** (`NW.Radius`): 4 pills
+**Space** (`SH.Space`, 4pt grid): 2, 4, 6, 8, 12, 16, 24, 32. **Radius** (`SH.Radius`): 4 pills
 and keycaps · 6 buttons, fields, rows · 8 cards, composer, code · 12 popovers, palette, sheets.
-**Height** (`NW.Height`): rows 22 · 28 · 36 (scaled by Density), controls 24 · 28 · 32 (never
-scaled), touch 44. Hairlines are 1px (`NWHairline`, `.nwBorder`).
+**Height** (`SH.Height`): rows 22 · 28 · 36 (scaled by Density), controls 24 · 28 · 32 (never
+scaled), touch 44. Hairlines are 1px (`SHHairline`, `.shBorder`).
 
-**Elevation**: `.nwCard()` is flat (raised fill, 1px `lineSubtle`, radius 8). `.nwPopover()` is
-the only shadow. **Focus**: `.nwFocusRing()`, a 2pt `running` ring for keyboard focus only.
+**Elevation**: `.shCard()` is flat (raised fill, 1px `lineSubtle`, radius 8). `.shPopover()` is
+the only shadow. **Focus**: `.shFocusRing()`, a 2pt `running` ring for keyboard focus only.
 
 **Icons**: SF Symbols, monochrome, weight `.medium`, 13 to 16pt, never emoji. Use the exact
 symbol and fill variant the design shows (`bolt` is not `bolt.fill`). Where a board draws its
-own outline (Settings' nav), it ships as a vector in `NWGlyph.Settings`. A glyph more than one
-view draws is an `NWGlyph` case. `DesignRulesTests` fails on a literal font size, a tinted
+own outline (Settings' nav), it ships as a vector in `SHGlyph.Settings`. A glyph more than one
+view draws is an `SHGlyph` case. `DesignRulesTests` fails on a literal font size, a tinted
 status color, a raw color, or a raw glyph name.
 
-**Motion** uses `NW.Motion` anchors, never a literal duration or curve:
+**Motion** uses `SH.Motion` anchors, never a literal duration or curve:
 
 - `hover`, `content` 120ms · `disclosure`, `list`, `pane`, `overlay` 180ms · `sheet`,
   `emphasis`, `scroll` 240ms, all springs; `glow` 1.6s (attention only), `spin` 1s, `shimmer`
   1.8s (live text only), `pulse` 1.4s.
-- A store-driven change uses `.nwAnimation(_:value:)` and `.nwTransition`. An action-driven
-  change uses `withNWAnimation`. Never use an ad-hoc `withAnimation`.
+- A store-driven change uses `.shAnimation(_:value:)` and `.shTransition`. An action-driven
+  change uses `withSHAnimation`. Never use an ad-hoc `withAnimation`.
 - Switching agents, keyboard navigation, selection, streaming text and terminal resizes land at
-  once (`.nwInstant()`). Under Reduce Motion nothing travels: cross-fade in 120ms or stand still.
+  once (`.shInstant()`). Under Reduce Motion nothing travels: cross-fade in 120ms or stand still.
 - Spinners and glows are Core Animation layers, never a view redrawn every frame.
 
 **Density**: Settings ▸ Appearance sets sidebar row height (22 · 28 · 36) and a Density of 80 to
@@ -185,7 +185,7 @@ status color, a raw color, or a raw glyph name.
   for a chord that isn't wired.
 - A rebound chord must include ⌘ and avoid ⌘1–9, ⌘, and the plain system chords. A chord the
   app chrome uses goes in `appOwnedChords`, so a focused Ghostty surface can't eat it.
-- Keycaps (`NWKeycap`) put modifiers in Apple's order, ⌃⌥⇧⌘, one cap per key.
+- Keycaps (`SHKeycap`) put modifiers in Apple's order, ⌃⌥⇧⌘, one cap per key.
 - The Mac's image-capable composers handle native Paste (⌘V, Edit and the text menu) in their
   own field editor, reusing dropped-image resizing and attachment chips. Text paste, selection,
   undo and input-method composition stay native; other fields and terminals are unchanged.
@@ -219,7 +219,7 @@ each rule. Add a budget with any new long list.
 - A cached visible bottom marker never overrides a following thread's measured gap from its tail.
   Cached current-row IDs require a live, nonhidden native row probe intersecting the Mac viewport;
   physical placement is not proof of compositor paint.
-- Motion no one sees costs nothing (`nwMotionPaused`). Detail:
+- Motion no one sees costs nothing (`shMotionPaused`). Detail:
   [performance](docs/design/performance.md).
 
 ## Verifying visuals

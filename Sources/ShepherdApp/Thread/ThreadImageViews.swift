@@ -111,14 +111,14 @@ struct ThreadImageThumb: View {
     var body: some View {
         switch load.state {
         case .unavailable:
-            NWThreadImageChip(name: name, detail: "not available")
+            SHThreadImageChip(name: name, detail: "not available")
         case .picture(_, let image):
-            NWThreadImage(name: name, size: size, content: .picture(Image(nsImage: image)), open: open)
+            SHThreadImage(name: name, size: size, content: .picture(Image(nsImage: image)), open: open)
         case .failed:
             // Retry starts the fetch itself: the `.loading` branch's task only runs when that branch first appears.
-            NWThreadImage(name: name, size: size, content: .failed, open: {}, retry: { load.retry(from: images) })
+            SHThreadImage(name: name, size: size, content: .failed, open: {}, retry: { load.retry(from: images) })
         case .loading:
-            NWThreadImage(name: name, size: size, content: .loading, open: open)
+            SHThreadImage(name: name, size: size, content: .loading, open: open)
                 .task { load.load(from: images) }
                 .onDisappear { load.cancel() }
         }
@@ -133,12 +133,12 @@ struct SentImages: View {
     @Environment(\.viewImages) private var view
 
     var body: some View {
-        HStack(spacing: NW.Space.s) {
+        HStack(spacing: SH.Space.s) {
             ForEach(Array(refs.enumerated()), id: \.element.id) { index, ref in
                 ThreadImageThumb(ref: ref, name: names.indices.contains(index) ? names[index] : "Image \(index + 1)",
-                                 size: NWThreadImageMetrics.box(width: ref.width, height: ref.height,
-                                                                widest: NWThreadImageMetrics.sentWidest,
-                                                                tallest: NWThreadImageMetrics.sentLongestSide)) {
+                                 size: SHThreadImageMetrics.box(width: ref.width, height: ref.height,
+                                                                widest: SHThreadImageMetrics.sentWidest,
+                                                                tallest: SHThreadImageMetrics.sentLongestSide)) {
                     view(ThreadImageSet(refs: refs, names: names, origin: origin), index)
                 }
             }
@@ -154,12 +154,12 @@ struct ReceivedImages: View {
     @Environment(\.viewImages) private var view
 
     var body: some View {
-        NWFlowLayout(spacing: NW.Space.l, lineSpacing: NW.Space.l) {
+        SHFlowLayout(spacing: SH.Space.l, lineSpacing: SH.Space.l) {
             ForEach(Array(refs.enumerated()), id: \.element.id) { index, ref in
                 ThreadImageThumb(ref: ref, name: "Image \(index + 1)",
-                                 size: NWThreadImageMetrics.box(width: ref.width, height: ref.height,
-                                                                widest: NWThreadImageMetrics.receivedWidest,
-                                                                tallest: NWThreadImageMetrics.receivedTallest)) {
+                                 size: SHThreadImageMetrics.box(width: ref.width, height: ref.height,
+                                                                widest: SHThreadImageMetrics.receivedWidest,
+                                                                tallest: SHThreadImageMetrics.receivedTallest)) {
                     view(ThreadImageSet(refs: refs, names: refs.indices.map { "Image \($0 + 1)" }, origin: "From the agent"), index)
                 }
             }

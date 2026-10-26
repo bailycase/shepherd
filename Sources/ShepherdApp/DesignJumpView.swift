@@ -10,20 +10,20 @@ struct DesignJumpOverlay: View {
 
     var body: some View {
         GeometryReader { geo in
-            let M = NWJumpMetrics.self
+            let M = SHJumpMetrics.self
             ZStack(alignment: .top) {
                 if let model = vm.designJump {
-                    Color.nw.sheetScrim
+                    Color.sh.sheetScrim
                         .contentShape(Rectangle())
                         .onTapGesture { vm.designJump = nil }
                         .accessibilityHidden(true)
-                        .nwTransition(.content)
+                        .shTransition(.content)
                     DesignJumpCard(model: model, maxListHeight: Self.maxListHeight(in: geo.size),
                                    picture: { vm.jumpPicture($0, in: model.design) },
                                    run: { vm.runDesignJump($0) }, close: { vm.designJump = nil })
-                        .frame(width: max(0, min(M.width, geo.size.width - 2 * NWPaletteMetrics.margin)))
+                        .frame(width: max(0, min(M.width, geo.size.width - 2 * SHPaletteMetrics.margin)))
                         .accessibilityAddTraits(.isModal)
-                        .nwTransition(.overlay, anchor: .top)
+                        .shTransition(.overlay, anchor: .top)
                         .padding(.top, (geo.size.height * M.topFraction).rounded())
                 }
             }
@@ -31,14 +31,14 @@ struct DesignJumpOverlay: View {
         }
         .ignoresSafeArea()
         .allowsHitTesting(vm.designJump != nil)
-        .nwAnimation(.overlay, value: vm.designJump != nil)
+        .shAnimation(.overlay, value: vm.designJump != nil)
     }
 
     /// The list's cap: what the window leaves under the card's top, its search row and footer,
     /// at most `maxVisibleRows` rows, at least one.
     static func maxListHeight(in size: CGSize) -> CGFloat {
-        let M = NWJumpMetrics.self
-        let room = size.height - (size.height * M.topFraction).rounded() - NWPaletteMetrics.margin
+        let M = SHJumpMetrics.self
+        let room = size.height - (size.height * M.topFraction).rounded() - SHPaletteMetrics.margin
             - M.searchHeight - M.footerHeight - M.listTop - M.listInset
         return max(M.rowHeight, min(M.rowHeight * CGFloat(M.maxVisibleRows), room))
     }
@@ -60,22 +60,22 @@ struct DesignJumpCard: View {
         let rows = model.rows
         let highlight = model.highlight
         let pictures = model.pictures
-        NWJumpCard {
-            HStack(spacing: NW.Space.m) {
-                NWJumpSearchField("Jump to a board or a design…", text: $model.query, focus: $fieldFocused) {
+        SHJumpCard {
+            HStack(spacing: SH.Space.m) {
+                SHJumpSearchField("Jump to a board or a design…", text: $model.query, focus: $fieldFocused) {
                     if let item = model.highlighted { run(item) }
                 }
-                NWJumpScopes(DesignJumpScope.allCases.map { ($0, $0.title) }, selection: $model.scope)
-                    .nwHelp("Switch scope", shortcut: "⇥")
+                SHJumpScopes(DesignJumpScope.allCases.map { ($0, $0.title) }, selection: $model.scope)
+                    .shHelp("Switch scope", shortcut: "⇥")
             }
         } results: {
             list(rows: rows, highlight: highlight, pictures: pictures)
         } footer: {
-            HStack(spacing: NWJumpMetrics.footerSpacing) {
-                NWJumpHint("↑↓", "move")
-                NWJumpHint("⏎", "jump")
+            HStack(spacing: SHJumpMetrics.footerSpacing) {
+                SHJumpHint("↑↓", "move")
+                SHJumpHint("⏎", "jump")
                 Spacer(minLength: 0)
-                NWJumpHint("esc", "close")
+                SHJumpHint("esc", "close")
             }
         }
         .onAppear { fieldFocused = true }
@@ -93,19 +93,19 @@ struct DesignJumpCard: View {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(rows.enumerated()), id: \.element.id) { index, item in
                         if let title = header(before: index, in: rows) {
-                            NWJumpSectionHeader(title.text, count: title.count)
+                            SHJumpSectionHeader(title.text, count: title.count)
                         }
-                        NWJumpRow(item.title, meta: item.meta, tag: item.tag,
-                                  picture: picture(item).map { NWReferenceImage(id: "\(item.id)@\(pictures)", image: Image(decorative: $0, scale: 2)) },
+                        SHJumpRow(item.title, meta: item.meta, tag: item.tag,
+                                  picture: picture(item).map { SHReferenceImage(id: "\(item.id)@\(pictures)", image: Image(decorative: $0, scale: 2)) },
                                   highlighted: index == highlight) { run(item) }
                             .onHover { if $0 { model.highlight = index } }
                             .id(item.id)
                     }
                     if rows.isEmpty {
                         Text(model.query.isEmpty ? (model.scope == .thisDesign ? "No boards yet" : "No designs yet") : "No matches")
-                            .font(Font.nw(.caption))
-                            .foregroundStyle(Color.nw.textTertiary)
-                            .frame(maxWidth: .infinity, minHeight: NWJumpMetrics.rowHeight)
+                            .font(Font.sh(.caption))
+                            .foregroundStyle(Color.sh.textTertiary)
+                            .frame(maxWidth: .infinity, minHeight: SHJumpMetrics.rowHeight)
                     }
                 }
             }

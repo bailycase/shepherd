@@ -97,13 +97,13 @@ enum MentionScope: Equatable {
 /// What the picker draws for a scope and a filter (MentionPicker's stages): sections of rows, the
 /// breadcrumb inside a design or board, and what it says with nothing to list.
 struct MentionPickerContent: Equatable {
-    var sections: [NWMentionSection] = []
+    var sections: [SHMentionSection] = []
     var crumbs: [String]?
-    var empty: NWMentionEmpty?
+    var empty: SHMentionEmpty?
     /// The catalog's item behind each row, by row id.
     var items: [String: DesignMentionItem] = [:]
 
-    var rows: [NWMentionRow] { sections.flatMap(\.rows) }
+    var rows: [SHMentionRow] { sections.flatMap(\.rows) }
 
     static let searched = "Searches this Mac’s designs, pages, boards and elements."
     /// A whole design's or board's row: its item is the design's (or board's) own, under this id.
@@ -112,11 +112,11 @@ struct MentionPickerContent: Equatable {
     /// The rows for `scope` and `filter` from `catalog`, most recently active designs first.
     /// `thumbnail` gives a row's picture, when one is at hand.
     static func make(catalog: DesignMentionCatalog, scope: MentionScope, filter: String, now: Date = Date(),
-                     thumbnail: (DesignMentionItem) -> NWReferenceImage? = { _ in nil }) -> MentionPickerContent {
+                     thumbnail: (DesignMentionItem) -> SHReferenceImage? = { _ in nil }) -> MentionPickerContent {
         var content = MentionPickerContent()
         let words = filter.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
             .split(whereSeparator: \.isWhitespace).map(String.init)
-        func add(_ item: DesignMentionItem, row: NWMentionRow) -> NWMentionRow {
+        func add(_ item: DesignMentionItem, row: SHMentionRow) -> SHMentionRow {
             content.items[row.id] = item
             return row
         }
@@ -127,10 +127,10 @@ struct MentionPickerContent: Equatable {
                 return content
             }
             let rows = catalog.designs.map { item in
-                add(item, row: NWMentionRow(id: item.id, kind: .design, title: item.title, subtitle: designLine(item, now: now),
+                add(item, row: SHMentionRow(id: item.id, kind: .design, title: item.title, subtitle: designLine(item, now: now),
                                             lead: item.system, trailing: .drill, thumbnail: thumbnail(item)))
             }
-            content.sections = [NWMentionSection(id: "designs", title: "Designs", trailing: "\(catalog.designs.count) on this Mac", rows: rows)]
+            content.sections = [SHMentionSection(id: "designs", title: "Designs", trailing: "\(catalog.designs.count) on this Mac", rows: rows)]
         case .designs:
             // What the search found, where the piece's own name holds a word of it (its path is
             // there to place it, as the boards show).
@@ -145,7 +145,7 @@ struct MentionPickerContent: Equatable {
             let rows = found.map { item in
                 add(item, row: searchRow(item, words: words, thumbnail: thumbnail(item)))
             }
-            content.sections = [NWMentionSection(id: "matches", title: "Designs, pages, boards and elements",
+            content.sections = [SHMentionSection(id: "matches", title: "Designs, pages, boards and elements",
                                                  trailing: rows.count == 1 ? "1 match" : "\(rows.count) matches", rows: rows)]
         case .design, .board:
             let all = catalog.rows(in: scope.catalogScope)
@@ -156,30 +156,30 @@ struct MentionPickerContent: Equatable {
             }
             content.crumbs = scope.crumbs
             let whole = own.kind == .design
-                ? NWMentionRow(id: wholeID(own), kind: .design, title: "Whole design", subtitle: boardsText(own.boardCount ?? 0),
+                ? SHMentionRow(id: wholeID(own), kind: .design, title: "Whole design", subtitle: boardsText(own.boardCount ?? 0),
                                trailing: .pick, thumbnail: thumbnail(own))
-                : NWMentionRow(id: wholeID(own), kind: .board, title: "Whole board", subtitle: boardLine(own),
+                : SHMentionRow(id: wholeID(own), kind: .board, title: "Whole board", subtitle: boardLine(own),
                                trailing: .pick, thumbnail: thumbnail(own))
             let inside = all.dropFirst().filter { words.isEmpty || matches($0.title, words) }
-            var sections: [NWMentionSection] = []
-            if words.isEmpty { sections.append(NWMentionSection(id: "whole", title: "", rows: [add(own, row: whole)])) }
+            var sections: [SHMentionSection] = []
+            if words.isEmpty { sections.append(SHMentionSection(id: "whole", title: "", rows: [add(own, row: whole)])) }
             let kinds: [(DesignMentionItem.Kind, String)] = own.kind == .design ? [(.page, "Pages"), (.board, "Boards")] : [(.element, "Elements")]
             for (kind, title) in kinds {
                 let rows = inside.filter { $0.kind == kind }.map { item in
-                    let row: NWMentionRow
+                    let row: SHMentionRow
                     switch item.kind {
                     case .page:
-                        row = NWMentionRow(id: item.id, kind: .page, title: item.title, subtitle: pageLine(item), trailing: .pick, matched: words)
+                        row = SHMentionRow(id: item.id, kind: .page, title: item.title, subtitle: pageLine(item), trailing: .pick, matched: words)
                     case .board:
-                        row = NWMentionRow(id: item.id, kind: .board, title: item.title, subtitle: boardLine(item), trailing: .drill,
+                        row = SHMentionRow(id: item.id, kind: .board, title: item.title, subtitle: boardLine(item), trailing: .drill,
                                            thumbnail: thumbnail(item), matched: words)
                     case .element, .design:
-                        row = NWMentionRow(id: item.id, kind: .element, title: item.title, subtitle: elementLine(item), trailing: .pick,
+                        row = SHMentionRow(id: item.id, kind: .element, title: item.title, subtitle: elementLine(item), trailing: .pick,
                                            thumbnail: thumbnail(item), matched: words)
                     }
                     return add(item, row: row)
                 }
-                if !rows.isEmpty { sections.append(NWMentionSection(id: title.lowercased(), title: title, trailing: "\(rows.count)", rows: rows)) }
+                if !rows.isEmpty { sections.append(SHMentionSection(id: title.lowercased(), title: title, trailing: "\(rows.count)", rows: rows)) }
             }
             if sections.isEmpty, !words.isEmpty { content.empty = .nothingMatches(query: filter, searched: searched) }
             content.sections = sections
@@ -188,20 +188,20 @@ struct MentionPickerContent: Equatable {
     }
 
     /// A search result: its path before it, and what it is under it.
-    static func searchRow(_ item: DesignMentionItem, words: [String], thumbnail: NWReferenceImage?) -> NWMentionRow {
+    static func searchRow(_ item: DesignMentionItem, words: [String], thumbnail: SHReferenceImage?) -> SHMentionRow {
         switch item.kind {
         case .design:
-            NWMentionRow(id: item.id, kind: .design, title: item.title, subtitle: boardsText(item.boardCount ?? 0), lead: item.system,
+            SHMentionRow(id: item.id, kind: .design, title: item.title, subtitle: boardsText(item.boardCount ?? 0), lead: item.system,
                          trailing: .drill, thumbnail: thumbnail, matched: words)
         case .page:
-            NWMentionRow(id: item.id, kind: .page, title: item.title, crumbs: item.breadcrumb, subtitle: pageLine(item),
+            SHMentionRow(id: item.id, kind: .page, title: item.title, crumbs: item.breadcrumb, subtitle: pageLine(item),
                          trailing: .pick, matched: words)
         case .board:
-            NWMentionRow(id: item.id, kind: .board, title: item.title, crumbs: item.breadcrumb,
+            SHMentionRow(id: item.id, kind: .board, title: item.title, crumbs: item.breadcrumb,
                          subtitle: ["board", size(item)].compactMap { $0 }.joined(separator: " · "), trailing: .drill,
                          thumbnail: thumbnail, matched: words)
         case .element:
-            NWMentionRow(id: item.id, kind: .element, title: item.title, crumbs: item.breadcrumb, subtitle: "element", trailing: .pick,
+            SHMentionRow(id: item.id, kind: .element, title: item.title, crumbs: item.breadcrumb, subtitle: "element", trailing: .pick,
                          thumbnail: thumbnail, matched: words)
         }
     }
@@ -280,7 +280,7 @@ struct MentionPickerState: Equatable {
     /// another host): it opens on that note alone, reads nothing and lists nothing.
     mutating func update(draft: String, catalog: DesignMentionCatalog?, stage: DesignMentionLoad.Stage = .loading,
                          unavailable: String? = nil, now: Date = Date(),
-                         thumbnail: (DesignMentionItem) -> NWReferenceImage? = { _ in nil }) {
+                         thumbnail: (DesignMentionItem) -> SHReferenceImage? = { _ in nil }) {
         guard draft != dismissed, let mention = ComposerMention.token(in: draft) else {
             close()
             return
@@ -332,7 +332,7 @@ struct MentionPickerState: Equatable {
         highlighted = ids[min(max(0, index + step), ids.count - 1)]
     }
 
-    var highlightedRow: NWMentionRow? { content.rows.first { $0.id == highlighted } }
+    var highlightedRow: SHMentionRow? { content.rows.first { $0.id == highlighted } }
 
     /// What a row does: drill into a design or a board (the draft spells the way in), or pick it.
     enum Choice: Equatable {
@@ -342,7 +342,7 @@ struct MentionPickerState: Equatable {
 
     /// `row` chosen: a design or board row drills in, writing its path into the draft; anything
     /// else picks its piece and takes the mention out of the draft.
-    mutating func choose(_ row: NWMentionRow) -> Choice? {
+    mutating func choose(_ row: SHMentionRow) -> Choice? {
         guard let mention, let item = content.items[row.id] else { return nil }
         if row.trailing == .drill {
             switch item.kind {

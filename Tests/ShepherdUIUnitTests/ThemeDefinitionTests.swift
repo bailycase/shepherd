@@ -76,7 +76,7 @@ struct ThemeDefinitionTests {
     }
 
     @Test func aThemeMissingARoleFailsToDecode() throws {
-        var object = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(ThemeDefinition.nightWatch)) as? [String: Any])
+        var object = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(ThemeDefinition.shepherdDesign)) as? [String: Any])
         var dark = try #require(object["dark"] as? [String: Any])
         var colors = try #require(dark["colors"] as? [String: Any])
         colors.removeValue(forKey: "failedTint")
@@ -87,7 +87,7 @@ struct ThemeDefinitionTests {
     }
 
     @Test func malformedColorsAreReportedWithTheirPaths() {
-        var theme = ThemeDefinition.nightWatch
+        var theme = ThemeDefinition.shepherdDesign
         theme.dark.colors.running = "#12345"
         theme.light.terminal.palette[3] = "blue"
         theme.light.terminal.selectionBackground = "nope"
@@ -101,7 +101,7 @@ struct ThemeDefinitionTests {
     }
 
     @Test func absentOptionalTerminalColorsAreValid() {
-        var theme = ThemeDefinition.nightWatch
+        var theme = ThemeDefinition.shepherdDesign
         theme.light.terminal.selectionBackground = nil
         theme.light.terminal.selectionForeground = nil
         #expect(theme.invalidColors.isEmpty)

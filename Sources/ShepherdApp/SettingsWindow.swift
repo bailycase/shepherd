@@ -75,7 +75,7 @@ struct WindowChrome: NSViewRepresentable {
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.isMovableByWindowBackground = false
-        window.backgroundColor = NSColor(Color.nw.bgBase)
+        window.backgroundColor = NSColor(Color.sh.bgBase)
         window.toolbar = nil
     }
 }

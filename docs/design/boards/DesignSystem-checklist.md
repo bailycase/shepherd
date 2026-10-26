@@ -14,13 +14,13 @@ out.
 
 ## Elements, top to bottom
 
-1. Header (`NWDesignHeader`, page style): nib, "Design systems" (back to Designs), "/", the system's name.
-   Trailing: Dark | Light (`NWSegmentedPicker`), New design (`.nw(.primary)`, the one amber control), and the
+1. Header (`SHDesignHeader`, page style): nib, "Design systems" (back to Designs), "/", the system's name.
+   Trailing: Dark | Light (`SHSegmentedPicker`), New design (`.sh(.primary)`, the one amber control), and the
    existing More menu (kept, see Departures).
-2. Contents button (`list.bullet`, bordered `nwIcon`, 16pt from the top left) opening the section menu: label
+2. Contents button (`list.bullet`, bordered `shIcon`, 16pt from the top left) opening the section menu: label
    "SHEPHERD UI" (the system's name, mono micro, uppercase), Overview, Principles n, Voice, Colors n, Typography n,
    Spacing n, Corner radius n, Size n, Components n, a hairline, "USED BY", then each design that uses the system
-   with its board count. Width 224, padding 6, rows 28, radius l, `nwPopover`.
+   with its board count. Width 224, padding 6, rows 28, radius l, `shPopover`.
 3. Column 960 wide, 24 between parts. Hero: 256 tall, `bgBase`, hairline `lineSubtle`, radius l, 32 padding;
    the name at 64 bold, the tagline (body, `textSecondary`) 8 under it; at the right six tiles in a 4x3 grid, 8 gap,
    2x2 `lantern`, 1x2 `running`, `done`, 1x2 `bgRaised` with `lineStrong`, `lanternTint`, `failed`.
@@ -43,7 +43,7 @@ the component), `chevron.up.chevron.down` (popup, in the component). No `square.
 ## Strings from code
 
 The name, every token name and value, type sizes and weights, spacing and radii, size values (control, field and
-segment from `NWSettingsControlMetrics`, row from `NW.Height.row`, rail from `AppLayout.settingsNavWidth`, thread and
+segment from `SHSettingsControlMetrics`, row from `SH.Height.row`, rail from `AppLayout.settingsNavWidth`, thread and
 prose from `AppLayout`), every count, the "Used by" designs, the component names and groups. The system's own copy
 (`tokens.json` › `page`): the tagline, summary, provenance note, Principles, Voice and sizes; a radius's `use`. The
 app's copy: the group hints.

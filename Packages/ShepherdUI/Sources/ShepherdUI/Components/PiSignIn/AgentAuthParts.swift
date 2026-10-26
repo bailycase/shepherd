@@ -5,7 +5,7 @@ import SwiftUI
 
 /// "Waiting to continue" (`AgentWaitingLine(restoredAt:)`): one static line at the end of a
 /// restored agent's thread while the first launch's copy holds it.
-public struct NWAgentWaitingLine: View, Equatable {
+public struct SHAgentWaitingLine: View, Equatable {
     let message: String
     let trailing: String?
 
@@ -15,35 +15,35 @@ public struct NWAgentWaitingLine: View, Equatable {
     }
 
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         HStack(spacing: 10) {
             Image(systemName: "clock")
-                .font(.nwSans(14))
-                .foregroundStyle(nw.textSecondary)
+                .font(.shSans(14))
+                .foregroundStyle(sh.textSecondary)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                Text("Waiting to continue").font(.nwSans(13, .medium)).foregroundStyle(nw.textPrimary)
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                Text("Waiting to continue").font(.shSans(13, .medium)).foregroundStyle(sh.textPrimary)
                 Text(message)
-                    .font(.nwSans(NWPiSignInMetrics.statusSize))
-                    .foregroundStyle(nw.textSecondary)
+                    .font(.shSans(SHPiSignInMetrics.statusSize))
+                    .foregroundStyle(sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if let trailing {
-                Text(trailing).font(.nwMono(NWPiSignInMetrics.timeSize)).foregroundStyle(nw.textTertiary).fixedSize()
+                Text(trailing).font(.shMono(SHPiSignInMetrics.timeSize)).foregroundStyle(sh.textTertiary).fixedSize()
             }
         }
         .padding(.vertical, 10)
         .padding(.horizontal, 14)
-        .background(nw.bgSunken, in: RoundedRectangle(cornerRadius: NWPiSignInMetrics.cardRadius))
-        .nwBorder(nw.lineSubtle, radius: NWPiSignInMetrics.cardRadius)
+        .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: SHPiSignInMetrics.cardRadius))
+        .shBorder(sh.lineSubtle, radius: SHPiSignInMetrics.cardRadius)
         .accessibilityElement(children: .combine)
     }
 }
 
 /// "Not signed in to Anthropic" (`AgentNotSignedInCard(provider:)`): a lantern card at the end of
 /// the thread with Sign in to <provider> and Use another model.
-public struct NWAgentNotSignedInCard<Models: View>: View {
+public struct SHAgentNotSignedInCard<Models: View>: View {
     let provider: String
     let model: String?
     let reason: String
@@ -65,42 +65,42 @@ public struct NWAgentNotSignedInCard<Models: View>: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        let M = NWPiSignInMetrics.self
-        VStack(alignment: .leading, spacing: NW.Space.l) {
-            HStack(alignment: .top, spacing: NW.Space.l) {
+        let sh = Color.sh
+        let M = SHPiSignInMetrics.self
+        VStack(alignment: .leading, spacing: SH.Space.l) {
+            HStack(alignment: .top, spacing: SH.Space.l) {
                 Image(systemName: "key")
-                    .font(.nwSans(M.cardGlyph - 3, .medium))
-                    .foregroundStyle(nw.lanternText)
+                    .font(.shSans(M.cardGlyph - 3, .medium))
+                    .foregroundStyle(sh.lanternText)
                     .frame(width: M.cardTile, height: M.cardTile)
-                    .background(nw.lanternTint, in: RoundedRectangle(cornerRadius: M.cardRadius))
+                    .background(sh.lanternTint, in: RoundedRectangle(cornerRadius: M.cardRadius))
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: M.lineGap) {
                     Text("Not signed in to \(provider)")
-                        .font(.nwSans(M.cardTitleSize, .semibold))
-                        .foregroundStyle(nw.textPrimary)
+                        .font(.shSans(M.cardTitleSize, .semibold))
+                        .foregroundStyle(sh.textPrimary)
                     message
-                        .nwText(size: 13, lineHeight: 1.5)
-                        .foregroundStyle(nw.textSecondary)
+                        .shText(size: 13, lineHeight: 1.5)
+                        .foregroundStyle(sh.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                 }
-                .padding(.top, NW.Space.xxs)
+                .padding(.top, SH.Space.xxs)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 if let time {
-                    Text(time).font(.nwMono(M.timeSize)).foregroundStyle(nw.textTertiary).fixedSize()
+                    Text(time).font(.shMono(M.timeSize)).foregroundStyle(sh.textTertiary).fixedSize()
                 }
             }
-            HStack(spacing: NW.Space.m) {
+            HStack(spacing: SH.Space.m) {
                 Button(action: signIn) { Label("Sign in to \(provider)", systemImage: "key") }
-                    .buttonStyle(.nw(.primary, size: .s))
+                    .buttonStyle(.sh(.primary, size: .s))
                 if let models {
                     Menu { models } label: {
                         Label("Use another model", systemImage: "arrow.triangle.swap")
-                            .font(.nwSans(12, .medium))
-                            .foregroundStyle(nw.textSecondary)
-                            .padding(.horizontal, NW.Space.m)
-                            .frame(height: NW.Height.controlS)
+                            .font(.shSans(12, .medium))
+                            .foregroundStyle(sh.textSecondary)
+                            .padding(.horizontal, SH.Space.m)
+                            .frame(height: SH.Height.controlS)
                             .contentShape(Rectangle())
                     }
                     .menuStyle(.button)
@@ -109,21 +109,21 @@ public struct NWAgentNotSignedInCard<Models: View>: View {
                     .fixedSize()
                 }
             }
-            .padding(.leading, M.cardTile + NW.Space.l)
+            .padding(.leading, M.cardTile + SH.Space.l)
         }
         .padding(.vertical, 14)
-        .padding(.horizontal, NW.Space.xl)
-        .background(nw.lantern.opacity(M.cardFillOpacity), in: RoundedRectangle(cornerRadius: M.cardRadius))
-        .nwBorder(nw.lantern.opacity(M.cardLineOpacity), radius: M.cardRadius)
+        .padding(.horizontal, SH.Space.xl)
+        .background(sh.lantern.opacity(M.cardFillOpacity), in: RoundedRectangle(cornerRadius: M.cardRadius))
+        .shBorder(sh.lantern.opacity(M.cardLineOpacity), radius: M.cardRadius)
     }
 
     private var message: Text {
         guard let model else { return Text(reason) }
-        return Text("This agent uses ") + Text(model).font(.nwMono(12.5)).foregroundColor(Color.nw.textPrimary) + Text(". ") + Text(reason)
+        return Text("This agent uses ") + Text(model).font(.shMono(12.5)).foregroundColor(Color.sh.textPrimary) + Text(". ") + Text(reason)
     }
 }
 
-extension NWAgentNotSignedInCard where Models == EmptyView {
+extension SHAgentNotSignedInCard where Models == EmptyView {
     /// With no other model to offer.
     public init(provider: String, model: String?, reason: String, time: String? = nil, signIn: @escaping () -> Void) {
         self.provider = provider

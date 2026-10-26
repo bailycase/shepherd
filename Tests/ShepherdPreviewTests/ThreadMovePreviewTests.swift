@@ -37,7 +37,7 @@ import ShepherdTestSupport
         if state == "before" {
             try await Preview.renderMatrix("thread-move-menu", size: CGSize(width: 300, height: 140)) {
                 VStack { ThreadMoveMenu(vm: world.vm, row: .local(agent.id)).items }
-                    .padding(NW.Space.m).background(Color.nw.bgBase)
+                    .padding(SH.Space.m).background(Color.sh.bgBase)
             }
         }
     }

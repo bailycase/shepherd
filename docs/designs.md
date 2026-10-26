@@ -609,9 +609,9 @@ keeps every key it doesn't name, at the top and on each token:
   never installed: its title, revision (moves with each write), when it was made, changed and
   last synced, the design whose agent built it (`ownerDesignID`), the project it was read from
   (`spaceID`) and its stylesheets there (`sources`, relative to the project).
-- **No bundled systems.** Shepherd does not generate or register Night Watch as a design system.
+- **No bundled systems.** Shepherd does not generate or register Shepherd Design as a design system.
   The catalog contains systems the user built or imported. New designs start without a system
-  when the catalog is empty. Existing installed `ds/night-watch/` copies and user-owned systems
+  when the catalog is empty. Existing installed `ds/shepherd-design/` copies and user-owned systems
   are left intact, so older boards keep rendering. ShepherdUI's app theme and tokens are unchanged.
 - **Links are never followed.** A `design-systems/<namespace>` that is a link or a file is no
   system: it is not listed, and reading, writing or installing it refuses (`not_a_folder`). Inside
@@ -948,10 +948,10 @@ was on keep their files and agents either way.
   Present (below) and Export (below). Opening a design whose agent is gone starts a fresh one. Switching away and back is
   a visibility flip, and a design's canvas (where it looks, the tool, the selected board) lasts
   the app's run. A design's screen has no terminal panel.
-- **The canvas** (`NWDesignCanvas`) pans with two fingers, the Pan tool or space-drag, and zooms
+- **The canvas** (`SHDesignCanvas`) pans with two fingers, the Pan tool or space-drag, and zooms
   with a pinch or ⌘-scroll about the pointer. It opens fitted to the boards, never above 100%.
 - **Board labels** sit 24pt above their boards where the boards around them leave room
-  (`NWLabelRoom`): where the row above is closer (rows 120 apart are about 20pt at the opening
+  (`SHLabelRoom`): where the row above is closer (rows 120 apart are about 20pt at the opening
   17%), a label moves down toward its frame, keeping at least 2pt; where not even that fits, it
   isn't drawn; and a label running past a narrow board stops before the next board along.
 
@@ -963,7 +963,7 @@ was on keep their files and agents either way.
   clears. Shift adds a pick, or takes a picked one back out. At most 20 are kept, most recent
   last.
 - **Rings** are drawn natively over the boards from the reported rects times the zoom
-  (`NWSelectionRing`): every selected element wears the 1.5pt `running` ring over its tint and
+  (`SHSelectionRing`): every selected element wears the 1.5pt `running` ring over its tint and
   the corner handles, and the latest its tag ("card · Checkout funnel": the noun, then its
   `data-el` name or its label). A board picked whole wears its frame's ring.
 - **Hover.** The element under the pointer wears the ring alone. The board under the pointer
@@ -980,14 +980,14 @@ was on keep their files and agents either way.
   ring and the next pin, and the review's comment editor opens under it ("Comment for the design
   agent", "on A · Checkout funnel"; ⏎ keeps it, esc cancels, an empty one is none). The Comment
   tool rings the element under the pointer as Select does.
-- **Pins** (`NWCommentPin`) sit centered on their elements' top-trailing corners: where a live
+- **Pins** (`SHCommentPin`) sit centered on their elements' top-trailing corners: where a live
   view of the board draws the element now (found again by tid and path after a write), else where
   it was when the comment was made. Only open comments have pins.
-- **The thread** (`NWCommentThread`) opens under its element, its trailing edge at the pin's, kept
+- **The thread** (`SHCommentThread`) opens under its element, its trailing edge at the pin's, kept
   inside the canvas: a click on a pin, or on a card in the Comments tab. It shows who and when,
   Resolve, the comment, each answer under a hairline ("Design agent · 1m"), and Reply…. A click
   anywhere on the canvas closes it.
-- **The chat.** A message carrying a comment draws as the comment's card (`NWCommentCard`: the
+- **The chat.** A message carrying a comment draws as the comment's card (`SHCommentCard`: the
   small pin, "on A · Checkout funnel", "You · 2m", the words), and the agent's reply to it sits
   inside the card under a hairline, without the turn's footer. The card holds the reply **up to
   its first compaction**: after one the agent works from its summary, so what it does next is its
@@ -1008,7 +1008,7 @@ was on keep their files and agents either way.
 
 ### Board actions (DZCanvas)
 
-The board picked whole last (not an element) wears the board actions (`NWBoardActions`, drawn as
+The board picked whole last (not an element) wears the board actions (`SHBoardActions`, drawn as
 DZCanvas draws it): its bottom 2pt above the board's label, its leading edge at the frame's
 middle, kept inside the canvas. Nothing floats over a presented board.
 
@@ -1039,7 +1039,7 @@ to the app's error dialog.
 
 Present (the toolbar's button; decision 11, until Present mode has a board) shows the board picked
 last, else the one nearest the middle of the view, focused over the canvas: the `scrim`, and the
-board fitted inside the canvas's margins, never over 100% (`NWBoardPresentation`). Play (•••, on
+board fitted inside the canvas's margins, never over 100% (`SHBoardPresentation`). Play (•••, on
 an interactive board) shows that board the same way.
 
 - The presented board is the design's one live view while it is shown (`DesignHost.present`):
@@ -1055,7 +1055,7 @@ an interactive board) shows that board the same way.
 
 A canvas with pages shows one at a time: the page it opens on, then the one picked in the
 toolbar's pages menu (shown with more than one page). A page's boards, its title and sticky notes
-(`NWCanvasNote`, read-only, under the boards and scaled with the canvas), the label rooms and the
+(`SHCanvasNote`, read-only, under the boards and scaled with the canvas), the label rooms and the
 fit are the page's own; switching fits the new page and drops what was selected on the last.
 
 ### The view record
@@ -1612,7 +1612,7 @@ now: a ref with a revision reads the copy sent at that revision, one without the
   `design-data` markers with a nonce new to the answer (`DesignReferenceData`), cut at 128 KB so a
   reply fits the socket's 1 MiB frame; `changes` quotes a start tag on one line, cut at 300
   characters.
-- **"Looked at…"** (NWActivityLine(.lookedAtDesign)): each answer carries
+- **"Looked at…"** (SHActivityLine(.lookedAtDesign)): each answer carries
   `DesignReferenceLookedAt` (the piece, what the agent got: picture and its size, page and its
   bytes, styles, tokens and the files and lines they came from), which the extension keeps in the
   call's details. The thread joins consecutive design_get calls on one ref into one line
@@ -1643,7 +1643,7 @@ The surfaces (docs/design/design-tool-references.md › Design references has th
 - **The canvas** (`DesignScreenModel+References.swift`): the selection is the reference (the last
   pick: an element, or a board picked whole; nothing selected, the whole design,
   `DesignReferenceSelection`). Implement… in the board actions (which float over an element's
-  board too), the right-click menu (`NWDesignCanvas`'s `contextMenu`: it picks what the click landed
+  board too), the right-click menu (`SHDesignCanvas`'s `contextMenu`: it picks what the click landed
   on first, then answers the items as a native menu), the design's ••• (`DesignMenuAction.implement`,
   `.copyReference`), and the canvas-scoped ⌘↩ and ⇧⌘C (`DesignCanvasKeys`: a local monitor, only
   while the design shows and no terminal or board page has the keyboard, nor a text field holding
@@ -1734,7 +1734,7 @@ the words in `DesignLifecycle.swift`, the views in `DesignLifecycleViews.swift`)
   repo isn’t touched.", "New designs can’t pick it."; a system still being built says the build
   stops and nothing it read is kept (Stop and delete). Its page, if shown, goes back to Designs. A
   failure keeps it and the toast names why, with Try again. There is no Undo.
-- **Import** fills its card first among Recent designs (`NWImportingCard`: the tiles filling, the
+- **Import** fills its card first among Recent designs (`SHImportingCard`: the tiles filling, the
   title shimmering, "7 of 12 boards · with Checkout DS", the bar), its system dashed among the
   systems ("came with Checkout funnel", "after the boards") until the boards are in; then the design
   opens. A failure or a question is a dialog (`DesignImportDialog`); Escape puts a staged import
@@ -1926,7 +1926,7 @@ through `capabilitiesChanged`.
   most 640pt wide, 64 MB per design. A page gets a viewport of its board's width at the canvas's zoom, so it lays out as
   on the Mac and draws sharp (`DesignBoardView` on iOS). Web views not on the canvas wait on a
   stage at the back of the window, where WebKit still draws them.
-- **Touch** (`NWCanvasTouchInput`): a drag pans, a pinch zooms, a tap selects or, with Comment,
+- **Touch** (`SHCanvasTouchInput`): a drag pans, a pinch zooms, a tap selects or, with Comment,
   opens the editor on the element under it. Fingers and pointers only: an Apple Pencil's touches
   go to the markup layer over the canvas (`PadDesignMarkupLayer`, Pencil markup, below).
 - **Writes** go through the host: comments, replies and Resolve at the comments' revision, Tweak
@@ -1951,7 +1951,7 @@ On iPad the viewer can draw on the canvas with an Apple Pencil (iPadDesign) wher
   the canvas, so a finger pans and pinches; where UIKit doesn't say which kind a touch is, the
   layer takes touches while there is ink and pans and pinches with a finger itself. The ink is
   kept in canvas points and drawn through the viewport, so it stays on its boards at every zoom.
-  The palette (`NWMarkupPalette`) shows while there is ink: pen, marker, eraser, Comment (the
+  The palette (`SHMarkupPalette`) shows while there is ink: pen, marker, eraser, Comment (the
   canvas's Comment tool), three inks, Done.
 - **Done reads the markup on the iPad** (`PadDesignMarkupReader`, `DesignMarkupReading`):
   - Each stroke's shape: a loop, a nearly straight line, a V (an arrowhead drawn on its own), an
@@ -1989,7 +1989,7 @@ On iPad the viewer can draw on the canvas with an Apple Pencil (iPadDesign) wher
   placed by the device that shows them (the host draws nothing, so they carry no `rect`).
 - **In the chat** (iPad): the markup message reads "Read your markup · 2 strokes · 2 notes" with
   the nib; the reply's `markup_propose` call gives way to the proposals card
-  (`NWMarkupProposals`) under its words: comment cards numbered as their pins are, named
+  (`SHMarkupProposals`) under its words: comment cards numbered as their pins are, named
   "A · phone › Steps list", "from your markup". **Apply both** sends each comment to the agent as
   a comment is sent; **Keep as comments** leaves them on the canvas as they are; both settle the
   proposals through `settleProposals`, once, so the card reads "On the canvas as comments 2 and

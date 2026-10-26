@@ -34,7 +34,7 @@ struct ReviewPreviewTests {
         try await Preview.render("sheet-commit-\(state)", size: CGSize(width: AppLayout.commitSheetWidth, height: 720)) {
             ReviewCommitSheet(store: store, askAgent: {}, close: {}, staged: true)
                 .frame(maxHeight: .infinity, alignment: .top)
-                .background(Color.nw.bgWindow)
+                .background(Color.sh.bgWindow)
         }
     }
 
@@ -74,7 +74,7 @@ struct ReviewPreviewTests {
         }) {
             // Sized to its content, as a sheet's window is.
             ReviewCommitSheet(store: fresh(), askAgent: {}, close: {})
-                .background(Color.nw.bgWindow)
+                .background(Color.sh.bgWindow)
         }
     }
 

@@ -68,12 +68,12 @@ struct SubagentListPreviewTests {
         let size: CGSize
         var body: some View {
             VStack(spacing: 0) {
-                NWSidePaneTabs(SidePaneTabs.items(news: [], changedFiles: 5, subagents: SidePaneTabs.subagents(store.subagents)),
+                SHSidePaneTabs(SidePaneTabs.items(news: [], changedFiles: 5, subagents: SidePaneTabs.subagents(store.subagents)),
                                selection: SidePaneTab.subagents.rawValue, select: { _ in }, closeShortcut: "⇧⌘B", close: {}) {}
                 SubagentListTab(store: store, inspect: { _ in })
             }
             .frame(width: size.width, height: size.height)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
     }
 
@@ -130,13 +130,13 @@ struct SubagentListPreviewTests {
         var body: some View {
             VStack(spacing: 0) {
                 ForEach(rows.indices, id: \.self) { index in
-                    NWSidePaneTabs(SidePaneTabs.items(news: index == 4 ? [.changes, .browser] : [], changedFiles: 5,
+                    SHSidePaneTabs(SidePaneTabs.items(news: index == 4 ? [.changes, .browser] : [], changedFiles: 5,
                                                       subagents: SidePaneTabs.subagents(rows[index].1)),
                                    selection: index % 2 == 0 ? SidePaneTab.subagents.rawValue : SidePaneTab.changes.rawValue,
                                    select: { _ in }, closeShortcut: "⇧⌘B", close: {}) {}
                 }
             }
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
     }
 

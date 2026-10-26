@@ -6,7 +6,7 @@ import SwiftUI
 /// marks a file the agent is editing right now.
 /// The selection slides from chip to chip (it cross-fades under Reduce Motion) and the strip
 /// scrolls it into view; with `animatesSelection` false (keyboard navigation) both land at once.
-public struct NWFileStrip: View {
+public struct SHFileStrip: View {
     static let chipHeight: CGFloat = 26
     static let chipPadding: CGFloat = 9
 
@@ -14,13 +14,13 @@ public struct NWFileStrip: View {
         public let id: String
         /// The full path: the chip's help tag.
         public let path: String
-        public let status: NWFileStatus
+        public let status: SHFileStatus
         public let added: Int
         public let removed: Int
         public let isViewed: Bool
         public let isTouched: Bool
 
-        public init(id: String, path: String, status: NWFileStatus, added: Int, removed: Int, isViewed: Bool = false, isTouched: Bool = false) {
+        public init(id: String, path: String, status: SHFileStatus, added: Int, removed: Int, isViewed: Bool = false, isTouched: Bool = false) {
             self.id = id
             self.path = path
             self.status = status
@@ -30,7 +30,7 @@ public struct NWFileStrip: View {
             self.isTouched = isTouched
         }
 
-        public var name: String { NWFileHeader.split(path).name }
+        public var name: String { SHFileHeader.split(path).name }
 
         /// Every file shows its stat, a new file's too (FileStrip).
         public var showsStat: Bool { true }
@@ -62,22 +62,22 @@ public struct NWFileStrip: View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal) {
                 // Lazy: a big change touches hundreds of files, and only the chips in view are built.
-                LazyHStack(spacing: NW.Space.xxs) {
+                LazyHStack(spacing: SH.Space.xxs) {
                     ForEach(items) { item in
-                        NWFileChip(item: item, selected: item.id == selection, selectionSpace: reduceMotion ? nil : selectionSpace) {
+                        SHFileChip(item: item, selected: item.id == selection, selectionSpace: reduceMotion ? nil : selectionSpace) {
                             onSelect(item.id)
                         }
                         // A chip that leaves goes at once and the chips after it close up: fading
                         // where it was, it would show through the chips sliding over it.
-                        .transition(.asymmetric(insertion: NW.Motion.list.transition(reduceMotion: reduceMotion, edge: .leading),
+                        .transition(.asymmetric(insertion: SH.Motion.list.transition(reduceMotion: reduceMotion, edge: .leading),
                                                 removal: .identity))
                     }
                 }
-                .padding(.horizontal, NW.Space.m)
-                .padding(.vertical, NW.Space.s)
+                .padding(.horizontal, SH.Space.m)
+                .padding(.vertical, SH.Space.s)
                 // Files arriving or leaving (a reload, a revert) move the chips aside.
-                .nwAnimation(.list, value: items.map(\.id))
-                .animation(animatesSelection ? NW.Motion.content.animation(reduceMotion: reduceMotion) : nil, value: selection)
+                .shAnimation(.list, value: items.map(\.id))
+                .animation(animatesSelection ? SH.Motion.content.animation(reduceMotion: reduceMotion) : nil, value: selection)
             }
             .scrollIndicators(.hidden)
             // As tall as its chips: a lazy stack would otherwise take whatever height it's offered.
@@ -87,20 +87,20 @@ public struct NWFileStrip: View {
                 // The first selection lands with the pane: an animation started there would
                 // carry the rest of that first layout with it (the thread beside the pane too).
                 if animatesSelection, old != nil {
-                    withNWAnimation(.scroll) { proxy.scrollTo(id) }
+                    withSHAnimation(.scroll) { proxy.scrollTo(id) }
                 } else {
                     proxy.scrollTo(id)
                 }
             }
         }
-        .background(Color.nw.bgBase)
+        .background(Color.sh.bgBase)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Changed files")
     }
 }
 
-private struct NWFileChip: View, Equatable {
-    let item: NWFileStrip.Item
+private struct SHFileChip: View, Equatable {
+    let item: SHFileStrip.Item
     let selected: Bool
     /// Where the selection's fill slides between chips; nil under Reduce Motion.
     let selectionSpace: Namespace.ID?
@@ -111,41 +111,41 @@ private struct NWFileChip: View, Equatable {
     }
 
     var body: some View {
-        let _ = NWRenderProbe.tick("review.fileChip")
-        let nw = Color.nw
+        let _ = SHRenderProbe.tick("review.fileChip")
+        let sh = Color.sh
         Button(action: action) {
-            HStack(spacing: NW.Space.s) {
-                Text(item.status.letter).font(.nwMono(10.5, .bold)).foregroundStyle(item.status.color)
-                Text(item.name).font(.nw(.mono)).foregroundStyle(nameColor(nw)).lineLimit(1)
-                if item.showsStat { NWDiffStat(added: item.added, removed: item.removed, font: .nwMono(10.5)) }
+            HStack(spacing: SH.Space.s) {
+                Text(item.status.letter).font(.shMono(10.5, .bold)).foregroundStyle(item.status.color)
+                Text(item.name).font(.sh(.mono)).foregroundStyle(nameColor(sh)).lineLimit(1)
+                if item.showsStat { SHDiffStat(added: item.added, removed: item.removed, font: .shMono(10.5)) }
                 if item.isViewed {
-                    Image(systemName: "checkmark").font(.system(size: 9, weight: .semibold)).foregroundStyle(nw.done)
-                        .nwTransition(.content)
+                    Image(systemName: "checkmark").font(.system(size: 9, weight: .semibold)).foregroundStyle(sh.done)
+                        .shTransition(.content)
                 }
-                if item.isTouched { NWStatusDot(.running).nwTransition(.content) }
+                if item.isTouched { SHStatusDot(.running).shTransition(.content) }
             }
-            .padding(.horizontal, NWFileStrip.chipPadding)
-            .frame(minHeight: NWFileStrip.chipHeight)
+            .padding(.horizontal, SHFileStrip.chipPadding)
+            .frame(minHeight: SHFileStrip.chipHeight)
             .background {
                 if selected { selectionFill }
             }
         }
         // The chip draws the selected fill itself, so the fill can travel to the next chip; the
         // row style only hovers, and never over the selection.
-        .buttonStyle(.nwRow(hoverFill: selected ? .clear : nil))
-        .nwAnimation(.hover, value: item.isViewed)
-        .nwAnimation(.content, value: item.isTouched)
+        .buttonStyle(.shRow(hoverFill: selected ? .clear : nil))
+        .shAnimation(.hover, value: item.isViewed)
+        .shAnimation(.content, value: item.isTouched)
         .help(item.path)
         .accessibilityLabel(item.accessibilityText)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    private func nameColor(_ nw: NWPalette) -> Color {
-        selected ? nw.textPrimary : item.isViewed ? nw.textTertiary : nw.textSecondary
+    private func nameColor(_ sh: SHPalette) -> Color {
+        selected ? sh.textPrimary : item.isViewed ? sh.textTertiary : sh.textSecondary
     }
 
     @ViewBuilder private var selectionFill: some View {
-        let fill = RoundedRectangle(cornerRadius: NW.Radius.s).fill(Color.nw.bgSelected)
+        let fill = RoundedRectangle(cornerRadius: SH.Radius.s).fill(Color.sh.bgSelected)
         if let selectionSpace {
             fill.matchedGeometryEffect(id: "selection", in: selectionSpace)
         } else {

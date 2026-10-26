@@ -32,7 +32,7 @@ struct SlashCommandsPageTests {
         ])
         let window = OffscreenWindow(size: CGSize(width: 900, height: 900), dark: true,
                                      ScrollView { SlashCommandsSettings(model: model, settings: settings).padding(32) }
-                                         .background(Color.nw.bgWindow))
+                                         .background(Color.sh.bgWindow))
         defer { window.close() }
         window.layout()
 

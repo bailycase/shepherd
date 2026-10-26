@@ -61,8 +61,8 @@ extension DesignScreenModel {
     /// view.
     func center(on frame: CGRect) {
         guard canvasSize.width > 0, canvasSize.height > 0 else { return }
-        var next = NWCanvasViewport.fitting(frame, in: canvasSize)
-        next.zoom = min(next.zoom, max(viewport.zoom, NWCanvasViewport.zoomRange.lowerBound))
+        var next = SHCanvasViewport.fitting(frame, in: canvasSize)
+        next.zoom = min(next.zoom, max(viewport.zoom, SHCanvasViewport.zoomRange.lowerBound))
         next.offset = CGPoint(x: canvasSize.width / 2 - frame.midX * next.zoom, y: canvasSize.height / 2 - frame.midY * next.zoom)
         viewport = next
     }

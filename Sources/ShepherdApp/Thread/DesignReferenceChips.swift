@@ -53,7 +53,7 @@ final class DesignReferenceChips {
     /// A sent chip once its copy is read.
     struct Sent: Equatable {
         var crumbs: [String]
-        var picture: NWReferenceImage?
+        var picture: SHReferenceImage?
         var freshness: DesignReferenceFreshness
         /// "pinned Sep 27, 10:42".
         var pinned: String?
@@ -216,9 +216,9 @@ final class DesignReferenceChips {
 
     /// A picker row's picture, while one is at hand. An element's is its own cut, the same for
     /// its revision, so a picture landing for one row leaves the other rows' alone.
-    func rowPicture(_ item: DesignMentionItem) -> NWReferenceImage? {
+    func rowPicture(_ item: DesignMentionItem) -> SHReferenceImage? {
         let id = item.kind == .element ? "crop:" + item.id + "@\(item.revision ?? 0)" : item.id + "@\(picturesVersion)"
-        return io.rowPicture(item).map { NWReferenceImage(id: id, image: Image(decorative: $0, scale: 2)) }
+        return io.rowPicture(item).map { SHReferenceImage(id: id, image: Image(decorative: $0, scale: 2)) }
     }
 
     /// A picker row came on screen: an element's picture is cut if it isn't yet.
@@ -230,8 +230,8 @@ final class DesignReferenceChips {
     }
 
     /// A composer chip's picture.
-    func picture(_ reference: DesignReference) -> NWReferenceImage? {
-        io.picture(reference).map { NWReferenceImage(id: reference.string + "@\(picturesVersion)", image: Image(decorative: $0, scale: 2)) }
+    func picture(_ reference: DesignReference) -> SHReferenceImage? {
+        io.picture(reference).map { SHReferenceImage(id: reference.string + "@\(picturesVersion)", image: Image(decorative: $0, scale: 2)) }
     }
 
     // MARK: Words
@@ -270,11 +270,11 @@ final class DesignReferenceChips {
     /// Whether a sent chip's preview opens above it (RefChipHover): whenever the `room` between
     /// the thread's top and the chip holds the preview and its 8pt gap; else it opens below.
     nonisolated static func previewFitsAbove(room: CGFloat, previewHeight: CGFloat) -> Bool {
-        room >= previewHeight + NW.Space.m
+        room >= previewHeight + SH.Space.m
     }
 
     /// How a chip draws `freshness`.
-    static func state(_ freshness: DesignReferenceFreshness?) -> NWReferenceState {
+    static func state(_ freshness: DesignReferenceFreshness?) -> SHReferenceState {
         guard let freshness, let words = DesignReferencePresentation.state(freshness) else { return .current }
         switch freshness {
         case .current: return .current
@@ -285,14 +285,14 @@ final class DesignReferenceChips {
     }
 
     /// The preview's amber box for a piece the design moved on from.
-    static func changes(_ freshness: DesignReferenceFreshness?, version: UInt64?) -> NWReferenceChanges? {
+    static func changes(_ freshness: DesignReferenceFreshness?, version: UInt64?) -> SHReferenceChanges? {
         guard case .updatedSince(let latest, let lines)? = freshness else { return nil }
         let since = version.map { "Changed since v\($0) · now v\(latest)" } ?? "Changed since · now v\(latest)"
-        return NWReferenceChanges(title: since, lines: lines.isEmpty ? ["the board changed"] : lines)
+        return SHReferenceChanges(title: since, lines: lines.isEmpty ? ["the board changed"] : lines)
     }
 
     /// A kept picture, scaled for a chip and its preview (read off the main thread).
-    static func picture(_ url: URL, id: String) async -> NWReferenceImage? {
+    static func picture(_ url: URL, id: String) async -> SHReferenceImage? {
         let image = await Task.detached(priority: .utility) { () -> CGImage? in
             guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
             let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true,
@@ -300,7 +300,7 @@ final class DesignReferenceChips {
                                             kCGImageSourceCreateThumbnailWithTransform: true]
             return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
         }.value
-        return image.map { NWReferenceImage(id: id, image: Image(decorative: $0, scale: 2)) }
+        return image.map { SHReferenceImage(id: id, image: Image(decorative: $0, scale: 2)) }
     }
 }
 
@@ -363,7 +363,7 @@ struct SentReferenceChips: View {
     @Environment(\.designReferences) private var references
 
     var body: some View {
-        NWFlowLayout(spacing: NW.Space.s, lineSpacing: NW.Space.s) {
+        SHFlowLayout(spacing: SH.Space.s, lineSpacing: SH.Space.s) {
             ForEach(Array(records.enumerated()), id: \.offset) { _, record in
                 SentReferenceChip(record: record, references: references)
             }
@@ -387,7 +387,7 @@ private struct SentReferenceChip: View {
     /// a guess until it has opened once.
     final class ChipTop {
         var value = CGFloat.infinity
-        var previewHeight = NWReferenceMetrics.previewPicture.height + NWReferenceMetrics.previewPadding * 12
+        var previewHeight = SHReferenceMetrics.previewPicture.height + SHReferenceMetrics.previewPadding * 12
         var fitsAbove: Bool { DesignReferenceChips.previewFitsAbove(room: value, previewHeight: previewHeight) }
     }
 
@@ -404,8 +404,8 @@ private struct SentReferenceChip: View {
         let crumbs = kept.map(\.crumbs).flatMap { $0.isEmpty ? nil : $0 } ?? DesignReferenceChips.crumbs(record)
         let state = DesignReferenceChips.state(kept?.freshness)
         let version = DesignReferencePresentation.version(record.revision)
-        NWDesignReferenceChip(crumbs: crumbs, version: version, state: state, thumbnail: kept?.picture, highlighted: hover.shown)
-            .contentShape(RoundedRectangle(cornerRadius: NWReferenceMetrics.chipRadius))
+        SHDesignReferenceChip(crumbs: crumbs, version: version, state: state, thumbnail: kept?.picture, highlighted: hover.shown)
+            .contentShape(RoundedRectangle(cornerRadius: SHReferenceMetrics.chipRadius))
             .onTapGesture { open() }
             .onHover { hover.pointer($0) }
             .accessibilityAddTraits(.isButton)
@@ -419,7 +419,7 @@ private struct SentReferenceChip: View {
             .overlay(alignment: roomAbove ? .topLeading : .bottomLeading) {
                 ZStack(alignment: roomAbove ? .bottomLeading : .topLeading) {
                     if hover.shown, references != nil {
-                        NWDesignReferencePreview(
+                        SHDesignReferencePreview(
                         picture: kept?.picture, crumbs: crumbs, version: version, pinned: kept?.pinned, system: kept?.system,
                         changes: DesignReferenceChips.changes(kept?.freshness, version: record.revision), gets: kept?.gets ?? [],
                         deleted: kept?.freshness == .deleted,
@@ -432,16 +432,16 @@ private struct SentReferenceChip: View {
                             chipTop.previewHeight = $0
                             place()
                         }
-                        .nwTransition(.overlay, anchor: roomAbove ? .bottomLeading : .topLeading)
+                        .shTransition(.overlay, anchor: roomAbove ? .bottomLeading : .topLeading)
                     }
                 }
                 .fixedSize()
                 // The preview opens above the chip, 8pt over it (RefChipHover), or 8pt under it
                 // when the thread's top is too near.
-                .alignmentGuide(.top) { $0.height + NW.Space.m }
-                .alignmentGuide(.bottom) { _ in -NW.Space.m }
+                .alignmentGuide(.top) { $0.height + SH.Space.m }
+                .alignmentGuide(.bottom) { _ in -SH.Space.m }
             }
-            .nwAnimation(.overlay, value: hover.shown)
+            .shAnimation(.overlay, value: hover.shown)
             .preference(key: ReferencePreviewOpenKey.self, value: hover.shown)
             .onAppear { if startsOpen { hover.show() } }
             .task(id: TaskKey(id: id, generation: references?.generation ?? 0)) {
@@ -497,13 +497,13 @@ struct ComposerReferenceChip: View {
         let freshness = references?.pinned[attached.reference.string]
         let version = DesignReferencePresentation.version(attached.reference.revision)
         let picture = references?.picture(attached.reference)
-        NWDesignReferenceChip(crumbs: crumbs, version: version, state: DesignReferenceChips.state(freshness), thumbnail: picture,
+        SHDesignReferenceChip(crumbs: crumbs, version: version, state: DesignReferenceChips.state(freshness), thumbnail: picture,
                               highlighted: hover.shown, remove: remove)
             .onHover { hover.pointer($0) }
             .overlay(alignment: .topLeading) {
                 ZStack(alignment: .bottomLeading) {
                     if hover.shown, let references {
-                        NWDesignReferencePreview(
+                        SHDesignReferencePreview(
                         picture: picture, crumbs: crumbs, version: version, pinned: nil, system: attached.outline?.system,
                         changes: DesignReferenceChips.changes(freshness, version: attached.reference.revision),
                         gets: attached.outline.map(DesignReferencePresentation.gets) ?? [],
@@ -519,13 +519,13 @@ struct ComposerReferenceChip: View {
                             Task { try? await references.io.sendLatest(attached.reference) }
                         })
                         .onHover { hover.pointer($0) }
-                        .nwTransition(.overlay, anchor: .bottomLeading)
+                        .shTransition(.overlay, anchor: .bottomLeading)
                     }
                 }
                 .fixedSize()
-                .alignmentGuide(.top) { $0[.bottom] + NW.Space.m }
+                .alignmentGuide(.top) { $0[.bottom] + SH.Space.m }
             }
-            .nwAnimation(.overlay, value: hover.shown)
+            .shAnimation(.overlay, value: hover.shown)
             .task(id: "\(attached.reference.string)#\(references?.generation ?? 0)") {
                 await references?.loadPinned(attached.reference)
             }
@@ -534,7 +534,7 @@ struct ComposerReferenceChip: View {
 
 // MARK: - "Looked at…"
 
-/// The agent reading a piece it was sent (NWActivityLine(.lookedAtDesign)): one quiet line naming
+/// The agent reading a piece it was sent (SHActivityLine(.lookedAtDesign)): one quiet line naming
 /// the design and board, its meta what it got; open, the picture, the page, the styles and the
 /// tokens with the file each lives in. Without the thread's references, the line says what it
 /// read and opens to its calls.
@@ -553,13 +553,13 @@ struct LookedAtLineView<Fallback: View>: View {
         if burst.state == .done, let references, let ref, let found = references.lookedAt[DesignReferenceChips.lookedAtKey(ref, aspects)] {
             let rows = LookedAtWords.rows(found)
             VStack(alignment: .leading, spacing: 0) {
-                NWActivityLine(kind: .lookedAtDesign, label: "Looked at " + found.title, meta: found.meta.joined(separator: " · "),
+                SHActivityLine(kind: .lookedAtDesign, label: "Looked at " + found.title, meta: found.meta.joined(separator: " · "),
                                isExpanded: expanded, action: rows.isEmpty ? nil : {
-                                   withAnimation(NW.Motion.disclosure.animation(reduceMotion: reduceMotion)) { expanded.toggle() }
+                                   withAnimation(SH.Motion.disclosure.animation(reduceMotion: reduceMotion)) { expanded.toggle() }
                                })
                 if expanded {
-                    NWLookedAtDetails(rows)
-                        .nwTransition(.disclosure)
+                    SHLookedAtDetails(rows)
+                        .shTransition(.disclosure)
                 }
             }
             .onAppear { if startsOpen { expanded = true } }
@@ -584,8 +584,8 @@ enum LookedAtWords {
     }
 
     /// The expanded rows: pic, html, css, tok, for what the agent read.
-    static func rows(_ found: DesignReferenceLookedAt) -> [NWLookedAtDetails.Row] {
-        var rows: [NWLookedAtDetails.Row] = []
+    static func rows(_ found: DesignReferenceLookedAt) -> [SHLookedAtDetails.Row] {
+        var rows: [SHLookedAtDetails.Row] = []
         if let picture = found.picture {
             let size = picture.pixelWidth.flatMap { w in picture.pixelHeight.map { "\(w) × \($0)" } }
             rows.append(.init(label: "pic", detail: picture.label, trailing: size))

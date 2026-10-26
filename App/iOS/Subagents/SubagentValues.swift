@@ -12,7 +12,7 @@ extension MobileLayout {
     /// Sibling runs shown as tabs over the inspector; more step with ‹ › instead.
     static let subagentTabsMax = 4
     /// Space between a section's head and its cards.
-    static let subagentSectionSpacing: CGFloat = NW.Space.m
+    static let subagentSectionSpacing: CGFloat = SH.Space.m
 }
 
 extension AgentState {
@@ -36,10 +36,10 @@ enum SubagentValues {
 
     /// The agent's name leads, "worker" (MobileSteer, MobileSubagents, iPadSteer, iPadSubagents),
     /// and the task it was given shows as its goal; a run with no role keeps its label.
-    static func card(_ summary: NativeRunSummary) -> NWRunCardValue {
+    static func card(_ summary: NativeRunSummary) -> SHRunCardValue {
         let agent = summary.role
         let tags = agent == nil ? summary.tags : summary.tags.map { $0.components(separatedBy: " · ").dropFirst().joined(separator: " · ") }
-        return NWRunCardValue(
+        return SHRunCardValue(
             id: summary.id, name: agent ?? summary.name, tags: tags?.isEmpty == true ? nil : tags, state: AgentState(summary.phase),
             stateLabel: [.paused, .asked].contains(summary.phase) ? nativeRunPhaseLabel(summary.phase) : nil, detail: summary.detail,
             step: summary.step, progress: summary.progress, progressLabel: summary.progress == nil ? nil : "Context window used",
@@ -49,30 +49,30 @@ enum SubagentValues {
     }
 
     /// The store's tray as the tray's header and rows draw it.
-    static func tray(_ tray: NativeSubagentTray) -> (summary: NWSubagentTraySummary, rows: [NWSubagentTrayRun]) {
-        let summary = NWSubagentTraySummary(title: tray.title, cells: tray.cells.map(AgentState.init),
-                                            tally: tray.tally.map { NWSubagentTraySummary.Part($0.text, state: $0.phase.map(AgentState.init)) })
+    static func tray(_ tray: NativeSubagentTray) -> (summary: SHSubagentTraySummary, rows: [SHSubagentTrayRun]) {
+        let summary = SHSubagentTraySummary(title: tray.title, cells: tray.cells.map(AgentState.init),
+                                            tally: tray.tally.map { SHSubagentTraySummary.Part($0.text, state: $0.phase.map(AgentState.init)) })
         // Agents lead ("worker"), unless two share a name: then the task leads, the agent under it.
         let roles = tray.rows.compactMap(\.role)
         let byAgent = Set(roles).count == roles.count
         return (summary, tray.rows.map { trayRow($0, byAgent: byAgent) })
     }
 
-    static func trayRow(_ row: NativeTrayRow, byAgent: Bool = true) -> NWSubagentTrayRun {
-        let line: NWSubagentTrayRun.Line = switch row.line {
+    static func trayRow(_ row: NativeTrayRow, byAgent: Bool = true) -> SHSubagentTrayRun {
+        let line: SHSubagentTrayRun.Line = switch row.line {
         case .working(let verb, let subject, let live): .working(verb: verb, subject: subject, live: live)
         case .waiting(let text): .waiting(text)
         case .asked(let question): .asked(question)
         case .result(let text): .result(text)
         case .failed(let reason): .failed(reason)
         }
-        return NWSubagentTrayRun(id: row.id, name: byAgent ? row.role ?? row.name : row.name, role: byAgent ? nil : row.role, state: AgentState(row.phase), line: line, added: row.added,
+        return SHSubagentTrayRun(id: row.id, name: byAgent ? row.role ?? row.name : row.name, role: byAgent ? nil : row.role, state: AgentState(row.phase), line: line, added: row.added,
                                  removed: row.removed, since: date(row.since), until: date(row.until),
                                  accessibilityLabel: row.accessibilityLabel)
     }
 
-    static func historyRow(_ summary: NativeRunSummary) -> NWRunHistoryRow {
-        NWRunHistoryRow(id: summary.id, name: summary.name, state: AgentState(summary.phase), summary: summary.detail,
+    static func historyRow(_ summary: NativeRunSummary) -> SHRunHistoryRow {
+        SHRunHistoryRow(id: summary.id, name: summary.name, state: AgentState(summary.phase), summary: summary.detail,
                         finishedAt: date(summary.endedAt), added: summary.added, removed: summary.removed)
     }
 }

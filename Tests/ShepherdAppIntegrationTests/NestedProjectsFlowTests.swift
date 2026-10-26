@@ -46,7 +46,7 @@ struct NestedProjectsFlowTests {
         window.layout()
         let parentControl = try #require(window.controls().first { $0.label == "Platform, 1 thread" })
         let childControl = try #require(window.controls().first { $0.label == "Hub, 1 thread" })
-        #expect(childControl.frame.minX - parentControl.frame.minX == NWProjectMetrics.chevronSlot + NWProjectMetrics.gap)
+        #expect(childControl.frame.minX - parentControl.frame.minX == SHProjectMetrics.chevronSlot + SHProjectMetrics.gap)
         #expect(ControlPress.undersized([parentControl, childControl], minimum: .desktop).isEmpty)
         try window.press("Platform, 1 thread")
         #expect(vm.sidebarShortcutRows.isEmpty)

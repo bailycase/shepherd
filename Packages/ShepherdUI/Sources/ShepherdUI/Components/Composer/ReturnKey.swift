@@ -13,7 +13,7 @@ import AppKit
 /// that returns `.ignored` for ⇧↩ leaves the system nothing that inserts a newline. The handler
 /// adds the line itself (`lineBreak(for:)`), in the field editor, so the caret, the selection and
 /// undo behave as the system's own insertion does.
-public enum NWReturnKey {
+public enum SHReturnKey {
     public enum Action: Equatable, Sendable {
         /// ⇧↩ or ⌥↩: a line break at the caret, replacing any selection. Never a send or a save.
         case lineBreak
@@ -52,7 +52,7 @@ public enum NWReturnKey {
 }
 
 #if canImport(AppKit)
-extension NWReturnKey {
+extension SHReturnKey {
     /// The text view holding the keyboard in the key window: the field editor of the field a key
     /// press reached.
     @MainActor

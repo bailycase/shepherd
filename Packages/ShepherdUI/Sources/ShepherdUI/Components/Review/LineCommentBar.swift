@@ -4,7 +4,7 @@ import SwiftUI
 /// board): "line 16 selected", Delete while the line already has a comment, and Done to clear
 /// the selection, over a 44pt capsule field ("Comment on line 16…") with a lantern send button
 /// that dims until there is text. Delete removes the line's comment.
-public struct NWLineCommentBar: View {
+public struct SHLineCommentBar: View {
     let lineLabel: String
     @Binding var text: String
     var isFocused: FocusState<Bool>.Binding
@@ -27,52 +27,52 @@ public struct NWLineCommentBar: View {
     private var hasText: Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     public var body: some View {
-        let nw = Color.nw
-        VStack(alignment: .leading, spacing: NW.Space.s) {
-            HStack(spacing: NW.Space.s) {
-                Text(lineLabel).font(.nw(.mono)).foregroundStyle(nw.running)
-                Text("selected").font(.nw(.caption)).foregroundStyle(nw.textTertiary)
-                Spacer(minLength: NW.Space.s)
+        let sh = Color.sh
+        VStack(alignment: .leading, spacing: SH.Space.s) {
+            HStack(spacing: SH.Space.s) {
+                Text(lineLabel).font(.sh(.mono)).foregroundStyle(sh.running)
+                Text("selected").font(.sh(.caption)).foregroundStyle(sh.textTertiary)
+                Spacer(minLength: SH.Space.s)
                 if canDelete {
                     Button("Delete", action: onDelete)
-                        .buttonStyle(.nwLink(color: nw.failed, font: .nw(.caption)))
-                        .nwTouchTarget(height: NW.Height.controlS)
+                        .buttonStyle(.shLink(color: sh.failed, font: .sh(.caption)))
+                        .shTouchTarget(height: SH.Height.controlS)
                 }
                 Button("Done", action: onDone)
-                    .buttonStyle(.nwLink(color: nw.textSecondary, font: .nw(.caption)))
-                    .nwTouchTarget(height: NW.Height.controlS)
+                    .buttonStyle(.shLink(color: sh.textSecondary, font: .sh(.caption)))
+                    .shTouchTarget(height: SH.Height.controlS)
             }
-            .padding(.horizontal, NW.Space.s)
-            HStack(spacing: NW.Space.m) {
-                TextField("Comment on \(lineLabel)…", text: $text, prompt: Text("Comment on \(lineLabel)…").foregroundStyle(nw.textTertiary),
+            .padding(.horizontal, SH.Space.s)
+            HStack(spacing: SH.Space.m) {
+                TextField("Comment on \(lineLabel)…", text: $text, prompt: Text("Comment on \(lineLabel)…").foregroundStyle(sh.textTertiary),
                           axis: .vertical)
                     .lineLimit(1...5)
                     .textFieldStyle(.plain)
-                    .font(.nw(.body, weight: .regular))
-                    .foregroundStyle(nw.textPrimary)
-                    .tint(nw.lantern)
+                    .font(.sh(.body, weight: .regular))
+                    .foregroundStyle(sh.textPrimary)
+                    .tint(sh.lantern)
                     .focused(isFocused)
                     .submitLabel(.send)
                     .onSubmit { if hasText { onSend() } }
                 Button(action: onSend) {
                     Image(systemName: "arrow.up")
-                        .font(.nw(.ui, weight: .bold))
-                        .foregroundStyle(nw.textOnLantern)
-                        .frame(width: NWLineCommentBar.sendSize, height: NWLineCommentBar.sendSize)
-                        .background(nw.lantern, in: Circle())
+                        .font(.sh(.ui, weight: .bold))
+                        .foregroundStyle(sh.textOnLantern)
+                        .frame(width: SHLineCommentBar.sendSize, height: SHLineCommentBar.sendSize)
+                        .background(sh.lantern, in: Circle())
                         .opacity(hasText ? 1 : 0.35)
                 }
                 .buttonStyle(.plain)
                 .disabled(!hasText)
-                .nwTouchTarget(height: NWLineCommentBar.sendSize, width: NWLineCommentBar.sendSize)
+                .shTouchTarget(height: SHLineCommentBar.sendSize, width: SHLineCommentBar.sendSize)
                 .accessibilityLabel("Save comment")
             }
-            .padding(.leading, NW.Space.xl)
-            .padding(.trailing, NW.Space.s)
-            .padding(.vertical, NW.Space.s)
-            .frame(minHeight: NW.Height.touch)
-            .background(nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Height.touch / 2))
-            .nwBorder(nw.lineStrong, in: RoundedRectangle(cornerRadius: NW.Height.touch / 2))
+            .padding(.leading, SH.Space.xl)
+            .padding(.trailing, SH.Space.s)
+            .padding(.vertical, SH.Space.s)
+            .frame(minHeight: SH.Height.touch)
+            .background(sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Height.touch / 2))
+            .shBorder(sh.lineStrong, in: RoundedRectangle(cornerRadius: SH.Height.touch / 2))
         }
     }
 
@@ -82,8 +82,8 @@ public struct NWLineCommentBar: View {
 #Preview("Line comment bar") {
     @Previewable @State var text = ""
     @Previewable @FocusState var focused: Bool
-    NWPreviewBoth {
-        NWLineCommentBar(lineLabel: "line 16", text: $text, isFocused: $focused, canDelete: true,
+    SHPreviewBoth {
+        SHLineCommentBar(lineLabel: "line 16", text: $text, isFocused: $focused, canDelete: true,
                          onSend: {}, onDelete: {}, onDone: {})
             .frame(width: 360)
     }

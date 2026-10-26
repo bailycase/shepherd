@@ -25,38 +25,38 @@ struct ProjectMCPSettings: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NW.Space.l) {
-            HStack(alignment: .top, spacing: NW.Space.l) {
+        VStack(alignment: .leading, spacing: SH.Space.l) {
+            HStack(alignment: .top, spacing: SH.Space.l) {
                 SettingsHeader(title: "MCP servers", explanation: "Configure servers for this space. Changes apply to new threads on \(model.selected?.host.name ?? "this host").")
                     .frame(maxWidth: AppLayout.mcpExplanationWidth, alignment: .leading)
-                Spacer(minLength: NW.Space.m)
+                Spacer(minLength: SH.Space.m)
                 MCPAddServerButton(editable: model.mcpEditable) { sheet = .add(.remote) }
             }
-            HStack(spacing: NW.Space.m) {
-                NWSearchField("Filter servers", text: $query).frame(width: AppLayout.mcpFilterWidth)
-                Spacer(minLength: NW.Space.m)
+            HStack(spacing: SH.Space.m) {
+                SHSearchField("Filter servers", text: $query).frame(width: AppLayout.mcpFilterWidth)
+                Spacer(minLength: SH.Space.m)
                 Button("Reload") {
                     guard let file = model.selectedFile else { return }
                     Task { await model.navigate(.file(file)) }
-                }.buttonStyle(.nw(.secondary)).disabled(model.fileLoading || model.saving)
+                }.buttonStyle(.sh(.secondary)).disabled(model.fileLoading || model.saving)
             }
             if model.mcp.native {
-                VStack(alignment: .leading, spacing: NW.Space.m) {
-                    Text(model.mcpTrustTitle).font(.nw(.ui, weight: .semibold)).foregroundStyle(Color.nw.textPrimary)
-                    Text(model.mcpTrustExplanation).font(.nw(.caption)).foregroundStyle(Color.nw.textSecondary)
+                VStack(alignment: .leading, spacing: SH.Space.m) {
+                    Text(model.mcpTrustTitle).font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.textPrimary)
+                    Text(model.mcpTrustExplanation).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                     if model.mcpProjectTrusted == false, model.selected?.host.supportsProjectTrust == true {
                         Button("Trust this space…") { model.mcpTrustError = nil; trustProject = model.selected }
-                            .buttonStyle(.nw(.secondary)).disabled(!model.mcpEditable || model.dirty || model.mcpTrustChecking)
+                            .buttonStyle(.sh(.secondary)).disabled(!model.mcpEditable || model.dirty || model.mcpTrustChecking)
                     } else if model.mcpTrustError != nil {
                         Button("Check again") { Task { await model.refreshMCPCredentials() } }
-                            .buttonStyle(.nw(.secondary)).disabled(!model.mcpEditable || model.mcpTrustChecking)
+                            .buttonStyle(.sh(.secondary)).disabled(!model.mcpEditable || model.mcpTrustChecking)
                     }
                 }
-                .padding(NW.Space.l).frame(maxWidth: .infinity, alignment: .leading).nwCard()
+                .padding(SH.Space.l).frame(maxWidth: .infinity, alignment: .leading).shCard()
             }
             if let problem = model.mcp.problem {
-                NWInlineProblem(problem)
+                SHInlineProblem(problem)
             } else {
                 ScrollView {
                     MCPServerList(rows: visible, details: model.mcp.details, editable: model.mcpEditable,
@@ -68,7 +68,7 @@ struct ProjectMCPSettings: View {
             Text(model.mcp.native
                  ? "Only trusted spaces load \(model.selectedFile?.path ?? ".shepherd/mcp.json"). Sign-in credentials stay on the space's host; live status belongs to its threads."
                  : "This file is used when Also use a repo’s .mcp.json is on in MCP settings. Its tools use Search. Sign-in credentials stay on the space's host.")
-                .font(.nwSans(AppLayout.mcpNoteSize)).foregroundStyle(Color.nw.textTertiary)
+                .font(.shSans(AppLayout.mcpNoteSize)).foregroundStyle(Color.sh.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -105,7 +105,7 @@ struct ProjectMCPSettings: View {
                                     } catch { removeError = String(describing: error) }
                                 }
                             },
-                        ]) { if let removeError { NWInlineProblem(removeError) } }
+                        ]) { if let removeError { SHInlineProblem(removeError) } }
                 .disabled(model.saving)
                 .interactiveDismissDisabled(model.saving)
         }

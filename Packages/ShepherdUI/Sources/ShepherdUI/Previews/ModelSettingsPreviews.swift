@@ -1,27 +1,27 @@
 import SwiftUI
 
-private let nwPreviewLevels = [
-  NWThinkingOption(id: "low", title: "Low", note: "quick"),
-  NWThinkingOption(id: "medium", title: "Medium", note: "default"),
-  NWThinkingOption(id: "high", title: "High", note: "slower, deeper"),
-  NWThinkingOption(id: "xhigh", title: "Extra high", note: "deeper still"),
+private let shPreviewLevels = [
+  SHThinkingOption(id: "low", title: "Low", note: "quick"),
+  SHThinkingOption(id: "medium", title: "Medium", note: "default"),
+  SHThinkingOption(id: "high", title: "High", note: "slower, deeper"),
+  SHThinkingOption(id: "xhigh", title: "Extra high", note: "deeper still"),
 ]
 
-private let nwPreviewSpeeds = [
-  NWSpeedOption(id: "standard", title: "Standard", detail: "Default speed and price"),
-  NWSpeedOption(
+private let shPreviewSpeeds = [
+  SHSpeedOption(id: "standard", title: "Standard", detail: "Default speed and price"),
+  SHSpeedOption(
     id: "fast", title: "Fast", detail: "Faster responses, billed at a higher rate", boosted: true),
 ]
 
 /// The popover for a model with Fast, with `speed` chosen.
-private func nwPreviewSettings(
-  speed: String, levels: [NWThinkingOption] = nwPreviewLevels, current: String = "xhigh",
-  speeds: [NWSpeedOption] = nwPreviewSpeeds, model: String = "gpt-6.1-sol"
+private func shPreviewSettings(
+  speed: String, levels: [SHThinkingOption] = shPreviewLevels, current: String = "xhigh",
+  speeds: [SHSpeedOption] = shPreviewSpeeds, model: String = "gpt-6.1-sol"
 ) -> some View {
-  NWModelSettings(
+  SHModelSettings(
     models: [
-      NWModelOption(id: "openai/\(model)", title: model, isCurrent: true, fast: !speeds.isEmpty),
-      NWModelOption(id: "anthropic/claude-opus", title: "claude-opus"),
+      SHModelOption(id: "openai/\(model)", title: model, isCurrent: true, fast: !speeds.isEmpty),
+      SHModelOption(id: "anthropic/claude-opus", title: "claude-opus"),
     ],
     thinking: levels, currentThinking: current, speeds: speeds, currentSpeed: speed,
     chooseModel: { _ in }, chooseThinking: { _ in }, chooseSpeed: { _ in }, allModels: {},
@@ -29,59 +29,59 @@ private func nwPreviewSettings(
 }
 
 #Preview("Model settings button") {
-  NWPreviewBoth {
-    VStack(alignment: .leading, spacing: NW.Space.m) {
+  SHPreviewBoth {
+    VStack(alignment: .leading, spacing: SH.Space.m) {
       Button {
       } label: {
-        NWModelSettingsLabel(model: "claude-opus", thinking: "Medium")
+        SHModelSettingsLabel(model: "claude-opus", thinking: "Medium")
       }
-      .buttonStyle(.nwComposerChip())
+      .buttonStyle(.shComposerChip())
       Button {
       } label: {
-        NWModelSettingsLabel(model: "gpt-6.1-sol", thinking: "Extra high", fast: true)
+        SHModelSettingsLabel(model: "gpt-6.1-sol", thinking: "Extra high", fast: true)
       }
-      .buttonStyle(.nwComposerChip())
+      .buttonStyle(.shComposerChip())
       Button {
       } label: {
-        NWModelSettingsLabel(model: "gpt-6.1-sol", fast: true)
+        SHModelSettingsLabel(model: "gpt-6.1-sol", fast: true)
       }
-      .buttonStyle(.nwComposerChip())
+      .buttonStyle(.shComposerChip())
       Button {
       } label: {
-        NWModelSettingsLabel(model: "claude-haiku")
+        SHModelSettingsLabel(model: "claude-haiku")
       }
-      .buttonStyle(.nwComposerChip())
+      .buttonStyle(.shComposerChip())
       Button {
       } label: {
-        NWComposerBranchLabel(branch: "agent/swiftui-previews", changes: 3)
+        SHComposerBranchLabel(branch: "agent/swiftui-previews", changes: 3)
       }
-      .buttonStyle(.nwComposerChip())
+      .buttonStyle(.shComposerChip())
     }
   }
 }
 
 #Preview("Model settings") {
-  NWPreviewBoth {
-    HStack(alignment: .top, spacing: NW.Space.xl) {
-      nwPreviewSettings(speed: "standard")
-      nwPreviewSettings(speed: "fast")
-      nwPreviewSettings(speed: "standard", speeds: [], model: "claude-sonnet")
+  SHPreviewBoth {
+    HStack(alignment: .top, spacing: SH.Space.xl) {
+      shPreviewSettings(speed: "standard")
+      shPreviewSettings(speed: "fast")
+      shPreviewSettings(speed: "standard", speeds: [], model: "claude-sonnet")
     }
   }
 }
 
 #Preview("Model settings, every level") {
-  NWPreviewBoth {
-    HStack(alignment: .top, spacing: NW.Space.xl) {
-      nwPreviewSettings(
+  SHPreviewBoth {
+    HStack(alignment: .top, spacing: SH.Space.xl) {
+      shPreviewSettings(
         speed: "fast",
         levels: ["off", "minimal", "low", "medium", "high"].map {
-          NWThinkingOption(id: $0, title: $0.capitalized)
+          SHThinkingOption(id: $0, title: $0.capitalized)
         }, current: "medium")
-      nwPreviewSettings(
+      shPreviewSettings(
         speed: "fast",
-        levels: nwPreviewLevels
-          + [NWThinkingOption(id: "off", title: "Off"), NWThinkingOption(id: "max", title: "Max")],
+        levels: shPreviewLevels
+          + [SHThinkingOption(id: "off", title: "Off"), SHThinkingOption(id: "max", title: "Max")],
         current: "xhigh")
     }
   }

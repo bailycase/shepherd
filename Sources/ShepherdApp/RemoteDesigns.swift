@@ -257,7 +257,7 @@ extension ShepherdViewModel {
                 return DesignsPageModel.Card(
                     id: design.id, name: design.name, system: system, detail: DesignsPageModel.boardsText(summary.boardCount),
                     edited: "edited \(SuggestionsPresentation.when(design.lastActiveAt / 1000, now: now))",
-                    board: NWDesignCardBoard(size: summary.firstBoard.map { CGSize(width: $0.width, height: $0.height) }),
+                    board: SHDesignCardBoard(size: summary.firstBoard.map { CGSize(width: $0.width, height: $0.height) }),
                     thumbnail: entry?.version ?? 0, selected: false,
                     menu: DesignMenu.design(.card, hasSystem: false, remote: connection.config.name,
                                             hostDeletes: connection.supportsDesignDelete))
@@ -286,7 +286,7 @@ struct RemoteDesignLayoutView: View {
     let threadPaneID: PaneID?
 
     var body: some View {
-        let _ = NWRenderProbe.tick("layout.design")
+        let _ = SHRenderProbe.tick("layout.design")
         HStack(spacing: 0) {
             if let screen = vm.remoteDesignScreen(ref) {
                 DesignCanvasPane(screen: screen)
@@ -319,20 +319,20 @@ struct RemoteDesignChatPane: View {
         let tab = screen.paneTab == .tweak && screen.tweak == nil ? .chat : screen.paneTab
         let chat = tab == .chat
         VStack(spacing: 0) {
-            NWDesignPaneTabs(DesignChatPane.tabs(open: open, tweak: screen.tweak != nil), selection: tab.rawValue) { id in
+            SHDesignPaneTabs(DesignChatPane.tabs(open: open, tweak: screen.tweak != nil), selection: tab.rawValue) { id in
                 screen.paneTab = DesignPaneTab(rawValue: id) ?? .chat
             }
             ZStack {
                 RemoteAgentThreadPane(vm: vm, ref: agent, agentName: agentName,
                                       isFocused: chat && vm.remoteFocusedPaneID == threadPaneID, designChat: true)
                     .environment(\.designCommentCards, screen.commentCards)
-                    .nwComposerSize(.compact)
+                    .shComposerSize(.compact)
                     .opacity(chat ? 1 : 0)
                     .allowsHitTesting(chat)
                     .accessibilityHidden(!chat)
                 if tab == .comments {
                     DesignCommentsList(cards: screen.openCards, resolve: { screen.resolve($0) }, open: { screen.revealComment($0) })
-                        .background(Color.nw.bgWindow)
+                        .background(Color.sh.bgWindow)
                 }
                 if let tweak = screen.tweak, tab == .tweak {
                     DesignTweakPane(model: tweak, target: screen.tweakTarget) { [vm] in
@@ -343,8 +343,8 @@ struct RemoteDesignChatPane: View {
             }
         }
         .frame(maxHeight: .infinity)
-        .background(Color.nw.bgWindow)
-        .overlay(alignment: .leading) { NWHairline(.vertical) }
+        .background(Color.sh.bgWindow)
+        .overlay(alignment: .leading) { SHHairline(.vertical) }
         .simultaneousGesture(TapGesture().onEnded { [vm] in if screen.paneTab == .chat { vm.remoteFocusedPaneID = threadPaneID } })
     }
 }

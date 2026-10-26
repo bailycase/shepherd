@@ -11,7 +11,7 @@ struct AutomationsDestination: View {
     @State private var editor: AutomationEditorTarget?
 
     var body: some View {
-        let _ = NWRenderProbe.tick("page.automations")
+        let _ = SHRenderProbe.tick("page.automations")
         AutomationsPage(model: vm.automationsPage, actions: actions, chrome: chrome)
             .task(id: vm.automationRunsSignature) { await vm.loadAutomationPageRuns() }
             .sheet(item: $editor) { target in
@@ -41,7 +41,7 @@ struct HostsDestination: View {
     @State private var removing: UUID?
 
     var body: some View {
-        let _ = NWRenderProbe.tick("page.hosts")
+        let _ = SHRenderProbe.tick("page.hosts")
         HostsPage(model: vm.hostsPage(agentVersion: vm.server.pi.engine.version), actions: HostsPageActions(
             retry: { vm.remoteHosts.reconnect(id: $0) },
             remove: { removing = $0 },

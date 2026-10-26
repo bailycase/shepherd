@@ -32,8 +32,8 @@ enum CodeHighlight {
         let function: Color
 
         @MainActor static var theme: Style {
-            Style(comment: Color.nw.synComment, string: Color.nw.synString, number: Color.nw.synNumber,
-                  keyword: Color.nw.synKeyword, type: Color.nw.synType, function: Color.nw.synFunction)
+            Style(comment: Color.sh.synComment, string: Color.sh.synString, number: Color.sh.synNumber,
+                  keyword: Color.sh.synKeyword, type: Color.sh.synType, function: Color.sh.synFunction)
         }
     }
 

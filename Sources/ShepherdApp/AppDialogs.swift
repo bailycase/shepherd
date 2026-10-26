@@ -222,8 +222,8 @@ struct WorktreeDeleteDialog: View {
         ) {
             SheetRow("Worktree") {
                 Text(path)
-                    .font(.nw(.mono))
-                    .foregroundStyle(Color.nw.textSecondary)
+                    .font(.sh(.mono))
+                    .foregroundStyle(Color.sh.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .help(path)
@@ -231,8 +231,8 @@ struct WorktreeDeleteDialog: View {
             }
             SheetRow("Branch") {
                 Text(branch)
-                    .font(.nw(.mono))
-                    .foregroundStyle(Color.nw.textSecondary)
+                    .font(.sh(.mono))
+                    .foregroundStyle(Color.sh.textSecondary)
                     .textSelection(.enabled)
             }
             if let warning {
@@ -241,7 +241,7 @@ struct WorktreeDeleteDialog: View {
         }
         // The probe's answer arrives after the sheet is up: the warning discloses and the
         // "Checking…" status fades as the destructive action enables.
-        .nwAnimation(.disclosure, value: checked)
+        .shAnimation(.disclosure, value: checked)
         .task(id: agent.id) {
             let (path, branch) = (path, branch)
             // No checkout to probe (its space is gone): `git -C ""` would probe the app's own

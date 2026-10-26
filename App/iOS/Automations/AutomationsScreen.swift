@@ -20,11 +20,11 @@ struct AutomationsScreen: View {
         let model = store.model
         Group {
             if model.rows.isEmpty {
-                NWEmptyState(Text("No automations"),
+                SHEmptyState(Text("No automations"),
                              message: "An automation is a saved prompt a host runs as a new thread. Save one here, or ask an agent on the Mac to.") {
                     if !store.editableHosts.isEmpty {
                         Button("New automation", systemImage: "plus") { AutomationsHooks.create(navigator: navigator) }
-                            .buttonStyle(.nw(.primary))
+                            .buttonStyle(.sh(.primary))
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -39,7 +39,7 @@ struct AutomationsScreen: View {
                 .refreshable { await store.refreshRuns() }
             }
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .task { await store.watch() }
         .navigationTitle("Automations")
         .navigationBarTitleDisplayMode(sizeClass == .regular ? .inline : .large)
@@ -48,7 +48,7 @@ struct AutomationsScreen: View {
             // iPadAutomations: "Automations" leads the bar, over the list.
             if sizeClass == .regular {
                 ToolbarItem(placement: .topBarLeading) {
-                    Text("Automations").font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary)
+                    Text("Automations").font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary)
                         .fixedSize()
                         .accessibilityAddTraits(.isHeader)
                 }
@@ -59,7 +59,7 @@ struct AutomationsScreen: View {
                     // New automation is the lantern circle (MobileAutomations).
                     Button("New automation", systemImage: "plus") { AutomationsHooks.create(navigator: navigator) }
                         .buttonStyle(.glassProminent)
-                        .tint(Color.nw.lantern)
+                        .tint(Color.sh.lantern)
                 }
             }
         }
@@ -78,20 +78,20 @@ private struct AutomationsList: View {
     var body: some View {
         VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
             if let failure = store.failure {
-                NWBanner(.failed, title: failure.message) {
-                    Button("OK") { store.failure = nil }.buttonStyle(.nw(.secondary))
+                SHBanner(.failed, title: failure.message) {
+                    Button("OK") { store.failure = nil }.buttonStyle(.sh(.secondary))
                 }
             }
             if chosen != nil {
                 // iPad (iPadAutomations): one flat list, the live runs first, the chosen row filled.
-                VStack(spacing: NW.Space.xxs) {
+                VStack(spacing: SH.Space.xxs) {
                     ForEach(model.live + model.quiet) { row in padRow(row) }
                 }
             } else {
                 if !model.live.isEmpty {
                     // iPhone (MobileAutomations): each live run is its own card.
                     VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-                        NWListHeader("Running now")
+                        SHListHeader("Running now")
                         VStack(spacing: MobileLayout.blockSpacing) {
                             ForEach(model.live) { row in
                                 AutomationRunCardView(row: row) { open(row.key) }.equatable()
@@ -104,12 +104,12 @@ private struct AutomationsList: View {
                 }
             }
             if !store.readOnlyNotes.isEmpty {
-                VStack(alignment: .leading, spacing: NW.Space.xs) {
+                VStack(alignment: .leading, spacing: SH.Space.xs) {
                     ForEach(store.readOnlyNotes, id: \.self) { note in
-                        Text(note).nwText(.caption).foregroundStyle(Color.nw.textTertiary)
+                        Text(note).shText(.caption).foregroundStyle(Color.sh.textTertiary)
                     }
                 }
-                .padding(.horizontal, NW.Space.xs)
+                .padding(.horizontal, SH.Space.xs)
             }
         }
     }
@@ -119,13 +119,13 @@ private struct AutomationsList: View {
                               selected: row.key == chosen, chevron: false,
                               toggle: { store.setEnabled(row.key, $0) }, open: { open(row.key) })
             .equatable()
-            .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+            .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
     }
 
     private func section(_ title: String, count: Int, rows: [AutomationListRow]) -> some View {
         VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-            NWListHeader(title, count: count)
-            NWListCard {
+            SHListHeader(title, count: count)
+            SHListCard {
                 ForEach(rows) { row in
                     AutomationListRowView(row: row, isOn: store.isOn(row), busy: store.busy.contains(row.key),
                                           selected: row.key == chosen, chevron: false,
@@ -153,7 +153,7 @@ struct AutomationListRowView: View, Equatable {
 
     var body: some View {
         let state = AgentState(row.tone)
-        NWAutomationRow(row.name, when: [row.when, row.hostTag ?? row.place].joined(separator: " · "), status: row.status,
+        SHAutomationRow(row.name, when: [row.when, row.hostTag ?? row.place].joined(separator: " · "), status: row.status,
                         statusTone: row.tone == .stopped || row.tone == .off ? nil : state, clock: clock,
                         leading: row.tone == .running ? .running : .symbol("bolt", row.tone == .attention ? .attention : nil),
                         // Read-only (offline, or an older host): the "when" line says whether it is on.
@@ -161,7 +161,7 @@ struct AutomationListRowView: View, Equatable {
                         dimmed: row.offline || !isOn, chevron: chevron, toggle: toggle, open: open)
     }
 
-    private var clock: NWRowClock? {
+    private var clock: SHRowClock? {
         switch row.clock {
         case .elapsed(let since)?: .elapsed(since: since)
         case .ago(let at)?: .ago(at)
@@ -179,7 +179,7 @@ struct AutomationRunCardView: View, Equatable {
 
     var body: some View {
         let since: Date? = if case .elapsed(let start)? = row.clock { start } else { nil }
-        NWAutomationRunCard(row.name, host: row.hostTag ?? row.hostName, status: row.status, asking: row.tone == .attention,
+        SHAutomationRunCard(row.name, host: row.hostTag ?? row.hostName, status: row.status, asking: row.tone == .attention,
                             since: since, open: open)
     }
 }
@@ -195,7 +195,7 @@ private struct AutomationsSplit: View {
         PadListDetail(listWidth: MobileLayout.automationsListWidth) {
             ScrollView {
                 AutomationsList(store: store, model: model, chosen: current) { store.chosen = $0 }
-                    .padding(NW.Space.m)
+                    .padding(SH.Space.m)
             }
             .refreshable { await store.refreshRuns() }
         } detail: {

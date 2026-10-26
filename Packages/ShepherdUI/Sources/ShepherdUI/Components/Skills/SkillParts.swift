@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Settings ▸ Skills' own measures (SettingsSkills, SkillsStates, MobileSkills).
-public enum NWSkillMetrics {
+public enum SHSkillMetrics {
     public static let pillHeight: CGFloat = 22
     public static let pillTextSize: CGFloat = 11.5
     public static let chipHeight: CGFloat = 26
@@ -25,7 +25,7 @@ public enum NWSkillMetrics {
 }
 
 /// The pill a skill with a newer commit wears, lantern on its tint (SkillsStates' "Update").
-public struct NWUpdatePill: View {
+public struct SHUpdatePill: View {
     let title: String
 
     public init(_ title: String = "Update") {
@@ -33,21 +33,21 @@ public struct NWUpdatePill: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         Text(title)
-            .font(.nwSans(NWSkillMetrics.pillTextSize, .semibold))
-            .foregroundStyle(nw.lanternText)
+            .font(.shSans(SHSkillMetrics.pillTextSize, .semibold))
+            .foregroundStyle(sh.lanternText)
             .lineLimit(1)
-            .padding(.horizontal, NW.Space.m)
-            .frame(height: NWSkillMetrics.pillHeight)
-            .background(nw.lanternTint, in: Capsule())
+            .padding(.horizontal, SH.Space.m)
+            .frame(height: SHSkillMetrics.pillHeight)
+            .background(sh.lanternTint, in: Capsule())
             .fixedSize()
     }
 }
 
 /// One entry at the top of a skill's folder: its icon, mono name, and a folder's file count
 /// ("SKILL.md", "scripts/ 8").
-public struct NWSkillFileChip: View {
+public struct SHSkillFileChip: View {
     public enum Kind: Sendable {
         /// A document: SKILL.md, reference.md.
         case file
@@ -68,33 +68,33 @@ public struct NWSkillFileChip: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        HStack(spacing: NW.Space.s) {
+        let sh = Color.sh
+        HStack(spacing: SH.Space.s) {
             Image(systemName: symbol)
-                .font(.nwSans(NWSkillMetrics.chipIconSize))
-                .foregroundStyle(nw.textTertiary)
+                .font(.shSans(SHSkillMetrics.chipIconSize))
+                .foregroundStyle(sh.textTertiary)
                 .accessibilityHidden(true)
             Text(name)
-                .font(.nwMono(NWSkillMetrics.chipTextSize))
-                .foregroundStyle(nw.textSecondary)
+                .font(.shMono(SHSkillMetrics.chipTextSize))
+                .foregroundStyle(sh.textSecondary)
                 .lineLimit(1)
             if let count {
                 Text("\(count)")
-                    .font(.nwMono(NWSkillMetrics.chipTextSize))
-                    .foregroundStyle(nw.textTertiary)
+                    .font(.shMono(SHSkillMetrics.chipTextSize))
+                    .foregroundStyle(sh.textTertiary)
             }
         }
-        .padding(.horizontal, NWSkillMetrics.chipSides)
-        .frame(height: NWSkillMetrics.chipHeight)
-        .background(nw.bgWindow, in: RoundedRectangle(cornerRadius: NW.Radius.s))
-        .nwBorder(nw.lineSubtle, radius: NW.Radius.s)
+        .padding(.horizontal, SHSkillMetrics.chipSides)
+        .frame(height: SHSkillMetrics.chipHeight)
+        .background(sh.bgWindow, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+        .shBorder(sh.lineSubtle, radius: SH.Radius.s)
         .fixedSize()
         .accessibilityElement(children: .combine)
     }
 
     private var symbol: String {
         switch kind {
-        case .file: NWGlyph.document.symbolName
+        case .file: SHGlyph.document.symbolName
         case .code: "curlybraces"
         case .folder: "folder"
         }
@@ -103,7 +103,7 @@ public struct NWSkillFileChip: View {
 
 /// Where one host is with a skill ("This Mac  installed"): a check when it's there, a filled dot
 /// while something is on its way to it, a hollow one while it's offline.
-public struct NWHostStateRow: View {
+public struct SHHostStateRow: View {
     public enum Mark: Sendable {
         case done
         case working
@@ -123,44 +123,44 @@ public struct NWHostStateRow: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        HStack(spacing: NW.Space.m) {
+        let sh = Color.sh
+        HStack(spacing: SH.Space.m) {
             Group {
                 switch mark {
                 case .done:
                     Image(systemName: "checkmark")
-                        .font(.nwSans(NWSkillMetrics.hostMarkSize - 2, .bold))
-                        .foregroundStyle(nw.done)
+                        .font(.shSans(SHSkillMetrics.hostMarkSize - 2, .bold))
+                        .foregroundStyle(sh.done)
                 case .working:
-                    Circle().fill(nw.running).frame(width: NWSkillMetrics.hostDotSize, height: NWSkillMetrics.hostDotSize)
+                    Circle().fill(sh.running).frame(width: SHSkillMetrics.hostDotSize, height: SHSkillMetrics.hostDotSize)
                 case .offline:
-                    Circle().strokeBorder(nw.textTertiary, lineWidth: 1.5)
-                        .frame(width: NWSkillMetrics.hostDotSize, height: NWSkillMetrics.hostDotSize)
+                    Circle().strokeBorder(sh.textTertiary, lineWidth: 1.5)
+                        .frame(width: SHSkillMetrics.hostDotSize, height: SHSkillMetrics.hostDotSize)
                 case .none:
                     Color.clear
                 }
             }
-            .frame(width: NWSkillMetrics.hostMarkSize)
+            .frame(width: SHSkillMetrics.hostMarkSize)
             .accessibilityHidden(true)
             Text(name)
-                .font(.nwMono(NWSkillMetrics.hostTextSize))
-                .foregroundStyle(nw.textPrimary)
+                .font(.shMono(SHSkillMetrics.hostTextSize))
+                .foregroundStyle(sh.textPrimary)
                 .lineLimit(1)
-                .frame(width: NWSkillMetrics.hostNameWidth, alignment: .leading)
+                .frame(width: SHSkillMetrics.hostNameWidth, alignment: .leading)
             Text(detail)
-                .font(.nwSans(NWSkillMetrics.hostTextSize))
-                .foregroundStyle(mark == .working ? nw.textSecondary : nw.textTertiary)
+                .font(.shSans(SHSkillMetrics.hostTextSize))
+                .foregroundStyle(mark == .working ? sh.textSecondary : sh.textTertiary)
                 .lineLimit(1)
             Spacer(minLength: 0)
         }
-        .frame(minHeight: NWSkillMetrics.hostRowHeight)
+        .frame(minHeight: SHSkillMetrics.hostRowHeight)
         .accessibilityElement(children: .combine)
     }
 }
 
 /// What the automatic skills cost in every prompt: a segment for each skill that is on, filled
 /// for an automatic one and a rule for one only /skill loads.
-public struct NWBudgetBar: View {
+public struct SHBudgetBar: View {
     let segments: [Bool]
 
     public init(_ segments: [Bool]) {
@@ -168,22 +168,22 @@ public struct NWBudgetBar: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        HStack(spacing: NWSkillMetrics.budgetGap) {
+        let sh = Color.sh
+        HStack(spacing: SHSkillMetrics.budgetGap) {
             if segments.isEmpty {
-                RoundedRectangle(cornerRadius: NWSkillMetrics.budgetGap).fill(nw.lineSubtle)
+                RoundedRectangle(cornerRadius: SHSkillMetrics.budgetGap).fill(sh.lineSubtle)
             }
             ForEach(Array(segments.enumerated()), id: \.offset) { _, filled in
-                RoundedRectangle(cornerRadius: NWSkillMetrics.budgetGap).fill(filled ? nw.running : nw.lineSubtle)
+                RoundedRectangle(cornerRadius: SHSkillMetrics.budgetGap).fill(filled ? sh.running : sh.lineSubtle)
             }
         }
-        .frame(height: NWSkillMetrics.budgetHeight)
+        .frame(height: SHSkillMetrics.budgetHeight)
         .accessibilityHidden(true)
     }
 }
 
 /// A radio button's mark: lantern with a dark center when chosen, a raised ring when not.
-public struct NWRadioMark: View {
+public struct SHRadioMark: View {
     let selected: Bool
 
     public init(selected: Bool) {
@@ -191,24 +191,24 @@ public struct NWRadioMark: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         ZStack {
             if selected {
-                Circle().fill(nw.lantern)
-                Circle().fill(nw.textOnLantern).frame(width: NWSkillMetrics.radioDot, height: NWSkillMetrics.radioDot)
+                Circle().fill(sh.lantern)
+                Circle().fill(sh.textOnLantern).frame(width: SHSkillMetrics.radioDot, height: SHSkillMetrics.radioDot)
             } else {
-                Circle().fill(nw.bgRaised)
-                Circle().strokeBorder(nw.lineStrong, lineWidth: 1.5)
+                Circle().fill(sh.bgRaised)
+                Circle().strokeBorder(sh.lineStrong, lineWidth: 1.5)
             }
         }
-        .frame(width: NWSkillMetrics.radioSize, height: NWSkillMetrics.radioSize)
-        .nwComponentAnimation(.content, value: selected)
+        .frame(width: SHSkillMetrics.radioSize, height: SHSkillMetrics.radioSize)
+        .shComponentAnimation(.content, value: selected)
         .accessibilityHidden(true)
     }
 }
 
 /// One choice of several, with what it means under its title (a skill's Use it).
-public struct NWRadioOption: View {
+public struct SHRadioOption: View {
     let title: String
     let note: String
     let selected: Bool
@@ -222,18 +222,18 @@ public struct NWRadioOption: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         Button(action: action) {
-            HStack(alignment: .top, spacing: NW.Space.m + NW.Space.xxs) {
-                NWRadioMark(selected: selected)
-                    .padding(.top, NWSkillMetrics.radioTopInset)
-                VStack(alignment: .leading, spacing: NW.Space.xxs) {
+            HStack(alignment: .top, spacing: SH.Space.m + SH.Space.xxs) {
+                SHRadioMark(selected: selected)
+                    .padding(.top, SHSkillMetrics.radioTopInset)
+                VStack(alignment: .leading, spacing: SH.Space.xxs) {
                     Text(title)
-                        .font(.nwSans(NWSkillMetrics.optionTitleSize, selected ? .semibold : .medium))
-                        .foregroundStyle(nw.textPrimary)
+                        .font(.shSans(SHSkillMetrics.optionTitleSize, selected ? .semibold : .medium))
+                        .foregroundStyle(sh.textPrimary)
                     Text(note)
-                        .nwText(size: NWSkillMetrics.optionNoteSize, lineHeight: NWSkillMetrics.optionNoteLineHeight)
-                        .foregroundStyle(nw.textTertiary)
+                        .shText(size: SHSkillMetrics.optionNoteSize, lineHeight: SHSkillMetrics.optionNoteLineHeight)
+                        .foregroundStyle(sh.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -246,7 +246,7 @@ public struct NWRadioOption: View {
 }
 
 /// skills.sh's seal for a publisher it marks official.
-public struct NWOfficialSeal: View {
+public struct SHOfficialSeal: View {
     let size: CGFloat
 
     public init(size: CGFloat = 12) {
@@ -255,8 +255,8 @@ public struct NWOfficialSeal: View {
 
     public var body: some View {
         Image(systemName: "checkmark.seal")
-            .font(.nwSans(size))
-            .foregroundStyle(Color.nw.running)
+            .font(.shSans(size))
+            .foregroundStyle(Color.sh.running)
             .accessibilityLabel("Official")
     }
 }

@@ -28,10 +28,10 @@ struct ProseImageIdentityTests {
             return url
         }
         let first = try image("first.png", blue: false), second = try image("second.png", blue: true)
-        _ = await NWProseThumbnails.load(second, pixels: 32)
+        _ = await SHProseThumbnails.load(second, pixels: 32)
         let state = SourceState(source: first.path)
         let window = OffscreenWindow(size: CGSize(width: 100, height: 100),
-                                     ImageFixture(state: state).environment(\.nwProseFileRoot, folder))
+                                     ImageFixture(state: state).environment(\.shProseFileRoot, folder))
         defer { window.close() }
         func coloredPixels(blue: Bool) -> Int {
             window.layout()
@@ -64,7 +64,7 @@ private final class SourceState {
 private struct ImageFixture: View {
     let state: SourceState
     var body: some View {
-        NWProseImageView(image: NWProseImage(alt: "image", source: state.source))
+        SHProseImageView(image: SHProseImage(alt: "image", source: state.source))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

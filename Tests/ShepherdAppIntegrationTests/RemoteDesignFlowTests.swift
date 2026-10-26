@@ -60,7 +60,7 @@ struct RemoteDesignFlowTests {
         #expect(screen.boards.map(\.id) == ["A.dc.html", "B.dc.html"])
 
         // A board moved here is written on the host, once.
-        let task = screen.move(NWBoardMove(board: "B.dc.html", offset: CGSize(width: 40, height: 20), ended: true))
+        let task = screen.move(SHBoardMove(board: "B.dc.html", offset: CGSize(width: 40, height: 20), ended: true))
         await task?.value
         #expect(screen.moveWrites == 1)
         let b = try #require(DesignPath("B.dc.html"))
@@ -86,7 +86,7 @@ struct RemoteDesignFlowTests {
         // The shared Comments list reveals the board and resolves through this host, too.
         let comment = try #require(kept.comments.first)
         screen.resized(CGSize(width: 900, height: 800))
-        screen.viewport = NWCanvasViewport(offset: CGPoint(x: -10_000, y: -10_000), zoom: 1)
+        screen.viewport = SHCanvasViewport(offset: CGPoint(x: -10_000, y: -10_000), zoom: 1)
         screen.revealComment(comment.id)
         #expect(screen.selectedWhole == [board] && screen.visibleBoards.contains(board))
         #expect(screen.openThread?.id == comment.id)

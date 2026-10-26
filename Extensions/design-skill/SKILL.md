@@ -211,7 +211,7 @@ canvas under `ds/<namespace>/`, and `design_check` checks every board against it
   `<link rel="stylesheet" href="ds/<namespace>/tokens.css">` (`../ds/…` from a folder), then use
   its custom properties (`var(--accent)`). `system_read(namespace)` gives each token's name,
   value and the file and line it came from, and the README says how the system is consumed.
-  Night Watch (`night-watch`) is Shepherd's own; its dark variant is `data-theme="dark"` on the
+  Shepherd Design (`shepherd-design`) is Shepherd's own; its dark variant is `data-theme="dark"` on the
   board's root.
 - **Its components.** When a system ships a bundle that puts components on `window` (its README
   names the global and the files to load), link its stylesheet and script after `support.js`

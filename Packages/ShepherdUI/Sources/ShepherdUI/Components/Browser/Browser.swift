@@ -4,7 +4,7 @@ import SwiftUI
 // the page when nothing is open, the viewport menu, a picked element's popover, the composer's
 // element chip, and the console drawer. The page itself is a web view the app hosts.
 
-public enum NWBrowserMetrics {
+public enum SHBrowserMetrics {
     /// The toolbar under the tabs.
     public static let toolbarHeight: CGFloat = 44
     /// The address capsule.
@@ -43,12 +43,12 @@ public enum NWBrowserMetrics {
 }
 
 /// The element glyph: a dashed square with a pointer.
-public let nwElementGlyph = "cursorarrow.and.square.on.square.dashed"
+public let shElementGlyph = "cursorarrow.and.square.on.square.dashed"
 
 // MARK: Toolbar
 
 /// What the toolbar's buttons can do now.
-public struct NWBrowserToolbarState: Equatable, Sendable {
+public struct SHBrowserToolbarState: Equatable, Sendable {
     public var canGoBack: Bool
     public var canGoForward: Bool
     public var canReload: Bool
@@ -73,7 +73,7 @@ public struct NWBrowserToolbarState: Equatable, Sendable {
 /// Reload; the address field; then Select an element (lantern while on), Viewport size (its menu's
 /// button is `bgSelected` while the menu is open) and Open in your browser. A button that can't
 /// act is at 40%.
-public struct NWBrowserToolbar<Address: View>: View {
+public struct SHBrowserToolbar<Address: View>: View {
     public struct Actions {
         public var back: () -> Void
         public var forward: () -> Void
@@ -93,12 +93,12 @@ public struct NWBrowserToolbar<Address: View>: View {
         }
     }
 
-    let state: NWBrowserToolbarState
+    let state: SHBrowserToolbarState
     let selectShortcut: String?
     let actions: Actions
     let address: Address
 
-    public init(state: NWBrowserToolbarState, selectShortcut: String? = nil, actions: Actions, @ViewBuilder address: () -> Address) {
+    public init(state: SHBrowserToolbarState, selectShortcut: String? = nil, actions: Actions, @ViewBuilder address: () -> Address) {
         self.state = state
         self.selectShortcut = selectShortcut
         self.actions = actions
@@ -106,46 +106,46 @@ public struct NWBrowserToolbar<Address: View>: View {
     }
 
     public var body: some View {
-        HStack(spacing: NW.Space.xxs) {
+        HStack(spacing: SH.Space.xxs) {
             icon("chevron.left", "Back", enabled: state.canGoBack, action: actions.back)
             icon("chevron.right", "Forward", enabled: state.canGoForward, action: actions.forward)
             icon(state.isLoading ? "xmark" : "arrow.clockwise", state.isLoading ? "Stop loading" : "Reload",
                  enabled: state.canReload, action: actions.reload)
             address
-                .padding(.horizontal, NW.Space.s)
-            Button(action: actions.select) { Image(systemName: nwElementGlyph) }
-                .buttonStyle(.nwIcon(isOn: state.selecting))
+                .padding(.horizontal, SH.Space.s)
+            Button(action: actions.select) { Image(systemName: shElementGlyph) }
+                .buttonStyle(.shIcon(isOn: state.selecting))
                 .disabled(!state.canReload)
-                .opacity(state.canReload ? 1 : NWBrowserToolbar.disabledOpacity)
-                .nwHelp(state.selecting ? "Stop selecting" : "Select an element", shortcut: selectShortcut)
+                .opacity(state.canReload ? 1 : SHBrowserToolbar.disabledOpacity)
+                .shHelp(state.selecting ? "Stop selecting" : "Select an element", shortcut: selectShortcut)
                 .accessibilityLabel("Select an element")
                 .accessibilityAddTraits(state.selecting ? .isSelected : [])
             Button(action: actions.viewport) { Image(systemName: "iphone") }
-                .buttonStyle(.nwIcon)
-                .background(state.viewportMenuOpen ? Color.nw.bgSelected : .clear, in: Circle())
-                .nwHelp("Viewport size")
+                .buttonStyle(.shIcon)
+                .background(state.viewportMenuOpen ? Color.sh.bgSelected : .clear, in: Circle())
+                .shHelp("Viewport size")
                 .accessibilityLabel("Viewport size")
             icon("arrow.up.forward.square", "Open in your browser", enabled: state.canOpenExternally, action: actions.openExternally)
         }
-        .padding(.horizontal, NW.Space.m)
-        .frame(height: NWBrowserMetrics.toolbarHeight)
+        .padding(.horizontal, SH.Space.m)
+        .frame(height: SHBrowserMetrics.toolbarHeight)
         .frame(maxWidth: .infinity)
-        .overlay(alignment: .bottom) { NWHairline() }
+        .overlay(alignment: .bottom) { SHHairline() }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Browser toolbar")
     }
 
     private func icon(_ symbol: String, _ label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) { Image(systemName: symbol) }
-            .buttonStyle(.nwIcon)
+            .buttonStyle(.shIcon)
             .disabled(!enabled)
-            .opacity(enabled ? 1 : NWBrowserToolbar.disabledOpacity)
-            .nwHelp(label)
+            .opacity(enabled ? 1 : SHBrowserToolbar.disabledOpacity)
+            .shHelp(label)
             .accessibilityLabel(label)
     }
 }
 
-extension NWBrowserToolbar {
+extension SHBrowserToolbar {
     /// A button that can't act.
     public static var disabledOpacity: Double { 0.4 }
 }
@@ -154,7 +154,7 @@ extension NWBrowserToolbar {
 /// `textTertiary` glyph, the URL in Geist Mono 12 (the host `textPrimary`, the path
 /// `textSecondary`), truncating, and the host chip. Empty, "Search or enter a URL". While it has
 /// the keyboard it edits the whole URL.
-public struct NWBrowserAddressField: View {
+public struct SHBrowserAddressField: View {
     let host: String?
     let path: String?
     let hostChip: String
@@ -177,17 +177,17 @@ public struct NWBrowserAddressField: View {
     public static let placeholder = "Search or enter a URL"
 
     public var body: some View {
-        let nw = Color.nw
-        HStack(spacing: NW.Space.m) {
+        let sh = Color.sh
+        HStack(spacing: SH.Space.m) {
             Image(systemName: "globe")
-                .font(.system(size: NWBrowserMetrics.addressGlyph))
-                .foregroundStyle(nw.textTertiary)
+                .font(.system(size: SHBrowserMetrics.addressGlyph))
+                .foregroundStyle(sh.textTertiary)
                 .accessibilityHidden(true)
             ZStack(alignment: .leading) {
-                TextField(text: $text, prompt: Text(Self.placeholder).foregroundStyle(nw.textTertiary)) { Text("Address") }
+                TextField(text: $text, prompt: Text(Self.placeholder).foregroundStyle(sh.textTertiary)) { Text("Address") }
                     .textFieldStyle(.plain)
-                    .font(.nwMono(12))
-                    .foregroundStyle(nw.textPrimary)
+                    .font(.shMono(12))
+                    .foregroundStyle(sh.textPrimary)
                     .focused(isFocused)
                     .onSubmit(submit)
                     .onKeyPress(.escape) {
@@ -196,8 +196,8 @@ public struct NWBrowserAddressField: View {
                     }
                     .opacity(isFocused.wrappedValue || host == nil ? 1 : 0)
                 if !isFocused.wrappedValue, let host {
-                    (Text(host).foregroundStyle(nw.textPrimary) + Text(path ?? "").foregroundStyle(nw.textSecondary))
-                        .font(.nwMono(12))
+                    (Text(host).foregroundStyle(sh.textPrimary) + Text(path ?? "").foregroundStyle(sh.textSecondary))
+                        .font(.shMono(12))
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -207,35 +207,35 @@ public struct NWBrowserAddressField: View {
                 }
             }
             .frame(maxWidth: .infinity)
-            NWBrowserHostChip(hostChip)
+            SHBrowserHostChip(hostChip)
         }
-        .padding(.leading, NWBrowserMetrics.addressLeading)
-        .padding(.trailing, NWBrowserMetrics.addressTrailing)
-        .frame(height: NWBrowserMetrics.addressHeight)
+        .padding(.leading, SHBrowserMetrics.addressLeading)
+        .padding(.trailing, SHBrowserMetrics.addressTrailing)
+        .frame(height: SHBrowserMetrics.addressHeight)
         .frame(maxWidth: .infinity)
-        .background(nw.bgSunken, in: Capsule())
-        .nwBorder(nw.lineSubtle, in: Capsule())
+        .background(sh.bgSunken, in: Capsule())
+        .shBorder(sh.lineSubtle, in: Capsule())
     }
 }
 
 /// The host chip in the address field: a 20pt capsule on `bgRaised` with a 10pt server glyph and
 /// the host in Geist 11 `textSecondary` ("This Mac", "build-01").
-public struct NWBrowserHostChip: View {
+public struct SHBrowserHostChip: View {
     let host: String
 
     public init(_ host: String) { self.host = host }
 
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         HStack(spacing: 5) {
-            Image(systemName: "display").font(.system(size: NWBrowserMetrics.hostChipGlyph))
-            Text(host).font(.nwSans(11)).lineLimit(1)
+            Image(systemName: "display").font(.system(size: SHBrowserMetrics.hostChipGlyph))
+            Text(host).font(.shSans(11)).lineLimit(1)
         }
-        .foregroundStyle(nw.textSecondary)
-        .padding(.horizontal, NWBrowserMetrics.hostChipPadding)
-        .frame(height: NWBrowserMetrics.hostChipHeight)
-        .background(nw.bgRaised, in: Capsule())
-        .nwBorder(nw.lineSubtle, in: Capsule())
+        .foregroundStyle(sh.textSecondary)
+        .padding(.horizontal, SHBrowserMetrics.hostChipPadding)
+        .frame(height: SHBrowserMetrics.hostChipHeight)
+        .background(sh.bgRaised, in: Capsule())
+        .shBorder(sh.lineSubtle, in: Capsule())
         .fixedSize()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("On \(host)")
@@ -247,7 +247,7 @@ public struct NWBrowserHostChip: View {
 /// three lines) and a close button. The card is `bgRaised`, radius 12, a `lantern` line and the
 /// popover's shadow, 12pt from the pane's sides, as the agent's card is. No board draws it: the
 /// words come from the app.
-public struct NWBrowserNotice: View {
+public struct SHBrowserNotice: View {
     let message: String
     let dismiss: () -> Void
 
@@ -257,27 +257,27 @@ public struct NWBrowserNotice: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        HStack(alignment: .top, spacing: NWBrowserAgentMetrics.cardGap) {
+        let sh = Color.sh
+        HStack(alignment: .top, spacing: SHBrowserAgentMetrics.cardGap) {
             Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: NWBrowserAgentMetrics.cardGlyph))
-                .foregroundStyle(nw.lanternText)
-                .frame(height: NWBrowserMetrics.noticeLine)
+                .font(.system(size: SHBrowserAgentMetrics.cardGlyph))
+                .foregroundStyle(sh.lanternText)
+                .frame(height: SHBrowserMetrics.noticeLine)
                 .accessibilityHidden(true)
             Text(message)
-                .font(.nw(.ui, weight: .regular))
-                .foregroundStyle(nw.textPrimary)
+                .font(.sh(.ui, weight: .regular))
+                .foregroundStyle(sh.textPrimary)
                 .lineLimit(3)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
             Button(action: dismiss) { Image(systemName: "xmark") }
-                .buttonStyle(.nwIcon(size: NWBrowserMetrics.consoleToggle))
-                .nwHelp("Dismiss")
+                .buttonStyle(.shIcon(size: SHBrowserMetrics.consoleToggle))
+                .shHelp("Dismiss")
                 .accessibilityLabel("Dismiss")
         }
-        .padding(.leading, NWBrowserAgentMetrics.cardLeading)
-        .padding([.vertical, .trailing], NWBrowserAgentMetrics.cardOther)
-        .nwPopover(radius: NW.Radius.l, line: nw.lantern)
+        .padding(.leading, SHBrowserAgentMetrics.cardLeading)
+        .padding([.vertical, .trailing], SHBrowserAgentMetrics.cardOther)
+        .shPopover(radius: SH.Radius.l, line: sh.lantern)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(message)
     }
@@ -286,7 +286,7 @@ public struct NWBrowserNotice: View {
 // MARK: Nothing open
 
 /// A dev server found in the repository, as the empty page offers it.
-public struct NWDevServerItem: Identifiable, Equatable, Sendable {
+public struct SHDevServerItem: Identifiable, Equatable, Sendable {
     public let id: String
     /// "pnpm dev".
     public let command: String
@@ -306,15 +306,15 @@ public struct NWDevServerItem: Identifiable, Equatable, Sendable {
 /// Nothing open (PaneStates › BrowserPane · nothing open): a 44pt circle with the globe, "No page
 /// open", a line under it, a card per dev server found in the repository with Start, and "Open a
 /// URL" with its keycaps.
-public struct NWBrowserEmpty: View {
+public struct SHBrowserEmpty: View {
     let message: String
-    let servers: [NWDevServerItem]
+    let servers: [SHDevServerItem]
     let openShortcut: String?
-    let start: (NWDevServerItem) -> Void
+    let start: (SHDevServerItem) -> Void
     let openURL: () -> Void
 
-    public init(message: String, servers: [NWDevServerItem], openShortcut: String? = nil,
-                start: @escaping (NWDevServerItem) -> Void, openURL: @escaping () -> Void) {
+    public init(message: String, servers: [SHDevServerItem], openShortcut: String? = nil,
+                start: @escaping (SHDevServerItem) -> Void, openURL: @escaping () -> Void) {
         self.message = message
         self.servers = servers
         self.openShortcut = openShortcut
@@ -323,88 +323,88 @@ public struct NWBrowserEmpty: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         VStack(spacing: 14) {
             Image(systemName: "globe")
-                .font(.system(size: NWBrowserMetrics.emptyGlyph))
-                .foregroundStyle(nw.textSecondary)
-                .frame(width: NWBrowserMetrics.emptyCircle, height: NWBrowserMetrics.emptyCircle)
-                .background(nw.bgSelected, in: Circle())
+                .font(.system(size: SHBrowserMetrics.emptyGlyph))
+                .foregroundStyle(sh.textSecondary)
+                .frame(width: SHBrowserMetrics.emptyCircle, height: SHBrowserMetrics.emptyCircle)
+                .background(sh.bgSelected, in: Circle())
                 .accessibilityHidden(true)
             Text("No page open")
-                .font(.nwSans(14, .semibold))
-                .foregroundStyle(nw.textPrimary)
+                .font(.shSans(14, .semibold))
+                .foregroundStyle(sh.textPrimary)
             Text(message)
-                .font(.nw(.ui, weight: .regular))
-                .foregroundStyle(nw.textSecondary)
+                .font(.sh(.ui, weight: .regular))
+                .foregroundStyle(sh.textSecondary)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: NWBrowserMetrics.emptyTextWidth)
+                .frame(maxWidth: SHBrowserMetrics.emptyTextWidth)
                 .fixedSize(horizontal: false, vertical: true)
-            VStack(spacing: NW.Space.m) {
+            VStack(spacing: SH.Space.m) {
                 ForEach(servers) { server in
-                    NWDevServerCard(server) { start(server) }
+                    SHDevServerCard(server) { start(server) }
                 }
                 Button(action: openURL) {
-                    HStack(spacing: NW.Space.m) {
-                        Image(systemName: "globe").font(.system(size: 12)).foregroundStyle(nw.textSecondary)
-                        Text("Open a URL").font(.nw(.ui, weight: .regular)).foregroundStyle(nw.textPrimary)
-                        Spacer(minLength: NW.Space.m)
-                        if let openShortcut { NWKeycap(openShortcut) }
+                    HStack(spacing: SH.Space.m) {
+                        Image(systemName: "globe").font(.system(size: 12)).foregroundStyle(sh.textSecondary)
+                        Text("Open a URL").font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textPrimary)
+                        Spacer(minLength: SH.Space.m)
+                        if let openShortcut { SHKeycap(openShortcut) }
                     }
-                    .padding(.horizontal, NW.Space.l)
+                    .padding(.horizontal, SH.Space.l)
                     .padding(.vertical, 10)
-                    .background(nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-                    .nwBorder(nw.lineSubtle, radius: NW.Radius.m)
-                    .contentShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+                    .background(sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+                    .shBorder(sh.lineSubtle, radius: SH.Radius.m)
+                    .contentShape(RoundedRectangle(cornerRadius: SH.Radius.m))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Open a URL")
             }
-            .padding(.top, NW.Space.m)
-            .frame(maxWidth: NWBrowserMetrics.emptyWidth)
+            .padding(.top, SH.Space.m)
+            .frame(maxWidth: SHBrowserMetrics.emptyWidth)
         }
-        .padding(NW.Space.xxl)
+        .padding(SH.Space.xxl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
 /// One dev server (PaneStates): the command in Geist Mono 12 over where it came from in Geist 11
 /// `textTertiary`, and Start (secondary `s`).
-public struct NWDevServerCard: View {
-    let server: NWDevServerItem
+public struct SHDevServerCard: View {
+    let server: SHDevServerItem
     let start: () -> Void
 
-    public init(_ server: NWDevServerItem, start: @escaping () -> Void) {
+    public init(_ server: SHDevServerItem, start: @escaping () -> Void) {
         self.server = server
         self.start = start
     }
 
     public var body: some View {
-        let nw = Color.nw
-        HStack(spacing: NW.Space.m) {
-            Image(systemName: "terminal").font(.system(size: 12)).foregroundStyle(nw.textSecondary).accessibilityHidden(true)
+        let sh = Color.sh
+        HStack(spacing: SH.Space.m) {
+            Image(systemName: "terminal").font(.system(size: 12)).foregroundStyle(sh.textSecondary).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
-                Text(server.command).font(.nwMono(12)).foregroundStyle(nw.textPrimary).lineLimit(1)
-                Text(server.detail).font(.nwSans(11)).foregroundStyle(nw.textTertiary).lineLimit(1).truncationMode(.middle)
+                Text(server.command).font(.shMono(12)).foregroundStyle(sh.textPrimary).lineLimit(1)
+                Text(server.detail).font(.shSans(11)).foregroundStyle(sh.textTertiary).lineLimit(1).truncationMode(.middle)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Button(action: start) {
                 Label(server.startTitle, systemImage: "play.fill")
             }
-            .buttonStyle(.nw(.secondary, size: .s))
+            .buttonStyle(.sh(.secondary, size: .s))
             .accessibilityLabel("\(server.startTitle) \(server.command)")
         }
-        .padding(.horizontal, NW.Space.l)
+        .padding(.horizontal, SH.Space.l)
         .padding(.vertical, 10)
-        .background(nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-        .nwBorder(nw.lineSubtle, radius: NW.Radius.m)
+        .background(sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+        .shBorder(sh.lineSubtle, radius: SH.Radius.m)
     }
 }
 
 // MARK: Viewport menu
 
 /// One width the viewport menu offers.
-public struct NWViewportOption: Identifiable, Equatable, Sendable {
+public struct SHViewportOption: Identifiable, Equatable, Sendable {
     public let id: String
     public let title: String
     /// "393"; nil for Fit the pane.
@@ -419,14 +419,14 @@ public struct NWViewportOption: Identifiable, Equatable, Sendable {
 
 /// The viewport menu (PaneStates › BrowserPane · viewport): a 220pt popover of widths, the chosen
 /// one checked, each width trailing in Geist Mono 11 `textTertiary`; a divider; Dark appearance.
-public struct NWViewportMenu: View {
-    let options: [NWViewportOption]
+public struct SHViewportMenu: View {
+    let options: [SHViewportOption]
     let selection: String
     let dark: Bool
-    let choose: (NWViewportOption) -> Void
+    let choose: (SHViewportOption) -> Void
     let toggleDark: () -> Void
 
-    public init(options: [NWViewportOption], selection: String, dark: Bool, choose: @escaping (NWViewportOption) -> Void,
+    public init(options: [SHViewportOption], selection: String, dark: Bool, choose: @escaping (SHViewportOption) -> Void,
                 toggleDark: @escaping () -> Void) {
         self.options = options
         self.selection = selection
@@ -440,12 +440,12 @@ public struct NWViewportMenu: View {
             ForEach(options) { option in
                 Row(title: option.title, trailing: option.width, checked: option.id == selection) { choose(option) }
             }
-            NWChangesMenuDivider()
+            SHChangesMenuDivider()
             Row(title: "Dark appearance", trailing: nil, checked: dark, action: toggleDark)
         }
-        .padding(NW.Space.s)
-        .frame(width: NWBrowserMetrics.viewportMenuWidth)
-        .nwPopover()
+        .padding(SH.Space.s)
+        .frame(width: SHBrowserMetrics.viewportMenuWidth)
+        .shPopover()
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Viewport size")
     }
@@ -458,21 +458,21 @@ public struct NWViewportMenu: View {
         @State private var hovering = false
 
         var body: some View {
-            let nw = Color.nw
-            HStack(spacing: NW.Space.m) {
+            let sh = Color.sh
+            HStack(spacing: SH.Space.m) {
                 Image(systemName: "checkmark")
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(nw.textPrimary)
+                    .foregroundStyle(sh.textPrimary)
                     .opacity(checked ? 1 : 0)
-                    .frame(width: NWChangesMenuMetrics.glyphWidth)
-                Text(title).font(.nw(.ui, weight: .regular)).foregroundStyle(nw.textPrimary).lineLimit(1)
-                Spacer(minLength: NW.Space.m)
-                if let trailing { Text(trailing).font(.nwMono(11)).foregroundStyle(nw.textTertiary) }
+                    .frame(width: SHChangesMenuMetrics.glyphWidth)
+                Text(title).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textPrimary).lineLimit(1)
+                Spacer(minLength: SH.Space.m)
+                if let trailing { Text(trailing).font(.shMono(11)).foregroundStyle(sh.textTertiary) }
             }
-            .padding(.horizontal, NW.Space.m)
-            .frame(height: NWChangesMenuMetrics.rowHeight)
-            .background(hovering ? nw.bgHover : .clear, in: RoundedRectangle(cornerRadius: NW.Radius.s))
-            .contentShape(RoundedRectangle(cornerRadius: NW.Radius.s))
+            .padding(.horizontal, SH.Space.m)
+            .frame(height: SHChangesMenuMetrics.rowHeight)
+            .background(hovering ? sh.bgHover : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+            .contentShape(RoundedRectangle(cornerRadius: SH.Radius.s))
             .onHover { hovering = $0 }
             .onTapGesture(perform: action)
             .accessibilityElement(children: .combine)
@@ -487,7 +487,7 @@ public struct NWViewportMenu: View {
 /// A picked element's popover (PaneBrowser): 188pt, padding 8, radius 12, the popover's fill and
 /// shadow. The source location only when the page gave one, then Add to message (primary `s`)
 /// and Copy selector (ghost `s`).
-public struct NWElementPopover: View {
+public struct SHElementPopover: View {
     let source: String?
     let add: () -> Void
     let copy: () -> Void
@@ -499,27 +499,27 @@ public struct NWElementPopover: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: NW.Space.s) {
+        VStack(alignment: .leading, spacing: SH.Space.s) {
             if let source {
                 Text(source)
-                    .font(.nwMono(10.5))
-                    .foregroundStyle(Color.nw.textTertiary)
+                    .font(.shMono(10.5))
+                    .foregroundStyle(Color.sh.textTertiary)
                     .lineLimit(1)
                     .truncationMode(.head)
-                    .padding(.horizontal, NW.Space.xxs)
+                    .padding(.horizontal, SH.Space.xxs)
             }
             Button(action: add) {
                 Label("Add to message", systemImage: "plus").frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(.nw(.primary, size: .s))
+            .buttonStyle(.sh(.primary, size: .s))
             Button(action: copy) {
                 Label("Copy selector", systemImage: "doc.on.doc").frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(.nw(.ghost, size: .s))
+            .buttonStyle(.sh(.ghost, size: .s))
         }
-        .padding(NW.Space.m)
-        .frame(width: NWBrowserMetrics.popoverWidth)
-        .nwPopover()
+        .padding(SH.Space.m)
+        .frame(width: SHBrowserMetrics.popoverWidth)
+        .shPopover()
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Picked element")
     }
@@ -530,13 +530,13 @@ public struct NWElementPopover: View {
 /// Mono 12, the source in Geist Mono 10.5 `textTertiary` when known, and a 9pt remove × in the
 /// composer. `.compact` is the queue's read-only chip: 22pt, an 11pt `textSecondary` glyph, the
 /// label in mono 11.
-public struct NWElementChip: View {
+public struct SHElementChip: View {
     let label: String
     let source: String?
-    let size: NWAttachmentChip.Size
+    let size: SHAttachmentChip.Size
     let remove: (() -> Void)?
 
-    public init(_ label: String, source: String? = nil, size: NWAttachmentChip.Size = .regular, remove: (() -> Void)? = nil) {
+    public init(_ label: String, source: String? = nil, size: SHAttachmentChip.Size = .regular, remove: (() -> Void)? = nil) {
         self.label = label
         self.source = source
         self.size = size
@@ -544,26 +544,26 @@ public struct NWElementChip: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let compact = size == .compact
-        HStack(spacing: compact ? NW.Space.xs : NW.Space.s) {
-            Image(systemName: nwElementGlyph)
-                .font(.system(size: compact ? 11 : NWBrowserMetrics.chipGlyph))
-                .foregroundStyle(nw.textSecondary)
+        HStack(spacing: compact ? SH.Space.xs : SH.Space.s) {
+            Image(systemName: shElementGlyph)
+                .font(.system(size: compact ? 11 : SHBrowserMetrics.chipGlyph))
+                .foregroundStyle(sh.textSecondary)
                 .accessibilityHidden(true)
             Text(label)
-                .font(.nwMono(compact ? 11 : 12))
-                .foregroundStyle(nw.textPrimary)
+                .font(.shMono(compact ? 11 : 12))
+                .foregroundStyle(sh.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.middle)
             if let source, !compact {
-                Text(source).font(.nwMono(10.5)).foregroundStyle(nw.textTertiary).lineLimit(1).truncationMode(.head)
+                Text(source).font(.shMono(10.5)).foregroundStyle(sh.textTertiary).lineLimit(1).truncationMode(.head)
             }
             if let remove {
                 Button(action: remove) {
                     Image(systemName: "xmark")
-                        .font(.system(size: NWBrowserMetrics.chipRemove - 1, weight: .semibold))
-                        .foregroundStyle(nw.textTertiary)
+                        .font(.system(size: SHBrowserMetrics.chipRemove - 1, weight: .semibold))
+                        .foregroundStyle(sh.textTertiary)
                         .frame(width: 14, height: 14)
                         .contentShape(Rectangle())
                 }
@@ -571,9 +571,9 @@ public struct NWElementChip: View {
                 .accessibilityLabel("Remove \(label)")
             }
         }
-        .padding(.horizontal, compact ? NW.Space.s : NW.Space.m)
-        .frame(height: compact ? NWBrowserMetrics.compactChipHeight : NWBrowserMetrics.chipHeight)
-        .nwBorder(nw.lineStrong, radius: compact ? NW.Radius.xs : NW.Radius.s)
+        .padding(.horizontal, compact ? SH.Space.s : SH.Space.m)
+        .frame(height: compact ? SHBrowserMetrics.compactChipHeight : SHBrowserMetrics.chipHeight)
+        .shBorder(sh.lineStrong, radius: compact ? SH.Radius.xs : SH.Radius.s)
         .fixedSize(horizontal: compact, vertical: false)
         .accessibilityElement(children: .contain)
         .accessibilityLabel([label, source].compactMap { $0 }.joined(separator: ", "))
@@ -583,19 +583,19 @@ public struct NWElementChip: View {
 // MARK: Console
 
 /// A console line's kind.
-public enum NWConsoleLevel: String, Equatable, Sendable {
+public enum SHConsoleLevel: String, Equatable, Sendable {
     case log, warning, error
 }
 
 /// One console line, as its row draws it.
-public struct NWConsoleLine: Identifiable, Equatable, Sendable {
+public struct SHConsoleLine: Identifiable, Equatable, Sendable {
     public let id: Int
     /// "14:02:11".
     public let time: String
     public let text: String
-    public let level: NWConsoleLevel
+    public let level: SHConsoleLevel
 
-    public init(id: Int, time: String, text: String, level: NWConsoleLevel = .log) {
+    public init(id: Int, time: String, text: String, level: SHConsoleLevel = .log) {
         self.id = id
         self.time = time
         self.text = text
@@ -607,7 +607,7 @@ public struct NWConsoleLine: Identifiable, Equatable, Sendable {
 /// "Console", "Network" with its count, the warnings (the page's own errors show as warnings
 /// too: no board draws a separate count) in `lanternText`, and Hide console (Show console while
 /// the drawer is closed).
-public struct NWConsoleBar: View {
+public struct SHConsoleBar: View {
     let network: Int
     let warnings: Int
     let open: Bool
@@ -621,31 +621,31 @@ public struct NWConsoleBar: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        HStack(spacing: NWBrowserMetrics.consoleGap) {
-            Text("Console").font(.nwSans(12, .semibold)).foregroundStyle(nw.textPrimary)
-            HStack(spacing: NW.Space.xs) {
-                Text("Network").font(.nwSans(12)).foregroundStyle(nw.textSecondary)
-                Text("\(network)").font(.nwMono(10.5)).foregroundStyle(nw.textTertiary).nwContentTransition(.numeric())
+        let sh = Color.sh
+        HStack(spacing: SHBrowserMetrics.consoleGap) {
+            Text("Console").font(.shSans(12, .semibold)).foregroundStyle(sh.textPrimary)
+            HStack(spacing: SH.Space.xs) {
+                Text("Network").font(.shSans(12)).foregroundStyle(sh.textSecondary)
+                Text("\(network)").font(.shMono(10.5)).foregroundStyle(sh.textTertiary).shContentTransition(.numeric())
             }
             if warnings > 0 {
                 HStack(spacing: 5) {
                     Image(systemName: "exclamationmark.triangle").font(.system(size: 12))
-                    Text("\(warnings) warning\(warnings == 1 ? "" : "s")").font(.nwSans(11.5))
+                    Text("\(warnings) warning\(warnings == 1 ? "" : "s")").font(.shSans(11.5))
                 }
-                .foregroundStyle(nw.lanternText)
+                .foregroundStyle(sh.lanternText)
             }
             Spacer(minLength: 0)
             Button(action: toggle) { Image(systemName: open ? "chevron.down" : "chevron.up") }
-                .buttonStyle(.nwIcon(size: NWBrowserMetrics.consoleToggle))
-                .nwHelp(open ? "Hide console" : "Show console")
+                .buttonStyle(.shIcon(size: SHBrowserMetrics.consoleToggle))
+                .shHelp(open ? "Hide console" : "Show console")
                 .accessibilityLabel(open ? "Hide console" : "Show console")
         }
         .padding(.leading, 14)
-        .padding(.trailing, NW.Space.m)
-        .frame(height: NWBrowserMetrics.consoleBarHeight)
-        .background(nw.bgBase)
-        .overlay(alignment: .top) { NWHairline(color: nw.lineStrong) }
+        .padding(.trailing, SH.Space.m)
+        .frame(height: SHBrowserMetrics.consoleBarHeight)
+        .background(sh.bgBase)
+        .overlay(alignment: .top) { SHHairline(color: sh.lineStrong) }
         .accessibilityElement(children: .contain)
     }
 }
@@ -653,26 +653,26 @@ public struct NWConsoleBar: View {
 /// A console line (PaneBrowser): at least 22pt, 14pt sides, Geist Mono 11: the time in
 /// `textTertiary`, the message in `textSecondary`, truncating. A warning (the page's own errors
 /// included: no board draws them apart) sits on `lanternTint` in `lanternText`.
-public struct NWConsoleRow: View, Equatable {
-    let line: NWConsoleLine
+public struct SHConsoleRow: View, Equatable {
+    let line: SHConsoleLine
 
-    public init(_ line: NWConsoleLine) { self.line = line }
+    public init(_ line: SHConsoleLine) { self.line = line }
 
     public var body: some View {
-        let _ = NWRenderProbe.tick("browser.consoleRow")
-        let nw = Color.nw
+        let _ = SHRenderProbe.tick("browser.consoleRow")
+        let sh = Color.sh
         HStack(spacing: 10) {
-            Text(line.time).foregroundStyle(nw.textTertiary)
+            Text(line.time).foregroundStyle(sh.textTertiary)
             Text(line.text)
-                .foregroundStyle(line.level == .warning ? nw.lanternText : nw.textSecondary)
+                .foregroundStyle(line.level == .warning ? sh.lanternText : sh.textSecondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 0)
         }
-        .font(.nwMono(11))
+        .font(.shMono(11))
         .padding(.horizontal, 14)
-        .frame(minHeight: NWBrowserMetrics.consoleRowHeight)
-        .background(line.level == .warning ? nw.lanternTint : .clear)
+        .frame(minHeight: SHBrowserMetrics.consoleRowHeight)
+        .background(line.level == .warning ? sh.lanternTint : .clear)
         .help(line.text)
     }
 }

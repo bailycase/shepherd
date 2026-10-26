@@ -32,7 +32,7 @@ struct ProjectSettingsScreen: View {
         Form {
             if let project {
                 if let failure = model.failure {
-                    Section { Text(failure.message).font(.nw(.caption)).foregroundStyle(Color.nw.failed) }
+                    Section { Text(failure.message).font(.sh(.caption)).foregroundStyle(Color.sh.failed) }
                 }
                 general(project, editable: editable)
                 spaces(project, host: host, editable: editable)
@@ -45,11 +45,11 @@ struct ProjectSettingsScreen: View {
                     Text("Removes the conversation, memory and automations. Threads stay in their spaces; branches and PRs are untouched.")
                 }
             } else {
-                Section { Text("This project is gone. It was deleted on its host.").foregroundStyle(Color.nw.textSecondary) }
+                Section { Text("This project is gone. It was deleted on its host.").foregroundStyle(Color.sh.textSecondary) }
             }
         }
         .scrollContentBackground(.hidden)
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .toolbar(.hidden, for: .tabBar)
         .navigationTitle("Project settings")
         .navigationBarTitleDisplayMode(.inline)
@@ -75,8 +75,8 @@ struct ProjectSettingsScreen: View {
         let settings = project.settings
         let textChanged = name != project.name || goal != project.goal
         Section {
-            TextField("Name", text: $name).font(.nw(.ui)).accessibilityLabel("Project name")
-            TextField("Goal", text: $goal, axis: .vertical).font(.nw(.ui)).accessibilityLabel("Goal")
+            TextField("Name", text: $name).font(.sh(.ui)).accessibilityLabel("Project name")
+            TextField("Goal", text: $goal, axis: .vertical).font(.sh(.ui)).accessibilityLabel("Goal")
             if textChanged {
                 Button("Save name and goal") {
                     Task { _ = await model.edit(ref, name: name.trimmingCharacters(in: .whitespacesAndNewlines), goal: goal) }
@@ -126,16 +126,16 @@ struct ProjectSettingsScreen: View {
         Section {
             if linked.isEmpty {
                 Text("No spaces yet. Add one, or let the project ask when the work needs a folder.")
-                    .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                    .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
             }
             ForEach(linked, id: \.id) { link in
                 let space = link.destination == .local ? owned.first { $0.id == link.spaceID } : nil
-                HStack(spacing: NW.Space.m) {
-                    VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                        Text(space?.name ?? "A space on another host").font(.nw(.ui))
-                        Text(Self.provenance(link)).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                HStack(spacing: SH.Space.m) {
+                    VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                        Text(space?.name ?? "A space on another host").font(.sh(.ui))
+                        Text(Self.provenance(link)).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                     }
-                    Spacer(minLength: NW.Space.m)
+                    Spacer(minLength: SH.Space.m)
                     Button("Remove", role: .destructive) {
                         Task { _ = await model.unlink(ref, space: link.spaceID, host: link.host) }
                     }
@@ -197,7 +197,7 @@ struct ProjectSettingsScreen: View {
         let limit = Project.maximumInstructionsLength
         Section {
             TextEditor(text: $instructions)
-                .font(.nw(.body))
+                .font(.sh(.body))
                 .frame(minHeight: MobileLayout.projectInstructionsMinHeight)
                 .accessibilityLabel("Project instructions")
             if instructions != project.settings.instructions {
@@ -214,16 +214,16 @@ struct ProjectSettingsScreen: View {
             }
         } header: { Text("Project instructions") } footer: {
             Text("Sent to the conversation and to every new thread, after each space’s AGENTS.md. \(instructions.count.formatted()) of \(limit.formatted()) characters.")
-                .foregroundStyle(instructions.count > limit ? Color.nw.failed : Color.nw.textTertiary)
+                .foregroundStyle(instructions.count > limit ? Color.sh.failed : Color.sh.textTertiary)
         }
         Section("What the project remembers") {
             if project.memory.isEmpty {
                 Text("Nothing yet. What you decide and what the project learns is kept here, and you can make it forget any of it.")
-                    .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                    .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
             }
             ForEach(project.memory) { entry in
-                HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
-                    Text(entry.text).font(.nw(.ui)).frame(maxWidth: .infinity, alignment: .leading)
+                HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+                    Text(entry.text).font(.sh(.ui)).frame(maxWidth: .infinity, alignment: .leading)
                     Button("Forget") { Task { _ = await model.forget(ref, memory: entry.id) } }
                         .buttonStyle(.borderless)
                         .disabled(!editable)
@@ -241,16 +241,16 @@ struct ProjectSettingsScreen: View {
         Section {
             if rows.isEmpty {
                 Text("Automations that belong to \(project.name) show here with a switch for each.")
-                    .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                    .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
             }
             ForEach(rows) { automation in
                 Toggle(isOn: Binding(get: { automation.enabled }, set: { value in
                     Task { _ = await model.automation(ref, automation.id, .setEnabled(value)) }
                 })) {
-                    VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                        Text(automation.name).font(.nw(.ui))
+                    VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                        Text(automation.name).font(.sh(.ui))
                         if let line = automation.prompt.split(whereSeparator: \.isNewline).first {
-                            Text(String(line)).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary).lineLimit(1)
+                            Text(String(line)).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
                         }
                     }
                 }

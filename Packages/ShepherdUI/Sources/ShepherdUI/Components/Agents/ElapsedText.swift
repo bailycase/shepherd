@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Durations as the boards write them: short ("48s", "37m", "2h", "3d") for rows, ledgers,
 /// sidebar times and waits; long ("48s", "4m 02s", "1h 02m") where a precise figure helps.
-public enum NWDuration {
+public enum SHDuration {
     public enum Style: Sendable { case short, long }
 
     public static func text(_ seconds: TimeInterval, _ style: Style = .short) -> String {
@@ -31,11 +31,11 @@ public enum NWDuration {
 
 /// Ticks exactly when an elapsed figure's text changes, anchored to the moment it counts from:
 /// every second for the first minute, then on each whole minute (or hour) since `start`.
-public struct NWElapsedSchedule: TimelineSchedule, Sendable {
+public struct SHElapsedSchedule: TimelineSchedule, Sendable {
     public let start: Date
-    public let style: NWDuration.Style
+    public let style: SHDuration.Style
 
-    public init(start: Date, style: NWDuration.Style = .short) {
+    public init(start: Date, style: SHDuration.Style = .short) {
         self.start = start
         self.style = style
     }
@@ -47,31 +47,31 @@ public struct NWElapsedSchedule: TimelineSchedule, Sendable {
     /// The first moment after `date` at which the text changes.
     public func boundary(after date: Date) -> Date {
         let elapsed = max(0, date.timeIntervalSince(start))
-        let step = NWDuration.step(at: elapsed, style)
+        let step = SHDuration.step(at: elapsed, style)
         return start.addingTimeInterval((floor(elapsed / step) + 1) * step)
     }
 
     public struct Entries: Sequence, IteratorProtocol, Sendable {
         let start: Date
-        let style: NWDuration.Style
+        let style: SHDuration.Style
         var upcoming: Date
 
         public mutating func next() -> Date? {
             let current = upcoming
-            upcoming = NWElapsedSchedule(start: start, style: style).boundary(after: current)
+            upcoming = SHElapsedSchedule(start: start, style: style).boundary(after: current)
             return current
         }
     }
 }
 
 /// An elapsed figure ("2m", "37m 21s"). While `until` is nil it counts live, and only this text
-/// re-renders, on `NWElapsedSchedule`'s ticks; once `until` is set it is static.
-public struct NWElapsedText: View {
+/// re-renders, on `SHElapsedSchedule`'s ticks; once `until` is set it is static.
+public struct SHElapsedText: View {
     let since: Date
     let until: Date?
-    let style: NWDuration.Style
+    let style: SHDuration.Style
 
-    public init(since: Date, until: Date? = nil, style: NWDuration.Style = .short) {
+    public init(since: Date, until: Date? = nil, style: SHDuration.Style = .short) {
         self.since = since
         self.until = until
         self.style = style
@@ -81,13 +81,13 @@ public struct NWElapsedText: View {
         if let until {
             label(until)
         } else {
-            TimelineView(NWElapsedSchedule(start: since, style: style)) { context in
+            TimelineView(SHElapsedSchedule(start: since, style: style)) { context in
                 label(context.date)
             }
         }
     }
 
     private func label(_ now: Date) -> some View {
-        Text(NWDuration.text(now.timeIntervalSince(since), style)).monospacedDigit()
+        Text(SHDuration.text(now.timeIntervalSince(since), style)).monospacedDigit()
     }
 }

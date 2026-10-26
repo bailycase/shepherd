@@ -15,7 +15,7 @@ struct DesignLayoutView: View {
     let thread: AgentLayoutModel.Thread
 
     var body: some View {
-        let _ = NWRenderProbe.tick("layout.design")
+        let _ = SHRenderProbe.tick("layout.design")
         HStack(spacing: 0) {
             DesignCanvasPane(screen: vm.designScreen(designID), vm: vm, designName: vm.design(designID)?.name ?? "")
                 // The canvas's Git notices (Opened from Git, Pull paused) at its top center.
@@ -51,7 +51,7 @@ struct DesignCanvasPane: View {
         let host = screen.host
         let zoom = screen.viewport.zoom
         let referencing = screen.referenceActions != nil
-        NWDesignCanvas(boards: screen.boards, viewport: $screen.viewport, tool: $screen.tool,
+        SHDesignCanvas(boards: screen.boards, viewport: $screen.viewport, tool: $screen.tool,
                        selection: screen.selectionRings, hover: screen.hoverRing,
                        pins: screen.pins, openPin: { screen.openThread($0) }, popoverAnchor: screen.popoverAnchor,
                        notes: screen.notes, actions: actions,
@@ -84,7 +84,7 @@ struct DesignCanvasPane: View {
         .overlay {
             if let host, let path = screen.presented, let board = screen.snapshot?.index.boards[path] {
                 let title = board.title?.trimmingCharacters(in: .whitespacesAndNewlines)
-                NWBoardPresentation(title: title?.isEmpty == false ? title! : path.stem,
+                SHBoardPresentation(title: title?.isEmpty == false ? title! : path.stem,
                                     boardSize: CGSize(width: board.w, height: board.h), close: { screen.present(nil) }) { zoom in
                     DesignPresentedSlot(host: host, path: path, zoom: zoom, content: host.tokens[path] ?? 0)
                 }
@@ -96,11 +96,11 @@ struct DesignCanvasPane: View {
     /// element picked takes the comment), Tweak opens its tab, Variations and Duplicate act on
     /// the board, Implement… hands the selection to a thread (RefImplementMenu), and ••• plays an
     /// interactive one.
-    private var actions: NWCanvasActions? {
+    private var actions: SHCanvasActions? {
         guard let path = screen.actionsBoard else { return nil }
         let screen = screen
         let designName = designName
-        return NWCanvasActions(board: path.rawValue, actions: NWBoardActions.Actions(
+        return SHCanvasActions(board: path.rawValue, actions: SHBoardActions.Actions(
             comment: { screen.tool = .comment },
             tweak: { screen.paneTab = .tweak },
             variations: { screen.askForVariations(of: path) },
@@ -120,7 +120,7 @@ struct DesignCommentPopover: View {
         if let note = screen.openThreadNote {
             // A thread's note (ThreadNoteCard): never a comment, never the design agent's.
             let actions = screen.referenceActions
-            NWThreadNoteCard(thread: note.thread, age: nwCommentAge(since: note.createdAt), text: note.text,
+            SHThreadNoteCard(thread: note.thread, age: shCommentAge(since: note.createdAt), text: note.text,
                              from: DesignReferencePresentation.version(note.revision).map { "from \($0)" },
                              openThread: actions.flatMap { actions in
                                  actions.threadExists(note.agentID) ? {
@@ -130,20 +130,20 @@ struct DesignCommentPopover: View {
                              },
                              resolve: { screen.resolveNote(note.id) })
         } else if let element = screen.draftElement {
-            NWCommentEditor(text: $screen.draftText, isFocused: $editorFocused, placeholder: "Comment for the design agent",
+            SHCommentEditor(text: $screen.draftText, isFocused: $editorFocused, placeholder: "Comment for the design agent",
                             context: "on \(nativeBoardName(element.board.rawValue))\(element.words.map { " · \($0)" } ?? "")",
                             onSave: { screen.submitComment() }, onCancel: { screen.closeComment() })
                 .disabled(screen.sendingComment)
         } else if let comment = screen.openThread {
             let now = Date()
-            NWCommentThread(
+            SHCommentThread(
                 author: DesignScreenModel.authorName(comment.author, name: comment.authorName, me: DesignScreenModel.gitUserName),
-                age: nwCommentAge(since: comment.createdAt, now: now),
+                age: shCommentAge(since: comment.createdAt, now: now),
                 note: comment.detached ? "element changed" : nil, text: comment.text,
                 entries: comment.replies.map { reply in
-                    NWCommentEntry(id: reply.id.uuidString,
+                    SHCommentEntry(id: reply.id.uuidString,
                                    author: DesignScreenModel.authorName(reply.author, name: reply.authorName, me: DesignScreenModel.gitUserName),
-                                   age: nwCommentAge(since: reply.createdAt, now: now), text: reply.text)
+                                   age: shCommentAge(since: reply.createdAt, now: now), text: reply.text)
                 },
                 reply: $screen.replyText,
                 onResolve: { screen.resolve(comment.id) },
@@ -164,10 +164,10 @@ struct DesignChatPane: View {
     let thread: AgentLayoutModel.Thread
 
     /// Chat, Comments with its count, and Tweak where the canvas can write.
-    static func tabs(open: Int, tweak: Bool) -> [NWDesignPaneTabs.Tab] {
-        var tabs = [NWDesignPaneTabs.Tab(id: DesignPaneTab.chat.rawValue, title: "Chat"),
-                    NWDesignPaneTabs.Tab(id: DesignPaneTab.comments.rawValue, title: "Comments", count: open > 0 ? open : nil)]
-        if tweak { tabs.append(NWDesignPaneTabs.Tab(id: DesignPaneTab.tweak.rawValue, title: "Tweak")) }
+    static func tabs(open: Int, tweak: Bool) -> [SHDesignPaneTabs.Tab] {
+        var tabs = [SHDesignPaneTabs.Tab(id: DesignPaneTab.chat.rawValue, title: "Chat"),
+                    SHDesignPaneTabs.Tab(id: DesignPaneTab.comments.rawValue, title: "Comments", count: open > 0 ? open : nil)]
+        if tweak { tabs.append(SHDesignPaneTabs.Tab(id: DesignPaneTab.tweak.rawValue, title: "Tweak")) }
         return tabs
     }
 
@@ -176,7 +176,7 @@ struct DesignChatPane: View {
         let tab = screen.paneTab == .tweak && screen.tweak == nil ? .chat : screen.paneTab
         let chat = tab == .chat
         VStack(spacing: 0) {
-            NWDesignPaneTabs(Self.tabs(open: open, tweak: screen.tweak != nil), selection: tab.rawValue) { id in
+            SHDesignPaneTabs(Self.tabs(open: open, tweak: screen.tweak != nil), selection: tab.rawValue) { id in
                 screen.paneTab = DesignPaneTab(rawValue: id) ?? .chat
             }
             ZStack {
@@ -196,7 +196,7 @@ struct DesignChatPane: View {
                         restartPi: { [vm] in vm.retryAgentStart(agentID, newConversation: $0) },
                         designChat: true)
                     .environment(\.designCommentCards, screen.commentCards)
-                    .nwComposerSize(.compact)
+                    .shComposerSize(.compact)
                     // The Git merge's card after the last turn (GitDesignMerge); the agent's own
                     // words and activity are the thread's rows.
                     .modifier(DesignGitChatEnvironment(vm: vm, designID: screen.designID))
@@ -206,7 +206,7 @@ struct DesignChatPane: View {
                 }
                 if tab == .comments {
                     DesignCommentsList(cards: screen.openCards, resolve: { screen.resolve($0) }, open: { screen.revealComment($0) })
-                        .background(Color.nw.bgWindow)
+                        .background(Color.sh.bgWindow)
                 }
                 if let tweak = screen.tweak, tab == .tweak {
                     DesignTweakPane(model: tweak, target: screen.tweakTarget, piece: screen.pieceNote) { [vm] in
@@ -219,8 +219,8 @@ struct DesignChatPane: View {
             }
         }
         .frame(maxHeight: .infinity)
-        .background(Color.nw.bgWindow)
-        .overlay(alignment: .leading) { NWHairline(.vertical) }
+        .background(Color.sh.bgWindow)
+        .overlay(alignment: .leading) { SHHairline(.vertical) }
         .simultaneousGesture(TapGesture().onEnded { [vm] in if screen.paneTab == .chat { vm.focusedPaneID = thread.paneID } })
     }
 }
@@ -237,7 +237,7 @@ struct DesignCommentsList: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: AppLayout.designCommentsSpacing) {
                 ForEach(cards) { card in
-                    NWCommentCard(number: card.number, target: card.target, meta: card.meta, text: card.text,
+                    SHCommentCard(number: card.number, target: card.target, meta: card.meta, text: card.text,
                                   onOpen: { open(card.id) }, onResolve: resolve.map { action in { action(card.id) } },
                                   hovering: hovering == card.id)
                         .equatable()
@@ -291,13 +291,13 @@ struct DesignToolbar: View, Equatable {
     }
 
     var body: some View {
-        NWDesignHeader(name, style: .toolbar, leadingInset: leadingInset, sidebar: showSidebar,
+        SHDesignHeader(name, style: .toolbar, leadingInset: leadingInset, sidebar: showSidebar,
                        sidebarShortcut: KeybindingsStore.shared.display(.toggleSidebar), designs: designs,
                        center: jump.map { jump in
-                           AnyView(NWJumpField(shortcut: KeybindingsStore.shared.display(.commandPalette), isOpen: jumpOpen, action: jump))
+                           AnyView(SHJumpField(shortcut: KeybindingsStore.shared.display(.commandPalette), isOpen: jumpOpen, action: jump))
                        }) {
             if let screen, screen.pages.count > 1 {
-                NWPopupMenu(screen.pageName ?? "Pages") {
+                SHPopupMenu(screen.pageName ?? "Pages") {
                     ForEach(screen.pages, id: \.id) { page in
                         Button {
                             screen.showPage(page.id)
@@ -309,7 +309,7 @@ struct DesignToolbar: View, Equatable {
                 .accessibilityLabel("Page")
             }
             if let git {
-                NWDesignGitChip(label: git.label, tone: git.tone, hint: git.hint, isOpen: gitOpen, action: pressGit)
+                SHDesignGitChip(label: git.label, tone: git.tone, hint: git.hint, isOpen: gitOpen, action: pressGit)
                     .onGeometryChange(for: CGFloat.self) { proxy in
                         let frame = proxy.frame(in: .named("root-layout"))
                         let window = proxy.bounds(of: .named("root-layout"))?.width ?? frame.maxX
@@ -317,18 +317,18 @@ struct DesignToolbar: View, Equatable {
                     } action: { placeGit($0) }
             }
             if let system {
-                NWDesignSystemChip(system, colors: swatches.map { Color(light: $0.light, dark: $0.dark) }, action: openSystem)
+                SHDesignSystemChip(system, colors: swatches.map { Color(light: $0.light, dark: $0.dark) }, action: openSystem)
             }
             Button { screen?.togglePresent() } label: { Image(systemName: "play.fill") }
-                .buttonStyle(.nwIcon(isOn: screen?.presented != nil))
+                .buttonStyle(.shIcon(isOn: screen?.presented != nil))
                 .disabled(screen?.canPresent != true)
                 .help("Present")
                 .accessibilityLabel("Present")
             Button("Export", systemImage: "square.and.arrow.up") { export?() }
-                .buttonStyle(.nw(.secondary))
+                .buttonStyle(.sh(.secondary))
                 .disabled(export == nil)
             if let menu {
-                NWDesignToolbarMore(label: "More for \(name)") { DesignMenuItems(menu: menu, perform: perform) }
+                SHDesignToolbarMore(label: "More for \(name)") { DesignMenuItems(menu: menu, perform: perform) }
             }
         }
     }

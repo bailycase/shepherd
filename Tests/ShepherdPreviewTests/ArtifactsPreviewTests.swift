@@ -124,12 +124,12 @@ struct ArtifactsPreviewTests {
         var selection: String?
         var body: some View {
             VStack(spacing: 0) {
-                NWSidePaneTabs(SidePaneTabs.items(news: [], changedFiles: 2, artifacts: store.artifacts.count), selection: SidePaneTab.artifacts.rawValue,
+                SHSidePaneTabs(SidePaneTabs.items(news: [], changedFiles: 2, artifacts: store.artifacts.count), selection: SidePaneTab.artifacts.rawValue,
                                select: { _ in }, closeShortcut: "⇧⌘B", close: {}) {}
                 ArtifactsTab(store: store, actions: ArtifactsActions(selection: selection, show: { _ in }, editorURL: { URL(fileURLWithPath: "/tmp/\($0.name)") }, failed: { _ in }))
             }
             .frame(width: size.width, height: size.height)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
     }
 
@@ -150,7 +150,7 @@ struct ArtifactsPreviewTests {
 
     @Test func theList() async throws { try await render("artifacts-list", size: CGSize(width: 600, height: 360)) }
 
-    @Test func aMarkdownPlanInNightWatchColors() async throws { try await render("artifacts-markdown", selection: "docs/retry-plan.md") }
+    @Test func aMarkdownPlanInShepherdDesignColors() async throws { try await render("artifacts-markdown", selection: "docs/retry-plan.md") }
 
     @Test func anHtmlReportOnItsOwnBackground() async throws {
         try await render("artifacts-html", selection: "reports/Load test report.html", size: CGSize(width: 600, height: 620))
@@ -180,9 +180,9 @@ struct ArtifactsPreviewTests {
         try await Preview.renderMatrix("artifacts-thread", size: CGSize(width: 660, height: 300)) {
             AgentTurn(presentation: presentation, live: false, startedAt: Self.now - 20 * 60_000, footer: false)
                 .environment(\.openArtifact, { _ in })
-                .padding(NW.Space.xxl)
+                .padding(SH.Space.xxl)
                 .frame(width: 660, alignment: .leading)
-                .background(Color.nw.bgWindow)
+                .background(Color.sh.bgWindow)
         }
     }
 
@@ -193,14 +193,14 @@ struct ArtifactsPreviewTests {
     /// its script and its remote image absent.
     @Test func theHtmlPageAsTheLockedDownWebViewDrawsIt() async throws {
         let directory = try #require(Preview.directory)
-        let renderer = NWArtifactWebRenderer()
+        let renderer = SHArtifactWebRenderer()
         renderer.webView.frame = CGRect(x: 0, y: 0, width: 600, height: 560)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 560), styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = renderer.webView
         window.orderBack(nil)
         defer { renderer.stop(); window.orderOut(nil); window.contentView = nil }
-        renderer.load(NWArtifactHTML.document(Self.report))
+        renderer.load(SHArtifactHTML.document(Self.report))
         var shot: NSImage?
         for _ in 0..<200 where shot == nil {
             try await Task.sleep(for: .milliseconds(50))
@@ -226,25 +226,25 @@ struct ArtifactsPreviewTests {
     private struct PadPane: View {
         let store: NativeThreadStore
         var open: NativeArtifact?
-        @State private var mode = NWArtifactMode.preview
+        @State private var mode = SHArtifactMode.preview
         var body: some View {
             VStack(spacing: 0) {
-                NWPadPaneHead([NWPadPaneTab(id: "changes", title: "Changes", systemImage: "plus.forwardslash.minus", count: 2),
-                               NWPadPaneTab(id: "artifacts", title: "Artifacts", systemImage: NWGlyph.artifact.symbolName, count: store.artifacts.count)],
+                SHPadPaneHead([SHPadPaneTab(id: "changes", title: "Changes", systemImage: "plus.forwardslash.minus", count: 2),
+                               SHPadPaneTab(id: "artifacts", title: "Artifacts", systemImage: SHGlyph.artifact.symbolName, count: store.artifacts.count)],
                               selection: "artifacts", select: { _ in }, close: {})
                 if let open {
-                    NWArtifactBar(name: open.name, symbol: open.kind.symbol, hasPreview: true, mode: $mode, pad: true, back: {}) {
-                        Button {} label: { Image(systemName: "square.and.arrow.down") }.buttonStyle(.nwIcon(size: NW.Height.touch - NW.Space.xs))
+                    SHArtifactBar(name: open.name, symbol: open.kind.symbol, hasPreview: true, mode: $mode, pad: true, back: {}) {
+                        Button {} label: { Image(systemName: "square.and.arrow.down") }.buttonStyle(.shIcon(size: SH.Height.touch - SH.Space.xs))
                     }
                     if case .markdown(let blocks, _) = NativeArtifactDocument(open, data: Data(ArtifactsPreviewTests.plan.utf8)) {
-                        ScrollView { NWAgentProse(Prose.proseBlocks(blocks), maxWidth: .infinity).padding(NWArtifactMetrics.documentInset).frame(maxWidth: .infinity, alignment: .leading) }
+                        ScrollView { SHAgentProse(Prose.proseBlocks(blocks), maxWidth: .infinity).padding(SHArtifactMetrics.documentInset).frame(maxWidth: .infinity, alignment: .leading) }
                     }
                 } else {
-                    NWArtifactList(store.artifacts.map { ArtifactRows.row($0) }, open: { _ in })
+                    SHArtifactList(store.artifacts.map { ArtifactRows.row($0) }, open: { _ in })
                 }
             }
             .frame(width: 640, height: 560)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
     }
 

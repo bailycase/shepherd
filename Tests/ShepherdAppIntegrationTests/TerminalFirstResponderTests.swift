@@ -171,7 +171,7 @@ struct TerminalFirstResponderTests {
             panes.firstResponder != nil && panes.firstResponder === panes.surface(of: panes.left)
         }
         let parent = NSView(frame: CGRect(x: 0, y: 0, width: 200, height: 200))
-        let canvas = NWCanvasInput.InputView(frame: parent.bounds)
+        let canvas = SHCanvasInput.InputView(frame: parent.bounds)
         parent.addSubview(canvas)
         let content = try #require(panes.window.window.contentView)
         content.addSubview(parent)

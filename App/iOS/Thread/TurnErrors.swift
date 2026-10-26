@@ -18,7 +18,7 @@ struct TurnErrorItem: View {
 
     var body: some View {
         let id = error.id
-        NWTurnError(NWTurnError.Content(error), folded: folded,
+        SHTurnError(SHTurnError.Content(error), folded: folded,
                     details: expansion.map { store in Binding { store.detailsOpen.contains(id) } set: { store.setDetails(id, open: $0) } },
                     unfolded: expansion.map { store in Binding { store.unfolded.contains(id) } set: { if $0 { store.unfold(id) } } },
                     retry: retry)
@@ -30,13 +30,13 @@ struct RetryLineItem: View {
     let line: NativeRetryLine
 
     var body: some View {
-        NWRetryLine(glyph: line.glyph, count: line.count, countdownEnds: Date(timeIntervalSince1970: line.retryAt / 1000)) { now in
+        SHRetryLine(glyph: line.glyph, count: line.count, countdownEnds: Date(timeIntervalSince1970: line.retryAt / 1000)) { now in
             line.text(now: now.timeIntervalSince1970 * 1000)
         }
     }
 }
 
-extension NWTurnError.Content {
+extension SHTurnError.Content {
     /// The card's values from the thread's reading of the error (`NativeTurnError`).
     init(_ error: NativeTurnError) {
         self.init(
@@ -49,7 +49,7 @@ extension NWTurnError.Content {
                 }
             },
             chips: error.chips, source: error.source, tries: error.tries, time: error.time, foldedMeta: error.foldedMeta,
-            facts: error.facts.map { NWTurnError.Fact($0.label, $0.value, mono: $0.mono) },
+            facts: error.facts.map { SHTurnError.Fact($0.label, $0.value, mono: $0.mono) },
             body: error.body.map { token in
                 switch token {
                 case .plain(let text): .plain(text)

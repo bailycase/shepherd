@@ -6,7 +6,7 @@ import SwiftUI
 // what goes.
 
 /// The sheet's own measures.
-public enum NWImplementMetrics {
+public enum SHImplementMetrics {
     public static let width: CGFloat = 540
     public static let radius: CGFloat = 14
     public static let headerPaddingTop: CGFloat = 20
@@ -56,7 +56,7 @@ public enum NWImplementMetrics {
 }
 
 /// Where the piece goes: a thread that exists, or a new one.
-public enum NWImplementMode: Hashable, Sendable {
+public enum SHImplementMode: Hashable, Sendable {
     case existing
     case new
 }
@@ -64,13 +64,13 @@ public enum NWImplementMode: Hashable, Sendable {
 /// The sheet (ImplementInThreadSheet): the piece's picture with "Implement <piece>" and where it
 /// is (design › board · v23), a close button; Existing thread | New thread; what `content` holds
 /// for the mode; then the footer: what gets sent, Cancel and Send. 540pt at radius 14 on
-/// `bgWindow` with the popover's line and shadow. Center it over `Color.nw.sheetScrim`.
-public struct NWImplementSheet<Content: View>: View {
-    let picture: NWReferenceImage?
+/// `bgWindow` with the popover's line and shadow. Center it over `Color.sh.sheetScrim`.
+public struct SHImplementSheet<Content: View>: View {
+    let picture: SHReferenceImage?
     let title: String
     let crumbs: [String]
     let version: String?
-    @Binding var mode: NWImplementMode
+    @Binding var mode: SHImplementMode
     let sends: Text
     let canSend: Bool
     let sending: Bool
@@ -78,7 +78,7 @@ public struct NWImplementSheet<Content: View>: View {
     let send: () -> Void
     @ViewBuilder let content: () -> Content
 
-    public init(picture: NWReferenceImage?, title: String, crumbs: [String], version: String?, mode: Binding<NWImplementMode>,
+    public init(picture: SHReferenceImage?, title: String, crumbs: [String], version: String?, mode: Binding<SHImplementMode>,
                 sends: Text, canSend: Bool, sending: Bool = false, close: @escaping () -> Void, send: @escaping () -> Void,
                 @ViewBuilder content: @escaping () -> Content) {
         self.picture = picture
@@ -95,36 +95,36 @@ public struct NWImplementSheet<Content: View>: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        let M = NWImplementMetrics.self
+        let sh = Color.sh
+        let M = SHImplementMetrics.self
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: M.headerSpacing) {
-                NWReferenceThumbnail(picture, size: M.picture, radius: M.pictureRadius)
+                SHReferenceThumbnail(picture, size: M.picture, radius: M.pictureRadius)
                 VStack(alignment: .leading, spacing: M.titleSpacing) {
-                    Text(title).font(.nwSans(M.titleSize, .semibold)).foregroundStyle(nw.textPrimary).lineLimit(1)
-                    HStack(spacing: NW.Space.s) {
-                        HStack(spacing: NWReferenceMetrics.crumbSpacing) {
+                    Text(title).font(.shSans(M.titleSize, .semibold)).foregroundStyle(sh.textPrimary).lineLimit(1)
+                    HStack(spacing: SH.Space.s) {
+                        HStack(spacing: SHReferenceMetrics.crumbSpacing) {
                             ForEach(Array(crumbs.enumerated()), id: \.offset) { index, crumb in
-                                if index > 0 { Text("›").foregroundStyle(nw.textTertiary) }
-                                Text(crumb).foregroundStyle(nw.textSecondary).lineLimit(1)
+                                if index > 0 { Text("›").foregroundStyle(sh.textTertiary) }
+                                Text(crumb).foregroundStyle(sh.textSecondary).lineLimit(1)
                             }
                         }
-                        .font(.nwSans(NWReferenceMetrics.crumbSize))
+                        .font(.shSans(SHReferenceMetrics.crumbSize))
                         if let version {
-                            Text("·").font(.nwSans(NWReferenceMetrics.crumbSize)).foregroundStyle(nw.textTertiary)
-                            Text(version).font(.nwMono(M.versionSize)).foregroundStyle(nw.textTertiary).fixedSize()
+                            Text("·").font(.shSans(SHReferenceMetrics.crumbSize)).foregroundStyle(sh.textTertiary)
+                            Text(version).font(.shMono(M.versionSize)).foregroundStyle(sh.textTertiary).fixedSize()
                         }
                     }
                 }
-                Spacer(minLength: NW.Space.m)
+                Spacer(minLength: SH.Space.m)
                 Button(action: close) { Image(systemName: "xmark") }
-                    .buttonStyle(.nwIcon(bordered: true, size: M.closeSize))
+                    .buttonStyle(.shIcon(bordered: true, size: M.closeSize))
                     .help("Close")
                     .accessibilityLabel("Close")
             }
             .padding(EdgeInsets(top: M.headerPaddingTop, leading: M.headerPaddingLeading, bottom: M.headerPaddingBottom,
                                 trailing: M.headerPaddingTrailing))
-            NWSegmentedPicker("Where it goes", selection: $mode, options: [(.existing, "Existing thread"), (.new, "New thread")])
+            SHSegmentedPicker("Where it goes", selection: $mode, options: [(.existing, "Existing thread"), (.new, "New thread")])
                 .padding(.horizontal, M.paddingHorizontal)
             VStack(alignment: .leading, spacing: M.bodySpacing) {
                 content()
@@ -132,28 +132,28 @@ public struct NWImplementSheet<Content: View>: View {
             .padding(EdgeInsets(top: M.bodyPaddingTop, leading: M.paddingHorizontal, bottom: M.bodyPaddingBottom, trailing: M.paddingHorizontal))
             HStack(spacing: M.footerSpacing) {
                 sends
-                    .font(.nwSans(M.footerTextSize))
-                    .foregroundStyle(nw.textTertiary)
-                    .lineSpacing(NW.Space.xxs)
+                    .font(.shSans(M.footerTextSize))
+                    .foregroundStyle(sh.textTertiary)
+                    .lineSpacing(SH.Space.xxs)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Button("Cancel", action: close)
-                    .buttonStyle(.nw(.ghost))
+                    .buttonStyle(.sh(.ghost))
                     .keyboardShortcut(.cancelAction)
                 Button(sending ? "Sending…" : "Send", systemImage: "arrow.up", action: send)
-                    .buttonStyle(.nw(.primary))
+                    .buttonStyle(.sh(.primary))
                     .keyboardShortcut(.defaultAction)
                     .disabled(!canSend || sending)
             }
             .padding(EdgeInsets(top: M.footerPaddingTop, leading: M.footerPaddingLeading, bottom: M.footerPaddingBottom,
                                 trailing: M.footerPaddingTrailing))
-            .background(nw.bgSunken)
-            .overlay(alignment: .top) { NWHairline() }
+            .background(sh.bgSunken)
+            .overlay(alignment: .top) { SHHairline() }
         }
         .frame(width: M.width)
-        .background(nw.bgWindow)
+        .background(sh.bgWindow)
         .clipShape(RoundedRectangle(cornerRadius: M.radius))
-        .nwPopover(radius: M.radius)
+        .shPopover(radius: M.radius)
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isModal)
         .accessibilityLabel(title)
@@ -162,12 +162,12 @@ public struct NWImplementSheet<Content: View>: View {
     /// The footer's words: `before`, then the system's name in mono, then `after`.
     public static func sends(_ before: String, mono: String?, after: String) -> Text {
         guard let mono else { return Text(before + after) }
-        return Text("\(before)\(Text(mono).font(.nwMono(NWImplementMetrics.footerMonoSize)))\(after)")
+        return Text("\(before)\(Text(mono).font(.shMono(SHImplementMetrics.footerMonoSize)))\(after)")
     }
 }
 
 /// A labelled part of the sheet: "Message", "Project".
-public struct NWImplementField<Content: View>: View {
+public struct SHImplementField<Content: View>: View {
     let label: String?
     @ViewBuilder let content: () -> Content
 
@@ -177,9 +177,9 @@ public struct NWImplementField<Content: View>: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: NWImplementMetrics.fieldSpacing) {
+        VStack(alignment: .leading, spacing: SHImplementMetrics.fieldSpacing) {
             if let label {
-                Text(label).font(.nwSans(NWImplementMetrics.labelSize, .medium)).foregroundStyle(Color.nw.textSecondary)
+                Text(label).font(.shSans(SHImplementMetrics.labelSize, .medium)).foregroundStyle(Color.sh.textSecondary)
             }
             content()
         }
@@ -188,7 +188,7 @@ public struct NWImplementField<Content: View>: View {
 
 /// The message field: several lines on `bgRaised` with a strong line, its placeholder in
 /// `textTertiary`.
-public struct NWImplementMessageField: View {
+public struct SHImplementMessageField: View {
     @Binding var text: String
     let placeholder: String
     var focused: FocusState<Bool>.Binding?
@@ -201,20 +201,20 @@ public struct NWImplementMessageField: View {
     }
 
     public var body: some View {
-        let M = NWImplementMetrics.self
-        let field = TextField(text: $text, prompt: Text(placeholder).foregroundStyle(Color.nw.textTertiary), axis: .vertical) {
+        let M = SHImplementMetrics.self
+        let field = TextField(text: $text, prompt: Text(placeholder).foregroundStyle(Color.sh.textTertiary), axis: .vertical) {
             Text("Message")
         }
         .textFieldStyle(.plain)
-        .font(.nwSans(M.fieldTextSize))
-        .foregroundStyle(Color.nw.textPrimary)
-        .lineSpacing(NW.Space.xxs)
+        .font(.shSans(M.fieldTextSize))
+        .foregroundStyle(Color.sh.textPrimary)
+        .lineSpacing(SH.Space.xxs)
         .lineLimit(2...6)
         .padding(.vertical, M.fieldPaddingVertical)
         .padding(.horizontal, M.fieldPaddingHorizontal)
         .frame(minHeight: M.fieldMinHeight, alignment: .topLeading)
-        .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-        .nwBorder(Color.nw.lineStrong, radius: NW.Radius.m)
+        .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+        .shBorder(Color.sh.lineStrong, radius: SH.Radius.m)
         if let focused {
             field.focused(focused)
         } else {
@@ -224,7 +224,7 @@ public struct NWImplementMessageField: View {
 }
 
 /// A thread the sheet can send to.
-public struct NWImplementThread: Identifiable, Equatable, Sendable {
+public struct SHImplementThread: Identifiable, Equatable, Sendable {
     public var id: String
     public var name: String
     /// Its project's name ("dashboard-web").
@@ -245,23 +245,23 @@ public struct NWImplementThread: Identifiable, Equatable, Sendable {
 
 /// The threads to pick from (ThreadPicker): 38pt rows in a bordered list, the chosen one on
 /// `runningTint` with a filled dot and a check, the rest an open ring. Past five they scroll.
-public struct NWImplementThreadList: View {
-    let threads: [NWImplementThread]
+public struct SHImplementThreadList: View {
+    let threads: [SHImplementThread]
     @Binding var selection: String?
 
-    public init(threads: [NWImplementThread], selection: Binding<String?>) {
+    public init(threads: [SHImplementThread], selection: Binding<String?>) {
         self.threads = threads
         _selection = selection
     }
 
     public var body: some View {
-        let M = NWImplementMetrics.self
+        let M = SHImplementMetrics.self
         let shape = RoundedRectangle(cornerRadius: M.listRadius)
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(Array(threads.enumerated()), id: \.element.id) { index, thread in
-                        NWImplementThreadRow(thread: thread, selected: thread.id == selection, first: index == 0) {
+                        SHImplementThreadRow(thread: thread, selected: thread.id == selection, first: index == 0) {
                             selection = thread.id
                         }
                         .equatable()
@@ -274,15 +274,15 @@ public struct NWImplementThreadList: View {
             .onAppear { if let selection { proxy.scrollTo(selection) } }
         }
         .clipShape(shape)
-        .nwBorder(Color.nw.lineSubtle, in: shape)
+        .shBorder(Color.sh.lineSubtle, in: shape)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Threads")
     }
 }
 
 /// One thread in the list. Equatable on what it draws.
-struct NWImplementThreadRow: View, Equatable {
-    let thread: NWImplementThread
+struct SHImplementThreadRow: View, Equatable {
+    let thread: SHImplementThread
     let selected: Bool
     let first: Bool
     let choose: () -> Void
@@ -290,45 +290,45 @@ struct NWImplementThreadRow: View, Equatable {
     static func == (a: Self, b: Self) -> Bool { a.thread == b.thread && a.selected == b.selected && a.first == b.first }
 
     var body: some View {
-        let nw = Color.nw
-        let M = NWImplementMetrics.self
+        let sh = Color.sh
+        let M = SHImplementMetrics.self
         Button(action: choose) {
             HStack(spacing: M.rowSpacing) {
                 Group {
                     if selected {
-                        Circle().fill(nw.running)
+                        Circle().fill(sh.running)
                     } else {
-                        Circle().strokeBorder(nw.textTertiary, lineWidth: M.rowDotRing)
+                        Circle().strokeBorder(sh.textTertiary, lineWidth: M.rowDotRing)
                     }
                 }
                 .frame(width: M.rowDot, height: M.rowDot)
                 Text(thread.name)
-                    .font(.nwSans(M.rowNameSize, selected ? .semibold : .medium))
-                    .foregroundStyle(nw.textPrimary)
+                    .font(.shSans(M.rowNameSize, selected ? .semibold : .medium))
+                    .foregroundStyle(sh.textPrimary)
                     .lineLimit(1)
                 if let project = thread.project {
-                    HStack(spacing: NW.Space.xs) {
+                    HStack(spacing: SH.Space.xs) {
                         Image(systemName: "folder").font(.system(size: M.rowMetaSize - 1))
-                        Text(project).font(.nwMono(M.rowMetaSize - 0.5)).lineLimit(1)
+                        Text(project).font(.shMono(M.rowMetaSize - 0.5)).lineLimit(1)
                     }
-                    .foregroundStyle(nw.textTertiary)
+                    .foregroundStyle(sh.textTertiary)
                 }
-                if let host = thread.host { NWReferenceHostTag(host) }
-                Spacer(minLength: NW.Space.m)
+                if let host = thread.host { SHReferenceHostTag(host) }
+                Spacer(minLength: SH.Space.m)
                 if let age = thread.age {
-                    Text(age).font(.nwSans(M.rowMetaSize)).foregroundStyle(nw.textTertiary).fixedSize()
+                    Text(age).font(.shSans(M.rowMetaSize)).foregroundStyle(sh.textTertiary).fixedSize()
                 }
                 Image(systemName: "checkmark")
                     .font(.system(size: M.rowCheck - 2, weight: .semibold))
-                    .foregroundStyle(nw.running)
+                    .foregroundStyle(sh.running)
                     .frame(width: M.rowCheck)
                     .opacity(selected ? 1 : 0)
             }
             .padding(.horizontal, M.rowPadding)
             .frame(height: M.rowHeight)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(selected ? nw.runningTint : .clear)
-            .overlay(alignment: .top) { if !first { NWHairline() } }
+            .background(selected ? sh.runningTint : .clear)
+            .overlay(alignment: .top) { if !first { SHHairline() } }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -339,7 +339,7 @@ struct NWImplementThreadRow: View, Equatable {
 
 /// The New thread tab's project field's label: the folder glyph and the project in mono, "·",
 /// the host with its glyph, and a chevron. The app puts it in a menu of its projects.
-public struct NWImplementProjectLabel: View {
+public struct SHImplementProjectLabel: View {
     let project: String
     let host: String
 
@@ -349,29 +349,29 @@ public struct NWImplementProjectLabel: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        let M = NWImplementMetrics.self
-        HStack(spacing: NW.Space.m) {
-            Image(systemName: "folder").font(.system(size: M.projectTextSize)).foregroundStyle(nw.textSecondary)
-            Text(project).font(.nwMono(M.projectTextSize)).foregroundStyle(nw.textPrimary).lineLimit(1)
-            Text("·").foregroundStyle(nw.textTertiary)
-            Image(systemName: "desktopcomputer").font(.system(size: M.projectTextSize)).foregroundStyle(nw.textSecondary)
-            Text(host).font(.nwMono(M.projectTextSize)).foregroundStyle(nw.textPrimary).lineLimit(1)
-            Spacer(minLength: NW.Space.m)
-            Image(systemName: "chevron.down").font(.system(size: M.projectTextSize - 3, weight: .semibold)).foregroundStyle(nw.textTertiary)
+        let sh = Color.sh
+        let M = SHImplementMetrics.self
+        HStack(spacing: SH.Space.m) {
+            Image(systemName: "folder").font(.system(size: M.projectTextSize)).foregroundStyle(sh.textSecondary)
+            Text(project).font(.shMono(M.projectTextSize)).foregroundStyle(sh.textPrimary).lineLimit(1)
+            Text("·").foregroundStyle(sh.textTertiary)
+            Image(systemName: "desktopcomputer").font(.system(size: M.projectTextSize)).foregroundStyle(sh.textSecondary)
+            Text(host).font(.shMono(M.projectTextSize)).foregroundStyle(sh.textPrimary).lineLimit(1)
+            Spacer(minLength: SH.Space.m)
+            Image(systemName: "chevron.down").font(.system(size: M.projectTextSize - 3, weight: .semibold)).foregroundStyle(sh.textTertiary)
         }
-        .padding(.horizontal, NW.Space.l - 2)
+        .padding(.horizontal, SH.Space.l - 2)
         .frame(height: M.projectHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-        .nwBorder(nw.lineStrong, radius: NW.Radius.m)
+        .background(sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+        .shBorder(sh.lineStrong, radius: SH.Radius.m)
         .contentShape(Rectangle())
     }
 }
 
 /// Where a new thread starts: "Starts on a new worktree, agent/implement-funnel-first", or why it
 /// can't take one.
-public struct NWImplementBranchLine: View {
+public struct SHImplementBranchLine: View {
     let words: String
     let branch: String?
 
@@ -381,14 +381,14 @@ public struct NWImplementBranchLine: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        let M = NWImplementMetrics.self
-        HStack(spacing: NW.Space.s) {
-            Image(systemName: NWGlyph.gitBranch.symbolName).font(.system(size: M.branchSize - 1))
+        let sh = Color.sh
+        let M = SHImplementMetrics.self
+        HStack(spacing: SH.Space.s) {
+            Image(systemName: SHGlyph.gitBranch.symbolName).font(.system(size: M.branchSize - 1))
             Text(words)
-            if let branch { Text(branch).font(.nwMono(M.branchMonoSize)).foregroundStyle(nw.textSecondary).lineLimit(1) }
+            if let branch { Text(branch).font(.shMono(M.branchMonoSize)).foregroundStyle(sh.textSecondary).lineLimit(1) }
         }
-        .font(.nwSans(M.branchSize))
-        .foregroundStyle(nw.textTertiary)
+        .font(.shSans(M.branchSize))
+        .foregroundStyle(sh.textTertiary)
     }
 }

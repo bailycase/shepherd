@@ -35,12 +35,12 @@ the content differs. Editing a `.ts` file is the whole change.
 
 ## Design tokens only
 
-Never hardcode a color, font size, dimension, duration or chord in a view. Colors are `Color.nw.<role>`;
-fonts `Font.nw(_:)` or `.nwText(_:)`; spacing, radii and heights `NW.Space`, `NW.Radius`, `NW.Height`;
+Never hardcode a color, font size, dimension, duration or chord in a view. Colors are `Color.sh.<role>`;
+fonts `Font.sh(_:)` or `.shText(_:)`; spacing, radii and heights `SH.Space`, `SH.Radius`, `SH.Height`;
 a Mac screen's own dimensions `AppLayout+<Domain>.swift`; a component's own measures its metrics enum
 in ShepherdUI. Status colors come from `AgentState` (`textColor`, `color`, `tint`), never a role with an
 alpha. A new color is a role on `ThemeColors` in both variants with a contrast rule if it carries text.
-A glyph more than one view draws is an `NWGlyph` case, named once. ShepherdUI imports no Shepherd module.
+A glyph more than one view draws is an `SHGlyph` case, named once. ShepherdUI imports no Shepherd module.
 
 `DesignRulesTests` fails on a literal font size, a status color with `.opacity(…)`, a raw color and a
 registered glyph named as a string. `DesignRuleAllowlist` only shrinks: never add an entry for code

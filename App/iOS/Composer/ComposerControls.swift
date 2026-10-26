@@ -17,13 +17,13 @@ struct AttachButton: View {
     var body: some View {
         PhotosPicker(selection: $items, maxSelectionCount: max(1, state.room), matching: .images, photoLibrary: .shared()) {
             Image(systemName: "paperclip")
-                .font(.nw(chip ? .ui : .headline, weight: .medium))
-                .foregroundStyle(Color.nw.textSecondary)
-                .frame(width: chip ? NWComposerMetrics.chipHeight : NW.Height.touch,
-                       height: chip ? NWComposerMetrics.chipHeight : NW.Height.touch)
+                .font(.sh(chip ? .ui : .headline, weight: .medium))
+                .foregroundStyle(Color.sh.textSecondary)
+                .frame(width: chip ? SHComposerMetrics.chipHeight : SH.Height.touch,
+                       height: chip ? SHComposerMetrics.chipHeight : SH.Height.touch)
                 .contentShape(Rectangle())
-                .nwTouchTarget(height: chip ? NWComposerMetrics.chipHeight : NW.Height.touch,
-                               width: chip ? NWComposerMetrics.chipHeight : NW.Height.touch)
+                .shTouchTarget(height: chip ? SHComposerMetrics.chipHeight : SH.Height.touch,
+                               width: chip ? SHComposerMetrics.chipHeight : SH.Height.touch)
         }
         .disabled(!enabled || state.room == 0)
         .accessibilityLabel("Attach images")
@@ -58,9 +58,9 @@ struct ModelChip: View {
     var body: some View {
         let title = model.map(short ? NativeModelChoices.compactName : NativeModelChoices.shortName) ?? "Model"
         Button(action: open) {
-            HStack(spacing: NW.Space.s) {
-                Text(title).font(.nw(.mono)).lineLimit(1).truncationMode(.middle)
-                if canChange { NWChipChevron() }
+            HStack(spacing: SH.Space.s) {
+                Text(title).font(.sh(.mono)).lineLimit(1).truncationMode(.middle)
+                if canChange { SHChipChevron() }
             }
         }
         .disabled(!canChange)
@@ -76,7 +76,7 @@ struct ThinkingChip: View {
     let levels: [NativeThinkingLevel]
     let enabled: Bool
     let choose: (String) -> Void
-    @Environment(\.nwComposerSize) private var size
+    @Environment(\.shComposerSize) private var size
 
     var body: some View {
         let title = level.map(NativeThinkingLevel.title) ?? "Default"
@@ -88,11 +88,11 @@ struct ThinkingChip: View {
             }
             .pickerStyle(.inline)
         } label: {
-            HStack(spacing: NW.Space.s) {
+            HStack(spacing: SH.Space.s) {
                 Image(systemName: "lightbulb")
                 if size.showsChipWords() { Text("Thinking") }
-                Text(title).fontWeight(.medium).foregroundStyle(Color.nw.textPrimary)
-                NWChipChevron()
+                Text(title).fontWeight(.medium).foregroundStyle(Color.sh.textPrimary)
+                SHChipChevron()
             }
         }
         .disabled(!enabled)
@@ -108,7 +108,7 @@ struct SpeedChip: View {
     let tiers: [ServiceTier]
     let enabled: Bool
     let choose: (ServiceTier) -> Void
-    @Environment(\.nwComposerSize) private var size
+    @Environment(\.shComposerSize) private var size
 
     var body: some View {
         Menu {
@@ -119,12 +119,12 @@ struct SpeedChip: View {
             }
             .pickerStyle(.inline)
         } label: {
-            HStack(spacing: NW.Space.s) {
+            HStack(spacing: SH.Space.s) {
                 Image(systemName: tier == .standard ? "bolt" : "bolt.fill")
-                    .foregroundStyle(tier == .standard ? Color.nw.textSecondary : Color.nw.lantern)
+                    .foregroundStyle(tier == .standard ? Color.sh.textSecondary : Color.sh.lantern)
                 if size.showsChipWords() { Text("Speed") }
-                Text(tier.title).fontWeight(.medium).foregroundStyle(Color.nw.textPrimary)
-                NWChipChevron()
+                Text(tier.title).fontWeight(.medium).foregroundStyle(Color.sh.textPrimary)
+                SHChipChevron()
             }
         }
         .disabled(!enabled)
@@ -138,8 +138,8 @@ struct CommandsChip: View {
 
     var body: some View {
         Button(action: open) {
-            HStack(spacing: NW.Space.s) {
-                Text("/").font(.nw(.mono))
+            HStack(spacing: SH.Space.s) {
+                Text("/").font(.sh(.mono))
                 Text("commands")
             }
         }
@@ -167,11 +167,11 @@ struct ModelPickerSheet: View {
         NavigationStack {
             Group {
                 if let failure {
-                    NWEmptyState(Text("Models unavailable"), message: failure)
+                    SHEmptyState(Text("Models unavailable"), message: failure)
                 } else if models == nil {
-                    ProgressView().progressViewStyle(NWSpinnerStyle())
+                    ProgressView().progressViewStyle(SHSpinnerStyle())
                 } else if sections.isEmpty {
-                    NWEmptyState(Text("No models"), message: query.isEmpty ? "\(host?.name ?? "The host") lists no models." : "Nothing matches \u{201C}\(query)\u{201D}.")
+                    SHEmptyState(Text("No models"), message: query.isEmpty ? "\(host?.name ?? "The host") lists no models." : "Nothing matches \u{201C}\(query)\u{201D}.")
                 } else {
                     List {
                         ForEach(sections) { section in
@@ -182,21 +182,21 @@ struct ModelPickerSheet: View {
                                         dismiss()
                                     } label: {
                                         HStack {
-                                            VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                                                Text(model.title).font(.nw(.code)).foregroundStyle(Color.nw.textPrimary)
+                                            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                                                Text(model.title).font(.sh(.code)).foregroundStyle(Color.sh.textPrimary)
                                                     .lineLimit(1).truncationMode(.middle)
                                                 if let levels = model.thinking {
-                                                    Text(levels).font(.nw(.caption)).foregroundStyle(Color.nw.textSecondary)
+                                                    Text(levels).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
                                                         .lineLimit(1).truncationMode(.tail)
                                                 }
                                             }
-                                            Spacer(minLength: NW.Space.m)
+                                            Spacer(minLength: SH.Space.m)
                                             if model.isCurrent {
-                                                Image(systemName: "checkmark").foregroundStyle(Color.nw.running)
+                                                Image(systemName: "checkmark").foregroundStyle(Color.sh.running)
                                                     .accessibilityLabel("Current")
                                             }
                                         }
-                                        .frame(minHeight: NW.Height.touch)
+                                        .frame(minHeight: SH.Height.touch)
                                         .contentShape(Rectangle())
                                     }
                                     .accessibilityLabel(model.id + (model.thinking.map { ", \($0)" } ?? ""))
@@ -209,7 +209,7 @@ struct ModelPickerSheet: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
             .navigationTitle("Model")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search models")

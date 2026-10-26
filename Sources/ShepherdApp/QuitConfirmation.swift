@@ -97,29 +97,29 @@ struct QuitDialog: View {
                     ]) {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(prompt.rows) { row in
-                    HStack(spacing: NW.Space.m) {
-                        NWStatusDot(row.state)
+                    HStack(spacing: SH.Space.m) {
+                        SHStatusDot(row.state)
                         Text(row.name)
-                            .font(.nw(.ui))
-                            .foregroundStyle(Color.nw.textPrimary)
+                            .font(.sh(.ui))
+                            .foregroundStyle(Color.sh.textPrimary)
                             .lineLimit(1)
                             .truncationMode(.tail)
-                        Spacer(minLength: NW.Space.m)
+                        Spacer(minLength: SH.Space.m)
                         Text(row.word)
-                            .nwText(.caption)
-                            .foregroundStyle(row.state == .attention ? Color.nw.lanternText : Color.nw.textTertiary)
+                            .shText(.caption)
+                            .foregroundStyle(row.state == .attention ? Color.sh.lanternText : Color.sh.textTertiary)
                     }
-                    .frame(minHeight: NW.Height.rowCompact)
+                    .frame(minHeight: SH.Height.rowCompact)
                     .accessibilityElement(children: .combine)
                 }
                 if let more = prompt.more {
                     Text(more)
-                        .nwText(.caption)
-                        .foregroundStyle(Color.nw.textTertiary)
-                        .frame(minHeight: NW.Height.rowCompact)
+                        .shText(.caption)
+                        .foregroundStyle(Color.sh.textTertiary)
+                        .frame(minHeight: SH.Height.rowCompact)
                 }
             }
-            .padding(.horizontal, NWDialogMetrics.inset)
+            .padding(.horizontal, SHDialogMetrics.inset)
         }
     }
 }

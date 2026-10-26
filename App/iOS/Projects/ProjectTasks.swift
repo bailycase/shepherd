@@ -18,30 +18,30 @@ struct ProjectTaskList: View {
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
                 if let page {
-                    Text(page.status).font(.nw(.ui)).foregroundStyle(Color.nw.textSecondary)
+                    Text(page.status).font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
                 }
                 if rows.isEmpty {
                     Text("Threads the project starts show here, grouped by what they need from you.")
-                        .font(.nw(.ui)).foregroundStyle(Color.nw.textTertiary)
+                        .font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
                     let shown = Self.matching(rows, query: query)
                     if shown.isEmpty {
-                        Text("No thread matches.").font(.nw(.ui)).foregroundStyle(Color.nw.textTertiary)
+                        Text("No thread matches.").font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary)
                     }
                     ForEach(ProjectTaskGroup.allCases, id: \.self) { group in
                         let members = shown.filter { $0.group == group }
                         if !members.isEmpty {
                             VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-                                NWListHeader(group.rawValue, attention: group == .waiting, count: members.count)
-                                NWListCard {
+                                SHListHeader(group.rawValue, attention: group == .waiting, count: members.count)
+                                SHListCard {
                                     ForEach(members) { row in
                                         Button { navigator.open(.projects(.task(ref, row.id))) } label: {
-                                            NWListRow(row.title, subtitle: row.line, subtitleMono: false,
+                                            SHListRow(row.title, subtitle: row.line, subtitleMono: false,
                                                       leading: .state(row.mobileState),
                                                       trailing: row.settledAt.map { .meta(ProjectAge.text($0)) } ?? .none)
                                         }
-                                        .buttonStyle(.nwRow(radius: 0))
+                                        .buttonStyle(.shRow(radius: 0))
                                     }
                                 }
                             }
@@ -54,7 +54,7 @@ struct ProjectTaskList: View {
         }
         .searchable(text: $query, prompt: "Search threads")
         .refreshable { await projects.model.refresh(ref.home) }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
     }
 
     /// Every word in the title, its lead or its detail.
@@ -117,7 +117,7 @@ struct ProjectTaskScreen: View {
                     .safeAreaInset(edge: .bottom, spacing: 0) {
                         VStack(spacing: MobileLayout.composerSpacing) {
                             if row.group == .resolved {
-                                NWLeadFooterCard(symbol: NWGlyph.resolved.symbolName, title: "This thread is resolved.",
+                                SHLeadFooterCard(symbol: SHGlyph.resolved.symbolName, title: "This thread is resolved.",
                                                  detail: "Its history stays here. New work starts a new thread.")
                                     .padding(.horizontal, MobileLayout.gutter)
                                     .padding(.bottom, MobileLayout.composerBottom)
@@ -129,14 +129,14 @@ struct ProjectTaskScreen: View {
                                 ProjectComposer(ref: ref, task: task)
                             }
                         }
-                        .background(Color.nw.bgWindow)
+                        .background(Color.sh.bgWindow)
                     }
             } else {
-                NWEmptyState(Text("This thread is no longer in the project"), message: "The owner no longer lists this task.") {}
+                SHEmptyState(Text("This thread is no longer in the project"), message: "The owner no longer lists this task.") {}
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .toolbar(.hidden, for: .tabBar)
         .navigationTitle(row?.title ?? "Thread")
         .navigationBarTitleDisplayMode(.inline)
@@ -144,10 +144,10 @@ struct ProjectTaskScreen: View {
             if let row {
                 ToolbarItem(placement: .topBarTrailing) {
                     if row.group == .resolved {
-                        Image(systemName: NWGlyph.resolved.symbolName).foregroundStyle(Color.nw.done)
+                        Image(systemName: SHGlyph.resolved.symbolName).foregroundStyle(Color.sh.done)
                             .accessibilityLabel("Resolved")
                     } else {
-                        Button("Mark resolved", systemImage: NWGlyph.resolved.symbolName) {
+                        Button("Mark resolved", systemImage: SHGlyph.resolved.symbolName) {
                             Task { _ = await projects.model.resolve(ref, task: task) }
                         }
                         .disabled(!row.canResolve || !projects.canRun(ref))

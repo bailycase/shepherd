@@ -14,10 +14,10 @@ struct PadDesignChatPane: View {
     let agent: AgentRef?
     let hostName: String?
 
-    static func tabs(open: Int) -> [NWDesignPaneTabs.Tab] {
-        [NWDesignPaneTabs.Tab(id: PadDesignPaneTab.chat.rawValue, title: "Chat"),
-         NWDesignPaneTabs.Tab(id: PadDesignPaneTab.tweak.rawValue, title: "Tweak"),
-         NWDesignPaneTabs.Tab(id: PadDesignPaneTab.comments.rawValue, title: "Comments", count: open > 0 ? open : nil)]
+    static func tabs(open: Int) -> [SHDesignPaneTabs.Tab] {
+        [SHDesignPaneTabs.Tab(id: PadDesignPaneTab.chat.rawValue, title: "Chat"),
+         SHDesignPaneTabs.Tab(id: PadDesignPaneTab.tweak.rawValue, title: "Tweak"),
+         SHDesignPaneTabs.Tab(id: PadDesignPaneTab.comments.rawValue, title: "Comments", count: open > 0 ? open : nil)]
     }
 
     var body: some View {
@@ -25,7 +25,7 @@ struct PadDesignChatPane: View {
         let tab = canvas.paneTab
         let chat = tab == .chat
         VStack(spacing: 0) {
-            NWDesignPaneTabs(Self.tabs(open: canvas.openComments.count), selection: tab.rawValue, size: .touch) { id in
+            SHDesignPaneTabs(Self.tabs(open: canvas.openComments.count), selection: tab.rawValue, size: .touch) { id in
                 canvas.paneTab = PadDesignPaneTab(rawValue: id) ?? .chat
             }
             .frame(height: MobileLayout.padDesignHeaderHeight, alignment: .bottom)
@@ -37,8 +37,8 @@ struct PadDesignChatPane: View {
                     } else {
                         // Not drawn on any board: the least that is honest.
                         Text("This design has no agent\(hostName.map { " on \($0)" } ?? ""). Open it there to start one.")
-                            .font(.nw(.caption))
-                            .foregroundStyle(Color.nw.textTertiary)
+                            .font(.sh(.caption))
+                            .foregroundStyle(Color.sh.textTertiary)
                             .padding(MobileLayout.gutter)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     }
@@ -48,18 +48,18 @@ struct PadDesignChatPane: View {
                 .accessibilityHidden(!chat)
                 if tab == .comments {
                     PadDesignCommentsList(cards: canvas.cards()) { canvas.openThread($0.uuidString) }
-                        .background(Color.nw.bgWindow)
+                        .background(Color.sh.bgWindow)
                 }
                 if tab == .tweak {
                     PadDesignTweakPane(model: canvas.tweak, target: canvas.tweakTarget) { canvas.paneTab = .chat }
-                        .background(Color.nw.bgWindow)
+                        .background(Color.sh.bgWindow)
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
-        .background(Color.nw.bgWindow.ignoresSafeArea())
-        .overlay(alignment: .leading) { NWHairline(.vertical).ignoresSafeArea() }
+        .background(Color.sh.bgWindow.ignoresSafeArea())
+        .overlay(alignment: .leading) { SHHairline(.vertical).ignoresSafeArea() }
     }
 }
 
@@ -78,13 +78,13 @@ private struct PadDesignChat: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if agent != nil {
                     ThreadComposer(ref: ref)
-                        .overlay(alignment: .top) { NWHairline() }
+                        .overlay(alignment: .top) { SHHairline() }
                 }
             }
             .environment(\.composerDesignChat, true)
-            .nwComposerSize(.compact)
-            .environment(\.nwProseSize, .small)
-            .background(Color.nw.bgWindow)
+            .shComposerSize(.compact)
+            .environment(\.shProseSize, .small)
+            .background(Color.sh.bgWindow)
             .designAgentThread(ref)
     }
 
@@ -150,7 +150,7 @@ private struct PadDesignCommentsList: View {
             LazyVStack(alignment: .leading, spacing: MobileLayout.padDesignCommentsSpacing) {
                 ForEach(cards) { card in
                     Button { open(card.id) } label: {
-                        NWCommentCard(number: card.number, target: card.target, meta: card.meta, text: card.text)
+                        SHCommentCard(number: card.number, target: card.target, meta: card.meta, text: card.text)
                             .equatable()
                     }
                     .buttonStyle(.plain)
@@ -158,8 +158,8 @@ private struct PadDesignCommentsList: View {
                 if cards.isEmpty {
                     // Not drawn on any board: the least that is honest.
                     Text("No open comments. Pick Comment on the canvas, then tap an element.")
-                        .font(.nw(.caption))
-                        .foregroundStyle(Color.nw.textTertiary)
+                        .font(.sh(.caption))
+                        .foregroundStyle(Color.sh.textTertiary)
                 }
             }
             .padding(MobileLayout.padDesignCommentsPadding)

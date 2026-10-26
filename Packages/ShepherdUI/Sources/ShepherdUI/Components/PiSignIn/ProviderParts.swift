@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The measures the sign-in surfaces draw (PiAuthStates, SettingsPiSignIn, the SignIn* and
 /// PiImport* boards).
-public enum NWPiSignInMetrics {
+public enum SHPiSignInMetrics {
     public static let badge: CGFloat = 30
     public static let badgeSmall: CGFloat = 28
     public static let badgeLarge: CGFloat = 38
@@ -76,30 +76,30 @@ public enum NWPiSignInMetrics {
 
 /// A provider's monogram tile: "An", "Cx", "Gh" in Geist 11/600 `textSecondary`, on `bgRaised` in
 /// a `lineStrong` line at radius 8.
-public struct NWProviderBadge: View {
+public struct SHProviderBadge: View {
     let letters: String
     let size: CGFloat
 
-    public init(_ letters: String, size: CGFloat = NWPiSignInMetrics.badge) {
+    public init(_ letters: String, size: CGFloat = SHPiSignInMetrics.badge) {
         self.letters = letters
         self.size = size
     }
 
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         Text(letters)
-            .font(.nwSans(NWPiSignInMetrics.badgeTextSize, .semibold))
+            .font(.shSans(SHPiSignInMetrics.badgeTextSize, .semibold))
             .tracking(-0.1)
-            .foregroundStyle(nw.textSecondary)
+            .foregroundStyle(sh.textSecondary)
             .frame(width: size, height: size)
-            .background(nw.bgRaised, in: RoundedRectangle(cornerRadius: NWPiSignInMetrics.badgeRadius))
-            .nwBorder(nw.lineStrong, radius: NWPiSignInMetrics.badgeRadius)
+            .background(sh.bgRaised, in: RoundedRectangle(cornerRadius: SHPiSignInMetrics.badgeRadius))
+            .shBorder(sh.lineStrong, radius: SHPiSignInMetrics.badgeRadius)
             .accessibilityHidden(true)
     }
 }
 
 /// What a provider row's status line says: a dot, a word, then details after "·".
-public struct NWProviderStatus: Equatable, Sendable {
+public struct SHProviderStatus: Equatable, Sendable {
     public enum Dot: Sendable {
         /// `done`, filled: signed in, a key, a variable.
         case on
@@ -150,19 +150,19 @@ public struct NWProviderStatus: Equatable, Sendable {
     }
 }
 
-extension NWProviderStatus.Tone {
+extension SHProviderStatus.Tone {
     @MainActor var color: Color {
         switch self {
-        case .primary: .nw.textPrimary
-        case .secondary: .nw.textSecondary
-        case .tertiary: .nw.textTertiary
-        case .attention: .nw.lanternText
+        case .primary: .sh.textPrimary
+        case .secondary: .sh.textSecondary
+        case .tertiary: .sh.textTertiary
+        case .attention: .sh.lanternText
         }
     }
 }
 
-/// Where a key comes from, after its mask (`NWKeySourceLabel`).
-public enum NWKeySource: Equatable, Sendable {
+/// Where a key comes from, after its mask (`SHKeySourceLabel`).
+public enum SHKeySource: Equatable, Sendable {
     /// The key the import copied from the user's pi.
     case copiedFromYourPi
     /// A `$NAME` reference, read from the login shell when an agent starts.
@@ -171,7 +171,7 @@ public enum NWKeySource: Equatable, Sendable {
     case command(String)
 
     /// The status line's parts for it, joined to the key before them.
-    public var parts: [NWProviderStatus.Part] {
+    public var parts: [SHProviderStatus.Part] {
         switch self {
         case .copiedFromYourPi: [.init("copied from pi", tone: .tertiary, separated: false)]
         case .variable(let name): [.init("reads", tone: .tertiary, separated: false),
@@ -182,24 +182,24 @@ public enum NWKeySource: Equatable, Sendable {
 }
 
 /// The dot at the head of a provider's status line.
-public struct NWProviderDot: View {
-    let dot: NWProviderStatus.Dot
+public struct SHProviderDot: View {
+    let dot: SHProviderStatus.Dot
 
-    public init(_ dot: NWProviderStatus.Dot) {
+    public init(_ dot: SHProviderStatus.Dot) {
         self.dot = dot
     }
 
     public var body: some View {
-        let nw = Color.nw
-        let M = NWPiSignInMetrics.self
+        let sh = Color.sh
+        let M = SHPiSignInMetrics.self
         ZStack {
             switch dot {
-            case .on: Circle().fill(nw.done)
-            case .attention: Circle().fill(nw.lantern)
-            case .off: Circle().strokeBorder(nw.textTertiary, lineWidth: M.dotStroke)
+            case .on: Circle().fill(sh.done)
+            case .attention: Circle().fill(sh.lantern)
+            case .off: Circle().strokeBorder(sh.textTertiary, lineWidth: M.dotStroke)
             case .live:
-                Circle().strokeBorder(nw.running, lineWidth: M.dotStroke)
-                Circle().fill(nw.running).padding(M.dotStroke + 0.5)
+                Circle().strokeBorder(sh.running, lineWidth: M.dotStroke)
+                Circle().fill(sh.running).padding(M.dotStroke + 0.5)
             }
         }
         .frame(width: M.dot, height: M.dot)
@@ -208,28 +208,28 @@ public struct NWProviderDot: View {
 }
 
 /// A provider's one status line: the dot, the word, and its details, each group after "·".
-public struct NWProviderStatusLine: View {
-    let status: NWProviderStatus
+public struct SHProviderStatusLine: View {
+    let status: SHProviderStatus
 
-    public init(_ status: NWProviderStatus) {
+    public init(_ status: SHProviderStatus) {
         self.status = status
     }
 
     public var body: some View {
-        let nw = Color.nw
-        let M = NWPiSignInMetrics.self
-        HStack(spacing: NW.Space.s) {
-            NWProviderDot(status.dot)
+        let sh = Color.sh
+        let M = SHPiSignInMetrics.self
+        HStack(spacing: SH.Space.s) {
+            SHProviderDot(status.dot)
             Text(status.word)
-                .font(.nwSans(M.statusSize))
-                .nwShimmer(active: status.live)
+                .font(.shSans(M.statusSize))
+                .shShimmer(active: status.live)
                 .foregroundStyle(status.wordTone.color)
                 .lineLimit(1)
                 .fixedSize()
             ForEach(Array(status.parts.enumerated()), id: \.offset) { _, part in
-                if part.separated { Text("·").font(.nwSans(M.statusSize)).foregroundStyle(nw.textTertiary) }
+                if part.separated { Text("·").font(.shSans(M.statusSize)).foregroundStyle(sh.textTertiary) }
                 Text(part.text)
-                    .font(part.mono ? .nwMono(part.small ? M.statusSmallMonoSize : M.statusMonoSize) : .nwSans(M.statusSize))
+                    .font(part.mono ? .shMono(part.small ? M.statusSmallMonoSize : M.statusMonoSize) : .shSans(M.statusSize))
                     .foregroundStyle(part.tone.color)
                     .lineLimit(1)
                     .truncationMode(part.middle ? .middle : .tail)
@@ -242,19 +242,19 @@ public struct NWProviderStatusLine: View {
 }
 
 /// A key's source after its mask: "copied from your pi", "reads `$NAME`", "command not supported".
-public struct NWKeySourceLabel: View {
-    let source: NWKeySource
+public struct SHKeySourceLabel: View {
+    let source: SHKeySource
 
-    public init(_ source: NWKeySource) {
+    public init(_ source: SHKeySource) {
         self.source = source
     }
 
     public var body: some View {
-        let M = NWPiSignInMetrics.self
-        HStack(spacing: NW.Space.s) {
+        let M = SHPiSignInMetrics.self
+        HStack(spacing: SH.Space.s) {
             ForEach(Array(source.parts.enumerated()), id: \.offset) { _, part in
                 Text(part.text)
-                    .font(part.mono ? .nwMono(M.statusSmallMonoSize) : .nwSans(M.statusSize))
+                    .font(part.mono ? .shMono(M.statusSmallMonoSize) : .shSans(M.statusSize))
                     .foregroundStyle(part.tone.color)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -266,24 +266,24 @@ public struct NWKeySourceLabel: View {
 
 /// "Signing in here and in your terminal pi can sign one of them out." Quiet: 11.5 `textTertiary`,
 /// under Anthropic, OpenAI Codex, Kimi and Radius.
-public struct NWSharedLoginNote: View {
+public struct SHSharedLoginNote: View {
     public init() {}
 
     public var body: some View {
-        HStack(spacing: NW.Space.s) {
+        HStack(spacing: SH.Space.s) {
             Image(systemName: "arrow.triangle.2.circlepath")
-                .font(.nwSans(NWPiSignInMetrics.noteSize - 1))
+                .font(.shSans(SHPiSignInMetrics.noteSize - 1))
                 .accessibilityHidden(true)
             Text("Signing in here and in your terminal pi can sign one of them out.")
-                .font(.nwSans(NWPiSignInMetrics.noteSize))
+                .font(.shSans(SHPiSignInMetrics.noteSize))
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .foregroundStyle(Color.nw.textTertiary)
+        .foregroundStyle(Color.sh.textTertiary)
     }
 }
 
 /// The ⋯ button that opens a provider's menu: a 26pt circle, "More for Anthropic".
-public struct NWProviderMenuButton<Items: View>: View {
+public struct SHProviderMenuButton<Items: View>: View {
     let name: String
     let items: Items
     @State private var hovering = false
@@ -294,16 +294,16 @@ public struct NWProviderMenuButton<Items: View>: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        let M = NWPiSignInMetrics.self
+        let sh = Color.sh
+        let M = SHPiSignInMetrics.self
         Menu {
             items
         } label: {
             Image(systemName: "ellipsis")
-                .font(.nwSans(M.menuGlyph, .medium))
-                .foregroundStyle(nw.textSecondary)
+                .font(.shSans(M.menuGlyph, .medium))
+                .foregroundStyle(sh.textSecondary)
                 .frame(width: M.menuButton, height: M.menuButton)
-                .background(hovering ? nw.bgHover : Color.clear, in: Circle())
+                .background(hovering ? sh.bgHover : Color.clear, in: Circle())
                 .contentShape(Circle())
         }
         .menuStyle(.button)
@@ -311,24 +311,24 @@ public struct NWProviderMenuButton<Items: View>: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .onHover { hovering = $0 }
-        .nwAnimation(.hover, value: hovering)
+        .shAnimation(.hover, value: hovering)
         .accessibilityLabel("More for \(name)")
     }
 }
 
 /// One provider in Settings ▸ Pi ▸ Sign-in (`ProviderRow(provider, auth)`): its badge, its name
 /// over its status line (and the shared-login note), its trailing action and ⋯ menu.
-public struct NWProviderRow<Trailing: View>: View {
+public struct SHProviderRow<Trailing: View>: View {
     let name: String
     let badge: String
     let mono: Bool
-    let status: NWProviderStatus
+    let status: SHProviderStatus
     let sharedLoginNote: Bool
     let problem: String?
     let trailing: Trailing
 
     /// `mono` sets a custom provider's id as its title.
-    public init(_ name: String, badge: String, mono: Bool = false, status: NWProviderStatus, sharedLoginNote: Bool = false,
+    public init(_ name: String, badge: String, mono: Bool = false, status: SHProviderStatus, sharedLoginNote: Bool = false,
                 problem: String? = nil, @ViewBuilder trailing: () -> Trailing) {
         self.name = name
         self.badge = badge
@@ -340,29 +340,29 @@ public struct NWProviderRow<Trailing: View>: View {
     }
 
     public var body: some View {
-        let M = NWPiSignInMetrics.self
+        let M = SHPiSignInMetrics.self
         HStack(alignment: .center, spacing: M.rowGap) {
-            NWProviderBadge(badge)
+            SHProviderBadge(badge)
             VStack(alignment: .leading, spacing: M.lineGap) {
                 Text(name)
-                    .font(mono ? .nwMono(M.nameSize - 0.5, .semibold) : .nwSans(M.nameSize, .medium))
-                    .foregroundStyle(Color.nw.textPrimary)
+                    .font(mono ? .shMono(M.nameSize - 0.5, .semibold) : .shSans(M.nameSize, .medium))
+                    .foregroundStyle(Color.sh.textPrimary)
                     .lineLimit(1)
-                NWProviderStatusLine(status)
-                if sharedLoginNote { NWSharedLoginNote() }
+                SHProviderStatusLine(status)
+                if sharedLoginNote { SHSharedLoginNote() }
                 if let problem {
-                    NWInlineProblem(problem).nwTransition(.disclosure)
+                    SHInlineProblem(problem).shTransition(.disclosure)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            HStack(spacing: NW.Space.xs) { trailing }
-                .nwControlScale(.standard)
+            HStack(spacing: SH.Space.xs) { trailing }
+                .shControlScale(.standard)
                 .fixedSize()
         }
         .padding(.vertical, M.rowVertical)
         .padding(.horizontal, M.rowSides)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .nwAnimation(.content, value: status)
-        .nwAnimation(.disclosure, value: problem)
+        .shAnimation(.content, value: status)
+        .shAnimation(.disclosure, value: problem)
     }
 }

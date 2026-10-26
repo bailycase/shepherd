@@ -44,23 +44,23 @@ struct SkillsDirectorySheet: View {
         SkillsSheetFrame(title: "Browse skills.sh",
                          subtitle: "The open directory of agent skills. Anything you install goes to all your hosts.", close: close) {
             Button { openURL(SkillsDirectory.home) } label: { Label("Open skills.sh", systemImage: "arrow.up.right.square") }
-                .buttonStyle(.nw(.ghost, size: .s))
+                .buttonStyle(.sh(.ghost, size: .s))
         } content: {
             VStack(spacing: 0) {
                 SkillsSearchBar(text: $query)
                     .padding(.horizontal, AppLayout.skillsSheetSides)
                 filters
                     .padding(.horizontal, AppLayout.skillsSheetSides)
-                    .padding(.top, NW.Space.l)
-                    .padding(.bottom, NW.Space.l)
+                    .padding(.top, SH.Space.l)
+                    .padding(.bottom, SH.Space.l)
                 HStack(spacing: 0) {
                     list(hosts)
                         .frame(width: AppLayout.skillsSheetListWidth)
-                    NWHairline(.vertical)
+                    SHHairline(.vertical)
                     detail(hosts)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
-                .overlay(alignment: .top) { NWHairline() }
+                .overlay(alignment: .top) { SHHairline() }
             }
         }
         .task(id: listKey) { await load() }
@@ -70,14 +70,14 @@ struct SkillsDirectorySheet: View {
     // MARK: Filters
 
     @ViewBuilder private var filters: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         if searching {
-            HStack(spacing: NW.Space.m + NW.Space.xxs) {
-                let term = Text("“\(query.trimmingCharacters(in: .whitespaces))”").foregroundStyle(nw.textPrimary)
+            HStack(spacing: SH.Space.m + SH.Space.xxs) {
+                let term = Text("“\(query.trimmingCharacters(in: .whitespaces))”").foregroundStyle(sh.textPrimary)
                 Text("\(results.count) \(results.count == 1 ? "skill" : "skills") for \(term)")
-                    .font(.nwSans(AppLayout.skillsSummarySize))
-                    .foregroundStyle(nw.textSecondary)
-                Spacer(minLength: NW.Space.m)
+                    .font(.shSans(AppLayout.skillsSummarySize))
+                    .foregroundStyle(sh.textSecondary)
+                Spacer(minLength: SH.Space.m)
                 Menu {
                     Picker("Sort", selection: $sort) {
                         Text("Installs").tag(Sort.installs)
@@ -92,12 +92,12 @@ struct SkillsDirectorySheet: View {
             }
             .frame(height: AppLayout.skillsTopicHeight)
         } else {
-            HStack(spacing: NW.Space.m + NW.Space.xxs) {
-                NWSegmentedPicker("List", selection: Binding(get: { ranking }, set: { ranking = $0; topic = nil }),
+            HStack(spacing: SH.Space.m + SH.Space.xxs) {
+                SHSegmentedPicker("List", selection: Binding(get: { ranking }, set: { ranking = $0; topic = nil }),
                                   options: DirectoryRanking.allCases.map { ($0, $0.title) })
-                NWHairline(.vertical).frame(height: AppLayout.skillsTopicHeight - NW.Space.m)
+                SHHairline(.vertical).frame(height: AppLayout.skillsTopicHeight - SH.Space.m)
                 ScrollView(.horizontal) {
-                    HStack(spacing: NW.Space.s) {
+                    HStack(spacing: SH.Space.s) {
                         topicChip("All", selected: topic == nil) { topic = nil }
                         ForEach(SkillsDirectory.topics, id: \.title) { item in
                             topicChip(item.title, selected: topic == item.title) { topic = item.title }
@@ -110,15 +110,15 @@ struct SkillsDirectorySheet: View {
     }
 
     private func topicChip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        let nw = Color.nw
+        let sh = Color.sh
         return Button(action: action) {
             Text(title)
-                .font(.nwSans(AppLayout.skillsNoteSize, selected ? .semibold : .regular))
-                .foregroundStyle(selected ? nw.textPrimary : nw.textSecondary)
-                .padding(.horizontal, NW.Space.m + NW.Space.xxs)
+                .font(.shSans(AppLayout.skillsNoteSize, selected ? .semibold : .regular))
+                .foregroundStyle(selected ? sh.textPrimary : sh.textSecondary)
+                .padding(.horizontal, SH.Space.m + SH.Space.xxs)
                 .frame(height: AppLayout.skillsTopicHeight)
-                .background(selected ? nw.bgSelected : Color.clear, in: Capsule())
-                .overlay { if !selected { Capsule().strokeBorder(nw.lineSubtle) } }
+                .background(selected ? sh.bgSelected : Color.clear, in: Capsule())
+                .overlay { if !selected { Capsule().strokeBorder(sh.lineSubtle) } }
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -128,26 +128,26 @@ struct SkillsDirectorySheet: View {
     // MARK: The list
 
     private func list(_ hosts: [SkillsHost]) -> some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let shown = sorted(results)
         return VStack(spacing: 0) {
             if !searching && failure == nil {
                 HStack {
-                    Text(topic.map { "\($0) · \(ranking.title)" } ?? ranking.heading).nwSettingsLabel(table: true)
+                    Text(topic.map { "\($0) · \(ranking.title)" } ?? ranking.heading).shSettingsLabel(table: true)
                     Spacer()
-                    Text("Installs").nwSettingsLabel(table: true)
+                    Text("Installs").shSettingsLabel(table: true)
                 }
-                .padding(.leading, NW.Space.m + NW.Space.xxs)
-                .padding(.trailing, NW.Space.xl)
+                .padding(.leading, SH.Space.m + SH.Space.xxs)
+                .padding(.trailing, SH.Space.xl)
                 .frame(height: AppLayout.skillsHeaderHeight)
-                .overlay(alignment: .bottom) { NWHairline() }
+                .overlay(alignment: .bottom) { SHHairline() }
             }
             if let failure {
                 SkillsDirectoryProblem(failure: failure)
             } else if shown.isEmpty {
                 Text(loading ? "Loading skills.sh…" : searching ? "No skills match." : "Nothing here yet.")
-                    .font(.nwSans(AppLayout.skillsSummarySize))
-                    .foregroundStyle(nw.textTertiary)
+                    .font(.shSans(AppLayout.skillsSummarySize))
+                    .foregroundStyle(sh.textTertiary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView(.vertical) {
@@ -182,19 +182,19 @@ struct SkillsDirectorySheet: View {
     @ViewBuilder private func detail(_ hosts: [SkillsHost]) -> some View {
         if let skill = results.first(where: { $0.id == selected }) {
             ScrollView(.vertical) {
-                VStack(alignment: .leading, spacing: NW.Space.xl) {
+                VStack(alignment: .leading, spacing: SH.Space.xl) {
                     SkillPreviewTitle(name: skill.name, source: skill.source, official: skill.official,
                                       meta: "\(DirectoryPresentation.installs(skill.installs)) installs")
                     actions(skill, hosts: hosts)
                     if let install = model.installs[skill.id], install.isRunning || install.failure != nil {
                         SkillInstallCard(install: install) { model.cancelInstall(skill.id) }
-                            .nwTransition(.disclosure)
+                            .shTransition(.disclosure)
                     }
                     if let preview, preview.skill == skill {
                         if let summary = preview.summary {
                             Text(summary)
-                                .nwText(size: AppLayout.skillsPreviewTextSize, lineHeight: AppLayout.skillsRailLineHeight)
-                                .foregroundStyle(Color.nw.textSecondary)
+                                .shText(size: AppLayout.skillsPreviewTextSize, lineHeight: AppLayout.skillsRailLineHeight)
+                                .foregroundStyle(Color.sh.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         SkillPreviewCard(lines: preview.lines, tokens: preview.tokens,
@@ -202,73 +202,73 @@ struct SkillsDirectorySheet: View {
                         SkillFilesBlock(entries: preview.entries, note: SkillsPresentation.scriptsNote(paths: preview.paths))
                         moreFrom(skill, hosts: hosts)
                     } else {
-                        ProgressView().progressViewStyle(.nwSpinner).frame(maxWidth: .infinity)
+                        ProgressView().progressViewStyle(.shSpinner).frame(maxWidth: .infinity)
                     }
                 }
-                .padding(.vertical, NW.Space.xl + NW.Space.xxs)
+                .padding(.vertical, SH.Space.xl + SH.Space.xxs)
                 .padding(.horizontal, AppLayout.skillsSheetSides)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .nwAnimation(.disclosure, value: model.installs[skill.id])
+            .shAnimation(.disclosure, value: model.installs[skill.id])
         } else {
             Text(failure == nil ? "Pick a skill to see what it does." : "")
-                .font(.nwSans(AppLayout.skillsSummarySize))
-                .foregroundStyle(Color.nw.textTertiary)
+                .font(.shSans(AppLayout.skillsSummarySize))
+                .foregroundStyle(Color.sh.textTertiary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
     private func actions(_ skill: DirectorySkill, hosts: [SkillsHost]) -> some View {
         let state = SkillResultState(skill, model: model, hosts: hosts)
-        return HStack(spacing: NW.Space.m) {
+        return HStack(spacing: SH.Space.m) {
             switch state {
             case .installed:
                 Label("Installed", systemImage: "checkmark")
-                    .font(.nwSans(AppLayout.skillsSummarySize, .medium))
-                    .foregroundStyle(Color.nw.done)
+                    .font(.shSans(AppLayout.skillsSummarySize, .medium))
+                    .foregroundStyle(Color.sh.done)
             case .update:
                 Button { Task { await model.update(skill.slug, in: vm.skillsHosts) } } label: {
                     Label("Update", systemImage: "arrow.down.to.line")
                 }
-                .buttonStyle(.nw(.primary))
+                .buttonStyle(.sh(.primary))
             case .install, .installing:
                 Button { install(skill) } label: { Label("Install", systemImage: "arrow.down.to.line") }
-                    .buttonStyle(.nw(.primary))
+                    .buttonStyle(.sh(.primary))
                     .disabled(state != .install)
                 SkillUsePicker(invocation: $invocation)
             }
             Button { openURL(SkillsDirectory.page(of: skill)) } label: {
                 Label("View on skills.sh", systemImage: "arrow.up.right.square")
             }
-            .buttonStyle(.nw(.ghost, size: .s))
+            .buttonStyle(.sh(.ghost, size: .s))
         }
     }
 
     /// The rest of the skill's repository that this list shows, and every skill in it.
     @ViewBuilder private func moreFrom(_ skill: DirectorySkill, hosts: [SkillsHost]) -> some View {
         let others = results.filter { $0.source == skill.source && $0.id != skill.id }
-        VStack(alignment: .leading, spacing: NW.Space.m) {
-            Text("More in \(skill.source)").nwSettingsLabel(table: true)
-            NWFlowLayout(spacing: NW.Space.s) {
+        VStack(alignment: .leading, spacing: SH.Space.m) {
+            Text("More in \(skill.source)").shSettingsLabel(table: true)
+            SHFlowLayout(spacing: SH.Space.s) {
                 ForEach(others) { other in
                     Button { selected = other.id } label: {
-                        HStack(spacing: NW.Space.xs) {
+                        HStack(spacing: SH.Space.xs) {
                             Text(other.name)
                             if model.row(other.slug, in: hosts) != nil {
-                                Text("✓").foregroundStyle(Color.nw.done)
+                                Text("✓").foregroundStyle(Color.sh.done)
                             }
                         }
-                        .font(.nwSans(AppLayout.skillsNoteSize))
-                        .foregroundStyle(Color.nw.textSecondary)
-                        .padding(.horizontal, NW.Space.m + NW.Space.xxs)
+                        .font(.shSans(AppLayout.skillsNoteSize))
+                        .foregroundStyle(Color.sh.textSecondary)
+                        .padding(.horizontal, SH.Space.m + SH.Space.xxs)
                         .frame(height: AppLayout.skillsTopicHeight)
-                        .overlay { Capsule().strokeBorder(Color.nw.lineSubtle) }
+                        .overlay { Capsule().strokeBorder(Color.sh.lineSubtle) }
                         .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
                 }
                 Button("Pick from the whole repo…") { openRepo(skill.source) }
-                    .buttonStyle(.nwLink(font: .nwSans(AppLayout.skillsNoteSize)))
+                    .buttonStyle(.shLink(font: .shSans(AppLayout.skillsNoteSize)))
                     .frame(height: AppLayout.skillsTopicHeight)
             }
         }
@@ -345,42 +345,42 @@ private struct SkillResultRow: View, Equatable {
     }
 
     var body: some View {
-        let _ = NWRenderProbe.tick("skills.result")
-        let nw = Color.nw
-        HStack(alignment: .center, spacing: NW.Space.m + NW.Space.xxs) {
+        let _ = SHRenderProbe.tick("skills.result")
+        let sh = Color.sh
+        HStack(alignment: .center, spacing: SH.Space.m + SH.Space.xxs) {
             if let rank {
                 Text("\(rank)")
-                    .font(.nwMono(AppLayout.skillsMetaSize))
-                    .foregroundStyle(nw.textTertiary)
+                    .font(.shMono(AppLayout.skillsMetaSize))
+                    .foregroundStyle(sh.textTertiary)
                     .frame(width: AppLayout.skillsResultRankWidth, alignment: .trailing)
             }
-            VStack(alignment: .leading, spacing: NW.Space.xxs + 1) {
-                HStack(spacing: NW.Space.s) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs + 1) {
+                HStack(spacing: SH.Space.s) {
                     Text(name)
-                        .font(.nwMono(AppLayout.skillsNameSize, .semibold))
+                        .font(.shMono(AppLayout.skillsNameSize, .semibold))
                         .lineLimit(1)
-                    if skill.official { NWOfficialSeal(size: AppLayout.skillsNameSize) }
+                    if skill.official { SHOfficialSeal(size: AppLayout.skillsNameSize) }
                 }
                 Text(skill.source)
-                    .font(.nwMono(AppLayout.skillsMetaSize))
-                    .foregroundStyle(nw.textTertiary)
+                    .font(.shMono(AppLayout.skillsMetaSize))
+                    .foregroundStyle(sh.textTertiary)
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            VStack(alignment: .trailing, spacing: NW.Space.xs) {
+            VStack(alignment: .trailing, spacing: SH.Space.xs) {
                 Text(DirectoryPresentation.installs(skill.installs))
-                    .font(.nwMono(AppLayout.skillsDetailTextSize))
-                    .foregroundStyle(nw.textPrimary)
+                    .font(.shMono(AppLayout.skillsDetailTextSize))
+                    .foregroundStyle(sh.textPrimary)
                 status
             }
             .frame(width: AppLayout.skillsResultInstallsWidth, alignment: .trailing)
         }
-        .padding(.vertical, NW.Space.m)
-        .padding(.leading, NW.Space.m + NW.Space.xxs)
-        .padding(.trailing, NW.Space.xl)
+        .padding(.vertical, SH.Space.m)
+        .padding(.leading, SH.Space.m + SH.Space.xxs)
+        .padding(.trailing, SH.Space.xl)
         .frame(minHeight: AppLayout.skillsResultMinHeight)
-        .background(selected ? nw.bgSelected : hovering ? nw.bgHover : Color.clear)
-        .overlay(alignment: .top) { if !first { NWHairline() } }
+        .background(selected ? sh.bgSelected : hovering ? sh.bgHover : Color.clear)
+        .overlay(alignment: .top) { if !first { SHHairline() } }
         .contentShape(Rectangle())
         .onTapGesture(perform: select)
         .onHover { hovering = $0 }
@@ -392,33 +392,33 @@ private struct SkillResultRow: View, Equatable {
     /// The name with the search's matches in lantern.
     private var name: AttributedString {
         var text = AttributedString(skill.name)
-        text.foregroundColor = Color.nw.textPrimary
+        text.foregroundColor = Color.sh.textPrimary
         for range in DirectoryPresentation.matches(of: highlight, in: skill.name) {
             guard let lower = AttributedString.Index(range.lowerBound, within: text),
                   let upper = AttributedString.Index(range.upperBound, within: text) else { continue }
-            text[lower..<upper].foregroundColor = Color.nw.lanternText
+            text[lower..<upper].foregroundColor = Color.sh.lanternText
         }
         return text
     }
 
     @ViewBuilder private var status: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         switch state {
         case .install:
-            Button("Install", action: install).buttonStyle(.nw(.secondary, size: .s))
+            Button("Install", action: install).buttonStyle(.sh(.secondary, size: .s))
         case .installing(let progress):
-            HStack(spacing: NW.Space.s) {
+            HStack(spacing: SH.Space.s) {
                 Text("\(progress.installed) of \(progress.steps.count) hosts")
-                    .font(.nwSans(AppLayout.skillsMetaSize))
-                    .foregroundStyle(nw.textSecondary)
+                    .font(.shSans(AppLayout.skillsMetaSize))
+                    .foregroundStyle(sh.textSecondary)
                 SkillInstallMeter(steps: progress.steps.map(\.state))
             }
         case .installed:
             Label("Installed", systemImage: "checkmark")
-                .font(.nwSans(AppLayout.skillsNoteSize))
-                .foregroundStyle(nw.done)
+                .font(.shSans(AppLayout.skillsNoteSize))
+                .foregroundStyle(sh.done)
         case .update:
-            NWUpdatePill()
+            SHUpdatePill()
         }
     }
 }
@@ -429,11 +429,11 @@ private struct SkillInstallMeter: View {
     let steps: [SkillInstall.Step.State]
 
     var body: some View {
-        let nw = Color.nw
-        HStack(spacing: NWSkillMetrics.budgetGap) {
+        let sh = Color.sh
+        HStack(spacing: SHSkillMetrics.budgetGap) {
             ForEach(Array(steps.enumerated()), id: \.offset) { _, step in
-                RoundedRectangle(cornerRadius: NWSkillMetrics.budgetGap)
-                    .fill(step == .installed ? nw.done : step == .copying ? nw.running : nw.lineStrong)
+                RoundedRectangle(cornerRadius: SHSkillMetrics.budgetGap)
+                    .fill(step == .installed ? sh.done : step == .copying ? sh.running : sh.lineStrong)
             }
         }
         .frame(width: AppLayout.skillsProgressWidth, height: AppLayout.skillsProgressHeight)
@@ -446,11 +446,11 @@ struct SkillsDirectoryProblem: View {
     let failure: SkillsDirectoryError
 
     var body: some View {
-        let nw = Color.nw
-        VStack(alignment: .leading, spacing: NW.Space.l) {
+        let sh = Color.sh
+        VStack(alignment: .leading, spacing: SH.Space.l) {
             Text(failure.description)
-                .nwText(size: AppLayout.skillsSummarySize, lineHeight: AppLayout.skillsNoteLineHeight)
-                .foregroundStyle(nw.textSecondary)
+                .shText(size: AppLayout.skillsSummarySize, lineHeight: AppLayout.skillsNoteLineHeight)
+                .foregroundStyle(sh.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(AppLayout.skillsSheetSides)
@@ -489,26 +489,26 @@ struct AddSkillsSheet: View {
             EmptyView()
         } content: {
             VStack(spacing: 0) {
-                HStack(spacing: NW.Space.m + NW.Space.xxs) {
+                HStack(spacing: SH.Space.m + SH.Space.xxs) {
                     field
                     Button("Look up") { Task { await lookUp() } }
-                        .buttonStyle(.nw(.secondary, size: .l))
+                        .buttonStyle(.sh(.secondary, size: .l))
                         .disabled(input.trimmingCharacters(in: .whitespaces).isEmpty || lookingUp)
                         .keyboardShortcut(.defaultAction)
                 }
                 .padding(.horizontal, AppLayout.skillsSheetSides)
-                .padding(.bottom, NW.Space.l)
+                .padding(.bottom, SH.Space.l)
                 if let problem {
-                    NWInlineProblem(problem)
+                    SHInlineProblem(problem)
                         .padding(.horizontal, AppLayout.skillsSheetSides)
-                        .padding(.bottom, NW.Space.l)
+                        .padding(.bottom, SH.Space.l)
                 }
                 HStack(spacing: 0) {
                     picker(hosts).frame(width: AppLayout.skillsSheetListWidth)
-                    NWHairline(.vertical)
+                    SHHairline(.vertical)
                     detail.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
-                .overlay(alignment: .top) { NWHairline() }
+                .overlay(alignment: .top) { SHHairline() }
                 footer(hosts)
             }
         }
@@ -520,58 +520,58 @@ struct AddSkillsSheet: View {
     }
 
     private var field: some View {
-        let nw = Color.nw
-        return HStack(spacing: NW.Space.m + NW.Space.xxs) {
-            Image(systemName: folder == nil ? NWGlyph.gitBranch.symbolName : "folder")
-                .font(.nwSans(AppLayout.skillsSummarySize))
-                .foregroundStyle(nw.textTertiary)
+        let sh = Color.sh
+        return HStack(spacing: SH.Space.m + SH.Space.xxs) {
+            Image(systemName: folder == nil ? SHGlyph.gitBranch.symbolName : "folder")
+                .font(.shSans(AppLayout.skillsSummarySize))
+                .foregroundStyle(sh.textTertiary)
                 .accessibilityHidden(true)
             TextField("owner/repo, a GitHub URL, or a folder", text: $input)
                 .textFieldStyle(.plain)
-                .font(.nwMono(AppLayout.skillsRepoFieldTextSize))
-                .foregroundStyle(nw.textPrimary)
+                .font(.shMono(AppLayout.skillsRepoFieldTextSize))
+                .foregroundStyle(sh.textPrimary)
                 .onSubmit { Task { await lookUp() } }
             if lookingUp {
-                ProgressView().progressViewStyle(.nwSpinner)
+                ProgressView().progressViewStyle(.shSpinner)
             } else if let found {
-                let commit = Text(SkillsText.shortCommit(found.commit)).font(.nwMono(AppLayout.skillsNoteSize))
+                let commit = Text(SkillsText.shortCommit(found.commit)).font(.shMono(AppLayout.skillsNoteSize))
                 Text("\(found.skills.count) \(found.skills.count == 1 ? "skill" : "skills") · \(found.branch) @ \(commit)")
-                    .font(.nwSans(AppLayout.skillsNoteSize))
-                    .foregroundStyle(nw.textTertiary)
+                    .font(.shSans(AppLayout.skillsNoteSize))
+                    .foregroundStyle(sh.textTertiary)
                     .lineLimit(1)
                     .fixedSize()
             }
         }
-        .padding(.horizontal, NW.Space.l)
+        .padding(.horizontal, SH.Space.l)
         .frame(height: AppLayout.skillsRepoFieldHeight)
-        .background(nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-        .nwBorder(nw.lineStrong, radius: NW.Radius.m)
+        .background(sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+        .shBorder(sh.lineStrong, radius: SH.Radius.m)
     }
 
     // MARK: The picker
 
     @ViewBuilder private func picker(_ hosts: [SkillsHost]) -> some View {
-        let nw = Color.nw
+        let sh = Color.sh
         if let found {
             let newPaths = found.skills.filter { model.row($0.name, in: hosts) == nil }.map(\.path)
             VStack(spacing: 0) {
-                HStack(spacing: NW.Space.l) {
+                HStack(spacing: SH.Space.l) {
                     Toggle(sources: newPaths.map { binding(for: $0) }, isOn: \.self) { EmptyView() }
-                        .toggleStyle(.nwCheckbox)
+                        .toggleStyle(.shCheckbox)
                         .labelsHidden()
                         .disabled(newPaths.isEmpty)
                     Text(SkillsPresentation.selection(picked.count, new: newPaths.count))
-                        .font(.nwSans(AppLayout.skillsNoteSize, .semibold))
-                        .foregroundStyle(nw.textPrimary)
+                        .font(.shSans(AppLayout.skillsNoteSize, .semibold))
+                        .foregroundStyle(sh.textPrimary)
                     Spacer()
                     Button("Select all new") { picked = Set(newPaths) }
-                        .buttonStyle(.nwLink(color: nw.running, font: .nwSans(AppLayout.skillsNoteSize)))
+                        .buttonStyle(.shLink(color: sh.running, font: .shSans(AppLayout.skillsNoteSize)))
                         .disabled(newPaths.isEmpty || picked.count == newPaths.count)
                 }
-                .padding(.horizontal, NW.Space.l + NW.Space.xxs)
+                .padding(.horizontal, SH.Space.l + SH.Space.xxs)
                 .frame(height: AppLayout.skillsPreviewHeaderHeight)
-                .background(nw.bgSunken)
-                .overlay(alignment: .bottom) { NWHairline() }
+                .background(sh.bgSunken)
+                .overlay(alignment: .bottom) { SHHairline() }
                 ScrollView(.vertical) {
                     LazyVStack(spacing: 0) {
                         ForEach(Array(found.skills.enumerated()), id: \.element.id) { index, skill in
@@ -591,8 +591,8 @@ struct AddSkillsSheet: View {
             }
         } else {
             Text(lookingUp ? "Looking it up…" : "Look up a repository to see its skills.")
-                .font(.nwSans(AppLayout.skillsSummarySize))
-                .foregroundStyle(nw.textTertiary)
+                .font(.shSans(AppLayout.skillsSummarySize))
+                .foregroundStyle(sh.textTertiary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -608,20 +608,20 @@ struct AddSkillsSheet: View {
     @ViewBuilder private var detail: some View {
         if let found, let skill = found.skills.first(where: { $0.path == selected }) {
             ScrollView(.vertical) {
-                VStack(alignment: .leading, spacing: NW.Space.xl) {
+                VStack(alignment: .leading, spacing: SH.Space.xl) {
                     SkillPreviewTitle(name: skill.name, source: skill.path.isEmpty ? found.repo : "\(found.repo) › \(skill.path)",
                                       official: false, meta: nil)
                     if !skill.summary.isEmpty {
                         Text(skill.summary)
-                            .nwText(size: AppLayout.skillsPreviewTextSize, lineHeight: AppLayout.skillsRailLineHeight)
-                            .foregroundStyle(Color.nw.textSecondary)
+                            .shText(size: AppLayout.skillsPreviewTextSize, lineHeight: AppLayout.skillsRailLineHeight)
+                            .foregroundStyle(Color.sh.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     SkillPreviewCard(lines: previews[skill.path] ?? [], tokens: SkillsText.tokens(skill.instructions),
                                      height: AppLayout.skillsPreviewRepoHeight)
                     SkillFilesBlock(entries: skill.files, note: SkillsPresentation.scriptsNote(entries: skill.files))
                 }
-                .padding(.vertical, NW.Space.xl + NW.Space.xxs)
+                .padding(.vertical, SH.Space.xl + SH.Space.xxs)
                 .padding(.horizontal, AppLayout.skillsSheetSides)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -633,39 +633,39 @@ struct AddSkillsSheet: View {
     // MARK: The footer
 
     private func footer(_ hosts: [SkillsHost]) -> some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let install = installKey.flatMap { model.installs[$0] }
-        return HStack(spacing: NW.Space.l) {
+        return HStack(spacing: SH.Space.l) {
             Text("Use them")
-                .font(.nwSans(AppLayout.skillsSummarySize))
-                .foregroundStyle(nw.textSecondary)
-            NWSegmentedPicker("Use them", selection: $invocation,
+                .font(.shSans(AppLayout.skillsSummarySize))
+                .foregroundStyle(sh.textSecondary)
+            SHSegmentedPicker("Use them", selection: $invocation,
                               options: [(.automatic, "Automatically"), (.slashOnly, "Only with /skill")])
             if let install {
                 Text(SkillsPresentation.installLine(install))
-                    .font(.nwSans(AppLayout.skillsNoteSize, .medium))
-                    .nwShimmer(active: install.isRunning)
-                    .foregroundStyle(install.failure != nil && install.installed == 0 ? nw.failed : nw.textSecondary)
+                    .font(.shSans(AppLayout.skillsNoteSize, .medium))
+                    .shShimmer(active: install.isRunning)
+                    .foregroundStyle(install.failure != nil && install.installed == 0 ? sh.failed : sh.textSecondary)
                     .lineLimit(1)
             } else {
                 Label(SkillsPresentation.destinations(model.targets(in: hosts)), systemImage: "desktopcomputer")
-                    .font(.nwSans(AppLayout.skillsNoteSize))
-                    .foregroundStyle(nw.textTertiary)
+                    .font(.shSans(AppLayout.skillsNoteSize))
+                    .foregroundStyle(sh.textTertiary)
                     .lineLimit(1)
             }
-            Spacer(minLength: NW.Space.m)
+            Spacer(minLength: SH.Space.m)
             Button("Cancel", action: close)
-                .buttonStyle(.nw(.ghost))
+                .buttonStyle(.sh(.ghost))
                 .keyboardShortcut(.cancelAction)
             Button(SkillsPresentation.installTitle(max(picked.count, 1))) { installPicked() }
-                .buttonStyle(.nw(.primary))
+                .buttonStyle(.sh(.primary))
                 .disabled(picked.isEmpty || install?.isRunning == true)
         }
         .padding(.leading, AppLayout.skillsSheetSides)
-        .padding(.trailing, NW.Space.xl + NW.Space.xxs)
+        .padding(.trailing, SH.Space.xl + SH.Space.xxs)
         .frame(height: AppLayout.skillsFooterHeight)
-        .background(nw.bgSunken)
-        .overlay(alignment: .top) { NWHairline() }
+        .background(sh.bgSunken)
+        .overlay(alignment: .top) { SHHairline() }
     }
 
     // MARK: Looking up and installing
@@ -762,34 +762,34 @@ private struct SkillPickRow: View, Equatable {
     }
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let dimmed = installed != nil
-        HStack(spacing: NW.Space.l) {
+        HStack(spacing: SH.Space.l) {
             Toggle(skill.name, isOn: Binding(get: { picked }, set: { _ in toggle() }))
-                .toggleStyle(.nwCheckbox)
+                .toggleStyle(.shCheckbox)
                 .labelsHidden()
                 .disabled(dimmed)
             Text(skill.name)
-                .font(.nwMono(AppLayout.skillsSummarySize, .semibold))
-                .foregroundStyle(dimmed ? nw.textTertiary : nw.textPrimary)
+                .font(.shMono(AppLayout.skillsSummarySize, .semibold))
+                .foregroundStyle(dimmed ? sh.textTertiary : sh.textPrimary)
                 .lineLimit(1)
                 .frame(width: AppLayout.skillsPickerNameWidth, alignment: .leading)
             Text(skill.summary)
-                .font(.nwSans(AppLayout.skillsNoteSize))
-                .foregroundStyle(dimmed ? nw.textTertiary : nw.textSecondary)
+                .font(.shSans(AppLayout.skillsNoteSize))
+                .foregroundStyle(dimmed ? sh.textTertiary : sh.textSecondary)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let installed {
                 Text(installed)
-                    .font(.nwSans(AppLayout.skillsMetaSize))
-                    .foregroundStyle(installed == "Installed" ? nw.textTertiary : nw.lanternText)
+                    .font(.shSans(AppLayout.skillsMetaSize))
+                    .foregroundStyle(installed == "Installed" ? sh.textTertiary : sh.lanternText)
                     .lineLimit(1)
             }
         }
-        .padding(.horizontal, NW.Space.l + NW.Space.xxs)
+        .padding(.horizontal, SH.Space.l + SH.Space.xxs)
         .frame(minHeight: AppLayout.skillsPickerRowHeight)
-        .background(selected ? nw.bgSelected : Color.clear)
-        .overlay(alignment: .top) { if !first { NWHairline() } }
+        .background(selected ? sh.bgSelected : Color.clear)
+        .overlay(alignment: .top) { if !first { SHHairline() } }
         .contentShape(Rectangle())
         .onTapGesture(perform: select)
         .accessibilityElement(children: .combine)
@@ -809,28 +809,28 @@ private struct SkillsSheetFrame<Trailing: View, Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         VStack(spacing: 0) {
-            HStack(alignment: .top, spacing: NW.Space.l) {
-                VStack(alignment: .leading, spacing: NW.Space.xxs + 1) {
+            HStack(alignment: .top, spacing: SH.Space.l) {
+                VStack(alignment: .leading, spacing: SH.Space.xxs + 1) {
                     Text(title)
-                        .font(.nwSans(AppLayout.skillsSheetTitleSize, .semibold))
-                        .foregroundStyle(nw.textPrimary)
+                        .font(.shSans(AppLayout.skillsSheetTitleSize, .semibold))
+                        .foregroundStyle(sh.textPrimary)
                         .accessibilityAddTraits(.isHeader)
                     Text(subtitle)
-                        .font(.nwSans(AppLayout.skillsSummarySize))
-                        .foregroundStyle(nw.textSecondary)
+                        .font(.shSans(AppLayout.skillsSummarySize))
+                        .foregroundStyle(sh.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer(minLength: NW.Space.l)
-                HStack(spacing: NW.Space.s) {
+                Spacer(minLength: SH.Space.l)
+                HStack(spacing: SH.Space.s) {
                     trailing
                     Button(action: close) {
                         Image(systemName: "xmark")
-                            .font(.nwSans(AppLayout.skillsMetaSize, .semibold))
-                            .foregroundStyle(nw.textSecondary)
+                            .font(.shSans(AppLayout.skillsMetaSize, .semibold))
+                            .foregroundStyle(sh.textSecondary)
                             .frame(width: AppLayout.skillsSheetCloseSize, height: AppLayout.skillsSheetCloseSize)
-                            .overlay { Circle().strokeBorder(nw.lineStrong) }
+                            .overlay { Circle().strokeBorder(sh.lineStrong) }
                             .contentShape(Circle())
                     }
                     .buttonStyle(.plain)
@@ -838,15 +838,15 @@ private struct SkillsSheetFrame<Trailing: View, Content: View>: View {
                     .accessibilityLabel("Close")
                 }
             }
-            .padding(.top, NW.Space.xl + NW.Space.xxs)
-            .padding(.bottom, NW.Space.l + NW.Space.xxs)
+            .padding(.top, SH.Space.xl + SH.Space.xxs)
+            .padding(.bottom, SH.Space.l + SH.Space.xxs)
             .padding(.leading, AppLayout.skillsSheetSides)
-            .padding(.trailing, NW.Space.xl + NW.Space.xxs)
+            .padding(.trailing, SH.Space.xl + SH.Space.xxs)
             content
         }
         .frame(minWidth: AppLayout.skillsSheetMinWidth, idealWidth: AppLayout.skillsSheetWidth,
                minHeight: AppLayout.skillsSheetMinHeight, idealHeight: AppLayout.skillsSheetHeight)
-        .background(nw.bgWindow)
+        .background(sh.bgWindow)
     }
 }
 
@@ -856,33 +856,33 @@ private struct SkillsSearchBar: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        let nw = Color.nw
-        HStack(spacing: NW.Space.m + NW.Space.xxs) {
+        let sh = Color.sh
+        HStack(spacing: SH.Space.m + SH.Space.xxs) {
             Image(systemName: "magnifyingglass")
-                .font(.nwSans(AppLayout.skillsSearchTextSize))
-                .foregroundStyle(nw.textTertiary)
+                .font(.shSans(AppLayout.skillsSearchTextSize))
+                .foregroundStyle(sh.textTertiary)
                 .accessibilityHidden(true)
             TextField("Search skills, repos and owners", text: $text)
                 .textFieldStyle(.plain)
-                .font(.nwSans(AppLayout.skillsSearchTextSize))
-                .foregroundStyle(nw.textPrimary)
-                .tint(nw.lantern)
+                .font(.shSans(AppLayout.skillsSearchTextSize))
+                .foregroundStyle(sh.textPrimary)
+                .tint(sh.lantern)
                 .focused($focused)
             if !text.isEmpty {
                 Button { text = "" } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.nwSans(AppLayout.skillsSearchTextSize))
-                        .foregroundStyle(nw.textTertiary)
+                        .font(.shSans(AppLayout.skillsSearchTextSize))
+                        .foregroundStyle(sh.textTertiary)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear")
             }
         }
-        .padding(.leading, NW.Space.l)
-        .padding(.trailing, NW.Space.m)
+        .padding(.leading, SH.Space.l)
+        .padding(.trailing, SH.Space.m)
         .frame(height: AppLayout.skillsSearchHeight)
-        .background(nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-        .nwBorder(focused ? nw.lantern : nw.lineStrong, radius: NW.Radius.m)
+        .background(sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+        .shBorder(focused ? sh.lantern : sh.lineStrong, radius: SH.Radius.m)
         .onAppear { focused = true }
     }
 }
@@ -899,11 +899,11 @@ private struct SkillUsePicker: View {
             }
             .pickerStyle(.inline)
         } label: {
-            let use = Text("Use:").foregroundStyle(Color.nw.textTertiary)
+            let use = Text("Use:").foregroundStyle(Color.sh.textTertiary)
             Text("\(use) \(invocation == .automatic ? "Automatically" : "Only with /skill")")
         }
         .menuStyle(.button)
-        .buttonStyle(.nw(.secondary))
+        .buttonStyle(.sh(.secondary))
         .fixedSize()
     }
 }
@@ -916,27 +916,27 @@ private struct SkillPreviewTitle: View {
     let meta: String?
 
     var body: some View {
-        let nw = Color.nw
-        VStack(alignment: .leading, spacing: NW.Space.s) {
+        let sh = Color.sh
+        VStack(alignment: .leading, spacing: SH.Space.s) {
             Text(name)
-                .font(.nwMono(AppLayout.skillsPreviewNameSize, .semibold))
-                .foregroundStyle(nw.textPrimary)
+                .font(.shMono(AppLayout.skillsPreviewNameSize, .semibold))
+                .foregroundStyle(sh.textPrimary)
                 .textSelection(.enabled)
-            HStack(spacing: NW.Space.m) {
+            HStack(spacing: SH.Space.m) {
                 Text(source)
-                    .font(.nwMono(AppLayout.skillsNoteSize))
-                    .foregroundStyle(nw.textSecondary)
+                    .font(.shMono(AppLayout.skillsNoteSize))
+                    .foregroundStyle(sh.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 if official {
                     Label("Official", systemImage: "checkmark.seal")
-                        .font(.nwSans(AppLayout.skillsMetaSize - 0.5))
-                        .foregroundStyle(nw.running)
+                        .font(.shSans(AppLayout.skillsMetaSize - 0.5))
+                        .foregroundStyle(sh.running)
                 }
                 if let meta {
                     Text("· \(meta)")
-                        .font(.nwSans(AppLayout.skillsNoteSize))
-                        .foregroundStyle(nw.textTertiary)
+                        .font(.shSans(AppLayout.skillsNoteSize))
+                        .foregroundStyle(sh.textTertiary)
                         .lineLimit(1)
                 }
             }
@@ -950,29 +950,29 @@ private struct SkillInstallCard: View {
     let cancel: () -> Void
 
     var body: some View {
-        let nw = Color.nw
-        VStack(alignment: .leading, spacing: NW.Space.s) {
-            HStack(spacing: NW.Space.m) {
+        let sh = Color.sh
+        VStack(alignment: .leading, spacing: SH.Space.s) {
+            HStack(spacing: SH.Space.m) {
                 Text(SkillsPresentation.installLine(install))
-                    .font(.nwSans(AppLayout.skillsOptionTitleSize, .medium))
-                    .nwShimmer(active: install.isRunning)
-                    .foregroundStyle(install.failure != nil && install.installed == 0 ? nw.failed : nw.textPrimary)
-                Spacer(minLength: NW.Space.m)
+                    .font(.shSans(AppLayout.skillsOptionTitleSize, .medium))
+                    .shShimmer(active: install.isRunning)
+                    .foregroundStyle(install.failure != nil && install.installed == 0 ? sh.failed : sh.textPrimary)
+                Spacer(minLength: SH.Space.m)
                 if install.isRunning {
-                    Button("Cancel", action: cancel).buttonStyle(.nw(.ghost, size: .s))
+                    Button("Cancel", action: cancel).buttonStyle(.sh(.ghost, size: .s))
                 }
             }
             ForEach(install.steps) { step in
-                NWHostStateRow(step.name, detail: SkillsPresentation.step(step.state), mark: Self.mark(step.state))
+                SHHostStateRow(step.name, detail: SkillsPresentation.step(step.state), mark: Self.mark(step.state))
             }
         }
-        .padding(.vertical, NW.Space.l)
-        .padding(.horizontal, NW.Space.l + NW.Space.xxs)
-        .background(nw.bgSunken, in: RoundedRectangle(cornerRadius: AppLayout.skillsCardRadius))
-        .nwBorder(nw.lineSubtle, radius: AppLayout.skillsCardRadius)
+        .padding(.vertical, SH.Space.l)
+        .padding(.horizontal, SH.Space.l + SH.Space.xxs)
+        .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: AppLayout.skillsCardRadius))
+        .shBorder(sh.lineSubtle, radius: AppLayout.skillsCardRadius)
     }
 
-    static func mark(_ state: SkillInstall.Step.State) -> NWHostStateRow.Mark {
+    static func mark(_ state: SkillInstall.Step.State) -> SHHostStateRow.Mark {
         switch state {
         case .installed: .done
         case .copying: .working
@@ -988,17 +988,17 @@ private struct SkillFilesBlock: View {
     let note: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NW.Space.m) {
-            Text("Files").nwSettingsLabel(table: true)
-            NWFlowLayout(spacing: NW.Space.s) {
+        VStack(alignment: .leading, spacing: SH.Space.m) {
+            Text("Files").shSettingsLabel(table: true)
+            SHFlowLayout(spacing: SH.Space.s) {
                 ForEach(entries) { entry in
-                    NWSkillFileChip(SkillsPresentation.chip(entry), count: entry.isDirectory ? entry.fileCount : nil,
+                    SHSkillFileChip(SkillsPresentation.chip(entry), count: entry.isDirectory ? entry.fileCount : nil,
                                     kind: entry.isDirectory ? (entry.name == "scripts" ? .code : .folder) : .file)
                 }
             }
             Text(note)
-                .nwText(size: AppLayout.skillsNoteSize, lineHeight: AppLayout.skillsNoteLineHeight)
-                .foregroundStyle(Color.nw.textTertiary)
+                .shText(size: AppLayout.skillsNoteSize, lineHeight: AppLayout.skillsNoteLineHeight)
+                .foregroundStyle(Color.sh.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -1012,56 +1012,56 @@ private struct SkillPreviewCard: View {
     let height: CGFloat
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         VStack(spacing: 0) {
-            HStack(spacing: NW.Space.m) {
-                Image(systemName: NWGlyph.document.symbolName)
-                    .font(.nwSans(AppLayout.skillsMetaSize))
-                    .foregroundStyle(nw.textTertiary)
+            HStack(spacing: SH.Space.m) {
+                Image(systemName: SHGlyph.document.symbolName)
+                    .font(.shSans(AppLayout.skillsMetaSize))
+                    .foregroundStyle(sh.textTertiary)
                     .accessibilityHidden(true)
                 Text("SKILL.md")
-                    .font(.nwMono(AppLayout.skillsDetailTextSize))
-                    .foregroundStyle(nw.textSecondary)
-                Spacer(minLength: NW.Space.m)
+                    .font(.shMono(AppLayout.skillsDetailTextSize))
+                    .foregroundStyle(sh.textSecondary)
+                Spacer(minLength: SH.Space.m)
                 if tokens > 0 {
                     Text("\(SkillsText.tokenNote(tokens)) when used")
-                        .font(.nwSans(AppLayout.skillsMetaSize))
-                        .foregroundStyle(nw.textTertiary)
+                        .font(.shSans(AppLayout.skillsMetaSize))
+                        .foregroundStyle(sh.textTertiary)
                 }
             }
-            .padding(.horizontal, NW.Space.l)
+            .padding(.horizontal, SH.Space.l)
             .frame(height: AppLayout.skillsPreviewHeaderHeight)
-            .background(nw.bgSunken)
-            .overlay(alignment: .bottom) { NWHairline() }
+            .background(sh.bgSunken)
+            .overlay(alignment: .bottom) { SHHairline() }
             ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(lines) { line in
                         HStack(alignment: .firstTextBaseline, spacing: 0) {
                             Text("\(line.number)")
-                                .font(.nwMono(AppLayout.skillsPreviewNumberSize))
-                                .foregroundStyle(nw.textTertiary)
-                                .frame(width: AppLayout.skillsPreviewGutter - NW.Space.m, alignment: .trailing)
-                                .padding(.trailing, NW.Space.m)
+                                .font(.shMono(AppLayout.skillsPreviewNumberSize))
+                                .foregroundStyle(sh.textTertiary)
+                                .frame(width: AppLayout.skillsPreviewGutter - SH.Space.m, alignment: .trailing)
+                                .padding(.trailing, SH.Space.m)
                             Text(line.text)
-                                .font(.nwMono(AppLayout.skillsDetailTextSize))
+                                .font(.shMono(AppLayout.skillsDetailTextSize))
                                 .lineLimit(1)
                         }
                         .frame(maxWidth: .infinity, minHeight: AppLayout.skillsPreviewLineHeight, alignment: .leading)
                     }
                 }
-                .padding(.vertical, NW.Space.m)
+                .padding(.vertical, SH.Space.m)
                 .textSelection(.enabled)
             }
             .overlay(alignment: .bottom) {
-                LinearGradient(colors: [nw.bgWindow.opacity(0), nw.bgWindow], startPoint: .top, endPoint: .bottom)
+                LinearGradient(colors: [sh.bgWindow.opacity(0), sh.bgWindow], startPoint: .top, endPoint: .bottom)
                     .frame(height: AppLayout.skillsPreviewFade)
                     .allowsHitTesting(false)
             }
         }
         .frame(height: height)
-        .background(nw.bgWindow)
+        .background(sh.bgWindow)
         .clipShape(RoundedRectangle(cornerRadius: AppLayout.skillsCardRadius))
-        .nwBorder(nw.lineSubtle, radius: AppLayout.skillsCardRadius)
+        .shBorder(sh.lineSubtle, radius: AppLayout.skillsCardRadius)
     }
 }
 
@@ -1075,10 +1075,10 @@ struct SkillPreviewLine: Identifiable, Equatable {
     /// The file's lines, at most `limit` of them, with the instructions editor's highlighting.
     @MainActor
     static func lines(_ text: String, limit: Int = 400) -> [SkillPreviewLine] {
-        let nw = Color.nw
+        let sh = Color.sh
         return InstructionsText.lines(text).prefix(limit).enumerated().map { index, line in
             var styled = AttributedString(line)
-            styled.foregroundColor = nw.textSecondary
+            styled.foregroundColor = sh.textSecondary
             for span in InstructionsText.highlight(line: line) {
                 let utf16 = line.utf16
                 let start = utf16.index(utf16.startIndex, offsetBy: span.range.lowerBound, limitedBy: utf16.endIndex) ?? utf16.endIndex
@@ -1086,12 +1086,12 @@ struct SkillPreviewLine: Identifiable, Equatable {
                 guard let lower = AttributedString.Index(start, within: styled),
                       let upper = AttributedString.Index(end, within: styled), lower < upper else { continue }
                 switch span.role {
-                case .headingMarker: styled[lower..<upper].foregroundColor = nw.textTertiary
+                case .headingMarker: styled[lower..<upper].foregroundColor = sh.textTertiary
                 case .heading:
-                    styled[lower..<upper].foregroundColor = nw.textPrimary
-                    styled[lower..<upper].font = .nwMono(AppLayout.skillsDetailTextSize, .semibold)
-                case .bullet: styled[lower..<upper].foregroundColor = nw.lanternText
-                case .code: styled[lower..<upper].foregroundColor = nw.synString
+                    styled[lower..<upper].foregroundColor = sh.textPrimary
+                    styled[lower..<upper].font = .shMono(AppLayout.skillsDetailTextSize, .semibold)
+                case .bullet: styled[lower..<upper].foregroundColor = sh.lanternText
+                case .code: styled[lower..<upper].foregroundColor = sh.synString
                 }
             }
             return SkillPreviewLine(number: index + 1, text: styled)

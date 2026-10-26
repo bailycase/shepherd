@@ -58,7 +58,7 @@ struct QuestionDockKeysTests {
 
     @Test func tooltipsSpellTheDocksKeys() {
         let keys = KeybindingsStore.shared.questionKeys
-        #expect(keys == NWQuestionDockKeys(answer: KeybindingsStore.shared.sendDisplay, hide: "Esc"))
+        #expect(keys == SHQuestionDockKeys(answer: KeybindingsStore.shared.sendDisplay, hide: "Esc"))
     }
 
     @Test func pisSelectDrawsItsOptionsAndAnAnswerButton() {
@@ -66,8 +66,8 @@ struct QuestionDockKeysTests {
         let content = QuestionDock.content(prompt, count: 2)
         #expect(content.count == 2)
         #expect(content.kind == .choice)
-        #expect(content.options == [NWQuestionDockOption(number: 1, title: "A", detail: "why", recommended: true),
-                                    NWQuestionDockOption(number: 2, title: "B", detail: "why")])
+        #expect(content.options == [SHQuestionDockOption(number: 1, title: "A", detail: "why", recommended: true),
+                                    SHQuestionDockOption(number: 2, title: "B", detail: "why")])
         #expect(content.showsAnswer)
         #expect(content.notice == nil)
     }

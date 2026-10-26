@@ -20,33 +20,33 @@ struct FinalizeScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
                 Text(intro(store, hostName: host?.name ?? "the host"))
-                    .font(.nw(.caption))
-                    .foregroundStyle(Color.nw.textSecondary)
+                    .font(.sh(.caption))
+                    .foregroundStyle(Color.sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 switch store.stage {
                 case .checking:
-                    HStack(spacing: NW.Space.m) {
-                        ProgressView().progressViewStyle(NWSpinnerStyle())
-                        Text("Checking git, origin and the GitHub CLI…").font(.nw(.ui)).foregroundStyle(Color.nw.textSecondary)
+                    HStack(spacing: SH.Space.m) {
+                        ProgressView().progressViewStyle(SHSpinnerStyle())
+                        Text("Checking git, origin and the GitHub CLI…").font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
                     }
-                    .frame(maxWidth: .infinity, minHeight: NW.Height.touch * 2)
+                    .frame(maxWidth: .infinity, minHeight: SH.Height.touch * 2)
                 case .setup:
                     FinalizeChecks(checks: store.checks)
                     Text("Fix what failed on \(host?.name ?? "the host"), then check again.")
-                        .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                        .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                 case .form:
                     FinalizeForm(store: store, branch: agent?.worktreeBranch)
                 case .operation:
                     FinalizeProgress(store: store)
                 }
                 if let error = store.error {
-                    NWBanner(.failed, title: store.stage == .operation ? "Outcome not yet known" : "Request failed", message: error)
+                    SHBanner(.failed, title: store.stage == .operation ? "Outcome not yet known" : "Request failed", message: error)
                 }
             }
             .padding(MobileLayout.gutter)
         }
         .scrollDismissesKeyboard(.interactively)
-        .background(Color.nw.bgBase)
+        .background(Color.sh.bgBase)
         .safeAreaInset(edge: .bottom, spacing: 0) { actions(store) }
         .navigationTitle(title(store))
         .navigationBarTitleDisplayMode(.inline)
@@ -77,19 +77,19 @@ struct FinalizeScreen: View {
     }
 
     @ViewBuilder private func actions(_ store: FinalizeStore) -> some View {
-        VStack(spacing: NW.Space.s) {
+        VStack(spacing: SH.Space.s) {
             switch store.stage {
             case .checking:
                 EmptyView()
             case .setup:
                 Button("Check again") { Task { await store.begin(hosts: hosts) } }
-                    .buttonStyle(.nwReviewBar(.secondary))
+                    .buttonStyle(.shReviewBar(.secondary))
             case .form:
                 if let problem = store.formProblem {
-                    Text(problem).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                    Text(problem).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                 }
                 Button("Finalize") { Task { await store.start(hosts: hosts) } }
-                    .buttonStyle(.nwReviewBar(.primary))
+                    .buttonStyle(.shReviewBar(.primary))
                     .disabled(!store.canFinalize)
             case .operation:
                 if store.operation?.finished == true {
@@ -100,19 +100,19 @@ struct FinalizeScreen: View {
                         // The host retired the agent with its worktree: nothing of it is left to show.
                         if succeeded { navigator.popToRoot() }
                     }
-                    .buttonStyle(.nwReviewBar(.primary))
+                    .buttonStyle(.shReviewBar(.primary))
                 } else {
                     Text("The operation continues on the host if you close this.")
-                        .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                        .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                 }
             }
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, MobileLayout.gutter)
-        .padding(.top, NW.Space.l)
-        .padding(.bottom, NW.Space.s)
-        .background(Color.nw.bgWindow)
-        .overlay(alignment: .top) { NWHairline() }
+        .padding(.top, SH.Space.l)
+        .padding(.bottom, SH.Space.s)
+        .background(Color.sh.bgWindow)
+        .overlay(alignment: .top) { SHHairline() }
     }
 }
 
@@ -121,21 +121,21 @@ private struct FinalizeChecks: View {
     let checks: [FinalizeCheckRow]
 
     var body: some View {
-        NWGroupCard {
+        SHGroupCard {
             ForEach(checks) { check in
-                HStack(alignment: .top, spacing: NW.Space.m) {
-                    NWStateGlyph(state(check.state)).padding(.top, NW.Space.xxs)
-                    VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                        Text(check.label).font(.nw(.ui)).foregroundStyle(Color.nw.textPrimary)
+                HStack(alignment: .top, spacing: SH.Space.m) {
+                    SHStateGlyph(state(check.state)).padding(.top, SH.Space.xxs)
+                    VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                        Text(check.label).font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary)
                         if let detail = detail(check.state) {
-                            Text(detail).font(.nw(.caption)).foregroundStyle(Color.nw.textSecondary).fixedSize(horizontal: false, vertical: true)
+                            Text(detail).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary).fixedSize(horizontal: false, vertical: true)
                         }
                     }
                     Spacer(minLength: 0)
                 }
-                .padding(.horizontal, NW.Space.xl)
-                .padding(.vertical, NW.Space.l)
-                .frame(minHeight: NW.Height.touch)
+                .padding(.horizontal, SH.Space.xl)
+                .padding(.vertical, SH.Space.l)
+                .frame(minHeight: SH.Height.touch)
                 .accessibilityElement(children: .combine)
             }
         }
@@ -168,80 +168,80 @@ private struct FinalizeForm: View {
     private enum Field { case base, title, body }
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
             if let info = store.info {
-                NWGroupCard {
+                SHGroupCard {
                     FinalizeValueRow(label: "Worktree", value: info.path)
                     FinalizeValueRow(label: "Branch", value: info.branch)
                 }
                 if let warning = info.warning {
-                    NWBanner(.attention, title: "Work not on the remote yet", message: "\(warning). Finalize commits and pushes it before any cleanup.")
+                    SHBanner(.attention, title: "Work not on the remote yet", message: "\(warning). Finalize commits and pushes it before any cleanup.")
                 }
             }
-            NWGroupCard {
-                VStack(alignment: .leading, spacing: NW.Space.s) {
-                    Text("Base").font(.nw(.caption)).foregroundStyle(nw.textSecondary)
+            SHGroupCard {
+                VStack(alignment: .leading, spacing: SH.Space.s) {
+                    Text("Base").font(.sh(.caption)).foregroundStyle(sh.textSecondary)
                     TextField("Base branch", text: $store.options.base)
-                        .font(.nw(.code))
+                        .font(.sh(.code))
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .focused($focused, equals: .base)
-                        .frame(minHeight: NW.Height.touch)
+                        .frame(minHeight: SH.Height.touch)
                     if let count = store.includedCommits {
                         Text("Will include \(nativeCount(count, "commit"))")
-                            .font(.nw(.caption))
-                            .foregroundStyle(count > finalizeCommitWarningCount ? nw.lanternText : nw.textTertiary)
+                            .font(.sh(.caption))
+                            .foregroundStyle(count > finalizeCommitWarningCount ? sh.lanternText : sh.textTertiary)
                     }
                 }
-                .padding(.horizontal, NW.Space.xl)
-                .padding(.vertical, NW.Space.m)
-                VStack(alignment: .leading, spacing: NW.Space.s) {
-                    Text("Title").font(.nw(.caption)).foregroundStyle(nw.textSecondary)
+                .padding(.horizontal, SH.Space.xl)
+                .padding(.vertical, SH.Space.m)
+                VStack(alignment: .leading, spacing: SH.Space.s) {
+                    Text("Title").font(.sh(.caption)).foregroundStyle(sh.textSecondary)
                     TextField("Pull request title", text: $store.options.title, axis: .vertical)
-                        .font(.nw(.ui, weight: .regular))
+                        .font(.sh(.ui, weight: .regular))
                         .focused($focused, equals: .title)
-                        .frame(minHeight: NW.Height.touch)
+                        .frame(minHeight: SH.Height.touch)
                 }
-                .padding(.horizontal, NW.Space.xl)
-                .padding(.vertical, NW.Space.m)
-                VStack(alignment: .leading, spacing: NW.Space.s) {
+                .padding(.horizontal, SH.Space.xl)
+                .padding(.vertical, SH.Space.m)
+                VStack(alignment: .leading, spacing: SH.Space.s) {
                     HStack {
-                        Text("Description").font(.nw(.caption)).foregroundStyle(nw.textSecondary)
-                        Spacer(minLength: NW.Space.s)
+                        Text("Description").font(.sh(.caption)).foregroundStyle(sh.textSecondary)
+                        Spacer(minLength: SH.Space.s)
                         if store.generating {
-                            Text("Drafting on the host…").font(.nw(.caption)).foregroundStyle(nw.textTertiary)
+                            Text("Drafting on the host…").font(.sh(.caption)).foregroundStyle(sh.textTertiary)
                         } else if store.info?.generateDescription == true {
                             Button(store.descriptionPrepared ? "Draft again" : "Draft") {
                                 Task { await store.generateDescription(hosts: hosts, force: true) }
                             }
-                            .buttonStyle(.nwLink(font: .nw(.caption)))
-                            .nwTouchTarget(height: NW.Height.controlS)
+                            .buttonStyle(.shLink(font: .sh(.caption)))
+                            .shTouchTarget(height: SH.Height.controlS)
                         }
                     }
                     TextField("What changed and why", text: $store.options.body, axis: .vertical)
                         .lineLimit(3...10)
-                        .font(.nw(.ui, weight: .regular))
+                        .font(.sh(.ui, weight: .regular))
                         .focused($focused, equals: .body)
                         .accessibilityLabel("Pull request description")
                 }
-                .padding(.horizontal, NW.Space.xl)
-                .padding(.vertical, NW.Space.m)
+                .padding(.horizontal, SH.Space.xl)
+                .padding(.vertical, SH.Space.m)
             }
-            .foregroundStyle(nw.textPrimary)
-            .tint(nw.lantern)
-            NWGroupCard {
-                NWCardRow("Commit remaining work", description: "Uncommitted changes go into one commit titled like the PR.") {
-                    Toggle("Commit remaining work", isOn: $store.options.autoCommit).toggleStyle(.nwSwitch).labelsHidden()
+            .foregroundStyle(sh.textPrimary)
+            .tint(sh.lantern)
+            SHGroupCard {
+                SHCardRow("Commit remaining work", description: "Uncommitted changes go into one commit titled like the PR.") {
+                    Toggle("Commit remaining work", isOn: $store.options.autoCommit).toggleStyle(.shSwitch).labelsHidden()
                 }
-                NWCardRow("Delete local branch", description: "After the worktree is removed. The remote branch stays.") {
-                    Toggle("Delete local branch", isOn: $store.options.deleteLocalBranch).toggleStyle(.nwSwitch).labelsHidden()
+                SHCardRow("Delete local branch", description: "After the worktree is removed. The remote branch stays.") {
+                    Toggle("Delete local branch", isOn: $store.options.deleteLocalBranch).toggleStyle(.shSwitch).labelsHidden()
                 }
-                NWCardRow("Merge PR automatically", description: "Auto-merge when the repository allows it, otherwise merge now.") {
-                    Toggle("Merge PR automatically", isOn: $store.options.autoMergePR).toggleStyle(.nwSwitch).labelsHidden()
+                SHCardRow("Merge PR automatically", description: "Auto-merge when the repository allows it, otherwise merge now.") {
+                    Toggle("Merge PR automatically", isOn: $store.options.autoMergePR).toggleStyle(.shSwitch).labelsHidden()
                 }
                 if store.options.autoMergePR {
-                    NWCardRow("Method") {
+                    SHCardRow("Method") {
                         Picker("Merge method", selection: $store.options.mergeMethod) {
                             Text("Squash").tag("squash")
                             Text("Merge").tag("merge")
@@ -267,13 +267,13 @@ private struct FinalizeValueRow: View {
     let value: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NW.Space.xxs) {
-            Text(label).font(.nw(.caption)).foregroundStyle(Color.nw.textSecondary)
-            Text(value).font(.nw(.mono)).foregroundStyle(Color.nw.textPrimary).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+        VStack(alignment: .leading, spacing: SH.Space.xxs) {
+            Text(label).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+            Text(value).font(.sh(.mono)).foregroundStyle(Color.sh.textPrimary).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
         }
-        .padding(.horizontal, NW.Space.xl)
-        .padding(.vertical, NW.Space.m)
-        .frame(maxWidth: .infinity, minHeight: NW.Height.touch, alignment: .leading)
+        .padding(.horizontal, SH.Space.xl)
+        .padding(.vertical, SH.Space.m)
+        .frame(maxWidth: .infinity, minHeight: SH.Height.touch, alignment: .leading)
         .accessibilityElement(children: .combine)
     }
 }
@@ -285,46 +285,46 @@ private struct FinalizeProgress: View {
     var body: some View {
         VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
             if store.steps.isEmpty {
-                HStack(spacing: NW.Space.m) {
-                    ProgressView().progressViewStyle(NWSpinnerStyle())
-                    Text("Starting on the host…").font(.nw(.ui)).foregroundStyle(Color.nw.textSecondary)
+                HStack(spacing: SH.Space.m) {
+                    ProgressView().progressViewStyle(SHSpinnerStyle())
+                    Text("Starting on the host…").font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
                 }
             } else {
-                NWGroupCard {
+                SHGroupCard {
                     ForEach(store.steps) { step in
-                        HStack(alignment: .top, spacing: NW.Space.m) {
-                            NWStateGlyph(state(step.state)).padding(.top, NW.Space.xxs)
-                            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+                        HStack(alignment: .top, spacing: SH.Space.m) {
+                            SHStateGlyph(state(step.state)).padding(.top, SH.Space.xxs)
+                            VStack(alignment: .leading, spacing: SH.Space.xxs) {
                                 Text(step.label.prefix(1).uppercased() + step.label.dropFirst())
-                                    .font(.nw(.ui)).foregroundStyle(step.state == .pending ? Color.nw.textTertiary : Color.nw.textPrimary)
+                                    .font(.sh(.ui)).foregroundStyle(step.state == .pending ? Color.sh.textTertiary : Color.sh.textPrimary)
                                 if let detail = detail(step.state) {
-                                    Text(detail).font(.nw(.caption))
-                                        .foregroundStyle(isFailure(step.state) ? Color.nw.failed : Color.nw.textSecondary)
+                                    Text(detail).font(.sh(.caption))
+                                        .foregroundStyle(isFailure(step.state) ? Color.sh.failed : Color.sh.textSecondary)
                                         .fixedSize(horizontal: false, vertical: true)
                                         .textSelection(.enabled)
                                 }
                             }
                             Spacer(minLength: 0)
                         }
-                        .padding(.horizontal, NW.Space.xl)
-                        .padding(.vertical, NW.Space.m)
-                        .frame(minHeight: NW.Height.touch)
+                        .padding(.horizontal, SH.Space.xl)
+                        .padding(.vertical, SH.Space.m)
+                        .frame(minHeight: SH.Height.touch)
                         .accessibilityElement(children: .combine)
                     }
                 }
             }
             if case .failed(let message)? = store.outcome {
-                NWBanner(.failed, title: "The host stopped the operation", message: message)
+                SHBanner(.failed, title: "The host stopped the operation", message: message)
             }
             if let url = store.operation?.prURL, let link = URL(string: url) {
                 Link(destination: link) {
                     Label(url, systemImage: "arrow.up.forward.square")
-                        .font(.nw(.mono))
+                        .font(.sh(.mono))
                         .lineLimit(1)
                         .truncationMode(.middle)
-                        .frame(minHeight: NW.Height.touch)
+                        .frame(minHeight: SH.Height.touch)
                 }
-                .foregroundStyle(Color.nw.running)
+                .foregroundStyle(Color.sh.running)
             }
         }
     }

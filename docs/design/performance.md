@@ -4,7 +4,7 @@
 
 A list is as fast with three hundred rows as with thirty: it builds the rows on screen, and a
 change redraws the rows it changed. `ListPerformanceTests` pins each rule below with a count of
-row bodies (`NWRenderProbe`), which a slower machine doesn't change, and
+row bodies (`SHRenderProbe`), which a slower machine doesn't change, and
 `SHEPHERD_PERF_REPORT=1 swift test --filter ListPerformanceReport` prints each list's timings
 against a large fixture (300 agents in 40 spaces, 1,000 palette results, a 2,000-line diff, a
 300-file review, and a highlighted 40-file review beside a thread, a 500-turn thread, 200 subagent
@@ -80,7 +80,7 @@ runs, 2,000 folders).
   from a real retained thread before and after switching agents; explicit callback overrides
   remain supported.
 - **The overlaid sidebar casts its shadow from its fill**, as the floating right pane does
-  (`nwFloatBackground`): on the sidebar itself, Core Animation redrew the shadow from its
+  (`shFloatBackground`): on the sidebar itself, Core Animation redrew the shadow from its
   scrolling list every step.
 - **The chrome around a field compares before it redraws.** The composer's control row takes an
   `Equatable` model of what it draws (`ComposerControls`), so a keystroke past the first
@@ -103,10 +103,10 @@ runs, 2,000 folders).
   (`ListPerformanceTests`).
 - **Motion never scales with the list.** A list's motion watches a small key (a layout count, the
   rows' ids), never the rows themselves, and rows scrolled back into a lazy stack are simply
-  there: an entrance plays only for what arrives while the list is on screen (`nwArrival`,
-  `nwRunArrival`).
+  there: an entrance plays only for what arrives while the list is on screen (`shArrival`,
+  `shRunArrival`).
 - **Motion no one sees costs nothing.** A layout the workspace keeps mounted behind the visible
-  one sets `nwMotionPaused`, and a continuous motion pauses while its view is off screen
+  one sets `shMotionPaused`, and a continuous motion pauses while its view is off screen
   (between `onDisappear` and `onAppear`: a lazy stack keeps a row it let go of for a while). A
   restored workspace of twelve agents drew about 6,000 spinner frames every 4 s idle until they
   did (about 4 s of main-thread CPU in an off-screen test window); `IdleCostTests` counts the

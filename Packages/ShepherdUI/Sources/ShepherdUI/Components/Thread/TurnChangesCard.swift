@@ -5,7 +5,7 @@ import SwiftUI
 /// the first files as plain paths (the folder dimmed, "new" before a created file's stat) and "N
 /// more". Once undone it is one dashed line, "Undid the agent’s edits to 5 files", with Redo.
 /// At the accessibility sizes the head stacks and paths take two lines, so nothing clips.
-public struct NWTurnChangesCard: View, Equatable {
+public struct SHTurnChangesCard: View, Equatable {
     public struct File: Identifiable, Equatable, Sendable {
         public var id: String { path }
         public var path: String
@@ -68,22 +68,22 @@ public struct NWTurnChangesCard: View, Equatable {
     // MARK: Card
 
     private var card: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         return VStack(spacing: 0) {
             head
             ForEach(files) { file in
-                NWHairline()
+                SHHairline()
                 row(file)
             }
             if let more {
-                NWHairline()
+                SHHairline()
                 moreRow(more)
             }
         }
         .frame(maxWidth: .infinity)
-        .background(nw.bgWindow, in: RoundedRectangle(cornerRadius: NW.Radius.l))
-        .clipShape(RoundedRectangle(cornerRadius: NW.Radius.l))
-        .nwBorder(nw.lineSubtle, radius: NW.Radius.l)
+        .background(sh.bgWindow, in: RoundedRectangle(cornerRadius: SH.Radius.l))
+        .clipShape(RoundedRectangle(cornerRadius: SH.Radius.l))
+        .shBorder(sh.lineSubtle, radius: SH.Radius.l)
         .accessibilityElement(children: .contain)
     }
 
@@ -95,7 +95,7 @@ public struct NWTurnChangesCard: View, Equatable {
                 stackedHead
             } else {
                 ViewThatFits(in: .horizontal) {
-                    HStack(spacing: NW.Space.m + NW.Space.xxs) {
+                    HStack(spacing: SH.Space.m + SH.Space.xxs) {
                         summary.fixedSize()
                         Spacer(minLength: 0)
                         actions
@@ -104,56 +104,56 @@ public struct NWTurnChangesCard: View, Equatable {
                 }
             }
         }
-        .padding(.vertical, NW.Space.m + NW.Space.xxs)
-        .padding(.leading, NW.Space.l)
-        .padding(.trailing, NW.Space.m + NW.Space.xxs)
+        .padding(.vertical, SH.Space.m + SH.Space.xxs)
+        .padding(.leading, SH.Space.l)
+        .padding(.trailing, SH.Space.m + SH.Space.xxs)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var stackedHead: some View {
-        VStack(alignment: .leading, spacing: NW.Space.m) {
+        VStack(alignment: .leading, spacing: SH.Space.m) {
             summary
             actions
         }
     }
 
     private var summary: some View {
-        let nw = Color.nw
-        return HStack(spacing: NW.Space.m + NW.Space.xxs) {
+        let sh = Color.sh
+        return HStack(spacing: SH.Space.m + SH.Space.xxs) {
             Image(systemName: "plus.forwardslash.minus")
-                .font(.nw(.ui))
-                .foregroundStyle(nw.textSecondary)
-                .frame(width: NWTurnChangesCard.tile, height: NWTurnChangesCard.tile)
-                .background(nw.bgSunken, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-                .nwBorder(nw.lineSubtle, radius: NW.Radius.m)
+                .font(.sh(.ui))
+                .foregroundStyle(sh.textSecondary)
+                .frame(width: SHTurnChangesCard.tile, height: SHTurnChangesCard.tile)
+                .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+                .shBorder(sh.lineSubtle, radius: SH.Radius.m)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                Text(title).font(.nw(.ui, weight: .semibold)).foregroundStyle(nw.textPrimary)
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                Text(title).font(.sh(.ui, weight: .semibold)).foregroundStyle(sh.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
-                NWDiffStat(added: added, removed: removed, font: .nw(.mono))
+                SHDiffStat(added: added, removed: removed, font: .sh(.mono))
             }
             .accessibilityElement(children: .combine)
         }
     }
 
     private var actions: some View {
-        HStack(spacing: NW.Space.xs) {
+        HStack(spacing: SH.Space.xs) {
             if let onUndo {
                 Button(action: onUndo) {
-                    HStack(spacing: NW.Space.xs + 1) {
+                    HStack(spacing: SH.Space.xs + 1) {
                         Text("Undo")
                         Image(systemName: "arrow.uturn.backward").imageScale(.small)
                     }
                 }
-                .buttonStyle(.nw(.ghost, size: .l))
+                .buttonStyle(.sh(.ghost, size: .l))
                 .disabled(busy)
                 .accessibilityLabel("Undo the agent\u{2019}s edits")
                 .accessibilityHint("Puts back the files this turn changed, in the working tree")
             }
             if let onReview {
                 Button("Review", action: onReview)
-                    .buttonStyle(.nw(.secondary, size: .m))
-                    .nwTouchTarget(height: NW.Height.controlM)
+                    .buttonStyle(.sh(.secondary, size: .m))
+                    .shTouchTarget(height: SH.Height.controlM)
                     .accessibilityLabel("Review \(title)")
             }
         }
@@ -161,29 +161,29 @@ public struct NWTurnChangesCard: View, Equatable {
     }
 
     @ViewBuilder private func row(_ file: File) -> some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let stacked = typeSize.isAccessibilitySize
-        let layout = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: NW.Space.xxs)) : AnyLayout(HStackLayout(spacing: NW.Space.m))
+        let layout = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: SH.Space.xxs)) : AnyLayout(HStackLayout(spacing: SH.Space.m))
         let content = layout {
-            Text("\(Text(file.directory).foregroundStyle(nw.textTertiary))\(Text(file.name).foregroundStyle(nw.textPrimary))")
-                .font(.nwSans(14))
+            Text("\(Text(file.directory).foregroundStyle(sh.textTertiary))\(Text(file.name).foregroundStyle(sh.textPrimary))")
+                .font(.shSans(14))
                 .lineLimit(stacked ? 2 : 1)
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            HStack(spacing: NW.Space.m) {
-                if file.isNew { Text("new").font(.nw(.caption)).foregroundStyle(nw.textTertiary) }
-                NWDiffStat(added: file.added, removed: file.removed, font: .nw(.mono))
+            HStack(spacing: SH.Space.m) {
+                if file.isNew { Text("new").font(.sh(.caption)).foregroundStyle(sh.textTertiary) }
+                SHDiffStat(added: file.added, removed: file.removed, font: .sh(.mono))
             }
             .fixedSize()
         }
-        .padding(.horizontal, NW.Space.l)
-        .padding(.vertical, stacked ? NW.Space.m : 0)
-        .frame(minHeight: NWTurnChangesCard.rowHeight)
+        .padding(.horizontal, SH.Space.l)
+        .padding(.vertical, stacked ? SH.Space.m : 0)
+        .frame(minHeight: SHTurnChangesCard.rowHeight)
         .contentShape(Rectangle())
         let label = "\(file.path), \(file.isNew ? "new, " : "")\(file.added) added, \(file.removed) removed"
         if let onOpen {
             Button { onOpen(file.path) } label: { content }
-                .buttonStyle(.nwRow(radius: 0))
+                .buttonStyle(.shRow(radius: 0))
                 .accessibilityLabel(label)
                 .accessibilityHint("Opens the file in review")
         } else {
@@ -193,14 +193,14 @@ public struct NWTurnChangesCard: View, Equatable {
 
     @ViewBuilder private func moreRow(_ more: String) -> some View {
         let content = Text(more)
-            .font(.nwSans(14))
-            .foregroundStyle(Color.nw.textSecondary)
-            .padding(.horizontal, NW.Space.l)
-            .frame(maxWidth: .infinity, minHeight: NWTurnChangesCard.rowHeight, alignment: .leading)
+            .font(.shSans(14))
+            .foregroundStyle(Color.sh.textSecondary)
+            .padding(.horizontal, SH.Space.l)
+            .frame(maxWidth: .infinity, minHeight: SHTurnChangesCard.rowHeight, alignment: .leading)
             .contentShape(Rectangle())
         if let onReview {
             Button(action: onReview) { content }
-                .buttonStyle(.nwRow(radius: 0))
+                .buttonStyle(.shRow(radius: 0))
                 .accessibilityHint("Opens every file in review")
         } else {
             content
@@ -210,28 +210,28 @@ public struct NWTurnChangesCard: View, Equatable {
     // MARK: Undone
 
     private var undoneLine: some View {
-        let nw = Color.nw
-        return HStack(spacing: NW.Space.m + NW.Space.xxs) {
+        let sh = Color.sh
+        return HStack(spacing: SH.Space.m + SH.Space.xxs) {
             Image(systemName: "arrow.uturn.backward")
-                .font(.nw(.caption))
-                .foregroundStyle(nw.textTertiary)
+                .font(.sh(.caption))
+                .foregroundStyle(sh.textTertiary)
                 .accessibilityHidden(true)
             Text(title)
-                .font(.nwSans(14))
-                .foregroundStyle(nw.textSecondary)
+                .font(.shSans(14))
+                .foregroundStyle(sh.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let onRedo {
                 Button("Redo", action: onRedo)
-                    .buttonStyle(.nw(.ghost, size: .l))
+                    .buttonStyle(.sh(.ghost, size: .l))
                     .disabled(busy)
                     .accessibilityHint("Puts the agent’s edits back")
             }
         }
-        .padding(.leading, NW.Space.l)
-        .padding(.trailing, NW.Space.s)
-        .frame(minHeight: NW.Height.touch)
-        .nwBorder(nw.lineStrong, in: RoundedRectangle(cornerRadius: NW.Radius.l), dash: [4, 3])
+        .padding(.leading, SH.Space.l)
+        .padding(.trailing, SH.Space.s)
+        .frame(minHeight: SH.Height.touch)
+        .shBorder(sh.lineStrong, in: RoundedRectangle(cornerRadius: SH.Radius.l), dash: [4, 3])
         .accessibilityElement(children: .combine)
     }
 
@@ -243,14 +243,14 @@ public struct NWTurnChangesCard: View, Equatable {
 
 #Preview("Turn changes card") {
     let files = [
-        NWTurnChangesCard.File(path: "ledger/outbox.go", directory: "ledger/", name: "outbox.go", isNew: false, added: 21, removed: 8),
-        NWTurnChangesCard.File(path: "ledger/refund.go", directory: "ledger/", name: "refund.go", isNew: true, added: 64, removed: 0),
-        NWTurnChangesCard.File(path: "ledger/refund_test.go", directory: "ledger/", name: "refund_test.go", isNew: true, added: 96, removed: 0),
+        SHTurnChangesCard.File(path: "ledger/outbox.go", directory: "ledger/", name: "outbox.go", isNew: false, added: 21, removed: 8),
+        SHTurnChangesCard.File(path: "ledger/refund.go", directory: "ledger/", name: "refund.go", isNew: true, added: 64, removed: 0),
+        SHTurnChangesCard.File(path: "ledger/refund_test.go", directory: "ledger/", name: "refund_test.go", isNew: true, added: 96, removed: 0),
     ]
-    NWPreviewBoth {
-        VStack(spacing: NW.Space.l) {
-            NWTurnChangesCard(title: "Edited 5 files", added: 200, removed: 8, files: files, more: "2 more", onUndo: {}, onReview: {}, onOpen: { _ in })
-            NWTurnChangesCard(title: "Undid the agent’s edits to 5 files", added: 200, removed: 8, files: [], undone: true, onRedo: {})
+    SHPreviewBoth {
+        VStack(spacing: SH.Space.l) {
+            SHTurnChangesCard(title: "Edited 5 files", added: 200, removed: 8, files: files, more: "2 more", onUndo: {}, onReview: {}, onOpen: { _ in })
+            SHTurnChangesCard(title: "Undid the agent’s edits to 5 files", added: 200, removed: 8, files: [], undone: true, onRedo: {})
         }
         .frame(width: 420)
         .padding()

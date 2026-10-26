@@ -36,7 +36,7 @@ struct HostsPageCard: Identifiable, Equatable {
     /// "Connected", "Connecting", "Unreachable", "Token refused".
     var status: String
     var state: AgentState
-    var facts: [NWHostFact]
+    var facts: [SHHostFact]
     /// What a failed connection needs from you, when retrying alone won't fix it.
     var note: String?
     /// Neither connected nor connecting.
@@ -106,8 +106,8 @@ struct HostsPageModel: Equatable {
     }
 
     /// Running threads, worktree threads, and the projects (spaces) there.
-    static func connectedFacts(_ state: ShepherdState, address: String?) -> [NWHostFact] {
-        var facts: [NWHostFact] = []
+    static func connectedFacts(_ state: ShepherdState, address: String?) -> [SHHostFact] {
+        var facts: [SHHostFact] = []
         // A design's agent is no thread, so it never counts as one.
         let running = state.agents.count { $0.status == .working && !state.isDesignAgent($0) }
         facts.append(.init("Running", running == 0 ? "none" : count(running, "thread")))
@@ -122,8 +122,8 @@ struct HostsPageModel: Equatable {
     /// What waits on an unreachable host (from its last pushed state), when it was last seen,
     /// and where it is.
     static func offlineFacts(_ state: ShepherdState, lastSeen: Date?, address: String, timeZone: TimeZone,
-                             locale: Locale) -> [NWHostFact] {
-        var facts: [NWHostFact] = []
+                             locale: Locale) -> [SHHostFact] {
+        var facts: [SHHostFact] = []
         let hidden = Set(state.spaces.filter(\.hidden).map(\.id))
         let threads = state.agents.count { !hidden.contains($0.spaceID) && !state.isDesignAgent($0) }
         let waiting = [threads > 0 ? count(threads, "thread") : nil,

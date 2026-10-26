@@ -5,7 +5,7 @@ recovery and blocked-input event producer have been removed.
 
 ## Checklist
 
-- Above the composer, reuse `NWBanner(.failed)` with its existing failed-state glyph, color,
+- Above the composer, reuse `SHBanner(.failed)` with its existing failed-state glyph, color,
   caption fonts, padding, radius and layout. No new dimensions or colors.
 - Title: "Message wasn't sent."
 - Message comes from the host's model-unavailable error: "Couldn't restore this

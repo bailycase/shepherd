@@ -2,9 +2,9 @@ import SwiftUI
 
 // The head every Mac question starts with (QuestionAsk, QuestionPick, QuestionStates): "Agent is
 // asking" in lantern, then Hide the question. Hidden, a question shrinks to one line
-// (QuestionStates › hidden, in `NWQuestionDockHidden`) that still holds the composer's place.
+// (QuestionStates › hidden, in `SHQuestionDockHidden`) that still holds the composer's place.
 
-public enum NWQuestionHeadMetrics {
+public enum SHQuestionHeadMetrics {
     public static let height: CGFloat = 26
     public static let spacing: CGFloat = 7
     public static let glyph: CGFloat = 13
@@ -15,13 +15,13 @@ public enum NWQuestionHeadMetrics {
 }
 
 /// The agent's glyph in lantern: a question mark.
-struct NWQuestionAskerGlyph: View {
+struct SHQuestionAskerGlyph: View {
     let size: CGFloat
 
     var body: some View {
         Image(systemName: "questionmark.circle")
             .font(.system(size: size, weight: .medium))
-            .foregroundStyle(Color.nw.lanternText)
+            .foregroundStyle(Color.sh.lanternText)
             .frame(width: size, height: size)
             .accessibilityHidden(true)
     }
@@ -29,7 +29,7 @@ struct NWQuestionAskerGlyph: View {
 
 /// The head: a question mark and "Agent is asking" in `lanternText`, then "1 / N" when several
 /// questions wait, and Hide the question.
-public struct NWQuestionHead: View {
+public struct SHQuestionHead: View {
     /// What every question says it is: the agent's own, since a subagent asks its parent.
     public static let title = "Agent is asking"
 
@@ -45,35 +45,35 @@ public struct NWQuestionHead: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        HStack(spacing: NWQuestionHeadMetrics.spacing) {
-            HStack(spacing: NWQuestionHeadMetrics.spacing) {
-                NWQuestionAskerGlyph(size: NWQuestionHeadMetrics.glyph)
-                Text(Self.title).font(.nwSans(12, .semibold)).foregroundStyle(nw.lanternText).lineLimit(1)
+        let sh = Color.sh
+        HStack(spacing: SHQuestionHeadMetrics.spacing) {
+            HStack(spacing: SHQuestionHeadMetrics.spacing) {
+                SHQuestionAskerGlyph(size: SHQuestionHeadMetrics.glyph)
+                Text(Self.title).font(.shSans(12, .semibold)).foregroundStyle(sh.lanternText).lineLimit(1)
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Self.title)
             .accessibilityAddTraits(.isHeader)
-            Spacer(minLength: NW.Space.m)
+            Spacer(minLength: SH.Space.m)
             if count > 1 {
-                Text("1 / \(count)").font(.nw(.micro)).foregroundStyle(nw.textTertiary).monospacedDigit()
-                    .nwContentTransition(.numeric())
-                    .nwTransition(.content)
+                Text("1 / \(count)").font(.sh(.micro)).foregroundStyle(sh.textTertiary).monospacedDigit()
+                    .shContentTransition(.numeric())
+                    .shTransition(.content)
             }
             Button(action: hide) { Image(systemName: "chevron.down") }
-                .buttonStyle(.nwIcon(size: NWQuestionHeadMetrics.hideButton))
+                .buttonStyle(.shIcon(size: SHQuestionHeadMetrics.hideButton))
                 .help(hideHelp)
                 .accessibilityLabel("Hide the question")
         }
         // Another question queuing behind this one counts up.
-        .nwAnimation(.content, value: count)
-        .frame(height: NWQuestionHeadMetrics.height)
+        .shAnimation(.content, value: count)
+        .frame(height: SHQuestionHeadMetrics.height)
     }
 }
 
 /// A hidden question: one line with its glyph, the question (truncating), a small Answer and
 /// Show the question, either of which brings the whole question back.
-public struct NWQuestionHiddenLine: View {
+public struct SHQuestionHiddenLine: View {
     let question: String
     let showHelp: String
     let show: () -> Void
@@ -85,21 +85,21 @@ public struct NWQuestionHiddenLine: View {
     }
 
     public var body: some View {
-        HStack(spacing: NWQuestionHeadMetrics.hiddenSpacing) {
-            NWQuestionAskerGlyph(size: NWQuestionHeadMetrics.hiddenGlyph)
-            Text(NWProseInline.attributed(question)).font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary)
+        HStack(spacing: SHQuestionHeadMetrics.hiddenSpacing) {
+            SHQuestionAskerGlyph(size: SHQuestionHeadMetrics.hiddenGlyph)
+            Text(SHProseInline.attributed(question)).font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary)
                 .lineLimit(1).truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityLabel("\(NWQuestionHead.title): \(question)")
+                .accessibilityLabel("\(SHQuestionHead.title): \(question)")
             Button("Answer", action: show)
-                .buttonStyle(.nw(.secondary, size: .s))
+                .buttonStyle(.sh(.secondary, size: .s))
                 .accessibilityLabel("Answer the question")
             Button(action: show) { Image(systemName: "chevron.up") }
-                .buttonStyle(.nwIcon(size: NWQuestionHeadMetrics.hideButton))
+                .buttonStyle(.shIcon(size: SHQuestionHeadMetrics.hideButton))
                 .help(showHelp)
                 .accessibilityLabel("Show the question")
         }
-        .frame(minHeight: NWQuestionHeadMetrics.height)
+        .frame(minHeight: SHQuestionHeadMetrics.height)
         .accessibilityElement(children: .contain)
     }
 }

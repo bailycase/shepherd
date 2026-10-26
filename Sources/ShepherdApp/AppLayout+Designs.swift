@@ -2,7 +2,7 @@ import SwiftUI
 import ShepherdUI
 
 /// The Design tool's screens (NavDesigns, DZStart, DZCanvas). The canvas's, the cards' and the
-/// header's own measures are `NWDesignMetrics`.
+/// header's own measures are `SHDesignMetrics`.
 extension AppLayout {
     // The Designs page
     /// Between the page's sections.
@@ -17,14 +17,14 @@ extension AppLayout {
     /// A picker row's board picture is kept this many pixels wide (drawn 40pt).
     static let referenceRowPicturePixels: CGFloat = 160
     /// An element's picture in a picker row: its thumbnail's size, in pixels at 2x.
-    static let referenceCropPixels = CGSize(width: NWReferenceMetrics.thumbnail.width * 2, height: NWReferenceMetrics.thumbnail.height * 2)
+    static let referenceCropPixels = CGSize(width: SHReferenceMetrics.thumbnail.width * 2, height: SHReferenceMetrics.thumbnail.height * 2)
     /// A board an element's picture is cut from is kept at most this many pixels wide.
     static let referenceCropSourcePixels: CGFloat = 1280
 
     // New design
     /// Between the page's parts, and under the headline.
     static let newDesignGap: CGFloat = 26
-    static let newDesignSubtitleSpacing: CGFloat = NW.Space.l
+    static let newDesignSubtitleSpacing: CGFloat = SH.Space.l
     static let newDesignSubtitleWidth: CGFloat = 560
     static let newDesignComposerWidth: CGFloat = 720
     static let newDesignFieldMinHeight: CGFloat = 72
@@ -37,7 +37,7 @@ extension AppLayout {
     /// A starting point's card: its three lines with their padding.
     static let newDesignCardHeight: CGFloat = 84
 
-    // A design system's page (DZSystem); the section list and the swatches are `NWDesignMetrics`
+    // A design system's page (DZSystem); the section list and the swatches are `SHDesignMetrics`
     /// The content's padding, and between its sections.
     static let designSystemPaddingVertical: CGFloat = 24
     static let designSystemPaddingHorizontal: CGFloat = 32

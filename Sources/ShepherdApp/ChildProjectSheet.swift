@@ -57,42 +57,42 @@ struct ChildProjectSheet: View {
     private enum Field: Hashable { case folder, name }
 
     var body: some View {
-        NWDialog("Add child space", message: "\(model.parentName)\n\(model.parentPath)") {
+        SHDialog("Add child space", message: "\(model.parentName)\n\(model.parentPath)") {
             SheetRow("Folder source") {
-                NWSegmentedPicker("Folder source", selection: $model.create,
+                SHSegmentedPicker("Folder source", selection: $model.create,
                                   options: [(true, "New folder"), (false, "Existing folder")])
             }
             SheetRow(model.create ? "Folder name" : "Folder path") {
-                HStack(spacing: NW.Space.s) {
+                HStack(spacing: SH.Space.s) {
                     TextField(model.create ? "Folder name" : "Folder path", text: $model.folder)
-                        .nwField(focused: focused == .folder, mono: true)
+                        .shField(focused: focused == .folder, mono: true)
                         .focused($focused, equals: .folder)
                     if !model.create {
-                        Button("Browse…") { model.browsing = true }.buttonStyle(.nw(.secondary))
+                        Button("Browse…") { model.browsing = true }.buttonStyle(.sh(.secondary))
                     }
                 }
             }
             SheetRow("Display name") {
                 TextField("Display name", text: $model.displayName, prompt: Text("Defaults to folder name"))
-                    .nwField(focused: focused == .name)
+                    .shField(focused: focused == .name)
                     .focused($focused, equals: .name)
             }
             Text(model.status)
-                .font(.nw(.caption))
-                .foregroundStyle(model.error == nil ? Color.nw.textSecondary : Color.nw.failed)
+                .font(.sh(.caption))
+                .foregroundStyle(model.error == nil ? Color.sh.textSecondary : Color.sh.failed)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, NWDialogMetrics.inset)
-                .padding(.vertical, NW.Space.m)
+                .padding(.horizontal, SHDialogMetrics.inset)
+                .padding(.vertical, SH.Space.m)
         } status: {
             EmptyView()
         } actions: {
-            Button("Cancel", action: dismiss).buttonStyle(.nw(.ghost)).keyboardShortcut(.cancelAction)
+            Button("Cancel", action: dismiss).buttonStyle(.sh(.ghost)).keyboardShortcut(.cancelAction)
             Button(model.actionTitle) {
                 Task { if await model.submit() { dismiss() } }
             }
-            .buttonStyle(.nw(.primary)).keyboardShortcut(.defaultAction).disabled(!model.canSubmit)
+            .buttonStyle(.sh(.primary)).keyboardShortcut(.defaultAction).disabled(!model.canSubmit)
         }
         .disabled(model.busy)
         .interactiveDismissDisabled(model.busy)

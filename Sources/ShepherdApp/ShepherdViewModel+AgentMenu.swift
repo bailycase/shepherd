@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 import ShepherdCore
 
-/// The agent menu's actions beyond rename, review and delete (NWComposer › Menus): Fork from
+/// The agent menu's actions beyond rename, review and delete (SHComposer › Menus): Fork from
 /// Here, Copy Transcript and Open in Finder, for This Mac's agents, read from pi's session file.
 @MainActor
 extension ShepherdViewModel {

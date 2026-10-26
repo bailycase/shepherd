@@ -72,7 +72,7 @@ Integration and preview targets use `Tests/ShepherdTestSupport`, which re-export
 - `OffscreenWindow`, `ControlPress`: an off-screen window and a press through the accessibility
   tree (below).
 - `ScrollTrace`: a thread's scroll view recorded as it changes, for scroll-rule tests.
-- `NWRenderProbe.tick("sidebar.row")` at the top of a row's `body` counts row bodies; the
+- `SHRenderProbe.tick("sidebar.row")` at the top of a row's `body` counts row bodies; the
   `ListPerformanceTests` budgets read it. Counts hold on a busy runner; timings don't, so budgets
   are counts.
 

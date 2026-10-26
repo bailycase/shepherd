@@ -52,26 +52,26 @@ struct BrowserPane: View {
                 // Mac took the agent's browser. The thread's own notice belongs to the root, so it stays in
                 // view whichever tab is shown, and it is dismissed on the page that holds it.
                 if let (owner, notice) = visibleNotice(page) {
-                    NWBrowserNotice(message: notice.message, dismiss: { owner.dismissNotice() })
-                        .padding(NW.Space.l)
+                    SHBrowserNotice(message: notice.message, dismiss: { owner.dismissNotice() })
+                        .padding(SH.Space.l)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                        .nwTransition(.overlay, edge: .top)
+                        .shTransition(.overlay, edge: .top)
                 }
                 // The agent works in a tab that is not the one shown.
                 if let other = tabs.agentPage, other !== page {
-                    NWAgentElsewhere(title: other.tabTitle) { tabs.select(other.tabID) }
-                        .padding(NW.Space.l)
+                    SHAgentElsewhere(title: other.tabTitle) { tabs.select(other.tabID) }
+                        .padding(SH.Space.l)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                        .nwTransition(.overlay, edge: .bottom)
+                        .shTransition(.overlay, edge: .bottom)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .nwAnimation(.overlay, value: page.menuOpen)
-            .nwAnimation(.overlay, value: visibleNotice(page)?.1)
-            .nwAnimation(.overlay, value: tabs.agentPage?.tabID)
+            .shAnimation(.overlay, value: page.menuOpen)
+            .shAnimation(.overlay, value: visibleNotice(page)?.1)
+            .shAnimation(.overlay, value: tabs.agentPage?.tabID)
             if let agent = page.agentOverlay {
-                NWAgentBar(note: agent.note, takeOver: { vm.takeOverBrowser(page) })
-                    .nwTransition(.overlay, edge: .bottom)
+                SHAgentBar(note: agent.note, takeOver: { vm.takeOverBrowser(page) })
+                    .shTransition(.overlay, edge: .bottom)
             }
             if page.hasPage {
                 BrowserConsoleDrawer(console: page.console, open: page.consoleOpen) { page.consoleOpen.toggle() }
@@ -79,7 +79,7 @@ struct BrowserPane: View {
             }
             .overlay { if listOpen { tabList } }
         }
-        .nwAnimation(.overlay, value: page.agentOverlay != nil)
+        .shAnimation(.overlay, value: page.agentOverlay != nil)
         .background {
             BrowserKeys(active: active, focusAddress: { page.focusAddress() }, select: { page.toggleSelecting() }, newTab: { newTab() })
         }
@@ -133,21 +133,21 @@ struct BrowserPane: View {
 
     private var tabStrip: some View {
         let items = tabs.pages.map(\.tabItem)
-        return NWBrowserTabStrip(items: items, selection: page.tabID, canAdd: tabs.canAdd, listOpen: listOpen,
+        return SHBrowserTabStrip(items: items, selection: page.tabID, canAdd: tabs.canAdd, listOpen: listOpen,
                                  newShortcut: vm.keybindings.display(.browserNewTab),
                                  actions: .init(select: { tabs.select($0) }, close: { tabs.close($0) }, new: { newTab() },
                                                 toggleList: { listOpen.toggle() }))
-            .nwAnimation(.list, value: items)
+            .shAnimation(.list, value: items)
     }
 
     @ViewBuilder private var tabsNote: some View {
         if let notice = tabs.notice {
-            NWBrowserTabsNote(message: notice.words, glyph: notice.glyph, dismiss: { tabs.dismissNotice() })
-                .nwTransition(.overlay, edge: .top)
+            SHBrowserTabsNote(message: notice.words, glyph: notice.glyph, dismiss: { tabs.dismissNotice() })
+                .shTransition(.overlay, edge: .top)
         } else if let opened = tabs.openedPage {
-            NWBrowserTabsNote(message: "The agent opened \(opened.tabTitle) in a new tab.",
+            SHBrowserTabsNote(message: "The agent opened \(opened.tabTitle) in a new tab.",
                               action: .init("Show it") { tabs.showOpenedPage() }, dismiss: { tabs.dismissNotice() })
-                .nwTransition(.overlay, edge: .top)
+                .shTransition(.overlay, edge: .top)
         }
     }
 
@@ -157,12 +157,12 @@ struct BrowserPane: View {
                 .contentShape(Rectangle())
                 .onTapGesture { listOpen = false }
                 .accessibilityHidden(true)
-            NWBrowserTabMenu(items: tabs.pages.map(\.tabItem), selection: page.tabID, maxTabs: BrowserTabs.maxTabs,
+            SHBrowserTabMenu(items: tabs.pages.map(\.tabItem), selection: page.tabID, maxTabs: BrowserTabs.maxTabs,
                              select: { tabs.select($0); listOpen = false },
                              closeOthers: { tabs.closeOthers(); listOpen = false })
                 .padding(.top, AppLayout.browserMenuDrop)
-                .padding(.trailing, NW.Space.m)
-                .nwTransition(.overlay, edge: .top)
+                .padding(.trailing, SH.Space.m)
+                .shTransition(.overlay, edge: .top)
         }
         .onKeyPress(.escape) {
             listOpen = false
@@ -174,26 +174,26 @@ struct BrowserPane: View {
 
     private func toolbar(_ page: BrowserSession) -> some View {
         let display = BrowserAddress.display(page.url)
-        let state = NWBrowserToolbarState(canGoBack: page.canGoBack, canGoForward: page.canGoForward, canReload: page.hasPage,
+        let state = SHBrowserToolbarState(canGoBack: page.canGoBack, canGoForward: page.canGoForward, canReload: page.hasPage,
                                           isLoading: page.isLoading, selecting: page.selecting, viewportMenuOpen: page.menuOpen,
                                           canOpenExternally: page.hasPage)
-        return NWBrowserToolbar(state: state, selectShortcut: vm.keybindings.display(.selectElement), actions: .init(
+        return SHBrowserToolbar(state: state, selectShortcut: vm.keybindings.display(.selectElement), actions: .init(
             back: { page.goBack() }, forward: { page.goForward() }, reload: { page.reload() },
             select: { page.toggleSelecting() }, viewport: { page.menuOpen.toggle() },
             openExternally: { vm.openInDefaultBrowser(page) })) {
-            NWBrowserAddressField(host: display?.host, path: display?.path, hostChip: page.hostChip, text: $address,
+            SHBrowserAddressField(host: display?.host, path: display?.path, hostChip: page.hostChip, text: $address,
                                   isFocused: $addressFocused,
                                   submit: {
                                       if page.open(address: address) { addressFocused = false }
                                   },
                                   cancel: { addressFocused = false })
-                .nwHelp("Search or enter a URL", shortcut: vm.keybindings.display(.focusAddressBar))
+                .shHelp("Search or enter a URL", shortcut: vm.keybindings.display(.focusAddressBar))
         }
     }
 
     private func empty(_ page: BrowserSession) -> some View {
         let servers = page.devServers ?? []
-        return NWBrowserEmpty(message: BrowserEmptyWords.message(waiting: page.waitingFor),
+        return SHBrowserEmpty(message: BrowserEmptyWords.message(waiting: page.waitingFor),
                               servers: servers.map { $0.item(startTitle: page.startTitle) }, openShortcut: vm.keybindings.display(.focusAddressBar),
                               start: { item in
                                   guard let server = servers.first(where: { $0.id == item.id }) else { return }
@@ -208,12 +208,12 @@ struct BrowserPane: View {
                 .contentShape(Rectangle())
                 .onTapGesture { page.menuOpen = false }
                 .accessibilityHidden(true)
-            NWViewportMenu(options: BrowserViewport.allCases.map(\.option), selection: page.viewport.rawValue, dark: page.dark,
+            SHViewportMenu(options: BrowserViewport.allCases.map(\.option), selection: page.viewport.rawValue, dark: page.dark,
                            choose: { option in page.viewport = BrowserViewport(rawValue: option.id) ?? .fit },
                            toggleDark: { page.dark.toggle() })
                 .padding(.top, AppLayout.browserMenuDrop)
                 .padding(.trailing, AppLayout.browserMenuTrailing)
-                .nwTransition(.overlay, edge: .top)
+                .shTransition(.overlay, edge: .top)
         }
         .onKeyPress(.escape) {
             page.menuOpen = false
@@ -234,25 +234,25 @@ extension BrowserTabNotice {
 
     var glyph: String {
         switch self {
-        case .popup: NWBrowserTabsNote.globeGlyph
-        case .cap: NWBrowserTabsNote.capGlyph
+        case .popup: SHBrowserTabsNote.globeGlyph
+        case .cap: SHBrowserTabsNote.capGlyph
         }
     }
 }
 
 extension BrowserSession {
     /// The page as the strip and the list draw it: its title, its address, and the tile of its site.
-    var tabItem: NWBrowserTabItem {
+    var tabItem: SHBrowserTabItem {
         let display = BrowserAddress.display(url)
         let host = display?.host ?? ""
-        return NWBrowserTabItem(id: tabID, title: tabTitle, address: display.map { $0.host + $0.path } ?? "",
-                                letter: NWBrowserTabTint.initial(host: host), tint: .forHost(host), source: tabSource.item,
+        return SHBrowserTabItem(id: tabID, title: tabTitle, address: display.map { $0.host + $0.path } ?? "",
+                                letter: SHBrowserTabTint.initial(host: host), tint: .forHost(host), source: tabSource.item,
                                 agentActive: agentOverlay != nil, unseen: tabUnseen)
     }
 }
 
 private extension BrowserTabSource {
-    var item: NWBrowserTabSource {
+    var item: SHBrowserTabSource {
         switch self {
         case .user: .user
         case .agent: .agent
@@ -277,7 +277,7 @@ enum BrowserEmptyWords {
 private struct BrowserPageArea: View {
     var vm: ShepherdViewModel
     let session: BrowserSession
-    @State private var popoverSize = CGSize(width: NWBrowserMetrics.popoverWidth, height: 90)
+    @State private var popoverSize = CGSize(width: SHBrowserMetrics.popoverWidth, height: 90)
 
     var body: some View {
         GeometryReader { geo in
@@ -286,15 +286,15 @@ private struct BrowserPageArea: View {
             let top: CGFloat = layout.framed ? margin : 0
             let origin = CGPoint(x: (geo.size.width - layout.width) / 2, y: top)
             ZStack(alignment: .topLeading) {
-                if layout.framed { Color.nw.bgSunken }
+                if layout.framed { Color.sh.bgSunken }
                 BrowserPageView(session: session)
                     .frame(width: layout.width, height: max(0, geo.size.height - top))
-                    .clipShape(UnevenRoundedRectangle(topLeadingRadius: layout.framed ? NWBrowserMetrics.frameRadius : 0,
-                                                      topTrailingRadius: layout.framed ? NWBrowserMetrics.frameRadius : 0))
+                    .clipShape(UnevenRoundedRectangle(topLeadingRadius: layout.framed ? SHBrowserMetrics.frameRadius : 0,
+                                                      topTrailingRadius: layout.framed ? SHBrowserMetrics.frameRadius : 0))
                     .overlay {
                         if layout.framed {
-                            UnevenRoundedRectangle(topLeadingRadius: NWBrowserMetrics.frameRadius, topTrailingRadius: NWBrowserMetrics.frameRadius)
-                                .strokeBorder(Color.nw.lineStrong, lineWidth: 1)
+                            UnevenRoundedRectangle(topLeadingRadius: SHBrowserMetrics.frameRadius, topTrailingRadius: SHBrowserMetrics.frameRadius)
+                                .strokeBorder(Color.sh.lineStrong, lineWidth: 1)
                                 .allowsHitTesting(false)
                         }
                     }
@@ -304,7 +304,7 @@ private struct BrowserPageArea: View {
                         .contentShape(Rectangle())
                         .onTapGesture { session.dismissPick() }
                         .accessibilityHidden(true)
-                    NWElementPopover(source: picked.sourceShort, add: { vm.addPickedElement(session) },
+                    SHElementPopover(source: picked.sourceShort, add: { vm.addPickedElement(session) },
                                      copy: { vm.copyPickedSelector(session) })
                         .onGeometryChange(for: CGSize.self) { $0.size } action: { popoverSize = $0 }
                         .offset(BrowserPopoverPlacement.origin(for: rect, pageOrigin: origin, zoom: layout.zoom, popover: popoverSize,
@@ -313,22 +313,22 @@ private struct BrowserPageArea: View {
                             session.dismissPick()
                             return .handled
                         }
-                        .nwTransition(.overlay, edge: .leading)
+                        .shTransition(.overlay, edge: .leading)
                 }
                 // The agent is using the page: the ring and its pointer. Native and over the page, never
                 // in it, and they take no clicks. The words and Take over are the bar under the page.
                 if let agent = session.agentOverlay {
-                    NWBrowserAgentOverlay(
+                    SHBrowserAgentOverlay(
                         pointer: agent.pointer.map { CGPoint(x: origin.x + $0.x * layout.zoom, y: origin.y + $0.y * layout.zoom) })
                         .frame(width: geo.size.width, height: geo.size.height)
-                        .nwTransition(.overlay)
+                        .shTransition(.overlay)
                 }
             }
-            .nwAnimation(.overlay, value: session.agentOverlay != nil)
+            .shAnimation(.overlay, value: session.agentOverlay != nil)
             .onChange(of: layout.zoom, initial: true) { _, zoom in session.apply(zoom: zoom) }
         }
         .clipped()
-        .nwAnimation(.overlay, value: session.picked)
+        .shAnimation(.overlay, value: session.picked)
     }
 }
 
@@ -345,11 +345,11 @@ struct BrowserConsoleDrawer: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            NWConsoleBar(network: console.network, warnings: console.warnings, open: open, toggle: toggle)
+            SHConsoleBar(network: console.network, warnings: console.warnings, open: open, toggle: toggle)
             if open {
                 BrowserConsoleLines(lines: console.lines)
-                    .frame(height: NWBrowserMetrics.consoleListHeight)
-                    .background(Color.nw.bgBase)
+                    .frame(height: SHBrowserMetrics.consoleListHeight)
+                    .background(Color.sh.bgBase)
             }
         }
     }
@@ -357,17 +357,17 @@ struct BrowserConsoleDrawer: View {
 
 /// The console's lines: one row per line, each equal unless it changed, newest at the bottom.
 struct BrowserConsoleLines: View, Equatable {
-    let lines: [NWConsoleLine]
+    let lines: [SHConsoleLine]
 
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
                 ForEach(lines) { line in
-                    NWConsoleRow(line).equatable()
+                    SHConsoleRow(line).equatable()
                 }
             }
-            .padding(.top, NW.Space.xs)
-            .padding(.bottom, NW.Space.m)
+            .padding(.top, SH.Space.xs)
+            .padding(.bottom, SH.Space.m)
         }
         .defaultScrollAnchor(.bottom)
         .accessibilityLabel("Console")

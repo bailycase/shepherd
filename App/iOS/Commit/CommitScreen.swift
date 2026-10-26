@@ -18,24 +18,24 @@ struct CommitScreen: View {
             VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
                 switch store.stage {
                 case .loading:
-                    HStack(spacing: NW.Space.m) {
-                        ProgressView().progressViewStyle(NWSpinnerStyle())
-                        Text("Reading the changes on the host…").font(.nw(.ui)).foregroundStyle(Color.nw.textSecondary)
+                    HStack(spacing: SH.Space.m) {
+                        ProgressView().progressViewStyle(SHSpinnerStyle())
+                        Text("Reading the changes on the host…").font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
                     }
-                    .frame(maxWidth: .infinity, minHeight: NW.Height.touch * 2)
+                    .frame(maxWidth: .infinity, minHeight: SH.Height.touch * 2)
                 case .unavailable(let message):
-                    NWBanner(.failed, title: "Can't commit from here", message: message)
+                    SHBanner(.failed, title: "Can't commit from here", message: message)
                 case .form:
                     CommitNotices(store: store)
                     ReviewSectionHead(title: "Message", note: nil)
                     CommitMessageCard(store: store)
                     ReviewSectionHead(title: "Files", note: store.selectionText)
-                        .padding(.top, NW.Space.xs)
+                        .padding(.top, SH.Space.xs)
                     CommitFileList(store: store)
-                        .nwCard(radius: MobileLayout.cardRadius)
+                        .shCard(radius: MobileLayout.cardRadius)
                     VStack(spacing: 0) { CommitOptions(store: store) }
-                        .nwCard(radius: MobileLayout.cardRadius)
-                        .padding(.top, NW.Space.xs)
+                        .shCard(radius: MobileLayout.cardRadius)
+                        .padding(.top, SH.Space.xs)
                 case .operation:
                     CommitProgress(store: store)
                 }
@@ -44,7 +44,7 @@ struct CommitScreen: View {
             .padding(MobileLayout.gutter)
         }
         .scrollDismissesKeyboard(.interactively)
-        .background(Color.nw.bgBase)
+        .background(Color.sh.bgBase)
         .safeAreaInset(edge: .bottom, spacing: 0) { actions(store) }
         .navigationTitle(commitTitle(store))
         .navigationBarTitleDisplayMode(.inline)
@@ -61,37 +61,37 @@ struct CommitScreen: View {
     }
 
     @ViewBuilder private func actions(_ store: ReviewCommitStore) -> some View {
-        VStack(spacing: NW.Space.s) {
+        VStack(spacing: SH.Space.s) {
             switch store.stage {
             case .loading, .unavailable:
                 EmptyView()
             case .form:
                 if let problem = store.problem, store.info?.blocked == nil {
-                    Text(problem).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                    Text(problem).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                 }
                 Button(store.actionTitle) { Task { await store.commit() } }
-                    .buttonStyle(.nwReviewBar(.primary))
+                    .buttonStyle(.shReviewBar(.primary))
                     .disabled(!store.canCommit)
                 Button("Ask agent to commit") { askAgent() }
-                    .buttonStyle(.nwLink(color: Color.nw.textPrimary, font: .nw(.ui)))
-                    .nwTouchTarget(height: NW.Height.controlS)
+                    .buttonStyle(.shLink(color: Color.sh.textPrimary, font: .sh(.ui)))
+                    .shTouchTarget(height: SH.Height.controlS)
                     .accessibilityHint("Sends the agent a turn asking it to commit these changes instead")
             case .operation:
                 if store.operation?.finished == true {
                     Button("Done") { close(store) }
-                        .buttonStyle(.nwReviewBar(.primary))
+                        .buttonStyle(.shReviewBar(.primary))
                 } else {
                     Text("The commit continues on the host if you close this.")
-                        .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                        .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                 }
             }
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, MobileLayout.gutter)
-        .padding(.top, NW.Space.l)
-        .padding(.bottom, NW.Space.s)
-        .background(Color.nw.bgWindow)
-        .overlay(alignment: .top) { NWHairline() }
+        .padding(.top, SH.Space.l)
+        .padding(.bottom, SH.Space.s)
+        .background(Color.sh.bgWindow)
+        .overlay(alignment: .top) { SHHairline() }
     }
 
     /// Closing a finished commit (or one whose outcome never came back) reloads the changes, so

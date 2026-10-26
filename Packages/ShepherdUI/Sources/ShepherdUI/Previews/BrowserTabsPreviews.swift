@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The Browser's tab chrome as one board, driven by plain local state through the components' own
 /// inputs (no model). Previews and the press tests use it; the app draws the same components.
-public struct NWBrowserTabsBoard: View {
+public struct SHBrowserTabsBoard: View {
     public enum Scene: Sendable {
         /// Board 86: two tabs.
         case two
@@ -24,13 +24,13 @@ public struct NWBrowserTabsBoard: View {
 
     private static func id(_ n: Int) -> UUID { UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", n))! }
 
-    private static func item(_ n: Int, _ title: String, _ address: String, _ letter: String, source: NWBrowserTabSource = .user,
-                             active: Bool = false, unseen: Bool = false) -> NWBrowserTabItem {
-        NWBrowserTabItem(id: id(n), title: title, address: address, letter: letter, tint: .forHost(address), source: source,
+    private static func item(_ n: Int, _ title: String, _ address: String, _ letter: String, source: SHBrowserTabSource = .user,
+                             active: Bool = false, unseen: Bool = false) -> SHBrowserTabItem {
+        SHBrowserTabItem(id: id(n), title: title, address: address, letter: letter, tint: .forHost(address), source: source,
                          agentActive: active, unseen: unseen)
     }
 
-    static func items(for scene: Scene) -> [NWBrowserTabItem] {
+    static func items(for scene: Scene) -> [SHBrowserTabItem] {
         switch scene {
         case .two:
             [item(1, "Refund overview", "localhost:3000/refunds", "A"),
@@ -65,7 +65,7 @@ public struct NWBrowserTabsBoard: View {
 
     let scene: Scene
     let log: (String) -> Void
-    @State private var items: [NWBrowserTabItem]
+    @State private var items: [SHBrowserTabItem]
     @State private var selection: UUID?
     @State private var listOpen: Bool
     @State private var note: Note?
@@ -89,61 +89,61 @@ public struct NWBrowserTabsBoard: View {
         _note = State(initialValue: {
             switch scene {
             case .full: Note(message: "This thread has 8 tabs, the most it keeps. New links open in this tab.",
-                             glyph: NWBrowserTabsNote.capGlyph, action: nil)
-            case .opened: Note(message: "The agent opened Refund overview · staging in a new tab.", glyph: NWBrowserTabsNote.globeGlyph, action: "Show it")
-            case .popup: Note(message: "A link opened a new window. Shepherd opened it as a tab.", glyph: NWBrowserTabsNote.globeGlyph, action: nil)
+                             glyph: SHBrowserTabsNote.capGlyph, action: nil)
+            case .opened: Note(message: "The agent opened Refund overview · staging in a new tab.", glyph: SHBrowserTabsNote.globeGlyph, action: "Show it")
+            case .popup: Note(message: "A link opened a new window. Shepherd opened it as a tab.", glyph: SHBrowserTabsNote.globeGlyph, action: nil)
             default: nil
             }
         }())
     }
 
-    private var shown: NWBrowserTabItem? { items.first { $0.id == selection } }
-    private var agentElsewhere: NWBrowserTabItem? { items.first { $0.agentActive && $0.id != selection } }
+    private var shown: SHBrowserTabItem? { items.first { $0.id == selection } }
+    private var agentElsewhere: SHBrowserTabItem? { items.first { $0.agentActive && $0.id != selection } }
 
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         VStack(spacing: 0) {
-            NWBrowserTabStrip(items: items, selection: selection, canAdd: items.count < 8, listOpen: listOpen,
+            SHBrowserTabStrip(items: items, selection: selection, canAdd: items.count < 8, listOpen: listOpen,
                               actions: .init(select: { select($0) }, close: { close($0) }, new: { log("new") },
                                              toggleList: { listOpen.toggle() }))
             if let note {
-                NWBrowserTabsNote(message: note.message, glyph: note.glyph,
+                SHBrowserTabsNote(message: note.message, glyph: note.glyph,
                                   action: note.action.map { title in .init(title) { log("show"); self.note = nil } },
                                   dismiss: { log("dismiss"); self.note = nil })
             }
-            NWBrowserToolbar(state: NWBrowserToolbarState(canGoBack: false, canReload: true, canOpenExternally: true), actions: .init()) {
-                NWBrowserAddressField(host: shown?.address.split(separator: "/").first.map(String.init), path: nil, hostChip: "This Mac",
+            SHBrowserToolbar(state: SHBrowserToolbarState(canGoBack: false, canReload: true, canOpenExternally: true), actions: .init()) {
+                SHBrowserAddressField(host: shown?.address.split(separator: "/").first.map(String.init), path: nil, hostChip: "This Mac",
                                       text: $address, isFocused: $focused, submit: {})
             }
             ZStack(alignment: .bottomTrailing) {
-                nw.bgWindow
-                Text(shown?.title ?? "").font(.nw(.display)).foregroundStyle(nw.textPrimary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).padding(NW.Space.xxl)
-                if scene == .agent { NWAgentRing() }
+                sh.bgWindow
+                Text(shown?.title ?? "").font(.sh(.display)).foregroundStyle(sh.textPrimary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).padding(SH.Space.xxl)
+                if scene == .agent { SHAgentRing() }
                 if let other = agentElsewhere {
-                    NWAgentElsewhere(title: other.title) { select(other.id) }.padding(NW.Space.l)
+                    SHAgentElsewhere(title: other.title) { select(other.id) }.padding(SH.Space.l)
                 }
                 if listOpen {
                     Color.clear.contentShape(Rectangle()).onTapGesture { listOpen = false }.accessibilityHidden(true)
-                    NWBrowserTabMenu(items: items, selection: selection, maxTabs: 8,
+                    SHBrowserTabMenu(items: items, selection: selection, maxTabs: 8,
                                      select: { select($0); listOpen = false },
                                      closeOthers: { log("closeOthers"); if let s = shown { items = [s] }; listOpen = false })
-                        .padding(.trailing, NW.Space.m).padding(.top, NW.Space.xs)
+                        .padding(.trailing, SH.Space.m).padding(.top, SH.Space.xs)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                 }
             }
             .frame(maxHeight: .infinity)
-            if scene == .agent { NWAgentBar(note: "filling the checkout form") { log("takeOver") } }
-            NWConsoleBar(network: 12, warnings: 1, open: false, toggle: {})
+            if scene == .agent { SHAgentBar(note: "filling the checkout form") { log("takeOver") } }
+            SHConsoleBar(network: 12, warnings: 1, open: false, toggle: {})
         }
         .frame(width: Self.paneWidth, height: 560)
-        .background(nw.bgWindow)
+        .background(sh.bgWindow)
     }
 
     private func select(_ id: UUID) {
         log("select \(id.uuidString.suffix(1))")
         selection = id
-        items = items.map { $0.id == id && $0.unseen ? NWBrowserTabItem(id: $0.id, title: $0.title, address: $0.address, letter: $0.letter, tint: $0.tint, source: $0.source, agentActive: $0.agentActive, unseen: false) : $0 }
+        items = items.map { $0.id == id && $0.unseen ? SHBrowserTabItem(id: $0.id, title: $0.title, address: $0.address, letter: $0.letter, tint: $0.tint, source: $0.source, agentActive: $0.agentActive, unseen: false) : $0 }
     }
 
     private func close(_ id: UUID) {
@@ -154,28 +154,28 @@ public struct NWBrowserTabsBoard: View {
 }
 
 #Preview("Browser tabs") {
-    NWPreviewBoth {
-        VStack(spacing: NW.Space.xl) {
-            NWBrowserTabsBoard(.two)
-            NWBrowserTabsBoard(.full)
+    SHPreviewBoth {
+        VStack(spacing: SH.Space.xl) {
+            SHBrowserTabsBoard(.two)
+            SHBrowserTabsBoard(.full)
         }
     }
 }
 
 #Preview("Browser tabs — the agent") {
-    NWPreviewBoth {
-        VStack(spacing: NW.Space.xl) {
-            NWBrowserTabsBoard(.agent)
-            NWBrowserTabsBoard(.elsewhere)
+    SHPreviewBoth {
+        VStack(spacing: SH.Space.xl) {
+            SHBrowserTabsBoard(.agent)
+            SHBrowserTabsBoard(.elsewhere)
         }
     }
 }
 
 #Preview("Browser tabs — notes") {
-    NWPreviewBoth {
-        VStack(spacing: NW.Space.xl) {
-            NWBrowserTabsBoard(.opened)
-            NWBrowserTabsBoard(.popup)
+    SHPreviewBoth {
+        VStack(spacing: SH.Space.xl) {
+            SHBrowserTabsBoard(.opened)
+            SHBrowserTabsBoard(.popup)
         }
     }
 }

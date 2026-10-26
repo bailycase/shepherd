@@ -17,7 +17,7 @@ User board `ProjectBrowser.dc.html`, revision 572. Saved as
   620pt width. Real space name replaces the board's sample name. Exact explanation:
   "Browser tabs in all threads and worktrees for <name> share cookies on this Mac. Other
   spaces use separate cookies."
-- Trailing "This Mac only" badge. Supplied computer vector, `NWGlyph.Settings.computer`,
+- Trailing "This Mac only" badge. Supplied computer vector, `SHGlyph.Settings.computer`,
   12pt, 11.5pt text, horizontal 8pt and
   vertical 6pt insets, 6pt radius, lineSubtle border. This is the viewer Mac even when the space
   lives on a remote host. Cookies never go through the remote protocol.
@@ -53,7 +53,7 @@ User board `ProjectBrowser.dc.html`, revision 572. Saved as
 - Render populated, empty, filtered, long domains, site/all confirmations, clearing/error,
   success and unavailable states in light/dark and text scale 1.3. Capture the running Dev app.
 
-All drawn glyphs use the supplied static SVG outlines via `NWGlyph.Settings`, not approximate
+All drawn glyphs use the supplied static SVG outlines via `SHGlyph.Settings`, not approximate
 SF Symbols. Assets contain no board HTML or script. The bundled Geist and Geist Mono faces keep
 fractional point sizes on macOS and apply the selected text scale once. Baseline adjustments
 preserve the board's text positions. Borders and table rules use 1pt CSS widths at 1x and 2x.

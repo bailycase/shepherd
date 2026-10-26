@@ -30,7 +30,7 @@ public enum AgentState: String, CaseIterable, Hashable, Sendable {
     }
 
     /// The SF Symbol for the state where a glyph stands alone (tool rows, run ledgers). Running
-    /// draws a spinner instead where one fits (`NWStateGlyph`).
+    /// draws a spinner instead where one fits (`SHStateGlyph`).
     public var symbolName: String {
         switch self {
         case .running: "circle.dotted"
@@ -51,36 +51,36 @@ public enum AgentState: String, CaseIterable, Hashable, Sendable {
 
     /// Dots, glyphs, spinners, bars.
     @MainActor public var color: Color {
-        let nw = Color.nw
+        let sh = Color.sh
         return switch self {
-        case .running: nw.running
-        case .attention: nw.lantern
-        case .done: nw.done
-        case .failed, .stuck: nw.failed
-        case .queued, .idle: nw.textTertiary
+        case .running: sh.running
+        case .attention: sh.lantern
+        case .done: sh.done
+        case .failed, .stuck: sh.failed
+        case .queued, .idle: sh.textTertiary
         }
     }
 
     /// The word on a pill or banner title.
     @MainActor public var textColor: Color {
-        let nw = Color.nw
+        let sh = Color.sh
         return switch self {
-        case .running: nw.running
-        case .attention: nw.lanternText
-        case .done: nw.done
-        case .failed, .stuck: nw.failed
-        case .queued, .idle: nw.textSecondary
+        case .running: sh.running
+        case .attention: sh.lanternText
+        case .done: sh.done
+        case .failed, .stuck: sh.failed
+        case .queued, .idle: sh.textSecondary
         }
     }
 
     /// The pill and banner fill; queued and idle have none (they are outlined).
     @MainActor public var tint: Color? {
-        let nw = Color.nw
+        let sh = Color.sh
         return switch self {
-        case .running: nw.runningTint
-        case .attention: nw.lanternTint
-        case .done: nw.doneTint
-        case .failed, .stuck: nw.failedTint
+        case .running: sh.runningTint
+        case .attention: sh.lanternTint
+        case .done: sh.doneTint
+        case .failed, .stuck: sh.failedTint
         case .queued, .idle: nil
         }
     }

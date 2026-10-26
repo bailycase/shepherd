@@ -7,13 +7,13 @@ import Testing
 @Suite("Menu components")
 struct MenuComponentTests {
     static let sections = [
-        NWModelSection(title: "Recent", options: [NWModelOption(id: "a/one", title: "one")]),
-        NWModelSection(title: "Empty", options: []),
-        NWModelSection(title: "a", options: [NWModelOption(id: "a/one", title: "one"), NWModelOption(id: "a/two", title: "two", note: "1M")]),
+        SHModelSection(title: "Recent", options: [SHModelOption(id: "a/one", title: "one")]),
+        SHModelSection(title: "Empty", options: []),
+        SHModelSection(title: "a", options: [SHModelOption(id: "a/one", title: "one"), SHModelOption(id: "a/two", title: "two", note: "1M")]),
     ]
 
     @Test func aModelListFlattensSectionsIntoHeadersAndNumberedModels() {
-        let list = NWModelList(sections: Self.sections)
+        let list = SHModelList(sections: Self.sections)
         #expect(list.rows.map(\.id) == ["#Recent", "Recent/a/one", "#a", "a/a/one", "a/a/two"])
         #expect(list.rows.map(\.position) == [nil, 0, nil, 1, 2])
         #expect(list.options.map(\.id) == ["a/one", "a/one", "a/two"])
@@ -21,33 +21,33 @@ struct MenuComponentTests {
     }
 
     @Test func aModelListKnowsItsHeightAndWhereEachModelIs() {
-        let list = NWModelList(sections: Self.sections)
-        #expect(list.height == 2 * (NWComposerMetrics.menuHeaderHeight + NWComposerMetrics.modelSectionGap) + 3 * NWComposerMetrics.modelRowHeight)
+        let list = SHModelList(sections: Self.sections)
+        #expect(list.height == 2 * (SHComposerMetrics.menuHeaderHeight + SHComposerMetrics.modelSectionGap) + 3 * SHComposerMetrics.modelRowHeight)
         #expect(list.rowID(ofOption: 2) == "a/a/two")
         #expect(list.rowID(ofOption: 3) == nil)
-        #expect(NWModelList(sections: []).height == 0)
+        #expect(SHModelList(sections: []).height == 0)
     }
 
     /// The picker's list is 360pt tall at most, less when the room above the card is short (its
     /// 30pt search and the list's 4pt insets), and never shorter than one row.
     @Test(arguments: [(nil, 360), (.infinity, 360), (1000, 360), (398, 360), (200, 162), (40, 40)] as [(CGFloat?, CGFloat)])
     @MainActor func thePickersListFitsTheRoomItIsGiven(room: CGFloat?, list: CGFloat) {
-        #expect(NWModelPicker.listMaxHeight(in: room) == list)
+        #expect(SHModelPicker.listMaxHeight(in: room) == list)
     }
 
     /// The slash menu shows eight rows at most, fewer when the room is short, and always one.
     @Test(arguments: [(nil, 8), (.infinity, 8), (1000, 8), (324, 8), (323, 7), (120, 2), (10, 1)] as [(CGFloat?, Int)])
     @MainActor func theSlashMenuShowsTheRowsThatFit(room: CGFloat?, rows: Int) {
-        #expect(NWSlashMenu.visibleRows(in: room) == rows)
+        #expect(SHSlashMenu.visibleRows(in: room) == rows)
     }
 }
 
-/// The composer's sizes (NWDesignTool › Chat composer): the chips' words show only at the
+/// The composer's sizes (SHDesignTool › Chat composer): the chips' words show only at the
 /// regular size with room for them.
 @Suite("Composer sizes")
 struct ComposerSizeTests {
-    @Test(arguments: [(NWComposerSize.regular, false, true), (.regular, true, false), (.compact, false, false), (.compact, true, false)])
-    func theChipsDropTheirWordsWhenCompactOrShortOfRoom(size: NWComposerSize, short: Bool, words: Bool) {
+    @Test(arguments: [(SHComposerSize.regular, false, true), (.regular, true, false), (.compact, false, false), (.compact, true, false)])
+    func theChipsDropTheirWordsWhenCompactOrShortOfRoom(size: SHComposerSize, short: Bool, words: Bool) {
         #expect(size.showsChipWords(short: short) == words)
     }
 }

@@ -3,96 +3,96 @@ import SwiftUI
 private let started = Date().addingTimeInterval(-41 * 60)
 
 #Preview("Sidebar") {
-    NWPreviewBoth {
-        HStack(alignment: .top, spacing: NW.Space.xl) {
-            ForEach([NWDensity.standard, .compact]) { density in
-                NWSidebar(topBar: NWSidebarTopBar(searchShortcut: "⌘K", hideShortcut: "⇧⌘S", search: {}, hide: {})) {
-                    VStack(alignment: .leading, spacing: NWSidebarMetrics.rowSpacing) {
-                        NWSidebarDestination("New thread", icon: .newThread, trailing: .keycaps("⌘N")) {}
-                        NWSidebarDestination("Automations", icon: .symbol("bolt")) {}
-                        NWSidebarDestination("More", icon: .disclosure(open: true)) {}
-                        NWSidebarDestination("Hosts", icon: .symbol("display"), selected: true, child: true,
+    SHPreviewBoth {
+        HStack(alignment: .top, spacing: SH.Space.xl) {
+            ForEach([SHDensity.standard, .compact]) { density in
+                SHSidebar(topBar: SHSidebarTopBar(searchShortcut: "⌘K", hideShortcut: "⇧⌘S", search: {}, hide: {})) {
+                    VStack(alignment: .leading, spacing: SHSidebarMetrics.rowSpacing) {
+                        SHSidebarDestination("New thread", icon: .newThread, trailing: .keycaps("⌘N")) {}
+                        SHSidebarDestination("Automations", icon: .symbol("bolt")) {}
+                        SHSidebarDestination("More", icon: .disclosure(open: true)) {}
+                        SHSidebarDestination("Hosts", icon: .symbol("display"), selected: true, child: true,
                                              trailing: .alert("1 offline")) {}
-                        NWSidebarDestination("Extensions", icon: .symbol("puzzlepiece.extension"), child: true) {}
-                        NWSidebarSection(.needsYou(count: 2))
-                        NWSidebarRow("Checkout funnel events", state: .attention, accessory: .reason("retention?"))
-                        NWSidebarRow("Nightly triage", leading: .glyph("bolt", attention: true), accessory: .reason("approve plan"))
-                        NWSidebarSection(.pinned)
-                        NWSidebarRow("Investigate SwiftUI live preview", state: .running, selected: true,
+                        SHSidebarDestination("Extensions", icon: .symbol("puzzlepiece.extension"), child: true) {}
+                        SHSidebarSection(.needsYou(count: 2))
+                        SHSidebarRow("Checkout funnel events", state: .attention, accessory: .reason("retention?"))
+                        SHSidebarRow("Nightly triage", leading: .glyph("bolt", attention: true), accessory: .reason("approve plan"))
+                        SHSidebarSection(.pinned)
+                        SHSidebarRow("Investigate SwiftUI live preview", state: .running, selected: true,
                                      accessory: .elapsed(since: started))
-                        NWSidebarRow("Fix remote subagent deletion", state: .idle, accessory: .tag("horizon"))
-                        NWSidebarSection(.recents)
-                        NWSidebarRow("Merge PR #24 after CI", leading: .glyph("bolt", attention: false), accessory: .text("done"))
-                        NWSidebarRow("Fix terminal output buffer", state: .done)
-                        NWSidebarRow("Fix remote nightly", state: .failed, accessory: .tag("horizon"))
+                        SHSidebarRow("Fix remote subagent deletion", state: .idle, accessory: .tag("horizon"))
+                        SHSidebarSection(.recents)
+                        SHSidebarRow("Merge PR #24 after CI", leading: .glyph("bolt", attention: false), accessory: .text("done"))
+                        SHSidebarRow("Fix terminal output buffer", state: .done)
+                        SHSidebarRow("Fix remote nightly", state: .failed, accessory: .tag("horizon"))
                     }
-                    .padding(.horizontal, NWSidebarMetrics.listInset)
+                    .padding(.horizontal, SHSidebarMetrics.listInset)
                 } footer: {
-                    NWSidebarFooter(name: "Alex", detail: "This Mac · demo-mac") {}
+                    SHSidebarFooter(name: "Alex", detail: "This Mac · demo-mac") {}
                 }
                 .frame(width: 232, height: 600)
-                .nwBorder(.nw.lineSubtle, radius: NW.Radius.m)
-                .nwDensity(density)
+                .shBorder(.sh.lineSubtle, radius: SH.Radius.m)
+                .shDensity(density)
             }
         }
     }
 }
 
 #Preview("Sidebar — Spaces") {
-    NWPreviewBoth {
-        HStack(alignment: .top, spacing: NW.Space.xl) {
-            ForEach([NWDensity.standard, .compact]) { density in
-                VStack(alignment: .leading, spacing: NWSidebarMetrics.rowSpacing) {
-                    NWProjectsHeader("Spaces") { Button("Show shepherd") {} }
-                    NWProjectRow("shepherd", count: 3, expanded: true, toggle: {}, newThread: {}) { Button("Hide from Sidebar") {} }
-                    NWSidebarRow("Dock review pane", state: .attention, accessory: .reason("approve plan"), nested: true)
-                    NWSidebarRow("Investigate SwiftUI live preview", state: .running, selected: true,
+    SHPreviewBoth {
+        HStack(alignment: .top, spacing: SH.Space.xl) {
+            ForEach([SHDensity.standard, .compact]) { density in
+                VStack(alignment: .leading, spacing: SHSidebarMetrics.rowSpacing) {
+                    SHProjectsHeader("Spaces") { Button("Show shepherd") {} }
+                    SHProjectRow("shepherd", count: 3, expanded: true, toggle: {}, newThread: {}) { Button("Hide from Sidebar") {} }
+                    SHSidebarRow("Dock review pane", state: .attention, accessory: .reason("approve plan"), nested: true)
+                    SHSidebarRow("Investigate SwiftUI live preview", state: .running, selected: true,
                                  accessory: .elapsed(since: started), nested: true)
-                    NWSidebarRow("Fix remote subagent deletion", state: .idle, accessory: .tag("horizon"), nested: true)
-                    NWProjectRow("dashboard-web", count: 2, expanded: false, rollup: .waiting, toggle: {}, newThread: {}) { EmptyView() }
-                    NWProjectRow("shepherd-daemon", count: 3, expanded: false, rollup: .running, toggle: {}, newThread: {}) { EmptyView() }
-                    NWProjectRow("dotfiles", count: 1, expanded: false, toggle: {}, newThread: {}) { EmptyView() }
-                    NWSidebarSection(.host("horizon", unreachable: true))
-                    NWProjectRow("shepherd", count: 2, expanded: false, dimmed: true, toggle: {}, newThread: nil) { EmptyView() }
+                    SHSidebarRow("Fix remote subagent deletion", state: .idle, accessory: .tag("horizon"), nested: true)
+                    SHProjectRow("dashboard-web", count: 2, expanded: false, rollup: .waiting, toggle: {}, newThread: {}) { EmptyView() }
+                    SHProjectRow("shepherd-daemon", count: 3, expanded: false, rollup: .running, toggle: {}, newThread: {}) { EmptyView() }
+                    SHProjectRow("dotfiles", count: 1, expanded: false, toggle: {}, newThread: {}) { EmptyView() }
+                    SHSidebarSection(.host("horizon", unreachable: true))
+                    SHProjectRow("shepherd", count: 2, expanded: false, dimmed: true, toggle: {}, newThread: nil) { EmptyView() }
                 }
-                .padding(.horizontal, NWSidebarMetrics.listInset)
+                .padding(.horizontal, SHSidebarMetrics.listInset)
                 .frame(width: 232, alignment: .top)
-                .background(Color.nw.bgBase)
-                .nwDensity(density)
+                .background(Color.sh.bgBase)
+                .shDensity(density)
             }
         }
     }
 }
 
 #Preview("Organize by") {
-    @Previewable @State var style = NWSidebarStyle.projects
-    NWPreviewBoth {
-        NWSidebarStylePicker(selection: $style).frame(width: 560)
+    @Previewable @State var style = SHSidebarStyle.projects
+    SHPreviewBoth {
+        SHSidebarStylePicker(selection: $style).frame(width: 560)
     }
 }
 
 #Preview("Toolbar and pane header") {
-    NWPreviewBoth {
-        VStack(spacing: NW.Space.l) {
-            NWThreadToolbar("Investigate SwiftUI live preview", project: "Shepherd") {
-                NWBranchChip(kind: .worktree, branch: "pi/swiftui-previews", changedFiles: 3)
+    SHPreviewBoth {
+        VStack(spacing: SH.Space.l) {
+            SHThreadToolbar("Investigate SwiftUI live preview", project: "Shepherd") {
+                SHBranchChip(kind: .worktree, branch: "pi/swiftui-previews", changedFiles: 3)
             } trailing: {
-                NWSidePaneButton(isOn: false, shortcut: "⇧⌘B") {}
-                NWOptionsMenu("Thread options") { Button("Rename…") {} }
+                SHSidePaneButton(isOn: false, shortcut: "⇧⌘B") {}
+                SHOptionsMenu("Thread options") { Button("Rename…") {} }
             }
-            NWThreadToolbar("Deploy media stack", project: "homelab", sidebar: {}) {
-                NWBranchChip(kind: .checkout, branch: "chore/remove-homarr", changedFiles: 11, host: "horizon")
+            SHThreadToolbar("Deploy media stack", project: "homelab", sidebar: {}) {
+                SHBranchChip(kind: .checkout, branch: "chore/remove-homarr", changedFiles: 11, host: "horizon")
             } trailing: {
-                NWSidePaneButton(isOn: true, shortcut: "⇧⌘B") {}
-                NWOptionsMenu("Thread options") { Button("Rename…") {} }
+                SHSidePaneButton(isOn: true, shortcut: "⇧⌘B") {}
+                SHOptionsMenu("Thread options") { Button("Rename…") {} }
             }
-            NWPaneHeader("Review", close: {}) {
-                HStack(spacing: NW.Space.xs) {
+            SHPaneHeader("Review", close: {}) {
+                HStack(spacing: SH.Space.xs) {
                     Text("4 files ·")
-                    NWDiffStat(added: 67, removed: 58, font: .nw(.micro, weight: .regular))
+                    SHDiffStat(added: 67, removed: 58, font: .sh(.micro, weight: .regular))
                 }
             } controls: {
-                NWSegmentedPicker(selection: .constant(0), options: [(0, "Local"), (1, "PR #24")], size: .s)
+                SHSegmentedPicker(selection: .constant(0), options: [(0, "Local"), (1, "PR #24")], size: .s)
             }
         }
         .frame(width: 720)
@@ -100,19 +100,19 @@ private let started = Date().addingTimeInterval(-41 * 60)
 }
 
 #Preview("Side pane tabs and button") {
-    NWPreviewBoth {
-        VStack(alignment: .trailing, spacing: NW.Space.l) {
-            NWSidePaneTabs([NWSidePaneTab(id: "changes", title: "Changes", systemImage: "plus.forwardslash.minus", count: 4, shortcut: "⌃1")],
+    SHPreviewBoth {
+        VStack(alignment: .trailing, spacing: SH.Space.l) {
+            SHSidePaneTabs([SHSidePaneTab(id: "changes", title: "Changes", systemImage: "plus.forwardslash.minus", count: 4, shortcut: "⌃1")],
                            selection: "changes", select: { _ in }, closeShortcut: "⇧⌘B", close: {}) {
                 Button("Reset Width") {}
             }
             .frame(width: 600)
-            NWSidePaneTabs([NWSidePaneTab(id: "changes", title: "Changes", systemImage: "plus.forwardslash.minus", count: 2, news: true)],
+            SHSidePaneTabs([SHSidePaneTab(id: "changes", title: "Changes", systemImage: "plus.forwardslash.minus", count: 2, news: true)],
                            selection: "changes", select: { _ in }, close: {}) {
                 Button("Reset Width") {}
             }
             .frame(width: 400)
-            NWSidePaneButton(isOn: false, news: "Agent opened a review in Changes", shortcut: "⇧⌘B") {}
+            SHSidePaneButton(isOn: false, news: "Agent opened a review in Changes", shortcut: "⇧⌘B") {}
                 .padding(.bottom, 48)
         }
         .frame(width: 720, alignment: .trailing)
@@ -122,30 +122,30 @@ private let started = Date().addingTimeInterval(-41 * 60)
 #Preview("Command palette") {
     @Previewable @State var query = "rev"
     @Previewable @FocusState var focused: Bool
-    NWPreviewBoth {
-        NWPaletteCard {
-            NWPaletteSearchRow("Search commands, agents, subagents…", text: $query, focus: $focused, submit: {}) {
-                NWSegmentedPicker(selection: .constant(0), options: [(0, "All"), (1, "Commands"), (2, "Agents")], size: .s)
+    SHPreviewBoth {
+        SHPaletteCard {
+            SHPaletteSearchRow("Search commands, agents, subagents…", text: $query, focus: $focused, submit: {}) {
+                SHSegmentedPicker(selection: .constant(0), options: [(0, "All"), (1, "Commands"), (2, "Agents")], size: .s)
             }
         } results: {
             VStack(alignment: .leading, spacing: 0) {
-                NWPaletteSectionHeader("Commands")
-                NWPaletteRow("New agent", systemImage: "plus", context: "in Shepherd/", shortcut: "⌘N", highlighted: true) {}
-                NWPaletteRow("Review diff", systemImage: "plus.forwardslash.minus", context: "working tree · 4 files", shortcut: "⇧⌘B") {}
-                NWPaletteSectionHeader("Agents")
-                NWPaletteRow("Dock review pane", systemImage: "bubble.left", context: "running · 8m") {}
+                SHPaletteSectionHeader("Commands")
+                SHPaletteRow("New agent", systemImage: "plus", context: "in Shepherd/", shortcut: "⌘N", highlighted: true) {}
+                SHPaletteRow("Review diff", systemImage: "plus.forwardslash.minus", context: "working tree · 4 files", shortcut: "⇧⌘B") {}
+                SHPaletteSectionHeader("Agents")
+                SHPaletteRow("Dock review pane", systemImage: "bubble.left", context: "running · 8m") {}
             }
         }
-        .frame(width: NWPaletteMetrics.width)
+        .frame(width: SHPaletteMetrics.width)
     }
 }
 
 #Preview("Artifacts") {
-    NWPreviewBoth {
-        VStack(alignment: .leading, spacing: NW.Space.xl) {
-            NWArtifactCard(NWArtifactRow(id: "a", name: "Load test report", detail: "HTML · 6m ago", symbol: "chevron.left.forwardslash.chevron.right"), open: {})
-            NWArtifactList([NWArtifactRow(id: "a", name: "Load test report", detail: "HTML · 6m ago", symbol: "chevron.left.forwardslash.chevron.right"),
-                            NWArtifactRow(id: "b", name: "retry-plan.md", detail: "Markdown · just now", symbol: "doc.text")], selection: "a", open: { _ in })
+    SHPreviewBoth {
+        VStack(alignment: .leading, spacing: SH.Space.xl) {
+            SHArtifactCard(SHArtifactRow(id: "a", name: "Load test report", detail: "HTML · 6m ago", symbol: "chevron.left.forwardslash.chevron.right"), open: {})
+            SHArtifactList([SHArtifactRow(id: "a", name: "Load test report", detail: "HTML · 6m ago", symbol: "chevron.left.forwardslash.chevron.right"),
+                            SHArtifactRow(id: "b", name: "retry-plan.md", detail: "Markdown · just now", symbol: "doc.text")], selection: "a", open: { _ in })
                 .frame(height: 200)
         }
         .frame(width: 420)

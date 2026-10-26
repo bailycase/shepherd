@@ -16,7 +16,7 @@ struct SubagentRunScreen: View {
         let store = threads.store(for: ref)
         let run = store.subagents.first { $0.runID == runID }
         SubagentRunView(ref: ref, store: store, runID: runID, compact: true)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
             .navigationTitle(run.map(nativeRunAgentName) ?? "Subagent")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .tabBar)
@@ -41,17 +41,17 @@ struct SubagentRunTitle: View {
 
     var body: some View {
         let phase = run.map(nativeRunPhase)
-        VStack(spacing: NW.Space.xxs) {
-            Text(run.map(nativeRunAgentName) ?? "Subagent").font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary)
+        VStack(spacing: SH.Space.xxs) {
+            Text(run.map(nativeRunAgentName) ?? "Subagent").font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary)
                 .lineLimit(1)
-            HStack(spacing: NW.Space.s) {
+            HStack(spacing: SH.Space.s) {
                 Text(phase.map(nativeRunPhaseLabel) ?? "No longer listed")
                 if let started = run?.startedAt {
                     Text("·")
-                    NWElapsedText(since: SubagentValues.date(started)!, until: SubagentValues.date(run?.isTerminal == true ? run?.endedAt : nil))
+                    SHElapsedText(since: SubagentValues.date(started)!, until: SubagentValues.date(run?.isTerminal == true ? run?.endedAt : nil))
                 }
             }
-            .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+            .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
             .lineLimit(1)
         }
         .accessibilityElement(children: .combine)
@@ -90,22 +90,22 @@ struct SubagentRunView: View {
                     if let summary {
                         // The inspector heads the run with its card, which carries its question.
                         if !compact {
-                            NWRunCard(SubagentValues.card(summary), isEnabled: commands.enabled, open: nil)
+                            SHRunCard(SubagentValues.card(summary), isEnabled: commands.enabled, open: nil)
                                 .equatable()
                         }
-                        NWRunGoal(goal: summary.goal, label: compact ? "Goal · from the parent" : "Goal",
+                        SHRunGoal(goal: summary.goal, label: compact ? "Goal · from the parent" : "Goal",
                                   note: run.flatMap(Self.goalNote), result: summary.result,
                                   resultState: AgentState(summary.phase))
                         if compact, let question = summary.question {
-                            NWRunQuestion(question, options: summary.options)
-                                .padding(NW.Space.l)
-                                .background(Color.nw.bgSunken, in: RoundedRectangle(cornerRadius: MobileLayout.cardRadius))
+                            SHRunQuestion(question, options: summary.options)
+                                .padding(SH.Space.l)
+                                .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: MobileLayout.cardRadius))
                         }
                     } else {
-                        Text("This run is no longer listed.").font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                        Text("This run is no longer listed.").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                     }
                     if !compact {
-                        Text("Its run").nwSectionLabel().padding(.top, NW.Space.s)
+                        Text("Its run").shSectionLabel().padding(.top, SH.Space.s)
                     }
                     SubagentTranscriptList(model: transcript, live: run.flatMap(nativeRunLive),
                                            emptyText: run == nil ? "This run is no longer listed." : "No transcript yet.",
@@ -142,50 +142,50 @@ struct SubagentRunView: View {
 
     @ViewBuilder private func footer(_ run: NativeSubagent?) -> some View {
         if transcript.earlierCount > 0 {
-            HStack(spacing: NW.Space.s) {
-                Text(nativeCount(transcript.earlierCount, "earlier turn")).font(.nw(.mono)).foregroundStyle(Color.nw.textTertiary)
+            HStack(spacing: SH.Space.s) {
+                Text(nativeCount(transcript.earlierCount, "earlier turn")).font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary)
                 Button(transcript.loadingOlder ? "Loading…" : "Show all") { Task { await transcript.loadAll(store: store) } }
-                    .buttonStyle(.nw(.ghost, size: .s))
+                    .buttonStyle(.sh(.ghost, size: .s))
                     .disabled(transcript.loadingOlder)
             }
         }
     }
 
     @ViewBuilder private func bottomBar(_ run: NativeSubagent?, summary: NativeRunSummary?, commands: SubagentCommands) -> some View {
-        VStack(alignment: .leading, spacing: NW.Space.s) {
+        VStack(alignment: .leading, spacing: SH.Space.s) {
             if let notice = copyNotice ?? store.notice {
-                Text(notice).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                Text(notice).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
             }
             if let run, let summary, nativeRunAcceptsSteer(run) {
                 // The same Steer command, called Reply while the run waits on its parent's answer.
                 let words = nativeRunSteerWords(run)
                 // "Steer worker…", the agent, not the task (MobileSubagent, iPadSteer).
                 let agent = summary.role ?? summary.name
-                NWSteerField(text: $draft, prompt: "\(words.label(agent))…",
+                SHSteerField(text: $draft, prompt: "\(words.label(agent))…",
                              caption: words.caption(agent),
                              isEnabled: commands.enabled, focus: $steering, accessibilityLabel: words.label(agent),
                              sendLabel: words.verb) {
                     steer(commands)
                 }
             } else if let run {
-                HStack(spacing: NW.Space.m) {
+                HStack(spacing: SH.Space.m) {
                     Button("Re-run") { commands.control(run.runID, .rerun) }
-                        .buttonStyle(.nw(.secondary, size: .l))
+                        .buttonStyle(.sh(.secondary, size: .l))
                         .disabled(!commands.enabled)
                         .accessibilityLabel("Re-run \(summary?.name ?? "subagent")")
                     Button("Copy transcript") { copy() }
-                        .buttonStyle(.nw(.ghost, size: .l))
+                        .buttonStyle(.sh(.ghost, size: .l))
                         .disabled(transcript.messages.isEmpty)
                     Spacer(minLength: 0)
                 }
             }
         }
         .padding(.horizontal, MobileLayout.gutter)
-        .padding(.vertical, NW.Space.m)
+        .padding(.vertical, SH.Space.m)
         .frame(maxWidth: MobileLayout.threadMaxWidth + 2 * MobileLayout.gutter)
         .frame(maxWidth: .infinity)
-        .background(Color.nw.bgWindow)
-        .overlay(alignment: .top) { NWHairline() }
+        .background(Color.sh.bgWindow)
+        .overlay(alignment: .top) { SHHairline() }
     }
 
     private func steer(_ commands: SubagentCommands) {

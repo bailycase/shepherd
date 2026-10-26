@@ -42,11 +42,11 @@ struct DesignExportSheet: View {
     @Bindable var model: DesignExportModel
 
     var body: some View {
-        NWExportSheet(exportTitle: model.exportTitle, canExport: model.canExport,
+        SHExportSheet(exportTitle: model.exportTitle, canExport: model.canExport,
                       close: { vm.closeDesignExport() }, export: { vm.runDesignExport(model) }) {
-            NWExportSection("Boards") { boards }
-            NWExportSection("Format") { formats }
-            NWExportSection("Use it somewhere else", divided: false) { share }
+            SHExportSection("Boards") { boards }
+            SHExportSection("Format") { formats }
+            SHExportSection("Use it somewhere else", divided: false) { share }
         }
         .disabled(model.working)
     }
@@ -54,28 +54,28 @@ struct DesignExportSheet: View {
     /// One row per board; past eight, they scroll.
     private var boards: some View {
         let rows = model.selection.rows
-        let height = NWDesignMetrics.exportRowHeight * min(CGFloat(rows.count), NWDesignMetrics.exportVisibleRows)
+        let height = SHDesignMetrics.exportRowHeight * min(CGFloat(rows.count), SHDesignMetrics.exportVisibleRows)
         return ScrollView {
             LazyVStack(spacing: 0) {
                 ForEach(rows) { row in
-                    NWExportBoardRow(title: row.title, size: row.size, isTicked: model.selection.isTicked(row.path)) {
+                    SHExportBoardRow(title: row.title, size: row.size, isTicked: model.selection.isTicked(row.path)) {
                         model.selection.toggle(row.path)
                     }
                     .equatable()
                 }
             }
         }
-        .scrollDisabled(CGFloat(rows.count) <= NWDesignMetrics.exportVisibleRows)
+        .scrollDisabled(CGFloat(rows.count) <= SHDesignMetrics.exportVisibleRows)
         .frame(height: height)
     }
 
     private var formats: some View {
         let all = DesignExportFormat.allCases
-        return Grid(horizontalSpacing: NWDesignMetrics.exportFormatSpacing, verticalSpacing: NWDesignMetrics.exportFormatSpacing) {
+        return Grid(horizontalSpacing: SHDesignMetrics.exportFormatSpacing, verticalSpacing: SHDesignMetrics.exportFormatSpacing) {
             ForEach(0..<(all.count / 2), id: \.self) { row in
                 GridRow {
                     ForEach(all[(row * 2)..<(row * 2 + 2)], id: \.self) { format in
-                        NWExportFormatCard(format.title, line: format.line, isChosen: model.format == format) { model.format = format }
+                        SHExportFormatCard(format.title, line: format.line, isChosen: model.format == format) { model.format = format }
                     }
                 }
             }
@@ -85,8 +85,8 @@ struct DesignExportSheet: View {
     }
 
     private var share: some View {
-        VStack(alignment: .leading, spacing: NW.Space.m) {
-            HStack(spacing: NWDesignMetrics.exportShareSpacing) {
+        VStack(alignment: .leading, spacing: SH.Space.m) {
+            HStack(spacing: SHDesignMetrics.exportShareSpacing) {
                 // Which thread is not drawn: the button lists them.
                 Menu {
                     ForEach(model.threads) { thread in
@@ -96,14 +96,14 @@ struct DesignExportSheet: View {
                     Label("Attach to a thread", systemImage: "text.bubble")
                 }
                 .menuStyle(.button)
-                .buttonStyle(.nw(.secondary, size: .s))
+                .buttonStyle(.sh(.secondary, size: .s))
                 .menuIndicator(.hidden)
                 .fixedSize()
                 .disabled(model.threads.isEmpty || model.selection.count == 0)
             }
             Text("Attached boards arrive as HTML plus a note of the tokens they use.")
-                .font(.nwSans(NWDesignMetrics.exportNoteSize))
-                .foregroundStyle(Color.nw.textTertiary)
+                .font(.shSans(SHDesignMetrics.exportNoteSize))
+                .foregroundStyle(Color.sh.textTertiary)
         }
     }
 }
@@ -116,18 +116,18 @@ struct DesignExportOverlay: View {
     var body: some View {
         ZStack {
             if let model = vm.designExport {
-                Color.nw.sheetScrim
+                Color.sh.sheetScrim
                     .contentShape(Rectangle())
                     .onTapGesture {}
                     .accessibilityHidden(true)
-                    .nwTransition(.content)
+                    .shTransition(.content)
                 DesignExportSheet(vm: vm, model: model)
-                    .nwTransition(.overlay, anchor: .center)
+                    .shTransition(.overlay, anchor: .center)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
         .allowsHitTesting(vm.designExport != nil)
-        .nwAnimation(.overlay, value: vm.designExport != nil)
+        .shAnimation(.overlay, value: vm.designExport != nil)
     }
 }

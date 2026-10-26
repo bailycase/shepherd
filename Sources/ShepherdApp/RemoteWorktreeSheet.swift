@@ -65,31 +65,31 @@ struct RemoteWorktreeSheet: View {
     }
 
     var body: some View {
-        NWDialog(finalize ? "Finalize worktree" : "Delete worktree agent",
+        SHDialog(finalize ? "Finalize worktree" : "Delete worktree agent",
                  message: finalize ? "Runs on \(hostName): commit, push, pull request, optional merge, then cleanup." : nil,
                  width: AppLayout.remoteWorktreeSheetWidth) {
             SheetRow("Host") {
-                Text(hostName).font(.nw(.ui)).foregroundStyle(Color.nw.textPrimary)
+                Text(hostName).font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary)
             }
             if finalize && !operationPending {
                 if checking {
-                    HStack(spacing: NW.Space.s) {
-                        ProgressView().progressViewStyle(.nwSpinner)
-                        Text("Checking host prerequisites…").font(.nw(.caption)).foregroundStyle(Color.nw.textSecondary)
+                    HStack(spacing: SH.Space.s) {
+                        ProgressView().progressViewStyle(.shSpinner)
+                        Text("Checking host prerequisites…").font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
                     }
-                    .padding(.horizontal, NWDialogMetrics.inset)
-                    .padding(.vertical, NW.Space.l)
+                    .padding(.horizontal, SHDialogMetrics.inset)
+                    .padding(.vertical, SH.Space.l)
                 } else if showingSetup {
                     WorktreeSetupChecklist(model: setup, openLoginShell: openLoginShell)
                 }
             }
             if let info {
                 SheetRow("Worktree") {
-                    Text(info.path).font(.nw(.mono)).foregroundStyle(Color.nw.textSecondary)
+                    Text(info.path).font(.sh(.mono)).foregroundStyle(Color.sh.textSecondary)
                         .lineLimit(1).truncationMode(.middle).help(info.path).textSelection(.enabled)
                 }
                 SheetRow("Branch") {
-                    Text(info.branch).font(.nw(.mono)).foregroundStyle(Color.nw.textSecondary).textSelection(.enabled)
+                    Text(info.branch).font(.sh(.mono)).foregroundStyle(Color.sh.textSecondary).textSelection(.enabled)
                 }
                 if operation == nil && !operationPending {
                     if finalize && !checking && !showingSetup {
@@ -97,41 +97,41 @@ struct RemoteWorktreeSheet: View {
                     } else if !finalize, let warning = info.warning {
                         DialogBanner(title: "Unreconciled work", message: "\(warning) will be lost with the worktree.")
                         Toggle("I understand this work will be lost", isOn: $acknowledgedLoss)
-                            .toggleStyle(.nwCheckbox)
-                            .font(.nw(.ui))
-                            .foregroundStyle(Color.nw.textPrimary)
-                            .padding(.horizontal, NWDialogMetrics.inset)
-                            .padding(.top, NW.Space.l)
+                            .toggleStyle(.shCheckbox)
+                            .font(.sh(.ui))
+                            .foregroundStyle(Color.sh.textPrimary)
+                            .padding(.horizontal, SHDialogMetrics.inset)
+                            .padding(.top, SH.Space.l)
                     }
                 }
             }
             if let operation {
-                VStack(alignment: .leading, spacing: NW.Space.xs) {
+                VStack(alignment: .leading, spacing: SH.Space.xs) {
                     ForEach(Array(operation.progress.enumerated()), id: \.offset) { _, line in
-                        Text(line).font(.nw(.mono)).foregroundStyle(Color.nw.textSecondary).textSelection(.enabled)
-                            .nwTransition(.list)
+                        Text(line).font(.sh(.mono)).foregroundStyle(Color.sh.textSecondary).textSelection(.enabled)
+                            .shTransition(.list)
                     }
                 }
-                .padding(.horizontal, NWDialogMetrics.inset)
-                .padding(.top, NW.Space.l)
+                .padding(.horizontal, SHDialogMetrics.inset)
+                .padding(.top, SH.Space.l)
                 if let error = operation.error { DialogBanner(state: .failed, title: "The host stopped the operation", message: error) }
                 if let url = operation.prURL, let link = URL(string: url) {
                     Link(url, destination: link)
-                        .font(.nw(.mono))
-                        .foregroundStyle(Color.nw.running)
+                        .font(.sh(.mono))
+                        .foregroundStyle(Color.sh.running)
                         .textSelection(.enabled)
-                        .padding(.horizontal, NWDialogMetrics.inset)
-                        .padding(.top, NW.Space.l)
-                        .nwTransition(.disclosure)
+                        .padding(.horizontal, SHDialogMetrics.inset)
+                        .padding(.top, SH.Space.l)
+                        .shTransition(.disclosure)
                 }
             }
             if let errorText { DialogBanner(state: .failed, title: "Request failed", message: errorText) }
         } status: {
             if operationPending, operation?.finished != true {
-                NWDialogStatus("Operation continues on the host. Reconnecting only checks its status.")
+                SHDialogStatus("Operation continues on the host. Reconnecting only checks its status.")
             } else if finalize && showingSetup && !operationPending {
                 Button("Re-run checks") { Task { await setup.runAll() } }
-                    .buttonStyle(.nw(.secondary, size: .s))
+                    .buttonStyle(.sh(.secondary, size: .s))
                     .disabled(setup.running)
             }
         } actions: {
@@ -139,11 +139,11 @@ struct RemoteWorktreeSheet: View {
         }
         // Checking → setup or the form → the host's progress → done: each stage replaces the
         // last in place as the sheet eases to its height, and progress lines arrive as rows.
-        .nwAnimation(.disclosure, value: stage)
-        .nwAnimation(.list, value: operation?.progress.count)
-        .nwAnimation(.disclosure, value: errorText)
-        .nwAnimation(.content, value: generatingDescription)
-        .nwAnimation(.content, value: includedCommits)
+        .shAnimation(.disclosure, value: stage)
+        .shAnimation(.list, value: operation?.progress.count)
+        .shAnimation(.disclosure, value: errorText)
+        .shAnimation(.content, value: generatingDescription)
+        .shAnimation(.content, value: includedCommits)
         .task {
             guard vm.remoteWorktreeOperationIDs[target] == nil else { return }
             if staged != nil {
@@ -194,7 +194,7 @@ struct RemoteWorktreeSheet: View {
     @ViewBuilder
     private var actions: some View {
         Button("Close") { vm.remoteWorktreeSheet = nil }
-            .buttonStyle(.nw(.secondary))
+            .buttonStyle(.sh(.secondary))
             .keyboardShortcut(.cancelAction)
         if let operation, operation.finished {
             Button("Done") {
@@ -202,12 +202,12 @@ struct RemoteWorktreeSheet: View {
                 vm.remoteWorktreeOperationEndpoints.removeValue(forKey: target)
                 vm.remoteWorktreeSheet = nil
             }
-            .buttonStyle(.nw(.primary))
+            .buttonStyle(.sh(.primary))
             .keyboardShortcut(.defaultAction)
         } else if !operationPending {
             if finalize && showingSetup {
                 Button("Continue") { Task { await prepareInput() } }
-                    .buttonStyle(.nw(.primary))
+                    .buttonStyle(.sh(.primary))
                     .keyboardShortcut(.defaultAction)
                     .disabled(setup.running || !setup.allPassed)
             } else if !finalize {
@@ -219,11 +219,11 @@ struct RemoteWorktreeSheet: View {
                         } catch { errorText = String(describing: error) }
                     }
                 }
-                .buttonStyle(.nw(.secondary))
+                .buttonStyle(.sh(.secondary))
             }
             if let info, !(finalize && showingSetup) {
                 Button(finalize ? "Finalize" : "Delete agent and worktree") { start(info) }
-                    .buttonStyle(.nw(finalize ? .primary : .dangerFill))
+                    .buttonStyle(.sh(finalize ? .primary : .dangerFill))
                     .keyboardShortcut(finalize ? KeyboardShortcut.defaultAction : nil)
                     .disabled(submitting || (finalize && (checking || showingSetup || generatingDescription || !setup.allPassed)) || (!finalize && info.warning != nil && !acknowledgedLoss)
                               || (finalize && (options.base.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || options.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)))
@@ -234,35 +234,35 @@ struct RemoteWorktreeSheet: View {
     @ViewBuilder
     private func finalizeInput(_ info: RemoteWorktreeInfo) -> some View {
         SheetRow("Base") {
-            HStack(spacing: NW.Space.m) {
-                TextField("Base branch", text: $options.base).textFieldStyle(.nw(mono: true))
+            HStack(spacing: SH.Space.m) {
+                TextField("Base branch", text: $options.base).textFieldStyle(.sh(mono: true))
                     .frame(maxWidth: AppLayout.baseFieldMaxWidth)
                 if let count = includedCommits {
                     Text("Will include \(count) commit\(count == 1 ? "" : "s")")
-                        .font(.nw(.caption))
-                        .foregroundStyle(count > 20 ? Color.nw.lanternText : Color.nw.textTertiary)
-                        .nwContentTransition(.numeric())
+                        .font(.sh(.caption))
+                        .foregroundStyle(count > 20 ? Color.sh.lanternText : Color.sh.textTertiary)
+                        .shContentTransition(.numeric())
                 }
             }
         }
         SheetRow("Title") {
             TextField("Pull request title", text: $options.title,
-                      prompt: Text("PR title").foregroundStyle(Color.nw.textTertiary))
-                .textFieldStyle(.nw)
+                      prompt: Text("PR title").foregroundStyle(Color.sh.textTertiary))
+                .textFieldStyle(.sh)
         }
         SheetRow("Description", alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: NW.Space.xs) {
+            VStack(alignment: .leading, spacing: SH.Space.xs) {
                 TextEditor(text: $options.body)
-                    .nwText(.body)
-                    .foregroundStyle(Color.nw.textPrimary)
+                    .shText(.body)
+                    .foregroundStyle(Color.sh.textPrimary)
                     .scrollContentBackground(.hidden)
                     .frame(height: AppLayout.descriptionEditorHeight)
-                    .padding(NW.Space.s)
-                    .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.s))
-                    .nwBorder(Color.nw.lineStrong, radius: NW.Radius.s)
+                    .padding(SH.Space.s)
+                    .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+                    .shBorder(Color.sh.lineStrong, radius: SH.Radius.s)
                     .accessibilityLabel("Pull request description")
                 if generatingDescription {
-                    Text("Generating on the host…").font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                    Text("Generating on the host…").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                 } else if info.generateDescription == true {
                     SheetLinkButton(label: descriptionPrepared ? "Regenerate…" : "Generate…") {
                         Task { await generateDescription(force: true) }
@@ -276,26 +276,26 @@ struct RemoteWorktreeSheet: View {
         SheetRow("Merge") { captionedSwitch("Merge PR automatically", isOn: $options.autoMergePR) }
         if options.autoMergePR {
             SheetRow("Method") {
-                NWSegmentedPicker("Merge method", selection: $options.mergeMethod,
+                SHSegmentedPicker("Merge method", selection: $options.mergeMethod,
                                   options: [("squash", "Squash"), ("merge", "Merge"), ("rebase", "Rebase")])
             }
-            .nwTransition(.disclosure)
+            .shTransition(.disclosure)
         }
         Text("Runs on the host: commit, push, PR, optional merge, clean check, stop agent, remove checkout. The remote branch is never deleted. Failures stop cleanup.")
-            .nwText(.caption)
-            .foregroundStyle(Color.nw.textTertiary)
+            .shText(.caption)
+            .foregroundStyle(Color.sh.textTertiary)
             .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, NWDialogMetrics.inset)
-            .padding(.top, NW.Space.l)
+            .padding(.horizontal, SHDialogMetrics.inset)
+            .padding(.top, SH.Space.l)
     }
 
     /// A switch with what it does beside it: the row label alone ("Cleanup") doesn't say.
     private func captionedSwitch(_ label: String, isOn: Binding<Bool>) -> some View {
-        HStack(spacing: NW.Space.m) {
+        HStack(spacing: SH.Space.m) {
             SettingsSwitch(label: label, isOn: isOn)
             Text(label)
-                .font(.nw(.caption))
-                .foregroundStyle(Color.nw.textSecondary)
+                .font(.sh(.caption))
+                .foregroundStyle(Color.sh.textSecondary)
                 .accessibilityHidden(true)
         }
     }

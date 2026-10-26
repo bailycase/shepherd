@@ -19,7 +19,7 @@ struct DesignsPageModel: Equatable {
         let detail: String
         /// "edited 2h ago".
         let edited: String
-        let board: NWDesignCardBoard
+        let board: SHDesignCardBoard
         /// Moves when the thumbnail's image changes.
         let thumbnail: Int
         let selected: Bool
@@ -114,7 +114,7 @@ struct DesignsPageModel: Equatable {
         }
     }
 
-    /// Night Watch's source line (DesignLifecycleStates: "Built into Shepherd", beside its tag).
+    /// Shepherd Design's source line (DesignLifecycleStates: "Built into Shepherd", beside its tag).
     static let builtInSource = "Built into Shepherd"
 
     static func make(designs: [Design], spaces: [Space], firstBoards: [DesignID: FirstBoard], filter: String,
@@ -137,7 +137,7 @@ struct DesignsPageModel: Equatable {
             let first = firstBoards[design.id]
             return Card(id: design.id, name: design.name, system: system(design), detail: boardsText(design.boardCount ?? 0),
                         edited: "edited \(SuggestionsPresentation.when(design.lastActiveAt / 1000, now: now))",
-                        board: NWDesignCardBoard(size: first?.size), thumbnail: first?.version ?? 0,
+                        board: SHDesignCardBoard(size: first?.size), thumbnail: first?.version ?? 0,
                         selected: design.id == selection)
         }
 

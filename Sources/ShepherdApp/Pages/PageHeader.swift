@@ -2,7 +2,7 @@ import SwiftUI
 import ShepherdUI
 
 /// A destination page's header (Destination pages; NavNewThread, NavAutomations, NavHosts):
-/// `NWPageHeader` with the page's chrome, and the Show sidebar button's chord from the keybindings.
+/// `SHPageHeader` with the page's chrome, and the Show sidebar button's chord from the keybindings.
 struct DestinationPageHeader<Trailing: View>: View {
     let title: String
     var subtitle: String?
@@ -10,7 +10,7 @@ struct DestinationPageHeader<Trailing: View>: View {
     @ViewBuilder let trailing: () -> Trailing
 
     var body: some View {
-        NWPageHeader(title, subtitle: subtitle, leadingInset: chrome.leadingInset, sidebar: chrome.showSidebar,
+        SHPageHeader(title, subtitle: subtitle, leadingInset: chrome.leadingInset, sidebar: chrome.showSidebar,
                      sidebarShortcut: KeybindingsStore.shared.display(.toggleSidebar), trailing: trailing)
     }
 }

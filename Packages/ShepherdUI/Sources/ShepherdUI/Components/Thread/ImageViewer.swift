@@ -4,7 +4,7 @@ import SwiftUI
 /// pill under it holding "1 of 2", then Copy, Add to message, Show in Finder and close as icons. A click on the scrim closes it.
 /// A control the caller does not supply is not drawn. While the bytes load the picture's place is a `bgSunken` field; if they
 /// cannot be read it says so in place of the picture. The name and its facts are not drawn; VoiceOver reads them.
-public struct NWImageViewer: View {
+public struct SHImageViewer: View {
     public enum Content {
         case loading
         case picture(Image)
@@ -51,19 +51,19 @@ public struct NWImageViewer: View {
     }
 
     public var body: some View {
-        let M = NWImageViewerMetrics.self
+        let M = SHImageViewerMetrics.self
         GeometryReader { window in
             // The picture may take the window less `margin` all round, the arrows beside it, and the pill and its gap below it.
             let room = CGSize(width: max(1, window.size.width - 2 * M.margin - arrowsWidth),
-                              height: max(1, window.size.height - 2 * M.margin - M.pill - NW.Space.l))
+                              height: max(1, window.size.height - 2 * M.margin - M.pill - SH.Space.l))
             ZStack {
                 // A real button, so a click and VoiceOver's press both close it; Esc and the pill's close stay the keyboard's way.
-                Button(action: close) { Color.nw.sheetScrim.contentShape(Rectangle()) }
+                Button(action: close) { Color.sh.sheetScrim.contentShape(Rectangle()) }
                     .buttonStyle(.plain)
                     .focusable(false)
                     .accessibilityLabel("Close viewer")
-                VStack(spacing: NW.Space.l) {
-                    HStack(spacing: NW.Space.xl) {
+                VStack(spacing: SH.Space.l) {
+                    HStack(spacing: SH.Space.xl) {
                         if position != nil { arrow("chevron.left", label: "Previous image", action: previous) }
                         picture(size: shownSize(in: room))
                         if position != nil { arrow("chevron.right", label: "Next image", action: next) }
@@ -79,62 +79,62 @@ public struct NWImageViewer: View {
         .accessibilityHint(caption)
     }
 
-    private var arrowsWidth: CGFloat { position != nil ? 2 * (NWImageViewerMetrics.arrow + NW.Space.xl) : 0 }
+    private var arrowsWidth: CGFloat { position != nil ? 2 * (SHImageViewerMetrics.arrow + SH.Space.xl) : 0 }
 
     /// The popover pill: "1 of 2" in `mono` `textTertiary`, the actions as 28pt ghost icons, and the 28pt close circle, which
     /// sits 8pt inside the pill's round end.
     private var pill: some View {
-        let nw = Color.nw
-        let M = NWImageViewerMetrics.self
-        return HStack(spacing: NW.Space.m) {
-            if let position { Text(position).font(.nw(.mono)).foregroundStyle(nw.textTertiary).lineLimit(1).fixedSize() }
+        let sh = Color.sh
+        let M = SHImageViewerMetrics.self
+        return HStack(spacing: SH.Space.m) {
+            if let position { Text(position).font(.sh(.mono)).foregroundStyle(sh.textTertiary).lineLimit(1).fixedSize() }
             if let copy { action("Copy", "doc.on.doc", copy) }
             if let addToMessage { action("Add to message", "plus", addToMessage) }
             if let showInFinder { action("Show in Finder", "folder", showInFinder) }
             Button(action: close) {
                 Image(systemName: "xmark")
                     .font(.system(size: M.closeGlyph, weight: .medium))
-                    .foregroundStyle(nw.textSecondary)
+                    .foregroundStyle(sh.textSecondary)
                     .frame(width: M.close, height: M.close)
-                    .nwBorder(nw.lineStrong, in: Circle())
+                    .shBorder(sh.lineStrong, in: Circle())
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
-            .nwFocusRingCircle()
+            .shFocusRingCircle()
             .accessibilityLabel("Close")
         }
-        .padding(.leading, position == nil ? NW.Space.m : NW.Space.l)
-        .padding(.trailing, NW.Space.m)
+        .padding(.leading, position == nil ? SH.Space.m : SH.Space.l)
+        .padding(.trailing, SH.Space.m)
         .frame(height: M.pill)
         .fixedSize()
-        .nwPopover(radius: M.pill / 2)
+        .shPopover(radius: M.pill / 2)
     }
 
     private func action(_ title: String, _ symbol: String, _ run: @escaping () -> Void) -> some View {
         Button(action: run) {
-            Image(systemName: symbol).font(.system(size: NWImageViewerMetrics.glyph, weight: .medium))
+            Image(systemName: symbol).font(.system(size: SHImageViewerMetrics.glyph, weight: .medium))
         }
-        .buttonStyle(.nw(.ghost, size: .m))
+        .buttonStyle(.sh(.ghost, size: .m))
         .accessibilityLabel(title)
-        .nwHelp(title)
+        .shHelp(title)
     }
 
     /// The round ‹ › beside the picture: 36pt, `bgRaised` with a `lineSubtle` ring, a 14pt chevron.
     private func arrow(_ symbol: String, label: String, action: (() -> Void)?) -> some View {
-        let nw = Color.nw
+        let sh = Color.sh
         return Button(action: { action?() }) {
             Image(systemName: symbol)
-                .font(.system(size: NWImageViewerMetrics.glyph, weight: .medium))
-                .foregroundStyle(nw.textSecondary)
-                .frame(width: NWImageViewerMetrics.arrow, height: NWImageViewerMetrics.arrow)
-                .background(nw.bgRaised, in: Circle())
-                .nwBorder(nw.lineSubtle, in: Circle())
+                .font(.system(size: SHImageViewerMetrics.glyph, weight: .medium))
+                .foregroundStyle(sh.textSecondary)
+                .frame(width: SHImageViewerMetrics.arrow, height: SHImageViewerMetrics.arrow)
+                .background(sh.bgRaised, in: Circle())
+                .shBorder(sh.lineSubtle, in: Circle())
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .disabled(action == nil)
-        .nwEnabledOpacity(action != nil)
-        .nwFocusRingCircle()
+        .shEnabledOpacity(action != nil)
+        .shFocusRingCircle()
         .accessibilityLabel(label)
     }
 
@@ -142,50 +142,50 @@ public struct NWImageViewer: View {
     private func shownSize(in room: CGSize) -> CGSize {
         if case .diagram = content { return room }
         guard let pixels, pixels.width > 0, pixels.height > 0 else {
-            return CGSize(width: NWImageViewerMetrics.placeholderWidth, height: NWImageViewerMetrics.placeholderHeight)
+            return CGSize(width: SHImageViewerMetrics.placeholderWidth, height: SHImageViewerMetrics.placeholderHeight)
         }
         let scale = min(1, room.width / pixels.width, room.height / pixels.height)
         return CGSize(width: (pixels.width * scale).rounded(.down), height: (pixels.height * scale).rounded(.down))
     }
 
     @ViewBuilder private func picture(size: CGSize) -> some View {
-        let nw = Color.nw
+        let sh = Color.sh
         switch content {
         case .picture(let image):
             image.resizable().aspectRatio(contentMode: .fit)
                 .frame(width: size.width, height: size.height)
-                .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
-                .nwBorder(nw.lineSubtle, radius: NW.Radius.m)
-                .nwFloatShadow()
+                .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
+                .shBorder(sh.lineSubtle, radius: SH.Radius.m)
+                .shFloatShadow()
                 .accessibilityLabel(name)
                 .accessibilityValue(facts)
                 .accessibilityAddTraits(.isImage)
         case .diagram(let view):
             view
                 .frame(width: size.width, height: size.height)
-                .background(nw.bgSunken)
-                .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
-                .nwBorder(nw.lineSubtle, radius: NW.Radius.m)
-                .nwFloatShadow()
+                .background(sh.bgSunken)
+                .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
+                .shBorder(sh.lineSubtle, radius: SH.Radius.m)
+                .shFloatShadow()
         case .loading:
-            RoundedRectangle(cornerRadius: NW.Radius.m).fill(nw.bgSunken)
-                .frame(width: NWImageViewerMetrics.placeholderWidth, height: NWImageViewerMetrics.placeholderHeight)
+            RoundedRectangle(cornerRadius: SH.Radius.m).fill(sh.bgSunken)
+                .frame(width: SHImageViewerMetrics.placeholderWidth, height: SHImageViewerMetrics.placeholderHeight)
                 .overlay { ProgressView().controlSize(.small) }
                 .accessibilityLabel("Loading \(name)")
         case .failed(let message):
-            VStack(spacing: NW.Space.m) {
-                Image(systemName: "exclamationmark.triangle").imageScale(.large).foregroundStyle(nw.failed).accessibilityHidden(true)
-                Text(message).font(.nw(.ui)).foregroundStyle(nw.textPrimary).multilineTextAlignment(.center)
-                if let retry { Button("Try again", action: retry).buttonStyle(.nw(.secondary, size: .s)) }
+            VStack(spacing: SH.Space.m) {
+                Image(systemName: "exclamationmark.triangle").imageScale(.large).foregroundStyle(sh.failed).accessibilityHidden(true)
+                Text(message).font(.sh(.ui)).foregroundStyle(sh.textPrimary).multilineTextAlignment(.center)
+                if let retry { Button("Try again", action: retry).buttonStyle(.sh(.secondary, size: .s)) }
             }
-            .padding(NW.Space.xxl)
-            .background(nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-            .nwBorder(nw.lineStrong, radius: NW.Radius.m)
+            .padding(SH.Space.xxl)
+            .background(sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+            .shBorder(sh.lineStrong, radius: SH.Radius.m)
         }
     }
 }
 
-public enum NWImageViewerMetrics {
+public enum SHImageViewerMetrics {
     /// The thread left showing round the picture and its pill.
     public static let margin: CGFloat = 64
     /// The pill under the picture.

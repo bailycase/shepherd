@@ -89,7 +89,7 @@ extension DesignScreenModel {
     /// A right-click (CanvasContextMenu): what it landed on is picked first (unless it is already
     /// selected), then the menu offers Comment and Tweak, Implement in a thread… (⌘↩) and Copy
     /// reference (⇧⌘C), and Duplicate for its board. On the empty canvas it offers the design.
-    func contextMenu(for pick: NWCanvasPick, designName: String, keys: KeybindingsStore) async -> [NWCanvasMenuItem] {
+    func contextMenu(for pick: SHCanvasPick, designName: String, keys: KeybindingsStore) async -> [SHCanvasMenuItem] {
         guard tool != .pan else { return [] }
         let board = pick.board.flatMap(DesignPath.init)
         var element: DesignElementPick?
@@ -105,21 +105,21 @@ extension DesignScreenModel {
     }
 
     /// The right-click menu's items for what is selected now.
-    func menuItems(designName: String, keys: KeybindingsStore) -> [NWCanvasMenuItem] {
+    func menuItems(designName: String, keys: KeybindingsStore) -> [SHCanvasMenuItem] {
         let selection = referenceSelection(designName: designName)
-        var items: [NWCanvasMenuItem] = []
+        var items: [SHCanvasMenuItem] = []
         if selection.board != nil {
-            items.append(NWCanvasMenuItem(id: "comment", title: "Comment", symbol: "text.bubble") { [weak self] in
+            items.append(SHCanvasMenuItem(id: "comment", title: "Comment", symbol: "text.bubble") { [weak self] in
                 guard let self else { return }
                 if let element = selection.element { self.beginComment(on: element) } else { self.tool = .comment }
             })
             if tweak != nil {
-                items.append(NWCanvasMenuItem(id: "tweak", title: "Tweak", symbol: "slider.horizontal.3") { [weak self] in
+                items.append(SHCanvasMenuItem(id: "tweak", title: "Tweak", symbol: "slider.horizontal.3") { [weak self] in
                     self?.paneTab = .tweak
                 })
             }
             if let element = selection.element, let source = pieceBoard(for: element) {
-                items.append(NWCanvasMenuItem(id: "go-to-source", title: "Go to Source", symbol: "arrow.turn.down.right") { [weak self] in
+                items.append(SHCanvasMenuItem(id: "go-to-source", title: "Go to Source", symbol: "arrow.turn.down.right") { [weak self] in
                     self?.goToSource(source)
                 })
             }
@@ -127,19 +127,19 @@ extension DesignScreenModel {
         }
         if referenceActions != nil {
             let implement = keys.chord(for: .implementInThread), copy = keys.chord(for: .copyDesignReference)
-            items.append(NWCanvasMenuItem(id: "implement", title: selection.board == nil ? "Implement \(selection.piece)…" : "Implement in a Thread…",
+            items.append(SHCanvasMenuItem(id: "implement", title: selection.board == nil ? "Implement \(selection.piece)…" : "Implement in a Thread…",
                                           symbol: "chevron.left.forwardslash.chevron.right", key: Self.menuKey(implement),
                                           command: implement.command, shift: implement.shift) { [weak self] in
                 self?.implementSelection(designName: designName)
             })
-            items.append(NWCanvasMenuItem(id: "copy", title: "Copy Reference", symbol: "link", key: Self.menuKey(copy),
+            items.append(SHCanvasMenuItem(id: "copy", title: "Copy Reference", symbol: "link", key: Self.menuKey(copy),
                                           command: copy.command, shift: copy.shift) { [weak self] in
                 self?.copySelectionReference(designName: designName)
             })
         }
         if let board = selection.board, canvasActions != nil {
             items.append(.divider("board"))
-            items.append(NWCanvasMenuItem(id: "duplicate", title: "Duplicate", symbol: "plus.square.on.square") { [weak self] in
+            items.append(SHCanvasMenuItem(id: "duplicate", title: "Duplicate", symbol: "plus.square.on.square") { [weak self] in
                 self?.duplicate(board)
             })
         }
@@ -174,10 +174,10 @@ extension DesignScreenModel {
 
     /// Each note on a board this page shows, as the thread's pin on its element (on its board's
     /// corner while the element isn't found, or for a board's own note).
-    func notePins(_ index: DesignIndex) -> [NWCanvasPin] {
+    func notePins(_ index: DesignIndex) -> [SHCanvasPin] {
         threadNotes.compactMap { note in
             guard index.boards[note.board] != nil, index.isOnPage(note.board, page) else { return nil }
-            return NWCanvasPin(id: Self.notePinID(note.id), board: note.board.rawValue, rect: noteRect(note, index), number: 0,
+            return SHCanvasPin(id: Self.notePinID(note.id), board: note.board.rawValue, rect: noteRect(note, index), number: 0,
                                style: .threadNote(note.thread))
         }
     }

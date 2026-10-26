@@ -1,14 +1,14 @@
 import SwiftUI
 
 /// The shepherd's crook: the product mark. Always lantern amber, on any background.
-public struct NWCrook: View {
+public struct SHCrook: View {
     public init() {}
 
     public var body: some View {
         GeometryReader { geo in
             let scale = min(geo.size.width, geo.size.height) / 24
-            NWCrookShape()
-                .stroke(Color.nw.lantern, style: StrokeStyle(lineWidth: 2.4 * scale, lineCap: .round, lineJoin: .round))
+            SHCrookShape()
+                .stroke(Color.sh.lantern, style: StrokeStyle(lineWidth: 2.4 * scale, lineCap: .round, lineJoin: .round))
         }
         .aspectRatio(1, contentMode: .fit)
         .accessibilityHidden(true)
@@ -16,7 +16,7 @@ public struct NWCrook: View {
 }
 
 /// The crook on the board's 24×24 grid: a stem, the hook over the top, and its curl.
-struct NWCrookShape: Shape {
+struct SHCrookShape: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
         path.move(to: CGPoint(x: 9, y: 22))
@@ -30,7 +30,7 @@ struct NWCrookShape: Shape {
 }
 
 /// The wordmark: the crook and "shepherd", lowercase Geist 600, tracked −3% large and −2% small.
-public struct NWWordmark: View {
+public struct SHWordmark: View {
     public enum Size: Sendable { case small, large }
     let size: Size
 
@@ -38,12 +38,12 @@ public struct NWWordmark: View {
 
     public var body: some View {
         let (mark, text): (CGFloat, CGFloat) = size == .large ? (30, 26) : (16, 14)
-        HStack(spacing: size == .large ? 10 : NW.Space.s) {
-            NWCrook().frame(width: mark, height: mark)
+        HStack(spacing: size == .large ? 10 : SH.Space.s) {
+            SHCrook().frame(width: mark, height: mark)
             Text("shepherd")
-                .font(.nwSans(text, .semibold))
+                .font(.shSans(text, .semibold))
                 .tracking((size == .large ? -0.03 : -0.02) * text)
-                .foregroundStyle(.nw.textPrimary)
+                .foregroundStyle(.sh.textPrimary)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Shepherd")

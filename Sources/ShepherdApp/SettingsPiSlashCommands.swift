@@ -14,13 +14,13 @@ struct SlashCommandsSettings: View {
         SettingsPage(title: "Slash commands",
                      explanation: "Commands supplied by extensions, prompt templates and skills. Turn one off to disable it entirely, including when typed directly.") {
             VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
-                HStack(spacing: NW.Space.xl) {
-                    NWSearchField("Search commands", text: Binding(get: { model.query }, set: { model.query = $0 }))
+                HStack(spacing: SH.Space.xl) {
+                    SHSearchField("Search commands", text: Binding(get: { model.query }, set: { model.query = $0 }))
                         .frame(width: AppLayout.slashSearchWidth)
-                    Spacer(minLength: NW.Space.l)
+                    Spacer(minLength: SH.Space.l)
                     Text(presentation.summary)
-                        .font(.nw(.caption))
-                        .foregroundStyle(Color.nw.textTertiary)
+                        .font(.sh(.caption))
+                        .foregroundStyle(Color.sh.textTertiary)
                         .lineLimit(1)
                         .accessibilityLabel("Commands: \(presentation.summary)")
                 }
@@ -53,8 +53,8 @@ struct SlashCommandsSettings: View {
                 Text(presentation.total == 0
                      ? "No commands yet. pi reports its commands when an agent starts, so they list here once one is running."
                      : "No command matches “\(model.query.trimmingCharacters(in: .whitespacesAndNewlines))”.")
-                    .font(.nw(.body))
-                    .foregroundStyle(Color.nw.textSecondary)
+                    .font(.sh(.body))
+                    .foregroundStyle(Color.sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }, actions: { EmptyView() })
@@ -72,36 +72,36 @@ private struct SlashCommandListRow: View, Equatable {
     nonisolated static func == (a: Self, b: Self) -> Bool { a.row == b.row && a.first == b.first }
 
     var body: some View {
-        let _ = NWRenderProbe.tick("slashCommands.row")
-        let nw = Color.nw
-        HStack(alignment: .center, spacing: NW.Space.xxl) {
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                HStack(spacing: NW.Space.m) {
+        let _ = SHRenderProbe.tick("slashCommands.row")
+        let sh = Color.sh
+        HStack(alignment: .center, spacing: SH.Space.xxl) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                HStack(spacing: SH.Space.m) {
                     Text("/" + row.name)
-                        .font(.nwMono(AppLayout.skillsNameSize, .semibold))
-                        .foregroundStyle(row.isOn ? nw.textPrimary : nw.textSecondary)
+                        .font(.shMono(AppLayout.skillsNameSize, .semibold))
+                        .foregroundStyle(row.isOn ? sh.textPrimary : sh.textSecondary)
                         .lineLimit(1)
                     if let arguments = row.arguments {
                         Text(arguments)
-                            .font(.nwMono(AppLayout.skillsMetaSize))
-                            .foregroundStyle(nw.textTertiary)
+                            .font(.shMono(AppLayout.skillsMetaSize))
+                            .foregroundStyle(sh.textTertiary)
                             .lineLimit(1)
                     }
                 }
                 if let line = detail {
                     Text(line)
-                        .font(.nwSans(AppLayout.skillsSummarySize))
-                        .foregroundStyle(row.isOn ? nw.textSecondary : nw.textTertiary)
+                        .font(.shSans(AppLayout.skillsSummarySize))
+                        .foregroundStyle(row.isOn ? sh.textSecondary : sh.textTertiary)
                         .lineLimit(1)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             SettingsSwitch(label: "/" + row.name, isOn: Binding(get: { row.isOn }, set: set))
         }
-        .padding(.vertical, NW.Space.m)
-        .padding(.horizontal, NW.Space.xl)
+        .padding(.vertical, SH.Space.m)
+        .padding(.horizontal, SH.Space.xl)
         .frame(minHeight: AppLayout.slashRowMinHeight)
-        .overlay(alignment: .top) { if !first { NWHairline() } }
+        .overlay(alignment: .top) { if !first { SHHairline() } }
         .help(SlashCommandWords.help(row.name, isOn: row.isOn))
         .accessibilityElement(children: .contain)
     }

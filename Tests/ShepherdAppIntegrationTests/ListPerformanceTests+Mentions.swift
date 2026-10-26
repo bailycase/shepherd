@@ -23,7 +23,7 @@ extension ListPerformanceTests {
         var appeared: MentionAppearances? = nil
 
         var body: some View {
-            NWMentionPicker(sections: content.sections, crumbs: content.crumbs, empty: content.empty, highlighted: highlight.id,
+            SHMentionPicker(sections: content.sections, crumbs: content.crumbs, empty: content.empty, highlighted: highlight.id,
                             maxHeight: 600, choose: { _ in }, drill: { _ in }, appear: { appeared?.ids.append($0) })
                 .frame(width: 820)
         }
@@ -72,7 +72,7 @@ extension ListPerformanceTests {
                                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)?.makeImage()
         return MentionPickerContent.make(catalog: catalog, scope: .board(board, design: "Checkout", board: "A · Funnel first"), filter: "") { item in
             guard let tid = item.reference.element?.tid, cut.contains(tid - 3), let picture else { return nil }
-            return NWReferenceImage(id: "crop:" + item.id, image: Image(decorative: picture, scale: 2))
+            return SHReferenceImage(id: "crop:" + item.id, image: Image(decorative: picture, scale: 2))
         }
     }
 
@@ -87,7 +87,7 @@ extension ListPerformanceTests {
                                      ObservedPickerHost(model: model, highlight: highlight, appeared: appeared))
         defer { window.close() }
         ListPerf.settle(window)
-        #expect(!appeared.ids.isEmpty && Set(appeared.ids).count <= NWMentionMetrics.maxRows + 2,
+        #expect(!appeared.ids.isEmpty && Set(appeared.ids).count <= SHMentionMetrics.maxRows + 2,
                 "only the rows on screen ask for their pictures: \(Set(appeared.ids).count) of \(count + 1)")
 
         let rows = ListPerf.counting {
@@ -108,7 +108,7 @@ extension ListPerformanceTests {
         }
         defer { window.close() }
         // At most eight rows show; each may be built twice while the list settles.
-        #expect(rows["mention.row", default: 0] <= 2 * (NWMentionMetrics.maxRows + 2), "\(rows)")
+        #expect(rows["mention.row", default: 0] <= 2 * (SHMentionMetrics.maxRows + 2), "\(rows)")
     }
 
     @Test func movingThePickersHighlightRedrawsOnlyTheRowsItLeavesAndLandsOn() throws {
@@ -124,6 +124,6 @@ extension ListPerformanceTests {
             for index in 1...20 { _ = ListPerf.time(window) { highlight.id = ids[index] } }
         }
         // Two rows per move, plus the rows the highlight scrolls into view.
-        #expect(rows["mention.row", default: 0] <= 20 * 2 + NWMentionMetrics.maxRows + 20, "\(rows)")
+        #expect(rows["mention.row", default: 0] <= 20 * 2 + SHMentionMetrics.maxRows + 20, "\(rows)")
     }
 }

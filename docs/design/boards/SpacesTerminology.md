@@ -38,8 +38,8 @@ term) and the `.pi/` and `.mcp.json` file formats keep their words.
 
 Each is a visible string for the old folder. Test per row: copy test or ControlPress label.
 
-- [ ] Sidebar: `NWProjectsHeader` title and its `+` help and label ("Add Space"), the organize-by
-  style title and summary (`NWSidebarStyle.projects`: raw value stays), Add / Rename / Remove /
+- [ ] Sidebar: `SHProjectsHeader` title and its `+` help and label ("Add Space"), the organize-by
+  style title and summary (`SHSidebarStyle.projects`: raw value stays), Add / Rename / Remove /
   Add Child / Show / "New Thread in" menu items, move and hide persistence descriptions.
 - [ ] Settings nav title and search keywords, the page header, filter, host picker, count
   ("1 space"), empty and loading copy, row accessibility labels, Add / Open / Add subspace actions,

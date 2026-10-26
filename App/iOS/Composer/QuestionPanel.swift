@@ -37,26 +37,26 @@ struct QuestionPanel: View {
     }
 
     var body: some View {
-        let nw = Color.nw
-        NWQuestionCard(docked: docked, count: count, hide: hide) {
+        let sh = Color.sh
+        SHQuestionCard(docked: docked, count: count, hide: hide) {
             // The question and its answers scroll inside a panel too tall for the screen (a
             // long message, a large text size); Answer stays in reach under them.
-            VStack(alignment: .leading, spacing: NW.Space.l) {
-                Text(prompt.question).font(.nw(.headline)).foregroundStyle(nw.textPrimary)
+            VStack(alignment: .leading, spacing: SH.Space.l) {
+                Text(prompt.question).font(.sh(.headline)).foregroundStyle(sh.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                     .accessibilityAddTraits(.isHeader)
                 if let message = prompt.message {
-                    Text(message).font(.nw(.code)).foregroundStyle(nw.textPrimary).textSelection(.enabled)
+                    Text(message).font(.sh(.code)).foregroundStyle(sh.textPrimary).textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(NW.Space.l)
-                        .background(nw.bgSunken, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-                        .nwBorder(nw.lineSubtle, radius: NW.Radius.m)
+                        .padding(SH.Space.l)
+                        .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+                        .shBorder(sh.lineSubtle, radius: SH.Radius.m)
                 }
                 choices.disabled(!enabled || prompt.blocked != nil)
                 if let notice = prompt.blocked ?? (prompt.mayTimeOut ? QuestionPanel.timeoutNotice : nil) {
-                    Text(notice).font(.nw(.caption)).foregroundStyle(nw.textTertiary)
+                    Text(notice).font(.sh(.caption)).foregroundStyle(sh.textTertiary)
                 }
             }
             .fittedScroll(maxHeight: maxHeight * MobileLayout.questionScrollShare)
@@ -74,9 +74,9 @@ struct QuestionPanel: View {
     @ViewBuilder private var choices: some View {
         switch prompt.kind {
         case .choice:
-            VStack(spacing: NW.Space.s) {
-                if !docked, prompt.options.count > 1, !typeSize.isAccessibilitySize, width >= 2 * MobileLayout.questionColumn + NW.Space.m {
-                    Grid(horizontalSpacing: NW.Space.m, verticalSpacing: NW.Space.m) {
+            VStack(spacing: SH.Space.s) {
+                if !docked, prompt.options.count > 1, !typeSize.isAccessibilitySize, width >= 2 * MobileLayout.questionColumn + SH.Space.m {
+                    Grid(horizontalSpacing: SH.Space.m, verticalSpacing: SH.Space.m) {
                         ForEach(Array(stride(from: 0, to: prompt.options.count, by: 2)), id: \.self) { start in
                             GridRow(alignment: .top) {
                                 option(prompt.options[start]).frame(maxHeight: .infinity, alignment: .top)
@@ -94,18 +94,18 @@ struct QuestionPanel: View {
                 if prompt.allowsText { textOption }
             }
         case .yesNo:
-            VStack(spacing: NW.Space.s) {
+            VStack(spacing: SH.Space.s) {
                 // Side by side, each answering on a tap; stacked at accessibility sizes.
-                let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: NW.Space.s))
-                    : AnyLayout(HStackLayout(alignment: .top, spacing: NW.Space.s))
+                let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: SH.Space.s))
+                    : AnyLayout(HStackLayout(alignment: .top, spacing: SH.Space.s))
                 layout {
                     ForEach(prompt.options) { option in
-                        NWQuestionOptionCard(number: option.number, title: option.title, detail: option.detail,
+                        SHQuestionOptionCard(number: option.number, title: option.title, detail: option.detail,
                                              recommended: option.recommended, selected: picks.picked == option.number) {
                             picks.picked = option.number
                             send()
                         }
-                        .frame(minHeight: NWTouchQuestionMetrics.yesNoHeight)
+                        .frame(minHeight: SHTouchQuestionMetrics.yesNoHeight)
                     }
                 }
             }
@@ -121,7 +121,7 @@ struct QuestionPanel: View {
             next.text = text
             picks = NativeQuestionPicks.exclusive(picks, next)
         }), axis: .vertical)
-            .textFieldStyle(NWTextFieldStyle(mono: prompt.multiline))
+            .textFieldStyle(SHTextFieldStyle(mono: prompt.multiline))
             .lineLimit(prompt.multiline ? 4...12 : 1...6)
             .textInputAutocapitalization(prompt.multiline ? .never : .sentences)
             .autocorrectionDisabled(prompt.multiline)
@@ -132,38 +132,38 @@ struct QuestionPanel: View {
     /// A choice that also takes words: its last numbered option, N+1, is an editable row in the
     /// option card's style, lit while it holds words (typing them drops the pick).
     private var textOption: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let typed = !picks.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let shape = RoundedRectangle(cornerRadius: NW.Radius.m)
-        return HStack(alignment: .top, spacing: NW.Space.l) {
-            NWQuestionNumber(prompt.options.count + 1, filled: typed)
+        let shape = RoundedRectangle(cornerRadius: SH.Radius.m)
+        return HStack(alignment: .top, spacing: SH.Space.l) {
+            SHQuestionNumber(prompt.options.count + 1, filled: typed)
             TextField(text: Binding(get: { picks.text }, set: { text in
                 var next = picks
                 next.text = text
                 picks = NativeQuestionPicks.exclusive(picks, next)
-            }), prompt: Text(prompt.placeholder).foregroundStyle(nw.textTertiary), axis: .vertical) {
+            }), prompt: Text(prompt.placeholder).foregroundStyle(sh.textTertiary), axis: .vertical) {
                 Text(prompt.placeholder)
             }
                 .lineLimit(1...6)
-                .font(.nw(.ui, weight: .semibold))
-                .foregroundStyle(nw.textPrimary)
-                .tint(nw.lantern)
+                .font(.sh(.ui, weight: .semibold))
+                .foregroundStyle(sh.textPrimary)
+                .tint(sh.lantern)
                 .textInputAutocapitalization(.sentences)
                 .focused($field, equals: .text)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityLabel(prompt.placeholder)
         }
-        .padding(NW.Space.l)
-        .frame(maxWidth: .infinity, minHeight: NWTouchQuestionMetrics.optionHeight, alignment: .topLeading)
-        .background(typed ? nw.lanternTint : nw.bgWindow, in: shape)
-        .nwBorder(typed ? nw.lantern : nw.lineSubtle, radius: NW.Radius.m)
-        .nwAnimation(.hover, value: typed)
+        .padding(SH.Space.l)
+        .frame(maxWidth: .infinity, minHeight: SHTouchQuestionMetrics.optionHeight, alignment: .topLeading)
+        .background(typed ? sh.lanternTint : sh.bgWindow, in: shape)
+        .shBorder(typed ? sh.lantern : sh.lineSubtle, radius: SH.Radius.m)
+        .shAnimation(.hover, value: typed)
         .contentShape(shape)
         .onTapGesture { field = .text }
     }
 
     private func option(_ option: NativeQuestionOption) -> some View {
-        NWQuestionOptionCard(number: option.number, title: option.title, detail: option.detail,
+        SHQuestionOptionCard(number: option.number, title: option.title, detail: option.detail,
                              recommended: option.recommended, selected: picks.picked == option.number) {
             // Picking another option moves the pick (and empties a choice's field); nothing is answered until Answer.
             var next = picks
@@ -178,13 +178,13 @@ struct QuestionPanel: View {
         let ready = enabled && prompt.answer(picks) != nil
         if docked {
             Button("Answer") { send() }
-                .buttonStyle(.nwReviewBar(.primary))
+                .buttonStyle(.shReviewBar(.primary))
                 .disabled(!ready)
         } else {
             HStack {
                 Spacer(minLength: 0)
                 Button("Answer") { send() }
-                    .buttonStyle(.nw(.primary, size: .l))
+                    .buttonStyle(.sh(.primary, size: .l))
                     .disabled(!ready)
             }
         }

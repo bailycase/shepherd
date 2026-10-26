@@ -10,8 +10,8 @@ extension View {
     ///
     /// A transition would need the insertion itself to animate, and a thread's rows arrive in
     /// the store's plain transactions alongside streaming text that must not animate.
-    public func nwArrival(_ isNew: Bool, _ motion: NW.Motion = .content, edge: Edge? = nil) -> some View {
-        modifier(NWArrivalModifier(isNew: isNew, motion: motion, edge: edge))
+    public func shArrival(_ isNew: Bool, _ motion: SH.Motion = .content, edge: Edge? = nil) -> some View {
+        modifier(SHArrivalModifier(isNew: isNew, motion: motion, edge: edge))
     }
 }
 
@@ -19,13 +19,13 @@ extension View {
     /// Arrives with `motion`'s transition (from `edge`) and leaves at once. For one view taking
     /// another's place in a card that is resizing (the composer's field and a question): a
     /// leaving view keeps drawing where it was, over whatever has moved there.
-    public func nwEntrance(_ motion: NW.Motion, edge: Edge? = nil) -> some View {
-        modifier(NWEntranceModifier(motion: motion, edge: edge))
+    public func shEntrance(_ motion: SH.Motion, edge: Edge? = nil) -> some View {
+        modifier(SHEntranceModifier(motion: motion, edge: edge))
     }
 }
 
-private struct NWEntranceModifier: ViewModifier {
-    let motion: NW.Motion
+private struct SHEntranceModifier: ViewModifier {
+    let motion: SH.Motion
     let edge: Edge?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -34,13 +34,13 @@ private struct NWEntranceModifier: ViewModifier {
     }
 }
 
-private struct NWArrivalModifier: ViewModifier {
-    let motion: NW.Motion
+private struct SHArrivalModifier: ViewModifier {
+    let motion: SH.Motion
     let edge: Edge?
     @State private var arrived: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    init(isNew: Bool, motion: NW.Motion, edge: Edge?) {
+    init(isNew: Bool, motion: SH.Motion, edge: Edge?) {
         self.motion = motion
         self.edge = edge
         _arrived = State(initialValue: !isNew)
@@ -52,14 +52,14 @@ private struct NWArrivalModifier: ViewModifier {
             .offset(arrived ? .zero : offset)
             .onAppear {
                 guard !arrived else { return }
-                NWRenderProbe.tick("arrival.animates")
+                SHRenderProbe.tick("arrival.animates")
                 withAnimation(motion.animation(reduceMotion: reduceMotion)) { arrived = true }
             }
     }
 
     private var offset: CGSize {
         if case .nudge(let edge) = motion.transitionStyle(reduceMotion: reduceMotion, edge: edge) {
-            return NW.Motion.nudgeOffset(edge)
+            return SH.Motion.nudgeOffset(edge)
         }
         return .zero
     }

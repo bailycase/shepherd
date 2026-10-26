@@ -5,12 +5,12 @@ import ShepherdUI
 
 extension AppLayout {
     /// The terminal panel under the thread (TerminalSplit board) until its divider moves.
-    static let terminalPanelHeight: CGFloat = NWTerminalMetrics.panelHeight
-    static let terminalPanelMinHeight: CGFloat = NWTerminalMetrics.minimumPanelHeight
+    static let terminalPanelHeight: CGFloat = SHTerminalMetrics.panelHeight
+    static let terminalPanelMinHeight: CGFloat = SHTerminalMetrics.minimumPanelHeight
     /// The thread keeps at least this above the panel.
-    static let terminalThreadMinHeight: CGFloat = NWTerminalMetrics.minimumThreadHeight
+    static let terminalThreadMinHeight: CGFloat = SHTerminalMetrics.minimumThreadHeight
     /// How near a third, a half or two-thirds of the layout the divider snaps.
-    static let terminalSnapTolerance: CGFloat = NWTerminalMetrics.snapTolerance
+    static let terminalSnapTolerance: CGFloat = SHTerminalMetrics.snapTolerance
     /// The panel's top edge while it is dragged: a lantern line this thick (TerminalStates).
     static let terminalDividerDragLine: CGFloat = 3
     /// How often an on-screen panel asks what its terminals run.
@@ -58,9 +58,9 @@ func terminalPanelGeometry(
                                                    threadMinimum: Double(AppLayout.terminalThreadMinHeight)))
     // Maximized, the thread keeps its size under the panel (folded away, not relaid out).
     let threadRect = CGRect(x: 0, y: 0, width: width, height: max(0, total - (shown ? height : 0)))
-    let barHeight = min(NWTerminalMetrics.tabBarHeight, total)
+    let barHeight = min(SHTerminalMetrics.tabBarHeight, total)
     // Maximized, the thread folds to one line above the strip.
-    let foldHeight = shown && maximized ? min(NWTerminalMetrics.foldedThreadHeight, max(0, total - barHeight)) : 0
+    let foldHeight = shown && maximized ? min(SHTerminalMetrics.foldedThreadHeight, max(0, total - barHeight)) : 0
     // Hidden, the terminals keep the place they would have: their grids never change on a toggle.
     let panelTop = shown && maximized ? foldHeight : max(0, total - height)
     let panelHeight = shown && maximized ? total - foldHeight : min(height, total)

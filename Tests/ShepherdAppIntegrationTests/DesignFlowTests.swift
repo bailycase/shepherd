@@ -73,7 +73,7 @@ struct DesignFlowTests {
         }
     }
 
-    /// New design's model and thinking chips (NWDesignTool › Chat composer): Settings' defaults
+    /// New design's model and thinking chips (SHDesignTool › Chat composer): Settings' defaults
     /// until picked, a pick survives the page opening again, and the design agent starts on it.
     @Test func newDesignStartsItsAgentOnTheModelAndLevelPicked() async throws {
         try StubPi.installAsEngine()
@@ -223,7 +223,7 @@ struct DesignFlowTests {
         let a = DesignPath("A.dc.html")!
 
         // The fixture's first card on A is 396 wide from x 32, under the heading; this is its padding.
-        screen.pick(NWCanvasPick(board: a.rawValue, point: CGPoint(x: 420, y: 150)))
+        screen.pick(SHCanvasPick(board: a.rawValue, point: CGPoint(x: 420, y: 150)))
         try await eventuallyOnMain("the card to be selected") { screen.selectedElements.count == 1 }
         let card = try #require(screen.selectedElements.first)
         #expect(card.id.description == "A.dc.html#7:1/1/0")
@@ -233,7 +233,7 @@ struct DesignFlowTests {
         #expect(screen.selectionRings.map(\.tag) == ["card · Step 1 90%"])
 
         // Shift adds the heading; a plain click on the empty canvas clears.
-        screen.pick(NWCanvasPick(board: a.rawValue, point: CGPoint(x: 100, y: 45), extending: true))
+        screen.pick(SHCanvasPick(board: a.rawValue, point: CGPoint(x: 100, y: 45), extending: true))
         try await eventuallyOnMain("the heading to join") { screen.selectedElements.count == 2 }
         #expect(screen.selectedElements.last?.id.description == "A.dc.html#5:1/0/1")
         #expect(screen.selectedElements.last?.label == "Checkout funnel")
@@ -247,7 +247,7 @@ struct DesignFlowTests {
         #expect(store.designContext?() == record, "the chat sends what the canvas shows")
 
         // The pointer over B's heading rings it.
-        screen.pointer(NWCanvasPick(board: "B.dc.html", point: CGPoint(x: 100, y: 45)))
+        screen.pointer(SHCanvasPick(board: "B.dc.html", point: CGPoint(x: 100, y: 45)))
         try await eventuallyOnMain("B's heading to be ringed", timeout: .seconds(30)) { screen.hover?.id.description == "B.dc.html#5:1/0/1" }
         screen.pointer(nil)
         #expect(screen.hover == nil)
@@ -260,14 +260,14 @@ struct DesignFlowTests {
         }
 
         // Clicks land in order: one whose board is still being asked never overtakes a later one.
-        screen.pick(NWCanvasPick(board: "B.dc.html", point: CGPoint(x: 100, y: 45)))
-        screen.pick(NWCanvasPick())
+        screen.pick(SHCanvasPick(board: "B.dc.html", point: CGPoint(x: 100, y: 45)))
+        screen.pick(SHCanvasPick())
         try await eventuallyOnMain("the clicks to settle", timeout: .seconds(30)) { !screen.isPicking }
         #expect(screen.picks.isEmpty, "the click on the empty canvas came last")
 
-        screen.pick(NWCanvasPick(board: a.rawValue, point: CGPoint(x: 100, y: 45)))
+        screen.pick(SHCanvasPick(board: a.rawValue, point: CGPoint(x: 100, y: 45)))
         try await eventuallyOnMain("the heading to be selected again", timeout: .seconds(30)) { !screen.isPicking }
-        screen.pick(NWCanvasPick())
+        screen.pick(SHCanvasPick())
         #expect(screen.picks.isEmpty && screen.viewRecord?.selected.isEmpty == true)
     }
 

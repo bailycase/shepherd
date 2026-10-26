@@ -3,12 +3,12 @@ import SwiftUI
 /// The review's files as touch chips (iPadReview board): 44pt bordered chips on `bgRaised` with
 /// the filename in mono 12; the selected chip is filled, viewed files dim. The strip scrolls the
 /// selection into view.
-public struct NWTouchFileStrip: View {
-    let items: [NWFileStrip.Item]
-    let selection: NWFileStrip.Item.ID?
-    let onSelect: (NWFileStrip.Item.ID) -> Void
+public struct SHTouchFileStrip: View {
+    let items: [SHFileStrip.Item]
+    let selection: SHFileStrip.Item.ID?
+    let onSelect: (SHFileStrip.Item.ID) -> Void
 
-    public init(_ items: [NWFileStrip.Item], selection: NWFileStrip.Item.ID?, onSelect: @escaping (NWFileStrip.Item.ID) -> Void) {
+    public init(_ items: [SHFileStrip.Item], selection: SHFileStrip.Item.ID?, onSelect: @escaping (SHFileStrip.Item.ID) -> Void) {
         self.items = items
         self.selection = selection
         self.onSelect = onSelect
@@ -17,13 +17,13 @@ public struct NWTouchFileStrip: View {
     public var body: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal) {
-                LazyHStack(spacing: NW.Space.s) {
+                LazyHStack(spacing: SH.Space.s) {
                     ForEach(items) { item in
-                        NWTouchFileChip(item: item, selected: item.id == selection) { onSelect(item.id) }
+                        SHTouchFileChip(item: item, selected: item.id == selection) { onSelect(item.id) }
                             .equatable()
                     }
                 }
-                .padding(NW.Space.m)
+                .padding(SH.Space.m)
             }
             .scrollIndicators(.hidden)
             .fixedSize(horizontal: false, vertical: true)
@@ -31,35 +31,35 @@ public struct NWTouchFileStrip: View {
                 if let id { proxy.scrollTo(id) }
             }
         }
-        .overlay(alignment: .bottom) { NWHairline() }
+        .overlay(alignment: .bottom) { SHHairline() }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Changed files")
     }
 
     /// The chips' height, the touch minimum.
-    public static let chipHeight: CGFloat = NW.Height.touch
+    public static let chipHeight: CGFloat = SH.Height.touch
 }
 
-private struct NWTouchFileChip: View, Equatable {
-    let item: NWFileStrip.Item
+private struct SHTouchFileChip: View, Equatable {
+    let item: SHFileStrip.Item
     let selected: Bool
     let action: () -> Void
 
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.item == rhs.item && lhs.selected == rhs.selected }
 
     var body: some View {
-        let nw = Color.nw
-        let shape = RoundedRectangle(cornerRadius: NW.Radius.s)
+        let sh = Color.sh
+        let shape = RoundedRectangle(cornerRadius: SH.Radius.s)
         Button(action: action) {
             Text(item.name)
-                .font(.nw(.mono))
-                .foregroundStyle(nw.textPrimary)
+                .font(.sh(.mono))
+                .foregroundStyle(sh.textPrimary)
                 .lineLimit(1)
-                .padding(.horizontal, NW.Space.l)
-                .frame(minHeight: NWTouchFileStrip.chipHeight)
+                .padding(.horizontal, SH.Space.l)
+                .frame(minHeight: SHTouchFileStrip.chipHeight)
                 .opacity(item.isViewed ? 0.5 : 1)
-                .background(selected ? nw.bgSelected : nw.bgRaised, in: shape)
-                .nwBorder(nw.lineStrong, radius: NW.Radius.s)
+                .background(selected ? sh.bgSelected : sh.bgRaised, in: shape)
+                .shBorder(sh.lineStrong, radius: SH.Radius.s)
                 .contentShape(shape)
         }
         .buttonStyle(.plain)
@@ -71,7 +71,7 @@ private struct NWTouchFileChip: View, Equatable {
 /// A file's header over its diff (iPadReview board): at least a touch target tall on
 /// `bgSunken`, the path with its directory in tertiary and the name in semibold mono, the hunk
 /// count or diff stat, then the caller's controls (Mark viewed, the diff style).
-public struct NWTouchFileHeader<Accessory: View>: View {
+public struct SHTouchFileHeader<Accessory: View>: View {
     let path: String
     let detail: String?
     let added: Int?
@@ -88,44 +88,44 @@ public struct NWTouchFileHeader<Accessory: View>: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        let (directory, name) = NWFileHeader.split(path)
-        HStack(spacing: NW.Space.m) {
-            Text("\(Text(directory).foregroundStyle(nw.textTertiary))\(Text(name).font(.nw(.code, weight: .semibold)).foregroundStyle(nw.textPrimary))")
-                .font(.nw(.code))
+        let sh = Color.sh
+        let (directory, name) = SHFileHeader.split(path)
+        HStack(spacing: SH.Space.m) {
+            Text("\(Text(directory).foregroundStyle(sh.textTertiary))\(Text(name).font(.sh(.code, weight: .semibold)).foregroundStyle(sh.textPrimary))")
+                .font(.sh(.code))
                 .lineLimit(1)
                 .truncationMode(.head)
                 .accessibilityLabel(directory.isEmpty ? name : "\(name), in \(directory)")
                 .accessibilityAddTraits(.isHeader)
             if let detail {
-                Text(detail).font(.nw(.micro, weight: .regular)).foregroundStyle(nw.textTertiary).fixedSize()
+                Text(detail).font(.sh(.micro, weight: .regular)).foregroundStyle(sh.textTertiary).fixedSize()
             }
             if let added, let removed {
-                NWDiffStat(added: added, removed: removed, font: .nw(.micro, weight: .regular))
+                SHDiffStat(added: added, removed: removed, font: .sh(.micro, weight: .regular))
             }
-            Spacer(minLength: NW.Space.s)
+            Spacer(minLength: SH.Space.s)
             accessory()
         }
-        .padding(.leading, NW.Space.l + NW.Space.xxs)
-        .padding(.trailing, NW.Space.s)
-        .frame(minHeight: NW.Height.touch)
-        .background(nw.bgSunken)
-        .overlay(alignment: .bottom) { NWHairline() }
+        .padding(.leading, SH.Space.l + SH.Space.xxs)
+        .padding(.trailing, SH.Space.s)
+        .frame(minHeight: SH.Height.touch)
+        .background(sh.bgSunken)
+        .overlay(alignment: .bottom) { SHHairline() }
         .accessibilityElement(children: .contain)
     }
 }
 
 #Preview("Touch file strip") {
-    NWPreviewBoth {
+    SHPreviewBoth {
         VStack(spacing: 0) {
-            NWTouchFileStrip([
+            SHTouchFileStrip([
                 .init(id: "a", path: "App/iOS/FleetView.swift", status: .modified, added: 10, removed: 54),
                 .init(id: "b", path: "App/iOS/ThreadView.swift", status: .modified, added: 48, removed: 3),
                 .init(id: "c", path: "App/iOS/HostCard.swift", status: .added, added: 31, removed: 0, isViewed: true),
             ], selection: "a") { _ in }
-            NWTouchFileHeader(path: "App/iOS/FleetView.swift", detail: "2 hunks") {
+            SHTouchFileHeader(path: "App/iOS/FleetView.swift", detail: "2 hunks") {
                 Button {} label: { Image(systemName: "checkmark") }
-                    .buttonStyle(.nwIcon(size: NW.Height.controlS))
+                    .buttonStyle(.shIcon(size: SH.Height.controlS))
                     .accessibilityLabel("Mark viewed")
             }
         }

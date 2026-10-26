@@ -55,7 +55,7 @@ struct SettingsPreviewTests {
             AgentSettings(pi: workspace.server.pi, settings: workspace.settings)
                 .padding(AppLayout.settingsWideSides)
                 .frame(width: 1020, height: 950, alignment: .topLeading)
-                .background(Color.nw.bgWindow)
+                .background(Color.sh.bgWindow)
         }
     }
 
@@ -264,7 +264,7 @@ struct SettingsPreviewTests {
         default:
             model = .init(title: "Sign in to Notion", subtitle: "Finish signing in on notion.com.", steps: steps, phase: .waiting)
         }
-        try await Preview.renderMatrix("mcp-signin-\(phase)", size: CGSize(width: NWMCPMetrics.sheetWidth, height: 380)) {
+        try await Preview.renderMatrix("mcp-signin-\(phase)", size: CGSize(width: SHMCPMetrics.sheetWidth, height: 380)) {
             MCPSignInSheet(model, actions: .none)
         }
     }
@@ -280,7 +280,7 @@ struct SettingsPreviewTests {
     @Test func skillsDirectoryFailure() async throws {
         try await Preview.render("skills-directory-failure", size: CGSize(width: 560, height: 400)) {
             SkillsDirectoryProblem(failure: .unavailable("Shepherd's skills directory answered 503."))
-                .background(Color.nw.bgWindow)
+                .background(Color.sh.bgWindow)
         }
     }
 
@@ -317,7 +317,7 @@ struct SettingsPreviewTests {
             }
             .padding(AppLayout.settingsWideSides)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
     }
 
@@ -337,7 +337,7 @@ struct SettingsPreviewTests {
             }
             .padding(AppLayout.settingsWideSides)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
     }
 
@@ -444,7 +444,7 @@ struct SettingsPreviewTests {
             }
             .padding(AppLayout.settingsWideSides)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
     }
 
@@ -503,17 +503,17 @@ struct SettingsPreviewTests {
         let states: [WorktreeFinalizer.StepState] = [.done("2 files"), .done("worktree/fix-login → origin"), .running, .pending, .pending, .pending]
         let steps = WorktreeFinalizer.Step.allCases.filter { $0 != .mergePR }
         try await Preview.render("sheet-finalize-pipeline", size: CGSize(width: AppLayout.finalizeSheetWidth, height: 380)) {
-            NWDialog("Finalize worktree",
+            SHDialog("Finalize worktree",
                      message: "Working — each step must succeed before the next runs. Nothing is deleted until the worktree is verified clean.",
                      width: AppLayout.finalizeSheetWidth) {
                 ForEach(Array(zip(steps, states)), id: \.0) { step, state in
                     let status = state.checklist
-                    NWChecklistRow(step.label, state: status.state, stateLabel: status.word, detail: status.detail)
+                    SHChecklistRow(step.label, state: status.state, stateLabel: status.word, detail: status.detail)
                 }
             } status: {
-                HStack(spacing: NW.Space.s) {
-                    ProgressView().progressViewStyle(.nwSpinner)
-                    NWDialogStatus("Working…")
+                HStack(spacing: SH.Space.s) {
+                    ProgressView().progressViewStyle(.shSpinner)
+                    SHDialogStatus("Working…")
                 }
             } actions: {
                 EmptyView()
@@ -588,7 +588,7 @@ struct SettingsPreviewTests {
     }
 
     /// A host's first listing still on its way: placeholder rows pulse where the folders will be
-    /// (NWStatus's loading placeholder).
+    /// (SHStatus's loading placeholder).
     @Test func directoryPickerLoading() async throws {
         try await Preview.render("sheet-directory-picker-loading", size: CGSize(width: AppLayout.directoryPickerWidth, height: 480)) {
             RemoteDirectoryPicker(hostName: "horizon", startPath: "", list: { _ in
@@ -632,7 +632,7 @@ struct SettingsPreviewTests {
             ("sheet-pi-import-failed", PreviewYourPi.importFailed, 700),
         ]
         for (name, state, height) in cases {
-            let width = state.stage == .newUser ? NWPiSignInMetrics.importWideWidth : NWPiSignInMetrics.importWidth
+            let width = state.stage == .newUser ? SHPiSignInMetrics.importWideWidth : SHPiSignInMetrics.importWidth
             try await Preview.render(name, size: CGSize(width: width, height: height)) {
                 PiImportSheet(state: state, signIn: { _, _ in }, retry: {}, reviewExtensions: {}, close: {})
             }
@@ -701,7 +701,7 @@ struct SettingsPreviewTests {
                                                            keyCheck: .rejected("401 · invalid api key")), 360),
         ]
         for (name, session, height) in cases {
-            try await Preview.render(name, size: CGSize(width: NWPiSignInMetrics.sheetWidth, height: height)) {
+            try await Preview.render(name, size: CGSize(width: SHPiSignInMetrics.sheetWidth, height: height)) {
                 PiSignInSheet(session: session, close: {})
             }
         }
@@ -745,13 +745,13 @@ struct SettingsPreviewTests {
         let space = Space(name: "billing-service", path: workspace.dir.path)
         let (agent, tab) = try await workspace.agent("Migrate invoices to v2", in: space, order: 0)
         try await workspace.seed(ShepherdState(spaces: [space], tabs: [tab], agents: [agent]))
-        try await Preview.render("sheet-remove-space", size: CGSize(width: NWDialogMetrics.width, height: 220)) {
+        try await Preview.render("sheet-remove-space", size: CGSize(width: SHDialogMetrics.width, height: 220)) {
             SpaceDeleteDialog(vm: workspace.vm, space: space)
         }
     }
 
     @Test func stopAllDialog() async throws {
-        try await Preview.render("sheet-stop-all", size: CGSize(width: NWDialogMetrics.width, height: 180)) {
+        try await Preview.render("sheet-stop-all", size: CGSize(width: SHDialogMetrics.width, height: 180)) {
             StopAllDialog(runningSubagents: 3, stopAgent: {}, stopAll: {}, cancel: {})
         }
     }
@@ -759,36 +759,36 @@ struct SettingsPreviewTests {
     /// Quit while agents work: five named (one waiting on an answer), the rest counted.
     @Test func quitDialog() async throws {
         let space = Space(name: "shepherd", path: "/tmp/shepherd")
-        let names = ["Fix the login redirect", "Night Watch tokens", "Review the sidebar", "Flaky integration tests",
+        let names = ["Fix the login redirect", "Shepherd Design tokens", "Review the sidebar", "Flaky integration tests",
                      "Release notes", "Remote listener", "Docs pass"]
         let agents = names.enumerated().map { index, name in
             Agent(name: name, spaceID: space.id, tabID: TabID(), status: index == 1 ? .blocked : .working)
         }
         let prompt = try #require(QuitPrompt(agents: agents))
-        try await Preview.render("sheet-quit", size: CGSize(width: NWDialogMetrics.width, height: 330)) {
+        try await Preview.render("sheet-quit", size: CGSize(width: SHDialogMetrics.width, height: 330)) {
             QuitDialog(prompt: prompt, quit: {}, cancel: {})
         }
         let one = try #require(QuitPrompt(agents: [agents[0]]))
-        try await Preview.render("sheet-quit-one", size: CGSize(width: NWDialogMetrics.width, height: 200)) {
+        try await Preview.render("sheet-quit-one", size: CGSize(width: SHDialogMetrics.width, height: 200)) {
             QuitDialog(prompt: one, quit: {}, cancel: {})
         }
     }
 
     @Test func revertFileDialog() async throws {
-        try await Preview.render("sheet-revert-file", size: CGSize(width: NWDialogMetrics.width, height: 200)) {
+        try await Preview.render("sheet-revert-file", size: CGSize(width: SHDialogMetrics.width, height: 200)) {
             RevertFileDialog(path: "Sources/ShepherdApp/SidebarView.swift", repository: "~/Developer/Shepherd", isNew: false,
                              revert: {}, cancel: {})
         }
     }
 
     @Test func actionErrorDialog() async throws {
-        try await Preview.render("sheet-action-error", size: CGSize(width: NWDialogMetrics.width, height: 200)) {
+        try await Preview.render("sheet-action-error", size: CGSize(width: SHDialogMetrics.width, height: 200)) {
             ActionErrorDialog(message: "horizon rejected the rename: agent_busy — the agent is mid-turn. Try again once it settles.") {}
         }
     }
 
     @Test func resetSettingsDialog() async throws {
-        try await Preview.render("sheet-reset-settings", size: CGSize(width: NWDialogMetrics.width, height: 180)) {
+        try await Preview.render("sheet-reset-settings", size: CGSize(width: SHDialogMetrics.width, height: 180)) {
             ResetSettingsDialog(reset: {}, cancel: {})
         }
     }

@@ -12,7 +12,7 @@
 @font-face{font-family:"Geist Mono";src:url(GeistMono-Regular.otf) format("opentype");font-weight:400}
 @font-face{font-family:"Geist Mono";src:url(GeistMono-Medium.otf) format("opentype");font-weight:500}
 
-/* Night Watch roles, verbatim from Packages/ShepherdUI/.../Tokens/NightWatch.swift */
+/* Shepherd Design roles, verbatim from Packages/ShepherdUI/.../Tokens/ShepherdDesign.swift */
 :root[data-theme=light]{
   --bgBase:#f2f2f0;--bgWindow:#fbfbfa;--bgRaised:#ffffff;--bgSunken:#f5f5f3;--bgBubble:#efefec;
   --bgHover:#0000000a;--bgSelected:#00000011;--lineSubtle:#e7e7e3;--lineStrong:#d6d6d1;
@@ -135,7 +135,7 @@ button.act:hover{background:var(--bgHover)}
 @keyframes shimmer{from{background-position:100% 0}to{background-position:0 0}}
 @media (prefers-reduced-motion:reduce){.shimmer{animation:none;background:none;color:var(--textSecondary)}.think-label .chev{transition:none}}
 
-/* timing popover (.nwPopover: bgRaised, radius 12, lineStrong, the one shadow) */
+/* timing popover (.shPopover: bgRaised, radius 12, lineStrong, the one shadow) */
 .pop{position:absolute;left:52px;bottom:32px;width:300px;background:var(--bgRaised);border:1px solid var(--lineStrong);border-radius:12px;box-shadow:0 12px 32px var(--popoverShadow);padding:12px 14px 12px;z-index:5;font-size:12px;color:var(--textSecondary)}
 .pop[hidden]{display:none}
 .pop-h{display:flex;align-items:baseline;justify-content:space-between}
@@ -394,15 +394,15 @@ const NOTES = {
     <ul><li><b>Waiting for response</b> is the live line from the moment the request is sent until the first model event. It replaces “Thinking…” there: the client has not yet observed a model event, so it cannot say whether the provider is queuing, processing input, or thinking. Its clock runs from the send.</li>
     <li><b>Thinking…</b> is today’s live thinking line, with one addition: its clock (mono 11, <code>textTertiary</code>), so a long Xhigh think reads as progress, not a hang.</li></ul>
     <ul><li><b>Generating</b> is today’s live activity line while the model writes a call. “18 KB received” counts the call’s <i>arguments</i> streamed from the model. Nothing is on disk until the call runs (the tooltip says so).</li>
-    <li><b>Retrying</b> is today’s <code>NWRetryLine</code>, stating the status that came back, not guessing a cause. Nothing spins. Only the words shimmer, and the clock ticks. With Reduce Motion the words are plain.</li></ul>`,
+    <li><b>Retrying</b> is today’s <code>SHRetryLine</code>, stating the status that came back, not guessing a cause. Nothing spins. Only the words shimmer, and the clock ticks. With Reduce Motion the words are plain.</li></ul>`,
   B: `<h2>B · Expanded thinking summary</h2>
-    <ul><li>The existing <code>NWThinking</code> disclosure, available while thinking is still in progress. Click “Thinking… · 30s” to fold it.</li>
+    <ul><li>The existing <code>SHThinking</code> disclosure, available while thinking is still in progress. Click “Thinking… · 30s” to fold it.</li>
     <li>Only summary text the provider has already exposed is drawn. It is never the private chain of thought.</li></ul>
     <ul><li>A caption explains the source: “Summary shared by the model. Its full reasoning isn’t shown.” This does not claim the summary describes all 30 seconds.</li>
     <li>If no summary text has arrived, show only the live thinking line and clock, without an empty disclosure. This mock holds the clock at 30s for review.</li></ul>`,
   C: `<h2>C · Response timing, anchored to the finished response</h2>
     <ul><li>The footer gains one 24pt icon button (Response timing) after Copy and Retry. It shows with the rest of the footer on hover or focus (pinned here for review). Click it to toggle the popover. Esc closes it.</li>
-    <li>It uses the standard <code>.nwPopover</code> chrome at 300pt, like the context details popover.</li></ul>
+    <li>It uses the standard <code>.shPopover</code> chrome at 300pt, like the context details popover.</li></ul>
     <ul><li><b>Phases</b> are back to back (1.4 + 30.4 + 13.2 = 45.0s). <b>Marks</b> are moments measured from the send, never added together. Headers at 1.2s fall inside the wait.</li>
     <li>Usage appears only once the provider reports it at the end. No token rate is estimated.</li></ul>`
 };

@@ -81,7 +81,7 @@ struct DesignSystemFlowTests {
         let space = Fixture.space("dashboard-web", path: repo.path)
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: []))
         vm.designNetwork = .none
-        app.server.designSystems.register(NightWatchSystem.builtIn())
+        app.server.designSystems.register(ShepherdDesignSystem.builtIn())
         return (vm, space)
     }
 
@@ -196,10 +196,10 @@ struct DesignSystemFlowTests {
         vm.openNewDesign()
         #expect(vm.newDesign.systemToInstall(vm) == "acme-web")
 
-        // Night Watch has no agent of its own: it opens as the Design systems page.
-        vm.openDesignSystem("night-watch")
-        #expect(vm.shownDestination == .designSystem && vm.designSystemShown == "night-watch")
-        #expect(vm.designSystemPage(.system("night-watch")).builtIn)
+        // Shepherd Design has no agent of its own: it opens as the Design systems page.
+        vm.openDesignSystem("shepherd-design")
+        #expect(vm.shownDestination == .designSystem && vm.designSystemShown == "shepherd-design")
+        #expect(vm.designSystemPage(.system("shepherd-design")).builtIn)
 
         // The repository was only read.
         #expect(Self.workingTree(repo) == before)
@@ -207,7 +207,7 @@ struct DesignSystemFlowTests {
         #expect(try git(["status", "--porcelain"], in: repo).isEmpty)
     }
 
-    /// New design picks no project: it starts in a system (Night Watch, with none built here) or
+    /// New design picks no project: it starts in a system (Shepherd Design, with none built here) or
     /// the one picked, and its agent works in the design's own folder, in the designs space.
     @Test func newDesignPicksNoProjectAndInstallsTheSystemPicked() async throws {
         try StubPi.installAsEngine()
@@ -220,22 +220,22 @@ struct DesignSystemFlowTests {
 
         vm.openNewDesign()
         let draft = vm.newDesign
-        #expect(draft.systemToInstall(vm) == "night-watch", "no system was built here yet")
+        #expect(draft.systemToInstall(vm) == "shepherd-design", "no system was built here yet")
 
-        draft.choose(system: "night-watch")
-        #expect(draft.systemToInstall(vm) == "night-watch")
+        draft.choose(system: "shepherd-design")
+        #expect(draft.systemToInstall(vm) == "shepherd-design")
         draft.brief = "A settings page"
         draft.send(vm)
         try await eventuallyOnMain("the design to open") { vm.shownDesign != nil && !draft.starting }
         let design = try #require(vm.shownDesign)
-        #expect(design.systemNamespace == "night-watch" && !design.buildsSystem && design.sourceSpaceID == nil)
+        #expect(design.systemNamespace == "shepherd-design" && !design.buildsSystem && design.sourceSpaceID == nil)
         let agent = try #require(vm.selectedAgent)
         #expect(agent.designID == design.id && agent.spaceID == vm.state.designsSpace?.id)
         let folder = try #require(app.server.designs.folder(for: design.id))
         #expect(vm.state.tabs.first { $0.id == agent.tabID }?.layout.firstLeaf.cwd == folder.path)
         #expect(vm.visibleSpaces.map(\.id) == [space.id], "the projects are as they were")
         let snapshot = try await app.server.designSnapshot(design.id)
-        #expect(snapshot.index.designSystems?.map(\.namespace) == ["night-watch"])
+        #expect(snapshot.index.designSystems?.map(\.namespace) == ["shepherd-design"])
         #expect(Self.workingTree(repo) == before)
     }
 }

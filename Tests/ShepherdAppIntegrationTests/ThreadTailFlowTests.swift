@@ -169,15 +169,15 @@ struct ThreadTailFlowTests {
                     ThreadView(store: store, active: active, isFocused: false, request: request, preview: preview,
                                commandKey: "flow", inspectSubagent: model.tray ? { _ in } : nil, listModels: { .empty }, retainedTailGuard: tailGuard, nativeTail: native)
                         .frame(width: geo.size.width, height: height)
-                    Color.nw.bgRaised
+                    Color.sh.bgRaised
                         .frame(width: geo.size.width, height: model.panelHeight)
                         .offset(y: height)
                         .opacity(panel ? 1 : 0)
                 }
                 .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
-                .nwAnimation(.content, value: panel)
+                .shAnimation(.content, value: panel)
             }
-            .environment(\.nwMotionPaused, !active)
+            .environment(\.shMotionPaused, !active)
             .environment(\.threadCommands, commands)
         }
     }
@@ -357,7 +357,7 @@ struct ThreadTailFlowTests {
         }
 
         /// What every sequence ends with. On any machine: the thread ends it drawing, and the guard
-        /// did not keep putting it back (`budget` repairs at most, counted by `NWRenderProbe`).
+        /// did not keep putting it back (`budget` repairs at most, counted by `SHRenderProbe`).
         /// Where wall-clock time counts (`TimingTests`, not CI): it never drew nothing for more
         /// than `blankLimit`.
         func expectSettled(repairs budget: Int) async throws {
@@ -366,7 +366,7 @@ struct ThreadTailFlowTests {
             let deadline = ContinuousClock.now + .seconds(8)
             repeat { try await pass(.milliseconds(50)) } while timeline.last?.state.hasInk != true && ContinuousClock.now < deadline
             #expect(timeline.last?.state.hasInk == true, "the thread ended the sequence drawing nothing")
-            #expect(NWRenderProbe.count("thread.tailRepair") <= budget, "the guard put the thread back \(NWRenderProbe.count("thread.tailRepair")) times")
+            #expect(SHRenderProbe.count("thread.tailRepair") <= budget, "the guard put the thread back \(SHRenderProbe.count("thread.tailRepair")) times")
             if TimingTests.enabled {
                 #expect(longestBlank < ThreadTailFlowTests.blankLimit, "the thread drew nothing for \(longestBlank) s (\(timeline.count) frames)")
             }
@@ -470,9 +470,9 @@ struct ThreadTailFlowTests {
         let preview: NativeThreadStore.Preview? = previewing ? { @Sendable in snapshot } : nil
         let deck = Deck(host: host, size: size, native: native, preview: preview)
         deck.tailGuard.enabled = guarding
-        NWRenderProbe.start()
+        SHRenderProbe.start()
         defer {
-            NWRenderProbe.stop()
+            SHRenderProbe.stop()
             deck.close()
         }
         try await withKnownIssue("an anchored thread stays blank at its opening in a short window before macOS 27", isIntermittent: true) {
@@ -643,11 +643,11 @@ struct ThreadTailFlowTests {
     func aTurnStreamingOnAThreadThatIsNotStrandedIsNotWalked(size: CGSize) async throws {
         try await Self.withDeck(size: size, history: Fx.history(turns: 40)) { deck in
             try await deck.open()
-            NWRenderProbe.start()
+            SHRenderProbe.start()
             try await deck.runTurn(1)
             try await deck.expectTail("the turn finished")
             if !Self.beforeMacOS27 {
-                #expect(NWRenderProbe.count("thread.tailRepair") == 0, "the guard walked a thread that was not stranded")
+                #expect(SHRenderProbe.count("thread.tailRepair") == 0, "the guard walked a thread that was not stranded")
             }
         }
     }

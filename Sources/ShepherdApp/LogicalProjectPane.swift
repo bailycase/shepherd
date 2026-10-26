@@ -47,7 +47,7 @@ struct LogicalProjectPane: View {
         }
         .frame(maxHeight: .infinity, alignment: .top)
         // The leading line (a CSS border-left) is the page's divider, drawn and dragged by `RightPaneSplit`.
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .task(id: listedWorkers) {
             await withTaskGroup(of: Void.self) { group in
                 for row in listedWorkers {
@@ -62,44 +62,44 @@ struct LogicalProjectPane: View {
     // MARK: Header (ProjectLead-Started): Threads, Files, Automations, New thread | Search threads, Filter, Expand, Close.
 
     private var header: some View {
-        HStack(spacing: NWLeadMetrics.paneTabGap) {
+        HStack(spacing: SHLeadMetrics.paneTabGap) {
             ForEach(LogicalProjectPaneTab.allCases) { tab in
                 if tab == vm.logicalProjectPaneTab {
-                    NWLeadToolbarButton(tab.rawValue, symbol: Self.symbol(tab), selected: true, badge: tab == .threads ? presentation.needsYou : 0) {}
+                    SHLeadToolbarButton(tab.rawValue, symbol: Self.symbol(tab), selected: true, badge: tab == .threads ? presentation.needsYou : 0) {}
                 } else {
                     Button { vm.logicalProjectPaneTab = tab } label: { Image(systemName: Self.symbol(tab)) }
-                        .buttonStyle(.nwIcon(size: NWLeadMetrics.paneHeaderButton))
-                        .nwHelp(tab.rawValue)
+                        .buttonStyle(.shIcon(size: SHLeadMetrics.paneHeaderButton))
+                        .shHelp(tab.rawValue)
                         .accessibilityLabel(tab.rawValue)
                 }
             }
             Button { vm.beginAssigningProjectTask(ref) } label: { Image(systemName: "plus") }
-                .buttonStyle(.nwIcon(size: NWLeadMetrics.paneHeaderButton))
-                .nwHelp("New thread")
+                .buttonStyle(.shIcon(size: SHLeadMetrics.paneHeaderButton))
+                .shHelp("New thread")
                 .accessibilityLabel("New thread")
-            Spacer(minLength: NW.Space.m)
+            Spacer(minLength: SH.Space.m)
             Button { vm.logicalProjectPaneSearching.toggle(); searchFocused = vm.logicalProjectPaneSearching } label: { Image(systemName: "magnifyingglass") }
-                .buttonStyle(.nwIcon(isOn: vm.logicalProjectPaneSearching, size: NWLeadMetrics.paneHeaderButton))
-                .nwHelp("Search threads")
+                .buttonStyle(.shIcon(isOn: vm.logicalProjectPaneSearching, size: SHLeadMetrics.paneHeaderButton))
+                .shHelp("Search threads")
                 .accessibilityLabel("Search threads")
             filterMenu
             Button { vm.logicalProjectPaneExpanded.toggle() } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }
-                .buttonStyle(.nwIcon(isOn: vm.logicalProjectPaneExpanded, size: NWLeadMetrics.paneHeaderButton))
-                .nwHelp(vm.logicalProjectPaneExpanded ? "Collapse" : "Expand")
+                .buttonStyle(.shIcon(isOn: vm.logicalProjectPaneExpanded, size: SHLeadMetrics.paneHeaderButton))
+                .shHelp(vm.logicalProjectPaneExpanded ? "Collapse" : "Expand")
                 .accessibilityLabel(vm.logicalProjectPaneExpanded ? "Collapse" : "Expand")
             Button { vm.logicalProjectPaneOpen = false } label: { Image(systemName: "xmark") }
-                .buttonStyle(.nwIcon(size: NWLeadMetrics.paneHeaderButton))
-                .nwHelp("Close")
+                .buttonStyle(.shIcon(size: SHLeadMetrics.paneHeaderButton))
+                .shHelp("Close")
                 .accessibilityLabel("Close")
         }
-        .padding(.horizontal, NWLeadMetrics.paneHeaderInset)
-        .frame(height: NWLeadMetrics.toolbarHeight)
+        .padding(.horizontal, SHLeadMetrics.paneHeaderInset)
+        .frame(height: SHLeadMetrics.toolbarHeight)
     }
 
     static func symbol(_ tab: LogicalProjectPaneTab) -> String {
         switch tab {
         case .threads: "bubble.left"
-        case .files: NWGlyph.document.symbolName
+        case .files: SHGlyph.document.symbolName
         case .automations: "clock"
         }
     }
@@ -121,17 +121,17 @@ struct LogicalProjectPane: View {
         }
         .menuStyle(.button)
         .menuIndicator(.hidden)
-        .buttonStyle(.nwIcon(isOn: !vm.logicalProjectPaneFilter.isEmpty, size: NWLeadMetrics.paneHeaderButton))
+        .buttonStyle(.shIcon(isOn: !vm.logicalProjectPaneFilter.isEmpty, size: SHLeadMetrics.paneHeaderButton))
         .fixedSize()
-        .nwHelp("Filter")
+        .shHelp("Filter")
         .accessibilityLabel("Filter")
     }
 
     private var searchField: some View {
-        NWSearchField("Search threads", text: Binding(get: { vm.logicalProjectPaneQuery }, set: { vm.logicalProjectPaneQuery = $0 }))
+        SHSearchField("Search threads", text: Binding(get: { vm.logicalProjectPaneQuery }, set: { vm.logicalProjectPaneQuery = $0 }))
             .focused($searchFocused)
-            .padding(.horizontal, NWLeadMetrics.paneHeaderInset)
-            .padding(.bottom, NW.Space.m)
+            .padding(.horizontal, SHLeadMetrics.paneHeaderInset)
+            .padding(.bottom, SH.Space.m)
     }
 
     // MARK: Threads
@@ -139,25 +139,25 @@ struct LogicalProjectPane: View {
     private var threads: some View {
         let shown = presentation.visibleRows(query: vm.logicalProjectPaneQuery, groups: vm.logicalProjectPaneFilter)
         return ScrollView(.vertical) {
-            VStack(alignment: .leading, spacing: NW.Space.xl) {
-                NWLeadWelcome(name: vm.projectViewerName, status: presentation.status)
-                    .padding(.horizontal, NWLeadMetrics.paneHeaderInset)
+            VStack(alignment: .leading, spacing: SH.Space.xl) {
+                SHLeadWelcome(name: vm.projectViewerName, status: presentation.status)
+                    .padding(.horizontal, SHLeadMetrics.paneHeaderInset)
                 if presentation.rows.isEmpty {
                     Text("Threads the project starts show here, grouped by what they need from you.")
-                        .font(.nw(.ui, weight: .regular)).foregroundStyle(Color.nw.textTertiary)
+                        .font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, NWLeadMetrics.paneHeaderInset)
+                        .padding(.horizontal, SHLeadMetrics.paneHeaderInset)
                 } else if shown.isEmpty {
-                    Text("No thread matches.").font(.nw(.ui, weight: .regular)).foregroundStyle(Color.nw.textTertiary)
-                        .padding(.horizontal, NWLeadMetrics.paneHeaderInset)
+                    Text("No thread matches.").font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textTertiary)
+                        .padding(.horizontal, SHLeadMetrics.paneHeaderInset)
                 } else {
-                    VStack(alignment: .leading, spacing: NW.Space.xs) {
+                    VStack(alignment: .leading, spacing: SH.Space.xs) {
                         ForEach(ProjectTaskGroup.allCases, id: \.self) { group in groupView(group, rows: shown.filter { $0.group == group }) }
                     }
                 }
             }
-            .padding(.horizontal, NWLeadMetrics.paneHeaderInset)
-            .padding(.top, NWLeadMetrics.panePadding)
+            .padding(.horizontal, SHLeadMetrics.paneHeaderInset)
+            .padding(.top, SHLeadMetrics.panePadding)
         }
         .scrollBounceBehavior(.basedOnSize)
     }
@@ -165,13 +165,13 @@ struct LogicalProjectPane: View {
     @ViewBuilder private func groupView(_ group: ProjectTaskGroup, rows: [ProjectTaskRow]) -> some View {
         if !rows.isEmpty {
             let open = !folded.contains(group)
-            VStack(alignment: .leading, spacing: NWLeadMetrics.rowGap) {
-                NWLeadGroupHeader(group.rawValue, count: rows.count, expanded: open) {
+            VStack(alignment: .leading, spacing: SHLeadMetrics.rowGap) {
+                SHLeadGroupHeader(group.rawValue, count: rows.count, expanded: open) {
                     if open { folded.insert(group) } else { folded.remove(group) }
                 }
                 if open {
                     ForEach(rows) { row in
-                        NWLeadThreadRow(title: row.title, lead: row.lead, detail: row.group == .working ? row.detail ?? vm.workerActivity(row.workerAgentID, home: ref.home) : row.detail,
+                        SHLeadThreadRow(title: row.title, lead: row.lead, detail: row.group == .working ? row.detail ?? vm.workerActivity(row.workerAgentID, home: ref.home) : row.detail,
                                         tone: row.tone,
                                         age: row.settledAt.map(Self.age) ?? vm.workerStarted(row.workerAgentID, home: ref.home).map(Self.age)) {
                             vm.logicalProjectPaneTask = row.id
@@ -202,30 +202,30 @@ struct ProjectTaskDetail: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: NW.Space.m) {
+            HStack(spacing: SH.Space.m) {
                 Button { vm.logicalProjectPaneTask = nil } label: {
-                    Text("Threads").font(.nw(.ui, weight: .regular)).foregroundStyle(Color.nw.textSecondary)
-                        .frame(minHeight: NW.Height.controlM)
+                    Text("Threads").font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textSecondary)
+                        .frame(minHeight: SH.Height.controlM)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Threads")
-                Image(systemName: "chevron.right").font(.system(size: NWLeadMetrics.groupChevron)).foregroundStyle(Color.nw.textTertiary)
+                Image(systemName: "chevron.right").font(.system(size: SHLeadMetrics.groupChevron)).foregroundStyle(Color.sh.textTertiary)
                     .accessibilityHidden(true)
-                Text(task.title).font(.nw(.ui, weight: .semibold)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
-                Spacer(minLength: NW.Space.m)
+                Text(task.title).font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
+                Spacer(minLength: SH.Space.m)
                 // Resolve is the check circle; it is drawn for every task and enabled only once the task has settled (the runtime
                 // refuses to resolve work still running). A resolved task's check is a green status, not a control.
                 if task.group == .resolved {
-                    Image(systemName: NWGlyph.resolved.symbolName).foregroundStyle(Color.nw.done)
-                        .frame(width: NWLeadMetrics.detailButton, height: NWLeadMetrics.detailButton)
-                        .nwHelp("Resolved")
+                    Image(systemName: SHGlyph.resolved.symbolName).foregroundStyle(Color.sh.done)
+                        .frame(width: SHLeadMetrics.detailButton, height: SHLeadMetrics.detailButton)
+                        .shHelp("Resolved")
                         .accessibilityLabel("Resolved")
                 } else {
-                    Button { Task { _ = await vm.logicalProjects.resolve(ref, task: task.id) } } label: { Image(systemName: NWGlyph.resolved.symbolName) }
-                        .buttonStyle(.nwIcon(size: NWLeadMetrics.detailButton))
+                    Button { Task { _ = await vm.logicalProjects.resolve(ref, task: task.id) } } label: { Image(systemName: SHGlyph.resolved.symbolName) }
+                        .buttonStyle(.shIcon(size: SHLeadMetrics.detailButton))
                         .disabled(!task.canResolve || vm.logicalProjects.busy.contains(ref))
-                        .nwHelp(task.canResolve ? "Mark resolved" : "Mark resolved once this thread's turn has stopped")
+                        .shHelp(task.canResolve ? "Mark resolved" : "Mark resolved once this thread's turn has stopped")
                         .accessibilityLabel("Mark resolved")
                 }
                 Menu {
@@ -234,28 +234,28 @@ struct ProjectTaskDetail: View {
                 } label: { Label("More", systemImage: "ellipsis").labelStyle(.iconOnly) }
                     .menuStyle(.button)
                     .menuIndicator(.hidden)
-                    .buttonStyle(.nwIcon(size: NWLeadMetrics.detailButton))
+                    .buttonStyle(.shIcon(size: SHLeadMetrics.detailButton))
                     .fixedSize()
-                    .nwHelp("More")
+                    .shHelp("More")
                     .accessibilityLabel("More")
                 Button { vm.openProjectWorkerThread(ref, task: task.id) } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }
-                    .buttonStyle(.nwIcon(size: NWLeadMetrics.detailButton))
-                    .nwHelp("Open as a thread")
+                    .buttonStyle(.shIcon(size: SHLeadMetrics.detailButton))
+                    .shHelp("Open as a thread")
                     .accessibilityLabel("Open as a thread")
                 Button { vm.logicalProjectPaneTask = nil } label: { Image(systemName: "xmark") }
-                    .buttonStyle(.nwIcon(size: NWLeadMetrics.detailButton))
-                    .nwHelp("Close")
+                    .buttonStyle(.shIcon(size: SHLeadMetrics.detailButton))
+                    .shHelp("Close")
                     .accessibilityLabel("Close")
             }
-            .padding(.horizontal, NWLeadMetrics.paneHeaderInset + NW.Space.xs)
-            .frame(height: NWLeadMetrics.toolbarHeight)
-            .overlay(alignment: .bottom) { NWHairline() }
+            .padding(.horizontal, SHLeadMetrics.paneHeaderInset + SH.Space.xs)
+            .frame(height: SHLeadMetrics.toolbarHeight)
+            .overlay(alignment: .bottom) { SHHairline() }
             // The worker's own conversation, the ordinary native thread: its composer steers it directly.
             WorkerThread(vm: vm, home: ref.home, projectID: ref.id, task: task)
             if task.group == .resolved {
-                NWLeadFooterCard(symbol: NWGlyph.resolved.symbolName, title: "This thread is resolved.",
+                SHLeadFooterCard(symbol: SHGlyph.resolved.symbolName, title: "This thread is resolved.",
                                  detail: "Its history stays here. New work starts a new thread.")
-                    .padding(NWLeadMetrics.footerInset)
+                    .padding(SHLeadMetrics.footerInset)
             }
         }
     }
@@ -278,8 +278,8 @@ private struct WorkerThread: View {
             .environment(\.projectWorkerThread, ProjectWorkerThreadStyle(assignmentOperations: task.assignmentOperations,
                                                                           composerHidden: task.group == .resolved,
                                                                           answerHeld: task.answerHeld))
-            .environment(\.nwUserBubbleMetrics, .lead)
-            .environment(\.nwProseHalfLeading, true)
+            .environment(\.shUserBubbleMetrics, .lead)
+            .environment(\.shProseHalfLeading, true)
             .id(task.workerAgentID.rawValue)
     }
 

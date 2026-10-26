@@ -9,67 +9,67 @@ import UIKit
 // The spinner, the attention glow and live text's shimmer run on the render server: a Core
 // Animation animation on a layer, installed once, so one on screen costs the app no frames (a
 // SwiftUI timeline redrew its window on every display frame, most of a core in a debug build off
-// screen). All keep their clock phase (`NWPhase`), so every spinner turns in step, every dot
+// screen). All keep their clock phase (`SHPhase`), so every spinner turns in step, every dot
 // pulses together, and every live line's highlight moves as one. Under Reduce Motion, or while
-// `nwMotionPaused`, the animation is removed and the layer rests as it draws statically.
+// `shMotionPaused`, the animation is removed and the layer rests as it draws statically.
 
 /// The running spinner's 3/4 arc.
-struct NWLayerSpinner: View {
+struct SHLayerSpinner: View {
     let size: CGFloat
     let color: Color
-    /// The stroke, else `NWPhase.spinnerLineWidth`; and how much of the circle the arc spans.
+    /// The stroke, else `SHPhase.spinnerLineWidth`; and how much of the circle the arc spans.
     var lineWidth: CGFloat? = nil
     var sweep: CGFloat = 0.75
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.nwMotionPaused) private var motionPaused
+    @Environment(\.shMotionPaused) private var motionPaused
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        NWSpinnerLayerRepresentable(size: size, color: color, animates: !reduceMotion && !motionPaused, colorScheme: colorScheme,
+        SHSpinnerLayerRepresentable(size: size, color: color, animates: !reduceMotion && !motionPaused, colorScheme: colorScheme,
                                     lineWidth: lineWidth, sweep: sweep)
             .frame(width: size, height: size)
     }
 }
 
 /// A status dot that glows (only attention glows).
-struct NWLayerGlowDot: View {
+struct SHLayerGlowDot: View {
     let color: Color
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.nwMotionPaused) private var motionPaused
+    @Environment(\.shMotionPaused) private var motionPaused
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        NWGlowLayerRepresentable(color: color, animates: !reduceMotion && !motionPaused, colorScheme: colorScheme)
+        SHGlowLayerRepresentable(color: color, animates: !reduceMotion && !motionPaused, colorScheme: colorScheme)
     }
 }
 
-extension NWPhase {
+extension SHPhase {
     /// The spinner's stroke: at least 1.5pt, else 14.5% of its size.
     static func spinnerLineWidth(size: CGFloat) -> CGFloat { max(1.5, size * 0.145) }
 
-    /// The glow's opacity through one period as keyframes: `NWPhase.glowOpacity` sampled at
+    /// The glow's opacity through one period as keyframes: `SHPhase.glowOpacity` sampled at
     /// `count` even steps and back to the start, so a linear interpolation between them follows
     /// the cosine to well under a percent.
     static func glowKeyframes(count: Int = 64) -> (values: [Double], keyTimes: [Double]) {
         let times = (0...count).map { Double($0) / Double(count) }
-        let period = NW.Motion.glow.duration
+        let period = SH.Motion.glow.duration
         return (times.map { glowOpacity(Date(timeIntervalSinceReferenceDate: $0 * period)) }, times)
     }
 }
 
 /// Live text's moving highlight: a `textTertiary` → `textPrimary` → `textTertiary` band that
-/// Core Animation slides across the view (`NW.Motion.shimmer`). Masked by the text it lights.
-struct NWLayerShimmer: View {
-    @Environment(\.nwMotionPaused) private var motionPaused
+/// Core Animation slides across the view (`SH.Motion.shimmer`). Masked by the text it lights.
+struct SHLayerShimmer: View {
+    @Environment(\.shMotionPaused) private var motionPaused
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        NWShimmerLayerRepresentable(base: .nw.textTertiary, highlight: .nw.textPrimary, animates: !motionPaused,
+        SHShimmerLayerRepresentable(base: .sh.textTertiary, highlight: .sh.textPrimary, animates: !motionPaused,
                                     colorScheme: colorScheme)
     }
 }
 
-extension NWPhase {
+extension SHPhase {
     /// The band's ends in unit coordinates of the text when its highlight is at `center` (in
     /// widths of the text).
     static func shimmerPoints(center: Double) -> (start: CGPoint, end: CGPoint) {
@@ -82,16 +82,16 @@ extension NWPhase {
 }
 
 /// The layer animations, shared by both platforms' views.
-enum NWLayerMotion {
-    static let spinKey = "nw.spin"
-    static let glowKey = "nw.glow"
-    static let shimmerKey = "nw.shimmer"
+enum SHLayerMotion {
+    static let spinKey = "sh.spin"
+    static let glowKey = "sh.glow"
+    static let shimmerKey = "sh.shimmer"
 
-    /// The shimmer's band sliding once across its text per `NW.Motion.shimmer.duration`, linear,
+    /// The shimmer's band sliding once across its text per `SH.Motion.shimmer.duration`, linear,
     /// from where the clock's phase puts it now.
     static func shimmer(now: Date = Date()) -> CAAnimationGroup {
-        let from = NWPhase.shimmerPoints(center: NWPhase.shimmerStart)
-        let to = NWPhase.shimmerPoints(center: NWPhase.shimmerEnd)
+        let from = SHPhase.shimmerPoints(center: SHPhase.shimmerStart)
+        let to = SHPhase.shimmerPoints(center: SHPhase.shimmerEnd)
         let start = CABasicAnimation(keyPath: "startPoint")
         start.fromValue = from.start
         start.toValue = to.start
@@ -100,10 +100,10 @@ enum NWLayerMotion {
         end.toValue = to.end
         let group = CAAnimationGroup()
         group.animations = [start, end]
-        group.duration = NW.Motion.shimmer.duration
+        group.duration = SH.Motion.shimmer.duration
         group.repeatCount = .infinity
         group.timingFunction = CAMediaTimingFunction(name: .linear)
-        group.timeOffset = NWPhase.fraction(now, .shimmer) * NW.Motion.shimmer.duration
+        group.timeOffset = SHPhase.fraction(now, .shimmer) * SH.Motion.shimmer.duration
         group.isRemovedOnCompletion = false
         return group
     }
@@ -113,7 +113,7 @@ enum NWLayerMotion {
         band.actions = noActions.merging(["colors": NSNull(), "startPoint": NSNull(), "endPoint": NSNull()]) { $1 }
         band.type = .axial
         band.locations = [0, 0.5, 1]
-        let rest = NWPhase.shimmerPoints(center: NWPhase.shimmerRest)
+        let rest = SHPhase.shimmerPoints(center: SHPhase.shimmerRest)
         band.startPoint = rest.start
         band.endPoint = rest.end
     }
@@ -124,31 +124,31 @@ enum NWLayerMotion {
         "position": NSNull(), "frame": NSNull(), "transform": NSNull(), "opacity": NSNull(), "hidden": NSNull(),
     ]
 
-    /// One turn per `NW.Motion.spin.duration`, starting where the clock's phase is now.
+    /// One turn per `SH.Motion.spin.duration`, starting where the clock's phase is now.
     /// `clockwise` is the sign that turns the layer clockwise on screen: negative in AppKit's
     /// y-up layers, positive in UIKit's.
     static func spin(clockwise: Double, now: Date = Date()) -> CABasicAnimation {
         let spin = CABasicAnimation(keyPath: "transform.rotation.z")
         spin.fromValue = 0
         spin.toValue = clockwise * 2 * Double.pi
-        spin.duration = NW.Motion.spin.duration
+        spin.duration = SH.Motion.spin.duration
         spin.repeatCount = .infinity
         spin.timingFunction = CAMediaTimingFunction(name: .linear)
-        spin.timeOffset = NWPhase.fraction(now, .spin) * NW.Motion.spin.duration
+        spin.timeOffset = SHPhase.fraction(now, .spin) * SH.Motion.spin.duration
         spin.isRemovedOnCompletion = false
         return spin
     }
 
-    /// The glow's pulse, 1 → 0.35 → 1 over `NW.Motion.glow.duration`, in phase with the clock.
+    /// The glow's pulse, 1 → 0.35 → 1 over `SH.Motion.glow.duration`, in phase with the clock.
     static func glow(now: Date = Date()) -> CAKeyframeAnimation {
-        let frames = NWPhase.glowKeyframes()
+        let frames = SHPhase.glowKeyframes()
         let glow = CAKeyframeAnimation(keyPath: "opacity")
         glow.values = frames.values
         glow.keyTimes = frames.keyTimes.map { NSNumber(value: $0) }
         glow.calculationMode = .linear
-        glow.duration = NW.Motion.glow.duration
+        glow.duration = SH.Motion.glow.duration
         glow.repeatCount = .infinity
-        glow.timeOffset = NWPhase.fraction(now, .glow) * NW.Motion.glow.duration
+        glow.timeOffset = SHPhase.fraction(now, .glow) * SH.Motion.glow.duration
         glow.isRemovedOnCompletion = false
         return glow
     }
@@ -168,7 +168,7 @@ enum NWLayerMotion {
 /// Draws the spinner's arc in a shape layer that Core Animation turns. AppKit layers are y-up:
 /// the arc runs clockwise on screen from three o'clock to twelve, as `Circle().trim(0, 0.75)`
 /// does in SwiftUI, and turns clockwise.
-final class NWSpinnerLayerView: NSView {
+final class SHSpinnerLayerView: NSView {
     let arc = CAShapeLayer()
     private var size: CGFloat = 0
     private var sweep: CGFloat = 0.75
@@ -177,7 +177,7 @@ final class NWSpinnerLayerView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        arc.actions = NWLayerMotion.noActions
+        arc.actions = SHLayerMotion.noActions
         arc.fillColor = nil
         arc.lineCap = .round
         layer?.addSublayer(arc)
@@ -187,7 +187,7 @@ final class NWSpinnerLayerView: NSView {
 
     func update(size: CGFloat, color: CGColor, animates: Bool, lineWidth: CGFloat? = nil, sweep: CGFloat = 0.75) {
         arc.strokeColor = color
-        let width = lineWidth ?? NWPhase.spinnerLineWidth(size: size)
+        let width = lineWidth ?? SHPhase.spinnerLineWidth(size: size)
         if size != self.size || width != arc.lineWidth || sweep != self.sweep {
             self.size = size
             self.sweep = sweep
@@ -215,13 +215,13 @@ final class NWSpinnerLayerView: NSView {
     }
 
     private func syncAnimation() {
-        NWLayerMotion.sync(arc, key: NWLayerMotion.spinKey, animates: animates && window != nil) {
-            NWLayerMotion.spin(clockwise: -1)
+        SHLayerMotion.sync(arc, key: SHLayerMotion.spinKey, animates: animates && window != nil) {
+            SHLayerMotion.spin(clockwise: -1)
         }
     }
 }
 
-struct NWSpinnerLayerRepresentable: NSViewRepresentable {
+struct SHSpinnerLayerRepresentable: NSViewRepresentable {
     let size: CGFloat
     let color: Color
     let animates: Bool
@@ -230,27 +230,27 @@ struct NWSpinnerLayerRepresentable: NSViewRepresentable {
     var lineWidth: CGFloat? = nil
     var sweep: CGFloat = 0.75
 
-    func makeNSView(context: Context) -> NWSpinnerLayerView { NWSpinnerLayerView() }
+    func makeNSView(context: Context) -> SHSpinnerLayerView { SHSpinnerLayerView() }
 
-    func updateNSView(_ view: NWSpinnerLayerView, context: Context) {
+    func updateNSView(_ view: SHSpinnerLayerView, context: Context) {
         view.update(size: size, color: color.resolve(in: context.environment).cgColor, animates: animates,
                     lineWidth: lineWidth, sweep: sweep)
     }
 
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NWSpinnerLayerView, context: Context) -> CGSize? {
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: SHSpinnerLayerView, context: Context) -> CGSize? {
         CGSize(width: size, height: size)
     }
 }
 
 /// A filled circle whose opacity Core Animation pulses.
-final class NWGlowLayerView: NSView {
+final class SHGlowLayerView: NSView {
     let dot = CAShapeLayer()
     private var animates = false
 
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        dot.actions = NWLayerMotion.noActions
+        dot.actions = SHLayerMotion.noActions
         layer?.addSublayer(dot)
     }
 
@@ -274,32 +274,32 @@ final class NWGlowLayerView: NSView {
     }
 
     private func syncAnimation() {
-        NWLayerMotion.sync(dot, key: NWLayerMotion.glowKey, animates: animates && window != nil) { NWLayerMotion.glow() }
+        SHLayerMotion.sync(dot, key: SHLayerMotion.glowKey, animates: animates && window != nil) { SHLayerMotion.glow() }
     }
 }
 
-struct NWGlowLayerRepresentable: NSViewRepresentable {
+struct SHGlowLayerRepresentable: NSViewRepresentable {
     let color: Color
     let animates: Bool
     let colorScheme: ColorScheme
 
-    func makeNSView(context: Context) -> NWGlowLayerView { NWGlowLayerView() }
+    func makeNSView(context: Context) -> SHGlowLayerView { SHGlowLayerView() }
 
-    func updateNSView(_ view: NWGlowLayerView, context: Context) {
+    func updateNSView(_ view: SHGlowLayerView, context: Context) {
         view.update(color: color.resolve(in: context.environment).cgColor, animates: animates)
     }
 }
 
 
-/// Live text's highlight band (`NWLayerShimmer`).
-final class NWShimmerLayerView: NSView {
+/// Live text's highlight band (`SHLayerShimmer`).
+final class SHShimmerLayerView: NSView {
     let band = CAGradientLayer()
     private var animates = false
 
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        NWLayerMotion.configure(band)
+        SHLayerMotion.configure(band)
         layer?.addSublayer(band)
     }
 
@@ -324,20 +324,20 @@ final class NWShimmerLayerView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     private func syncAnimation() {
-        NWLayerMotion.sync(band, key: NWLayerMotion.shimmerKey, animates: animates && window != nil) { NWLayerMotion.shimmer() }
+        SHLayerMotion.sync(band, key: SHLayerMotion.shimmerKey, animates: animates && window != nil) { SHLayerMotion.shimmer() }
     }
 }
 
-struct NWShimmerLayerRepresentable: NSViewRepresentable {
+struct SHShimmerLayerRepresentable: NSViewRepresentable {
     let base: Color
     let highlight: Color
     let animates: Bool
     /// Read so that an appearance change updates the view, which resolves the colors again.
     let colorScheme: ColorScheme
 
-    func makeNSView(context: Context) -> NWShimmerLayerView { NWShimmerLayerView() }
+    func makeNSView(context: Context) -> SHShimmerLayerView { SHShimmerLayerView() }
 
-    func updateNSView(_ view: NWShimmerLayerView, context: Context) {
+    func updateNSView(_ view: SHShimmerLayerView, context: Context) {
         view.update(base: base.resolve(in: context.environment).cgColor, highlight: highlight.resolve(in: context.environment).cgColor,
                     animates: animates)
     }
@@ -346,7 +346,7 @@ struct NWShimmerLayerRepresentable: NSViewRepresentable {
 #elseif canImport(UIKit)
 
 /// UIKit layers are y-down: the same arc and turn with the opposite signs.
-final class NWSpinnerLayerView: UIView {
+final class SHSpinnerLayerView: UIView {
     let arc = CAShapeLayer()
     private var size: CGFloat = 0
     private var sweep: CGFloat = 0.75
@@ -355,7 +355,7 @@ final class NWSpinnerLayerView: UIView {
     override init(frame: CGRect) {
         super.init(frame: frame)
         isUserInteractionEnabled = false
-        arc.actions = NWLayerMotion.noActions
+        arc.actions = SHLayerMotion.noActions
         arc.fillColor = nil
         arc.lineCap = .round
         layer.addSublayer(arc)
@@ -365,7 +365,7 @@ final class NWSpinnerLayerView: UIView {
 
     func update(size: CGFloat, color: CGColor, animates: Bool, lineWidth: CGFloat? = nil, sweep: CGFloat = 0.75) {
         arc.strokeColor = color
-        let width = lineWidth ?? NWPhase.spinnerLineWidth(size: size)
+        let width = lineWidth ?? SHPhase.spinnerLineWidth(size: size)
         if size != self.size || width != arc.lineWidth || sweep != self.sweep {
             self.size = size
             self.sweep = sweep
@@ -393,13 +393,13 @@ final class NWSpinnerLayerView: UIView {
     }
 
     private func syncAnimation() {
-        NWLayerMotion.sync(arc, key: NWLayerMotion.spinKey, animates: animates && window != nil) {
-            NWLayerMotion.spin(clockwise: 1)
+        SHLayerMotion.sync(arc, key: SHLayerMotion.spinKey, animates: animates && window != nil) {
+            SHLayerMotion.spin(clockwise: 1)
         }
     }
 }
 
-struct NWSpinnerLayerRepresentable: UIViewRepresentable {
+struct SHSpinnerLayerRepresentable: UIViewRepresentable {
     let size: CGFloat
     let color: Color
     let animates: Bool
@@ -407,26 +407,26 @@ struct NWSpinnerLayerRepresentable: UIViewRepresentable {
     var lineWidth: CGFloat? = nil
     var sweep: CGFloat = 0.75
 
-    func makeUIView(context: Context) -> NWSpinnerLayerView { NWSpinnerLayerView() }
+    func makeUIView(context: Context) -> SHSpinnerLayerView { SHSpinnerLayerView() }
 
-    func updateUIView(_ view: NWSpinnerLayerView, context: Context) {
+    func updateUIView(_ view: SHSpinnerLayerView, context: Context) {
         view.update(size: size, color: color.resolve(in: context.environment).cgColor, animates: animates,
                     lineWidth: lineWidth, sweep: sweep)
     }
 
-    func sizeThatFits(_ proposal: ProposedViewSize, uiView: NWSpinnerLayerView, context: Context) -> CGSize? {
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: SHSpinnerLayerView, context: Context) -> CGSize? {
         CGSize(width: size, height: size)
     }
 }
 
-final class NWGlowLayerView: UIView {
+final class SHGlowLayerView: UIView {
     let dot = CAShapeLayer()
     private var animates = false
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         isUserInteractionEnabled = false
-        dot.actions = NWLayerMotion.noActions
+        dot.actions = SHLayerMotion.noActions
         layer.addSublayer(dot)
     }
 
@@ -450,31 +450,31 @@ final class NWGlowLayerView: UIView {
     }
 
     private func syncAnimation() {
-        NWLayerMotion.sync(dot, key: NWLayerMotion.glowKey, animates: animates && window != nil) { NWLayerMotion.glow() }
+        SHLayerMotion.sync(dot, key: SHLayerMotion.glowKey, animates: animates && window != nil) { SHLayerMotion.glow() }
     }
 }
 
-struct NWGlowLayerRepresentable: UIViewRepresentable {
+struct SHGlowLayerRepresentable: UIViewRepresentable {
     let color: Color
     let animates: Bool
     let colorScheme: ColorScheme
 
-    func makeUIView(context: Context) -> NWGlowLayerView { NWGlowLayerView() }
+    func makeUIView(context: Context) -> SHGlowLayerView { SHGlowLayerView() }
 
-    func updateUIView(_ view: NWGlowLayerView, context: Context) {
+    func updateUIView(_ view: SHGlowLayerView, context: Context) {
         view.update(color: color.resolve(in: context.environment).cgColor, animates: animates)
     }
 }
 
-/// Live text's highlight band (`NWLayerShimmer`).
-final class NWShimmerLayerView: UIView {
+/// Live text's highlight band (`SHLayerShimmer`).
+final class SHShimmerLayerView: UIView {
     let band = CAGradientLayer()
     private var animates = false
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         isUserInteractionEnabled = false
-        NWLayerMotion.configure(band)
+        SHLayerMotion.configure(band)
         layer.addSublayer(band)
     }
 
@@ -497,19 +497,19 @@ final class NWShimmerLayerView: UIView {
     }
 
     private func syncAnimation() {
-        NWLayerMotion.sync(band, key: NWLayerMotion.shimmerKey, animates: animates && window != nil) { NWLayerMotion.shimmer() }
+        SHLayerMotion.sync(band, key: SHLayerMotion.shimmerKey, animates: animates && window != nil) { SHLayerMotion.shimmer() }
     }
 }
 
-struct NWShimmerLayerRepresentable: UIViewRepresentable {
+struct SHShimmerLayerRepresentable: UIViewRepresentable {
     let base: Color
     let highlight: Color
     let animates: Bool
     let colorScheme: ColorScheme
 
-    func makeUIView(context: Context) -> NWShimmerLayerView { NWShimmerLayerView() }
+    func makeUIView(context: Context) -> SHShimmerLayerView { SHShimmerLayerView() }
 
-    func updateUIView(_ view: NWShimmerLayerView, context: Context) {
+    func updateUIView(_ view: SHShimmerLayerView, context: Context) {
         view.update(base: base.resolve(in: context.environment).cgColor, highlight: highlight.resolve(in: context.environment).cgColor,
                     animates: animates)
     }

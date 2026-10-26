@@ -25,38 +25,38 @@ struct ProjectFilesScreen: View {
     var body: some View {
         List {
             if let problem {
-                Text(problem).font(.nw(.caption)).foregroundStyle(Color.nw.failed)
+                Text(problem).font(.sh(.caption)).foregroundStyle(Color.sh.failed)
             } else if let listing {
                 if listing.entries.isEmpty {
                     Text("Nothing here yet. Files the project's threads publish show here.")
-                        .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                        .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                 }
                 ForEach(listing.entries, id: \.relativePath) { entry in
                     Button { open(entry) } label: {
                         Label {
-                            VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                                Text(entry.name).font(.nw(.ui)).foregroundStyle(Color.nw.textPrimary)
+                            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                                Text(entry.name).font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary)
                                 if entry.kind == .file {
                                     Text(ByteCountFormatter.string(fromByteCount: entry.size, countStyle: .file))
-                                        .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                                        .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                                 }
                             }
                         } icon: {
-                            Image(systemName: entry.kind == .folder ? "folder" : "doc").foregroundStyle(Color.nw.textSecondary)
+                            Image(systemName: entry.kind == .folder ? "folder" : "doc").foregroundStyle(Color.sh.textSecondary)
                         }
                     }
                 }
                 if listing.truncated {
                     Text("Showing the first \(LogicalProjectFileListing.maximumEntries) entries; this isn't the whole folder.")
-                        .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                        .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                 }
             } else {
-                ProgressView().progressViewStyle(NWSpinnerStyle()).frame(maxWidth: .infinity)
+                ProgressView().progressViewStyle(SHSpinnerStyle()).frame(maxWidth: .infinity)
             }
             if let preview { Section { previewView(preview) } }
         }
         .scrollContentBackground(.hidden)
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .toolbar(.hidden, for: .tabBar)
         .navigationTitle(path.isEmpty ? "Files" : (path as NSString).lastPathComponent)
         .navigationBarTitleDisplayMode(.inline)
@@ -94,23 +94,23 @@ struct ProjectFilesScreen: View {
     @ViewBuilder private func previewView(_ preview: Preview) -> some View {
         switch preview {
         case .text(let name, let text):
-            VStack(alignment: .leading, spacing: NW.Space.s) {
-                Text(name).font(.nw(.ui, weight: .semibold))
-                Text(text).font(.nw(.mono)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: SH.Space.s) {
+                Text(name).font(.sh(.ui, weight: .semibold))
+                Text(text).font(.sh(.mono)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
             }
         case .image(let name, let data):
-            VStack(alignment: .leading, spacing: NW.Space.s) {
-                Text(name).font(.nw(.ui, weight: .semibold))
+            VStack(alignment: .leading, spacing: SH.Space.s) {
+                Text(name).font(.sh(.ui, weight: .semibold))
                 if let image = UIImage(data: data) {
                     Image(uiImage: image).resizable().scaledToFit().accessibilityLabel(name)
                 } else {
-                    Text("This image can't be read.").font(.nw(.caption)).foregroundStyle(Color.nw.failed)
+                    Text("This image can't be read.").font(.sh(.caption)).foregroundStyle(Color.sh.failed)
                 }
             }
         case .problem(let name, let message):
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                Text(name).font(.nw(.ui, weight: .semibold))
-                Text(message).font(.nw(.caption)).foregroundStyle(Color.nw.failed)
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                Text(name).font(.sh(.ui, weight: .semibold))
+                Text(message).font(.sh(.caption)).foregroundStyle(Color.sh.failed)
             }
         }
     }
@@ -140,16 +140,16 @@ struct AssignProjectTaskScreen: View {
             && !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         Form {
             Section("Title") {
-                TextField("Title", text: $title).font(.nw(.ui)).accessibilityLabel("Thread title")
+                TextField("Title", text: $title).font(.sh(.ui)).accessibilityLabel("Thread title")
             }
             Section("What to do") {
-                TextEditor(text: $prompt).font(.nw(.body))
+                TextEditor(text: $prompt).font(.sh(.body))
                     .frame(minHeight: MobileLayout.projectPromptMinHeight)
                     .accessibilityLabel("What to do")
             }
             Section {
                 if spaces.isEmpty {
-                    Text("Link a space in Project settings first.").font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                    Text("Link a space in Project settings first.").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                 } else {
                     Picker("Space", selection: $space) {
                         if space == nil { Text("Choose…").tag(SpaceID?.none) }
@@ -158,17 +158,17 @@ struct AssignProjectTaskScreen: View {
                 }
             } header: { Text("Where it runs") } footer: { Text("On \(projects.host(ref)?.name ?? "the project's host").") }
             if let error {
-                Section { Text(error).font(.nw(.caption)).foregroundStyle(Color.nw.failed) }
+                Section { Text(error).font(.sh(.caption)).foregroundStyle(Color.sh.failed) }
             }
         }
         .scrollContentBackground(.hidden)
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .navigationTitle("New thread")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Cancel") { navigator.dismissPresented() } }
             ToolbarItem(placement: .confirmationAction) {
-                if assigning { ProgressView().progressViewStyle(NWSpinnerStyle()) } else {
+                if assigning { ProgressView().progressViewStyle(SHSpinnerStyle()) } else {
                     Button("Start thread") { assign() }.disabled(!ready)
                 }
             }

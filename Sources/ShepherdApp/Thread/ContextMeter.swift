@@ -13,18 +13,18 @@ extension EnvironmentValues {
     @Entry var compactionExpansion: NativeCompactionExpansion? = nil
 }
 
-extension NWContextRingState {
+extension SHContextRingState {
     init(_ ring: NativeContextMeter.Ring) {
         switch ring {
         case .empty: self = .empty
         case .compacting: self = .compacting
         case .estimated: self = .estimated
-        case .fill(let fraction, let tone): self = .fill(fraction, NWContextTone(tone))
+        case .fill(let fraction, let tone): self = .fill(fraction, SHContextTone(tone))
         }
     }
 }
 
-extension NWContextTone {
+extension SHContextTone {
     init(_ tone: NativeContextMeter.Tone) {
         switch tone {
         case .calm: self = .calm
@@ -34,7 +34,7 @@ extension NWContextTone {
     }
 }
 
-extension NWContextDetailsModel.ItemKind {
+extension SHContextDetailsModel.ItemKind {
     init(_ kind: NativeContextItem.Kind) {
         switch kind {
         case .file: self = .file
@@ -44,7 +44,7 @@ extension NWContextDetailsModel.ItemKind {
     }
 }
 
-extension NWCompactionDivider.Tone {
+extension SHCompactionDivider.Tone {
     init(_ tone: NativeCompactionRow.Tone) {
         switch tone {
         case .normal: self = .normal
@@ -54,7 +54,7 @@ extension NWCompactionDivider.Tone {
     }
 }
 
-extension NWContextDetailsModel {
+extension SHContextDetailsModel {
     init(_ details: NativeContextDetails) {
         let variant: Variant = switch details.variant {
         case .empty: .empty
@@ -107,12 +107,12 @@ struct ContextMeterButton: View, Equatable {
     }
 
     var body: some View {
-        let _ = NWRenderProbe.tick("composer.contextMeter")
+        let _ = SHRenderProbe.tick("composer.contextMeter")
         if let meter = store.contextMeter {
-            NWContextMeterButton(NWContextRingState(meter.ring), expanded: expanded, help: meter.helpText,
+            SHContextMeterButton(SHContextRingState(meter.ring), expanded: expanded, help: meter.helpText,
                                  accessibilityLabel: meter.accessibilityLabel, action: toggle)
                 // 32pt, as the board draws it, in a row of 28pt controls without growing the row.
-                .padding(.vertical, -(NWContextMetrics.buttonSize - NWComposerMetrics.actionSize) / 2)
+                .padding(.vertical, -(SHContextMetrics.buttonSize - SHComposerMetrics.actionSize) / 2)
         }
     }
 }
@@ -129,7 +129,7 @@ struct ContextDetailsPopover: View {
     var body: some View {
         if let details = store.contextDetails {
             let compacting = store.contextMeter?.ring == .compacting
-            NWContextDetails(NWContextDetailsModel(details), actions: NWContextDetailsActions(
+            SHContextDetails(SHContextDetailsModel(details), actions: SHContextDetailsActions(
                 compact: { keep in Task { await store.compact(instructions: keep) } },
                 find: { id in find(id) },
                 showSummary: {
@@ -157,23 +157,23 @@ struct CompactionItem: View {
 
     var body: some View {
         let open = expanded && !row.sections.isEmpty
-        VStack(alignment: .leading, spacing: NWCompactionMetrics.openGap) {
-            NWCompactionDivider(
+        VStack(alignment: .leading, spacing: SHCompactionMetrics.openGap) {
+            SHCompactionDivider(
                 title: row.title, tokens: row.tokens,
-                tone: NWCompactionDivider.Tone(row.tone),
+                tone: SHCompactionDivider.Tone(row.tone),
                 running: row.running, expanded: row.sections.isEmpty ? nil : open, help: row.error) {
                 if let expansion { expansion.toggle(row.id) } else { ownExpanded.toggle() }
             }
             if open {
-                NWCompactionSummary(size: row.summarySize,
-                                    sections: row.sections.map { NWSummarySection(id: $0.id, title: $0.title, text: $0.text, files: $0.files) }) {
+                SHCompactionSummary(size: row.summarySize,
+                                    sections: row.sections.map { SHSummarySection(id: $0.id, title: $0.title, text: $0.text, files: $0.files) }) {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(row.summary ?? "", forType: .string)
                 }
-                .nwTransition(.content)
+                .shTransition(.content)
             }
         }
-        .padding(.vertical, NW.Space.xs)
-        .nwAnimation(.disclosure, value: open)
+        .padding(.vertical, SH.Space.xs)
+        .shAnimation(.disclosure, value: open)
     }
 }

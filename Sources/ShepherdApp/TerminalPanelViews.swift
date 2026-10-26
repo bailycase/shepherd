@@ -22,7 +22,7 @@ struct TerminalPanelBar: View {
     var body: some View {
         let panels = vm.terminalPanels
         let items = panels.items(target.key, tabs: tabs, selected: selected, onScreen: onScreen, host: host)
-        NWTerminalTabBar(items, selection: selected?.id.rawValue, select: { id in
+        SHTerminalTabBar(items, selection: selected?.id.rawValue, select: { id in
             if let tab = tabs.first(where: { $0.id.rawValue == id }) { vm.selectTerminalTab(tab, target: target) }
         }, close: { id in
             if let tab = tabs.first(where: { $0.id.rawValue == id }) { vm.closeTerminalTab(tab, target: target) }
@@ -32,10 +32,10 @@ struct TerminalPanelBar: View {
             Button { vm.toggleTerminalMaximized() } label: {
                 Image(systemName: maximized ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
             }
-            .nwHelp(maximized ? "Restore" : "Maximize", shortcut: keys.display(.maximizeTerminal))
+            .shHelp(maximized ? "Restore" : "Maximize", shortcut: keys.display(.maximizeTerminal))
             .accessibilityLabel(maximized ? "Restore" : "Maximize")
             Button { vm.toggleTerminalPanel() } label: { Image(systemName: "xmark") }
-                .nwHelp("Hide terminal", shortcut: keys.display(.toggleTerminal))
+                .shHelp("Hide terminal", shortcut: keys.display(.toggleTerminal))
                 .accessibilityLabel("Hide terminal")
         }
         .onChange(of: seenMark, initial: true) { _, mark in
@@ -64,7 +64,7 @@ struct TerminalPanelDivider: View {
             .frame(height: AppLayout.resizeHandleWidth)
             .overlay {
                 if liveHeight != nil {
-                    Color.nw.lantern.frame(height: AppLayout.terminalDividerDragLine)
+                    Color.sh.lantern.frame(height: AppLayout.terminalDividerDragLine)
                 }
             }
             .contentShape(Rectangle())
@@ -105,7 +105,7 @@ struct TerminalPanelChrome: View {
 
     var body: some View {
         if let fold = geometry.fold {
-            NWTerminalFoldedThread(title: threadTitle, state: threadState,
+            SHTerminalFoldedThread(title: threadTitle, state: threadState,
                                    restoreShortcut: KeybindingsStore.shared.display(.maximizeTerminal), restore: restore)
                 .frame(width: fold.width, height: fold.height)
                 .offset(x: fold.minX, y: fold.minY)
@@ -134,32 +134,32 @@ struct TerminalMenuLayer: View {
                     .accessibilityHidden(true)
                 GeometryReader { geo in
                     content(menu)
-                        .offset(x: min(max(NW.Space.s, bar.minX + menu.anchor), max(NW.Space.s, geo.size.width - NWTerminalMetrics.menuWidth - NW.Space.s)),
-                                y: bar.maxY + NW.Space.xs)
-                        .nwTransition(.overlay, edge: .top)
+                        .offset(x: min(max(SH.Space.s, bar.minX + menu.anchor), max(SH.Space.s, geo.size.width - SHTerminalMetrics.menuWidth - SH.Space.s)),
+                                y: bar.maxY + SH.Space.xs)
+                        .shTransition(.overlay, edge: .top)
                 }
                 .background(EscapeCloses { panels.menu = nil })
             }
         }
-        .nwAnimation(.overlay, value: panels.menu)
+        .shAnimation(.overlay, value: panels.menu)
     }
 
     private func content(_ menu: TerminalMenuRequest) -> some View {
         let tab = menu.tab.flatMap { id in tabs.first { $0.id == id } }
         let control = vm.terminalControlAvailable(target)
         let close = { vm.terminalPanels.menu = nil }
-        return NWTerminalMenu {
-            NWChangesMenuRow("New terminal in the worktree", subtitle: vm.terminalPlace(target), systemImage: "terminal",
-                             trailing: .chord(keys.display(.newTerminal)), tallHeight: NWTerminalMetrics.menuTallRowHeight) {
+        return SHTerminalMenu {
+            SHChangesMenuRow("New terminal in the worktree", subtitle: vm.terminalPlace(target), systemImage: "terminal",
+                             trailing: .chord(keys.display(.newTerminal)), tallHeight: SHTerminalMetrics.menuTallRowHeight) {
                 close()
                 vm.newTerminalTab(target)
             }
             if let tab {
-                NWChangesMenuRow("Rename tab", systemImage: "pencil", enabled: control) {
+                SHChangesMenuRow("Rename tab", systemImage: "pencil", enabled: control) {
                     close()
                     vm.renameTerminalTab(tab, target: target)
                 }
-                NWChangesMenuRow("Kill process", systemImage: "xmark", enabled: control && vm.terminalTabIsRunning(tab, target: target)) {
+                SHChangesMenuRow("Kill process", systemImage: "xmark", enabled: control && vm.terminalTabIsRunning(tab, target: target)) {
                     close()
                     vm.killTerminalProcess(in: tab, target: target)
                 }

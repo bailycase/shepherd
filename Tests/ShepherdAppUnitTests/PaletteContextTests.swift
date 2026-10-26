@@ -5,7 +5,7 @@ import ShepherdUI
 import Testing
 @testable import ShepherdApp
 
-/// The dim context beside a palette row's title (NWComposer, CommandPalette).
+/// The dim context beside a palette row's title (SHComposer, CommandPalette).
 @MainActor
 @Suite("Palette context")
 struct PaletteContextTests {
@@ -30,7 +30,7 @@ struct PaletteContextTests {
     @Test func toggleFastModeIsListedOnlyWhereTheModelOffersATier() throws {
         #expect(ShepherdViewModel.fastModePaletteItem(offered: false) == nil)
         let item = try #require(ShepherdViewModel.fastModePaletteItem(offered: true))
-        #expect(item.title == "Toggle fast mode" && item.section == .thisThread && item.icon == NWGlyph.fastBolt.symbolName)
+        #expect(item.title == "Toggle fast mode" && item.section == .thisThread && item.icon == SHGlyph.fastBolt.symbolName)
         #expect(item.kind == .action("fastMode"))
     }
 

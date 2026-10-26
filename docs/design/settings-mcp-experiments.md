@@ -60,7 +60,7 @@ active goals without clearing them." It has no budget fields/options and default
 Checking, pauses active goals, hides goal chrome and the slash row, and rejects goal controls;
 on shows the preserved Paused goal but never resumes it. Ordinary work and in-flight tools are
 not aborted. The user requested this card after the supplied GoalStates board.
-Projects uses the same card with the Project mark (`NWProjectGlyphView`, 18pt `lanternText`) in the
+Projects uses the same card with the Project mark (`SHProjectGlyphView`, 18pt `lanternText`) in the
 lantern tile, "Projects", "Coordinate work across threads and spaces. Turning this off pauses project
 work and keeps your projects and files.", and its switch (`AppSettings.projectsEnabled`, default off).
 It has no options. It sits after Goals; Settings search finds it by "Projects" or "new project", never
@@ -89,7 +89,7 @@ agent gets only while the experiment is on for its kind and names the files it m
   - Its options, while on, under a hairline on `bgBase`: rows whose content is at least 48pt, 10pt
     in from their top and bottom (68pt, as the canvas renders them), with a 13/500 title
     over a 12/1.45 `textSecondary` note and the controls trailing, hairlines between:
-    - Learn from, "Where agents may notice a lesson.": `.nwCheckbox`es 14pt apart for Threads and
+    - Learn from, "Where agents may notice a lesson.": `.shCheckbox`es 14pt apart for Threads and
       Automations (both on).
     - Can suggest for, "APPEND_SYSTEM.md overrides everything else, so it stays off unless you want
       it.": AGENTS.md (on) and APPEND_SYSTEM.md (off).

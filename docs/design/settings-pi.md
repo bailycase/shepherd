@@ -61,7 +61,7 @@ Turn one off to disable it entirely, including when typed directly."
 (`SettingsSection.piSlashCommands`; full available width with 40pt side gutters;
 `SlashCommandsSettings`, its groups derived once per change by `SlashCommandsModel`).
 
-- **Search commands:** a 280pt `NWSearchField` and, trailing in caption `textTertiary`, the count:
+- **Search commands:** a 280pt `SHSearchField` and, trailing in caption `textTertiary`, the count:
   "7 commands", "7 commands · 2 disabled", "No commands yet". The search matches a command's name or
   description ignoring a leading slash, and the count stays the whole list's.
 - **Groups**, each a `SettingsGroup` card, in this order and each by name: **Extensions**,
@@ -102,7 +102,7 @@ terminal pi keeps its own." The header's trailing edge holds **Re-import from pi
 pi of yours). Everything here is Shepherd's pi's alone (its home's `auth.json` and
 `models.json`): nothing reads or writes the user's pi but a Re-import, which only reads it.
 
-- **Groups**, each a `SettingsGroup` whose card holds `NWProviderRow`s (hairlines between):
+- **Groups**, each a `SettingsGroup` whose card holds `SHProviderRow`s (hairlines between):
   - **Subscriptions**: every provider Shepherd's pi can sign in to with an account, in this
     order: Anthropic ("Claude Pro or Max"), OpenAI Codex ("ChatGPT Plus or Pro"), GitHub Copilot
     ("Copilot Pro or Business"), xAI ("Grok subscription"), Kimi ("Kimi For Coding"), Radius
@@ -119,8 +119,8 @@ pi of yours). Everything here is Shepherd's pi's alone (its home's `auth.json` a
     file's path in mono 11 `textTertiary` trailing the group's label (`~/Library/…/pi/models.json`,
     the file Shepherd's pi reads; the board's `~/.pi/agent/models.json` is where it came from).
     The provider's id is its title, in mono 13/600.
-- **`NWProviderRow`** (`ProviderRow(provider, auth)`): 12pt above and below, 16 at the sides, 12
-  between parts. A 30pt monogram tile (`NWProviderBadge`: radius 8, `bgRaised` in a `lineStrong`
+- **`SHProviderRow`** (`ProviderRow(provider, auth)`): 12pt above and below, 16 at the sides, 12
+  between parts. A 30pt monogram tile (`SHProviderBadge`: radius 8, `bgRaised` in a `lineStrong`
   line, the provider's two letters in Geist 11/600 `textSecondary`: "An", "Cx", "Gh", "xA",
   "Ki", "Ra"; a custom provider's first two letters). The name in Geist 13.5/500 over, 3pt under
   it, the status line in 12.5, one line that truncates at its end: a 7pt dot, then the state
@@ -132,30 +132,30 @@ pi of yours). Everything here is Shepherd's pi's alone (its home's `auth.json` a
   | expired | `lantern`, filled | "Expired · sign in again" in `lanternText` · the plan | Sign in again (primary, small) |
   | not signed in | hollow `textTertiary` ring | "Not signed in" in `textSecondary` · the plan | Sign in (secondary, small) |
   | signing in | a `running` ring with a dot, its words shimmering | "Signing in…" in `textPrimary` · the plan | Cancel (ghost, small) |
-  | key | `done`, filled | "API key" · the masked key in mono 12 `textPrimary` · its `NWKeySourceLabel` | Change key (secondary, small) |
+  | key | `done`, filled | "API key" · the masked key in mono 12 `textPrimary` · its `SHKeySourceLabel` | Change key (secondary, small) |
   | from your environment | `done`, filled | "From your environment" · `$NAME` in mono 11.5 `textSecondary` · "in your login shell" in `textTertiary` | Change key |
   | no key needed | hollow ring | "No key needed" · the base URL in mono 11.5, all `textTertiary` | none |
 
   The plan is what the provider sells ("Claude Pro or Max"): pi keeps no account name or plan
   with a sign-in, so the row never shows an address (departures). Then the ⋯ button
-  (`NWProviderMenuButton`: 26pt circle, `ellipsis` 13pt `textSecondary`, "More for Anthropic";
+  (`SHProviderMenuButton`: 26pt circle, `ellipsis` 13pt `textSecondary`, "More for Anthropic";
   while its menu is open it takes a `lineStrong` line and `bgHover`) for every row with a
   sign-in or a key. A row with a problem (a sign-out that failed) shows it inline
-  (`NWInlineProblem`) under its status line.
+  (`SHInlineProblem`) under its status line.
 - **Masking** (`PiKeyMask`): a key shows as its prefix (the leading letters-and-hyphens word
   groups, at most 8 characters: "sk-proj-", "sk-") and "••••" and its last 4
   ("sk-proj-••••3kQz"); a key shorter than 12 characters shows "••••" alone. Nothing else of a
   key's value is ever drawn, logged or put in a tooltip.
-- **`NWKeySourceLabel`** after a key: "copied from pi" (`textTertiary`; its key is the one
+- **`SHKeySourceLabel`** after a key: "copied from pi" (`textTertiary`; its key is the one
   the import copied), "reads `$NAME`" (the key is a `$NAME` reference, read from the login shell
   when an agent starts), "command not supported" for an imported `!command` reference
   (`textTertiary`, no command text or tooltip, including custom providers). Shepherd never
   executes command values; replace them with a variable or pasted key. A key pasted into Shepherd has no label.
-- **`NWSharedLoginNote`**: under Anthropic, OpenAI Codex, Kimi and Radius (the providers whose
+- **`SHSharedLoginNote`**: under Anthropic, OpenAI Codex, Kimi and Radius (the providers whose
   refresh tokens rotate), whatever the row's state: an `arrow.triangle.2.circlepath` 11pt and
   "Signing in here and in your terminal pi can sign one of them out." in Geist 11.5
   `textTertiary`, 3pt under the status line.
-- **The provider menu** (the native menu, `NWOptionsMenu`'s anatomy):
+- **The provider menu** (the native menu, `SHOptionsMenu`'s anatomy):
   - a subscription: Sign in again · Re-import from pi (with its freshness as the item's
     second line; disabled when your pi has no sign-in for it) · a divider · Sign out, in
     `failed`. Sign out removes it from Shepherd's pi only: its entry in the home's `auth.json`,
@@ -178,7 +178,7 @@ your terminal. Shepherd keeps its own copy, so nothing here changes your pi."
   - **Last brought over**: "Today at 9:41 AM, on first launch. Nothing is synced after that."
     (relative day and time of `copiedAt`); Re-import all (secondary, small), which copies every
     item below again, in order.
-- **Brought over**, a group of `NWReimportRow`s (footnote "Copies. Re-import replaces
+- **Brought over**, a group of `SHReimportRow`s (footnote "Copies. Re-import replaces
   Shepherd’s copy with your pi’s; your pi is never written to."):
   - a sub-label in the card, "Logins" (Geist 11/600 caps `textTertiary`, 16pt in, 10 above),
     then one row per provider your pi has a login for: its badge, name, and "Subscription ·
@@ -188,7 +188,7 @@ your terminal. Shepherd keeps its own copy, so nothing here changes your pi."
     model (`claude-opus`, and "here" in `textTertiary` when Shepherd's differs, with a second line
     "Your pi now uses `gpt-5.3-codex`."), Trusted folders ("4 folders · `~/code/shepherd` and 3
     more").
-  - **`NWReimportRow`**: the freshness word trailing in caption: "Same as your pi"
+  - **`SHReimportRow`**: the freshness word trailing in caption: "Same as your pi"
     (`textTertiary`), "Newer in your pi" (`lanternText`, with the why as a second line: "Your pi's
     sign-in changed on Sep 24."), "Changed here" (`textSecondary`), "Re-importing…" (shimmering),
     "Re-imported just now" (`done`); then Re-import, a quiet ghost button when the two are the
@@ -196,13 +196,13 @@ your terminal. Shepherd keeps its own copy, so nothing here changes your pi."
 - **Copied** (footnote "Copied into Shepherd’s pi. Edits in your pi reach Shepherd only when you
   Re-import."): Instructions ("`~/.pi/agent/AGENTS.md` · 38 lines · no `APPEND_SYSTEM.md`"; Show
   in Finder, at Shepherd's copy: Settings ▸ Instructions edits other files, departures), Skills
-  ("12 skills, listed with the rest in Skills."; Show in Finder, at Shepherd's copies), Prompts (their names as `NWTag`s in
+  ("12 skills, listed with the rest in Skills."; Show in Finder, at Shepherd's copies), Prompts (their names as `SHTag`s in
   mono, "/review", at most six and "+3"; Show in Finder), Themes the same way when there are
   any; each with Re-import.
 - **Imported extensions**, with "4 in `~/.pi/agent/extensions`" trailing (footnote "Code, so each
   one came over switched off. Shepherd's bundled extensions are on Extensions.", where
   "Extensions" is a link that opens that page):
-  one **`NWExtensionRow`** each: its name in mono 13/500, its path in mono 11.5 `textTertiary`,
+  one **`SHExtensionRow`** each: its name in mono 13/500, its path in mono 11.5 `textTertiary`,
   its package.json description in caption `textSecondary`, the switch trailing:
   - off: nothing more;
   - on: the full-access note under it ("Runs with full access to your files, shell and network,

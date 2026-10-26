@@ -169,7 +169,7 @@ struct SidebarPinnedTests {
         let presented = lists.presented(selected: nil, shortcuts: true)
         #expect(presented.pinned.map(\.accessory) == [.shortcut("⌘1"), .shortcut("⌘2")])
         #expect(presented.recents.prefix(7).map(\.accessory) == (3...9).map { .shortcut("⌘\($0)") })
-        #expect(presented.recents.dropFirst(7).allSatisfy { $0.accessory == NWSidebarRow.Accessory.none })
+        #expect(presented.recents.dropFirst(7).allSatisfy { $0.accessory == SHSidebarRow.Accessory.none })
         #expect(presented.needsYou.first?.accessory == .reason("ship it?"))
     }
 
@@ -180,8 +180,8 @@ struct SidebarPinnedTests {
         #expect(lists.shortcutRows.count == 11)
         let presented = lists.presented(selected: nil, shortcuts: true)
         #expect(presented.pinned.prefix(9).map(\.accessory) == (1...9).map { .shortcut("⌘\($0)") })
-        #expect(presented.pinned.last?.accessory == NWSidebarRow.Accessory.none)
-        #expect(presented.recents.allSatisfy { $0.accessory == NWSidebarRow.Accessory.none })
+        #expect(presented.pinned.last?.accessory == SHSidebarRow.Accessory.none)
+        #expect(presented.recents.allSatisfy { $0.accessory == SHSidebarRow.Accessory.none })
     }
 
     @Test func aDesignStillTakesNoDigitBesidePinnedThreads() {

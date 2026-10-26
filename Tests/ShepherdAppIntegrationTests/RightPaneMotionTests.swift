@@ -36,9 +36,9 @@ struct RightPaneMotionTests {
             } pane: {
                 RightPaneSlot(showing: model.showing) {
                     if case .inspector = model.showing {
-                        Color.black.nwTransition(.content)
+                        Color.black.shTransition(.content)
                     } else {
-                        Color.nw.running.nwTransition(.content)
+                        Color.sh.running.shTransition(.content)
                     }
                 }
             }

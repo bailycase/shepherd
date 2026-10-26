@@ -25,7 +25,7 @@ struct AutomationsPageRow: Identifiable, Equatable {
     var canToggle: Bool
     var host: String
     /// How its last run went; nil while its runs have not been read.
-    var lastRun: NWRunOutcome?
+    var lastRun: SHRunOutcome?
     var selected: Bool
     /// Its run works or waits on you: its menu offers Stop, else Run Now.
     var live: Bool
@@ -129,15 +129,15 @@ struct AutomationsPageModel: Equatable {
     }
 
     /// The table's Last run: the run's word, lowercase as the board has it, with its time.
-    static func lastRun(_ row: AutomationListRow, runsKnown: Bool) -> NWRunOutcome? {
+    static func lastRun(_ row: AutomationListRow, runsKnown: Bool) -> SHRunOutcome? {
         // Until the runs are read, a row without a run knows only whether it is on.
         guard runsKnown || row.run != nil || row.offline else { return nil }
-        let clock: NWRowClock? = switch row.clock {
+        let clock: SHRowClock? = switch row.clock {
         case .elapsed(let since)?: .elapsed(since: since)
         case .ago(let at)?: .ago(at)
         case nil: nil
         }
-        return NWRunOutcome(row.status.lowercasedFirst, state: state(row.tone), clock: clock)
+        return SHRunOutcome(row.status.lowercasedFirst, state: state(row.tone), clock: clock)
     }
 
     /// A tone as the page colors it: stopped and off are quiet (a hollow dot).

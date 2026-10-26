@@ -26,12 +26,12 @@ struct TerminalMotionTests {
         var body: some View {
             HStack(spacing: 0) {
                 if model.open {
-                    Color.black.frame(width: Self.paneWidth).nwTransition(.pane, edge: .leading)
+                    Color.black.frame(width: Self.paneWidth).shTransition(.pane, edge: .leading)
                 }
                 terminal()
             }
             .frame(width: Self.size.width, height: Self.size.height)
-            .nwAnimation(.pane, value: model.open)
+            .shAnimation(.pane, value: model.open)
         }
 
         static var size: CGSize { CGSize(width: 600, height: 200) }
@@ -115,7 +115,7 @@ struct TerminalMotionTests {
 
     @Test func aTerminalTakesItsFinalGridOnceWhileAPaneSlidesInBesideIt() async throws {
         let model = Model()
-        let terminal = AppTerminalModel(terminal: ShepherdTheme.nightWatchLight.terminal)
+        let terminal = AppTerminalModel(terminal: ShepherdTheme.shepherdDesignLight.terminal)
         let view = PaneBesideTerminal(model: model) { AppTerminalView(model: terminal, isFocused: false) }
 
         let (grids, animated) = try await gridsWhileAPaneSlidesIn(terminal, view: view, model: model)
@@ -124,11 +124,11 @@ struct TerminalMotionTests {
         #expect(grids.count == 1, "one PTY resize, not one per column: \(grids)")
     }
 
-    /// The control: the same surface without `AppTerminalView`'s `nwInstant()` is resized
+    /// The control: the same surface without `AppTerminalView`'s `shInstant()` is resized
     /// frame by frame, so the check above is not vacuous.
     @Test(.timingSensitive) func withoutInstantTheSameSurfaceIsResizedFrameByFrame() async throws {
         let model = Model()
-        let terminal = AppTerminalModel(terminal: ShepherdTheme.nightWatchLight.terminal)
+        let terminal = AppTerminalModel(terminal: ShepherdTheme.shepherdDesignLight.terminal)
         let view = PaneBesideTerminal(model: model) { TerminalSurfaceView(model: terminal.model, isFocused: false) }
 
         let (grids, animated) = try await gridsWhileAPaneSlidesIn(terminal, view: view, model: model)

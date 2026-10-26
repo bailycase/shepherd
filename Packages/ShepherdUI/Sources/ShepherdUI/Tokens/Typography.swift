@@ -1,10 +1,10 @@
 import SwiftUI
 import CoreText
 
-/// The Night Watch type ramp (Foundations board). Geist for prose and chrome, Geist Mono for
+/// The Shepherd Design type ramp (Foundations board). Geist for prose and chrome, Geist Mono for
 /// anything the agent touched. Sizes are points and scale with Settings ▸ Appearance ▸ Text size;
 /// on iOS they follow the phone and iPad boards' larger ramp and Dynamic Type (`relativeTo:`).
-public enum NWTextStyle: Int, CaseIterable, Sendable {
+public enum SHTextStyle: Int, CaseIterable, Sendable {
     /// Geist 28/600/1.15: empty states, onboarding.
     case display
     /// Geist 15/600/1.3: thread and pane titles.
@@ -21,7 +21,7 @@ public enum NWTextStyle: Int, CaseIterable, Sendable {
     case code
     /// Geist Mono 11.5/400/1.3: paths, commands, tool rows.
     case mono
-    /// Geist Mono 10.5/500/1.2: section labels (uppercase, via `.nwSectionLabel()`).
+    /// Geist Mono 10.5/500/1.2: section labels (uppercase, via `.shSectionLabel()`).
     case micro
 
     public var size: CGFloat {
@@ -93,7 +93,7 @@ public enum NWTextStyle: Int, CaseIterable, Sendable {
 
 /// The bundled faces (SIL OFL, `Resources/Fonts/OFL.txt`), registered for the process from the
 /// package bundle: no Info.plist entry needed.
-public enum NWFonts {
+public enum SHFonts {
     public static let sansFamily = "Geist"
     public static let monoFamily = "Geist Mono"
 
@@ -133,21 +133,21 @@ public enum NWFonts {
 
 /// How a thread's prose and bubbles are set: the thread's own ramp, or one step smaller in a
 /// transcript beside it (the subagent inspector: the Subagents mock sets it a point under the
-/// thread). Components that set prose read it from the environment (`nwProseSize`).
-public enum NWProseSize: Int, CaseIterable, Sendable {
+/// thread). Components that set prose read it from the environment (`shProseSize`).
+public enum SHProseSize: Int, CaseIterable, Sendable {
     case regular, small
 
     /// Points under the ramp: one step, `.body` down to the `.ui` size.
-    public var step: CGFloat { self == .small ? NWTextStyle.body.size - NWTextStyle.ui.size : 0 }
+    public var step: CGFloat { self == .small ? SHTextStyle.body.size - SHTextStyle.ui.size : 0 }
 }
 
 extension EnvironmentValues {
     /// The prose size for thread components under this view.
-    @Entry public var nwProseSize: NWProseSize = .regular
+    @Entry public var shProseSize: SHProseSize = .regular
 }
 
 /// Every text style at one text scale, at each prose size, built once per scale change.
-public final class NWTypeRamp: Sendable {
+public final class SHTypeRamp: Sendable {
     public let scale: CGFloat
     /// Indexed by prose size, then style.
     private let fonts: [[Font]]
@@ -157,12 +157,12 @@ public final class NWTypeRamp: Sendable {
         self.scale = scale
         var fonts: [[Font]] = []
         var spacing: [[CGFloat]] = []
-        for proseSize in NWProseSize.allCases {
+        for proseSize in SHProseSize.allCases {
             var sizeFonts: [Font] = []
             var sizeSpacing: [CGFloat] = []
-            for style in NWTextStyle.allCases {
+            for style in SHTextStyle.allCases {
                 let size = (style.size - proseSize.step) * scale
-                let name = NWFonts.postScriptName(mono: style.isMonospaced, weight: style.weight)
+                let name = SHFonts.postScriptName(mono: style.isMonospaced, weight: style.weight)
                 #if os(macOS)
                 sizeFonts.append(.custom(name, fixedSize: size))
                 #else
@@ -180,33 +180,33 @@ public final class NWTypeRamp: Sendable {
         self.spacing = spacing
     }
 
-    public func font(_ style: NWTextStyle, size: NWProseSize = .regular) -> Font { fonts[size.rawValue][style.rawValue] }
+    public func font(_ style: SHTextStyle, size: SHProseSize = .regular) -> Font { fonts[size.rawValue][style.rawValue] }
     /// Extra leading (`.lineSpacing`) that reaches the style's line height.
-    public func lineSpacing(_ style: NWTextStyle, size: NWProseSize = .regular) -> CGFloat { spacing[size.rawValue][style.rawValue] }
+    public func lineSpacing(_ style: SHTextStyle, size: SHProseSize = .regular) -> CGFloat { spacing[size.rawValue][style.rawValue] }
 }
 
 extension Font {
-    /// A Night Watch text style: `.font(.nw(.body))`. Pass `weight` for the rare emphasis the
+    /// A Shepherd Design text style: `.font(.sh(.body))`. Pass `weight` for the rare emphasis the
     /// ramp does not carry (a bold path segment, a medium count), and `size` for prose set in a
     /// side transcript.
-    @MainActor public static func nw(_ style: NWTextStyle, weight: Font.Weight? = nil, size: NWProseSize = .regular) -> Font {
+    @MainActor public static func sh(_ style: SHTextStyle, weight: Font.Weight? = nil, size: SHProseSize = .regular) -> Font {
         guard let weight, weight != style.weight else { return ThemeStore.shared.typeRamp.font(style, size: size) }
-        return .nwFace(style.size - size.step, weight: weight, mono: style.isMonospaced, relativeTo: style.dynamicTypeStyle)
+        return .shFace(style.size - size.step, weight: weight, mono: style.isMonospaced, relativeTo: style.dynamicTypeStyle)
     }
 
     /// A one-off Geist size the ramp does not name (the empty-state title, a palette search
     /// field). Prefer a ramp style.
-    @MainActor public static func nwSans(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
-        .nwFace(size, weight: weight, mono: false, relativeTo: .body)
+    @MainActor public static func shSans(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+        .shFace(size, weight: weight, mono: false, relativeTo: .body)
     }
 
     /// A one-off Geist Mono size the ramp does not name. Prefer a ramp style.
-    @MainActor public static func nwMono(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
-        .nwFace(size, weight: weight, mono: true, relativeTo: .body)
+    @MainActor public static func shMono(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+        .shFace(size, weight: weight, mono: true, relativeTo: .body)
     }
 
-    @MainActor private static func nwFace(_ size: CGFloat, weight: Font.Weight, mono: Bool, relativeTo: Font.TextStyle) -> Font {
-        let name = NWFonts.postScriptName(mono: mono, weight: weight)
+    @MainActor private static func shFace(_ size: CGFloat, weight: Font.Weight, mono: Bool, relativeTo: Font.TextStyle) -> Font {
+        let name = SHFonts.postScriptName(mono: mono, weight: weight)
         let points = size * ThemeStore.shared.textScale
         #if os(macOS)
         // Our text scale already sets the size. Relative custom fonts round fractional
@@ -218,52 +218,52 @@ extension Font {
     }
 }
 
-extension NWTextStyle {
+extension SHTextStyle {
     /// Extra leading at the current text scale.
     @MainActor public var lineSpacing: CGFloat { ThemeStore.shared.typeRamp.lineSpacing(self) }
 
     /// Extra leading at the current text scale and `size`.
-    @MainActor public func lineSpacing(_ size: NWProseSize) -> CGFloat { ThemeStore.shared.typeRamp.lineSpacing(self, size: size) }
+    @MainActor public func lineSpacing(_ size: SHProseSize) -> CGFloat { ThemeStore.shared.typeRamp.lineSpacing(self, size: size) }
 }
 
 extension View {
     /// A text style with its line height: the font plus the extra leading that reaches it. Use
-    /// for text that wraps; `.font(.nw(_:))` alone is enough for single lines.
-    @MainActor public func nwText(_ style: NWTextStyle, size: NWProseSize = .regular) -> some View {
-        font(.nw(style, size: size)).lineSpacing(style.lineSpacing(size))
+    /// for text that wraps; `.font(.sh(_:))` alone is enough for single lines.
+    @MainActor public func shText(_ style: SHTextStyle, size: SHProseSize = .regular) -> some View {
+        font(.sh(style, size: size)).lineSpacing(style.lineSpacing(size))
     }
 
     /// A one-off size the ramp does not name, set at its own line height (a Settings description
     /// at 12.5/1.45, a footnote at 12/1.5): the font plus the extra leading that reaches it.
-    @MainActor public func nwText(size: CGFloat, weight: Font.Weight = .regular, mono: Bool = false, lineHeight: CGFloat) -> some View {
-        font(mono ? .nwMono(size, weight) : .nwSans(size, weight))
-            .lineSpacing(NWLineSpacing.extra(size: size, weight: weight, mono: mono, lineHeight: lineHeight))
+    @MainActor public func shText(size: CGFloat, weight: Font.Weight = .regular, mono: Bool = false, lineHeight: CGFloat) -> some View {
+        font(mono ? .shMono(size, weight) : .shSans(size, weight))
+            .lineSpacing(SHLineSpacing.extra(size: size, weight: weight, mono: mono, lineHeight: lineHeight))
     }
 
     /// The Settings boards' section label ("BUNDLED EXTENSIONS", "HOW THE AGENT READS THEM"):
     /// Geist 11/600, uppercase, tracked 6%, in `textSecondary`. `table` is a list's column header
     /// and a detail's label (Skill, Source, Use it): 10.5 in `textTertiary`.
-    @MainActor public func nwSettingsLabel(table: Bool = false) -> some View {
+    @MainActor public func shSettingsLabel(table: Bool = false) -> some View {
         let size: CGFloat = table ? 10.5 : 11
-        return font(.nwSans(size, .semibold))
+        return font(.shSans(size, .semibold))
             .textCase(.uppercase)
             .tracking(size * 0.06)
-            .foregroundStyle(table ? Color.nw.textTertiary : Color.nw.textSecondary)
+            .foregroundStyle(table ? Color.sh.textTertiary : Color.sh.textSecondary)
     }
 
     /// The section label treatment ("THIS MAC", "AUTOMATIONS"): micro mono, uppercase, tracked 6%
     /// (the Foundations board's 0.06em), tertiary.
-    @MainActor public func nwSectionLabel() -> some View {
-        font(.nw(.micro))
+    @MainActor public func shSectionLabel() -> some View {
+        font(.sh(.micro))
             .textCase(.uppercase)
-            .tracking(NWTextStyle.micro.size * 0.06)
-            .foregroundStyle(.nw.textTertiary)
+            .tracking(SHTextStyle.micro.size * 0.06)
+            .foregroundStyle(.sh.textTertiary)
     }
 }
 
-/// Extra leading for the one-off sizes `nwText(size:weight:mono:lineHeight:)` sets, measured once
+/// Extra leading for the one-off sizes `shText(size:weight:mono:lineHeight:)` sets, measured once
 /// per scaled size: building a CoreText font on every render would be too slow.
-@MainActor enum NWLineSpacing {
+@MainActor enum SHLineSpacing {
     private struct Key: Hashable {
         let size: CGFloat
         let weight: Font.Weight
@@ -277,7 +277,7 @@ extension View {
     /// `extra` rounds to a whole point (13.5pt at 1.6 is 21.6, and a line the text system sets at 18 needs 1.8 each side, not 2).
     static func halfLeading(size: CGFloat, lineHeight: CGFloat) -> CGFloat {
         let scaled = size * ThemeStore.shared.textScale
-        let ct = CTFontCreateWithName(NWFonts.postScriptName(mono: false, weight: .regular) as CFString, scaled, nil)
+        let ct = CTFontCreateWithName(SHFonts.postScriptName(mono: false, weight: .regular) as CFString, scaled, nil)
         let line = CTFontGetAscent(ct).rounded(.up) + CTFontGetDescent(ct).rounded(.up) + CTFontGetLeading(ct).rounded(.up)
         return max(0, (scaled * lineHeight - line) / 2)
     }
@@ -286,7 +286,7 @@ extension View {
         let scaled = size * ThemeStore.shared.textScale
         let key = Key(size: scaled, weight: weight, mono: mono, lineHeight: lineHeight)
         if let cached = cache[key] { return cached }
-        let ct = CTFontCreateWithName(NWFonts.postScriptName(mono: mono, weight: weight) as CFString, scaled, nil)
+        let ct = CTFontCreateWithName(SHFonts.postScriptName(mono: mono, weight: weight) as CFString, scaled, nil)
         let natural = CTFontGetAscent(ct) + CTFontGetDescent(ct) + CTFontGetLeading(ct)
         let extra = max(0, (scaled * lineHeight - natural).rounded(.toNearestOrEven))
         cache[key] = extra

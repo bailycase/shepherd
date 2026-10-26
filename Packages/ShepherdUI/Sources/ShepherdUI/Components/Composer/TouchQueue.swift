@@ -1,14 +1,14 @@
 import SwiftUI
 
 // "Up next" for touch (MobileQueue, MobileSteer, iPadQueue boards): the Mac's queue stack
-// (`NWQueueStack`, `NWQueueRow`) is pointer-first (40pt rows, actions on hover, a drag grip).
+// (`SHQueueStack`, `SHQueueRow`) is pointer-first (40pt rows, actions on hover, a drag grip).
 // On a phone or iPad the rows are at least 44pt, a queued row's actions live in its swipe
 // actions and its long-press menu (the app attaches both), and a steering row keeps Back to the
 // queue as a 44pt button. The number ring and the queue glyph are the Mac's.
 
-public enum NWTouchQueueMetrics {
+public enum SHTouchQueueMetrics {
     /// The header: the queue glyph, "Up next", the count, and the ••• options.
-    public static let headerHeight: CGFloat = NW.Height.touch
+    public static let headerHeight: CGFloat = SH.Height.touch
     /// A row's minimum height (the boards' 48pt; a steering row grows to its two lines).
     public static let rowHeight: CGFloat = 48
     /// The queue glyph in the header.
@@ -27,9 +27,9 @@ public enum NWTouchQueueMetrics {
 /// A paused queue says so in its header, and, with no hover to reveal the Mac's per-row Send now
 /// or tooltip, shows Send now there (the ••• menu's Send all now), its reason as the hint.
 ///
-/// Unframed, it draws no card of its own: it is Up next's section of the dock (`NWDockStack`),
+/// Unframed, it draws no card of its own: it is Up next's section of the dock (`SHDockStack`),
 /// under the subagents, and rounds only its bottom corners.
-public struct NWTouchQueueCard<Rows: View, Options: View>: View {
+public struct SHTouchQueueCard<Rows: View, Options: View>: View {
     let count: Int
     let framed: Bool
     let afterGoalCheck: Bool
@@ -58,23 +58,23 @@ public struct NWTouchQueueCard<Rows: View, Options: View>: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        let radius = NW.Radius.l
+        let sh = Color.sh
+        let radius = SH.Radius.l
         let shape = UnevenRoundedRectangle(cornerRadii: RectangleCornerRadii(
             topLeading: framed ? radius : 0, bottomLeading: radius, bottomTrailing: radius, topTrailing: framed ? radius : 0))
         VStack(spacing: 0) {
-            NWTouchQueueHeader(count: count, paused: paused, resume: paused == nil ? nil : resume,
+            SHTouchQueueHeader(count: count, paused: paused, resume: paused == nil ? nil : resume,
                                afterGoalCheck: afterGoalCheck, collapsed: collapsed, onToggle: onToggle, options: options)
-            if !collapsed { rows().overlay(alignment: .top) { NWHairline() } }
+            if !collapsed { rows().overlay(alignment: .top) { SHHairline() } }
         }
-        .background(framed ? nw.bgRaised : .clear, in: shape)
+        .background(framed ? sh.bgRaised : .clear, in: shape)
         .clipShape(shape)
-        .nwBorder(framed ? nw.lineStrong : .clear, radius: radius)
+        .shBorder(framed ? sh.lineStrong : .clear, radius: radius)
         .accessibilityElement(children: .contain)
     }
 }
 
-private struct NWTouchQueueHeader<Options: View>: View {
+private struct SHTouchQueueHeader<Options: View>: View {
     let count: Int
     let paused: String?
     let resume: (() -> Void)?
@@ -85,20 +85,20 @@ private struct NWTouchQueueHeader<Options: View>: View {
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         // At accessibility sizes Send now takes a row of its own under the title, which would
         // otherwise truncate beside it.
         let stacked = typeSize.isAccessibilitySize
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: NW.Space.m) {
-                HStack(spacing: NW.Space.m) {
-                    NWQueueGlyph(size: NWTouchQueueMetrics.glyph).foregroundStyle(nw.textTertiary)
-                    Text("Up next").font(.nw(.ui, weight: .semibold)).foregroundStyle(nw.textSecondary)
-                    Text("\(count)").font(.nw(.mono)).foregroundStyle(nw.textTertiary).monospacedDigit()
-                        .nwContentTransition(.numeric())
-                        .nwComponentAnimation(.content, value: count)
+            HStack(spacing: SH.Space.m) {
+                HStack(spacing: SH.Space.m) {
+                    SHQueueGlyph(size: SHTouchQueueMetrics.glyph).foregroundStyle(sh.textTertiary)
+                    Text("Up next").font(.sh(.ui, weight: .semibold)).foregroundStyle(sh.textSecondary)
+                    Text("\(count)").font(.sh(.mono)).foregroundStyle(sh.textTertiary).monospacedDigit()
+                        .shContentTransition(.numeric())
+                        .shComponentAnimation(.content, value: count)
                     if paused != nil {
-                        Text("Paused").font(.nw(.caption)).foregroundStyle(nw.textTertiary).nwTransition(.content)
+                        Text("Paused").font(.sh(.caption)).foregroundStyle(sh.textTertiary).shTransition(.content)
                     }
                 }
                 .lineLimit(1)
@@ -106,47 +106,47 @@ private struct NWTouchQueueHeader<Options: View>: View {
                 .accessibilityLabel("Up next, \(count) \(count == 1 ? "message" : "messages")\(paused != nil ? ", paused" : "")")
                 .accessibilityHint(paused ?? "")
                 .accessibilityAddTraits(.isHeader)
-                Spacer(minLength: NW.Space.m)
+                Spacer(minLength: SH.Space.m)
                 if afterGoalCheck {
-                    Text("after the goal check").font(.nwMono(NWGoalMetrics.metaFont)).foregroundStyle(nw.textTertiary)
+                    Text("after the goal check").font(.shMono(SHGoalMetrics.metaFont)).foregroundStyle(sh.textTertiary)
                         .lineLimit(1).minimumScaleFactor(0.75)
                 }
                 if !stacked { sendNow }
                 Menu(content: options) {
                     Image(systemName: "ellipsis")
-                        .font(.nw(.ui, weight: .semibold))
-                        .foregroundStyle(nw.textSecondary)
-                        .frame(width: NW.Height.touch, height: NW.Height.touch)
+                        .font(.sh(.ui, weight: .semibold))
+                        .foregroundStyle(sh.textSecondary)
+                        .frame(width: SH.Height.touch, height: SH.Height.touch)
                         .contentShape(Rectangle())
                 }
                 .accessibilityLabel("Queue options")
                 if let onToggle {
                     Button(action: onToggle) {
                         Image(systemName: collapsed ? "chevron.up" : "chevron.down")
-                            .foregroundStyle(nw.textSecondary)
-                            .frame(width: NW.Height.touch, height: NW.Height.touch)
+                            .foregroundStyle(sh.textSecondary)
+                            .frame(width: SH.Height.touch, height: SH.Height.touch)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(collapsed ? "Expand the queue" : "Collapse the queue")
                 }
             }
-            .frame(minHeight: NWTouchQueueMetrics.headerHeight)
+            .frame(minHeight: SHTouchQueueMetrics.headerHeight)
             if stacked, resume != nil {
-                sendNow.padding(.bottom, NW.Space.m)
+                sendNow.padding(.bottom, SH.Space.m)
             }
         }
         // "Paused" and Send now come and go on their own: a queue can pause while its
         // messages can't be sent yet.
-        .nwComponentAnimation(.content, value: [paused != nil, resume != nil])
-        .padding(.leading, NW.Space.l)
+        .shComponentAnimation(.content, value: [paused != nil, resume != nil])
+        .padding(.leading, SH.Space.l)
     }
 
     @ViewBuilder private var sendNow: some View {
         if let resume {
             Button("Send now", systemImage: "arrow.up", action: resume)
-                .buttonStyle(.nw(.secondary, size: .s))
+                .buttonStyle(.sh(.secondary, size: .s))
                 .accessibilityHint(paused ?? "")
-                .nwTransition(.content)
+                .shTransition(.content)
         }
     }
 }
@@ -161,7 +161,7 @@ private struct NWTouchQueueHeader<Options: View>: View {
 ///   Steering" under it (on iPad, `wide`, the "Steering" pill after the text; iPadQueue), and Back to
 ///   the queue.
 /// - **Deleted / Cleared:** where a message was deleted (or the queue cleared), with Undo.
-public struct NWTouchQueueRow: View {
+public struct SHTouchQueueRow: View {
     public enum Kind: Equatable, Sendable {
         case queued(number: Int)
         case steering
@@ -205,53 +205,53 @@ public struct NWTouchQueueRow: View {
     }
 
     private var message: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let steering = kind == .steering
         // The row's text and its Back to the queue are one VoiceOver element; Steer now, which the app also
         // offers as a named action, stays a button of its own beside it.
-        let content = HStack(spacing: NW.Space.l) {
+        let content = HStack(spacing: SH.Space.l) {
             ZStack {
                 switch kind {
-                case .queued(let number): NWQueueNumber(number).nwTransition(.content)
+                case .queued(let number): SHQueueNumber(number).shTransition(.content)
                 default:
                     Image(systemName: "arrow.turn.down.right")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(nw.running)
-                        .frame(width: NWTouchQueueMetrics.steerGlyph, height: NWTouchQueueMetrics.steerGlyph)
+                        .foregroundStyle(sh.running)
+                        .frame(width: SHTouchQueueMetrics.steerGlyph, height: SHTouchQueueMetrics.steerGlyph)
                         .accessibilityHidden(true)
-                        .nwTransition(.content)
+                        .shTransition(.content)
                 }
             }
-            .frame(width: NWQueueMetrics.numberSize + NW.Space.xs)
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                Text(text).font(.nw(.ui, weight: .regular)).foregroundStyle(nw.textPrimary)
+            .frame(width: SHQueueMetrics.numberSize + SH.Space.xs)
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                Text(text).font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textPrimary)
                     .lineLimit(steering ? 1 : 2).truncationMode(.tail)
                 if steering, !wide {
                     Label("Steering", systemImage: "arrow.turn.down.right")
-                        .font(.nw(.caption, weight: .medium)).foregroundStyle(nw.running)
-                        .labelStyle(NWTouchQueueInlineLabel())
+                        .font(.sh(.caption, weight: .medium)).foregroundStyle(sh.running)
+                        .labelStyle(SHTouchQueueInlineLabel())
                 } else if held {
                     Label("Being edited", systemImage: "pencil")
-                        .font(.nw(.caption)).foregroundStyle(nw.textTertiary)
-                        .labelStyle(NWTouchQueueInlineLabel())
+                        .font(.sh(.caption)).foregroundStyle(sh.textTertiary)
+                        .labelStyle(SHTouchQueueInlineLabel())
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if steering, wide {
-                NWStatusPill(.running, label: "Steering", symbol: "arrow.turn.down.right").fixedSize()
+                SHStatusPill(.running, label: "Steering", symbol: "arrow.turn.down.right").fixedSize()
             }
             if images > 0 {
                 Label("\(images)", systemImage: "photo")
-                    .font(.nw(.caption)).foregroundStyle(nw.textTertiary)
-                    .labelStyle(NWTouchQueueInlineLabel())
+                    .font(.sh(.caption)).foregroundStyle(sh.textTertiary)
+                    .labelStyle(SHTouchQueueInlineLabel())
                     .accessibilityLabel(images == 1 ? "1 image" : "\(images) images")
             }
             if steering, let back {
                 Button(action: back) {
                     Image(systemName: "arrow.uturn.backward")
-                        .font(.nw(.ui, weight: .medium))
-                        .foregroundStyle(nw.textSecondary)
-                        .frame(width: NW.Height.touch, height: NW.Height.touch)
+                        .font(.sh(.ui, weight: .medium))
+                        .foregroundStyle(sh.textSecondary)
+                        .frame(width: SH.Height.touch, height: SH.Height.touch)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -260,23 +260,23 @@ public struct NWTouchQueueRow: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLabel)
-        .modifier(NWTouchNamedAction(name: "Back to the queue", action: steering ? back : nil))
-        return HStack(spacing: NW.Space.m) {
+        .modifier(SHTouchNamedAction(name: "Back to the queue", action: steering ? back : nil))
+        return HStack(spacing: SH.Space.m) {
             content
             if !steering, let steer {
                 Button(action: steer) { Label(steerLabel, systemImage: "arrow.turn.down.right") }
-                    .buttonStyle(.nw(.secondary, size: .s))
+                    .buttonStyle(.sh(.secondary, size: .s))
                     .fixedSize()
-                    .nwTransition(.content)
+                    .shTransition(.content)
             }
         }
-        .padding(.leading, NW.Space.l)
-        .padding(.trailing, steering && back != nil ? NW.Space.xs : NW.Space.l)
-        .padding(.vertical, NW.Space.s)
-        .frame(minHeight: NWTouchQueueMetrics.rowHeight)
+        .padding(.leading, SH.Space.l)
+        .padding(.trailing, steering && back != nil ? SH.Space.xs : SH.Space.l)
+        .padding(.vertical, SH.Space.s)
+        .frame(minHeight: SHTouchQueueMetrics.rowHeight)
         .frame(maxWidth: .infinity)
-        .background(steering ? nw.runningTint : nw.bgRaised)
-        .nwComponentAnimation(.content, value: kind)
+        .background(steering ? sh.runningTint : sh.bgRaised)
+        .shComponentAnimation(.content, value: kind)
         .contentShape(Rectangle())
     }
 
@@ -289,38 +289,38 @@ public struct NWTouchQueueRow: View {
     }
 
     private var deletedRow: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let label: Text = if case .cleared(let count) = kind {
             Text("Cleared \(count) \(count == 1 ? "message" : "messages")")
         } else {
             Text("Deleted \(Text(text).strikethrough())")
         }
-        return HStack(spacing: NW.Space.l) {
-            Image(systemName: "trash").font(.nw(.caption)).foregroundStyle(nw.textTertiary)
-                .frame(width: NWQueueMetrics.numberSize + NW.Space.xs)
+        return HStack(spacing: SH.Space.l) {
+            Image(systemName: "trash").font(.sh(.caption)).foregroundStyle(sh.textTertiary)
+                .frame(width: SHQueueMetrics.numberSize + SH.Space.xs)
                 .accessibilityHidden(true)
-            label.font(.nw(.ui, weight: .regular)).foregroundStyle(nw.textTertiary)
+            label.font(.sh(.ui, weight: .regular)).foregroundStyle(sh.textTertiary)
                 .lineLimit(1).truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let undo {
                 Button("Undo", action: undo)
-                    .buttonStyle(.nwLink(font: .nw(.ui, weight: .medium)))
-                    .frame(minWidth: NW.Height.touch, minHeight: NW.Height.touch)
+                    .buttonStyle(.shLink(font: .sh(.ui, weight: .medium)))
+                    .frame(minWidth: SH.Height.touch, minHeight: SH.Height.touch)
                     .contentShape(Rectangle())
             }
         }
-        .padding(.horizontal, NW.Space.l)
-        .frame(minHeight: NWTouchQueueMetrics.rowHeight)
+        .padding(.horizontal, SH.Space.l)
+        .frame(minHeight: SHTouchQueueMetrics.rowHeight)
         .frame(maxWidth: .infinity)
-        .background(nw.bgRaised)
+        .background(sh.bgRaised)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(kind == .deleted ? "Deleted: \(text)" : "Queue cleared")
-        .modifier(NWTouchNamedAction(name: "Undo", action: undo))
+        .modifier(SHTouchNamedAction(name: "Undo", action: undo))
     }
 }
 
 /// A VoiceOver action for a button the row's combined element would otherwise hide.
-private struct NWTouchNamedAction: ViewModifier {
+private struct SHTouchNamedAction: ViewModifier {
     let name: String
     let action: (() -> Void)?
 
@@ -330,9 +330,9 @@ private struct NWTouchNamedAction: ViewModifier {
 }
 
 /// A glyph and a word at caption size, 4pt apart.
-private struct NWTouchQueueInlineLabel: LabelStyle {
+private struct SHTouchQueueInlineLabel: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: NW.Space.xs) {
+        HStack(spacing: SH.Space.xs) {
             configuration.icon
             configuration.title
         }

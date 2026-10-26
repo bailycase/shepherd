@@ -8,21 +8,21 @@ struct ProjectSettingsCard<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
     var body: some View {
-        let M = NWProjectSettingsMetrics.self
-        let shape = RoundedRectangle(cornerRadius: NW.Radius.l)
+        let M = SHProjectSettingsMetrics.self
+        let shape = RoundedRectangle(cornerRadius: SH.Radius.l)
         VStack(spacing: 0) {
             Group(subviews: content()) { subviews in
                 ForEach(subviews) { subview in
                     let first = subview.id == subviews.first?.id
-                    if !first { NWHairline(width: M.line) }
+                    if !first { SHHairline(width: M.line) }
                     subview.frame(minHeight: first ? M.rowMinHeight : M.rowMinHeight - M.line)
                 }
             }
         }
         .padding(M.line)
-        .background(Color.nw.bgRaised, in: shape)
+        .background(Color.sh.bgRaised, in: shape)
         .clipShape(shape)
-        .nwBorder(Color.nw.lineStrong, radius: NW.Radius.l, width: M.line)
+        .shBorder(Color.sh.lineStrong, radius: SH.Radius.l, width: M.line)
     }
 }
 
@@ -33,12 +33,12 @@ struct ProjectSettingsRow<Control: View>: View {
     @ViewBuilder var control: Control
 
     var body: some View {
-        HStack(alignment: .center, spacing: NW.Space.l) {
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                Text(title).font(.nw(.ui)).foregroundStyle(Color.nw.textPrimary)
+        HStack(alignment: .center, spacing: SH.Space.l) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                Text(title).font(.sh(.ui)).foregroundStyle(Color.sh.textPrimary)
                 if let subtitle {
-                    NWMarkupText(subtitle, size: NWTextStyle.caption.size, lineHeight: NWCardRowMetrics.settingsDescriptionLineHeight)
-                        .foregroundStyle(Color.nw.textTertiary)
+                    SHMarkupText(subtitle, size: SHTextStyle.caption.size, lineHeight: SHCardRowMetrics.settingsDescriptionLineHeight)
+                        .foregroundStyle(Color.sh.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -54,8 +54,8 @@ struct ProjectSettingsRow<Control: View>: View {
 struct ProjectSettingsRowFrame: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .padding(.horizontal, NW.Space.l)
-            .padding(.vertical, NW.Space.m)
+            .padding(.horizontal, SH.Space.l)
+            .padding(.vertical, SH.Space.m)
     }
 }
 
@@ -63,16 +63,16 @@ struct ProjectSettingsRowFrame: ViewModifier {
 /// `danger` is Delete…: `failed` text on the card's fill, its line `failed` at 30%.
 struct ProjectSettingsButton: View {
     let title: String
-    var kind: NWButtonStyle.Kind = .secondary
+    var kind: SHButtonStyle.Kind = .secondary
     var danger = false
     let action: () -> Void
 
     var body: some View {
-        let label = Text(title).padding(.horizontal, NWProjectSettingsMetrics.line)
+        let label = Text(title).padding(.horizontal, SHProjectSettingsMetrics.line)
         if danger {
-            Button(action: action) { label }.buttonStyle(NWProjectSettingsDangerStyle())
+            Button(action: action) { label }.buttonStyle(SHProjectSettingsDangerStyle())
         } else {
-            Button(action: action) { label }.buttonStyle(.nw(kind))
+            Button(action: action) { label }.buttonStyle(.sh(kind))
         }
     }
 }

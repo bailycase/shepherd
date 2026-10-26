@@ -50,10 +50,10 @@ struct NativeSubagentSettings: View {
                 SettingsGroup(title: "Native subagent defaults",
                               footnote: "Precedence: explicit call → agent file → these defaults → parent. Child tools run with your account's access.") {
                     SettingsRow(title: "Concurrency", subtitle: "Child process limit per parent, including workflows.") {
-                        NWStepper("Concurrency", value: $settings.childConcurrency, in: 1...16)
+                        SHStepper("Concurrency", value: $settings.childConcurrency, in: 1...16)
                     }
                     SettingsRow(title: "Model", subtitle: "Agent files and explicit calls override this.") {
-                        NWPopupMenu(settings.childModel.isEmpty ? "Inherit parent" : settings.childModel,
+                        SHPopupMenu(settings.childModel.isEmpty ? "Inherit parent" : settings.childModel,
                                     mono: !settings.childModel.isEmpty, minWidth: AppLayout.settingsPopupWidth) {
                             Button("Inherit parent") { settings.childModel = "" }
                             Divider()
@@ -64,7 +64,7 @@ struct NativeSubagentSettings: View {
                         .accessibilityLabel("Subagent model")
                     }
                     SettingsRow(title: "Thinking") {
-                        NWPopupMenu(settings.childThinking.isEmpty ? "Inherit parent" : settings.childThinking.capitalized,
+                        SHPopupMenu(settings.childThinking.isEmpty ? "Inherit parent" : settings.childThinking.capitalized,
                                     minWidth: AppLayout.settingsPopupWidth) {
                             Button("Inherit parent") { settings.childThinking = "" }
                             Divider()
@@ -75,7 +75,7 @@ struct NativeSubagentSettings: View {
                         .accessibilityLabel("Subagent thinking")
                     }
                     SettingsRow(title: "Context", subtitle: "Start each child fresh, or fork the parent's conversation.") {
-                        NWSegmentedPicker("Context", selection: $settings.childContext, options: [("fresh", "Fresh"), ("fork", "Fork")])
+                        SHSegmentedPicker("Context", selection: $settings.childContext, options: [("fresh", "Fresh"), ("fork", "Fork")])
                     }
                 }
                 .task {
@@ -85,11 +85,11 @@ struct NativeSubagentSettings: View {
                         Array(Set(catalog.entriesOrConfigured().map(\.id))).sorted()
                     }.value
                 }
-                .nwTransition(.disclosure)
+                .shTransition(.disclosure)
             }
         }
-        .nwControlScale(.settings)
-        .nwAnimation(.disclosure, value: settings.piNativeSubagents)
+        .shControlScale(.settings)
+        .shAnimation(.disclosure, value: settings.piNativeSubagents)
     }
 
     /// The configured subagent model always stays listed, even when pi's catalog lacks it.

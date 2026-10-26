@@ -28,37 +28,37 @@ struct SubagentListTab: View {
             if list.isEmpty {
                 // The board's `.sl-empty` rule, with no state drawn on it and so no copy of its own: centered, 8pt apart,
                 // 32pt around, `ui` in `textSecondary`. The words are the app's.
-                VStack(spacing: NW.Space.m) {
-                    Text(store.snapshot == nil ? "Loading the thread…" : "No subagents").font(.nw(.ui, weight: .regular))
+                VStack(spacing: SH.Space.m) {
+                    Text(store.snapshot == nil ? "Loading the thread…" : "No subagents").font(.sh(.ui, weight: .regular))
                 }
                 .multilineTextAlignment(.center)
-                .foregroundStyle(Color.nw.textSecondary)
-                .padding(NW.Space.xxxl)
+                .foregroundStyle(Color.sh.textSecondary)
+                .padding(SH.Space.xxxl)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
                     // Every head and row is its own element of the lazy stack, so only the rows on screen are built.
                     LazyVStack(spacing: 0) {
-                        NWSubagentListSummary(title: list.title, tally: list.tally).equatable()
+                        SHSubagentListSummary(title: list.title, tally: list.tally).equatable()
                         ForEach(list.elements) { element in
                             // One view per element: a container whatever the element is.
                             VStack(spacing: 0) {
                                 switch element.kind {
                                 case .section(let section):
-                                    NWSubagentListSection(section.title, time: section.time).equatable()
+                                    SHSubagentListSection(section.title, time: section.time).equatable()
                                 case .item(let item):
-                                    NWSubagentListRow(item.row, open: { inspect(item.run) }).equatable()
+                                    SHSubagentListRow(item.row, open: { inspect(item.run) }).equatable()
                                 }
                             }
                         }
                     }
-                    .padding(.bottom, NW.Space.xxl)
+                    .padding(.bottom, SH.Space.xxl)
                 }
                 .scrollIndicators(.automatic)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Subagents in this thread")
         .onChange(of: key, initial: true) { _, key in

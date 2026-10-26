@@ -12,16 +12,16 @@ struct PiSignInSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            NWSheetHeader(title, subtitle: subtitle, leading: .badge(PiSignInCatalog.badge(session.provider)), close: close)
+            SHSheetHeader(title, subtitle: subtitle, leading: .badge(PiSignInCatalog.badge(session.provider)), close: close)
             content
-                .padding(.top, NWPiSignInMetrics.bodyTop)
-                .padding(.horizontal, NWPiSignInMetrics.sheetInset)
-                .padding(.bottom, NWPiSignInMetrics.bodyBottom)
+                .padding(.top, SHPiSignInMetrics.bodyTop)
+                .padding(.horizontal, SHPiSignInMetrics.sheetInset)
+                .padding(.bottom, SHPiSignInMetrics.bodyBottom)
             footer
         }
-        .frame(width: NWPiSignInMetrics.sheetWidth)
-        .background(Color.nw.bgWindow)
-        .nwAnimation(.disclosure, value: session.phase)
+        .frame(width: SHPiSignInMetrics.sheetWidth)
+        .background(Color.sh.bgWindow)
+        .shAnimation(.disclosure, value: session.phase)
         .task(id: session.phase) {
             // One opened from /login or an agent's card closes by itself once it lands.
             guard case .done = session.phase, session.origin == .slash || session.origin == .agentCard else { return }
@@ -55,12 +55,12 @@ struct PiSignInSheet: View {
         let site = session.site
         switch session.phase {
         case .portBusy(let port):
-            VStack(alignment: .leading, spacing: NWPiSignInMetrics.bodyGap) {
-                NWFailureBox("Another sign-in is using localhost:\(port)",
+            VStack(alignment: .leading, spacing: SHPiSignInMetrics.bodyGap) {
+                SHFailureBox("Another sign-in is using localhost:\(port)",
                              detail: "Probably Codex CLI or your terminal pi’s /login, mid-way. Finish or cancel it there, then try again.")
-                NWSignInSteps {
-                    NWSignInStepRow("Open \(site) in your browser", state: .pending)
-                    NWSignInStepRow("Save the sign-in to Shepherd’s pi", state: .pending)
+                SHSignInSteps {
+                    SHSignInStepRow("Open \(site) in your browser", state: .pending)
+                    SHSignInStepRow("Save the sign-in to Shepherd’s pi", state: .pending)
                 }
                 if session.subscription?.pasteNeedsPort != true {
                     linkLine("Or skip the browser hand-off: sign in on \(site) and paste the code it shows.", link: "Paste a code instead") {
@@ -69,8 +69,8 @@ struct PiSignInSheet: View {
                 }
             }
         default:
-            VStack(alignment: .leading, spacing: NWPiSignInMetrics.bodyGap) {
-                NWSignInSteps { browserSteps(site: site) }
+            VStack(alignment: .leading, spacing: SHPiSignInMetrics.bodyGap) {
+                SHSignInSteps { browserSteps(site: site) }
                 if session.phase.isLive, session.phase != .saving {
                     linkLine("Browser on another computer?", link: "Paste a code instead") { session.pasteInstead() }
                 }
@@ -81,26 +81,26 @@ struct PiSignInSheet: View {
     @ViewBuilder private func browserSteps(site: String) -> some View {
         switch session.phase {
         case .starting:
-            NWSignInStepRow("Open \(site) in your browser", state: .now)
-            NWSignInStepRow("Waiting for you in the browser", state: .pending)
-            NWSignInStepRow("Save the sign-in to Shepherd’s pi", state: .pending)
+            SHSignInStepRow("Open \(site) in your browser", state: .now)
+            SHSignInStepRow("Waiting for you in the browser", state: .pending)
+            SHSignInStepRow("Save the sign-in to Shepherd’s pi", state: .pending)
         case .done(let pickedUp):
-            NWSignInStepRow("Opened \(site) in your browser", state: .done)
-            NWSignInStepRow("Signed in", note: session.subscription?.plan, state: .done)
-            NWSignInStepRow("Saved to Shepherd’s pi", note: Self.pickedUp(pickedUp), state: .done)
+            SHSignInStepRow("Opened \(site) in your browser", state: .done)
+            SHSignInStepRow("Signed in", note: session.subscription?.plan, state: .done)
+            SHSignInStepRow("Saved to Shepherd’s pi", note: Self.pickedUp(pickedUp), state: .done)
         case .failed(let reason):
-            NWSignInStepRow("Opened \(site) in your browser", state: .done)
-            NWSignInStepRow("\(site) didn’t sign you in", note: reason, state: .failed)
-            NWSignInStepRow("Save the sign-in to Shepherd’s pi", note: "Nothing was saved.", state: .pending)
+            SHSignInStepRow("Opened \(site) in your browser", state: .done)
+            SHSignInStepRow("\(site) didn’t sign you in", note: reason, state: .failed)
+            SHSignInStepRow("Save the sign-in to Shepherd’s pi", note: "Nothing was saved.", state: .pending)
         case .saving:
-            NWSignInStepRow("Opened \(site) in your browser", state: .done)
-            NWSignInStepRow("Approved", state: .done)
-            NWSignInStepRow("Saving the sign-in to Shepherd’s pi", state: .now)
+            SHSignInStepRow("Opened \(site) in your browser", state: .done)
+            SHSignInStepRow("Approved", state: .done)
+            SHSignInStepRow("Saving the sign-in to Shepherd’s pi", state: .now)
         default:
-            NWSignInStepRow("Opened \(site) in your browser", state: .done)
-            NWSignInStepRow("Waiting for you in the browser",
+            SHSignInStepRow("Opened \(site) in your browser", state: .done)
+            SHSignInStepRow("Waiting for you in the browser",
                             note: "Approve Shepherd on \(site). This closes by itself when you’re done.", state: .now)
-            NWSignInStepRow("Save the sign-in to Shepherd’s pi", state: .pending)
+            SHSignInStepRow("Save the sign-in to Shepherd’s pi", state: .pending)
         }
     }
 
@@ -108,31 +108,31 @@ struct PiSignInSheet: View {
         let site = session.site
         switch session.phase {
         case .done(let pickedUp):
-            NWSignInSteps {
-                NWSignInStepRow("Signed in", note: session.subscription?.plan, state: .done)
-                NWSignInStepRow("Saved to Shepherd’s pi", note: Self.pickedUp(pickedUp), state: .done)
+            SHSignInSteps {
+                SHSignInStepRow("Signed in", note: session.subscription?.plan, state: .done)
+                SHSignInStepRow("Saved to Shepherd’s pi", note: Self.pickedUp(pickedUp), state: .done)
             }
         case .failed(let reason):
-            NWFailureBox("The sign-in didn’t finish", detail: reason)
+            SHFailureBox("The sign-in didn’t finish", detail: reason)
         default:
             let rejected: String? = if case .paste(let reason) = session.phase { reason } else { nil }
-            VStack(alignment: .leading, spacing: NWPiSignInMetrics.bodyGap) {
+            VStack(alignment: .leading, spacing: SHPiSignInMetrics.bodyGap) {
                 Text("After you approve Shepherd, \(site) shows a code. Paste it here to finish.")
-                    .nwText(size: NWPiSignInMetrics.proseSize, lineHeight: NWPiSignInMetrics.proseLeading)
-                    .foregroundStyle(Color.nw.textSecondary)
+                    .shText(size: SHPiSignInMetrics.proseSize, lineHeight: SHPiSignInMetrics.proseLeading)
+                    .foregroundStyle(Color.sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                VStack(alignment: .leading, spacing: NW.Space.s) {
-                    NWFieldLabel("Code from \(site)")
+                VStack(alignment: .leading, spacing: SH.Space.s) {
+                    SHFieldLabel("Code from \(site)")
                     TextField("Paste the code", text: $session.code)
-                        .textFieldStyle(.nw(mono: true, error: rejected != nil))
+                        .textFieldStyle(.sh(mono: true, error: rejected != nil))
                         .focused($fieldFocused)
                         .disabled(session.phase == .saving)
                         .onSubmit { session.submitCode() }
                         .accessibilityLabel("Code from \(site)")
                     if let rejected {
-                        Text(rejected).font(.nw(.caption)).foregroundStyle(Color.nw.failed).fixedSize(horizontal: false, vertical: true)
+                        Text(rejected).font(.sh(.caption)).foregroundStyle(Color.sh.failed).fixedSize(horizontal: false, vertical: true)
                     } else if session.phase == .saving {
-                        Text("Checking the code with \(site)").font(.nw(.caption)).nwShimmer(active: true).foregroundStyle(Color.nw.textTertiary)
+                        Text("Checking the code with \(site)").font(.sh(.caption)).shShimmer(active: true).foregroundStyle(Color.sh.textTertiary)
                     }
                 }
             }
@@ -144,40 +144,40 @@ struct PiSignInSheet: View {
         let site = session.site
         switch session.phase {
         case .device(let code, let uri, let expires):
-            VStack(alignment: .leading, spacing: NWPiSignInMetrics.bodyGap) {
-                (Text("Enter this code at ") + Text(Self.shortURI(uri)).font(.nwMono(NWPiSignInMetrics.proseMonoSize)).foregroundColor(Color.nw.textPrimary)
+            VStack(alignment: .leading, spacing: SHPiSignInMetrics.bodyGap) {
+                (Text("Enter this code at ") + Text(Self.shortURI(uri)).font(.shMono(SHPiSignInMetrics.proseMonoSize)).foregroundColor(Color.sh.textPrimary)
                     + Text(". It’s already on your clipboard."))
-                    .nwText(size: NWPiSignInMetrics.proseSize, lineHeight: NWPiSignInMetrics.proseLeading)
-                    .foregroundStyle(Color.nw.textSecondary)
+                    .shText(size: SHPiSignInMetrics.proseSize, lineHeight: SHPiSignInMetrics.proseLeading)
+                    .foregroundStyle(Color.sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                VStack(spacing: NW.Space.m) {
-                    NWDeviceCode(code)
-                    HStack(spacing: NW.Space.m) {
+                VStack(spacing: SH.Space.m) {
+                    SHDeviceCode(code)
+                    HStack(spacing: SH.Space.m) {
                         Button { session.copyCode() } label: { Label("Copy", systemImage: "doc.on.doc") }
-                            .buttonStyle(.nw(.ghost, size: .s))
+                            .buttonStyle(.sh(.ghost, size: .s))
                         Button { session.openDevicePage() } label: { Label("Open \(site)", systemImage: "arrow.up.forward.square") }
-                            .buttonStyle(.nw(.secondary, size: .s))
+                            .buttonStyle(.sh(.secondary, size: .s))
                     }
                 }
-                NWSignInSteps {
-                    NWSignInStepRow("Waiting for you to enter the code",
+                SHSignInSteps {
+                    SHSignInStepRow("Waiting for you to enter the code",
                                     note: expires.map { "The code works until \($0.formatted(date: .omitted, time: .shortened))." }, state: .now)
                 }
             }
         case .done(let pickedUp):
-            NWSignInSteps {
-                NWSignInStepRow("Signed in", note: session.subscription?.plan, state: .done)
-                NWSignInStepRow("Saved to Shepherd’s pi", note: Self.pickedUp(pickedUp), state: .done)
+            SHSignInSteps {
+                SHSignInStepRow("Signed in", note: session.subscription?.plan, state: .done)
+                SHSignInStepRow("Saved to Shepherd’s pi", note: Self.pickedUp(pickedUp), state: .done)
             }
         case .failed(let reason):
-            NWSignInSteps {
-                NWSignInStepRow("\(site) didn’t sign you in", note: reason, state: .failed)
-                NWSignInStepRow("Save the sign-in to Shepherd’s pi", note: "Nothing was saved.", state: .pending)
+            SHSignInSteps {
+                SHSignInStepRow("\(site) didn’t sign you in", note: reason, state: .failed)
+                SHSignInStepRow("Save the sign-in to Shepherd’s pi", note: "Nothing was saved.", state: .pending)
             }
         default:
-            NWSignInSteps {
-                NWSignInStepRow("Asking \(site) for a code", state: .now)
-                NWSignInStepRow("Waiting for you to enter the code", state: .pending)
+            SHSignInSteps {
+                SHSignInStepRow("Asking \(site) for a code", state: .now)
+                SHSignInStepRow("Waiting for you to enter the code", state: .pending)
             }
         }
     }
@@ -185,35 +185,35 @@ struct PiSignInSheet: View {
     @ViewBuilder private var keyForm: some View {
         switch session.phase {
         case .done(let pickedUp):
-            NWSignInSteps {
-                NWSignInStepRow("Works", state: .done)
-                NWSignInStepRow("Saved to Shepherd’s pi", note: Self.pickedUp(pickedUp), state: .done)
+            SHSignInSteps {
+                SHSignInStepRow("Works", state: .done)
+                SHSignInStepRow("Saved to Shepherd’s pi", note: Self.pickedUp(pickedUp), state: .done)
             }
         case .failed(let reason):
-            NWFailureBox("The key wasn’t saved", detail: reason)
+            SHFailureBox("The key wasn’t saved", detail: reason)
         default:
-            VStack(alignment: .leading, spacing: NWPiSignInMetrics.bodyGap) {
-                NWSegmentedPicker("How the key is given", selection: Binding(get: { session.keyMode }, set: { session.setKeyMode($0) }),
+            VStack(alignment: .leading, spacing: SHPiSignInMetrics.bodyGap) {
+                SHSegmentedPicker("How the key is given", selection: Binding(get: { session.keyMode }, set: { session.setKeyMode($0) }),
                                   options: [(.paste, "Paste a key"), (.variable, "Environment variable")])
                     .fixedSize()
-                VStack(alignment: .leading, spacing: NW.Space.s) {
+                VStack(alignment: .leading, spacing: SH.Space.s) {
                     if session.keyMode == .paste {
-                        NWFieldLabel("API key")
+                        SHFieldLabel("API key")
                         SecureField("Paste the key", text: $session.key)
-                            .textFieldStyle(.nw(mono: true, error: rejected))
+                            .textFieldStyle(.sh(mono: true, error: rejected))
                             .focused($fieldFocused)
                             .onSubmit { session.saveKey() }
                             .accessibilityLabel("API key")
                     } else {
-                        NWFieldLabel("Variable name")
+                        SHFieldLabel("Variable name")
                         TextField(PiProviders.environmentKeys[session.provider]?.first.map { "$" + $0 } ?? "$PROVIDER_API_KEY",
                                   text: $session.variable)
-                            .textFieldStyle(.nw(mono: true, error: rejected))
+                            .textFieldStyle(.sh(mono: true, error: rejected))
                             .focused($fieldFocused)
                             .onSubmit { session.saveKey() }
                             .accessibilityLabel("Variable name")
                         Text("Read from your login shell each time an agent starts.")
-                            .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                            .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                     }
                 }
                 check
@@ -237,22 +237,22 @@ struct PiSignInSheet: View {
         case .idle:
             EmptyView()
         case .checking:
-            Text("Checking the key with \(name)").font(.nw(.caption)).nwShimmer(active: true).foregroundStyle(Color.nw.textTertiary)
+            Text("Checking the key with \(name)").font(.sh(.caption)).shShimmer(active: true).foregroundStyle(Color.sh.textTertiary)
         case .works(let models):
-            HStack(alignment: .firstTextBaseline, spacing: NW.Space.s) {
-                Text("Works.").font(.nw(.caption, weight: .medium)).foregroundStyle(Color.nw.done)
+            HStack(alignment: .firstTextBaseline, spacing: SH.Space.s) {
+                Text("Works.").font(.sh(.caption, weight: .medium)).foregroundStyle(Color.sh.done)
                 if !models.isEmpty {
-                    Text(Self.ready(models)).font(.nw(.caption)).foregroundStyle(Color.nw.textSecondary)
+                    Text(Self.ready(models)).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
                 }
             }
         case .rejected(let reason):
-            Text("\(name) rejected this key (\(reason)).").font(.nw(.caption)).foregroundStyle(Color.nw.failed)
+            Text("\(name) rejected this key (\(reason)).").font(.sh(.caption)).foregroundStyle(Color.sh.failed)
                 .fixedSize(horizontal: false, vertical: true)
         case .unreachable(let reason):
-            Text("Couldn’t reach \(name) to check it. \(reason)").font(.nw(.caption)).foregroundStyle(Color.nw.textSecondary)
+            Text("Couldn’t reach \(name) to check it. \(reason)").font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         case .unset(let reason):
-            Text(reason).font(.nw(.caption)).foregroundStyle(Color.nw.failed)
+            Text(reason).font(.sh(.caption)).foregroundStyle(Color.sh.failed)
         }
     }
 
@@ -261,57 +261,57 @@ struct PiSignInSheet: View {
     @ViewBuilder private var footer: some View {
         switch session.phase {
         case .done:
-            NWSheetFooter {
-                Button("Done", action: close).buttonStyle(.nw(.primary)).keyboardShortcut(.defaultAction)
+            SHSheetFooter {
+                Button("Done", action: close).buttonStyle(.sh(.primary)).keyboardShortcut(.defaultAction)
             }
         case .failed(let reason):
-            NWSheetFooter {
+            SHSheetFooter {
                 Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(reason, forType: .string) } label: {
                     Label("Copy details", systemImage: "doc.on.doc")
                 }
-                .buttonStyle(.nw(.ghost))
+                .buttonStyle(.sh(.ghost))
             } actions: {
-                Button("Close", action: close).buttonStyle(.nw(.ghost)).keyboardShortcut(.cancelAction)
+                Button("Close", action: close).buttonStyle(.sh(.ghost)).keyboardShortcut(.cancelAction)
                 Button { session.tryAgain() } label: { Label("Try again", systemImage: "arrow.clockwise") }
-                    .buttonStyle(.nw(.primary)).keyboardShortcut(.defaultAction)
+                    .buttonStyle(.sh(.primary)).keyboardShortcut(.defaultAction)
             }
         case .portBusy:
-            NWSheetFooter {
-                Button("Cancel", action: close).buttonStyle(.nw(.ghost)).keyboardShortcut(.cancelAction)
+            SHSheetFooter {
+                Button("Cancel", action: close).buttonStyle(.sh(.ghost)).keyboardShortcut(.cancelAction)
                 Button { session.tryAgain() } label: { Label("Try again", systemImage: "arrow.clockwise") }
-                    .buttonStyle(.nw(.primary)).keyboardShortcut(.defaultAction)
+                    .buttonStyle(.sh(.primary)).keyboardShortcut(.defaultAction)
             }
         default:
             switch session.flow {
             case .browser:
-                NWSheetFooter {
+                SHSheetFooter {
                     Button { session.copyLink() } label: { Label("Copy link", systemImage: "doc.on.doc") }
-                        .buttonStyle(.nw(.ghost))
+                        .buttonStyle(.sh(.ghost))
                         .disabled(session.authURL == nil)
                 } actions: {
-                    Button("Cancel", action: close).buttonStyle(.nw(.ghost)).keyboardShortcut(.cancelAction)
+                    Button("Cancel", action: close).buttonStyle(.sh(.ghost)).keyboardShortcut(.cancelAction)
                     Button { session.openBrowserAgain() } label: { Label("Open browser again", systemImage: "arrow.up.forward.square") }
-                        .buttonStyle(.nw(.secondary))
+                        .buttonStyle(.sh(.secondary))
                         .disabled(session.authURL == nil)
                 }
             case .paste:
-                NWSheetFooter {
-                    Button("Open \(session.site) again") { session.reopenForCode() }.buttonStyle(.nw(.ghost))
+                SHSheetFooter {
+                    Button("Open \(session.site) again") { session.reopenForCode() }.buttonStyle(.sh(.ghost))
                 } actions: {
-                    Button("Cancel", action: close).buttonStyle(.nw(.ghost)).keyboardShortcut(.cancelAction)
+                    Button("Cancel", action: close).buttonStyle(.sh(.ghost)).keyboardShortcut(.cancelAction)
                     Button("Continue") { session.submitCode() }
-                        .buttonStyle(.nw(.primary)).keyboardShortcut(.defaultAction)
+                        .buttonStyle(.sh(.primary)).keyboardShortcut(.defaultAction)
                         .disabled(session.code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || session.phase == .saving)
                 }
             case .device:
-                NWSheetFooter {
-                    Button("Cancel", action: close).buttonStyle(.nw(.ghost)).keyboardShortcut(.cancelAction)
+                SHSheetFooter {
+                    Button("Cancel", action: close).buttonStyle(.sh(.ghost)).keyboardShortcut(.cancelAction)
                 }
             case .key:
-                NWSheetFooter {
-                    Button("Cancel", action: close).buttonStyle(.nw(.ghost)).keyboardShortcut(.cancelAction)
+                SHSheetFooter {
+                    Button("Cancel", action: close).buttonStyle(.sh(.ghost)).keyboardShortcut(.cancelAction)
                     Button("Save") { session.saveKey() }
-                        .buttonStyle(.nw(.primary)).keyboardShortcut(.defaultAction)
+                        .buttonStyle(.sh(.primary)).keyboardShortcut(.defaultAction)
                         .disabled(!session.keyCheck.allowsSave || session.phase == .saving)
                 }
             }
@@ -319,9 +319,9 @@ struct PiSignInSheet: View {
     }
 
     private func linkLine(_ text: String, link: String, action: @escaping () -> Void) -> some View {
-        HStack(spacing: NW.Space.xs) {
-            Text(text).font(.nw(.ui)).foregroundStyle(Color.nw.textTertiary).fixedSize(horizontal: false, vertical: true)
-            Button(link, action: action).buttonStyle(.nwLink(color: Color.nw.running))
+        HStack(spacing: SH.Space.xs) {
+            Text(text).font(.sh(.ui)).foregroundStyle(Color.sh.textTertiary).fixedSize(horizontal: false, vertical: true)
+            Button(link, action: action).buttonStyle(.shLink(color: Color.sh.running))
         }
     }
 

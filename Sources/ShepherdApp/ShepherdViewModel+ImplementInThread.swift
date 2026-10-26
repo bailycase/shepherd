@@ -158,8 +158,8 @@ extension ShepherdViewModel {
     /// "4m", "1h", "yesterday", "2d".
     static func implementAge(_ milliseconds: Double, now: Date) -> String {
         let seconds = now.timeIntervalSince1970 - milliseconds / 1000
-        if seconds < 86_400 { return nwCommentAge(since: milliseconds, now: now) }
-        return SuggestionsPresentation.when(milliseconds / 1000, now: now) == "yesterday" ? "yesterday" : nwCommentAge(since: milliseconds, now: now)
+        if seconds < 86_400 { return shCommentAge(since: milliseconds, now: now) }
+        return SuggestionsPresentation.when(milliseconds / 1000, now: now) == "yesterday" ? "yesterday" : shCommentAge(since: milliseconds, now: now)
     }
 
     /// The projects a new thread can start in: every project the sidebar shows.
@@ -184,7 +184,7 @@ extension ShepherdViewModel {
 
     /// The sheet's picture: the element cut from its board as the canvas drew it, the board, or
     /// the design's first board.
-    func implementPicture(_ selection: DesignReferenceSelection) -> NWReferenceImage? {
+    func implementPicture(_ selection: DesignReferenceSelection) -> SHReferenceImage? {
         let host = designRendering.host(for: selection.designID)
         var image: CGImage?
         if let board = selection.board {
@@ -198,7 +198,7 @@ extension ShepherdViewModel {
         } else {
             image = designRendering.thumbnails.image(selection.designID)
         }
-        return image.map { NWReferenceImage(id: "implement/" + (selection.reference?.string ?? ""), image: Image(decorative: $0, scale: 2)) }
+        return image.map { SHReferenceImage(id: "implement/" + (selection.reference?.string ?? ""), image: Image(decorative: $0, scale: 2)) }
     }
 
     /// `rect` (in the board's points) cut from a picture of the whole board.

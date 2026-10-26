@@ -22,7 +22,7 @@ time, the "TIME SENSITIVE" label, stacks, and where the actions appear. Shepherd
 (title, subtitle, body), the actions and their order, the interruption level, the group
 (`threadIdentifier`), what a tap opens, and any rich content (a content extension, attachments). So
 the boards' notification cards are the system's, filled with Shepherd's content. A Live Activity,
-the Dynamic Island and a widget are Shepherd's own drawing, in Night Watch. Where a board draws
+the Dynamic Island and a widget are Shepherd's own drawing, in Shepherd Design. Where a board draws
 something only the system decides, this section says so. Never rebuild the system's chrome inside
 the app to get it.
 
@@ -141,7 +141,7 @@ The board's categories (NotifCatalog's `NotificationCategories.swift`):
   planner for a planner question, and to pi's dialog for a thread's. The boards also draw a reply
   that goes to the subagent that asked (NotifPhoneReply: "Goes to the reviewer, not the parent
   thread."), which Shepherd does not build: a subagent never asks you. Tapping a choice needs no typing.
-- **Answering never opens Shepherd** (NWMissions: the choices are actions "so answering never opens
+- **Answering never opens Shepherd** (SHMissions: the choices are actions "so answering never opens
   the app"). Open, Review and Review patch open Shepherd at the thing.
 
 ## iPhone
@@ -162,15 +162,15 @@ The board's categories (NotifCatalog's `NotificationCategories.swift`):
   question as the body) is the rule.
 
 **Rich views** (a long press). Each is Shepherd's own content in the system's expanded card, drawn
-in Night Watch from the same tokens as the app: `bgRaised` behind (radius 20, padding 14 × 16,
+in Shepherd Design from the same tokens as the app: `bgRaised` behind (radius 20, padding 14 × 16,
 its blocks 12pt apart in the stuck-lane view, 10pt in the review), `textPrimary` text,
 `textSecondary` for supporting lines, `textTertiary` for meta, `lineSubtle` hairlines, a 26pt app
 icon (radius 6) beside the title (14pt semibold) and its meta (a mono 10pt "TIME SENSITIVE" in
 `lanternText`, or the time at 12pt in `textTertiary`). Under the card, the system lists the actions
 (Actions and answering).
 
-- **Stuck lane** (NotifPhoneRich): the mission's lanes as `NWLaneStrip` rows ("A lane as a tiny
-  subway line", NWMissions; not built): the lane's name (mono 11pt, `textSecondary`, a 90pt column),
+- **Stuck lane** (NotifPhoneRich): the mission's lanes as `SHLaneStrip` rows ("A lane as a tiny
+  subway line", SHMissions; not built): the lane's name (mono 11pt, `textSecondary`, a 90pt column),
   a 120pt three-stop track (9pt stops joined by 2pt lines in `done`; a finished stop filled `done`,
   the running one a ring in `running` on `bgRaised`, the stuck one filled `failed`), then where it
   is in mono 10.5pt ("done" and "at join" in `textTertiary`, "go test" in `running`, "stuck" in
@@ -196,7 +196,7 @@ icon (radius 6) beside the title (14pt semibold) and its meta (a mono 10pt "TIME
   semibold); "Contract: 10 of 10 passed" (13pt) after a `checkmark.shield` in `done`, and "· merges
   in this order" in `textTertiary`; then one row per PR in merge order, at least 26pt: its place
   (mono 10.5pt, `textTertiary`, a 12pt column), the repository (mono semibold), the PR number (mono
-  11.5pt, `running`) and `NWDiffStat` (mono 11pt). Actions: Approve · start train (`faceid`), Open
+  11.5pt, `running`) and `SHDiffStat` (mono 11pt). Actions: Approve · start train (`faceid`), Open
   review. Approving asks for Face ID even on an unlocked phone ("Approving needs Face ID, even with
   the phone unlocked. The diffs are one tap away in Open review.").
 - **Scheduled Summary** (NotifPhoneSummary): finished work arrives Passive, so it can wait for the
@@ -211,7 +211,7 @@ icon (radius 6) beside the title (14pt semibold) and its meta (a mono 10pt "TIME
 
 - **Actions without a long press** (NotifiPadBanner, NotifiPadCenter): "On iPad the actions sit
   right in the notification: there's room, so you don't need to long-press first." The boards draw
-  them as a row of 28pt buttons (`NW.Height.controlM`, radius 6, 12.5pt, 8pt apart, 8pt under the
+  them as a row of 28pt buttons (`SH.Height.controlM`, radius 6, 12.5pt, 8pt apart, 8pt under the
   body): the recommended one primary (`lantern` fill, `textOnLantern`, semibold), the other choices
   secondary (`bgRaised`, a `lineStrong` border), Reply… and Open ghost (`textSecondary`). Retry
   carries `arrow.clockwise`. Where no option is recommended (a planner question without a pick,
@@ -224,7 +224,7 @@ icon (radius 6) beside the title (14pt semibold) and its meta (a mono 10pt "TIME
 - **Notification Center** (NotifiPadCenter): a 520pt column, 36pt from the right edge, headed
   "Notification Center" and the app's group ("Shepherd · 9"). Rich previews show at full width:
   Boards ready ("4 boards drawn in acme-web. 2 comments resolved.") shows its thumbnails as a row of
-  86pt-tall tiles sharing the width (radius 8, 8pt apart); a board still drawing is a `.nwShimmer()`
+  86pt-tall tiles sharing the width (radius 8, 8pt apart); a board still drawing is a `.shShimmer()`
   tile on `bgSelected`. The stuck lane keeps its stack; a planner question offers its options and
   Reply…; Host offline reads "horizon is offline", "Host", "1 automation paused until it's back."
   with Retry, its only action, drawn secondary.
@@ -307,11 +307,11 @@ holds the rest, banners stack by thread, and every host's threads notify here. *
 
 **Not built yet** (NotifSettings). A screen pushed from Settings (its row is on the MobileSettings
 board), titled "Notifications" with "Settings" as its back label. It is built like the rest of iOS
-Settings: `SettingsSection` headers (`NWListHeader`; the board draws them 13pt semibold in
-`textSecondary`, where `NWListHeader` draws the caption size in `textTertiary`) over
-`NWListCard`s (`bgRaised`, a `lineSubtle` border, radius 12, `NW.Radius.l`), rows of `NWListRow`
+Settings: `SettingsSection` headers (`SHListHeader`; the board draws them 13pt semibold in
+`textSecondary`, where `SHListHeader` draws the caption size in `textTertiary`) over
+`SHListCard`s (`bgRaised`, a `lineSubtle` border, radius 12, `SH.Radius.l`), rows of `SHListRow`
 height (48pt, or 56pt with a second line: the title at 15pt, the line under it at 12.5pt in
-`textTertiary`), 14pt side padding, and `.nwSwitch` switches (30 × 18, lantern when on).
+`textTertiary`), 14pt side padding, and `.shSwitch` switches (30 × 18, lantern when on).
 
 - **Send me** (a switch each; all four are on in the board):
   - Questions and approvals: "Planner and automation questions, plans, reviews"
@@ -343,19 +343,19 @@ A notification marks only a change that needs you, or an end (Rules).
 **The card:** `bgRaised`, radius 22, padding 13 × 15, its lines 9pt apart (MobileLock's mission
 card: 14 × 16 and 10pt); cards stack 8pt apart (10pt on iPad, in its 440pt column). They use Night
 Watch roles and follow the device's appearance (the boards draw dark); only the island is always
-dark. Sizes the iOS ramp doesn't name are set with `Font.nwSans` and `Font.nwMono` at the board's
+dark. Sizes the iOS ramp doesn't name are set with `Font.shSans` and `Font.shMono` at the board's
 size.
 
 - **Header** (every card): a leading glyph, the title (14pt semibold, `textPrimary`, one line), and
   trailing meta in mono 11.5pt `textTertiary`. The glyph says what it is and how it's going: a 14pt
-  spinner in `running` for a working thread, `NWBranchGlyph` (15pt) for a thread with subagents (in
-  `lanternText` while one needs you), a bolt in `running` for an automation, the crook (`NWCrook`,
+  spinner in `running` for a working thread, `SHBranchGlyph` (15pt) for a thread with subagents (in
+  `lanternText` while one needs you), a bolt in `running` for an automation, the crook (`SHCrook`,
   15pt, in `lantern`) for a mission. The meta is the elapsed time for a thread (counting live:
   "4:12", "37m"), the host for an automation ("This Mac"), elapsed over the time budget for a
   mission ("1h38 / 4h").
 - **A thread** (MobileLiveLock, iPadLock): what it's doing now (13.5pt, `textPrimary`: "Running
   tests") with the command in mono 11.5pt `textTertiary` ("swift test --filter toolPreview"); then
-  its changes and where it runs (12pt, `textSecondary`: "Edited 3 files", `NWDiffStat` in mono 11pt,
+  its changes and where it runs (12pt, `textSecondary`: "Edited 3 files", `SHDiffStat` in mono 11pt,
   "· This Mac" in `textTertiary`); then **Steer** and **Stop**.
 - **A thread with subagents** ("Restyle native UI · 3 subagents"): one row per subagent (13pt): its
   state (an 11pt spinner in `running`, the glowing 7pt `attention` dot, or a 12pt checkmark in
@@ -364,15 +364,15 @@ size.
   the old token names everywhere?"). While one asks, the buttons are its options: the first primary,
   the second secondary ("Replace everywhere", "Rename new ones").
 - **An automation** ("Merge PR #24 after CI"): what it waits on (13.5pt: "Waiting for CI") with its
-  progress in mono `textTertiary` ("3 of 5 checks · ~4m"); an `NWStepStrip` of 5pt segments 4pt
+  progress in mono `textTertiary` ("3 of 5 checks · ~4m"); an `SHStepStrip` of 5pt segments 4pt
   apart (done, running, then pending in `lineStrong`); and what happens next (12pt, `textSecondary`:
   "Merges into main when all checks are green."). No buttons.
-- **A mission** (MobileLock, iPadLock): one `NWLaneStrip` row per lane (the label in mono 11pt
+- **A mission** (MobileLock, iPadLock): one `SHLaneStrip` row per lane (the label in mono 11pt
   `textSecondary` in a 104pt column, a 130pt three-stop track, where it is in mono 10.5pt; the
   stuck-lane view's colors, iPhone above), 20pt rows 10pt apart (9pt on iPad). On iPhone a footer
   says what needs you and what's next (12.5pt: the glowing 7pt `attention` dot, "orders needs you"
   in `lanternText`, "· then validator, ~40m" in `textTertiary`); on iPad it has buttons instead:
-  **Retry with hint** (primary) and **Open**. NWMissions names it `NWMissionLiveActivity` and
+  **Retry with hint** (primary) and **Open**. SHMissions names it `SHMissionLiveActivity` and
   draws it smaller (Missions: iPhone and iPad: radius 18, 12×14 padding, 8pt apart, 18pt rows,
   an 80pt label column in mono 10.5, the step in mono 10, the title at 13/600). The two boards
   disagree; settle one set of measures before building.
@@ -390,7 +390,7 @@ so what it carries (a command, a question's text) would cross the push relay in 
 
 **Not built yet** (MobileIsland). Every Live Activity has three sizes. The island is always black,
 so its colors don't change with the theme: text is white (the board's `#f4f5f7`) and 55% white for
-secondary, buttons are 14% white, and the state colors are Night Watch's dark values (`running`,
+secondary, buttons are 14% white, and the state colors are Shepherd Design's dark values (`running`,
 `lantern`, `done`, `failed`). These whites are not roles yet; add them as roles before building
 (Adding a theme or a role).
 

@@ -5,7 +5,7 @@ User requirement: reuse Settings > MCP servers' OAuth sign-in flow in Settings >
 ## Checklist
 
 - Keep the existing project header, host identity, filter, server cards, Add/Edit forms and file-save controls.
-- Reuse MCPServerRow, MCPServerDetail and MCPSignInSheetHost unchanged, including their glyphs, Night Watch tokens and hit areas.
+- Reuse MCPServerRow, MCPServerDetail and MCPSignInSheetHost unchanged, including their glyphs, Shepherd Design tokens and hit areas.
 - HTTP servers without an Authorization header offer "Sign in". Signed-in servers offer the existing "Sign out" control.
 - "Add and sign in" saves successfully before starting authentication. Editing or opening a project never starts authentication.
 - Use the existing finding, registration, browser-wait, success and error states. "Open browser again", "Copy link", "Try again" and "Cancel" retain their existing actions.

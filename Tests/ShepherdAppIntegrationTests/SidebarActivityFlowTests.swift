@@ -294,12 +294,12 @@ struct SidebarActivityFlowTests {
     @Test func disclosuresAndMarkAllSeenTakeRealAccessibilityPresses() async {
         await #expect(processExitsWith: .success) {
             await recordingErrors {
-                for density in NWDensity.allCases { try await Self.pressControls(density: density) }
+                for density in SHDensity.allCases { try await Self.pressControls(density: density) }
             }
         }
     }
 
-    private static func pressControls(density: NWDensity) async throws {
+    private static func pressControls(density: SHDensity) async throws {
         AccessibilityNode.enable()
         let app = try AppHarness()
         defer { app.stop() }
@@ -319,7 +319,7 @@ struct SidebarActivityFlowTests {
         vm.adopt(completed)
         vm.applyAgentChildren(fixtures[2].agent.id, [ChildRun(runID: "child", label: "worker", state: "running")])
         #expect(vm.sidebarActivityItems.contains(.header(.done, count: 1, collapsed: false)))
-        let window = OffscreenWindow(size: CGSize(width: 232, height: 650), dark: true, SidebarView(vm: vm).nwDensity(density))
+        let window = OffscreenWindow(size: CGSize(width: 232, height: 650), dark: true, SidebarView(vm: vm).shDensity(density))
         defer { window.close() }
         vm.settings.projectsEnabled = true
         // Projects sit right under Designs and above Needs you, Working, Done and Pinned, drawn in that order from the real window.

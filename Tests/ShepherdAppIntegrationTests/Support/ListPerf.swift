@@ -5,7 +5,7 @@ import SwiftUI
 
 /// Measures long lists in an off-screen window: the main thread's time for a change and the
 /// layout and display it causes, scrolling in steps the way a reader does (each step one layout
-/// pass), and how many rows evaluated their `body` meanwhile (`NWRenderProbe`). Nothing here
+/// pass), and how many rows evaluated their `body` meanwhile (`SHRenderProbe`). Nothing here
 /// sends an event: scrolling moves the clip view, as `ThreadScrollingTests` does.
 @MainActor
 enum ListPerf {
@@ -41,9 +41,9 @@ enum ListPerf {
 
     /// Row bodies counted while `work` runs, by probe key.
     static func counting(_ work: () -> Void) -> [String: Int] {
-        NWRenderProbe.start()
+        SHRenderProbe.start()
         work()
-        return NWRenderProbe.stop()
+        return SHRenderProbe.stop()
     }
 
     /// The list under test: the scroll view with the tallest frame in the window.

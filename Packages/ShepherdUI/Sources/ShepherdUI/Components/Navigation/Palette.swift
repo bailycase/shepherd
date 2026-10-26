@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// The command palette's placement (Composer board, `.nwCommandPalette`): 620pt wide, 18% from
+/// The command palette's placement (Composer board, `.shCommandPalette`): 620pt wide, 18% from
 /// the top of the window over the scrim, and never taller than the window leaves room for.
-public enum NWPaletteMetrics {
+public enum SHPaletteMetrics {
     public static let width: CGFloat = 620
     public static let topFraction: CGFloat = 0.18
     public static let searchHeight: CGFloat = 44
@@ -38,45 +38,45 @@ public enum NWPaletteMetrics {
 }
 
 extension EnvironmentValues {
-    /// The results list's height cap inside `.nwCommandPalette`.
-    @Entry public var nwPaletteMaxListHeight: CGFloat = 392
+    /// The results list's height cap inside `.shCommandPalette`.
+    @Entry public var shPaletteMaxListHeight: CGFloat = 392
 }
 
 extension View {
     /// Presents `content` (the palette card) over a scrim, 18% from the top and capped to the
     /// window. Clicking the scrim dismisses. The card grows from its top edge and the scrim fades
     /// (`.overlay`; a cross-fade under Reduce Motion) whichever path presents or dismisses it.
-    public func nwCommandPalette<Content: View>(isPresented: Binding<Bool>, @ViewBuilder content: @escaping () -> Content) -> some View {
+    public func shCommandPalette<Content: View>(isPresented: Binding<Bool>, @ViewBuilder content: @escaping () -> Content) -> some View {
         overlay {
-            NWPaletteOverlay(isPresented: isPresented.wrappedValue, dismiss: { isPresented.wrappedValue = false }, content: content)
+            SHPaletteOverlay(isPresented: isPresented.wrappedValue, dismiss: { isPresented.wrappedValue = false }, content: content)
         }
     }
 }
 
-private struct NWPaletteOverlay<Content: View>: View {
+private struct SHPaletteOverlay<Content: View>: View {
     let isPresented: Bool
     let dismiss: () -> Void
     @ViewBuilder let content: () -> Content
-    @Environment(\.nwDensity) private var density
+    @Environment(\.shDensity) private var density
 
     /// Always mounted, so the scrim and the card come and go with their transitions.
     var body: some View {
-        let _ = NWRenderProbe.tick("paletteOverlay")
+        let _ = SHRenderProbe.tick("paletteOverlay")
         GeometryReader { geo in
-            let placement = NWPaletteMetrics.placement(in: geo.size, rowHeight: density.rowHeight)
+            let placement = SHPaletteMetrics.placement(in: geo.size, rowHeight: density.rowHeight)
             ZStack(alignment: .top) {
                 if isPresented {
-                    Color.nw.scrim
+                    Color.sh.scrim
                         .contentShape(Rectangle())
                         .onTapGesture(perform: dismiss)
                         .accessibilityHidden(true)
-                        .nwTransition(.content)
+                        .shTransition(.content)
                     content()
                         .frame(width: placement.width)
-                        .environment(\.nwPaletteMaxListHeight, placement.maxListHeight)
+                        .environment(\.shPaletteMaxListHeight, placement.maxListHeight)
                         // VoiceOver stays inside the palette while it is up.
                         .accessibilityAddTraits(.isModal)
-                        .nwTransition(.overlay, anchor: .top)
+                        .shTransition(.overlay, anchor: .top)
                         .padding(.top, placement.top)
                 }
             }
@@ -84,13 +84,13 @@ private struct NWPaletteOverlay<Content: View>: View {
         }
         .ignoresSafeArea()
         .allowsHitTesting(isPresented)
-        .nwAnimation(.overlay, value: isPresented)
+        .shAnimation(.overlay, value: isPresented)
     }
 }
 
 /// The palette card: the search row across the top, a rule, then the results inset by 6pt.
-/// `.nwPopover()` chrome at radius 12.
-public struct NWPaletteCard<Search: View, Results: View>: View {
+/// `.shPopover()` chrome at radius 12.
+public struct SHPaletteCard<Search: View, Results: View>: View {
     @ViewBuilder let search: () -> Search
     @ViewBuilder let results: () -> Results
 
@@ -102,17 +102,17 @@ public struct NWPaletteCard<Search: View, Results: View>: View {
     public var body: some View {
         VStack(spacing: 0) {
             search()
-                .frame(height: NWPaletteMetrics.searchHeight)
-            NWHairline()
+                .frame(height: SHPaletteMetrics.searchHeight)
+            SHHairline()
             results()
-                .padding(NWPaletteMetrics.padding)
+                .padding(SHPaletteMetrics.padding)
         }
-        .nwPopover(radius: NW.Radius.l)
+        .shPopover(radius: SH.Radius.l)
     }
 }
 
 /// The palette's search row: a 15pt glass and field, with the scope control trailing.
-public struct NWPaletteSearchRow<Accessory: View>: View {
+public struct SHPaletteSearchRow<Accessory: View>: View {
     let placeholder: String
     @Binding var text: String
     let focus: FocusState<Bool>.Binding
@@ -132,13 +132,13 @@ public struct NWPaletteSearchRow<Accessory: View>: View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 14, weight: .regular))
-                .foregroundStyle(.nw.textSecondary)
+                .foregroundStyle(.sh.textSecondary)
                 .accessibilityHidden(true)
             TextField(placeholder, text: $text)
                 .textFieldStyle(.plain)
-                .font(.nwSans(15))
-                .foregroundStyle(.nw.textPrimary)
-                .tint(.nw.lantern)
+                .font(.shSans(15))
+                .foregroundStyle(.sh.textPrimary)
+                .tint(.sh.lantern)
                 .focused(focus)
                 .onSubmit(submit)
                 .accessibilityLabel(placeholder)
@@ -149,27 +149,27 @@ public struct NWPaletteSearchRow<Accessory: View>: View {
 }
 
 /// A results group label ("COMMANDS"): 10pt mono caps in tertiary, 24pt.
-public struct NWPaletteSectionHeader: View {
+public struct SHPaletteSectionHeader: View {
     let title: String
 
     public init(_ title: String) { self.title = title }
 
     public var body: some View {
         Text(title)
-            .font(.nwMono(10, .medium))
+            .font(.shMono(10, .medium))
             .textCase(.uppercase)
             .tracking(0.6)
-            .foregroundStyle(.nw.textTertiary)
+            .foregroundStyle(.sh.textTertiary)
             .lineLimit(1)
-            .padding(.horizontal, NW.Space.m)
-            .frame(maxWidth: .infinity, minHeight: NWPaletteMetrics.sectionHeight, alignment: .leading)
+            .padding(.horizontal, SH.Space.m)
+            .frame(maxWidth: .infinity, minHeight: SHPaletteMetrics.sectionHeight, alignment: .leading)
             .accessibilityAddTraits(.isHeader)
     }
 }
 
 /// One palette result: icon, label, dim context, and the real shortcut as keycaps. The
 /// highlighted row is running tint with a running icon. A button.
-public struct NWPaletteRow<Detail: View>: View {
+public struct SHPaletteRow<Detail: View>: View {
     let systemImage: String
     let title: String
     let context: String?
@@ -178,7 +178,7 @@ public struct NWPaletteRow<Detail: View>: View {
     let iconColor: Color?
     let action: () -> Void
     @ViewBuilder let detail: () -> Detail
-    @Environment(\.nwDensity) private var density
+    @Environment(\.shDensity) private var density
 
     public init(_ title: String, systemImage: String, context: String? = nil, shortcut: String? = nil,
                 highlighted: Bool = false, iconColor: Color? = nil, action: @escaping () -> Void,
@@ -194,44 +194,44 @@ public struct NWPaletteRow<Detail: View>: View {
     }
 
     public var body: some View {
-        let _ = NWRenderProbe.tick("palette.row")
+        let _ = SHRenderProbe.tick("palette.row")
         Button(action: action) {
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                HStack(spacing: NWPaletteMetrics.iconGap) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                HStack(spacing: SHPaletteMetrics.iconGap) {
                     Image(systemName: systemImage)
                         .font(.system(size: 12, weight: .regular))
-                        .foregroundStyle(iconColor ?? (highlighted ? Color.nw.running : Color.nw.textSecondary))
-                        .frame(width: NWPaletteMetrics.iconWidth)
+                        .foregroundStyle(iconColor ?? (highlighted ? Color.sh.running : Color.sh.textSecondary))
+                        .frame(width: SHPaletteMetrics.iconWidth)
                     Text(title)
                         .font(density.rowTitleFont())
-                        .foregroundStyle(.nw.textPrimary)
+                        .foregroundStyle(.sh.textPrimary)
                         .lineLimit(1)
                         .layoutPriority(1)
                     if let context {
                         Text(context)
-                            .font(.nwSans(12))
-                            .foregroundStyle(.nw.textTertiary)
+                            .font(.shSans(12))
+                            .foregroundStyle(.sh.textTertiary)
                             .lineLimit(1)
                             .truncationMode(.tail)
                     }
-                    Spacer(minLength: NW.Space.l)
-                    if let shortcut { NWKeycap(shortcut) }
+                    Spacer(minLength: SH.Space.l)
+                    if let shortcut { SHKeycap(shortcut) }
                 }
                 .frame(minHeight: density.rowHeight)
                 detail()
             }
-            .padding(.horizontal, NW.Space.m)
+            .padding(.horizontal, SH.Space.m)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(highlighted ? Color.nw.runningTint : .clear, in: RoundedRectangle(cornerRadius: NW.Radius.s))
-            .contentShape(RoundedRectangle(cornerRadius: NW.Radius.s))
+            .background(highlighted ? Color.sh.runningTint : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+            .contentShape(RoundedRectangle(cornerRadius: SH.Radius.s))
         }
-        .buttonStyle(NWPlainPressStyle())
+        .buttonStyle(SHPlainPressStyle())
         .accessibilityLabel([title, context].compactMap { $0 }.joined(separator: ", "))
         .accessibilityAddTraits(highlighted ? .isSelected : [])
     }
 }
 
-extension NWPaletteRow where Detail == EmptyView {
+extension SHPaletteRow where Detail == EmptyView {
     public init(_ title: String, systemImage: String, context: String? = nil, shortcut: String? = nil,
                 highlighted: Bool = false, iconColor: Color? = nil, action: @escaping () -> Void) {
         self.init(title, systemImage: systemImage, context: context, shortcut: shortcut, highlighted: highlighted,

@@ -8,7 +8,7 @@ import SwiftUI
 /// `bgSelected`), a divider, the three inks (22pt, the current one ringed in its own color 2pt
 /// out), a divider, and Done in the link blue. A raised capsule with the popover's line and
 /// shadow.
-public struct NWMarkupPalette: View {
+public struct SHMarkupPalette: View {
     public enum Tool: String, CaseIterable, Sendable {
         case pen, marker, eraser, comment
 
@@ -28,9 +28,9 @@ public struct NWMarkupPalette: View {
 
         @MainActor public var color: Color {
             switch self {
-            case .lantern: Color.nw.lantern
-            case .running: Color.nw.running
-            case .text: Color.nw.textPrimary
+            case .lantern: Color.sh.lantern
+            case .running: Color.sh.running
+            case .text: Color.sh.textPrimary
             }
         }
 
@@ -57,13 +57,13 @@ public struct NWMarkupPalette: View {
     }
 
     public var body: some View {
-        let M = NWDesignMetrics.self
+        let M = SHDesignMetrics.self
         HStack(spacing: M.markupSpacing) {
             ForEach(Tool.allCases, id: \.self) { item in
                 Button { tool = item } label: {
-                    NWMarkupToolGlyph(tool: item)
-                        .frame(width: NW.Height.touch, height: NW.Height.touch)
-                        .background(tool == item ? Color.nw.bgSelected : .clear, in: Circle())
+                    SHMarkupToolGlyph(tool: item)
+                        .frame(width: SH.Height.touch, height: SH.Height.touch)
+                        .background(tool == item ? Color.sh.bgSelected : .clear, in: Circle())
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
@@ -82,7 +82,7 @@ public struct NWMarkupPalette: View {
                                     .padding(-(M.markupSwatchRing + M.markupSwatchGap))
                             }
                         }
-                        .frame(width: M.markupSwatchTarget, height: NW.Height.touch)
+                        .frame(width: M.markupSwatchTarget, height: SH.Height.touch)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -92,12 +92,12 @@ public struct NWMarkupPalette: View {
             divider
             Button(action: done) {
                 Text("Done")
-                    .font(.nwSans(M.markupDoneSize, .semibold))
-                    .foregroundStyle(Color.nw.running)
-                    .padding(.horizontal, NW.Space.xs)
-                    .frame(minHeight: NW.Height.touch)
+                    .font(.shSans(M.markupDoneSize, .semibold))
+                    .foregroundStyle(Color.sh.running)
+                    .padding(.horizontal, SH.Space.xs)
+                    .frame(minHeight: SH.Height.touch)
                     .contentShape(Rectangle())
-                    .opacity(reading ? NWControlMetrics.disabledOpacity : 1)
+                    .opacity(reading ? SHControlMetrics.disabledOpacity : 1)
             }
             .buttonStyle(.plain)
             .disabled(reading)
@@ -105,45 +105,45 @@ public struct NWMarkupPalette: View {
         }
         .padding(.vertical, M.markupPaddingVertical)
         .padding(.horizontal, M.markupPaddingHorizontal)
-        .nwPopover(radius: (NW.Height.touch + 2 * M.markupPaddingVertical) / 2)
+        .shPopover(radius: (SH.Height.touch + 2 * M.markupPaddingVertical) / 2)
     }
 
     private var divider: some View {
-        NWHairline(.vertical)
-            .frame(height: NWDesignMetrics.markupDividerHeight)
-            .padding(.horizontal, NWDesignMetrics.markupDividerMargin)
+        SHHairline(.vertical)
+            .frame(height: SHDesignMetrics.markupDividerHeight)
+            .padding(.horizontal, SHDesignMetrics.markupDividerMargin)
     }
 }
 
 /// A markup tool's glyph (iPadDesign): a pencil with a lantern tip, a marker with a blue tip, an
 /// eraser, and Comment's bubble, 20 × 26 in `textSecondary`.
-struct NWMarkupToolGlyph: View {
-    let tool: NWMarkupPalette.Tool
+struct SHMarkupToolGlyph: View {
+    let tool: SHMarkupPalette.Tool
 
     var body: some View {
-        let M = NWDesignMetrics.self
+        let M = SHDesignMetrics.self
         Group {
             switch tool {
             case .comment:
                 Image(systemName: "text.bubble")
-                    .font(.nwSans(M.markupGlyphWidth))
-                    .foregroundStyle(Color.nw.textSecondary)
+                    .font(.shSans(M.markupGlyphWidth))
+                    .foregroundStyle(Color.sh.textSecondary)
             default:
                 Canvas { context, size in
                     let scale = CGAffineTransform(scaleX: size.width / 20, y: size.height / 26)
                     let line = StrokeStyle(lineWidth: M.markupGlyphLine, lineCap: .round, lineJoin: .round)
                     let body = Self.body(tool).applying(scale)
-                    context.fill(body, with: .color(Color.nw.bgBase))
-                    context.stroke(body, with: .color(Color.nw.textSecondary), style: line)
+                    context.fill(body, with: .color(Color.sh.bgBase))
+                    context.stroke(body, with: .color(Color.sh.textSecondary), style: line)
                     switch tool {
                     case .pen:
                         let tip = Path { $0.move(to: CGPoint(x: 8, y: 5.5)); $0.addLine(to: CGPoint(x: 12, y: 5.5)) }
-                        context.stroke(tip.applying(scale), with: .color(Color.nw.lantern), lineWidth: M.markupTipLine)
+                        context.stroke(tip.applying(scale), with: .color(Color.sh.lantern), lineWidth: M.markupTipLine)
                     case .marker:
-                        context.fill(Path(CGRect(x: 7, y: 3, width: 6, height: 4)).applying(scale), with: .color(Color.nw.running))
+                        context.fill(Path(CGRect(x: 7, y: 3, width: 6, height: 4)).applying(scale), with: .color(Color.sh.running))
                     case .eraser:
                         let band = Path { $0.move(to: CGPoint(x: 5, y: 10)); $0.addLine(to: CGPoint(x: 15, y: 10)) }
-                        context.stroke(band.applying(scale), with: .color(Color.nw.textSecondary), style: line)
+                        context.stroke(band.applying(scale), with: .color(Color.sh.textSecondary), style: line)
                     case .comment:
                         break
                     }
@@ -155,7 +155,7 @@ struct NWMarkupToolGlyph: View {
     }
 
     /// The tool's outline in its 20 × 26 box.
-    static func body(_ tool: NWMarkupPalette.Tool) -> Path {
+    static func body(_ tool: SHMarkupPalette.Tool) -> Path {
         switch tool {
         case .pen:
             Path { p in
@@ -177,7 +177,7 @@ struct NWMarkupToolGlyph: View {
 /// The design agent's comments proposed from Pencil markup, in the chat (iPadDesign): each a
 /// comment card numbered as its pin will be, "from your markup", then Apply both (primary: each
 /// goes to the agent as a comment) and Keep as comments, and a footnote.
-public struct NWMarkupProposals: View, Equatable {
+public struct SHMarkupProposals: View, Equatable {
     public struct Card: Equatable, Identifiable, Sendable {
         public var id: String
         public var number: Int
@@ -216,7 +216,7 @@ public struct NWMarkupProposals: View, Equatable {
         self.keep = keep
     }
 
-    public static func == (a: NWMarkupProposals, b: NWMarkupProposals) -> Bool {
+    public static func == (a: SHMarkupProposals, b: SHMarkupProposals) -> Bool {
         a.cards == b.cards && a.state == b.state && a.footnote == b.footnote
     }
 
@@ -226,29 +226,29 @@ public struct NWMarkupProposals: View, Equatable {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: NWDesignMetrics.markupProposalsSpacing) {
+        VStack(alignment: .leading, spacing: SHDesignMetrics.markupProposalsSpacing) {
             ForEach(cards) { card in
-                NWCommentCard(number: card.number, target: card.target, meta: "from your markup", text: card.text)
+                SHCommentCard(number: card.number, target: card.target, meta: "from your markup", text: card.text)
                     .equatable()
             }
             switch state {
             case .open, .working:
-                HStack(spacing: NW.Space.m) {
+                HStack(spacing: SH.Space.m) {
                     Button(Self.applyTitle(cards.count), action: apply)
-                        .buttonStyle(.nw(.primary, size: .l))
+                        .buttonStyle(.sh(.primary, size: .l))
                     Button("Keep as comments", action: keep)
-                        .buttonStyle(.nw(.secondary, size: .l))
+                        .buttonStyle(.sh(.secondary, size: .l))
                 }
                 .disabled(state == .working)
             case .settled(let line):
                 Text(line)
-                    .font(.nw(.caption))
-                    .foregroundStyle(Color.nw.textTertiary)
+                    .font(.sh(.caption))
+                    .foregroundStyle(Color.sh.textTertiary)
             }
             if let footnote {
                 Text(footnote)
-                    .font(.nw(.caption))
-                    .foregroundStyle(Color.nw.textTertiary)
+                    .font(.sh(.caption))
+                    .foregroundStyle(Color.sh.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }

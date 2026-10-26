@@ -3,7 +3,7 @@ import SwiftUI
 // The new Projects feature's sidebar parts (ProjectLead-Activity, ProjectLead-AddsSpace). A Project
 // is not a folder: its glyph is the board's stacked outline, never `folder`.
 
-extension NWSidebarMetrics {
+extension SHSidebarMetrics {
     /// The Project glyph's box: the boards draw it in the 14pt row slot (the supplied icon is 14pt).
     public static let projectGlyphBox: CGFloat = 14
     /// The Project toolbar's name: Geist 13 semibold, as the thread toolbar's title.
@@ -14,12 +14,12 @@ extension NWSidebarMetrics {
 /// (`lanternText` while selected, else `textTertiary`), the name (semibold while selected) in the density's row
 /// font, and a mono 10 summary (`lanternText` when it needs you). 28pt, radius 8, 8pt in from the sides, 9pt gaps;
 /// the same box as every Activity row. The summary and its tone come only from a real lifecycle.
-public struct NWLeadProjectRow: View, Equatable {
+public struct SHLeadProjectRow: View, Equatable {
     let name: String
     let selected: Bool
     let summary: String?
     let needsYou: Bool
-    @Environment(\.nwDensity) private var density
+    @Environment(\.shDensity) private var density
     @State private var hovering = false
 
     public init(_ name: String, selected: Bool, summary: String? = nil, needsYou: Bool = false) {
@@ -29,35 +29,35 @@ public struct NWLeadProjectRow: View, Equatable {
         self.needsYou = needsYou
     }
 
-    public nonisolated static func == (a: NWLeadProjectRow, b: NWLeadProjectRow) -> Bool {
+    public nonisolated static func == (a: SHLeadProjectRow, b: SHLeadProjectRow) -> Bool {
         a.name == b.name && a.selected == b.selected && a.summary == b.summary && a.needsYou == b.needsYou
     }
 
     public var body: some View {
-        let _ = NWRenderProbe.tick("sidebar.leadProject")
+        let _ = SHRenderProbe.tick("sidebar.leadProject")
         HStack(spacing: density.sidebarRowGap) {
-            NWProjectGlyphView(tint: selected ? .nw.lanternText : .nw.textTertiary)
-                .frame(width: NWSidebarMetrics.rowSlot)
+            SHProjectGlyphView(tint: selected ? .sh.lanternText : .sh.textTertiary)
+                .frame(width: SHSidebarMetrics.rowSlot)
             Text(name)
                 .font(density.rowTitleFont(weight: selected ? .semibold : .regular))
-                .foregroundStyle(.nw.textPrimary)
+                .foregroundStyle(.sh.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.tail)
-            Spacer(minLength: NW.Space.xs)
+            Spacer(minLength: SH.Space.xs)
             if let summary {
                 Text(summary)
-                    .font(.nwMono(NWSidebarMetrics.accessoryFont))
-                    .foregroundStyle(needsYou ? Color.nw.lanternText : Color.nw.textTertiary)
+                    .font(.shMono(SHSidebarMetrics.accessoryFont))
+                    .foregroundStyle(needsYou ? Color.sh.lanternText : Color.sh.textTertiary)
                     .lineLimit(1)
                     .fixedSize()
             }
         }
         .padding(.horizontal, density.sidebarRowPadding)
         .frame(maxWidth: .infinity, minHeight: density.rowHeight, alignment: .leading)
-        .nwRowBackground(selected: selected, hovering: hovering, radius: NW.Radius.m)
-        .contentShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+        .shRowBackground(selected: selected, hovering: hovering, radius: SH.Radius.m)
+        .contentShape(RoundedRectangle(cornerRadius: SH.Radius.m))
         .onHover { hovering = $0 }
-        .nwAnimation(.hover, value: hovering)
+        .shAnimation(.hover, value: hovering)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel([name, "project", summary].compactMap { $0 }.joined(separator: ", "))
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
@@ -68,7 +68,7 @@ public struct NWLeadProjectRow: View, Equatable {
 /// 10.5 count of its threads (`textTertiary`; semibold while selected) or, when something waits on it, a 6pt
 /// lantern dot before the count. 6pt in from the left (not 8), 8pt from the right, 8pt gaps: the board's
 /// `ls-row` box, which differs from an Activity row's.
-public struct NWLeadSpaceProjectRow: View, Equatable {
+public struct SHLeadSpaceProjectRow: View, Equatable {
     let name: String
     let selected: Bool
     let count: Int
@@ -81,40 +81,40 @@ public struct NWLeadSpaceProjectRow: View, Equatable {
         self.needsYou = needsYou
     }
 
-    public nonisolated static func == (a: NWLeadSpaceProjectRow, b: NWLeadSpaceProjectRow) -> Bool {
+    public nonisolated static func == (a: SHLeadSpaceProjectRow, b: SHLeadSpaceProjectRow) -> Bool {
         a.name == b.name && a.selected == b.selected && a.count == b.count && a.needsYou == b.needsYou
     }
 
-    @Environment(\.nwDensity) private var density
+    @Environment(\.shDensity) private var density
     @State private var hovering = false
 
     public var body: some View {
-        HStack(spacing: NW.Space.m) {
-            NWProjectGlyphView(tint: selected ? .nw.lanternText : .nw.textTertiary)
-                .frame(width: NWSidebarMetrics.rowSlot)
+        HStack(spacing: SH.Space.m) {
+            SHProjectGlyphView(tint: selected ? .sh.lanternText : .sh.textTertiary)
+                .frame(width: SHSidebarMetrics.rowSlot)
             Text(name)
                 .font(density.rowTitleFont(weight: selected ? .semibold : .regular))
-                .foregroundStyle(.nw.textPrimary)
+                .foregroundStyle(.sh.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.tail)
-            Spacer(minLength: NW.Space.xs)
+            Spacer(minLength: SH.Space.xs)
             if needsYou {
-                Circle().fill(Color.nw.lantern).frame(width: NWSidebarMetrics.sectionPulse + 1, height: NWSidebarMetrics.sectionPulse + 1)
+                Circle().fill(Color.sh.lantern).frame(width: SHSidebarMetrics.sectionPulse + 1, height: SHSidebarMetrics.sectionPulse + 1)
                     .accessibilityHidden(true)
             }
             Text("\(count)")
-                .font(.nwMono(NWSidebarMetrics.sectionCountFont, selected ? .semibold : .regular))
-                .foregroundStyle(Color.nw.textTertiary)
+                .font(.shMono(SHSidebarMetrics.sectionCountFont, selected ? .semibold : .regular))
+                .foregroundStyle(Color.sh.textTertiary)
                 .monospacedDigit()
                 .fixedSize()
         }
-        .padding(.leading, NW.Space.s)
+        .padding(.leading, SH.Space.s)
         .padding(.trailing, density.sidebarRowPadding)
         .frame(maxWidth: .infinity, minHeight: density.rowHeight, alignment: .leading)
-        .nwRowBackground(selected: selected, hovering: hovering, radius: NW.Radius.m)
-        .contentShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+        .shRowBackground(selected: selected, hovering: hovering, radius: SH.Radius.m)
+        .contentShape(RoundedRectangle(cornerRadius: SH.Radius.m))
         .onHover { hovering = $0 }
-        .nwAnimation(.hover, value: hovering)
+        .shAnimation(.hover, value: hovering)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel([name, "project", count == 1 ? "1 thread" : "\(count) threads", needsYou ? "needs you" : nil]
             .compactMap { $0 }.joined(separator: ", "))
@@ -123,7 +123,7 @@ public struct NWLeadSpaceProjectRow: View, Equatable {
 }
 
 /// The text chip beside a section header ("New project", like "Mark all seen"): a 20pt `bgHover` pill.
-public struct NWSidebarHeaderChip: View {
+public struct SHSidebarHeaderChip: View {
     let title: String
     let action: () -> Void
 
@@ -135,23 +135,23 @@ public struct NWSidebarHeaderChip: View {
     public var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.nwSans(NWSidebarMetrics.sectionActionFont))
-                .foregroundStyle(.nw.textSecondary)
+                .font(.shSans(SHSidebarMetrics.sectionActionFont))
+                .foregroundStyle(.sh.textSecondary)
                 .fixedSize()
-                .padding(.horizontal, NW.Space.s)
-                .frame(height: NWSidebarMetrics.markSeenHeight)
-                .background(Color.nw.bgHover, in: RoundedRectangle(cornerRadius: NW.Radius.xs))
-                .frame(minHeight: NW.Height.controlS)
+                .padding(.horizontal, SH.Space.s)
+                .frame(height: SHSidebarMetrics.markSeenHeight)
+                .background(Color.sh.bgHover, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
+                .frame(minHeight: SH.Height.controlS)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(NWPlainPressStyle())
+        .buttonStyle(SHPlainPressStyle())
         .accessibilityLabel(title)
     }
 }
 
 /// A Project's toolbar (ProjectLead-EmptyV2): the Project glyph in `lantern` and the name, then the
 /// trailing controls (Overview, settings). The 44pt toolbar height and its hairline are the app's.
-public struct NWLeadToolbar<Trailing: View>: View {
+public struct SHLeadToolbar<Trailing: View>: View {
     let name: String
     let leadingInset: CGFloat
     let sidebar: (() -> Void)?
@@ -165,37 +165,37 @@ public struct NWLeadToolbar<Trailing: View>: View {
     }
 
     public var body: some View {
-        HStack(spacing: NW.Space.m) {
+        HStack(spacing: SH.Space.m) {
             if let sidebar {
                 Button(action: sidebar) { Image(systemName: "sidebar.left") }
-                    .buttonStyle(.nwIcon)
-                    .nwHelp("Show sidebar")
+                    .buttonStyle(.shIcon)
+                    .shHelp("Show sidebar")
                     .accessibilityLabel("Show sidebar")
             }
             // The glyph's 14pt box, then the title 6pt on (the boards: glyph x 244, title x 264, in a page that begins at 232).
-            HStack(spacing: NWLeadMetrics.toolbarTitleGap) {
-                NWProjectGlyphView(tint: .nw.lantern)
+            HStack(spacing: SHLeadMetrics.toolbarTitleGap) {
+                SHProjectGlyphView(tint: .sh.lantern)
                 Text(name)
-                    .font(.nwSans(NWSidebarMetrics.projectToolbarTitle, .semibold))
-                    .foregroundStyle(.nw.textPrimary)
+                    .font(.shSans(SHSidebarMetrics.projectToolbarTitle, .semibold))
+                    .foregroundStyle(.sh.textPrimary)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .accessibilityAddTraits(.isHeader)
             }
-            Spacer(minLength: NW.Space.l)
-            HStack(spacing: NW.Space.xs) { trailing() }.fixedSize()
+            Spacer(minLength: SH.Space.l)
+            HStack(spacing: SH.Space.xs) { trailing() }.fixedSize()
         }
-        .padding(.leading, (sidebar == nil ? NWLeadMetrics.toolbarLeading : NWToolbarMetrics.leadingPadding) + leadingInset)
-        .padding(.trailing, NWToolbarMetrics.trailingPadding)
-        .frame(height: NWToolbarMetrics.height)
+        .padding(.leading, (sidebar == nil ? SHLeadMetrics.toolbarLeading : SHToolbarMetrics.leadingPadding) + leadingInset)
+        .padding(.trailing, SHToolbarMetrics.trailingPadding)
+        .frame(height: SHToolbarMetrics.height)
         .frame(maxWidth: .infinity)
-        .background(Color.nw.bgWindow)
-        .overlay(alignment: .bottom) { NWHairline() }
+        .background(Color.sh.bgWindow)
+        .overlay(alignment: .bottom) { SHHairline() }
     }
 }
 
 /// The toolbar's Overview button: the list glyph and the word, on `bgHover` while it is the page shown.
-public struct NWLeadToolbarButton: View {
+public struct SHLeadToolbarButton: View {
     let title: String
     let symbol: String
     let selected: Bool
@@ -216,28 +216,28 @@ public struct NWLeadToolbarButton: View {
 
     public var body: some View {
         Button(action: action) {
-            HStack(spacing: NW.Space.s) {
-                Image(systemName: symbol).font(.system(size: NWLeadMetrics.toolbarGlyph, weight: .regular))
-                Text(title).font(.nw(.ui, weight: .regular))
+            HStack(spacing: SH.Space.s) {
+                Image(systemName: symbol).font(.system(size: SHLeadMetrics.toolbarGlyph, weight: .regular))
+                Text(title).font(.sh(.ui, weight: .regular))
                 if dot {
-                    Circle().fill(Color.nw.lantern).frame(width: NWLeadMetrics.toolbarDot, height: NWLeadMetrics.toolbarDot)
+                    Circle().fill(Color.sh.lantern).frame(width: SHLeadMetrics.toolbarDot, height: SHLeadMetrics.toolbarDot)
                         .accessibilityHidden(true)
                 }
                 if badge > 0 {
                     Text("\(badge)")
-                        .font(.nwSans(NWLeadMetrics.badgeSize, .semibold))
-                        .foregroundStyle(Color.nw.textOnRunning)
-                        .frame(minWidth: NWLeadMetrics.badge, minHeight: NWLeadMetrics.badge)
-                        .background(Color.nw.running, in: RoundedRectangle(cornerRadius: NW.Radius.xs))
+                        .font(.shSans(SHLeadMetrics.badgeSize, .semibold))
+                        .foregroundStyle(Color.sh.textOnRunning)
+                        .frame(minWidth: SHLeadMetrics.badge, minHeight: SHLeadMetrics.badge)
+                        .background(Color.sh.running, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
                 }
             }
-            .foregroundStyle(selected ? Color.nw.textPrimary : Color.nw.textSecondary)
-            .padding(.horizontal, NW.Space.m)
-            .frame(height: NWLeadMetrics.toolbarButtonHeight)
-            .background(selected ? Color.nw.bgSelected : .clear, in: RoundedRectangle(cornerRadius: NW.Radius.s))
+            .foregroundStyle(selected ? Color.sh.textPrimary : Color.sh.textSecondary)
+            .padding(.horizontal, SH.Space.m)
+            .frame(height: SHLeadMetrics.toolbarButtonHeight)
+            .background(selected ? Color.sh.bgSelected : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
             .contentShape(Rectangle())
         }
-        .buttonStyle(NWPlainPressStyle())
+        .buttonStyle(SHPlainPressStyle())
         .accessibilityLabel(dot ? "\(title), needs you" : badge > 0 ? "\(title), \(badge)" : title)
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
@@ -245,11 +245,11 @@ public struct NWLeadToolbarButton: View {
 
 /// A task thread under its Project in the Spaces mode (ProjectLead-Paused, -Question): a 6pt dot (`lantern` while it waits on
 /// you, else `running`) in a 14pt slot 26pt in from the left, the title, and a mono 10.5 word ("answer") in `lanternText`.
-public struct NWLeadTaskRow: View, Equatable {
+public struct SHLeadTaskRow: View, Equatable {
     let title: String
     let attention: Bool
     let word: String?
-    @Environment(\.nwDensity) private var density
+    @Environment(\.shDensity) private var density
     @State private var hovering = false
 
     public init(title: String, attention: Bool, word: String? = nil) {
@@ -258,31 +258,31 @@ public struct NWLeadTaskRow: View, Equatable {
         self.word = word
     }
 
-    public nonisolated static func == (a: NWLeadTaskRow, b: NWLeadTaskRow) -> Bool {
+    public nonisolated static func == (a: SHLeadTaskRow, b: SHLeadTaskRow) -> Bool {
         a.title == b.title && a.attention == b.attention && a.word == b.word
     }
 
     public var body: some View {
-        HStack(spacing: NW.Space.m) {
-            Circle().fill(attention ? Color.nw.lantern : Color.nw.running)
-                .frame(width: NWLeadMetrics.taskDot, height: NWLeadMetrics.taskDot)
-                .frame(width: NWSidebarMetrics.rowSlot)
+        HStack(spacing: SH.Space.m) {
+            Circle().fill(attention ? Color.sh.lantern : Color.sh.running)
+                .frame(width: SHLeadMetrics.taskDot, height: SHLeadMetrics.taskDot)
+                .frame(width: SHSidebarMetrics.rowSlot)
                 .accessibilityHidden(true)
             Text(title)
                 .font(density.rowTitleFont(weight: .regular))
-                .foregroundStyle(.nw.textPrimary)
+                .foregroundStyle(.sh.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.tail)
-            Spacer(minLength: NW.Space.xs)
+            Spacer(minLength: SH.Space.xs)
             if let word {
-                Text(word).font(.nwMono(NWSidebarMetrics.sectionCountFont)).foregroundStyle(Color.nw.lanternText).fixedSize()
+                Text(word).font(.shMono(SHSidebarMetrics.sectionCountFont)).foregroundStyle(Color.sh.lanternText).fixedSize()
             }
         }
-        .padding(.leading, NWLeadMetrics.sidebarTaskLeading)
+        .padding(.leading, SHLeadMetrics.sidebarTaskLeading)
         .padding(.trailing, density.sidebarRowPadding)
         .frame(maxWidth: .infinity, minHeight: density.rowHeight, alignment: .leading)
-        .nwRowBackground(selected: false, hovering: hovering, radius: NW.Radius.m)
-        .contentShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+        .shRowBackground(selected: false, hovering: hovering, radius: SH.Radius.m)
+        .contentShape(RoundedRectangle(cornerRadius: SH.Radius.m))
         .onHover { hovering = $0 }
         .accessibilityElement(children: .ignore)
     }

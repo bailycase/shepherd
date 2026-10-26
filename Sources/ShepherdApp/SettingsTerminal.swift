@@ -18,7 +18,7 @@ struct TerminalSettings: View {
             SettingsGroup(title: "Font", footnote: "Font changes apply to open terminals in place; running processes are untouched.") {
                 SettingsRow(title: "Font family",
                             subtitle: "Fixed-pitch families installed on this Mac. Ghostty falls back if a family can't be loaded.") {
-                    NWPopupMenu(settings.terminalFontFamily == AppSettings.systemFontFamily ? "System font" : settings.terminalFontFamily,
+                    SHPopupMenu(settings.terminalFontFamily == AppSettings.systemFontFamily ? "System font" : settings.terminalFontFamily,
                                 minWidth: AppLayout.settingsPopupWidth) {
                         Button("System font") { settings.terminalFontFamily = AppSettings.systemFontFamily }
                         Divider()
@@ -30,7 +30,7 @@ struct TerminalSettings: View {
                     .onChange(of: settings.terminalFontFamily) { vm.rebuildSurfaces() }
                 }
                 SettingsRow(title: "Font size") {
-                    NWValueSlider("Font size", value: $settings.terminalFontSize, in: AppSettings.fontSizeRange, step: 0.5, unit: "points") {
+                    SHValueSlider("Font size", value: $settings.terminalFontSize, in: AppSettings.fontSizeRange, step: 0.5, unit: "points") {
                         String(format: "%.1f", $0)
                     }
                     .onChange(of: settings.terminalFontSize) { vm.rebuildSurfaces() }
@@ -41,7 +41,7 @@ struct TerminalSettings: View {
             }
             SettingsGroup(title: "Shell", footnote: "A new shell applies to terminals opened afterwards.") {
                 SettingsRow(title: "Shell", subtitle: Self.shellSubtitle(keys)) {
-                    NWPopupMenu(settings.shellPath, mono: true, minWidth: AppLayout.settingsPopupWidth) {
+                    SHPopupMenu(settings.shellPath, mono: true, minWidth: AppLayout.settingsPopupWidth) {
                         ForEach(shells, id: \.self) { shell in
                             Button(shell) { settings.shellPath = shell }
                         }
@@ -94,18 +94,18 @@ private struct FontPreview: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NW.Space.xxs) {
-            Text("\(Text("~/proj ").foregroundStyle(Color.nw.running))❯ git status --short")
-            Text(" M Sources/App.swift").foregroundStyle(Color.nw.lanternText)
-            Text("?? Tests/AppTests.swift").foregroundStyle(Color.nw.done)
-            Text("ILil1| O0o {} -> the quick brown fox").foregroundStyle(Color.nw.textSecondary)
+        VStack(alignment: .leading, spacing: SH.Space.xxs) {
+            Text("\(Text("~/proj ").foregroundStyle(Color.sh.running))❯ git status --short")
+            Text(" M Sources/App.swift").foregroundStyle(Color.sh.lanternText)
+            Text("?? Tests/AppTests.swift").foregroundStyle(Color.sh.done)
+            Text("ILil1| O0o {} -> the quick brown fox").foregroundStyle(Color.sh.textSecondary)
         }
         .font(font)
-        .foregroundStyle(Color.nw.textPrimary)
+        .foregroundStyle(Color.sh.textPrimary)
         .lineLimit(1)
-        .padding(NW.Space.l)
+        .padding(SH.Space.l)
         .frame(width: AppLayout.settingsFontPreviewWidth, alignment: .leading)
-        .nwCard(radius: NW.Radius.s, fill: Color.nw.bgWindow)
+        .shCard(radius: SH.Radius.s, fill: Color.sh.bgWindow)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Preview of \(family) at \(size.formatted()) points")
     }

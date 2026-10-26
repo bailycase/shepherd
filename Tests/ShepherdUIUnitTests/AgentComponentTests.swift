@@ -14,8 +14,8 @@ struct AgentComponentTests {
         (3599, "59m", "59m 59s"), (86_399, "23h", "23h 59m"), (86_400, "1d", "24h 00m"),
     ])
     func durationsReadAsTheBoardsWriteThem(seconds: Double, short: String, long: String) {
-        #expect(NWDuration.text(seconds, .short) == short)
-        #expect(NWDuration.text(seconds, .long) == long)
+        #expect(SHDuration.text(seconds, .short) == short)
+        #expect(SHDuration.text(seconds, .long) == long)
     }
 
     /// Short text changes every second for a minute, then on whole minutes (then hours) counted
@@ -25,13 +25,13 @@ struct AgentComponentTests {
     ])
     func shortTicksLandWhereTheTextChanges(elapsed: Double, next: Double) {
         let start = Date(timeIntervalSince1970: 1_000)
-        let schedule = NWElapsedSchedule(start: start, style: .short)
+        let schedule = SHElapsedSchedule(start: start, style: .short)
         #expect(schedule.boundary(after: start.addingTimeInterval(elapsed)) == start.addingTimeInterval(next))
     }
 
     @Test func longTicksEverySecondForAnHourThenEveryMinute() {
         let start = Date(timeIntervalSince1970: 1_000)
-        let schedule = NWElapsedSchedule(start: start, style: .long)
+        let schedule = SHElapsedSchedule(start: start, style: .long)
         #expect(schedule.boundary(after: start.addingTimeInterval(2241.5)) == start.addingTimeInterval(2242))
         #expect(schedule.boundary(after: start.addingTimeInterval(3661)) == start.addingTimeInterval(3720))
     }
@@ -39,13 +39,13 @@ struct AgentComponentTests {
     @Test func entriesStartNowAndFollowTheBoundaries() {
         let start = Date(timeIntervalSince1970: 1_000)
         let now = start.addingTimeInterval(58.5)
-        let entries = Array(NWElapsedSchedule(start: start).entries(from: now, mode: .normal).prefix(4))
+        let entries = Array(SHElapsedSchedule(start: start).entries(from: now, mode: .normal).prefix(4))
         #expect(entries == [now, start.addingTimeInterval(59), start.addingTimeInterval(60), start.addingTimeInterval(120)])
     }
 
     /// The runs of `text` as (characters, is code, is strong, is a link).
     @MainActor private func runs(_ text: String) -> [(String, Bool, Bool, Bool)] {
-        let attributed = NWInlineMarkup.attributed(text)
+        let attributed = SHInlineMarkup.attributed(text)
         return attributed.runs.map { run in
             let intent = run.inlinePresentationIntent ?? []
             return (String(attributed[run.range].characters), intent.contains(.code), intent.contains(.stronglyEmphasized), run.link != nil)
@@ -68,7 +68,7 @@ struct AgentComponentTests {
     }
 
     @Test func aTrayHeaderReadsAsItsTitleThenItsTally() {
-        let summary = NWSubagentTraySummary(title: "3 subagents", cells: [.running, .queued, .done],
+        let summary = SHSubagentTraySummary(title: "3 subagents", cells: [.running, .queued, .done],
                                             tally: [.init("1 running", state: .running), .init("1 waiting on parent"), .init("1 done")])
         #expect(summary.accessibilityLabel == "3 subagents, 1 running, 1 waiting on parent, 1 done")
     }
@@ -76,7 +76,7 @@ struct AgentComponentTests {
     /// Only a run still going can be steered and stopped; one waiting on its parent draws as queued, so it counts as going.
     @Test(arguments: [(AgentState.running, true), (.queued, true), (.done, false), (.failed, false)])
     func aTrayRowIsLiveUntilItsRunEnds(state: AgentState, live: Bool) {
-        let run = NWSubagentTrayRun(id: "w", name: "worker", state: state, line: .waiting(""))
+        let run = SHSubagentTrayRun(id: "w", name: "worker", state: state, line: .waiting(""))
         #expect(run.isLive == live)
         #expect(run.accessibilityLabel == "worker", "the app hands in the spoken label; the name stands in without one")
     }

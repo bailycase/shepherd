@@ -26,26 +26,26 @@ extension ListPerformanceTests {
 
         let size = CGSize(width: 380, height: 460)
         var window: OffscreenWindow!
-        let onScreen = Int(ChangesMenuLayout.listMaxHeight / NWChangesMenuMetrics.rowHeight) + 1
+        let onScreen = Int(ChangesMenuLayout.listMaxHeight / SHChangesMenuMetrics.rowHeight) + 1
         // Counted from before the window opens until the branches are in and drawn.
-        NWRenderProbe.start()
+        SHRenderProbe.start()
         window = OffscreenWindow(size: size, dark: true, WorktreeBasePicker(vm: vm, repo: repo.path, selected: nil, choose: { _ in }, close: {}))
         defer { window.close() }
         try await eventuallyOnMain("the branches to load") {
             ListPerf.settle(window)
-            return NWRenderProbe.count("changes.menu.row") > 0
+            return SHRenderProbe.count("changes.menu.row") > 0
         }
         ListPerf.settle(window)
-        let opened = NWRenderProbe.stop()
+        let opened = SHRenderProbe.stop()
         #expect(opened["changes.menu.row", default: 0] <= 2 * onScreen, "opening builds the rows that fit: \(opened)")
 
         let scroll = try #require(ListPerf.scrollView(in: window))
         // The 300pt window, not 300 rows tall: the list scrolls inside the menu.
         #expect(scroll.frame.height <= ChangesMenuLayout.listMaxHeight + 1, "\(scroll.frame)")
-        let step = NWChangesMenuMetrics.rowHeight * 4
+        let step = SHChangesMenuMetrics.rowHeight * 4
         var moved: CGFloat = 0
         let scrolled = ListPerf.counting { moved = ListPerf.scroll(window, scroll, step: step, steps: 20).distance }
-        let arriving = Int(moved / NWChangesMenuMetrics.rowHeight) + 1
+        let arriving = Int(moved / SHChangesMenuMetrics.rowHeight) + 1
         #expect(moved > 0)
         #expect(scrolled["changes.menu.row", default: 0] <= 2 * (arriving + onScreen), "\(scrolled)")
         #expect(scrolled["changes.menu.row", default: 0] < 300, "never every branch: \(scrolled)")

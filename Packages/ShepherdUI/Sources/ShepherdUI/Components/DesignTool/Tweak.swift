@@ -1,12 +1,12 @@
 import SwiftUI
 
-// The Tweak tab's parts (DZTweak, NWDesignTool): its header, groups of rows, token chips, the
+// The Tweak tab's parts (DZTweak, SHDesignTool): its header, groups of rows, token chips, the
 // scope, and the footer. The app composes them from what the selected element offers.
 
 /// The Tweak tab's header: the path to the element in mono 11 `textTertiary` with the element in
 /// `textPrimary` ("A · Funnel first › card · Checkout funnel"), then a note in 11.5 `textTertiary`
 /// ("Changes show on the canvas as you drag."). 14×18 padding, a hairline under it.
-public struct NWTweakHeader: View {
+public struct SHTweakHeader: View {
     let board: String
     let element: String?
     let note: String
@@ -18,33 +18,33 @@ public struct NWTweakHeader: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: NWDesignMetrics.tweakHeaderSpacing) {
+        VStack(alignment: .leading, spacing: SHDesignMetrics.tweakHeaderSpacing) {
             Group {
                 if let element {
-                    Text("\(board) › ") + Text(element).foregroundStyle(Color.nw.textPrimary)
+                    Text("\(board) › ") + Text(element).foregroundStyle(Color.sh.textPrimary)
                 } else {
-                    Text(board).foregroundStyle(Color.nw.textPrimary)
+                    Text(board).foregroundStyle(Color.sh.textPrimary)
                 }
             }
-            .font(.nwMono(NWDesignMetrics.tweakPathSize))
-            .foregroundStyle(Color.nw.textTertiary)
+            .font(.shMono(SHDesignMetrics.tweakPathSize))
+            .foregroundStyle(Color.sh.textTertiary)
             .lineLimit(1)
             .truncationMode(.middle)
             Text(note)
-                .font(.nwSans(NWDesignMetrics.tweakNoteSize))
-                .foregroundStyle(Color.nw.textTertiary)
+                .font(.shSans(SHDesignMetrics.tweakNoteSize))
+                .foregroundStyle(Color.sh.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, NWDesignMetrics.tweakPaddingVertical)
-        .padding(.horizontal, NWDesignMetrics.tweakPaddingHorizontal)
-        .overlay(alignment: .bottom) { NWHairline() }
+        .padding(.vertical, SHDesignMetrics.tweakPaddingVertical)
+        .padding(.horizontal, SHDesignMetrics.tweakPaddingHorizontal)
+        .overlay(alignment: .bottom) { SHHairline() }
     }
 }
 
-/// A group of tweak rows under its section label (`.nwSectionLabel()`, 6pt above them), at 14×18
+/// A group of tweak rows under its section label (`.shSectionLabel()`, 6pt above them), at 14×18
 /// padding with a hairline under it (none under the last).
-public struct NWTweakGroup<Content: View>: View {
+public struct SHTweakGroup<Content: View>: View {
     let title: String
     let divided: Bool
     let content: Content
@@ -58,22 +58,22 @@ public struct NWTweakGroup<Content: View>: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(title)
-                .nwSectionLabel()
-                .foregroundStyle(Color.nw.textTertiary)
-                .padding(.bottom, NWDesignMetrics.tweakLabelGap)
+                .shSectionLabel()
+                .foregroundStyle(Color.sh.textTertiary)
+                .padding(.bottom, SHDesignMetrics.tweakLabelGap)
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, NWDesignMetrics.tweakPaddingVertical)
-        .padding(.horizontal, NWDesignMetrics.tweakPaddingHorizontal)
-        .overlay(alignment: .bottom) { if divided { NWHairline() } }
+        .padding(.vertical, SHDesignMetrics.tweakPaddingVertical)
+        .padding(.horizontal, SHDesignMetrics.tweakPaddingHorizontal)
+        .overlay(alignment: .bottom) { if divided { SHHairline() } }
     }
 }
 
-/// One tweak (`NWTweakRow`): its label in 12.5 `textSecondary` in a 92pt column, then the control,
+/// One tweak (`SHTweakRow`): its label in 12.5 `textSecondary` in a 92pt column, then the control,
 /// 12pt apart. A slider row is at least 30pt and its slider leads; any other control (a segmented
 /// picker, a switch, token chips) sits at the trailing edge of a row at least 32pt tall.
-public struct NWTweakRow<Control: View>: View {
+public struct SHTweakRow<Control: View>: View {
     public enum Layout: Sendable { case slider, trailing }
 
     let label: String
@@ -93,12 +93,12 @@ public struct NWTweakRow<Control: View>: View {
                 // A slider wider than the row leaves beside the label (the iPad's narrower pane)
                 // goes under it.
                 ViewThatFits(in: .horizontal) {
-                    HStack(spacing: NWDesignMetrics.tweakRowSpacing) {
+                    HStack(spacing: SHDesignMetrics.tweakRowSpacing) {
                         title
                         control
                         Spacer(minLength: 0)
                     }
-                    VStack(alignment: .leading, spacing: NWDesignMetrics.tweakControlSpacing) {
+                    VStack(alignment: .leading, spacing: SHDesignMetrics.tweakControlSpacing) {
                         title
                         control
                     }
@@ -106,37 +106,37 @@ public struct NWTweakRow<Control: View>: View {
             case .trailing:
                 // A control wider than the row leaves beside the label goes under it, trailing.
                 ViewThatFits(in: .horizontal) {
-                    HStack(spacing: NWDesignMetrics.tweakRowSpacing) {
+                    HStack(spacing: SHDesignMetrics.tweakRowSpacing) {
                         title
                         Spacer(minLength: 0)
                         control
                     }
-                    VStack(alignment: .trailing, spacing: NWDesignMetrics.tweakControlSpacing) {
+                    VStack(alignment: .trailing, spacing: SHDesignMetrics.tweakControlSpacing) {
                         title.frame(maxWidth: .infinity, alignment: .leading)
                         control
                     }
                 }
             }
         }
-        .frame(minHeight: layout == .slider ? NWDesignMetrics.tweakSliderRowHeight : NWDesignMetrics.tweakRowHeight)
+        .frame(minHeight: layout == .slider ? SHDesignMetrics.tweakSliderRowHeight : SHDesignMetrics.tweakRowHeight)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(label)
     }
 
     private var title: some View {
         Text(label)
-            .font(.nwSans(NWDesignMetrics.tweakLabelSize))
-            .foregroundStyle(Color.nw.textSecondary)
+            .font(.shSans(SHDesignMetrics.tweakLabelSize))
+            .foregroundStyle(Color.sh.textSecondary)
             .lineLimit(1)
-            .frame(width: NWDesignMetrics.tweakLabelWidth, alignment: .leading)
+            .frame(width: SHDesignMetrics.tweakLabelWidth, alignment: .leading)
     }
 }
 
-/// A color from the design's tokens, never a free hex (`NWTokenChip`): 26pt, 8pt padding,
+/// A color from the design's tokens, never a free hex (`SHTokenChip`): 26pt, 8pt padding,
 /// radius 6, a 10pt swatch (radius 3) and the token's name in mono 11.5. Selected, a 1px
 /// `running` line on `runningTint`; otherwise a 1px `lineSubtle` line. The swatch is the design's
 /// own color, not Shepherd's.
-public struct NWTokenChip: View {
+public struct SHTokenChip: View {
     let name: String
     let swatch: Color
     let isSelected: Bool
@@ -150,23 +150,23 @@ public struct NWTokenChip: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         Button(action: action) {
-            HStack(spacing: NWDesignMetrics.tokenChipSpacing) {
-                RoundedRectangle(cornerRadius: NWDesignMetrics.tokenChipSwatchRadius)
+            HStack(spacing: SHDesignMetrics.tokenChipSpacing) {
+                RoundedRectangle(cornerRadius: SHDesignMetrics.tokenChipSwatchRadius)
                     .fill(swatch)
-                    .frame(width: NWDesignMetrics.tokenChipSwatch, height: NWDesignMetrics.tokenChipSwatch)
+                    .frame(width: SHDesignMetrics.tokenChipSwatch, height: SHDesignMetrics.tokenChipSwatch)
                 Text(name)
-                    .font(.nwMono(NWDesignMetrics.tokenChipTextSize))
-                    .foregroundStyle(nw.textPrimary)
+                    .font(.shMono(SHDesignMetrics.tokenChipTextSize))
+                    .foregroundStyle(sh.textPrimary)
                     .lineLimit(1)
             }
-            .padding(.horizontal, NWDesignMetrics.tokenChipPadding)
-            .frame(height: NWDesignMetrics.tokenChipHeight)
-            .background(isSelected ? nw.runningTint : .clear, in: RoundedRectangle(cornerRadius: NWDesignMetrics.tokenChipRadius))
-            .nwBorder(isSelected ? nw.running : nw.lineSubtle, radius: NWDesignMetrics.tokenChipRadius)
+            .padding(.horizontal, SHDesignMetrics.tokenChipPadding)
+            .frame(height: SHDesignMetrics.tokenChipHeight)
+            .background(isSelected ? sh.runningTint : .clear, in: RoundedRectangle(cornerRadius: SHDesignMetrics.tokenChipRadius))
+            .shBorder(isSelected ? sh.running : sh.lineSubtle, radius: SHDesignMetrics.tokenChipRadius)
             .contentShape(Rectangle())
-            .nwFocusRing(radius: NWDesignMetrics.tokenChipRadius)
+            .shFocusRing(radius: SHDesignMetrics.tokenChipRadius)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(name)
@@ -175,13 +175,13 @@ public struct NWTokenChip: View {
 }
 
 /// Token chips in a row that wraps, trailing-aligned, 6pt apart.
-public struct NWTokenChipFlow: Layout {
+public struct SHTokenChipFlow: Layout {
     public init() {}
 
     public func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let rows = rows(subviews, width: proposal.width ?? .infinity)
         let width = rows.map(\.width).max() ?? 0
-        let height = rows.map(\.height).reduce(0, +) + CGFloat(max(0, rows.count - 1)) * NWDesignMetrics.tweakControlSpacing
+        let height = rows.map(\.height).reduce(0, +) + CGFloat(max(0, rows.count - 1)) * SHDesignMetrics.tweakControlSpacing
         return CGSize(width: proposal.width.map { min($0, width) } ?? width, height: height)
     }
 
@@ -192,9 +192,9 @@ public struct NWTokenChipFlow: Layout {
             for index in row.indices {
                 let size = subviews[index].sizeThatFits(.unspecified)
                 subviews[index].place(at: CGPoint(x: x, y: y + (row.height - size.height) / 2), proposal: .unspecified)
-                x += size.width + NWDesignMetrics.tweakControlSpacing
+                x += size.width + SHDesignMetrics.tweakControlSpacing
             }
-            y += row.height + NWDesignMetrics.tweakControlSpacing
+            y += row.height + SHDesignMetrics.tweakControlSpacing
         }
     }
 
@@ -209,12 +209,12 @@ public struct NWTokenChipFlow: Layout {
         var row = Row()
         for index in subviews.indices {
             let size = subviews[index].sizeThatFits(.unspecified)
-            let added = row.indices.isEmpty ? size.width : row.width + NWDesignMetrics.tweakControlSpacing + size.width
+            let added = row.indices.isEmpty ? size.width : row.width + SHDesignMetrics.tweakControlSpacing + size.width
             if !row.indices.isEmpty, added > width {
                 rows.append(row)
                 row = Row()
             }
-            row.width = row.indices.isEmpty ? size.width : row.width + NWDesignMetrics.tweakControlSpacing + size.width
+            row.width = row.indices.isEmpty ? size.width : row.width + SHDesignMetrics.tweakControlSpacing + size.width
             row.height = max(row.height, size.height)
             row.indices.append(index)
         }
@@ -223,9 +223,9 @@ public struct NWTokenChipFlow: Layout {
     }
 }
 
-/// Where a tweak applies (`NWTweakScope`): "This board" or every element that matches ("Every
+/// Where a tweak applies (`SHTweakScope`): "This board" or every element that matches ("Every
 /// funnel card"), as a small segmented picker.
-public struct NWTweakScope: View {
+public struct SHTweakScope: View {
     public enum Scope: Hashable, Sendable { case board, every }
 
     @Binding var selection: Scope
@@ -237,32 +237,32 @@ public struct NWTweakScope: View {
     }
 
     public var body: some View {
-        NWSegmentedPicker("Scope", selection: $selection, options: [(.board, "This board"), (.every, every)], size: .s)
+        SHSegmentedPicker("Scope", selection: $selection, options: [(.board, "This board"), (.every, every)], size: .s)
     }
 }
 
 /// The note under a group's rows (the scope's reach): 11.5/1.45 `textTertiary`, 6pt under them.
-public struct NWTweakNote: View {
+public struct SHTweakNote: View {
     let text: String
 
     public init(_ text: String) { self.text = text }
 
     public var body: some View {
         Text(text)
-            .font(.nwSans(NWDesignMetrics.tweakNoteSize))
-            .lineSpacing(NWDesignMetrics.tweakScopeNoteLineSpacing)
-            .foregroundStyle(Color.nw.textTertiary)
+            .font(.shSans(SHDesignMetrics.tweakNoteSize))
+            .lineSpacing(SHDesignMetrics.tweakScopeNoteLineSpacing)
+            .foregroundStyle(Color.sh.textTertiary)
             .fixedSize(horizontal: false, vertical: true)
-            .padding(.top, NWDesignMetrics.tweakScopeNoteGap)
+            .padding(.top, SHDesignMetrics.tweakScopeNoteGap)
     }
 }
 
-/// An element that is one use of a shared piece (`NWTweakPieceNote`): the piece draws it, so a style
+/// An element that is one use of a shared piece (`SHTweakPieceNote`): the piece draws it, so a style
 /// written on the instance would do nothing, and the tab offers none. It is the "Shared piece" group
 /// at the tab's padding, saying where a change goes (the piece, once, for every board that uses it)
 /// in the scope note's 11.5/1.45 `textTertiary`, with a small ghost "Go to source" under it when the
 /// piece has a frame on the canvas to go to. Under it, a hairline.
-public struct NWTweakPieceNote: View {
+public struct SHTweakPieceNote: View {
     let piece: String
     let boards: String?
     let goToSource: (() -> Void)?
@@ -278,24 +278,24 @@ public struct NWTweakPieceNote: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Shared piece")
-                .nwSectionLabel()
-                .foregroundStyle(Color.nw.textTertiary)
-                .padding(.bottom, NWDesignMetrics.tweakLabelGap)
+                .shSectionLabel()
+                .foregroundStyle(Color.sh.textTertiary)
+                .padding(.bottom, SHDesignMetrics.tweakLabelGap)
             Text("This is one use of \(piece)\(boards.map { ", drawn by \($0)" } ?? ""). Its look comes from the piece: change the piece to change every use.")
-                .font(.nwSans(NWDesignMetrics.tweakNoteSize))
-                .lineSpacing(NWDesignMetrics.tweakScopeNoteLineSpacing)
-                .foregroundStyle(Color.nw.textTertiary)
+                .font(.shSans(SHDesignMetrics.tweakNoteSize))
+                .lineSpacing(SHDesignMetrics.tweakScopeNoteLineSpacing)
+                .foregroundStyle(Color.sh.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
             if let goToSource {
                 Button("Go to source", action: goToSource)
-                    .buttonStyle(.nw(.secondary, size: .s))
-                    .padding(.top, NWDesignMetrics.tweakControlSpacing)
+                    .buttonStyle(.sh(.secondary, size: .s))
+                    .padding(.top, SHDesignMetrics.tweakControlSpacing)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, NWDesignMetrics.tweakPaddingVertical)
-        .padding(.horizontal, NWDesignMetrics.tweakPaddingHorizontal)
-        .overlay(alignment: .bottom) { NWHairline() }
+        .padding(.vertical, SHDesignMetrics.tweakPaddingVertical)
+        .padding(.horizontal, SHDesignMetrics.tweakPaddingHorizontal)
+        .overlay(alignment: .bottom) { SHHairline() }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Shared piece \(piece)")
     }
@@ -303,7 +303,7 @@ public struct NWTweakPieceNote: View {
 
 /// The Tweak tab's footer, pinned to its bottom: Reset (ghost, 24pt) leading and "Ask the agent
 /// instead…" (secondary, 24pt) trailing, at 12×14 padding under a hairline.
-public struct NWTweakFooter: View {
+public struct SHTweakFooter: View {
     let canReset: Bool
     let reset: () -> Void
     let ask: () -> Void
@@ -315,16 +315,16 @@ public struct NWTweakFooter: View {
     }
 
     public var body: some View {
-        HStack(spacing: NW.Space.m) {
+        HStack(spacing: SH.Space.m) {
             Button("Reset", action: reset)
-                .buttonStyle(.nw(.ghost, size: .s))
+                .buttonStyle(.sh(.ghost, size: .s))
                 .disabled(!canReset)
             Spacer(minLength: 0)
             Button("Ask the agent instead…", action: ask)
-                .buttonStyle(.nw(.secondary, size: .s))
+                .buttonStyle(.sh(.secondary, size: .s))
         }
-        .padding(.vertical, NWDesignMetrics.tweakFooterPaddingVertical)
-        .padding(.horizontal, NWDesignMetrics.tweakFooterPaddingHorizontal)
-        .overlay(alignment: .top) { NWHairline() }
+        .padding(.vertical, SHDesignMetrics.tweakFooterPaddingVertical)
+        .padding(.horizontal, SHDesignMetrics.tweakFooterPaddingHorizontal)
+        .overlay(alignment: .top) { SHHairline() }
     }
 }

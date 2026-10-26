@@ -48,7 +48,7 @@ struct DesignSystemPageTests {
 
     private static let acme = summary("acme-web", space: web.id, sources: ["web/static/tokens.css"], synced: ms - 4 * 60_000,
                                       counts: tokens.counts)
-    private static let nightWatch = summary("night-watch", title: "Night Watch", builtIn: true)
+    private static let shepherdDesign = summary("shepherd-design", title: "Shepherd Design", builtIn: true)
 
     private func design(_ name: String, system: String? = nil, boards: Int = 4, space: Space = web, builds: Bool = false) -> Design {
         Design(name: name, systemNamespace: system, createdAt: 1_000, boardCount: boards, buildsSystem: builds,
@@ -60,13 +60,13 @@ struct DesignSystemPageTests {
     @Test func theGridListsTheSystemsBuiltHereThenBuildsThenTheBuiltIns() {
         let build = design("shepherd", space: Self.app, builds: true)
         let designs = [design("Checkout", system: "acme-web"), design("Onboarding", system: "acme-web"),
-                       design("Settings", system: "night-watch"), build]
+                       design("Settings", system: "shepherd-design"), build]
         let zeta = Self.summary("zeta", space: Self.app.id)
         let model = DesignsPageModel.make(designs: designs, spaces: [Self.web, Self.app], firstBoards: [:], filter: "", selection: nil,
-                                          now: Self.now, systems: [Self.nightWatch, zeta, Self.acme],
+                                          now: Self.now, systems: [Self.shepherdDesign, zeta, Self.acme],
                                           swatches: ["acme-web": DesignSystemPresentation.swatches(Self.tokens, count: 4)])
-        #expect(model.systems.map(\.name) == ["acme-web", "zeta", "shepherd", "Night Watch"])
-        #expect(model.systems.map(\.id) == [.system("acme-web"), .system("zeta"), .build(build.id), .system("night-watch")])
+        #expect(model.systems.map(\.name) == ["acme-web", "zeta", "shepherd", "Shepherd Design"])
+        #expect(model.systems.map(\.id) == [.system("acme-web"), .system("zeta"), .build(build.id), .system("shepherd-design")])
         #expect(model.systems.map(\.source) == ["dashboard-web · tokens.css", "shepherd", "shepherd · building",
                                                 DesignsPageModel.builtInSource])
         #expect(model.systems.map(\.count) == ["2 designs", "0 designs", "", "1 design"])
@@ -87,14 +87,14 @@ struct DesignSystemPageTests {
     }
 
     @Test func theFilterKeepsSystemsByNameSourceOrTheDesignsItKeeps() {
-        let designs = [design("Checkout", system: "acme-web"), design("Settings", system: "night-watch")]
+        let designs = [design("Checkout", system: "acme-web"), design("Settings", system: "shepherd-design")]
         func names(_ filter: String) -> [String] {
             DesignsPageModel.make(designs: designs, spaces: [Self.web], firstBoards: [:], filter: filter, selection: nil, now: Self.now,
-                                  systems: [Self.nightWatch, Self.acme]).systems.map(\.name)
+                                  systems: [Self.shepherdDesign, Self.acme]).systems.map(\.name)
         }
         #expect(names("checkout") == ["acme-web"])
         #expect(names("tokens.css") == ["acme-web"])
-        #expect(names("night") == ["Night Watch"])
+        #expect(names("shepherd") == ["Shepherd Design"])
         #expect(names("nothing").isEmpty)
     }
 
@@ -105,7 +105,7 @@ struct DesignSystemPageTests {
         let model = DesignSystemPageModel.make(summary: Self.acme, read: read, build: nil, spaces: [Self.web], designs: [],
                                                syncing: false, now: Self.now)
         #expect(model.title == "acme-web" && model.namespace == "acme-web")
-        #expect(model.status == NWDesignHeaderStatus(.done, label: "Synced"))
+        #expect(model.status == SHDesignHeaderStatus(.done, label: "Synced"))
         #expect(model.source.map(\.text) == ["Read from ", "dashboard-web", ": ", "web/static/tokens.css", " and 3 templates in ",
                                              "templates/partials/", " · synced 4m ago"])
         #expect(model.source.map(\.mono) == [false, true, false, true, false, true, false])
@@ -135,8 +135,8 @@ struct DesignSystemPageTests {
     @Test func aResyncSaysSoAndABuiltInCantBeSynced() {
         let syncing = DesignSystemPageModel.make(summary: Self.acme, read: nil, build: nil, spaces: [Self.web], designs: [],
                                                  syncing: true, now: Self.now)
-        #expect(syncing.status == NWDesignHeaderStatus(.running, label: "Syncing"))
-        let builtIn = DesignSystemPageModel.make(summary: Self.nightWatch, read: nil, build: nil, spaces: [], designs: [],
+        #expect(syncing.status == SHDesignHeaderStatus(.running, label: "Syncing"))
+        let builtIn = DesignSystemPageModel.make(summary: Self.shepherdDesign, read: nil, build: nil, spaces: [], designs: [],
                                                  syncing: false, now: Self.now)
         #expect(builtIn.status == nil && !builtIn.canResync && builtIn.builtIn)
         #expect(builtIn.source.map(\.text) == ["Generated from ShepherdUI's tokens"])
@@ -208,26 +208,26 @@ struct DesignSystemPageTests {
         #expect(orphan == ("acme-web", "design system", "found in web/static/tokens.css"))
         let written = NewDesignState.card(system: Self.summary("sketch"), spaces: [Self.web])
         #expect(written == ("sketch", "design system", "made in Shepherd"))
-        let nightWatch = NewDesignState.card(system: Self.nightWatch, spaces: [])
-        #expect(nightWatch == ("night-watch", "design system · shepherd", "built into Shepherd"))
+        let shepherdDesign = NewDesignState.card(system: Self.shepherdDesign, spaces: [])
+        #expect(shepherdDesign == ("shepherd-design", "design system · shepherd", "built into Shepherd"))
         let none = NewDesignState.card(system: nil, spaces: [Self.web])
         #expect(none.title == "No design system")
     }
 
-    /// A new design starts in the system changed last among those built here, else Night Watch:
+    /// A new design starts in the system changed last among those built here, else Shepherd Design:
     /// no project picks it.
     @Test func aNewDesignStartsInTheLatestSystemBuiltHereElseTheBuiltIn() {
         let older = Self.summary("older", space: Self.app.id, updated: 1)
         let newer = Self.summary("newer", space: Self.web.id, updated: 2)
-        #expect(NewDesignState.defaultSystem(in: [Self.nightWatch, older, newer])?.namespace == "newer")
-        #expect(NewDesignState.defaultSystem(in: [Self.nightWatch])?.namespace == "night-watch")
+        #expect(NewDesignState.defaultSystem(in: [Self.shepherdDesign, older, newer])?.namespace == "newer")
+        #expect(NewDesignState.defaultSystem(in: [Self.shepherdDesign])?.namespace == "shepherd-design")
         #expect(NewDesignState.defaultSystem(in: []) == nil)
         let draft = NewDesignState()
-        #expect(draft.chosenSystem(in: [Self.nightWatch, older, newer])?.namespace == "newer")
+        #expect(draft.chosenSystem(in: [Self.shepherdDesign, older, newer])?.namespace == "newer")
         draft.choose(system: "older")
-        #expect(draft.chosenSystem(in: [Self.nightWatch, older, newer])?.namespace == "older")
+        #expect(draft.chosenSystem(in: [Self.shepherdDesign, older, newer])?.namespace == "older")
         // A pick that is gone reads as the default.
-        #expect(draft.chosenSystem(in: [Self.nightWatch])?.namespace == "night-watch")
+        #expect(draft.chosenSystem(in: [Self.shepherdDesign])?.namespace == "shepherd-design")
     }
 
     // MARK: The sidebar

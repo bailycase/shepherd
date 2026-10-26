@@ -22,7 +22,7 @@ struct ModelPickerTests {
         #expect(ModelCatalog.settingsModels(catalog: nil, current: "", recent: ["gone/model"]).isEmpty)
     }
 
-    private func sections(_ list: NWModelList) -> [String] {
+    private func sections(_ list: SHModelList) -> [String] {
         list.rows.compactMap { if case .header(let title) = $0.kind { title } else { nil } }
     }
 

@@ -3,7 +3,7 @@ import AppKit
 import SwiftUI
 
 /// AppKit lays out selectable code without SwiftUI resolving every syntax run on each chunk.
-struct NWNativeCodeText: NSViewRepresentable {
+struct SHNativeCodeText: NSViewRepresentable {
     let code: String
     let highlighted: AttributedString?
     let scale: CGFloat
@@ -123,7 +123,7 @@ struct NWNativeCodeText: NSViewRepresentable {
         }
         override var intrinsicContentSize: CGSize {
             if let measuredSize { return measuredSize }
-            if !stringValue.isEmpty { NWRenderProbe.tick("layout.codeMeasured") }
+            if !stringValue.isEmpty { SHRenderProbe.tick("layout.codeMeasured") }
             return super.intrinsicContentSize
         }
     }
@@ -141,13 +141,13 @@ struct NWNativeCodeText: NSViewRepresentable {
     }
 
     func updateNSView(_ field: Field, context: Context) {
-        let points = NWTextStyle.code.size * scale
-        let font = NSFont(name: NWFonts.postScriptName(mono: true, weight: .regular), size: points)
+        let points = SHTextStyle.code.size * scale
+        let font = NSFont(name: SHFonts.postScriptName(mono: true, weight: .regular), size: points)
             ?? .monospacedSystemFont(ofSize: points, weight: .regular)
         // Resize and hover updates keep the same text. Read the theme before comparing so a
         // palette change still invalidates the native attributes; appearance is dynamic.
         let content = Content(code: code, highlighted: highlighted, font: font, lineSpacing: lineSpacing,
-                              foreground: Color.nw.textPrimary)
+                              foreground: Color.sh.textPrimary)
         let value = cache.value(for: content)
         // AppKit measures outside SwiftUI's sizing hook too. Invalidate for new content/font,
         // but reuse a known non-wrapping size even when AppKit asks for it directly.
@@ -168,11 +168,11 @@ struct NWNativeCodeText: NSViewRepresentable {
 
     static func attributedCode(_ code: String, highlighted: AttributedString?, font: NSFont,
                                lineSpacing: CGFloat) -> NSAttributedString {
-        NWRenderProbe.tick("thread.codeAttributes")
+        SHRenderProbe.tick("thread.codeAttributes")
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = lineSpacing
         paragraph.lineBreakMode = .byClipping
-        let base: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor(Color.nw.textPrimary),
+        let base: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor(Color.sh.textPrimary),
                                                   .paragraphStyle: paragraph]
         if let highlighted, let text = syntaxCode(highlighted, base: base) { return text }
         let text = highlighted.map { NSMutableAttributedString(attributedString: NSAttributedString($0)) }

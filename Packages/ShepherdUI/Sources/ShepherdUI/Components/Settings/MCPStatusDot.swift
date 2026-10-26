@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Settings ▸ MCP servers' own measures (SettingsMCP, MCPStates).
-public enum NWMCPMetrics {
+public enum SHMCPMetrics {
     public static let dotSize: CGFloat = 7
     public static let dotStroke: CGFloat = 1.5
     /// An off server's row fades to this.
@@ -71,21 +71,21 @@ public struct MCPStatusDot: View {
     let state: MCPDotState
     let size: CGFloat
 
-    public init(_ state: MCPDotState, size: CGFloat = NWMCPMetrics.dotSize) {
+    public init(_ state: MCPDotState, size: CGFloat = SHMCPMetrics.dotSize) {
         self.state = state
         self.size = size
     }
 
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         Group {
             switch state {
-            case .connected: Circle().fill(nw.done)
-            case .starting: Circle().fill(nw.running)
-            case .needsYou: Circle().fill(nw.lantern)
-            case .error: Circle().fill(nw.failed)
-            case .idle: Circle().strokeBorder(nw.textTertiary, lineWidth: NWMCPMetrics.dotStroke)
-            case .off: Circle().strokeBorder(nw.lineStrong, lineWidth: NWMCPMetrics.dotStroke)
+            case .connected: Circle().fill(sh.done)
+            case .starting: Circle().fill(sh.running)
+            case .needsYou: Circle().fill(sh.lantern)
+            case .error: Circle().fill(sh.failed)
+            case .idle: Circle().strokeBorder(sh.textTertiary, lineWidth: SHMCPMetrics.dotStroke)
+            case .off: Circle().strokeBorder(sh.lineStrong, lineWidth: SHMCPMetrics.dotStroke)
             }
         }
         .frame(width: size, height: size)

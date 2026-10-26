@@ -5,10 +5,10 @@ import ShepherdProtocol
 import ShepherdUI
 @testable import ShepherdApp
 
-/// Night Watch as a built-in design system: generated from ShepherdUI's tokens, complete for
+/// Shepherd Design as a built-in design system: generated from ShepherdUI's tokens, complete for
 /// every role in both variants, and a system a design can install as it is.
-@Suite("Night Watch design system")
-struct NightWatchSystemTests {
+@Suite("Shepherd Design design system")
+struct ShepherdDesignSystemTests {
     /// A variant's roles as their Codable keys (read apart from the generator, which walks the
     /// struct): role → hex.
     static func roles<T: Encodable>(_ value: T) throws -> [String: String] {
@@ -17,8 +17,8 @@ struct NightWatchSystemTests {
     }
 
     @Test func everyColorRoleIsATokenWithItsLightAndDarkValue() throws {
-        let theme = ThemeDefinition.nightWatch
-        let tokens = NightWatchSystem.tokens(theme)
+        let theme = ThemeDefinition.shepherdDesign
+        let tokens = ShepherdDesignSystem.tokens(theme)
         let byName = Dictionary(uniqueKeysWithValues: tokens.colors.map { ($0.name, $0) })
         let groups: [(prefix: String, light: [String: String], dark: [String: String])] = [
             ("", try Self.roles(theme.light.colors), try Self.roles(theme.dark.colors)),
@@ -29,7 +29,7 @@ struct NightWatchSystemTests {
             #expect(Set(group.light.keys) == Set(group.dark.keys))
             for (role, light) in group.light {
                 expected += 1
-                let token = try #require(byName["--" + group.prefix + NightWatchSystem.kebab(role)], "no token for \(role)")
+                let token = try #require(byName["--" + group.prefix + ShepherdDesignSystem.kebab(role)], "no token for \(role)")
                 #expect(token.value == light && token.dark == group.dark[role], "\(role)")
             }
         }
@@ -38,27 +38,27 @@ struct NightWatchSystemTests {
     }
 
     @Test func theRampAndScalesAreShepherdsOwn() {
-        let tokens = NightWatchSystem.tokens()
-        #expect(tokens.type.map(\.name) == NWTextStyle.allCases.map { "\($0)" })
-        for style in NWTextStyle.allCases {
+        let tokens = ShepherdDesignSystem.tokens()
+        #expect(tokens.type.map(\.name) == SHTextStyle.allCases.map { "\($0)" })
+        for style in SHTextStyle.allCases {
             let token = tokens.type.first { $0.name == "\(style)" }
             #expect(token?.size == Double(style.size) && token?.lineHeight == Double(style.lineHeight))
-            #expect(token?.family == (style.isMonospaced ? NWFonts.monoFamily : NWFonts.sansFamily))
+            #expect(token?.family == (style.isMonospaced ? SHFonts.monoFamily : SHFonts.sansFamily))
         }
         #expect(tokens.type.first { $0.name == "display" }?.weight == 600 && tokens.type.first { $0.name == "body" }?.weight == 400)
-        #expect(tokens.spacing.map(\.px) == [NW.Space.xxs, NW.Space.xs, NW.Space.s, NW.Space.m, NW.Space.l, NW.Space.xl,
-                                             NW.Space.xxl, NW.Space.xxxl].map(Double.init))
-        #expect(tokens.radii.map(\.px) == [NW.Radius.xs, NW.Radius.s, NW.Radius.m, NW.Radius.l].map(Double.init))
-        #expect(tokens.fonts.map(\.family) == [NWFonts.sansFamily, NWFonts.monoFamily])
+        #expect(tokens.spacing.map(\.px) == [SH.Space.xxs, SH.Space.xs, SH.Space.s, SH.Space.m, SH.Space.l, SH.Space.xl,
+                                             SH.Space.xxl, SH.Space.xxxl].map(Double.init))
+        #expect(tokens.radii.map(\.px) == [SH.Radius.xs, SH.Radius.s, SH.Radius.m, SH.Radius.l].map(Double.init))
+        #expect(tokens.fonts.map(\.family) == [SHFonts.sansFamily, SHFonts.monoFamily])
     }
 
     @Test func theBuiltInIsASoundSystemADesignCanInstall() throws {
-        let builtIn = NightWatchSystem.builtIn()
-        #expect(builtIn.info.namespace == "night-watch" && builtIn.info.title == "Night Watch")
+        let builtIn = ShepherdDesignSystem.builtIn()
+        #expect(builtIn.info.namespace == "shepherd-design" && builtIn.info.title == "Shepherd Design")
         #expect(Set(builtIn.files.keys) == [DesignSystemFile.tokens, DesignSystemFile.stylesheet, DesignSystemFile.readme])
         #expect(builtIn.files.keys.allSatisfy(DesignSystemFile.isPath))
         let tokens = try DesignSystemTokens.decode(try #require(builtIn.files[DesignSystemFile.tokens]))
-        #expect(tokens == NightWatchSystem.tokens() && tokens.problems().isEmpty)
+        #expect(tokens == ShepherdDesignSystem.tokens() && tokens.problems().isEmpty)
         let css = String(decoding: try #require(builtIn.files[DesignSystemFile.stylesheet]), as: UTF8.self)
         let declared = DesignSystemCSS.declarations(css, file: "tokens.css")
         // Every color twice (light, then dark), and every step once.
@@ -67,6 +67,6 @@ struct NightWatchSystemTests {
         }
         #expect(declared.contains { $0.name == "--space-xl" && $0.value == "16px" })
         let readme = String(decoding: try #require(builtIn.files[DesignSystemFile.readme]), as: UTF8.self)
-        #expect(readme.contains("ds/night-watch/tokens.css") && readme.contains("data-theme=\"dark\""))
+        #expect(readme.contains("ds/shepherd-design/tokens.css") && readme.contains("data-theme=\"dark\""))
     }
 }

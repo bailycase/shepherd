@@ -62,7 +62,7 @@ struct ComposerCaretTests {
         #expect(editor.selectedRange() == NSRange(location: draft.text.utf16.count, length: 0))
     }
 
-    /// ⇧↩ and ⌥↩ reach the field through `NWReturnKey.insertLineBreak(in:)`, the call the composer's
+    /// ⇧↩ and ⌥↩ reach the field through `SHReturnKey.insertLineBreak(in:)`, the call the composer's
     /// key handler makes with the field editor holding the keyboard. Nothing here posts a key event.
     /// A SwiftUI field editor answers ↩ and ⇧↩ (`insertNewline:`) with no line at all, so the
     /// handler adds the line itself, at the caret or over a selection, and never sends.
@@ -85,7 +85,7 @@ struct ComposerCaretTests {
         let sent = store.sentCount
         editor.setSelectedRange(NSRange(location: 6, length: selectionLength))
 
-        #expect(NWReturnKey.insertLineBreak(in: editor))
+        #expect(SHReturnKey.insertLineBreak(in: editor))
 
         let expected = selectionLength == 0 ? "before\nafter" : "before\n"
         try await eventuallyOnMain("the line break to reach the draft") {
@@ -114,7 +114,7 @@ struct ComposerCaretTests {
         #expect(editor.hasMarkedText())
         let before = editor.string
 
-        #expect(!NWReturnKey.insertLineBreak(in: editor))
+        #expect(!SHReturnKey.insertLineBreak(in: editor))
         #expect(editor.string == before)
     }
 
@@ -139,7 +139,7 @@ struct ComposerCaretTests {
         let editor = try #require(found)
         editor.setSelectedRange(NSRange(location: 6, length: 0))
 
-        #expect(NWReturnKey.insertLineBreak(in: editor))
+        #expect(SHReturnKey.insertLineBreak(in: editor))
 
         try await eventuallyOnMain("the line break to reach the prompt") {
             window.layout()

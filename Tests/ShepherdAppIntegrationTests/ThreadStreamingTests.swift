@@ -29,13 +29,13 @@ struct ThreadStreamingTests {
         ListPerf.settle(window)
 
         let adoptions = Adoptions(store)
-        NWRenderProbe.start()
+        SHRenderProbe.start()
         FileManager.default.createFile(atPath: app.dir.appendingPathComponent("continue-1").path, contents: nil)
         try await eventuallyOnMain("the reply to pause in its tool call", timeout: .seconds(30)) {
             Self.streamed(store).contains { $0.toolName == "bash" && $0.role != "assistant" }
         }
         ListPerf.settle(window)
-        let counts = NWRenderProbe.stop()
+        let counts = SHRenderProbe.stop()
         adoptions.stop()
 
         #expect(adoptions.count >= 1)

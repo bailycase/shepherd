@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The side pane's and the branch chip's fixed measures (PaneStates, Main boards).
-public enum NWSidePaneMetrics {
+public enum SHSidePaneMetrics {
     /// Narrower than this, the tab strip drops its labels; glyphs, counts and dots stay.
     public static let labelsMinWidth: CGFloat = 480
     /// The dot on a tab pi opened something in, and on the header button.
@@ -31,7 +31,7 @@ public enum NWSidePaneMetrics {
 /// checkout reads "⌂ chore/remove-homarr your checkout ●11" in lantern, since pi edits your
 /// files there. The count is files changed in that checkout (left out at zero), and a remote
 /// host trails it ("▭ horizon").
-public struct NWBranchChip: View {
+public struct SHBranchChip: View {
     public enum Kind: Equatable, Sendable {
         case worktree, checkout
     }
@@ -51,53 +51,53 @@ public struct NWBranchChip: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let checkout = kind == .checkout
-        HStack(spacing: NW.Space.s) {
+        HStack(spacing: SH.Space.s) {
             Image(systemName: checkout ? "house" : "square.on.square")
-                .font(.system(size: NWSidePaneMetrics.chipGlyph, weight: .medium))
-                .foregroundStyle(checkout ? nw.lanternText : nw.textSecondary)
+                .font(.system(size: SHSidePaneMetrics.chipGlyph, weight: .medium))
+                .foregroundStyle(checkout ? sh.lanternText : sh.textSecondary)
             Text(branch)
-                .font(.nw(.mono))
-                .foregroundStyle(checkout ? nw.lanternText : nw.textPrimary)
+                .font(.sh(.mono))
+                .foregroundStyle(checkout ? sh.lanternText : sh.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .layoutPriority(-1)
             if checkout {
                 Text("your checkout")
-                    .font(.nwSans(NWSidePaneMetrics.chipLabelSize))
-                    .foregroundStyle(nw.lanternText)
+                    .font(.shSans(SHSidePaneMetrics.chipLabelSize))
+                    .foregroundStyle(sh.lanternText)
                     .lineLimit(1)
                     .fixedSize()
             }
             if changedFiles > 0 {
                 Text("●\(changedFiles)")
-                    .font(.nw(.micro, weight: .regular))
-                    .foregroundStyle(nw.lanternText)
+                    .font(.sh(.micro, weight: .regular))
+                    .foregroundStyle(sh.lanternText)
                     .fixedSize()
-                    .nwContentTransition(.numeric())
+                    .shContentTransition(.numeric())
             }
             if let host {
-                HStack(spacing: NW.Space.xxs) {
+                HStack(spacing: SH.Space.xxs) {
                     Image(systemName: "display")
-                        .font(.system(size: NWSidePaneMetrics.chipHostGlyph))
+                        .font(.system(size: SHSidePaneMetrics.chipHostGlyph))
                     Text(host).lineLimit(1)
                 }
-                .font(.nwSans(NWSidePaneMetrics.chipHostSize))
-                .foregroundStyle(nw.textTertiary)
+                .font(.shSans(SHSidePaneMetrics.chipHostSize))
+                .foregroundStyle(sh.textTertiary)
                 .fixedSize()
             }
             if showsChevron {
                 Image(systemName: "chevron.down")
-                    .font(.system(size: NWSidePaneMetrics.chipChevron, weight: .semibold))
-                    .foregroundStyle(checkout ? nw.lanternText : nw.textTertiary)
+                    .font(.system(size: SHSidePaneMetrics.chipChevron, weight: .semibold))
+                    .foregroundStyle(checkout ? sh.lanternText : sh.textTertiary)
             }
         }
-        .padding(.horizontal, NW.Space.m)
-        .frame(height: NW.Height.controlS)
-        .background(checkout ? nw.lanternTint : .clear, in: RoundedRectangle(cornerRadius: NW.Radius.s))
-        .nwBorder(checkout ? nw.lantern : nw.lineStrong, radius: NW.Radius.s)
-        .contentShape(RoundedRectangle(cornerRadius: NW.Radius.s))
+        .padding(.horizontal, SH.Space.m)
+        .frame(height: SH.Height.controlS)
+        .background(checkout ? sh.lanternTint : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+        .shBorder(checkout ? sh.lantern : sh.lineStrong, radius: SH.Radius.s)
+        .contentShape(RoundedRectangle(cornerRadius: SH.Radius.s))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Self.accessibilityLabel(kind: kind, branch: branch, changedFiles: changedFiles, host: host))
     }
@@ -116,7 +116,7 @@ public struct NWBranchChip: View {
 /// hides the pane, lit while it shows. When pi opens something for the pane while it is closed,
 /// the button takes an 8pt running dot instead of the pane opening, and a tip under it says what
 /// ("Agent opened a review in Changes ⇧⌘B") for a few seconds, and again while it is hovered.
-public struct NWSidePaneButton: View {
+public struct SHSidePaneButton: View {
     let isOn: Bool
     let news: String?
     let shortcut: String?
@@ -134,23 +134,23 @@ public struct NWSidePaneButton: View {
     public var body: some View {
         let label = isOn ? "Hide side pane" : "Show side pane"
         Button(action: action) { Image(systemName: "sidebar.right") }
-            .buttonStyle(.nwIcon(isOn: isOn))
-            .overlay(alignment: .topTrailing) { NWToggleBadge(visible: news != nil) }
-            .nwHelp(news.map { "\(label) · \($0)" } ?? label, shortcut: shortcut)
+            .buttonStyle(.shIcon(isOn: isOn))
+            .overlay(alignment: .topTrailing) { SHToggleBadge(visible: news != nil) }
+            .shHelp(news.map { "\(label) · \($0)" } ?? label, shortcut: shortcut)
             .accessibilityLabel(label)
             .accessibilityValue(news ?? "")
             .accessibilityAddTraits(isOn ? .isSelected : [])
             .onHover { hovering = $0 }
             .overlay(alignment: .topTrailing) {
                 if let news, tipShown || hovering {
-                    NWPaneNewsTip(news, shortcut: shortcut)
+                    SHPaneNewsTip(news, shortcut: shortcut)
                         .fixedSize()
-                        .offset(y: NW.Height.controlM + NW.Space.s)
+                        .offset(y: SH.Height.controlM + SH.Space.s)
                         .allowsHitTesting(false)
-                        .nwTransition(.overlay, edge: .top)
+                        .shTransition(.overlay, edge: .top)
                 }
             }
-            .nwAnimation(.overlay, value: tipShown || hovering)
+            .shAnimation(.overlay, value: tipShown || hovering)
             // Each new thing pi opens shows the tip for a moment.
             .task(id: news) {
                 guard news != nil else { tipShown = false; return }
@@ -163,7 +163,7 @@ public struct NWSidePaneButton: View {
 
 /// What pi opened, under the header button or a tab (PaneStates): a raised card with a glyph,
 /// the sentence, and the pane's chord as keycaps.
-public struct NWPaneNewsTip: View {
+public struct SHPaneNewsTip: View {
     let text: String
     let shortcut: String?
 
@@ -173,31 +173,31 @@ public struct NWPaneNewsTip: View {
     }
 
     public var body: some View {
-        HStack(spacing: NW.Space.m) {
+        HStack(spacing: SH.Space.m) {
             Image(systemName: "sparkles")
-                .font(.system(size: NWSidePaneMetrics.chipGlyph))
-                .foregroundStyle(Color.nw.textSecondary)
+                .font(.system(size: SHSidePaneMetrics.chipGlyph))
+                .foregroundStyle(Color.sh.textSecondary)
             Text(text)
-                .font(.nw(.caption))
-                .foregroundStyle(Color.nw.textPrimary)
+                .font(.sh(.caption))
+                .foregroundStyle(Color.sh.textPrimary)
                 .lineLimit(1)
-            if let shortcut { NWKeycap(shortcut) }
+            if let shortcut { SHKeycap(shortcut) }
         }
-        .padding(.horizontal, NW.Space.m)
-        .padding(.vertical, NW.Space.xs)
-        .frame(maxWidth: NWSidePaneMetrics.tipWidth, alignment: .leading)
-        .padding(NW.Space.xs)
-        .nwPopover(radius: NW.Radius.l)
+        .padding(.horizontal, SH.Space.m)
+        .padding(.vertical, SH.Space.xs)
+        .frame(maxWidth: SHSidePaneMetrics.tipWidth, alignment: .leading)
+        .padding(SH.Space.xs)
+        .shPopover(radius: SH.Radius.l)
     }
 }
 
 // MARK: Tab strip
 
 /// The strip's own coordinate space, so a tab knows where it sits when its tip hangs from it.
-private let nwSidePaneTabsSpace = "nw-side-pane-tabs"
+private let shSidePaneTabsSpace = "sh-side-pane-tabs"
 
 /// One tab of the side pane's strip.
-public struct NWSidePaneTab: Identifiable, Equatable, Sendable {
+public struct SHSidePaneTab: Identifiable, Equatable, Sendable {
     public let id: String
     public let title: String
     public let systemImage: String
@@ -212,10 +212,10 @@ public struct NWSidePaneTab: Identifiable, Equatable, Sendable {
     public let shortcut: String?
     /// What pi opened there, said briefly under the tab while it is news ("Agent opened
     /// localhost:5173/checkout"); nil says nothing.
-    public let tip: NWSidePaneTabTip?
+    public let tip: SHSidePaneTabTip?
 
     public init(id: String, title: String, systemImage: String, count: Int? = nil, news: Bool = false, status: AgentState? = nil,
-                shortcut: String? = nil, tip: NWSidePaneTabTip? = nil) {
+                shortcut: String? = nil, tip: SHSidePaneTabTip? = nil) {
         self.id = id
         self.title = title
         self.systemImage = systemImage
@@ -231,8 +231,8 @@ public struct NWSidePaneTab: Identifiable, Equatable, Sendable {
 /// toolbar, tabs 2pt apart, then the pane's ⋯ menu and close. A tab is 28pt: its glyph, its
 /// label, and its count; the current one on `bgSelected`, semibold. A tab pi opened something
 /// in carries a 6pt running dot. Under 480pt the labels drop; glyphs, counts and dots stay.
-public struct NWSidePaneTabs<Options: View>: View {
-    let tabs: [NWSidePaneTab]
+public struct SHSidePaneTabs<Options: View>: View {
+    let tabs: [SHSidePaneTab]
     let selection: String
     let select: (String) -> Void
     let closeShortcut: String?
@@ -244,7 +244,7 @@ public struct NWSidePaneTabs<Options: View>: View {
     @State private var showsLabels = true
     @State private var stripWidth: CGFloat = 0
 
-    public init(_ tabs: [NWSidePaneTab], selection: String, select: @escaping (String) -> Void,
+    public init(_ tabs: [SHSidePaneTab], selection: String, select: @escaping (String) -> Void,
                 closeShortcut: String? = nil, close: @escaping () -> Void, restore: (() -> Void)? = nil,
                 @ViewBuilder options: @escaping () -> Options) {
         self.tabs = tabs
@@ -257,39 +257,39 @@ public struct NWSidePaneTabs<Options: View>: View {
     }
 
     public var body: some View {
-        HStack(spacing: NW.Space.xxs) {
+        HStack(spacing: SH.Space.xxs) {
             ForEach(tabs) { tab in
                 TabButton(tab: tab, isSelected: tab.id == selection, showsLabel: showsLabels, stripWidth: stripWidth) { select(tab.id) }
             }
-            Spacer(minLength: NW.Space.m)
-            HStack(spacing: NW.Space.xs) {
+            Spacer(minLength: SH.Space.m)
+            HStack(spacing: SH.Space.xs) {
                 if let restore {
                     Button(action: restore) { Image(systemName: "arrow.down.right.and.arrow.up.left") }
-                        .buttonStyle(.nwIcon(bordered: true))
-                        .nwHelp("Restore the thread")
+                        .buttonStyle(.shIcon(bordered: true))
+                        .shHelp("Restore the thread")
                         .accessibilityLabel("Restore the thread")
                 }
-                NWOptionsMenu("Pane options", content: options)
+                SHOptionsMenu("Pane options", content: options)
                 Button(action: close) { Image(systemName: "xmark") }
-                    .buttonStyle(.nwIcon)
-                    .nwHelp("Hide side pane", shortcut: closeShortcut)
+                    .buttonStyle(.shIcon)
+                    .shHelp("Hide side pane", shortcut: closeShortcut)
                     .accessibilityLabel("Hide side pane")
             }
         }
-        .padding(.horizontal, NWSidePaneMetrics.tabPadding)
-        .frame(height: NWToolbarMetrics.height)
+        .padding(.horizontal, SHSidePaneMetrics.tabPadding)
+        .frame(height: SHToolbarMetrics.height)
         .frame(maxWidth: .infinity)
-        .background(Color.nw.bgWindow)
-        .overlay(alignment: .bottom) { NWHairline() }
-        .onGeometryChange(for: Bool.self) { NWSidePaneMetrics.showsLabels(width: $0.size.width) } action: { showsLabels = $0 }
+        .background(Color.sh.bgWindow)
+        .overlay(alignment: .bottom) { SHHairline() }
+        .onGeometryChange(for: Bool.self) { SHSidePaneMetrics.showsLabels(width: $0.size.width) } action: { showsLabels = $0 }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { stripWidth = $0 }
-        .coordinateSpace(.named(nwSidePaneTabsSpace))
+        .coordinateSpace(.named(shSidePaneTabsSpace))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Side pane tabs")
     }
 
     private struct TabButton: View {
-        let tab: NWSidePaneTab
+        let tab: SHSidePaneTab
         let isSelected: Bool
         let showsLabel: Bool
         let stripWidth: CGFloat
@@ -300,68 +300,68 @@ public struct NWSidePaneTabs<Options: View>: View {
 
         /// The tip hangs from the tab, moved left when the strip is too narrow for it to fit.
         private var tipShift: CGFloat {
-            -min(minX, max(0, minX + NWBrowserAgentMetrics.tabTipWidth + NW.Space.m - stripWidth))
+            -min(minX, max(0, minX + SHBrowserAgentMetrics.tabTipWidth + SH.Space.m - stripWidth))
         }
 
         var body: some View {
-            let nw = Color.nw
+            let sh = Color.sh
             Button(action: action) {
-                HStack(spacing: NW.Space.s) {
+                HStack(spacing: SH.Space.s) {
                     Image(systemName: tab.systemImage)
-                        .font(.system(size: NWSidePaneMetrics.tabGlyph, weight: .medium))
+                        .font(.system(size: SHSidePaneMetrics.tabGlyph, weight: .medium))
                     if showsLabel {
                         Text(tab.title)
-                            .font(.nw(.ui, weight: isSelected ? .semibold : .medium))
+                            .font(.sh(.ui, weight: isSelected ? .semibold : .medium))
                             .lineLimit(1)
                     }
                     if let count = tab.count {
                         Text("\(count)")
-                            .font(.nw(.micro, weight: .regular))
-                            .foregroundStyle(nw.textTertiary)
-                            .nwContentTransition(.numeric())
+                            .font(.sh(.micro, weight: .regular))
+                            .foregroundStyle(sh.textTertiary)
+                            .shContentTransition(.numeric())
                     }
                     if tab.news {
-                        Circle().fill(nw.running)
-                            .frame(width: NWSidePaneMetrics.tabDot, height: NWSidePaneMetrics.tabDot)
+                        Circle().fill(sh.running)
+                            .frame(width: SHSidePaneMetrics.tabDot, height: SHSidePaneMetrics.tabDot)
                             .accessibilityHidden(true)
                     }
                     if let status = tab.status {
                         Circle().fill(status.color)
-                            .frame(width: NWSidePaneMetrics.tabDot, height: NWSidePaneMetrics.tabDot)
+                            .frame(width: SHSidePaneMetrics.tabDot, height: SHSidePaneMetrics.tabDot)
                             .accessibilityHidden(true)
                     }
                 }
-                .foregroundStyle(isSelected || hovering ? nw.textPrimary : nw.textSecondary)
-                .padding(.horizontal, showsLabel ? NWSidePaneMetrics.tabPadding : NWSidePaneMetrics.narrowTabPadding)
-                .frame(height: NW.Height.controlM)
-                .background(isSelected ? nw.bgSelected : hovering ? nw.bgHover : .clear,
-                            in: RoundedRectangle(cornerRadius: NW.Radius.s))
-                .contentShape(RoundedRectangle(cornerRadius: NW.Radius.s))
+                .foregroundStyle(isSelected || hovering ? sh.textPrimary : sh.textSecondary)
+                .padding(.horizontal, showsLabel ? SHSidePaneMetrics.tabPadding : SHSidePaneMetrics.narrowTabPadding)
+                .frame(height: SH.Height.controlM)
+                .background(isSelected ? sh.bgSelected : hovering ? sh.bgHover : .clear,
+                            in: RoundedRectangle(cornerRadius: SH.Radius.s))
+                .contentShape(RoundedRectangle(cornerRadius: SH.Radius.s))
             }
             .buttonStyle(.plain)
             .onHover { hovering = $0 }
-            .nwAnimation(.hover, value: hovering)
-            .nwHelp(tab.title, shortcut: tab.shortcut)
+            .shAnimation(.hover, value: hovering)
+            .shHelp(tab.title, shortcut: tab.shortcut)
             .accessibilityLabel(tab.title)
             .accessibilityValue([tab.count.map { "\($0)" }, tab.news ? "the agent opened something" : nil, tab.status?.label]
                 .compactMap { $0 }.joined(separator: ", "))
             .accessibilityAddTraits(isSelected ? .isSelected : [])
             .overlay(alignment: .topLeading) {
                 if tab.news, let tip = tab.tip, tipShown || hovering {
-                    NWPaneTabTip(tip)
+                    SHPaneTabTip(tip)
                         .fixedSize()
-                        .offset(x: tipShift, y: NWToolbarMetrics.height - (NWToolbarMetrics.height - NW.Height.controlM) / 2 + NW.Space.s)
+                        .offset(x: tipShift, y: SHToolbarMetrics.height - (SHToolbarMetrics.height - SH.Height.controlM) / 2 + SH.Space.s)
                         .allowsHitTesting(false)
-                        .nwTransition(.overlay, edge: .top)
+                        .shTransition(.overlay, edge: .top)
                 }
             }
-            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(nwSidePaneTabsSpace)).minX } action: { minX = $0 }
-            .nwAnimation(.overlay, value: tab.news && (tipShown || hovering))
+            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(shSidePaneTabsSpace)).minX } action: { minX = $0 }
+            .shAnimation(.overlay, value: tab.news && (tipShown || hovering))
             // Each new thing pi opens shows the tip for a moment.
             .task(id: tab.news ? tab.tip : nil) {
                 guard tab.news, tab.tip != nil else { tipShown = false; return }
                 tipShown = true
-                try? await Task.sleep(for: .seconds(NWBrowserAgentMetrics.tabTipSeconds))
+                try? await Task.sleep(for: .seconds(SHBrowserAgentMetrics.tabTipSeconds))
                 if !Task.isCancelled { tipShown = false }
             }
         }
@@ -372,7 +372,7 @@ public struct NWSidePaneTabs<Options: View>: View {
 /// The maximized side pane's rail (ChangesWide), in place of the sidebar and the toolbar: 52pt on
 /// `bgBase` with a `lineStrong` edge, the window controls stacked at its top (while the window
 /// has them: not in full screen), then Back to the thread, a 32pt bordered circle.
-public struct NWSidePaneRail: View {
+public struct SHSidePaneRail: View {
     public enum Metrics {
         public static let width: CGFloat = 52
         public static let topPadding: CGFloat = 14
@@ -382,12 +382,12 @@ public struct NWSidePaneRail: View {
         public static let buttonSize: CGFloat = 32
     }
 
-    let windowControls: NWWindowControls?
+    let windowControls: SHWindowControls?
     let backShortcut: String?
     let back: () -> Void
 
     /// `windowControls` nil in full screen, where the window has none.
-    public init(windowControls: NWWindowControls?, backShortcut: String? = nil, back: @escaping () -> Void) {
+    public init(windowControls: SHWindowControls?, backShortcut: String? = nil, back: @escaping () -> Void) {
         self.windowControls = windowControls
         self.backShortcut = backShortcut
         self.back = back
@@ -402,23 +402,23 @@ public struct NWSidePaneRail: View {
             Button(action: back) {
                 Image(systemName: "text.bubble").font(.system(size: 14, weight: .regular))
             }
-            .buttonStyle(.nwIcon(bordered: true, size: Metrics.buttonSize))
-            .nwHelp("Back to the thread", shortcut: backShortcut)
+            .buttonStyle(.shIcon(bordered: true, size: Metrics.buttonSize))
+            .shHelp("Back to the thread", shortcut: backShortcut)
             .accessibilityLabel("Back to the thread")
             Spacer(minLength: 0)
         }
         .padding(.top, Metrics.topPadding)
         .frame(width: Metrics.width)
         .frame(maxHeight: .infinity)
-        .background(Color.nw.bgBase)
-        .overlay(alignment: .trailing) { NWHairline(.vertical, color: .nw.lineStrong) }
+        .background(Color.sh.bgBase)
+        .overlay(alignment: .trailing) { SHHairline(.vertical, color: .sh.lineStrong) }
     }
 }
 
 /// The window's close, minimize and zoom, stacked (ChangesWide's rail): 12pt circles 6pt apart
 /// in macOS's colors, gray while the window is inactive, each showing its glyph while the group
 /// is hovered, as the system's do.
-public struct NWWindowControls: View {
+public struct SHWindowControls: View {
     public static let size: CGFloat = 12
     public static let spacing: CGFloat = 6
 
@@ -435,11 +435,11 @@ public struct NWWindowControls: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         VStack(spacing: Self.spacing) {
-            control(nw.windowClose, glyph: "xmark", label: "Close", action: close)
-            control(nw.windowMinimize, glyph: "minus", label: "Minimize", action: minimize)
-            control(nw.windowZoom, glyph: "plus", label: "Zoom", action: zoom)
+            control(sh.windowClose, glyph: "xmark", label: "Close", action: close)
+            control(sh.windowMinimize, glyph: "minus", label: "Minimize", action: minimize)
+            control(sh.windowZoom, glyph: "plus", label: "Zoom", action: zoom)
         }
         .onHover { hovering = $0 }
         .accessibilityElement(children: .contain)
@@ -449,13 +449,13 @@ public struct NWWindowControls: View {
         let active = activeState == .key || activeState == .active || hovering
         return Button(action: action) {
             Circle()
-                .fill(active ? color : Color.nw.lineStrong)
+                .fill(active ? color : Color.sh.lineStrong)
                 .frame(width: Self.size, height: Self.size)
                 .overlay {
                     if hovering {
                         Image(systemName: glyph)
                             .font(.system(size: 7, weight: .bold))
-                            .foregroundStyle(Color.nw.windowControlGlyph)
+                            .foregroundStyle(Color.sh.windowControlGlyph)
                     }
                 }
                 .contentShape(Circle())

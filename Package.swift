@@ -16,7 +16,7 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "Vendor/libghostty-spm"),
-        // Night Watch, the design system: its own package (see Packages/ShepherdUI).
+        // Shepherd Design, the design system: its own package (see Packages/ShepherdUI).
         .package(path: "Packages/ShepherdUI"),
         .package(url: "https://github.com/migueldeicaza/SwiftTerm", from: "1.18.0"),
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),

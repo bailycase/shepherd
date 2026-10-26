@@ -41,11 +41,11 @@ struct ThreadControlsPreviewTests {
             NewThreadPage(vm: vm, chrome: PageHeaderChrome())
         }
         try await Preview.renderMatrix("standalone-place-menu", size: CGSize(width: 380, height: 260)) {
-            NWPlaceMenu(sections: NewThreadPlaces.sections(NewThreadState.hosts(vm), chosen: vm.newThread.place), worktree: nil,
+            SHPlaceMenu(sections: NewThreadPlaces.sections(NewThreadState.hosts(vm), chosen: vm.newThread.place), worktree: nil,
                         onChoose: { _ in }, onAdd: { _ in }, onWorktree: { _ in }, onClose: {}) { _ in EmptyView() }
-                .padding(NW.Space.l)
+                .padding(SH.Space.l)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .background(Color.nw.bgWindow)
+                .background(Color.sh.bgWindow)
         }
     }
 
@@ -90,9 +90,9 @@ struct ThreadControlsPreviewTests {
             try await Preview.render(scale == 1 ? surface : "\(surface)-x1.3", size: CGSize(width: 380, height: 460),
                                      untilGone: "Reading branches", showing: settled) {
                 WorktreeBasePicker(vm: workspace.vm, repo: dir.path, selected: repo ? "agent/in-a-worktree" : nil, query: query, choose: { _ in }, close: {})
-                    .padding(NW.Space.l)
+                    .padding(SH.Space.l)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .background(Color.nw.bgWindow)
+                    .background(Color.sh.bgWindow)
             }
         }
     }
@@ -109,14 +109,14 @@ struct ThreadControlsPreviewTests {
         draft.worktree = true
         draft.worktreeBase = base == "Default" ? nil : base
         try await Preview.renderMatrix(surface, size: CGSize(width: 360, height: 260)) {
-            NWPlaceMenu(sections: NewThreadPlaces.sections(NewThreadState.hosts(workspace.vm), chosen: draft.place),
-                        worktree: NWPlaceWorktree(isOn: draft.worktree,
+            SHPlaceMenu(sections: NewThreadPlaces.sections(NewThreadState.hosts(workspace.vm), chosen: draft.place),
+                        worktree: SHPlaceWorktree(isOn: draft.worktree,
                                                  caption: NewThreadRules.worktreeCaption(base: draft.worktreeBase ?? ""),
                                                  base: draft.worktreeBase ?? "Default"),
                         onChoose: { _ in }, onAdd: { _ in }, onWorktree: { draft.worktree = $0 }, onChooseBase: {}, onClose: {}) { _ in EmptyView() }
-                .padding(NW.Space.l)
+                .padding(SH.Space.l)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .background(Color.nw.bgWindow)
+                .background(Color.sh.bgWindow)
         }
     }
 }

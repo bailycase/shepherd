@@ -122,13 +122,13 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
                             .frame(width: paneWidth, height: geo.size.height)
                             .clipped()
                     }
-                    .nwFloatBackground(Color.nw.bgWindow, floating: !docked && !covers)
+                    .shFloatBackground(Color.sh.bgWindow, floating: !docked && !covers)
                     .offset(x: covers ? 0 : max(0, total - layout.width - AppLayout.dividerWidth))
-                    .nwTransition(.pane, edge: .trailing)
+                    .shTransition(.pane, edge: .trailing)
                 }
             }
-            .nwAnimation(.pane, value: showPane)
-            .nwAnimation(.pane, value: covers)
+            .shAnimation(.pane, value: showPane)
+            .shAnimation(.pane, value: covers)
         }
         .coordinateSpace(.named("right-pane"))
     }
@@ -136,7 +136,7 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
     /// The pane's leading edge and drag handle (adjustable with VoiceOver); a double-click takes
     /// the pane to half the column.
     private func handle(total: CGFloat, width: CGFloat) -> some View {
-        Color.nw.lineSubtle
+        Color.sh.lineSubtle
             .frame(width: AppLayout.dividerWidth)
             .overlay {
                 Color.clear
@@ -196,7 +196,7 @@ enum RightPaneShowing: Hashable {
 /// The side pane's content. The inspector and the tabs share the slot: when one replaces the
 /// other, the inspector steps to another run, or a new review replaces one, the content
 /// cross-fades (`.content`) while the pane itself stays put. Give each child
-/// `.nwTransition(.content)` and an identity that follows `showing`.
+/// `.shTransition(.content)` and an identity that follows `showing`.
 struct RightPaneSlot<Content: View>: View {
     let showing: RightPaneShowing?
     @ViewBuilder let content: () -> Content
@@ -204,6 +204,6 @@ struct RightPaneSlot<Content: View>: View {
     var body: some View {
         // A ZStack, so the outgoing and incoming content overlap while they cross-fade.
         ZStack { content() }
-            .nwAnimation(.content, value: showing)
+            .shAnimation(.content, value: showing)
     }
 }

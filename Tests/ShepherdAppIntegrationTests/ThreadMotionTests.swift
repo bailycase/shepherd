@@ -98,11 +98,11 @@ struct ThreadMotionTests {
 
     // MARK: Switching
 
-    /// Entrances counted (`nwArrival`) while `work` runs.
+    /// Entrances counted (`shArrival`) while `work` runs.
     private func entrances(_ work: () async throws -> Void) async rethrows -> Int {
-        NWRenderProbe.start()
+        SHRenderProbe.start()
         try await work()
-        return NWRenderProbe.stop()["arrival.animates", default: 0]
+        return SHRenderProbe.stop()["arrival.animates", default: 0]
     }
 
     /// Switching back to an agent is a flip: the turns its thread catches up on, which arrived
@@ -336,7 +336,7 @@ struct ThreadMotionTests {
     // MARK: Composer
 
     /// ⇧⌘M's picker comes in over frames (growing from the chip's corner, or under Reduce Motion
-    /// fading: `NW.Motion.overlay`'s transitions, pinned in MotionTests) and closes the same way.
+    /// fading: `SH.Motion.overlay`'s transitions, pinned in MotionTests) and closes the same way.
     /// A fresh thread, so nothing but the picker changes above the card.
     @Test(.timingSensitive, arguments: [false, true]) func theModelPickerComesAndGoesWithMotion(reduceMotion: Bool) async throws {
         let thread = MotionThread(Fixtures.snapshot([]), reduceMotion: reduceMotion)
@@ -413,7 +413,7 @@ struct ThreadMotionTests {
         let thread = MotionThread(Fixtures.snapshot(Fixtures.history(2)))
         defer { thread.close() }
         try await thread.waitUntilReady()
-        let center = Self.size.height - AppLayout.composerBottom - NW.Space.s - NWComposerMetrics.actionSize / 2
+        let center = Self.size.height - AppLayout.composerBottom - SH.Space.s - SHComposerMetrics.actionSize / 2
         let strip = CGRect(x: Self.size.width - 120, y: center, width: 120, height: 1)
 
         let recording = await MotionProbe.record(thread.window, region: strip, timeout: 1.5) {
@@ -467,17 +467,17 @@ struct ThreadComponentMotionTests {
                 if toggle.on { Color.black.frame(width: 100, height: 20).modifier(motion) }
             }
             .frame(width: 300, height: 60)
-            .nwAnimation(.content, value: animated ? toggle.on : false)
+            .shAnimation(.content, value: animated ? toggle.on : false)
         }
     }
 
     private struct Arrival: ViewModifier {
         let isNew: Bool
-        func body(content: Content) -> some View { content.nwArrival(isNew, .list, edge: .bottom) }
+        func body(content: Content) -> some View { content.shArrival(isNew, .list, edge: .bottom) }
     }
 
     private struct Entrance: ViewModifier {
-        func body(content: Content) -> some View { content.nwEntrance(.content) }
+        func body(content: Content) -> some View { content.shEntrance(.content) }
     }
 
     /// Through the bar.
@@ -522,7 +522,7 @@ struct ThreadComponentMotionTests {
             #expect(recording.inBetween.contains { (0.05..<0.95).contains($0.lightness(x: 0, y: rest - 5)) }, "it fades in")
         } else {
             #expect(bottoms.contains { $0 > rest + 2 }, "it starts below its place: \(bottoms), resting at \(rest)")
-            #expect(bottoms.allSatisfy { $0 >= rest && $0 <= rest + Int(NW.Motion.nudge) }, "a nudge, no more: \(bottoms)")
+            #expect(bottoms.allSatisfy { $0 >= rest && $0 <= rest + Int(SH.Motion.nudge) }, "a nudge, no more: \(bottoms)")
         }
     }
 
@@ -557,11 +557,11 @@ struct ThreadComponentMotionTests {
         let toggle: Toggle
 
         var body: some View {
-            NWThinking("Thought for 4s", text: "Where do the labels render? The desktop thread view and the iOS bubble both draw them.",
+            SHThinking("Thought for 4s", text: "Where do the labels render? The desktop thread view and the iOS bubble both draw them.",
                        isExpanded: Binding(get: { toggle.on }, set: { toggle.on = $0 }))
                 .frame(width: 400, height: 120, alignment: .topLeading)
                 .padding(20)
-                .background(Color.nw.bgWindow)
+                .background(Color.sh.bgWindow)
         }
     }
 
@@ -577,7 +577,7 @@ struct ThreadComponentMotionTests {
         try await atRest(window)
 
         let recording = await MotionProbe.record(window, region: column) {
-            withAnimation(NW.Motion.disclosure.animation(reduceMotion: reduceMotion)) { toggle.on = true }
+            withAnimation(SH.Motion.disclosure.animation(reduceMotion: reduceMotion)) { toggle.on = true }
         }
 
         #expect(!recording.inBetween.isEmpty)
@@ -604,7 +604,7 @@ struct ThreadComponentMotionTests {
         try await atRest(window)
 
         let recording = await MotionProbe.record(window, region: chevron) {
-            withAnimation(NW.Motion.disclosure.animation(reduceMotion: reduceMotion)) { toggle.on = true }
+            withAnimation(SH.Motion.disclosure.animation(reduceMotion: reduceMotion)) { toggle.on = true }
         }
 
         #expect(!recording.inBetween.isEmpty, "the chevron changes over frames")

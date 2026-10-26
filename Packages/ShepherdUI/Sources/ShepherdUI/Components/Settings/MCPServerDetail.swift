@@ -98,8 +98,8 @@ public struct MCPServerDetail: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        let M = NWMCPMetrics.self
+        let sh = Color.sh
+        let M = SHMCPMetrics.self
         VStack(alignment: .leading, spacing: M.detailPadding) {
             HStack(alignment: .top, spacing: M.detailColumnGap) {
                 block("Sign-in") { signIn }.frame(maxWidth: .infinity, alignment: .leading)
@@ -108,89 +108,89 @@ public struct MCPServerDetail: View {
             }
             if let message = model.message {
                 Text(message)
-                    .nwText(size: M.detailNoteSize, lineHeight: 1.5)
-                    .foregroundStyle(nw.failed)
+                    .shText(size: M.detailNoteSize, lineHeight: 1.5)
+                    .foregroundStyle(sh.failed)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
             }
-            HStack(spacing: NW.Space.s) {
+            HStack(spacing: SH.Space.s) {
                 Button(action: actions.edit) { Label("Edit…", systemImage: "pencil") }
-                    .buttonStyle(.nw(.secondary, size: .s))
+                    .buttonStyle(.sh(.secondary, size: .s))
                 if let reconnect = actions.reconnect {
                     Button(action: reconnect) { Label("Reconnect", systemImage: "arrow.clockwise") }
-                        .buttonStyle(.nw(.ghost, size: .s))
+                        .buttonStyle(.sh(.ghost, size: .s))
                 }
                 Button(action: actions.copyJSON) { Label("Copy JSON", systemImage: "doc.on.doc") }
-                    .buttonStyle(.nw(.ghost, size: .s))
+                    .buttonStyle(.sh(.ghost, size: .s))
                     .help("Copies the entry as mcpServers JSON; secrets stay references.")
-                Spacer(minLength: NW.Space.m)
-                Button("Remove", action: actions.remove).buttonStyle(.nw(.danger, size: .s))
+                Spacer(minLength: SH.Space.m)
+                Button("Remove", action: actions.remove).buttonStyle(.sh(.danger, size: .s))
             }
             .padding(.top, M.detailPadding)
-            .overlay(alignment: .top) { NWHairline() }
+            .overlay(alignment: .top) { SHHairline() }
         }
         .padding(.vertical, M.detailPadding)
         .padding(.leading, M.detailLeading)
         .padding(.trailing, M.rowSides)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(nw.bgSunken)
-        .overlay(alignment: .top) { NWHairline() }
+        .background(sh.bgSunken)
+        .overlay(alignment: .top) { SHHairline() }
     }
 
     @ViewBuilder private var signIn: some View {
-        let nw = Color.nw
-        let M = NWMCPMetrics.self
+        let sh = Color.sh
+        let M = SHMCPMetrics.self
         switch model.signIn {
         case .signedIn(let account, let scopes, let note, let title):
-            HStack(spacing: NW.Space.m) {
-                Image(systemName: "person.crop.circle").foregroundStyle(nw.textSecondary).accessibilityHidden(true)
+            HStack(spacing: SH.Space.m) {
+                Image(systemName: "person.crop.circle").foregroundStyle(sh.textSecondary).accessibilityHidden(true)
                 if let account {
                     Text("Signed in as \(Text(account).fontWeight(.semibold))")
                 } else {
                     Text(title)
                 }
             }
-            .font(.nwSans(M.detailTextSize))
-            .foregroundStyle(nw.textPrimary)
+            .font(.shSans(M.detailTextSize))
+            .foregroundStyle(sh.textPrimary)
             if !scopes.isEmpty { MCPChipFlow(scopes.map { MCPChip($0) }) }
             noteText(note)
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: NW.Space.s) { signedInActions }.fixedSize()
-                VStack(alignment: .leading, spacing: NW.Space.s) { signedInActions }
+                HStack(spacing: SH.Space.s) { signedInActions }.fixedSize()
+                VStack(alignment: .leading, spacing: SH.Space.s) { signedInActions }
             }
         case .needsSignIn(let title, let note, let again):
-            Text(title).font(.nwSans(M.detailTextSize)).foregroundStyle(nw.lanternText)
+            Text(title).font(.shSans(M.detailTextSize)).foregroundStyle(sh.lanternText)
             noteText(note)
-            Button(again ? "Sign in again" : "Sign in", action: actions.signIn).buttonStyle(.nw(.primary, size: .s))
+            Button(again ? "Sign in again" : "Sign in", action: actions.signIn).buttonStyle(.sh(.primary, size: .s))
         case .header(let name, let variable):
-            HStack(spacing: NW.Space.m) {
-                Image(systemName: "key").foregroundStyle(nw.textSecondary).accessibilityHidden(true)
-                Text(variable).font(.nwMono(M.detailOptionSize)).foregroundStyle(nw.textPrimary)
+            HStack(spacing: SH.Space.m) {
+                Image(systemName: "key").foregroundStyle(sh.textSecondary).accessibilityHidden(true)
+                Text(variable).font(.shMono(M.detailOptionSize)).foregroundStyle(sh.textPrimary)
             }
             noteText("Sent as the \(name) header, read from your login shell’s environment.")
         case .secrets(let names, let missing):
-            VStack(alignment: .leading, spacing: NW.Space.xs) {
+            VStack(alignment: .leading, spacing: SH.Space.xs) {
                 ForEach(names, id: \.self) { name in
-                    HStack(spacing: NW.Space.s + NW.Space.xxs) {
-                        Image(systemName: "lock").font(.nwSans(M.detailNoteSize)).accessibilityHidden(true)
-                        Text(name).font(.nwMono(M.detailNoteSize))
-                        if missing.contains(name) { Text("isn’t set").font(.nwSans(M.detailNoteSize)) }
+                    HStack(spacing: SH.Space.s + SH.Space.xxs) {
+                        Image(systemName: "lock").font(.shSans(M.detailNoteSize)).accessibilityHidden(true)
+                        Text(name).font(.shMono(M.detailNoteSize))
+                        if missing.contains(name) { Text("isn’t set").font(.shSans(M.detailNoteSize)) }
                     }
-                    .foregroundStyle(missing.contains(name) ? nw.lanternText : nw.textSecondary)
+                    .foregroundStyle(missing.contains(name) ? sh.lanternText : sh.textSecondary)
                 }
             }
             noteText(missing.isEmpty ? "Values marked with a lock live in Keychain." : "Set it with Edit…, then Reconnect.")
         case .unverified(let note):
             noteText(note)
         case .none:
-            Text("None").font(.nwSans(M.detailTextSize)).foregroundStyle(nw.textSecondary)
+            Text("None").font(.shSans(M.detailTextSize)).foregroundStyle(sh.textSecondary)
             noteText("This server needs no sign-in.")
         }
     }
 
     @ViewBuilder private var tools: some View {
-        let nw = Color.nw
-        let M = NWMCPMetrics.self
+        let sh = Color.sh
+        let M = SHMCPMetrics.self
         if model.toolNames.isEmpty {
             noteText(model.toolsNote ?? (model.toolCount == 0 ? "It lists no tools." : "Listed once it connects."))
         } else {
@@ -198,8 +198,8 @@ public struct MCPServerDetail: View {
             let more = max(0, (model.toolCount ?? model.toolNames.count) - shown.count)
             MCPChipFlow(shown.map { MCPChip($0) }, more: more > 0 ? "+\(more)" : nil, moreAction: { actions.chooseTools?() })
         }
-        VStack(alignment: .leading, spacing: NW.Space.s) {
-            Text("Tool exposure").nwSettingsLabel(table: true)
+        VStack(alignment: .leading, spacing: SH.Space.s) {
+            Text("Tool exposure").shSettingsLabel(table: true)
             option("Search", cost: model.searchCost, selected: model.direct == false,
                    help: "The agent searches this server’s tools when it needs one. Nothing of them is in a prompt until then.") {
                 actions.setDirect?(false)
@@ -209,23 +209,23 @@ public struct MCPServerDetail: View {
                 actions.setDirect?(true)
             }
         }.disabled(actions.setDirect == nil)
-        HStack(spacing: NW.Space.m) {
+        HStack(spacing: SH.Space.m) {
             if let chooseTools = actions.chooseTools {
                 Button("Choose which tools…", action: chooseTools)
-                    .buttonStyle(.nwLink)
-                    .font(.nwSans(M.detailNoteSize))
+                    .buttonStyle(.shLink)
+                    .font(.shSans(M.detailNoteSize))
                     .disabled(model.toolNames.isEmpty)
             }
             if let chosen = model.chosenNote {
-                Text(chosen).font(.nwSans(M.detailNoteSize)).foregroundStyle(nw.textTertiary)
+                Text(chosen).font(.shSans(M.detailNoteSize)).foregroundStyle(sh.textTertiary)
             }
         }
     }
 
     @ViewBuilder private var connection: some View {
-        let nw = Color.nw
-        let M = NWMCPMetrics.self
-        Text(model.transport).font(.nwSans(M.detailOptionSize)).foregroundStyle(nw.textSecondary)
+        let sh = Color.sh
+        let M = SHMCPMetrics.self
+        Text(model.transport).font(.shSans(M.detailOptionSize)).foregroundStyle(sh.textSecondary)
         noteText("Connects when a thread starts and stays until it ends.")
         VStack(alignment: .leading, spacing: 0) {
             ForEach(model.hosts, id: \.name) { host in
@@ -235,13 +235,13 @@ public struct MCPServerDetail: View {
     }
 
     private func option(_ title: String, cost: String, selected: Bool, help: String, action: @escaping () -> Void) -> some View {
-        let nw = Color.nw
-        let M = NWMCPMetrics.self
+        let sh = Color.sh
+        let M = SHMCPMetrics.self
         return Button(action: action) {
-            HStack(spacing: NW.Space.m) {
-                NWRadioMark(selected: selected)
-                Text(title).font(.nwSans(M.detailOptionSize)).foregroundStyle(selected ? nw.textPrimary : nw.textSecondary)
-                Text(cost).font(.nwMono(M.tagTextSize)).foregroundStyle(nw.textTertiary)
+            HStack(spacing: SH.Space.m) {
+                SHRadioMark(selected: selected)
+                Text(title).font(.shSans(M.detailOptionSize)).foregroundStyle(selected ? sh.textPrimary : sh.textSecondary)
+                Text(cost).font(.shMono(M.tagTextSize)).foregroundStyle(sh.textTertiary)
             }
             // A pointer's 24pt, not the label's 17: the button is taller than its text, and the
             // negative padding below hands that room back so the column doesn't grow.
@@ -255,20 +255,20 @@ public struct MCPServerDetail: View {
     }
 
     @ViewBuilder private var signedInActions: some View {
-        Button("Sign in again", action: actions.signIn).buttonStyle(.nw(.secondary, size: .s))
-        Button("Sign out", action: actions.signOut).buttonStyle(.nw(.ghost, size: .s))
+        Button("Sign in again", action: actions.signIn).buttonStyle(.sh(.secondary, size: .s))
+        Button("Sign out", action: actions.signOut).buttonStyle(.sh(.ghost, size: .s))
     }
 
     private func noteText(_ text: String) -> some View {
         Text(text)
-            .nwText(size: NWMCPMetrics.detailNoteSize, lineHeight: 1.5)
-            .foregroundStyle(Color.nw.textTertiary)
+            .shText(size: SHMCPMetrics.detailNoteSize, lineHeight: 1.5)
+            .foregroundStyle(Color.sh.textTertiary)
             .fixedSize(horizontal: false, vertical: true)
     }
 
     private func block<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: NWMCPMetrics.detailBlockGap) {
-            Text(title).nwSettingsLabel(table: true)
+        VStack(alignment: .leading, spacing: SHMCPMetrics.detailBlockGap) {
+            Text(title).shSettingsLabel(table: true)
             content()
         }
     }
@@ -283,19 +283,19 @@ public struct MCPHostRow: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        let M = NWMCPMetrics.self
-        HStack(spacing: NW.Space.m) {
+        let sh = Color.sh
+        let M = SHMCPMetrics.self
+        HStack(spacing: SH.Space.m) {
             Group {
                 switch host.mark {
                 case .done:
-                    Image(systemName: "checkmark").font(.nwSans(M.cellSize - 2, .bold)).foregroundStyle(nw.done)
+                    Image(systemName: "checkmark").font(.shSans(M.cellSize - 2, .bold)).foregroundStyle(sh.done)
                 case .working:
-                    Circle().fill(nw.running).frame(width: M.dotSize, height: M.dotSize)
+                    Circle().fill(sh.running).frame(width: M.dotSize, height: M.dotSize)
                 case .offline:
-                    Circle().strokeBorder(nw.textTertiary, lineWidth: M.dotStroke).frame(width: M.dotSize, height: M.dotSize)
+                    Circle().strokeBorder(sh.textTertiary, lineWidth: M.dotStroke).frame(width: M.dotSize, height: M.dotSize)
                 case .failed:
-                    Image(systemName: "xmark").font(.nwSans(M.cellSize - 2, .bold)).foregroundStyle(nw.failed)
+                    Image(systemName: "xmark").font(.shSans(M.cellSize - 2, .bold)).foregroundStyle(sh.failed)
                 case .none:
                     Color.clear
                 }
@@ -303,13 +303,13 @@ public struct MCPHostRow: View {
             .frame(width: M.cellSize)
             .accessibilityHidden(true)
             Text(host.name)
-                .font(.nwMono(M.cellSize))
-                .foregroundStyle(nw.textPrimary)
+                .font(.shMono(M.cellSize))
+                .foregroundStyle(sh.textPrimary)
                 .lineLimit(1)
                 .frame(width: M.hostNameWidth * ThemeStore.shared.textScale, alignment: .leading)
             Text(host.detail)
-                .font(.nwSans(M.cellSize))
-                .foregroundStyle(host.mark == .failed ? nw.failed : nw.textTertiary)
+                .font(.shSans(M.cellSize))
+                .foregroundStyle(host.mark == .failed ? sh.failed : sh.textTertiary)
                 .lineLimit(1)
             Spacer(minLength: 0)
         }
@@ -327,15 +327,15 @@ public struct MCPChip: View, Hashable {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        let M = NWMCPMetrics.self
+        let sh = Color.sh
+        let M = SHMCPMetrics.self
         Text(text)
-            .font(.nwMono(M.tagTextSize))
-            .foregroundStyle(nw.textSecondary)
+            .font(.shMono(M.tagTextSize))
+            .foregroundStyle(sh.textSecondary)
             .lineLimit(1)
             .padding(.horizontal, M.chipSides)
             .frame(height: M.chipHeight)
-            .nwBorder(nw.lineSubtle, radius: M.chipRadius)
+            .shBorder(sh.lineSubtle, radius: M.chipRadius)
             .fixedSize()
     }
 }
@@ -353,13 +353,13 @@ struct MCPChipFlow: View {
     }
 
     var body: some View {
-        NWFlowLayout(spacing: NW.Space.s, lineSpacing: NW.Space.s) {
+        SHFlowLayout(spacing: SH.Space.s, lineSpacing: SH.Space.s) {
             ForEach(chips, id: \.self) { $0 }
             if let more {
                 Button(more, action: moreAction)
-                    .buttonStyle(.nwLink)
-                    .font(.nwSans(NWMCPMetrics.cellSize))
-                    .frame(height: NWMCPMetrics.chipHeight)
+                    .buttonStyle(.shLink)
+                    .font(.shSans(SHMCPMetrics.cellSize))
+                    .frame(height: SHMCPMetrics.chipHeight)
             }
         }
     }

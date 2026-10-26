@@ -8,22 +8,22 @@ import WebKit
 /// - a content rule list blocks every request but `data:`, so it cannot reach the network (an `<img>`, a stylesheet, a font, a prefetch);
 /// - every navigation is cancelled (a link, a redirect, a form, a new window), and the page keeps no data between opens.
 /// An SVG is drawn through an `<img>`, which never runs script or loads another resource.
-public struct NWArtifactWebView: View {
+public struct SHArtifactWebView: View {
     let html: String
 
     public init(html: String) { self.html = html }
 
-    public init(svg: String) { self.html = NWArtifactHTML.picture(base64: Data(svg.utf8).base64EncodedString()) }
+    public init(svg: String) { self.html = SHArtifactHTML.picture(base64: Data(svg.utf8).base64EncodedString()) }
 
     public var body: some View { ArtifactWebHost(html: html) }
 }
 
 /// The documents the view loads, built as text so a test can read them.
-public enum NWArtifactHTML {
+public enum SHArtifactHTML {
     /// The page 18pt in from the pane's edge, padded on `html` so a report's own `body{margin:0}` keeps the inset (its background still
     /// fills it, since the root's background paints the canvas), put after its `<head>` so a leading doctype keeps its standards mode.
     public static func document(_ html: String) -> String {
-        let style = "<style>html{padding:\(Int(NWArtifactMetrics.documentInset))px}:where(body){margin:0}</style>"
+        let style = "<style>html{padding:\(Int(SHArtifactMetrics.documentInset))px}:where(body){margin:0}</style>"
         if let head = html.range(of: "<head[^>]*>", options: [.regularExpression, .caseInsensitive]) {
             return html.replacingCharacters(in: head.upperBound..<head.upperBound, with: style)
         }
@@ -37,7 +37,7 @@ public enum NWArtifactHTML {
     public static func picture(base64: String) -> String {
         """
         <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-        <style>html,body{margin:0}body{padding:\(Int(NWArtifactMetrics.documentInset))px}img{display:block;max-width:100%;height:auto}</style></head>
+        <style>html,body{margin:0}body{padding:\(Int(SHArtifactMetrics.documentInset))px}img{display:block;max-width:100%;height:auto}</style></head>
         <body><img alt="" src="data:image/svg+xml;base64,\(base64)"></body></html>
         """
     }
@@ -50,7 +50,7 @@ public enum NWArtifactHTML {
 }
 
 @MainActor
-final class NWArtifactWebRenderer: NSObject, WKNavigationDelegate {
+final class SHArtifactWebRenderer: NSObject, WKNavigationDelegate {
     private(set) var webView: WKWebView!
     private var loaded: String?
     private var task: Task<Void, Never>?
@@ -85,7 +85,7 @@ final class NWArtifactWebRenderer: NSObject, WKNavigationDelegate {
 
     private static func rules() async -> WKContentRuleList? {
         if let compiled { return compiled }
-        let list = try? await WKContentRuleListStore.default().compileContentRuleList(forIdentifier: "shepherd.artifact", encodedContentRuleList: NWArtifactHTML.rules)
+        let list = try? await WKContentRuleListStore.default().compileContentRuleList(forIdentifier: "shepherd.artifact", encodedContentRuleList: SHArtifactHTML.rules)
         compiled = list
         return list
     }
@@ -108,20 +108,20 @@ final class NWArtifactWebRenderer: NSObject, WKNavigationDelegate {
 private struct ArtifactWebHost {
     let html: String
 
-    func makeCoordinator() -> NWArtifactWebRenderer { NWArtifactWebRenderer() }
-    func update(_ renderer: NWArtifactWebRenderer) { renderer.load(NWArtifactHTML.document(html)) }
+    func makeCoordinator() -> SHArtifactWebRenderer { SHArtifactWebRenderer() }
+    func update(_ renderer: SHArtifactWebRenderer) { renderer.load(SHArtifactHTML.document(html)) }
 }
 
 #if os(macOS)
 extension ArtifactWebHost: NSViewRepresentable {
     func makeNSView(context: Context) -> WKWebView { context.coordinator.webView }
     func updateNSView(_ view: WKWebView, context: Context) { update(context.coordinator) }
-    static func dismantleNSView(_ view: WKWebView, coordinator: NWArtifactWebRenderer) { coordinator.stop() }
+    static func dismantleNSView(_ view: WKWebView, coordinator: SHArtifactWebRenderer) { coordinator.stop() }
 }
 #else
 extension ArtifactWebHost: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView { context.coordinator.webView }
     func updateUIView(_ view: WKWebView, context: Context) { update(context.coordinator) }
-    static func dismantleUIView(_ view: WKWebView, coordinator: NWArtifactWebRenderer) { coordinator.stop() }
+    static func dismantleUIView(_ view: WKWebView, coordinator: SHArtifactWebRenderer) { coordinator.stop() }
 }
 #endif

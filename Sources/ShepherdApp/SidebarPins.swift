@@ -127,7 +127,7 @@ extension SidebarPins {
 enum PinWords {
     /// The row menu's and the thread options menu's item.
     static func menuTitle(pinned: Bool) -> String { pinned ? "Unpin" : "Pin" }
-    static func symbol(pinned: Bool) -> String { pinned ? "pin.slash" : NWGlyph.pin.symbolName }
+    static func symbol(pinned: Bool) -> String { pinned ? "pin.slash" : SHGlyph.pin.symbolName }
     /// The palette's command, named for what it does now.
     static func paletteTitle(pinned: Bool) -> String { pinned ? "Unpin thread" : "Pin thread" }
 }

@@ -74,7 +74,7 @@ struct SidebarRecentsTests {
                                        state: ShepherdState(spaces: [space], agents: [agent("remote", status: .working, at: 1)]))]))
         let rows = Dictionary(uniqueKeysWithValues: lists.all.map { ($0.title, $0) })
         #expect(rows["failed"]?.leading == .dot(.failed))
-        #expect(rows["failed"]?.accessory == NWSidebarRow.Accessory.none)
+        #expect(rows["failed"]?.accessory == SHSidebarRow.Accessory.none)
         #expect(rows["running"]?.leading == .dot(.running))
         #expect(rows["running"]?.accessory == .elapsed(since: since))
         #expect(rows["idle"]?.leading == .dot(.idle))
@@ -122,7 +122,7 @@ struct SidebarRecentsTests {
         #expect(rows["Nightly"]?.accessory == .text("can't start", tone: .failed))
     }
 
-    /// PiAuthStates' `NWSidebarRow(agent) · .waiting, .notSignedIn`: a restored agent the first
+    /// PiAuthStates' `SHSidebarRow(agent) · .waiting, .notSignedIn`: a restored agent the first
     /// launch's copy holds says "waiting" with a clock; one that isn't signed in moves to Needs you
     /// with "sign in", ahead of its "can't start".
     @Test func anAgentWaitingForYourPiOrNotSignedInSaysSo() {
@@ -181,7 +181,7 @@ struct SidebarRecentsTests {
         let presented = lists.presented(selected: .local(agents[2].id), shortcuts: true)
         #expect(presented.recents.map(\.selected) == (0..<11).map { $0 == 2 })
         #expect(presented.recents.prefix(9).map(\.accessory) == (1...9).map { .shortcut("⌘\($0)") })
-        #expect(presented.recents.dropFirst(9).allSatisfy { $0.accessory == NWSidebarRow.Accessory.none })
+        #expect(presented.recents.dropFirst(9).allSatisfy { $0.accessory == SHSidebarRow.Accessory.none })
         // ⌘1–9 are Recents': Needs you keeps its reason.
         #expect(presented.needsYou.first?.accessory == .reason("Ship it?"))
     }
@@ -260,12 +260,12 @@ struct SidebarNeedsYouTests {
     ])
     func aReasonIsOneShortLine(text: String, reason: String) {
         #expect(SidebarDerivation.shortened(text) == reason)
-        #expect(SidebarDerivation.shortened(text).count <= NWSidebarMetrics.reasonLength)
+        #expect(SidebarDerivation.shortened(text).count <= SHSidebarMetrics.reasonLength)
     }
 
     /// The iPad's chips cut at the Mac's length.
     @Test func theIPadCutsReasonsAtTheMacsLength() {
-        #expect(NeedsYouReason.length == NWSidebarMetrics.reasonLength)
+        #expect(NeedsYouReason.length == SHSidebarMetrics.reasonLength)
     }
 
     /// An automation run that asks leads with its bolt in lantern; a remote one keeps its reason
@@ -318,7 +318,7 @@ struct SidebarDestinationTests {
 
     @Test(arguments: [("Alex Example", "A"), ("  ada", "A"), ("", "")])
     func theFootersAvatarIsTheInitial(name: String, initial: String) {
-        #expect(NWSidebarFooter.initial(name) == initial)
+        #expect(SHSidebarFooter.initial(name) == initial)
     }
 }
 

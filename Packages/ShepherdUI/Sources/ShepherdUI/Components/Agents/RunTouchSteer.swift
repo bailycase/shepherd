@@ -3,7 +3,7 @@ import SwiftUI
 /// A run's brief for touch (MobileSubagent, iPadSubagents boards): "GOAL · FROM THE PARENT" over
 /// the task, a mono note on the right while it runs ("step 1 of 3 · 62%"), and once finished its
 /// RESULT (inline Markdown) under a label in the state's color.
-public struct NWRunGoal: View {
+public struct SHRunGoal: View {
     let goal: String
     let label: String
     let note: String?
@@ -20,38 +20,38 @@ public struct NWRunGoal: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        VStack(alignment: .leading, spacing: NW.Space.m) {
+        let sh = Color.sh
+        VStack(alignment: .leading, spacing: SH.Space.m) {
             HStack(alignment: .firstTextBaseline) {
-                NWBriefLabel(text: label)
-                Spacer(minLength: NW.Space.m)
+                SHBriefLabel(text: label)
+                Spacer(minLength: SH.Space.m)
                 if let note {
-                    Text(note).font(.nw(.micro)).foregroundStyle(nw.textTertiary).monospacedDigit().lineLimit(1)
+                    Text(note).font(.sh(.micro)).foregroundStyle(sh.textTertiary).monospacedDigit().lineLimit(1)
                 }
             }
             Text(goal)
-                .nwText(.ui)
+                .shText(.ui)
                 .fontWeight(.regular)
-                .foregroundStyle(nw.textPrimary)
+                .foregroundStyle(sh.textPrimary)
                 .lineLimit(8)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let result {
-                NWBriefLabel(text: "Result", color: resultState.textColor)
-                    .padding(.top, NW.Space.xs)
-                NWInlineText(text: result, codeSize: NWTextStyle.caption.size).equatable()
-                    .nwText(.ui)
+                SHBriefLabel(text: "Result", color: resultState.textColor)
+                    .padding(.top, SH.Space.xs)
+                SHInlineText(text: result, codeSize: SHTextStyle.caption.size).equatable()
+                    .shText(.ui)
                     .fontWeight(.regular)
-                    .foregroundStyle(nw.textPrimary)
+                    .foregroundStyle(sh.textPrimary)
                     .lineLimit(10)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .padding(NW.Space.l)
+        .padding(SH.Space.l)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(nw.bgSunken, in: RoundedRectangle(cornerRadius: NW.Radius.l))
-        .nwBorder(nw.lineSubtle, radius: NW.Radius.l)
+        .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.l))
+        .shBorder(sh.lineSubtle, radius: SH.Radius.l)
         .accessibilityElement(children: .combine)
     }
 }
@@ -59,7 +59,7 @@ public struct NWRunGoal: View {
 /// The field that steers one run (MobileSubagent board): a rounded field with Send inside it,
 /// growing to five lines, and a mono caption under it saying who it reaches ("to: worker · not
 /// the parent · lands before its next turn"). Return adds a line; Send sends.
-public struct NWSteerField: View {
+public struct SHSteerField: View {
     @Binding var text: String
     let prompt: String
     let caption: String?
@@ -89,31 +89,31 @@ public struct NWSteerField: View {
     private var sendable: Bool { isEnabled && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     public var body: some View {
-        let nw = Color.nw
-        let shape = RoundedRectangle(cornerRadius: NWRunTouchMetrics.steerHeight / 2)
-        VStack(alignment: .leading, spacing: NW.Space.s) {
-            HStack(alignment: .bottom, spacing: NW.Space.m) {
+        let sh = Color.sh
+        let shape = RoundedRectangle(cornerRadius: SHRunTouchMetrics.steerHeight / 2)
+        VStack(alignment: .leading, spacing: SH.Space.s) {
+            HStack(alignment: .bottom, spacing: SH.Space.m) {
                 field
-                    .font(.nw(.body))
-                    .foregroundStyle(nw.textPrimary)
-                    .tint(nw.lantern)
+                    .font(.sh(.body))
+                    .foregroundStyle(sh.textPrimary)
+                    .tint(sh.lantern)
                     .lineLimit(1...5)
-                    .padding(.vertical, NW.Space.m + NW.Space.xxs)
+                    .padding(.vertical, SH.Space.m + SH.Space.xxs)
                     .accessibilityLabel(accessibilityText)
-                NWComposerActionButton(.send, enabled: sendable, action: send)
-                    .padding(.bottom, NW.Space.s + NW.Space.xxs)
+                SHComposerActionButton(.send, enabled: sendable, action: send)
+                    .padding(.bottom, SH.Space.s + SH.Space.xxs)
                     .accessibilityLabel(sendLabel)
             }
-            .padding(.leading, NW.Space.xl)
-            .padding(.trailing, NW.Space.s + NW.Space.xxs)
-            .frame(minHeight: NWRunTouchMetrics.steerHeight)
-            .background(nw.bgRaised, in: shape)
-            .nwBorder(isFocused ? nw.textTertiary : nw.lineStrong, in: shape)
-            .nwAnimation(.hover, value: isFocused)
+            .padding(.leading, SH.Space.xl)
+            .padding(.trailing, SH.Space.s + SH.Space.xxs)
+            .frame(minHeight: SHRunTouchMetrics.steerHeight)
+            .background(sh.bgRaised, in: shape)
+            .shBorder(isFocused ? sh.textTertiary : sh.lineStrong, in: shape)
+            .shAnimation(.hover, value: isFocused)
             if let caption {
-                Text(caption).font(.nw(.micro)).foregroundStyle(nw.textTertiary)
+                Text(caption).font(.sh(.micro)).foregroundStyle(sh.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, NW.Space.m)
+                    .padding(.horizontal, SH.Space.m)
             }
         }
     }

@@ -2,11 +2,11 @@ import SwiftUI
 
 /// Left-to-right wrapping row (chips): items keep their ideal size and wrap to a new line when
 /// the next one would overflow. An item wider than the row is offered the row's width.
-public struct NWFlowLayout: Layout {
+public struct SHFlowLayout: Layout {
     let spacing: CGFloat
     let lineSpacing: CGFloat
 
-    public init(spacing: CGFloat = NW.Space.m, lineSpacing: CGFloat? = nil) {
+    public init(spacing: CGFloat = SH.Space.m, lineSpacing: CGFloat? = nil) {
         self.spacing = spacing
         self.lineSpacing = lineSpacing ?? spacing
     }
@@ -50,10 +50,10 @@ public struct NWFlowLayout: Layout {
 }
 
 #Preview("Flow layout") {
-    NWPreviewBoth {
-        NWFlowLayout {
+    SHPreviewBoth {
+        SHFlowLayout {
             ForEach(["shepherd", "This Mac", "claude-opus", "Medium", "a longer value"], id: \.self) { value in
-                NWTag(value, mono: true)
+                SHTag(value, mono: true)
             }
         }
         .frame(width: 220, alignment: .leading)

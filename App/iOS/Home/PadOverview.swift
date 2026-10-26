@@ -14,21 +14,21 @@ struct PadOverview: View {
             if hosts.hosts.isEmpty {
                 NoHostsState()
             } else {
-                NWEmptyState(Text("No thread selected"), message: "Pick a thread in the sidebar, or start a new one.") {
-                    Button("New thread") { NewThreadHooks.open(navigator: navigator) }.buttonStyle(.nw(.primary))
+                SHEmptyState(Text("No thread selected"), message: "Pick a thread in the sidebar, or start a new one.") {
+                    Button("New thread") { NewThreadHooks.open(navigator: navigator) }.buttonStyle(.sh(.primary))
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
     }
 }
 
 /// A running thread's glyph (iPadOverview, iPadHosts): the spinner, the branch while its
 /// subagents work, or its state's dot while it waits on you.
 enum RunningGlyph {
-    static func of(_ row: FleetThreadRow) -> NWListRow.Leading {
+    static func of(_ row: FleetThreadRow) -> SHListRow.Leading {
         guard row.status == .working else { return .state(AgentState(row.status)) }
-        return row.subagents > 0 ? .symbol(NWGlyph.gitBranch.symbolName, .running) : .glyph(.running)
+        return row.subagents > 0 ? .symbol(SHGlyph.gitBranch.symbolName, .running) : .glyph(.running)
     }
 }

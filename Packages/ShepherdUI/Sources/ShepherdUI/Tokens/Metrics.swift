@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// Night Watch's space, radius, and size scales (Foundations board), on a 4pt grid. Padding and
-/// gaps use only `Space` steps. Hairlines are 1px: `NW.hairline(displayScale)`.
-public enum NW {
+/// Shepherd Design's space, radius, and size scales (Foundations board), on a 4pt grid. Padding and
+/// gaps use only `Space` steps. Hairlines are 1px: `SH.hairline(displayScale)`.
+public enum SH {
     public enum Space {
         public static let xxs: CGFloat = 2
         public static let xs: CGFloat = 4

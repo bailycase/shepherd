@@ -48,11 +48,11 @@ struct DesignLifecycleWordsTests {
             == [.open, .rename, .duplicateSystem, .deleteSystem])
         #expect(DesignMenu.system(name: "acme-mobile", builtIn: false, repo: "mobile-app", building: true).items.map(\.action)
             == [.open, .deleteSystem])
-        let builtIn = DesignMenu.system(name: "Night Watch", builtIn: true, repo: nil, building: false)
+        let builtIn = DesignMenu.system(name: "Shepherd Design", builtIn: true, repo: nil, building: false)
         #expect(builtIn.items.map(\.title) == ["Open", "Duplicate as a New System", "Delete Design System…"])
         let delete = builtIn.items.last
         #expect(delete?.enabled == false, "Delete stays in the menu, off")
-        #expect(delete?.disabledReason == "Night Watch is built into Shepherd. Duplicate it to make one you can change or delete.")
+        #expect(delete?.disabledReason == "Shepherd Design is built into Shepherd. Duplicate it to make one you can change or delete.")
     }
 
     // MARK: Delete design
@@ -193,11 +193,11 @@ struct DesignLifecycleWordsTests {
         let design = Design(name: "Onboarding", createdAt: 1)
         let importing = DesignImporting(file: "checkout-funnel.zip", title: "Checkout funnel", done: 7, total: 12, system: "Checkout DS")
         let systems = [DesignSystemSummary(info: DesignSystemInfo(namespace: "acme-web", title: "acme-web", createdAt: 1)),
-                       DesignSystemSummary(info: DesignSystemInfo(namespace: "night-watch", title: "Night Watch", createdAt: 0), builtIn: true)]
+                       DesignSystemSummary(info: DesignSystemInfo(namespace: "shepherd-design", title: "Shepherd Design", createdAt: 0), builtIn: true)]
         let model = DesignsPageModel.make(designs: [design], spaces: [], firstBoards: [:], filter: "", selection: nil, now: Date(),
                                           systems: systems, importing: importing)
         #expect(model.rows.first?.map(\.id) == ["importing", design.id.rawValue])
-        #expect(model.systems.map(\.name) == ["acme-web", "Night Watch", "Checkout DS"])
+        #expect(model.systems.map(\.name) == ["acme-web", "Shepherd Design", "Checkout DS"])
         let coming = model.systems.first { $0.dashed }
         #expect(coming?.name == "Checkout DS" && coming?.source == "came with Checkout funnel" && coming?.count == "after the boards")
         #expect(coming?.menu == nil)
@@ -207,16 +207,16 @@ struct DesignLifecycleWordsTests {
     @Test func systemCardsSayWhereTheyCameFrom() {
         let design = Design(name: "Checkout funnel", createdAt: 1)
         let systems = [
-            DesignSystemSummary(info: DesignSystemInfo(namespace: "night-watch", title: "Night Watch", createdAt: 0), builtIn: true),
+            DesignSystemSummary(info: DesignSystemInfo(namespace: "shepherd-design", title: "Shepherd Design", createdAt: 0), builtIn: true),
             DesignSystemSummary(info: DesignSystemInfo(namespace: "checkout-ds", title: "Checkout DS", createdAt: 1, cameWith: design.id)),
         ]
         let model = DesignsPageModel.make(designs: [design], spaces: [], firstBoards: [:], filter: "", selection: nil, now: Date(),
                                           systems: systems)
         let checkout = model.systems.first { $0.name == "Checkout DS" }
         #expect(checkout?.source == "came with Checkout funnel" && checkout?.tag == nil)
-        let nightWatch = model.systems.first { $0.name == "Night Watch" }
-        #expect(nightWatch?.tag == "Built-in")
-        #expect(nightWatch?.menu?.items.last?.enabled == false)
+        let shepherdDesign = model.systems.first { $0.name == "Shepherd Design" }
+        #expect(shepherdDesign?.tag == "Built-in")
+        #expect(shepherdDesign?.menu?.items.last?.enabled == false)
     }
 
     @Test(arguments: [("checkout-funnel.zip", true), ("Checkout.ZIP", true), ("notes.txt", false), ("board.png", false)])

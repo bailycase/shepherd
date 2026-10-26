@@ -26,7 +26,7 @@ revision 562, defines the detail screen and replaces the first implementation.
   and MCP servers."
 - Toolbar: "Filter spaces" field, outline `magnifyingglass`, 302pt including border/padding;
   10pt gap; host segments with "All hosts", "This Mac" and the configured host names;
-  trailing "Add space…". Controls are 32pt tall and use Night Watch's settings controls.
+  trailing "Add space…". Controls are 32pt tall and use Shepherd Design's settings controls.
   Search matches space name/path and host. Host selection filters without changing data.
   Adding uses the existing local/remote directory browser and stays in Settings.
 - Table: 10pt corners, `borderSubtle`, header `bgSunken`, 32pt header, 58pt minimum rows,

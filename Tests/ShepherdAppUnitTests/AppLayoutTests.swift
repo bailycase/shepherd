@@ -16,8 +16,8 @@ struct AppLayoutTests {
         body()
     }
 
-    @Test(arguments: [(NWDensity.compact, 22.0), (.standard, 28.0), (.comfortable, 36.0)])
-    func sidebarRowsFollowNightWatchAtTheDesignedDensity(rows: NWDensity, height: Double) {
+    @Test(arguments: [(SHDensity.compact, 22.0), (.standard, 28.0), (.comfortable, 36.0)])
+    func sidebarRowsFollowShepherdDesignAtTheDesignedDensity(rows: SHDensity, height: Double) {
         withDensity(1) {
             #expect(rows.rowHeight == CGFloat(height))
             #expect(AppLayout.settingsRowMinHeight == 52)
@@ -27,7 +27,7 @@ struct AppLayoutTests {
     @Test(arguments: [(0.85, 24.0, 44.0), (1.2, 34.0, 62.0)])
     func rowHeightsScaleAndRoundToWholePoints(density: Double, row: Double, settings: Double) {
         withDensity(CGFloat(density)) {
-            #expect(NWDensity.standard.rowHeight == CGFloat(row))
+            #expect(SHDensity.standard.rowHeight == CGFloat(row))
             #expect(AppLayout.settingsRowMinHeight == CGFloat(settings))
         }
     }
@@ -48,8 +48,8 @@ struct AppLayoutTests {
     /// board's 640pt prose measure and 600pt bubbles.
     @Test func theThreadColumnIsTheBoards820PointsWithItsProseMeasure() {
         #expect(AppLayout.threadMaxWidth == 820)
-        #expect(AppLayout.proseMaxWidth == NWThreadMetrics.proseMeasure && AppLayout.proseMaxWidth == 640)
-        #expect(AppLayout.userMaxWidth == NWThreadMetrics.bubbleMaxWidth && AppLayout.userMaxWidth == 600)
+        #expect(AppLayout.proseMaxWidth == SHThreadMetrics.proseMeasure && AppLayout.proseMaxWidth == 640)
+        #expect(AppLayout.userMaxWidth == SHThreadMetrics.bubbleMaxWidth && AppLayout.userMaxWidth == 600)
     }
 
     /// A thread keeps its 32pt gutters only while the widest column fits between them (820 +

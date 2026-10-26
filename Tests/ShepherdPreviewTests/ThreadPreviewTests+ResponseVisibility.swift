@@ -165,11 +165,11 @@ extension ThreadPreviewTests {
         let report = try #require(store.rows.last?.presentation?.timing)
         #expect(report.segments.map(\.text) == ["1.4s", "30.4s", "13.2s"] && report.total == "45.0s")
         try await Preview.render("response-timing-popover", size: CGSize(width: 340, height: 420)) {
-            NWResponseTiming(NWResponseTimingModel(report))
-                .nwPopover()
-                .padding(NW.Space.l)
+            SHResponseTiming(SHResponseTimingModel(report))
+                .shPopover()
+                .padding(SH.Space.l)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .background(Color.nw.bgWindow)
+                .background(Color.sh.bgWindow)
         }
     }
 }
@@ -191,7 +191,7 @@ private struct VisibilityScene: View {
                          hasTurns: true, gutter: AppLayout.gutter)
             }
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
     }
 }
 
@@ -222,6 +222,6 @@ private struct VisibilityTurns: View {
         .padding(.horizontal, AppLayout.gutter)
         .padding(.top, AppLayout.threadTop)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
     }
 }

@@ -18,13 +18,13 @@ enum DesignRule: String, CaseIterable, Sendable, CustomTestStringConvertible {
     var rule: String {
         switch self {
         case .rawFontSize:
-            "A view never hardcodes a font size: a literal in .nwMono(11), .nwSans(12), .system(size: 13) or .nwText(size: 12.5, …). (DESIGN.md › Night Watch › Type)"
+            "A view never hardcodes a font size: a literal in .shMono(11), .shSans(12), .system(size: 13) or .shText(size: 12.5, …). (DESIGN.md › Shepherd Design › Type)"
         case .statusTintByOpacity:
-            "A status color is never tinted by hand: a lantern, running, done or failed role (or a tint) with .opacity(…) as a fill, line or text. (DESIGN.md › Night Watch › Color)"
+            "A status color is never tinted by hand: a lantern, running, done or failed role (or a tint) with .opacity(…) as a fill, line or text. (DESIGN.md › Shepherd Design › Color)"
         case .rawColor:
-            "A view never hardcodes a color: Color(red:…), Color(light: \"#…\"), a hex string, Color.white, .foregroundStyle(.gray), NSColor.white. (DESIGN.md › Night Watch)"
+            "A view never hardcodes a color: Color(red:…), Color(light: \"#…\"), a hex string, Color.white, .foregroundStyle(.gray), NSColor.white. (DESIGN.md › Shepherd Design)"
         case .rawGlyphName:
-            "A glyph with a shared definition is never named as a raw SF Symbol string: it comes from NWGlyph (Tokens/Glyphs.swift). (DESIGN.md › Night Watch › Icons)"
+            "A glyph with a shared definition is never named as a raw SF Symbol string: it comes from SHGlyph (Tokens/Glyphs.swift). (DESIGN.md › Shepherd Design › Icons)"
         }
     }
 
@@ -32,13 +32,13 @@ enum DesignRule: String, CaseIterable, Sendable, CustomTestStringConvertible {
     var fix: String {
         switch self {
         case .rawFontSize:
-            "Use a ramp style (.font(.nw(.caption)), .nwText(.body)). A size a board gives outside the ramp is a named constant in the component's metrics enum (NWThreadMetrics, NWGoalMetrics, …) or in AppLayout+<Domain>, used as .nwMono(NWGoalMetrics.labelFont); say in your PR which board gives it."
+            "Use a ramp style (.font(.sh(.caption)), .shText(.body)). A size a board gives outside the ramp is a named constant in the component's metrics enum (SHThreadMetrics, SHGoalMetrics, …) or in AppLayout+<Domain>, used as .shMono(SHGoalMetrics.labelFont); say in your PR which board gives it."
         case .statusTintByOpacity:
-            "Take the pill or banner colors from AgentState: .textColor for the word, .color for dots and glyphs, .tint for the fill (NWStatusPill, NWStateGlyph, NWStatusDot draw them). A state AgentState lacks is a new role on ThemeColors, filled in both variants, not an alpha."
+            "Take the pill or banner colors from AgentState: .textColor for the word, .color for dots and glyphs, .tint for the fill (SHStatusPill, SHStateGlyph, SHStatusDot draw them). A state AgentState lacks is a new role on ThemeColors, filled in both variants, not an alpha."
         case .rawColor:
-            "Use Color.nw.<role>. A color that has no role is a new role on ThemeColors, filled in both variants of every theme, with a contrast rule if it carries text. A color that is the user's own data (a design system's swatch) goes in the allowlist with that reason."
+            "Use Color.sh.<role>. A color that has no role is a new role on ThemeColors, filled in both variants of every theme, with a contrast rule if it carries text. A color that is the user's own data (a design system's swatch) goes in the allowlist with that reason."
         case .rawGlyphName:
-            "Draw it through NWGlyph (NWGlyph.fastBolt.image, or NWFastBolt for the Fast mark) or pass NWGlyph.<case>.symbolName where an API takes a symbol name. A new glyph that more than one view draws is a new case in Tokens/Glyphs.swift."
+            "Draw it through SHGlyph (SHGlyph.fastBolt.image, or SHFastBolt for the Fast mark) or pass SHGlyph.<case>.symbolName where an API takes a symbol name. A new glyph that more than one view draws is a new case in Tokens/Glyphs.swift."
         }
     }
 }
@@ -75,15 +75,15 @@ enum DesignRules {
     private static let namedColors = "(?:white|black|red|green|blue|gray|grey|orange|yellow|pink|purple|cyan|mint|teal|indigo|brown|primary|secondary)"
 
     private static let fontSize = alternation([
-        #"\.nw(?:Sans|Mono)\(\s*\d"#,
+        #"\.sh(?:Sans|Mono)\(\s*\d"#,
         #"\.system\(\s*size:\s*\d"#,
-        #"\.nwText\(\s*size:\s*\d"#,
+        #"\.shText\(\s*size:\s*\d"#,
         #"\.custom\([^)]*size:\s*\d"#,
         #"\b(?:NS|UI)Font\.[A-Za-z]+\(ofSize:\s*\d"#,
     ])
     /// A status role with an opacity, or an opacity named for a tint, fill or line (a hand-made tint).
     private static let statusTint = alternation([
-        #"\bnw\."# + statusRoles + #"\)?\.opacity\("#,
+        #"\bsh\."# + statusRoles + #"\)?\.opacity\("#,
         #"\.(?:textColor|tint)\??\.opacity\("#,
         #"(?i:\.opacity\(\s*[\w.]*(?:tint|fill|line|border|wash)\w*opacity)"#,
     ])
@@ -98,8 +98,8 @@ enum DesignRules {
         ##""#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?""##,
     ])
 
-    /// The symbol names `NWGlyph` registers, as the string literals that must not appear elsewhere.
-    private static let registeredSymbols: [String] = NWGlyph.allCases.map { "\"\($0.symbolName)\"" }
+    /// The symbol names `SHGlyph` registers, as the string literals that must not appear elsewhere.
+    private static let registeredSymbols: [String] = SHGlyph.allCases.map { "\"\($0.symbolName)\"" }
     private static let registeredNeedles: [[UInt8]] = registeredSymbols.map { Array($0.utf8) }
 
     /// The rules a line of code breaks. `code` has its comments removed (`strippingComment`).
@@ -149,11 +149,11 @@ enum DesignRules {
             }
             return false
         }
-        return has(".nwSans(") || has(".nwMono(") || has("size:") || has("Size:") || has(".opacity(")
-            || has("Color(") || has("Color.", notFollowedBy: "nw") || has("#colorLiteral") || has("\"#") || has("NSColor") || has("UIColor")
-            || has("foregroundStyle(.", notFollowedBy: "nw") || has("foregroundColor(.", notFollowedBy: "nw")
-            || has(".background(.", notFollowedBy: "nw") || has(".fill(.", notFollowedBy: "nw") || has(".stroke(.", notFollowedBy: "nw")
-            || has(".tint(.", notFollowedBy: "nw") || mentionsARegisteredSymbol(line)
+        return has(".shSans(") || has(".shMono(") || has("size:") || has("Size:") || has(".opacity(")
+            || has("Color(") || has("Color.", notFollowedBy: "sh") || has("#colorLiteral") || has("\"#") || has("NSColor") || has("UIColor")
+            || has("foregroundStyle(.", notFollowedBy: "sh") || has("foregroundColor(.", notFollowedBy: "sh")
+            || has(".background(.", notFollowedBy: "sh") || has(".fill(.", notFollowedBy: "sh") || has(".stroke(.", notFollowedBy: "sh")
+            || has(".tint(.", notFollowedBy: "sh") || mentionsARegisteredSymbol(line)
     }
 
     private static func mentionsARegisteredSymbol(_ line: UnsafeBufferPointer<UInt8>) -> Bool {

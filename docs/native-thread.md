@@ -691,8 +691,8 @@ new tool, no versioning and no editing. The host stores nothing and trusts no cl
   either way, and opens "isn't available" on a host that cannot serve them.
 - **The client** (`NativeThreadArtifacts`) checks each piece (same path, in order, a size that does not change,
   within the limits), holds up to 24 MiB, keyed by path and latest write, and drops everything on a new session.
-- **Drawn** by `NWArtifactCard`, `NWArtifactList`, `NWArtifactBar` (ShepherdUI). Markdown through the thread's prose
-  renderer; HTML and SVG in `NWArtifactWebView`: JavaScript off, no base URL (so no file access), a content rule list
+- **Drawn** by `SHArtifactCard`, `SHArtifactList`, `SHArtifactBar` (ShepherdUI). Markdown through the thread's prose
+  renderer; HTML and SVG in `SHArtifactWebView`: JavaScript off, no base URL (so no file access), a content rule list
   that blocks every request but `data:`, every navigation cancelled. Save a copy writes the fetched bytes.
 
 ## Goals
@@ -1051,7 +1051,7 @@ components ([docs/design/thread.md](design/thread.md) specifies their look):
 - **`ThreadMarkdown`:** prose and code blocks. The reply's blocks come parsed from the store
   (`nativeMarkdownParse`, ShepherdRemote: tables, task and nested lists, images, `<details>`,
   footnotes; see docs/design/thread.md › Rich content in prose); inline Markdown is styled once per text
-  (`NWProseInline`), and code blocks are colored by tree-sitter off the main actor and cached.
+  (`SHProseInline`), and code blocks are colored by tree-sitter off the main actor and cached.
 - **`Composer`:**
   - the field, attachments (resized to a 2000 px longest edge; at most 4 images of 2 MiB each)
   - chips: model with its picker on ⇧⌘M, and thinking

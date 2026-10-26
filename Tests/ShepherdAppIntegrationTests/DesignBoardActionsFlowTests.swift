@@ -94,10 +94,10 @@ struct DesignBoardActionsFlowTests {
         let before = try await opened.app.server.designSnapshot(opened.design.id)
         let pulls = screen.pulls
         for step in 1...20 {
-            screen.move(NWBoardMove(board: a.rawValue, offset: CGSize(width: Double(step) * 7, height: Double(step) * 3), ended: false))
+            screen.move(SHBoardMove(board: a.rawValue, offset: CGSize(width: Double(step) * 7, height: Double(step) * 3), ended: false))
         }
         #expect(try await opened.app.server.designSnapshot(opened.design.id).revision == before.revision, "nothing written while dragging")
-        await screen.move(NWBoardMove(board: a.rawValue, offset: CGSize(width: 140.4, height: 60.2), ended: true))?.value
+        await screen.move(SHBoardMove(board: a.rawValue, offset: CGSize(width: 140.4, height: 60.2), ended: true))?.value
         let after = try await opened.app.server.designSnapshot(opened.design.id)
         #expect(after.revision == before.revision + 1, "one write")
         #expect(screen.moveWrites == 1)

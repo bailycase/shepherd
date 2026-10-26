@@ -11,13 +11,13 @@ import Testing
 
 /// The composer's menus stay cheap over a full catalog (`ModelCatalogFixture`: hundreds of
 /// models) and pi's full command list. Budgets are counted in rows drawn
-/// (`NWMenuDiagnostics`, debug builds), which no machine's speed changes; the one timed budget
+/// (`SHMenuDiagnostics`, debug builds), which no machine's speed changes; the one timed budget
 /// takes the best of several runs, so a busy machine only adds headroom.
 @Suite("Composer menu performance", .serialized, .mainActorExclusive)
 @MainActor
 struct ComposerMenuPerformanceTests {
     /// The most rows the picker's list shows at once: its 360pt, all in 24pt headers.
-    static let screenful = Int(NWComposerMetrics.modelPickerMaxHeight / NWComposerMetrics.menuHeaderHeight) + 1
+    static let screenful = Int(SHComposerMetrics.modelPickerMaxHeight / SHComposerMetrics.menuHeaderHeight) + 1
     /// A lazy list builds what is on screen and a little beyond it.
     static let rowBudget = 2 * screenful
 
@@ -25,14 +25,14 @@ struct ComposerMenuPerformanceTests {
         let thread = ComposerThread()
         defer { thread.close() }
         try await thread.waitUntilReady()
-        NWMenuDiagnostics.rowBodies = 0
+        SHMenuDiagnostics.rowBodies = 0
 
         thread.openModelPicker()
         try await thread.settle()
 
-        #expect(NWMenuDiagnostics.rowBodies > 0, "the picker opened")
-        #expect(NWMenuDiagnostics.rowBodies <= Self.rowBudget,
-                "\(NWMenuDiagnostics.rowBodies) rows drawn for \(ModelCatalogFixture.entries.count) models")
+        #expect(SHMenuDiagnostics.rowBodies > 0, "the picker opened")
+        #expect(SHMenuDiagnostics.rowBodies <= Self.rowBudget,
+                "\(SHMenuDiagnostics.rowBodies) rows drawn for \(ModelCatalogFixture.entries.count) models")
     }
 
     /// Each keystroke in the search field draws the rows its results put on screen, not the
@@ -47,10 +47,10 @@ struct ComposerMenuPerformanceTests {
 
         var drawn: [Int] = []
         for step in ["g", "p", "t", "-", "5", "⌫", "⌫", "⌫", "⌫", "⌫", "q", "w", "⌫", "⌫"] {
-            NWMenuDiagnostics.rowBodies = 0
+            SHMenuDiagnostics.rowBodies = 0
             if step == "⌫" { thread.deleteBackward() } else { thread.type(step) }
             try await thread.settle()
-            drawn.append(NWMenuDiagnostics.rowBodies)
+            drawn.append(SHMenuDiagnostics.rowBodies)
         }
 
         #expect(drawn.contains { $0 > 0 }, "the results changed")
@@ -64,7 +64,7 @@ struct ComposerMenuPerformanceTests {
         let thread = ComposerThread(animated: false)
         defer { thread.close() }
         try await thread.waitUntilReady()
-        let picker = CGRect(x: thread.columnLeading, y: 0, width: NWComposerMetrics.modelPickerWidth + 20, height: thread.cardTop)
+        let picker = CGRect(x: thread.columnLeading, y: 0, width: SHComposerMetrics.modelPickerWidth + 20, height: thread.cardTop)
         var opens: [Double] = [], closes: [Double] = []
         for _ in 0..<4 {
             let open = await FrameTimer.measure(thread.window, region: picker, stillFrames: 5) { thread.openModelPicker() }
@@ -93,7 +93,7 @@ struct ComposerMenuPerformanceTests {
         let scroll = try #require(Self.menuScroll(in: window))
         let clip = scroll.contentView
         let end = try #require(scroll.documentView).bounds.height - clip.bounds.height
-        let step = 3 * NWComposerMetrics.modelRowHeight
+        let step = 3 * SHComposerMetrics.modelRowHeight
         // A menu holds its list at the top while it grows in; wait until a scroll stays put.
         var held = 0
         try await eventuallyOnMain("the list to keep a scroll") {
@@ -112,7 +112,7 @@ struct ComposerMenuPerformanceTests {
         var fought: [CGFloat] = []
         var y: CGFloat = 0
         while y <= end {
-            NWMenuDiagnostics.rowBodies = 0
+            SHMenuDiagnostics.rowBodies = 0
             clip.scroll(to: NSPoint(x: 0, y: y))
             scroll.reflectScrolledClipView(clip)
             window.layout()
@@ -121,13 +121,13 @@ struct ComposerMenuPerformanceTests {
             window.layout()
             try? await Task.sleep(for: .milliseconds(1))
             window.layout()
-            drawn.append(NWMenuDiagnostics.rowBodies)
+            drawn.append(SHMenuDiagnostics.rowBodies)
             if abs(clip.bounds.origin.y - y) > 0.5 { fought.append(clip.bounds.origin.y - y) }
             y += step
         }
 
         #expect(drawn.count > 100, "scrolled through \(drawn.count) steps")
-        #expect(drawn.allSatisfy { $0 <= 2 + 2 * Int(step / NWComposerMetrics.menuHeaderHeight) + 2 },
+        #expect(drawn.allSatisfy { $0 <= 2 + 2 * Int(step / SHComposerMetrics.menuHeaderHeight) + 2 },
                 "rows drawn per step: max \(drawn.max() ?? 0), total \(drawn.reduce(0, +))")
         #expect(fought.isEmpty, "the highlight moved the list \(fought.count) times")
     }
@@ -136,7 +136,7 @@ struct ComposerMenuPerformanceTests {
     /// between; ↑↓ past the visible rows still scroll the highlight into view.
     @Test func movingTheSlashMenusHighlightRedrawsTwoRows() async throws {
         let model = HighlightModel()
-        let commands = ModelCatalogFixture.commands.map { NWSlashCommand(name: $0.name, description: $0.description, tag: $0.source) }
+        let commands = ModelCatalogFixture.commands.map { SHSlashCommand(name: $0.name, description: $0.description, tag: $0.source) }
         let window = OffscreenWindow(size: CGSize(width: 520, height: 360), dark: false, SlashHost(model: model, commands: commands))
         defer { window.close() }
         try await eventuallyOnMain("the menu to load") { window.layout(); return Self.menuScroll(in: window) != nil }
@@ -144,17 +144,17 @@ struct ComposerMenuPerformanceTests {
 
         var drawn: [Int] = []
         for index in 1...6 {
-            NWMenuDiagnostics.rowBodies = 0
+            SHMenuDiagnostics.rowBodies = 0
             model.selection = index
             window.layout()
-            drawn.append(NWMenuDiagnostics.rowBodies)
+            drawn.append(SHMenuDiagnostics.rowBodies)
         }
         #expect(drawn.allSatisfy { $0 <= 2 }, "rows drawn per move: \(drawn)")
 
         model.selection = 40
         try await eventuallyOnMain("↑↓ to scroll the highlight into view") {
             window.layout()
-            return clip.bounds.origin.y >= 40 * NWComposerMetrics.slashRowHeight - clip.bounds.height
+            return clip.bounds.origin.y >= 40 * SHComposerMetrics.slashRowHeight - clip.bounds.height
         }
     }
 
@@ -169,10 +169,10 @@ struct ComposerMenuPerformanceTests {
 
         var drawn: [Int] = []
         for index in 1...6 {
-            NWMenuDiagnostics.rowBodies = 0
+            SHMenuDiagnostics.rowBodies = 0
             model.selection = index
             window.layout()
-            drawn.append(NWMenuDiagnostics.rowBodies)
+            drawn.append(SHMenuDiagnostics.rowBodies)
         }
         #expect(drawn.allSatisfy { $0 <= 2 }, "rows drawn per move: \(drawn)")
 
@@ -182,7 +182,7 @@ struct ComposerMenuPerformanceTests {
             model.selection = position
             window.layout()
             let top = Self.top(ofOption: position)
-            if clip.bounds.minY > top + 1 || top + NWComposerMetrics.modelRowHeight > clip.bounds.maxY + 1 { hidden.append(position) }
+            if clip.bounds.minY > top + 1 || top + SHComposerMetrics.modelRowHeight > clip.bounds.maxY + 1 { hidden.append(position) }
         }
         #expect(hidden.isEmpty, "highlighted models out of view: \(hidden)")
     }
@@ -191,12 +191,12 @@ struct ComposerMenuPerformanceTests {
 
     /// Bodies, derivations and menu rows counted while `change` runs and the window settles.
     private func counting(_ thread: ComposerThread, _ change: () -> Void) async throws -> [String: Int] {
-        NWMenuDiagnostics.rowBodies = 0
-        NWRenderProbe.start()
+        SHMenuDiagnostics.rowBodies = 0
+        SHRenderProbe.start()
         change()
         try await thread.settle()
-        var counts = NWRenderProbe.stop()
-        counts["menu.rows"] = NWMenuDiagnostics.rowBodies
+        var counts = SHRenderProbe.stop()
+        counts["menu.rows"] = SHMenuDiagnostics.rowBodies
         return counts
     }
 
@@ -286,18 +286,18 @@ struct ComposerMenuPerformanceTests {
     // MARK: Fixtures
 
     /// The catalog as the picker lists it: one section per provider.
-    static let sections: [NWModelSection] = {
+    static let sections: [SHModelSection] = {
         var order: [String] = []
-        var byProvider: [String: [NWModelOption]] = [:]
+        var byProvider: [String: [SHModelOption]] = [:]
         for entry in ModelCatalogFixture.entries {
             if byProvider[entry.provider] == nil { order.append(entry.provider) }
-            byProvider[entry.provider, default: []].append(NWModelOption(id: entry.id, title: nativeModelShortName(entry.id), note: entry.context))
+            byProvider[entry.provider, default: []].append(SHModelOption(id: entry.id, title: nativeModelShortName(entry.id), note: entry.context))
         }
-        return order.map { NWModelSection(title: $0, options: byProvider[$0] ?? []) }
+        return order.map { SHModelSection(title: $0, options: byProvider[$0] ?? []) }
     }()
 
     /// A section header's height with the gap above it.
-    static let header = NWComposerMetrics.menuHeaderHeight + NWComposerMetrics.modelSectionGap
+    static let header = SHComposerMetrics.menuHeaderHeight + SHComposerMetrics.modelSectionGap
 
     /// The model at `y` down the list.
     static func option(at y: CGFloat) -> Int {
@@ -306,7 +306,7 @@ struct ComposerMenuPerformanceTests {
             top += header
             if y < top { return position }
             for _ in section.options {
-                top += NWComposerMetrics.modelRowHeight
+                top += SHComposerMetrics.modelRowHeight
                 if y < top { return position }
                 position += 1
             }
@@ -319,8 +319,8 @@ struct ComposerMenuPerformanceTests {
         var top: CGFloat = 0, seen = 0
         for section in sections {
             top += header
-            if position < seen + section.options.count { return top + CGFloat(position - seen) * NWComposerMetrics.modelRowHeight }
-            top += CGFloat(section.options.count) * NWComposerMetrics.modelRowHeight
+            if position < seen + section.options.count { return top + CGFloat(position - seen) * SHComposerMetrics.modelRowHeight }
+            top += CGFloat(section.options.count) * SHComposerMetrics.modelRowHeight
             seen += section.options.count
         }
         return top
@@ -344,20 +344,20 @@ private final class HighlightModel {
 private struct PickerHost: View {
     static let size = CGSize(width: 400, height: 480)
     @Bindable var model: HighlightModel
-    let sections: [NWModelSection]
+    let sections: [SHModelSection]
 
     var body: some View {
-        NWModelPicker(query: $model.query, sections: sections, selection: $model.selection, onChoose: { _ in }, onClose: {})
+        SHModelPicker(query: $model.query, sections: sections, selection: $model.selection, onChoose: { _ in }, onClose: {})
             .frame(width: Self.size.width, height: Self.size.height)
     }
 }
 
 private struct SlashHost: View {
     @Bindable var model: HighlightModel
-    let commands: [NWSlashCommand]
+    let commands: [SHSlashCommand]
 
     var body: some View {
-        NWSlashMenu(commands: commands, total: commands.count, query: "", selection: $model.selection) { _ in }
+        SHSlashMenu(commands: commands, total: commands.count, query: "", selection: $model.selection) { _ in }
             .frame(width: 520, height: 360)
     }
 }

@@ -32,7 +32,7 @@ struct ProjectsSettings: View {
                 }.scrollBounceBehavior(.basedOnSize)
             }
         }
-        .nwControlScale(.settings)
+        .shControlScale(.settings)
         .task(id: vm.projectsSources) { await model.load(vm.projectsSources) }
         .sheet(item: $addingChild) { model in
             ChildProjectSheet(model: model, dismiss: { addingChild = nil })
@@ -58,47 +58,47 @@ struct ProjectsSettings: View {
 
     private var index: some View {
         VStack(alignment: .leading, spacing: AppLayout.projectsSpacing) {
-            HStack(alignment: .center, spacing: NW.Space.xl) {
+            HStack(alignment: .center, spacing: SH.Space.xl) {
                 SettingsHeader(title: "Spaces", explanation: "Organize spaces without moving folders. Settings still follow folder ancestry.",
                                titleSize: AppLayout.projectsTitleSize, explanationSize: AppLayout.projectsExplanationSize)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 add
             }
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: NW.Space.xl) { filter; hosts; Spacer(minLength: 0); count }
-                VStack(alignment: .leading, spacing: NW.Space.m) {
-                    HStack(spacing: NW.Space.xl) { filter; Spacer(minLength: 0); count }
+                HStack(spacing: SH.Space.xl) { filter; hosts; Spacer(minLength: 0); count }
+                VStack(alignment: .leading, spacing: SH.Space.m) {
+                    HStack(spacing: SH.Space.xl) { filter; Spacer(minLength: 0); count }
                     ScrollView(.horizontal) { hosts }.scrollIndicators(.hidden)
                 }
             }
             if let error = model.error { SettingsNote(text: error) }
             table
             Text("Space grouping changes only Shepherd. Instructions and settings follow folders on disk.")
-                .nwText(size: AppLayout.projectsHostSize, lineHeight: AppLayout.projectsFooterLineHeight)
-                .foregroundStyle(Color.nw.textSecondary)
+                .shText(size: AppLayout.projectsHostSize, lineHeight: AppLayout.projectsFooterLineHeight)
+                .foregroundStyle(Color.sh.textSecondary)
                 .frame(maxWidth: AppLayout.projectsTextWidth, alignment: .leading)
         }
     }
 
     private var filter: some View {
-        NWSearchField("Filter spaces", text: $model.filter)
+        SHSearchField("Filter spaces", text: $model.filter)
             .frame(width: AppLayout.projectsFilterWidth)
     }
 
     private var hosts: some View {
-        NWSegmentedPicker("Space hosts", selection: $model.host, options: model.hostOptions)
+        SHSegmentedPicker("Space hosts", selection: $model.host, options: model.hostOptions)
     }
 
     private var count: some View {
         Text(model.countText)
-            .font(.nwSans(AppLayout.projectsHostSize))
-            .foregroundStyle(Color.nw.textSecondary)
+            .font(.shSans(AppLayout.projectsHostSize))
+            .foregroundStyle(Color.sh.textSecondary)
             .fixedSize()
     }
 
     private var add: some View {
         Button("Add space", systemImage: "plus") { adding = model.addHost.map { AddingProject(host: $0) } }
-            .buttonStyle(.nw(.primary))
+            .buttonStyle(.sh(.primary))
             .disabled(model.addHost == nil || model.addHost?.unavailable != nil)
     }
 
@@ -107,11 +107,11 @@ struct ProjectsSettings: View {
             ProjectColumns {
                 Text("SPACE"); Text("HOST"); Text("CONFIGURATION"); Color.clear
             }
-            .font(.nwMono(AppLayout.projectsHeaderSize))
-            .foregroundStyle(Color.nw.textTertiary)
+            .font(.shMono(AppLayout.projectsHeaderSize))
+            .foregroundStyle(Color.sh.textTertiary)
             .frame(height: AppLayout.projectsHeaderHeight)
-            .background(Color.nw.bgSunken)
-            NWHairline()
+            .background(Color.sh.bgSunken)
+            SHHairline()
             LazyVStack(spacing: 0) {
                 ForEach(model.visible) { row in
                     VStack(spacing: 0) {
@@ -128,7 +128,7 @@ struct ProjectsSettings: View {
                                            ? { vm.spaceDeleteTarget = row.project.projectID } : nil,
                                        rename: row.host.id == "local" && row.project.projectID != nil
                                            ? { vm.spaceRenameTarget = row.project.projectID } : nil)
-                        if row.id != model.visible.last?.id { NWHairline() }
+                        if row.id != model.visible.last?.id { SHHairline() }
                     }
                 }
             }
@@ -136,14 +136,14 @@ struct ProjectsSettings: View {
             .accessibilityLabel("Spaces and subspaces")
             if model.visible.isEmpty {
                 Text(model.loading ? "Loading spaces…" : model.rows.isEmpty ? "No spaces yet. Add a folder to get started." : "No spaces match your filter.")
-                    .font(.nw(.body)).foregroundStyle(Color.nw.textTertiary)
-                    .padding(NW.Space.xxl)
+                    .font(.sh(.body)).foregroundStyle(Color.sh.textTertiary)
+                    .padding(SH.Space.xxl)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .background(Color.nw.bgWindow)
-        .clipShape(RoundedRectangle(cornerRadius: NW.Radius.l))
-        .nwBorder(Color.nw.lineSubtle, radius: NW.Radius.l)
+        .background(Color.sh.bgWindow)
+        .clipShape(RoundedRectangle(cornerRadius: SH.Radius.l))
+        .shBorder(Color.sh.lineSubtle, radius: SH.Radius.l)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("ProjectsTable")
     }
@@ -156,7 +156,7 @@ private struct ProjectColumns<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
         let scale = ThemeStore.shared.textScale
-        HStack(spacing: NW.Space.xl) {
+        HStack(spacing: SH.Space.xl) {
             Group(subviews: content) { columns in
                 ForEach(columns.indices, id: \.self) { index in
                     switch index {
@@ -174,7 +174,7 @@ private struct ProjectColumns<Content: View>: View {
                 }
             }
         }
-        .padding(.horizontal, NW.Space.xl)
+        .padding(.horizontal, SH.Space.xl)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -193,18 +193,18 @@ private struct ProjectTreeRow: View {
     var rename: (() -> Void)? = nil
 
     var body: some View {
-        let _ = NWRenderProbe.tick("settings.project.row")
+        let _ = SHRenderProbe.tick("settings.project.row")
         ProjectColumns {
-            HStack(spacing: NW.Space.m) {
+            HStack(spacing: SH.Space.m) {
                 if row.children > 0 {
                     Button(action: toggle) {
                         Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                            .font(.nwSans(AppLayout.projectsChevronSize))
-                            .foregroundStyle(Color.nw.textSecondary)
+                            .font(.shSans(AppLayout.projectsChevronSize))
+                            .foregroundStyle(Color.sh.textSecondary)
                             .frame(width: AppLayout.projectsToggleWidth, height: AppLayout.projectsToggleHeight)
                             .contentShape(Rectangle())
                     }
-                    .buttonStyle(.nwRow())
+                    .buttonStyle(.shRow())
                     .accessibilityLabel("\(expanded ? "Collapse" : "Expand") \(row.project.name)")
                 } else {
                     Color.clear.frame(width: AppLayout.projectsToggleWidth, height: 1)
@@ -218,12 +218,12 @@ private struct ProjectTreeRow: View {
                         if let remove { Button("Remove Space…", role: .destructive, action: remove) }
                     }
             }
-            .padding(.leading, CGFloat(row.ancestorIDs.count) * NW.Space.xxl)
-            Text(row.host.name).font(.nwSans(AppLayout.projectsHostSize)).foregroundStyle(Color.nw.textSecondary).lineLimit(1)
+            .padding(.leading, CGFloat(row.ancestorIDs.count) * SH.Space.xxl)
+            Text(row.host.name).font(.shSans(AppLayout.projectsHostSize)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
             configuration
             action
         }
-        .padding(.vertical, NW.Space.l)
+        .padding(.vertical, SH.Space.l)
         .frame(minHeight: AppLayout.projectsRowHeight)
         .contentShape(Rectangle())
         .onTapGesture(perform: open)
@@ -235,26 +235,26 @@ private struct ProjectTreeRow: View {
     }
 
     private var identity: some View {
-        HStack(spacing: NW.Space.m) {
+        HStack(spacing: SH.Space.m) {
             Image(systemName: "folder")
-                .font(.nwSans(AppLayout.projectsFolderSize))
-                .foregroundStyle(Color.nw.textSecondary)
+                .font(.shSans(AppLayout.projectsFolderSize))
+                .foregroundStyle(Color.sh.textSecondary)
                 .frame(width: AppLayout.projectsFolderFrame, height: AppLayout.projectsFolderFrame)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: NW.Space.xs) {
-                HStack(spacing: NW.Space.m) {
-                    Text(row.project.name).font(.nwSans(AppLayout.projectsNameSize, .medium)).foregroundStyle(Color.nw.textPrimary)
+            VStack(alignment: .leading, spacing: SH.Space.xs) {
+                HStack(spacing: SH.Space.m) {
+                    Text(row.project.name).font(.shSans(AppLayout.projectsNameSize, .medium)).foregroundStyle(Color.sh.textPrimary)
                     if row.children > 0 {
                         Text(row.children == 1 ? "1 subspace" : "\(row.children) subspaces")
-                            .font(.nwSans(AppLayout.projectsPathSize))
-                            .foregroundStyle(Color.nw.textSecondary)
-                            .padding(.horizontal, NW.Space.s)
-                            .padding(.vertical, NW.Space.xxs)
-                            .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.xs))
+                            .font(.shSans(AppLayout.projectsPathSize))
+                            .foregroundStyle(Color.sh.textSecondary)
+                            .padding(.horizontal, SH.Space.s)
+                            .padding(.vertical, SH.Space.xxs)
+                            .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
                             .fixedSize()
                     }
                 }
-                Text(row.project.displayPath).font(.nwMono(AppLayout.projectsPathSize)).foregroundStyle(Color.nw.textTertiary)
+                Text(row.project.displayPath).font(.shMono(AppLayout.projectsPathSize)).foregroundStyle(Color.sh.textTertiary)
                     .truncationMode(.middle)
             }
             .lineLimit(1)
@@ -268,11 +268,11 @@ private struct ProjectTreeRow: View {
         if row.unavailable == nil { label = row.configuration }
         else if row.host.unavailable == nil { label = "directory unavailable" }
         else { label = "host unavailable" }
-        return VStack(alignment: .leading, spacing: NW.Space.xs) {
-            Text(label).font(.nwSans(AppLayout.projectsHostSize))
-                .foregroundStyle(row.unavailable != nil ? Color.nw.textTertiary : Color.nw.textSecondary)
+        return VStack(alignment: .leading, spacing: SH.Space.xs) {
+            Text(label).font(.shSans(AppLayout.projectsHostSize))
+                .foregroundStyle(row.unavailable != nil ? Color.sh.textTertiary : Color.sh.textSecondary)
             if let parent = row.project.inheritedFromName ?? row.parentName, !row.project.inheritedMCP.isEmpty, row.unavailable == nil {
-                Text("From \(parent)").font(.nwMono(AppLayout.projectsPathSize)).foregroundStyle(Color.nw.textTertiary)
+                Text("From \(parent)").font(.shMono(AppLayout.projectsPathSize)).foregroundStyle(Color.sh.textTertiary)
             }
         }
         .lineLimit(1)
@@ -281,10 +281,10 @@ private struct ProjectTreeRow: View {
     @ViewBuilder private var action: some View {
         if row.isSubproject {
             Button("Open space", action: open)
-                .buttonStyle(.nw(.ghost, size: .s))
+                .buttonStyle(.sh(.ghost, size: .s))
         } else {
             Button("Add subspace", systemImage: "plus", action: addSubproject)
-                .buttonStyle(.nw(.ghost, size: .s))
+                .buttonStyle(.sh(.ghost, size: .s))
                 .disabled(row.unavailable != nil)
                 .accessibilityLabel("Add subspace to \(row.project.name)")
         }

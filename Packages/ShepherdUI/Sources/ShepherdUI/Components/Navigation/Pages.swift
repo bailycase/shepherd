@@ -6,28 +6,28 @@ import SwiftUI
 // caller's.
 
 /// The destination pages' own measures.
-public enum NWPageMetrics {
+public enum SHPageMetrics {
     /// The page header (the thread toolbar is 44).
     public static let headerHeight: CGFloat = 52
-    public static let headerLeading: CGFloat = NW.Space.xxl
-    public static let headerTrailing: CGFloat = NW.Space.xl
+    public static let headerLeading: CGFloat = SH.Space.xxl
+    public static let headerTrailing: CGFloat = SH.Space.xl
     /// Between the header's items.
-    public static let headerSpacing: CGFloat = NW.Space.l
+    public static let headerSpacing: CGFloat = SH.Space.l
     /// The header's filter field.
     public static let filterWidth: CGFloat = 220
     public static let filterPadding: CGFloat = 10
     public static let filterGlyph: CGFloat = 12
     /// A page's side inset (the header's leading edge, a table's rows, a card grid).
-    public static let sideInset: CGFloat = NW.Space.xxl
+    public static let sideInset: CGFloat = SH.Space.xxl
     /// Above and below a page body of cards.
     public static let bodyVertical: CGFloat = 20
     /// Between a table's columns, and between cards.
-    public static let columnGap: CGFloat = NW.Space.xl
+    public static let columnGap: CGFloat = SH.Space.xl
     /// Above and below a table row's content.
-    public static let rowVertical: CGFloat = NW.Space.l
+    public static let rowVertical: CGFloat = SH.Space.l
     /// Under the table's column labels.
-    public static let headBottom: CGFloat = NW.Space.m
-    /// A card's corners (the boards' 10, between `NW.Radius.m` and `.l`).
+    public static let headBottom: CGFloat = SH.Space.m
+    /// A card's corners (the boards' 10, between `SH.Radius.m` and `.l`).
     public static let cardRadius: CGFloat = 10
     /// A fact row's shortest height (a host card's).
     public static let factMinHeight: CGFloat = 26
@@ -45,10 +45,10 @@ public enum NWPageMetrics {
 
 /// A destination page's header: the title, an optional subtitle ("3 hosts · 1 offline"), then
 /// the trailing controls (a filter, the page's one primary button), on the window's background
-/// with a hairline beneath. As the thread toolbar (`NWThreadToolbar`): a sidebar button leads
+/// with a hairline beneath. As the thread toolbar (`SHThreadToolbar`): a sidebar button leads
 /// while the sidebar is not docked, `leadingInset` clears the window controls, and its empty area
 /// drags the window.
-public struct NWPageHeader<Trailing: View>: View {
+public struct SHPageHeader<Trailing: View>: View {
     let title: String
     let subtitle: String?
     let leadingInset: CGFloat
@@ -70,47 +70,47 @@ public struct NWPageHeader<Trailing: View>: View {
     }
 
     public var body: some View {
-        HStack(spacing: NWPageMetrics.headerSpacing) {
+        HStack(spacing: SHPageMetrics.headerSpacing) {
             if let sidebar {
                 Button(action: sidebar) { Image(systemName: "sidebar.left") }
-                    .buttonStyle(.nwIcon)
-                    .nwHelp(sidebarLabel, shortcut: sidebarShortcut)
+                    .buttonStyle(.shIcon)
+                    .shHelp(sidebarLabel, shortcut: sidebarShortcut)
                     .accessibilityLabel(sidebarLabel)
             }
             Text(title)
-                .font(.nw(.title))
-                .foregroundStyle(Color.nw.textPrimary)
+                .font(.sh(.title))
+                .foregroundStyle(Color.sh.textPrimary)
                 .lineLimit(1)
                 .accessibilityAddTraits(.isHeader)
             if let subtitle {
                 Text(subtitle)
-                    .font(.nw(.ui, weight: .regular))
-                    .foregroundStyle(Color.nw.textTertiary)
+                    .font(.sh(.ui, weight: .regular))
+                    .foregroundStyle(Color.sh.textTertiary)
                     .lineLimit(1)
             }
-            Spacer(minLength: NW.Space.m)
+            Spacer(minLength: SH.Space.m)
             trailing
         }
-        .padding(.leading, NWPageMetrics.headerLeading + leadingInset)
-        .padding(.trailing, NWPageMetrics.headerTrailing)
-        .frame(height: NWPageMetrics.headerHeight)
+        .padding(.leading, SHPageMetrics.headerLeading + leadingInset)
+        .padding(.trailing, SHPageMetrics.headerTrailing)
+        .frame(height: SHPageMetrics.headerHeight)
         .frame(maxWidth: .infinity)
-        .background(Color.nw.bgWindow)
-        .overlay(alignment: .bottom) { NWHairline() }
+        .background(Color.sh.bgWindow)
+        .overlay(alignment: .bottom) { SHHairline() }
         .contentShape(Rectangle())
-        .nwWindowDrag()
+        .shWindowDrag()
     }
 }
 
-extension NWPageHeader where Trailing == EmptyView {
+extension SHPageHeader where Trailing == EmptyView {
     public init(_ title: String, subtitle: String? = nil, leadingInset: CGFloat = 0, sidebar: (() -> Void)? = nil) {
         self.init(title, subtitle: subtitle, leadingInset: leadingInset, sidebar: sidebar) { EmptyView() }
     }
 }
 
 /// The header's filter ("Filter automations"): a borderline field with no fill, a glass, and a
-/// clear button once there is text. Lighter than `NWSearchField`, as the boards draw it.
-public struct NWPageFilterField: View {
+/// clear button once there is text. Lighter than `SHSearchField`, as the boards draw it.
+public struct SHPageFilterField: View {
     let placeholder: String
     @Binding var text: String
     @FocusState private var focused: Bool
@@ -121,37 +121,37 @@ public struct NWPageFilterField: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        HStack(spacing: NW.Space.m) {
+        let sh = Color.sh
+        HStack(spacing: SH.Space.m) {
             Image(systemName: "magnifyingglass")
-                .font(.nwSans(NWPageMetrics.filterGlyph - 1, .medium))
-                .foregroundStyle(nw.textTertiary)
+                .font(.shSans(SHPageMetrics.filterGlyph - 1, .medium))
+                .foregroundStyle(sh.textTertiary)
                 .accessibilityHidden(true)
-            TextField(placeholder, text: $text, prompt: Text(placeholder).foregroundStyle(nw.textTertiary))
+            TextField(placeholder, text: $text, prompt: Text(placeholder).foregroundStyle(sh.textTertiary))
                 .textFieldStyle(.plain)
-                .font(.nwSans(12))
-                .foregroundStyle(nw.textPrimary)
-                .tint(nw.lantern)
+                .font(.shSans(12))
+                .foregroundStyle(sh.textPrimary)
+                .tint(sh.lantern)
                 .focused($focused)
             if !text.isEmpty {
                 Button { text = "" } label: {
                     Image(systemName: "xmark")
-                        .font(.nwSans(9, .semibold))
-                        .foregroundStyle(nw.textTertiary)
-                        .frame(width: NW.Space.xl, height: NW.Space.xl)
+                        .font(.shSans(9, .semibold))
+                        .foregroundStyle(sh.textTertiary)
+                        .frame(width: SH.Space.xl, height: SH.Space.xl)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear filter")
             }
         }
-        .padding(.horizontal, NWPageMetrics.filterPadding)
-        .frame(width: NWPageMetrics.filterWidth, height: NW.Height.controlM)
-        .nwBorder(nw.lineSubtle, radius: NW.Radius.s)
+        .padding(.horizontal, SHPageMetrics.filterPadding)
+        .frame(width: SHPageMetrics.filterWidth, height: SH.Height.controlM)
+        .shBorder(sh.lineSubtle, radius: SH.Radius.s)
         .overlay {
             Color.clear
-                .nwFocusRing(focused, radius: NW.Radius.s)
-                .nwComponentAnimation(.hover, value: focused)
+                .shFocusRing(focused, radius: SH.Radius.s)
+                .shComponentAnimation(.hover, value: focused)
                 .allowsHitTesting(false)
         }
     }
@@ -160,7 +160,7 @@ public struct NWPageFilterField: View {
 /// A table's column widths: fixed points, or a share of what the fixed ones leave (the boards'
 /// `2fr 76px 76px 1.15fr`). Lays its children out one per column, vertically centered; a
 /// child past the last column gets no width.
-public struct NWTableColumns: Layout {
+public struct SHTableColumns: Layout {
     public enum Column: Equatable, Sendable {
         case fixed(CGFloat)
         case flex(CGFloat)
@@ -169,7 +169,7 @@ public struct NWTableColumns: Layout {
     let columns: [Column]
     let spacing: CGFloat
 
-    public init(_ columns: [Column], spacing: CGFloat = NWPageMetrics.columnGap) {
+    public init(_ columns: [Column], spacing: CGFloat = SHPageMetrics.columnGap) {
         self.columns = columns
         self.spacing = spacing
     }
@@ -221,42 +221,42 @@ public struct NWTableColumns: Layout {
 }
 
 /// A table's column labels in mono caps ("AUTOMATION", "HOST"), on its columns.
-public struct NWTableHead: View {
+public struct SHTableHead: View {
     let labels: [String]
-    let columns: [NWTableColumns.Column]
+    let columns: [SHTableColumns.Column]
 
-    public init(_ labels: [String], columns: [NWTableColumns.Column]) {
+    public init(_ labels: [String], columns: [SHTableColumns.Column]) {
         self.labels = labels
         self.columns = columns
     }
 
     public var body: some View {
-        NWTableColumns(columns) {
+        SHTableColumns(columns) {
             ForEach(Array(labels.enumerated()), id: \.offset) { _, label in
                 Text(label)
-                    .nwSectionLabel()
+                    .shSectionLabel()
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .padding(.horizontal, NWPageMetrics.sideInset)
-        .padding(.bottom, NWPageMetrics.headBottom)
+        .padding(.horizontal, SHPageMetrics.sideInset)
+        .padding(.bottom, SHPageMetrics.headBottom)
         .accessibilityHidden(true)
     }
 }
 
 extension View {
     /// A destination page's card: a 1pt `lineSubtle` border at the boards' 10pt radius, clipped.
-    public func nwPageCard() -> some View {
-        clipShape(RoundedRectangle(cornerRadius: NWPageMetrics.cardRadius))
-            .nwBorder(Color.nw.lineSubtle, radius: NWPageMetrics.cardRadius)
+    public func shPageCard() -> some View {
+        clipShape(RoundedRectangle(cornerRadius: SHPageMetrics.cardRadius))
+            .shBorder(Color.sh.lineSubtle, radius: SHPageMetrics.cardRadius)
     }
 }
 
 /// A labeled fact: a fixed label column in `textSecondary`, then the value (mono for a host, a
 /// path, a model). A host card's rows are at least 26pt tall with mono 11.5 values; a detail
 /// pane's are tight, with values at the label's size.
-public struct NWPageFact: View, Equatable {
+public struct SHPageFact: View, Equatable {
     public enum Style: Sendable { case card, detail }
 
     let label: String
@@ -274,60 +274,60 @@ public struct NWPageFact: View, Equatable {
     }
 
     public var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: style == .card ? NWPageMetrics.factGap : 0) {
+        HStack(alignment: .firstTextBaseline, spacing: style == .card ? SHPageMetrics.factGap : 0) {
             Text(label)
-                .font(.nw(.ui, weight: .regular))
-                .foregroundStyle(Color.nw.textSecondary)
+                .font(.sh(.ui, weight: .regular))
+                .foregroundStyle(Color.sh.textSecondary)
                 .frame(width: labelWidth, alignment: .leading)
             Text(value)
                 .font(valueFont)
-                .foregroundStyle(Color.nw.textPrimary)
+                .foregroundStyle(Color.sh.textPrimary)
                 .lineLimit(style == .card ? 1 : 3)
                 .truncationMode(.tail)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(minHeight: style == .card ? NWPageMetrics.factMinHeight : nil)
+        .frame(minHeight: style == .card ? SHPageMetrics.factMinHeight : nil)
         .accessibilityElement(children: .combine)
     }
 
     private var valueFont: Font {
         switch style {
-        case .card: mono ? .nw(.mono) : .nw(.ui, weight: .regular)
-        case .detail: mono ? .nwMono(NWTextStyle.ui.size) : .nw(.ui, weight: .regular)
+        case .card: mono ? .sh(.mono) : .sh(.ui, weight: .regular)
+        case .detail: mono ? .shMono(SHTextStyle.ui.size) : .sh(.ui, weight: .regular)
         }
     }
 }
 
 /// A detail pane's section label in mono caps ("PROMPT", "RECENT RUNS").
-public struct NWPageSectionLabel: View {
+public struct SHPageSectionLabel: View {
     let title: String
 
     public init(_ title: String) { self.title = title }
 
     public var body: some View {
         Text(title)
-            .nwSectionLabel()
+            .shSectionLabel()
             .accessibilityAddTraits(.isHeader)
     }
 }
 
 /// A block of text set apart on `bgSunken` with a `lineSubtle` border (an automation's prompt).
-public struct NWPageQuote: View {
+public struct SHPageQuote: View {
     let text: String
 
     public init(_ text: String) { self.text = text }
 
     public var body: some View {
         Text(text)
-            .font(.nw(.ui, weight: .regular))
-            .lineSpacing(NWPageMetrics.quoteLineSpacing)
-            .foregroundStyle(Color.nw.textPrimary)
+            .font(.sh(.ui, weight: .regular))
+            .lineSpacing(SHPageMetrics.quoteLineSpacing)
+            .foregroundStyle(Color.sh.textPrimary)
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
-            .padding(.vertical, NWPageMetrics.quoteVertical)
-            .padding(.horizontal, NW.Space.l)
+            .padding(.vertical, SHPageMetrics.quoteVertical)
+            .padding(.horizontal, SH.Space.l)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .nwCard(radius: NW.Radius.m, fill: Color.nw.bgSunken, line: Color.nw.lineSubtle)
+            .shCard(radius: SH.Radius.m, fill: Color.sh.bgSunken, line: Color.sh.lineSubtle)
     }
 }

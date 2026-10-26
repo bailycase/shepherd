@@ -43,7 +43,7 @@ struct SidebarProject: Identifiable, Equatable {
     /// This Mac's folder for it is gone: it takes no new thread here until located or removed.
     var missing = false
     var pinned = false
-    var rollup: NWProjectRollup = .quiet
+    var rollup: SHProjectRollup = .quiet
     var parentID: SidebarProjectID?
     var childThreadCount = 0
     var parentIsExplicit = false
@@ -227,7 +227,7 @@ struct SidebarProjectRow: Equatable {
     let path: String
     let count: Int
     let expanded: Bool
-    let rollup: NWProjectRollup
+    let rollup: SHProjectRollup
     let dimmed: Bool
     /// Where + and New thread in <project> start one; nil space: nowhere reachable.
     let newThreadHost: UUID?
@@ -293,7 +293,7 @@ extension SidebarDerivation {
     /// in the project its folder is in (or nowhere, when no project holds it), and designs are
     /// not in the tree at all (the user's decision, 2026-09-26: they stay under Designs and ⌘K).
     @MainActor static func tree(_ source: SidebarSource, options: SidebarTreeOptions) -> SidebarTree {
-        NWRenderProbe.tick("sidebar.tree")
+        SHRenderProbe.tick("sidebar.tree")
         var builder = TreeBuilder(options: options)
         builder.addLocal(source)
         for (hostIndex, host) in source.hosts.enumerated() {

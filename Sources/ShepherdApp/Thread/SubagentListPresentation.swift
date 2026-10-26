@@ -12,7 +12,7 @@ struct SubagentListPresentation: Equatable {
     /// One run: the row's values, and the run itself for the commands it offers.
     struct Item: Equatable, Identifiable {
         var id: String { row.id }
-        let row: NWSubagentTrayRun
+        let row: SHSubagentTrayRun
         let run: ChildRun
     }
 
@@ -27,7 +27,7 @@ struct SubagentListPresentation: Equatable {
     /// "5 subagents".
     var title = ""
     /// "1 running", "1 waiting on parent", "2 done", "1 stopped": every phase present, live ones first.
-    var tally: [NWSubagentTraySummary.Part] = []
+    var tally: [SHSubagentTraySummary.Part] = []
     var sections: [Section] = []
     var count = 0
 
@@ -79,7 +79,7 @@ struct SubagentListPresentation: Equatable {
 
     /// "1 running · 1 waiting on parent · 2 done · 1 stopped": live phases first, then how the rest ended.
     /// A run its parent or you stopped says "stopped", not "failed" (the board's word).
-    static func tally(_ runs: [ChildRun]) -> [NWSubagentTraySummary.Part] {
+    static func tally(_ runs: [ChildRun]) -> [SHSubagentTraySummary.Part] {
         var counts: [(word: String, count: Int)] = []
         func add(_ word: String) {
             if let index = counts.firstIndex(where: { $0.word == word }) { counts[index].count += 1 } else { counts.append((word, 1)) }
@@ -89,7 +89,7 @@ struct SubagentListPresentation: Equatable {
             let phase = nativeRunPhase(run)
             add(phase == .failed && run.state == "stopped" ? "stopped" : phase.word)
         }
-        return order.compactMap { word in counts.first { $0.word == word }.map { NWSubagentTraySummary.Part("\($0.count) \(word)") } }
+        return order.compactMap { word in counts.first { $0.word == word }.map { SHSubagentTraySummary.Part("\($0.count) \(word)") } }
     }
 }
 

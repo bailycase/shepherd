@@ -2,15 +2,15 @@
 
 > Read when you change the composer, its model-settings popover, slash menu, context meter, a question, or the send path.
 
-`Composer` (`Thread/Composer.swift`) on `NWComposer`, `NWSlashMenu`, `NWModelPicker`,
-`NWModelSettings`, and `NWSendMenu`, with Up next above the card (below). Sizes are
-`NWComposerMetrics`; the app's own are in `AppLayout+Thread.swift`. The boards: Composer & menus
-(NWComposer, NWComposerLight: one anatomy in both appearances, every color a role), SlashMenu,
+`Composer` (`Thread/Composer.swift`) on `SHComposer`, `SHSlashMenu`, `SHModelPicker`,
+`SHModelSettings`, and `SHSendMenu`, with Up next above the card (below). Sizes are
+`SHComposerMetrics`; the app's own are in `AppLayout+Thread.swift`. The boards: Composer & menus
+(SHComposer, SHComposerLight: one anatomy in both appearances, every color a role), SlashMenu,
 ModelPicker, and the Question boards (QuestionAsk, QuestionPick, QuestionAnswered,
 QuestionStates).
 
 The full-window boards (Main, Running, SlashMenu, ModelPicker, CommandPalette, SettingsKeyboard)
-were drawn before Night Watch's component boards and draw the same parts larger: a radius-12
+were drawn before Shepherd Design's component boards and draw the same parts larger: a radius-12
 composer with 32pt controls and a 14pt field, a 640pt palette with a 56pt search row, 38pt rows,
 and a lantern scope pill over a 54% scrim, and 22pt keycaps, under a 52pt breadcrumb toolbar
 (Toolbar). Where they disagree, the component boards (Composer & menus, Controls, Navigation) win,
@@ -24,9 +24,9 @@ it (the palette's New agent with options…, New space on <host>…, and "PR #24
 - It is pinned under the thread in the same column, 16pt above the bottom
   (`AppLayout.composerBottom`), with a 48pt fade from transparent to `bgWindow` above it
   (`AppLayout.composerFade`).
-- It is `bgRaised`, with a 1px `lineStrong` line and radius 8 (`NW.Radius.m`). While the field
+- It is `bgRaised`, with a 1px `lineStrong` line and radius 8 (`SH.Radius.m`). While the field
   has focus, a menu is open, or a drop hovers, the line turns `textTertiary` inside a 3pt
-  `bgSelected` ring (`NWComposerMetrics.focusRing`); both fade (`hover`). (NWComposer: "focused,
+  `bgSelected` ring (`SHComposerMetrics.focusRing`); both fade (`hover`). (SHComposer: "focused,
   with text".)
 - Top to bottom: attachments (a row 10pt from the top and 12pt from the sides, chips 6pt apart),
   the field, and one row of controls. The field is `body` text in `textPrimary` with a `lantern`
@@ -37,13 +37,13 @@ it (the palette's New agent with options…, New space on <host>…, and "PR #24
 
 **The control row:**
 
-- attach: a 14pt `paperclip` in `textSecondary`, in a 26pt circular icon button (`.nwIcon`),
+- attach: a 14pt `paperclip` in `textSecondary`, in a 26pt circular icon button (`.shIcon`),
   only when the agent accepts images, and disabled at four attachments. Tooltip "Attach images
   (drop or paste also works), up to 4"; VoiceOver "Attach file".
-- One model-settings button (`NWModelSettingsLabel`; "claude-opus · Medium ⌄"): the model's
+- One model-settings button (`SHModelSettingsLabel`; "claude-opus · Medium ⌄"): the model's
   short name in mono 12, a tertiary dot separator, the thinking level in sans 12, then the
   chevron, all in `textSecondary`. While speed is Fast the button adds a **filled** bolt in
-  `lantern` after the level (`NWFastBolt`, `bolt.fill` at 11pt medium, the one definition every
+  `lantern` after the level (`SHFastBolt`, `bolt.fill` at 11pt medium, the one definition every
   place that shows Fast draws through); Standard draws nothing, and a model with no Fast tier
   never shows the bolt, even while the agent's own tier is still Fast. Unsupported thinking and
   speed are absent. The full model id remains in the tooltip and VoiceOver label ("Model
@@ -56,17 +56,17 @@ it (the palette's New agent with options…, New space on <host>…, and "PR #24
   chooses its highlighted row and never sends the message. Design tool › Design references ›
   The @ picker has the rest.
 - After the spacer, the checkout menu sits in the composer instead of the Mac thread header.
-  `NWComposerBranchLabel` is a 26pt ghost chip with a 13pt worktree or house glyph, the branch
+  `SHComposerBranchLabel` is a 26pt ghost chip with a 13pt worktree or house glyph, the branch
   in mono 11.5 (`textSecondary`, as the model's name), and a nonzero changed-file count in mono
   10.5 `lanternText` ("●3"), then the chevron.
   Its existing Show Changes, Copy Branch Name, Copy Path and Show in Finder actions remain.
   While the agent's question replaces the card, the checkout menu remains accessible in the header.
-- `NWModelSettings` (the board's "One button opens one popover") floats above the card,
+- `SHModelSettings` (the board's "One button opens one popover") floats above the card,
   leading-aligned, 328pt wide, radius 12, with 6pt padding. Its sections have mono caps
-  headers (`NWMenuHeader`: MODEL, THINKING, SPEED) over hairline separators.
+  headers (`SHMenuHeader`: MODEL, THINKING, SPEED) over hairline separators.
   - **MODEL:** 28pt rows in mono 12: the current model (a check in `running` on its trailing
     side), one available recent model, and All models… (Geist `ui`, `textSecondary`, a trailing
-    chevron) opening the full picker. A model with a Fast tier wears a filled `NWFastBolt`
+    chevron) opening the full picker. A model with a Fast tier wears a filled `SHFastBolt`
     before its check (the picker's "fast" tag, as a glyph); a model without one wears none.
   - **THINKING:** a segmented control of the levels the model takes (Low · Medium · High ·
     Extra high; Off to Max where it has them), in equal 24pt segments on a `bgSunken` track
@@ -95,15 +95,15 @@ it (the palette's New agent with options…, New space on <host>…, and "PR #24
   ("Stop the agent and its subagents" while subagents are live). While a question waits, the
   question dock takes the whole card's place (below).
 
-Chips (`.nwComposerChip(active:)`) are 26pt ghost buttons with 8pt side padding and radius 6, in
+Chips (`.shComposerChip(active:)`) are 26pt ghost buttons with 8pt side padding and radius 6, in
 Geist 12 `textSecondary`, their parts 6pt apart, filled with `bgHover` on hover, on press, or
 while their menu is open. A new model or level cross-fades in its chip (`content`); typing and
 width changes stay instant. In a narrow thread, Starting… drops its words first, then the
 model-settings button drops the thinking level and shortens dated model ids. The branch name
 truncates in the middle. There is never a second row of controls.
 
-**Sizes** (NWDesignTool › Chat composer): the composer is the same component everywhere, at one
-of two sizes, `.nwComposerSize(_:)` (`NWComposerSize`). `.regular` is the thread's and New
+**Sizes** (SHDesignTool › Chat composer): the composer is the same component everywhere, at one
+of two sizes, `.shComposerSize(_:)` (`SHComposerSize`). `.regular` is the thread's and New
 design's. `.compact` is for a pane under 520pt, a design's 420pt chat (the canvas's, a system
 build's, a remote design's): the model-settings button drops the thinking level but keeps the Fast bolt. Attach,
 the model, the context ring and Send are the same at both sizes, and so are the chips' 26pt
@@ -133,11 +133,11 @@ metrics (the boards draw the Design tool's composers at their own scale).
 - **Error:** Send, plus a `failed` banner above the card, "Lost connection to the agent
   process.", with the error and Reconnect: only for a pi that was serving and went away, one
   that failed, or one that never started.
-- **Model blocked:** a `failed` `NWBanner` above the card, "Message wasn't sent.", names the
+- **Model blocked:** a `failed` `SHBanner` above the card, "Message wasn't sent.", names the
   saved model and says the message was not sent. "Choose model" opens the existing
   picker. The draft and attachments stay; Send retries only on the user's press.
   This presentation handles a host's `model_unavailable` failure; it does not recover a provider.
-- **Can't start:** a `failed` `NWBanner` in the Error banner's place above the card, for a pi
+- **Can't start:** a `failed` `SHBanner` in the Error banner's place above the card, for a pi
   that stopped before it served (Thread › Can't start), except one not signed in on this Mac,
   whose card in the thread says so instead (Thread › Not signed in; the composer stays as it is). Its title names the cause and its message
   says what to do, then pi's own last lines (at most six, colour codes removed), all selectable:
@@ -198,7 +198,7 @@ the start of a message it starts), so it waits for the turn to end. ⇧↩ and �
 the caret, replacing selected text and leaving the caret after it, and never send or save; the
 same holds in New thread, New design, subagent replies, queued-message editing, inline review
 comments and a design comment's reply. The key handler inserts the line itself
-(`NWReturnKey`, through the field editor's own `insertNewlineIgnoringFieldEditor:`, so the draft,
+(`SHReturnKey`, through the field editor's own `insertNewlineIgnoringFieldEditor:`, so the draft,
 the caret and undo follow): on macOS 27 a SwiftUI multi-line field's editor answers `insertNewline:`,
 the command ↩ and ⇧↩ both resolve to, by ending the edit with no line added, and only ⌥↩'s command
 adds one, so returning `.ignored` for ⇧↩ left the system nothing to insert. An input
@@ -207,7 +207,7 @@ system's. With a menu open ⇧↩ still adds the line, which closes the menu; �
 `ComposerReturnKey` decides it, apart from the field. While pi is idle ↩ and ⌘↩ both send.
 Attachments ride along with a queued message.
 
-**Send menu** (`NWSendMenu`): right-clicking Send, or holding it for
+**Send menu** (`SHSendMenu`): right-clicking Send, or holding it for
 `AppLayout.sendHoldDelay` (500ms), while pi works with a draft, opens the choice at send time
 (`.overlay`): beside the card, 8pt after its trailing edge and bottom-aligned with it, where
 the thread has room for it and its margin (`Composer.sendMenuBeside`), so it covers none of Up
@@ -216,7 +216,7 @@ corner nearest Send. Nothing about the choice is written under the composer.
 
 - 268pt on the menus' popover, 6pt padding, rows 2pt apart; each row top-aligned with 8×10
   padding and the `runningTint` highlight: a 14pt glyph in `textSecondary`, the title in Geist
-  13 medium with its description in caption tertiary beneath, and its keys as `NWKeycap`s.
+  13 medium with its description in caption tertiary beneath, and its keys as `SHKeycap`s.
 - Two rows, the gentlest first. **Wait for the turn to end** (the queue glyph): "Goes when the agent
   finishes this turn." **Steer now** (`arrow.turn.down.right`): "Stops what the agent is doing and
   sends this at once."
@@ -244,7 +244,7 @@ Image drafts belong to the thread, so switching remote threads or parking a term
 layout does not discard them. A successful send removes only its submitted image IDs; images
 added while it waits remain for the next message. Images are resized on the
 way in (longest edge 2000px), at most four per message and 2 MiB each, and shown as
-`NWAttachmentChip`s (ThreadImagesComposer) in a row **above the card**, 6pt apart, wrapping: 26pt, a
+`SHAttachmentChip`s (ThreadImagesComposer) in a row **above the card**, 6pt apart, wrapping: 26pt, a
 `lineStrong` line at radius 6, a 20pt thumbnail (radius 4) 3pt from the leading edge, 6pt, the
 file name in Geist 12 `textPrimary` (truncating in the middle), its size in `micro` mono
 `textTertiary` ("1.4 MB"), and a small `textTertiary` ✕ that removes it ("Remove <name>" to
@@ -255,7 +255,7 @@ one.", and Send, ↩ and ⌘↩ are held until it is removed (the New thread and
 the same way, with the same words as their blocker). Other problems show in the same line:
 "At most 4 images per message." and "<name> is not an image Shepherd can attach.".
 
-**The element chip** (`NWElementChip`; PaneBrowser's composer): an element picked in the Browser
+**The element chip** (`SHElementChip`; PaneBrowser's composer): an element picked in the Browser
 (Side pane: Browser) waits in the same row, after any design references: 26pt, padding 0×8,
 radius 6, a `lineStrong` line, a 12pt element glyph (a dashed square with a pointer) in
 `textSecondary`, the label in Geist Mono 12 `textPrimary` ("button.pay"), the source's file and
@@ -270,7 +270,7 @@ asks its parent, which asks here, as pi's own question, only when it cannot answ
 (Subagents). pi stops and asks once; the thread above keeps what pi found, and the question holds only the question, its
 answers, and yours.
 
-**The question dock** (`Thread/QuestionDock.swift` on ShepherdUI's `NWQuestionDock`; the shared
+**The question dock** (`Thread/QuestionDock.swift` on ShepherdUI's `SHQuestionDock`; the shared
 presentation is `NativeQuestionPrompt` in ShepherdRemote, for the touch clients too). It replaces
 the whole composer card, not just its field, for pi's own question. Its
 rules (QuestionStates › Rules):
@@ -292,23 +292,23 @@ rules (QuestionStates › Rules):
 6. **After:** the composer comes back (the field takes the keyboard again), and the thread
    keeps the record where pi asked (below).
 
-- **The dock** (`NWQuestionDock`, `NWQuestionDockMetrics`): `bgRaised`, radius 12, a 1px
-  `lantern` line inside a 3pt `lanternTint` ring (`.nwQuestionCard()`), 12pt above and below
+- **The dock** (`SHQuestionDock`, `SHQuestionDockMetrics`): `bgRaised`, radius 12, a 1px
+  `lantern` line inside a 3pt `lanternTint` ring (`.shQuestionCard()`), 12pt above and below
   and 14pt at the sides, 12pt between its parts, as wide as the composer card:
-  - the 26pt head (`NWQuestionHead`): a 13pt `questionmark.circle` and "Agent is asking" in
-    Geist 12 semibold (`.nwSans(12, .semibold)`), both `lanternText`, 7pt apart; "1 / N" in
-    micro tertiary when several wait; trailing, Hide the question, a 26pt round `.nwIcon`
+  - the 26pt head (`SHQuestionHead`): a 13pt `questionmark.circle` and "Agent is asking" in
+    Geist 12 semibold (`.shSans(12, .semibold)`), both `lanternText`, 7pt apart; "1 / N" in
+    micro tertiary when several wait; trailing, Hide the question, a 26pt round `.shIcon`
     (transparent, a 14pt `chevron.down` in `textSecondary`; tooltip "Hide the question (Esc)").
     VoiceOver reads the head as one header, "Agent is asking", and the button as "Hide the
     question"
-  - the question in Geist 16 semibold at 1.35, tracked -0.5% (`Font.nwSans(16, .semibold)`;
+  - the question in Geist 16 semibold at 1.35, tracked -0.5% (`Font.shSans(16, .semibold)`;
     15 for a yes or a no and an open question, as the Kinds cards draw it), inline code and
-    emphasis as in prose (`NWProseInline`)
+    emphasis as in prose (`SHProseInline`)
   - the asker's longer message, when it has one (a confirm's), in mono on `bgSunken` (radius 8, a
     `lineSubtle` line, scrolling past 140pt): an app addition no board draws
   - the options, 6pt apart. An option is a card on `bgWindow` with a 1px `lineSubtle` line,
     radius 8, 10pt above and below and 12pt at the sides, its parts 11pt apart: its number in a
-    20pt rounded square (a `lineStrong` line, mono 11 `textSecondary`; radius 4, `NW.Radius.xs`,
+    20pt rounded square (a `lineStrong` line, mono 11 `textSecondary`; radius 4, `SH.Radius.xs`,
     for the board's 5); the title in `headline` (13.5 semibold) over its description in `ui`
     regular `textSecondary` at 1.45, 3pt apart; and, trailing at the top, a 20pt
     **Recommended** tag (`lanternTint` fill, `lanternText` 11 semibold, radius 4, 7pt side
@@ -316,7 +316,7 @@ rules (QuestionStates › Rules):
     lines after the first), and a trailing "(Recommended)". A click picks it (tooltip: its title
     and number). More than six options scroll inside a 360pt lazy stack.
   - a footer over a `lineSubtle` hairline, 12pt below the options: trailing, **Answer**
-    (`.nw(.primary, size: .m)`, 28pt; tooltip "Answer (↩)"), disabled (40%) until there is an
+    (`.sh(.primary, size: .m)`, 28pt; tooltip "Answer (↩)"), disabled (40%) until there is an
     answer. Leading, in micro tertiary, "The agent may stop waiting for this answer" when the
     question has a timeout, or why it cannot be answered here ("An external editor is open ·
     finish it before answering here", "This question is too large to show here"), which also
@@ -338,7 +338,7 @@ rules (QuestionStates › Rules):
     dock never draws "<name> is asking", the branch glyph, 14.5 question or a note and
     Something else… for one: that variant was pruned from the components, on the Mac and iOS.
 - **Hidden** (QuestionStates): Esc or Hide the question shrinks the dock to one 46pt line
-  (`NWQuestionDockHidden`), so you can read the thread; it still holds the composer's place,
+  (`SHQuestionDockHidden`), so you can read the thread; it still holds the composer's place,
   because pi is still waiting. The line is the same lantern card (radius 12, 14pt leading and 8pt
   trailing padding, 10pt between its parts): a 14pt glyph in `lanternText`, the question in 13.5
   semibold (truncating; inline code as in the dock), a small secondary **Answer** (24pt), and a 26pt Show the question
@@ -355,12 +355,12 @@ rules (QuestionStates › Rules):
 - **Stopping** (⌘., Agent ▸ Stop) is how a question is refused: it cancels the questions pi is
   waiting on (their asker gets pi's cancelled answer), then stops the turn. The thread records
   each as not answered.
-- **The record** (QuestionAnswered; `QuestionRecord` on the board; `NWQuestionRecord`, from
+- **The record** (QuestionAnswered; `QuestionRecord` on the board; `SHQuestionRecord`, from
   `NativeQuestionRecordRow`): where pi asked, the thread keeps one line in Geist 12.5
   `textTertiary` (a 12pt `questionmark.circle`, "Agent asked:", and the question in
   `textSecondary` medium, 7pt apart; one line, truncating, the whole question in its tooltip; on
   iPhone and iPad the question wraps to three lines, "not answered" riding its last)
-  and, 8pt below, your answer as a user bubble (`NWUserBubble` with a title): the option's
+  and, 8pt below, your answer as a user bubble (`SHUserBubble` with a title): the option's
   title in semibold (its description and "(Recommended)" left out), or Yes or No for a confirm,
   or the text you typed for an input or editor in the bubble's regular weight; and "2:51 PM ·
   answered" in mono 10.5 tertiary beneath, on hover like every bubble's time. pi's turn carries
@@ -401,7 +401,7 @@ above, so its question is the row of the dialog it opens. Its `short` reason is 
 Needs you (Sidebar); the dock never shows it.
 
 **Not built yet: Pick several** (QuestionStates › Kinds: rows at least 40pt with a 14pt
-`.nwCheckbox`, the label in mono 13 semibold for a host or a path and a note in 12
+`.shCheckbox`, the label in mono 13 semibold for a host or a path and a note in 12
 `textTertiary`, a ticked row in the picked style, and "Answer with 2 hosts"). No asker takes
 several answers: pi's select returns one option. It waits for an asker that says it takes several. Any of pi's dialogs can also be cancelled (pi returns undefined or
 false to its asker), which only Stop does. pi's `custom` UI is not supported in RPC mode, so a
@@ -417,14 +417,14 @@ from that corner (`.overlay`: from 96%, fading). They take no room in the compos
 never changes the composer's height, the thread's inset or scroll position, or any of the thread
 outside the menu (`ComposerMenuTests`). A menu is never taller than the room above the card (it
 keeps 8pt from the thread's top, `AppLayout.menuMargin`, and its list scrolls inside), and beside
-a docked pane it narrows to the card. They share one anatomy (NWComposer › Menus):
+a docked pane it narrows to the card. They share one anatomy (SHComposer › Menus):
 
-- `.nwPopover()` at radius 12 (a 1px `lineStrong` line, `bgRaised`, the popover shadow), with 6pt
+- `.shPopover()` at radius 12 (a 1px `lineStrong` line, `bgRaised`, the popover shadow), with 6pt
   padding (the model picker's parts carry their own)
-- section headers (`NWMenuHeader`, 24pt; NWComposer › Menus: COMMANDS, RECENT, MODEL, THINKING,
+- section headers (`SHMenuHeader`, 24pt; SHComposer › Menus: COMMANDS, RECENT, MODEL, THINKING,
   SPEED): mono 10 medium, uppercase, tracked 6%, `textTertiary`, with an optional trailing count
   in mono 11 `textTertiary` ("4 of 23"), 8pt from the sides (10pt in the model picker)
-- rows (`NWMenuRow`, 28pt unless a menu says otherwise), radius 6 (the boards' 7 on the radius
+- rows (`SHMenuRow`, 28pt unless a menu says otherwise), radius 6 (the boards' 7 on the radius
   scale), 8pt side padding, their parts 10pt apart, with a `runningTint` highlight that the pointer
   moves too; the current choice wears a `running` check. Rows are not `Button`s (the field or the
   menu keeps keyboard focus), but they read as buttons to VoiceOver. A row never wraps: what does
@@ -438,14 +438,14 @@ a docked pane it narrows to the card. They share one anatomy (NWComposer › Men
   field's own, so the field keeps them. No footers; the
   only key hints are the slash menu's ⏎ and the model picker's chord.
 
-- **Slash menu** (`NWSlashMenu`; SlashMenu): opens when the draft is "/…" with no space yet (or
+- **Slash menu** (`SHSlashMenu`; SlashMenu): opens when the draft is "/…" with no space yet (or
   from the chip). It spans the composer card, from its leading edge to its trailing one, 8pt above
   it. "Commands" with "n of m" (matches of all); then one-line 36pt rows
-  (`NWComposerMetrics.slashRowHeight`) with 12pt sides, their parts 12pt apart: the command in
+  (`SHComposerMetrics.slashRowHeight`) with 12pt sides, their parts 12pt apart: the command in
   mono 12.5 with the typed prefix in semibold `textPrimary`, the rest in `textSecondary` and its
   argument hint in `textTertiary`, in a column at least 150pt wide that grows to the whole name
   rather than wrap (`/shepherd-subagents-fleet` stays one line); the description in Geist 13
-  `textSecondary`, truncating at its end; its source as an `NWTag` for prompt templates and skills
+  `textSecondary`, truncating at its end; its source as an `SHTag` for prompt templates and skills
   ("prompt", "skill"; none for extension commands); and on the highlighted row a trailing ⏎ in
   mono 11 `running`. The whole command is its tooltip. Commands whose name starts with the query come first, then those whose
   name or description contains it. At most 8 rows show, fewer when the room above the card is
@@ -480,12 +480,12 @@ a docked pane it narrows to the card. They share one anatomy (NWComposer › Men
   click). A name Shepherd
   doesn't know opens Sign-in with the list as it is. Nothing reaches pi. A remote agent's composer
   doesn't list them.
-- **Argument hints** after the name in `textTertiary` ("/release-notes [tag]"; NWComposer,
+- **Argument hints** after the name in `textTertiary` ("/release-notes [tag]"; SHComposer,
   SlashMenu) come from a prompt template's `argument-hint` frontmatter, which the host reads from
   the file pi names (pi's `get_commands` sends no hints; `NativeCommand.arguments`). Extension
   commands and skills declare none, and pi's interactive built-ins (/resume, /reload) are not in
   its registry, so those rows have no hint.
-- **Model picker** (`ModelPicker` on `NWModelPicker`, 380pt, its list at most 360pt tall;
+- **Model picker** (`ModelPicker` on `SHModelPicker`, 380pt, its list at most 360pt tall;
   ModelPicker): from the model chip or ⇧⌘M, either of which also closes it (without `setModel` it
   beeps). Agent ▸ Choose Model uses the same route, including a rebound chord while a terminal
   has focus. When All models replaces the settings menu, the search claim waits one main-actor
@@ -496,7 +496,7 @@ a docked pane it narrows to the card. They share one anatomy (NWComposer › Men
   from the sides: **Recent** (the last four models picked in any thread, newest first;
   `RecentModels`), then one section per provider in catalog order, headed with the provider's name
   4pt below what precedes it, leaving out what Recent shows. Rows are 40pt
-  (`NWComposerMetrics.modelRowHeight`) with 10pt sides, their parts 10pt apart: a 12pt column
+  (`SHComposerMetrics.modelRowHeight`) with 10pt sides, their parts 10pt apart: a 12pt column
   holding a `running` check on the current model; the model's short name in mono 12.5
   `textPrimary`, truncating in the middle, so a long id keeps its provider prefix and its tail
   ("~anthropic/claude-o…pus-4-8"), over a second line in caption `textSecondary` listing the
@@ -519,7 +519,7 @@ a docked pane it narrows to the card. They share one anatomy (NWComposer › Men
   (`ModelCatalog`, `ModelPickerState`; this Mac's catalog is asked once per process, off the main
   actor), and a hover moves the highlight without redrawing the list or scrolling it
   (`ComposerMenuPerformanceTests`).
-- **Model settings** (`NWModelSettings`, 328pt; NWComposer › Menus; the control row above): from the
+- **Model settings** (`SHModelSettings`, 328pt; SHComposer › Menus; the control row above): from the
   model-settings button, which also closes it, over the card as the other composer menus are
   (left-aligned, 8pt above it, never moving the thread). It takes focus with the first row
   highlighted. The levels are the ones pi offers the thread's model
@@ -535,7 +535,7 @@ a docked pane it narrows to the card. They share one anatomy (NWComposer › Men
   under load: the thread's cost figures follow the tier the provider reports.
   `ThreadCommandCenter.Command.thinkingMenu` and `.speedMenu` open this popover (no chord), and
   ⌘K's Toggle fast mode switches the tier without opening it.
-- **Agent context menu** (NWComposer › Menus: "Native NSMenu in Swift; shown for spec"): a
+- **Agent context menu** (SHComposer › Menus: "Native NSMenu in Swift; shown for spec"): a
   native menu (`.contextMenu`), never a custom popover: Rename… with its keys (⌘R), Fork from here
   and Copy transcript (each with its glyph), a separator, Open in Finder, a separator, and Delete
   agent… as the destructive item (`role: .destructive`). The sidebar's agent menu
@@ -544,8 +544,8 @@ a docked pane it narrows to the card. They share one anatomy (NWComposer › Men
 
 **Context meter** (ContextIdeas: placement A, "its own circle, beside Send"; ContextDetails,
 ContextFull, ContextCompacted; `ContextMeterButton` and `ContextDetailsPopover` in
-`Thread/ContextMeter.swift`, on ShepherdUI's `NWContextMeterButton`, `NWContextRing` and
-`NWContextDetails`; sizes are `NWContextMetrics`). What fills the model's context window is a
+`Thread/ContextMeter.swift`, on ShepherdUI's `SHContextMeterButton`, `SHContextRing` and
+`SHContextDetails`; sizes are `SHContextMetrics`). What fills the model's context window is a
 small ring in the control row, just before the action, Send or Stop; the composer
 never shows text for it, and the header has no counters (Toolbar). The ring comes from
 the host (`NativeThreadSnapshot.context`, docs/native-thread.md); a host from before it reports
@@ -640,7 +640,7 @@ none, and the row has no ring.
   its 32pt circle, so it sits 14pt from Send's circle rather than 6pt (the targets never overlap).
   The ring stays while the agent runs. Stop is the action in the same corner while the agent works with nothing to send. Touch has no hover: the
   numbers are the ring's VoiceOver label and the sheet's; a pointer over it on iPad shows the
-  tooltip. A tap opens the details as a sheet (`NWContextDetails(…, presentation: .sheet)`) on
+  tooltip. A tap opens the details as a sheet (`SHContextDetails(…, presentation: .sheet)`) on
   `bgRaised` with a drag indicator, fitted to the details' height (the whole screen when taller;
   a form sheet as wide as the form on iPad): the same header, total, bar, mark, split, Largest,
   footnote and buttons as the popover, at the sheet's width, with Largest's rows and the buttons

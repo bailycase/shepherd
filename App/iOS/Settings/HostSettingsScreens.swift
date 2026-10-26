@@ -19,7 +19,7 @@ struct DefaultsScreen: View {
         HostSettingsPage(store: store, page: .defaults,
                          explanation: "What new threads on a host start with. Threads already running keep their own.") { settings, host in
             SettingsSection("New threads") {
-                NWListCard {
+                SHListCard {
                     SettingsControlRow("Model", note: "“Use the agent’s default” passes no model, so the agent picks.") {
                         Menu {
                             Button("Use the agent’s default") { store.hostSettings.post(.defaultModel(nil), on: host) }
@@ -39,7 +39,7 @@ struct DefaultsScreen: View {
                 }
             }
             SettingsSection("While the agent is working") {
-                NWListCard {
+                SHListCard {
                     SettingsControlRow("When a turn ends, send the queue", note: "All at once arrives as one turn, in order.") {
                         SettingsPicker("Send the queue", selection: settings.queueDelivery, options: [.oneAtATime, .all],
                                        title: HostSettingsPresentation.title) { store.hostSettings.post(.queueDelivery($0), on: host) }
@@ -49,7 +49,7 @@ struct DefaultsScreen: View {
             .task(id: host.id) { models = await Self.models(of: store.mobileHost(host.id)) }
             if store.mobileHost(host.id)?.supports(RemoteProtocol.nativeGoalCapability) == true {
                 SettingsSection("Goal checks") {
-                    NWListCard {
+                    SHListCard {
                         SettingsSwitchRow("Allow cross-provider goal checks",
                                           note: "Off uses the thread’s exact model and provider. On may send conversation, tool output and written code to another provider, preferring Haiku, Codex Mini or Gemini Flash when available.",
                                           isOn: settings.goalCrossProviderEvaluation) {
@@ -85,7 +85,7 @@ struct WorktreesScreen: View {
                          explanation: "How a host creates worktrees, and what Finalize does when a thread's work is done.") { settings, host in
             let post: (HostSettingChange) -> Void = { store.hostSettings.post($0, on: host) }
             SettingsSection("New worktrees") {
-                NWListCard {
+                SHListCard {
                     SettingsControlRow("Base branch",
                                        note: "**Remote default** starts clean from origin's default branch. **Current branch** stacks on the checkout's work in progress.") {
                         SettingsPicker("Base branch", selection: settings.worktreeBase, options: HostSettings.WorktreeBase.allCases,
@@ -97,7 +97,7 @@ struct WorktreesScreen: View {
                 }
             }
             SettingsSection("Finalize") {
-                NWListCard {
+                SHListCard {
                     SettingsSwitchRow("Commit remaining work",
                                       note: "Commits what's left with the PR's title. Off stops Finalize on a dirty worktree.",
                                       isOn: settings.commitRemainingWork) { post(.commitRemainingWork($0)) }
@@ -116,7 +116,7 @@ struct WorktreesScreen: View {
                 }
                 SettingsFootnote("Shepherd never deletes the remote branch: merging the PR cleans it up on GitHub.")
             }
-            .nwAnimation(.disclosure, value: settings.mergePRAutomatically)
+            .shAnimation(.disclosure, value: settings.mergePRAutomatically)
         }
     }
 }
@@ -132,7 +132,7 @@ struct PiExtensionsScreen: View {
                          explanation: "What the agent loads on a host: the extensions Shepherd bundles and the ones installed there.") { settings, host in
             let post: (HostSettingChange) -> Void = { store.hostSettings.post($0, on: host) }
             SettingsSection("Bundled with Shepherd") {
-                NWListCard {
+                SHListCard {
                     ForEach(settings.bundledExtensions) { bundled in
                         SettingsSwitchRow(bundled.name, note: HostSettingsPresentation.note(forBundled: bundled.id), isOn: bundled.on) {
                             post(.bundledExtension(id: bundled.id, on: $0))
@@ -145,15 +145,15 @@ struct PiExtensionsScreen: View {
                 if settings.installedExtensions.isEmpty {
                     SettingsFootnote("None yet. Extensions installed on \(host.name) show here.")
                 } else {
-                    NWListCard {
+                    SHListCard {
                         ForEach(settings.installedExtensions, id: \.self) { source in
                             Text(source)
-                                .font(.nw(.mono))
-                                .foregroundStyle(Color.nw.textPrimary)
+                                .font(.sh(.mono))
+                                .foregroundStyle(Color.sh.textPrimary)
                                 .lineLimit(2)
                                 .truncationMode(.middle)
-                                .padding(.horizontal, NW.Space.l)
-                                .frame(maxWidth: .infinity, minHeight: NWListMetrics.rowHeight, alignment: .leading)
+                                .padding(.horizontal, SH.Space.l)
+                                .frame(maxWidth: .infinity, minHeight: SHListMetrics.rowHeight, alignment: .leading)
                         }
                     }
                 }
@@ -183,16 +183,16 @@ private struct HostSettingsPage<Content: View>: View {
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
                 Text(explanation)
-                    .nwText(.caption)
-                    .foregroundStyle(Color.nw.textSecondary)
+                    .shText(.caption)
+                    .foregroundStyle(Color.sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, NW.Space.xs)
+                    .padding(.horizontal, SH.Space.xs)
                 if store.hosts.count > 1 {
                     HostChooser(store: store)
                 }
                 if let problem = store.hostSettings.problem {
-                    NWBanner(.failed, title: problem) {
-                        Button("OK") { store.hostSettings.dismissProblem() }.buttonStyle(.nw(.secondary))
+                    SHBanner(.failed, title: problem) {
+                        Button("OK") { store.hostSettings.dismissProblem() }.buttonStyle(.sh(.secondary))
                     }
                 }
                 if let host {
@@ -200,7 +200,7 @@ private struct HostSettingsPage<Content: View>: View {
                     case .loaded(let settings):
                         content(settings, host)
                     case .loading:
-                        ProgressView().progressViewStyle(NWSpinnerStyle())
+                        ProgressView().progressViewStyle(SHSpinnerStyle())
                             .frame(maxWidth: .infinity)
                     case .offline:
                         SettingsFootnote("\(host.name) is offline. Its settings show here once it's back.")
@@ -220,8 +220,8 @@ private struct HostSettingsPage<Content: View>: View {
             .frame(maxWidth: .infinity)
         }
         .refreshable { await store.refresh() }
-        .background(Color.nw.bgWindow)
-        .nwAnimation(.content, value: host.map { store.hostSettings.state(of: $0) })
+        .background(Color.sh.bgWindow)
+        .shAnimation(.content, value: host.map { store.hostSettings.state(of: $0) })
         .navigationTitle(inColumn ? page.listTitle : page.title)
         .navigationBarTitleDisplayMode(inColumn ? .inline : .large)
         .task { if !inColumn { await store.watch() } }
@@ -235,7 +235,7 @@ private struct HostChooser: View {
     private var host: SettingsHost? { store.settingsHost(chosenHost: navigator.settingsSelection.chosenHost) }
 
     var body: some View {
-        NWListCard {
+        SHListCard {
             SettingsControlRow("Host") {
                 Menu {
                     ForEach(store.hosts) { host in
@@ -276,24 +276,24 @@ struct SettingsControlRow<Control: View>: View {
     }
 
     var body: some View {
-        HStack(spacing: NW.Space.l) {
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+        HStack(spacing: SH.Space.l) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 Text(title)
-                    .font(.nw(.ui))
-                    .foregroundStyle(Color.nw.textPrimary)
+                    .font(.sh(.ui))
+                    .foregroundStyle(Color.sh.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
                 if let note {
-                    NWMarkupText(note, size: MobileLayout.settingsNoteSize, codeSize: MobileLayout.settingsNoteCodeSize)
-                        .foregroundStyle(Color.nw.textTertiary)
+                    SHMarkupText(note, size: MobileLayout.settingsNoteSize, codeSize: MobileLayout.settingsNoteCodeSize)
+                        .foregroundStyle(Color.sh.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             control()
         }
-        .padding(.horizontal, NW.Space.l)
-        .padding(.vertical, NW.Space.m)
-        .frame(minHeight: note == nil ? NWListMetrics.rowHeight : NWListMetrics.twoLineRowHeight)
+        .padding(.horizontal, SH.Space.l)
+        .padding(.vertical, SH.Space.m)
+        .frame(minHeight: note == nil ? SHListMetrics.rowHeight : SHListMetrics.twoLineRowHeight)
     }
 }
 
@@ -314,7 +314,7 @@ struct SettingsSwitchRow: View {
     var body: some View {
         SettingsControlRow(title, note: note) {
             Toggle(title, isOn: Binding(get: { isOn }, set: toggle))
-                .toggleStyle(.nwSwitch)
+                .toggleStyle(.shSwitch)
                 .labelsHidden()
         }
     }
@@ -363,15 +363,15 @@ struct SettingsMenuLabel: View {
     }
 
     var body: some View {
-        HStack(spacing: NW.Space.xs) {
+        HStack(spacing: SH.Space.xs) {
             Text(text)
-                .font(mono ? .nw(.mono) : .nw(.ui))
-                .foregroundStyle(Color.nw.textSecondary)
+                .font(mono ? .sh(.mono) : .sh(.ui))
+                .foregroundStyle(Color.sh.textSecondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
             Image(systemName: "chevron.up.chevron.down")
-                .font(.nw(.caption, weight: .semibold))
-                .foregroundStyle(Color.nw.textTertiary)
+                .font(.sh(.caption, weight: .semibold))
+                .foregroundStyle(Color.sh.textTertiary)
         }
         .frame(maxWidth: MobileLayout.settingsMenuMaxWidth, alignment: .trailing)
         .contentShape(Rectangle())
@@ -392,9 +392,9 @@ struct SettingsFootnote: View {
 
     var body: some View {
         Text(text)
-            .nwText(.caption)
-            .foregroundStyle(tone == .failed ? Color.nw.failed : Color.nw.textTertiary)
+            .shText(.caption)
+            .foregroundStyle(tone == .failed ? Color.sh.failed : Color.sh.textTertiary)
             .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, NW.Space.xs)
+            .padding(.horizontal, SH.Space.xs)
     }
 }

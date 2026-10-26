@@ -28,7 +28,7 @@ struct AgentSettings: View {
             SettingsGroup(title: "New agents") {
                 SettingsRow(title: "Default model",
                             subtitle: "Preselected in the New Agent sheet. \"Use the agent's default\" passes no `--model` at all.") {
-                    NWPopupMenu(settings.defaultModel.isEmpty ? agentDefault : settings.defaultModel,
+                    SHPopupMenu(settings.defaultModel.isEmpty ? agentDefault : settings.defaultModel,
                                 mono: !settings.defaultModel.isEmpty, minWidth: AppLayout.settingsPopupWidth) {
                         Button(agentDefault) { settings.defaultModel = "" }
                         Divider()
@@ -39,19 +39,19 @@ struct AgentSettings: View {
                     .accessibilityLabel("Default model")
                 }
                 SettingsRow(title: "Default thinking level", subtitle: "Can be changed per agent from the composer.") {
-                    NWSegmentedPicker("Default thinking level", selection: $settings.defaultThinking,
+                    SHSegmentedPicker("Default thinking level", selection: $settings.defaultThinking,
                                       options: ThinkingLevel.allCases.map { ($0, $0.title) })
                 }
                 SettingsRow(title: "Speed for new threads",
                             subtitle: "New threads start on this speed. Each thread keeps its own after that.") {
-                    NWSegmentedPicker("Speed for new threads", selection: $settings.defaultServiceTier,
+                    SHSegmentedPicker("Speed for new threads", selection: $settings.defaultServiceTier,
                                       options: ServiceTier.allCases.map { ($0, $0.title) })
                 }
             }
             SettingsGroup(title: "Session naming") {
                 SettingsRow(title: "Session naming model",
                             subtitle: "Sessions are named automatically from their first prompt. Your manual renames are never overwritten. Automatic prefers a low-cost model you’re signed in to.") {
-                    NWPopupMenu(settings.namingModel.isEmpty ? "Automatic" : settings.namingModel,
+                    SHPopupMenu(settings.namingModel.isEmpty ? "Automatic" : settings.namingModel,
                                 mono: !settings.namingModel.isEmpty, minWidth: AppLayout.settingsPopupWidth) {
                         Button("Automatic") { settings.namingModel = "" }
                         Divider()
@@ -64,7 +64,7 @@ struct AgentSettings: View {
             }
             SettingsGroup(title: "While the agent is working") {
                 SettingsRow(title: "When a turn ends, send the queue", subtitle: "All at once arrives as one turn, in the order you queued it.") {
-                    NWSegmentedPicker("When a turn ends, send the queue", selection: $settings.queueDelivery,
+                    SHSegmentedPicker("When a turn ends, send the queue", selection: $settings.queueDelivery,
                                       options: [(NativeQueueMode.oneAtATime, "One per turn"), (.all, "All at once")])
                 }
             }
@@ -72,7 +72,7 @@ struct AgentSettings: View {
                 SettingsRow(title: "Compact at",
                             subtitle: "How full an agent lets its context get before it compacts on its own, as a share of the model's window. "
                                 + "The default leaves 16k tokens free, about 94% of a 272k window. New agents follow a change; running ones at their next launch.") {
-                    NWSegmentedPicker("Compact at", selection: Binding(get: { settings.compactAtPercent ?? 0 },
+                    SHSegmentedPicker("Compact at", selection: Binding(get: { settings.compactAtPercent ?? 0 },
                                                                        set: { settings.compactAtPercent = $0 == 0 ? nil : $0 }),
                                       options: [(0, Self.compactAtTitle(nil))] + PiCompactionThreshold.choices.map { ($0, Self.compactAtTitle($0)) })
                 }

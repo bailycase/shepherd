@@ -20,19 +20,19 @@ struct LogicalProjectFiles: View {
     var body: some View {
         VStack(spacing: 0) {
             ScrollView(.vertical) {
-                VStack(alignment: .leading, spacing: NW.Space.m) {
+                VStack(alignment: .leading, spacing: SH.Space.m) {
                     switch files.listing {
                     case .loading:
-                        Text("Loading files…").font(.nw(.ui, weight: .regular)).foregroundStyle(Color.nw.textTertiary)
+                        Text("Loading files…").font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textTertiary)
                     case .failed(let message):
-                        Text(message).font(.nw(.ui, weight: .regular)).foregroundStyle(Color.nw.textTertiary)
+                        Text(message).font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
-                        Button("Try again") { reload() }.buttonStyle(NWLeadSecondaryButton())
+                        Button("Try again") { reload() }.buttonStyle(SHLeadSecondaryButton())
                     case .listed(let listing):
                         listed(listing)
                     }
                 }
-                .padding(NWLeadMetrics.paneHeaderInset)
+                .padding(SHLeadMetrics.paneHeaderInset)
             }
             .scrollBounceBehavior(.basedOnSize)
             if let preview = files.preview { previewCard(preview) }
@@ -64,10 +64,10 @@ struct LogicalProjectFiles: View {
             }
         }
         if listing.entries.isEmpty {
-            Text("No files yet.").font(.nw(.ui, weight: .regular)).foregroundStyle(Color.nw.textTertiary)
+            Text("No files yet.").font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textTertiary)
         }
         ForEach(listing.entries, id: \.relativePath) { entry in
-            row(symbol: entry.kind == .folder ? "folder" : NWGlyph.document.symbolName, name: entry.name, detail: nil,
+            row(symbol: entry.kind == .folder ? "folder" : SHGlyph.document.symbolName, name: entry.name, detail: nil,
                 trailing: entry.kind == .folder ? nil : LogicalProjectFilesModel.sizeText(entry.size)) {
                 switch entry.kind {
                 case .folder: Task { await files.open(ref, path: entry.relativePath, via: vm.logicalProjects) }
@@ -78,42 +78,42 @@ struct LogicalProjectFiles: View {
         if listing.truncated {
             // The owner capped the list: this is not the whole folder, and it says so.
             Text("Showing the first \(listing.entries.count) items. This folder has more.")
-                .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
         }
     }
 
     private func row(symbol: String, name: String, detail: String?, trailing: String?, action: @escaping () -> Void) -> some View {
-        NWLeadFileRow(symbol: symbol, name: name, detail: detail, trailing: trailing, action: action)
+        SHLeadFileRow(symbol: symbol, name: name, detail: detail, trailing: trailing, action: action)
     }
 
     /// The previewed file as inert data: text is selectable plain text, an image is a picture. Never active content.
     private func previewCard(_ preview: LogicalProjectFilesModel.Preview) -> some View {
-        VStack(alignment: .leading, spacing: NW.Space.m) {
-            HStack(spacing: NW.Space.m) {
-                Text(preview.name).font(.nwMono(NWLeadMetrics.chipText)).foregroundStyle(Color.nw.textPrimary).lineLimit(1).truncationMode(.middle)
+        VStack(alignment: .leading, spacing: SH.Space.m) {
+            HStack(spacing: SH.Space.m) {
+                Text(preview.name).font(.shMono(SHLeadMetrics.chipText)).foregroundStyle(Color.sh.textPrimary).lineLimit(1).truncationMode(.middle)
                 Spacer(minLength: 0)
                 Button { files.closePreview() } label: { Image(systemName: "xmark") }
-                    .buttonStyle(.nwIcon(size: NWLeadMetrics.paneHeaderButton))
-                    .nwHelp("Close preview")
+                    .buttonStyle(.shIcon(size: SHLeadMetrics.paneHeaderButton))
+                    .shHelp("Close preview")
                     .accessibilityLabel("Close preview")
             }
             switch preview {
-            case .loading: Text("Loading…").font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
-            case .failed(_, let message): Text(message).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+            case .loading: Text("Loading…").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+            case .failed(_, let message): Text(message).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
             case .text(_, let text):
-                ScrollView { Text(text).font(.nwMono(NWLeadMetrics.chipText)).foregroundStyle(Color.nw.textSecondary).textSelection(.enabled)
+                ScrollView { Text(text).font(.shMono(SHLeadMetrics.chipText)).foregroundStyle(Color.sh.textSecondary).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading) }
-                    .frame(maxHeight: NWLeadMetrics.filePreviewHeight)
+                    .frame(maxHeight: SHLeadMetrics.filePreviewHeight)
             case .image(let name, let data):
                 if let image = NSImage(data: data) {
-                    Image(nsImage: image).resizable().scaledToFit().frame(maxHeight: NWLeadMetrics.filePreviewHeight)
+                    Image(nsImage: image).resizable().scaledToFit().frame(maxHeight: SHLeadMetrics.filePreviewHeight)
                         .accessibilityLabel(name)
                 }
             }
         }
-        .padding(NWLeadMetrics.paneHeaderInset)
-        .background(Color.nw.bgRaised)
-        .overlay(alignment: .top) { NWHairline() }
+        .padding(SHLeadMetrics.paneHeaderInset)
+        .background(Color.sh.bgRaised)
+        .overlay(alignment: .top) { SHHairline() }
     }
 }
 
@@ -128,7 +128,7 @@ struct LogicalProjectPaneAutomations: View {
     var body: some View {
         ScrollView(.vertical) {
             LogicalProjectAutomationsTab(vm: vm, ref: ref, project: project)
-                .padding(NWLeadMetrics.paneHeaderInset)
+                .padding(SHLeadMetrics.paneHeaderInset)
         }
         .scrollBounceBehavior(.basedOnSize)
     }
@@ -178,28 +178,28 @@ struct AssignProjectTaskSheet: View {
                 DialogAction(draft.assigning ? "Starting…" : "Start thread", kind: .prominent, isEnabled: draft.canAssign) { assign() },
             ]
         ) {
-            VStack(alignment: .leading, spacing: NW.Space.l) {
-                TextField("Title", text: $draft.title).textFieldStyle(.nw).accessibilityLabel("Title")
-                TextField("What should it do?", text: $draft.prompt, axis: .vertical).textFieldStyle(.nw)
+            VStack(alignment: .leading, spacing: SH.Space.l) {
+                TextField("Title", text: $draft.title).textFieldStyle(.sh).accessibilityLabel("Title")
+                TextField("What should it do?", text: $draft.prompt, axis: .vertical).textFieldStyle(.sh)
                     .lineLimit(3...8).accessibilityLabel("What should it do?")
-                NWPopupMenu(spaces.first { $0.id == draft.space }?.name ?? "Choose a space") {
+                SHPopupMenu(spaces.first { $0.id == draft.space }?.name ?? "Choose a space") {
                     ForEach(spaces) { space in Button(space.name) { draft.space = space.id } }
                 }
                 .disabled(spaces.isEmpty)
                 .accessibilityLabel("Space")
                 // Where it runs: only when the Project allows more than its owner, from the OWNER's own host list.
                 if hostChoices.count > 1 {
-                    NWPopupMenu(hostChoices.first { $0.reference == (draft.host ?? .local) }?.name ?? "Choose a host") {
+                    SHPopupMenu(hostChoices.first { $0.reference == (draft.host ?? .local) }?.name ?? "Choose a host") {
                         ForEach(hostChoices, id: \.reference) { choice in
                             Button(choice.name) { draft.host = choice.reference == .local ? nil : choice.reference }
                         }
                     }
-                    .nwHelp("Host")
+                    .shHelp("Host")
                     .accessibilityLabel("Host")
                 }
             }
-            .padding(.horizontal, NWDialogMetrics.inset)
-            .padding(.bottom, NW.Space.l)
+            .padding(.horizontal, SHDialogMetrics.inset)
+            .padding(.bottom, SH.Space.l)
         }
         .task(id: ref) { ownerHosts = await vm.logicalProjects.hostOptions(ref.home) }
     }

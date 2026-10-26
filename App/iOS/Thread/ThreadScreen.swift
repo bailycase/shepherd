@@ -56,10 +56,10 @@ struct ThreadScreen: View {
                         // iPad: as wide as the thread's column, a question's card too (iPadQuestion).
                         .frame(maxWidth: sizeClass == .regular ? MobileLayout.threadMaxWidth + 2 * MobileLayout.padThreadGutter : .infinity)
                         .frame(maxWidth: .infinity)
-                        .background(Color.nw.bgWindow)
+                        .background(Color.sh.bgWindow)
                 }
             }
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
             // Measured around the composer's inset, which would otherwise shrink what it measures.
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
             // iPad: the terminal panel under the thread and its composer (Terminal/).
@@ -157,11 +157,11 @@ struct ThreadTranscript: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: MobileLayout.turnSpacing) {
                     if let banner {
-                        Text(banner).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                        Text(banner).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     if store.snapshot == nil && store.loadError == nil && store.startProblem == nil && store.isLive {
-                        ProgressView().progressViewStyle(NWSpinnerStyle()).frame(maxWidth: .infinity)
+                        ProgressView().progressViewStyle(SHSpinnerStyle()).frame(maxWidth: .infinity)
                     }
                     ForEach(rows) { row in
                         // One view per row whatever it holds, so the lazy stack builds only the
@@ -191,7 +191,7 @@ struct ThreadTranscript: View {
                 .padding(.horizontal, sizeClass == .regular && !designChat ? MobileLayout.padThreadGutter : MobileLayout.gutter)
                 .padding(.vertical, sizeClass == .regular && !designChat ? MobileLayout.padThreadGutter : MobileLayout.gutter)
                 // iPad bubbles (iPadThread): at most 520pt, 12×16 inside.
-                .environment(\.nwUserBubbleMetrics, sizeClass == .regular ? .pad : .standard)
+                .environment(\.shUserBubbleMetrics, sizeClass == .regular ? .pad : .standard)
                 .frame(maxWidth: .infinity)
                 // Which compactions show what the agent kept: its own object, so a toggle
                 // redraws only the compaction lines.
@@ -252,7 +252,7 @@ struct ThreadTranscript: View {
             // Laid out in the thread's safe area, so it sits on the composer; the margin of its
             // 44pt hit area draws the capsule 8pt above it.
             .overlay(alignment: .bottom) {
-                NWJumpToLatest(action: follower.showsJump(running: running) ? {
+                SHJumpToLatest(action: follower.showsJump(running: running) ? {
                     follow { $0.jumpToLatest(); return false }
                     proxy.scrollTo(Self.bottomID, anchor: .bottom)
                 } : nil)
@@ -281,7 +281,7 @@ struct ThreadTranscript: View {
         }
         guard let row = holder() else { return }
         follow { $0.beginJump(); return false }
-        withNWAnimation(.scroll) { proxy.scrollTo(row.id, anchor: .top) }
+        withSHAnimation(.scroll) { proxy.scrollTo(row.id, anchor: .top) }
     }
 
     /// Applies a change to the follower, writing it back only when it changed, so a scroll frame
@@ -354,7 +354,7 @@ struct ThreadTranscript: View {
 /// The title and status line (MobileThread, MobileQueue, MobileQuestion, iPadThread boards). On a
 /// phone, the name over "● Idle · ⧉ pi/swiftui-previews": the status word and the worktree's
 /// branch, or "⌂ your checkout" in lantern when pi works in the space's own checkout.
-/// On iPad, the name, the branch chip (`NWBranchChip`: the files changed, and the host when there
+/// On iPad, the name, the branch chip (`SHBranchChip`: the files changed, and the host when there
 /// are several), and a status pill with the running turn's time, on one line.
 struct ThreadTitle: View {
     struct Status: Equatable {
@@ -402,17 +402,17 @@ struct ThreadTitle: View {
     }
 
     private var compact: some View {
-        VStack(spacing: NW.Space.xxs) {
-            Text(name).font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
+        VStack(spacing: SH.Space.xxs) {
+            Text(name).font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
             // The branch truncates in the middle; the status word stays whole.
-            HStack(spacing: NW.Space.s) {
-                NWStatusDot(status.state)
+            HStack(spacing: SH.Space.s) {
+                SHStatusDot(status.state)
                 Text(status.label).fontWeight(.medium).foregroundStyle(status.state.textColor).fixedSize()
                 ThreadGoalHeader(store: goalStore, time: goalTime)
                 // A worktree names its branch; your own checkout says so in lantern (MobileQuestion).
                 if let branch {
                     let checkout = branch.kind == .checkout
-                    let tint = checkout ? Color.nw.lanternText : Color.nw.textTertiary
+                    let tint = checkout ? Color.sh.lanternText : Color.sh.textTertiary
                     Text("·").foregroundStyle(tint)
                     Image(systemName: checkout ? "house" : "square.on.square")
                         .imageScale(.small)
@@ -421,26 +421,26 @@ struct ThreadTitle: View {
                         Text("your checkout").fontWeight(.medium).foregroundStyle(tint)
                     } else {
                         Text(branch.branch)
-                            .font(.nw(.mono))
+                            .font(.sh(.mono))
                             .foregroundStyle(tint)
                             .truncationMode(.middle)
                     }
                 }
             }
-            .font(.nw(.caption))
+            .font(.sh(.caption))
             .lineLimit(1)
         }
     }
 
     private func pill(_ meta: NativeThreadMeta) -> some View {
-        HStack(spacing: NW.Space.m) {
-            Text(name).font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
+        HStack(spacing: SH.Space.m) {
+            Text(name).font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
             if let branch {
-                NWBranchChip(kind: branch.kind == .worktree ? .worktree : .checkout, branch: branch.branch,
+                SHBranchChip(kind: branch.kind == .worktree ? .worktree : .checkout, branch: branch.branch,
                              changedFiles: branch.changedFiles, host: branch.host, showsChevron: false)
                     .layoutPriority(-1)
             }
-            NWStatusPill(status.state, label: meta.elapsed.map { "\(status.label) · \($0)" } ?? status.label)
+            SHStatusPill(status.state, label: meta.elapsed.map { "\(status.label) · \($0)" } ?? status.label)
                 .fixedSize()
             ThreadGoalHeader(store: goalStore, time: goalTime)
         }
@@ -455,10 +455,10 @@ private struct ThreadGoalHeader: View {
     var body: some View {
         if let store {
             if let goal = store.goal, goal.isActive {
-                NWGoalHeaderPill(time: goal.timeLabel, clockStart: goal.clockStart)
+                SHGoalHeaderPill(time: goal.timeLabel, clockStart: goal.clockStart)
             }
         } else if let time {
-            NWGoalHeaderPill(time: time)
+            SHGoalHeaderPill(time: time)
         }
     }
 }
@@ -481,10 +481,10 @@ private struct ThreadSidePaneButton: View {
         let label = isOn ? "Hide side pane" : "Show side pane"
         if isOn {
             Button(action: action) {
-                Image(systemName: "sidebar.right").foregroundStyle(Color.nw.running)
+                Image(systemName: "sidebar.right").foregroundStyle(Color.sh.running)
             }
             .buttonStyle(.glassProminent)
-            .tint(Color.nw.runningTint)
+            .tint(Color.sh.runningTint)
             .accessibilityLabel(label)
             .accessibilityAddTraits(.isSelected)
         } else {
@@ -503,7 +503,7 @@ private struct ThreadStopButton: View {
     var body: some View {
         if !store.dialogs.isEmpty {
             Button("Stop", systemImage: "stop.fill") { Task { await store.abort() } }
-                .tint(Color.nw.failed)
+                .tint(Color.sh.failed)
                 .disabled(!enabled || !store.supports("abort"))
                 .accessibilityLabel("Stop agent")
         }

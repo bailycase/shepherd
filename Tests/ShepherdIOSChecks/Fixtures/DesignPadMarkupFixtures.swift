@@ -188,7 +188,7 @@ enum DesignPadMarkupFixtures {
     /// Lantern as the window draws it, stored the way PencilKit keeps ink (light colors).
     @MainActor static var inkColor: UIColor {
         let traits = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first?.traitCollection ?? .current
-        let lantern = UIColor(Color.nw.lantern).resolvedColor(with: traits)
+        let lantern = UIColor(Color.sh.lantern).resolvedColor(with: traits)
         return traits.userInterfaceStyle == .dark ? PKInkingTool.convertColor(lantern, from: .dark, to: .light) : lantern
     }
 

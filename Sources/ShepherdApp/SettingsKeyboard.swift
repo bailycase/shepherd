@@ -37,12 +37,12 @@ struct KeyboardSettings: View {
             }
 
             SettingsGroup(title: "Fixed", footnote: "Changes apply immediately, everywhere a shortcut is shown.") {
-                SettingsRow(title: "Select agent 1–9", subtitle: "The first nine in Recents; hold ⌘ to see the numbers.") { NWKeycap(keys: ["⌘", "1–9"]) }
+                SettingsRow(title: "Select agent 1–9", subtitle: "The first nine in Recents; hold ⌘ to see the numbers.") { SHKeycap(keys: ["⌘", "1–9"]) }
                 ForEach(SidePaneTab.allCases, id: \.self) { tab in
-                    SettingsRow(title: "Side pane: \(tab.title)") { NWKeycap(tab.shortcutDisplay) }
+                    SettingsRow(title: "Side pane: \(tab.title)") { SHKeycap(tab.shortcutDisplay) }
                 }
-                SettingsRow(title: "Settings") { NWKeycap("⌘,") }
-                SettingsRow(title: "Confirm / cancel in sheets") { NWKeycap(keys: ["⏎", "esc"]) }
+                SettingsRow(title: "Settings") { SHKeycap("⌘,") }
+                SettingsRow(title: "Confirm / cancel in sheets") { SHKeycap(keys: ["⏎", "esc"]) }
             }
 
             // Under the last group, trailing: disabled while nothing is changed.
@@ -53,12 +53,12 @@ struct KeyboardSettings: View {
                     vm.rebuildSurfaces()
                     clearError()
                 }
-                .buttonStyle(.nw(.secondary, size: .s))
+                .buttonStyle(.sh(.secondary, size: .s))
                 .disabled(keys.overrides.isEmpty)
             }
         }
         // A rejected chord's reason discloses under its row.
-        .nwAnimation(.disclosure, value: errorText)
+        .shAnimation(.disclosure, value: errorText)
     }
 
     /// The keys for sending while pi works and for the queue, as the Queue & steer boards'
@@ -69,13 +69,13 @@ struct KeyboardSettings: View {
             ForEach(WhileWorkingKey.all) { key in
                 switch key {
                 case .send:
-                    SettingsRow(title: key.title) { NWKeycap(keys.sendDisplay) }
+                    SettingsRow(title: key.title) { SHKeycap(keys.sendDisplay) }
                 case .alternateSend:
                     shortcutRow(.alternateSend, title: key.title)
                 case .fixed(let chord):
-                    SettingsRow(title: key.title) { NWKeycap(keys: chord.keys) }
+                    SettingsRow(title: key.title) { SHKeycap(keys: chord.keys) }
                 case .steerFocused:
-                    SettingsRow(title: key.title) { NWKeycap(keys.display(.alternateSend)) }
+                    SettingsRow(title: key.title) { SHKeycap(keys.display(.alternateSend)) }
                 }
             }
         }
@@ -84,7 +84,7 @@ struct KeyboardSettings: View {
     /// A rebindable shortcut: its keycap records a new chord, and a changed one offers Reset.
     private func shortcutRow(_ action: ShortcutAction, title: String) -> some View {
         SettingsRow(title: title, problem: errorAction == action ? errorText : nil) {
-            HStack(spacing: NW.Space.xs) {
+            HStack(spacing: SH.Space.xs) {
                 if !keys.isDefault(action) {
                     Button {
                         if let error = keys.reset(action) {
@@ -96,13 +96,13 @@ struct KeyboardSettings: View {
                         }
                     } label: {
                         Text("Reset")
-                            .frame(minHeight: NW.Height.controlS)
+                            .frame(minHeight: SH.Height.controlS)
                     }
                     // SettingsKeyboard: Geist 12, 6pt either side, just before the caps.
-                    .buttonStyle(.nwLink(font: .nwSans(AppLayout.shortcutResetSize)))
-                    .padding(.horizontal, NW.Space.s)
+                    .buttonStyle(.shLink(font: .shSans(AppLayout.shortcutResetSize)))
+                    .padding(.horizontal, SH.Space.s)
                     .accessibilityLabel("Reset \(title)")
-                    .nwTransition(.disclosure)
+                    .shTransition(.disclosure)
                 }
                 ShortcutRecorder(title: title, isRecording: recording == action, chordText: keys.display(action)) {
                     clearError()
@@ -122,8 +122,8 @@ struct KeyboardSettings: View {
             }
             // The recorder swaps its keycap for "Press keys…"; a changed chord
             // grows its Reset link. The rest of the row moves along.
-            .nwComponentAnimation(.hover, value: recording == action)
-            .nwComponentAnimation(.disclosure, value: keys.isDefault(action))
+            .shComponentAnimation(.hover, value: recording == action)
+            .shComponentAnimation(.disclosure, value: keys.isDefault(action))
         }
     }
 
@@ -148,19 +148,19 @@ private struct ShortcutRecorder: View {
             Group {
                 if isRecording {
                     Text("Press keys…")
-                        .font(.nw(.caption))
-                        .foregroundStyle(Color.nw.running)
-                        .padding(.horizontal, NW.Space.m)
-                        .frame(minHeight: NWSettingsControlMetrics.keycapHeight)
-                        .background(Color.nw.runningTint, in: RoundedRectangle(cornerRadius: NW.Radius.xs))
-                        .nwBorder(Color.nw.running, radius: NW.Radius.xs)
+                        .font(.sh(.caption))
+                        .foregroundStyle(Color.sh.running)
+                        .padding(.horizontal, SH.Space.m)
+                        .frame(minHeight: SHSettingsControlMetrics.keycapHeight)
+                        .background(Color.sh.runningTint, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
+                        .shBorder(Color.sh.running, radius: SH.Radius.xs)
                 } else {
-                    NWKeycap(chordText)
+                    SHKeycap(chordText)
                 }
             }
-            .frame(minHeight: NW.Height.controlS)
+            .frame(minHeight: SH.Height.controlS)
             .contentShape(Rectangle())
-            .nwFocusRing(radius: NW.Radius.xs)
+            .shFocusRing(radius: SH.Radius.xs)
         }
         .buttonStyle(.plain)
         .help(isRecording ? "Press the new shortcut — ⎋ cancels" : "Click, then press the new shortcut")

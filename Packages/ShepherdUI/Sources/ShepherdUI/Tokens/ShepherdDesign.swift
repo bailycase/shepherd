@@ -1,13 +1,13 @@
 import Foundation
 
-// Night Watch, the only shipped theme. The UI and syntax roles are the Foundations board's
+// Shepherd Design, the only shipped theme. The UI and syntax roles are the Foundations board's
 // values verbatim (translucent roles as #RRGGBBAA). Terminal panes sit on bgWindow,
 // with translucent selection colors flattened onto it because Ghostty wants opaque colors.
 extension ThemeDefinition {
-    public static let nightWatch = ThemeDefinition(
-        id: "night-watch",
-        name: "Night Watch",
-        light: .nightWatch(
+    public static let shepherdDesign = ThemeDefinition(
+        id: "shepherd-design",
+        name: "Shepherd Design",
+        light: .shepherdDesign(
             colors: ThemeColors(
                 bgBase: "#f2f2f0",
                 bgWindow: "#fbfbfa",
@@ -45,7 +45,7 @@ extension ThemeDefinition {
             ],
             selectionAlpha: 0.13
         ),
-        dark: .nightWatch(
+        dark: .shepherdDesign(
             colors: ThemeColors(
                 bgBase: "#0a0b0c",
                 bgWindow: "#0d0e10",
@@ -86,8 +86,8 @@ extension ThemeDefinition {
 }
 
 extension ThemeVariant {
-    /// A Night Watch variant: the given roles, with the terminal palette derived from them.
-    static func nightWatch(colors c: ThemeColors, syntax s: SyntaxColors, ansi: [String], selectionAlpha: Double) -> ThemeVariant {
+    /// A Shepherd Design variant: the given roles, with the terminal palette derived from them.
+    static func shepherdDesign(colors c: ThemeColors, syntax s: SyntaxColors, ansi: [String], selectionAlpha: Double) -> ThemeVariant {
         /// A translucent role (or `tint` at `alpha`) flattened onto the window surface.
         func flat(_ tint: String, alpha: Double? = nil) -> String {
             guard let color = HexColor(tint), let window = HexColor(c.bgWindow) else { return tint }

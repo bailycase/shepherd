@@ -25,7 +25,7 @@ struct ShellMotionTests {
     /// The branch chip's count of changed files rolls as the host reads the checkout again.
     @Test(.timingSensitive) func theBranchChipsCountRolls() async {
         let checkout = Checkout()
-        let size = CGSize(width: 600, height: NWToolbarMetrics.height)
+        let size = CGSize(width: 600, height: SHToolbarMetrics.height)
         let window = OffscreenWindow(size: size, dark: false, ChipToolbar(checkout: checkout))
         defer { window.close() }
         let row = CGRect(x: 0, y: size.height / 2, width: size.width, height: 1)
@@ -39,9 +39,9 @@ struct ShellMotionTests {
         let checkout: Checkout
 
         var body: some View {
-            NWThreadToolbar("Title", project: "Shepherd") {
-                NWBranchChip(kind: .worktree, branch: "pi/branch", changedFiles: checkout.changedFiles)
-                    .nwAnimation(.content, value: checkout.changedFiles)
+            SHThreadToolbar("Title", project: "Shepherd") {
+                SHBranchChip(kind: .worktree, branch: "pi/branch", changedFiles: checkout.changedFiles)
+                    .shAnimation(.content, value: checkout.changedFiles)
             } trailing: { EmptyView() }
         }
     }
@@ -63,7 +63,7 @@ struct ShellMotionTests {
             let store = vm.threadStores.store(for: agent.agent.id)
             try await eventuallyOnMain("\(agent.agent.name)'s thread to load", timeout: .seconds(20)) { store.ready }
         }
-        let toolbar = CGRect(x: 0, y: NWToolbarMetrics.height / 2, width: size.width, height: 1)
+        let toolbar = CGRect(x: 0, y: SHToolbarMetrics.height / 2, width: size.width, height: 1)
         _ = await MotionProbe.record(window, region: toolbar, timeout: 0.5) {}
 
         let switching = await MotionProbe.record(window, region: toolbar) { vm.selectAgent(second.agent.id) }
@@ -102,7 +102,7 @@ struct ShellMotionTests {
         let pane = ShellLayout.rightPane(containerWidth: size.width - column, preferredWidth: nil)
         for agent in [second, first, second] {
             let threadEnd = agent.agent.id == first.agent.id ? size.width - pane.width - AppLayout.dividerWidth : size.width
-            let thread = CGRect(x: column, y: NWToolbarMetrics.height, width: threadEnd - column, height: size.height - NWToolbarMetrics.height)
+            let thread = CGRect(x: column, y: SHToolbarMetrics.height, width: threadEnd - column, height: size.height - SHToolbarMetrics.height)
             let switching = await MotionProbe.record(window) { vm.selectAgent(agent.agent.id) }
             #expect(!switching.settled.matches(switching.before), "the window changed")
             // The switch is the frames up to where the window first holds still. On a busy machine

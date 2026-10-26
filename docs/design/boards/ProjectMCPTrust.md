@@ -11,8 +11,8 @@ packages as well as MCP. No sensitive space names or data appear in this design 
 - Between the filter and cards, show space configuration eligibility for `.shepherd/mcp.json`
   and `.pi/mcp.json` when an older remote host inventories it. The footnote names the selected path;
   local discovery remains `.shepherd` only.
-  Use `NW.Space.m`, `NW.Space.l` and `NWDialogMetrics.inset`, `Font.nw(.ui)` and `.caption`, `Color.nw.textPrimary`
-  and `.textSecondary`, and the existing `.nwCard()` and `.nw(.secondary)` button style.
+  Use `SH.Space.m`, `SH.Space.l` and `SHDialogMetrics.inset`, `Font.sh(.ui)` and `.caption`, `Color.sh.textPrimary`
+  and `.textSecondary`, and the existing `.shCard()` and `.sh(.secondary)` button style.
   No new glyphs, colors, dimensions or animation.
 - Checking: "Checking space approval…". No approval action until the host replies.
 - Blocked: "Space configuration blocked" and "This folder hasn't been approved. New threads

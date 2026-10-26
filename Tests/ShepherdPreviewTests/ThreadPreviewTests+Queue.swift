@@ -117,7 +117,7 @@ extension ThreadPreviewTests {
             QueueStatesBoard(queued: queued, hovered: hovered, steering: steering, editing: editing, deleted: deleted,
                              attachments: attachments, reordering: reordering, long: long, collapsed: collapsed, expanded: expanded)
                 .frame(width: size.width, height: size.height, alignment: .topLeading)
-                .background(Color.nw.bgWindow)
+                .background(Color.sh.bgWindow)
         }
     }
 
@@ -154,12 +154,12 @@ extension ThreadPreviewTests {
                 HStack(alignment: .top, spacing: 24) {
                     Self.cell("Mac · idle (Send now on hover only)", idle)
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("iPhone and iPad · \(running) on the first queued row").font(.nwMono(11)).foregroundStyle(Color.nw.textSecondary)
-                        NWTouchQueueCard(count: 3) {
+                        Text("iPhone and iPad · \(running) on the first queued row").font(.shMono(11)).foregroundStyle(Color.sh.textSecondary)
+                        SHTouchQueueCard(count: 3) {
                             VStack(spacing: 0) {
-                                NWTouchQueueRow(long, images: 1, kind: .queued(number: 1), steer: {}, steerLabel: running)
-                                NWTouchQueueRow(QueueThreads.queued[1], kind: .queued(number: 2)).overlay(alignment: .top) { NWHairline() }
-                                NWTouchQueueRow(QueueThreads.queued[2], kind: .queued(number: 3)).overlay(alignment: .top) { NWHairline() }
+                                SHTouchQueueRow(long, images: 1, kind: .queued(number: 1), steer: {}, steerLabel: running)
+                                SHTouchQueueRow(QueueThreads.queued[1], kind: .queued(number: 2)).overlay(alignment: .top) { SHHairline() }
+                                SHTouchQueueRow(QueueThreads.queued[2], kind: .queued(number: 3)).overlay(alignment: .top) { SHHairline() }
                             }
                         } options: { EmptyView() }
                         .frame(width: 390)
@@ -168,13 +168,13 @@ extension ThreadPreviewTests {
             }
             .padding(32)
             .frame(width: size.width, height: size.height, alignment: .topLeading)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
     }
 
     private static func cell(_ title: String, _ fixture: QueueStackFixture) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.nwMono(11)).foregroundStyle(Color.nw.textSecondary)
+            Text(title).font(.shMono(11)).foregroundStyle(Color.sh.textSecondary)
             fixture.fixture.stack().frame(width: 540)
         }
     }
@@ -213,7 +213,7 @@ private struct HoveredQueueThread: View {
         .padding(.horizontal, AppLayout.gutter)
         .padding(.top, AppLayout.threadTop)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
     }
 }
 
@@ -253,9 +253,9 @@ private struct QueueStatesBoard: View {
                 VStack(alignment: .leading, spacing: 16) {
                     cell("QueueStack · collapsed", collapsed)
                     label("QueueItem · focused")
-                    NWQueueStack(count: 1, collapsed: false, onToggle: {}) {
-                        NWQueueRow("Also cover partial refunds in the tests.", kind: .queued(number: 1), focused: true,
-                                   actions: NWQueueRowActions(steer: {}, edit: {}, delete: {}))
+                    SHQueueStack(count: 1, collapsed: false, onToggle: {}) {
+                        SHQueueRow("Also cover partial refunds in the tests.", kind: .queued(number: 1), focused: true,
+                                   actions: SHQueueRowActions(steer: {}, edit: {}, delete: {}))
                     } options: { EmptyView() }
                     .frame(width: 424)
                 }
@@ -263,20 +263,20 @@ private struct QueueStatesBoard: View {
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 10) {
                     label("SendMenu (right-click or hold Send)")
-                    NWSendMenu(options: Composer.sendOptions(send: "↩", alternate: "⌘↩"), onChoose: { _ in }, onClose: {})
+                    SHSendMenu(options: Composer.sendOptions(send: "↩", alternate: "⌘↩"), onChoose: { _ in }, onClose: {})
                 }
                 cell("QueueStack · expanded (scrolls past six)", expanded)
                 VStack(alignment: .trailing, spacing: 10) {
                     label("Queue delivered at turn end · Steer landed mid-turn")
-                    NWQueueDivider(count: 2)
-                    NWUserBubble("Also cover partial refunds in the tests.", timestamp: "3:04 PM", revealed: true)
-                    NWUserBubble("Use table-driven tests, like ledger_test.go.", timestamp: "3:07 PM", revealed: true, origin: .steered)
+                    SHQueueDivider(count: 2)
+                    SHUserBubble("Also cover partial refunds in the tests.", timestamp: "3:04 PM", revealed: true)
+                    SHUserBubble("Use table-driven tests, like ledger_test.go.", timestamp: "3:07 PM", revealed: true, origin: .steered)
                 }
                 .frame(width: 520)
             }
         }
         .padding(32)
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
     }
 
     private func cell(_ title: String, _ fixture: QueueStackFixture) -> some View {
@@ -287,7 +287,7 @@ private struct QueueStatesBoard: View {
     }
 
     private func label(_ text: String) -> some View {
-        Text(text).font(.nwMono(11)).foregroundStyle(Color.nw.textSecondary)
+        Text(text).font(.shMono(11)).foregroundStyle(Color.sh.textSecondary)
     }
 }
 
@@ -320,7 +320,7 @@ enum QueueThreads {
                                       hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
-        NSGradient(starting: NSColor(Color.nw.running), ending: NSColor(Color.nw.lantern))!
+        NSGradient(starting: NSColor(Color.sh.running), ending: NSColor(Color.sh.lantern))!
             .draw(in: NSRect(x: 0, y: 0, width: 64, height: 64), angle: -45)
         NSGraphicsContext.restoreGraphicsState()
         return NativeImage(mimeType: "image/png", data: bitmap.representation(using: .png, properties: [:])!, name: name)

@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The toolbar's and pane headers' fixed measures (Navigation board).
-public enum NWToolbarMetrics {
+public enum SHToolbarMetrics {
     /// The thread toolbar and pane headers, unified with the title bar.
     public static let height: CGFloat = 44
     public static let leadingPadding: CGFloat = 14
@@ -11,13 +11,13 @@ public enum NWToolbarMetrics {
     public static let paneTrailingPadding: CGFloat = 6
 }
 
-/// The thread toolbar (`NWThreadToolbar`; Main, Review, QuestionAsk boards): 44pt, the space and
+/// The thread toolbar (`SHThreadToolbar`; Main, Review, QuestionAsk boards): 44pt, the space and
 /// the title as a breadcrumb ("Shepherd / Investigate…"), an accessory beside them (the branch
 /// chip), and the trailing controls (the side-pane button and the options menu). No status sits
 /// beside the title: the thread and the sidebar already say what an agent is doing. A sidebar
 /// button leads while the sidebar is not docked; `leadingInset` clears the window controls. The
 /// space gives way first when the toolbar narrows, then the chip's branch and the title truncate.
-public struct NWThreadToolbar<Accessory: View, Trailing: View>: View {
+public struct SHThreadToolbar<Accessory: View, Trailing: View>: View {
     let title: String
     let project: String?
     let titleHelp: String?
@@ -42,12 +42,12 @@ public struct NWThreadToolbar<Accessory: View, Trailing: View>: View {
     }
 
     public var body: some View {
-        let _ = NWRenderProbe.tick("toolbar.thread")
+        let _ = SHRenderProbe.tick("toolbar.thread")
         HStack(spacing: 10) {
             if let sidebar {
                 Button(action: sidebar) { Image(systemName: "sidebar.left") }
-                    .buttonStyle(.nwIcon)
-                    .nwHelp(sidebarLabel)
+                    .buttonStyle(.shIcon)
+                    .shHelp(sidebarLabel)
                     .accessibilityLabel(sidebarLabel)
             }
             // The space gives way first: it shows only while everything fits at full length.
@@ -55,51 +55,51 @@ public struct NWThreadToolbar<Accessory: View, Trailing: View>: View {
                 breadcrumb(showsProject: project != nil)
                 breadcrumb(showsProject: false)
             }
-            Spacer(minLength: NW.Space.l)
-            HStack(spacing: NW.Space.xs) {
+            Spacer(minLength: SH.Space.l)
+            HStack(spacing: SH.Space.xs) {
                 trailing()
             }
             .fixedSize()
             .layoutPriority(1)
         }
-        .padding(.leading, NWToolbarMetrics.leadingPadding + leadingInset)
-        .padding(.trailing, NWToolbarMetrics.trailingPadding)
-        .frame(height: NWToolbarMetrics.height)
+        .padding(.leading, SHToolbarMetrics.leadingPadding + leadingInset)
+        .padding(.trailing, SHToolbarMetrics.trailingPadding)
+        .frame(height: SHToolbarMetrics.height)
         .frame(maxWidth: .infinity)
-        .background(Color.nw.bgWindow)
-        .overlay(alignment: .bottom) { NWHairline() }
+        .background(Color.sh.bgWindow)
+        .overlay(alignment: .bottom) { SHHairline() }
     }
 
     private func breadcrumb(showsProject: Bool) -> some View {
-        HStack(spacing: NW.Space.m) {
+        HStack(spacing: SH.Space.m) {
             if showsProject, let project {
                 Text(project)
-                    .foregroundStyle(.nw.textSecondary)
+                    .foregroundStyle(.sh.textSecondary)
                     .lineLimit(1)
                     .accessibilityHidden(true)
                 Text("/")
-                    .foregroundStyle(.nw.textTertiary)
+                    .foregroundStyle(.sh.textTertiary)
                     .accessibilityHidden(true)
             }
             Text(title)
-                .font(.nwSans(13, .semibold))
-                .foregroundStyle(.nw.textPrimary)
+                .font(.shSans(13, .semibold))
+                .foregroundStyle(.sh.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .help(titleHelp ?? title)
                 .accessibilityAddTraits(.isHeader)
                 // A rename or a settled name cross-fades.
-                .nwContentTransition(.crossFade)
-                .nwAnimation(.content, value: title)
+                .shContentTransition(.crossFade)
+                .shAnimation(.content, value: title)
             accessory()
         }
-        .font(.nwSans(13))
+        .font(.shSans(13))
     }
 }
 
 /// The dot on a toolbar button (the side-pane button when pi opened something for the closed
 /// pane), ringed in the toolbar's surface so it reads over the button's edge.
-public struct NWToggleBadge: View {
+public struct SHToggleBadge: View {
     let visible: Bool
 
     public init(visible: Bool) { self.visible = visible }
@@ -107,18 +107,18 @@ public struct NWToggleBadge: View {
     public var body: some View {
         if visible {
             Circle()
-                .fill(Color.nw.running)
+                .fill(Color.sh.running)
                 .frame(width: 8, height: 8)
-                .padding(NW.Space.xxs)
-                .background(Color.nw.bgWindow, in: Circle())
-                .offset(x: NW.Space.xxs, y: -NW.Space.xxs)
+                .padding(SH.Space.xxs)
+                .background(Color.sh.bgWindow, in: Circle())
+                .offset(x: SH.Space.xxs, y: -SH.Space.xxs)
                 .allowsHitTesting(false)
-                .nwTransition(.content)
+                .shTransition(.content)
         }
     }
 }
 
-extension NWThreadToolbar where Accessory == EmptyView, Trailing == EmptyView {
+extension SHThreadToolbar where Accessory == EmptyView, Trailing == EmptyView {
     /// A toolbar with only a title (no thread on screen).
     public init(_ title: String, leadingInset: CGFloat = 0, sidebar: (() -> Void)? = nil, sidebarLabel: String = "Show sidebar") {
         self.init(title, leadingInset: leadingInset, sidebar: sidebar, sidebarLabel: sidebarLabel,
@@ -128,12 +128,12 @@ extension NWThreadToolbar where Accessory == EmptyView, Trailing == EmptyView {
 
 /// The options (`⋯`) menu of a toolbar or pane header: a native menu on a 28pt icon button
 /// (24pt in the queue's header).
-public struct NWOptionsMenu<Content: View>: View {
+public struct SHOptionsMenu<Content: View>: View {
     let label: String
     let size: CGFloat
     @ViewBuilder let content: () -> Content
 
-    public init(_ label: String = "Options", size: CGFloat = NW.Height.controlM, @ViewBuilder content: @escaping () -> Content) {
+    public init(_ label: String = "Options", size: CGFloat = SH.Height.controlM, @ViewBuilder content: @escaping () -> Content) {
         self.label = label
         self.size = size
         self.content = content
@@ -145,15 +145,15 @@ public struct NWOptionsMenu<Content: View>: View {
         }
         .menuStyle(.button)
         .menuIndicator(.hidden)
-        .buttonStyle(.nwIcon(size: size))
+        .buttonStyle(.shIcon(size: size))
         .fixedSize()
         .accessibilityLabel(label)
     }
 }
 
-/// A right pane's header (Navigation board, `NWPaneHeader`): a title with a mono subtitle,
+/// A right pane's header (Navigation board, `SHPaneHeader`): a title with a mono subtitle,
 /// controls on the right, close last. 44pt, like the thread toolbar beside it.
-public struct NWPaneHeader<Subtitle: View, Controls: View>: View {
+public struct SHPaneHeader<Subtitle: View, Controls: View>: View {
     let title: String
     let closeLabel: String
     let close: (() -> Void)?
@@ -171,37 +171,37 @@ public struct NWPaneHeader<Subtitle: View, Controls: View>: View {
     }
 
     public var body: some View {
-        HStack(spacing: NW.Space.m) {
+        HStack(spacing: SH.Space.m) {
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
-                    .font(.nwSans(13, .semibold))
-                    .foregroundStyle(.nw.textPrimary)
+                    .font(.shSans(13, .semibold))
+                    .foregroundStyle(.sh.textPrimary)
                     .lineLimit(1)
                     .accessibilityAddTraits(.isHeader)
                 subtitle()
-                    .font(.nw(.micro, weight: .regular))
-                    .foregroundStyle(.nw.textTertiary)
+                    .font(.sh(.micro, weight: .regular))
+                    .foregroundStyle(.sh.textTertiary)
                     .lineLimit(1)
             }
             .layoutPriority(1)
-            Spacer(minLength: NW.Space.m)
+            Spacer(minLength: SH.Space.m)
             controls()
             if let close {
                 Button(action: close) { Image(systemName: "xmark") }
-                    .buttonStyle(.nwIcon)
-                    .nwHelp(closeLabel)
+                    .buttonStyle(.shIcon)
+                    .shHelp(closeLabel)
                     .accessibilityLabel(closeLabel)
             }
         }
-        .padding(.leading, NWToolbarMetrics.paneLeadingPadding)
-        .padding(.trailing, NWToolbarMetrics.paneTrailingPadding)
-        .frame(minHeight: NWToolbarMetrics.height)
-        .background(Color.nw.bgWindow)
-        .overlay(alignment: .bottom) { NWHairline() }
+        .padding(.leading, SHToolbarMetrics.paneLeadingPadding)
+        .padding(.trailing, SHToolbarMetrics.paneTrailingPadding)
+        .frame(minHeight: SHToolbarMetrics.height)
+        .background(Color.sh.bgWindow)
+        .overlay(alignment: .bottom) { SHHairline() }
     }
 }
 
-extension NWPaneHeader where Subtitle == EmptyView {
+extension SHPaneHeader where Subtitle == EmptyView {
     public init(_ title: String, closeLabel: String = "Close pane", close: (() -> Void)?,
                 @ViewBuilder controls: @escaping () -> Controls) {
         self.init(title, closeLabel: closeLabel, close: close, subtitle: { EmptyView() }, controls: controls)

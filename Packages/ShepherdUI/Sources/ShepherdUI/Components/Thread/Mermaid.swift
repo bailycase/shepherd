@@ -2,29 +2,29 @@ import SwiftUI
 import WebKit
 
 /// Window-owned presentation state; environment updates compare its stable identity.
-@MainActor @Observable public final class NWDiagramPresentation {
+@MainActor @Observable public final class SHDiagramPresentation {
     public var source: String?
     public init() {}
 }
 
 extension EnvironmentValues {
     /// Opens a diagram in the owning window without replacing a callback on every layout.
-    @Entry public var nwDiagramPresentation: NWDiagramPresentation? = nil
+    @Entry public var shDiagramPresentation: SHDiagramPresentation? = nil
     /// An explicit callback takes precedence over window-owned presentation; retained for existing clients.
-    @Entry public var nwPresentDiagram: ((String) -> Void)? = nil
+    @Entry public var shPresentDiagram: ((String) -> Void)? = nil
 }
 
 /// A finished Mermaid fence. Source stays copyable even when WebKit or Mermaid cannot render it.
 /// Pinch or ⌘-scroll zooms the chart in place, a drag pans it once zoomed, and the corner button opens it full screen.
-public struct NWMermaidBlock: View {
+public struct SHMermaidBlock: View {
     let source: String
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.nwProseSize) private var proseSize
-    @Environment(\.nwPresentDiagram) private var presentDiagram
-    @Environment(\.nwDiagramPresentation) private var diagramPresentation
+    @Environment(\.shProseSize) private var proseSize
+    @Environment(\.shPresentDiagram) private var presentDiagram
+    @Environment(\.shDiagramPresentation) private var diagramPresentation
     @ScaledMetric(relativeTo: .body) private var dynamicTypeScale: CGFloat = 1
-    @State private var height = NWMermaidMetrics.initialHeight
-    @State private var status = NWMermaidStatus.loading
+    @State private var height = SHMermaidMetrics.initialHeight
+    @State private var status = SHMermaidStatus.loading
     @State private var expanded = false
 
     public init(_ source: String) { self.source = source }
@@ -34,15 +34,15 @@ public struct NWMermaidBlock: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: NW.Space.m) {
+        VStack(alignment: .leading, spacing: SH.Space.m) {
             MermaidWebView(source: source, colors: ThemeStore.shared.theme.variant(dark: colorScheme == .dark).colors,
-                           fontSize: (NWTextStyle.body.size - proseSize.step) * ThemeStore.shared.textScale * dynamicTypeScale,
+                           fontSize: (SHTextStyle.body.size - proseSize.step) * ThemeStore.shared.textScale * dynamicTypeScale,
                            viewer: false, height: $height, status: $status)
                 .frame(height: status == .failed ? 0 : height)
                 .accessibilityLabel("Mermaid diagram")
             if status == .ready {
-                DisclosureGroup("Diagram source") { NWCodeBlock(source, language: "mermaid") }
-                    .font(.nw(.caption)).foregroundStyle(Color.nw.textSecondary)
+                DisclosureGroup("Diagram source") { SHCodeBlock(source, language: "mermaid") }
+                    .font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
                     // On the source line, not over the chart, so it never hides part of the diagram.
                     .overlay(alignment: .topTrailing) {
                         if canExpand {
@@ -53,23 +53,23 @@ public struct NWMermaidBlock: View {
                             } label: {
                                 Label("Full screen", systemImage: "arrow.up.left.and.arrow.down.right")
                             }
-                            .buttonStyle(.nw(.ghost, size: .s))
+                            .buttonStyle(.sh(.ghost, size: .s))
                             .accessibilityLabel("Open diagram full screen")
-                            .nwHelp("Open full screen")
+                            .shHelp("Open full screen")
                         }
                     }
             } else {
                 Text(status == .failed ? "Diagram couldn’t be rendered. View or copy the source below." : "Rendering diagram…")
-                    .font(.nw(.caption)).foregroundStyle(Color.nw.textSecondary)
+                    .font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
                     .accessibilityAddTraits(.updatesFrequently)
-                NWCodeBlock(source, language: "mermaid")
+                SHCodeBlock(source, language: "mermaid")
             }
         }
-        .padding(NW.Space.l)
-        .background(Color.nw.bgSunken, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-        .nwBorder(Color.nw.lineSubtle, radius: NW.Radius.m)
+        .padding(SH.Space.l)
+        .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+        .shBorder(Color.sh.lineSubtle, radius: SH.Radius.m)
         #if os(iOS)
-        .fullScreenCover(isPresented: $expanded) { NWMermaidViewer(source) { expanded = false } }
+        .fullScreenCover(isPresented: $expanded) { SHMermaidViewer(source) { expanded = false } }
         #endif
     }
 
@@ -84,7 +84,7 @@ public struct NWMermaidBlock: View {
 
 /// A diagram open over the thread, in the image viewer: the chart fills the room, pinch or ⌘-scroll zooms,
 /// scroll or drag pans, double-click zooms in or back to fit. Copy takes the source.
-public struct NWMermaidViewer: View {
+public struct SHMermaidViewer: View {
     let source: String
     let close: () -> Void
 
@@ -95,14 +95,14 @@ public struct NWMermaidViewer: View {
 
     public var body: some View {
         let lines = source.split(separator: "\n", omittingEmptySubsequences: false).count
-        NWImageViewer(name: "Mermaid diagram", facts: lines == 1 ? "1 line" : "\(lines) lines",
+        SHImageViewer(name: "Mermaid diagram", facts: lines == 1 ? "1 line" : "\(lines) lines",
                       content: .diagram(AnyView(MermaidCanvas(source: source))),
                       caption: Self.caption,
-                      copy: { NWPasteboard.copy(source) }, close: close)
+                      copy: { SHPasteboard.copy(source) }, close: close)
     }
 }
 
-extension NWMermaidViewer {
+extension SHMermaidViewer {
     #if os(macOS)
     static let caption = "Pinch or ⌘-scroll to zoom · Drag to pan · Double-click to zoom · Esc to close"
     #else
@@ -115,27 +115,27 @@ private struct MermaidCanvas: View {
     let source: String
     @Environment(\.colorScheme) private var colorScheme
     @ScaledMetric(relativeTo: .body) private var dynamicTypeScale: CGFloat = 1
-    @State private var height = NWMermaidMetrics.initialHeight
-    @State private var status = NWMermaidStatus.loading
+    @State private var height = SHMermaidMetrics.initialHeight
+    @State private var status = SHMermaidStatus.loading
 
     var body: some View {
         ZStack {
             MermaidWebView(source: source, colors: ThemeStore.shared.theme.variant(dark: colorScheme == .dark).colors,
-                           fontSize: NWTextStyle.body.size * ThemeStore.shared.textScale * dynamicTypeScale,
+                           fontSize: SHTextStyle.body.size * ThemeStore.shared.textScale * dynamicTypeScale,
                            viewer: true, height: $height, status: $status)
                 .opacity(status == .ready ? 1 : 0)
                 .accessibilityLabel("Mermaid diagram")
             if status != .ready {
                 Text(status == .failed ? "Diagram couldn’t be rendered." : "Rendering diagram…")
-                    .font(.nw(.ui)).foregroundStyle(Color.nw.textSecondary)
+                    .font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
             }
         }
     }
 }
 
-enum NWMermaidStatus: Equatable { case loading, ready, failed }
+enum SHMermaidStatus: Equatable { case loading, ready, failed }
 
-enum NWMermaidMetrics {
+enum SHMermaidMetrics {
     static let initialHeight: CGFloat = 120
     static let maximumHeight: CGFloat = 1200
     static let maximumSourceBytes = 50_000
@@ -153,7 +153,7 @@ final class MermaidRenderer: NSObject, WKNavigationDelegate, WKScriptMessageHand
     private var navigation: WKNavigation?
     private var key: String?
     private var timeout: Task<Void, Never>?
-    var onStatus: (NWMermaidStatus, CGFloat?) -> Void = { _, _ in }
+    var onStatus: (SHMermaidStatus, CGFloat?) -> Void = { _, _ in }
 
     override init() {
         super.init()
@@ -174,7 +174,7 @@ final class MermaidRenderer: NSObject, WKNavigationDelegate, WKScriptMessageHand
         #endif
     }
 
-    private func publish(_ state: NWMermaidStatus, _ height: CGFloat?) {
+    private func publish(_ state: SHMermaidStatus, _ height: CGFloat?) {
         let current = revision
         Task { @MainActor [weak self] in
             guard let self, self.revision == current else { return }
@@ -199,7 +199,7 @@ final class MermaidRenderer: NSObject, WKNavigationDelegate, WKScriptMessageHand
         let current = revision
         timeout?.cancel()
         publish(.loading, nil)
-        guard source.utf8.count <= NWMermaidMetrics.maximumSourceBytes,
+        guard source.utf8.count <= SHMermaidMetrics.maximumSourceBytes,
               let html = Self.document(source: source, colors: colors, fontSize: fontSize, viewer: viewer, revision: current) else {
             webView.loadHTMLString("", baseURL: nil)
             publish(.failed, nil)
@@ -207,7 +207,7 @@ final class MermaidRenderer: NSObject, WKNavigationDelegate, WKScriptMessageHand
         }
         navigation = webView.loadHTMLString(html, baseURL: nil)
         timeout = Task { [weak self] in
-            try? await Task.sleep(for: NWMermaidMetrics.timeout)
+            try? await Task.sleep(for: SHMermaidMetrics.timeout)
             guard !Task.isCancelled, let self, self.revision == current else { return }
             self.fail()
         }
@@ -218,7 +218,7 @@ final class MermaidRenderer: NSObject, WKNavigationDelegate, WKScriptMessageHand
               body["revision"] as? String == revision, let state = body["state"] as? String else { return }
         if state == "ready", let height = body["height"] as? Double, height.isFinite, height > 0 {
             timeout?.cancel()
-            publish(.ready, min(CGFloat(height), NWMermaidMetrics.maximumHeight))
+            publish(.ready, min(CGFloat(height), SHMermaidMetrics.maximumHeight))
         } else if state == "error" {
             fail()
         }
@@ -290,7 +290,7 @@ final class MermaidRenderer: NSObject, WKNavigationDelegate, WKScriptMessageHand
         function zoomable(viewer) {
           let s = 1, x = 0, y = 0, start = 1, drag = null;
           const set = (ns, nx, ny) => {
-            ns = Math.min(Math.max(ns, 1), \(NWMermaidMetrics.maximumZoom));
+            ns = Math.min(Math.max(ns, 1), \(SHMermaidMetrics.maximumZoom));
             const w = chart.offsetWidth, h = chart.offsetHeight;
             nx = Math.min(0, Math.max(w - w * ns, nx));
             ny = Math.min(0, Math.max(h - h * ns, ny));
@@ -303,10 +303,10 @@ final class MermaidRenderer: NSObject, WKNavigationDelegate, WKScriptMessageHand
           };
           const at = event => [event.clientX - chart.offsetLeft, event.clientY - chart.offsetTop];
           const zoomAt = (k, [px, py]) => {
-            const ns = Math.min(Math.max(s * k, 1), \(NWMermaidMetrics.maximumZoom)), r = ns / s;
+            const ns = Math.min(Math.max(s * k, 1), \(SHMermaidMetrics.maximumZoom)), r = ns / s;
             return set(ns, px - (px - x) * r, py - (py - y) * r);
           };
-          window.nwZoom = { state: () => ({s, x, y}), reset: () => set(1, 0, 0) };
+          window.shZoom = { state: () => ({s, x, y}), reset: () => set(1, 0, 0) };
           addEventListener('wheel', event => {
             const unit = event.deltaMode === 1 ? 16 : 1;
             if (event.ctrlKey || event.metaKey) {
@@ -341,7 +341,7 @@ final class MermaidRenderer: NSObject, WKNavigationDelegate, WKScriptMessageHand
             const secure = [...new Set([...Object.keys(mermaid.mermaidAPI.getConfig()), 'secure', 'themeCSS', 'themeVariables', 'htmlLabels'])];
             const fontSize = parseFloat(input.variables.fontSize);
             mermaid.initialize({startOnLoad:false,securityLevel:'strict',suppressErrorRendering:true,
-              maxTextSize:\(NWMermaidMetrics.maximumSourceBytes),maxEdges:500,htmlLabels:false,theme:'base',
+              maxTextSize:\(SHMermaidMetrics.maximumSourceBytes),maxEdges:500,htmlLabels:false,theme:'base',
               fontSize,fontFamily:'Geist',themeVariables:input.variables,flowchart:{htmlLabels:false},secure});
             await document.fonts.load(input.variables.fontSize + ' Geist');
             const result = await mermaid.render('diagram', input.source);
@@ -375,7 +375,7 @@ private struct MermaidWebView {
     let fontSize: CGFloat
     let viewer: Bool
     @Binding var height: CGFloat
-    @Binding var status: NWMermaidStatus
+    @Binding var status: SHMermaidStatus
 
     func makeCoordinator() -> MermaidRenderer { MermaidRenderer() }
     func update(_ renderer: MermaidRenderer) {
@@ -401,5 +401,5 @@ extension MermaidWebView: UIViewRepresentable {
 }
 #endif
 
-#Preview("Mermaid · light") { NWMermaidBlock("flowchart LR\n  Request --> Agent --> Review").preferredColorScheme(.light) }
-#Preview("Mermaid · dark") { NWMermaidBlock("flowchart LR\n  Request --> Agent --> Review").preferredColorScheme(.dark) }
+#Preview("Mermaid · light") { SHMermaidBlock("flowchart LR\n  Request --> Agent --> Review").preferredColorScheme(.light) }
+#Preview("Mermaid · dark") { SHMermaidBlock("flowchart LR\n  Request --> Agent --> Review").preferredColorScheme(.dark) }

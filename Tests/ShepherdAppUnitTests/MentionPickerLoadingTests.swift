@@ -83,7 +83,7 @@ struct MentionPickerLoadingTests {
     @Test func returnOverLoadingChoosesNothing() {
         var state = MentionPickerState()
         state.update(draft: "@", catalog: nil, stage: .loading)
-        let row = NWMentionRow(id: "ghost", kind: .design, title: "Ghost", trailing: .drill)
+        let row = SHMentionRow(id: "ghost", kind: .design, title: "Ghost", trailing: .drill)
         #expect(state.choose(row) == nil, "a row the content doesn't hold is never chosen")
         #expect(state.isOpen, "and the picker stays")
     }

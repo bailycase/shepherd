@@ -21,7 +21,7 @@ struct AgentActionsMenu: View {
                 if FleetThreadAbilities(agent: agent, state: host.state, connected: true, capabilities: []).pin {
                     let sidebar = SidebarThreads.of(hosts)
                     let pinned = sidebar.isPinned(thread)
-                    Button(pinned ? "Unpin" : "Pin", systemImage: pinned ? "pin.slash" : NWGlyph.pin.symbolName) {
+                    Button(pinned ? "Unpin" : "Pin", systemImage: pinned ? "pin.slash" : SHGlyph.pin.symbolName) {
                         sidebar.togglePin(thread)
                     }
                 }

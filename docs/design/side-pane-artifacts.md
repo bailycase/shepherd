@@ -53,11 +53,11 @@ pi makes along the way. Each is a file on the thread's host. Open one from the t
   `bgSelected`) over "Markdown · v4 · just now" in `caption` `textTertiary`, plus "edited by you"
   in `micro` `lanternText` after a save of yours, and a 24pt ⋯ trailing.
 - **An open artifact:** a 44pt bar under the tabs (8pt padding and gaps): All artifacts (28pt
-  `nwIcon`, back to the list), a 22pt kind tile (radius 6), the name in Geist 13 semibold
+  `shIcon`, back to the list), a 22pt kind tile (radius 6), the name in Geist 13 semibold
   (truncating), a 22pt version chip (radius 6, `lineSubtle`, a clock glyph, "v2 · 6m ago" in
   Geist Mono 11 `textSecondary`, a chevron) that opens its versions, then a small Preview | Source
-  `NWSegmentedPicker`, Edit and Open in a window (28pt `nwIcon`). Diagrams and Markdown render in
-  Night Watch colors, so they follow light and dark; HTML artifacts keep their own styles, on
+  `SHSegmentedPicker`, Edit and Open in a window (28pt `shIcon`). Diagrams and Markdown render in
+  Shepherd Design colors, so they follow light and dark; HTML artifacts keep their own styles, on
   their own background with 18pt padding.
 - **Versions** (`ArtifactVersions`, a 280pt popover): the file's name in `caption` semibold
   `textSecondary`, then one 38pt row per version, newest first: a check on the one shown, "v4"
@@ -86,7 +86,7 @@ before building it (as iOS: iPad › Side pane says).
 
 - **The tree,** 210pt on `bgBase` with a hairline on its trailing side. Its header (padding
   10/10/8/12, a hairline beneath): the repository in Geist Mono 12.5 semibold with Go to file (24pt
-  `nwIcon`), over the branch and host in Geist 11 `textTertiary` with 11pt glyphs ("fix/pay-jump"
+  `shIcon`), over the branch and host in Geist 11 `textTertiary` with 11pt glyphs ("fix/pay-jump"
   in mono · "build-01"). Rows are 24pt, radius 6, 8pt leading padding plus 14pt per level, 6pt
   gaps: a 9pt disclosure chevron (or its space), a folder (13pt `textSecondary`) or file (12pt
   `textTertiary`) glyph, the name in `ui` (semibold on `bgSelected` when open), and trailing an M

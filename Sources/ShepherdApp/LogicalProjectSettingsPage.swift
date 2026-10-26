@@ -15,26 +15,26 @@ struct LogicalProjectSettingsDestination: View {
     var chrome = PageHeaderChrome()
 
     var body: some View {
-        let _ = NWRenderProbe.tick("page.projectSettings")
+        let _ = SHRenderProbe.tick("page.projectSettings")
         VStack(spacing: 0) {
             if let showSidebar = chrome.showSidebar {
                 HStack {
                     Button(action: showSidebar) { Image(systemName: "sidebar.left") }
-                        .buttonStyle(.nwIcon)
-                        .nwHelp("Show sidebar")
+                        .buttonStyle(.shIcon)
+                        .shHelp("Show sidebar")
                         .accessibilityLabel("Show sidebar")
                     Spacer()
                 }
-                .padding(.leading, NWToolbarMetrics.leadingPadding + chrome.leadingInset)
-                .frame(height: NWToolbarMetrics.height)
+                .padding(.leading, SHToolbarMetrics.leadingPadding + chrome.leadingInset)
+                .frame(height: SHToolbarMetrics.height)
             }
             if let ref = vm.selectedLogicalProject, let project = vm.logicalProjects.project(ref) {
                 LogicalProjectSettingsPage(vm: vm, ref: ref, project: project)
             } else {
-                NWEmptyState(Text("This project is gone"), message: "It was deleted on its host.") {}
+                SHEmptyState(Text("This project is gone"), message: "It was deleted on its host.") {}
             }
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
     }
 }
 
@@ -50,29 +50,29 @@ struct LogicalProjectSettingsPage: View {
     private var model: LogicalProjectsModel { vm.logicalProjects }
 
     var body: some View {
-        let M = NWProjectSettingsMetrics.self
+        let M = SHProjectSettingsMetrics.self
         ScrollView(.vertical) {
-            VStack(alignment: .leading, spacing: NW.Space.xl) {
-                VStack(alignment: .leading, spacing: NW.Space.s) {
+            VStack(alignment: .leading, spacing: SH.Space.xl) {
+                VStack(alignment: .leading, spacing: SH.Space.s) {
                     // The project's name leads back to its page (not on the boards; the user asked for a way back).
                     Button { vm.openLogicalProject(ref) } label: {
-                        HStack(spacing: NW.Space.xs) {
-                            NWGlyph.Settings.back.image.accessibilityHidden(true)
+                        HStack(spacing: SH.Space.xs) {
+                            SHGlyph.Settings.back.image.accessibilityHidden(true)
                             Text(project.name).lineLimit(1)
                         }
-                        .frame(minHeight: NW.Height.controlS)  // the desktop's 24pt hit area
+                        .frame(minHeight: SH.Height.controlS)  // the desktop's 24pt hit area
                     }
-                    .buttonStyle(.nwLink(color: Color.nw.textTertiary, font: .nw(.caption)))
-                    .nwHelp("Back to \(project.name)")
+                    .buttonStyle(.shLink(color: Color.sh.textTertiary, font: .sh(.caption)))
+                    .shHelp("Back to \(project.name)")
                     .accessibilityLabel("Back to \(project.name)")
                     Text("Project settings")
-                        .font(.nw(.title))
-                        .foregroundStyle(Color.nw.textPrimary)
+                        .font(.sh(.title))
+                        .foregroundStyle(Color.sh.textPrimary)
                         .accessibilityAddTraits(.isHeader)
                 }
                 tabs
                 if let failure = model.failure {
-                    Text(failure.message).font(.nw(.caption)).foregroundStyle(Color.nw.failed)
+                    Text(failure.message).font(.sh(.caption)).foregroundStyle(Color.sh.failed)
                         .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                         .accessibilityLabel(failure.stale ? "This project changed. \(failure.message)" : failure.message)
                 }
@@ -85,9 +85,9 @@ struct LogicalProjectSettingsPage: View {
                 }
             }
             .frame(maxWidth: M.columnWidth, alignment: .leading)
-            .padding(.horizontal, NW.Space.xxxl)
+            .padding(.horizontal, SH.Space.xxxl)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, NW.Space.xxl)
+            .padding(.vertical, SH.Space.xxl)
         }
         .scrollBounceBehavior(.basedOnSize)
         .task(id: ref) { models = await vm.ownerModelIDs(of: ref.home) }
@@ -101,10 +101,10 @@ struct LogicalProjectSettingsPage: View {
     /// all over a 1pt `lineSubtle` rail.
     private var tabs: some View {
         VStack(spacing: 0) {
-            HStack(spacing: NW.Space.s) {
+            HStack(spacing: SH.Space.s) {
                 ForEach(LogicalProjectSettingsTab.allCases) { item in
                     Button { vm.logicalProjectSettingsTab = item } label: {
-                        NWProjectSettingsTab(item.rawValue, selected: item == tab)
+                        SHProjectSettingsTab(item.rawValue, selected: item == tab)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -113,7 +113,7 @@ struct LogicalProjectSettingsPage: View {
                 }
                 Spacer(minLength: 0)
             }
-            NWHairline()
+            SHHairline()
         }
     }
 }
@@ -135,19 +135,19 @@ private struct LogicalProjectGeneralTab: View {
     private var saving: Bool { model.busy.contains(ref) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NW.Space.xl) {
+        VStack(alignment: .leading, spacing: SH.Space.xl) {
             ProjectSettingsCard {
                 ProjectSettingsRow(title: "Goal", subtitle: "One line the project works toward. Optional.") {
                     TextField("", text: $goal)
                         .textFieldStyle(.plain)
-                        .font(.nw(.ui, weight: .regular))
-                        .foregroundStyle(Color.nw.textPrimary)
-                        .tint(Color.nw.lantern)
+                        .font(.sh(.ui, weight: .regular))
+                        .foregroundStyle(Color.sh.textPrimary)
+                        .tint(Color.sh.lantern)
                         .focused($goalFocused)
-                        .padding(.horizontal, NW.Space.l + NWProjectSettingsMetrics.line)
-                        .frame(width: NWProjectSettingsMetrics.goalFieldWidth, alignment: .leading)
-                        .frame(minHeight: NWProjectSettingsMetrics.fieldHeight)
-                        .nwProjectSettingsField(focused: goalFocused)
+                        .padding(.horizontal, SH.Space.l + SHProjectSettingsMetrics.line)
+                        .frame(width: SHProjectSettingsMetrics.goalFieldWidth, alignment: .leading)
+                        .frame(minHeight: SHProjectSettingsMetrics.fieldHeight)
+                        .shProjectSettingsField(focused: goalFocused)
                         .accessibilityLabel("Goal")
                         .onSubmit(commitText)
                 }
@@ -164,7 +164,7 @@ private struct LogicalProjectGeneralTab: View {
                     }
                 }
                 ProjectSettingsRow(title: "Threads at once", subtitle: "More wait for a slot. Counts across every host.") {
-                    NWProjectSettingsPopup("\(settings.maxConcurrentWorkers)") {
+                    SHProjectSettingsPopup("\(settings.maxConcurrentWorkers)") {
                         ForEach(1...6, id: \.self) { count in
                             Button("\(count)") {
                                 guard count != settings.maxConcurrentWorkers else { return }
@@ -173,7 +173,7 @@ private struct LogicalProjectGeneralTab: View {
                         }
                     }
                     .disabled(saving)
-                    .nwHelp("Threads at once")
+                    .shHelp("Threads at once")
                     .accessibilityLabel("Threads at once")
                     .accessibilityValue("\(settings.maxConcurrentWorkers)")
                 }
@@ -216,7 +216,7 @@ struct ProjectModelField: View {
     private static let useDefault = "Default"
 
     var body: some View {
-        NWProjectSettingsPopup(current ?? Self.useDefault) {
+        SHProjectSettingsPopup(current ?? Self.useDefault) {
             Button(Self.useDefault) { choose(nil) }
             Divider()
             ForEach(options, id: \.self) { id in
@@ -224,7 +224,7 @@ struct ProjectModelField: View {
             }
         }
         .disabled(disabled)
-        .nwHelp(label)
+        .shHelp(label)
         .accessibilityLabel(label)
         .accessibilityValue(current ?? Self.useDefault)
     }

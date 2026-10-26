@@ -8,17 +8,17 @@ Each destination opens a page in the main column, in place of a thread (NavNewTh
 NavAutomations, NavHosts; Missions and Designs are hidden until built). A page covers the whole
 column, the thread toolbar included, while every mounted layout stays mounted and hidden under it
 (`MainDestination`, `WorkspaceSelection.destination`), so leaving it is a flip; picking a row
-leaves it. The pages share one frame (ShepherdUI's Pages components, `NWPageMetrics`):
+leaves it. The pages share one frame (ShepherdUI's Pages components, `SHPageMetrics`):
 
-- **Page header** (`NWPageHeader`, through the app's `DestinationPageHeader`): 52pt (the thread
+- **Page header** (`SHPageHeader`, through the app's `DestinationPageHeader`): 52pt (the thread
   toolbar is 44) on `bgWindow`, with a hairline beneath, 24pt leading and 16pt trailing padding,
   and 12pt between items. It holds the page title in `title` (Geist 15 semibold); an optional
   subtitle in 12.5 `textTertiary` ("3 hosts · 1 offline"); a spacer; and the page's own controls: a
   filter field ("Filter automations"; 220×28, radius 6, padded 10pt, a 1pt `lineSubtle` border and
   no fill, a 12pt `textTertiary` magnifying glass 8pt before a 12pt `textTertiary` placeholder) and
-  the page's one primary button (`.nw(.primary)`, 28pt, radius 6, padded 10pt, a 13pt `plus` 6pt
+  the page's one primary button (`.sh(.primary)`, 28pt, radius 6, padded 10pt, a 13pt `plus` 6pt
   before the label in 12.5 semibold: "New automation", "Add host"). New thread has neither. The
-  field is `NWPageFilterField`, lighter than `NWSearchField` as the board draws it. While the
+  field is `SHPageFilterField`, lighter than `SHSearchField` as the board draws it. While the
   sidebar is not docked the header leads with the Show sidebar button and clears the window
   controls, as the toolbar does, and its empty area drags the window.
 - **State tabs** (Missions; the Automations page has none, since automations have no schedule), under the header, padded 16pt above, 12pt below, and 24pt
@@ -29,7 +29,7 @@ leaves it. The pages share one frame (ShepherdUI's Pages components, `NWPageMetr
   padded 24pt at the sides and 8pt below. Rows have a hairline above, 24pt side padding, and the
   columns' gap. The selected row is `bgSelected`.
 - **Cards** (Designs, Hosts): a 1pt `lineSubtle` border at radius 10 (the boards' value, between
-  `NW.Radius.m` 8 and `.l` 12), clipped. The page body is padded 20pt above and below and 24pt at
+  `SH.Radius.m` 8 and `.l` 12), clipped. The page body is padded 20pt above and below and 24pt at
   the sides.
 
 ## New thread page
@@ -43,8 +43,8 @@ one. The New agent sheet (⇧⌘T) stays for its directory and base fields.
 - The header reads "New thread". The body centres one column vertically, padded 40pt at the sides
   and 80pt below, with 24pt gaps.
 - **Heading:** "What should the agent work on?" in Geist 26 semibold, tracked −2%. This is outside
-  the ramp; set it with `Font.nwSans`.
-- **Composer:** the thread's `NWComposer`, 720pt wide, drawn focused (a `textTertiary` border and a
+  the ramp; set it with `Font.shSans`.
+- **Composer:** the thread's `SHComposer`, 720pt wide, drawn focused (a `textTertiary` border and a
   3pt `bgSelected` ring). The placeholder is "Describe the task…". Its control row is attach, the
   normal composer's shared model-settings button, a spacer, then the workplace chip. Thinking
   appears only while the model takes a level; the settings popover's Speed row only while the target
@@ -76,10 +76,10 @@ one. The New agent sheet (⇧⌘T) stays for its directory and base fields.
   words come back into its composer. They are this Mac's designs and reach this Mac's spaces
   only: for a space on another host the picker says "Design references go to spaces on this
   Mac." and, with a chip attached, Send says the same under the card and in its tooltip.
-- **Workplace chip** (`NWPlaceChipLabel`): a 12pt `textSecondary` folder glyph and the space in
+- **Workplace chip** (`SHPlaceChipLabel`): a 12pt `textSecondary` folder glyph and the space in
   mono ("shepherd"), a `textTertiary` "·", a display glyph and the host in mono ("This Mac"), and a
   10pt `textTertiary` chevron, as a 26pt chip in 12 `textSecondary`. It picks where the thread runs,
-  and opens the **workplace menu** (`NWPlaceMenu`, the composer menus' anatomy, 320pt, 8pt under the
+  and opens the **workplace menu** (`SHPlaceMenu`, the composer menus' anatomy, 320pt, 8pt under the
   card): one section per host, This Mac then each connected host. This Mac starts with **No space**,
   which creates a standalone thread in `<support>/threads/<agentID>` without registering a user
   space. These threads stay in Activity and across restarts; their folders are kept when a thread
@@ -132,7 +132,7 @@ one. The New agent sheet (⇧⌘T) stays for its directory and base fields.
 - **Table**, columns Mission · Lanes · Route · Spend · Host (1.7fr · 1.2fr · 160pt · 150pt · 110pt,
   20pt gaps). Rows are padded 14pt above and below.
   - **Mission:** a 14pt map glyph (`lanternText` while it needs you, else `textSecondary`), the name
-    in 13.5 semibold, and a 10pt gap before its state pill (`NWStatusPill`): Needs you (glowing),
+    in 13.5 semibold, and a 10pt gap before its state pill (`SHStatusPill`): Needs you (glowing),
     Running, Draft (outlined, `textTertiary` dot), or Merged (the `done` pill worded "Merged").
     Under it, indented 24pt, is one line in 12, truncating: the question in `lanternText` while it
     needs you ("retention: 30 days or 13 months?"), else what it is doing or how it ended in
@@ -167,18 +167,18 @@ board's When and Next columns and its Scheduled and On an event tabs are left ou
 decision, 2026-09-25: "Automations = table + detail with name, host, last run, prompt, runs, Run
 now (no schedules, triggers or next-run column)").
 
-- **Header** (`NWPageHeader`): "Automations", "Filter automations" (`NWPageFilterField`: name,
+- **Header** (`SHPageHeader`): "Automations", "Filter automations" (`SHPageFilterField`: name,
   host or prompt), and **New automation**.
 - **Table**, columns Automation · Starts · Host · Last run (`2fr · 76pt · 76pt · 1.15fr`,
-  `NWTableColumns`, 16pt gaps), under its labels (`NWTableHead`, 16pt below the header). Each row
-  is an `NWAutomationTableRow`, padded 12pt above and below with a hairline above, `bgSelected`
+  `SHTableColumns`, 16pt gaps), under its labels (`SHTableHead`, 16pt below the header). Each row
+  is an `SHAutomationTableRow`, padded 12pt above and below with a hairline above, `bgSelected`
   when selected; a click selects it.
-  - **Automation:** its switch (`NWAutomationSwitch`, 30×18), 10pt before the name in 13
+  - **Automation:** its switch (`SHAutomationSwitch`, 30×18), 10pt before the name in 13
     semibold. The switch turns it on or off on its host, disabled while the host can't take it.
   - **Starts:** a speech bubble and "thread" in 12 `textSecondary`: every run starts a thread.
   - **Host:** "This Mac" or the host's name, mono 11 `textSecondary`.
   - **Last run:** a 6pt dot and the run's word with its time in 12, colored by how it went
-    (`NWRunOutcomeLabel`): "running · 4m" `running`, "asked you · 1h ago" `lanternText` with a
+    (`SHRunOutcomeLabel`): "running · 4m" `running`, "asked you · 1h ago" `lanternText` with a
     glowing `lantern` dot, "finished · 6h ago" `done`, "interrupted · 3d ago" `failed`, and quiet
     (a hollow `textTertiary` dot, `textTertiary` words) for stopped, "not run yet", "off" and
     "host offline". Empty until the host's runs are read.
@@ -191,13 +191,13 @@ now (no schedules, triggers or next-run column)").
   18pt at the sides, with a hairline between them.
   - **Header,** padded 16pt: the name in `title` over "Starts a thread on demo-mac when Shepherd
     starts" (or "when you run it") in 12 `textTertiary`.
-  - **Prompt:** "PROMPT" (`NWPageSectionLabel`), 8pt above the prompt on `bgSunken` with a
-    `lineSubtle` border, radius 8 (`NWPageQuote`).
-  - **Facts** (`NWPageFact`, a 90pt label column in `textSecondary`, 6pt apart): When ("When
+  - **Prompt:** "PROMPT" (`SHPageSectionLabel`), 8pt above the prompt on `bgSunken` with a
+    `lineSubtle` border, radius 8 (`SHPageQuote`).
+  - **Facts** (`SHPageFact`, a 90pt label column in `textSecondary`, 6pt apart): When ("When
     Shepherd starts" or "By hand"), Host (mono), Folder (mono, in place of the board's Repos: an
     automation has one folder), and Model (mono) only where its run's thread says which.
   - **Recent runs:** "RECENT RUNS", then every run the host kept, newest first, in 28pt rows
-    (`NWAutomationRunLine`): the dot, the start in mono 12 `textSecondary` ("Sep 24 02:00"), the
+    (`SHAutomationRunLine`): the dot, the start in mono 12 `textSecondary` ("Sep 24 02:00"), the
     word in 12 `textTertiary`, and how long it took in mono 10.5 `textTertiary`. A run whose thread
     still exists opens it. Before the runs arrive: "Reading runs…"; with none: "No runs yet."; from
     a host that can't list them: "Runs aren't available from this host."
@@ -225,7 +225,7 @@ Hosts are still added and edited in Settings ▸ Remote.
 - **Explainer:** one paragraph in 12.5 `textSecondary`, at most 720pt wide: "Where agents run.
   Threads run on the host you pick when you start them. Remote threads show the host's name as a
   tag in Recents." The board's missions sentence waits on Missions.
-- **Host cards** (`NWHostPageCard`), 14pt under the explainer, three to a row with 16pt gaps,
+- **Host cards** (`SHHostPageCard`), 14pt under the explainer, three to a row with 16pt gaps,
   equal heights, each a 1pt `lineSubtle` border at radius 10.
   - **Head,** padded 14pt above and below and 16pt at the sides, with a hairline beneath: the 30pt
     tile with a display glyph; the name in mono 14 semibold over "Shepherd app · agent 0.8.2"
@@ -233,7 +233,7 @@ Hosts are still added and edited in Settings ▸ Remote.
     and the connection trailing in 12 with a 6pt dot: "Connected" `done`, "Connecting" `running`,
     "Not connected" `idle`, or the failure's word in `failed` ("Unreachable", "Token refused",
     "Update needed").
-  - **Facts** (`NWPageFact`, 110pt labels, mono 11.5 values, rows at least 26pt): a connected host
+  - **Facts** (`SHPageFact`, 110pt labels, mono 11.5 values, rows at least 26pt): a connected host
     shows Running ("2 threads", or "none"), Worktrees (how many threads work on one, when any),
     Repos (its spaces), and, for a remote host, Address. An unreachable one shows Waiting from
     its last state ("2 threads, 1 automation"), Last seen ("Sep 24 07:12", when it dropped this

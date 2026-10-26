@@ -25,7 +25,7 @@ struct LogicalProjectConversation: View {
                 ConversationThread.empty(vm: vm, ref: ref, project: project, presentation: presentation)
             }
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
     }
 }
 
@@ -48,10 +48,10 @@ struct ConversationThread: View {
                    listModels: ownerModels, allowsLocalFiles: ref.home == .local,
                    retainedInput: agent.map { vm.threadStores.input(for: $0) } ?? vm.emptyProjectInput)
             .environment(\.projectComposerSend, composerSend)
-            .environment(\.nwUserBubbleMetrics, .lead)   // the boards' bubble: 520pt measure, 12 / 16 padding
-            .environment(\.nwProseHalfLeading, true)     // and CSS's half-leading above and below a paragraph's lines
+            .environment(\.shUserBubbleMetrics, .lead)   // the boards' bubble: 520pt measure, 12 / 16 padding
+            .environment(\.shProseHalfLeading, true)     // and CSS's half-leading above and below a paragraph's lines
             .environment(\.projectActionCards, actionCards)
-            .environment(\.nwProseTaskLinks, ProjectTaskLinks.table(project: ref.id, presentation: presentation))
+            .environment(\.shProseTaskLinks, ProjectTaskLinks.table(project: ref.id, presentation: presentation))
             .environment(\.openURL, OpenURLAction { [vm, projectID = ref.id] url in
                 ProjectTaskLinks.open(url, in: vm, project: projectID, presentation: presentation) ? .handled : .systemAction
             })
@@ -159,12 +159,12 @@ struct ConversationThread: View {
             refusal: { [vm] in vm.logicalProjects.failure?.message },
             emptyState: agent == nil ? { AnyView(LogicalProjectOverview(vm: vm, ref: ref, project: project)) } : nil,
             dock: (presentation.summary != nil || !offers.isEmpty) ? { [vm, ref] in
-                AnyView(VStack(spacing: NWLeadMetrics.dockGap) {
+                AnyView(VStack(spacing: SHLeadMetrics.dockGap) {
                     ForEach(offers) { proposal in SpaceOffer(vm: vm, ref: ref, proposal: proposal) }
                     // Read in the dock, not the thread's body: observed there, a refused send redraws the thread and leaves its Send
                     // disabled once the owner has dropped the coordinator.
                     if !questions.isEmpty, let questionFailure = vm.logicalProjects.failure?.message {
-                        NWInlineProblem(questionFailure).accessibilityLabel(questionFailure)
+                        SHInlineProblem(questionFailure).accessibilityLabel(questionFailure)
                     }
                     ForEach(questions) { task in TaskQuestion(vm: vm, ref: ref, task: task) }
                     if let summary = presentation.summary {
@@ -202,30 +202,30 @@ struct ProjectSummaryStrip: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Button { withNWAnimation(.disclosure) { expanded.toggle() } } label: {
-                HStack(spacing: NW.Space.s) {
+            Button { withSHAnimation(.disclosure) { expanded.toggle() } } label: {
+                HStack(spacing: SH.Space.s) {
                     Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: NWLeadMetrics.summaryChevron, weight: .medium))
+                        .font(.system(size: SHLeadMetrics.summaryChevron, weight: .medium))
                         .accessibilityHidden(true)
-                    Text(summary).font(.nw(.caption))
+                    Text(summary).font(.sh(.caption))
                     Spacer(minLength: 0)
                 }
-                .foregroundStyle(Color.nw.textTertiary)
-                .padding(NWLeadMetrics.summaryPadding)
-                .frame(height: NWLeadMetrics.summaryHeight)
+                .foregroundStyle(Color.sh.textTertiary)
+                .padding(SHLeadMetrics.summaryPadding)
+                .frame(height: SHLeadMetrics.summaryHeight)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .nwFocusRing(radius: NWLeadMetrics.summaryRadius)
+            .shFocusRing(radius: SHLeadMetrics.summaryRadius)
             .accessibilityLabel(expanded ? "Hide project tasks" : "Show project tasks")
             .accessibilityValue("\(expanded ? "Expanded" : "Collapsed"), \(summary)")
 
             if expanded {
-                NWHairline()
+                SHHairline()
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(rows) { row in
-                            NWLeadThreadRow(title: row.title, lead: row.lead, detail: Self.detail(row),
+                            SHLeadThreadRow(title: row.title, lead: row.lead, detail: Self.detail(row),
                                             tone: row.tone,
                                             age: row.settledAt.map(LogicalProjectPane.age)) {
                                 vm.openProjectTask(row.id)
@@ -233,13 +233,13 @@ struct ProjectSummaryStrip: View {
                         }
                     }
                 }
-                .frame(height: min(CGFloat(rows.count) * NWLeadMetrics.threadRowHeight, NWLeadMetrics.summaryListMaxHeight))
+                .frame(height: min(CGFloat(rows.count) * SHLeadMetrics.threadRowHeight, SHLeadMetrics.summaryListMaxHeight))
                 .scrollBounceBehavior(.basedOnSize)
-                .padding(NWLeadMetrics.summaryPadding)
+                .padding(SHLeadMetrics.summaryPadding)
             }
         }
-        .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NWLeadMetrics.summaryRadius))
-        .nwBorder(Color.nw.lineStrong, radius: NWLeadMetrics.summaryRadius)
+        .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SHLeadMetrics.summaryRadius))
+        .shBorder(Color.sh.lineStrong, radius: SHLeadMetrics.summaryRadius)
         .onChange(of: ref) { _, _ in expanded = false }
     }
 
@@ -272,9 +272,9 @@ struct TaskQuestion: View {
 
     @ViewBuilder private func card(_ store: NativeThreadStore, _ dialog: NativeThreadDialog, _ session: NativeThreadSession) -> some View {
         let prompt = NativeQuestionPrompt(dialog: dialog)
-        NWLeadQuestionCard(
+        SHLeadQuestionCard(
                 question: prompt.question,
-                options: prompt.options.map { NWLeadQuestionCard.Option(id: $0.number, title: $0.title, detail: $0.detail, recommended: $0.recommended) },
+                options: prompt.options.map { SHLeadQuestionCard.Option(id: $0.number, title: $0.title, detail: $0.detail, recommended: $0.recommended) },
                 footer: Self.footer(title: task.title),
                 enabled: store.supports("answer") && prompt.blocked == nil && !vm.logicalProjects.busy.contains(ref),
                 textPlaceholder: prompt.allowsText ? prompt.placeholder : nil,
@@ -306,7 +306,7 @@ struct SpaceOffer: View {
     var body: some View {
         let space = proposal.spaceID.flatMap { id in vm.ownerSpaces(of: ref.home).first { $0.id == id } }
         let path = space.map { ($0.path as NSString).abbreviatingWithTildeInPath } ?? proposal.displayPath
-        NWLeadSpaceOffer(name: space?.name ?? (path as NSString).lastPathComponent,
+        SHLeadSpaceOffer(name: space?.name ?? (path as NSString).lastPathComponent,
                          path: "\(path) · \(vm.ownerName(of: ref.home))",
                          enabled: !vm.logicalProjects.busy.contains(ref)) {
             Task { _ = await vm.logicalProjects.decideSpace(ref, proposal: proposal, accept: false) }
@@ -325,7 +325,7 @@ struct ProjectTaskCard: View {
 
     var body: some View {
         let waiting = row.group == .waiting
-        NWLeadTaskCard(
+        SHLeadTaskCard(
             title: row.title,
             tone: row.tone,
             // Only live work shows activity; a stopped or resolved card says its execution fact and any recorded outcome instead.
@@ -377,7 +377,7 @@ struct ProjectActionResolver {
 /// link. A reference resolves only when its Project is this one and its task still exists; its chip shows the task's own current
 /// title (the model's words are never read), so a renamed or duplicate title still opens the right task.
 extension ProjectTaskRow {
-    var tone: NWLeadTaskCard.Tone {
+    var tone: SHLeadTaskCard.Tone {
         switch group {
         case .waiting: .attention
         case .working: .running
@@ -390,10 +390,10 @@ extension ProjectTaskRow {
 }
 
 enum ProjectTaskLinks {
-    static func url(project: ProjectID, task: ProjectTaskID) -> String { "\(NWProseTaskLinks.scheme)://\(project.rawValue)/\(task.rawValue)" }
+    static func url(project: ProjectID, task: ProjectTaskID) -> String { "\(SHProseTaskLinks.scheme)://\(project.rawValue)/\(task.rawValue)" }
 
-    static func table(project: ProjectID, presentation: ProjectPagePresentation) -> NWProseTaskLinks {
-        NWProseTaskLinks(links: Dictionary(uniqueKeysWithValues: presentation.rows.map { row in
+    static func table(project: ProjectID, presentation: ProjectPagePresentation) -> SHProseTaskLinks {
+        SHProseTaskLinks(links: Dictionary(uniqueKeysWithValues: presentation.rows.map { row in
             (url(project: project, task: row.id),
              .init(title: row.title, tone: row.tone))
         }))
@@ -403,7 +403,7 @@ enum ProjectTaskLinks {
     /// the scheme is inert and is never handed to the system, so nothing internal can reach a browser or another app; every other
     /// link is the system's, as in any thread (the result is whether this handled it).
     @MainActor static func open(_ url: URL, in vm: ShepherdViewModel, project: ProjectID, presentation: ProjectPagePresentation) -> Bool {
-        guard url.scheme == NWProseTaskLinks.scheme else { return false }
+        guard url.scheme == SHProseTaskLinks.scheme else { return false }
         if let task = task(in: url, project: project, presentation: presentation) {
             vm.openProjectTask(task)
         }
@@ -412,7 +412,7 @@ enum ProjectTaskLinks {
 
     /// The task a link names in this Project, or nil: a stale ID, another Project's or a malformed one.
     static func task(in url: URL, project: ProjectID, presentation: ProjectPagePresentation) -> ProjectTaskID? {
-        guard url.scheme == NWProseTaskLinks.scheme, url.host == project.rawValue else { return nil }
+        guard url.scheme == SHProseTaskLinks.scheme, url.host == project.rawValue else { return nil }
         let id = ProjectTaskID(rawValue: url.path.dropFirst().description)
         return presentation.rows.first { $0.id == id }?.id
     }

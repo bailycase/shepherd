@@ -46,7 +46,7 @@ public struct DesignTokenSet: Hashable, Sendable {
 
     public let colors: [Color]
     public let lengths: [Length]
-    /// "night-watch", or "night-watch + acme-web": what the report says it checked against.
+    /// "shepherd-design", or "shepherd-design + acme-web": what the report says it checked against.
     public let source: String
 
     public init(colors: [Color], lengths: [Length], source: String) {

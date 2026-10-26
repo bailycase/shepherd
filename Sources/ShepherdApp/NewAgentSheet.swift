@@ -31,9 +31,9 @@ private struct ModelField: View {
     }
 
     var body: some View {
-        TextField("Model", text: $model, prompt: Text("The agent's default").foregroundStyle(Color.nw.textTertiary))
+        TextField("Model", text: $model, prompt: Text("The agent's default").foregroundStyle(Color.sh.textTertiary))
             .focused($focused)
-            .nwField(focused: focused, mono: true)
+            .shField(focused: focused, mono: true)
             .onChange(of: focused) { showSuggestions = focused && !options.isEmpty }
             .onChange(of: model) { if focused { showSuggestions = !options.isEmpty } }
             .onChange(of: model, initial: true) { matches = Self.rank(model, in: options) }
@@ -49,17 +49,17 @@ private struct ModelField: View {
                         }
                         if matches.isEmpty {
                             Text("No matching models")
-                                .font(.nw(.caption))
-                                .foregroundStyle(Color.nw.textTertiary)
-                                .padding(NW.Space.m)
+                                .font(.sh(.caption))
+                                .foregroundStyle(Color.sh.textTertiary)
+                                .padding(SH.Space.m)
                         }
                     }
-                    .padding(NW.Space.s)
+                    .padding(SH.Space.s)
                 }
                 .scrollIndicators(.hidden)
                 .frame(width: AppLayout.modelPickerWidth,
-                       height: min(CGFloat(max(matches.count, 1)) * NW.Height.row + 2 * NW.Space.s, AppLayout.modelSuggestionsMaxHeight))
-                .background(Color.nw.bgRaised)
+                       height: min(CGFloat(max(matches.count, 1)) * SH.Height.row + 2 * SH.Space.s, AppLayout.modelSuggestionsMaxHeight))
+                .background(Color.sh.bgRaised)
             }
     }
 }
@@ -72,15 +72,15 @@ private struct ModelSuggestionRow: View {
     var body: some View {
         Button(action: action) {
             Text(id)
-                .font(.nw(.code))
-                .foregroundStyle(Color.nw.textPrimary)
+                .font(.sh(.code))
+                .foregroundStyle(Color.sh.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.middle)
-                .padding(.horizontal, NW.Space.m)
-                .frame(maxWidth: .infinity, minHeight: NW.Height.row, alignment: .leading)
+                .padding(.horizontal, SH.Space.m)
+                .frame(maxWidth: .infinity, minHeight: SH.Height.row, alignment: .leading)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.nwRow())
+        .buttonStyle(.shRow())
         .help(id)
     }
 }
@@ -91,7 +91,7 @@ struct SheetLinkButton: View {
     let action: () -> Void
 
     var body: some View {
-        Button(label, action: action).buttonStyle(.nw(.ghost, size: .s))
+        Button(label, action: action).buttonStyle(.sh(.ghost, size: .s))
     }
 }
 
@@ -232,12 +232,12 @@ struct NewAgentSheet: View {
     }
 
     var body: some View {
-        NWDialog("New agent",
+        SHDialog("New agent",
                  message: "Starts the agent as a native thread that runs until Shepherd quits. The agent names itself from your first prompt.",
                  width: AppLayout.newAgentSheetWidth) {
             if !connectedHosts.isEmpty {
                 SheetRow("Machine") {
-                    NWPopupMenu(remoteConnection?.config.name ?? "This Mac", minWidth: AppLayout.settingsPopupWidth) {
+                    SHPopupMenu(remoteConnection?.config.name ?? "This Mac", minWidth: AppLayout.settingsPopupWidth) {
                         Button("This Mac") { targetHostID = nil }
                         ForEach(connectedHosts) { connection in
                             Button(connection.config.name) { targetHostID = connection.id }
@@ -245,35 +245,35 @@ struct NewAgentSheet: View {
                     }
                     .accessibilityLabel("Machine")
                 }
-                .nwTransition(.disclosure)
+                .shTransition(.disclosure)
             }
 
             SheetRow("Space") {
-                HStack(spacing: NW.Space.m) {
+                HStack(spacing: SH.Space.m) {
                     if targetSpaces.isEmpty {
                         Text("No spaces yet")
-                            .font(.nw(.ui))
-                            .foregroundStyle(Color.nw.textSecondary)
-                            .nwTransition(.content)
+                            .font(.sh(.ui))
+                            .foregroundStyle(Color.sh.textSecondary)
+                            .shTransition(.content)
                     } else {
-                        NWPopupMenu(selectedSpace?.name ?? "Choose a space", minWidth: AppLayout.settingsPopupWidth) {
+                        SHPopupMenu(selectedSpace?.name ?? "Choose a space", minWidth: AppLayout.settingsPopupWidth) {
                             ForEach(targetSpaces) { space in
                                 Button(space.name) { spaceID = space.id }
                             }
                         }
                         .accessibilityLabel("Space")
-                        .nwTransition(.content)
+                        .shTransition(.content)
                     }
                     Spacer(minLength: 0)
                     SheetLinkButton(label: "Add space…") { addSpaceInline() }
                 }
-                .nwComponentAnimation(.content, value: targetSpaces.isEmpty)
+                .shComponentAnimation(.content, value: targetSpaces.isEmpty)
             }
 
             SheetRow("Directory") {
-                HStack(spacing: NW.Space.m) {
+                HStack(spacing: SH.Space.m) {
                     TextField("Directory", text: $workingDirectory)
-                        .textFieldStyle(.nw(mono: true))
+                        .textFieldStyle(.sh(mono: true))
                     SheetLinkButton(label: "Choose…") { remotePicking = .cwd }
                         .accessibilityLabel("Choose directory")
                 }
@@ -282,52 +282,52 @@ struct NewAgentSheet: View {
             // Repository probes and worktree creation run on the chosen machine.
             if targetHostID != nil || isRepo {
                 SheetRow("Worktree") {
-                    HStack(spacing: NW.Space.m) {
+                    HStack(spacing: SH.Space.m) {
                         Toggle("Worktree", isOn: $worktree)
-                            .toggleStyle(.nwSwitch)
+                            .toggleStyle(.shSwitch)
                             .labelsHidden()
                             .disabled(targetHostID != nil && remoteConnection?.supportsWorktreeCreation != true)
                         if worktree {
                             TextField("Worktree branch", text: $worktreeBranch,
-                                      prompt: Text("branch name").foregroundStyle(Color.nw.textTertiary))
-                                .textFieldStyle(.nw(mono: true))
-                                .nwTransition(.content)
+                                      prompt: Text("branch name").foregroundStyle(Color.sh.textTertiary))
+                                .textFieldStyle(.sh(mono: true))
+                                .shTransition(.content)
                         } else {
                             Text("Isolate the agent on its own branch")
-                                .font(.nw(.caption))
-                                .foregroundStyle(Color.nw.textSecondary)
-                                .nwTransition(.content)
+                                .font(.sh(.caption))
+                                .foregroundStyle(Color.sh.textSecondary)
+                                .shTransition(.content)
                         }
                     }
                 }
-                .nwTransition(.disclosure)
+                .shTransition(.disclosure)
             }
 
             if worktree {
                 SheetRow("Base", alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: NW.Space.xs) {
+                    VStack(alignment: .leading, spacing: SH.Space.xs) {
                         TextField("Base branch", text: $worktreeBase,
-                                  prompt: Text("base branch").foregroundStyle(Color.nw.textTertiary))
-                            .textFieldStyle(.nw(mono: true))
+                                  prompt: Text("base branch").foregroundStyle(Color.sh.textTertiary))
+                            .textFieldStyle(.sh(mono: true))
                         Text(resolvingBase ? "Resolving on the target…" : baseNote)
-                            .font(.nw(.caption))
-                            .foregroundStyle(Color.nw.textTertiary)
-                            .nwContentTransition(.crossFade)
+                            .font(.sh(.caption))
+                            .foregroundStyle(Color.sh.textTertiary)
+                            .shContentTransition(.crossFade)
                     }
                 }
-                .nwTransition(.disclosure)
+                .shTransition(.disclosure)
                 SheetRow("Fetch") {
-                    HStack(spacing: NW.Space.m) {
-                        Toggle("Fetch origin before creating", isOn: $fetchFirst).toggleStyle(.nwSwitch).labelsHidden()
+                    HStack(spacing: SH.Space.m) {
+                        Toggle("Fetch origin before creating", isOn: $fetchFirst).toggleStyle(.shSwitch).labelsHidden()
                         Text("Fetch origin before creating")
-                            .font(.nw(.caption))
-                            .foregroundStyle(Color.nw.textSecondary)
+                            .font(.sh(.caption))
+                            .foregroundStyle(Color.sh.textSecondary)
                             .accessibilityHidden(true)
                         Spacer(minLength: 0)
                         SheetLinkButton(label: "Resolve base…") { Task { await resolveBase(fetch: fetchFirst) } }
                     }
                 }
-                .nwTransition(.disclosure)
+                .shTransition(.disclosure)
             }
 
             SheetRow("Model") {
@@ -336,58 +336,58 @@ struct NewAgentSheet: View {
 
             if offersThinking {
                 SheetRow("Thinking") {
-                    NWSegmentedPicker("Thinking", selection: Binding(get: { thinking }, set: { defaults.thinking = $0; defaults.thinkingEdited = true }),
+                    SHSegmentedPicker("Thinking", selection: Binding(get: { thinking }, set: { defaults.thinking = $0; defaults.thinkingEdited = true }),
                                       options: thinkingLevels.map { ($0, $0.title) })
                 }
-                .nwTransition(.disclosure)
+                .shTransition(.disclosure)
             }
 
             // Prompt: full-width editor under its label, no row chrome — this is the field
             // you actually type into.
-            VStack(alignment: .leading, spacing: NW.Space.s) {
+            VStack(alignment: .leading, spacing: SH.Space.s) {
                 Text("Prompt")
-                    .font(.nw(.ui))
-                    .foregroundStyle(Color.nw.textSecondary)
+                    .font(.sh(.ui))
+                    .foregroundStyle(Color.sh.textSecondary)
                     .accessibilityHidden(true)
                 TextEditor(text: $initialPrompt)
                     .focused($promptFocused)
-                    .nwText(.body)
-                    .foregroundStyle(Color.nw.textPrimary)
+                    .shText(.body)
+                    .foregroundStyle(Color.sh.textPrimary)
                     .scrollContentBackground(.hidden)
                     .frame(height: AppLayout.promptEditorHeight)
-                    .padding(NW.Space.m)
-                    .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.s))
-                    .nwBorder(Color.nw.lineStrong, radius: NW.Radius.s)
+                    .padding(SH.Space.m)
+                    .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+                    .shBorder(Color.sh.lineStrong, radius: SH.Radius.s)
                     .overlay {
                         // The ring fades on its own layer: the editor itself never animates.
                         Color.clear
-                            .nwFocusRing(promptFocused, radius: NW.Radius.s)
-                            .nwComponentAnimation(.hover, value: promptFocused)
+                            .shFocusRing(promptFocused, radius: SH.Radius.s)
+                            .shComponentAnimation(.hover, value: promptFocused)
                             .allowsHitTesting(false)
                     }
                     .accessibilityLabel("Prompt")
             }
-            .padding(EdgeInsets(top: NW.Space.l, leading: NWDialogMetrics.inset, bottom: 0, trailing: NWDialogMetrics.inset))
+            .padding(EdgeInsets(top: SH.Space.l, leading: SHDialogMetrics.inset, bottom: 0, trailing: SHDialogMetrics.inset))
         } status: {
             if !defaults.ready && !defaults.loading {
-                Button("Retry defaults") { loadModels() }.buttonStyle(.nw(.secondary, size: .s))
+                Button("Retry defaults") { loadModels() }.buttonStyle(.sh(.secondary, size: .s))
             }
-            NWDialogStatus(errorText ?? (defaults.loading ? "Loading host defaults…" : sessionCaption), isError: errorText != nil)
-                .nwContentTransition(.crossFade)
+            SHDialogStatus(errorText ?? (defaults.loading ? "Loading host defaults…" : sessionCaption), isError: errorText != nil)
+                .shContentTransition(.crossFade)
         } actions: {
             Button("Cancel") { vm.showNewAgentSheet = false }
-                .buttonStyle(.nw(.ghost))
+                .buttonStyle(.sh(.ghost))
                 .keyboardShortcut(.cancelAction)
             Button(starting ? "Starting…" : "Start agent") { start() }
-                .buttonStyle(.nw(.primary))
+                .buttonStyle(.sh(.primary))
                 .keyboardShortcut(.defaultAction)
                 .disabled(!canStart)
         }
         // Rows the sheet grows (a host to pick, the worktree option once the directory probes as
         // a repository, the worktree's base and fetch) disclose, and the sheet follows; captions
         // that settle later (the resolved base, host defaults, an error) fade in place.
-        .nwAnimation(.disclosure, value: disclosureState)
-        .nwAnimation(.content, value: captionState)
+        .shAnimation(.disclosure, value: disclosureState)
+        .shAnimation(.content, value: captionState)
         .onAppear {
             if let preselect = vm.newAgentPreselect {
                 // Opened from a remote space header's `+`.

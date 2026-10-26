@@ -13,7 +13,7 @@ import WebKit
 struct DesignBoardViewTests {
     // MARK: Element ids
 
-    nonisolated static let goldenBoards = ["Minimal.dc.html", "Edges.dc.html", "DZStart.dc.html", "NWDesignTool.dc.html", "ThreadRichContent.dc.html"]
+    nonisolated static let goldenBoards = ["Minimal.dc.html", "Edges.dc.html", "DZStart.dc.html", "SHDesignTool.dc.html", "ThreadRichContent.dc.html"]
 
     /// Every element the runtime draws carries the tid WebKit's own numbering (the golden file,
     /// which ShepherdProtocol's `DesignTemplate` matches) gives it, with the same tag; and every

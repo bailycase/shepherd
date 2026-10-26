@@ -28,7 +28,7 @@ struct ProjectComposer: View {
     var body: some View {
         VStack(alignment: .leading, spacing: MobileLayout.composerSpacing) {
             if let message = projects.model.failure?.message ?? state.attachmentError ?? target.store.notice {
-                Text(message).font(.nw(.caption)).foregroundStyle(Color.nw.failed)
+                Text(message).font(.sh(.caption)).foregroundStyle(Color.sh.failed)
                     .accessibilityIdentifier("project-send-error")
             }
             if let dialog = target.store.dialogs.first, let session = target.store.session {
@@ -42,46 +42,46 @@ struct ProjectComposer: View {
                     }
                 }
             } else if sizeClass == .regular {
-                NWComposer(isFocused: focused) { attachments } field: { field } controls: {
+                SHComposer(isFocused: focused) { attachments } field: { field } controls: {
                     AttachButton(state: state, enabled: canAttach, chip: true)
-                    Spacer(minLength: NW.Space.m)
+                    Spacer(minLength: SH.Space.m)
                     action
                 }
             } else {
                 if !state.attachments.isEmpty { attachments }
-                NWCapsuleComposer {
+                SHCapsuleComposer {
                     AttachButton(state: state, enabled: canAttach)
                 } field: { field } action: { action }
             }
         }
         .padding(.horizontal, sizeClass == .regular ? MobileLayout.padThreadGutter : MobileLayout.gutter)
-        .padding(.top, NW.Space.m)
+        .padding(.top, SH.Space.m)
         .padding(.bottom, MobileLayout.composerBottom)
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .accessibilityIdentifier("project-composer")
     }
 
     private var field: some View {
         @Bindable var store = target.store
         return TextField(task == nil ? "Message the project owner…" : "Steer this thread…", text: $store.draft, axis: .vertical)
-            .font(.nw(.body)).foregroundStyle(Color.nw.textPrimary)
-            .lineLimit(1...NWComposerMetrics.fieldMaxLines)
+            .font(.sh(.body)).foregroundStyle(Color.sh.textPrimary)
+            .lineLimit(1...SHComposerMetrics.fieldMaxLines)
             .focused($focused)
             .accessibilityLabel("Message to project")
     }
 
     private var attachments: some View {
         ScrollView(.horizontal) {
-            HStack(spacing: NW.Space.s) {
+            HStack(spacing: SH.Space.s) {
                 ForEach(state.attachments) { item in
-                    NWAttachmentChip(item.image.name ?? "Image", thumbnail: item.thumbnail, remove: { state.remove(item.id) })
+                    SHAttachmentChip(item.image.name ?? "Image", thumbnail: item.thumbnail, remove: { state.remove(item.id) })
                 }
             }
         }.scrollIndicators(.hidden)
     }
 
     private var action: some View {
-        NWComposerActionButton(.send, enabled: canSend, action: send)
+        SHComposerActionButton(.send, enabled: canSend, action: send)
             .accessibilityLabel("Send")
     }
 

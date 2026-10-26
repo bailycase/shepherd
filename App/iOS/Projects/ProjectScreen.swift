@@ -29,11 +29,11 @@ struct ProjectScreen: View {
                     ProjectConversation(ref: ref, project: project, showsSummary: true)
                 }
             } else {
-                NWEmptyState(Text("This project is gone"), message: "It was deleted on its host, or its host was forgotten.") {}
+                SHEmptyState(Text("This project is gone"), message: "It was deleted on its host, or its host was forgotten.") {}
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .toolbar(.hidden, for: .tabBar)
         .navigationTitle(project?.name ?? "Project")
         .navigationBarTitleDisplayMode(.inline)
@@ -100,7 +100,7 @@ private struct ProjectConversation: View {
                 ProjectDock(ref: ref, project: project, page: page, showsSummary: showsSummary)
                 ProjectComposer(ref: ref)
             }
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
         .onAppear { visible = true }
         .onDisappear { visible = false }
@@ -144,13 +144,13 @@ private struct ProjectDock: View {
             }
             if showsSummary, let summary = page?.summary {
                 Button { navigator.open(.projects(.tasks(ref))) } label: {
-                    HStack(spacing: NW.Space.s) {
-                        Text(summary).font(.nw(.caption))
+                    HStack(spacing: SH.Space.s) {
+                        Text(summary).font(.sh(.caption))
                         Spacer(minLength: 0)
                         Image(systemName: "chevron.right").accessibilityHidden(true)
                     }
-                    .foregroundStyle(Color.nw.textTertiary)
-                    .frame(minHeight: NW.Height.touch)
+                    .foregroundStyle(Color.sh.textTertiary)
+                    .frame(minHeight: SH.Height.touch)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -175,33 +175,33 @@ private struct ProjectOverview: View {
         let spaces = projects.host(ref)?.state.spaces ?? []
         let names = project.linkedSpaces.compactMap { link in spaces.first { $0.id == link.spaceID }?.name }
         VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
-            VStack(alignment: .leading, spacing: NW.Space.s) {
-                Text(project.name).font(.nw(.title, weight: .semibold)).foregroundStyle(Color.nw.textPrimary)
+            VStack(alignment: .leading, spacing: SH.Space.s) {
+                Text(project.name).font(.sh(.title, weight: .semibold)).foregroundStyle(Color.sh.textPrimary)
                     .accessibilityAddTraits(.isHeader)
                 if !project.goal.isEmpty {
-                    Text(project.goal).font(.nw(.body)).foregroundStyle(Color.nw.textSecondary)
+                    Text(project.goal).font(.sh(.body)).foregroundStyle(Color.sh.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            NWListCard {
+            SHListCard {
                 Button { navigator.open(.projects(.settings(ref))) } label: {
-                    NWListRow("Spaces", subtitle: names.isEmpty ? "None yet · add in settings" : names.joined(separator: ", "),
+                    SHListRow("Spaces", subtitle: names.isEmpty ? "None yet · add in settings" : names.joined(separator: ", "),
                               subtitleMono: false, leading: .symbol("folder"))
                 }
-                .buttonStyle(.nwRow(radius: 0))
+                .buttonStyle(.shRow(radius: 0))
                 Button { navigator.open(.projects(.settings(ref))) } label: {
-                    NWListRow("Instructions, memory", subtitle: "In project settings", subtitleMono: false, leading: .symbol(NWGlyph.document.symbolName))
+                    SHListRow("Instructions, memory", subtitle: "In project settings", subtitleMono: false, leading: .symbol(SHGlyph.document.symbolName))
                 }
-                .buttonStyle(.nwRow(radius: 0))
+                .buttonStyle(.shRow(radius: 0))
             }
             VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-                NWListHeader("Suggestions")
-                NWListCard {
+                SHListHeader("Suggestions")
+                SHListCard {
                     ForEach(Self.suggestions(firstSpace: names.first), id: \.self) { text in
                         Button { store.draft = text } label: {
-                            NWListRow(text, leading: .symbol("sparkles"), chevron: false)
+                            SHListRow(text, leading: .symbol("sparkles"), chevron: false)
                         }
-                        .buttonStyle(.nwRow(radius: 0))
+                        .buttonStyle(.shRow(radius: 0))
                     }
                 }
             }

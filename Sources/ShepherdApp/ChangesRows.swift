@@ -36,7 +36,7 @@ struct ChangesFoldSpan: Equatable, Sendable {
 
     /// The lines a reveal shows: the 20 at the fold's bottom edge (up), the 20 at its top (down),
     /// or all of them.
-    func revealed(_ reveal: NWDiffReveal, step: Int = ChangesRows.revealStep) -> ClosedRange<Int> {
+    func revealed(_ reveal: SHDiffReveal, step: Int = ChangesRows.revealStep) -> ClosedRange<Int> {
         switch reveal {
         case .all: lines
         case .up: max(lines.lowerBound, lines.upperBound - step + 1)...lines.upperBound
@@ -74,17 +74,17 @@ enum ChangesRows {
     /// A modified line's changed words sit on a second layer of its tint (`wordTint`).
     @MainActor
     static func rows(_ file: DiffFile, layout: ChangesLayout, revealed: IndexSet = [], truncated: Bool = false,
-                     colors: [Int: AttributedString]? = nil, words: [Int: [Range<Int>]]? = nil) -> [NWChangesRow] {
-        let tints = (added: Color.nw.doneTint, removed: Color.nw.failedTint)
+                     colors: [Int: AttributedString]? = nil, words: [Int: [Range<Int>]]? = nil) -> [SHChangesRow] {
+        let tints = (added: Color.sh.doneTint, removed: Color.sh.failedTint)
         return rows(file, layout: layout, revealed: revealed, truncated: truncated, colors: colors, words: words, tints: tints)
     }
 
     static func rows(_ file: DiffFile, layout: ChangesLayout, revealed: IndexSet, truncated: Bool,
                      colors: [Int: AttributedString]?, words: [Int: [Range<Int>]]?,
-                     tints: (added: Color, removed: Color)) -> [NWChangesRow] {
+                     tints: (added: Color, removed: Color)) -> [SHChangesRow] {
         if file.isBinary { return [.notice(id: "\(file.id)\u{0}binary", text: "Binary file")] }
-        var rows: [NWChangesRow] = []
-        func content(_ line: DiffLine) -> NWDiffLineContent {
+        var rows: [SHChangesRow] = []
+        func content(_ line: DiffLine) -> SHDiffLineContent {
             var text = colors?[line.id] ?? AttributedString(line.text)
             if let ranges = words?[line.id], line.kind != .context {
                 let tint = line.kind == .added ? tints.added : tints.removed
@@ -92,11 +92,11 @@ enum ChangesRows {
                     if let attributed = Range(range, in: text) { text[attributed].backgroundColor = tint }
                 }
             }
-            return NWDiffLineContent(id: "\(file.id)\u{0}\(line.id)", key: line.id, kind: line.kind.diffKind,
+            return SHDiffLineContent(id: "\(file.id)\u{0}\(line.id)", key: line.id, kind: line.kind.diffKind,
                                      oldNumber: line.oldLine, newNumber: line.newLine, text: text, source: line.text)
         }
         func fold(_ span: ChangesFoldSpan, up: Bool, down: Bool) {
-            rows.append(.fold(NWDiffFold(id: foldID(fileID: file.id, span: span), count: span.lines.count, revealsUp: up, revealsDown: down)))
+            rows.append(.fold(SHDiffFold(id: foldID(fileID: file.id, span: span), count: span.lines.count, revealsUp: up, revealsDown: down)))
         }
         // Consecutive shown lines, laid out together (split pairs a run of removals with the
         // additions after it).
@@ -246,7 +246,7 @@ enum ChangesRows {
 /// A file's diff in a Changes list: the status letter and counts the list gave, for files whose
 /// hunks have not arrived yet.
 extension ChangesFile {
-    var nwStatus: NWFileStatus {
+    var shStatus: SHFileStatus {
         switch status {
         case .added: .added
         case .deleted: .deleted

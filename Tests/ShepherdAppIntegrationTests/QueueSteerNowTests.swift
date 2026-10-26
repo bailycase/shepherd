@@ -41,12 +41,12 @@ struct QueueSteerNowTests {
 
     @MainActor
     private static func row(_ log: Log, hovering: Bool, labelled: Bool, running: Bool = true) -> some View {
-        NWQueueRow(text, kind: .queued(number: 1), hovering: hovering, actions: NWQueueRowActions(
+        SHQueueRow(text, kind: .queued(number: 1), hovering: hovering, actions: SHQueueRowActions(
             steer: { log.steered += 1 }, steerLabel: NativeQueueStack.steerLabel(running: running), steerShortcut: "⌘↩",
             steerHelp: running ? NativeSendChoice.steerNowHelp : "Send this now", steerLabelled: labelled,
             edit: { log.edited += 1 }, delete: { log.deleted += 1 }, deleteShortcut: "⌫"))
             .frame(width: 520)
-            .background(Color.nw.bgRaised)
+            .background(Color.sh.bgRaised)
     }
 
     /// At rest the button is a control with the words Steer now and a desktop hit area, and pressing it

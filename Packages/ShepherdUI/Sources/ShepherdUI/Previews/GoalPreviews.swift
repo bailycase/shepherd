@@ -1,10 +1,10 @@
 import SwiftUI
 
-private let nwPreviewGoalText = "Ledger tests pass and go vet is clean, without changing the consumer package."
+private let shPreviewGoalText = "Ledger tests pass and go vet is clean, without changing the consumer package."
 
-private struct NWPreviewGoal: View {
-    let state: NWGoalState
-    var size: NWGoalSize = .desktop
+private struct SHPreviewGoal: View {
+    let state: SHGoalState
+    var size: SHGoalSize = .desktop
     var framed = true
 
     private var meta: String {
@@ -18,48 +18,48 @@ private struct NWPreviewGoal: View {
     }
 
     var body: some View {
-        NWGoalCard(state: state, time: state == .met ? "9m 12s" : "6m 40s", meta: meta,
-                   text: nwPreviewGoalText, size: size, framed: framed,
+        SHGoalCard(state: state, time: state == .met ? "9m 12s" : "6m 40s", meta: meta,
+                   text: shPreviewGoalText, size: size, framed: framed,
                    pause: {}, resume: {}, edit: {}, clear: {})
     }
 }
 
 #Preview("Goal · desktop states") {
-    NWPreviewBoth {
-        VStack(spacing: NW.Space.l) {
-            ForEach(NWGoalState.allCases, id: \.self) { state in
-                NWPreviewGoal(state: state)
+    SHPreviewBoth {
+        VStack(spacing: SH.Space.l) {
+            ForEach(SHGoalState.allCases, id: \.self) { state in
+                SHPreviewGoal(state: state)
             }
-            NWGoalHeaderPill(time: "6m 40s")
+            SHGoalHeaderPill(time: "6m 40s")
         }
         .frame(width: 620)
-        .environment(\.nwMotionPaused, true)
+        .environment(\.shMotionPaused, true)
     }
 }
 
 #Preview("Goal · touch states") {
-    NWPreviewBoth {
-        VStack(spacing: NW.Space.l) {
-            NWPreviewGoal(state: .working, size: .touch)
-            NWPreviewGoal(state: .needsYou, size: .touch)
+    SHPreviewBoth {
+        VStack(spacing: SH.Space.l) {
+            SHPreviewGoal(state: .working, size: .touch)
+            SHPreviewGoal(state: .needsYou, size: .touch)
         }
         .frame(width: 366)
-        .environment(\.nwMotionPaused, true)
+        .environment(\.shMotionPaused, true)
     }
 }
 
 #Preview("Goal · shared dock") {
-    NWPreviewBoth {
+    SHPreviewBoth {
         VStack(spacing: 0) {
-            NWPreviewGoal(state: .working, framed: false)
-            NWHairline()
-            NWQueueStack(count: 1, collapsed: false, framed: false, onToggle: {}) {
-                NWQueueRow("Use table-driven tests, like ledger_test.go.", kind: .queued(number: 1))
+            SHPreviewGoal(state: .working, framed: false)
+            SHHairline()
+            SHQueueStack(count: 1, collapsed: false, framed: false, onToggle: {}) {
+                SHQueueRow("Use table-driven tests, like ledger_test.go.", kind: .queued(number: 1))
             } options: {}
         }
-        .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NWGoalMetrics.desktopRadius))
-        .nwBorder(Color.nw.lineStrong, radius: NWGoalMetrics.desktopRadius)
+        .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SHGoalMetrics.desktopRadius))
+        .shBorder(Color.sh.lineStrong, radius: SHGoalMetrics.desktopRadius)
         .frame(width: 620)
-        .environment(\.nwMotionPaused, true)
+        .environment(\.shMotionPaused, true)
     }
 }

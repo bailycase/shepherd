@@ -18,7 +18,7 @@ struct SubagentListScreen: View {
                 .padding(MobileLayout.gutter)
                 .frame(maxWidth: .infinity)
         }
-        .background(Color.nw.bgSunken)
+        .background(Color.sh.bgSunken)
         .navigationTitle("Subagents")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
@@ -35,15 +35,15 @@ struct SubagentListTitle: View {
 
     var body: some View {
         let tally = nativeRunTally(store.subagents)
-        VStack(spacing: NW.Space.xxs) {
-            Text("Subagents").font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
+        VStack(spacing: SH.Space.xxs) {
+            Text("Subagents").font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
             if let tally {
                 let state = AgentState(tally.phase)
-                HStack(spacing: NW.Space.s) {
-                    NWStatusDot(state)
+                HStack(spacing: SH.Space.s) {
+                    SHStatusDot(state)
                     Text(tally.text).foregroundStyle(state.textColor)
                 }
-                .font(.nw(.caption, weight: .medium))
+                .font(.sh(.caption, weight: .medium))
                 .lineLimit(1)
             }
         }
@@ -65,12 +65,12 @@ struct SubagentListContent: View {
         let selected = SubagentInspection.of(navigator).selected(in: ref)
         VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
             SubagentHostNotice(ref: ref, subject: "runs")
-            if let notice = store.notice { Text(notice).font(.nw(.caption)).foregroundStyle(Color.nw.failed) }
+            if let notice = store.notice { Text(notice).font(.sh(.caption)).foregroundStyle(Color.sh.failed) }
             if list.isEmpty {
-                NWEmptyState(Text("No subagents"), message: store.snapshot == nil ? "Loading the thread…"
+                SHEmptyState(Text("No subagents"), message: store.snapshot == nil ? "Loading the thread…"
                              : "Runs this thread starts show here, with their questions and results.")
                     .frame(maxWidth: .infinity)
-                    .padding(.top, NW.Space.xxxl)
+                    .padding(.top, SH.Space.xxxl)
             }
             if !list.current.isEmpty {
                 VStack(alignment: .leading, spacing: MobileLayout.subagentSectionSpacing) {
@@ -83,12 +83,12 @@ struct SubagentListContent: View {
             if !list.earlier.isEmpty {
                 VStack(alignment: .leading, spacing: MobileLayout.subagentSectionSpacing) {
                     sectionHead("Earlier in this thread", trailing: "kept after they finish", mono: false)
-                    NWRunHistoryList(list.earlier.map(SubagentValues.historyRow)) { id in
+                    SHRunHistoryList(list.earlier.map(SubagentValues.historyRow)) { id in
                         if let run = list.earlier.first(where: { $0.id == id }) { open(run.runID) }
                     }
                     .equatable()
                 }
-                .padding(.top, NW.Space.s)
+                .padding(.top, SH.Space.s)
             }
         }
         .onChange(of: key, initial: true) { list = SubagentList(store) }
@@ -96,17 +96,17 @@ struct SubagentListContent: View {
 
     private func sectionHead(_ title: String, trailing: String, mono: Bool) -> some View {
         HStack {
-            Text(title).font(.nw(.ui, weight: .semibold)).foregroundStyle(Color.nw.textSecondary)
+            Text(title).font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.textSecondary)
                 .accessibilityAddTraits(.isHeader)
-            Spacer(minLength: NW.Space.m)
-            Text(trailing).font(mono ? .nw(.mono) : .nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+            Spacer(minLength: SH.Space.m)
+            Text(trailing).font(mono ? .sh(.mono) : .sh(.caption)).foregroundStyle(Color.sh.textTertiary)
         }
-        .padding(.horizontal, NW.Space.xs)
+        .padding(.horizontal, SH.Space.xs)
     }
 
     private func card(_ summary: NativeRunSummary, selected: Bool, commands: SubagentCommands) -> some View {
         let run = store.subagents.first { $0.id == summary.id }
-        return NWRunCard(SubagentValues.card(summary), isSelected: selected, isEnabled: commands.enabled,
+        return SHRunCard(SubagentValues.card(summary), isSelected: selected, isEnabled: commands.enabled,
                          open: { open(summary.runID) },
                          rerun: summary.phase == .failed ? { commands.control(summary.runID, .rerun) } : nil)
             .equatable()
@@ -138,7 +138,7 @@ struct SubagentHostNotice: View {
 
     var body: some View {
         if let text {
-            Text(text).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+            Text(text).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }

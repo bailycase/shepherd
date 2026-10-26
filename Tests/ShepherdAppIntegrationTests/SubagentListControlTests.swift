@@ -82,7 +82,7 @@ struct SubagentListControlTests {
         AccessibilityNode.enable()
         var selected: [String] = []
         func strip(_ subagents: (count: Int, status: AgentState)?) -> OffscreenWindow {
-            OffscreenWindow(size: CGSize(width: 600, height: 60), dark: true, NWSidePaneTabs(
+            OffscreenWindow(size: CGSize(width: 600, height: 60), dark: true, SHSidePaneTabs(
                 SidePaneTabs.items(news: [], changedFiles: 5, subagents: subagents), selection: SidePaneTab.changes.rawValue,
                 select: { selected.append($0) }, closeShortcut: "⇧⌘B", close: {}) {})
         }
@@ -126,7 +126,7 @@ struct SubagentListControlTests {
         let rows = window.controls()
         #expect(rows.count == 4, "one button per run, and nothing else: \(rows)")
         #expect(ControlPress.undersized(rows, minimum: .desktop).isEmpty, "every row has a desktop hit area: \(rows)")
-        #expect(rows.allSatisfy { $0.frame.height >= NWSubagentListMetrics.rowHeight - 1 }, "and is as tall as the board's: \(rows.map(\.frame))")
+        #expect(rows.allSatisfy { $0.frame.height >= SHSubagentListMetrics.rowHeight - 1 }, "and is as tall as the board's: \(rows.map(\.frame))")
 
         for run in runs {
             let label = try #require(rows.first { $0.label?.contains(nativeRunNames(run).name) == true }?.label, "a row for \(run.runID): \(rows)")

@@ -408,9 +408,9 @@ struct BrowserAgentRulesTests {
     @Test func theTabsTipNamesTheHostAndPathTheAgentOpened() throws {
         let opened = Date(timeIntervalSince1970: 5)
         let url = try #require(URL(string: "http://localhost:5173/checkout?step=2"))
-        #expect(SidePaneTabs.tip(opened: (url, opened)) == NWSidePaneTabTip(text: "localhost:5173/checkout?step=2", openedAt: opened))
+        #expect(SidePaneTabs.tip(opened: (url, opened)) == SHSidePaneTabTip(text: "localhost:5173/checkout?step=2", openedAt: opened))
         #expect(SidePaneTabs.tip(opened: nil) == nil)
-        let items = SidePaneTabs.items(news: [.browser], changedFiles: nil, browserTip: NWSidePaneTabTip(text: "localhost:5173", openedAt: opened))
+        let items = SidePaneTabs.items(news: [.browser], changedFiles: nil, browserTip: SHSidePaneTabTip(text: "localhost:5173", openedAt: opened))
         let browserTab = items.first { $0.id == "browser" }
         #expect(browserTab?.tip?.text == "localhost:5173" && items.first?.tip == nil)
     }

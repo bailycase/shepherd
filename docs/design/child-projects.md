@@ -4,7 +4,7 @@
 
 The user's requested UI supports creating a new folder or registering an existing folder
 inside a parent space. This supplements SettingsProjects and Sidebar Spaces. No image
-was supplied. The shared Night Watch dialog is the reference for layout.
+was supplied. The shared Shepherd Design dialog is the reference for layout.
 
 ## Implementation checklist
 
@@ -15,8 +15,8 @@ was supplied. The shared Night Watch dialog is the reference for layout.
   "Folder source" picker with "New folder" and "Existing folder"; "Folder name" for new
   folders or "Folder path" and "Browse…" for existing folders; "Display name" with the
   placeholder "Defaults to folder name"; status/error; Cancel and the primary action.
-- Use NWDialog and NWDialogMetrics.width/inset, NWSheetRow, NWSegmentedPicker, nwField,
-  NW.Space spacing, nw primary/ghost/secondary button styles, and existing
+- Use SHDialog and SHDialogMetrics.width/inset, SHSheetRow, SHSegmentedPicker, shField,
+  SH.Space spacing, sh primary/ghost/secondary button styles, and existing
   body/caption/mono typography. No new colors, dimensions, animation, or glyphs.
 - New folder is initially selected. Its primary action is "Create and add". A matching existing
   directory is reused with its real capitalization, never renamed or duplicated. Existing folder
@@ -61,8 +61,8 @@ The user's subsequent request supersedes the initial flat-sidebar behavior.
   at the top level rather than guessing a parent.
 - Parent row, its own threads, then its child space rows. Keep root order and sibling order
   from the saved spaces. A newly registered child appears inside its parent, never above it.
-- Reuse NWProjectRow and NWSidebarRow unchanged. Child spaces receive one additional leading
-  inset of NWProjectMetrics.chevronSlot + NWProjectMetrics.gap per parent level. Their thread rows receive the
+- Reuse SHProjectRow and SHSidebarRow unchanged. Child spaces receive one additional leading
+  inset of SHProjectMetrics.chevronSlot + SHProjectMetrics.gap per parent level. Their thread rows receive the
   same extra inset on top of existing thread nesting. No new glyph, size, color, or animation.
   Outline folder, existing chevrons, labels, plus/menu actions, and status colors remain unchanged.
 - Parent collapse hides child space rows and their threads. Child collapse hides its own
@@ -87,7 +87,7 @@ The user requested removing a space or child space without deleting its folder.
 - Subtitle uses the selected space's name and live direct-agent count: "Removes <name> from
   the sidebar and stops its <count> agent(s). The local folder and all its files are kept.
   Saved conversations and space history remain. Child spaces stay registered."
-- Keep NWDialogMetrics.width, shared DialogSheet styles, typography, spacing, and colors. Long
+- Keep SHDialogMetrics.width, shared DialogSheet styles, typography, spacing, and colors. Long
   space names wrap in the message. Zero, one, and several agents use the existing count and
   pluralization. The existing dismissal-before-layout-teardown timing stays unchanged.
 - Cancel changes nothing. Confirm removes only the selected registration and its own agents,

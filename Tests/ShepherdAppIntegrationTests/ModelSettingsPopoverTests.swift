@@ -164,10 +164,10 @@ struct ModelSettingsPopoverTests {
             try #require(segments.count == perRow.reduce(0, +), "\(group) has a segment for each choice")
             var index = 0
             for count in perRow {
-                let share = (track.width - 2 * NW.Space.xxs - NW.Space.xxs * CGFloat(count - 1)) / CGFloat(count)
+                let share = (track.width - 2 * SH.Space.xxs - SH.Space.xxs * CGFloat(count - 1)) / CGFloat(count)
                 for segment in segments[index..<index + count] {
                     #expect(abs(segment.frame.width - share) <= 1, "\(segment.label ?? "?") fills its share of the row: \(segment.frame.width) of \(share)")
-                    #expect(segment.frame.height >= NW.Height.controlS, "\(segment.label ?? "?") is the whole segment tall: \(segment.frame.height)")
+                    #expect(segment.frame.height >= SH.Height.controlS, "\(segment.label ?? "?") is the whole segment tall: \(segment.frame.height)")
                 }
                 index += count
             }

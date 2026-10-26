@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// How a design card draws its first board.
-public enum NWDesignCardBoard: Equatable, Sendable {
+public enum SHDesignCardBoard: Equatable, Sendable {
     case desktop, phone
     /// No board drawn yet: the thumbnail is the dots alone.
     case none
@@ -13,7 +13,7 @@ public enum NWDesignCardBoard: Equatable, Sendable {
     }
 }
 
-/// A design on the Designs page (NWDesignCard; NavDesigns): a radius-10 card with a hairline and
+/// A design on the Designs page (SHDesignCard; NavDesigns): a radius-10 card with a hairline and
 /// the hover fill. Its top is a 172pt thumbnail on `bgBase` with the canvas's dots every 16pt
 /// and a hairline under it, the design's first board centered in it in its board frame (256×160
 /// for a desktop board, 74×160 for a phone). Under it, 5pt apart: the name in 13.5 semibold; the
@@ -21,8 +21,8 @@ public enum NWDesignCardBoard: Equatable, Sendable {
 /// `textTertiary`. The selected card wears a 2pt `textPrimary` ring. With a menu
 /// (DesignCardMenu), a right-click anywhere on the card opens it, and ••• shows over the
 /// thumbnail's top-trailing corner on hover.
-public struct NWDesignCard<Thumbnail: View, MenuItems: View>: View {
-    public typealias Board = NWDesignCardBoard
+public struct SHDesignCard<Thumbnail: View, MenuItems: View>: View {
+    public typealias Board = SHDesignCardBoard
 
     let name: String
     let system: String?
@@ -55,9 +55,9 @@ public struct NWDesignCard<Thumbnail: View, MenuItems: View>: View {
                 card
                     .overlay(alignment: .topTrailing) {
                         if hovering {
-                            NWDesignMoreButton(label: "More for \(name)") { menu }
-                                .padding(NWDesignMetrics.cardMoreInset)
-                                .nwTransition(.content)
+                            SHDesignMoreButton(label: "More for \(name)") { menu }
+                                .padding(SHDesignMetrics.cardMoreInset)
+                                .shTransition(.content)
                         }
                     }
                     .contextMenu { menu }
@@ -66,47 +66,47 @@ public struct NWDesignCard<Thumbnail: View, MenuItems: View>: View {
             }
         }
         .onHover { hovering = $0 }
-        .nwAnimation(.hover, value: hovering)
+        .shAnimation(.hover, value: hovering)
     }
 
     private var card: some View {
-        let _ = NWRenderProbe.tick("design.card")
-        let shape = RoundedRectangle(cornerRadius: NWDesignMetrics.cardRadius)
+        let _ = SHRenderProbe.tick("design.card")
+        let shape = RoundedRectangle(cornerRadius: SHDesignMetrics.cardRadius)
         return Button(action: action) {
             VStack(alignment: .leading, spacing: 0) {
                 ZStack {
-                    NWDotGrid(spacing: NWDesignMetrics.cardGridSpacing)
+                    SHDotGrid(spacing: SHDesignMetrics.cardGridSpacing)
                     if let size = boardSize {
-                        NWBoardSurface(size: size, selected: false) { thumbnail }
+                        SHBoardSurface(size: size, selected: false) { thumbnail }
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: NWDesignMetrics.cardThumbnailHeight)
-                .background(Color.nw.bgBase)
+                .frame(height: SHDesignMetrics.cardThumbnailHeight)
+                .background(Color.sh.bgBase)
                 .clipped()
-                .overlay(alignment: .bottom) { NWHairline() }
-                VStack(alignment: .leading, spacing: NWDesignMetrics.cardLineSpacing) {
+                .overlay(alignment: .bottom) { SHHairline() }
+                VStack(alignment: .leading, spacing: SHDesignMetrics.cardLineSpacing) {
                     Text(name)
-                        .font(.nwSans(NWDesignMetrics.cardNameSize, .semibold))
-                        .foregroundStyle(Color.nw.textPrimary)
+                        .font(.shSans(SHDesignMetrics.cardNameSize, .semibold))
+                        .foregroundStyle(Color.sh.textPrimary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                     meta
                     Text(edited)
-                        .font(.nwSans(NWDesignMetrics.cardEditedSize))
-                        .foregroundStyle(Color.nw.textTertiary)
+                        .font(.shSans(SHDesignMetrics.cardEditedSize))
+                        .foregroundStyle(Color.sh.textTertiary)
                         .lineLimit(1)
                 }
-                .padding(.vertical, NWDesignMetrics.cardPaddingVertical)
-                .padding(.horizontal, NWDesignMetrics.cardPaddingHorizontal)
+                .padding(.vertical, SHDesignMetrics.cardPaddingVertical)
+                .padding(.horizontal, SHDesignMetrics.cardPaddingHorizontal)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .background(hovering ? Color.nw.bgHover : .clear, in: shape)
+            .background(hovering ? Color.sh.bgHover : .clear, in: shape)
             .clipShape(shape)
-            .nwBorder(Color.nw.lineSubtle, radius: NWDesignMetrics.cardRadius)
+            .shBorder(Color.sh.lineSubtle, radius: SHDesignMetrics.cardRadius)
             .overlay {
                 if selected {
-                    shape.strokeBorder(Color.nw.textPrimary, lineWidth: NWDesignMetrics.cardRingWidth)
+                    shape.strokeBorder(Color.sh.textPrimary, lineWidth: SHDesignMetrics.cardRingWidth)
                 }
             }
             .contentShape(shape)
@@ -119,18 +119,18 @@ public struct NWDesignCard<Thumbnail: View, MenuItems: View>: View {
 
     private var boardSize: CGSize? {
         switch board {
-        case .desktop: NWDesignMetrics.cardDesktopBoard
-        case .phone: NWDesignMetrics.cardPhoneBoard
+        case .desktop: SHDesignMetrics.cardDesktopBoard
+        case .phone: SHDesignMetrics.cardPhoneBoard
         case .none: nil
         }
     }
 
     private var meta: some View {
         let detailText = Text(system == nil ? detail : " · \(detail)")
-            .font(.nwSans(NWDesignMetrics.cardMetaSize))
-            .foregroundStyle(Color.nw.textTertiary)
+            .font(.shSans(SHDesignMetrics.cardMetaSize))
+            .foregroundStyle(Color.sh.textTertiary)
         let line: Text = if let system {
-            Text("\(Text(system).font(.nwMono(NWDesignMetrics.cardMetaSize)).foregroundStyle(Color.nw.textSecondary))\(detailText)")
+            Text("\(Text(system).font(.shMono(SHDesignMetrics.cardMetaSize)).foregroundStyle(Color.sh.textSecondary))\(detailText)")
         } else {
             detailText
         }
@@ -138,7 +138,7 @@ public struct NWDesignCard<Thumbnail: View, MenuItems: View>: View {
     }
 }
 
-extension NWDesignCard where MenuItems == EmptyView {
+extension SHDesignCard where MenuItems == EmptyView {
     /// A card without a menu (a host's design, the iPad's grid).
     public init(name: String, system: String?, detail: String, edited: String, board: Board, selected: Bool = false,
                 action: @escaping () -> Void, @ViewBuilder thumbnail: () -> Thumbnail) {
@@ -160,7 +160,7 @@ extension NWDesignCard where MenuItems == EmptyView {
 /// in 11.5 `textTertiary`, and how many designs use it trailing in 11 `textTertiary` ("3
 /// designs"). With a menu (SystemCardMenu), a right-click opens it and ••• takes the count's place
 /// on hover. A system coming with an import is dashed until its design's boards are in.
-public struct NWDesignSystemCard<MenuItems: View>: View {
+public struct SHDesignSystemCard<MenuItems: View>: View {
     let name: String
     let source: String?
     let count: String
@@ -192,67 +192,67 @@ public struct NWDesignSystemCard<MenuItems: View>: View {
     }
 
     private var card: some View {
-        let _ = NWRenderProbe.tick("design.systemCard")
-        let shape = RoundedRectangle(cornerRadius: NWDesignMetrics.cardRadius)
-        return HStack(spacing: NWDesignMetrics.systemCardSpacing) {
+        let _ = SHRenderProbe.tick("design.systemCard")
+        let shape = RoundedRectangle(cornerRadius: SHDesignMetrics.cardRadius)
+        return HStack(spacing: SHDesignMetrics.systemCardSpacing) {
             if !colors.isEmpty {
-                HStack(spacing: NWDesignMetrics.swatchSpacing) {
+                HStack(spacing: SHDesignMetrics.swatchSpacing) {
                     ForEach(Array(colors.prefix(4).enumerated()), id: \.offset) { _, color in
-                        RoundedRectangle(cornerRadius: NW.Radius.xs)
+                        RoundedRectangle(cornerRadius: SH.Radius.xs)
                             .fill(color)
-                            .frame(width: NWDesignMetrics.swatchSize, height: NWDesignMetrics.swatchSize)
-                            .nwBorder(Color.nw.lineSubtle, radius: NW.Radius.xs)
+                            .frame(width: SHDesignMetrics.swatchSize, height: SHDesignMetrics.swatchSize)
+                            .shBorder(Color.sh.lineSubtle, radius: SH.Radius.xs)
                     }
                 }
                 .accessibilityHidden(true)
             }
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                HStack(spacing: NW.Space.s) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                HStack(spacing: SH.Space.s) {
                     Text(name)
-                        .font(.nwMono(NWDesignMetrics.systemNameSize, .semibold))
-                        .foregroundStyle(Color.nw.textPrimary)
+                        .font(.shMono(SHDesignMetrics.systemNameSize, .semibold))
+                        .foregroundStyle(Color.sh.textPrimary)
                         .lineLimit(1)
-                    if let tag { NWDesignTagBadge(tag) }
+                    if let tag { SHDesignTagBadge(tag) }
                 }
                 if let source {
                     Text(source)
-                        .font(.nwSans(NWDesignMetrics.systemSourceSize))
-                        .foregroundStyle(Color.nw.textTertiary)
+                        .font(.shSans(SHDesignMetrics.systemSourceSize))
+                        .foregroundStyle(Color.sh.textTertiary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
             }
-            Spacer(minLength: NW.Space.m)
+            Spacer(minLength: SH.Space.m)
             ZStack(alignment: .trailing) {
                 Text(count)
-                    .font(.nwSans(NWDesignMetrics.systemCountSize))
-                    .foregroundStyle(Color.nw.textTertiary)
+                    .font(.shSans(SHDesignMetrics.systemCountSize))
+                    .foregroundStyle(Color.sh.textTertiary)
                     .lineLimit(1)
                     .fixedSize()
                     .opacity(hovering && menu != nil ? 0 : 1)
                 if hovering, let menu {
-                    NWDesignMoreButton(label: "More for \(name)") { menu }
-                        .nwTransition(.content)
+                    SHDesignMoreButton(label: "More for \(name)") { menu }
+                        .shTransition(.content)
                 }
             }
-            .frame(minHeight: NWDesignMetrics.cardMoreSize)
+            .frame(minHeight: SHDesignMetrics.cardMoreSize)
         }
-        .padding(.vertical, NWDesignMetrics.cardPaddingVertical)
-        .padding(.horizontal, NWDesignMetrics.cardPaddingHorizontal)
-        .background(hovering && action != nil ? Color.nw.bgHover : .clear, in: shape)
-        .nwBorder(dashed ? .clear : Color.nw.lineSubtle, radius: NWDesignMetrics.cardRadius)
-        .overlay { if dashed { shape.strokeBorder(Color.nw.lineStrong, style: StrokeStyle(lineWidth: 1, dash: [4, 3])) } }
+        .padding(.vertical, SHDesignMetrics.cardPaddingVertical)
+        .padding(.horizontal, SHDesignMetrics.cardPaddingHorizontal)
+        .background(hovering && action != nil ? Color.sh.bgHover : .clear, in: shape)
+        .shBorder(dashed ? .clear : Color.sh.lineSubtle, radius: SHDesignMetrics.cardRadius)
+        .overlay { if dashed { shape.strokeBorder(Color.sh.lineStrong, style: StrokeStyle(lineWidth: 1, dash: [4, 3])) } }
         .contentShape(shape)
         .onTapGesture { action?() }
         .onHover { hovering = $0 }
-        .nwAnimation(.hover, value: hovering)
+        .shAnimation(.hover, value: hovering)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel([name, tag, source, count].compactMap { $0 }.joined(separator: ", "))
         .accessibilityAddTraits(action == nil ? [] : .isButton)
     }
 }
 
-extension NWDesignSystemCard where MenuItems == EmptyView {
+extension SHDesignSystemCard where MenuItems == EmptyView {
     /// A card without a menu.
     public init(name: String, source: String? = nil, count: String, colors: [Color] = [], tag: String? = nil, dashed: Bool = false,
                 action: (() -> Void)? = nil) {
@@ -267,10 +267,10 @@ extension NWDesignSystemCard where MenuItems == EmptyView {
     }
 }
 
-/// The design's system in the design header (NWDesignSystemChip; DZCanvas): 24pt, 8pt padding,
+/// The design's system in the design header (SHDesignSystemChip; DZCanvas): 24pt, 8pt padding,
 /// radius 6, a hairline, up to three of the system's colors as 8pt squares, then its name in
 /// mono 11.5 `textSecondary`. With an action it opens the system's page.
-public struct NWDesignSystemChip: View {
+public struct SHDesignSystemChip: View {
     let name: String
     let colors: [Color]
     let action: (() -> Void)?
@@ -293,26 +293,26 @@ public struct NWDesignSystemChip: View {
     }
 
     private var chip: some View {
-        HStack(spacing: NW.Space.s) {
+        HStack(spacing: SH.Space.s) {
             if !colors.isEmpty {
-                HStack(spacing: NWDesignMetrics.chipSwatchSpacing) {
+                HStack(spacing: SHDesignMetrics.chipSwatchSpacing) {
                     ForEach(Array(colors.prefix(3).enumerated()), id: \.offset) { _, color in
-                        RoundedRectangle(cornerRadius: NWDesignMetrics.chipSwatchRadius)
+                        RoundedRectangle(cornerRadius: SHDesignMetrics.chipSwatchRadius)
                             .fill(color)
-                            .frame(width: NWDesignMetrics.chipSwatch, height: NWDesignMetrics.chipSwatch)
+                            .frame(width: SHDesignMetrics.chipSwatch, height: SHDesignMetrics.chipSwatch)
                     }
                 }
                 .accessibilityHidden(true)
             }
             Text(name)
-                .font(.nwMono(NWDesignMetrics.chipTextSize))
-                .foregroundStyle(Color.nw.textSecondary)
+                .font(.shMono(SHDesignMetrics.chipTextSize))
+                .foregroundStyle(Color.sh.textSecondary)
                 .lineLimit(1)
         }
-        .padding(.horizontal, NWDesignMetrics.chipPadding)
-        .frame(height: NWDesignMetrics.chipHeight)
-        .nwBorder(Color.nw.lineSubtle, radius: NWDesignMetrics.chipRadius)
-        .contentShape(RoundedRectangle(cornerRadius: NWDesignMetrics.chipRadius))
+        .padding(.horizontal, SHDesignMetrics.chipPadding)
+        .frame(height: SHDesignMetrics.chipHeight)
+        .shBorder(Color.sh.lineSubtle, radius: SHDesignMetrics.chipRadius)
+        .contentShape(RoundedRectangle(cornerRadius: SHDesignMetrics.chipRadius))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Design system \(name)")
     }
@@ -322,7 +322,7 @@ public struct NWDesignSystemChip: View {
 /// hairline, 6pt between its lines, the hover fill. A 13pt glyph and a title in mono 12
 /// semibold; a line in 12.5 `textPrimary`; a note in 11 `textTertiary`. The chosen card is
 /// `lanternTint` with a `lanternText` border and glyph.
-public struct NWDesignStartCard: View {
+public struct SHDesignStartCard: View {
     let symbol: String
     let title: String
     let line: String
@@ -339,36 +339,36 @@ public struct NWDesignStartCard: View {
     }
 
     public var body: some View {
-        let shape = RoundedRectangle(cornerRadius: NW.Radius.m)
-        VStack(alignment: .leading, spacing: NW.Space.s) {
-            HStack(spacing: NW.Space.s) {
+        let shape = RoundedRectangle(cornerRadius: SH.Radius.m)
+        VStack(alignment: .leading, spacing: SH.Space.s) {
+            HStack(spacing: SH.Space.s) {
                 Image(systemName: symbol)
-                    .font(.nwSans(NWDesignMetrics.startGlyph))
-                    .foregroundStyle(chosen ? Color.nw.lanternText : Color.nw.textSecondary)
+                    .font(.shSans(SHDesignMetrics.startGlyph))
+                    .foregroundStyle(chosen ? Color.sh.lanternText : Color.sh.textSecondary)
                     .accessibilityHidden(true)
                 Text(title)
-                    .font(.nwMono(NWDesignMetrics.startTitleSize, .semibold))
-                    .foregroundStyle(Color.nw.textPrimary)
+                    .font(.shMono(SHDesignMetrics.startTitleSize, .semibold))
+                    .foregroundStyle(Color.sh.textPrimary)
                     .lineLimit(1)
             }
             Text(line)
-                .font(.nwSans(NWDesignMetrics.startLineSize))
-                .foregroundStyle(Color.nw.textPrimary)
+                .font(.shSans(SHDesignMetrics.startLineSize))
+                .foregroundStyle(Color.sh.textPrimary)
                 .lineLimit(1)
             Text(note)
-                .font(.nwSans(NWDesignMetrics.startNoteSize))
-                .foregroundStyle(Color.nw.textTertiary)
+                .font(.shSans(SHDesignMetrics.startNoteSize))
+                .foregroundStyle(Color.sh.textTertiary)
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
-        .padding(.vertical, NW.Space.l)
-        .padding(.horizontal, NWDesignMetrics.cardPaddingHorizontal)
+        .padding(.vertical, SH.Space.l)
+        .padding(.horizontal, SHDesignMetrics.cardPaddingHorizontal)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(chosen ? Color.nw.lanternTint : hovering ? Color.nw.bgHover : .clear, in: shape)
-        .nwBorder(chosen ? Color.nw.lanternText : Color.nw.lineSubtle, radius: NW.Radius.m)
+        .background(chosen ? Color.sh.lanternTint : hovering ? Color.sh.bgHover : .clear, in: shape)
+        .shBorder(chosen ? Color.sh.lanternText : Color.sh.lineSubtle, radius: SH.Radius.m)
         .contentShape(shape)
         .onHover { hovering = $0 }
-        .nwAnimation(.hover, value: hovering)
+        .shAnimation(.hover, value: hovering)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title), \(line), \(note)")
         .accessibilityAddTraits(chosen ? .isSelected : [])

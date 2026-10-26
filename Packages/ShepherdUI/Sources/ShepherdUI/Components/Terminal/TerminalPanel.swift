@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The terminal panel's measures (TerminalSplit and TerminalStates boards on the Mac, iPadTerminal
 /// on iPad): a strip of tabs over the terminal, under the thread and its composer.
-public enum NWTerminalMetrics {
+public enum SHTerminalMetrics {
     #if os(iOS)
     public static let panelHeight: CGFloat = 340
     public static let tabBarHeight: CGFloat = 46
@@ -14,7 +14,7 @@ public enum NWTerminalMetrics {
     public static let panelHeight: CGFloat = 330
     public static let tabBarHeight: CGFloat = 38
     public static let tabHeight: CGFloat = 26
-    public static let buttonSize: CGFloat = NW.Height.controlS
+    public static let buttonSize: CGFloat = SH.Height.controlS
     public static let contentPadding = EdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14)
     #endif
     /// Never shorter than a tab bar and a few lines.
@@ -46,7 +46,7 @@ public enum NWTerminalMetrics {
 }
 
 /// One tab in the panel (TerminalTab · states board).
-public struct NWTerminalTab: Equatable, Identifiable, Sendable {
+public struct SHTerminalTab: Equatable, Identifiable, Sendable {
     public enum Activity: Equatable, Sendable {
         /// The shell waits at its prompt.
         case idle
@@ -75,8 +75,8 @@ public struct NWTerminalTab: Equatable, Identifiable, Sendable {
 
 /// The panel's tab strip: the tabs, + for a new one, then the panel's own controls (maximize,
 /// hide) at the trailing end. The selected tab carries its close button.
-public struct NWTerminalTabBar<Trailing: View>: View {
-    let tabs: [NWTerminalTab]
+public struct SHTerminalTabBar<Trailing: View>: View {
+    let tabs: [SHTerminalTab]
     let selection: String?
     let select: (String) -> Void
     let close: ((String) -> Void)?
@@ -92,7 +92,7 @@ public struct NWTerminalTabBar<Trailing: View>: View {
     /// `menu`, where given, opens the new terminal menu (NewTerminalMenu) from + (`tab` nil) and
     /// from a right-click on a tab, at `anchor` along the strip; + then opens the menu rather
     /// than a tab.
-    public init(_ tabs: [NWTerminalTab], selection: String?, select: @escaping (String) -> Void,
+    public init(_ tabs: [SHTerminalTab], selection: String?, select: @escaping (String) -> Void,
                 close: ((String) -> Void)? = nil, newTab: (() -> Void)? = nil, newTabHelp: String = "New terminal",
                 menu: ((_ tab: String?, _ anchor: CGFloat) -> Void)? = nil,
                 @ViewBuilder trailing: @escaping () -> Trailing) {
@@ -106,15 +106,15 @@ public struct NWTerminalTabBar<Trailing: View>: View {
         self.trailing = trailing
     }
 
-    private static var space: String { "nwTerminalTabBar" }
+    private static var space: String { "shTerminalTabBar" }
     private static var plusAnchor: String { "+" }
 
     public var body: some View {
-        HStack(spacing: NW.Space.xxs) {
+        HStack(spacing: SH.Space.xxs) {
             ScrollView(.horizontal) {
-                HStack(spacing: NW.Space.xxs) {
+                HStack(spacing: SH.Space.xxs) {
                     ForEach(tabs) { tab in
-                        NWTerminalTabView(tab: tab, isSelected: tab.id == selection, select: { select(tab.id) },
+                        SHTerminalTabView(tab: tab, isSelected: tab.id == selection, select: { select(tab.id) },
                                           close: close.map { close in { close(tab.id) } })
                             .modifier(AnchorReader(id: tab.id, anchors: $anchors))
                     }
@@ -122,8 +122,8 @@ public struct NWTerminalTabBar<Trailing: View>: View {
                         Button {
                             if let menu { menu(nil, anchors[Self.plusAnchor]?.minX ?? 0) } else { newTab() }
                         } label: { Image(systemName: "plus") }
-                            .buttonStyle(.nwIcon(size: NWTerminalMetrics.buttonSize))
-                            .nwHelp(newTabHelp)
+                            .buttonStyle(.shIcon(size: SHTerminalMetrics.buttonSize))
+                            .shHelp(newTabHelp)
                             .accessibilityLabel(newTabHelp)
                             .modifier(AnchorReader(id: Self.plusAnchor, anchors: $anchors))
                     }
@@ -132,24 +132,24 @@ public struct NWTerminalTabBar<Trailing: View>: View {
             .scrollIndicators(.hidden)
             .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: { visibleTabs = $0 }
-            Spacer(minLength: NW.Space.m)
-            HStack(spacing: NW.Space.xxs) { trailing() }
-                .buttonStyle(.nwIcon(size: NWTerminalMetrics.buttonSize))
+            Spacer(minLength: SH.Space.m)
+            HStack(spacing: SH.Space.xxs) { trailing() }
+                .buttonStyle(.shIcon(size: SHTerminalMetrics.buttonSize))
         }
-        .padding(.horizontal, NW.Space.m)
-        .frame(minHeight: NWTerminalMetrics.tabBarHeight)
+        .padding(.horizontal, SH.Space.m)
+        .frame(minHeight: SHTerminalMetrics.tabBarHeight)
         .frame(maxWidth: .infinity)
         // A strip of chrome over the terminal: it grows with Dynamic Type, but not past a size
         // that leaves room for the terminal under it.
         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-        .background(Color.nw.bgWindow)
-        .overlay(alignment: .top) { NWHairline(color: .nw.lineStrong) }
-        .overlay(alignment: .bottom) { NWHairline() }
+        .background(Color.sh.bgWindow)
+        .overlay(alignment: .top) { SHHairline(color: .sh.lineStrong) }
+        .overlay(alignment: .bottom) { SHHairline() }
         #if os(macOS)
         // A right-click (or ⌃-click) on a tab opens the menu from it.
         .background {
             if let menu {
-                NWSecondaryClickRegions(regions: tabs.compactMap { tab in
+                SHSecondaryClickRegions(regions: tabs.compactMap { tab in
                     anchors[tab.id].map { (tab.id, $0.intersection(visibleTabs)) }.flatMap { $0.1.isNull ? nil : $0 }
                 }) { id in
                     menu(id, anchors[id]?.minX ?? 0)
@@ -168,7 +168,7 @@ public struct NWTerminalTabBar<Trailing: View>: View {
         @Binding var anchors: [String: CGRect]
 
         func body(content: Content) -> some View {
-            content.onGeometryChange(for: CGRect.self) { $0.frame(in: .named(NWTerminalTabBar.space)) } action: {
+            content.onGeometryChange(for: CGRect.self) { $0.frame(in: .named(SHTerminalTabBar.space)) } action: {
                 anchors[id] = $0
             }
         }
@@ -177,14 +177,14 @@ public struct NWTerminalTabBar<Trailing: View>: View {
 
 /// A tab: the terminal glyph (a spinner while a command runs), the title in mono, the host of a
 /// selected remote tab, a running-blue dot for output you have not seen, and the selected tab's close.
-public struct NWTerminalTabView: View {
-    let tab: NWTerminalTab
+public struct SHTerminalTabView: View {
+    let tab: SHTerminalTab
     let isSelected: Bool
     let select: () -> Void
     let close: (() -> Void)?
     @State private var hovering = false
 
-    public init(tab: NWTerminalTab, isSelected: Bool, select: @escaping () -> Void, close: (() -> Void)? = nil) {
+    public init(tab: SHTerminalTab, isSelected: Bool, select: @escaping () -> Void, close: (() -> Void)? = nil) {
         self.tab = tab
         self.isSelected = isSelected
         self.select = select
@@ -192,30 +192,30 @@ public struct NWTerminalTabView: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         HStack(spacing: 0) {
             Button(action: select) {
-                HStack(spacing: NW.Space.s) {
+                HStack(spacing: SH.Space.s) {
                     glyph
                     Text(tab.title)
-                        .font(.nw(.mono))
-                        .foregroundStyle(isSelected ? nw.textPrimary : nw.textSecondary)
+                        .font(.sh(.mono))
+                        .foregroundStyle(isSelected ? sh.textPrimary : sh.textSecondary)
                         .lineLimit(1)
                     // The selected tab names its host (TerminalTab · states); the rest share it.
                     if isSelected, let host = tab.host {
                         Label(host, systemImage: "desktopcomputer")
-                            .labelStyle(NWTerminalHostLabelStyle())
-                            .font(.nw(.micro, weight: .regular))
-                            .foregroundStyle(nw.textTertiary)
+                            .labelStyle(SHTerminalHostLabelStyle())
+                            .font(.sh(.micro, weight: .regular))
+                            .foregroundStyle(sh.textTertiary)
                             .lineLimit(1)
                     }
                     if tab.activity == .unseen {
-                        Circle().fill(nw.running).frame(width: 6, height: 6)
+                        Circle().fill(sh.running).frame(width: 6, height: 6)
                     }
                 }
-                .padding(.leading, NW.Space.m)
-                .padding(.trailing, isSelected && close != nil ? NW.Space.xs : NW.Space.m)
-                .frame(minHeight: NWTerminalMetrics.tabHeight)
+                .padding(.leading, SH.Space.m)
+                .padding(.trailing, isSelected && close != nil ? SH.Space.xs : SH.Space.m)
+                .frame(minHeight: SHTerminalMetrics.tabHeight)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -228,37 +228,37 @@ public struct NWTerminalTabView: View {
                 Button(action: close) {
                     Image(systemName: "xmark")
                         .font(.system(size: 8, weight: .semibold))
-                        .foregroundStyle(nw.textTertiary)
-                        .frame(width: NWTerminalMetrics.tabHeight * 0.75)
-                        .frame(minHeight: NWTerminalMetrics.tabHeight)
+                        .foregroundStyle(sh.textTertiary)
+                        .frame(width: SHTerminalMetrics.tabHeight * 0.75)
+                        .frame(minHeight: SHTerminalMetrics.tabHeight)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .nwTouchTarget(height: NWTerminalMetrics.tabHeight, width: NWTerminalMetrics.tabHeight * 0.75)
-                .nwHelp("Close terminal")
+                .shTouchTarget(height: SHTerminalMetrics.tabHeight, width: SHTerminalMetrics.tabHeight * 0.75)
+                .shHelp("Close terminal")
                 .accessibilityLabel("Close \(tab.title)")
             }
         }
-        .background(isSelected ? nw.bgSelected : hovering ? nw.bgHover : .clear,
-                    in: RoundedRectangle(cornerRadius: NW.Radius.s))
+        .background(isSelected ? sh.bgSelected : hovering ? sh.bgHover : .clear,
+                    in: RoundedRectangle(cornerRadius: SH.Radius.s))
         .onHover { hovering = $0 }
-        .nwAnimation(.hover, value: hovering)
+        .shAnimation(.hover, value: hovering)
         .fixedSize()
     }
 
     @ViewBuilder private var glyph: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         switch tab.activity {
         case .running:
-            ProgressView().progressViewStyle(NWSpinnerStyle(size: 11))
+            ProgressView().progressViewStyle(SHSpinnerStyle(size: 11))
         case .exited(let failed):
             Image(systemName: "terminal")
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(failed ? nw.failed : nw.textTertiary)
+                .foregroundStyle(failed ? sh.failed : sh.textTertiary)
         case .idle, .unseen:
             Image(systemName: "terminal")
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(isSelected ? nw.textPrimary : nw.textTertiary)
+                .foregroundStyle(isSelected ? sh.textPrimary : sh.textTertiary)
         }
     }
 
@@ -275,9 +275,9 @@ public struct NWTerminalTabView: View {
     }
 }
 
-private struct NWTerminalHostLabelStyle: LabelStyle {
+private struct SHTerminalHostLabelStyle: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: NW.Space.xxs) {
+        HStack(spacing: SH.Space.xxs) {
             configuration.icon.imageScale(.small)
             configuration.title
         }
@@ -285,7 +285,7 @@ private struct NWTerminalHostLabelStyle: LabelStyle {
 }
 
 /// One key of the touch key row.
-public struct NWTerminalKeycap: Equatable, Identifiable, Sendable {
+public struct SHTerminalKeycap: Equatable, Identifiable, Sendable {
     public let id: String
     public let label: String
     public let spokenLabel: String
@@ -305,11 +305,11 @@ public struct NWTerminalKeycap: Equatable, Identifiable, Sendable {
 /// where it fits (iPad, a phone in landscape); on a phone in portrait it wraps into two rows of
 /// equal keys, so every key shows. Only where two rows don't fit either (a large text size in a
 /// narrow window) does it scroll, with its scroll bar showing.
-public struct NWTerminalKeyRow: View {
-    let keys: [NWTerminalKeycap]
+public struct SHTerminalKeyRow: View {
+    let keys: [SHTerminalKeycap]
     let press: (String) -> Void
 
-    public init(_ keys: [NWTerminalKeycap], press: @escaping (String) -> Void) {
+    public init(_ keys: [SHTerminalKeycap], press: @escaping (String) -> Void) {
         self.keys = keys
         self.press = press
     }
@@ -317,50 +317,50 @@ public struct NWTerminalKeyRow: View {
     public var body: some View {
         let half = (keys.count + 1) / 2
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: NW.Space.s) { keycaps(keys, fill: false) }
-                .padding(.horizontal, NW.Space.l)
+            HStack(spacing: SH.Space.s) { keycaps(keys, fill: false) }
+                .padding(.horizontal, SH.Space.l)
             VStack(spacing: 0) {
-                HStack(spacing: NW.Space.s) { keycaps(Array(keys.prefix(half)), fill: true) }
-                HStack(spacing: NW.Space.s) { keycaps(Array(keys.dropFirst(half)), fill: true) }
+                HStack(spacing: SH.Space.s) { keycaps(Array(keys.prefix(half)), fill: true) }
+                HStack(spacing: SH.Space.s) { keycaps(Array(keys.dropFirst(half)), fill: true) }
             }
-            .padding(.horizontal, NW.Space.l)
+            .padding(.horizontal, SH.Space.l)
             ScrollView(.horizontal) {
-                HStack(spacing: NW.Space.s) { keycaps(keys, fill: false) }
-                    .padding(.horizontal, NW.Space.l)
+                HStack(spacing: SH.Space.s) { keycaps(keys, fill: false) }
+                    .padding(.horizontal, SH.Space.l)
             }
             .scrollIndicators(.visible)
             .scrollIndicatorsFlash(onAppear: true)
             .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         }
         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-        .padding(.vertical, NW.Space.m)
+        .padding(.vertical, SH.Space.m)
         .frame(maxWidth: .infinity)
-        .background(Color.nw.bgWindow)
-        .overlay(alignment: .top) { NWHairline() }
+        .background(Color.sh.bgWindow)
+        .overlay(alignment: .top) { SHHairline() }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Terminal keys")
     }
 
     /// `fill`: the keys share their row's width equally (the wrapped rows).
-    private func keycaps(_ keys: [NWTerminalKeycap], fill: Bool) -> some View {
+    private func keycaps(_ keys: [SHTerminalKeycap], fill: Bool) -> some View {
         ForEach(keys) { key in
             Button { press(key.id) } label: {
                 Text(key.label)
-                    .font(.nw(.code))
-                    .foregroundStyle(key.isLatched ? Color.nw.lanternText : Color.nw.textPrimary)
+                    .font(.sh(.code))
+                    .foregroundStyle(key.isLatched ? Color.sh.lanternText : Color.sh.textPrimary)
                     .lineLimit(1)
                     // A key never truncates: where its row can't hold it, the row scrolls instead.
                     .fixedSize()
-                    .padding(.horizontal, NW.Space.m)
-                    .frame(minWidth: NWTerminalMetrics.keyMinWidth, maxWidth: fill ? .infinity : nil,
-                           minHeight: NWTerminalMetrics.keyHeight)
-                    .background(key.isLatched ? Color.nw.lanternTint : Color.nw.bgRaised,
-                                in: RoundedRectangle(cornerRadius: NW.Radius.s))
-                    .nwBorder(key.isLatched ? Color.nw.lantern : Color.nw.lineSubtle, radius: NW.Radius.s)
+                    .padding(.horizontal, SH.Space.m)
+                    .frame(minWidth: SHTerminalMetrics.keyMinWidth, maxWidth: fill ? .infinity : nil,
+                           minHeight: SHTerminalMetrics.keyHeight)
+                    .background(key.isLatched ? Color.sh.lanternTint : Color.sh.bgRaised,
+                                in: RoundedRectangle(cornerRadius: SH.Radius.s))
+                    .shBorder(key.isLatched ? Color.sh.lantern : Color.sh.lineSubtle, radius: SH.Radius.s)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(NWKeycapPressStyle())
-            .nwTouchTarget(height: NWTerminalMetrics.keyHeight)
+            .buttonStyle(SHKeycapPressStyle())
+            .shTouchTarget(height: SHTerminalMetrics.keyHeight)
             .accessibilityLabel(key.spokenLabel)
             .accessibilityAddTraits(key.isLatched ? .isSelected : [])
         }
@@ -368,7 +368,7 @@ public struct NWTerminalKeyRow: View {
 }
 
 /// A pressed keycap dims, as a key does.
-private struct NWKeycapPressStyle: ButtonStyle {
+private struct SHKeycapPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label.opacity(configuration.isPressed ? 0.6 : 1)
     }
@@ -376,23 +376,23 @@ private struct NWKeycapPressStyle: ButtonStyle {
 
 /// A terminal's quiet state line in place of its screen ("attaching…", "session exited (1)"):
 /// mono, tertiary, at the top left, as docs/design/terminal.md › Terminal panes has it.
-public struct NWTerminalNotice: View {
+public struct SHTerminalNotice: View {
     let text: String
 
     public init(_ text: String) { self.text = text }
 
     public var body: some View {
         Text(text)
-            .font(.nw(.micro, weight: .regular))
-            .foregroundStyle(Color.nw.textTertiary)
-            .padding(NWTerminalMetrics.contentPadding)
+            .font(.sh(.micro, weight: .regular))
+            .foregroundStyle(Color.sh.textTertiary)
+            .padding(SHTerminalMetrics.contentPadding)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
 /// The thread folded to one line while the panel is maximized (TerminalStates › TerminalPanel ·
 /// maximized): its title, its state, and Show the thread, which restores the panel.
-public struct NWTerminalFoldedThread: View {
+public struct SHTerminalFoldedThread: View {
     let title: String
     let state: AgentState
     let restore: () -> Void
@@ -407,31 +407,31 @@ public struct NWTerminalFoldedThread: View {
     }
 
     public var body: some View {
-        HStack(spacing: NWTerminalMetrics.foldedThreadGap) {
+        HStack(spacing: SHTerminalMetrics.foldedThreadGap) {
             Text(title)
-                .font(.nwSans(12.5, .semibold))
-                .foregroundStyle(Color.nw.textPrimary)
+                .font(.shSans(12.5, .semibold))
+                .foregroundStyle(Color.sh.textPrimary)
                 .lineLimit(1)
-            NWStatusPill(state)
+            SHStatusPill(state)
             Spacer(minLength: 0)
             Button(action: restore) { Image(systemName: "chevron.down") }
-                .buttonStyle(.nwIcon(size: NWTerminalMetrics.buttonSize))
-                .nwHelp("Show the thread", shortcut: restoreShortcut)
+                .buttonStyle(.shIcon(size: SHTerminalMetrics.buttonSize))
+                .shHelp("Show the thread", shortcut: restoreShortcut)
                 .accessibilityLabel("Show the thread")
         }
-        .padding(.leading, NWTerminalMetrics.foldedThreadLeading)
-        .padding(.trailing, NWTerminalMetrics.foldedThreadTrailing)
-        .frame(height: NWTerminalMetrics.foldedThreadHeight)
+        .padding(.leading, SHTerminalMetrics.foldedThreadLeading)
+        .padding(.trailing, SHTerminalMetrics.foldedThreadTrailing)
+        .frame(height: SHTerminalMetrics.foldedThreadHeight)
         .frame(maxWidth: .infinity)
-        .background(Color.nw.bgWindow)
-        .overlay(alignment: .bottom) { NWHairline() }
+        .background(Color.sh.bgWindow)
+        .overlay(alignment: .bottom) { SHHairline() }
         .accessibilityElement(children: .contain)
     }
 }
 
 /// Beside a selection in a terminal (TerminalPane): Add to message puts the selection in the
 /// thread's composer, and Copy copies it.
-public struct NWTerminalSelectionBar: View {
+public struct SHTerminalSelectionBar: View {
     let add: () -> Void
     let copy: () -> Void
 
@@ -441,17 +441,17 @@ public struct NWTerminalSelectionBar: View {
     }
 
     public var body: some View {
-        HStack(spacing: NWTerminalMetrics.selectionBarPadding) {
+        HStack(spacing: SHTerminalMetrics.selectionBarPadding) {
             Button(action: add) { Label("Add to message", systemImage: "plus") }
-                .buttonStyle(.nw(.primary, size: .s))
+                .buttonStyle(.sh(.primary, size: .s))
                 .help("Add the selection to your message")
             Button(action: copy) { Label("Copy", systemImage: "doc.on.doc") }
-                .buttonStyle(.nw(.ghost, size: .s))
+                .buttonStyle(.sh(.ghost, size: .s))
                 .help("Copy the selection")
         }
-        .padding(NWTerminalMetrics.selectionBarPadding)
+        .padding(SHTerminalMetrics.selectionBarPadding)
         .fixedSize()
-        .nwPopover(radius: NWTerminalMetrics.selectionBarRadius)
+        .shPopover(radius: SHTerminalMetrics.selectionBarRadius)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Selection")
     }
@@ -459,8 +459,8 @@ public struct NWTerminalSelectionBar: View {
 
 /// The new terminal menu (NewTerminalMenu: + or a right-click on a tab): 290pt, 6pt in, radius
 /// 10, the popover's fill, line and shadow. Its rows are the Changes menus' rows
-/// (`NWChangesMenuRow`), two-line ones at least 36pt, with their chords as keycaps.
-public struct NWTerminalMenu<Content: View>: View {
+/// (`SHChangesMenuRow`), two-line ones at least 36pt, with their chords as keycaps.
+public struct SHTerminalMenu<Content: View>: View {
     let content: Content
 
     public init(@ViewBuilder content: () -> Content) {
@@ -469,9 +469,9 @@ public struct NWTerminalMenu<Content: View>: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) { content }
-            .padding(NW.Space.s)
-            .frame(width: NWTerminalMetrics.menuWidth)
-            .nwPopover(radius: NWTerminalMetrics.menuRadius)
+            .padding(SH.Space.s)
+            .frame(width: SHTerminalMetrics.menuWidth)
+            .shPopover(radius: SHTerminalMetrics.menuRadius)
             .accessibilityElement(children: .contain)
             .accessibilityAddTraits(.isModal)
     }
@@ -483,7 +483,7 @@ import AppKit
 /// Secondary clicks (right-click, ⌃-click) on regions of the view it backs, found by an event
 /// monitor while the view is on screen: nothing sits over the regions, so every other click
 /// reaches them as before. `regions` are in the backed view's space, top-left origin.
-struct NWSecondaryClickRegions: NSViewRepresentable {
+struct SHSecondaryClickRegions: NSViewRepresentable {
     let regions: [(String, CGRect)]
     let action: (String) -> Void
 

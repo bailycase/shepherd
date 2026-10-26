@@ -312,7 +312,7 @@ struct ThreadImagesControlTests {
         #expect(abs(close.frame.width - 28) < 1 && abs(close.frame.height - 28) < 1, "the close circle is 28pt: \(close.frame)")
         #expect(abs(close.frame.midY - copy.frame.midY) < 1, "Copy and close share the pill")
         #expect(abs(close.frame.midX - frame.midX) < frame.width / 6, "the pill is centred, not in a corner: \(close.frame) in \(frame)")
-        #expect(close.frame.minY > frame.minY + NWImageViewerMetrics.margin / 2, "the pill floats above the window's bottom edge: \(close.frame)")
+        #expect(close.frame.minY > frame.minY + SHImageViewerMetrics.margin / 2, "the pill floats above the window's bottom edge: \(close.frame)")
         let next = try control("Next image")
         #expect(abs(next.frame.width - 36) < 1 && abs(next.frame.height - 36) < 1, "\(next.frame)")
         let previous = try control("Previous image")

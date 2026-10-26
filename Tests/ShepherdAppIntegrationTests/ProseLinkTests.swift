@@ -13,7 +13,7 @@ struct ProseLinkTests {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let file = folder.appendingPathComponent("PLAN.md")
         try "# Plan".write(to: file, atomically: true, encoding: .utf8)
-        let markdown = NWProseInline.styled("[temporal/PLAN.md](temporal/PLAN.md)")
+        let markdown = SHProseInline.styled("[temporal/PLAN.md](temporal/PLAN.md)")
         let link = try #require(markdown.runs.first?.link)
         #expect(link.scheme == nil) // The original handoff passed this URL straight to macOS.
         let web = try #require(URL(string: "https://example.com/plan"))
@@ -23,10 +23,10 @@ struct ProseLinkTests {
             var opened: [URL] = []
             // Exercise the actual prose environment without launching an app or taking focus.
             let window = OffscreenWindow(size: CGSize(width: 400, height: 200), dark: dark,
-                NWAgentProse([.paragraph(markdown), .code("", language: nil)]) { _, _ in
+                SHAgentProse([.paragraph(markdown), .code("", language: nil)]) { _, _ in
                     LinkProbe(urls: [link, web, task])
                 }
-                .environment(\.nwProseFileRoot, root)
+                .environment(\.shProseFileRoot, root)
                 .environment(\.openURL, OpenURLAction { url in
                     opened.append(url)
                     return .handled

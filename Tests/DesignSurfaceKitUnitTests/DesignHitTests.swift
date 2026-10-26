@@ -63,7 +63,7 @@ import Testing
 
     /// Every element of every golden board the grammar can name comes back as the id the golden
     /// numbering gives it.
-    @Test(arguments: ["Minimal.dc.html", "Edges.dc.html", "DZStart.dc.html", "NWDesignTool.dc.html", "ThreadRichContent.dc.html"])
+    @Test(arguments: ["Minimal.dc.html", "Edges.dc.html", "DZStart.dc.html", "SHDesignTool.dc.html", "ThreadRichContent.dc.html"])
     func aHitOnAGoldenElementIsNamedAsTheGoldenFileNumbersIt(_ name: String) throws {
         let designs = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Designs")
         let data = try Data(contentsOf: designs.appendingPathComponent("element-ids.json"))

@@ -256,7 +256,7 @@ public final class NativeThreadArtifacts {
 public enum NativeArtifactDocument: Equatable, Sendable {
     /// `blocks` is Preview (the thread's own prose renderer), `source` is Source.
     case markdown(blocks: [NativeMarkdownBlock], source: String)
-    /// A page with its own styles: drawn in a locked-down web view (`NWArtifactWebView`), never as prose.
+    /// A page with its own styles: drawn in a locked-down web view (`SHArtifactWebView`), never as prose.
     case html(String)
     /// A picture: drawn as an image, so nothing in it runs.
     case svg(String)

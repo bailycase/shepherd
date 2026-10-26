@@ -61,9 +61,9 @@ struct ChangesScopeMenu<Label: View>: View {
                     if let stat = statText(option) { Text(stat) }
                     if option.selected { Image(systemName: "checkmark") }
                 }
-                Button("Compare against…", systemImage: NWGlyph.gitBranch.symbolName, action: pickBase)
+                Button("Compare against…", systemImage: SHGlyph.gitBranch.symbolName, action: pickBase)
             } label: {
-                SwiftUI.Label(option.title, systemImage: NWGlyph.gitBranch.symbolName)
+                SwiftUI.Label(option.title, systemImage: SHGlyph.gitBranch.symbolName)
                 if let detail = option.detail { Text(detail) }
             }
         default:
@@ -97,7 +97,7 @@ struct ChangesScopeMenu<Label: View>: View {
         case .lastTurn: "clock.arrow.circlepath"
         case .uncommitted, .unstaged, .staged: "pencil"
         case .commits: "point.3.connected.trianglepath.dotted"
-        case .branch: NWGlyph.gitBranch.symbolName
+        case .branch: SHGlyph.gitBranch.symbolName
         case .pullRequest: "arrow.triangle.pull"
         }
     }
@@ -119,15 +119,15 @@ struct ChangesTitle: View {
 
     var body: some View {
         ChangesScopeMenu(store: store, pickBase: pickBase) {
-            VStack(spacing: NW.Space.xxs) {
-                Text("Changes").font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
-                HStack(spacing: NW.Space.xs) {
-                    Image(systemName: store.usesChanges ? scopeSymbol : NWGlyph.gitBranch.symbolName).imageScale(.small)
+            VStack(spacing: SH.Space.xxs) {
+                Text("Changes").font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
+                HStack(spacing: SH.Space.xs) {
+                    Image(systemName: store.usesChanges ? scopeSymbol : SHGlyph.gitBranch.symbolName).imageScale(.small)
                     Text(store.scopeTitle).lineLimit(1).truncationMode(.middle)
                     Image(systemName: "chevron.down").imageScale(.small)
                 }
-                .font(.nw(.caption, weight: .medium))
-                .foregroundStyle(Color.nw.running)
+                .font(.sh(.caption, weight: .medium))
+                .foregroundStyle(Color.sh.running)
             }
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Changes, \(store.scopeTitle)")
@@ -140,7 +140,7 @@ struct ChangesTitle: View {
         case .commits?: "point.3.connected.trianglepath.dotted"
         case .pullRequest?: "arrow.triangle.pull"
         case .uncommitted?, .unstaged?, .staged?: "pencil"
-        default: NWGlyph.gitBranch.symbolName
+        default: SHGlyph.gitBranch.symbolName
         }
     }
 }
@@ -155,46 +155,46 @@ struct ChangesBasePicker: View {
     @State private var query = ""
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         NavigationStack {
             List {
                 if let branches = store.branches {
                     Section {
                         ForEach(changesBaseOptions(branches, selected: store.base, query: query)) { option in
                             Button { choose(option.name) } label: { row(option) }
-                                .listRowBackground(nw.bgRaised)
-                                .listRowInsets(EdgeInsets(top: 0, leading: NW.Space.l, bottom: 0, trailing: NW.Space.l))
+                                .listRowBackground(sh.bgRaised)
+                                .listRowInsets(EdgeInsets(top: 0, leading: SH.Space.l, bottom: 0, trailing: SH.Space.l))
                         }
                     } header: {
-                        Text("Compare against").nwSectionLabel()
+                        Text("Compare against").shSectionLabel()
                     }
                     if let base = branches.pullRequestBase, query.isEmpty {
                         Section {
                             Button { choose(base) } label: {
-                                HStack(spacing: NW.Space.m) {
-                                    Image(systemName: "arrow.triangle.pull").foregroundStyle(nw.textSecondary)
-                                    Text("The PR's base").font(.nw(.ui)).foregroundStyle(nw.textPrimary)
-                                    Spacer(minLength: NW.Space.s)
-                                    Text(base).font(.nw(.mono)).foregroundStyle(nw.textTertiary)
+                                HStack(spacing: SH.Space.m) {
+                                    Image(systemName: "arrow.triangle.pull").foregroundStyle(sh.textSecondary)
+                                    Text("The PR's base").font(.sh(.ui)).foregroundStyle(sh.textPrimary)
+                                    Spacer(minLength: SH.Space.s)
+                                    Text(base).font(.sh(.mono)).foregroundStyle(sh.textTertiary)
                                 }
-                                .frame(minHeight: NW.Height.touch)
+                                .frame(minHeight: SH.Height.touch)
                             }
-                            .listRowBackground(nw.bgRaised)
+                            .listRowBackground(sh.bgRaised)
                         }
                     }
                 } else if let error = store.branchesError {
-                    NWEmptyState(Text("Couldn't list the branches"), message: error)
+                    SHEmptyState(Text("Couldn't list the branches"), message: error)
                         .listRowBackground(Color.clear)
                 } else {
-                    ProgressView().progressViewStyle(NWSpinnerStyle())
-                        .frame(maxWidth: .infinity, minHeight: NW.Height.touch * 2)
+                    ProgressView().progressViewStyle(SHSpinnerStyle())
+                        .frame(maxWidth: .infinity, minHeight: SH.Height.touch * 2)
                         .listRowBackground(Color.clear)
                         .accessibilityLabel("Loading the branches")
                 }
             }
             .scrollContentBackground(.hidden)
-            .environment(\.defaultMinListRowHeight, NW.Height.touch)
-            .background(nw.bgBase)
+            .environment(\.defaultMinListRowHeight, SH.Height.touch)
+            .background(sh.bgBase)
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search branches")
             .navigationTitle("Compare against")
             .navigationBarTitleDisplayMode(.inline)
@@ -206,17 +206,17 @@ struct ChangesBasePicker: View {
     }
 
     private func row(_ option: ChangesBaseOption) -> some View {
-        let nw = Color.nw
-        return HStack(spacing: NW.Space.m) {
-            Image(systemName: NWGlyph.gitBranch.symbolName).foregroundStyle(nw.textSecondary).accessibilityHidden(true)
-            Text(option.name).font(.nw(.code)).foregroundStyle(nw.textPrimary).lineLimit(1).truncationMode(.middle)
-            Spacer(minLength: NW.Space.s)
-            if let tag = option.tag { Text(tag).font(.nw(.mono)).foregroundStyle(nw.textTertiary) }
+        let sh = Color.sh
+        return HStack(spacing: SH.Space.m) {
+            Image(systemName: SHGlyph.gitBranch.symbolName).foregroundStyle(sh.textSecondary).accessibilityHidden(true)
+            Text(option.name).font(.sh(.code)).foregroundStyle(sh.textPrimary).lineLimit(1).truncationMode(.middle)
+            Spacer(minLength: SH.Space.s)
+            if let tag = option.tag { Text(tag).font(.sh(.mono)).foregroundStyle(sh.textTertiary) }
             if option.selected {
-                Image(systemName: "checkmark").font(.nw(.caption, weight: .semibold)).foregroundStyle(nw.textPrimary)
+                Image(systemName: "checkmark").font(.sh(.caption, weight: .semibold)).foregroundStyle(sh.textPrimary)
             }
         }
-        .frame(minHeight: NW.Height.touch)
+        .frame(minHeight: SH.Height.touch)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(option.selected ? .isSelected : [])

@@ -33,7 +33,7 @@ struct QueueRowModel: Equatable, Identifiable {
     let id: String
     var kind: Kind
     var message: NativeQueuedMessage?
-    var attachments: [NWQueueAttachment] = []
+    var attachments: [SHQueueAttachment] = []
 
     /// A message (not an Undo row or "Show more"): it takes keyboard focus.
     var isMessage: Bool {
@@ -80,7 +80,7 @@ enum QueueStackLayout {
     /// `longStackShown` show, then "Show N more" (an open editor further down shows them all);
     /// expanded, every row shows, then "Show fewer".
     static func rows(queue: [NativeQueuedMessage], undo: [Undo], editing: UUID? = nil, expanded: Bool = false,
-                     attachments: (NativeQueuedMessage) -> [NWQueueAttachment] = { _ in [] }) -> [QueueRowModel] {
+                     attachments: (NativeQueuedMessage) -> [SHQueueAttachment] = { _ in [] }) -> [QueueRowModel] {
         func row(_ message: NativeQueuedMessage, _ kind: QueueRowModel.Kind) -> QueueRowModel {
             QueueRowModel(id: message.id.uuidString, kind: kind, message: message, attachments: attachments(message))
         }
@@ -100,8 +100,8 @@ enum QueueStackLayout {
         }
         rows += pending.map(placeholder)
 
-        guard rows.count > NWQueueMetrics.shortStackLimit else { return rows }
-        let shown = NWQueueMetrics.longStackShown
+        guard rows.count > SHQueueMetrics.shortStackLimit else { return rows }
+        let shown = SHQueueMetrics.longStackShown
         let editorHidden = rows.dropFirst(shown).contains { if case .editing = $0.kind { true } else { false } }
         if expanded || editorHidden {
             return rows + [QueueRowModel(id: moreID, kind: .more(hidden: 0, expanded: true))]
@@ -113,7 +113,7 @@ enum QueueStackLayout {
     /// of a neighbour, it takes the neighbour's side. Never above the steering messages, and
     /// nil when it would stay where it is.
     static func drop(rows: [QueueRowModel], moving id: String, translation: CGFloat,
-                     rowHeight: CGFloat = NWQueueMetrics.rowHeight) -> Drop? {
+                     rowHeight: CGFloat = SHQueueMetrics.rowHeight) -> Drop? {
         let slots = rows.filter { if case .more = $0.kind { false } else { true } }
         guard let from = slots.firstIndex(where: { $0.id == id }), slots[from].isQueued else { return nil }
         let steering = slots.prefix { $0.kind == .steering }.count
@@ -233,9 +233,9 @@ final class QueueStackState {
     }
 
     /// A message's chips: its images' names, with the thumbnails this Mac has (decoded once).
-    private func attachments(_ message: NativeQueuedMessage) -> [NWQueueAttachment] {
+    private func attachments(_ message: NativeQueuedMessage) -> [SHQueueAttachment] {
         let elements = message.elements.enumerated().map { index, element in
-            NWQueueAttachment(id: "\(message.id.uuidString)/element/\(index)", name: element.label, isElement: true)
+            SHQueueAttachment(id: "\(message.id.uuidString)/element/\(index)", name: element.label, isElement: true)
         }
         guard !message.images.isEmpty else { return elements }
         let decoded = thumbnails[message.id] ?? {
@@ -244,7 +244,7 @@ final class QueueStackState {
             return value
         }()
         return elements + message.images.enumerated().map { index, image in
-            NWQueueAttachment(id: "\(message.id.uuidString)/\(index)", name: image.name ?? "Image",
+            SHQueueAttachment(id: "\(message.id.uuidString)/\(index)", name: image.name ?? "Image",
                               thumbnail: decoded.indices.contains(index) ? decoded[index] : nil)
         }
     }
@@ -419,8 +419,8 @@ final class QueueStackState {
             dragFrom = slots.firstIndex { $0.id == id }
         }
         // The lifted row follows the pointer, up to half a row past the first and last rows.
-        let from = CGFloat(dragFrom ?? 0), last = CGFloat(max(0, slots.count - 1)), half = NWQueueMetrics.rowHeight / 2
-        self.translation = min(max(translation, -from * NWQueueMetrics.rowHeight - half), (last - from) * NWQueueMetrics.rowHeight + half)
+        let from = CGFloat(dragFrom ?? 0), last = CGFloat(max(0, slots.count - 1)), half = SHQueueMetrics.rowHeight / 2
+        self.translation = min(max(translation, -from * SHQueueMetrics.rowHeight - half), (last - from) * SHQueueMetrics.rowHeight + half)
         let drop = QueueStackLayout.drop(rows: rows, moving: id, translation: translation)
         if drop != self.drop { self.drop = drop }
     }
@@ -432,8 +432,8 @@ final class QueueStackState {
     /// a gap where it would land.
     func shift(_ id: String) -> CGFloat {
         guard let drop, let from = dragFrom, dragging != id, let index = slots.firstIndex(where: { $0.id == id }) else { return 0 }
-        if drop.boundary <= from, (drop.boundary..<from).contains(index) { return NWQueueMetrics.rowHeight }
-        if drop.boundary > from + 1, (from + 1..<drop.boundary).contains(index) { return -NWQueueMetrics.rowHeight }
+        if drop.boundary <= from, (drop.boundary..<from).contains(index) { return SHQueueMetrics.rowHeight }
+        if drop.boundary > from + 1, (from + 1..<drop.boundary).contains(index) { return -SHQueueMetrics.rowHeight }
         return 0
     }
 
@@ -512,16 +512,16 @@ struct QueueStackView: View {
     var readOnly = false
 
     var body: some View {
-        let _ = NWRenderProbe.tick("queue.body")
+        let _ = SHRenderProbe.tick("queue.body")
         let rows = state.rows
         let keys = KeybindingsStore.shared
         let actions = QueueRowActions(state: state, store: store, running: running)
-        NWQueueStack(count: state.count,
+        SHQueueStack(count: state.count,
                      paused: readOnly ? nil : NativeQueueStack.pausedReason(paused: store.queuePaused, notice: store.queueNotice),
                      collapsed: state.collapsed,
-                     scrolls: rows.last?.kind == .more(hidden: 0, expanded: true) && rows.count - 1 > NWQueueMetrics.expandedMaxRows,
+                     scrolls: rows.last?.kind == .more(hidden: 0, expanded: true) && rows.count - 1 > SHQueueMetrics.expandedMaxRows,
                      drop: state.dropSlot, framed: framed, afterGoalCheck: store.hasGoal, showsOptions: !readOnly,
-                     onToggle: { withNWAnimation(.disclosure) { state.collapsed.toggle() } }) {
+                     onToggle: { withSHAnimation(.disclosure) { state.collapsed.toggle() } }) {
             ForEach(rows) { row in
                 QueueRowView(row: row, hover: state.hover(row.id), focused: focusedRow.wrappedValue == row.id, running: running,
                              lift: state.dragging == row.id ? state.translation : nil, shift: state.shift(row.id),
@@ -546,7 +546,7 @@ struct QueueStackView: View {
                         }
                     }
                     .zIndex(state.dragging == row.id ? 1 : 0)
-                    .nwTransition(.list, insertion: .bottom, removal: .top)
+                    .shTransition(.list, insertion: .bottom, removal: .top)
             }
         } options: {
             QueueOptions(running: running, hasQueued: state.queuedCount > 0, mode: store.queueMode ?? .all,
@@ -555,7 +555,7 @@ struct QueueStackView: View {
                          clear: { state.clear(store: store) })
         }
         // Rows arriving, leaving, moving, and changing kind; a drag's own motion follows the pointer.
-        .nwAnimation(.list, value: animated ? rows : nil)
+        .shAnimation(.list, value: animated ? rows : nil)
         .task(id: state.undo.map(\.id)) {
             while let next = state.expireUndo(store: store) {
                 do { try await Task.sleep(until: next, clock: .continuous) } catch { return }
@@ -603,7 +603,7 @@ struct QueueRowActions {
     func undo(_ id: String) { state.undo(id, store: store) }
     func save() { state.saveEdit(store: store) }
     func cancel() { state.cancelEdit(store: store) }
-    func toggleExpanded() { withNWAnimation(.disclosure) { state.toggleExpanded() } }
+    func toggleExpanded() { withSHAnimation(.disclosure) { state.toggleExpanded() } }
     func drag(_ id: String, _ translation: CGFloat) { state.drag(id, by: translation) }
     func endDrag(_ id: String, _ translation: CGFloat) { state.endDrag(id, at: translation, store: store) }
 }
@@ -635,7 +635,7 @@ struct QueueRowView: View, Equatable {
     }
 
     var body: some View {
-        let _ = NWRenderProbe.tick("queue.row")
+        let _ = SHRenderProbe.tick("queue.row")
         VStack(spacing: 0) {
             switch row.kind {
             case .queued(let number):
@@ -643,27 +643,27 @@ struct QueueRowView: View, Equatable {
             case .steering:
                 message(.steering)
             case .editing(let number):
-                NWQueueEditor(number: number, text: draft, onSave: actions.save, onCancel: actions.cancel)
+                SHQueueEditor(number: number, text: draft, onSave: actions.save, onCancel: actions.cancel)
             case .deleted(let text):
-                NWQueueDeletedRow(deleted: text) { actions.undo(row.id) }
+                SHQueueDeletedRow(deleted: text) { actions.undo(row.id) }
             case .cleared(let count):
-                NWQueueDeletedRow(cleared: count) { actions.undo(row.id) }
+                SHQueueDeletedRow(cleared: count) { actions.undo(row.id) }
             case .more(let hidden, let expanded):
-                NWQueueMoreRow(hidden: hidden, expanded: expanded, action: actions.toggleExpanded)
+                SHQueueMoreRow(hidden: hidden, expanded: expanded, action: actions.toggleExpanded)
             }
         }
         // The lifted row follows the pointer at once; its neighbours step aside on the list motion.
         .offset(y: lift ?? shift)
-        .nwAnimation(.list, value: shift)
+        .shAnimation(.list, value: shift)
         .onHover { inside in if hover.hovering != inside { hover.hovering = inside } }
     }
 
-    @ViewBuilder private func message(_ kind: NWQueueRow.Kind) -> some View {
+    @ViewBuilder private func message(_ kind: SHQueueRow.Kind) -> some View {
         let id = readOnly ? nil : row.message?.id
         let text = row.message?.text ?? ""
         let steering = kind == .steering
-        NWQueueRow(text, attachments: row.attachments, kind: kind, hovering: hover.hovering, focused: focused, lifted: lift != nil,
-                   actions: NWQueueRowActions(
+        SHQueueRow(text, attachments: row.attachments, kind: kind, hovering: hover.hovering, focused: focused, lifted: lift != nil,
+                   actions: SHQueueRowActions(
                     steer: id.map { id in { actions.steer(id) } },
                     steerLabel: running ? "Steer now" : "Send now",
                     steerShortcut: steerShortcut,
@@ -675,7 +675,7 @@ struct QueueRowView: View, Equatable {
                     deleteShortcut: deleteShortcut,
                     back: id.map { id in { actions.unsteer(id) } },
                     subagent: actions.store.supportsQueueSubagent ? id.map { id in { actions.subagent(id) } } : nil),
-                   drag: steering || readOnly ? nil : NWQueueDrag(changed: { actions.drag(row.id, $0) }, ended: { actions.endDrag(row.id, $0) }))
+                   drag: steering || readOnly ? nil : SHQueueDrag(changed: { actions.drag(row.id, $0) }, ended: { actions.endDrag(row.id, $0) }))
             // The lifted row follows the pointer exactly.
             .transaction(value: lift) { if lift != nil { $0.animation = nil } }
             .accessibilityElement(children: .ignore)
@@ -696,7 +696,7 @@ struct QueueRowView: View, Equatable {
             }
     }
 
-    private func accessibilityLabel(_ kind: NWQueueRow.Kind, text: String) -> String {
+    private func accessibilityLabel(_ kind: SHQueueRow.Kind, text: String) -> String {
         switch kind {
         case .queued(let number): "Queued \(number) of \(total): \(text)"
         case .steering: "Steering: \(text), waiting for the agent's current tool calls"

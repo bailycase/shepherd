@@ -26,7 +26,7 @@ struct DesignBoardScreen: View {
             if let model {
                 DesignBoardContent(model: model) { ask(model) }
             } else {
-                Color.nw.bgBase
+                Color.sh.bgBase
             }
         }
         .onAppear {
@@ -267,7 +267,7 @@ private struct DesignBoardContent: View {
                 // The keyboard never refits the board: the comment being written rises over it.
                 .ignoresSafeArea(.keyboard)
                 .overlay(alignment: .bottom) { cardLayer }
-            NWBoardToolbar(tools: DesignBoardTools.all, active: model.commenting ? DesignBoardTools.comment : nil,
+            SHBoardToolbar(tools: DesignBoardTools.all, active: model.commenting ? DesignBoardTools.comment : nil,
                            disabled: model.designs.agent(model.ref) == nil ? [DesignBoardTools.ask] : []) { id in
                 switch id {
                 case DesignBoardTools.comment:
@@ -280,19 +280,19 @@ private struct DesignBoardContent: View {
                 }
             }
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .navigationBarTitleDisplayMode(.inline)
         // The board's own toolbar takes the bottom edge (MobileDesignBoard).
         .toolbar(.hidden, for: .tabBar)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                VStack(spacing: NW.Space.xxs) {
+                VStack(spacing: SH.Space.xxs) {
                     Text(model.label)
-                        .font(.nwSans(NWPhoneDesignMetrics.boardTitleSize, .semibold))
-                        .foregroundStyle(Color.nw.textPrimary)
+                        .font(.shSans(SHPhoneDesignMetrics.boardTitleSize, .semibold))
+                        .foregroundStyle(Color.sh.textPrimary)
                         .lineLimit(1)
                     if model.boards.count > 1, let current = model.current {
-                        NWBoardDots(count: model.boards.count, current: model.boards.firstIndex(of: current) ?? 0)
+                        SHBoardDots(count: model.boards.count, current: model.boards.firstIndex(of: current) ?? 0)
                     }
                 }
             }
@@ -313,13 +313,13 @@ private struct DesignBoardContent: View {
 
     /// The comment picked, or the one being written, over the board above the toolbar.
     @ViewBuilder private var cardLayer: some View {
-        VStack(spacing: NW.Space.m) {
+        VStack(spacing: SH.Space.m) {
             if let problem = model.problem {
                 Button { model.dismissProblem() } label: {
-                    Text(problem).nwText(.caption).foregroundStyle(Color.nw.failed)
+                    Text(problem).shText(.caption).foregroundStyle(Color.sh.failed)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(NW.Space.l)
-                        .nwPopover(radius: NWPhoneDesignMetrics.cardRadius)
+                        .padding(SH.Space.l)
+                        .shPopover(radius: SHPhoneDesignMetrics.cardRadius)
                 }
                 .buttonStyle(.plain)
             }
@@ -328,11 +328,11 @@ private struct DesignBoardContent: View {
             } else if let id = model.selected, let comment = model.pins.first(where: { $0.id == id }) {
                 let working = model.designs.agentWorking(model.ref)
                 let answer = RemoteDesignPresentation.answer(comment)
-                NWPhoneCommentCard(number: comment.number, target: RemoteDesignPresentation.target(comment),
+                SHPhoneCommentCard(number: comment.number, target: RemoteDesignPresentation.target(comment),
                                    meta: RemoteDesignPresentation.meta(comment.author, at: comment.createdAt, now: .now),
                                    text: comment.text,
                                    status: RemoteDesignPresentation.updating(comment, agentWorking: working, board: model.label),
-                                   answer: answer.map { NWCommentEntry(id: $0.id.uuidString, author: "Design agent",
+                                   answer: answer.map { SHCommentEntry(id: $0.id.uuidString, author: "Design agent",
                                                                        age: RemoteDesignPresentation.age($0.createdAt, now: .now), text: $0.text) })
                 .equatable()
             }
@@ -349,7 +349,7 @@ private struct DesignCommentDraftCard: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        NWCommentEditor(text: $model.draftText, isFocused: $focused, placeholder: "Comment for the design agent",
+        SHCommentEditor(text: $model.draftText, isFocused: $focused, placeholder: "Comment for the design agent",
                         context: "on \(model.label) · \(target)",
                         onSave: { Task { await model.sendDraft() } }, onCancel: { model.cancelDraft() })
             .disabled(model.sending)
@@ -369,8 +369,8 @@ private struct DesignBoardCanvas: View {
             let space = CGSize(width: proxy.size.width - 2 * MobileLayout.gutter,
                                height: proxy.size.height - 2 * MobileDesignLayout.boardTop)
             ZStack(alignment: .top) {
-                NWDotGrid(spacing: NWDesignMetrics.gridSpacing)
-                    .background(Color.nw.bgBase)
+                SHDotGrid(spacing: SHDesignMetrics.gridSpacing)
+                    .background(Color.sh.bgBase)
                     .contentShape(Rectangle())
                     .onTapGesture { model.selected = nil }
                 if let live = model.live, let board = model.board {
@@ -393,15 +393,15 @@ private struct DesignBoardCanvas: View {
     }
 
     private func boardLayer(_ live: DesignLiveBoard, size: CGSize, scale: CGFloat) -> some View {
-        NWBoardSurface(size: size, selected: false) {
+        SHBoardSurface(size: size, selected: false) {
             DesignLiveBoardView(board: live, zoom: scale)
                 .frame(width: size.width, height: size.height)
                 .overlay {
                     if !live.booted {
                         if live.failure != nil {
-                            Text(live.failure ?? "").nwText(.caption).foregroundStyle(Color.nw.textTertiary)
+                            Text(live.failure ?? "").shText(.caption).foregroundStyle(Color.sh.textTertiary)
                         } else {
-                            ProgressView().progressViewStyle(.nwSpinner)
+                            ProgressView().progressViewStyle(.shSpinner)
                         }
                     }
                 }
@@ -414,17 +414,17 @@ private struct DesignBoardCanvas: View {
                         Task { await model.tap(at: CGPoint(x: location.x / scale, y: location.y / scale)) }
                     }
                 if let draft = model.draft {
-                    NWSelectionRing(.selected, tag: draft.tag)
+                    SHSelectionRing(.selected, tag: draft.tag)
                         .frame(width: draft.rect.width * scale, height: draft.rect.height * scale)
                         .offset(x: draft.rect.minX * scale, y: draft.rect.minY * scale)
                         .allowsHitTesting(false)
                 }
                 ForEach(model.pins) { comment in
                     if let rect = model.pinRects[comment.id] {
-                        Button { model.selected = comment.id } label: { NWCommentPin(comment.number) }
+                        Button { model.selected = comment.id } label: { SHCommentPin(comment.number) }
                             .buttonStyle(.plain)
-                            .frame(width: NWDesignMetrics.pinSize, height: NWDesignMetrics.pinSize)
-                            .offset(x: rect.maxX * scale - NWDesignMetrics.pinSize / 2, y: rect.minY * scale - NWDesignMetrics.pinSize / 2)
+                            .frame(width: SHDesignMetrics.pinSize, height: SHDesignMetrics.pinSize)
+                            .offset(x: rect.maxX * scale - SHDesignMetrics.pinSize / 2, y: rect.minY * scale - SHDesignMetrics.pinSize / 2)
                             .accessibilityLabel("Comment \(comment.number) on \(RemoteDesignPresentation.target(comment))")
                     }
                 }
@@ -441,7 +441,7 @@ private struct DesignBoardCanvas: View {
                     model.zoom = RemoteDesignPresentation.clampZoom(model.zoom * value.magnification)
                     if model.zoom == 1 { model.pan = .zero }
                 },
-            DragGesture(minimumDistance: NW.Space.l)
+            DragGesture(minimumDistance: SH.Space.l)
                 .updating($drag) { value, state, _ in state = value.translation }
                 .onEnded { value in
                     if model.zoom > 1 {
@@ -465,7 +465,7 @@ enum DesignBoardTools {
     static let boards = "boards"
     static let export = "export"
 
-    static let all: [NWBoardToolbar.Tool] = [
+    static let all: [SHBoardToolbar.Tool] = [
         .init(id: comment, title: "Comment", symbol: "text.bubble"),
         .init(id: ask, title: "Ask the agent", symbol: "sparkle"),
         .init(id: boards, title: "Boards", symbol: "square.grid.2x2"),

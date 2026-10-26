@@ -31,11 +31,11 @@ struct ArtifactsTab: View {
             ArtifactView(store: store, actions: actions, artifact: open)
                 .id(open.path)
         } else if store.artifacts.isEmpty {
-            NWArtifactEmpty(store.snapshot == nil ? "Loading the thread…" : "No artifacts", line: "Files the agent makes in this thread show up here.")
+            SHArtifactEmpty(store.snapshot == nil ? "Loading the thread…" : "No artifacts", line: "Files the agent makes in this thread show up here.")
         } else {
             // Ages are coarse ("6m ago"): the list redraws once a minute, and whenever the thread changes.
             TimelineView(.periodic(from: .now, by: 60)) { context in
-                NWArtifactList(store.artifacts.map { ArtifactRows.row($0, now: context.date) }, selection: actions.selection, open: { actions.show($0) })
+                SHArtifactList(store.artifacts.map { ArtifactRows.row($0, now: context.date) }, selection: actions.selection, open: { actions.show($0) })
             }
         }
     }
@@ -43,8 +43,8 @@ struct ArtifactsTab: View {
 
 /// An artifact as a row or a card says it.
 enum ArtifactRows {
-    static func row(_ artifact: NativeArtifact, now: Date = Date()) -> NWArtifactRow {
-        NWArtifactRow(id: artifact.path, name: artifact.name, detail: artifact.detail(now: now), symbol: artifact.kind.symbol)
+    static func row(_ artifact: NativeArtifact, now: Date = Date()) -> SHArtifactRow {
+        SHArtifactRow(id: artifact.path, name: artifact.name, detail: artifact.detail(now: now), symbol: artifact.kind.symbol)
     }
 }
 
@@ -54,7 +54,7 @@ private struct ArtifactView: View {
     var store: NativeThreadStore
     let actions: ArtifactsActions
     let artifact: NativeArtifact
-    @State private var mode: NWArtifactMode = .preview
+    @State private var mode: SHArtifactMode = .preview
     @State private var state = Loaded.loading
     @State private var attempt = 0
 
@@ -67,25 +67,25 @@ private struct ArtifactView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            NWArtifactBar(name: artifact.name, symbol: artifact.kind.symbol, hasPreview: artifact.kind.hasPreview, mode: $mode,
+            SHArtifactBar(name: artifact.name, symbol: artifact.kind.symbol, hasPreview: artifact.kind.hasPreview, mode: $mode,
                           back: { actions.show(nil) }) {
-                HStack(spacing: NW.Space.xxs) {
+                HStack(spacing: SH.Space.xxs) {
                     if let editor = editorURL {
                         Button { ArtifactEditor.open(editor, editor: actions.editor) } label: { Image(systemName: "arrow.up.forward.square") }
-                            .buttonStyle(.nwIcon)
-                            .nwHelp("Open in your editor")
+                            .buttonStyle(.shIcon)
+                            .shHelp("Open in your editor")
                             .accessibilityLabel("Open in your editor")
                     }
                     Button(action: saveCopy) { Image(systemName: "square.and.arrow.down") }
-                        .buttonStyle(.nwIcon)
+                        .buttonStyle(.shIcon)
                         .disabled(data == nil)
-                        .nwHelp("Save a copy")
+                        .shHelp("Save a copy")
                         .accessibilityLabel("Save a copy")
                 }
             }
             content
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .task(id: attempt) { await load() }
         // A rewrite of the file while it is open reads it again.
         .task(id: artifact.createdAt) { if case .ready = state { await load() } }
@@ -102,11 +102,11 @@ private struct ArtifactView: View {
     @ViewBuilder private var content: some View {
         switch state {
         case .loading:
-            NWArtifactNotice(.loading)
+            SHArtifactNotice(.loading)
         case .unavailable:
-            NWArtifactNotice(.unavailable)
+            SHArtifactNotice(.unavailable)
         case .failed(let message):
-            NWArtifactNotice(.failed(message)) { attempt += 1 }
+            SHArtifactNotice(.failed(message)) { attempt += 1 }
         case .ready(let document, _):
             ArtifactBody(document: document, mode: mode)
         }
@@ -143,27 +143,27 @@ private struct ArtifactView: View {
 /// An artifact's content by kind and mode.
 struct ArtifactBody: View {
     let document: NativeArtifactDocument
-    let mode: NWArtifactMode
+    let mode: SHArtifactMode
 
     var body: some View {
         switch (document, mode) {
         case (.markdown(let blocks, _), .preview):
-            // Night Watch colors, so it follows light and dark; the thread's own prose renderer.
+            // Shepherd Design colors, so it follows light and dark; the thread's own prose renderer.
             ScrollView {
                 Prose(blocks: blocks, maxWidth: .infinity)
-                    .padding(NWArtifactMetrics.documentInset)
+                    .padding(SHArtifactMetrics.documentInset)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         case (.html(let html), .preview):
             // Its own styles on its own background (the web view's white where the page sets none).
-            NWArtifactWebView(html: html)
+            SHArtifactWebView(html: html)
         case (.svg(let svg), .preview):
-            NWArtifactWebView(svg: svg)
+            SHArtifactWebView(svg: svg)
         case (.text(let text), _):
-            NWArtifactSource(text)
+            SHArtifactSource(text)
         default:
-            NWArtifactSource(document.source)
+            SHArtifactSource(document.source)
         }
     }
 }
@@ -197,7 +197,7 @@ struct ArtifactCardItem: View, Equatable {
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.artifact == rhs.artifact }
 
     var body: some View {
-        NWArtifactCard(ArtifactRows.row(artifact), open: openArtifact.map { open in { open(artifact.path) } })
+        SHArtifactCard(ArtifactRows.row(artifact), open: openArtifact.map { open in { open(artifact.path) } })
             .frame(maxWidth: AppLayout.proseMaxWidth, alignment: .leading)
     }
 }

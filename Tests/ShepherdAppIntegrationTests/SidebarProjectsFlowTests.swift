@@ -90,7 +90,7 @@ struct SidebarProjectsFlowTests {
             ListPerf.settle(window)
             guard let scroll = ListPerf.scrollView(in: window), let document = scroll.documentView?.bounds.height else { return false }
             return vm.sidebarWalkRows.contains { $0.id == last.id }
-                && scroll.contentView.bounds.maxY > document - 8 * NWDensity.standard.rowHeight
+                && scroll.contentView.bounds.maxY > document - 8 * SHDensity.standard.rowHeight
         }
         #expect(vm.selectedSidebarRow == last.id)
     }

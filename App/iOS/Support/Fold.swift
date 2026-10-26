@@ -73,7 +73,7 @@ struct PadListDetail<List: View, Detail: View, Single: View>: View {
                     list
                         .paneWidth(fold?.lowerBound ?? listWidth)
                         .padding(.trailing, fold.map { $0.upperBound - $0.lowerBound } ?? 0)
-                    NWHairline(.vertical)
+                    SHHairline(.vertical)
                     detail.frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }

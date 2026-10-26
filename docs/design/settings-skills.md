@@ -20,8 +20,8 @@ back. The page sits between Instructions and Remote in the nav, with `graduation
   700pt), and trailing, bottom-aligned: Add from repo… (secondary, `plus`) and Browse skills.sh
   (primary, a glass). Both open sheets (below). The blocks are 18pt apart, the list and the 280pt
   rail 28pt apart.
-- **Toolbar:** a 240pt `NWSearchField` ("Filter skills", names and descriptions, and a package's name), then
-  All · On · Updates with their counts ("All 8", "On 7", "Updates 2", an `NWSegmentedPicker`), a
+- **Toolbar:** a 240pt `SHSearchField` ("Filter skills", names and descriptions, and a package's name), then
+  All · On · Updates with their counts ("All 8", "On 7", "Updates 2", an `SHSegmentedPicker`), a
   spacer, "Checked 2h ago" in 12 `textTertiary` (when the first host last looked for updates:
   "Checked just now", "Not checked yet"; it ages by the minute), and Update N (small secondary,
   `arrow.down.to.line`) while any skill has a newer commit.
@@ -43,11 +43,11 @@ back. The page sits between Instructions and Remote in the nav, with `graduation
     updates.").
   - Use (84pt): "Auto" in a bordered 20pt tag, or "/skill only" in mono on `bgSelected`.
   - Updated (60pt): the day it last changed ("Sep 18", mono 11.5 `textTertiary`); the Update pill
-    (`NWUpdatePill`, 22pt, `lanternText` on `lanternTint`) while a newer commit waits, which
+    (`SHUpdatePill`, 22pt, `lanternText` on `lanternTint`) while a newer commit waits, which
     installs it; "Updating" shimmering while it goes (nothing spins).
   - a chevron: a click anywhere on the row opens its detail in place, below it, one row at a time
     (`bgHover` while open or hovered).
-  - "not used" (`NWTag`) after the name when pi uses a same-named skill from the user's pi setup
+  - "not used" (`SHTag`) after the name when pi uses a same-named skill from the user's pi setup
     instead; its tooltip names where ("Not used: pi uses the one in ~/.pi/agent/skills.").
   - Empty: "No skills yet. Browse skills.sh, or add them from a repo.", "No skill matches “…”.",
     "No skill is on.", "Every skill is up to date.", or "Reading skills…". Filtered, an Installed
@@ -66,7 +66,7 @@ back. The page sits between Instructions and Remote in the nav, with `graduation
     same-named skill that comes first reads "not used", its description replaced by "Not used:
     pi uses the one in ~/.agents/skills.". On This Mac its menu offers Open SKILL.md and Show in
     Finder.
-  - Pi couldn't be asked: the group's title over the reason (`NWInlineProblem`: "Couldn’t find
+  - Pi couldn't be asked: the group's title over the reason (`SHInlineProblem`: "Couldn’t find
     pi, so the skills from your pi setup aren’t listed.", "…node…", "This pi is too old…", "pi
     took too long…"). A remote first host too old to report them says so in the note row.
   - Last, on `bgSunken`: "A repository’s own skills (.shepherd/skills, .agents/skills) load only in
@@ -75,7 +75,7 @@ back. The page sits between Instructions and Remote in the nav, with `graduation
     in a thread's / menu.
 - **The detail** (`SkillDetail`, on `bgSunken` under a hairline, 62pt in, 14pt apart): three
   columns 28pt apart under section labels:
-  - **Use it:** two radio options (`NWRadioOption`): Automatically, "The agent reads it when a
+  - **Use it:** two radio options (`SHRadioOption`): Automatically, "The agent reads it when a
     task calls for it. Its description sits in every prompt, about 90 tokens." (the estimate is
     the skill's own), and "Only when I type /skill:pdf", "Stays out of the agent’s prompt until
     you call it." A choice rewrites the skill's SKILL.md (`disable-model-invocation`) on every
@@ -86,10 +86,10 @@ back. The page sits between Instructions and Remote in the nav, with `graduation
     comparison). A Local skill says "Copied into the skills folder by hand. It never updates."; one
     copied from the user's pi says "Copied from your pi (~/.pi/agent/skills/pdf). It changes only
     when you re-import skills in Settings ▸ Pi."
-  - **Hosts:** a row per host (`NWHostStateRow`: a check, a filled dot while it changes there, a
+  - **Hosts:** a row per host (`SHHostStateRow`: a check, a filled dot while it changes there, a
     hollow one while it's away; the name in a 70pt mono column; the state): "installed",
     "updating", "not installed", "offline · updates later", "needs a newer Shepherd".
-  - Under a hairline: the top of the skill's folder as chips (`NWSkillFileChip`: "SKILL.md",
+  - Under a hairline: the top of the skill's folder as chips (`SHSkillFileChip`: "SKILL.md",
     "reference.md", "scripts/ 8" with a code glyph for scripts, a folder glyph for other folders),
     then Open SKILL.md (small secondary) and Show folder (small ghost), which act on This Mac's copy
     and disable when This Mac hasn't got one, and Remove (small danger): it takes the skill off every
@@ -99,7 +99,7 @@ back. The page sits between Instructions and Remote in the nav, with `graduation
     skill. When a task matches one, it reads that skill’s files and follows them. Type /skill:name
     to use one on purpose." (12.5/1.55, the command in mono `textPrimary`), then the In every prompt
     card (radius 10, `bgWindow`): "In every prompt" with "~610 tokens" (mono), a 6pt bar
-    (`NWBudgetBar`) with a segment per skill the agent loads (`running` for an automatic one, a
+    (`SHBudgetBar`) with a segment per skill the agent loads (`running` for an automatic one, a
     rule for a /skill one), and "6 automatic skills. Full files load only when used." They count
     every skill the agent loads, pi's own included, and not one pi passes over. Its tooltip: "The
     context meter counts this as part of the system prompt."
@@ -128,14 +128,14 @@ then a list (560pt) beside the selected item's preview, a hairline between.
   `https://api.useshepherd.app` without a user API key. Browser links stay on skills.sh.
   - A 38pt search field ("Search skills, repos and owners", a glass, 14pt text, a clear button; a
     `lantern` line while focused), focused when the sheet opens.
-  - Without a search: Trending · All time · Hot · Official (`NWSegmentedPicker`), a rule, then
+  - Without a search: Trending · All time · Hot · Official (`SHSegmentedPicker`), a rule, then
     topics as 26pt capsules (All, React, Next.js, Design & UI, Databases, Testing, Docs & files,
     Agent workflows; the chosen one on `bgSelected`). With one: "9 skills for “postgres”" and
     Sort: Installs or Name.
   - The list: a 30pt header ("Trending · last 24 hours", "Hot · last hour", "React · Trending"; Installs) over
     rows at least 58pt (`SkillResultRow`): the place in a ranked list (mono 11.5), the name in mono
     13/600 with the search's matches in `lanternText` and skills.sh's Official seal
-    (`NWOfficialSeal`), the repository in mono 11.5 `textTertiary`, and a 96pt column with the
+    (`SHOfficialSeal`), the repository in mono 11.5 `textTertiary`, and a 96pt column with the
     installs ("3.6M", mono 12) over Install (small secondary), "1 of 3 hosts" with a 64 × 3 meter
     (a segment per host: `done`, `running`, a rule) while it installs, "Installed" with a check in
     `done`, or the Update pill. The selected row is on `bgSelected`.

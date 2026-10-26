@@ -111,7 +111,7 @@ final class ReviewStore {
     private(set) var summaries: [ReviewFileSummary] = []
     private(set) var totals = ReviewTotals(files: 0, added: 0, removed: 0, viewed: 0)
     /// The iPad's file chips, one per row.
-    private(set) var chips: [NWFileStrip.Item] = []
+    private(set) var chips: [SHFileStrip.Item] = []
     /// Comments by file, then line, so a line finds its comment without a scan.
     private(set) var commentsByFile: [String: [Int: ReviewComment]] = [:]
     private(set) var expandedRuns: [String: Set<String>] = [:]
@@ -543,7 +543,7 @@ final class ReviewStore {
         guard texts[id] == nil, textLoads[id] == nil, let file = diffs[id], !file.isBinary else { return }
         let requestID = UUID()
         textLoads[id] = requestID
-        let palette = ReviewTextPalette(Color.nw)
+        let palette = ReviewTextPalette(Color.sh)
         let words = wordDiffs
         Task {
             let lines = await Task.detached(priority: .userInitiated) { ReviewText.prepare(file, palette: palette, words: words) }.value
@@ -595,7 +595,7 @@ final class ReviewStore {
             switch row.kind {
             case .hunk(let header): return .hunk(id: row.id, header: header, gap: gaps ? gapsBefore[row.id] ?? 0 : nil)
             case .line(let line): return .line(content(line, id: row.id, colors: colors))
-            case .collapsed(let key, let count, let kind, let range): return .fold(id: key, count: count, kind: NWDiffLineKind(kind), range: range)
+            case .collapsed(let key, let count, let kind, let range): return .fold(id: key, count: count, kind: SHDiffLineKind(kind), range: range)
             }
         }
         unifiedCache[fileID] = CachedRows(version: version, expanded: expanded, gaps: gaps, rows: rows)
@@ -617,15 +617,15 @@ final class ReviewStore {
                 return .pair(id: row.id, old: old.map { content($0, id: "\(row.id)\u{0}o", colors: colors) },
                              new: new.map { content($0, id: "\(row.id)\u{0}n", colors: colors) })
             case .collapsed(let key, let count, let kind, let range, let side):
-                return .fold(id: row.id, key: key, count: count, kind: NWDiffLineKind(kind), range: range, side: NWSplitFoldRow.Side(side))
+                return .fold(id: row.id, key: key, count: count, kind: SHDiffLineKind(kind), range: range, side: SHSplitFoldRow.Side(side))
             }
         }
         splitCache[fileID] = CachedRows(version: version, expanded: expanded, gaps: true, rows: rows)
         return rows
     }
 
-    private func content(_ line: DiffLine, id: String, colors: [Int: AttributedString]) -> NWDiffLineContent {
-        NWDiffLineContent(id: id, key: line.id, kind: NWDiffLineKind(line.kind), oldNumber: line.oldLine, newNumber: line.newLine,
+    private func content(_ line: DiffLine, id: String, colors: [Int: AttributedString]) -> SHDiffLineContent {
+        SHDiffLineContent(id: id, key: line.id, kind: SHDiffLineKind(line.kind), oldNumber: line.oldLine, newNumber: line.newLine,
                           text: colors[line.id] ?? AttributedString(line.text), source: line.text)
     }
 
@@ -755,7 +755,7 @@ final class ReviewStore {
         if summaries != rows {
             summaries = rows
             chips = rows.map {
-                NWFileStrip.Item(id: $0.id, path: $0.path, status: NWFileStatus($0.status), added: $0.added, removed: $0.removed, isViewed: $0.viewed)
+                SHFileStrip.Item(id: $0.id, path: $0.path, status: SHFileStatus($0.status), added: $0.added, removed: $0.removed, isViewed: $0.viewed)
             }
         }
         if self.totals != totals { self.totals = totals }
@@ -769,8 +769,8 @@ final class ReviewStore {
 /// unchanged lines before it), a line, or a fold.
 enum ReviewUnifiedRow: Identifiable, Equatable {
     case hunk(id: String, header: String, gap: Int?)
-    case line(NWDiffLineContent)
-    case fold(id: String, count: Int, kind: NWDiffLineKind, range: String)
+    case line(SHDiffLineContent)
+    case fold(id: String, count: Int, kind: SHDiffLineKind, range: String)
 
     var id: String {
         switch self {
@@ -783,8 +783,8 @@ enum ReviewUnifiedRow: Identifiable, Equatable {
 /// A row of a file's diff side by side, ready to draw.
 enum ReviewSplitDisplayRow: Identifiable, Equatable {
     case hunk(id: String, header: String, gap: Int)
-    case pair(id: String, old: NWDiffLineContent?, new: NWDiffLineContent?)
-    case fold(id: String, key: String, count: Int, kind: NWDiffLineKind, range: String, side: NWSplitFoldRow.Side)
+    case pair(id: String, old: SHDiffLineContent?, new: SHDiffLineContent?)
+    case fold(id: String, key: String, count: Int, kind: SHDiffLineKind, range: String, side: SHSplitFoldRow.Side)
 
     var id: String {
         switch self {
@@ -798,16 +798,16 @@ struct ReviewTextPalette: Sendable {
     let keyword, type, string, number, function, comment: Color
     let addedWord, removedWord: Color
 
-    @MainActor init(_ nw: NWPalette) {
-        keyword = nw.synKeyword
-        type = nw.synType
-        string = nw.synString
-        number = nw.synNumber
-        function = nw.synFunction
-        comment = nw.synComment
+    @MainActor init(_ sh: SHPalette) {
+        keyword = sh.synKeyword
+        type = sh.synType
+        string = sh.synString
+        number = sh.synNumber
+        function = sh.synFunction
+        comment = sh.synComment
         // Changed words take the line's tint again, over the line's own: a stronger tint.
-        addedWord = nw.doneTint
-        removedWord = nw.failedTint
+        addedWord = sh.doneTint
+        removedWord = sh.failedTint
     }
 }
 
@@ -868,7 +868,7 @@ extension DiffFile {
     }
 }
 
-extension NWDiffLineKind {
+extension SHDiffLineKind {
     init(_ kind: DiffLine.Kind) {
         switch kind {
         case .context: self = .context
@@ -878,7 +878,7 @@ extension NWDiffLineKind {
     }
 }
 
-extension NWFileStatus {
+extension SHFileStatus {
     init(_ status: ReviewFileStatus) {
         switch status {
         case .modified: self = .modified
@@ -889,7 +889,7 @@ extension NWFileStatus {
     }
 }
 
-extension NWSplitFoldRow.Side {
+extension SHSplitFoldRow.Side {
     init(_ side: ReviewSplitRow.Side) {
         switch side {
         case .old: self = .old
@@ -899,9 +899,9 @@ extension NWSplitFoldRow.Side {
     }
 }
 
-extension NWReviewFileRow.Item {
+extension SHReviewFileRow.Item {
     init(_ summary: ReviewFileSummary) {
-        self.init(name: summary.name, directory: summary.directory, status: NWFileStatus(summary.status), added: summary.added,
+        self.init(name: summary.name, directory: summary.directory, status: SHFileStatus(summary.status), added: summary.added,
                   removed: summary.removed, comments: summary.comments, viewed: summary.viewed)
     }
 }

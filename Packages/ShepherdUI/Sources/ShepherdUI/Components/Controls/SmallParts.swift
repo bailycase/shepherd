@@ -1,11 +1,11 @@
 import SwiftUI
 
-/// Keycaps for a real, wired shortcut: `NWKeycap("⇧⌘B")` draws one cap per key. Menus, the
+/// Keycaps for a real, wired shortcut: `SHKeycap("⇧⌘B")` draws one cap per key. Menus, the
 /// palette, and settings only; never under the composer, never for an unwired chord.
-public struct NWKeycap: View {
+public struct SHKeycap: View {
     let keys: [String]
     @Environment(\.displayScale) private var displayScale
-    @Environment(\.nwControlScale) private var scale
+    @Environment(\.shControlScale) private var scale
 
     /// Splits a display chord ("⇧⌘N") into caps: each modifier, then the key.
     public init(_ chord: String) {
@@ -23,27 +23,27 @@ public struct NWKeycap: View {
     public init(keys: [String]) { self.keys = keys }
 
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         // The Settings boards' caps: 22pt at radius 5, mono 11.5 in `textPrimary`, 4pt apart.
         let settings = scale == .settings
-        let M = NWSettingsControlMetrics.self
+        let M = SHSettingsControlMetrics.self
         let side: CGFloat = settings ? M.keycapHeight : 18
-        let radius = settings ? M.keycapRadius : NW.Radius.xs
+        let radius = settings ? M.keycapRadius : SH.Radius.xs
         HStack(spacing: settings ? M.keycapSpacing : 3) {
             ForEach(Array(keys.enumerated()), id: \.offset) { _, key in
                 Text(key)
-                    .font(.nwMono(settings ? M.keycapTextSize : 10.5))
-                    .foregroundStyle(settings ? nw.textPrimary : nw.textSecondary)
-                    .padding(.horizontal, settings ? M.keycapPadding : NW.Space.xs)
+                    .font(.shMono(settings ? M.keycapTextSize : 10.5))
+                    .foregroundStyle(settings ? sh.textPrimary : sh.textSecondary)
+                    .padding(.horizontal, settings ? M.keycapPadding : SH.Space.xs)
                     .frame(minWidth: side, minHeight: side)
-                    .background(nw.bgRaised, in: RoundedRectangle(cornerRadius: radius))
-                    .nwBorder(nw.lineStrong, radius: radius)
+                    .background(sh.bgRaised, in: RoundedRectangle(cornerRadius: radius))
+                    .shBorder(sh.lineStrong, radius: radius)
                     // The board's heavier bottom edge (1.5px against 1px): a cap, not a box. A
                     // second hairline just above the border's, since a device pixel does not split.
                     .overlay(alignment: .bottom) {
-                        NWHairline(color: nw.lineStrong)
+                        SHHairline(color: sh.lineStrong)
                             .padding(.horizontal, radius)
-                            .padding(.bottom, NW.hairline(displayScale))
+                            .padding(.bottom, SH.hairline(displayScale))
                     }
             }
         }
@@ -54,7 +54,7 @@ public struct NWKeycap: View {
 }
 
 /// A count ("19", "3"): neutral, needs-you, or failed (Controls board).
-public struct NWCountBadge: View {
+public struct SHCountBadge: View {
     public enum Tone: Sendable { case neutral, attention, failed }
 
     let count: Int
@@ -66,28 +66,28 @@ public struct NWCountBadge: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let (fill, text): (Color, Color) = switch tone {
-        case .neutral: (nw.bgSelected, nw.textSecondary)
-        case .attention: (nw.lantern, nw.textOnLantern)
-        case .failed: (nw.failed, nw.textOnFailed)
+        case .neutral: (sh.bgSelected, sh.textSecondary)
+        case .attention: (sh.lantern, sh.textOnLantern)
+        case .failed: (sh.failed, sh.textOnFailed)
         }
         Text("\(count)")
-            .font(.nwMono(10, .semibold))
+            .font(.shMono(10, .semibold))
             .monospacedDigit()
             .foregroundStyle(text)
-            .nwContentTransition(.numeric())
+            .shContentTransition(.numeric())
             .padding(.horizontal, 5)
             .frame(minWidth: 18, minHeight: 16)
             .background(fill, in: Capsule())
             .fixedSize()
-            .nwComponentAnimation(.content, value: count)
-            .nwComponentAnimation(.content, value: tone)
+            .shComponentAnimation(.content, value: count)
+            .shComponentAnimation(.content, value: tone)
     }
 }
 
 /// A small tag for roles, models, kinds ("worker", "claude-sonnet", "prompt").
-public struct NWTag: View {
+public struct SHTag: View {
     let text: String
     let mono: Bool
     let foreground: Color?
@@ -101,19 +101,19 @@ public struct NWTag: View {
 
     public var body: some View {
         Text(text)
-            .font(mono ? .nwMono(10.5) : .nwSans(11))
-            .foregroundStyle(foreground ?? .nw.textSecondary)
+            .font(mono ? .shMono(10.5) : .shSans(11))
+            .foregroundStyle(foreground ?? .sh.textSecondary)
             .lineLimit(1)
-            .padding(.horizontal, NW.Space.s)
+            .padding(.horizontal, SH.Space.s)
             .frame(height: 18)
-            .background(Color.nw.bgSelected, in: RoundedRectangle(cornerRadius: NW.Radius.xs))
+            .background(Color.sh.bgSelected, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
             .fixedSize()
     }
 }
 
 extension View {
     /// Hover help with its shortcut ("Review changes ⇧⌘B"). Rendered by the system tooltip.
-    public func nwHelp(_ label: String, shortcut: String? = nil) -> some View {
+    public func shHelp(_ label: String, shortcut: String? = nil) -> some View {
         help(shortcut.map { "\(label)  \($0)" } ?? label)
     }
 }

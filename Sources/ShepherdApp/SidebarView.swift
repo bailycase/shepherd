@@ -5,7 +5,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-/// The sidebar (NWNavigation; Main, Running, NavNewThread, NavAutomations, NavHosts): the top bar
+/// The sidebar (SHNavigation; Main, Running, NavNewThread, NavAutomations, NavHosts): the top bar
 /// with Search and Hide sidebar, the destinations (New thread, Automations, More ▸ Hosts and
 /// Extensions), activity groups, Designs, and the footer with the Mac's user and Settings.
 /// Subagents have no rows; their questions go to their parent agent.
@@ -17,9 +17,9 @@ struct SidebarView: View {
     var vm: ShepherdViewModel
 
     var body: some View {
-        let _ = NWRenderProbe.tick("shell.sidebar")
+        let _ = SHRenderProbe.tick("shell.sidebar")
         let keys = vm.keybindings
-        NWSidebar(topBar: NWSidebarTopBar(searchShortcut: keys.display(.commandPalette), hideShortcut: keys.display(.toggleSidebar),
+        SHSidebar(topBar: SHSidebarTopBar(searchShortcut: keys.display(.commandPalette), hideShortcut: keys.display(.toggleSidebar),
                                           search: { vm.showCommandPalette = true }, hide: { vm.toggleSidebar() })) {
             VStack(spacing: 0) {
                 SidebarDestinations(vm: vm)
@@ -27,7 +27,7 @@ struct SidebarView: View {
             }
         } footer: {
             let footer = vm.sidebarFooterIdentity ?? SidebarDerivation.footer
-            NWSidebarFooter(name: footer.name, detail: footer.detail, settingsShortcut: "⌘,") { vm.showSettings = true }
+            SHSidebarFooter(name: footer.name, detail: footer.detail, settingsShortcut: "⌘,") { vm.showSettings = true }
         }
     }
 }
@@ -41,16 +41,16 @@ private struct SidebarDestinations: View {
     var body: some View {
         let rows = SidebarDerivation.destinations(shown: vm.shownDestination, newThreadChord: vm.keybindings.display(.newAgent),
                                                   designs: vm.designToolEnabled)
-        VStack(alignment: .leading, spacing: NWSidebarMetrics.rowSpacing) {
+        VStack(alignment: .leading, spacing: SHSidebarMetrics.rowSpacing) {
             ForEach(rows) { row in
-                NWSidebarDestination(row.title, icon: row.icon, selected: row.selected, child: row.child, trailing: row.trailing) {
+                SHSidebarDestination(row.title, icon: row.icon, selected: row.selected, child: row.child, trailing: row.trailing) {
                     vm.openSidebarDestination(row.target)
                 }
                 .equatable()
                 .accessibilityLabel(row.title)
             }
         }
-        .padding(.vertical, NWSidebarMetrics.destinationsPadding)
+        .padding(.vertical, SHSidebarMetrics.destinationsPadding)
         .padding(.horizontal, AppLayout.sidebarPadding)
     }
 }
@@ -72,7 +72,7 @@ private struct SidebarListsView: View {
                     }
                 }
                 .padding(.horizontal, AppLayout.sidebarPadding)
-                .padding(.bottom, NW.Space.m)
+                .padding(.bottom, SH.Space.m)
             }
             .scrollIndicators(.hidden)
             // Keyboard selection (⌘1–9, ⌘↑/↓) can land on a row scrolled out of view, or in a
@@ -83,7 +83,7 @@ private struct SidebarListsView: View {
                 vm.openProjectHoldingSelection()
                 vm.openActivitySectionHoldingSelection()
                 DispatchQueue.main.async {
-                    withNWAnimation(.scroll) { proxy.scrollTo(AnyHashable(target)) }
+                    withSHAnimation(.scroll) { proxy.scrollTo(AnyHashable(target)) }
                 }
             }
         }
@@ -100,11 +100,11 @@ private struct SidebarActivityList: View {
             ForEach(items) { item in
                 SidebarItemView(vm: vm, item: item)
                     .equatable()
-                    .nwTransition(.list)
+                    .shTransition(.list)
             }
         }
         // Rows arriving, leaving, and moving up animate; the key is the rows' ids, never the rows.
-        .nwAnimation(.list, value: items.map(\.id))
+        .shAnimation(.list, value: items.map(\.id))
     }
 
 }
@@ -121,7 +121,7 @@ private struct SidebarItemView: View, Equatable {
         VStack(spacing: 0) {
             switch item {
             case .header(let section, let count, let collapsed):
-                NWSidebarSectionHeader(section.title, count: count, isExpanded: !collapsed,
+                SHSidebarSectionHeader(section.title, count: count, isExpanded: !collapsed,
                                        attention: section == .needsYou, pulse: section == .working,
                                        toggle: { vm.toggleActivitySection(section) },
                                        markAllSeen: section == .done ? { vm.markAllSidebarDoneSeen() } : nil,
@@ -129,7 +129,7 @@ private struct SidebarItemView: View, Equatable {
             case .project(let project):
                 LogicalProjectSidebarRow(vm: vm, project: project)
             case .row(let row):
-                NWSidebarRow(row.title, leading: row.leading, selected: row.selected, dimmed: row.offline,
+                SHSidebarRow(row.title, leading: row.leading, selected: row.selected, dimmed: row.offline,
                              accessory: accessory(row), hasGoal: row.hasGoal)
                     .help(row.help)
                     .sidebarTapRow { vm.selectSidebarRow(row.id) }
@@ -143,7 +143,7 @@ private struct SidebarItemView: View, Equatable {
 }
 
 private extension SidebarItemView {
-    func accessory(_ row: SidebarListRow) -> NWSidebarRow.Accessory {
+    func accessory(_ row: SidebarListRow) -> SHSidebarRow.Accessory {
         if row.section == .working, case .local(let id) = row.id {
             if case .shortcut = row.accessory { return row.accessory }
             return .activity(vm.sidebarActivitySamples[id] ?? [])
@@ -179,7 +179,7 @@ struct SidebarRowMenu: View {
                 Divider()
                 Button("Delete Automation", role: .destructive) { vm.deleteAutomation(automation) }
             } else {
-                // NWComposer's agent menu: Rename… with its keys, Fork and Copy with their glyphs.
+                // SHComposer's agent menu: Rename… with its keys, Fork and Copy with their glyphs.
                 Button("Rename…") { vm.agentRenameTarget = id }
                     .keyboardShortcut(KeybindingsStore.shared.shortcut(.renameAgent))
                 PinMenuItem(vm: vm, row: row)
