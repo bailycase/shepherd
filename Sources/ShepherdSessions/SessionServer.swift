@@ -3361,14 +3361,14 @@ public final class SessionServer: @unchecked Sendable {
             guard agentActionAllowed(senderID: agentID, requestID: id, client: client,
                                      problem: spawnProblem(sender: agentID, cwd: cwd)) else { return }
             routeAgentPeerRequest(.spawn(agentID: agentID, cwd: cwd, prompt: prompt), requestID: id, client: client)
-        case .createAutomation(let id, let name, let prompt, let cwd, let enabled, let start):
+        case .createAutomation(let id, let name, let prompt, let cwd, let enabled, let start, let deleteAfterRun):
             let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
             let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmedName.isEmpty, !trimmedPrompt.isEmpty, !cwd.isEmpty else {
                 reply(.error(id: id, code: "invalid", message: "name, prompt, and cwd are required"), to: client)
                 return
             }
-            let automation = Automation(name: trimmedName, prompt: trimmedPrompt, cwd: cwd, enabled: enabled)
+            let automation = Automation(name: trimmedName, prompt: trimmedPrompt, cwd: cwd, enabled: enabled, deleteAfterRun: deleteAfterRun)
             routeAutomationRequest(.create(automation: automation, start: start), requestID: id, client: client)
         case .listAutomations(let id):
             routeAutomationRequest(.list, requestID: id, client: client)
@@ -4500,6 +4500,7 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
             failure = thread.turnFailure
+            scheduleAutomationCleanup(agentID: agentID)
         }
         if let index = store.state.agents.firstIndex(where: { $0.id == agentID }) {
             let current = store.state.agents[index].status
@@ -4687,6 +4688,13 @@ public final class SessionServer: @unchecked Sendable {
             projects.remember(state)
         }
         runLog.record(from: before, to: state)
+        // A fast watcher may settle before the GUI has linked its agent to the automation.
+        for automation in state.automations where automation.deleteAfterRun && automation.projectID == nil {
+            if let agentID = automation.agentID,
+               before.automations.first(where: { $0.id == automation.id })?.agentID != agentID {
+                scheduleAutomationCleanup(agentID: agentID)
+            }
+        }
         // An agent that goes takes the copies of design references it was sent, and its tier file.
         if before.agents.count != state.agents.count || before.agents.map(\.id) != state.agents.map(\.id) {
             let gone = Set(before.agents.map(\.id)).subtracting(state.agents.map(\.id))
@@ -5267,6 +5275,32 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     // MARK: - Automations (server queue)
+
+    /// Delete only the saved unscoped watcher, never its agent (which keeps its report/history).
+    /// Recheck the link and actual pi settlement on the queue: an old event cannot delete a new run.
+    private func scheduleAutomationCleanup(agentID: AgentID) {
+        guard let thread = rpcThread(forAgent: agentID) else { return }
+        let ids = store.state.automations.filter {
+            $0.projectID == nil && $0.deleteAfterRun && $0.agentID == agentID
+        }.map(\.id)
+        guard !ids.isEmpty else { return }
+        queue.async { [weak self, weak thread] in
+            guard let self, let thread, self.rpcThread(forAgent: agentID) === thread,
+                  thread.actualTurnSettled, !thread.piBusy, !thread.continuesAfterSettle,
+                  !thread.stopRequested, thread.dialogs.isEmpty, thread.goal?.isActive != true,
+                  thread.goal?.state != .needsYou,
+                  self.store.state.agents.first(where: { $0.id == agentID })?.status != .blocked else { return }
+            do {
+                try self.mutateState { state in
+                    state.automations.removeAll {
+                        ids.contains($0.id) && $0.agentID == agentID && $0.deleteAfterRun && $0.projectID == nil
+                    }
+                }
+            } catch {
+                ShepherdLog.warning("automation cleanup failed: \(error)")
+            }
+        }
+    }
 
     /// Each automation's run whose agent still exists, from any thread without waiting for the
     /// server queue: a state broadcast or awaited mutation is always reflected in it. The local
@@ -6769,6 +6803,7 @@ public final class SessionServer: @unchecked Sendable {
                 server.designMergeTurnSettled(agentID: agentID, thread: thread)
                 server.projectWorkerSettled(agentID: agentID)
                 server.executionSettled(agentID: agentID, thread: thread)
+                server.scheduleAutomationCleanup(agentID: agentID)
             }
             thread.onTurnEvent = { [weak serverWeak] event in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }

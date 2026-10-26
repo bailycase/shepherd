@@ -22,6 +22,7 @@ struct AutomationRestartTests {
         let (orphan, orphanTab) = agent("watch CI", in: runSpace)        // leaked by an older build
         var automation = Automation(name: "watch CI", prompt: "watch", cwd: first.dir.path, enabled: true)
         automation.agentID = current.id
+        automation.deleteAfterRun = true
         try await first.server.putState(ShepherdState(
             spaces: [userSpace, runSpace], tabs: [userTab, currentTab, orphanTab],
             agents: [user, current, orphan], automations: [automation]))
@@ -34,6 +35,7 @@ struct AutomationRestartTests {
         #expect(state.tabs.map(\.id) == [userTab.id])
         #expect(state.automations.map(\.agentID) == [nil])
         #expect(state.automations.map(\.enabled) == [true])
+        #expect(state.automations.map(\.deleteAfterRun) == [true])
         #expect(!state.agents.contains { $0.id == orphan.id })
     }
 }

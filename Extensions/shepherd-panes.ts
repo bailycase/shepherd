@@ -732,7 +732,7 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       "with sleep between checks), the exact success/failure conditions, and to call its " +
       "notify tool then stop when a condition is met. The watch agent does the watching " +
       "itself — its prompt must never instruct it to create further automations. Enabled " +
-      "automations restart when Shepherd relaunches. Set replyToCreator only when the user asked to hear " +
+      "automations restart when Shepherd relaunches unless deleteAfterRun is true. Set replyToCreator only when the user asked to hear " +
       "the result back in this thread: the watch agent then sends it to your thread with agent_send " +
       "(delivery report), which works only while the user allows agent messages from automations; " +
       "otherwise it just notifies.",
@@ -741,6 +741,7 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     parameters: Type.Object({
       name: Type.String({ description: "Short sidebar title, e.g. 'pr-watch #4821'" }),
       prompt: Type.String({ description: "Full instructions for the watch agent" }),
+      deleteAfterRun: Type.Optional(Type.Boolean({ description: "Delete the saved automation after the watcher's turn actually settles (success or failure), not while blocked or retrying (default false). Never auto-restarts after app relaunch, even if enabled. Stop does not count. Keeps the agent/report, but removes the automation's run log." })),
       replyToCreator: Type.Optional(Type.Boolean({ description: "Only when the user asked to hear the result in this thread: asks the watch agent to report completion or failure back to it (default false). Adds instructions, not a guaranteed delivery hook." })),
       cwd: Type.String({ description: "Absolute working directory for the watch agent" }),
       enabled: Type.Optional(
@@ -760,6 +761,7 @@ export default function shepherdPanes(pi: ExtensionAPI) {
         cwd: params.cwd,
         enabled: params.enabled !== false,
         start: params.start !== false,
+        deleteAfterRun: params.deleteAfterRun === true,
       });
       return text(`created automation: ${params.name}`);
     },

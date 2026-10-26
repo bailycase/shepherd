@@ -362,7 +362,16 @@ struct AutomationModelTests {
     @Test func newAutomationsAreEnabledAndStopped() {
         let automation = Automation(name: "pr-watch", prompt: "watch PR 1", cwd: "/tmp")
         #expect(automation.enabled)
+        #expect(!automation.deleteAfterRun)
         #expect(automation.agentID == nil)
+    }
+
+    @Test func automationDeleteAfterRunDefaultsFalseAndRoundTripsTrue() throws {
+        let old = try Fixture.decode(Automation.self, #"{"id":"watch","name":"CI","prompt":"watch","cwd":"/tmp","enabled":true}"#)
+        #expect(!old.deleteAfterRun)
+        var oneShot = old
+        oneShot.deleteAfterRun = true
+        #expect(try Fixture.roundTrip(oneShot) == oneShot)
     }
 
     @Test func automationRoundTripsWithAndWithoutARunningAgent() throws {

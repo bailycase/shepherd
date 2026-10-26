@@ -77,6 +77,18 @@ struct ThreadEventTests {
         }
     }
 
+    @Test func oldSettleCaptureCannotMarkANewerTurnSettled() async throws {
+        let thread = try Thread(bootstrap: false)
+        defer { thread.stop() }
+        let pending = Locked<(() -> Void)?>(nil)
+        thread.queue.sync { thread.state.captureSettledTurn = { finish in pending.withValue { $0 = finish } } }
+        try await thread.feed(#"{"type":"agent_start"}"#, #"{"type":"agent_settled"}"#, #"{"type":"agent_start"}"#)
+        thread.queue.sync {
+            pending.current?()
+            #expect(!thread.state.actualTurnSettled)
+        }
+    }
+
     @Test func skillEventsCoalesceWhileBusyRefreshOnSettleAndDoNothingWhileIdle() async throws {
         let scratch = try makeScratchDirectory("refresh-events")
         defer { try? FileManager.default.removeItem(at: scratch) }

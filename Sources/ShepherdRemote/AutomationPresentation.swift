@@ -213,7 +213,7 @@ public struct AutomationsModel: Equatable, Sendable {
         }
         return AutomationListRow(
             key: key, name: automation.name, prompt: automation.prompt,
-            when: automation.projectID != nil ? "By explicit Project action" : automation.enabled ? "When Shepherd starts" : "By hand",
+            when: automation.projectID != nil ? "By explicit Project action" : automation.enabled && !automation.deleteAfterRun ? "When Shepherd starts" : "By hand",
             place: Self.lastComponent(automation.cwd), cwd: automation.cwd, enabled: automation.enabled,
             status: status, tone: tone, clock: clock,
             run: agent.map { FleetRef(host: host.id, agent: $0.id) }, hostName: host.name, hostTag: tag,

@@ -386,7 +386,7 @@ struct ExtensionSocketTests {
         let client = try ExtensionClient(path: h.socketPath)
         let id = info.id
 
-        try client.send(.createAutomation(id: 1, name: " pr-watch ", prompt: " watch the PR ", cwd: "/tmp/repo", enabled: true, start: true))
+        try client.send(.createAutomation(id: 1, name: " pr-watch ", prompt: " watch the PR ", cwd: "/tmp/repo", enabled: true, start: true, deleteAfterRun: true))
         #expect(try await client.reply() == .ok(id: 1))
         try client.send(.listAutomations(id: 2))
         #expect(try await client.reply() == .automations(id: 2, automations: [info]))
@@ -404,7 +404,7 @@ struct ExtensionSocketTests {
         #expect(requests.count == 6)
         guard case .create(let automation, let start)? = requests.first else { Issue.record("expected create"); return }
         #expect(automation.name == "pr-watch" && automation.prompt == "watch the PR" && automation.cwd == "/tmp/repo")
-        #expect(start)
+        #expect(start && automation.deleteAfterRun)
         #expect(Array(requests.dropFirst()) == [
             .list,
             .update(automationID: id, name: nil, prompt: "new", cwd: nil, enabled: false),
