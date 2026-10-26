@@ -1048,7 +1048,7 @@ def ensure_ios_push(client: AppStoreConnect) -> None:
     if len(matches) != 1 or not isinstance(matches[0].get("id"), str) or not matches[0]["id"]:
         raise AppStoreConnectError("expected exactly one existing iOS App ID")
     identifier = matches[0]["id"]
-    url = f"{client.api}/v1/bundleIds/{urllib.parse.quote(identifier, safe='')}/bundleIdCapabilities?limit=200"
+    url = f"{client.api}/v1/bundleIds/{urllib.parse.quote(identifier, safe='')}/bundleIdCapabilities"
     def enabled():
         return any(row.get("attributes", {}).get("capabilityType") == "PUSH_NOTIFICATIONS"
                    for row in rows(url))
