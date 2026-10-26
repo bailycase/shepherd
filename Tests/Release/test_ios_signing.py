@@ -20,8 +20,14 @@ class IOSSigningTests(unittest.TestCase):
             "application-identifier": f"{self.team}.{release.IOS.bundle_id}",
             "com.apple.developer.team-identifier": self.team,
             "get-task-allow": False,
+            "com.apple.security.application-groups": [release.IOS_GROUP],
         }
         self.profile = {"TeamIdentifier": [self.team], "Entitlements": self.signed.copy()}
+        self.widgets = {
+            "application-identifier": f"{self.team}.{release.IOS_WIDGETS[1]}",
+            "com.apple.security.application-groups": [release.IOS_GROUP],
+        }
+        self.widgets_profile = {"Entitlements": self.widgets.copy()}
         self.commands = []
         self.app_overrides = {}
         self.extra_app = False
@@ -40,23 +46,24 @@ class IOSSigningTests(unittest.TestCase):
                 (payload / "Other.app").mkdir()
         elif args[:2] == ("codesign", "--force"):
             requested = Path(args[args.index("--entitlements") + 1])
-            self.assertEqual(plistlib.loads(requested.read_bytes()), {
-                "aps-environment": "production",
-                # The glance widgets read the app's snapshot through this group.
-                "com.apple.security.application-groups": ["group.com.bailycase.shepherd.ios"],
-            })
+            # The glance widgets read the app's snapshot through this group, so both ask for it.
+            group = {"com.apple.security.application-groups": ["group.com.bailycase.shepherd.ios"]}
+            self.assertEqual(plistlib.loads(requested.read_bytes()),
+                             group if args[-1].endswith(".appex") else {"aps-environment": "production", **group})
             self.assertIn("--generate-entitlement-der", args)
             self.assertEqual(args[args.index("--sign") + 1], "-")
         elif args[:2] == ("codesign", "-d"):
-            output = plistlib.dumps(self.signed)
+            output = plistlib.dumps(self.widgets if args[-1].endswith(".appex") else self.signed)
         elif args[0] == "security":
-            output = plistlib.dumps(self.profile)
+            output = plistlib.dumps(self.widgets_profile if ".appex" in args[-1] else self.profile)
         return subprocess.CompletedProcess(args, 0, output, b"private diagnostics")
 
     def test_preparation_seals_and_reads_back_production_entitlements(self):
         with patch.object(release.subprocess, "run", side_effect=self.native):
             release.prepare_ios_signing("scratch.app")
-        self.assertEqual(len(self.commands), 2)
+        # The extension is sealed before the app that contains it.
+        self.assertEqual([args[-1] for args in self.commands],
+                         ["scratch.app/" + release.IOS_WIDGETS[0]] * 2 + ["scratch.app"] * 2)
         self.assertFalse(Path(self.commands[0][self.commands[0].index("--entitlements") + 1]).exists())
         self.signed.clear()
         with patch.object(release.subprocess, "run", side_effect=self.native):
@@ -66,12 +73,13 @@ class IOSSigningTests(unittest.TestCase):
     def test_export_checks_metadata_signature_and_profile_and_removes_scratch(self):
         with patch.object(release.subprocess, "run", side_effect=self.native):
             release.verify_ios_ipa("scratch.ipa", "321")
-        self.assertEqual([args[0] for args in self.commands], ["ditto", "codesign", "codesign", "security"])
+        self.assertEqual([args[0] for args in self.commands],
+                         ["ditto", "codesign", "codesign", "security", "codesign", "security"])
         self.assertEqual(self.commands[1][1:4], ("--verify", "--deep", "--strict"))
         self.assertFalse(Path(self.commands[0][-1]).exists())
 
     def test_signature_and_profile_fail_closed(self):
-        for target in (self.signed, self.profile["Entitlements"]):
+        for target in (self.signed, self.profile["Entitlements"], self.widgets, self.widgets_profile["Entitlements"]):
             original = target.copy()
             for key in original:
                 for value in (None, "$(UNRESOLVED)", "wrong", True):
