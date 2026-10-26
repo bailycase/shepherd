@@ -257,9 +257,12 @@ struct ToolCallStreamTests {
             contentHashed += await hashed()
         }
         let after = try await t.snapshot()
-        #expect(after.revision == mid.revision, "the content streaming moves nothing")
-        #expect(contentHashed == 0, "\(contentHashed) bytes rehashed by content fragments")
-        #expect(await encodes() <= 1, "a snapshot after content fragments sizes only its fixed part")
+        // 10 KB of content passed: the row's "N KB received" moved at each whole KB
+        // (ResponseVisibility), never per fragment, and never holding or hashing the content.
+        #expect(after.revision - mid.revision <= 10, "the content streaming moves the row once per KB at most")
+        #expect(after.provisional.first { $0.toolCallID == "call_abc" }?.argumentBytes == 9 * 1024, "10,033 bytes so far")
+        #expect(contentHashed <= 10 * #"{"path":"src/big.txt"}"#.utf8.count, "\(contentHashed) bytes rehashed by content fragments")
+        #expect(await encodes() <= 2, "a snapshot after content fragments sizes its fixed part and that row")
     }
     #endif
 }

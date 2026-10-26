@@ -170,7 +170,7 @@ struct ThreadView: View {
                                 .equatable()
                                 .environment(\.nwUserBubbleMetrics, { var metrics = bubbleMetrics; metrics.overlaysCaption = false; return metrics }())
                         }
-                        if thinking, liveRow == nil { (projectActionCards != nil || workerStyle != nil ? AnyView(ProjectLiveLine(startedAt: nil)) : AnyView(NWThinking.live())).nwArrival(settled) }
+                        if thinking, liveRow == nil { (projectActionCards != nil || workerStyle != nil ? AnyView(ProjectLiveLine(startedAt: nil)) : AnyView(LiveWaitLine(wait: store.liveWait))).nwArrival(settled) }
                         if let authNotice {
                             ThreadAuthNoticeView(notice: authNotice, actions: authActions)
                                 .id(ThreadAuthNotice.rowID)
@@ -383,7 +383,7 @@ struct ThreadView: View {
             AgentTurn(presentation: presentation, live: row.live, subagents: TurnSubagents(store.placements[row.id]),
                       subagentActions: subagentActions, startedAt: row.startedAt,
                       retry: retryAction(row, running: running), review: review, recordedTurn: row.recordedTurn,
-                      turnActions: turnActions, thinking: thinking, arriving: arriving,
+                      turnActions: turnActions, thinking: thinking, wait: thinking ? store.liveWait : NativeLiveWait(), arriving: arriving,
                       settled: settled, footer: card == nil, cards: projectCardState(row))
                 .equatable()
                 .modifier(CommentAnswer(inCard: card != nil))

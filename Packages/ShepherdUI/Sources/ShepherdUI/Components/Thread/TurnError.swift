@@ -445,6 +445,11 @@ public struct NWRetryLine: View {
     }
 
     private func line(_ value: String) -> some View {
+        #if os(iOS)
+        // The observed status must not truncate the retry countdown in a narrow scene.
+        Text(value).font(.nw(.ui, weight: .regular)).fixedSize(horizontal: false, vertical: true).nwShimmer(active: true)
+        #else
         Text(value).font(.nw(.ui, weight: .regular)).lineLimit(1).truncationMode(.tail).nwShimmer(active: true)
+        #endif
     }
 }

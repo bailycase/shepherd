@@ -15,7 +15,7 @@ struct ExtensionMessageTests {
     /// give it a sample below.
     static func caseName(_ message: ExtensionMessage) -> String {
         switch message {
-        case .setAgentStatus, .setAgentName, .setAgentSession, .setAgentChildren, .notify, .helloAgent,
+        case .setAgentStatus, .setAgentName, .setAgentSession, .setAgentChildren, .notify, .helloAgent, .responseTiming,
              .helloChildren, .childScope, .childCommandResult, .prepareProjectConfiguration, .listPanes, .openPane, .closePane, .focusPane,
              .sendPaneInput, .readPane, .requestReview, .listAgents, .sendToAgent, .spawnAgent, .moveAgent, .peerMessageReceived,
              .coordinateAgent, .agentResponse, .cancelAgentRequest, .createAutomation, .listAutomations,
@@ -27,7 +27,7 @@ struct ExtensionMessageTests {
             return Wire.caseName(message)
         }
     }
-    static let caseCount = 58
+    static let caseCount = 59
     static let design = DesignID(rawValue: "d1")
 
     static let samples: [ExtensionMessage] = [
@@ -40,6 +40,10 @@ struct ExtensionMessageTests {
         .deleteProject(id: 74, agentID: agent, projectID: SpaceID(rawValue: "p1")),
         .addChildProject(id: 72, agentID: agent, parentPath: "/tmp/project", path: "/tmp/project/child", name: "Child", create: true),
         .setAgentStatus(agentID: agent, status: .blocked),
+        .responseTiming(agentID: agent, seq: 3, mark: .sent, at: 1_790_744_354_772),
+        .responseTiming(agentID: agent, seq: 3, mark: .headers, at: 1_790_744_355_972.5),
+        .responseTiming(agentID: agent, seq: 3, mark: .firstEvent, at: 1_790_744_356_172),
+        .responseTiming(agentID: agent, seq: 3, mark: .message, at: 1_790_744_354_770),
         .setAgentName(agentID: agent, name: "Title with \"quotes\" and ünicode", sessionID: "session-a"),
         .setAgentSession(agentID: agent, piSessionID: "01a026dd-ce9a-7ea2-b1bb-195d958cca0c"),
         .setAgentChildren(agentID: agent, children: [
@@ -228,6 +232,8 @@ struct ExtensionMessageTests {
         (#"{"type":"notify","agentID":"a1","title":"Done"}"#,
          .notify(agentID: agent, title: "Done", body: "")),
         (#"{"type":"helloAgent","agentID":"a1"}"#, .helloAgent(agentID: agent)),
+        (#"{"type":"responseTiming","agentID":"a1","seq":2,"mark":"firstEvent","at":1790744354772}"#,
+         .responseTiming(agentID: agent, seq: 2, mark: .firstEvent, at: 1_790_744_354_772)),
         (#"{"type":"helloChildren","agentID":"a1"}"#, .helloChildren(agentID: agent)),
         (#"{"type":"childCommandResult","id":7}"#, .childCommandResult(id: 7, error: nil)),
         (#"{"type":"openPane","id":7,"agentID":"a1"}"#,

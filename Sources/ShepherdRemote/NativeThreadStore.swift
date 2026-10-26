@@ -224,6 +224,9 @@ public final class NativeThreadStore {
     /// live line, and a reply being written is its own indicator; a pi starting again says so in
     /// the composer (`awaitingPi`), never here.
     public private(set) var showsThinking = false { didSet { threadVersion &+= 1 } }
+    /// What that live line says (ResponseVisibility › A): waiting for the request in flight, or
+    /// its response started, with the clock from its send. Read only while `showsThinking`.
+    public private(set) var liveWait = NativeLiveWait() { didSet { threadVersion &+= 1 } }
     /// User turns in the thread (the toolbar counts them once the whole history is loaded).
     public private(set) var userTurnCount = 0
     public private(set) var hasSubagents = false
@@ -673,6 +676,8 @@ public final class NativeThreadStore {
         }
         let thinking = showsThinking(running: running, dialogs: dialogs)
         if thinking != showsThinking { showsThinking = thinking }
+        let wait = NativeLiveWait(thinking ? value?.liveRequest : nil)
+        if wait != liveWait { liveWait = wait }
         let userTurns = turns.count(where: \.isUser)
         if userTurns != userTurnCount { userTurnCount = userTurns }
         if subagents.isEmpty == hasSubagents { hasSubagents = !subagents.isEmpty }

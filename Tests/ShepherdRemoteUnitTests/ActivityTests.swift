@@ -559,11 +559,13 @@ struct TurnPresentationTests {
     @Test func theThinkingStillStreamingStaysLastAndLive() {
         var streaming = F.assistant("", thinking: "hmm", status: "streaming")
         streaming.timestamp = 5_000
+        // Its clock runs from when the host saw it start thinking, not from pi's message stamp.
+        streaming.timing = NativeResponseTiming(sentAt: 3_000, firstEventAt: 4_000, firstThinkingAt: 5_500)
         let presentation = nativeTurnPresentation([F.assistant("Going."), tool("read", "r"), streaming], live: true)
         #expect(kinds(presentation) == ["prose", "lines:1", "live-thinking"])
         #expect(!presentation.betweenTools, "the thinking is what moves")
         guard case .thinking(_, _, _, _, _, let since) = presentation.items.last else { return }
-        #expect(since == 5_000)
+        #expect(since == 5_500)
     }
 
     @Test func aRunningCallEndsTheLiveTurnOnItsOwnLine() {

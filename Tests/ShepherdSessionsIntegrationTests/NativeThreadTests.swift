@@ -552,6 +552,26 @@ struct NativeThreadTests {
         #expect(pi.stdin("abort").isEmpty)
     }
 
+    /// The status extension's response timing reaches its agent's thread (ResponseVisibility): a
+    /// request's send, reported on the extension socket while the turn runs, is the thread's
+    /// "Waiting for response" clock, or joins the reply it became.
+    @Test func aResponseTimingMarkReachesItsAgentsThread() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        let idle = try await pi.ready()
+        _ = try await pi.send("slow", from: idle)
+        _ = try await pi.snapshot("the turn to start") { $0.running }
+        let at = Date().timeIntervalSince1970 * 1000 - 2_000
+        let reports = try ExtensionClient(path: h.socketPath)
+        try reports.send(.responseTiming(agentID: pi.agent.id, seq: 1, mark: .sent, at: at))
+        _ = try await pi.snapshot("the send to reach the thread") { snapshot in
+            snapshot.liveRequest?.sentAt == at || snapshot.provisional.contains { $0.timing?.sentAt == at }
+        }
+        pi.release(1)
+        pi.release(2)
+    }
+
     // MARK: - Revision pushes
 
     /// A watched thread's new revisions reach the app on the main queue for that agent alone,

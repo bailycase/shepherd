@@ -8,6 +8,11 @@ import ShepherdProtocol
 final class ComposerPresentation {
     var choosingModel = false
     var showingContext = false
+    // The compact and regular shells rebuild their transcript when the scene changes width.
+    // Keep reader intent and disclosures here with this window's existing scroll/find intent.
+    var scrollFollower = NativeScrollFollower()
+    var visibleTurn: String?
+    var openThinking: Set<String> = []
     var editing: NativeQueuedMessage?
     var editText = ""
     private(set) var findRequest: ThreadFindRequest?

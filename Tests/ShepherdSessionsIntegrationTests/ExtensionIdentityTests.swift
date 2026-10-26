@@ -172,6 +172,7 @@ struct ExtensionIdentityTests {
             .setAgentSession(agentID: victim, piSessionID: "another-session"),
             .setAgentChildren(agentID: victim, children: [ChildRun(runID: "x", label: "x", state: "running")]),
             .notify(agentID: victim, title: "fake", body: "from another process"),
+            .responseTiming(agentID: victim, seq: 1, mark: .sent, at: 1),
             .agentResponse(agentID: victim, requestID: "token", result: AgentCoordinationResult(text: "made up")),
             .cancelAgentRequest(id: 90, agentID: victim),
         ]
@@ -226,7 +227,7 @@ struct ExtensionIdentityTests {
         }
         #expect((quiet + requests).allSatisfy { $0.speaksFor == victim })
         #expect(requests.allSatisfy { $0.replyID != nil } && quiet.allSatisfy { $0.replyID == nil })
-        #expect(Set(try (quiet + requests).map(kind)).count == 50)
+        #expect(Set(try (quiet + requests).map(kind)).count == 51)
 
         let client = try ExtensionClient(path: h.socketPath)
         for message in quiet + requests { try client.send(message) }
@@ -249,6 +250,8 @@ struct ExtensionIdentityTests {
         // The refused hello registered none, so nothing more comes to this process.
         _ = try await b.send("slow", from: idle)
         let running = try await b.snapshot("the turn to start") { $0.running }
+        #expect(running.liveRequest?.sentAt != 1 && running.provisional.allSatisfy { $0.timing?.sentAt != 1 },
+                "a forged response timing changed no thread")
         #expect(try await b.send("a new user question", from: running).failureCode == nil)
         _ = try await b.snapshot("the message to wait in the host queue") { $0.queue?.items.count == 1 }
         do {

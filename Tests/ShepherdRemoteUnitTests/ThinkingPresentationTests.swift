@@ -109,6 +109,16 @@ struct ThinkingPresentationTests {
         #expect(turns.last?.messages.map(\.entryID) == (kept ? ["a", "r"] : ["r"]))
     }
 
+    /// The thread's last message thinking now, with nothing shared yet, stays: it is the live
+    /// "Thinking…" (an observed thinking event), not the wait before the model's first event.
+    @Test func thinkingNowWithNothingSharedIsTheLiveLine() {
+        let thinking = F.assistant("", thinking: "", status: "streaming", id: "a")
+        #expect(nativeTurns([F.user("go", id: "u"), thinking]).last?.messages.map(\.entryID) == ["a"])
+        let presentation = nativeTurnPresentation([thinking], live: true)
+        guard case .thinking(_, "", [], _, true, _)? = presentation.items.last else { Issue.record("expected live thinking"); return }
+        #expect(!presentation.betweenTools)
+    }
+
     @Test(arguments: [
         (nil, "Thought"), (0.3, "Thought"), (1, "Thought for 1 second"), (9.6, "Thought for 10 seconds"),
         (60, "Thought for 1 minute"), (64, "Thought for 1 minute 4 seconds"), (3600, "Thought for 1 hour"),
@@ -158,21 +168,31 @@ struct ThinkingPresentationTests {
         #expect(thinking == [test.blocks])
     }
 
-    /// Only finished thinking with text is parsed: live thinking shows no text, and a plain
-    /// "Thought for Ns" line has none.
-    @Test func onlyFinishedThinkingWithTextIsParsed() {
+    /// Only thinking with text is parsed: finished thinking, and live thinking once the provider
+    /// shared some (ResponseVisibility › B, the live summary). A plain "Thought for Ns" line, and
+    /// live thinking with nothing shared, have none.
+    @Test func onlyThinkingWithTextIsParsed() {
         var parsed: [String] = []
         let messages = Self.messages([("", 3), ("**Plan**\n\n", 1), ("still thinking", 1)], live: true)
         let presentation = nativeTurnPresentation(messages, live: true, thinking: { text in
             parsed.append(text)
             return nativeThinkingBlocks(text)
         })
-        #expect(parsed == ["**Plan**"])
+        #expect(parsed == ["**Plan**", "still thinking"])
         guard case .thinking(_, let text, let blocks, _, true, _)? = presentation.items.last else {
             Issue.record("no live thinking")
             return
         }
-        #expect(text == "still thinking" && blocks.isEmpty)
+        #expect(text == "still thinking" && blocks == [.paragraph("still thinking")])
+
+        parsed = []
+        let hidden = nativeTurnPresentation(Self.messages([("", 3), (" ", 1)], live: true), live: true, thinking: { text in
+            parsed.append(text)
+            return nativeThinkingBlocks(text)
+        })
+        #expect(parsed.isEmpty)
+        guard case .thinking(_, _, let none, _, true, _)? = hidden.items.last else { Issue.record("no live thinking"); return }
+        #expect(none.isEmpty)
     }
 }
 

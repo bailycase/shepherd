@@ -307,16 +307,23 @@ struct NWCopyGlyph: View {
 /// The model's thinking (NWThread board). Collapsed: a 10pt chevron and "Thought for 4s" in
 /// italic 12. Expanded: the text as Markdown (bold, italic, code and links inline; paragraphs,
 /// lists and quotes as blocks) in italic 12.5 on a 2pt rule. Live (LiveText): "Thinking…"
-/// shimmering on a 26pt line, the thread's live indicator between tools, settling into "Thought
-/// for Ns" when it ends. With no text (the model kept its reasoning back), finished thinking is
-/// the plain line, not a control. A row with nothing to open draws no chevron but keeps its
-/// place, so the words never move.
+/// shimmering on a 26pt line with its clock in mono 11 tertiary, settling into "Thought for Ns"
+/// when it ends. Live thinking whose summary the provider shared is a disclosure already
+/// ("Thinking… · 30s", ResponseVisibility › B): open, the summary so far and where it came from.
+/// With no text (the model kept its reasoning back), finished thinking is the plain line, not a
+/// control. A row with nothing to open draws no chevron but keeps its place, so the words never
+/// move.
 public struct NWThinking: View {
     let title: String
     let spokenTitle: String
     let blocks: [NWProseBlock]
     @Binding var isExpanded: Bool
     let live: Bool
+    /// When live thinking began, for its clock; nil draws none.
+    var since: Date?
+
+    /// Under an open live summary: where its words came from, and that they are not all of it.
+    public static let summarySource = "Summary shared by the model. Its full reasoning isn’t shown."
 
     /// Finished thinking: `title` is "Thought for 4s", `spokenTitle` how VoiceOver says it
     /// ("Thought for 4 seconds"), and `blocks` the text, parsed once per change by the host
@@ -338,16 +345,23 @@ public struct NWThinking: View {
         self.init(title, blocks: paragraphs.map { .paragraph(AttributedString($0)) }, isExpanded: isExpanded, spokenTitle: spokenTitle)
     }
 
-    private init() {
+    private init(since: Date?, blocks: [NWProseBlock] = [], isExpanded: Binding<Bool> = .constant(false)) {
         title = "Thinking…"
         spokenTitle = "Thinking"
-        blocks = []
-        _isExpanded = .constant(false)
+        self.blocks = blocks
+        _isExpanded = isExpanded
         live = true
+        self.since = since
     }
 
     /// pi thinking between tools: its thinking streaming, or nothing yet to show for it.
-    public static func live() -> NWThinking { NWThinking() }
+    public static func live() -> NWThinking { NWThinking(since: nil) }
+
+    /// The model thinking now, since `since` (its clock; nil draws none). With `blocks`, the
+    /// summary the provider has shared so far, it is a disclosure: "Thinking… · 30s".
+    public static func live(since: Date?, blocks: [NWProseBlock] = [], isExpanded: Binding<Bool> = .constant(false)) -> NWThinking {
+        NWThinking(since: since, blocks: blocks, isExpanded: isExpanded)
+    }
 
     /// Expanded thinking's text: Geist 12.5 (italic where it is drawn) at 1.55, headings
     /// semibold.
@@ -360,15 +374,17 @@ public struct NWThinking: View {
     enum Kind: Equatable {
         /// "Thinking…", shimmering: nothing to open yet.
         case live
+        /// "Thinking… · 30s": live, with a summary to open.
+        case liveDisclosure
         /// "Thought for Ns" with no text: the model kept its reasoning back.
         case plain
         case disclosure
 
         init(live: Bool, blocks: [NWProseBlock]) {
-            self = live ? .live : blocks.isEmpty ? .plain : .disclosure
+            self = live ? (blocks.isEmpty ? .live : .liveDisclosure) : blocks.isEmpty ? .plain : .disclosure
         }
 
-        var opens: Bool { self == .disclosure }
+        var opens: Bool { self == .disclosure || self == .liveDisclosure }
     }
 
     var kind: Kind { Kind(live: live, blocks: blocks) }
@@ -385,13 +401,17 @@ public struct NWThinking: View {
                 switch kind {
                 case .live: liveHeader.nwTransition(.content)
                 case .plain: plainLine.nwTransition(.content)
-                case .disclosure: toggle.nwTransition(.content)
+                case .disclosure, .liveDisclosure: toggle.nwTransition(.content)
                 }
             }
             .nwAnimation(.content, value: live)
             if isExpanded, kind.opens {
                 VStack(alignment: .leading, spacing: NW.Space.m) {
                     NWProseBlocks(blocks: blocks, voice: .thinking) { NWCodeBlock($0, language: $1) }
+                    if kind == .liveDisclosure {
+                        Text(Self.summarySource).font(.nw(.caption)).foregroundStyle(nw.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 .padding(.vertical, NW.Space.xxs)
                 .padding(.leading, NW.Space.l)
@@ -406,13 +426,7 @@ public struct NWThinking: View {
     /// opens yet, so no chevron draws (the user's decision, 2026-09-25); its place stays, the
     /// finished row's, so the words settle into "Thought for Ns" without moving.
     private var liveHeader: some View {
-        HStack(spacing: NW.Space.s) {
-            NWThreadChevron(isExpanded: false, shown: false)
-            Text(title).font(.nw(.ui, weight: .regular)).italic().lineLimit(1).nwShimmer(active: true)
-        }
-        .frame(minHeight: NWThreadMetrics.liveHeight)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(spokenTitle)
+        NWLiveLine(title, italic: true, since: since, spokenTitle: spokenTitle)
     }
 
     /// Thinking the model did not share: the collapsed row's words alone, where a toggle's would
@@ -441,9 +455,16 @@ public struct NWThinking: View {
             HStack(spacing: NW.Space.s) {
                 NWThreadChevron(isExpanded: isExpanded)
                 // Thinking that merges into this stretch counts its seconds up.
-                Text(title).font(.nwSans(12)).italic()
-                    .nwContentTransition(.numeric())
-                    .nwAnimation(.content, value: title)
+                HStack(spacing: 0) {
+                    Text(title)
+                    if live, let since {
+                        Text(" · ")
+                        NWElapsedText(since: since, style: .long)
+                    }
+                }
+                .font(.nwSans(12)).italic()
+                .nwContentTransition(.numeric())
+                .nwAnimation(.content, value: title)
             }
             .foregroundStyle(Color.nw.textSecondary)
             #if os(iOS)
@@ -455,16 +476,55 @@ public struct NWThinking: View {
         .nwFocusRing(radius: NW.Radius.xs)
         .accessibilityLabel(spokenTitle)
         .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
-        .accessibilityHint("Shows the model's thinking")
+        .accessibilityHint(live ? "Shows the summary the model has shared so far" : "Shows the model's thinking")
+    }
+}
+
+/// The thread's live line while nothing else moves (LiveText, ResponseVisibility › A): the words
+/// shimmering in 12.5 on a 26pt line ("Waiting for response", or "Thinking…" in italic), where a
+/// thinking row's words sit, and the clock beside them in mono 11 `textTertiary`. Nothing spins;
+/// under Reduce Motion the words are plain.
+public struct NWLiveLine: View {
+    let title: String
+    let italic: Bool
+    let since: Date?
+    let spokenTitle: String
+    let help: String?
+
+    public init(_ title: String, italic: Bool = false, since: Date? = nil, spokenTitle: String? = nil, help: String? = nil) {
+        self.title = title
+        self.italic = italic
+        self.since = since
+        self.spokenTitle = spokenTitle ?? title
+        self.help = help
+    }
+
+    public var body: some View {
+        HStack(spacing: NW.Space.s) {
+            NWThreadChevron(isExpanded: false, shown: false)
+            HStack(spacing: NW.Space.m) {
+                Text(title).font(.nw(.ui, weight: .regular)).italic(italic).lineLimit(1).nwShimmer(active: true)
+                if let since {
+                    NWElapsedText(since: since, style: .long).font(.nwMono(NWThreadMetrics.liveClock)).foregroundStyle(Color.nw.textTertiary).fixedSize()
+                }
+            }
+        }
+        .frame(minHeight: NWThreadMetrics.liveHeight)
+        .contentShape(Rectangle())
+        .help(help ?? "")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spokenTitle)
     }
 }
 
 // MARK: Turn footer and errors
 
-/// After a finished turn: copy and retry (24pt icon buttons), then "2:44 PM · 3m 12s · 23 tool
-/// calls" in mono 10.5 tertiary, and "· 3 subagents" as a link when given. The whole row shows
-/// only while its turn is hovered (`revealed`), one of its controls has keyboard focus, a copy
-/// confirms, or VoiceOver runs; at rest it keeps its place, invisible.
+/// After a finished turn: copy and retry (24pt icon buttons), Response timing when the host
+/// measured the reply (ResponseVisibility › C: its popover toggles, Esc closes it), then "2:44 PM ·
+/// 3m 12s · 23 tool calls" in mono 10.5 tertiary, and "· 3 subagents" as a link when given. The
+/// whole row shows only while its turn is hovered (`revealed`), one of its controls has keyboard
+/// focus, a copy confirms, the timing is open, or VoiceOver runs; at rest it keeps its place,
+/// invisible.
 public struct NWTurnFooter: View {
     let meta: String
     let link: String?
@@ -472,14 +532,24 @@ public struct NWTurnFooter: View {
     let onCopy: (() -> Void)?
     let onRetry: (() -> Void)?
     let revealed: Bool
+    /// The reply's Response timing; nil draws no timing button.
+    var timing: NWResponseTimingModel?
     /// Stands in for the system's VoiceOver state (tests).
     private var voiceOverSeed: Bool?
     @State private var copied = false
     @State private var copies = 0
+    @State private var timingOpen = false
     @FocusState private var focus: Control?
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
 
-    private enum Control: Hashable { case copy, retry, link }
+    private enum Control: Hashable { case copy, retry, timing, link }
+
+    /// The footer with the reply's Response timing (nil draws no timing button).
+    public init(meta: String, link: String? = nil, onLink: (() -> Void)? = nil, onCopy: (() -> Void)? = nil,
+                onRetry: (() -> Void)? = nil, timing: NWResponseTimingModel?, revealed: Bool = false) {
+        self.init(meta: meta, link: link, onLink: onLink, onCopy: onCopy, onRetry: onRetry, revealed: revealed)
+        self.timing = timing
+    }
 
     /// `revealed` is whether the pointer is over the turn; the host tracks it for the whole turn.
     public init(meta: String, link: String? = nil, onLink: (() -> Void)? = nil,
@@ -500,7 +570,7 @@ public struct NWTurnFooter: View {
     }
 
     public var body: some View {
-        let shown = NWMessageDetails.shown(hovering: revealed, focused: focus != nil, confirming: copied,
+        let shown = NWMessageDetails.shown(hovering: revealed, focused: focus != nil || timingOpen, confirming: copied,
                                            voiceOver: voiceOverSeed ?? voiceOver)
         HStack(spacing: NW.Space.xs) {
             if let onCopy {
@@ -523,6 +593,37 @@ public struct NWTurnFooter: View {
                     .accessibilityLabel("Retry turn")
                     .nwTransition(.content)
             }
+            if let timing {
+                Button { timingOpen.toggle() } label: { NWGlyph.responseTiming.image.font(.system(size: NWThreadMetrics.footerGlyph)) }
+                    .buttonStyle(.nwIcon(isOn: timingOpen, size: NWThreadMetrics.footerButton))
+                    .focused($focus, equals: .timing)
+                    .help(NWResponseTiming.title)
+                    .accessibilityLabel(NWResponseTiming.title)
+                    .accessibilityValue(timingOpen ? "Expanded" : "Collapsed")
+                    .popover(isPresented: $timingOpen, arrowEdge: .top) {
+                        #if os(iOS)
+                        NWResponseTimingPresentation(model: timing)
+                            .presentationCompactAdaptation(.sheet)
+                        #else
+                        NWResponseTiming(timing)
+                        #endif
+                    }
+            }
+            #if os(iOS)
+            // Metadata wraps in the space left by the 44pt actions, including when a scene
+            // narrows while its timing sheet is open. Touch never depends on hover.
+            VStack(alignment: .leading, spacing: NW.Space.xs) {
+                Text(meta).monospacedDigit().fixedSize(horizontal: false, vertical: true)
+                if let link, let onLink {
+                    Button(link, action: onLink).buttonStyle(.nwLink(font: .nw(.micro)))
+                        .focused($focus, equals: .link)
+                        .frame(minHeight: NW.Height.touch)
+                }
+            }
+            .font(.nw(.micro))
+            .foregroundStyle(Color.nw.textTertiary)
+            .padding(.leading, NW.Space.xs)
+            #else
             HStack(spacing: 0) {
                 Text(meta).monospacedDigit()
                 if let link, let onLink {
@@ -534,6 +635,7 @@ public struct NWTurnFooter: View {
             .font(.nwMono(10.5))
             .foregroundStyle(Color.nw.textTertiary)
             .padding(.leading, NW.Space.xs)
+            #endif
         }
         // Retry appears once the agent is idle again.
         .nwAnimation(.content, value: onRetry != nil)
