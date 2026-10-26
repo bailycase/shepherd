@@ -67,8 +67,11 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   manual run on `nightly` with the `testflight` input
   (`gh workflow run release.yml --ref nightly -f testflight=true`) uploads it to TestFlight
   internal testing and builds no Mac app. A plain manual run plans like a push. The `testflight`
-  job runs on the `xcode-27` runner, archives unsigned, and cloud-signs at export with the
-  `APP_STORE_CONNECT_*` key. The plan refuses it on any other ref, without the key, or on a
+  job runs on the `xcode-27` runner. It archives unsigned, seals the archive with its push
+  entitlements using an ad-hoc signature, and cloud-signs a local IPA with the
+  `APP_STORE_CONNECT_*` key. It enables Push Notifications on the existing App ID if needed,
+  verifies production APNs entitlements in both the distribution signature and provisioning
+  profile, then uploads the verified IPA. The plan refuses it on any other ref, without the key, or on a
   re-run (which keeps the build number; start a new run). Its version is the project's
   `MARKETING_VERSION`, and its build number is the run number. Beta tags (external testing) and
   stable tags (the App Store) upload nothing yet ([docs/ios](ios/README.md#distribution)).
