@@ -6,7 +6,7 @@ import Foundation
 /// tool's own `message`.
 public enum NativeProjectToolActivity {
     public static let names: Set<String> = [
-        "project_read", "project_inspect", "project_publish", "project_assign", "project_follow_up", "project_resolve",
+        "project_read", "project_list_spaces", "project_inspect", "project_publish", "project_assign", "project_follow_up", "project_resolve",
         "project_propose_space", "project_remember", "project_answer", "project_question",
     ]
 
@@ -74,13 +74,14 @@ public enum NativeProjectToolActivity {
         let words: String
         switch name {
         case "project_read": words = "Reading the project"
+        case "project_list_spaces": words = "Listing spaces"
         case "project_inspect": words = "Inspecting a thread"
         case "project_publish": words = "Publishing"
         case "project_question": words = "Asking"
         case "project_assign": words = "Starting thread"
         case "project_follow_up": words = "Sending a follow-up to"
         case "project_resolve": words = "Resolving a thread"
-        case "project_propose_space": words = "Asking to add a space"
+        case "project_propose_space": words = "Adding a space"
         case "project_remember": words = "Saving a memory"
         default: words = "Relaying an answer"
         }
@@ -91,13 +92,14 @@ public enum NativeProjectToolActivity {
     static func failed(_ name: String) -> String {
         switch name {
         case "project_read": "Couldn’t read the project"
+        case "project_list_spaces": "Couldn’t list spaces"
         case "project_inspect": "Couldn’t inspect the thread"
         case "project_publish": "Couldn’t publish"
         case "project_question": "Couldn’t ask the question"
         case "project_assign": "Couldn’t assign the thread"
         case "project_follow_up": "Couldn’t send the follow-up"
         case "project_resolve": "Couldn’t resolve the thread"
-        case "project_propose_space": "Couldn’t ask to add the space"
+        case "project_propose_space": "Couldn’t add the space"
         case "project_remember": "Couldn’t save the memory"
         default: "Couldn’t relay the answer"
         }
@@ -116,6 +118,7 @@ public enum NativeProjectToolActivity {
         func many(_ words: String) -> (String, [String]) { ("\(words) \(calls.count) times", time) }
         switch first.name {
         case "project_read": return calls.count == 1 ? one("Read the project") : many("Read the project")
+        case "project_list_spaces": return calls.count == 1 ? one("Listed spaces") : many("Listed spaces")
         case "project_inspect": return calls.count == 1 ? one("Inspected a thread") : many("Inspected threads")
         case "project_publish":
             if calls.count == 1 {
@@ -132,7 +135,12 @@ public enum NativeProjectToolActivity {
             if calls.count == 1 { return (first.detail.isEmpty ? words : words + " " + first.detail, choice(first) + time) }
             return many(first.name == "project_assign" ? "Started threads" : "Sent follow-ups")
         case "project_resolve": return calls.count == 1 ? one("Resolved a thread") : many("Resolved threads")
-        case "project_propose_space": return calls.count == 1 ? one("Asked to add a space") : many("Asked to add spaces")
+        case "project_propose_space":
+            let linked = calls.allSatisfy { call in
+                let proposals = object(call.output)?["spaceProposals"] as? [[String: Any]] ?? []
+                return !proposals.isEmpty && proposals.allSatisfy { $0["phase"] as? String == "accepted" }
+            }
+            return calls.count == 1 ? one(linked ? "Added a space" : "Asked to add a space") : many(linked ? "Added spaces" : "Asked to add spaces")
         case "project_question":
             if calls.count == 1 {
                 if cancelled(first) { return ("Question cancelled", [first.detail].filter { !$0.isEmpty } + time) }

@@ -3311,7 +3311,9 @@ public final class SessionServer: @unchecked Sendable {
                             self.reply(.error(id: id, code: (error as? LogicalProjectsError)?.code ?? "project_failed", message: String(describing: error)), to: client)
                             return
                         }
-                        let spaces = self.store.state.spaces.filter { space in !space.hidden && project.linkedSpaces.contains { $0.spaceID == space.id && $0.destination == .local } }
+                        // Coordinators can discover owner-local Spaces before linking them. Workers only see linked Spaces.
+                        let discovery = project.coordinatorAgentID == agentID && request == .read
+                        let spaces = self.store.state.spaces.filter { space in !space.hidden && (discovery || project.linkedSpaces.contains { $0.spaceID == space.id && $0.destination == .local }) }
                         // Only the coordinator chooses a task's model, so only its replies carry the owner's model list.
                         let models = project.coordinatorAgentID == agentID ? self.modelListing().models : []
                         self.reply(.projectRuntime(id: id, project: project, spaces: spaces, models: models), to: client, revocation: { [weak self] in
@@ -4756,7 +4758,8 @@ public final class SessionServer: @unchecked Sendable {
             let oldCaller = before.agents.first { $0.id == old.coordinatorAgentID }
             let newCaller = state.agents.first { $0.id == next?.coordinatorAgentID }
             if next?.ownerID != old.ownerID || next?.coordinatorAgentID != old.coordinatorAgentID
-                || next?.linkedSpaces != old.linkedSpaces || next?.settings.hostPolicy != old.settings.hostPolicy
+                || old.linkedSpaces.contains(where: { next?.linkedSpaces.contains($0) != true })
+                || next?.settings.hostPolicy != old.settings.hostPolicy
                 || next?.settings.allowedHosts != old.settings.allowedHosts
                 || oldCaller?.coordinatorFor != newCaller?.coordinatorFor || oldCaller?.id != newCaller?.id {
                 projectReadAuthority[old.id] = UUID()

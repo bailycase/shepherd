@@ -237,6 +237,64 @@ struct ProjectCoordinationTests {
         #expect(await host.server.listSessions().isEmpty)
     }
 
+    @Test func coordinatorDiscoversAndLinksSpacesWithoutApprovalOrQueuedMessages() async throws {
+        let rig = try Rig(); defer { rig.stop() }
+        let project = try await rig.create()
+        let sent = try await rig.perform(project.id, .message(operationID: UUID(), text: "hello"))
+        let coordinator = try #require(sent.coordinatorAgentID)
+        try await eventually("coordinator installed") { rig.agents.current[coordinator] != nil }
+        let directory = rig.host.dir.appendingPathComponent("linked-space")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        let existing = Space(name: "Existing", path: directory.path)
+        try await rig.host.server.addSpace(existing)
+        let client = try ExtensionClient(path: rig.host.socketPath)
+        try client.send(.projectRuntime(id: 90, agentID: coordinator, projectID: project.id, expectedRevision: 0, request: .read))
+        guard case .projectRuntime(90, _, let spaces, _) = try client.readReply() else { throw WireError("Space listing missing") }
+        #expect(spaces.contains { $0.id == existing.id })
+        #expect(!spaces.contains { $0.hidden })
+        let before = try #require(rig.host.server.state.projects.first)
+        let operation = UUID()
+        let request = ProjectRuntimeRequest.proposeSpace(operationID: operation, path: nil, spaceID: existing.id, originTaskID: nil)
+        let linked = try await rig.host.server.projectTool(agentID: coordinator, projectID: project.id, expectedRevision: 0, request: request)
+        #expect(linked.linkedSpaces.contains { $0.spaceID == existing.id && $0.provenance == .project })
+        #expect(linked.spaceProposals.first { $0.operationID == operation }?.phase == .accepted)
+        let replay = try await rig.host.server.projectTool(agentID: coordinator, projectID: project.id, expectedRevision: 0, request: request)
+        #expect(replay.linkedSpaces.filter { $0.spaceID == existing.id }.count == 1)
+        #expect(rig.host.server.state.projects.first?.messages.map(\.id) == before.messages.map(\.id))
+        let fresh = rig.host.dir.appendingPathComponent("new-registration")
+        try FileManager.default.createDirectory(at: fresh, withIntermediateDirectories: false)
+        let registered = try await rig.host.server.projectTool(agentID: coordinator, projectID: project.id, expectedRevision: 0,
+            request: .proposeSpace(operationID: UUID(), path: fresh.path, spaceID: nil, originTaskID: nil))
+        let space = try #require(rig.host.server.state.spaces.first { $0.path == fresh.path })
+        #expect(registered.linkedSpaces.contains { $0.spaceID == space.id })
+        // Accepted links must not exhaust the old 32-proposal ceiling or duplicate links.
+        for _ in 0..<33 {
+            _ = try await rig.host.server.projectTool(agentID: coordinator, projectID: project.id, expectedRevision: 0,
+                request: .proposeSpace(operationID: UUID(), path: nil, spaceID: existing.id, originTaskID: nil))
+        }
+        #expect(rig.host.server.state.projects.first?.linkedSpaces.filter { $0.spaceID == existing.id }.count == 1)
+        #expect(rig.host.server.state.projects.first?.spaceProposals.contains { $0.phase == .pending } == false)
+        _ = try await rig.host.server.updateRuntimeProject(project.id) { project in
+            for _ in 0..<32 {
+                let operation = UUID()
+                project.spaceProposals.append(.init(id: operation, operationID: operation, path: directory.path, displayPath: directory.path))
+            }
+        }
+        _ = try await rig.host.server.projectTool(agentID: coordinator, projectID: project.id, expectedRevision: 0,
+            request: .proposeSpace(operationID: UUID(), path: nil, spaceID: existing.id, originTaskID: nil))
+        await #expect(throws: (any Error).self) {
+            try await rig.host.server.projectTool(agentID: coordinator, projectID: project.id, expectedRevision: 0,
+                request: .proposeSpace(operationID: UUID(), path: fresh.appendingPathComponent("missing").path, spaceID: nil, originTaskID: nil))
+        }
+        let current = try #require(rig.host.server.state.projects.first)
+        var settings = current.settings; settings.canRequestSpaceLinks = false
+        _ = try await rig.host.server.logicalProjects(.settings(projectID: project.id, expectedRevision: current.revision, settings: settings))
+        await #expect(throws: LogicalProjectsError.self) {
+            try await rig.host.server.projectTool(agentID: coordinator, projectID: project.id, expectedRevision: 0,
+                request: .proposeSpace(operationID: UUID(), path: directory.path, spaceID: nil, originTaskID: nil))
+        }
+    }
+
     @Test func proposalsAreExplicitConsumedApprovalsWithProjectProvenanceAndOwnerHostValidation() async throws {
         let rig = try Rig(); defer { rig.stop() }
         let p = try await rig.create()
@@ -249,6 +307,7 @@ struct ProjectCoordinationTests {
         let current = try #require(rig.host.server.state.projects.first)
         #expect(current.spaceProposals.first?.phase == .accepted)
         #expect(current.linkedSpaces.last?.provenance == .project)
+        #expect(current.messages.isEmpty, "A Space decision must not enqueue a coordinator prompt")
         let denied = UUID()
         _ = try await rig.perform(p.id, .proposeSpace(operationID: denied, path: "/does/not/exist", spaceID: nil, originTaskID: nil))
         _ = try await rig.perform(p.id, .decideSpace(proposalID: denied, expectedProposalRevision: 1, accept: false))

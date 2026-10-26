@@ -51,7 +51,7 @@ test('real extension tools use correlated owner requests and refresh memory each
     install({ on: (name, hook) => hooks.set(name, hook), registerTool: tool => tools.set(tool.name, tool), setActiveTools: value => { active = value; } });
     hooks.get('session_start')();
     assert.deepEqual(new Set(active), new Set(tools.keys()));
-    assert.equal(tools.size, 12);
+    assert.equal(tools.size, 13);
     assert.equal((await hooks.get('tool_call')({ toolName: 'project_plan' })).block, true);
     assert.equal((await hooks.get('tool_call')({ toolName: 'agent_spawn' })).block, true);
     for (const toolName of ['shepherd_child_start', 'shepherd_child_resume', 'shepherd_child_message', 'shepherd_workflow', 'subagent', 'codemode']) {
@@ -210,7 +210,8 @@ test('coordinator results scope snapshots without losing native evidence, human 
   const events = [{ id: 'previous-result', text: nativeText, phase: 'delivered', source: source('settled', 'prior-0') },
     { id: 'current-result', text: nativeText, phase: 'delivered', source: source('settled', 'operation-0') }, question];
   const models = Array.from({ length: 1200 }, (_, i) => `provider-${i % 20}/model-${i}-long-valid-catalogue-identifier`);
-  const spaces = [{ id: 'local-space', name: 'Owner Space', path: '/owner/path/not-executor-path' }];
+  const spaces = [{ id: 'local-space', name: 'Owner Space', path: '/owner/path/not-executor-path' },
+    { id: 'unlinked-space', name: 'Available Space', path: '/owner/available' }];
   const stored = JSON.stringify(project);
   const finalBytes = Buffer.from('Complete final response, not a success claim.\n'.repeat(200));
   const digest = createHash('sha256').update(finalBytes).digest('hex');
@@ -274,7 +275,11 @@ test('coordinator results scope snapshots without losing native evidence, human 
     assert.equal(read.availableModels, undefined);
     assert.equal(read.revision, 48);
     assert.deepEqual(read.linkedSpaces, project.linkedSpaces);
-    assert.deepEqual(read.linkedSpaceDetails, spaces);
+    assert.deepEqual(read.linkedSpaceDetails, [spaces[0]], 'discovery never mislabels an unlinked Space');
+    const { data: spaceList } = await run('project_list_spaces');
+    assert.deepEqual(spaceList.spaces, spaces.map((space, index) => ({ ...space, linked: index === 0 })));
+    assert.equal(spaceList.tasks, undefined);
+    assert.match(tools.get('project_propose_space').description, /without human approval/);
     assert.deepEqual(read.settings, project.settings);
     assert.deepEqual(read.memory, project.memory);
     assert.deepEqual(read.tasks.map(task => task.phase), phases, 'settled, resolved, failed and unknown are not conflated');

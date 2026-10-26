@@ -92,12 +92,11 @@ struct ProjectChatAnswerTests {
         _ = try await r.host.server.updateRuntimeProject(p.id) { project in
             project.messages[project.messages.firstIndex { $0.id == event.id }!].source = event.source
         }
-        // Real human Space approval produces a source-nil *synthetic* message, never human proof.
+        // A Space decision never creates a chat turn or human answer proof.
         let proposal = UUID()
         _ = try await r.perform(p.id, .proposeSpace(operationID: proposal, path: "/not-approved", spaceID: nil, originTaskID: task.id))
         _ = try await r.perform(p.id, .decideSpace(proposalID: proposal, expectedProposalRevision: 1, accept: false))
-        let synthetic = try #require(r.host.server.state.projects.first?.messages.first { $0.id == proposal })
-        #expect(synthetic.source == nil && synthetic.humanSubmitted == nil)
+        #expect(r.host.server.state.projects.first?.messages.contains { $0.id == proposal } == false)
         await #expect(throws: LogicalProjectsError.self) { try await relay(proposal) }
         for request in [ProjectRuntimeRequest.read, .inspect(taskID: task.id)] {
             let read = try await r.host.server.projectTool(agentID: coordinator, projectID: p.id, expectedRevision: 0, request: request)
