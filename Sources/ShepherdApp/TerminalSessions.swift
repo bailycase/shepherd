@@ -448,7 +448,9 @@ final class TerminalSessionStore {
         }
         handledExits.insert(sessionID)
         ShepherdDiagnostics.shared.record(.processExited, code: exit.code)
-        if exit.startProblem != nil { ShepherdDiagnostics.shared.capture(.agentStartFailed, code: exit.code) }
+        if let problem = exit.startProblem {
+            ShepherdDiagnostics.shared.capture(.agentStartFailed, code: exit.code, details: .init(startupKind: problem.kind))
+        }
         // Read before the view model retires the agent: a pi that exits while it boots frees its
         // place in the launch queue now, not when its hold runs out.
         let agent = serverState?.agents.first { $0.paneID == paneID }

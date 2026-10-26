@@ -137,6 +137,8 @@ struct DiagnosticsRuntimeTests {
             scope.addAttachment(Attachment(data: Data("PRIVATE_ATTACHMENT_SENTINEL".utf8), filename: "PRIVATE_FILENAME_SENTINEL.txt"))
             scope.setExtra(value: "PRIVATE_PROMPT_SENTINEL", key: "prompt")
             scope.setTag(value: "PRIVATE_PROMPT_SENTINEL", key: "project")
+            scope.setTag(value: "PRIVATE_PROMPT_SENTINEL", key: "failure.category")
+            scope.setAttribute(value: "PRIVATE_PROMPT_SENTINEL", key: "tool.kind")
             scope.setAttribute(value: "PRIVATE_PROMPT_SENTINEL", key: "prompt")
             scope.setAttribute(value: "PRIVATE_PROMPT_SENTINEL", key: "exit_code")
             scope.setAttribute(value: "forged", key: "shepherd.private_emission")
@@ -145,12 +147,16 @@ struct DiagnosticsRuntimeTests {
             scope.setUser(user)
         }
         diagnostics.record(.threadSelected)
-        diagnostics.capture(.agentStartFailed, code: 2)
+        diagnostics.capture(.agentStartFailed, code: 2, details: .init(startupKind: .extensionFailed))
         try await eventuallyOnMain("the fake transport to receive a report") { try items(ofType: "event").count == 1 }
         let first = try #require(items(ofType: "event").first)
         let envelope = String(decoding: try JSONSerialization.data(withJSONObject: first), as: UTF8.self)
         #expect(envelope.contains("agent.start_failed") && envelope.contains("thread.selected"))
         #expect(envelope.contains("shepherd.installation") && envelope.contains("shepherd.run"))
+        let tags = try #require(first["tags"] as? [String: String])
+        #expect(tags["startup.kind"] == "extensionFailed")
+        #expect(tags["startup.stage"] == "initialization")
+        #expect(tags["failure.category"] == nil)
         #expect(!envelope.contains("PRIVATE_PROMPT_SENTINEL"))
         #expect(try items(ofType: "attachment").isEmpty)
         #expect(!envelope.contains("PRIVATE_ATTACHMENT_SENTINEL") && !envelope.contains("PRIVATE_FILENAME_SENTINEL"))
@@ -182,7 +188,12 @@ struct DiagnosticsRuntimeTests {
 
         diagnostics.record(.processExited, code: 9)
         let outcomes: [ShepherdDiagnostics.Activity] = [.modelFailed, .toolFailed, .modelRetry, .compactionFailed, .extensionFailed]
-        for outcome in outcomes { diagnostics.record(outcome) }
+        for outcome in outcomes {
+            let details: DiagnosticFailureDetails = outcome == .toolFailed
+                ? .init(category: .other, toolKind: .mcp)
+                : outcome == .modelFailed || outcome == .compactionFailed ? .init(category: .rateLimit) : .init()
+            diagnostics.record(outcome, details: details)
+        }
         // Public names (and a forged ownership attribute) must not authorize SDK callers.
         SentrySDK.logger.info("app.started", attributes: ["prompt": "PRIVATE_PROMPT_SENTINEL", "shepherd.private_emission": "forged"])
         SentrySDK.logger.error("PRIVATE_PROMPT_SENTINEL")
@@ -200,6 +211,17 @@ struct DiagnosticsRuntimeTests {
             #expect(logs.contains { $0["body"] as? String == outcome.rawValue && $0["level"] as? String == "warn" })
             #expect(metrics.contains { $0["name"] as? String == "shepherd." + outcome.rawValue && $0["value"] as? Int == 1 })
         }
+        for (body, key, value) in [
+            ("agent.start_failed", "startup.kind", "extensionFailed"),
+            ("agent.start_failed", "startup.stage", "initialization"),
+            ("model.failed", "failure.category", "rateLimit"),
+            ("context.compact_failed", "failure.category", "rateLimit"),
+            ("tool.failed", "tool.kind", "mcp")
+        ] {
+            let log = try #require(logs.first { $0["body"] as? String == body })
+            let attributes = try #require(log["attributes"] as? [String: [String: Any]])
+            #expect(attributes[key]?["value"] as? String == value)
+        }
         #expect(logs.filter { $0["body"] as? String == "app.started" }.count == 1)
         #expect(logs.contains { $0["body"] as? String == "process.exited" && $0["level"] as? String == "warn" })
         #expect(logs.contains { $0["body"] as? String == "agent.start_failed" && $0["level"] as? String == "error" })
@@ -213,7 +235,7 @@ struct DiagnosticsRuntimeTests {
         var runs = Set<String>()
         for item in logs + metrics {
             let attributes = try #require(item["attributes"] as? [String: [String: Any]])
-            #expect(Set(attributes.keys).isSubset(of: metadataKeys.union(["exit_code"])))
+            #expect(Set(attributes.keys).isSubset(of: metadataKeys.union(["exit_code", "failure.category", "tool.kind", "startup.kind", "startup.stage"])))
             #expect(attributes["sentry.release"]?["value"] as? String == "shepherd-diagnostics-tests@1.0+1")
             #expect(attributes["sentry.environment"]?["value"] as? String == ShepherdEdition.current.rawValue)
             let run = try #require(attributes["shepherd.run"]?["value"] as? String)
