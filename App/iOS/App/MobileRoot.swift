@@ -42,7 +42,11 @@ struct MobileRoot: View {
         // The hinge reports every degree as it moves; the navigator changes only as it shuts or opens.
         .onHingeClosedChange { closed in if navigator.hingeClosed != closed { navigator.hingeClosed = closed } }
         // Done's reading: opening another thread marks the one read before seen, as the Mac's sidebar does.
-        .onChange(of: navigator.selectedThread, initial: true) { _, thread in SidebarThreads.of(app.hosts).select(thread) }
+        .onChange(of: navigator.selectedThread, initial: true) { _, thread in
+            SidebarThreads.of(app.hosts).select(thread)
+            // The laptop arrangement belongs to its thread: another one, or none, ends it.
+            if let arranged = navigator.sidePane.arranged, arranged != thread { navigator.sidePane.arranged = nil }
+        }
         .onAppear {
             app.windows.register(window, navigator: navigator)
             app.pushRouter.drainPending(hosts: app.hosts, windows: app.windows)

@@ -24,8 +24,8 @@ enum ReviewRoute: Hashable, Codable {
 }
 
 /// How the thread opens review: the changes card's Review, a changed file, an edit line. On
-/// iPhone the changes push over the thread; on iPad the review docks beside it (it can go full
-/// screen from there).
+/// iPhone the changes push over the thread; on iPad they open in the side pane's Changes tab
+/// beside it (it can go full screen from there).
 @MainActor
 enum ReviewHooks {
     static func open(thread: AgentRef, file: String?, navigator: MobileNavigator) {
@@ -40,24 +40,17 @@ enum ReviewHooks {
     }
 }
 
+/// The phone's review screens; on regular width the navigator shows changes and a diff in the side
+/// pane's Changes tab instead (`SidePaneChanges`).
 struct ReviewDestination: View {
     let route: ReviewRoute
-    @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
         switch route {
         case .changes(let ref, let file):
-            if sizeClass == .regular {
-                PadReviewScreen(ref: ref, file: file)
-            } else {
-                ChangesScreen(ref: ref, file: file)
-            }
+            ChangesScreen(ref: ref, file: file)
         case .diff(let ref, let path):
-            if sizeClass == .regular {
-                PadReviewScreen(ref: ref, file: path)
-            } else {
-                DiffScreen(ref: ref, path: path)
-            }
+            DiffScreen(ref: ref, path: path)
         case .finalize(let ref):
             FinalizeScreen(ref: ref)
         case .commit(let ref):
