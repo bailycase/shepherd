@@ -53,7 +53,7 @@ final class RPCSession: @unchecked Sendable {
     var onEvent: ((RPCEvent) -> Void)?
     /// One stderr line at a time, for the log.
     var onStderr: ((String) -> Void)?
-    /// Invoked after the child is reaped and stdout is drained. nil = signal.
+    /// Invoked after reaping, stdout decoding, and final stderr delivery. nil = signal.
     var onExit: ((Int32?) -> Void)?
     /// One-shot retry when stdin's queued bytes drain; never called from `send`.
     var onInputDrained: (() -> Void)?
@@ -611,6 +611,11 @@ final class RPCSession: @unchecked Sendable {
             if errno == EAGAIN || errno == EWOULDBLOCK { return }
             break
         }
+        finishStderr()
+    }
+
+    private func finishStderr() {
+        guard !stderrClosed else { return }
         if !stderrBuffer.isEmpty {
             emitStderr(stderrBuffer)
             stderrBuffer.removeAll(keepingCapacity: false)
@@ -681,6 +686,10 @@ final class RPCSession: @unchecked Sendable {
         signalProcessGroup(SIGKILL)
         cancelProcessSources()
         closeStdin()
+        // The child's diagnostics must precede exit classification. Don't wait for descendants
+        // holding stderr open, but retain its final line even without a trailing newline.
+        drainStderr()
+        finishStderr()
         failRequestsAfterExit()
         deliverExitIfReady()
         return true
