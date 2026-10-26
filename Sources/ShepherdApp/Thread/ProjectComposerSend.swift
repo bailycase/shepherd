@@ -9,7 +9,7 @@ import ShepherdUI
 /// runtime accepted the message (queued, or delivered), so the draft clears only then; a refusal leaves the words in
 /// the field.
 struct ProjectComposerSend {
-    /// "Ask Sample App a question or start a task…", or the paused wording.
+    /// "Ask Sample App a question or start a task…".
     var placeholder: String
     /// Sends the words and the images on the card. True only when the runtime accepted BOTH; then the composer clears the draft and
     /// exactly the images it submitted. A refusal or a lost connection keeps every word and every image.
@@ -44,17 +44,22 @@ struct ProjectComposerSend {
     }
 }
 
-/// The Project's conversation model as the composer's model chip shows and sets it. Before the first message there is no coordinator
-/// to ask, so `pending` is true and the chip reads and writes the Project's `conversationModel` setting, which the launch then uses.
-/// Once the coordinator exists the setting is saved FIRST and the thread's own `setModel` runs only after the owner accepted it, so the
-/// live model and the one a relaunch uses never disagree; a refused save changes nothing and says why.
+/// The Project's conversation model and reasoning level as the composer's model chip shows and sets them. While the coordinator's pi
+/// does not serve (no coordinator yet, held off, paused, starting) the chip reads and writes the Project's `conversationModel` and
+/// `conversationThinking` settings, which the owner applies at launch and before each message it delivers. While it serves, a setting
+/// is saved FIRST and the thread's own `setModel`/`setThinking` runs only after the owner accepted it, so the live thread and the one a
+/// relaunch uses never disagree; a refused save changes nothing and says why.
 struct ProjectConversationModel {
     /// The Project's saved conversation model, else the app's default; nil when neither is named.
     var current: String?
-    /// No coordinator yet: the thread cannot take `setModel`, the setting is the only place to put the choice.
-    var pending: Bool
-    /// Saves the pick as the Project's conversation model; true only when the owner accepted it. Nothing else changes the model before it does.
-    var choose: (String) async -> Bool
+    /// The Project's saved reasoning level for its coordinator; nil keeps the coordinator's own (the owner's default for a new one).
+    var thinking: String? = nil
+    /// Saves the pick as the Project's conversation model, with the reasoning level clamped to it when that changed (nil keeps it); true
+    /// only when the owner accepted it. Nothing else changes the model before it does.
+    var choose: (String, String?) async -> Bool
+    /// Saves a reasoning level as the Project's; nil where the owner cannot keep one (an older remote owner), which leaves the coordinator's
+    /// live thread its own setting while it serves, as before.
+    var chooseThinking: ((String) async -> Bool)? = nil
     /// What the chip says while no model is named: the launch will use the default.
     static let defaultName = "Default model"
 }
@@ -140,7 +145,7 @@ struct ProjectWorkerThreadStyle: Equatable {
     /// (ProjectLead-ThreadRunning: prose x 1137...1584, card 1137...1568 in a pane 1121...1600).
     var gutter: CGFloat = NWLeadMetrics.paneThreadGutter
     var composerTrailing: CGFloat = NWLeadMetrics.paneComposerTrailing
-    /// A resolved task takes no more messages: its thread draws no composer at all (the footer card with Reopen stands in), and the
+    /// A resolved task takes no more messages: its thread draws no composer at all (the resolved footer card stands in), and the
     /// transcript reaches the bottom of the pane.
     var composerHidden = false
     /// The owner already holds an answer to this worker's question (queued for Resume, or on its way): the thread's own question dock
@@ -212,8 +217,6 @@ struct ProjectHeldMessage: Equatable, Identifiable {
     let text: String
     let note: String
     var phase: ProjectMessage.Phase = .queued
-    /// The Project is paused, so a waiting message is held until Resume.
-    var paused = false
     /// Its images' names; the bytes stay with the owner.
     var images: [NativeQueuedImage] = []
 
@@ -226,13 +229,13 @@ struct ProjectHeldMessage: Equatable, Identifiable {
 /// consumed operation identities. A message is represented once the native thread has a user message carrying its operation ID, or
 /// the native delivery ID the owner recorded for it. Worker reports (a `source`) are the runtime's own and are never drawn here.
 enum ProjectHeldMessages {
-    static func held(messages: [ProjectMessage], paused: Bool, consumed: Set<UUID>) -> [ProjectHeldMessage] {
+    static func held(messages: [ProjectMessage], consumed: Set<UUID>) -> [ProjectHeldMessage] {
         messages.compactMap { message in
             guard message.source == nil else { return nil }
             if consumed.contains(message.id) || message.nativeDeliveryID.map(consumed.contains) == true { return nil }
             let note: String
             switch message.phase {
-            case .queued: note = paused ? "Sends when the project resumes" : "Waiting to send"
+            case .queued: note = "Waiting to send"
             case .delivering: note = "Sending"
             case .unknown: note = "Delivery unconfirmed. Send it again to retry."
             case .failed:
@@ -242,24 +245,21 @@ enum ProjectHeldMessages {
                 note = reason.isEmpty ? "Not delivered. Send it again to retry." : "Not delivered. \(sentence) Send it again to retry."
             case .delivered: return nil
             }
-            return ProjectHeldMessage(id: message.id, text: message.text, note: note, phase: message.phase, paused: paused,
+            return ProjectHeldMessage(id: message.id, text: message.text, note: note, phase: message.phase,
                                       images: (message.images ?? []).map { NativeQueuedImage(mimeType: $0.mimeType, name: $0.name) })
         }
     }
 
-    /// The waiting messages as the shared Up next stack takes a queue, in the owner's order, and why it waits while paused. Read-only:
+    /// The waiting messages as the shared Up next stack takes a queue, in the owner's order. Read-only:
     /// the owner has no edit, delete, reorder or send-now for them. A message leaves once the transcript holds its operation (pi's own
     /// pending row for the handoff, then the saved message), so it is drawn in exactly one place.
     static func upNext(_ held: [ProjectHeldMessage]) -> ProjectUpNext {
         let waiting = held.filter(\.waiting)
-        return ProjectUpNext(queue: waiting.map { NativeQueuedMessage(id: $0.id, text: $0.text, images: $0.images, sentAt: 0) },
-                             paused: waiting.contains { $0.paused && $0.phase == .queued } ? "Sends when the project resumes" : nil)
+        return ProjectUpNext(queue: waiting.map { NativeQueuedMessage(id: $0.id, text: $0.text, images: $0.images, sentAt: 0) })
     }
 }
 
 /// The owner's waiting messages, shaped as the queue the composer's shared Up next stack draws (`QueueStackView(readOnly:)`).
 struct ProjectUpNext: Equatable {
     var queue: [NativeQueuedMessage] = []
-    /// The header's Paused tooltip while the Project holds them.
-    var paused: String?
 }

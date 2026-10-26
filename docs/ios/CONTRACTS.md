@@ -9,6 +9,8 @@ The shared `RemoteHostClient.agentAction` supports `.move(spaceID:)` behind `age
 It preserves the host's conversation and reloads destination context only for inactive ordinary
 threads. Mac and iOS share decoding and the capability gate; this adds no iOS drag UI.
 
+The shared Project protocol also advertises `logicalProjects.result.v1` for explicit selected-operation result reads. `Project.resultPage`, `historyPage`, `historyNext`, operational-history counters and worker-ownership fields are optional compatible additions. Older peers refuse result requests before sending. Projects uses `logicalProjects.v1` for records and files and `logicalProjects.runtime.v1` for conversations, questions, tasks and settings; neither creates a device-local execution runtime.
+
 ## The one rule
 
 **A track edits only its own folders, plus new files anywhere under them. Everything else goes
@@ -37,6 +39,7 @@ Never commit a `project.pbxproj` change for a new file.
 | I. Windows | `Windows/`, `Fixtures/WindowsFixtures.swift` | several iPad windows: the scene, each window's navigator and restoration, Open in new window, Send to…, text dropped on a composer |
 | J. Terminal | `Terminal/`, `Fixtures/TerminalFixtures.swift` | terminals: the iPad panel under a thread (tabs only), the iPhone's full-screen terminals, the key row |
 | K. Designs | `Designs/`, `Fixtures/DesignsFixtures.swift`, and its rows in Home, Recents, search and More | a host's designs (`designs.v1`): Designs, a design's boards, one board with its comments, New design, design systems |
+| M. Projects | `Projects/`, `Fixtures/ProjectFixtures.swift` | the host-owned Projects list, owner conversation, tasks, files, settings and creation/assignment forms; shared model in ShepherdRemote |
 | L. Designs on iPad | `DesignPad/`, `Fixtures/DesignPadFixtures.swift`, `Fixtures/DesignPadBoards.swift` | a host's designs on iPad (`designs.v1`): the Designs list, the canvas beside its chat, Split View's reply card, the sidebar's Designs row and design rows |
 
 Shared modules (`ShepherdUI`, `ShepherdRemote`, `ShepherdProtocol`, `ShepherdCore`) belong to no
@@ -63,6 +66,7 @@ enum MobileRoute: Hashable, Codable {
     case padDesign(PadDesignRoute)        // DesignPad/PadDesignRoute.swift
     case terminal(TerminalRoute)          // Terminal/TerminalRoute.swift
     case designs(DesignsRoute)            // Designs/DesignsRoute.swift
+    case projects(ProjectsRoute)          // Projects/ProjectsRoute.swift
 }
 ```
 
@@ -78,6 +82,7 @@ Routes today:
 | Route | Shows |
 | --- | --- |
 | `.thread(AgentRef)` | one agent's thread |
+| `.projects(.list / .project / .task / .files / .settings)` | host-owned Projects and their detail screens; `.create` and `.assign` are modal |
 | `.home(.needsYou / .automations / .more / .recents)` | Home's destinations, and every recent thread |
 | `.newThread(.compose(host: UUID?))` | New thread (presented modally) |
 | `.subagents(.list(AgentRef) / .run(AgentRef, runID:))` | a thread's runs, one run |
@@ -245,6 +250,7 @@ controller before the host interrupts work.
 | Subagent tray | `Subagents/SubagentTray.swift` (D) | `ThreadComposer`, above the composer in one card with Up next | `SubagentTraySection(ref: AgentRef, tray: NativeSubagentTray, store: NativeThreadStore, state: ComposerState, size: NWSubagentTraySize, enabled: Bool)` |
 | Subagent routes | `Subagents/SubagentsRoute.swift` (D) | the turn footer's "N subagents", a turn's subagent record lines, the thread's options menu | `SubagentHooks.list(thread:) -> MobileRoute`, `SubagentHooks.run(thread:runID:) -> MobileRoute` |
 | Open review | `Review/ReviewRoute.swift` (E) | the changes card's Review and files, an edit line | `ReviewHooks.open(thread: AgentRef, file: String?, navigator: MobileNavigator)`; a recorded turn's card: `ReviewHooks.open(thread:turn:file:navigator:)`, the review scoped to that turn |
+| Open an artifact | `Review/ArtifactScreens.swift` (E) | the thread's "Made an artifact" line and its card | `ArtifactHooks.open(thread: AgentRef, path: String, navigator: MobileNavigator)`: iPad shows the docked pane's Artifacts tab, iPhone presents `ReviewRoute.artifact`; the thread reads `\.openArtifact`, nil where nothing can show it (a subagent's transcript). The files come from `NativeThreadStore.artifactFiles` (`native.artifacts.v1`) |
 | Undo a turn | `Thread/TurnUndo.swift` | the "Edited N files" card's Undo and Redo | `TurnUndoStore.shared.undo(_:ref:hosts:threads:)` / `redo`, and `.turnUndoAlert()` on the thread for a refusal |
 | Agent actions | `Search/AgentActionsMenu.swift` (F) | the thread's options menu (menu items only) | `AgentActionsMenu(thread: AgentRef)` |
 | Commit from review | `Commit/CommitHooks.swift` (G) | the changes' bar and ••• menu, the iPad composer and full-screen toolbar | `CommitHooks.available(host:) -> Bool`, `CommitHooks.open(thread:navigator:sizeClass:)`, `.commitPopover(ref:arrowEdge:)` on the iPad's Commit… |
@@ -274,7 +280,10 @@ redraws it unless its values changed; keep it that way.
 ## Windows (iPad)
 
 iPad runs several Shepherd windows at once, side by side in Split View or in Stage Manager;
-iPhone keeps one. `ShepherdIOSApp` has one scene:
+iPhone keeps one, except iPhone Duo, which opens them on its inner display held upright. The
+window items follow `WindowAvailability`: `supportsMultipleWindows` alone on iPad, and on iPhone
+Duo also a regular-width window wider than tall, since closed or held sideways a new window
+replaces the one showing. `ShepherdIOSApp` has one scene:
 
 ```swift
 WindowGroup(for: MobileWindowSeed.self) { $seed in MobileWindowRoot(app: app, seed: seed) }
@@ -325,7 +334,8 @@ WindowGroup(for: MobileWindowSeed.self) { $seed in MobileWindowRoot(app: app, se
   turn also drags out as text, and a composer takes dropped text into its draft.
 - **Commands** read the focused window's navigator (`@FocusedValue(\.mobileNavigator)`), set by
   each `MobileRoot`.
-- The window items are drawn only where `supportsMultipleWindows` is true: never on iPhone.
+- The window items are drawn only where `WindowAvailability` allows: never on iPhone, and on
+  iPhone Duo only its inner display held upright (the hinge from SwiftUI's `onHingeChange`).
 
 ## Rules every track follows
 

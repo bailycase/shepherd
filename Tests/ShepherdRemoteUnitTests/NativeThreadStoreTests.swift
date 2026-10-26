@@ -105,6 +105,70 @@ struct NativeThreadStoreTests {
         return (store, host, task)
     }
 
+    @Test func aStartupAnswerCanFinishAfterReadinessWithoutDroppingAWaitingSend() async {
+        var partial = F.snapshot(session: "", actions: ["answer"], dialogs: [NativeThreadDialog(id: "startup", kind: .confirm, title: "Continue?")])
+        partial.initializing = true
+        let host = FakeHost(partial)
+        let store = manualStore()
+        let answerGate = FirstPullGate(), sendGate = FirstPullGate()
+        let request: NativeThreadStore.Request = { request in
+            switch request {
+            case .answer(_, _, let id, _, _):
+                answerGate.asked = true
+                await until { !answerGate.held }
+                return .accepted(operationID: id)
+            case .send(_, _, let id, _, _, _, _, _, _):
+                sendGate.asked = true
+                await until { !sendGate.held }
+                return .accepted(operationID: id)
+            default:
+                return try host.handle(request)
+            }
+        }
+        let shown = Task { await store.run(request: request) }
+        defer { shown.cancel(); store.stop() }
+        await until { store.supports("answer") }
+        store.draft = "next"
+        let sending = Task { await store.send(); sendGate.held = false }
+        await until { store.busy && store.supports("answer") }
+        let answering = Task { await store.answer(dialogID: "startup", sessionID: "", generation: "g", answer: .confirm(value: true)) }
+        await until { answerGate.asked }
+        host.snapshot = F.snapshot(session: "ready")
+        await store.refresh()
+        #expect(store.busy && !sendGate.asked && sendGate.held, "Send waits for the pending startup answer to finish")
+        answerGate.held = false
+        await answering.value
+        await until { sendGate.asked || !sendGate.held }
+        #expect(sendGate.asked && store.busy && store.notice == nil, "the expected readiness transition must neither fail the answer nor drop Send")
+        sendGate.held = false
+        await sending.value
+        #expect(!store.busy && store.notice == nil)
+    }
+
+    @Test func startupSnapshotsReplaceHostProvisionalRowsIncludingAcrossGenerations() async {
+        let old = F.assistant("old output", id: "old")
+        let new = F.assistant("new output", id: "new")
+        var partial = F.snapshot(session: "", actions: ["answer"], provisional: [old])
+        partial.initializing = true
+        let (store, host, task) = await started(partial)
+        defer { task.cancel(); store.stop() }
+        #expect(store.snapshot?.provisional == [old])
+        host.snapshot.provisional = []
+        host.snapshot.revision += 1
+        await store.refresh()
+        #expect(store.snapshot?.provisional.isEmpty == true, "do not resurrect a row the host clipped or removed")
+        host.snapshot.provisional = [old]
+        host.snapshot.revision += 1
+        await store.refresh()
+        host.snapshot.generation = "replacement"
+        host.snapshot.provisional = [new]
+        await store.refresh()
+        #expect(store.snapshot?.provisional == [new])
+        host.next = [.success(.failure(code: NativeThreadCode.unavailable, message: "offline"))]
+        await store.refresh()
+        #expect(store.loadError == "offline" && !store.supports("answer"))
+    }
+
     // MARK: Recorded turns
 
     /// A reply carries the turn its host recorded for the message that opened it (its
@@ -1086,9 +1150,15 @@ struct NativeThreadStoreTests {
         defer { task.cancel() }
         host.acceptAll()
         await store.answer(dialogID: "ext", sessionID: "s", generation: "g", answer: .cancel)
+        #expect(store.notice?.contains("question") == true)
         await store.answer(dialogID: "missing", sessionID: "s", generation: "g", answer: .cancel)
+        #expect(store.notice?.contains("question") == true)
         await store.answer(dialogID: "ok", sessionID: "old", generation: "g", answer: .cancel)
+        #expect(store.notice?.contains("session") == true)
+        await store.answer(dialogID: "ok", sessionID: "s", generation: "old", answer: .cancel)
+        #expect(store.notice?.contains("session") == true)
         #expect(host.actions.isEmpty)
+        #expect(store.dialogs == dialogs, "refusals do not dismiss or replace the question")
         await store.answer(dialogID: "ok", sessionID: "s", generation: "g", answer: .confirm(value: true))
         guard case .answer(_, _, _, let dialog, let answer)? = host.actions.first else { Issue.record("expected an answer"); return }
         #expect(dialog == "ok" && answer == .confirm(value: true))
@@ -1540,31 +1610,109 @@ struct NativeThreadStoreTests {
         #expect(store.rows.last { !$0.isUser }?.retryEntryID == entry)
     }
 
-    /// Retry retries in place on a host that can; elsewhere it sends the turn's prompt again.
     @Test(arguments: [true, false])
-    func retryGoesInPlaceWhereTheHostCanElseSendsThePromptAgain(inPlace: Bool) async throws {
-        let actions = ["send", "abort"] + (inPlace ? ["retry"] : [])
-        let (store, host, task) = await started(F.snapshot(actions: actions, messages: [F.user("fix it", id: "u"),
-                                                                                       F.assistant("", status: "error", id: "a")]))
+    func retryUsesTheExactCheckpointOrExplainsUnsupportedWithoutSending(supported: Bool) async throws {
+        let checkpoint = NativeRecoveryCheckpoint(token: "token", failedEntryID: "failed-entry")
+        var snapshot = F.snapshot(actions: ["send", "abort", "retry"] + (supported ? ["checkpointRecovery"] : []),
+                                  messages: [F.user("fix it", id: "u"), F.assistant("", status: "error", id: "a")])
+        snapshot.checkpointRecovery = supported ? NativeCheckpointRecovery(checkpoint: checkpoint) : nil
+        let (store, host, task) = await started(snapshot)
         defer { task.cancel() }
         host.action = { request in
-            switch request {
-            case .retry(_, _, let id, _), .send(_, _, let id, _, _, _, _, _, _): .accepted(operationID: id)
-            default: .failure(code: "x", message: "unexpected")
-            }
+            guard case .retry(_, _, let id, _, _) = request else { return .failure(code: "x", message: "unexpected") }
+            return .accepted(operationID: id)
         }
         let row = try #require(store.rows.last)
         #expect(store.canRetry(row, running: false) && !store.canRetry(row, running: true))
         await store.retry(row)
-        let action = try #require(host.actions.first)
-        if inPlace {
-            guard case .retry(let session, let generation, _, let entryID) = action else { Issue.record("expected retry"); return }
-            #expect(session == "s" && generation == "g" && entryID == "u")
+        if supported {
+            let action = try #require(host.actions.first)
+            guard case .retry(let session, let generation, _, let entryID, let sentCheckpoint) = action else {
+                Issue.record("expected recovery"); return
+            }
+            #expect(session == "s" && generation == "g" && entryID == "u" && sentCheckpoint == checkpoint)
+            #expect(host.actions.count == 1)
         } else {
-            guard case .send(_, _, _, let text, .followUp, _, _, _, _) = action else { Issue.record("expected send"); return }
-            #expect(text == "fix it")
+            #expect(host.actions.isEmpty, "old send/rewind fallback must not run")
+            #expect(store.notice?.contains("message-free checkpoint recovery") == true)
         }
-        #expect(host.actions.count == 1)
+    }
+
+    @Test func uncertainRecoveryKeepsItsOperationAndLateReplyCannotChangeTheNewRun() async throws {
+        let checkpoint = NativeRecoveryCheckpoint(token: "sealed", failedEntryID: "failure")
+        var initial = F.snapshot(actions: ["send", "abort", "retry"],
+                                 messages: [F.user("fix it", id: "u"), F.assistant("failed", status: "error", id: "a")])
+        initial.checkpointRecovery = NativeCheckpointRecovery(version: 1, checkpoint: checkpoint)
+        initial.supportedActions.append("checkpointRecovery")
+        let host = FakeHost(initial)
+        let store = manualStore()
+        var pending: CheckedContinuation<NativeThreadResult, Error>?
+        let gate = FirstPullGate()
+        var attempts: [NativeThreadRequest] = []
+        let poll = Task {
+            await store.run { request in
+                if case .retry = request {
+                    attempts.append(request)
+                    return try await withCheckedThrowingContinuation { pending = $0; gate.asked = true }
+                }
+                return try host.handle(request)
+            }
+        }
+        defer { poll.cancel(); store.suspend(); pending?.resume(throwing: CancellationError()) }
+        await until { store.ready }
+        let row = try #require(store.rows.last)
+        try #require(row.offersRetry && store.canRetry(row, running: false))
+        let first = Task { await store.retry(row) }
+        await until { gate.asked }
+        pending?.resume(returning: .failure(code: "outcome_unknown", message: "unknown delivery")); pending = nil
+        gate.asked = false
+        await first.value
+        let second = Task { await store.retry(row) }
+        await until { gate.asked }
+        #expect(attempts.count == 2 && attempts[0] == attempts[1], "an explicit check may replay the exact operation, never create a new one")
+        store.suspend()
+        poll.cancel()
+        host.snapshot.piSessionID = "new-session"
+        host.snapshot.generation = "new-generation"
+        let resumed = await start(store, host)
+        defer { resumed.cancel() }
+        store.reportActionNotice("current run notice")
+        let attempt = try #require(attempts.last)
+        guard case .retry(_, _, let operation, _, _) = attempt else { Issue.record("expected recovery"); return }
+        pending?.resume(returning: .accepted(operationID: operation)); pending = nil
+        await second.value
+        #expect(store.notice == "current run notice")
+        #expect(store.snapshot?.piSessionID == "new-session" && store.snapshot?.generation == "new-generation")
+        #expect(store.snapshot?.messages == initial.messages)
+    }
+
+    @Test func aStaleReplyCannotContinueANewerFailureInTheSameSession() async throws {
+        var initial = F.snapshot(actions: ["send", "abort", "retry", "checkpointRecovery"],
+            messages: [F.user("request", id: "u"), F.assistant("failed A", status: "error", id: "a")])
+        initial.checkpointRecovery = NativeCheckpointRecovery(version: 1,
+            checkpoint: NativeRecoveryCheckpoint(token: "token-A", failedEntryID: "failed-A"))
+        let (store, host, task) = await started(initial)
+        defer { task.cancel(); store.stop() }
+        let old = try #require(store.rows.last)
+        var newer = initial
+        newer.messages.append(F.assistant("failed B", status: "error", id: "b"))
+        newer.checkpointRecovery?.checkpoint = NativeRecoveryCheckpoint(token: "token-B", failedEntryID: "failed-B")
+        newer.revision += 1
+        host.snapshot = newer
+        await store.refresh()
+        await store.retry(old)
+        #expect(host.actions.isEmpty)
+        #expect(store.notice?.contains("That reply changed") == true)
+    }
+
+    @Test func aRecoveryRefusalIsVisibleWithoutSending() async throws {
+        var snapshot = F.snapshot(actions: ["send", "checkpointRecovery"],
+                                  messages: [F.user("fix it", id: "u"), F.assistant("", status: "error", id: "a")])
+        snapshot.checkpointRecovery = NativeCheckpointRecovery(refusal: "recovery_uncertain_tool")
+        let (store, host, task) = await started(snapshot)
+        defer { task.cancel() }
+        await store.retry(try #require(store.rows.last))
+        #expect(host.actions.isEmpty && store.notice == "A tool call may be incomplete or have failed after a side effect. Continue will not replay it.")
     }
 
     @Test func onlyTheLastReplyIsLiveWhileTheAgentRuns() async {

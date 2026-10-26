@@ -20,7 +20,7 @@ struct PadHostsScreen: View {
                 NoHostsState().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 let current = model.hosts.first { $0.id == chosen } ?? model.hosts[0]
-                HStack(spacing: 0) {
+                PadListDetail(listWidth: MobileLayout.hostsListWidth) {
                     ScrollView {
                         VStack(alignment: .leading, spacing: NW.Space.xxs) {
                             ForEach(model.hosts) { card in
@@ -43,11 +43,21 @@ struct PadHostsScreen: View {
                         hosts.retryAll()
                         await feed.refresh()
                     }
-                    .frame(width: MobileLayout.hostsListWidth)
-                    NWHairline(.vertical)
+                } detail: {
                     PadHostDetail(card: current, running: model.running.filter { $0.ref.host == current.id },
                                   automations: model.automationsRunning.filter { $0.host == current.id })
-                        .frame(maxWidth: .infinity)
+                } single: {
+                    // Too narrow for both (iPhone Duo): the phone's host cards, each opening its form.
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
+                            ForEach(model.hosts) { card in HostCardView(card: card) }
+                        }
+                        .padding(MobileLayout.gutter)
+                    }
+                    .refreshable {
+                        hosts.retryAll()
+                        await feed.refresh()
+                    }
                 }
             }
         }
@@ -55,7 +65,15 @@ struct PadHostsScreen: View {
         .task { await feed.watch() }
         .navigationTitle("Hosts")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(removing: .title)
         .toolbar {
+            // iPadHosts: "Hosts" leads the bar, over the list.
+            ToolbarItem(placement: .topBarLeading) {
+                Text("Hosts").font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary)
+                    .fixedSize()
+                    .accessibilityAddTraits(.isHeader)
+            }
+            .sharedBackgroundVisibility(.hidden)
             ToolbarItem(placement: .primaryAction) {
                 Button("Add host", systemImage: "plus") { navigator.present(.settings(.host(nil))) }
             }

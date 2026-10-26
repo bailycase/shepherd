@@ -404,8 +404,9 @@ jobs:
     permissions:
       contents: read
     env:
-      # Never a beta Xcode: App Store Connect refuses its builds (ITMS-90534).
-      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+      # Never a beta Xcode: App Store Connect refuses its builds (ITMS-90534). 27.1, because only
+      # an iOS 27.1 SDK build fills iPhone Duo's displays and moves its bars to the side.
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
       SCHEME: ${{ fromJSON(needs.plan.outputs.plan).ios_scheme }}
       CONFIGURATION: ${{ fromJSON(needs.plan.outputs.plan).ios_configuration }}
       PRODUCT: ${{ fromJSON(needs.plan.outputs.plan).ios_product }}
@@ -424,8 +425,9 @@ jobs:
           xcodebuild -version
           sdk=$(xcrun --sdk iphoneos --show-sdk-version)
           echo "iOS SDK $sdk"
-          if (( ${sdk%%.*} < 27 )); then
-            echo "::error::Shepherd iOS needs the iOS 27 SDK; $DEVELOPER_DIR has $sdk." && exit 1
+          IFS=. read -r major minor _ <<< "$sdk"
+          if (( major < 27 || (major == 27 && ${minor:-0} < 1) )); then
+            echo "::error::Shepherd iOS needs the iOS 27.1 SDK (iPhone Duo); $DEVELOPER_DIR has $sdk." && exit 1
           fi
           if [[ "$(realpath "$DEVELOPER_DIR")" == *[Bb]eta* ]]; then
             echo "::error::$DEVELOPER_DIR is a beta Xcode, which App Store Connect refuses." && exit 1

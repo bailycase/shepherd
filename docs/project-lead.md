@@ -39,8 +39,10 @@ folder-based UI becomes Spaces before the new Projects UI uses that name.
 
 - **D1. Assigned work.** A project coordinates tasks the user asks for, including follow-up work
   needed to finish those tasks. The goal provides context, not permission to invent more work
-  indefinitely. Quick questions can be answered in the project conversation. Related follow-ups
-  can reuse an existing task thread.
+  indefinitely. Quick questions can be answered in the project conversation. Follow-ups may reuse
+  a settled worker only for its original unresolved assignment. New assignments use `project_assign`
+  with fresh task and worker-thread identities, even in the same area. Include exact prior result
+  references and a short handoff when useful; never keep unfinished tasks as reusable peers.
 - **D2. Questions.** Needs you primarily means questions. A question is associated with its
   originating task thread. The user can answer in the project conversation or in that thread.
   The answer must reach the same question without being delivered twice. Unrelated work need
@@ -107,11 +109,47 @@ concurrency limits still bound coordination; this feature makes no strict dollar
   thread as coordinated work.
 - Questions and results retain their originating thread identity. Model prose is not proof
   that a thread finished or that a question was answered.
-- Resolved threads remain inspectable and can be reopened. They are not deleted. A thread
-  becoming idle is not automatically proof that its assigned task succeeded.
-- Pause prevents new coordinated work and automation runs and requests safe interruption of
-  active project work. Messages sent while paused wait for explicit Resume. The UI cannot
-  claim an unreachable worker stopped before its host acknowledges that request.
+- Resolved tasks are terminal, not deleted. Their history, results and artifacts remain readable
+  through authorized routes. A stopped (settled) turn is not success or resolution. Fresh follow-ups
+  and legacy `reopen` requests refuse with `task_resolved` and direct callers to `project_assign`.
+- **Outcomes** are separate from the runtime phase. `ProjectRuntimeRequest.recordOutcome` (the coordinator's
+  `project_outcome`) appends one fact bound to an exact settled or resolved activation (`taskOperationID`: the current run,
+  or an earlier run of the same task proven by `previousOperations` or its durable `activation` record): `accepted` or
+  `needsChanges` (a review verdict), or `merged`, `uploaded` or `available` (delivery facts that need redacted evidence up
+  to 256 bytes, such as a PR, commit or build reference). Uploaded is not available to testers. It never changes the phase,
+  reopens a resolved task or touches its worker. There is no lifetime quota: `ProjectTask.outcomes` is a bounded working
+  copy (newest `ProjectTaskOutcome.hotPerTask`, 4, always keeping the current run's newest fact) and
+  `archivedOutcomeCount` counts the rest. Every fact is inserted once into the existing durable history (`records`,
+  kind `outcome`, append-only `ON CONFLICT DO NOTHING`) only from committed state: the predecessor that `prepare`
+  captures, or a committed snapshot. A candidate's new fact is never written while it may still be refused or abandoned,
+  and only facts read back as durable may leave the working copy, so retirement, resolved-task retirement and restart
+  lose nothing, and a refused, failed or uncommitted fact is neither history nor retained-operation proof (its identity
+  stays admissible). `ProjectRuntimeRequest.outcomes(taskID:operationID:beforeSequence:)`
+  (the coordinator's `project_outcomes`; a worker only for its own task) pages 8 facts newest first, filtered and limited in
+  SQL; `historyNext` continues it. An executor task's facts follow its captured route grant exactly as its result does:
+  checked before page I/O and again at return, so removing or replacing that Space (including remove/restore while the read
+  is suspended) permanently revokes the captured read; a fresh read may succeed; other Spaces' changes do not revoke it. Replays use the existing
+  command receipts: an exact retry returns a receipt even after archival or reload, a changed payload is
+  `operation_conflict`, and nothing is duplicated, restored or dispatched. Each row always names its recorder ("per
+  coordinator" or "recorded by owner"); neither is a person's approval. Nothing infers an outcome from settlement,
+  resolution, worker prose or CI text: a legacy or unrecorded task stays unknown, and a follow-up's row shows no earlier
+  run's verdict. No outcome is required, and no Project goal, milestone or project-wide done exists or is needed.
+- **The shared brief** is the existing owner-approved source, not a new system: Settings ▸ Memory's Project
+  instructions (owner authority, labelled as set by the owner and never overriding system, host, tool or Space
+  permissions) and remembered facts (sourced data, `project_remember` only from an inspectable settled task). Every new
+  native turn reads them fresh from the owner. An empty goal is left out. Only the newest whole facts, each with its
+  redacted source, that fit 8,000 UTF-8 bytes ride along; none is truncated. The extension adds `olderMemoryOmitted`
+  and where to find them (the coordinator's `project_read` returns every fact; a worker is told to ask the coordinator).
+  Remote assignments carry `Project.briefMemory` (same rule, an omission line inside the budget) in the existing 16 KiB
+  prompt and retain the whole sourced records for executor-side rebudgeting. Legacy formatted-only briefs are kept or
+  omitted whole, never split into synthetic facts; an inactive executor receipt supplies none of it. Stored memory and Settings are unchanged.
+  Owner tool replies recheck their captured route through socket release. Revocation replaces an unwritten reply with a refusal,
+  or closes an already-partial frame rather than splicing NDJSON or finishing private data disclosure.
+  Executor-only context reads use their immutable execution receipt and local Space grant, not a fabricated owner Project;
+  removing and restoring that Space revokes a queued read, while unrelated Spaces leave that read live.
+- There is no person-facing Pause. When the runtime stops a Project itself (see Pause, restart and
+  deletion) it requests safe interruption of active work; the person's next message restarts it. The
+  UI cannot claim an unreachable worker stopped before its host acknowledges that request.
 - Project deletion removes project-owned conversation, memory and automation records while
   retaining ordinary task threads in their Spaces, their worktrees, branches and pull requests.
   Project-owned file retention or deletion must be explicit in the deletion confirmation.
@@ -159,8 +197,9 @@ Core types live in `Sources/ShepherdCore/Project.swift`:
 
 - `ProjectID`; `Project` with `id`, `name`, `goal`, `coordinatorAgentID?`, `revision`, `paused`,
   `settings`, `memory`, and `linkedSpaces`.
-- `LogicalProjectSettings(maxConcurrentWorkers: 3, conversationModel: nil, threadModel: nil,
-  instructions: "", canRequestSpaceLinks: true)`. Model preferences are the existing
+- `LogicalProjectSettings(maxConcurrentWorkers: 3, conversationModel: nil, conversationThinking: nil, threadModel: nil,
+  instructions: "", canRequestSpaceLinks: true)`. `conversationThinking` is the coordinator's reasoning level (a
+  `ThinkingLevel` raw value); an edit that omits it keeps the saved one. Model preferences are the existing
   provider/model strings used by `Agent.model`. Save does not require a currently available
   model; a future launch must validate against the owning host's catalog. The Space setting
   allows **requesting user approval**, never automatically adding a Space.
@@ -291,8 +330,8 @@ staged writes and delayed callbacks across OFF/ON. A worker prompt waiting for C
 is withdrawn by its exact native delivery ID, even before consumption establishes its run scope.
 Releasing the preparation cannot send it; explicit Resume uses a new native delivery ID. Manual
 messages in that worker are not cancelled. Saved messages, files, memory, links and ordinary
-worker threads remain. Turning ON never resumes work; use explicit Project Resume
-or start. Restart likewise restores paused work. Worker no-subagents policy is membership-based
+worker threads remain. Turning ON never resumes work; the person's next message
+restarts the Project. Restart likewise restores paused work. Worker no-subagents policy is membership-based
 and remains enforced even with the experiment OFF.
 
 ### Runtime hooks
@@ -301,8 +340,8 @@ and remains enforced even with the experiment OFF.
 
 - `sendProjectMessage(projectID:expectedRevision:operationID:text:) async throws -> Project`
 - `ensureProjectConversation(projectID:expectedRevision:) async throws -> AgentID`: finds/restores
-  an existing active conversation idle, without a prompt. A paused Project requires explicit
-  Resume first; an empty project requires its first message.
+  an existing active conversation idle, without a prompt. A stopped Project requires the person's
+  next message first; an empty project requires its first message.
 - `perform(projectID:expectedRevision:request:) async throws -> Project`
 - `conversationStore(agentID:) -> NativeThreadStore?`: the normal shared agent store, not a
   copied transcript. Composer sends use the Project hook. Raw coordinator sends, queue actions,
@@ -315,7 +354,8 @@ and remains enforced even with the experiment OFF.
 
 These call `SessionServer.projectRuntime(_:expectedRevision:request:)`. `ProjectRuntimeRequest`
 contains `conversation`, `message(operationID:text:images:)`, `assign(operationID:spaceID:title:prompt:)`,
-`followUp(taskID:operationID:text:)`, `resolve(taskID:)`, `reopen(taskID:)`, `pause`, and `resume`.
+`followUp(taskID:operationID:text:)`, `resolve(taskID:)`, `pause`, and `resume`.
+The legacy `reopen(taskID:)` wire case still decodes but refuses new requests; resolved tasks are terminal.
 Additional actions are `read`, `inspect(taskID:)`, `proposeSpace(operationID:path:spaceID:originTaskID:)`,
 `decideSpace(proposalID:expectedProposalRevision:accept:)` and `remember(operationID:text:taskID:)`.
 Model resolution supplies an optional `operationID` on `resolve` for durable retry receipts.
@@ -348,8 +388,8 @@ message it can deliver: the page reads the saved history from pi's session file
 coordinator pi runs and no message is queued or in flight (or the Project is paused), the store is
 `offline` (`ProjectComposerSend.isOffline`, restated by the view model on every adoption and when a
 store is made): `native_starting` is then the expected answer, so the composer never says "Starting
-the agent" and no "has not started after a minute" error appears. Resume alone launches nothing; the
-next message does, and its start is the ordinary, timed warm-up. A remote owner's page sets
+the agent" and no "has not started after a minute" error appears. Nothing launches the coordinator but the
+next message, and its start is the ordinary, timed warm-up. A remote owner's page sets
 `offline` from the Project it pushed; a served snapshot is ready whatever `offline` says.
 
 The coordinator's pi launches with `--no-builtin-tools` (`PiLaunch.agent(coordinator:)`), never
@@ -360,15 +400,17 @@ its Project extension registers, leaving the coordinator with none.
 owner-local Space, title, prompt, phase, revision, optional error, settled timestamp and question
 title. Phases are `queued`, `reserved`, `running`, `waiting`, `settled`, `resolved`, `unknown`,
 `failed`. **Settled means an admitted worker emitted an actual started/settled native turn, not
-success or automatic resolution.** User resolution requires settled; Reopen returns resolved
-to settled. Follow-up reuses a settled worker and its native conversation. Active work can still
+success or automatic resolution.** User resolution requires settled and is terminal. Follow-up
+reuses a settled worker and its native conversation only for the original unresolved assignment.
+Fresh resolved-task follow-ups refuse before changing prompt, model, thinking or delivery state,
+including tasks restored from durable history. Active work can still
 be steered directly in that ordinary thread; a project follow-up to an active/unknown task is
 refused, not silently reinterpreted. Questions retain worker identity and remain inspectable.
 
-`Project.messages` retains bounded queued/delivering/delivered/unknown/failed receipts.
+`Project.messages` is bounded operational delivery state, not the Project's lifetime history. An owner-only SQLite ledger beside the owner state file archives committed messages, task activations, native events and replay/answer proof before retirement. It retains attachment references and human provenance; it does not rewrite native transcripts. Reads use indexed, bounded pages rather than loading the archive into every update. The newest 32 messages are retained where possible; queued, delivering, unknown, unanswered questions and unresolved answer dispatches remain pinned, up to the existing 64-message/frame admission bounds.
 Human image-only and text-plus-image submissions use optional `NativeImage` inputs; durable
-receipts retain bounded private blob descriptors, never image bytes in Project JSON. Paused
-images wait for explicit Resume and restart remains paused. Remote image submissions require
+receipts retain bounded private blob descriptors, never image bytes in Project JSON. Images sent to a
+stopped Project restart it with the message. Remote image submissions require
 `logicalProjectRuntime.images.v1` and must fit one frame; oversized sends fail before transmission
 without clearing the draft. Storage, privacy and UI API: [Project producers](project-producers.md). A retry with the
 same operation identity returns the current record without another prompt, even with a stale
@@ -397,20 +439,23 @@ the Instructions editor's independent character counter does not change.
 
 ### Pause, restart and deletion
 
-A Project never pauses on its own. Only the person pauses it (Project settings > Pause project, or the pane), and only Resume or
-their next message after Resume starts work again. There is no run-time or activation limit; the bounds are Threads at once
-(how many threads run together) and the owner's plan limits, as in Claude's Projects. Stop on the coordinator ends its current
-turn only. A coordinator pi that exits marks an in-flight delivery `unknown` (never resent) and the next message relaunches it.
-A failed launch of the coordinator still pauses (there is nothing to talk to) and says why.
+The person has no Pause or Resume (removed 2026-10-20: the owner found it made no sense). Stop on the coordinator or a worker ends
+that turn only. There is no run-time or activation limit; the bounds are Threads at once (how many threads run together) and the
+owner's plan limits, as in Claude's Projects. A coordinator pi that exits marks an in-flight delivery `unknown` (never resent) and the
+next message relaunches it.
 
-Pause closes admissions, retains new messages and queued assignments, and issues native aborts
+The runtime still stops a Project on its own when it cannot go on: a failed coordinator launch, a failed Project save, or Projects
+turned off. That stop is the internal `.pause` described below. The person's next message restarts it (the `.resume` transition,
+applied by `.message`); while the interruption is unacknowledged the message is refused with `project_busy` and the words stay.
+
+The internal stop closes admissions, retains new messages and queued assignments, and issues native aborts
 for active project work. `interruptPending` distinguishes the request from acknowledged idle
 processes; pending launcher callbacks also reconcile the acknowledgement. A worker solely waiting
 on an actual native human dialog is a safe pause point and is NOT aborted. Concurrent non-question
 tool work still interrupts. Both native answer views enter the same owner gate while paused:
 `ProjectTask.pendingAnswer: ProjectQuestionAnswer?` persists the original operation/session/
 generation/dialog identity and a bounded opaque native answer envelope. Its phase is queued,
-delivering, delivered, failed or unknown. UI shows queued as waiting for explicit Resume; it must
+delivering, delivered, failed or unknown. UI shows queued as waiting to send; it must
 not display or log the envelope. Resume revalidates the original live dialog and consumes the
 answer once; expired/replaced dialogs fail honestly, never become synthetic replacement dialogs.
 Restart marks retained answers unknown and never sends them. An ordinary worker Stop can explicitly
@@ -422,10 +467,17 @@ follow-up continues it); another host's thread stays `unknown` until its receipt
 Deliveries in flight become `unknown` and are never resent. No polling model, invented backlog or
 automatic task retry is used. First-class child/workflow/peer/automation spawn/send bypasses are
 gated for active assigned workers; ordinary coding tools stay available.
-Record limits remain 64 task links, 32 activations and 32 resolution receipts per task, 64 message
-receipts, 32 Space proposals and 128 memory-operation receipts within the encoded project budget.
-A full event receipt queue pauses and records an inspectable error; the native result remains in
-the worker conversation. These are storage safeguards, not run limits.
+Completed history no longer consumes a permanent delivery, activation, resolution, memory-operation or executor-receipt quota. The owner archives resolved tasks before retaining at most 16 recent resolved tasks plus live work; `archivedResolvedTaskCount` preserves the lifecycle count. Authorized archived open/read routes retrieve the exact retained task without reactivating it. New follow-up/reopen requests cannot revive it. Previously accepted operations, including legacy resolved-task follow-ups, retain their replay/recovery proof: exact-payload replay returns retained receipts before new admission checks, never redispatches or reopens work. Legacy proof without a verifiable payload refuses resend. No historical lifecycle or native transcript is rewritten, and uncertain work is never automatically resent. Recent terminal Space proposals and executor receipts are bounded too; active/unknown receipts stay pinned. Artifact references pin their operations. Retired referenced tasks keep only bounded task/worker/Space/host/operation provenance, not prompts or full task records, so artifacts and pending Space proposals still validate. Terminal recovery preserves the exact operation's diagnostic, including takeover and native turn warnings, rather than clearing it or importing an older failure.
+
+A native stop first enters the durable event/result outbox. Only then can a workspace save publish settlement. If the live queue is full, the result remains indexed in the outbox and drains in owner sequence before newer human admission; it is not dropped and the worker is not rerun. A failed workspace rename leaves the outbox recoverable on the next owner save. Storage failure fails closed, retains the in-process capture where available, and blocks admissions; explicit Resume can retry retaining that already-observed stop without resending its prompt. Process death before capture is durably recorded can still leave an interrupted/unknown operation with unavailable content, never invented success or automatic dispatch.
+
+Migration archives the original committed state transactionally before changing working arrays. It is idempotent, also for legacy Projects already holding 64 messages; queued/in-flight/failed/unknown states, original IDs, attachments and answer proof survive. Restart resumes no model work. History already discarded by an earlier version cannot be reconstructed from a clipped receipt or display ID.
+
+Archived native threads remain hidden as managed workers but are readable through the owner-authorized worker route. It loads one historical task, checks the original worker/session and remote execution binding, and allows snapshots only. It does not reactivate a task or resend work. Closed child-scope tombstones retain at most 16 recent scopes plus scopes still draining; old tokens/callbacks fail closed after eviction and restart.
+
+Result, history and worker-snapshot reads retain their initial permission grant across asynchronous storage/host I/O. Disable/re-enable, caller replacement, ownership or linked host-policy changes revoke that grant; Pause and ordinary work-state updates do not. Both owner and executor recheck before returning content or metadata. Removing, hiding or replacing the exact executor Space/path/binding revokes its read grant even if that route is later restored; no-op refreshes, display renames and unrelated Spaces do not. Route tokens mirror only the current visible directory, not lifetime history. Existing disabled-executor cancellation, pause and receipt reconciliation remain available with exact scope checks; execute/resume/answer and the new result/worker-content reads still require Projects to be enabled.
+
+Resources remain finite: working task/executor counts, unknown dispatches, active answer receipts, linked Spaces, configuration memory and existing artifact/storage budgets can apply real backpressure. SQLite history grows on disk; disk exhaustion is an error, not automatic proof deletion. Captures retain at most 16 MiB of final visible text and explicitly mark larger/non-text/abnormal-stop results incomplete. Settled still does not mean reviewed success.
 
 ### Per-task model and thinking
 
@@ -434,7 +486,8 @@ coordinator's `project_read({includeModels: true})`) and `thinking` (off…max).
 task, launches the thread with them, and before a follow-up's prompt sets the thread's model and
 thinking when they changed. Omitted, a task uses the Project's Thread model and the owner's default
 thinking level (Settings > Agents), never a hardcoded level. A follow-up keeps the task's earlier
-choice unless it names a new one, and reaches a resolved task too, reopening it.
+choice unless it names a new one. Only an admitted same-assignment turn may change these values;
+a fresh follow-up to resolved work cannot change them.
 
 ### Asking the person
 
@@ -472,7 +525,7 @@ including the existing genuine persistence-failure regression.
 ### Typed tools, live context, Space approval and hosts
 
 `shepherd-project-context.ts` registers only
-`project_read`, `project_inspect`, `project_answer`, `project_assign`, `project_follow_up`, `project_resolve`,
+`project_read`, `project_inspect`, `project_history`, `project_result`, `project_answer`, `project_assign`, `project_follow_up`, `project_resolve`,
 `project_propose_space` and `project_remember` for coordinators. Ordinary workers get no coordinator
 tools. Kernel extension-peer identity, reciprocal coordinator ownership, revision, operation,
 linked Space and host permission checks run independently on the host. These primary tools are
@@ -482,11 +535,11 @@ coordinators and their working directories.
 
 AI-facing results omit the model catalogue unless `project_read({includeModels: true})` requests it.
 Reads omit task prompts and result bodies; mutations acknowledge only the affected task or proposal.
-`project_inspect({taskID})` returns task state and native receipt identities without replaying settled
-result prose. Add `includeResults: true` to retrieve retained prompt/result bodies, not a full native
-transcript. Remote receipt text is capped at 4,096 bytes; oversized local events omit content.
-Inspect the source worker conversation when receipts are clipped or omitted; an index or preview
-is not proof of result inspection or success. Questions, options and eligible human reply proof
+`project_inspect({taskID, operationID?})` returns task state and at most three retained native receipt identities without replaying settled result prose. `project_history({taskID?, beforeSequence?, includeResults?})` explicitly pages retained owner history, newest first, at most five records/256 KiB of retained bodies per page. Omit taskID for Project messages, including historical human replies. Default pages are indexes, not inspected result content. `includeResults: true` on inspect/history reveals retained receipt bodies only; old remote receipt text can be capped at 4,096 bytes and oversized local receipts can omit content.
+
+`project_result({taskID, operationID, offset?, sha256?})` retrieves only that exact operation's visible final assistant text, redacted before paging. First use offset 0; follow `nextOffset` with the returned SHA-256. Pages contain at most 8 KiB of base64-encoded bytes with stable total bytes, hash, redaction status and exact owner/Project/task/operation/event/worker/session/generation/delivery/host identity. Remote results retain both owner-event and executor-origin identities/revisions. Continuations require the digest; bytes reconstruct one immutable UTF-8 result even if a code point spans a page. Read all pages and check availability; an index, clipped preview or partial page is not proof of complete inspection or success. No thinking, system prompt, unrelated transcript or tool-output browsing is exposed.
+
+Availability is `complete`, `incomplete`, `unavailable` or `unsupported`. Legacy clipped/missing captures remain honestly unavailable. Remote reads require `logicalProjects.result.v1`, the original owner host/binding/Space authorization and executor key; stale generations, replaced bindings and unsupported peers fail closed, never fall back to a latest assistant response. Questions, options and eligible human reply proof
 remain intact. App snapshots, native receipts and existing transcripts are unchanged; these
 projections apply only to new coordinator tool results. Lost mutation replies report an unknown
 outcome, never a refusal or verified success.
@@ -522,12 +575,10 @@ answer, expired dialog, changed activation/generation, manual takeover, stale re
 Project cannot redirect the chat answer to another question. Ordinary native controls need no
 coordinator proof and keep their existing behavior.
 
-`project_read`/`project_inspect` expose at most the current eligible human message, redacted, alongside
-inspect's existing three worker events. They never expose chat history, image descriptors, chat-answer
-payload receipts or immutable execution retry context. Native question sources carry optional
+`project_read`/`project_inspect` expose at most the current eligible human message, redacted, alongside inspect's three worker events. Explicit `project_history` pages can retrieve historical human messages and their original provenance; neither those old messages nor a result can authorize a new native answer. Model-facing copies omit image descriptors, opaque chat-answer envelopes and immutable execution retry context. Native question sources carry optional
 generation; old events without it cannot authorize a relay.
 
-The owner retains up to 64 chat-answer receipts per Project under their human messages, each binding
+The bounded live state retains up to 64 chat-answer receipts under human messages; the durable history/replay ledger preserves retired proof without a Project-lifetime answer quota. Each receipt binds
 operation, task, question event and the exact bounded native answer envelope (32 KiB). Identical
 accepted retries do not dispatch again; changing the answer or source under an operation refuses.
 In-flight/unknown delivery is reported as uncertain, never retried as a fresh answer. A definite
@@ -602,8 +653,11 @@ creates no thread, session or process and fakes no conversation, task or send.
   from the text and `Project.maximumInstructionsLength` (16,000), and Forget. **Automations:** an honest empty
   state, because an `Automation` has no project link yet.
 - **A resolved task's thread** in the pane draws no composer at all (`ProjectWorkerThreadStyle.composerHidden`), not a
-  disabled one: the footer card ("This thread is resolved.", Reopen) stands in and the transcript reaches the pane's
-  bottom. Reopen brings the steering composer back.
+  disabled one: the read-only footer card ("This thread is resolved." / "Its history stays here. New work starts a new
+  thread.") stands in and the transcript reaches the pane's bottom. Resolved tasks are terminal, so the detail offers no
+  Reopen anywhere (the header's check is a green status, the More menu keeps only Open as a thread, the footer has no
+  action, and `ProjectTaskRow` has no `canReopen`). The history stays readable in the pane and through Open as a thread;
+  new work is a fresh assignment. Ordinary chat and authorized owner manual takeover are unchanged.
 - **A worker's question card** above the conversation's composer is truthful: the worker is blocked on a native question, so its
   footer says "<thread> is waiting for your answer." (never that it "keeps going on its best guess"), and while the Project is
   paused "Your answer waits until you resume." Once the owner holds an answer (queued for Resume, or on its way) the card goes,
@@ -635,24 +689,33 @@ copied transcript. Only the composer's **send** and **placeholder** differ (`Pro
 a send uses one operation identity per text-and-images submission, so a retry never delivers twice. While paused a message
 is accepted and held by the runtime (queued, not delivered), and Resume is a real control until the owner acknowledges the interruption.
 
-**Model and branch.** The conversation's composer is the standard one, with its model chip and the same All models… picker (a remote
-Project lists its owner's catalog). The chip names the Project's `conversationModel`, else the app's default model. A pick saves that
-setting FIRST (`ProjectConversationModel.choose`, a revision-checked settings write), and only when the owner accepts it does a running
-coordinator's own `setModel` follow, so the live model and the one a relaunch uses never disagree. A refused save leaves the chip as it
-was and says why on the composer's own failed line. Before the first message there is no coordinator, so the setting is the only
-place the pick can go, and the launch reads it. A Project conversation and its worker threads draw no branch or worktree chip: the runtime
+**Model, reasoning and branch.** The conversation's composer is the standard one, with its model chip, reasoning levels and the same
+All models… picker (a remote Project lists its owner's catalog). The Project's settings target the coordinator only: `conversationModel`
+and `conversationThinking` (never the task threads' `threadModel` or a task's own level). While the coordinator's pi serves, the chip
+names its live model and level; while it does not (no coordinator yet, held off after a relaunch, paused, starting), it names the
+Project's saved model, else the app's default, and the saved level, else the owner's default for a new coordinator, offering the levels
+the catalog lists for that model. Either way the chip opens and a pick saves the setting FIRST (`ProjectConversationModel.choose` and
+`chooseThinking`, revision-checked settings writes); only when the owner accepts it does a serving coordinator's own `setModel` or
+`setThinking` follow, so the live thread and the one a relaunch uses never disagree. A new model clamps the saved level to the levels it
+takes, as pi does. The owner applies both at launch and before each message it delivers. A refused save leaves the chip as it was and
+says why on the composer's own failed line. A remote owner without `logicalProjects.conversationThinking.v1` keeps no level: there the
+level is offered only while its coordinator serves, as the live thread's own. A Project conversation and its worker threads draw no branch or worktree chip: the runtime
 places the work in the Project's linked Spaces. (Reported 2026-10-13: starting a Project showed "Lost connection to the agent process.
 native_unavailable: The agent no longer exists." with a model chip that could not be changed. The screenshot was a temporary file and is
 not kept; the cause and fix are in `docs/project-execution.md`, Coordinator startup.)
 
 - **Right pane:** Waiting on you, Working and Resolved groups from `Project.tasks`; a row's detail is the worker's own question (waiting) or
   its latest native activity (running); ages come from the task's own clock. Opening a row shows the worker's **ordinary** thread with its
-  own composer (steering stays native); Resolve, Reopen and Open as a thread are real runtime calls with the displayed revision.
+  own composer (steering stays native); Resolve is a real runtime call with the displayed revision and Open as a thread selects the worker's ordinary thread; a resolved task is terminal and offers no Reopen.
+  Open as a thread follows the task's owner-relative `destination`: an owner-local worker is a local thread, a worker placed
+  on an executor opens through that exact host binding, and a viewer of a remote owner opens that owner's own workers. A worker
+  a remote owner placed on a third Mac, or a binding that has changed or gone, is reported in the action-failed dialog; it never
+  falls back to an agent-ID search or a local agent with the same ID, and opening never changes the task or sends anything.
 - **Questions:** a waiting task's native dialog is drawn as lettered options and answered through `answerProjectQuestion`, so the same dialog
   is not answered twice.
 - **Coordinators are not threads:** every ordinary-thread producer (sidebar in both modes, completions, palette, pins, notifications, remote
   inspection, peer lists) now asks `isOrdinaryThread`, covered by `ProjectCoordinatorHiddenTests`.
-- **Finished is done:** the strip counts settled and resolved tasks as done ("2 of 3 done"), as Claude's Projects counts a thread that finished. Settled still means finished but unconfirmed: it keeps Mark resolved in the pane and moves to Resolved only when the person or the coordinator resolves it. Pressing the strip expands the current task rows inline; selecting one opens its thread in the existing pane. The list scrolls beyond four rows, and switching Projects collapses it.
+- **Execution is not delivery:** a Project is a long-lived workspace of unrelated tasks, not one campaign, so the strip counts execution facts ("1 needs you · 2 working · 1 stopped · 3 resolved"), never "N of M done". A settled task is **Stopped** (its own pane group, idle dot, "No outcome recorded" until a fact for that exact run exists): settled proves only that the turn stopped, so no review is implied. Resolved closes the assignment; it claims no acceptance, merge or release. Pressing the strip expands the current task rows inline; selecting one opens its thread in the existing pane. The list scrolls beyond four rows, and switching Projects collapses it.
 - **Remote Projects:** an owner-remote Project's runtime actions are refused in words; they are never sent to this Mac's runtime.
 
 Verified with `ProjectPagePresentationTests`, `ProjectCoordinatorHiddenTests` (unit), `LogicalProjectConversationTests` (real scratch
@@ -668,6 +731,9 @@ The pane header draws every control the Started board draws, and each acts.
   operation id per sheet, so a retry never starts a second thread. It is disabled with a reason when the Project has no linked Space.
 - **Search threads** and **Filter** narrow the task list locally over the real `ProjectTask` rows (title, subtitle, group).
 - **Expand** gives the pane the whole page; the same button (named Collapse) restores the conversation.
+- **The pane's leading edge** is a thread's side-pane divider (`RightPaneSplit`): drag it, adjust it with VoiceOver, or double-click
+  for half the page. It starts at the board's 480 (479 and the 1pt line), stays 380 to half the page while the conversation keeps 400,
+  overlays the conversation in a narrower page, and keeps one width for every Project across launches (`shepherd.projectPaneWidth`).
 - A task row's subtitle is its worker's own native activity line, and its age is the worker's last user message (else its last status
   change). Nothing is typed in. The branch pill reads the worker Agent's own worktree branch and is absent without one.
 - The conversation and a worker's thread draw a day separator from the first turn's real timestamp.

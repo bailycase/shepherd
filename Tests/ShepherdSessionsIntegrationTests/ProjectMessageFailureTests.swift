@@ -9,6 +9,47 @@ import ShepherdTestSupport
 struct ProjectMessageFailureTests {
     typealias Rig = ProjectRuntimeTests.Rig
 
+    @Test(arguments: [false, true])
+    func configurationTimeoutDoesNotFenceLaterMessages(thinking: Bool) async throws {
+        let rig = try Rig(); defer { rig.stop() }
+        let p = try await rig.create()
+        let sent = try await rig.perform(p.id, .message(operationID: UUID(), text: "first"))
+        let id = try #require(sent.coordinatorAgentID)
+        try await eventually("initial turn settled") {
+            try await rig.host.server.enqueue {
+                rig.host.server.state.projects.first?.messages.first?.phase == .delivered
+                    && rig.host.server.rpcThread(forAgent: id)?.piBusy == false
+            }
+        }
+        let cwd = rig.host.dir.appendingPathComponent("logical-projects/\(p.id)")
+        let marker = cwd.appendingPathComponent(thinking ? "ignore-thinking-response-once" : "ignore-model-response-once")
+        try Data().write(to: marker)
+        var settings = try #require(rig.host.server.state.projects.first).settings
+        if thinking { settings.conversationThinking = "minimal" }
+        else { settings.conversationModel = "anthropic/config-timeout" }
+        let current = try #require(rig.host.server.state.projects.first)
+        _ = try await rig.host.server.logicalProjects(.settings(projectID: p.id, expectedRevision: current.revision, settings: settings))
+        let blocked = UUID()
+        _ = try await rig.perform(p.id, .message(operationID: blocked, text: "not dispatched"))
+        try await eventually("configuration request awaiting its reply") {
+            !FileManager.default.fileExists(atPath: marker.path)
+        }
+        let queued = UUID()
+        _ = try await rig.perform(p.id, .message(operationID: queued, text: "after configuration"))
+        try await eventually("configuration deadline handled") {
+            rig.host.server.state.projects.first?.messages.first(where: { $0.id == blocked })?.phase != .delivering
+        }
+        let failed = try #require(rig.host.server.state.projects.first?.messages.first(where: { $0.id == blocked }))
+        #expect(failed.phase == .failed)
+        guard failed.phase == .failed else { return }
+        let pi = try #require(rig.agents.current[id])
+        #expect(!pi.stdin("prompt").contains { $0["message"] as? String == "not dispatched" })
+        try await eventually("queued turn delivered after configuration recovers") {
+            rig.host.server.state.projects.first?.messages.first(where: { $0.id == queued })?.phase == .delivered
+        }
+        #expect(pi.stdin("prompt").filter { $0["message"] as? String == "after configuration" }.count == 1)
+    }
+
     @Test(arguments: [
         ("No API key found for test-provider.", "No API key found for test-provider."),
         ("Invalid api_key=synthetic-secret-value; Bearer synthetic-bearer-token-12345; sk-synthetic0123456789abcdef\u{1B}",

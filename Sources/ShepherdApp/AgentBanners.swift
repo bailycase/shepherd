@@ -90,11 +90,31 @@ struct AgentBanner: Equatable {
     let group: String
     /// What a question's actions answer: pi's dialog id.
     var question: String? = nil
+    /// Continue's immutable checkpoint, captured when this banner was posted.
+    var recovery: NativeThreadRequest? = nil
 
     var sound: Bool { level == .active }
 }
 
 enum AgentBanners {
+    static func recovery(in snapshot: NativeThreadSnapshot) -> NativeThreadRequest? {
+        guard !snapshot.running, snapshot.dialogs.isEmpty,
+              snapshot.supportedActions.contains("checkpointRecovery"),
+              let checkpoint = snapshot.checkpointRecovery?.checkpoint,
+              let entryID = lastPromptEntry(in: snapshot.messages) else { return nil }
+        return .retry(expectedSessionID: snapshot.piSessionID, generation: snapshot.generation,
+                      operationID: checkpoint.operationID(sessionID: snapshot.piSessionID),
+                      entryID: entryID, checkpoint: checkpoint)
+    }
+
+    static func matchesRecovery(_ request: NativeThreadRequest, in snapshot: NativeThreadSnapshot) -> Bool {
+        guard case .retry(let sessionID, let generation, _, let entryID, let checkpoint) = request,
+              let checkpoint else { return false }
+        return !snapshot.running && snapshot.dialogs.isEmpty && snapshot.supportedActions.contains("checkpointRecovery") &&
+            sessionID == snapshot.piSessionID && generation == snapshot.generation &&
+            checkpoint == snapshot.checkpointRecovery?.checkpoint && entryID == lastPromptEntry(in: snapshot.messages)
+    }
+
     /// The longest error, question or result a banner quotes, in characters.
     static let quoteLimit = 200
 

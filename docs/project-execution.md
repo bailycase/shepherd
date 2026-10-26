@@ -124,6 +124,18 @@ background polling service or second transcript. A changed executor binding refu
 
 ## Explicit same-task follow-ups
 
+The Project owner's admission permits a new `project_follow_up` only after the worker turn has
+settled and only while its original assignment is unresolved. Settled means the turn stopped,
+not that the assignment succeeded or was resolved. Resolved tasks are terminal, hot or archived:
+fresh follow-up and legacy `reopen` requests refuse with `task_resolved` and direct callers to
+`project_assign`. Each new assignment gets a fresh task and logical worker conversation; pass
+explicit prior task/operation result references and short handoff context instead of reusing a
+resolved conversation. Do not leave unfinished tasks open as peers for unrelated assignments.
+Previously accepted operations, including legacy follow-ups, keep their exact replay/recovery
+proof without redispatch or revival. This owner contract does not close ordinary sessions or
+change authorized owner manual takeover. The executor's retained native receipt is evidence of a
+stopped activation, not permission to reopen an owner-resolved assignment.
+
 Use the same `execute` API with a **new operation UUID**, unchanged owner/project/task/worker/
 Space identities, and refreshed bounded prompt/context. The receiver, not the caller, sets the
 optional `ProjectExecutionReceipt.previousOperationID` from a retained settled or acknowledged
@@ -168,7 +180,7 @@ Snapshot/proof reads, Pause and Cancel remain available while OFF, so a disconne
 reconcile retained work without replaying it. Owner reconciliation can record evidence while
 OFF but cannot dispatch work, deliver answers or commit pulled artifacts. Disconnect or failed
 interruption is not completion and does not release a remote reservation. Re-enabling leaves
-receipts and Projects paused until explicit Resume; no new polling or scheduler is introduced.
+receipts and Projects stopped until the person's next message; no new polling or scheduler is introduced.
 
 One assignment activates at most one native prompt, with no receiver retry/model/evaluator loop.
 The default elapsed bound is ten minutes from durable admission, including launch and prompt

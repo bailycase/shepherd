@@ -275,6 +275,8 @@ public struct FleetAttention: Identifiable, Equatable, Sendable {
         case thread
         /// An automation's run, by the automation's name.
         case automation(String)
+        /// Project threads keep their questions but never become ordinary sidebar rows or pins.
+        case project
     }
 
     /// How it can be answered without opening the thread.
@@ -312,6 +314,16 @@ public struct FleetAttention: Identifiable, Equatable, Sendable {
         switch origin {
         case .thread: "A thread"
         case .automation(let name): "A run of the automation \(name)"
+        case .project: "A Project's thread"
+        }
+    }
+
+    /// The iPad's kind line (iPadInbox, iPadOverview): "Thread", "Automation".
+    public var shortOriginLabel: String {
+        switch origin {
+        case .thread: "Thread"
+        case .automation: "Automation"
+        case .project: "Project"
         }
     }
 
@@ -435,12 +447,13 @@ public struct FleetModel: Equatable, Sendable {
                 }
                 let automation = automationByAgent[agent.id]
                 let space = spaces[agent.spaceID]
+                let ordinary = host.state.isSidebarThread(agent)
                 let attention = connected ? Self.attention(agent, ref: ref, digest: digest, automation: automation,
-                                                           hostName: host.name, hostTag: tag) : []
+                                                           project: !ordinary, hostName: host.name, hostTag: tag) : []
                 needs += attention.count
                 needsYou.append(contentsOf: attention)
                 // Automation runs live under Automations, not among the threads.
-                guard automation == nil, space?.hidden != true else { continue }
+                guard ordinary, automation == nil, space?.hidden != true else { continue }
                 if agent.status == .working { running += 1 }
                 let row = Self.row(agent, ref: ref, digest: digest, space: space, hostName: host.name, hostTag: tag,
                                    offline: !connected)
@@ -477,10 +490,10 @@ public struct FleetModel: Equatable, Sendable {
     }
 
 
-    static func attention(_ agent: Agent, ref: FleetRef, digest: FleetDigest?, automation: Automation?,
+    static func attention(_ agent: Agent, ref: FleetRef, digest: FleetDigest?, automation: Automation?, project: Bool = false,
                           hostName: String, hostTag: String?) -> [FleetAttention] {
         var items: [FleetAttention] = []
-        let origin: FleetAttention.Origin = automation.map { .automation($0.name) } ?? .thread
+        let origin: FleetAttention.Origin = project ? .project : automation.map { .automation($0.name) } ?? .thread
         let since = digest?.lastActivity
         if let question = digest?.question {
             let reply: FleetAttention.Reply

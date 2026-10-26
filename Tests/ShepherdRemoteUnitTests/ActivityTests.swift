@@ -477,6 +477,7 @@ struct TurnPresentationTests {
             case .note: "note"
             case .images(_, let images): "images:\(images.count)"
             case .goalRecord: "goal"
+            case .artifact(_, let artifact): "artifact:" + artifact.name
             case .error(_, _, let final, let folded): final ? "error:final" : folded ? "error:folded" : "error"
             case .retrying: "retrying"
             case .steer(_, let text, _, _): "steer:" + text
@@ -727,6 +728,14 @@ struct TurnPresentationTests {
         let presentation = nativeTurnPresentation([spawn, wrapUp], live: false, cards: NativeCardLayout(callIDs: ["s1"], record: Self.record))
         #expect(kinds(presentation) == ["record:Started 2 subagents|2 subagents finished", "prose"])
         #expect(presentation.items.first?.id == "subagents:started")
+    }
+
+    @Test func theStartedLineNamesRunsByTheirAgent() {
+        let runs = [ChildRun(runID: "a", label: "worker: Restyle the thread", state: "running", startedAt: 0, role: "worker"),
+                    ChildRun(runID: "b", label: "spec-audit", state: "running", startedAt: 1)]
+        #expect(NativeSubagentRecord(runs)?.started.meta == "worker · spec-audit")
+        let twins = [runs[0], ChildRun(runID: "c", label: "worker: Fix the tests", state: "running", startedAt: 2, role: "worker")]
+        #expect(NativeSubagentRecord(twins)?.started.meta == "Restyle the thread · Fix the tests")
     }
 
     @Test func aCardLayoutRecordsItsRunsOnceTheyAllFinish() {

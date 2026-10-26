@@ -26,7 +26,7 @@ extension SessionServer {
             }
         }
         for attempt in 0..<8 {
-            let staged = try await enqueue { () -> (ShepherdState, UInt64, UInt64, URL, Project) in
+            let staged = try await enqueue { () -> (ShepherdState, UInt64, UInt64, URL, Project, ShepherdState) in
                 try self.requireStarted()
                 guard expectedEpoch == nil || expectedEpoch == self.logicalProjectEpoch else { throw LogicalProjectsError("conflict", "Project owner restarted.") }
                 guard self.logicalProjectSaveCount < 8, !self.projectFolderOperation else {
@@ -41,22 +41,23 @@ extension SessionServer {
                 }
                 var project = before
                 try change(&project)
+                project.retireFinishedMessages()
                 if project != before { project.revision += 1 }
                 var candidate = self.store.state
                 try workspace?(&candidate)
                 candidate.projects[index] = project
                 Self.reconcileProjectAutomations(&candidate, before: self.store.state)
                 self.logicalProjectSaveCount += 1
-                return (candidate, self.store.version, self.logicalProjectEpoch, self.store.url, project)
+                return (candidate, self.store.version, self.logicalProjectEpoch, self.store.url, project, self.store.state)
             }
-            let file: Result<URL, Error> = await withCheckedContinuation { continuation in
-                logicalProjectFiles.async { continuation.resume(returning: Result { try StateStore.stageLogicalProjects(staged.0, at: staged.3) }) }
+            let file: Result<StateStore.LogicalProjectsStage, Error> = await withCheckedContinuation { continuation in
+                logicalProjectFiles.async { continuation.resume(returning: Result { try StateStore.stageLogicalProjects(staged.0, before: staged.5, at: staged.3) }) }
             }
             do {
                 return try await enqueue {
                     self.logicalProjectSaveCount -= 1
                     let url = try file.get()
-                    defer { self.logicalProjectFiles.async { _ = unlink(url.path) } }
+                    defer { self.logicalProjectFiles.async { _ = unlink(url.url.path) } }
                     try self.requireStarted()
                     guard self.logicalProjectEpoch == staged.2 else { throw LogicalProjectsError("conflict", "Project owner restarted.") }
                     guard !self.projectFolderOperation else { throw LogicalProjectsError("project_busy", "A Space folder operation is in progress.") }
@@ -64,7 +65,7 @@ extension SessionServer {
                     let before = self.store.state
                     try self.store.commitLogicalProjects(staged.0, version: staged.1, staged: url)
                     self.stateDidCommit(before: before)
-                    return staged.4
+                    return self.store.state.projects.first(where: { $0.id == id }) ?? staged.4
                 }
             } catch let error as LogicalProjectsError where error.code == "workspace_changed" && attempt < 7 {
                 continue
@@ -84,6 +85,11 @@ extension SessionServer {
               projectPersistenceFailed.insert(id).inserted else { return }
         ShepherdLog.error("Project runtime stopped: \(error)")
         projectRunStarts[id] = nil
+        // Disk failure cannot prevent the in-process admission stop. Restart also revokes unattended work.
+        store.updateLive { state in
+            guard let i = state.projects.firstIndex(where: { $0.id == id }) else { return }
+            state.projects[i].paused = true; state.projects[i].interruptPending = true; state.projects[i].revision += 1
+        }
         projectAnswersInFlight.subtract(store.state.projects.first(where: { $0.id == id })?.tasks.map(\.id) ?? [])
         interruptProject(id)
         let epoch = logicalProjectEpoch

@@ -21,32 +21,62 @@ struct NeedsYouScreen: View {
             } else if sizeClass == .regular {
                 NeedsYouSplit(items: items, answering: feed.answering, failures: feed.failures)
             } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
-                        Text(Self.waiting(items.count))
-                            .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
-                            .padding(.horizontal, NW.Space.xs)
-                        ForEach(items) { item in
-                            AttentionCard(item: item, busy: feed.answering.contains(item.id), failure: feed.failures[item.id])
-                        }
-                    }
-                    .padding(.horizontal, MobileLayout.gutter)
-                    .padding(.bottom, MobileLayout.sectionSpacing)
-                    .frame(maxWidth: MobileLayout.homeMaxWidth)
-                    .frame(maxWidth: .infinity)
-                }
-                .refreshable { await feed.refresh() }
+                NeedsYouCards(items: items, answering: feed.answering, failures: feed.failures)
             }
         }
         .background(Color.nw.bgWindow)
         .task { await feed.watch() }
         .navigationTitle("Needs you")
         .navigationBarTitleDisplayMode(sizeClass == .regular ? .inline : .large)
+        .toolbar {
+            // iPadInbox: "Needs you" with "5 waiting" beside it, leading the bar.
+            if sizeClass == .regular {
+                ToolbarItem(placement: .topBarLeading) {
+                    HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
+                        Text("Needs you").font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary)
+                        if !items.isEmpty {
+                            Text("\(items.count) waiting").font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                        }
+                    }
+                    .fixedSize()
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(.isHeader)
+                }
+                .sharedBackgroundVisibility(.hidden)
+            }
+        }
+        .toolbar(removing: sizeClass == .regular ? .title : nil)
     }
 
     /// "4 things are waiting on you".
     static func waiting(_ count: Int) -> String {
         count == 1 ? "1 thing is waiting on you" : "\(count) things are waiting on you"
+    }
+}
+
+/// iPhone: the cards with their answers.
+private struct NeedsYouCards: View {
+    let items: [FleetAttention]
+    let answering: Set<String>
+    let failures: [String: String]
+    @Environment(MobileHosts.self) private var hosts
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
+                Text(NeedsYouScreen.waiting(items.count))
+                    .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                    .padding(.horizontal, NW.Space.xs)
+                ForEach(items) { item in
+                    AttentionCard(item: item, busy: answering.contains(item.id), failure: failures[item.id])
+                }
+            }
+            .padding(.horizontal, MobileLayout.gutter)
+            .padding(.bottom, MobileLayout.sectionSpacing)
+            .frame(maxWidth: MobileLayout.homeMaxWidth)
+            .frame(maxWidth: .infinity)
+        }
+        .refreshable { await HomeFeed.of(hosts).refresh() }
     }
 }
 
@@ -59,14 +89,10 @@ private struct NeedsYouSplit: View {
 
     var body: some View {
         let current = items.first { $0.id == chosen } ?? items[0]
-        HStack(spacing: 0) {
+        PadListDetail(listWidth: MobileLayout.inboxListWidth) {
             ScrollView {
                 // Flat items, 2pt apart, the chosen one filled (iPadInbox).
                 LazyVStack(alignment: .leading, spacing: NW.Space.xxs) {
-                    Text(NeedsYouScreen.waiting(items.count))
-                        .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
-                        .padding(.horizontal, NW.Space.l)
-                        .padding(.bottom, NW.Space.s)
                     ForEach(items) { item in
                         Button { chosen = item.id } label: {
                             AttentionCard(item: item, busy: answering.contains(item.id), failure: nil,
@@ -78,10 +104,12 @@ private struct NeedsYouSplit: View {
                 }
                 .padding(NW.Space.m)
             }
-            .frame(width: MobileLayout.inboxListWidth)
-            NWHairline(.vertical)
+        } detail: {
             NeedsYouDetail(item: current, busy: answering.contains(current.id), failure: failures[current.id])
                 .id(current.id)
+        } single: {
+            // Too narrow for both (iPhone Duo): the phone's cards, answered in place.
+            NeedsYouCards(items: items, answering: answering, failures: failures)
         }
     }
 }
@@ -92,6 +120,7 @@ private struct NeedsYouDetail: View {
     let busy: Bool
     let failure: String?
     @Environment(MobileNavigator.self) private var navigator
+    @Environment(MobileProjects.self) private var projects
 
     var body: some View {
         let nw = Color.nw
@@ -141,7 +170,7 @@ private struct NeedsYouDetail: View {
             }
             NWHairline()
             HStack(spacing: NW.Space.m) {
-                Button("Open thread") { navigator.open(item.route) }
+                Button("Open thread") { navigator.open(projects.route(item)) }
                     .buttonStyle(.nw(item.reply == .open ? .primary : .ghost, size: .l))
                 Spacer(minLength: NW.Space.m)
                 if let failure {

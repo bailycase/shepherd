@@ -34,7 +34,7 @@ extension FleetAttention {
 
     var leading: NWListRow.Leading {
         switch origin {
-        case .thread: .state(.attention)
+        case .thread, .project: .state(.attention)
         case .automation: .symbol("bolt", .attention)
         }
     }
@@ -44,13 +44,14 @@ extension FleetAttention {
         switch origin {
         case .thread: "A thread"
         case .automation(let name): "A run of the automation \(name)"
+        case .project: "A Project's thread"
         }
     }
 
     /// The card's origin glyph; a thread's is the glowing dot (nil).
     var symbol: String? {
         switch origin {
-        case .thread: nil
+        case .thread, .project: nil
         case .automation: "bolt"
         }
     }
@@ -118,17 +119,20 @@ struct AttentionCard: View {
     var answers = true
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
+    @Environment(MobileProjects.self) private var projects
 
     var body: some View {
-        // An automation's card is titled by its question over the asker's context (MobileInbox).
-        let asked = answers && item.symbol != nil && item.message != nil
-        NWAttentionCard(symbol: item.symbol, origin: item.originLabel, title: asked ? item.question : item.title,
+        // On iPhone an automation's card is titled by its question over the asker's context
+        // (MobileInbox); the iPad's cards keep the name and "Thread" or "Automation" (iPadOverview).
+        let pad = navigator.layout == .pad
+        let asked = !pad && answers && item.symbol != nil && item.message != nil
+        NWAttentionCard(symbol: item.symbol, origin: pad ? item.shortOriginLabel : item.originLabel, title: asked ? item.question : item.title,
                         question: asked ? (item.message ?? item.question) : item.question,
                         message: answers && !asked ? item.message : nil, since: item.since.map(Date.init(milliseconds:)), host: item.hostTag,
                         selected: selected, style: answers ? .card : .item) {
             if answers {
                 AttentionReplies(item: item, busy: busy)
-                Button("Open") { navigator.open(item.route) }
+                Button("Open") { navigator.open(projects.route(item)) }
                     .buttonStyle(.nw(item.reply == .open ? .secondary : .ghost))
                     .accessibilityLabel("Open \(item.thread)")
             }

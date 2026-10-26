@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 public enum NativeThreadRequest: Codable, Hashable, Sendable {
     case snapshot(expectedSessionID: String? = nil, beforeEntryID: String? = nil, afterRevision: UInt64? = nil)
@@ -32,12 +33,10 @@ public enum NativeThreadRequest: Codable, Hashable, Sendable {
     /// v4: summarize the conversation now (pi's `compact`), keeping what `instructions` asks
     /// for. Gated by `compact` in `supportedActions` and, remotely, `native.context.v1`.
     case compact(expectedSessionID: String, generation: String, operationID: UUID, instructions: String? = nil)
-    /// Retry the latest turn in place: pi's session moves back to before the user message
-    /// `entryID` (a history entry id) and the message goes again, so the failed turn leaves the
-    /// thread and pi's context. Only while pi is idle, and only the latest turn's message. Gated
-    /// by `retry` in `supportedActions` and, remotely, `native.retry.v1`; a client without them
-    /// sends the prompt again.
-    case retry(expectedSessionID: String, generation: String, operationID: UUID, entryID: String)
+    /// A new provider request from an exact settled failure checkpoint, with no new user input.
+    /// `entryID` identifies the displayed turn. Old clients without a checkpoint are refused.
+    /// Requires `checkpointRecovery` and, remotely, `native.checkpointRecovery.v1`.
+    case retry(expectedSessionID: String, generation: String, operationID: UUID, entryID: String, checkpoint: NativeRecoveryCheckpoint? = nil)
     /// How fast this agent asks its provider to answer from its next model call on: `tier` is a
     /// raw `ServiceTier` the snapshot's `serviceTiers` lists ("standard", "fast"). Gated by
     /// `setServiceTier` in `supportedActions` and, remotely, `native.serviceTier.v1`.
@@ -46,6 +45,10 @@ public enum NativeThreadRequest: Codable, Hashable, Sendable {
     /// `offset`. Gated by `images` in `supportedActions` and, remotely, `native.images.v1`. The host reads
     /// the image from pi's own history for this agent and session, never from a path a client names.
     case image(expectedSessionID: String, imageID: String, offset: Int)
+    /// v5: one 256 KiB piece of an artifact: a file a successful `write` call created in this thread, named by the path the call
+    /// gave, from byte `offset`. Gated by `artifacts` in `supportedActions` and, remotely, `native.artifacts.v1`. The path is only a
+    /// key: the host serves it only when its own history holds a successful `write` of exactly that path, never an arbitrary file.
+    case artifact(expectedSessionID: String, path: String, offset: Int)
     /// Goal controls execute even during work or evaluation; fenced by the displayed goal revision.
     case goal(expectedSessionID: String, generation: String, operationID: UUID, action: NativeGoalAction,
               expectedGoalID: String? = nil, expectedGoalRevision: Int? = nil, expectedGoalState: NativeGoalState? = nil)
@@ -469,6 +472,8 @@ public enum NativeThreadResult: Codable, Hashable, Sendable {
     case transcript(value: NativeSubagentTranscript)
     /// v5: one piece of an image for `.image`.
     case imageChunk(value: NativeImageChunk)
+    /// v5: one piece of an artifact for `.artifact`.
+    case artifactChunk(value: NativeArtifactChunk)
 }
 
 /// One piece of an image the host read from pi's saved thread (`NativeThreadRequest.image`). The client
@@ -498,6 +503,34 @@ public enum NativeImageCode {
     public static let unsupported = "image_unsupported"
 }
 
+/// One piece of an artifact the host read from disk (`NativeThreadRequest.artifact`). The client asks again from
+/// `offset + data.count` until it holds `totalBytes`; a total that changes between pieces means the file changed under it.
+public struct NativeArtifactChunk: Codable, Hashable, Sendable {
+    /// The most bytes of one artifact the host serves.
+    public static let maxBytes = 8 * 1024 * 1024
+
+    public var path: String
+    public var totalBytes: Int
+    public var offset: Int
+    public var data: Data
+
+    public init(path: String, totalBytes: Int, offset: Int, data: Data) {
+        self.path = path
+        self.totalBytes = totalBytes
+        self.offset = offset
+        self.data = data
+    }
+}
+
+/// Why an artifact could not be had; the codes of a `.failure` to `NativeThreadRequest.artifact`. They travel between hosts and
+/// clients, so they never change.
+public enum NativeArtifactCode {
+    /// No successful `write` of this path is in the thread's history, or the offset is invalid.
+    public static let unknown = "unknown_artifact"
+    /// The thread wrote it, but the file cannot be served now: gone, not a regular file, a symlink, or over `NativeArtifactChunk.maxBytes`.
+    public static let unavailable = "artifact_unavailable"
+}
+
 /// Failure codes a thread's availability is reported with, as `NativeThreadResult.failure` or
 /// a rejected request. Both travel between hosts and clients, so they never change.
 public enum NativeThreadCode {
@@ -521,6 +554,42 @@ public struct NativeSubagentTranscript: Codable, Hashable, Sendable {
         self.messages = messages
         self.olderCursor = olderCursor
         self.earlierCount = earlierCount
+    }
+}
+
+public struct NativeRecoveryCheckpoint: Codable, Hashable, Sendable {
+    public var token: String
+    public var failedEntryID: String
+    public init(token: String, failedEntryID: String) { self.token = token; self.failedEntryID = failedEntryID }
+
+    /// Stable across reconnect/process replacement. Advance only after an observed, definite busy refusal.
+    public func operationID(sessionID: String, refusal: UInt64 = 0) -> UUID {
+        var b = Array(SHA256.hash(data: Data("Shepherd.checkpointRecovery.v1/\(sessionID)/\(failedEntryID)/\(refusal)".utf8)).prefix(16))
+        b[6] = (b[6] & 0x0f) | 0x80
+        b[8] = (b[8] & 0x3f) | 0x80
+        return UUID(uuid: (b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]))
+    }
+}
+
+public struct NativeCheckpointRecovery: Codable, Hashable, Sendable {
+    public var version: Int
+    public var checkpoint: NativeRecoveryCheckpoint?
+    public var refusal: String?
+    public init(version: Int = 1, checkpoint: NativeRecoveryCheckpoint? = nil, refusal: String? = nil) {
+        self.version = version; self.checkpoint = checkpoint; self.refusal = refusal
+    }
+    public var refusalMessage: String? {
+        guard let refusal else { return nil }
+        switch refusal {
+        case "recovery_busy": return "Wait for the agent, queued work and questions before continuing."
+        case "recovery_not_failed": return "Continue requires a settled failed or interrupted turn."
+        case "recovery_consumed": return "This failure already has a recovery operation. Check its recorded outcome; it will not be sent again."
+        case "recovery_checkpoint_unavailable": return "This turn has no recorded recovery checkpoint. Continue requires a failure captured by an updated engine; no message was sent."
+        case "recovery_context_changed": return "The model, thinking, tools or prompt no longer match this failure. Nothing was continued."
+        case "recovery_uncertain_tool": return "A tool call may be incomplete or have failed after a side effect. Continue will not replay it."
+        case "recovery_stale": return "The failure checkpoint changed. Refresh before continuing."
+        default: return "Checkpoint recovery is unavailable (\(refusal)). Nothing was resent."
+        }
     }
 }
 
@@ -571,6 +640,8 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
     /// pi is retrying a failed request on its own (TurnErrors › While it retries). nil when it
     /// isn't, and from older hosts.
     public var retry: NativeThreadRetry?
+    /// Exact engine checkpoint or an explicit refusal. Absent on unsupported engines/hosts.
+    public var checkpointRecovery: NativeCheckpointRecovery?
     /// The agent's pi stopped before it served this thread, and why (docs/design/thread.md › Thread › Can't
     /// start). The host keeps the agent and answers with only this until pi starts again: no
     /// history, no actions. nil otherwise, and from older hosts.
@@ -588,6 +659,10 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
     /// requests, while idle, and from older hosts.
     public var liveRequest: NativeResponseTiming?
 
+    /// Startup has asked a question before history is ready. Only answering is available;
+    /// messages are not an authoritative history page yet. Absent from older hosts.
+    public var initializing: Bool?
+
     public var isRPC: Bool { runtime == "rpc" }
 
     public init(
@@ -598,7 +673,8 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
         commands: [NativeCommand]? = nil, subagents: [NativeSubagent]? = nil, queue: NativeQueue? = nil,
         context: NativeThreadContext? = nil, turnChanges: [ChangesTurn]? = nil, retry: NativeThreadRetry? = nil,
         startProblem: NativeStartProblem? = nil, serviceTier: String? = nil, serviceTiers: [String]? = nil, goal: NativeGoal? = nil,
-        clips: NativeThreadClips? = nil, liveRequest: NativeResponseTiming? = nil
+        clips: NativeThreadClips? = nil, liveRequest: NativeResponseTiming? = nil,
+        initializing: Bool? = nil, checkpointRecovery: NativeCheckpointRecovery? = nil
     ) {
         self.piSessionID = piSessionID
         self.generation = generation
@@ -623,12 +699,14 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
         self.context = context
         self.turnChanges = turnChanges
         self.retry = retry
+        self.checkpointRecovery = checkpointRecovery
         self.startProblem = startProblem
         self.serviceTier = serviceTier
         self.serviceTiers = serviceTiers
         self.goal = goal
         self.clips = clips
         self.liveRequest = liveRequest
+        self.initializing = initializing
     }
 }
 

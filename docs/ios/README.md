@@ -55,8 +55,9 @@ The iOS client ships through TestFlight, following the Mac's channels:
   plain manual run build Shepherd Nightly as before and upload nothing.
 - **Job:** the manual run's `testflight` job in `.github/workflows/release.yml`.
   `scripts/release.py plan --testflight` decides it (`ios`), and `Tests/Release` tests the rule.
-- **Build:** the job runs on the `xcode-27` runner, because the target needs the iOS 27 SDK.
-  It archives `Shepherd iOS` unsigned, and `release.py verify-ios` checks the app.
+- **Build:** the job runs on the `xcode-27` runner with Xcode 27.1 for iPhone Duo's SwiftUI hinge
+  and reserved-region APIs. Earlier SDK builds compile without that fold-aware spacing. It
+  archives `Shepherd iOS` unsigned, and `release.py verify-ios` checks the app.
 - **Signing and upload:** `xcodebuild -exportArchive` with `App/iOS/ExportOptions.plist`,
   `-allowProvisioningUpdates`, and the App Store Connect key. It signs with the team's
   cloud-managed Apple Distribution certificate and uploads the build. No certificate is
@@ -137,7 +138,7 @@ keep the version for real breaks.
   Mac's host screens already use) for terminals.
 - **Folders:** `App/` (entry point, `MobileApp`, `MobileRoot`, the phone and iPad shells, routes
   and the navigator), `Hosts/`, `Home/`, `Thread/`, `Composer/`, `NewThread/`, `Subagents/`,
-  `Review/`, `Commit/`, `Search/`, `Settings/`, `Automations/`, `Windows/` (the scene and its
+  `Review/`, `Commit/`, `Search/`, `Settings/`, `Automations/`, `Projects/`, `Windows/` (the scene and its
   windows), `Terminal/`, `Designs/` (a host's designs on iPhone), `DesignPad/` (on iPad), and `Support/` (`AgentRef`, `MobileLayout`, `MobileAppearance`, the
   `AgentState` mapping). Ownership and hooks: [CONTRACTS.md](CONTRACTS.md).
 - **Shared with the Mac:** `RemoteHostClient`, `NativeThreadStore`, the turn and activity
@@ -163,13 +164,36 @@ keep the version for real breaks.
   kept apart from its record (`shepherd.ios.hosts.lastSeen`), so a host the phone cannot reach
   says when it was last seen.
 - **iPhone:** two tabs, Home and Settings, each a navigation stack. Home merges every host:
-  Automations and More (host cards), offline hosts with Retry, Needs you (questions
+  Projects, Automations and More (host cards), offline hosts with Retry, Needs you (questions
   and blocked threads, answered in place when short; a subagent's question is its parent's, so
-  it is never here), and Recents with host tags. `HomeFeed`
+  it is never here), Working, Done (with Mark all seen), Pinned, and Recents with host tags. `HomeFeed`
   derives it once per change from each host's state and, while Home is on screen, the threads'
   snapshots.
+- **Projects (`Projects/`):** lists the paired hosts' Projects, with conversations, questions,
+  task transcripts, linked-space assignment, settings and read-only file previews. Create, rename,
+  delete and send use the selected host's existing capabilities and revision checks. Drafts and
+  images stay in memory on this device until sent to that host. Offline and older hosts disable
+  writes. Execution, approvals and worker limits remain on the host. Mac and iOS share
+  `LogicalProjectsModel` and `ProjectPagePresentation` in ShepherdRemote.
+- **Thread groups and row menus (`Home/SidebarThreads.swift`, `Home/ThreadRowMenu.swift`):** the
+  Mac sidebar's groups on both devices, each thread in one (`FleetSidebarState` in ShepherdRemote):
+  Needs you, Working (running on a connected host), Done (a finished turn this device saw end;
+  opening another thread marks it seen, a later turn brings it back), Pinned (pin order, any state,
+  a waiting one keeps its reason) and Recents. Done keeps its observed completion order when later activity changes;
+  activity alone on reconnect is not completion evidence. Runs between observations can be missed. Only pins persist,
+  so Done/seen state starts over on relaunch. Project threads never become ordinary rows or pins, even from legacy pins;
+  their questions stay in Needs you as the Project's. Pins are this device's view state, like each Mac's:
+  `shepherd.ios.sidebar.pinned` in its preferences, never sent to a host, kept while a host is
+  offline, gone with their thread or host. A thread row's long press is the Mac's row menu for a
+  connected host's thread: Open in new window (iPad), Pin or Unpin, Rename…, Move to Space (the
+  host's visible spaces, `agent.move.v1`, never a worktree or a run), Finalize Worktree…, Review
+  Uncommitted Changes, Review PR Changes, and Delete Agent… or Delete Worktree Agent…. Each item
+  shows only where the row's own host takes it; offline, only Unpin and "<host> is offline" remain.
+  An automation run's long press opens its automation and offers Run Now or Stop… as its detail
+  does. Pin and Unpin are also in the thread's options menu.
 - **iPad:** a split view. Landscape shows the sidebar (New thread, Designs while a host serves
-  them, Automations, More expanding to Hosts and Extensions, Needs you, Recents, and a footer with
+  them, Projects, Automations, More expanding to Hosts and Extensions, Needs you, automation runs, Working,
+  Done, Pinned, Recents, and a footer with
   the hosts and Settings) beside the selected thread; in portrait the thread takes the width and
   the sidebar slides over it. Portrait is the window's shape, never what the
   keyboard leaves of it (CONTRACTS.md › Navigation). With no thread selected the detail is the
@@ -279,7 +303,9 @@ keep the version for real breaks.
   threads. Open in new window from a thread's options, a sidebar row or the ⌘K palette (it
   brings forward a window already showing the thread). A turn's long-press menu has Send to…,
   which puts its text in another window's composer, and a turn drags into a composer as text.
-  iPhone keeps one window.
+  iPhone keeps one window, except iPhone Duo, which opens them on its inner display held upright
+  (`WindowAvailability` shows or hides these items). Half open, the iPad layout splits at the
+  fold (`Support/Fold.swift`), and a list too narrow for its detail shows alone.
 - **Search and actions (`Search/`):** search across every connected host: title matches at once,
   conversations fanned out to each host (`agentQuery(.search)`), snippets with host tags. A
   thread's options menu renames, moves and deletes its agent; a worktree agent's delete follows

@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import ShepherdCore
+import ShepherdTestKit
 import ShepherdUI
 import Testing
 @testable import ShepherdApp
@@ -89,6 +90,43 @@ struct ShellLayoutTests {
     @Test(arguments: [(1440.0, 720.0), (1000.0, 500.0), (781.0, 380.0), (700.0, 699.0)])
     func theWidestPaneIsHalfTheColumn(column: Double, width: Double) {
         #expect(ShellLayout.widestRightPane(containerWidth: column) == CGFloat(width))
+    }
+
+    /// A Project page's Threads pane is the same split with its own key and its board's 479 (480 with the divider) default: its
+    /// width persists like a thread's pane, a narrower-than-minimum save restores the default, and the two never share a width.
+    @Test func theProjectPaneKeepsItsOwnWidthBesideTheThreadPane() {
+        let defaults = ScratchDefaults()
+        let thread = RightPaneState(defaults: defaults)
+        let project = RightPaneState(widthKey: ShepherdViewModel.logicalProjectPaneWidthKey, defaultWidth: 479, defaults: defaults)
+        #expect(thread.width == 0 && project.width == 0, "both start at their defaults")
+        #expect(ShellLayout.rightPane(containerWidth: 1368, preferredWidth: project.width, defaultWidth: project.defaultWidth).width == 479)
+        #expect(ShellLayout.rightPane(containerWidth: 1368, preferredWidth: thread.width, defaultWidth: thread.defaultWidth).width == 600)
+        project.width = 620
+        #expect(thread.width == 0, "dragging the Project pane leaves a thread's pane alone")
+        #expect(RightPaneState(widthKey: ShepherdViewModel.logicalProjectPaneWidthKey, defaultWidth: 479, defaults: defaults).width == 620,
+                "the width comes back on the next launch")
+        #expect(RightPaneState(defaults: defaults).width == 0)
+        defaults.set(100.0, forKey: ShepherdViewModel.logicalProjectPaneWidthKey)
+        #expect(RightPaneState(widthKey: ShepherdViewModel.logicalProjectPaneWidthKey, defaultWidth: 479, defaults: defaults).width == 0,
+                "a width under the minimum restores the default")
+    }
+
+    /// A thread's side pane under its handle's drag path: the 600 default until a drag, the pointer's place deciding the width,
+    /// clamped to 380...half the column while previewing and when let go, and only letting go saves it, under the thread's own key.
+    @Test func aThreadPaneDragPreviewsWithinItsBoundsAndSavesOnlyWhenLetGo() {
+        let defaults = ScratchDefaults()
+        let state = RightPaneState(defaults: defaults)
+        #expect(RightPaneDrag.layout(nil, state: state, containerWidth: 1440).width == 600)
+        for (pointer, preview) in [(900.0, 540.0), (300, 720), (1200, 380)] as [(CGFloat, CGFloat)] {
+            #expect(RightPaneDrag.layout(RightPaneDrag(pointerX: pointer, containerWidth: 1440), state: state, containerWidth: 1440).width == preview)
+        }
+        #expect(state.width == 0 && defaults.object(forKey: RightPaneState.widthKey) == nil, "previewing saves nothing")
+        RightPaneDrag(pointerX: 300, containerWidth: 1440).end(in: state, containerWidth: 1440)
+        #expect(state.width == 720 && defaults.double(forKey: RightPaneState.widthKey) == 720)
+        #expect(defaults.object(forKey: ShepherdViewModel.logicalProjectPaneWidthKey) == nil)
+        // Beside a column too narrow to dock, the pane overlays and lets go at what fits.
+        RightPaneDrag(pointerX: -100, containerWidth: 700).end(in: state, containerWidth: 700)
+        #expect(state.width == 699)
     }
 
     @Test(arguments: Array(stride(from: 0.0, through: 2400, by: 37)))

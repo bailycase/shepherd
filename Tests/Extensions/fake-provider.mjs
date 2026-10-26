@@ -62,19 +62,22 @@ function completions(model, tier, decision, used = MILLION) {
   const wanted = toolCall(decision);
   if (wanted) {
     return sse([[null, chunk({ tool_calls: [{ index: 0, id: "call_1", type: "function", function: { name: wanted.name, arguments: wanted.arguments } }] })],
-      [null, chunk({}, "tool_calls", { usage })], [null, "[DONE]"]]);
+      [null, decision.streamError ? { error: { message: decision.streamError, type: "provider_error" } } : chunk({}, "tool_calls", { usage })], [null, "[DONE]"]]);
   }
   return sse([[null, chunk({ content: decision.outputText ?? "ok" })],
     [null, decision.streamError ? { error: { message: decision.streamError, type: "provider_error" } } : chunk({}, "stop", { usage })], [null, "[DONE]"]]);
 }
 
-function anthropic(model) {
+function anthropic(model, decision) {
+  const wanted = toolCall(decision);
   return sse([
     ["message_start", { type: "message_start", message: { id: "m1", type: "message", role: "assistant", content: [], model, stop_reason: null, usage: { input_tokens: 5, output_tokens: 1 } } }],
-    ["content_block_start", { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }],
-    ["content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "ok" } }],
+    ["content_block_start", { type: "content_block_start", index: 0, content_block: wanted
+      ? { type: "tool_use", id: "call_1", name: wanted.name, input: {} } : { type: "text", text: "" } }],
+    ["content_block_delta", { type: "content_block_delta", index: 0, delta: wanted
+      ? { type: "input_json_delta", partial_json: wanted.arguments } : { type: "text_delta", text: decision.outputText ?? "ok" } }],
     ["content_block_stop", { type: "content_block_stop", index: 0 }],
-    ["message_delta", { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 2 } }],
+    ["message_delta", { type: "message_delta", delta: { stop_reason: wanted ? "tool_use" : "end_turn" }, usage: { output_tokens: 2 } }],
     ["message_stop", { type: "message_stop" }],
   ]);
 }
@@ -106,7 +109,7 @@ export async function startProvider({ onRequest, usage, uniqueIds = false } = {}
     const tier = body?.service_tier;
     const used = usage?.(entry);
     if (path.endsWith("/chat/completions")) res.end(completions(body?.model, tier, decision, used));
-    else if (path.endsWith("/messages")) res.end(anthropic(body?.model));
+    else if (path.endsWith("/messages")) res.end(anthropic(body?.model, decision));
     else res.end(responses(body?.model, tier, decision, used, uniqueIds ? entry.index + 1 : undefined, decision.reasoning));
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));

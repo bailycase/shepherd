@@ -21,7 +21,7 @@ struct SubagentTraySection: View {
     @Environment(\.composerMaxHeight) private var composerMaxHeight
 
     var body: some View {
-        let values = SubagentValues.tray(tray, byAgent: size == .phone)
+        let values = SubagentValues.tray(tray)
         let shown = NativeSubagentTray.shownRows
         let long = values.rows.count > shown
         let rows = long && !state.trayExpanded ? Array(values.rows.prefix(shown)) : values.rows
@@ -62,7 +62,8 @@ struct SubagentTraySection: View {
             }
         }
         .onChange(of: store.goalID, initial: true) { _, id in
-            if id != nil { state.trayCollapsed = true }
+            // A goal folds the tray to its header on iPhone; the iPad draws it in full (GoalStates, iPadGoal).
+            if id != nil, size == .phone { state.trayCollapsed = true }
         }
     }
 

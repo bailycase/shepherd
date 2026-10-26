@@ -6,6 +6,16 @@ import Testing
 struct LogicalProjectTests {
     static let id = ProjectID(rawValue: "11111111-1111-4111-8111-111111111111")
 
+    @Test func archivedWorkerOwnershipSurvivesCodingWithoutBecomingDispatchAuthority() throws {
+        var worker = Agent(name: "Retained worker", spaceID: SpaceID(), tabID: TabID())
+        worker.projectWorkerFor = Self.id
+        let decoded = try JSONDecoder().decode(Agent.self, from: JSONEncoder().encode(worker))
+        #expect(decoded.projectWorkerFor == Self.id && decoded.executionFor == nil)
+        var state = ShepherdState(); state.agents = [decoded]; state.projects = [Project(id: Self.id, name: "Owning Project")]
+        #expect(state.isProjectWorker(decoded.id) && !state.isSidebarThread(decoded))
+        #expect(state.projectContext(for: decoded.id) == nil, "The marker preserves presentation, not a replayable activation or tool authority.")
+    }
+
     @Test func oldWorkspacesDecodeWithoutLogicalProjects() throws {
         let old = Data(#"{"spaces":[],"tabs":[],"agents":[]}"#.utf8)
         #expect(try JSONDecoder().decode(ShepherdState.self, from: old).projects.isEmpty)
@@ -31,6 +41,16 @@ struct LogicalProjectTests {
         try state.validate()
         #expect(try JSONDecoder().decode(ShepherdState.self, from: JSONEncoder().encode(state)) == state)
         #expect(throws: ShepherdStateValidationError.self) { try ShepherdState(projects: [project, project]).validate() }
+    }
+
+    /// The coordinator's reasoning level round-trips, decodes as nil from an older owner's record, and must be a known level.
+    @Test func theConversationReasoningLevelRoundTripsDefaultsToNoneAndMustBeAKnownLevel() throws {
+        var project = Project(id: Self.id, name: "Release", settings: .init(conversationModel: "provider/a", conversationThinking: "xhigh"))
+        try project.validate()
+        #expect(try JSONDecoder().decode(Project.self, from: JSONEncoder().encode(project)).settings.conversationThinking == "xhigh")
+        #expect(try JSONDecoder().decode(LogicalProjectSettings.self, from: Data(#"{"conversationModel":"provider/a"}"#.utf8)).conversationThinking == nil)
+        project.settings.conversationThinking = "turbo"
+        #expect(throws: ProjectValidationError.self) { try project.validate() }
     }
 
     @Test(arguments: ["../outside", "", "/tmp/escape", "11111111-1111-4111-8111-11111111111Z", "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"])
@@ -91,5 +111,93 @@ struct LogicalProjectTests {
         #expect(throws: ProjectValidationError.self) { try ShepherdState(projects: projects).validate() }
         let heavy = (0..<12).map { Project(name: "Project \($0)", settings: .init(instructions: String(repeating: "🦊", count: 16_000))) }
         #expect(throws: ProjectValidationError.self) { try ShepherdState(projects: heavy).validate() }
+    }
+    /// A long conversation used to hit the 64-message ceiling and refuse every later save ("Project message queue is full").
+    @Test func aLongConversationRetiresFinishedMessagesAndKeepsWhatIsStillLive() throws {
+        var project = Project(id: Self.id, name: "Release")
+        let worker = AgentID(), waitingOp = UUID()
+        project.tasks = [ProjectTask(operationID: waitingOp, workerAgentID: worker, spaceID: SpaceID(), title: "Ask", prompt: "p", phase: .waiting)]
+        let question = ProjectMessage(id: UUID(), text: "q", phase: .delivered,
+                                      source: .init(kind: .question, taskID: project.tasks[0].id, operationID: waitingOp, workerAgentID: worker, sessionID: "s"))
+        let wake = ProjectMessage(id: UUID(), text: "w", phase: .delivered,
+                                  source: .init(kind: .settled, taskID: project.tasks[0].id, operationID: UUID(), workerAgentID: worker, sessionID: "s"))
+        let queued = ProjectMessage(id: UUID(), text: "held")
+        project.messages = [question, wake, queued] + (0..<200).map { ProjectMessage(id: UUID(), text: "m\($0)", phase: .delivered) }
+        project.retireFinishedMessages()
+        #expect(project.messages.count == 203, "Working history cannot be retired without durable archive confirmation.")
+        project.retireFinishedMessages(archived: Set(project.messages.map(\.id)))
+        #expect(project.messages.count == Project.retainedMessages)
+        #expect(project.messages.contains(question), "a question its task still waits on stays")
+        #expect(project.messages.contains(queued), "a message not yet sent stays")
+        #expect(!project.messages.contains(wake) && project.retiredWakeups == [wake.id], "a retired wake-up stays hidden")
+        #expect(project.messages.suffix(8).map(\.text) == (192..<200).map { "m\($0)" }, "the newest stay")
+        try ShepherdState(projects: [project]).validate()
+        let decoded = try JSONDecoder().decode(Project.self, from: JSONEncoder().encode(project))
+        #expect(decoded.retiredWakeups == [wake.id])
+    }
+
+    /// A Project is a long-lived multi-task workspace: no goal, milestone or project-wide done is required to create, validate or
+    /// work in one, and a legacy task decodes with an unknown outcome, never an inferred success.
+    @Test func aGoallessProjectValidatesAndLegacyTasksKeepAnUnknownOutcome() throws {
+        var project = Project(id: Self.id, name: "Workspace")
+        #expect(project.goal.isEmpty)
+        project.tasks = [.init(operationID: UUID(), spaceID: SpaceID(), title: "Investigate", prompt: "look", phase: .resolved)]
+        try project.validate()
+        var json = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(project.tasks[0])) as? [String: Any])
+        json["outcomes"] = nil
+        let legacy = try JSONDecoder().decode(ProjectTask.self, from: JSONSerialization.data(withJSONObject: json))
+        #expect(legacy.outcomes == nil && legacy.currentOutcome == nil && legacy.phase == .resolved)
+    }
+
+    @Test func outcomesAreBoundedAndDeliveryFactsNeedEvidence() throws {
+        var project = Project(id: Self.id, name: "Workspace")
+        var task = ProjectTask(operationID: UUID(), spaceID: SpaceID(), title: "Ship", prompt: "p", phase: .settled)
+        func outcome(_ kind: ProjectTaskOutcome.Kind, _ evidence: String? = nil) -> ProjectTaskOutcome {
+            .init(id: UUID(), operationID: task.operationID, kind: kind, evidence: evidence, recordedBy: AgentID(), recordedAt: 1)
+        }
+        task.outcomes = [outcome(.needsChanges), outcome(.merged, "PR #1"), outcome(.uploaded, "build 329"), outcome(.available, "group A")]
+        project.tasks = [task]
+        try project.validate()
+        #expect(project.tasks[0].currentOutcome?.kind == .available, "the newest fact for this activation")
+        for bad in [outcome(.merged), outcome(.uploaded, "  "), outcome(.available, String(repeating: "x", count: 257))] {
+            project.tasks[0].outcomes = [bad]
+            #expect(throws: ProjectValidationError.self) { try project.validate() }
+        }
+        // The hot copy is bounded; lifetime facts live in durable history (archivedOutcomeCount), not here.
+        project.tasks[0].outcomes = (0...ProjectTaskOutcome.hotPerTask).map { _ in outcome(.accepted) }
+        #expect(throws: ProjectValidationError.self) { try project.validate() }
+        let decoded = try JSONDecoder().decode(ProjectTask.self, from: JSONEncoder().encode(task))
+        #expect(decoded.outcomes == task.outcomes)
+    }
+
+    /// Retirement removes only already-archived facts, oldest first, and always keeps the current run's newest fact.
+    @Test func outcomeRetirementKeepsTheCurrentFactAndNeverDropsAnUnarchivedOne() {
+        var task = ProjectTask(operationID: UUID(), spaceID: SpaceID(), title: "T", prompt: "p", phase: .settled)
+        let earlier = UUID()
+        let old = (0..<5).map { ProjectTaskOutcome(id: UUID(), operationID: earlier, kind: .needsChanges, recordedAt: Double($0)) }
+        let current = ProjectTaskOutcome(id: UUID(), operationID: task.operationID, kind: .accepted, recordedAt: 9)
+        task.outcomes = [current] + old
+        task.retireOutcomes(archived: [])
+        #expect(task.outcomes?.count == 6 && task.archivedOutcomeCount == nil, "nothing leaves the working copy before it is archived")
+        task.retireOutcomes(archived: Set((old + [current]).map(\.id)))
+        #expect(task.outcomes == [current] + old.suffix(3) && task.archivedOutcomeCount == 2)
+        #expect(task.currentOutcome == current)
+    }
+
+    /// The brief carries only the newest WHOLE remembered facts with their sources (multi-byte text is never split), plus one honest
+    /// omission line; the stored list is untouched.
+    @Test func briefMemoryKeepsTheNewestWholeSourcedFactsWithinItsBudgetAndSaysWhatItOmitted() {
+        let memory = (0..<40).map { ProjectMemory(text: "fact \($0) " + String(repeating: "é😀", count: 60), source: "Task t\($0) · worker w", createdAt: Double($0)) }
+        let brief = Project.briefMemory(memory)
+        let lines = brief.split(separator: "\n").map(String.init)
+        #expect(brief.utf8.count <= Project.briefMemoryBytes)
+        let facts = lines.dropLast()
+        #expect(lines.last == "(\(memory.count - facts.count) older remembered facts omitted; they remain stored with the Project owner.)")
+        #expect(facts.elementsEqual(memory.suffix(facts.count).map { "\($0.text) [source: \($0.source)]" }), "newest, whole, in order, each with its source")
+        #expect(memory.count == 40, "the stored list is not changed")
+        #expect(Project.briefMemory([.init(text: "a", source: "s", createdAt: 0)]) == "a [source: s]", "no omission line when nothing is omitted")
+        #expect(Project.briefMemory([.init(text: String(repeating: "y", count: Project.briefMemoryBytes), source: "s", createdAt: 0)])
+                == "(1 older remembered facts omitted; they remain stored with the Project owner.)", "an oversized fact is omitted, never truncated")
+        #expect(Project.briefMemory([]).isEmpty)
     }
 }

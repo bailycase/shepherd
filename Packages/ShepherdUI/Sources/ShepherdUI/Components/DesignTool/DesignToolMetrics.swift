@@ -16,10 +16,9 @@ public enum NWDesignMetrics {
     public static let paneTabTextSize: CGFloat = 12.5
     public static let paneTabCountSize: CGFloat = 10
     public static let paneTabUnderline: CGFloat = 2
-    /// The iPad pane's tabs (iPadDesign): 44pt tall in 14, 16pt in.
+    /// The iPad pane's tabs (iPadDesign): 44pt tall in 15, sharing the pane's width.
     public static let touchPaneTabHeight: CGFloat = NW.Height.touch
-    public static let touchPaneTabTextSize: CGFloat = 14
-    public static let touchPaneTabsLeading: CGFloat = NW.Space.xl
+    public static let touchPaneTabTextSize: CGFloat = 15
 
     // The canvas
     /// The canvas's dots: 1px, every 22pt.

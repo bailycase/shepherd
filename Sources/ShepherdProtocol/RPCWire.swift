@@ -134,6 +134,8 @@ public enum RPCCommand: Encodable, Hashable, Sendable {
     case clearQueue
     case getState
     case getMessages
+    case recoverCheckpoint(token: String, operationID: UUID)
+    case getRecoveryOperation(operationID: UUID)
     case getSessionStats
     case getCommands
     /// Shepherd's pinned engine: skills-only disk refresh, refused while busy.
@@ -157,6 +159,8 @@ public enum RPCCommand: Encodable, Hashable, Sendable {
         case .clearQueue: return "clear_queue"
         case .getState: return "get_state"
         case .getMessages: return "get_messages"
+        case .recoverCheckpoint: return "recover_checkpoint"
+        case .getRecoveryOperation: return "get_recovery_operation"
         case .getSessionStats: return "get_session_stats"
         case .getCommands: return "get_commands"
         case .refreshSkills: return "refresh_skills"
@@ -170,7 +174,7 @@ public enum RPCCommand: Encodable, Hashable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case type, message, images, streamingBehavior, provider, modelId, level, id, value, confirmed, cancelled, customInstructions
+        case type, message, images, streamingBehavior, provider, modelId, level, id, value, confirmed, cancelled, customInstructions, history, token, operationID
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -193,7 +197,14 @@ public enum RPCCommand: Encodable, Hashable, Sendable {
             try c.encodeIfPresent(cancelled, forKey: .cancelled)
         case .compact(let customInstructions):
             try c.encodeIfPresent(customInstructions, forKey: .customInstructions)
-        case .abort, .clearQueue, .getState, .getMessages, .getSessionStats, .getCommands, .refreshSkills, .getAvailableThinkingLevels, .newSession:
+        case .getMessages:
+            try c.encode(true, forKey: .history)
+        case .recoverCheckpoint(let token, let operationID):
+            try c.encode(token, forKey: .token)
+            try c.encode(operationID.uuidString, forKey: .operationID)
+        case .getRecoveryOperation(let operationID):
+            try c.encode(operationID.uuidString, forKey: .operationID)
+        case .abort, .clearQueue, .getState, .getSessionStats, .getCommands, .refreshSkills, .getAvailableThinkingLevels, .newSession:
             break
         }
     }

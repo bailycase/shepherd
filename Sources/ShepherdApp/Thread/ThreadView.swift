@@ -198,10 +198,11 @@ struct ThreadView: View {
                     .background { ThreadScrollViewFinder(guardian: tailGuard) }
                     .environment(\.compactionExpansion, store.compactions)
                     .environment(\.turnErrorExpansion, store.errors)
-                    // A local agent's images draw from its folder; a remote agent's files are not here.
+                    // A local agent's images and file links resolve in its folder; a remote agent's files are not here.
                     .environment(\.nwProseFileRoot, workingDirectory.map {
                         URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath, isDirectory: true)
                     })
+                    .environment(\.nwProseFileLinks, .app)
                 }
                 .id(transcriptRevision)
                 .scrollPosition($historyAnchor.position)
@@ -438,7 +439,7 @@ struct ThreadView: View {
             inspectedRunID: inspectedRunID)
     }
 
-    /// Retry, on the latest turn once the agent is idle: the turn again in its place.
+    /// Request checkpoint recovery from the latest settled turn. Never resend its user input.
     private func retryAction(_ row: NativeThreadRow, running: Bool) -> (() -> Void)? {
         guard store.canRetry(row, running: running) else { return nil }
         return { [store] in Task { await store.retry(row) } }

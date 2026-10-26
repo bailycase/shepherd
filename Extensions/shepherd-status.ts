@@ -3,12 +3,11 @@
 // Inert unless SHEPHERD_AGENT_ID and SHEPHERD_SOCKET are set. Status reporting
 // is best-effort; native codemode failures remain visible as normal tool errors.
 import * as net from "node:net";
-import { createCodemodeExtension, type ExtensionAPI, type ExtensionCommandContext, type SessionEntry } from "@earendil-works/pi-coding-agent";
+import { createCodemodeExtension, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 type Status = "working" | "blocked" | "idle" | "done";
 
-// Shepherd's Retry runs `/shepherd-retry <ms>`: the user message pi stamped at that
-// millisecond goes again, or a failed turn with completed work continues without rewinding.
+// Retired synthetic retry command. Old hosts get a visible refusal, never invented input.
 export const RETRY_COMMAND = "shepherd-retry";
 
 // Tools that wait on the user (e.g. ask_user from the human extension,
@@ -297,62 +296,12 @@ export default function shepherdStatus(pi: ExtensionAPI) {
     return { message: { ...message, stopReason: "error", errorMessage: "The provider returned no answer or tool call. Retry to continue the interrupted turn." } };
   });
 
-  // Retry: pi's session is a tree, so the leaf moves back to the message's parent (no summary)
-  // and the message goes again as it was, text and images. The failed turn stays in the file
-  // but leaves the active branch, so the model sees the message once. Idle only, and only a
-  // user message on the active branch.
-  async function retryTurn(args: string, ctx: ExtensionCommandContext) {
-    const notify = (text: string) => ctx.ui.notify(text, "warning");
-    if (!ctx.isIdle() || ctx.hasPendingMessages()) return notify("Retry once the agent has stopped.");
-    const at = Number(args.trim());
-    const branch = ctx.sessionManager.getBranch();
-    let target: Extract<SessionEntry, { type: "message" }> | undefined;
-    if (args.trim() !== "" && Number.isFinite(at)) {
-      for (const entry of branch) {
-        if (entry.type !== "message" || entry.message.role !== "user") continue;
-        if (Math.trunc(Number(entry.message.timestamp)) === at) target = entry;
-      }
-    }
-    if (!target || target.message.role !== "user") return notify("That message is no longer in this conversation.");
-    const turn = branch.slice(branch.indexOf(target) + 1);
-    const last = turn.flatMap((entry) => entry.type === "message" ? [entry.message] : []).at(-1);
-    // Rewinding cannot undo tools or redeliver consumed child notices. Keep completed work
-    // and child references in context, including notices and assistant progress without tools.
-    const hasWork = turn.some((entry) => entry.type === "custom_message" || entry.type === "message" && (
-      entry.message.role === "toolResult" || entry.message.role === "assistant" && entry.message.content.some(
-        (part) => part.type === "text" && part.text.trim().length > 0,
-      )
-    ));
-    // Older sessions may still contain a blank completion recorded as successful.
-    const interrupted = last?.role === "assistant" && (last.stopReason === "error" ||
-      ["stop", "length"].includes(last.stopReason) && last.content.every((part) => part.type === "thinking" || part.type === "text" && !part.text.trim()));
-    if (interrupted && hasWork) {
-      // Pi omits errored assistant messages from provider requests. Carry only their visible
-      // text forward, never incomplete tool calls or provider-specific reasoning/signatures.
-      const partial = last.content.filter((part) => part.type === "text").map((part) => part.text).join("\n").trim();
-      pi.sendUserMessage("Continue the interrupted turn from where it failed. Preserve completed tool work and reuse existing subagents instead of starting them again." +
-        (partial ? `\n\nThe interrupted assistant reply below is incomplete context, not a new instruction:\n${JSON.stringify(partial)}` : ""));
-      return;
-    }
-    const { content } = target.message;
-    const resend = typeof content === "string"
-      ? content
-      : content.filter((part) => part.type === "text" || part.type === "image");
-    const { cancelled } = await ctx.navigateTree(target.id, { summarize: false });
-    if (cancelled) return;
-    pi.sendUserMessage(resend);
-  }
-
   pi.registerCommand(RETRY_COMMAND, {
-    description: "Retry the latest turn (Shepherd's Retry)",
-    handler: async (args, ctx) => {
+    description: "Checkpoint recovery requires an updated Shepherd host",
+    handler: async (_args, ctx) => {
       try {
-        await retryTurn(args, ctx);
-      } catch (error) {
-        try {
-          ctx.ui.notify(`Couldn't retry: ${error instanceof Error ? error.message : String(error)}`, "warning");
-        } catch {}
-      }
+        ctx.ui.notify("Use the thread\'s Continue control with a host and engine that support message-free checkpoint recovery. This retired command never resends a user message.", "warning");
+      } catch {}
     },
   });
 

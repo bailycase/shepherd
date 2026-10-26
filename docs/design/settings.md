@@ -31,7 +31,7 @@ Save or Apply. Instructions and [Spaces](settings-projects.md) edit files with a
     (`textPrimary` when selected), then, 10pt after it, the name in Geist 13 `textPrimary`. The
     selected page sits on `bgSelected` with its name at medium (500); hover is `bgHover`
     (`NWSettingsNavMetrics`). `NWGlyph.Settings` draws the boards' vector outlines rather than
-    similar SF Symbols; Extensions and Slash commands are the boards' filled outlines, cropped to
+    similar SF Symbols, except Advanced, which draws the system `gearshape` itself (a traced copy rendered lumpy); Extensions and Slash commands are the boards' filled outlines, cropped to
     their ink and drawn at the boards' 42.86pt scale.
   - "Shepherd x.y.z · agent x.y.z" pinned at the bottom in mono `micro`, `textTertiary`, aligned with
     the rows' icons: the app's own name, so "Shepherd Nightly …" there. On Pi it names the
@@ -361,6 +361,9 @@ automated step of the worktree flows can be turned off here.
   socket, "Where each agent process reports status and terminal requests.": `PathRow`s, the file's name in
   mono `textSecondary` (`state.json`, `shepherd.sock`; the full path as its tooltip) and Reveal,
   which selects it in Finder.
+- **Editor:** Open files in, "File links in replies, reviewed files and project files. System
+  default uses each file's own app.": a popup of System default, the installed apps that open
+  plain text or source code, and Choose… (an app picker). Stored as the app's bundle identifier.
 - **Updates:** Check for updates automatically, a switch; Update channel, "Stable: tagged releases.
   Beta: pre-releases, plus newer stable builds. Nightly builds are a separate app, Shepherd
   Nightly.": Stable · Beta. Shepherd Nightly names its one channel instead ("Nightly", in

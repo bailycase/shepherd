@@ -2,6 +2,8 @@ import AppKit
 import Foundation
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdCore
+@testable import ShepherdSessions
 import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
@@ -57,6 +59,70 @@ struct ThreadSendHostTests {
                 ThreadSendScrollTests.expectRestingOnTheTail(trace, "run \(run)")
             }
         }
+    }
+
+    /// ⌘↩ through the composer's own key monitor, in a thread whose history holds an image, while a tool runs: the message
+    /// leaves the composer for Up next, then is the thread's newest user turn, and stays drawn (once, never gone) through the
+    /// stopped run's history read and its own turn. The host's read of a history with images is held while pi starts it.
+    @Test func aSteerNowFromTheKeyboardStaysInTheThreadWhileItsTurnRuns() async throws {
+        let image = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 8, pixelsHigh: 8, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                                     isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 32, bitsPerPixel: 32)!
+        let png = try #require(image.representation(using: .png, properties: [:]))
+        let rig = try await RealThreadRig(size: CGSize(width: 1100, height: 800), turns: 3, mix: .moderate, image: png)
+        defer { rig.close() }
+        let held = DispatchSemaphore(value: 0), reads = Locked(0)
+        defer { for _ in 0..<8 { held.signal() } }
+        rig.store.draft = "tools:2 start the long job"
+        await rig.store.send()
+        try await eventuallyOnMain("a tool to run") { rig.store.running && rig.store.rows.last?.live == true }
+        try await Self.holdHistoryImages(rig.app.server, rig.agentID, held: held, reads: reads)
+        let text = "tools:1 steer words here"
+        rig.store.draft = text
+        rig.window.layout()
+        func monitor(_ view: NSView) -> ComposerKeyMonitor? {
+            if let reader = view as? ComposerWindowReader.Reader, reader.monitor?.chord() == KeybindingsStore.shared.chord(for: .alternateSend) {
+                return reader.monitor
+            }
+            return view.subviews.lazy.compactMap(monitor).first
+        }
+        let keys = try #require(monitor(rig.window.host))
+        let press = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0,
+                                                  windowNumber: rig.window.window.windowNumber, context: nil, characters: "\r",
+                                                  charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+        #expect(keys.handle(press), "⌘↩ is the composer's: a draft is ready to send")
+
+        func drawn() -> [NativeThreadMessage] {
+            rig.store.rows.filter(\.isUser).flatMap(\.turn.messages).filter { $0.blocks.first?.text == text }
+        }
+        func queued() -> Bool { rig.store.queue.contains { $0.text == text } }
+        try await eventuallyOnMain("the message to be the thread's newest user turn while pi reads the stopped run") {
+            reads.current > 0 && drawn().count == 1 && rig.store.rows.last(where: \.isUser)?.turn.messages.last?.blocks.first?.text == text
+        }
+        #expect(rig.store.draft.isEmpty, "the composer gave it up")
+        held.signal()
+        let until = ContinuousClock.now + .seconds(1.5)
+        while ContinuousClock.now < until {
+            rig.window.layout()
+            #expect(drawn().count == 1 || queued(), "never out of sight: \(rig.store.rows.suffix(3).map(\.id))")
+            #expect(drawn().count <= 1, "never twice")
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(rig.store.running, "its own turn still runs")
+        if let dir = ProcessInfo.processInfo.environment["SHEPHERD_PREVIEW_DIR"] {
+            let frames = await MotionProbe.record(rig.window) {}
+            try frames.settled.bitmap.representation(using: .png, properties: [:])?
+                .write(to: URL(fileURLWithPath: dir).appendingPathComponent("SteerNowKeyboard-running-dark.png"))
+        }
+        for _ in 0..<8 { held.signal() }
+        rig.release(2)
+        try await eventuallyOnMain("its turn to finish", timeout: .seconds(20)) { !rig.store.running }
+        try await eventuallyOnMain("the message saved, once") { drawn().count == 1 && drawn().first?.status == nil }
+        #expect(rig.store.notice == nil)
+    }
+
+    /// From now on the host's read of a history with images waits for `held`, counting in `reads`.
+    nonisolated static func holdHistoryImages(_ server: SessionServer, _ agent: AgentID, held: DispatchSemaphore, reads: Locked<Int>) async throws {
+        try await server.enqueue { server.rpcThread(forAgent: agent)?.beforeHistoryImages = { reads.withValue { $0 += 1 }; held.wait() } }
     }
 
     /// The first send into a freshly opened thread of tall rows, with a draft of several lines: the

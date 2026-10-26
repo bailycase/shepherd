@@ -29,6 +29,7 @@ struct ProjectRuntimeTests {
                         let log = host.dir.appendingPathComponent("\(agent.id).log")
                         let session = try await host.server.createSession(params: .init(cwd: launch.cwd, command: StubPi.command,
                             env: ["STUB_PI_LOG": log.path, "SHEPHERD_AGENT_ID": agent.id.rawValue,
+                                  "STUB_PI_SESSION_ID": agent.id.rawValue,
                                   "SHEPHERD_SOCKET": host.socketPath,
                                   "SHEPHERD_PROJECT_CONTEXT": "{\"projectID\":\"\(launch.projectID)\"}"], runtime: .rpc))
                         try await host.server.updatePaneSession(tabID: tab.id, paneID: pane.id, sessionID: session.id)
@@ -164,7 +165,7 @@ struct ProjectRuntimeTests {
         #expect(pi.stdin("prompt").count == 1, "retrying the original operation never sends it twice")
     }
 
-    @Test func delayedCoordinatorFailureFencesConcurrentMessagesAndResumeGetsFreshRunBounds() async throws {
+    @Test func delayedCoordinatorFailureFencesConcurrentMessagesAndTheNextMessageGetsFreshRunBounds() async throws {
         let rig = try Rig(); defer { rig.stop() }
         let launcher = try #require(rig.host.server.onProjectRuntimeLaunch)
         let held = Locked<(ProjectRuntimeLaunch, @Sendable (Result<AgentID, Error>) -> Void)?>(nil)
@@ -202,20 +203,16 @@ struct ProjectRuntimeTests {
             try await rig.host.server.enqueue { !rig.host.server.projectRuntimeWriters.isEmpty }
         }
         try await rig.host.server.enqueue { rig.host.server.pumpProject(project.id) }
-        #expect(launches.current == 1)
+        #expect(launches.current == 1, "nothing relaunches while the failure is still being saved")
+        // The concurrent message lands only after the failure is saved: a person's message restarts the stopped Project, with fresh
+        // run bounds, and both retained operations are delivered once.
+        rig.host.server.onProjectRuntimeLaunch = launcher
         gate.signal()
         _ = try await message.value
-        try await eventually("failure saved and concurrent message retained without relaunch") {
-            guard let p = rig.host.server.state.projects.first else { return false }
-            return p.paused && p.coordinatorAgentID == nil && p.messages.count == 2
-        }
-        #expect(launches.current == 1)
         #expect(rig.host.server.state.projects.first?.messages.map(\.id) == [original, concurrent])
-        rig.host.server.onProjectRuntimeLaunch = launcher
-        _ = try await rig.perform(project.id, .resume)
         let started = try await rig.host.server.enqueue { rig.host.server.projectRunStarts[project.id] }
         #expect(try #require(started) > expiredStart)
-        try await eventually("both retained operations delivered once after fresh Resume") {
+        try await eventually("both retained operations delivered once after the restart") {
             rig.host.server.state.projects.first?.messages.allSatisfy { $0.phase == .delivered } == true
         }
         let id = try #require(rig.host.server.state.projects.first?.coordinatorAgentID)
@@ -283,9 +280,10 @@ struct ProjectRuntimeTests {
             return p?.paused == true && p?.interruptPending == true && pi.stdin("abort").count == 1
         }
         do {
-            _ = try await rig.perform(project.id, .resume)
+            let current = try #require(rig.host.server.state.projects.first)
+            _ = try await rig.host.server.projectRuntime(project.id, expectedRevision: current.revision, request: .resume)
             Issue.record("Resume must wait for interruption acknowledgement")
-        } catch let error as LogicalProjectsError { #expect(error.code == "conflict") }
+        } catch let error as LogicalProjectsError { #expect(error.code == "project_busy") }
         #expect(rig.host.server.state.projects.first?.coordinatorAgentID == id)
         try FileManager.default.removeItem(at: refusal)
         _ = try await rig.perform(project.id, .pause)
@@ -334,11 +332,16 @@ struct ProjectRuntimeTests {
         #expect(settled.tasks.allSatisfy { $0.settledAt != nil })
         let resolved = try await rig.perform(project.id, .resolve(taskID: settled.tasks[0].id))
         #expect(resolved.tasks[0].phase == .resolved)
-        let reopened = try await rig.perform(project.id, .reopen(taskID: settled.tasks[0].id))
-        #expect(reopened.tasks[0].phase == .settled)
+        do {
+            _ = try await rig.perform(project.id, .reopen(taskID: settled.tasks[0].id))
+            Issue.record("Resolved tasks must be terminal, including the legacy owner reopen route")
+        } catch let error as LogicalProjectsError {
+            #expect(error.code == "task_resolved" && error.description.contains("project_assign"))
+        }
+        #expect(rig.host.server.state.projects.first == resolved)
     }
 
-    @Test func pauseInterruptsAndQueuesNewMessagesUntilExplicitResume() async throws {
+    @Test func pauseInterruptsRefusesMessagesWhileStoppingAndTheNextMessageRestarts() async throws {
         let rig = try Rig(); defer { rig.stop() }
         let project = try await rig.create()
         let sent = try await rig.perform(project.id, .message(operationID: UUID(), text: "slow"))
@@ -351,11 +354,20 @@ struct ProjectRuntimeTests {
             return (try? await rig.host.server.logicalProjects(.setPaused(projectID: project.id, expectedRevision: before.revision, paused: true))) != nil
         }
         try await eventually("native abort acknowledgement") { rig.agents.current[coordinator]?.stdin("abort").count ?? 0 > 0 }
-        _ = try await rig.perform(project.id, .message(operationID: UUID(), text: "after pause"))
+        // While the threads are still stopping, a person's message is refused (busy), never queued behind the pause.
+        if let p = rig.host.server.state.projects.first, p.interruptPending {
+            do {
+                _ = try await rig.host.server.projectRuntime(project.id, expectedRevision: p.revision, request: .message(operationID: UUID(), text: "too soon"))
+                Issue.record("a message while stopping must be refused")
+            } catch let error as LogicalProjectsError { #expect(["project_busy", "stale_project"].contains(error.code)) }
+        }
         #expect(rig.agents.current[coordinator]?.stdin("prompt").count == 1)
         try await eventually("safe pause acknowledgement") { rig.host.server.state.projects.first?.interruptPending == false }
-        _ = try await rig.perform(project.id, .resume)
-        try await eventually("retained message after resume") { rig.agents.current[coordinator]?.stdin("prompt").count == 2 }
+        // Once stopped, the next message restarts the Project and is delivered.
+        _ = try await rig.perform(project.id, .message(operationID: UUID(), text: "after pause"))
+        #expect(rig.host.server.state.projects.first?.paused == false)
+        try await eventually("the message restarts and is delivered") { rig.agents.current[coordinator]?.stdin("prompt").count == 2 }
+        #expect(rig.host.server.state.projects.first?.messages.contains { $0.text == "too soon" } == false, "a refused message is not kept")
     }
 
     @Test func restartSettlesInterruptedLocalWorkersWithoutPausingAndDeletionPreservesOrdinaryThreads() async throws {
@@ -388,6 +400,20 @@ struct ProjectRuntimeTests {
         try await eventually("question receipt persisted") { rig.host.server.state.projects.first?.tasks.first?.phase == .waiting }
         let state = try #require(rig.host.server.state.projects.first), task = try #require(state.tasks.first)
         #expect(task.phase == .waiting)
+        for (revision, session, generation, dialog) in [
+            (state.revision - 1, asked.piSessionID, asked.generation, "uuid-2"),
+            (state.revision, "stale-session", asked.generation, "uuid-2"),
+            (state.revision, asked.piSessionID, "stale-generation", "uuid-2"),
+            (state.revision, asked.piSessionID, asked.generation, "missing-dialog")
+        ] {
+            let rejected = NativeThreadRequest.answer(expectedSessionID: session, generation: generation,
+                operationID: UUID(), dialogID: dialog, answer: .confirm(value: true))
+            do {
+                let result = try await rig.host.server.answerProjectQuestion(project.id, expectedRevision: revision, taskID: task.id, request: rejected)
+                #expect(result.failureCode != nil)
+            } catch let error as LogicalProjectsError { #expect(error.code == "stale_project") }
+            #expect(pi.stdin("extension_ui_response").isEmpty, "a rejected answer never reaches the worker")
+        }
         let answer = NativeThreadRequest.answer(expectedSessionID: asked.piSessionID, generation: asked.generation,
                                                operationID: UUID(), dialogID: "uuid-2", answer: .confirm(value: true))
         #expect(try await rig.host.server.answerProjectQuestion(project.id, expectedRevision: state.revision, taskID: task.id, request: answer).failureCode == nil)
@@ -447,11 +473,18 @@ struct ProjectRuntimeTests {
         #expect(task.thinking == "high")
         let pi = try #require(rig.agents.current[task.workerAgentID])
         #expect(pi.stdin("set_thinking_level").last?["level"] as? String == "high")
-        // A resolved thread still takes a follow-up, which reopens it (as a finished thread does in Claude's Projects).
-        _ = try await rig.perform(project.id, .resolve(taskID: task.id))
+        // Only the original unresolved assignment can iterate in this worker conversation.
         _ = try await rig.perform(project.id, .followUp(taskID: task.id, operationID: UUID(), text: "hello", thinking: "low"))
         try await eventually("follow-up settled") { pi.stdin("prompt").count == 2 && rig.host.server.state.projects.first?.tasks.first?.phase == .settled }
         #expect(rig.host.server.state.projects.first?.tasks.first?.thinking == "low")
+        #expect(pi.stdin("set_thinking_level").last?["level"] as? String == "low")
+        let resolved = try await rig.perform(project.id, .resolve(taskID: task.id))
+        do {
+            _ = try await rig.perform(project.id, .followUp(taskID: task.id, operationID: UUID(), text: "new work", model: "nobody/unlisted", thinking: "high"))
+            Issue.record("A new follow-up must not reopen resolved work or change its model/thinking")
+        } catch let error as LogicalProjectsError { #expect(error.code == "task_resolved") }
+        #expect(rig.host.server.state.projects.first == resolved)
+        #expect(pi.stdin("prompt").count == 2)
         #expect(pi.stdin("set_thinking_level").last?["level"] as? String == "low")
     }
 

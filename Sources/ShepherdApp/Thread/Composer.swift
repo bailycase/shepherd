@@ -174,28 +174,65 @@ struct Composer: View {
     private var canSend: Bool {
         active && store.acceptsSend && (store.hasDraft || !input.attachments.isEmpty) && input.attachments.oversize == nil
     }
-    /// ProjectLead-Started/-ThreadRunning draw the conversation's empty composer as the disabled arrow while the coordinator works: Stop
-    /// there would also pause the Project (Esc included). Worker and ordinary threads keep Stop.
-    private var projectConversation: Bool { projectSend != nil }
     private var fadeHeight: CGFloat { projectSend != nil || workerStyle != nil ? NWLeadMetrics.turnGap : AppLayout.composerFade }
-    /// The model the chip names. A Project's conversation has no thread to ask before its first message, so it names the Project's own.
-    private var modelName: String? {
-        store.model ?? projectSend?.model.map { $0.current ?? ProjectConversationModel.defaultName }
+    /// A Project conversation whose coordinator's pi is not serving (none yet, held off, paused, starting): the chip names and sets the
+    /// Project's saved model and reasoning level, which the owner applies at launch and before each message it delivers.
+    private var projectSettingsOnly: Bool {
+        projectSend?.model != nil && !(store.ready && store.supportedActions.contains("setModel"))
     }
-    private var modelPending: Bool { projectSend?.model?.pending == true }
-    private var modelSettable: Bool { store.supports("setModel") || modelPending }
-    /// A pick. An ordinary thread sets its own model. A Project's conversation saves the Project's setting FIRST, and the thread's live model
-    /// changes only once the owner accepted it, so the two never disagree; a refusal leaves the chip as it was and shows why.
+    /// The model the chip names: pi's own while it serves, else the Project's saved one (the history's while none is saved).
+    private var modelID: String? {
+        if projectSettingsOnly, let project = projectSend?.model { return project.current ?? store.model }
+        return store.model ?? projectSend?.model?.current
+    }
+    private var modelName: String? {
+        modelID ?? projectSend?.model.map { _ in ProjectConversationModel.defaultName }
+    }
+    /// A Project's model is its owner's setting, settable whether or not its coordinator's pi runs.
+    private var modelSettable: Bool { store.supports("setModel") || projectSend?.model != nil }
+    /// A pick. An ordinary thread sets its own model. A Project's conversation saves the Project's setting FIRST (with its reasoning level
+    /// clamped to the levels the new model takes, as pi clamps it), and the thread's live model changes only once the owner accepted it,
+    /// so the two never disagree; a refusal leaves the chip as it was and shows why.
     private func pickModel(_ id: String) {
-        guard let choose = projectSend?.model?.choose else { Task { await store.setModel(id) }; return }
+        guard let project = projectSend?.model else { Task { await store.setModel(id) }; return }
+        let level = project.chooseThinking == nil ? nil : Self.clampedThinking(shownThinking, to: catalog?.model(id)?.levels)
         Task {
-            guard await choose(id) else {
+            guard await project.choose(id, level == shownThinking ? nil : level) else {
                 referenceError = projectSend?.refusal() ?? "The model could not be saved. Try again."
                 return
             }
             if store.supports("setModel") { await store.setModel(id) }
         }
     }
+    /// `level` as pi would take it for a model offering `levels`; unchanged where the model's levels are unknown or it takes none.
+    nonisolated static func clampedThinking(_ level: String?, to levels: [String]?) -> String? {
+        guard let level, let current = ThinkingLevel(rawValue: level), let levels, !levels.isEmpty else { return level }
+        return current.clamped(to: levels.compactMap(ThinkingLevel.init(rawValue:))).rawValue
+    }
+    /// A level. An ordinary thread sets its own. A Project's conversation saves it as the Project's FIRST, then sets the live thread's; an
+    /// owner that cannot save one (an older remote host) leaves the live thread's own setting, as before.
+    private func pickThinking(_ level: String) {
+        guard let save = projectSend?.model?.chooseThinking else { Task { await store.setThinking(level) }; return }
+        Task {
+            guard await save(level) else {
+                referenceError = projectSend?.refusal() ?? "The reasoning level could not be saved. Try again."
+                return
+            }
+            if store.supports("setThinking") { await store.setThinking(level) }
+        }
+    }
+    /// The level the chip names: pi's while it serves, else the Project's saved one (the history's while none is saved).
+    private var shownThinking: String? {
+        projectSettingsOnly ? (projectSend?.model?.thinking ?? store.thinking) : store.thinking
+    }
+    /// The levels offered: pi's for its model while it serves, else those the catalog lists for the Project's model (the standard four
+    /// for a model the catalog does not know; none for one without reasoning).
+    private var shownThinkingLevels: [NativeThinkingLevel] {
+        guard projectSettingsOnly else { return store.thinkingLevels }
+        guard let model = modelID.flatMap({ catalog?.model($0) }) else { return NativeThinkingLevel.fallback }
+        return model.levels.isEmpty ? [] : NativeThinkingLevel.levels(model.levels)
+    }
+    private var thinkingSettable: Bool { projectSend?.model?.chooseThinking != nil || store.supports("setThinking") }
     /// A Project's composer asks the Project's owner (it exists before the first coordinator); every other thread asks its own.
     private var canAttach: Bool { projectSend?.carriesImages ?? store.supportedActions.contains("sendImages") }
     /// pi answers `/name` prompts itself; the list comes from its command registry. Its skills'
@@ -351,7 +388,7 @@ struct Composer: View {
                     if queueStack.isVisible {
                         QueueStackView(state: queueStack, store: store, running: running, animated: !catchingUp, framed: !showsTray && !store.hasGoal,
                                        focusedRow: $focusedRow, focusComposer: { composing = true },
-                                       readOnly: projectUpNext != nil, heldReason: projectUpNext?.paused)
+                                       readOnly: projectUpNext != nil)
                     }
                 }
                 // A lifted row floats over the card too.
@@ -530,7 +567,7 @@ struct Composer: View {
 
     /// The levels pi offers the thread's model, with the board's notes.
     private var thinkingOptions: [NWThinkingOption] {
-        store.thinkingLevels.map { NWThinkingOption(id: $0.id, title: $0.title, note: $0.note) }
+        shownThinkingLevels.map { NWThinkingOption(id: $0.id, title: $0.title, note: $0.note) }
     }
 
     /// The tiers the model offers, with the board's words.
@@ -590,15 +627,15 @@ struct Composer: View {
             }
             if menu == .settings {
                 NWModelSettings(models: settingsModels, thinking: thinkingAvailable ? thinkingOptions : [],
-                                currentThinking: store.thinking, speeds: store.offersServiceTier ? speedOptions : [],
+                                currentThinking: shownThinking, speeds: store.offersServiceTier ? speedOptions : [],
                                 currentSpeed: store.serviceTier.rawValue, modelEnabled: modelSettable,
-                                thinkingEnabled: store.supports("setThinking"), speedEnabled: store.supports("setServiceTier"), maxHeight: room,
+                                thinkingEnabled: thinkingSettable, speedEnabled: store.supports("setServiceTier"), maxHeight: room,
                                 chooseModel: { model in
                                     menu = nil
                                     composing = true
                                     RecentModels.record(model.id, thread: agentName, defaults: modelDefaults)
                                     pickModel(model.id)
-                                }, chooseThinking: { level in Task { await store.setThinking(level) } },
+                                }, chooseThinking: { level in pickThinking(level) },
                                 chooseSpeed: { id in
                                     if let tier = ServiceTier(rawValue: id) { Task { await store.setServiceTier(tier) } }
                                 }, allModels: { openModels() }, close: { menu = nil; composing = true })
@@ -682,8 +719,6 @@ struct Composer: View {
                              dismissal: dismissal).equatable()
         }
         .coordinateSpace(.named(Self.cardSpace))
-        .environment(\.nwComposerControlsInset, projectSend != nil || workerStyle != nil
-                     ? NWComposerControlsInset(top: NWLeadMetrics.composerControlsTop, bottom: NWLeadMetrics.composerControlsBottom) : nil)
     }
 
     private var placeholder: String {
@@ -798,8 +833,7 @@ struct Composer: View {
             }
             .onComposerKey(.escape) {
                 switch ComposerEscape(menuOpen: menu != nil, commandsOpen: commandQuery != nil || loginQuery != nil || mentionShown,
-                                      canStop: running && dialogs.isEmpty && active && store.supports("abort")
-                                          && !(projectConversation && !store.hasDraft && input.attachments.isEmpty)) {
+                                      canStop: running && dialogs.isEmpty && active && store.supports("abort")) {
                 case .closeMenu: menu = nil
                 case .dismissCommands where mentionShown && commandQuery == nil && loginQuery == nil:
                     mentions.dismissed = store.draft
@@ -810,9 +844,9 @@ struct Composer: View {
                 }
                 return .handled
             }
-            .modifier(CycleThinkingShortcut(focused: composing && active && thinkingAvailable && store.supports("setThinking") && dialogs.isEmpty,
-                                          current: store.thinking, levels: store.thinkingLevels.map(\.id),
-                                          choose: { level in Task { await store.setThinking(level) } }))
+            .modifier(CycleThinkingShortcut(focused: composing && active && thinkingAvailable && thinkingSettable && dialogs.isEmpty,
+                                          current: shownThinking, levels: shownThinkingLevels.map(\.id),
+                                          choose: { level in pickThinking(level) }))
             .accessibilityLabel("Message the agent")
     }
 
@@ -825,12 +859,12 @@ struct Composer: View {
     private var controlsModel: ComposerControlsModel {
         let working = running
         let draftEmpty = !store.hasDraft && input.attachments.isEmpty
-        let stops = NativeSendChoice.stopsInPlaceOfSend(running: working, hasInput: !draftEmpty) && !projectConversation
+        let stops = NativeSendChoice.stopsInPlaceOfSend(running: working, hasInput: !draftEmpty)
         return ComposerControlsModel(
             active: active, canAttach: canAttach, attachFull: input.attachments.isFull,
-            model: modelName, modelChangeable: store.supportedActions.contains("setModel") || modelPending,
+            model: modelName, modelChangeable: store.supportedActions.contains("setModel") || projectSend?.model != nil,
             modelEnabled: modelSettable, modelsOpen: menu == .models || menu == .settings,
-            thinking: store.thinking, thinkingShown: thinkingAvailable, thinkingEnabled: store.supports("setThinking"),
+            thinking: shownThinking, thinkingShown: thinkingAvailable, thinkingEnabled: thinkingSettable,
             speed: store.serviceTier, speedShown: store.offersServiceTier, speedEnabled: store.supports("setServiceTier"),
             // A Project's conversation and its threads show no branch: the Project's work is placed in its Spaces by the runtime.
             branch: projectSend != nil || workerStyle != nil ? nil : branch,
@@ -878,7 +912,8 @@ struct Composer: View {
 
     /// The thinking chip shows while pi reports a level it can set and the model takes one.
     private var thinkingAvailable: Bool {
-        store.thinking != nil && store.supportedActions.contains("setThinking") && reasoningAvailable
+        if projectSettingsOnly { return projectSend?.model?.chooseThinking != nil && NativeThinkingLevel.reasons(shownThinkingLevels) }
+        return store.thinking != nil && store.supportedActions.contains("setThinking") && reasoningAvailable
             && NativeThinkingLevel.reasons(store.thinkingLevels)
     }
 
@@ -894,8 +929,8 @@ struct Composer: View {
     private func openModels() {
         guard modelSettable else { NSSound.beep(); return }
         guard menu != .models else { menu = nil; return }
-        picker = ModelPickerState(catalog: catalog, recent: RecentModels.load(modelDefaults).map(\.id), current: store.model ?? projectSend?.model?.current,
-                                  currentLevels: store.snapshot?.thinkingLevels)
+        picker = ModelPickerState(catalog: catalog, recent: RecentModels.load(modelDefaults).map(\.id), current: modelID,
+                                  currentLevels: projectSettingsOnly ? nil : store.snapshot?.thinkingLevels)
         dismissCommands()
         menu = .models
         // The shared catalog caches unchanged files. Re-read on opening so connections added
@@ -904,7 +939,7 @@ struct Composer: View {
     }
 
     private func toggleThinking() {
-        guard thinkingAvailable, store.supports("setThinking") else { NSSound.beep(); return }
+        guard thinkingAvailable, thinkingSettable else { NSSound.beep(); return }
         openSettings()
     }
 
@@ -922,7 +957,7 @@ struct Composer: View {
 
     /// Current model first, then one recent model. Never offer a stale unavailable model.
     private var settingsModels: [NWModelOption] {
-        ModelCatalog.settingsModels(catalog: catalog, current: store.model ?? projectSend?.model?.current, recent: RecentModels.load(modelDefaults).map(\.id),
+        ModelCatalog.settingsModels(catalog: catalog, current: modelID, recent: RecentModels.load(modelDefaults).map(\.id),
                                     currentOffersFast: store.offersServiceTier)
     }
 

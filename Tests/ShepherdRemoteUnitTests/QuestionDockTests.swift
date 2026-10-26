@@ -91,6 +91,52 @@ struct QuestionDockTests {
         #expect(prompt.answer(NativeQuestionPicks(text: text)).flatMap(prompt.dialogAnswer) == expected)
     }
 
+    // MARK: An input that offers choices (project_question)
+
+    static let choiceInput = NativeThreadDialog(id: "ci", kind: .input, title: "Which store?", options: ["Use SQLite", "Use Postgres"],
+                                                message: "1. Use SQLite\n2. Use Postgres", placeholder: "Say anything")
+
+    @Test func anInputWithChoicesIsAChoiceWithAFieldAndNoFakeOption() {
+        let prompt = NativeQuestionPrompt(dialog: Self.choiceInput)
+        #expect(prompt.kind == .choice && prompt.allowsText && prompt.showsAnswer)
+        #expect(prompt.options.map(\.title) == ["Use SQLite", "Use Postgres"], "Say anything is the field, never an option")
+        #expect(prompt.placeholder == "Say anything")
+        #expect(prompt.message == nil, "the offered buttons replace the older clients' text hints")
+        var contextual = Self.choiceInput
+        contextual.message = "Keep the existing migration compatible."
+        #expect(NativeQuestionPrompt(dialog: contextual).message == contextual.message, "preserve an asker's real context")
+        #expect(!NativeQuestionPrompt(dialog: Self.select).allowsText, "an ordinary select takes only its options")
+        #expect(!NativeQuestionPrompt(dialog: NativeThreadDialog(id: "i", kind: .input, title: "Name?")).allowsText)
+    }
+
+    @Test func anInputsChoiceAndWordsBothAnswerItsInputAndWhitespaceAnswersNothing() throws {
+        let prompt = NativeQuestionPrompt(dialog: Self.choiceInput)
+        #expect(prompt.answer(NativeQuestionPicks(picked: 2)).flatMap(prompt.dialogAnswer) == .input(value: "Use Postgres"))
+        #expect(prompt.answer(NativeQuestionPicks(text: "  a preview DB  ")).flatMap(prompt.dialogAnswer) == .input(value: "a preview DB"))
+        #expect(prompt.answer(NativeQuestionPicks(text: "   ")) == nil)
+        #expect(prompt.answer(NativeQuestionPicks(picked: 1, text: "mine")).flatMap(prompt.dialogAnswer) == .input(value: "mine"))
+        // An ordinary select never answers with words.
+        let select = NativeQuestionPrompt(dialog: Self.select)
+        #expect(select.dialogAnswer(.words("anything")) == nil)
+        #expect(select.answer(NativeQuestionPicks(text: "anything")) == nil)
+    }
+
+    @Test func typingDropsThePickAndPickingEmptiesTheField() {
+        let typed = NativeQuestionPicks.exclusive(NativeQuestionPicks(picked: 1), NativeQuestionPicks(picked: 1, text: "m"))
+        #expect(typed == NativeQuestionPicks(text: "m"))
+        let blank = NativeQuestionPicks.exclusive(NativeQuestionPicks(picked: 1), NativeQuestionPicks(picked: 1, text: " "))
+        #expect(blank.picked == 1, "whitespace alone keeps the pick")
+        let picked = NativeQuestionPicks.exclusive(NativeQuestionPicks(text: "mine"), NativeQuestionPicks(picked: 2, text: "mine"))
+        #expect(picked == NativeQuestionPicks(picked: 2))
+    }
+
+    @Test func anInputsChoiceKeysPickOutsideTheFieldAndTypeInIt() {
+        let prompt = NativeQuestionPrompt(dialog: Self.choiceInput)
+        #expect(prompt.action(for: .number(2), picks: NativeQuestionPicks(), hidden: false, editing: false) == .pick(2))
+        #expect(prompt.action(for: .number(2), picks: NativeQuestionPicks(), hidden: false, editing: true) == .pass)
+        #expect(prompt.action(for: .answer, picks: NativeQuestionPicks(text: "mine"), hidden: false, editing: true) == .answer)
+    }
+
     @Test(arguments: ["external-editor", "payload-limit"])
     func aQuestionThatCannotBeAnsweredHereSaysWhyAndTakesNoAnswer(reason: String) {
         let prompt = NativeQuestionPrompt(dialog: NativeThreadDialog(id: "x", kind: .select, title: "Q", options: ["A", "B", "C"], unavailable: reason))

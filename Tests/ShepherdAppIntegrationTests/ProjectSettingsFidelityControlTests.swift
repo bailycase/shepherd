@@ -1,4 +1,5 @@
 import AppKit
+import ShepherdRemote
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
@@ -31,7 +32,7 @@ private func need<T>(_ value: T?, _ message: @autoclosure () -> String = "a requ
 struct ProjectSettingsFidelityControlTests {
     // MARK: General
 
-    @Test func generalSizesPauseResumeAndDeleteWork() async {
+    @Test func generalSizesAndDeleteWork() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.general() } }
         expectScenarioCompleted(result)
     }
@@ -206,16 +207,15 @@ struct ProjectSettingsFidelityControlTests {
 
     private static func general() async throws {
         try await page(goal: "Build a shared reading list for a small team") { app, vm, window, id in
-            try await eventuallyOnMain("the page") { window.layout(); return window.element("Pause") != nil && window.element("Delete…") != nil }
+            try await eventuallyOnMain("the page") { window.layout(); return window.element("Delete…") != nil }
             @MainActor func current() -> Project { app.server.state.projects[0] }
 
             // Sizes the boards' markup computes: tabs 34 tall (the 32pt label and its 2pt rule), General 60.1 wide and a 6pt gap to Spaces;
-            // Pause, Delete… 28 tall at text + 22; the popups 32 tall.
+            // Delete… 28 tall at text + 22; the popups 32 tall.
             let general = try control(window, "General"), spaces = try control(window, "Spaces")
             near(general.frame.height, 34, "a tab's height"); near(general.frame.width, 60.1, "General's width", tolerance: 1)
             near(abs(spaces.frame.minX - general.frame.maxX), 6, "the gap between tabs")
-            let pause = try control(window, "Pause"), delete = try control(window, "Delete…")
-            near(pause.frame.height, 28, "Pause's height"); near(pause.frame.width, 57.9, "Pause's width", tolerance: 1)
+            let delete = try control(window, "Delete…")
             near(delete.frame.height, 28, "Delete…'s height"); near(delete.frame.width, 68.1, "Delete…'s width", tolerance: 1)
             for name in ["Conversation model", "Thread model", "Threads at once"] {
                 let node = try await enabledPopup(window, name)
@@ -225,7 +225,7 @@ struct ProjectSettingsFidelityControlTests {
             }
             let goal = try need(AccessibilityNode.all(under: window.host).first { $0.label == "Goal" && ["AXTextField", "AXTextArea"].contains($0.role ?? "") })
             near(goal.frame.width, 320, "the Goal field's width"); near(goal.frame.height, 36.75, "the Goal field's height")
-            for control in [general, spaces, pause, delete] {
+            for control in [general, spaces, delete] {
                 #expect(ControlPress.undersized([control], minimum: .desktop).isEmpty, "\(control) is under 24pt")
             }
             // The row says only what the board says: the retained-files sentence lives in the confirmation, not the row.
@@ -239,16 +239,8 @@ struct ProjectSettingsFidelityControlTests {
             try await press(window, "Back to Sample App")
             try await eventuallyOnMain("the project's page") { vm.destination == .project }
             vm.openLogicalProjectSettings(LogicalProjectRef(home: .local, id: id))
-            try await eventuallyOnMain("settings again") { window.layout(); return window.element("Pause") != nil }
-
-            // Pause and Resume send setPaused; the button and its help change with the state.
-            try await press(window, "Pause")
-            try await eventuallyOnMain("paused") { current().paused }
-            try await eventuallyOnMain("Resume shows") { window.layout(); return window.element("Resume") != nil }
-            let resume = try control(window, "Resume")
-            #expect(ControlPress.undersized([resume], minimum: .desktop).isEmpty)
-            try await press(window, "Resume")
-            try await eventuallyOnMain("resumed") { !current().paused }
+            try await eventuallyOnMain("settings again") { window.layout(); return window.element("Delete…") != nil }
+            #expect(window.element("Pause") == nil && window.element("Resume") == nil, "settings offer no Pause or Resume")
 
             // Delete… opens the confirmation (which says the files stay); Cancel keeps the project; confirming removes only the record.
             let kept = app.dir.appendingPathComponent("logical-projects/\(id.rawValue)")
@@ -275,7 +267,7 @@ struct ProjectSettingsFidelityControlTests {
         switch which {
         case .limit:
             try await page { app, _, window, _ in
-                try await eventuallyOnMain("the page") { window.layout(); return window.element("Pause") != nil }
+                try await eventuallyOnMain("the page") { window.layout(); return window.element("Delete…") != nil }
                 #expect(app.server.state.projects[0].settings.maxConcurrentWorkers == 3, "a new project defaults to three threads at once")
                 let counts = try await NativeMenuChoice.choose("5", from: try popup(window, "Threads at once"))
                 #expect(counts == ["1", "2", "3", "4", "5", "6"], "threads at once is 1 to 6: \(counts)")
@@ -283,7 +275,7 @@ struct ProjectSettingsFidelityControlTests {
             }
         case .conversationModel:
             try await page { app, _, window, _ in
-                try await eventuallyOnMain("the page") { window.layout(); return window.element("Pause") != nil }
+                try await eventuallyOnMain("the page") { window.layout(); return window.element("Delete…") != nil }
                 let offered = try await NativeMenuChoice.choose(try need(catalog.first), from: try await enabledPopup(window, "Conversation model"))
                 #expect(offered == ["Default"] + catalog, "the owner's own catalog, Default first: \(offered)")
                 try await eventuallyOnMain("conversation model saved") { app.server.state.projects[0].settings.conversationModel == catalog.first }
@@ -291,14 +283,14 @@ struct ProjectSettingsFidelityControlTests {
             }
         case .threadModel:
             try await page(settings: { $0.conversationModel = catalog.first }) { app, _, window, _ in
-                try await eventuallyOnMain("the page") { window.layout(); return window.element("Pause") != nil }
+                try await eventuallyOnMain("the page") { window.layout(); return window.element("Delete…") != nil }
                 _ = try await NativeMenuChoice.choose(try need(catalog.last), from: try await enabledPopup(window, "Thread model"))
                 try await eventuallyOnMain("thread model saved") { app.server.state.projects[0].settings.threadModel == catalog.last }
                 #expect(app.server.state.projects[0].settings.conversationModel == catalog.first, "choosing the thread model leaves the conversation model alone")
             }
         case .defaultModel:
             try await page(settings: { $0.conversationModel = catalog.first }) { app, _, window, _ in
-                try await eventuallyOnMain("the page") { window.layout(); return window.element("Pause") != nil }
+                try await eventuallyOnMain("the page") { window.layout(); return window.element("Delete…") != nil }
                 _ = try await NativeMenuChoice.choose("Default", from: try await enabledPopup(window, "Conversation model"))
                 try await eventuallyOnMain("Default clears it") { app.server.state.projects[0].settings.conversationModel == nil }
             }
@@ -366,8 +358,8 @@ struct ProjectSettingsFidelityControlTests {
     private static func scaled() async throws {
         ThemeStore.shared.textScale = 1.3
         try await page(goal: "Build a shared reading list for a small team, with sample accounts and shared folders") { app, _, window, _ in
-            try await eventuallyOnMain("the page") { window.layout(); return window.element("Pause") != nil }
-            for name in ["General", "Spaces", "Memory", "Automations", "Pause", "Delete…"] {
+            try await eventuallyOnMain("the page") { window.layout(); return window.element("Delete…") != nil }
+            for name in ["General", "Spaces", "Memory", "Automations", "Delete…"] {
                 let control = try control(window, name)
                 #expect(ControlPress.undersized([control], minimum: .desktop).isEmpty, "\(name) is \(control.frame.size) at 1.3")
             }
@@ -453,7 +445,7 @@ struct ProjectSettingsFidelityControlTests {
     private static func edits() async throws {
         try await page(goal: "Launch") { app, _, window, _ in
             @MainActor func current() -> Project { app.server.state.projects[0] }
-            try await eventuallyOnMain("the page") { window.layout(); return window.element("Pause") != nil }
+            try await eventuallyOnMain("the page") { window.layout(); return window.element("Delete…") != nil }
 
             // Goal. Typing is not committing.
             let revision = current().revision

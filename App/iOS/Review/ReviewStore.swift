@@ -40,6 +40,8 @@ final class ReviewStores {
 @Observable
 final class ReviewStore {
     enum PadLayout: Hashable { case docked, full }
+    /// The docked pane's tab (iPadPaneArtifacts: the review is its Changes tab).
+    enum PadTab: Hashable { case changes, artifacts }
     enum DiffStyle: Hashable { case unified, split }
 
     struct LineKey: Hashable {
@@ -121,6 +123,9 @@ final class ReviewStore {
     /// iPad: beside the thread or full screen, and the file shown. `diffStyle` is the reviewer's
     /// choice; nil draws split where the diff is wide enough and unified where it is not.
     var padLayout: PadLayout = .docked
+    /// The tab the docked pane shows, and the artifact open on its Artifacts tab (its path; nil is the list).
+    var padTab: PadTab = .changes
+    var artifact: String?
     var diffStyle: DiffStyle?
     var currentFile: String?
     /// The base picker is open (the phone's sheet, the iPad's popover).
@@ -335,6 +340,16 @@ final class ReviewStore {
 
     /// Compares Branch against `base`.
     func pickBase(_ base: String) { pick(.branch(base: base)) }
+
+    /// A thread row's Review Uncommitted Changes or Review PR Changes: that scope on a Changes host, the working tree's or
+    /// the PR's diff on an older one. A review already on screen reloads.
+    func show(_ scope: ChangesScope) {
+        pullRequest = scope == .pullRequest
+        guard pickedScope != scope else { return }
+        pickedScope = scope
+        loadedKey = nil
+        if loaded { refresh() }
+    }
 
     /// A changes card's Review: the turn it ended.
     func show(turn id: UUID) {
@@ -570,9 +585,11 @@ final class ReviewStore {
     func unifiedRows(_ fileID: String, gaps: Bool) -> [ReviewUnifiedRow] {
         guard let file = diffs[fileID] else { return [] }
         let expanded = expandedRuns[fileID] ?? []
+        // Read before the cache answers: a view that drew the rows uncolored must hear the
+        // colors arrive (the cache and its version are invisible to Observation).
+        let colors = texts[fileID] ?? [:]
         let version = fileVersions[fileID] ?? 0
         if let cached = unifiedCache[fileID], cached.version == version, cached.expanded == expanded, cached.gaps == gaps { return cached.rows }
-        let colors = texts[fileID] ?? [:]
         let gapsBefore = gaps ? reviewHunkGaps(file) : [:]
         let rows: [ReviewUnifiedRow] = reviewRows(file, expandedRuns: expanded).map { row in
             switch row.kind {
@@ -589,9 +606,9 @@ final class ReviewStore {
     func splitRows(_ fileID: String) -> [ReviewSplitDisplayRow] {
         guard let file = diffs[fileID] else { return [] }
         let expanded = expandedRuns[fileID] ?? []
+        let colors = texts[fileID] ?? [:]
         let version = fileVersions[fileID] ?? 0
         if let cached = splitCache[fileID], cached.version == version, cached.expanded == expanded { return cached.rows }
-        let colors = texts[fileID] ?? [:]
         let gapsBefore = reviewHunkGaps(file)
         let rows: [ReviewSplitDisplayRow] = reviewSplitRows(file, expandedRuns: expanded).map { row in
             switch row.kind {
@@ -890,7 +907,3 @@ extension NWReviewFileRow.Item {
 }
 
 /// A host's refusal says what went wrong in its message; anything else describes itself.
-func reviewErrorText(_ error: Error) -> String {
-    if case RemoteHostClientError.rejected(_, let message) = error { return message }
-    return String(describing: error)
-}

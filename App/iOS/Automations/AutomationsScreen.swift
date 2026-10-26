@@ -43,7 +43,17 @@ struct AutomationsScreen: View {
         .task { await store.watch() }
         .navigationTitle("Automations")
         .navigationBarTitleDisplayMode(sizeClass == .regular ? .inline : .large)
+        .toolbar(removing: sizeClass == .regular ? .title : nil)
         .toolbar {
+            // iPadAutomations: "Automations" leads the bar, over the list.
+            if sizeClass == .regular {
+                ToolbarItem(placement: .topBarLeading) {
+                    Text("Automations").font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary)
+                        .fixedSize()
+                        .accessibilityAddTraits(.isHeader)
+                }
+                .sharedBackgroundVisibility(.hidden)
+            }
             if !store.editableHosts.isEmpty {
                 ToolbarItem(placement: .topBarTrailing) {
                     // New automation is the lantern circle (MobileAutomations).
@@ -178,19 +188,28 @@ struct AutomationRunCardView: View, Equatable {
 private struct AutomationsSplit: View {
     let store: AutomationsStore
     let model: AutomationsModel
+    @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
         let current = model.rows.first { $0.key == store.chosen }?.key ?? model.rows[0].key
-        HStack(spacing: 0) {
+        PadListDetail(listWidth: MobileLayout.automationsListWidth) {
             ScrollView {
                 AutomationsList(store: store, model: model, chosen: current) { store.chosen = $0 }
                     .padding(NW.Space.m)
             }
             .refreshable { await store.refreshRuns() }
-            .frame(width: MobileLayout.automationsListWidth)
-            NWHairline(.vertical)
+        } detail: {
             AutomationDetailContent(key: current, pad: true)
-                .frame(maxWidth: .infinity)
+        } single: {
+            // Too narrow for both (iPhone Duo): the list, each row pushing its detail.
+            ScrollView {
+                AutomationsList(store: store, model: model, chosen: nil) { key in
+                    navigator.open(.automations(.detail(host: key.host, automation: key.automation)))
+                }
+                .padding(.horizontal, MobileLayout.gutter)
+                .padding(.bottom, MobileLayout.sectionSpacing)
+            }
+            .refreshable { await store.refreshRuns() }
         }
     }
 }

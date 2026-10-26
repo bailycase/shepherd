@@ -9,7 +9,7 @@ import ShepherdUI
 // goes through the Project runtime. Before the first message there is no coordinator, so the page shows the Project's
 // context (the Empty overview) and the composer; the first send creates the conversation.
 
-/// The main column: the pause banner (while paused), then the thread (or the empty overview) with the composer.
+/// The main column: the thread (or the empty overview) with the composer.
 struct LogicalProjectConversation: View {
     var vm: ShepherdViewModel
     let ref: LogicalProjectRef
@@ -18,7 +18,6 @@ struct LogicalProjectConversation: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if project.paused { PausedBanner(vm: vm, ref: ref, project: project) }
             // The coordinator's own thread: this Mac's for a local Project, the owner's for a remote one (read through the owner).
             if let agent = project.coordinatorAgentID {
                 ConversationThread(vm: vm, ref: ref, project: project, presentation: presentation, agent: agent)
@@ -27,37 +26,6 @@ struct LogicalProjectConversation: View {
             }
         }
         .background(Color.nw.bgWindow)
-    }
-}
-
-/// "Paused. Threads stopped at a safe point and nothing new starts. Messages wait until you resume." and Resume.
-/// While the owner has not yet acknowledged the interruption, Resume is refused (the runtime says so), never faked.
-private struct PausedBanner: View {
-    var vm: ShepherdViewModel
-    let ref: LogicalProjectRef
-    let project: Project
-
-    var body: some View {
-        HStack(spacing: NWLeadMetrics.bannerGap) {
-            Image(systemName: "pause").font(.system(size: NWLeadMetrics.bannerGlyph)).foregroundStyle(Color.nw.textSecondary)
-                .accessibilityHidden(true)
-            Text(project.interruptPending
-                 ? "Paused. Stopping threads at a safe point. Messages wait until you resume."
-                 : "Paused. Threads stopped at a safe point and nothing new starts. Messages wait until you resume.")
-                .font(.nw(.ui, weight: .regular))
-                .foregroundStyle(Color.nw.textPrimary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Button("Resume") { Task { _ = await vm.logicalProjects.setPaused(ref, false) } }
-                .buttonStyle(NWLeadSecondaryButton())
-                .disabled(vm.logicalProjects.busy.contains(ref.id) || project.interruptPending)
-        }
-        .padding(NWLeadMetrics.bannerPadding)
-        .frame(height: NWLeadMetrics.bannerHeight)
-        .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-        .nwBorder(Color.nw.lineStrong, radius: NW.Radius.m)
-        .padding(.horizontal, NWLeadMetrics.bannerInset)
-        .padding(.top, NWLeadMetrics.bannerTop)
-        .accessibilityElement(children: .contain)
     }
 }
 
@@ -185,7 +153,7 @@ struct ConversationThread: View {
         let inline = Set((store.messages + store.rows.flatMap(\.turn.messages)).compactMap { $0.projectAction?.proposalID })
         let offers = project.spaceProposals.filter { $0.phase == .pending && !inline.contains($0.id) }
         return ProjectComposerSend(
-            placeholder: project.paused ? "Paused. Your message waits until you resume…" : "Ask \(name) a question or start a task…",
+            placeholder: "Ask \(name) a question or start a task…",
             carriesImages: vm.projectCarriesImages(ref.home),
             send: { [vm, ref] text, images in await vm.logicalProjects.sendMessage(ref, text: text, images: images) },
             refusal: { [vm] in vm.logicalProjects.failure?.message },
@@ -193,7 +161,12 @@ struct ConversationThread: View {
             dock: (presentation.summary != nil || !offers.isEmpty) ? { [vm, ref] in
                 AnyView(VStack(spacing: NWLeadMetrics.dockGap) {
                     ForEach(offers) { proposal in SpaceOffer(vm: vm, ref: ref, proposal: proposal) }
-                    ForEach(questions) { task in TaskQuestion(vm: vm, ref: ref, task: task, paused: project.paused) }
+                    // Read in the dock, not the thread's body: observed there, a refused send redraws the thread and leaves its Send
+                    // disabled once the owner has dropped the coordinator.
+                    if !questions.isEmpty, let questionFailure = vm.logicalProjects.failure?.message {
+                        NWInlineProblem(questionFailure).accessibilityLabel(questionFailure)
+                    }
+                    ForEach(questions) { task in TaskQuestion(vm: vm, ref: ref, task: task) }
                     if let summary = presentation.summary {
                         ProjectSummaryStrip(vm: vm, ref: ref, summary: summary, rows: presentation.rows)
                     }
@@ -202,13 +175,20 @@ struct ConversationThread: View {
             held: { [store, project] in
                 // Consumed native operations: the thread's own user messages (saved or pending echoes) name the send that became them.
                 let consumed = Set((store.messages + store.pending + store.rows.flatMap(\.turn.messages)).compactMap { $0.operationID })
-                return ProjectHeldMessages.held(messages: project.messages, paused: project.paused, consumed: consumed)
+                return ProjectHeldMessages.held(messages: project.messages, consumed: consumed)
             },
-            runtimeOperations: Set(project.messages.filter { $0.source != nil }.flatMap { [$0.id] + [$0.nativeDeliveryID].compactMap { $0 } }),
+            runtimeOperations: Set(project.messages.filter { $0.source != nil }.flatMap { [$0.id] + [$0.nativeDeliveryID].compactMap { $0 } }
+                                   + project.retiredWakeups),
             model: ProjectConversationModel(
                 current: project.settings.conversationModel ?? (ref.home == .local ? vm.settings.agentDefaults.model : nil),
-                pending: agent == nil,
-                choose: { [vm, ref] id in await vm.logicalProjects.saveSettings(ref) { $0.conversationModel = id } }))
+                // Before a coordinator exists, the level a new one starts with: the owner's default (a local owner's is known here).
+                thinking: project.settings.conversationThinking ?? (agent == nil && ref.home == .local ? vm.settings.agentDefaults.thinking.rawValue : nil),
+                choose: { [vm, ref] id, level in await vm.logicalProjects.saveSettings(ref) {
+                    $0.conversationModel = id
+                    if let level { $0.conversationThinking = level }
+                } },
+                chooseThinking: vm.projectKeepsConversationThinking(ref.home)
+                    ? { [vm, ref] level in await vm.logicalProjects.saveSettings(ref) { $0.conversationThinking = level } } : nil))
     }
 }
 
@@ -246,7 +226,7 @@ struct ProjectSummaryStrip: View {
                     LazyVStack(spacing: 0) {
                         ForEach(rows) { row in
                             NWLeadThreadRow(title: row.title, lead: row.lead, detail: Self.detail(row),
-                                            tone: row.group == .resolved ? .resolved : row.group == .waiting ? .attention : .running,
+                                            tone: row.tone,
                                             age: row.settledAt.map(LogicalProjectPane.age)) {
                                 vm.openProjectTask(row.id)
                             }
@@ -263,10 +243,8 @@ struct ProjectSummaryStrip: View {
         .onChange(of: ref) { _, _ in expanded = false }
     }
 
-    /// Only the owner's question or failure: worker activity is refreshed by the pane, not here, so it could be stale.
-    nonisolated static func detail(_ row: ProjectTaskRow) -> String? {
-        row.group == .resolved ? nil : row.detail
-    }
+    /// Only the owner's question, failure or recorded outcome: worker activity is refreshed by the pane, not here, so it could be stale.
+    nonisolated static func detail(_ row: ProjectTaskRow) -> String? { row.detail }
 }
 
 /// A waiting task's question, from the worker's own native dialog (never a copy): its options as the asker offered them,
@@ -275,13 +253,9 @@ struct TaskQuestion: View {
     var vm: ShepherdViewModel
     let ref: LogicalProjectRef
     let task: ProjectTaskRow
-    var paused = false
 
-    /// What happens to a reply, truthfully: the worker is blocked on this question (nothing is guessed), and while the Project is
-    /// paused an answer is held by the owner until Resume.
-    static func footer(title: String, paused: Bool) -> String {
-        paused ? "Or just reply in chat. Your answer waits until you resume." : "Or just reply in chat. \(title) is waiting for your answer."
-    }
+    /// What happens to a reply, truthfully: the worker is blocked on this question (nothing is guessed).
+    static func footer(title: String) -> String { "Or just reply in chat. \(title) is waiting for your answer." }
 
     var body: some View {
         let store = vm.projectWorkerStore(ref.home, task.workerAgentID)
@@ -301,13 +275,24 @@ struct TaskQuestion: View {
         NWLeadQuestionCard(
                 question: prompt.question,
                 options: prompt.options.map { NWLeadQuestionCard.Option(id: $0.number, title: $0.title, detail: $0.detail, recommended: $0.recommended) },
-                footer: Self.footer(title: task.title, paused: paused),
-                enabled: store.supports("answer") && prompt.blocked == nil && !vm.logicalProjects.busy.contains(ref.id)) { option in
-                    guard let reply = prompt.dialogAnswer(.option(prompt.options.first { $0.number == option.id } ?? prompt.options[0])) else { return }
-                    let request = NativeThreadRequest.answer(expectedSessionID: session.piSessionID, generation: session.generation,
-                                                             operationID: UUID(), dialogID: dialog.id, answer: reply)
-                    Task { _ = await vm.logicalProjects.answer(ref, task: task.id, request: request) }
+                footer: Self.footer(title: task.title),
+                enabled: store.supports("answer") && prompt.blocked == nil && !vm.logicalProjects.busy.contains(ref),
+                textPlaceholder: prompt.allowsText ? prompt.placeholder : nil,
+                submit: { words in
+                    send(prompt.answer(NativeQuestionPicks(text: words)).flatMap(prompt.dialogAnswer), dialog, session)
+                }) { option in
+                    guard let picked = prompt.options.first(where: { $0.number == option.id }) else { return }
+                    send(prompt.dialogAnswer(.option(picked)), dialog, session)
                 }
+                .id("\(session.piSessionID):\(session.generation):\(dialog.id)")
+    }
+
+    /// One answer through the Project, exactly as the native prompt maps it (a choice's words and options both answer its input).
+    private func send(_ reply: NativeDialogAnswer?, _ dialog: NativeThreadDialog, _ session: NativeThreadSession) {
+        guard let reply else { return }
+        let request = NativeThreadRequest.answer(expectedSessionID: session.piSessionID, generation: session.generation,
+                                                 operationID: UUID(), dialogID: dialog.id, answer: reply)
+        Task { _ = await vm.logicalProjects.answer(ref, task: task.id, request: request) }
     }
 }
 
@@ -323,7 +308,7 @@ struct SpaceOffer: View {
         let path = space.map { ($0.path as NSString).abbreviatingWithTildeInPath } ?? proposal.displayPath
         NWLeadSpaceOffer(name: space?.name ?? (path as NSString).lastPathComponent,
                          path: "\(path) · \(vm.ownerName(of: ref.home))",
-                         enabled: !vm.logicalProjects.busy.contains(ref.id)) {
+                         enabled: !vm.logicalProjects.busy.contains(ref)) {
             Task { _ = await vm.logicalProjects.decideSpace(ref, proposal: proposal, accept: false) }
         } add: {
             Task { _ = await vm.logicalProjects.decideSpace(ref, proposal: proposal, accept: true) }
@@ -342,8 +327,9 @@ struct ProjectTaskCard: View {
         let waiting = row.group == .waiting
         NWLeadTaskCard(
             title: row.title,
-            tone: row.group == .resolved ? .resolved : waiting ? .attention : .running,
-            detail: waiting || row.group == .resolved ? nil : vm.workerActivity(row.workerAgentID, home: ref.home),
+            tone: row.tone,
+            // Only live work shows activity; a stopped or resolved card says its execution fact and any recorded outcome instead.
+            detail: waiting ? nil : row.group == .working ? vm.workerActivity(row.workerAgentID, home: ref.home) : row.outcomeLine,
             question: waiting ? row.detail : nil,
             files: row.files.map { .init(id: $0.id, name: $0.name) },
             open: { open() },
@@ -390,13 +376,26 @@ struct ProjectActionResolver {
 /// The typed task references of the coordinator's prose: `[words](shepherd-project-task://<projectID>/<taskID>)`, a standard Markdown
 /// link. A reference resolves only when its Project is this one and its task still exists; its chip shows the task's own current
 /// title (the model's words are never read), so a renamed or duplicate title still opens the right task.
+extension ProjectTaskRow {
+    var tone: NWLeadTaskCard.Tone {
+        switch group {
+        case .waiting: .attention
+        case .working: .running
+        case .stopped: .stopped
+        case .resolved: .resolved
+        }
+    }
+    /// "Stopped · No outcome recorded", "Accepted · per coordinator", or nil for a resolved task with no recorded outcome (unknown, not success).
+    var outcomeLine: String? { lead.map { [$0, detail].compactMap { $0 }.joined(separator: " · ") } }
+}
+
 enum ProjectTaskLinks {
     static func url(project: ProjectID, task: ProjectTaskID) -> String { "\(NWProseTaskLinks.scheme)://\(project.rawValue)/\(task.rawValue)" }
 
     static func table(project: ProjectID, presentation: ProjectPagePresentation) -> NWProseTaskLinks {
         NWProseTaskLinks(links: Dictionary(uniqueKeysWithValues: presentation.rows.map { row in
             (url(project: project, task: row.id),
-             .init(title: row.title, tone: row.group == .resolved ? .resolved : row.group == .waiting ? .attention : .running))
+             .init(title: row.title, tone: row.tone))
         }))
     }
 

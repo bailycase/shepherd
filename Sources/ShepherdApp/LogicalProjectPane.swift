@@ -43,14 +43,11 @@ struct LogicalProjectPane: View {
                 case .files: LogicalProjectFiles(vm: vm, ref: ref, project: project)
                 case .automations: LogicalProjectPaneAutomations(vm: vm, ref: ref, project: project)
                 }
-                if project.paused && vm.logicalProjectPaneTab == .threads { pausedFooter }
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
-        // The leading line takes its own 1pt (a CSS border-left), so the content starts one point in.
-        .padding(.leading, NWLeadMetrics.paneBorder)
+        // The leading line (a CSS border-left) is the page's divider, drawn and dragged by `RightPaneSplit`.
         .background(Color.nw.bgWindow)
-        .overlay(alignment: .leading) { NWHairline(.vertical, width: NWLeadMetrics.paneBorder) }
         .task(id: listedWorkers) {
             await withTaskGroup(of: Void.self) { group in
                 for row in listedWorkers {
@@ -174,8 +171,8 @@ struct LogicalProjectPane: View {
                 }
                 if open {
                     ForEach(rows) { row in
-                        NWLeadThreadRow(title: row.title, lead: row.lead, detail: row.group == .resolved ? nil : row.detail ?? vm.workerActivity(row.workerAgentID, home: ref.home),
-                                        tone: row.group == .resolved ? .resolved : row.group == .waiting ? .attention : .running,
+                        NWLeadThreadRow(title: row.title, lead: row.lead, detail: row.group == .working ? row.detail ?? vm.workerActivity(row.workerAgentID, home: ref.home) : row.detail,
+                                        tone: row.tone,
                                         age: row.settledAt.map(Self.age) ?? vm.workerStarted(row.workerAgentID, home: ref.home).map(Self.age)) {
                             vm.logicalProjectPaneTask = row.id
                         }
@@ -183,16 +180,6 @@ struct LogicalProjectPane: View {
                 }
             }
         }
-    }
-
-    private var pausedFooter: some View {
-        NWLeadFooterCard(title: "The project is paused.", action: "Resume",
-                         enabled: !vm.logicalProjects.busy.contains(ref.id) && !project.interruptPending,
-                         height: NWLeadMetrics.pausedFooterHeight) {
-            Task { _ = await vm.logicalProjects.setPaused(ref, false) }
-        }
-        .padding(.horizontal, NWLeadMetrics.pausedFooterMargin)
-        .padding(.bottom, NWLeadMetrics.pausedFooterMargin)
     }
 
     /// "29m", "2h", "3d": minutes, hours or days since the task settled.
@@ -204,8 +191,9 @@ struct LogicalProjectPane: View {
     }
 }
 
-/// One task opened in the pane: its breadcrumb (Threads › title), Resolve or Reopen, and the worker's own native
-/// conversation (the ordinary thread, steered with its own composer), or the resolved footer with Reopen.
+/// One task opened in the pane: its breadcrumb (Threads › title), Resolve, and the worker's own native conversation (the
+/// ordinary thread, steered with its own composer), or, once resolved, its read-only history above the resolved footer.
+/// A resolved task is terminal: nothing here reopens it; new work is a fresh assignment from the conversation.
 struct ProjectTaskDetail: View {
     var vm: ShepherdViewModel
     let ref: LogicalProjectRef
@@ -227,25 +215,22 @@ struct ProjectTaskDetail: View {
                 Text(task.title).font(.nw(.ui, weight: .semibold)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
                 Spacer(minLength: NW.Space.m)
                 // Resolve is the check circle; it is drawn for every task and enabled only once the task has settled (the runtime
-                // refuses to resolve work still running). A resolved task's check is the green Reopen.
-                if task.canReopen {
-                    Button { Task { _ = await vm.logicalProjects.reopen(ref, task: task.id) } } label: {
-                        Image(systemName: NWGlyph.resolved.symbolName).foregroundStyle(Color.nw.done)
-                    }
-                    .buttonStyle(.nwIcon(size: NWLeadMetrics.detailButton))
-                    .nwHelp("Reopen thread")
-                    .accessibilityLabel("Reopen thread")
+                // refuses to resolve work still running). A resolved task's check is a green status, not a control.
+                if task.group == .resolved {
+                    Image(systemName: NWGlyph.resolved.symbolName).foregroundStyle(Color.nw.done)
+                        .frame(width: NWLeadMetrics.detailButton, height: NWLeadMetrics.detailButton)
+                        .nwHelp("Resolved")
+                        .accessibilityLabel("Resolved")
                 } else {
                     Button { Task { _ = await vm.logicalProjects.resolve(ref, task: task.id) } } label: { Image(systemName: NWGlyph.resolved.symbolName) }
                         .buttonStyle(.nwIcon(size: NWLeadMetrics.detailButton))
-                        .disabled(!task.canResolve || vm.logicalProjects.busy.contains(ref.id))
-                        .nwHelp(task.canResolve ? "Mark resolved" : "Mark resolved once this thread has finished")
+                        .disabled(!task.canResolve || vm.logicalProjects.busy.contains(ref))
+                        .nwHelp(task.canResolve ? "Mark resolved" : "Mark resolved once this thread's turn has stopped")
                         .accessibilityLabel("Mark resolved")
                 }
                 Menu {
-                    Button("Open as a thread") { vm.selectAgent(task.workerAgentID) }
+                    Button("Open as a thread") { vm.openProjectWorkerThread(ref, task: task.id) }
                     if task.canResolve { Button("Mark resolved") { Task { _ = await vm.logicalProjects.resolve(ref, task: task.id) } } }
-                    if task.canReopen { Button("Reopen thread") { Task { _ = await vm.logicalProjects.reopen(ref, task: task.id) } } }
                 } label: { Label("More", systemImage: "ellipsis").labelStyle(.iconOnly) }
                     .menuStyle(.button)
                     .menuIndicator(.hidden)
@@ -253,7 +238,7 @@ struct ProjectTaskDetail: View {
                     .fixedSize()
                     .nwHelp("More")
                     .accessibilityLabel("More")
-                Button { vm.selectAgent(task.workerAgentID) } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }
+                Button { vm.openProjectWorkerThread(ref, task: task.id) } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }
                     .buttonStyle(.nwIcon(size: NWLeadMetrics.detailButton))
                     .nwHelp("Open as a thread")
                     .accessibilityLabel("Open as a thread")
@@ -268,11 +253,9 @@ struct ProjectTaskDetail: View {
             // The worker's own conversation, the ordinary native thread: its composer steers it directly.
             WorkerThread(vm: vm, home: ref.home, projectID: ref.id, task: task)
             if task.group == .resolved {
-                NWLeadFooterCard(symbol: NWGlyph.resolved.symbolName, title: "This thread is resolved.", detail: "Reopen it to send more messages.",
-                                 action: "Reopen", enabled: !vm.logicalProjects.busy.contains(ref.id)) {
-                    Task { _ = await vm.logicalProjects.reopen(ref, task: task.id) }
-                }
-                .padding(NWLeadMetrics.footerInset)
+                NWLeadFooterCard(symbol: NWGlyph.resolved.symbolName, title: "This thread is resolved.",
+                                 detail: "Its history stays here. New work starts a new thread.")
+                    .padding(NWLeadMetrics.footerInset)
             }
         }
     }

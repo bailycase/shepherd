@@ -1,4 +1,5 @@
 import Foundation
+import ShepherdRemote
 import SwiftUI
 import Testing
 import ShepherdCore
@@ -129,13 +130,14 @@ extension LogicalProjectPreviewTests {
         // Board 05: the conversation alone (the Threads pane closed).
         vm.logicalProjectPaneOpen = false
         try await Preview.renderMatrix("board-question", size: CGSize(width: 1600, height: 900), scales: [1, 1.3], ready: ready) { window(vm, style: .projects) }
-        // Board 06: a resolved task opened in the pane, with its footer and Reopen.
+        // Board 06: a resolved task opened in the pane, with its read-only footer (resolved tasks are terminal: no Reopen).
         vm.logicalProjectPaneOpen = true
         vm.logicalProjectPaneTask = tasks.first { $0.title == jobs[2].0 }?.id
         try await Preview.renderMatrix("board-resolved", size: CGSize(width: 1600, height: 900), scales: [1, 1.3], ready: ready) { window(vm, style: .projects) }
         // Board 04: Pause. The question stays waiting (the runtime does not abort a turn that is only asking).
         vm.logicalProjectPaneTask = nil
-        #expect(await vm.logicalProjects.setPaused(ref, true))
+        let running = try #require(vm.state.projects.first)
+        _ = try await vm.projectCoordinator.perform(projectID: running.id, expectedRevision: running.revision, request: .pause)
         try await eventuallyOnMain("paused, with the question still waiting", timeout: .seconds(30)) {
             vm.state.projects.first?.paused == true && vm.state.projects.first?.tasks.first { $0.title == jobs[1].0 }?.phase == .waiting
         }

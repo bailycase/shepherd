@@ -34,6 +34,9 @@ public enum NWGlyph: CaseIterable, Sendable {
     case pin
     /// Response visibility: the finished reply’s measured timing.
     case responseTiming
+    /// A file the agent made (PaneArtifacts, iPadPaneArtifacts: the Artifacts tab and "Made an artifact"). The boards draw a page with a
+    /// sparkle in it, which no SF Symbol matches; the page with a plus is the nearest ("made").
+    case artifact
 
     /// The SF Symbol that draws it, fill variant included.
     public var symbolName: String {
@@ -48,6 +51,7 @@ public enum NWGlyph: CaseIterable, Sendable {
         case .gitBranch: "arrow.triangle.branch"
         case .pin: "pin"
         case .responseTiming: "stopwatch"
+        case .artifact: "doc.badge.plus"
         }
     }
 
@@ -84,7 +88,12 @@ public enum NWGlyph: CaseIterable, Sendable {
             }
         }
 
-        public var resourceURL: URL? { Bundle.module.url(forResource: rawValue, withExtension: "svg", subdirectory: "Glyphs") }
+        /// Advanced's gear is the system `gearshape` the boards draw: a hand-traced copy rendered as a lumpy polygon.
+        public var systemSymbolName: String? { self == .advanced ? "gearshape" : nil }
+
+        public var resourceURL: URL? {
+            systemSymbolName == nil ? Bundle.module.url(forResource: rawValue, withExtension: "svg", subdirectory: "Glyphs") : nil
+        }
 
         @MainActor public var image: Image {
             #if os(macOS)
@@ -96,6 +105,14 @@ public enum NWGlyph: CaseIterable, Sendable {
 
         #if os(macOS)
         @MainActor private static let artwork: [Settings: NSImage] = Dictionary(uniqueKeysWithValues: allCases.map { glyph in
+            if let symbol = glyph.systemSymbolName {
+                guard let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+                    .withSymbolConfiguration(.init(pointSize: NWSettingsNavMetrics.glyphSize, weight: .regular)) else {
+                    preconditionFailure("Missing Settings symbol: \(symbol)")
+                }
+                image.isTemplate = true
+                return (glyph, image)
+            }
             guard let url = glyph.resourceURL,
                   let image = NSImage(contentsOf: url) else {
                 preconditionFailure("Missing Settings glyph: \(glyph.rawValue)")

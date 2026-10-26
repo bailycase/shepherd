@@ -675,6 +675,11 @@ text.
   `textPrimary` and its host in mono 10.5 tertiary. The chip opens the image in the browser.
   A remote host's agent (and every agent on iOS) shows local images as chips too, because
   its files are not on this device. An image inside a sentence reads as its alt text.
+- **File links:** a link to a local path (`[plan](temporal/PLAN.md)`, `./`, `~/`, absolute,
+  `file://`) resolves against the agent's folder (`nwProseFileRoot`). A click opens it in the
+  editor chosen in Settings ▸ Advanced; a right-click offers Open in <editor>, Open With, Reveal in
+  Finder and Copy Path (`nwProseFileLinks`). A remote agent's file link is plain words: it never
+  opens a same-named file on this Mac. Web links open in the browser as before.
 - **Footnotes:** `[^label]` references become superscript numbers in `running` (mono 10.5),
   numbered in the order they are first cited. The notes gather after the message's last block,
   below a hairline: each number in caption tertiary where a list marker sits, its text in

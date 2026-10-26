@@ -4,6 +4,29 @@ import ShepherdProtocol
 import ShepherdRemote
 
 extension SessionServer {
+    /// Server queue. Match admission's visible Space predicate; path changes replace the route.
+    func refreshExecutionSpaceAuthority(before: [Space]) {
+        let previous = Dictionary(uniqueKeysWithValues: before.map { ($0.id, $0) })
+        var authority: [SpaceID: UUID] = [:]
+        for space in store.state.spaces where !space.hidden && !space.holdsProjects && !space.holdsDesigns {
+            let old = previous[space.id]
+            let unchanged = old?.path == space.path && old?.hidden == false && old?.holdsProjects == false && old?.holdsDesigns == false
+            authority[space.id] = unchanged ? (executionSpaceAuthority[space.id] ?? UUID()) : UUID()
+        }
+        executionSpaceAuthority = authority
+    }
+
+    func executionSpaceGrants() -> [SpaceID: UUID] {
+        // Lazily seed routes loaded at startup even if no state commit has happened yet.
+        refreshExecutionSpaceAuthority(before: store.state.spaces)
+        return executionSpaceAuthority
+    }
+
+    func executionSpaceIsCurrent(_ id: SpaceID, grants: [SpaceID: UUID]) -> Bool {
+        guard let captured = grants[id] else { return false }
+        return executionSpaceGrants()[id] == captured
+    }
+
     public func projectExecution(_ request: ProjectExecutionRequest) async throws -> ProjectExecutionResult {
         try await withCheckedThrowingContinuation { continuation in
             queue.async { self.projectExecutionOnQueue(request) { continuation.resume(with: $0) } }
@@ -11,11 +34,47 @@ extension SessionServer {
     }
 
     func projectExecutionOnQueue(_ request: ProjectExecutionRequest,
+                                history: ProjectHistoryStore.ExecutionHistory? = nil,
                                 completion: @escaping @Sendable (Result<ProjectExecutionResult, Error>) -> Void) {
+        let requiresEnabled: Bool
+        switch request {
+        case .execute, .resume, .answer, .result, .worker: requiresEnabled = true
+        case .pause, .cancel, .snapshot, .publicationRead: requiresEnabled = false
+        }
+        do {
+            try requireStarted()
+            if requiresEnabled { try requireProjectsEnabled() }
+        } catch { completion(.failure(error)); return }
+        if history == nil {
+            if store.state.projectExecutions.contains(where: { $0.key == request.key }) {
+                projectExecutionOnQueue(request, history: .init(), completion: completion)
+            } else {
+                let url = store.url, epoch = logicalProjectEpoch, generation = projectsGeneration, spaceGrants = executionSpaceGrants()
+                projectHistoryReads.async {
+                    let loaded = Result { try ProjectHistoryStore(beside: url).executionHistory(request) }
+                    self.queue.async {
+                        guard self.logicalProjectEpoch == epoch,
+                              !requiresEnabled || (self.projectsEnabled && self.projectsGeneration == generation) else { completion(.failure(LogicalProjectsError("project_scope", "Executor result permission was revoked."))); return }
+                        switch loaded {
+                        case .success(let value):
+                            let spaceID: SpaceID?
+                            if case .execute(let assignment) = request { spaceID = assignment.executorSpaceID }
+                            else { spaceID = value.existing?.assignment?.executorSpaceID }
+                            if requiresEnabled, let spaceID, self.executionSpaceGrants()[spaceID] != spaceGrants[spaceID] {
+                                completion(.failure(LogicalProjectsError("project_scope", "Executor Space permission was revoked."))); return
+                            }
+                            self.projectExecutionOnQueue(request, history: value, completion: completion)
+                        case .failure(let error): completion(.failure(error))
+                        }
+                    }
+                }
+            }
+            return
+        }
         do {
             try requireStarted()
             switch request {
-            case .execute, .resume, .answer: try requireProjectsEnabled()
+            case .execute, .resume, .answer, .result, .worker: try requireProjectsEnabled()
             case .pause, .cancel, .snapshot, .publicationRead: break
             }
             let generation = projectsGeneration
@@ -28,11 +87,36 @@ extension SessionServer {
             }
             guard Project.validID(request.key.projectID.rawValue) else { throw LogicalProjectsError("invalid_execution", "Invalid project identity.") }
             let key = request.key
-            let existing = store.state.projectExecutions.first { $0.key == key }
+            let existing = store.state.projectExecutions.first { $0.key == key } ?? history?.existing
             switch request {
+            case .result(_, let offset, let hash):
+                guard let existing else { throw LogicalProjectsError("unknown_execution", "No receipt exists for this exact result.") }
+                let url = store.url, epoch = logicalProjectEpoch, generation = projectsGeneration, spaceGrants = executionSpaceGrants()
+                logicalProjectFiles.async {
+                    let page = Result { try ProjectHistoryStore(beside: url).executionResult(existing, offset: offset, hash: hash) }
+                    self.queue.async {
+                        guard self.projectsEnabled, self.projectsGeneration == generation, self.logicalProjectEpoch == epoch,
+                              existing.assignment.map({ self.executionSpaceIsCurrent($0.executorSpaceID, grants: spaceGrants) }) ?? true else {
+                            completion(.failure(LogicalProjectsError("project_scope", "Executor result permission was revoked."))); return
+                        }
+                        completion(page.map { .init(receipt: existing, resultPage: $0) })
+                    }
+                }
             case .publicationRead(_, let id, let offset):
                 guard let existing else { throw LogicalProjectsError("no_such_execution", "No execution receipt exists.") }
                 try readExecutionPublication(existing, id: id, offset: offset, completion: completion)
+            case .worker:
+                guard let existing else { throw LogicalProjectsError("no_such_execution", "No execution receipt exists.") }
+                let spaceGrants = executionSpaceGrants(), epoch = logicalProjectEpoch
+                self.executionSnapshot(existing) { result in
+                    self.queue.async {
+                        guard self.projectsEnabled, self.projectsGeneration == generation, self.logicalProjectEpoch == epoch,
+                              existing.assignment.map({ self.executionSpaceIsCurrent($0.executorSpaceID, grants: spaceGrants) }) ?? false else {
+                            completion(.failure(LogicalProjectsError("project_scope", "Executor worker permission was revoked."))); return
+                        }
+                        completion(result)
+                    }
+                }
             case .snapshot:
                 guard let existing else { throw LogicalProjectsError("no_such_execution", "No execution receipt exists.") }
                 executionSnapshot(existing, completion: completion)
@@ -56,7 +140,7 @@ extension SessionServer {
                       !executionWorkers.contains(assignment.reservedWorkerID) else {
                     throw LogicalProjectsError("execution_busy", "Worker already has an outstanding activation.")
                 }
-                let previous = try executionPredecessor(for: assignment)
+                let previous = try executionPredecessor(for: assignment, proof: history?.workerProof ?? [])
                 if let previous, let thread = rpcThread(forAgent: assignment.reservedWorkerID) {
                     if thread.session.isAlive { try validateExecutionContinuation(assignment, previous: previous, thread: thread) }
                     else if thread.piBusy || !thread.items.isEmpty || thread.inputOutcomeUnknown {
@@ -118,7 +202,15 @@ extension SessionServer {
                 }
             case .resume:
                 guard let existing else { throw LogicalProjectsError("no_such_execution", "No retained execution; Resume does not replay assignments.") }
-                guard existing.ownerPaused == true else { completion(.success(.init(receipt: existing))); return }
+                guard existing.ownerPaused == true else {
+                    if existing.phase.active || existing.phase == .unknown,
+                       let worker = existing.assignment?.reservedWorkerID, let thread = rpcThread(forAgent: worker),
+                       !thread.running, thread.piSessionID == existing.sessionID, thread.generation == existing.generation,
+                       thread.lastTurnResultDeliveryID == key.operationID, thread.lastTurnResult != nil {
+                        executionSettled(agentID: worker, thread: thread)
+                    }
+                    completion(.success(.init(receipt: existing))); return
+                }
                 guard let oldScope = projectChildScope(existing) else { throw LogicalProjectsError("project_scope", "No retained native question scope.") }
                 saveExecution(key, revalidate: admission, change: { current in
                     try admission()
@@ -180,8 +272,8 @@ extension SessionServer {
     }
 
     /// Existing IDs are reusable only through retained proof of this very task's prior activation.
-    private func executionPredecessor(for assignment: ProjectExecutionAssignment) throws -> ProjectExecutionReceipt? {
-        let records = store.state.projectExecutions.filter { $0.assignment?.reservedWorkerID == assignment.reservedWorkerID }
+    private func executionPredecessor(for assignment: ProjectExecutionAssignment, proof: [ProjectExecutionReceipt] = []) throws -> ProjectExecutionReceipt? {
+        let records = (store.state.projectExecutions + proof.filter { retained in !store.state.projectExecutions.contains { $0.key == retained.key } }).filter { $0.assignment?.reservedWorkerID == assignment.reservedWorkerID }
         let agent = store.state.agents.first { $0.id == assignment.reservedWorkerID }
         if records.isEmpty, agent == nil { return nil }
         guard let agent, agent.coordinatorFor == nil, agent.designID == nil, agent.spaceID == assignment.executorSpaceID,
@@ -196,7 +288,12 @@ extension SessionServer {
     }
 
     /// Idle must include host preparations/queues, compaction and native input, not just status.
-    private func validateExecutionContinuation(_ assignment: ProjectExecutionAssignment, previous: ProjectExecutionReceipt,
+    private func validateExecutionContinuation(_ assignment: ProjectExecutionAssignment, previous: ProjectExecutionReceipt, thread: RPCThreadState) throws {
+        guard let proof = ProjectExecutionPredecessor(previous) else { throw LogicalProjectsError("execution_history", "Settlement proof is incomplete.") }
+        try validateExecutionContinuation(assignment, previous: proof, thread: thread)
+    }
+
+    private func validateExecutionContinuation(_ assignment: ProjectExecutionAssignment, previous: ProjectExecutionPredecessor,
                                               thread: RPCThreadState) throws {
         guard thread.isServable, thread.session.isAlive, !thread.piBusy, thread.items.isEmpty,
               thread.preparingPrompts.isEmpty, !thread.inputActive, !thread.inputOutcomeUnknown,
@@ -219,11 +316,11 @@ extension SessionServer {
         }
     }
 
-    private func executionPredecessor(of receipt: ProjectExecutionReceipt) -> ProjectExecutionReceipt? {
+    private func executionPredecessor(of receipt: ProjectExecutionReceipt) -> ProjectExecutionPredecessor? {
         guard let operation = receipt.previousOperationID else { return nil }
         return store.state.projectExecutions.first {
             $0.key.ownerID == receipt.key.ownerID && $0.key.projectID == receipt.key.projectID && $0.key.operationID == operation
-        }
+        }.flatMap(ProjectExecutionPredecessor.init) ?? receipt.predecessorProof
     }
 
     /// Called at the common addAgent boundary too: an asynchronous app launch may have been cancelled.
@@ -440,7 +537,10 @@ extension SessionServer {
 
     /// Called after the Changes capture clears busy, never from a status.running=false report.
     func executionSettled(agentID: AgentID, thread: RPCThreadState) {
-        guard let receipt = executionReceipt(agentID, session: thread.piSessionID, generation: thread.generation),
+        let exactLate = store.state.projectExecutions.first { $0.assignment?.reservedWorkerID == agentID && $0.phase == .unknown
+            && $0.sessionID == thread.piSessionID && $0.generation == thread.generation
+            && $0.key.operationID == thread.lastTurnResultDeliveryID }
+        guard let receipt = executionReceipt(agentID, session: thread.piSessionID, generation: thread.generation) ?? exactLate,
               executionConsumed[agentID] == receipt.key.operationID,
               projectChildrenSettled(projectChildScope(receipt), thread: thread) else { return }
         let failed = thread.runFailed
@@ -458,7 +558,7 @@ extension SessionServer {
             if currentProjectChildScope[agentID] == scope { currentProjectChildScope[agentID] = nil }
         }
         executionConsumed[agentID] = nil
-        executionEvent(receipt.key) { r in
+        executionEvent(receipt.key, visibleResult: thread.lastTurnResultDeliveryID == receipt.key.operationID ? thread.lastTurnResult : nil) { r in
             guard r.matchedUserEntryID != nil else { return }
             r.phase = r.phase == .interruptPending ? .cancelled : .settled
             r.resultEntryID = assistant.map { Self.executionText($0.entryID, limit: 512) }
@@ -508,10 +608,10 @@ extension SessionServer {
         return RPCThreadState.clippedText(printable, limit: limit)
     }
 
-    private func executionEvent(_ key: ProjectExecutionKey, change: @escaping (inout ProjectExecutionReceipt) -> Void) {
-        saveExecution(key, change: { current in
+    private func executionEvent(_ key: ProjectExecutionKey, visibleResult: ProjectVisibleResult? = nil, change: @escaping (inout ProjectExecutionReceipt) -> Void) {
+        saveExecution(key, visibleResult: visibleResult, change: { current in
             guard var r = current else { throw LogicalProjectsError("no_such_execution", "Receipt missing.") }
-            guard r.phase.active else { return r }
+            guard r.phase.active || (r.phase == .unknown && visibleResult != nil) else { return r }
             change(&r)
             if self.executionUnconfirmedStops.contains(key) {
                 r.phase = .unknown
@@ -519,6 +619,9 @@ extension SessionServer {
             }
             return r
         }) { result in
+            if case .success(let receipt) = result, visibleResult != nil, let worker = receipt.assignment?.reservedWorkerID {
+                self.rpcThread(forAgent: worker)?.discardProjectResult(deliveryID: key.operationID)
+            }
             if case .failure(let error) = result {
                 self.executionCancelled.insert(key)
                 ShepherdLog.error("Execution evidence could not persist: \(error)")
@@ -529,6 +632,7 @@ extension SessionServer {
     /// Small receiver-only FIFO. Each stage derives from the current workspace; unrelated edits
     /// force a fresh stage, never a stale full-workspace overwrite. No I/O on the owner queue.
     func saveExecution(_ key: ProjectExecutionKey,
+                               visibleResult: ProjectVisibleResult? = nil,
                                revalidate: (() throws -> Void)? = nil,
                                change: @escaping (ProjectExecutionReceipt?) throws -> ProjectExecutionReceipt,
                                completion: @escaping (Result<ProjectExecutionReceipt, Error>) -> Void) {
@@ -537,7 +641,7 @@ extension SessionServer {
         }
         let epoch = logicalProjectEpoch
         executionSaves.append {
-            self.stageExecution(key, revalidate: revalidate, change: { current in
+            self.stageExecution(key, visibleResult: visibleResult, revalidate: revalidate, change: { current in
                 guard self.logicalProjectEpoch == epoch else { throw LogicalProjectsError("workspace_changed", "Executor restarted while saving.") }
                 return try change(current)
             }, attempt: 0, completion: completion)
@@ -546,6 +650,7 @@ extension SessionServer {
     }
 
     private func stageExecution(_ key: ProjectExecutionKey,
+                                visibleResult: ProjectVisibleResult? = nil,
                                 revalidate: (() throws -> Void)? = nil,
                                 change: @escaping (ProjectExecutionReceipt?) throws -> ProjectExecutionReceipt, attempt: Int,
                                 completion: @escaping (Result<ProjectExecutionReceipt, Error>) -> Void) {
@@ -569,17 +674,20 @@ extension SessionServer {
             candidate.projectExecutions.append(receipt)
             let snapshot = candidate, saved = receipt, url = store.url
             logicalProjectFiles.async {
-                let staged = Result { try StateStore.stageLogicalProjects(snapshot, at: url) }
+                let staged = Result {
+                    if let visibleResult { try ProjectHistoryStore(beside: url).retainExecutionResult(saved, result: visibleResult) }
+                    return try StateStore.stageLogicalProjects(snapshot, before: before, at: url)
+                }
                 self.queue.async {
                     do {
                         let file = try staged.get()
-                        defer { self.logicalProjectFiles.async { _ = unlink(file.path) } }
+                        defer { self.logicalProjectFiles.async { _ = unlink(file.url.path) } }
                         try self.requireStarted()
                         guard self.logicalProjectEpoch == epoch, !self.projectFolderOperation else {
                             throw LogicalProjectsError("workspace_changed", "Executor lifecycle or Space changed while saving.")
                         }
                         if self.store.version != version, attempt < 8 {
-                            self.stageExecution(key, revalidate: revalidate, change: change, attempt: attempt + 1, completion: completion)
+                            self.stageExecution(key, visibleResult: visibleResult, revalidate: revalidate, change: change, attempt: attempt + 1, completion: completion)
                             return
                         }
                         try revalidate?()

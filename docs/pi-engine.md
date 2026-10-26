@@ -41,8 +41,12 @@ Pi and its SDK modules by install location, version, registry tarball and `sha51
    multiple archive roots are refused. Named roots used by `@types` packages are supported.
 4. Sets the staged package's `piConfig` to `name: "pi", configDir: ".shepherd"`. Pi reads this
    manifest at runtime for project resource discovery; keeping `name` preserves `PI_*` environment
-   names. Shepherd still pins its global agent home, and terminal Pi is unchanged. Verification
-   rejects an engine with a different project directory or application name.
+   names. Trusted projects discover settings, skills, prompts, themes, extensions, system prompts
+   and MCP in both `.shepherd/` and `.pi/`. `.shepherd` wins collisions; settings and system prompts
+   fall back per file, while MCP merges server names. Relative settings paths use the selected
+   settings file's folder. Both SDK and bundled child CLI use the same precedence and trust rules.
+   Shepherd still pins its global agent home, and terminal Pi is unchanged. Verification rejects
+   an engine with a different primary project directory or application name.
 5. Keeps the files above (Node's binary as it comes), writes the licences, and swaps the tree
    into `.build/pi-engine` whole.
 6. Verifies the result the way `release.py verify-app` does.
@@ -94,7 +98,14 @@ watcher source `skill-watch.js`. It also removes command-based configuration val
 from the modular runtime and SDK bundle, and finishes MCP's owned process group when its server
 leader closes, including descendants that ignore SIGTERM. MCP shutdown also closes clients still
 initializing or listing tools, without waiting for their request timeout. The MCP fixes cover the
-modular runtime, pinned stdio dependency and bundled SDK. Its hash is recorded in the engine pin.
+modular runtime, pinned stdio dependency and bundled SDK. RPC input starts before extension
+initialization finishes so startup UI answers can get through; all other commands wait for
+initialization. Its hash is recorded in the engine pin.
+The same patch adds message-free checkpoint recovery to the readable SDK, RPC and bundled SDK/CLI.
+`checkpoint-recovery.js` owns validation and append-only receipts; its declaration file describes
+that SDK contract. This is a Shepherd patch, not a claim that unpatched upstream Pi exposes recovery.
+It reuses Pi's provider-context omission without changing automatic retry classification.
+See [Retry](native-thread.md#retry) for safety gates and limits.
 Staging verifies the pi version, full original file hashes, unique replacement anchors and final
 file hashes; verification also checks the shipped patched files. A source, patch or pin mismatch
 fails closed. The Linux extension-test job applies the same verified patches to its isolated npm
@@ -103,14 +114,49 @@ Update the patch hash in the pin and restage whenever the patch changes, so Xcod
 existing pin stamp cannot reuse an older unpatched engine.
 
 The patch supplies `refresh_skills`, native file observation and the `skills_changed` /
-`skills_watch_error` RPC events. The host coalesces dirty state and refreshes immediately at an
+`skills_watch_error` RPC events, covering prompt templates as well as skills. The host coalesces dirty state and refreshes immediately at an
 idle boundary, without periodic requests. It does not
-reload extensions, tools, providers or settings. See [live skills](skills.md#live-threads) for
-bounds, discovery scope and busy behavior. All launches still go through `PiLaunch` and the one
-`BundledPiEngine.entryPath`, now upstream's `dist/cli.js`: agents, children, catalog and print
-launches all use the patched modular runtime. No dependency was added; the modular SDK and its
-locked dependencies already ship. No production CLI launch executes the unpatched bundle;
-existing SDK-only sign-in and definition-discovery imports still use `bundle/index.js`.
+reload extensions, tools, providers or settings. The same watcher also reloads the built-in MCP extension's
+`mcp.json` servers in a running session ([mcp.md](mcp.md#what-pis-mcp-does)). See [live skills](skills.md#live-threads) for
+bounds, discovery scope and busy behavior. Host launches go through `PiLaunch` and
+`BundledPiEngine.entryPath`, upstream's `dist/cli.js`: agents, catalog and print launches use the
+patched modular runtime. No dependency was added; the modular SDK and its locked dependencies
+already ship. Native children still launch `dist/bundle/cli.js`, and SDK-only sign-in and
+definition-discovery imports still use `bundle/index.js`; provider patches cover both runtimes.
+
+Anthropic OAuth compatibility automatically uses a full source port of
+[`leohenon/pi-anthropic-oauth` v0.3.4](https://github.com/leohenon/pi-anthropic-oauth/tree/44efe694a3e81a62742cdb3e7ba9da858e191a81)
+(revision `44efe694a3e81a62742cdb3e7ba9da858e191a81`) at both modular and bundled stream
+boundaries, including native children, helpers and launches with extensions disabled. API-key
+requests remain native Pi. `scripts/pi-engine-patches/anthropic-oauth/` carries the upstream
+stream, conversion, prompt, auth and version modules with MIT notices, transpiled by Node 24's
+`stripTypeScriptTypes` (`transform` for auth's parameter property, `strip` for the others).
+`upstream/` retains the original source and hashes as an independent test oracle. The small
+`anthropic-oauth.js` adapter translates pi 1.0's auth interaction/credential API; upstream login
+and refresh replace Pi's differing callback validation, fallback and refresh semantics. No new
+runtime dependency is installed. Upstream's extension registration is replaced by automatic
+engine routing; its `~/.Claude Code` symlink setup is deliberately **not** shipped.
+
+**Upstream's outgoing prompt rewriting is aggressive, not path-safe.** It removes whole system
+paragraphs containing `you are pi` (case-insensitive), `pi-coding-agent`,
+`@earendil-works/pi-coding-agent` or `badlogic/pi-mono`, then replaces standalone `pi`/`Pi` with
+`Claude Code`, including inside executable, documentation, skill and instruction paths. For
+example `/tmp/pi/project/.pi/AGENTS.md` becomes `/tmp/Claude Code/project/.Claude Code/AGENTS.md`.
+Those references can be unusable; no aliases or home-directory changes compensate for them.
+Original stored transcripts and files, user messages and tool descriptions/arguments stay
+unchanged. This is the upstream request behavior, not a promise that all original project or
+user system instructions reach the model. Upstream's rewrite/version environment options are
+retained without a Shepherd override. Its tool conversion is also exact: existing MCP names
+receive another `mcp__pi__` prefix, sanitization collisions are not repaired, and Pi-specific
+parameters unsupported by upstream (such as `toolChoice`, `temperature` and native deferred
+wire blocks) are not added back in a hybrid implementation.
+
+Offline checks in `anthropic-oauth.test.mjs` compare SDK-serialized requests and streaming results
+against the unmodified pinned source, including `claude-opus-5-5`, histories, cache/thinking
+parameters and custom tools. Both CLI entrypoints execute selected tools and return tool-result
+history with and without extensions. API-key serialization is compared with pristine pinned Pi.
+These checks do **not** establish live subscription billing, cache hits or Anthropic's direct
+server acceptance; a direct OAuth call still needs user validation.
 
 Configuration values beginning with `!` never execute a command. MCP env, headers, OAuth
 client secrets and model credentials must use literal values or environment-variable references;
@@ -181,7 +227,7 @@ so tools stay reachable through direct calls or tool search when codemode is off
 
 Settings ▸ Agents ▸ Context ▸ Codemode defaults on. Before a primary agent launch, `PiHome.configureCodemode`
 writes `codemode.enabled` in the host's Pi home under Pi's settings lock. A trusted project's
-`.shepherd/settings.json` can override it. `shepherd-status.ts` uses Pi's `createCodemodeExtension` factory
+Project `settings.json` in `.shepherd` or `.pi` can override it. `shepherd-status.ts` uses Pi's `createCodemodeExtension` factory
 with `models: false` and `mode: "on"`. It caps each script at five minutes and 128 nested tool calls.
 Pi still owns the QuickJS executor, discovery, tool hooks, nested-call metadata and cancellation.
 Each nested tool has its own activity row. Pi's `nestedCalls` metadata restores its arguments and
@@ -200,7 +246,7 @@ what pi does with them, measured).
 What pi's MCP does with the files and the environment it is given is in [mcp.md](mcp.md); what it adds
 to a launch is `/mcp` (over RPC it answers with this thread's servers, `name: connected, 9 tools
 (deferred)`), a server section in the system prompt, `tool_search`, and `<home>/mcp-auth.json` for
-sign-ins. A trusted project's `.shepherd/mcp.json` is read too, as pi's trust model says. `llama.cpp`, the
+sign-ins. A trusted project's `.shepherd/mcp.json` and `.pi/mcp.json` are read too, as pi's trust model says. `llama.cpp`, the
 fourth built-in, is a provider pi has always shipped and stays; `/llama` still does nothing over RPC and
 the thread's command menu leaves it out. `PiConfig.installedExtensions` (Settings ▸ Pi, a host's
 `hostSettings`) and the first copy from "your pi" ignore the `builtin:` entries.

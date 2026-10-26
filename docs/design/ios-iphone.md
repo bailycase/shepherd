@@ -478,7 +478,7 @@ record lines, a list, and a screen per run.
   leading, 10pt apart): the state in a 14pt slot, the name in mono 13.5/600 in a 68pt column,
   what it is doing at 14 (the subject in mono 13), its time in mono 11, and a chevron in a 34pt
   slot; the diff stat drops. The name is the agent's ("worker", the run's role), never the task the
-  run was given (the iPad and Mac lead with the task); a run with no role keeps its label. A run that asked its parent says "asked the parent: …" quietly, with no
+  run was given (the iPad does the same; two runs sharing a role lead with their tasks); a run with no role keeps its label. A run that asked its parent says "asked the parent: …" quietly, with no
   Answer. Tapping a row pushes its run's screen; touch and hold for Open and the run's controls. Past
   four runs, "Show N more"; open, the rows scroll inside, never more than a share of the
   composer's room. The tray's rules (when it shows, the order, what each state says) are the

@@ -49,6 +49,8 @@ public struct NativeTurnPresentation: Equatable, Sendable {
         /// Images a tool returned (a screenshot, a chart), where the call ended: the host names each one and a client fetches it
         /// (`NativeThreadImages`). A client that cannot draw them shows how many.
         case images(id: String, images: [NativeImageRef])
+        /// A file the agent made, as a card (NWArtifactCard), after the words that follow its "Made an artifact" line, or at the turn's end.
+        case artifact(id: String, artifact: NativeArtifact)
         /// Goal set and completion checks divide stretches of automatic work.
         case goalRecord(id: String, text: String)
         /// A failed request to the model, pi's automatic retries of it merged in. `final` when it
@@ -68,7 +70,7 @@ public struct NativeTurnPresentation: Equatable, Sendable {
         public var id: String {
             switch self {
             case .thinking(let id, _, _, _, _, _), .prose(let id, _, _, _), .subagents(let id, _), .note(let id, _), .images(let id, _), .goalRecord(let id, _), .error(let id, _, _, _),
-                 .steer(let id, _, _, _), .activity(let id, _), .retrying(let id, _): id
+                 .steer(let id, _, _, _), .activity(let id, _), .retrying(let id, _), .artifact(let id, _): id
             case .compaction(let row): "compaction:" + row.id
             case .question(let row): "question:" + row.id
             }
@@ -242,6 +244,12 @@ public func nativeTurnPresentation(
     var stretchThinking: [(text: String, seconds: Double?, message: String)] = []
     var stretchCalls: [NativeActivityCall] = []
     var stretchItems: [NativeTurnPresentation.Item] = []
+    /// Files the stretch made, whose cards wait for the words after them (or the turn's end), one per path.
+    var pendingCards: [NativeArtifact] = []
+    func placeCards() {
+        items += pendingCards.map { .artifact(id: "artifact:" + $0.path, artifact: $0) }
+        pendingCards = []
+    }
 
     func flushCalls() {
         let bursts = nativeActivityBursts(stretchCalls)
@@ -308,11 +316,16 @@ public func nativeTurnPresentation(
             let value = call(message)
             stretchCalls.append(value)
             calls.append(value)
+            if let artifact = value.artifact {
+                pendingCards.removeAll { $0.path == artifact.path }
+                pendingCards.append(artifact)
+            }
         case .prose(let text, let streaming):
             flushStretch()
             let id = nextID("prose")
             let parsed = prose(id, text, live && streaming)
             items.append(.prose(id: id, text: text, blocks: parsed.blocks, openFence: parsed.endsInOpenFence))
+            placeCards()
             copy.append(text)
         case .goalRecord(let text):
             flushStretch()
@@ -342,6 +355,7 @@ public func nativeTurnPresentation(
     placeStart()
     placeFinish()
     flushStretch()
+    placeCards()
     if case .thinking(let text, let seconds, _, let since)? = liveThinking {
         // Only what the provider shared, parsed as it grows; with none, the live line stays a line.
         let shared = RPCContentBlock.normalizedThinking(text)

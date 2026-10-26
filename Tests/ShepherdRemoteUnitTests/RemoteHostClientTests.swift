@@ -104,12 +104,13 @@ struct RemoteHostClientTests {
         (NativeThreadRequest.compact(expectedSessionID: "s", generation: "g", operationID: UUID()), RemoteProtocol.nativeContextCapability),
         (.queue(expectedSessionID: "s", generation: "g", operationID: UUID(), action: .clear), RemoteProtocol.nativeQueueCapability),
         (.setThinking(expectedSessionID: "s", generation: "g", operationID: UUID(), level: "high"), RemoteProtocol.nativeThreadV2Capability),
-        (.retry(expectedSessionID: "s", generation: "g", operationID: UUID(), entryID: "user:1"), RemoteProtocol.nativeRetryCapability),
+        (.retry(expectedSessionID: "s", generation: "g", operationID: UUID(), entryID: "user:1"), RemoteProtocol.checkpointRecoveryCapability),
         (.send(expectedSessionID: "s", generation: "g", operationID: UUID(), text: "t", delivery: .interrupt), RemoteProtocol.nativeInterruptCapability),
         (.queue(expectedSessionID: "s", generation: "g", operationID: UUID(), action: .interrupt(ids: [UUID()])), RemoteProtocol.nativeInterruptCapability),
         (.queue(expectedSessionID: "s", generation: "g", operationID: UUID(), action: .subagent(id: UUID())), RemoteProtocol.nativeQueueSubagentCapability),
         (.setServiceTier(expectedSessionID: "s", generation: "g", operationID: UUID(), tier: "fast"), RemoteProtocol.nativeServiceTierCapability),
         (.image(expectedSessionID: "s", imageID: "user:1|0|0123456789abcdef", offset: 0), RemoteProtocol.nativeImagesCapability),
+        (.artifact(expectedSessionID: "s", path: "plan.md", offset: 0), RemoteProtocol.nativeArtifactsCapability),
     ])
     func newerRequestsNeedTheirCapability(_ request: NativeThreadRequest, capability: String) {
         let all = Set(RemoteProtocol.capabilities)
@@ -118,8 +119,7 @@ struct RemoteHostClientTests {
         #expect(RemoteHostClient.missingCapability(.snapshot(), capabilities: all.subtracting([capability])) == nil)
     }
 
-    /// A host without `native.retry.v1` never offers Retry in place, whatever its snapshot lists,
-    /// so the thread sends the prompt again there.
+    /// Legacy retry capability filtering remains compatible; no client sends the prompt as a fallback.
     @Test func retryIsOfferedOnlyByAHostThatRetriesInPlace() {
         let snapshot = NativeThreadSnapshot(piSessionID: "s", generation: "g", revision: 1, running: false,
                                             supportedActions: ["send", "retry"], dialogsSupported: true, dialogs: [],
@@ -161,6 +161,19 @@ struct RemoteHostClientTests {
         #expect(RemoteHostClient.missingCapability(.image(expectedSessionID: "s", imageID: "x|0|0123456789abcdef", offset: 0), capabilities: all) == nil)
     }
 
+    /// A host without `native.artifacts.v1` never offers artifact files, whatever its snapshot lists.
+    @Test func artifactFilesAreOfferedOnlyByAHostThatServesThem() {
+        let snapshot = NativeThreadSnapshot(piSessionID: "s", generation: "g", revision: 1, running: false,
+                                            supportedActions: ["send", "artifacts", "retry"], dialogsSupported: true, dialogs: [],
+                                            messages: [], provisional: [], clipped: false)
+        let all = Set(RemoteProtocol.capabilities)
+        #expect(RemoteHostClient.incoming(.snapshot(value: snapshot), capabilities: all).actions == ["send", "artifacts", "retry"])
+        let older = all.subtracting([RemoteProtocol.nativeArtifactsCapability])
+        #expect(RemoteHostClient.incoming(.snapshot(value: snapshot), capabilities: older).actions == ["send", "retry"])
+        #expect(RemoteHostClient.missingCapability(.artifact(expectedSessionID: "s", path: "a.md", offset: 0), capabilities: older)
+                == "Update Shepherd on the host to open this thread's files.")
+    }
+
     /// A host without `native.interrupt.v1` never offers Steer now as an interrupt, whatever its
     /// snapshot lists, so the thread steers there (`NativeThreadStore.resolvedDelivery`). Its
     /// other capabilities leave the list alone.
@@ -199,6 +212,17 @@ struct RemoteHostClientTests {
     func agentQueriesAreGatedBeforeSending(_ query: RemoteAgentQuery) async {
         let client = RemoteHostClient()
         #expect(await code { _ = try await client.agentQuery(agentID: AgentID(), query: query) } == "update_required")
+    }
+
+    @Test func exactProjectResultsAreRefusedBeforeSendingToOlderPeers() async {
+        let client = RemoteHostClient()
+        let key = ProjectExecutionKey(ownerID: UUID(), projectID: ProjectID(), operationID: UUID())
+        #expect(await code { _ = try await client.projectExecution(.result(key: key, offset: 0, sha256: nil)) } == "unsupported_result")
+        for request in [ProjectRuntimeRequest.worker(taskID: ProjectTaskID()), .history(), .result(taskID: ProjectTaskID(), operationID: key.operationID), .inspect(taskID: ProjectTaskID(), operationID: key.operationID)] {
+            let read = ProjectRuntimeTransport.action(projectID: key.projectID, expectedRevision: 1, request: request)
+            #expect(await code { _ = try await client.projectRuntime(read) } == "unsupported_result")
+        }
+        #expect(!ProjectRuntimeTransport.action(projectID: key.projectID, expectedRevision: 1, request: .inspect(taskID: ProjectTaskID())).requiresResults)
     }
 
     /// Commit from review needs its own capability: a host that inspects agents but predates

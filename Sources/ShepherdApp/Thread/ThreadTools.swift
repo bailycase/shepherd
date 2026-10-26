@@ -68,6 +68,7 @@ struct ActivityLineView: View, Equatable {
     let burst: NativeActivityBurst
     /// Opens the review pane at a file an edit or write touched.
     var review: ((String) -> Void)?
+    @Environment(\.openArtifact) private var openArtifact
     private let inputRows: [String: NWActivityCallRow]
     private let inputTexts: [String: String]
     @State private var expanded: Bool
@@ -137,7 +138,7 @@ struct ActivityLineView: View, Equatable {
             // A call the model is still writing says how much of its arguments came (ResponseVisibility › A).
             NWActivityLine(kind: kind, label: burst.label, meta: burst.meta, status: status, isExpanded: expanded,
                            accessibilityLabel: burst.accessibilityLabel,
-                           action: burst.expandable ? toggle : nil, received: burst.received)
+                           action: opensArtifact ?? (burst.expandable ? toggle : nil), received: burst.received)
             if expanded {
                 NWActivityCalls(burst.calls.flatMap { call -> [NWActivityCallRow] in
                     if var input = inputRows["\(call.id):input"] {
@@ -157,9 +158,16 @@ struct ActivityLineView: View, Equatable {
         }
     }
 
+    /// "Made an artifact · plan.md" opens the file in the side pane, where a pane can show it.
+    private var opensArtifact: (() -> Void)? {
+        guard let artifact = burst.artifact, let openArtifact else { return nil }
+        return { openArtifact(artifact.path) }
+    }
+
     private var kind: NWActivityLine.Kind {
         switch burst.kind {
         case .explore: .explore
+        case .edit where burst.artifact != nil: .artifact
         case .edit: .edit
         case .run: .run
         case .subagents: .subagents

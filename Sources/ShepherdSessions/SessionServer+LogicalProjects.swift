@@ -132,6 +132,9 @@ extension SessionServer {
                 guard settings.allowedHosts.allSatisfy({ project.settings.allowedHosts.contains($0) || projectEligibleHosts.contains($0) }) else {
                     throw LogicalProjectsError("invalid_host", "Choose a currently connected host binding configured on the Project owner.")
                 }
+                // A viewer that predates the reasoning level sends none: nil keeps the owner's, so its edit never clears it.
+                var settings = settings
+                settings.conversationThinking = settings.conversationThinking ?? project.settings.conversationThinking
                 project.settings = settings
                 if !settings.canRequestSpaceLinks {
                     for i in project.spaceProposals.indices where project.spaceProposals[i].phase == .pending {
@@ -189,6 +192,7 @@ extension SessionServer {
                 return
             case .list, .get, .create, .files, .read: preconditionFailure("Handled above")
             }
+            project.retireFinishedMessages()
             project.revision += 1
             try validateLogicalProject(project, replacing: project.id)
             let projects = store.state.projects.map { $0.id == project.id ? project : $0 }
@@ -222,12 +226,12 @@ extension SessionServer {
         }
         let snapshot = candidate
         logicalProjectFiles.async {
-            let staged = Result { try StateStore.stageLogicalProjects(snapshot, at: url) }
+            let staged = Result { try StateStore.stageLogicalProjects(snapshot, before: before, at: url) }
             self.queue.async {
                 self.logicalProjectSaveCount -= 1
                 do {
                     let file = try staged.get()
-                    defer { self.logicalProjectFiles.async { _ = unlink(file.path) } }
+                    defer { self.logicalProjectFiles.async { _ = unlink(file.url.path) } }
                     try self.requireStarted()
                     try self.requireProjectsEnabled()
                     guard self.logicalProjectEpoch == epoch, self.projectsGeneration == generation, !self.projectFolderOperation else {
@@ -243,7 +247,9 @@ extension SessionServer {
                     }
                     try self.store.commitLogicalProjects(snapshot, version: version, staged: file)
                     self.stateDidCommit(before: before)
-                    completion(.success(result))
+                    if case .project(let project) = result, let saved = self.store.state.projects.first(where: { $0.id == project.id }) {
+                        completion(.success(.project(saved)))
+                    } else { completion(.success(result)) }
                 } catch let error as ProjectValidationError {
                     completion(.failure(LogicalProjectsError("invalid_project", error.description)))
                 } catch { completion(.failure(error)) }

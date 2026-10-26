@@ -61,18 +61,20 @@ extension SessionServer {
 
     func relayProjectAnswer(_ id: ProjectID, revision: UInt64, coordinator: AgentID, operation: UUID,
                             taskID: ProjectTaskID, eventID: UUID, replyID: UUID, answer: NativeDialogAnswer) async throws -> Project {
+        let snapshot = try await enqueue { try self.runtimeProject(id) }
+        let archived = try await projectHistoryRead { try $0.chatAnswer(snapshot, operation: operation) }
         let (current, epoch, existing) = try await enqueue {
             let p = try self.runtimeProject(id)
-            guard self.projectHumanReply(p, coordinator: coordinator)?.id == replyID else {
-                throw LogicalProjectsError("question_proof", "Only the active turn's consumed human reply can authorize an answer.")
-            }
             let prior = p.messages.flatMap { message in (message.answerReceipts ?? []).map { (message.id, $0) } }
-                .first { $0.1.nativeAnswer.operationID == operation }
+                .first { $0.1.nativeAnswer.operationID == operation } ?? archived.map { ($0.humanReplyID, $0.receipt) }
             if let (human, receipt) = prior {
                 guard human == replyID, receipt.taskID == taskID, receipt.questionEventID == eventID,
                       case .answer(_, _, _, _, let stored) = try NDJSON.decode(NativeThreadRequest.self, from: receipt.nativeAnswer.request), stored == answer else {
                     throw LogicalProjectsError("answer_conflict", "An answer operation cannot change its human source, question or payload.")
                 }
+            }
+            guard self.projectHumanReply(p, coordinator: coordinator)?.id == replyID else {
+                throw LogicalProjectsError("question_proof", "Only the active turn's consumed human reply can authorize an answer.")
             }
             return (p, self.logicalProjectEpoch, prior?.1)
         }

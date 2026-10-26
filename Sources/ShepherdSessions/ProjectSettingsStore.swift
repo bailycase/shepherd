@@ -18,93 +18,25 @@ public final class ProjectSettingsStore: @unchecked Sendable {
     private let sessions: URL
     private let systems: URL?
     private let globalDirectories: @Sendable () -> [URL]
-    private let openEditor: @MainActor @Sendable (URL) async throws -> Void
+    private let openEditor: (@MainActor @Sendable (URL) async throws -> Void)?
+    /// The editor's bundle identifier (Settings ▸ Advanced; nil or empty: the file's default app), read when a file opens.
+    @MainActor public var editor: @MainActor () -> String? = { nil }
     private var history: [Entry] = []
     private var loaded = false
     private var importedSessions = false
-    private var pendingConfigMigration: [String] = []
-    private var configMigrationError: String?
-    private var migrationURL: URL { historyURL.deletingLastPathComponent().appendingPathComponent("project-config-migration.json") }
+    /// Compatibility entry point for restored hosts. Configuration is now read in place.
+    public func migrateExistingProjectConfiguration(in state: ShepherdState) { remember(state) }
 
-    /// Freeze the pre-cutover cohort once. New projects never become migration candidates on
-    /// a later restart. Each owning host runs this before launching its restored agents.
-    public func migrateExistingProjectConfiguration(in state: ShepherdState) {
-        queue.async { [self] in
-            do {
-                try load()
-                if FileManager.default.fileExists(atPath: migrationURL.path) {
-                    let handle = try FileHandle(forReadingFrom: migrationURL)
-                    defer { try? handle.close() }
-                    var info = stat()
-                    guard fstat(handle.fileDescriptor, &info) == 0, info.st_mode & S_IFMT == S_IFREG,
-                          info.st_size <= 4 * 1024 * 1024 else { throw ProjectFileError("config_migration", "Project configuration migration history is too large.") }
-                    let data = try handle.read(upToCount: 4 * 1024 * 1024 + 1) ?? Data()
-                    guard data.count <= 4 * 1024 * 1024 else { throw ProjectFileError("config_migration", "Project configuration migration history is too large.") }
-                    pendingConfigMigration = try JSONDecoder().decode([String].self, from: data)
-                } else {
-                    try rememberEntries(Self.directories(in: state))
-                    try importSessions()
-                    pendingConfigMigration = history.map(\.directory)
-                    guard pendingConfigMigration.count <= 20_000 else { throw ProjectFileError("config_migration", "Too many projects to migrate configuration safely.") }
-                    try saveConfigMigration()
-                }
-                guard pendingConfigMigration.count <= 20_000 else { throw ProjectFileError("config_migration", "Too many projects to migrate configuration safely.") }
-            } catch {
-                configMigrationError = "Project configuration migration could not be initialized. Check the host's project history and retry after restarting Shepherd."
-                ShepherdLog.warning("Project configuration migration could not be initialized: \(error)")
-            }
-        }
-    }
+    /// Kept for existing launch/extension callers. Neither project directory needs copying.
+    public func prepareProjectConfiguration(for cwd: String) async throws {}
 
-    /// Shared launch boundary, including remote RPC launches. Parent configurations must also
-    /// be ready before their MCP servers are inherited by a subproject.
-    public func prepareProjectConfiguration(for cwd: String) async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            queue.async { [self] in
-                continuation.resume(with: Result {
-                    if let configMigrationError { throw ProjectFileError("config_migration", configMigrationError) }
-                    let path = absolute(cwd)
-                    let deadline = Date().addingTimeInterval(30)
-                    for directory in pendingConfigMigration where path == directory || path.hasPrefix(directory + "/") {
-                        guard Date() < deadline else { throw ProjectFileError("config_migration", "Project configuration migration reached its time limit. Retry to continue.") }
-                        try migrateConfiguration(directory)
-                    }
-                })
-            }
-        }
-    }
-
-    private func saveConfigMigration() throws {
-        try FileManager.default.createDirectory(at: migrationURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let data = try JSONEncoder().encode(pendingConfigMigration)
-        guard pendingConfigMigration.count <= 20_000, data.count <= 4 * 1024 * 1024 else {
-            throw ProjectFileError("config_migration", "Project configuration migration history exceeds its safety limit.")
-        }
-        try data.write(to: migrationURL, options: .atomic)
-    }
-
-    private func migrateConfiguration(_ directory: String) throws {
-        guard pendingConfigMigration.contains(directory) else { return }
-        do {
-            let support = absolute(historyURL.deletingLastPathComponent().path)
-            if directory != support, !directory.hasPrefix(support + "/") {
-                try ProjectConfigMigration.copy(in: validatedRoot(directory))
-            }
-        } catch let error as ProjectFileError where error.code == "global_settings" {
-            // Global Pi, app support and the user's home are never project migrations.
-        }
-        let before = pendingConfigMigration
-        pendingConfigMigration.removeAll { $0 == directory }
-        do { try saveConfigMigration() }
-        catch { pendingConfigMigration = before; throw error }
-    }
     private struct Entry: Codable { var directory: String; var name: String }
 
     public init(historyURL: URL, home: URL, sessions: URL, systems: URL? = nil,
                 globalDirectories: @escaping @Sendable () -> [URL] = { [] },
                 openEditor: (@MainActor @Sendable (URL) async throws -> Void)? = nil, pi: PiSetup? = nil) {
         self.mcp = pi.map { ProjectMCPService(pi: $0) }
-        self.openEditor = openEditor ?? ProjectSettingsStore.openEditor
+        self.openEditor = openEditor
         self.historyURL = historyURL; self.home = home; self.sessions = sessions; self.systems = systems
         self.globalDirectories = globalDirectories
     }
@@ -122,7 +54,7 @@ public final class ProjectSettingsStore: @unchecked Sendable {
 
     public func request(_ request: RemoteProjectsRequest, state: ShepherdState, owner: UUID? = nil) async throws -> RemoteProjectsResult {
         if case .mcp(let directory, let file, let action) = request {
-            guard file == ".shepherd/mcp.json" || file == ".mcp.json", let mcp else {
+            guard ProjectConfiguration.isMCP(file) || file == ".mcp.json", let mcp else {
                 throw ProjectFileError("unsupported", "Project MCP sign-in is unavailable on this host.")
             }
             switch action {
@@ -146,7 +78,7 @@ public final class ProjectSettingsStore: @unchecked Sendable {
             let reference: URL = try await withCheckedThrowingContinuation { continuation in
                 queue.async { [self] in continuation.resume(with: Result { try editorReference(root: root(directory), file: file) }) }
             }
-            try await openEditor(reference)
+            if let openEditor { try await openEditor(reference) } else { try await Self.openEditor(reference, store: self) }
             return .opened
         }
         return try await withCheckedThrowingContinuation { continuation in
@@ -212,7 +144,7 @@ public final class ProjectSettingsStore: @unchecked Sendable {
     }
 
     /// The project `cwd` is a subproject of, for an agent starting there: the outermost project
-    /// folder that holds it (`ProjectNesting`), or nil. Its `.shepherd/mcp.json` servers are shared with
+    /// folder that holds it (`ProjectNesting`), or nil. Its project MCP servers are shared with
     /// the agent (`shepherd-mcp-parent.ts`). Reads the history on this store's worker, never the
     /// caller's queue.
     public func parentProject(of cwd: String, state: ShepherdState) async -> String? {
@@ -232,12 +164,17 @@ public final class ProjectSettingsStore: @unchecked Sendable {
         return history.map(\.directory).filter { $0 != home && $0 != "/" }
     }
 
-    /// The servers a project's own `.shepherd/mcp.json` names, sorted: what it shares with its subprojects.
+    /// Names from both project MCP files, matching runtime inheritance.
     private func sharedMCP(_ directory: String) -> [String] {
-        guard let root = try? validatedRoot(directory), let text = try? read(root: root, file: ".shepherd/mcp.json"),
-              let object = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
-              let servers = object["mcpServers"] as? [String: Any] else { return [] }
-        return servers.keys.sorted()
+        guard let root = try? validatedRoot(directory) else { return [] }
+        var names = Set<String>()
+        for base in ProjectConfiguration.directories {
+            guard let text = try? read(root: root, file: base + "/mcp.json"),
+                  let object = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
+                  let servers = object["mcpServers"] as? [String: Any] else { continue }
+            names.formUnion(servers.keys)
+        }
+        return names.sorted()
     }
 
     /// Primary agent cwd only, never a terminal tab. Names do not merge distinct directories.
@@ -318,9 +255,7 @@ public final class ProjectSettingsStore: @unchecked Sendable {
     }
 
     private func root(_ directory: String) throws -> URL {
-        if let configMigrationError { throw ProjectFileError("config_migration", configMigrationError) }
-        try migrateConfiguration(directory)
-        return try validatedRoot(directory)
+        try validatedRoot(directory)
     }
 
     private func validatedRoot(_ directory: String) throws -> URL {
@@ -348,14 +283,16 @@ public final class ProjectSettingsStore: @unchecked Sendable {
 
     private func inventory(root: URL) throws -> [ProjectFile] {
         var files = [ProjectFile(path: "AGENTS.md", category: .instructions, exists: false),
-                     ProjectFile(path: "AGENTS.override.md", category: .instructions, exists: false),
-                     ProjectFile(path: ".shepherd/APPEND_SYSTEM.md", category: .instructions, exists: false),
-                     ProjectFile(path: ".shepherd/SYSTEM.md", category: .instructions, exists: false),
-                     ProjectFile(path: ".shepherd/settings.json", category: .pi, exists: false),
-                     ProjectFile(path: ".shepherd/mcp.json", category: .mcp, exists: false),
-                     ProjectFile(path: ".mcp.json", category: .mcp, exists: false)]
+                     ProjectFile(path: "AGENTS.override.md", category: .instructions, exists: false)]
+        for base in ProjectConfiguration.directories {
+            files += [ProjectFile(path: base + "/APPEND_SYSTEM.md", category: .instructions, exists: false),
+                      ProjectFile(path: base + "/SYSTEM.md", category: .instructions, exists: false),
+                      ProjectFile(path: base + "/settings.json", category: .pi, exists: false),
+                      ProjectFile(path: base + "/mcp.json", category: .mcp, exists: false)]
+        }
+        files.append(ProjectFile(path: ".mcp.json", category: .mcp, exists: false))
         let fm = FileManager.default
-        for base in [".shepherd/skills", ".agents/skills"] {
+        for base in ProjectConfiguration.directories.map({ $0 + "/skills" }) + [".agents/skills"] {
             let folder = root.appendingPathComponent(base)
             guard folder.resolvingSymlinksInPath().path == folder.path else { continue }
             for name in (try? fm.contentsOfDirectory(atPath: folder.path))?.sorted().prefix(256) ?? [] where name != "." && name != ".." {
@@ -363,11 +300,13 @@ public final class ProjectSettingsStore: @unchecked Sendable {
                 if fm.fileExists(atPath: root.appendingPathComponent(path).path) { files.append(ProjectFile(path: path, category: .skills, exists: true)) }
             }
         }
-        let extensions = root.appendingPathComponent(".shepherd/extensions")
-        if extensions.resolvingSymlinksInPath().path == extensions.path {
-            for name in (try? fm.contentsOfDirectory(atPath: extensions.path))?.sorted().prefix(256) ?? [] {
-                guard ["ts", "js", "mjs", "cjs"].contains((name as NSString).pathExtension) else { continue }
-                files.append(ProjectFile(path: ".shepherd/extensions/" + name, category: .extensions, exists: true))
+        for base in ProjectConfiguration.directories {
+            let extensions = root.appendingPathComponent(base + "/extensions")
+            if extensions.resolvingSymlinksInPath().path == extensions.path {
+                for name in (try? fm.contentsOfDirectory(atPath: extensions.path))?.sorted().prefix(256) ?? [] {
+                    guard ["ts", "js", "mjs", "cjs"].contains((name as NSString).pathExtension) else { continue }
+                    files.append(ProjectFile(path: base + "/extensions/" + name, category: .extensions, exists: true))
+                }
             }
         }
         return files.map { file in
@@ -402,16 +341,27 @@ public final class ProjectSettingsStore: @unchecked Sendable {
         }
     }
 
-    @MainActor private static func openEditor(_ url: URL) async throws {
-        let workspace = NSWorkspace.shared
-        if let editor = workspace.urlForApplication(withBundleIdentifier: "com.apple.dt.Xcode")
-            ?? workspace.urlForApplication(withBundleIdentifier: "com.apple.TextEdit") {
-            _ = try await workspace.open([url], withApplicationAt: editor, configuration: NSWorkspace.OpenConfiguration())
-        } else { throw ProjectFileError("editor", "No text editor is available on this host.") }
+    @MainActor private static func openEditor(_ url: URL, store: ProjectSettingsStore) async throws {
+        guard EditorOpener.application(for: url, editor: store.editor()) != nil else {
+            throw ProjectFileError("editor", "No text editor is available on this host.")
+        }
+        try await EditorOpener.open(url, editor: store.editor())
     }
 
     private func modified(root: URL, file: String) -> Double? {
         (try? root.appendingPathComponent(file).resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate?.timeIntervalSince1970
+    }
+
+    private func resourceSettings(root: URL) throws -> [String: Any]? {
+        var settings: [String: Any]?
+        for directory in ProjectConfiguration.directories.reversed() {
+            let file = directory + "/settings.json"
+            if let text = try read(root: root, file: file),
+               let object = try? YourPiFiles.object(Data(text.utf8), file: file) {
+                settings = (settings ?? [:]).merging(object) { _, preferred in preferred }
+            }
+        }
+        return settings
     }
 
     private func context(root: URL) throws -> ProjectContext {
@@ -437,8 +387,7 @@ public final class ProjectSettingsStore: @unchecked Sendable {
         }
         let files = try inventory(root: root)
         var resources = files.filter { $0.category == .skills || $0.category == .extensions }.count
-        if let text = try read(root: root, file: ".shepherd/settings.json"),
-           let settings = try? YourPiFiles.object(Data(text.utf8), file: ".shepherd/settings.json") {
+        if let settings = try resourceSettings(root: root) {
             resources += (settings["extensions"] as? [Any])?.count ?? 0
             resources += (settings["packages"] as? [Any])?.count ?? 0
         }
@@ -452,7 +401,7 @@ public final class ProjectSettingsStore: @unchecked Sendable {
 
     private func allowed(_ file: String, root: URL) throws -> ProjectFile {
         guard let item = try inventory(root: root).first(where: { $0.path == file }) else {
-            throw ProjectFileError("invalid_file", "Only project instruction and .shepherd configuration files can be edited.")
+            throw ProjectFileError("invalid_file", "Only project instruction, .shepherd and .pi configuration files can be edited.")
         }
         return item
     }
@@ -478,11 +427,11 @@ public final class ProjectSettingsStore: @unchecked Sendable {
             let skills = files.filter { $0.category == .skills }.count
             if skills > 0 { parts.append("\(skills) \(skills == 1 ? "skill" : "skills")") }
             var extensions = files.filter { $0.category == .extensions }.count
-            if let text = try? read(root: root, file: ".shepherd/settings.json"), let object = try? YourPiFiles.object(Data(text.utf8), file: ".shepherd/settings.json") {
+            if let object = try? resourceSettings(root: root) {
                 extensions += (object["extensions"] as? [Any])?.count ?? 0
                 extensions += (object["packages"] as? [Any])?.count ?? 0
                 if !Set(object.keys).subtracting(["extensions", "packages"]).isEmpty { parts.append("pi settings") }
-            } else if files.contains(where: { $0.path == ".shepherd/settings.json" && $0.exists }) { parts.append("pi settings") }
+            } else if files.contains(where: { $0.category == .pi && $0.exists }) { parts.append("pi settings") }
             if extensions > 0 { parts.append("\(extensions) \(extensions == 1 ? "extension" : "extensions")") }
             var mcpNames = Set<String>()
             for file in files where file.category == .mcp && file.exists {
@@ -501,7 +450,7 @@ public final class ProjectSettingsStore: @unchecked Sendable {
     }
 
     /// Walk using directory descriptors and O_NOFOLLOW: symlink swaps cannot redirect an editor
-    /// to auth, another project or the user's global configuration. Missing .shepherd is created on Save.
+    /// to auth, another project or the user's global configuration. Missing config folders are created on Save.
     private func withParent<T>(root: URL, file: String, create: Bool = false, _ body: (Int32, String) throws -> T) throws -> T {
         // Foundation maps /private/tmp back to /tmp. POSIX realpath keeps the physical path
         // so this no-follow walk accepts macOS' standard aliases without following replacements.

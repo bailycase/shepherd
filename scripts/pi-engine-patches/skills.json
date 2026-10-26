@@ -2,35 +2,473 @@
   "version": "1.0.0",
   "files": [
     {
+      "path": "node_modules/@earendil-works/pi-ai/dist/api/anthropic-messages.js",
+      "before": "a0644ab05cf7ee3e4d566f21113d5b6c2361588237c999a45fa0d7935b68af10",
+      "after": "ba237fb9d948bf14ce09fdd250e652c234d4a10ff7a1dea1c15eb4b73cd55fc3",
+      "edits": [
+        {
+          "old": "import Anthropic, {} from \"@anthropic-ai/sdk\";",
+          "new": "import Anthropic, {} from \"@anthropic-ai/sdk\";\nimport { isClaudeOAuthAccessToken, streamAnthropicOAuth } from \"./shepherd-anthropic-oauth.js\";"
+        },
+        {
+          "old": "export const stream = (model, context, options) => {",
+          "new": "export const stream = (model, context, options) => {\n    if (options?.apiKey && isClaudeOAuthAccessToken(options.apiKey)) return streamAnthropicOAuth(model, context, options);\n"
+        },
+        {
+          "old": "export const streamSimple = (model, context, options) => {",
+          "new": "export const streamSimple = (model, context, options) => {\n    if (options?.apiKey && isClaudeOAuthAccessToken(options.apiKey)) return streamAnthropicOAuth(model, context, options);\n"
+        }
+      ]
+    },
+    {
+      "path": "dist/bundle/chunks/anthropic-messages-UID2PALB.js",
+      "before": "86370b5d60a634d40def4b9d58a0025ca64a61fb74103a8de793ed91a398a230",
+      "after": "eb3f8c3ab2d9fa890076d9776a52ffa1569e07701d1d4b5df8385e6c148c982c",
+      "edits": [
+        {
+          "old": "import { createRequire as __piCreateRequire } from \"node:module\"; const require = __piCreateRequire(import.meta.url);",
+          "new": "import { createRequire as __piCreateRequire } from \"node:module\"; const require = __piCreateRequire(import.meta.url);\nimport { isClaudeOAuthAccessToken, streamAnthropicOAuth } from \"./shepherd-anthropic-oauth.js\";"
+        },
+        {
+          "old": "stream=(model,context,options)=>{",
+          "new": "stream=(model,context,options)=>{\n    if (options?.apiKey && isClaudeOAuthAccessToken(options.apiKey)) return streamAnthropicOAuth(model, context, options);\n"
+        },
+        {
+          "old": "streamSimple=(model,context,options)=>{",
+          "new": "streamSimple=(model,context,options)=>{\n    if (options?.apiKey && isClaudeOAuthAccessToken(options.apiKey)) return streamAnthropicOAuth(model, context, options);\n"
+        }
+      ]
+    },
+    {
+      "path": "dist/utils/shell.js",
+      "before": "c8378f2b0566e35f90dfbb622a2214acf5cf45d15107c44b260cad897b539f72",
+      "after": "58555cb340755090fa990753b41d55e19dcbb1d69be2b9cce170168dc5f8114e",
+      "edits": [
+        {
+          "old": "    const hasBinDir = pathEntries.includes(binDir);\n    const updatedPath = hasBinDir ? currentPath : [binDir, currentPath].filter(Boolean).join(delimiter);",
+          "new": "    const updatedPath = [binDir, ...pathEntries.filter(entry => entry !== binDir)].join(delimiter);"
+        }
+      ]
+    },
+    {
+      "path": "dist/bundle/chunks/chunk-PRD6WYBT.js",
+      "before": "583f63dfc899c8e5dc93e71dc4ce3febef31467df77108c95ded51b5c3adbc07",
+      "after": "0de6aa502eddc83e245d837ff1a99153967b955fd8798dd0c971bbee366112d5",
+      "edits": [
+        {
+          "old": "updatedPath=currentPath.split(delimiter).filter(Boolean).includes(binDir)?currentPath:[binDir,currentPath].filter(Boolean).join(delimiter)",
+          "new": "updatedPath=[binDir,...currentPath.split(delimiter).filter(entry=>entry&&entry!==binDir)].join(delimiter)"
+        }
+      ]
+    },
+    {
+      "path": "dist/modes/interactive/components/config-selector.js",
+      "before": "f2322efaa4c2cee047a8254473a3569e92b35e1b71827c9ad6447083aed53a18",
+      "after": "0cbb07f758fee428deca464a13a35533f8983569ef9f1882ce5464ea1bbeec30",
+      "edits": [
+        {
+          "old": "import { CONFIG_DIR_NAME } from \"../../../config.js\";",
+          "new": "import { CONFIG_DIR_NAME, getProjectConfigPath } from \"../../../config.js\";"
+        },
+        {
+          "old": "return scope === \"project\" ? join(this.cwd, CONFIG_DIR_NAME) : this.agentDir;",
+          "new": "return scope === \"project\" ? dirname(getProjectConfigPath(this.cwd, \"settings.json\")) : this.agentDir;"
+        }
+      ]
+    },
+    {
+      "path": "dist/bundle/chunks/chunk-33XOIQ5N.js",
+      "before": "1fbf59b1126d78129049710d1c825afaf3a905333a62a680fdb2174fdb6d3aca",
+      "after": "b9686052d06e84187ebd9461d787f2f4293f5744b368f3f08958a99c1c9edd39",
+      "edits": [
+        {
+          "old": "import{ProjectTrustStore,addMcpServerConfig,",
+          "new": "import{getProjectConfigDirs,getProjectConfigPath}from\"../../config.js\";import{ProjectTrustStore,addMcpServerConfig,"
+        },
+        {
+          "old": "projectBaseDir=join4(this.cwd,CONFIG_DIR_NAME)",
+          "new": "projectBaseDir=dirname3(getProjectConfigPath(this.cwd,\"settings.json\"))"
+        },
+        {
+          "old": "join4(this.cwd,CONFIG_DIR_NAME,\"npm\")",
+          "new": "getProjectConfigPath(this.cwd,\"npm\")"
+        },
+        {
+          "old": "join4(this.cwd,CONFIG_DIR_NAME,\"npm\",\"node_modules\",source.name)",
+          "new": "getProjectConfigPath(this.cwd,\"npm\",\"node_modules\",source.name)"
+        },
+        {
+          "old": "join4(this.cwd,CONFIG_DIR_NAME,\"git\")",
+          "new": "getProjectConfigPath(this.cwd,\"git\")"
+        },
+        {
+          "old": "join4(this.cwd,CONFIG_DIR_NAME)",
+          "new": "dirname3(getProjectConfigPath(this.cwd,\"settings.json\"))"
+        },
+        {
+          "old": "this.projectSettingsPath=join5(resolvedCwd,CONFIG_DIR_NAME,\"settings.json\")",
+          "new": "this.projectSettingsPath=getProjectConfigPath(resolvedCwd,\"settings.json\")"
+        },
+        {
+          "old": "project:join5(resolvedCwd,CONFIG_DIR_NAME,\"settings.json\")",
+          "new": "project:getProjectConfigPath(resolvedCwd,\"settings.json\")"
+        },
+        {
+          "old": "return this.resolveManagedPath(installRoot,source.host,source.path)",
+          "new": "let installed=this.resolveManagedPath(installRoot,source.host,source.path);return scope===\"project\"?getProjectConfigPath(this.cwd,\"git\",relative(installRoot,installed)):installed"
+        },
+        {
+          "old": "join17(this.cwd,CONFIG_DIR_NAME,\"SYSTEM.md\")",
+          "new": "getProjectConfigPath(this.cwd,\"SYSTEM.md\")"
+        },
+        {
+          "old": "join17(this.cwd,CONFIG_DIR_NAME,\"APPEND_SYSTEM.md\")",
+          "new": "getProjectConfigPath(this.cwd,\"APPEND_SYSTEM.md\")"
+        },
+        {
+          "old": "projectRoots=[join17(this.cwd,CONFIG_DIR_NAME,\"skills\"),join17(this.cwd,CONFIG_DIR_NAME,\"prompts\"),join17(this.cwd,CONFIG_DIR_NAME,\"themes\"),join17(this.cwd,CONFIG_DIR_NAME,\"extensions\")]",
+          "new": "projectRoots=getProjectConfigDirs(this.cwd).flatMap(base=>[\"skills\",\"prompts\",\"themes\",\"extensions\"].map(kind=>join17(base,kind)))"
+        },
+        {
+          "old": "[join17(this.agentDir,\"themes\"),join17(this.cwd,CONFIG_DIR_NAME,\"themes\")]",
+          "new": "[join17(this.agentDir,\"themes\"),...getProjectConfigDirs(this.cwd).map(base=>join17(base,\"themes\"))]"
+        },
+        {
+          "old": "scope===\"project\"?join31(this.cwd,CONFIG_DIR_NAME):this.agentDir",
+          "new": "scope===\"project\"?dirname17(getProjectConfigPath(this.cwd,\"settings.json\")):this.agentDir"
+        },
+        {
+          "old": ",projectDirs={extensions:join4(projectBaseDir,\"extensions\"),skills:join4(projectBaseDir,\"skills\"),prompts:join4(projectBaseDir,\"prompts\"),themes:join4(projectBaseDir,\"themes\")}",
+          "new": ""
+        },
+        {
+          "old": "projectTrusted&&(addResources(\"extensions\",collectAutoExtensionEntries(projectDirs.extensions),projectMetadata,projectOverrides.extensions,projectBaseDir),addResources(\"skills\",collectAutoSkillEntries(projectDirs.skills,\"pi\"),projectMetadata,projectOverrides.skills,projectBaseDir));",
+          "new": "if(projectTrusted)for(let baseDir of getProjectConfigDirs(this.cwd)){let metadata={...projectMetadata,baseDir},extensions=collectAutoExtensionEntries(join4(baseDir,\"extensions\")).filter(file=>getProjectConfigPath(this.cwd,relative(baseDir,file))===file);addResources(\"extensions\",extensions,metadata,projectOverrides.extensions,projectBaseDir);addResources(\"skills\",collectAutoSkillEntries(join4(baseDir,\"skills\"),\"pi\"),metadata,projectOverrides.skills,projectBaseDir);addResources(\"prompts\",collectAutoPromptEntries(join4(baseDir,\"prompts\")),metadata,projectOverrides.prompts,projectBaseDir);addResources(\"themes\",collectAutoThemeEntries(join4(baseDir,\"themes\")),metadata,projectOverrides.themes,projectBaseDir);}"
+        },
+        {
+          "old": "projectTrusted&&(addResources(\"prompts\",collectAutoPromptEntries(projectDirs.prompts),projectMetadata,projectOverrides.prompts,projectBaseDir),addResources(\"themes\",collectAutoThemeEntries(projectDirs.themes),projectMetadata,projectOverrides.themes,projectBaseDir)),addResources",
+          "new": "addResources"
+        },
+        {
+          "old": "addSkills(loadSkillsFromDirInternal(resolve2(resolvedCwd,CONFIG_DIR_NAME,\"skills\"),\"project\",!0))",
+          "new": "getProjectConfigDirs(resolvedCwd).forEach(base=>addSkills(loadSkillsFromDirInternal(resolve2(base,\"skills\"),\"project\",!0)))"
+        },
+        {
+          "old": "projectSkillsDir=resolve2(resolvedCwd,CONFIG_DIR_NAME,\"skills\")",
+          "new": "projectSkillsDirs=getProjectConfigDirs(resolvedCwd).map(base=>resolve2(base,\"skills\"))"
+        },
+        {
+          "old": "if(isUnderPath(resolvedPath,projectSkillsDir))",
+          "new": "if(projectSkillsDirs.some(dir=>isUnderPath(resolvedPath,dir)))"
+        },
+        {
+          "old": ",localExtDir=path3.join(resolvedCwd,CONFIG_DIR_NAME,\"extensions\");addPaths(discoverExtensionsInDir(localExtDir));",
+          "new": ";for(let base of getProjectConfigDirs(resolvedCwd)){let localExtDir=path3.join(base,\"extensions\");addPaths(discoverExtensionsInDir(localExtDir).filter(file=>getProjectConfigPath(resolvedCwd,path3.relative(base,file))===file));}"
+        },
+        {
+          "old": "projectPromptsDir=resolve6(resolvedCwd,CONFIG_DIR_NAME,\"prompts\")",
+          "new": "projectPromptsDirs=getProjectConfigDirs(resolvedCwd).map(base=>resolve6(base,\"prompts\"))"
+        },
+        {
+          "old": "isUnderPath(resolvedPath,projectPromptsDir)?createSyntheticSourceInfo(resolvedPath,{source:\"local\",scope:\"project\",baseDir:projectPromptsDir})",
+          "new": "projectPromptsDirs.some(dir=>isUnderPath(resolvedPath,dir))?createSyntheticSourceInfo(resolvedPath,{source:\"local\",scope:\"project\",baseDir:projectPromptsDirs.find(dir=>isUnderPath(resolvedPath,dir))})"
+        },
+        {
+          "old": "addResult(loadTemplatesFromDir(projectPromptsDir,getSourceInfo))",
+          "new": "projectPromptsDirs.forEach(dir=>addResult(loadTemplatesFromDir(dir,getSourceInfo)))"
+        },
+        {
+          "old": "import { createRequire as __piCreateRequire } from \"node:module\";",
+          "new": "import { acceptRecovery, finishRecovery, invalidateRecoveryGeneration, recordRecoveryCheckpoint, recoveryState, recoveryOperation, recoveryTranscript } from \"../../core/shepherd-checkpoint-recovery.js\";\nimport { createRequire as __piCreateRequire } from \"node:module\";"
+        },
+        {
+          "old": "async _runAgentPrompt(messages){this._agentRunAbortRequested=!1,this._failedResponse=void 0,",
+          "new": "    getRecoveryState() {\n        return recoveryState(this, this._cwd);\n    }\n    getRecoveryOperation(operationID) { return recoveryOperation(this, operationID); }\n    getRecoveryTranscript() { return recoveryTranscript(this); }\n    recoverCheckpoint(token, operationID) {\n        const accepted = acceptRecovery(this, token, operationID, this._cwd);\n        if (accepted.replay) return accepted.receipt;\n        const failed = this.sessionManager.getEntry(accepted.receipt.failedEntryID).message;\n        try { this._omitRecoveryAttempt(failed); }\n        catch (error) {\n            finishRecovery(this, accepted.receipt, \"unknown\", String(error));\n            throw error;\n        }\n        // This is an SDK-owned run, not an extension mutating Agent.state or inventing input.\n        this._runAgentPrompt(undefined, failed).then(() => {\n            finishRecovery(this, accepted.receipt, \"settled\");\n        }, error => {\n            finishRecovery(this, accepted.receipt, \"unknown\", String(error));\n            this._emit({ type: \"extension_error\", extensionPath: \"checkpoint-recovery\", event: \"recovery\", error: String(error) });\n        });\n        return accepted.receipt;\n    }\nasync _runAgentPrompt(messages,recoveredFailure){const recoverySessionID=this.sessionId;this._agentRunAbortRequested=!1,this._failedResponse=recoveredFailure,"
+        },
+        {
+          "old": "for(await this.agent.prompt(messages);!this._agentRunAbortRequested;)",
+          "new": "for(await(messages===void 0?this.agent.continue():this.agent.prompt(messages));!this._agentRunAbortRequested;)"
+        },
+        {
+          "old": "this._failedResponse=void 0,this._runSystemPromptOptions=void 0,this._flushPendingBashMessages()",
+          "new": "recordRecoveryCheckpoint(this,recoverySessionID,Boolean(this._runSystemPromptOptions?.forceSystemPrompt),this._cwd),this._failedResponse=void 0,this._runSystemPromptOptions=void 0,this._flushPendingBashMessages()"
+        },
+        {
+          "old": "async prompt(text,options){if(this._isEmittingAgentSettled)",
+          "new": "_recoveryPrompts=0;async prompt(text,options){this._recoveryPrompts++;try{return await this._prompt(text,options)}finally{this._recoveryPrompts--}}async _prompt(text,options){if(this._isEmittingAgentSettled)"
+        },
+        {
+          "old": "switch(command.type){case\"prompt\":",
+          "new": "switch(command.type){case\"recover_checkpoint\":{if(pendingExtensionRequests.size)return error(id,command.type,\"recovery_busy\");return success(id,command.type,session.recoverCheckpoint(command.token,command.operationID))}case\"get_recovery_operation\":return success(id,command.type,{receipt:session.getRecoveryOperation(command.operationID)??null});case\"prompt\":"
+        },
+        {
+          "old": "pendingMessageCount:session.pendingMessageCount};return success(id,\"get_state\",state2)",
+          "new": "pendingMessageCount:session.pendingMessageCount,checkpointRecovery:pendingExtensionRequests.size?{version:1,refusal:\"recovery_busy\"}:session.getRecoveryState()};return success(id,\"get_state\",state2)"
+        },
+        {
+          "old": "case\"get_messages\":return success(id,\"get_messages\",{messages:session.messages});",
+          "new": "case\"get_messages\":return success(id,\"get_messages\",{messages:command.history===!0?session.getRecoveryTranscript():session.messages});"
+        },
+        {
+          "old": "this._refreshFinalizedContext(),this._restoreToolsFromTranscript(),await this._extensionRunner.emit({type:\"session_tree\"",
+          "new": "invalidateRecoveryGeneration(this),this._refreshFinalizedContext(),this._restoreToolsFromTranscript(),await this._extensionRunner.emit({type:\"session_tree\""
+        },
+        {
+          "old": "dispose(){try{this.abortRetry()",
+          "new": "dispose(){invalidateRecoveryGeneration(this,true);try{this.abortRetry()"
+        },
+        {
+          "old": "async setModel(model,options={}){if(!await",
+          "new": "async setModel(model,options={}){invalidateRecoveryGeneration(this);if(!await"
+        },
+        {
+          "old": "setThinkingLevel(level,options={}){let availableLevels=",
+          "new": "setThinkingLevel(level,options={}){invalidateRecoveryGeneration(this);let availableLevels="
+        }
+      ]
+    },
+    {
+      "path": "dist/bundle/chunks/chunk-KDN6RCEQ.js",
+      "before": "5c1bcab1a910f10a6d2f3d11fd28939358fee5bd9539e5501cad937c66a1dbfa",
+      "after": "6892f507e5874ec008d3d169bc58f6e073356690dcf22a58f6af697cfd64e391",
+      "edits": [
+        {
+          "old": "import{CONFIG_DIR_NAME,canonicalizePath,resolvePath,stripBom}from\"./chunk-2KTBZM5G.js\";",
+          "new": "import{CONFIG_DIR_NAME,canonicalizePath,resolvePath,stripBom}from\"./chunk-2KTBZM5G.js\";import{getProjectConfigDirs}from\"../../config.js\";"
+        },
+        {
+          "old": "currentDir=canonicalizePath(resolvePath(cwd)),configDir=join(currentDir,CONFIG_DIR_NAME);if(TRUST_REQUIRING_PROJECT_CONFIG_RESOURCES.some(entry=>existsSync(join(configDir,entry))))",
+          "new": "currentDir=canonicalizePath(resolvePath(cwd));if(getProjectConfigDirs(currentDir).some(configDir=>TRUST_REQUIRING_PROJECT_CONFIG_RESOURCES.some(entry=>existsSync(join(configDir,entry)))))"
+        },
+        {
+          "old": "options.projectTrusted&&readConfigFile(join2(options.cwd,CONFIG_DIR_NAME,\"mcp.json\"),\"project\",state)",
+          "new": "options.projectTrusted&&getProjectConfigDirs(options.cwd).reverse().forEach(base=>readConfigFile(join2(base,\"mcp.json\"),\"project\",state))"
+        }
+      ]
+    },
+    {
+      "path": "dist/config.js",
+      "before": "65fb18914aed61cb62d6ef932131a9b66a4e37e482d2aa09136301267929dbed",
+      "after": "93fa25754324b383d61cd75909ff3c30499c469be5988884251ff7a91f563b6b",
+      "edits": [
+        {
+          "old": "export const CONFIG_DIR_NAME = pkg.piConfig?.configDir || \".pi\";",
+          "new": "export const CONFIG_DIR_NAME = pkg.piConfig?.configDir || \".pi\";\n// Project aliases only. The global agent directory remains pinned by Shepherd.\nexport function getProjectConfigDirs(cwd) {\n    return [...new Set([\".shepherd\", \".pi\", CONFIG_DIR_NAME])].map(name => join(cwd, name));\n}\nexport function getProjectConfigPath(cwd, ...parts) {\n    return getProjectConfigDirs(cwd).map(base => join(base, ...parts)).find(path => existsSync(path))\n        ?? join(cwd, CONFIG_DIR_NAME, ...parts);\n}"
+        }
+      ]
+    },
+    {
+      "path": "dist/core/settings-manager.js",
+      "before": "b3a424ac1af9bd0c380796f9e5d812e2c61755ed3b31dd39982a57bbe0d5a391",
+      "after": "ce2dfa91b3a244b92b10373a134790acd736562070d5cde0d174646c6df2b162",
+      "edits": [
+        {
+          "old": "import { CONFIG_DIR_NAME, getAgentDir }",
+          "new": "import { CONFIG_DIR_NAME, getAgentDir, getProjectConfigPath }"
+        },
+        {
+          "old": "this.projectSettingsPath = join(resolvedCwd, CONFIG_DIR_NAME, \"settings.json\");",
+          "new": "this.projectSettingsPath = getProjectConfigPath(resolvedCwd, \"settings.json\");"
+        },
+        {
+          "old": "project: join(resolvedCwd, CONFIG_DIR_NAME, \"settings.json\"),",
+          "new": "project: getProjectConfigPath(resolvedCwd, \"settings.json\"),"
+        }
+      ]
+    },
+    {
+      "path": "dist/extensions/mcp/config.js",
+      "before": "e6167bf9b062134aadb2dc85f10a57f801be6bfc2e2b4a6b8a9b01d4a345d7b1",
+      "after": "3801569dc8997458ad33086df5d4edde017e653fc181c872b0a5fa1c9e776443",
+      "edits": [
+        {
+          "old": "import { CONFIG_DIR_NAME }",
+          "new": "import { CONFIG_DIR_NAME, getProjectConfigDirs }"
+        },
+        {
+          "old": "    if (options.projectTrusted)\n        readConfigFile(join(options.cwd, CONFIG_DIR_NAME, \"mcp.json\"), \"project\", state);",
+          "new": "    if (options.projectTrusted) {\n        for (const base of getProjectConfigDirs(options.cwd).reverse()) {\n            readConfigFile(join(base, \"mcp.json\"), \"project\", state);\n        }\n    }"
+        }
+      ]
+    },
+    {
+      "path": "dist/extensions/mcp/cli.js",
+      "before": "abcbf73233214aeae393a7cb0c8d59f2d8921c316301f141bc61c67749302eb2",
+      "after": "f7c8e072dd4800c5bf19eb29edb7c17beb85d944da7769b262d8f00974340fbd",
+      "edits": [
+        {
+          "old": "import { APP_NAME, CONFIG_DIR_NAME }",
+          "new": "import { APP_NAME, CONFIG_DIR_NAME, getProjectConfigPath }"
+        },
+        {
+          "old": "const projectConfig = join(options.cwd, CONFIG_DIR_NAME, \"mcp.json\");",
+          "new": "const projectConfig = getProjectConfigPath(options.cwd, \"mcp.json\");"
+        }
+      ]
+    },
+    {
+      "path": "dist/core/prompt-templates.js",
+      "before": "f378bb43f6a5ee8e7a2e1b53fe8d91a6e0504d96d3a724a97a58c3bd9b647555",
+      "after": "c2f1893f4f8d563408dc4ee248c2a200e11408d6119933250f86539b0d4391fd",
+      "edits": [
+        {
+          "old": "import { CONFIG_DIR_NAME }",
+          "new": "import { CONFIG_DIR_NAME, getProjectConfigDirs }"
+        },
+        {
+          "old": "const projectPromptsDir = resolve(resolvedCwd, CONFIG_DIR_NAME, \"prompts\");",
+          "new": "const projectPromptsDirs = getProjectConfigDirs(resolvedCwd).map(base => resolve(base, \"prompts\"));"
+        },
+        {
+          "old": "        if (isUnderPath(resolvedPath, projectPromptsDir)) {",
+          "new": "        const projectPromptsDir = projectPromptsDirs.find(dir => isUnderPath(resolvedPath, dir));\n        if (projectPromptsDir) {"
+        },
+        {
+          "old": "        addResult(loadTemplatesFromDir(projectPromptsDir, getSourceInfo));",
+          "new": "        for (const dir of projectPromptsDirs) addResult(loadTemplatesFromDir(dir, getSourceInfo));"
+        }
+      ]
+    },
+    {
+      "path": "dist/core/skills.js",
+      "before": "3b7cc3997c630553eb88931de978e0db623ce51fbf7356e0ab922183885e208c",
+      "after": "c2a17a27cbe6b3a9c3117f66ba65e086cff67a7b3c2e0e0c796964c8a9ebd741",
+      "edits": [
+        {
+          "old": "import { CONFIG_DIR_NAME, getAgentDir }",
+          "new": "import { CONFIG_DIR_NAME, getAgentDir, getProjectConfigDirs }"
+        },
+        {
+          "old": "        addSkills(loadSkillsFromDirInternal(resolve(resolvedCwd, CONFIG_DIR_NAME, \"skills\"), \"project\", true));",
+          "new": "        for (const base of getProjectConfigDirs(resolvedCwd)) addSkills(loadSkillsFromDirInternal(resolve(base, \"skills\"), \"project\", true));"
+        },
+        {
+          "old": "    const projectSkillsDir = resolve(resolvedCwd, CONFIG_DIR_NAME, \"skills\");",
+          "new": "    const projectSkillsDirs = getProjectConfigDirs(resolvedCwd).map(base => resolve(base, \"skills\"));"
+        },
+        {
+          "old": "if (isUnderPath(resolvedPath, projectSkillsDir))",
+          "new": "if (projectSkillsDirs.some(dir => isUnderPath(resolvedPath, dir)))"
+        }
+      ]
+    },
+    {
+      "path": "dist/core/extensions/loader.js",
+      "before": "440c37c201d3c9ea78b5188482ea6aaf19e654266ccb8d6760d00ef360dcae3c",
+      "after": "732ad76e055515de1d98a8e37037237ec83962659db47a46a4a734fc8794140e",
+      "edits": [
+        {
+          "old": "import { CONFIG_DIR_NAME, getAgentDir, isBunBinary, isBundledNode }",
+          "new": "import { CONFIG_DIR_NAME, getAgentDir, getProjectConfigDirs, getProjectConfigPath, isBunBinary, isBundledNode }"
+        },
+        {
+          "old": "    const localExtDir = path.join(resolvedCwd, CONFIG_DIR_NAME, \"extensions\");\n    addPaths(discoverExtensionsInDir(localExtDir));",
+          "new": "    for (const base of getProjectConfigDirs(resolvedCwd)) {\n        const localExtDir = path.join(base, \"extensions\");\n        addPaths(discoverExtensionsInDir(localExtDir).filter(file =>\n            getProjectConfigPath(resolvedCwd, path.relative(base, file)) === file));\n    }"
+        }
+      ]
+    },
+    {
       "path": "dist/core/resource-loader.js",
       "before": "710e367e37c40df9f8f0239ebee6955e0a971a028d20467024bf4ea9ff55a42a",
-      "after": "a1a6dcb7b0ba5e15aa44909ec9b2717fb8c00924a20dc1b40e658081d33147cc",
+      "after": "71f7d33395bca8637fa8692a5faf3359d663393e2ec5cd6f265f74d65b917e09",
       "edits": [
         {
           "old": "    async loadProjectTrustExtensions() {",
-          "new": "    // Shepherd: reparse skills without reloading executable extensions or settings.\n    refreshSkills() {\n        const previous = JSON.stringify(this.getSkills());\n        const metadata = new Map(this.resourceMetadataByPath);\n        let paths = this.lastSkillPaths;\n        if (!this.noSkills) {\n            const manager = this.packageManager;\n            const accumulator = manager.createAccumulator();\n            const global = this.settingsManager.getGlobalSettings();\n            const project = this.settingsManager.getProjectSettings();\n            const projectBase = join(this.cwd, CONFIG_DIR_NAME);\n            manager.resolveLocalEntries(project.skills ?? [], \"skills\", accumulator.skills,\n                { source: \"local\", scope: \"project\", origin: \"top-level\" }, projectBase);\n            manager.resolveLocalEntries(global.skills ?? [], \"skills\", accumulator.skills,\n                { source: \"local\", scope: \"user\", origin: \"top-level\" }, this.agentDir);\n            manager.addAutoDiscoveredResources(accumulator, global, project, this.agentDir, projectBase);\n            // Keep startup precedence: CLI extension resources, ranked local/package\n            // resources, explicit --skill paths, then extension-discovered paths.\n            const prefix = [], suffix = [];\n            for (const path of this.lastSkillPaths) {\n                const info = this.resourceMetadataByPath.get(path);\n                if (info?.scope === \"temporary\") prefix.push(path);\n                else if (info?.origin === \"package\") manager.addResource(accumulator.skills, path, info, true);\n                else if (this.extensionSkillSourceInfos.has(path) || (info?.source !== \"auto\" && info?.source !== \"local\")) suffix.push(path);\n            }\n            const resources = manager.toResolvedPaths(accumulator).skills;\n            for (const resource of resources) metadata.set(resource.path, resource.metadata);\n            paths = this.mergePaths(prefix, [...resources.filter(r => r.enabled).map(r => this.mapSkillPath(r, metadata)), ...this.additionalSkillPaths, ...suffix]);\n        }\n        this.updateSkillsFromPaths(paths, metadata);\n        return previous !== JSON.stringify(this.getSkills());\n    }\n    async loadProjectTrustExtensions() {"
+          "new": "    // Shepherd: reparse skills without reloading executable extensions or settings.\n    // Prompt templates refresh with skills: same watcher, same idle boundary, no extension reload.\n    refreshSkills() {\n        const previous = JSON.stringify([this.getSkills(), this.getPrompts()]);\n        const metadata = new Map(this.resourceMetadataByPath);\n        let paths = this.lastSkillPaths;\n        let promptPaths = this.lastPromptPaths;\n        const manager = this.packageManager;\n        const accumulator = manager.createAccumulator();\n        const global = this.settingsManager.getGlobalSettings();\n        const project = this.settingsManager.getProjectSettings();\n        const projectBase = join(this.cwd, CONFIG_DIR_NAME);\n        for (const kind of [\"skills\", \"prompts\"]) {\n            manager.resolveLocalEntries(project[kind] ?? [], kind, accumulator[kind],\n                { source: \"local\", scope: \"project\", origin: \"top-level\" }, projectBase);\n            manager.resolveLocalEntries(global[kind] ?? [], kind, accumulator[kind],\n                { source: \"local\", scope: \"user\", origin: \"top-level\" }, this.agentDir);\n        }\n        manager.addAutoDiscoveredResources(accumulator, global, project, this.agentDir, projectBase);\n        if (!this.noSkills) {\n            // Keep startup precedence: CLI extension resources, ranked local/package\n            // resources, explicit --skill paths, then extension-discovered paths.\n            const prefix = [], suffix = [];\n            for (const path of this.lastSkillPaths) {\n                const info = this.resourceMetadataByPath.get(path);\n                if (info?.scope === \"temporary\") prefix.push(path);\n                else if (info?.origin === \"package\") manager.addResource(accumulator.skills, path, info, true);\n                else if (this.extensionSkillSourceInfos.has(path) || (info?.source !== \"auto\" && info?.source !== \"local\")) suffix.push(path);\n            }\n            const resources = manager.toResolvedPaths(accumulator).skills;\n            for (const resource of resources) metadata.set(resource.path, resource.metadata);\n            paths = this.mergePaths(prefix, [...resources.filter(r => r.enabled).map(r => this.mapSkillPath(r, metadata)), ...this.additionalSkillPaths, ...suffix]);\n        }\n        this.updateSkillsFromPaths(paths, metadata);\n        if (!this.noPromptTemplates) {\n            const prefix = [], suffix = [];\n            for (const path of this.lastPromptPaths) {\n                const info = this.resourceMetadataByPath.get(path);\n                if (info?.scope === \"temporary\") prefix.push(path);\n                else if (info?.origin === \"package\") manager.addResource(accumulator.prompts, path, info, true);\n                else if (this.extensionPromptSourceInfos.has(path) || (info?.source !== \"auto\" && info?.source !== \"local\")) suffix.push(path);\n            }\n            const resources = manager.toResolvedPaths(accumulator).prompts;\n            for (const resource of resources) metadata.set(resource.path, resource.metadata);\n            promptPaths = this.mergePaths(prefix, [...resources.filter(r => r.enabled).map(r => r.path), ...this.additionalPromptTemplatePaths, ...suffix]);\n        }\n        this.updatePromptsFromPaths(promptPaths, metadata);\n        return previous !== JSON.stringify([this.getSkills(), this.getPrompts()]);\n    }\n    async loadProjectTrustExtensions() {"
         },
         {
           "old": "    // Shepherd: reparse skills without reloading executable extensions or settings.",
-          "new": "    getSkillWatchPaths() {\n        return [...(this.noSkills ? [] : this.packageManager.getSkillWatchPaths()),\n            ...this.lastSkillPaths, ...this.additionalSkillPaths, ...this.extensionSkillSourceInfos.keys()]\n            .map(path => this.resolveResourcePath(path));\n    }\n    // Shepherd: reparse skills without reloading executable extensions or settings."
+          "new": "    getSkillWatchPaths() {\n        return [...(this.noSkills ? [] : this.packageManager.getSkillWatchPaths()),\n            ...this.lastSkillPaths, ...this.additionalSkillPaths, ...this.extensionSkillSourceInfos.keys(),\n            ...this.getPromptWatchPaths()]\n            .map(path => this.resolveResourcePath(path));\n    }\n    getPromptWatchPaths() {\n        if (this.noPromptTemplates) return [...this.additionalPromptTemplatePaths];\n        const paths = [join(this.agentDir, \"prompts\")];\n        if (this.settingsManager.isProjectTrusted()) paths.push(...getProjectConfigDirs(this.cwd).map(base => join(base, \"prompts\")));\n        const projectBase = dirname(getProjectConfigPath(this.cwd, \"settings.json\"));\n        for (const [entries, base] of [[this.settingsManager.getGlobalSettings().prompts, this.agentDir],\n            [this.settingsManager.getProjectSettings().prompts, projectBase]]) {\n            for (const entry of entries ?? []) {\n                if (!/^[!+-]|[*?]/.test(entry)) paths.push(this.packageManager.resolvePathFromBase(entry, base));\n            }\n        }\n        return [...paths, ...this.lastPromptPaths, ...this.additionalPromptTemplatePaths, ...this.extensionPromptSourceInfos.keys()];\n    }\n    // Shepherd: reparse skills without reloading executable extensions or settings."
+        },
+        {
+          "old": "import { CONFIG_DIR_NAME }",
+          "new": "import { CONFIG_DIR_NAME, getProjectConfigDirs, getProjectConfigPath }"
+        },
+        {
+          "old": "const projectBase = join(this.cwd, CONFIG_DIR_NAME);",
+          "new": "const projectBase = dirname(getProjectConfigPath(this.cwd, \"settings.json\"));"
+        },
+        {
+          "old": "        const projectRoots = [\n            join(this.cwd, CONFIG_DIR_NAME, \"skills\"),\n            join(this.cwd, CONFIG_DIR_NAME, \"prompts\"),\n            join(this.cwd, CONFIG_DIR_NAME, \"themes\"),\n            join(this.cwd, CONFIG_DIR_NAME, \"extensions\"),\n        ];",
+          "new": "        const projectRoots = getProjectConfigDirs(this.cwd).flatMap(base =>\n            [\"skills\", \"prompts\", \"themes\", \"extensions\"].map(kind => join(base, kind)));"
+        },
+        {
+          "old": "const defaultDirs = [join(this.agentDir, \"themes\"), join(this.cwd, CONFIG_DIR_NAME, \"themes\")];",
+          "new": "const defaultDirs = [join(this.agentDir, \"themes\"), ...getProjectConfigDirs(this.cwd).map(base => join(base, \"themes\"))];"
+        },
+        {
+          "old": "const projectPath = join(this.cwd, CONFIG_DIR_NAME, \"SYSTEM.md\");",
+          "new": "const projectPath = getProjectConfigPath(this.cwd, \"SYSTEM.md\");"
+        },
+        {
+          "old": "const projectPath = join(this.cwd, CONFIG_DIR_NAME, \"APPEND_SYSTEM.md\");",
+          "new": "const projectPath = getProjectConfigPath(this.cwd, \"APPEND_SYSTEM.md\");"
         }
       ]
     },
     {
       "path": "dist/core/agent-session.js",
       "before": "476722dd363a0347049d450b5a0c67386cf156ecae2b039676962aa00a857161",
-      "after": "5075c356727c1370cc7b4d75a17bf9d5ddf82d8d9bfa4edd5187c8285387529b",
+      "after": "9c209135b546a748b96196cb72b16b600adc8629f9d71c85ea3595eeae320cf5",
       "edits": [
         {
           "old": "    async reload(options) {",
           "new": "    refreshSkills() {\n        if (!this.isIdle) throw new Error(\"skills_busy\");\n        if (typeof this._resourceLoader.refreshSkills !== \"function\") throw new Error(\"skills_refresh_unsupported\");\n        const changed = this._resourceLoader.refreshSkills();\n        if (changed) this._rebuildSystemPrompt(this.getActiveToolNames());\n        return { changed };\n    }\n    async reload(options) {"
+        },
+        {
+          "old": "import { readFileSync } from \"node:fs\";",
+          "new": "import { acceptRecovery, finishRecovery, invalidateRecoveryGeneration, recordRecoveryCheckpoint, recoveryState, recoveryOperation, recoveryTranscript } from \"./shepherd-checkpoint-recovery.js\";\nimport { readFileSync } from \"node:fs\";"
+        },
+        {
+          "old": "    async _runAgentPrompt(messages) {",
+          "new": "    async _runAgentPrompt(messages, recoveredFailure) {"
+        },
+        {
+          "old": "        this._failedResponse = undefined;\n        this._recordSelection();",
+          "new": "        this._failedResponse = recoveredFailure;\n        this._recordSelection();"
+        },
+        {
+          "old": "            await this.agent.prompt(messages);",
+          "new": "            if (messages === undefined) await this.agent.continue();\n            else await this.agent.prompt(messages);"
+        },
+        {
+          "old": "    async prompt(text, options) {",
+          "new": "    _recoveryPrompts = 0;\n    async prompt(text, options) {\n        this._recoveryPrompts++;\n        try { return await this._prompt(text, options); }\n        finally { this._recoveryPrompts--; }\n    }\n    async _prompt(text, options) {"
+        },
+        {
+          "old": "    async _runAgentPrompt(messages, recoveredFailure) {",
+          "new": "    getRecoveryState() {\n        return recoveryState(this, this._cwd);\n    }\n    getRecoveryOperation(operationID) { return recoveryOperation(this, operationID); }\n    getRecoveryTranscript() { return recoveryTranscript(this); }\n    recoverCheckpoint(token, operationID) {\n        const accepted = acceptRecovery(this, token, operationID, this._cwd);\n        if (accepted.replay) return accepted.receipt;\n        const failed = this.sessionManager.getEntry(accepted.receipt.failedEntryID).message;\n        try { this._omitRecoveryAttempt(failed); }\n        catch (error) {\n            finishRecovery(this, accepted.receipt, \"unknown\", String(error));\n            throw error;\n        }\n        // This is an SDK-owned run, not an extension mutating Agent.state or inventing input.\n        this._runAgentPrompt(undefined, failed).then(() => {\n            finishRecovery(this, accepted.receipt, \"settled\");\n        }, error => {\n            finishRecovery(this, accepted.receipt, \"unknown\", String(error));\n            this._emit({ type: \"extension_error\", extensionPath: \"checkpoint-recovery\", event: \"recovery\", error: String(error) });\n        });\n        return accepted.receipt;\n    }\n    async _runAgentPrompt(messages, recoveredFailure) {"
+        },
+        {
+          "old": "    async _runAgentPrompt(messages, recoveredFailure) {\n        this._agentRunAbortRequested = false;",
+          "new": "    async _runAgentPrompt(messages, recoveredFailure) {\n        const recoverySessionID = this.sessionId;\n        this._agentRunAbortRequested = false;"
+        },
+        {
+          "old": "            this._failedResponse = undefined;\n            this._runSystemPromptOptions = undefined;",
+          "new": "            recordRecoveryCheckpoint(this, recoverySessionID, Boolean(this._runSystemPromptOptions?.forceSystemPrompt), this._cwd);\n            this._failedResponse = undefined;\n            this._runSystemPromptOptions = undefined;"
+        },
+        {
+          "old": "            // Update finalized context from the canonical session projection.\n            this._refreshFinalizedContext();",
+          "new": "            // Update finalized context from the canonical session projection.\n            invalidateRecoveryGeneration(this);\n            this._refreshFinalizedContext();"
+        },
+        {
+          "old": "    dispose() {\n        try {",
+          "new": "    dispose() {\n        invalidateRecoveryGeneration(this, true);\n        try {"
+        },
+        {
+          "old": "    async setModel(model, options = {}) {\n",
+          "new": "    async setModel(model, options = {}) {\n        invalidateRecoveryGeneration(this);\n"
+        },
+        {
+          "old": "    setThinkingLevel(level, options = {}) {\n",
+          "new": "    setThinkingLevel(level, options = {}) {\n        invalidateRecoveryGeneration(this);\n"
         }
       ]
     },
     {
       "path": "dist/modes/rpc/rpc-mode.js",
       "before": "631697cd35928fc827f4a423538c43ff227b8cbf63c2a2f11060616f55eba6db",
-      "after": "6b364eaf366cf321c24ec8b481cf2cd4306927560cd73bc9c8abf8110327b5a7",
+      "after": "1fcece78edc3bcd70ee3f1e69f7ec07bf7287919bc80e52db01b1c12f69cf46a",
       "edits": [
         {
           "old": "    // Handle a single command",
@@ -63,6 +501,34 @@
         {
           "old": "        await runtimeHost.dispose();",
           "new": "        stopSkillWatch?.();\n        await runtimeHost.dispose();"
+        },
+        {
+          "old": "    await rebindSession();\n    registerSignalHandlers();\n",
+          "new": ""
+        },
+        {
+          "old": "    const handleInputLine = async (line) => {",
+          "new": "    // Startup dialogs need stdin before session_start completes. Other commands stay gated.\n    const startup = rebindSession();\n    registerSignalHandlers();\n    const handleInputLine = async (line) => {"
+        },
+        {
+          "old": "        try {\n            const response = await handleCommand(command);",
+          "new": "        try {\n            await startup;\n            const response = await handleCommand(command);"
+        },
+        {
+          "old": "    // Keep process alive forever",
+          "new": "    await startup;\n    // Keep process alive forever"
+        },
+        {
+          "old": "        switch (command.type) {",
+          "new": "        switch (command.type) {\n            case \"recover_checkpoint\": {\n                if (pendingExtensionRequests.size || skillRefreshPrompts) return error(id, command.type, \"recovery_busy\");\n                return success(id, command.type, session.recoverCheckpoint(command.token, command.operationID));\n            }\n            case \"get_recovery_operation\": {\n                return success(id, command.type, { receipt: session.getRecoveryOperation(command.operationID) ?? null });\n            }"
+        },
+        {
+          "old": "                    pendingMessageCount: session.pendingMessageCount,",
+          "new": "                    pendingMessageCount: session.pendingMessageCount,\n                    checkpointRecovery: pendingExtensionRequests.size || skillRefreshPrompts ? { version: 1, refusal: \"recovery_busy\" } : session.getRecoveryState(),"
+        },
+        {
+          "old": "return success(id, \"get_messages\", { messages: session.messages });",
+          "new": "return success(id, \"get_messages\", { messages: command.history === true ? session.getRecoveryTranscript() : session.messages });"
         }
       ]
     },
@@ -77,9 +543,80 @@
         {
           "old": "function collectSkillEntries(dir, mode, ignoreMatcher, rootDir) {",
           "new": "export { addIgnoreRules as addSkillWatchIgnoreRules };\nfunction collectSkillEntries(dir, mode, ignoreMatcher, rootDir) {"
+        },
+        {
+          "old": "            addResources(\"prompts\", collectAutoPromptEntries(projectDirs.prompts), projectMetadata, projectOverrides.prompts, projectBaseDir);",
+          "new": "            addResources(\"prompts\", collectAutoPromptEntries(projectDirs.prompts), projectMetadata, projectOverrides.prompts, projectBaseDir);\n            // Spec Kit and other Pi integrations install project prompts under .pi/prompts.\n            // Keep Shepherd first for name collisions; apply Shepherd's project overrides to both.\n            if (CONFIG_DIR_NAME !== \".pi\") {\n                const piBaseDir = join(this.cwd, \".pi\");\n                addResources(\"prompts\", collectAutoPromptEntries(join(piBaseDir, \"prompts\")),\n                    { ...projectMetadata, baseDir: piBaseDir }, projectOverrides.prompts, projectBaseDir);\n            }"
+        },
+        {
+          "old": "import { CONFIG_DIR_NAME }",
+          "new": "import { CONFIG_DIR_NAME, getProjectConfigDirs, getProjectConfigPath }"
+        },
+        {
+          "old": "        const projectBase = join(this.cwd, CONFIG_DIR_NAME);",
+          "new": "        const projectBase = dirname(getProjectConfigPath(this.cwd, \"settings.json\"));"
+        },
+        {
+          "old": "            add(join(projectBase, \"skills\"), project, projectBase);",
+          "new": "            for (const base of getProjectConfigDirs(this.cwd)) add(join(base, \"skills\"), project, projectBase);"
+        },
+        {
+          "old": "        const projectBaseDir = join(this.cwd, CONFIG_DIR_NAME);",
+          "new": "        const projectBaseDir = dirname(getProjectConfigPath(this.cwd, \"settings.json\"));"
+        },
+        {
+          "old": "        const projectDirs = {\n            extensions: join(projectBaseDir, \"extensions\"),\n            skills: join(projectBaseDir, \"skills\"),\n            prompts: join(projectBaseDir, \"prompts\"),\n            themes: join(projectBaseDir, \"themes\"),\n        };\n",
+          "new": ""
+        },
+        {
+          "old": "        if (projectTrusted) {\n            // Project extensions from .pi/\n            addResources(\"extensions\", collectAutoExtensionEntries(projectDirs.extensions), projectMetadata, projectOverrides.extensions, projectBaseDir);\n            // Project skills from .pi/\n            addResources(\"skills\", collectAutoSkillEntries(projectDirs.skills, \"pi\"), projectMetadata, projectOverrides.skills, projectBaseDir);\n        }",
+          "new": "        if (projectTrusted) {\n            for (const baseDir of getProjectConfigDirs(this.cwd)) {\n                const metadata = { ...projectMetadata, baseDir };\n                const extensions = collectAutoExtensionEntries(join(baseDir, \"extensions\"))\n                    .filter(path => getProjectConfigPath(this.cwd, relative(baseDir, path)) === path);\n                addResources(\"extensions\", extensions, metadata, projectOverrides.extensions, projectBaseDir);\n                addResources(\"skills\", collectAutoSkillEntries(join(baseDir, \"skills\"), \"pi\"), metadata, projectOverrides.skills, projectBaseDir);\n                addResources(\"prompts\", collectAutoPromptEntries(join(baseDir, \"prompts\")), metadata, projectOverrides.prompts, projectBaseDir);\n                addResources(\"themes\", collectAutoThemeEntries(join(baseDir, \"themes\")), metadata, projectOverrides.themes, projectBaseDir);\n            }\n        }"
+        },
+        {
+          "old": "        if (projectTrusted) {\n            addResources(\"prompts\", collectAutoPromptEntries(projectDirs.prompts), projectMetadata, projectOverrides.prompts, projectBaseDir);\n            // Spec Kit and other Pi integrations install project prompts under .pi/prompts.\n            // Keep Shepherd first for name collisions; apply Shepherd's project overrides to both.\n            if (CONFIG_DIR_NAME !== \".pi\") {\n                const piBaseDir = join(this.cwd, \".pi\");\n                addResources(\"prompts\", collectAutoPromptEntries(join(piBaseDir, \"prompts\")),\n                    { ...projectMetadata, baseDir: piBaseDir }, projectOverrides.prompts, projectBaseDir);\n            }\n            addResources(\"themes\", collectAutoThemeEntries(projectDirs.themes), projectMetadata, projectOverrides.themes, projectBaseDir);\n        }\n",
+          "new": ""
+        },
+        {
+          "old": "return join(this.cwd, CONFIG_DIR_NAME, \"npm\");",
+          "new": "return getProjectConfigPath(this.cwd, \"npm\");"
+        },
+        {
+          "old": "return join(this.cwd, CONFIG_DIR_NAME, \"npm\", \"node_modules\", source.name);",
+          "new": "return getProjectConfigPath(this.cwd, \"npm\", \"node_modules\", source.name);"
+        },
+        {
+          "old": "return this.resolveManagedPath(installRoot, source.host, source.path);",
+          "new": "const installed = this.resolveManagedPath(installRoot, source.host, source.path);\n        return scope === \"project\" ? getProjectConfigPath(this.cwd, \"git\", relative(installRoot, installed)) : installed;"
+        },
+        {
+          "old": "return join(this.cwd, CONFIG_DIR_NAME, \"git\");",
+          "new": "return getProjectConfigPath(this.cwd, \"git\");"
+        },
+        {
+          "old": "return join(this.cwd, CONFIG_DIR_NAME);",
+          "new": "return dirname(getProjectConfigPath(this.cwd, \"settings.json\"));"
         }
       ],
-      "after": "edc0f0b76dcd1b689c68b08d4ec8867d0942e88e1e0824b2eb2e0d7446591b7f"
+      "after": "9af7ec14c496a0d02c5e0763a69ea28e39e19e078cd16ef173082e02b4074375"
+    },
+    {
+      "path": "dist/core/trust-manager.js",
+      "before": "ce8644574983b5f8a04059545305b63463557cdf8d09049c35590cb937a70c76",
+      "after": "f537a1aeb59ff35f87986ecf0d1d05329ee2df14295eb74ee65c90dd46c27f30",
+      "edits": [
+        {
+          "old": "    const configDir = join(currentDir, CONFIG_DIR_NAME);",
+          "new": "    // Pi-compatible prompts require the same project approval as Shepherd resources.\n    if (CONFIG_DIR_NAME !== \".pi\" && existsSync(join(currentDir, \".pi\", \"prompts\"))) {\n        return true;\n    }\n    const configDir = join(currentDir, CONFIG_DIR_NAME);"
+        },
+        {
+          "old": "import { CONFIG_DIR_NAME }",
+          "new": "import { CONFIG_DIR_NAME, getProjectConfigDirs }"
+        },
+        {
+          "old": "    // Pi-compatible prompts require the same project approval as Shepherd resources.\n    if (CONFIG_DIR_NAME !== \".pi\" && existsSync(join(currentDir, \".pi\", \"prompts\"))) {\n        return true;\n    }\n    const configDir = join(currentDir, CONFIG_DIR_NAME);\n    if (TRUST_REQUIRING_PROJECT_CONFIG_RESOURCES.some((entry) => existsSync(join(configDir, entry)))) {",
+          "new": "    if (getProjectConfigDirs(currentDir).some(configDir =>\n        TRUST_REQUIRING_PROJECT_CONFIG_RESOURCES.some(entry => existsSync(join(configDir, entry))))) {"
+        }
+      ]
     },
     {
       "path": "dist/core/shepherd-skill-watch.js",
@@ -209,6 +746,170 @@
           "new": "let client=this.client??this.connectingClient;this.client=void 0,await client?.close()"
         }
       ]
+    },
+    {
+      "path": "dist/core/agent-session.d.ts",
+      "before": "2e50b35a37f9c7149c6297ae554b2d965bd74dbfcb8ccd7be44f13226ce497e7",
+      "after": "2b5f08ee2001fe819e42ed306bfb730e4e3d6b1f3ee114154f06f3bd789f7ed1",
+      "edits": [
+        {
+          "old": "    get messages(): AgentMessage[];",
+          "new": "    get messages(): AgentMessage[];\n    /** New provider request from an exact settled checkpoint, never synthetic user input. */\n    getRecoveryState(): import(\"./shepherd-checkpoint-recovery.js\").CheckpointRecoveryState;\n    getRecoveryOperation(operationID: string): import(\"./shepherd-checkpoint-recovery.js\").CheckpointRecoveryReceipt | undefined;\n    getRecoveryTranscript(): AgentMessage[];\n    recoverCheckpoint(token: string, operationID: string): import(\"./shepherd-checkpoint-recovery.js\").CheckpointRecoveryReceipt;"
+        }
+      ]
+    },
+    {
+      "path": "dist/core/shepherd-checkpoint-recovery.js",
+      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "034e9ff4581f3e795afc26ac9907cb6cd44bd8e8bc8b369d5d8a48131acc897b",
+      "source": "checkpoint-recovery.js"
+    },
+    {
+      "path": "dist/modes/rpc/rpc-types.d.ts",
+      "before": "68b6dc2e47a3969c09c961a40d0462473407b6786f3bd02715fa035e816e2af1",
+      "after": "1e63ef117fa96b32ee676290e55d6f0c4d127eea8d043ee5302b311582b63da1",
+      "edits": [
+        {
+          "old": "export type RpcCommand = {",
+          "new": "export type RpcCommand = {\n    id?: string;\n    type: \"recover_checkpoint\";\n    token: string;\n    operationID: string;\n} | {\n    id?: string;\n    type: \"get_recovery_operation\";\n    operationID: string;\n} | {"
+        },
+        {
+          "old": "    type: \"get_messages\";",
+          "new": "    type: \"get_messages\";\n    history?: boolean;"
+        },
+        {
+          "old": "    pendingMessageCount: number;",
+          "new": "    pendingMessageCount: number;\n    checkpointRecovery?: import(\"../../core/shepherd-checkpoint-recovery.js\").CheckpointRecoveryState;"
+        },
+        {
+          "old": "export type RpcResponse = {",
+          "new": "export type RpcResponse = {\n    id?: string;\n    type: \"response\";\n    command: \"recover_checkpoint\";\n    success: true;\n    data: import(\"../../core/shepherd-checkpoint-recovery.js\").CheckpointRecoveryReceipt;\n} | {\n    id?: string;\n    type: \"response\";\n    command: \"get_recovery_operation\";\n    success: true;\n    data: { receipt: import(\"../../core/shepherd-checkpoint-recovery.js\").CheckpointRecoveryReceipt | null };\n} | {"
+        }
+      ]
+    },
+    {
+      "path": "dist/core/shepherd-checkpoint-recovery.d.ts",
+      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "9e0be7c336d60bc54de3bb9f04904203d1715caefb20412123d12e7c7bd9cdc2",
+      "source": "checkpoint-recovery.d.ts"
+
+    },
+    {
+      "path": "dist/extensions/mcp/index.js",
+      "before": "1c4ee9b558a158ad88ebab5e1f6b267e53a09f4a49547481a6371d38502f47ad",
+      "after": "d6bb44605cdc80f705910ae337dd349c14c92193a50af275a2d8eeb0060c7734",
+      "edits": [
+        {
+          "old": "import { getAgentDir } from \"../../config.js\";",
+          "new": "import { getAgentDir, getProjectConfigDirs } from \"../../config.js\";\nimport { watchSkillPaths } from \"../../core/shepherd-skill-watch.js\";"
+        },
+        {
+          "old": "            sessionCwd = ctx.cwd;\n",
+          "new": "            sessionCwd = ctx.cwd;\n            watchConfig(ctx);\n"
+        },
+        {
+          "old": "        pi.on(\"session_shutdown\", async () => {\n            sessionActive = false;\n",
+          "new": "        // Shepherd: `mcp.json` edits (Settings, a sign-in's setup, a git pull) apply to the running session.\n        // Changed or removed servers close and withdraw their tools; new ones connect; unchanged ones keep\n        // their connection. Native file events only, never polling; trust is the session's own decision.\n        let stopConfigWatch;\n        const serverKey = (server) => JSON.stringify([server.entry.name, server.entry.scope, server.entry.source, server.entry.config, server.registeredConfig ?? null]);\n        const reloadConfig = async (ctx) => {\n            if (!sessionActive)\n                return;\n            const current = generation;\n            const loaded = defaultLoadConfig(ctx);\n            configErrors = loaded.errors;\n            autoEnableCodemode = loaded.autoEnableCodemode ?? true;\n            configuredEntries = loaded.servers;\n            const registered = registeredServers();\n            overridden = registered.overridden;\n            const kept = new Map(servers.map((server) => [serverKey(server), server]));\n            const next = [...loaded.servers.map((entry) => ({ entry })), ...registered.servers]\n                .map((server) => kept.get(serverKey(server)) ?? server);\n            const removed = servers.filter((server) => !next.includes(server));\n            const added = next.filter((server) => !servers.includes(server));\n            if (removed.length === 0 && added.length === 0)\n                return;\n            servers = next;\n            for (const server of removed)\n                hideTools(server.entry.name);\n            emitChange();\n            ensureDiscoveryActive(ctx);\n            await Promise.all(removed.map((server) => server.connection?.close().catch(() => undefined)));\n            const connecting = added.filter(isEnabled);\n            if (current !== generation || connecting.length === 0)\n                return;\n            await Promise.all(connecting.map((server) => startConnection(server, () => current === generation)));\n            if (current !== generation) {\n                await Promise.all(connecting.map((server) => server.connection?.close()));\n                return;\n            }\n            ensureDiscoveryActive(ctx);\n            reportProblems(ctx, connecting);\n        };\n        const watchConfig = (ctx) => {\n            stopConfigWatch?.();\n            stopConfigWatch = undefined;\n            if (options.loadConfig)\n                return;\n            const paths = [join(getAgentDir(), \"mcp.json\"),\n                ...(ctx.isProjectTrusted() ? getProjectConfigDirs(ctx.cwd).map((base) => join(base, \"mcp.json\")) : [])];\n            let reloading = Promise.resolve();\n            const changed = () => {\n                reloading = reloading.then(() => reloadConfig(ctx)).catch((error) => {\n                    try {\n                        ctx.ui.notify(`MCP failed to reload: ${errorMessage(error)}`, \"error\");\n                    }\n                    catch { }\n                });\n            };\n            try {\n                stopConfigWatch = watchSkillPaths(paths, changed, () => undefined);\n            }\n            catch { }\n        };\n        pi.on(\"session_shutdown\", async () => {\n            stopConfigWatch?.();\n            stopConfigWatch = undefined;\n            sessionActive = false;\n"
+        }
+      ]
+    },
+    {
+      "path": "node_modules/@earendil-works/pi-ai/dist/auth/oauth/anthropic.js",
+      "before": "80fc4412ce09d42d678f5094932f3e58eecec53df40c4530fc4f55651a57d0a4",
+      "after": "3f2f5dda5201cfd6a9e7419851ab4f51824fd9d61489c6300ae0db454d019d1c",
+      "edits": [
+        {
+          "old": "export const anthropicOAuth = {",
+          "new": "export { anthropicOAuth } from \"../../api/shepherd-anthropic-oauth.js\";\nconst nativeAnthropicOAuth = {"
+        }
+      ]
+    },
+    {
+      "path": "dist/bundle/chunks/anthropic.js",
+      "before": "ef7155d2bf92a2cb82f51cd26a1a93fb25e5660cae20082e8c55e293c7de45b8",
+      "after": "ae5467705b576b0bd1004949c2a7e368df7337aefef061940744982d235d692b",
+      "edits": [
+        {
+          "old": "import { createRequire as __piCreateRequire } from \"node:module\"; const require = __piCreateRequire(import.meta.url);",
+          "new": "import { createRequire as __piCreateRequire } from \"node:module\"; const require = __piCreateRequire(import.meta.url);\nimport { anthropicOAuth } from \"./shepherd-anthropic-oauth.js\";"
+        },
+        {
+          "old": "var anthropicOAuth={",
+          "new": "var nativeAnthropicOAuth={"
+        }
+      ]
+    },
+    {
+      "path": "node_modules/@earendil-works/pi-ai/dist/api/shepherd-anthropic-oauth.js",
+      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "397d0e143356da4743f90d57028e51ef70583f230578e3f6fd672eaa6c10c190",
+      "source": "anthropic-oauth.js"
+    },
+    {
+      "path": "node_modules/@earendil-works/pi-ai/dist/api/anthropic-oauth/convert.js",
+      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "0aad2a5a71627d8e5c0694804db2b2c0d10b631da0aa1bfec82be38dd107fe6f",
+      "source": "anthropic-oauth/convert.js"
+    },
+    {
+      "path": "node_modules/@earendil-works/pi-ai/dist/api/anthropic-oauth/stream.js",
+      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "3f46bb6a07338dc84a7b5dbd860d971bf1bdb98f726928dea89943e76e7c1a64",
+      "source": "anthropic-oauth/stream.js"
+    },
+    {
+      "path": "node_modules/@earendil-works/pi-ai/dist/api/anthropic-oauth/auth.js",
+      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "20e4f6035f7f3e01d807366a2dcb43f6da1f03b34a2d5684114b07ae7efc4906",
+      "source": "anthropic-oauth/auth.js"
+    },
+    {
+      "path": "node_modules/@earendil-works/pi-ai/dist/api/anthropic-oauth/version.js",
+      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "08945730a660d9a4d10e1d349f003422ddc44dbee4ebc6771af6933c2f75c259",
+      "source": "anthropic-oauth/version.js"
+    },
+    {
+      "path": "node_modules/@earendil-works/pi-ai/dist/api/anthropic-oauth/prompt.js",
+      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "041bbcb40bfe1183e2431b0090ccf90f025765f290005c2d8985c437041bbc24",
+      "source": "anthropic-oauth/prompt.js"
+    },
+    {
+      "path": "dist/bundle/chunks/shepherd-anthropic-oauth.js",
+      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "397d0e143356da4743f90d57028e51ef70583f230578e3f6fd672eaa6c10c190",
+      "source": "anthropic-oauth.js"
+    },
+    {
+      "path": "dist/bundle/chunks/anthropic-oauth/convert.js",
+      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "0aad2a5a71627d8e5c0694804db2b2c0d10b631da0aa1bfec82be38dd107fe6f",
+      "source": "anthropic-oauth/convert.js"
+    },
+    {
+      "path": "dist/bundle/chunks/anthropic-oauth/stream.js",
+      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "3f46bb6a07338dc84a7b5dbd860d971bf1bdb98f726928dea89943e76e7c1a64",
+      "source": "anthropic-oauth/stream.js"
+    },
+    {
+      "path": "dist/bundle/chunks/anthropic-oauth/auth.js",
+      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "20e4f6035f7f3e01d807366a2dcb43f6da1f03b34a2d5684114b07ae7efc4906",
+      "source": "anthropic-oauth/auth.js"
+    },
+    {
+      "path": "dist/bundle/chunks/anthropic-oauth/version.js",
+      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "08945730a660d9a4d10e1d349f003422ddc44dbee4ebc6771af6933c2f75c259",
+      "source": "anthropic-oauth/version.js"
+    },
+    {
+      "path": "dist/bundle/chunks/anthropic-oauth/prompt.js",
+      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "041bbcb40bfe1183e2431b0090ccf90f025765f290005c2d8985c437041bbc24",
+      "source": "anthropic-oauth/prompt.js"
     }
   ]
 }

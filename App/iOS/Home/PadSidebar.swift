@@ -4,19 +4,29 @@ import ShepherdRemote
 
 /// The iPad sidebar (iPadThread, iPadSidebar, iPadHosts boards; home track): New thread,
 /// Designs (while a host serves them, DesignPad/), Automations and More (which expands in place
-/// to Hosts and Extensions), Needs you with each item's reason, Recents with their hosts and the
-/// designs among them, and a footer with the hosts and Settings.
+/// to Hosts and Extensions), Needs you with each item's reason, automation runs, then the Mac
+/// sidebar's Working, Done (with Mark all seen) and Pinned (`SidebarThreads`), Recents with their
+/// hosts and the designs among them, and a footer with the hosts and Settings. A thread row's
+/// long press is the Mac's row menu (`ThreadRowMenu`).
 struct PadSidebar: View {
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
     /// More's sub-rows show (iPadHosts); kept per window.
     @SceneStorage("shepherd.ios.sidebar.moreExpanded") private var moreExpanded = false
+    @Environment(MobileProjects.self) private var projects
+
+    private var projectsTrailing: NWListRow.Trailing {
+        let needsYou = projects.rows.reduce(0) { $0 + $1.needsYou }
+        if needsYou > 0 { return .alert("\(needsYou) needs you") }
+        return projects.rows.isEmpty ? .none : .value(String(projects.rows.count))
+    }
 
     var body: some View {
         let feed = HomeFeed.of(hosts)
         let model = feed.model
         let designs = PadDesigns.of(hosts)
-        let recents = designs.recents(model.recents)
+        let groups = SidebarThreads.of(hosts).groups(model)
+        let recents = designs.recents(groups.recents)
         let selected = navigator.selectedThread
         let pushed = navigator.padPath.last
         ScrollView {
@@ -28,6 +38,10 @@ struct PadSidebar: View {
                     SidebarItem("Designs", leading: .symbol("pencil.tip"), selected: pushed?.isPadDesign == true) {
                         PadDesignHooks.openList(navigator: navigator)
                     }
+                }
+                SidebarItem("Projects", leading: .symbol("square.stack.3d.up"), selected: pushed?.isProjects == true,
+                            trailing: projectsTrailing) {
+                    navigator.open(.projects(.list))
                 }
                 SidebarItem("Automations", leading: .symbol("bolt"), selected: pushed == .home(.automations),
                             trailing: model.automations.isEmpty ? .none : .value(String(model.automations.count))) {
@@ -57,19 +71,12 @@ struct PadSidebar: View {
                     }
                     .nwTransition(.content)
                 }
-                if !model.needsYou.isEmpty {
-                    SidebarHeader(title: "Needs you", attention: true, count: model.needsYou.count) {
+                if !groups.needsYou.isEmpty {
+                    SidebarHeader(title: "Needs you", attention: true, count: groups.needsYou.count) {
                         navigator.open(.home(.needsYou))
                     }
-                    ForEach(model.needsYou) { item in
-                        Button { navigator.open(item.route) } label: {
-                            AttentionRow(item: item, selected: pushed == item.route || item.ref.agentRef == selected,
-                                         compact: true)
-                                .equatable()
-                                .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
-                        }
-                        .buttonStyle(.nwRow(radius: NW.Radius.m))
-                        .contextMenu { OpenInNewWindowButton(thread: item.ref.agentRef) }
+                    ForEach(groups.needsYou) { item in
+                        attentionRow(item, pushed: pushed, selected: selected)
                     }
                 }
                 // Automation runs have their own group, never among Recents; its header opens the Automations screen.
@@ -88,7 +95,30 @@ struct PadSidebar: View {
                                     .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
                             }
                             .buttonStyle(.nwRow(radius: NW.Radius.m))
-                            .contextMenu { OpenInNewWindowButton(thread: run.agentRef) }
+                            .contextMenu { AutomationRunMenu(row: row) }
+                        }
+                    }
+                }
+                // The Mac's Working, Done and Pinned, in its order (docs/design/sidebar.md).
+                if !groups.working.isEmpty {
+                    SidebarHeader(title: "Working", count: groups.working.count)
+                    ForEach(groups.working) { row in threadRow(row, selected: selected) }
+                }
+                if !groups.done.isEmpty {
+                    HStack(alignment: .bottom, spacing: 0) {
+                        SidebarHeader(title: "Done", count: groups.done.count)
+                        MarkAllSeenChip(rows: groups.done)
+                    }
+                    ForEach(groups.done) { row in threadRow(row, selected: selected) }
+                }
+                if !groups.pinned.isEmpty {
+                    SidebarHeader(title: "Pinned", count: groups.pinned.count)
+                    ForEach(groups.pinned) { pinned in
+                        VStack(spacing: 0) {
+                            switch pinned {
+                            case .thread(let row): threadRow(row, selected: selected)
+                            case .attention(let item): attentionRow(item, pushed: pushed, selected: selected)
+                            }
                         }
                     }
                 }
@@ -99,13 +129,7 @@ struct PadSidebar: View {
                         VStack(spacing: 0) {
                             switch recent {
                             case .thread(let row):
-                                Button { navigator.open(.thread(row.ref.agentRef)) } label: {
-                                    ThreadRow(row: row, selected: row.ref.agentRef == selected, compact: true)
-                                        .equatable()
-                                        .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
-                                }
-                                .buttonStyle(.nwRow(radius: NW.Radius.m))
-                                .contextMenu { OpenInNewWindowButton(thread: row.ref.agentRef) }
+                                threadRow(row, selected: selected)
                             case .design(let row):
                                 Button { PadDesignHooks.open(row.ref, navigator: navigator) } label: {
                                     PadDesignRecentRow(row: row, selected: pushed == .padDesign(.design(row.ref)))
@@ -140,6 +164,26 @@ struct PadSidebar: View {
                 Button("Search", systemImage: "magnifyingglass") { SearchHooks.open(navigator: navigator) }
             }
         }
+    }
+
+    private func threadRow(_ row: FleetThreadRow, selected: AgentRef?) -> some View {
+        Button { navigator.open(.thread(row.ref.agentRef)) } label: {
+            ThreadRow(row: row, selected: row.ref.agentRef == selected, compact: true)
+                .equatable()
+                .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+        }
+        .buttonStyle(.nwRow(radius: NW.Radius.m))
+        .contextMenu { ThreadRowMenu(thread: row.ref.agentRef) }
+    }
+
+    private func attentionRow(_ item: FleetAttention, pushed: MobileRoute?, selected: AgentRef?) -> some View {
+        Button { navigator.open(projects.route(item)) } label: {
+            AttentionRow(item: item, selected: pushed == item.route || item.ref.agentRef == selected, compact: true)
+                .equatable()
+                .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+        }
+        .buttonStyle(.nwRow(radius: NW.Radius.m))
+        .contextMenu { ThreadRowMenu(thread: item.ref.agentRef) }
     }
 }
 

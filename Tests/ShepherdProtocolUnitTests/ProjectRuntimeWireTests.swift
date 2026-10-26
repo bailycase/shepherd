@@ -9,6 +9,9 @@ struct ProjectRuntimeWireTests {
     static let space = SpaceID(rawValue: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
     static let operation = UUID(uuidString: "cccccccc-cccc-4ccc-8ccc-cccccccccccc")!
     @Test(arguments: [ProjectRuntimeRequest.conversation, .read,
+                      .worker(taskID: task), .inspect(taskID: task), .inspect(taskID: task, operationID: operation),
+                      .history(), .history(taskID: task, beforeSequence: 42, includeBodies: true),
+                      .result(taskID: task, operationID: operation, offset: 8190, sha256: "exact-content-digest"),
                       .answer(operationID: operation, taskID: task, questionEventID: operation, humanReplyID: operation, answer: .select(value: "Allow")),
                       .answer(operationID: operation, taskID: task, questionEventID: operation, humanReplyID: operation, answer: .confirm(value: true)),
                       .answer(operationID: operation, taskID: task, questionEventID: operation, humanReplyID: operation, answer: .input(value: "")),
@@ -20,7 +23,9 @@ struct ProjectRuntimeWireTests {
                       .message(operationID: operation, text: "", images: [.init(mimeType: "image/png", data: Data([1, 2, 3]))]),
                       .assign(operationID: operation, spaceID: space, title: "Task", prompt: "Assigned"),
                       .followUp(taskID: task, operationID: operation, text: "Follow up"),
-                      .resolve(taskID: task), .reopen(taskID: task), .pause, .resume])
+                      .resolve(taskID: task), .reopen(taskID: task), .pause, .resume,
+                      .recordOutcome(operationID: operation, taskID: task, taskOperationID: operation, kind: .needsChanges),
+                      .recordOutcome(operationID: operation, taskID: task, taskOperationID: operation, kind: .merged, evidence: "PR #12")])
     func everyLocalActionRoundTrips(_ request: ProjectRuntimeRequest) throws {
         #expect(try Wire.roundTrip(request) == request)
     }
@@ -42,6 +47,19 @@ struct ProjectRuntimeWireTests {
         #expect(project.settings.allowedHosts == [.local] && project.settings.hostPolicy == .selected)
         project.spaceProposals = [.init(id: Self.operation, operationID: Self.operation, path: "/source", displayPath: "/source", phase: .denied)]
         #expect(try Wire.roundTrip(project) == project)
+    }
+
+    @Test func oldInspectShapeAndNewResultDescriptorRoundTrip() throws {
+        let old = Data("{\"inspect\":{\"taskID\":\"\(Self.task)\"}}".utf8)
+        #expect(try JSONDecoder().decode(ProjectRuntimeRequest.self, from: old) == .inspect(taskID: Self.task))
+        var project = Project(name: "Owner")
+        let source = ProjectEventSource(kind: .settled, taskID: Self.task, operationID: Self.operation, workerAgentID: AgentID(), sessionID: "session", generation: "generation")
+        let identity = ProjectResultIdentity(ownerID: project.ownerID, projectID: project.id, eventID: Self.operation, source: source, host: .local, deliveryID: Self.operation, observedProjectRevision: 7)
+        project.resultPage = .init(identity: identity, availability: .complete, totalBytes: 4, sha256: "digest", data: Data("done".utf8), stopReason: "stop")
+        #expect(try Wire.roundTrip(RemoteReply.logicalProjectRuntime(id: 7, result: .project(project))) == .logicalProjectRuntime(id: 7, result: .project(project)))
+        let extensionFrame = ExtensionMessage.projectRuntime(id: 8, agentID: source.workerAgentID, projectID: project.id, expectedRevision: 7, request: .result(taskID: Self.task, operationID: Self.operation, offset: 0, sha256: nil))
+        let decoded = try Wire.roundTrip(extensionFrame)
+        #expect(extensionFrame.replyID == 8 && extensionFrame.speaksFor == source.workerAgentID && decoded == extensionFrame)
     }
 
     @Test func olderMessageWireAndStoredMessageDefaultImagesToNil() throws {

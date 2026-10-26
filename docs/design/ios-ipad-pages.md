@@ -56,10 +56,10 @@ The sidebar's Needs you head opens the list beside the chosen item's detail, one
 its full context.
 
 - **List:** 380pt wide on the board (the app 360), a 1px `lineSubtle` trailing edge. Its header:
-  "Needs you" (17/600) with "5 waiting" at 12.5 `textTertiary` (the app puts "3 things are
-  waiting on you" at the list's top). Items (10pt inset, 2pt apart; `NWAttentionCard(style:
+  "Needs you" (17/600) with "5 waiting" at 12.5 `textTertiary`, leading the bar. Items (10pt inset, 2pt apart; `NWAttentionCard(style:
   .item)`: no line, the app's radius 8): 12pt inset at radius 10, the chosen one on `bgSelected`: the origin line (a 14pt `lanternText` glyph or a glowing 8pt dot,
-  "Thread" at 12 `textTertiary`, the age trailing), the title at 15/600
+  "Thread" or "Automation" at 12 `textTertiary`, the age trailing; the iPhone's cards say "A
+  thread" and "A run of the automation …"), the title at 15/600
   (the thread's name), the question at 13/1.4 `textSecondary`.
 - **Detail header:** the title (17/600) and the pill with its age ("Needs you · 2m"); **not built
   yet:** a ••• menu (40pt) trailing (the board does not show its items).
@@ -191,13 +191,14 @@ Keyboard, Experiments. Agents, Worktrees, Pi and Keyboard are the host's setting
 Instructions, SettingsInstructions; `Settings/InstructionsScreens.swift`):
 
 - **Header:** "Instructions", History (secondary) and "Save to 3 hosts" (primary).
-- **Scope:** Every host | Per host (a 300pt segmented control: a `bgSelected` track at radius 9,
-  30pt segments at radius 7, 13), and the sync state at 12.5 `textTertiary` ("This Mac, build-01
-  synced · horizon when it's back").
-- **Files** as tabs (22pt apart, a hairline under them): the name in mono 13 (the open one in
-  `textPrimary` semibold with a 2pt `textPrimary` underline, the other `textSecondary`) over a
-  caption at 11.5 `textTertiary` ("how you work · ~640 tokens", "rules that win · ~90 tokens").
-- **Editor** (`bgWindow`, a 1px `lineStrong` line, radius 12): a bar on `bgSunken` (8×12 inset)
+- **Scope:** Every host | Per host (a 300pt segmented control: a `bgSunken` track with a 1px
+  `lineSubtle` line at radius 9, 30pt segments at radius 7, 13 `textPrimary`, the chosen one on
+  `bgRaised`), and under it the sync state at 12 `textTertiary` ("This Mac, build-01 synced ·
+  horizon when it's back").
+- **Files** as tabs (22pt apart, a hairline under them, 44pt): the name in mono 13, the open one
+  in `textPrimary` with a 2pt `lantern` underline, the other `textTertiary`. VoiceOver reads what
+  each file is and its size.
+- **Editor** (`bgWindow`, a 1px `lineSubtle` line, radius 12): a bar on `bgSunken` (8×12 inset)
   with the file's path in mono 12 `textSecondary` and "● edited" at 11.5 `lanternText`; lines at
   least 26pt in mono 14/26 in `textSecondary`, numbered in a 34pt column (mono 10.5
   `textTertiary`), the edited line on `lanternTint`; at least 250pt tall.
@@ -207,8 +208,7 @@ Instructions, SettingsInstructions; `Settings/InstructionsScreens.swift`):
   line, in `textPrimary`). Under it at 12.5/1.5 `textTertiary`: "APPEND_SYSTEM.md is added to the
   end of the agent’s system prompt, so these rules beat anything in an AGENTS.md. Keep it short."
 - **In the app** the bar holds the title, and History and Save (NW buttons at `l`) end the page's
-  first row, after the scope control and its state, dropping under them where the row is too
-  narrow. The state names every host ("Studio, build-01 synced · horizon when it's back", "…
+  first row, beside the scope control and its state. The state names every host ("Studio, build-01 synced · horizon when it's back", "…
   build-02 differs"), with Sync now as a link while one differs; Per host swaps it for a menu of
   the host being edited. The path is the host's own instructions folder, the editor is the
   phone's (`InstructionsTextEditor`) at the iPad's sizes, and it fills the height left: the read
@@ -222,11 +222,14 @@ Instructions, SettingsInstructions; `Settings/InstructionsScreens.swift`):
 
 ## Side pane (iPadPaneBrowser, iPadPaneArtifacts, iPadPaneFiles)
 
-Built: the Changes pane (see Review) is the only thing beside a thread; its head carries the
-Changes tab alone, and the header's side-pane button shows and hides it (Thread › Header
-buttons).
+Built: the side pane beside a thread (`PadReviewScreen`), its head the segmented control of the tabs
+Shepherd has, Changes (the docked review) and Artifacts (iPadPaneArtifacts, once the thread has made a file); the header's
+side-pane button shows and hides it (Thread › Header buttons). Artifacts: the list ("This thread · N"), and the open
+artifact under a 52pt bar (All artifacts, the kind tile, the name, Preview | Source, Save a copy), Markdown in Night Watch colors,
+HTML and SVG in a locked-down web view on their own background, 18pt in; "Made an artifact" opens it here (on iPhone, in a
+sheet over the thread). **Not built: Browser, Files**, the board's version chip, Edit and Open in a window (departures.md).
 
-**Not built yet: the side pane.** Show side pane (a 40pt circle in the thread's header; Hide side
+**Not built yet: the rest of the side pane.** Show side pane (a 40pt circle in the thread's header; Hide side
 pane, on `bgSelected`, while it shows) opens a pane on the thread's trailing side, with a 1px
 `lineStrong` leading edge on `bgWindow`: 620pt for Browser, 640pt for Artifacts, 720pt for
 Files. The sidebar hides while it is open (Show sidebar in the header). Its tabs are the review
@@ -257,12 +260,10 @@ and three more, so the docked review becomes its Changes tab.
     "Console" at 12/600, "Network" at 12 `textSecondary` with its count in mono 10.5
     `textTertiary`, "1 warning" at 11.5 `lanternText` with a triangle, and Hide console (24pt).
   - The thread's line for it: "Opened the checkout · localhost:5173".
-- **Artifacts** (iPadPaneArtifacts): the thread's line "Made an artifact · Load test report ·
-  v2" opens it here.
+- **Artifacts** (iPadPaneArtifacts): the thread's line "Made an artifact · Load test report" opens it here.
   - A 52pt bar: All artifacts (36pt), a 22pt `bgSelected` tile at radius 6, the name at 13/600,
-    the version as a menu chip (22pt, radius 6, a 1px `lineSubtle` line, a clock glyph, "v2 · 6m
-    ago" in mono 11 `textSecondary`, a chevron), Preview | Source (20pt segments), Edit, and Open
-    in a window (36pt).
+    Preview | Source (20pt segments), and Save a copy (36pt). (The board's version chip, Edit and Open in a window are
+    not built: departures.md.)
   - The artifact renders in its own colors on a padded surface (18pt).
 - **Files** (iPadPaneFiles), the repo while pi works in it:
   - A 210pt tree on `bgBase` (a 1px `lineSubtle` trailing edge). Its head (10×12 inset, a
@@ -343,7 +344,8 @@ or the iPad sidebar's.
   apart (radius 3 on top; `done`, `failed`, `lantern` for a run that asked, at 75%, the latest at
   100%) over a hairline, and under them the first date, the counts ("failed: 1 · asked: 1") and the
   last run's time in mono 10.5 `textTertiary`. The last run is a card: its glyph, "Today 02:00 ·
-  passed in 43s" at 14.5/600, and Open thread (13, `running`). The foot (a hairline above, 12×20
+  finished in 43s" at 15/600, and Open thread (`running`) while its thread is there; the runs list
+  follows it. The column's header leads the bar ("Automations", 17/600). The foot (a hairline above, 12×20
   inset, 26 under) holds Edit (secondary) and Run now (primary, with its glyph), 36pt.
 - **Form:** Name, Prompt, Where it runs (Host when adding and more than one can take it, then
   Folder from the host's spaces), and Starts with Shepherd. Save waits for the host. A new

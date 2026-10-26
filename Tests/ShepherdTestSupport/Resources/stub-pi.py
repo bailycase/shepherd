@@ -2,7 +2,8 @@
 """A stand-in for `pi --mode rpc` that speaks the documented JSONL protocol
 (pi docs/rpc.md). stdlib only. Behaviour keyed on the prompt text:
 
-  "ask"    emits a confirm extension_ui_request and waits for the response
+  "ask"    emits a confirm extension_ui_request and waits for the response (also as the last
+           paragraph, after an executor's Project context)
   "hang"   never responds (timeout path)
   "preflight-compact" compacts before answering a prompt, held by preflight-go then
            preflight-reply; add "-refuse" for a late refusal instead of a started turn
@@ -127,6 +128,7 @@ pi's queues, as pi 1.0.0 behaves (docs/rpc-commands.md, and transcripts of the r
     a prompt while compaction is in progress...").
   - "long:P" in the prompt makes a run's final reply P paragraphs and a code block long.
   - Idle, a prompt with a streamingBehavior is a plain prompt.
+$STUB_PI_SESSION_ID gives independent fixture workers distinct native session identities.
 $STUB_PI_MESSAGES_FILE, when set, loads the history from that file at start and saves it
 after every "tools:N" run, like pi resuming its session file.
 
@@ -147,6 +149,8 @@ $STUB_PI_HISTORY_BYTES seeds that many bytes of prior history (see below).
 Startup, like a pi that takes a while to boot (or fails to), before stdin is read:
   $STUB_PI_STARTUP_DELAY  seconds to wait
   $STUB_PI_STARTUP_GATE   a file in the cwd to wait for (up to 60 s)
+  $STUB_PI_HISTORY_GATE   hold get_messages until this file exists (up to 60 s)
+  $STUB_PI_METADATA_GATE  hold get_session_stats until this file exists (up to 60 s)
   $STUB_PI_STARTUP_NEW_SESSION  write pi's warning (in chalk's yellow) that it found no session
                           with the `--session-id` it was given and creates one, then go on
   $STUB_PI_STARTUP_EXIT   exit with this code instead of serving
@@ -165,6 +169,9 @@ cwd ({"delay": 1.5, "gate": "release-pi", "newSession": true, "exit": 1, "stderr
 "requireAuth": true, "model": {"provider": "openai", "id": "gpt-6-luna", "api": "openai-responses"}})
 sets the same.
 
+$STUB_PI_PROMPT_GATE holds prompts before acknowledgement until that file exists (recovery crash tests).
+$STUB_PI_HISTORY_FAILURE_GATE fails history reads until that file exists, then emits an end event to refresh history.
+"late-start" delays agent_start until the file late-start exists (Stop/start race tests).
 Every stdin line is appended to $STUB_PI_LOG when set, so tests can assert
 on what the client actually wrote.
 """
@@ -178,6 +185,7 @@ import time
 
 out = sys.stdout.buffer
 out_lock = threading.Lock()
+turn_thread = None
 log_path = os.environ.get("STUB_PI_LOG")
 tier_path = os.environ.get("SHEPHERD_EXT_SERVICE_TIER")
 
@@ -207,9 +215,13 @@ def wait_for_file(name, timeout=30.0):
 
 
 def emit(obj, terminator=b"\n"):
+    global turn_thread
     # ensure_ascii=False keeps U+2028 as a raw code point inside the string,
     # the exact case a generic line reader would split on.
     with out_lock:
+        # Settled means idle, even if Python has not returned from the worker yet.
+        if obj.get("type") == "agent_settled" and turn_thread is threading.current_thread():
+            turn_thread = None
         out.write(json.dumps(obj, ensure_ascii=False).encode("utf-8") + terminator)
         out.flush()
 
@@ -238,7 +250,7 @@ STATE = {
     "steeringMode": "all",
     "followUpMode": "one-at-a-time",
     "sessionFile": "/tmp/stub-session.jsonl",
-    "sessionId": "stub-session",
+    "sessionId": os.environ.get("STUB_PI_SESSION_ID", "stub-session"),
     "autoCompactionEnabled": True,
     "messageCount": 2,
     "pendingMessageCount": 0,
@@ -271,7 +283,7 @@ COMMANDS = [
 ]
 
 STATS = {
-    "sessionFile": "/tmp/stub-session.jsonl", "sessionId": "stub-session",
+    "sessionFile": "/tmp/stub-session.jsonl", "sessionId": STATE["sessionId"],
     "userMessages": 1, "assistantMessages": 1, "toolCalls": 0, "toolResults": 0, "totalMessages": 2,
     "tokens": {"input": 50000, "output": 10000, "cacheRead": 40000, "cacheWrite": 5000, "total": 105000},
     "cost": 0.45,
@@ -426,10 +438,10 @@ def script_turn(prompt, script):
             wait_for_file(item["wait"], item.get("timeout", 30.0))
             continue
         if "ask" in item:
-            # A select the worker waits on (its native dialog): the last item, so the turn stays open until it is answered.
+            # A native dialog the worker waits on: the last item keeps the turn open until answered.
             global pending_ui
             pending_ui = "uuid-script"
-            emit({"type": "extension_ui_request", "id": "uuid-script", "method": "select", "title": item["ask"]["title"], "options": item["ask"]["options"]})
+            emit({"type": "extension_ui_request", "id": "uuid-script", "method": "select", **item["ask"]})
             MESSAGES.extend(new)
             STATE["messageCount"] = len(MESSAGES)
             return
@@ -619,19 +631,39 @@ def flaky_turn(message):
     STATE["messageCount"] = len(MESSAGES)
     emit({"type": "agent_end", "messages": [final], "willRetry": False})
     emit({"type": "agent_settled"})
+    if os.environ.get("STUB_PI_FLAKY_SETTLED_GATE"):
+        wait_for_file(os.environ["STUB_PI_FLAKY_SETTLED_GATE"])
 
 
-def retry_command(at):
-    """The status extension's /shepherd-retry: the branch goes back to before the message, which
-    goes again (after pi has answered the prompt, as pi does)."""
-    for index in range(len(MESSAGES) - 1, -1, -1):
-        message = MESSAGES[index]
-        if message.get("role") == "user" and int(message.get("timestamp") or -1) == at:
-            original = message
-            del MESSAGES[index:]
-            STATE["messageCount"] = len(MESSAGES)
-            return original
-    return None
+RECOVERY_RECEIPTS = {}
+
+
+def recovery_checkpoint(streaming=False):
+    if streaming:
+        return {"version": 1, "refusal": "recovery_busy"}
+    if not MESSAGES or MESSAGES[-1].get("stopReason") not in ("error", "aborted"):
+        return {"version": 1, "refusal": "recovery_not_failed"}
+    failed_id = "failure:" + str(MESSAGES[-1].get("timestamp"))
+    if any(r.get("failedEntryID") == failed_id and r["state"] != "refused" for r in RECOVERY_RECEIPTS.values()):
+        return {"version": 1, "refusal": "recovery_consumed"}
+    return {"version": 1, "checkpoint": {"token": "fixture:" + failed_id, "failedEntryID": failed_id}}
+
+
+def recover_checkpoint_turn(operation_id):
+    emit({"type": "agent_start"})
+    emit({"type": "turn_start"})
+    original = next(m for m in reversed(MESSAGES) if m.get("role") == "user")
+    emit({"type": "message_start", "message": {"role": "assistant", "content": []}})
+    if "flaky-hold" in text_of(original):
+        wait_for_file("flaky-go")
+    final = {"role": "assistant", "content": [{"type": "text", "text": "Recovered: " + text_of(original)}],
+             "stopReason": "stop", "timestamp": max(now_ms(), MESSAGES[-1].get("timestamp", 0) + 1)}
+    MESSAGES.append(final)
+    emit({"type": "message_end", "message": final})
+    emit({"type": "turn_end", "message": final, "toolResults": []})
+    emit({"type": "agent_end", "messages": [final], "willRetry": False})
+    RECOVERY_RECEIPTS[operation_id]["state"] = "settled"
+    emit({"type": "agent_settled"})
 
 
 def paced_turn(prompt, deltas=40, interval=0.002):
@@ -1257,7 +1289,6 @@ if os.path.exists("project-script.json"):
     STATE["messageCount"] = 0
 
 pending_ui = None
-turn_thread = None
 # An abort ends a "slow" turn as far as pi's state goes (its thread still waits for its files).
 turn_aborted = False
 stale_history = None
@@ -1267,6 +1298,7 @@ fail_switched_history = False
 blocked_model_inputs = 0
 skill_refresh_reply_lost = False
 skill_commands_failed = False
+history_gate_watching = False
 for raw in sys.stdin.buffer:
     line = raw.rstrip(b"\n").rstrip(b"\r")
     if not line:
@@ -1282,23 +1314,64 @@ for raw in sys.stdin.buffer:
     if cmd.get("type") == "prompt":
         log_tier("prompt", cmd.get("message"))
     t = cmd.get("type")
-    streaming = RUN["active"] or (turn_thread is not None and turn_thread.is_alive() and not turn_aborted)
+    active_thread = turn_thread
+    streaming = RUN["active"] or (active_thread is not None and active_thread.is_alive() and not turn_aborted)
     if t == "get_state":
         with QUEUE_LOCK:
             pending_count = len(steering) + len(follow_up)
-        respond(cmd, t, data=dict(STATE, isStreaming=streaming, pendingMessageCount=pending_count))
+        recovery = {} if os.environ.get("STUB_PI_RECOVERY_UNSUPPORTED") else {"checkpointRecovery": recovery_checkpoint(streaming)}
+        respond(cmd, t, data=dict(STATE, isStreaming=streaming, pendingMessageCount=pending_count, **recovery))
         if held_history_request is not None:
             respond(held_history_request, "get_messages", data={"messages": stale_history})
             held_history_request = None
             stale_history = None
+    elif t == "new_session":
+        STATE["sessionId"] = "stub-session-2"
+        del MESSAGES[:]
+        STATE["messageCount"] = 0
+        respond(cmd, t, data={"cancelled": False})
+        emit({"type": "agent_settled"})
     elif t == "get_messages":
-        if stale_history is not None:
+        if os.environ.get("STUB_PI_HISTORY_GATE"):
+            wait_for_file(os.environ["STUB_PI_HISTORY_GATE"], timeout=60.0)
+        history_gate = os.environ.get("STUB_PI_HISTORY_FAILURE_GATE")
+        if history_gate and not os.path.exists(history_gate):
+            respond(cmd, t, success=False, error="History temporarily unavailable")
+            if not history_gate_watching:
+                history_gate_watching = True
+                def history_ready(path=history_gate):
+                    wait_for_file(path)
+                    emit({"type": "agent_end", "messages": [], "willRetry": False})
+                threading.Thread(target=history_ready, daemon=True).start()
+        elif stale_history is not None:
             held_history_request = cmd
         elif fail_switched_history:
             fail_switched_history = False
             respond(cmd, t, success=False, error="Switched history unavailable")
         else:
             respond(cmd, t, data={"messages": MESSAGES})
+    elif t == "get_recovery_operation":
+        respond(cmd, t, data={"receipt": RECOVERY_RECEIPTS.get(cmd.get("operationID"))})
+    elif t == "recover_checkpoint":
+        operation_id = cmd.get("operationID")
+        previous = RECOVERY_RECEIPTS.get(operation_id)
+        checkpoint = recovery_checkpoint(streaming).get("checkpoint")
+        if previous:
+            respond(cmd, t, data=previous, success=previous["token"] == cmd.get("token"))
+        elif not checkpoint or checkpoint["token"] != cmd.get("token"):
+            respond(cmd, t, success=False, error="recovery_stale")
+        elif os.environ.get("STUB_PI_RECOVERY_BUSY_ONCE") and not RECOVERY_RECEIPTS:
+            RECOVERY_RECEIPTS[operation_id] = dict(token=cmd.get("token"), operationID=operation_id,
+                sessionID=STATE["sessionId"], state="refused", error="recovery_busy")
+            respond(cmd, t, success=False, error="recovery_busy")
+        else:
+            receipt = dict(checkpoint, operationID=operation_id, sessionID=STATE["sessionId"], state="accepted")
+            RECOVERY_RECEIPTS[operation_id] = receipt
+            if not os.environ.get("STUB_PI_RECOVERY_LOST_REPLY"):
+                respond(cmd, t, data=receipt)
+            turn_aborted = False
+            turn_thread = threading.Thread(target=recover_checkpoint_turn, args=(operation_id,), daemon=True)
+            turn_thread.start()
     elif t == "refresh_skills":
         if os.environ.get("STUB_PI_SKILL_REFRESH_LOST_REPLY") and not skill_refresh_reply_lost:
             skill_refresh_reply_lost = True
@@ -1318,6 +1391,8 @@ for raw in sys.stdin.buffer:
         commands = [dict(c, sourceInfo={"path": template}) if template and c["name"] == "fix-tests" else c for c in COMMANDS]
         respond(cmd, t, data={"commands": commands})
     elif t == "get_session_stats":
+        if os.environ.get("STUB_PI_METADATA_GATE"):
+            wait_for_file(os.environ["STUB_PI_METADATA_GATE"], timeout=60.0)
         respond(cmd, t, data=STATS)
     elif t == "compact":
         result = compaction("manual", cmd.get("customInstructions"))
@@ -1333,7 +1408,10 @@ for raw in sys.stdin.buffer:
         else:
             STATE["model"] = dict(STATE["model"], id=cmd.get("modelId"), provider=cmd.get("provider"),
                                   api=apis.get(key, STATE["model"].get("api")))
-            respond(cmd, t, data=STATE["model"])
+            if os.path.exists("ignore-model-response-once"):
+                os.unlink("ignore-model-response-once")
+            else:
+                respond(cmd, t, data=STATE["model"])
     elif t == "get_available_models":
         respond(cmd, t, data={"models": [
             {"provider": "anthropic", "id": "claude-opus-4-5", "api": "anthropic-messages", "contextWindow": 200000, "reasoning": True},
@@ -1353,7 +1431,10 @@ for raw in sys.stdin.buffer:
             respond(cmd, t, data={"levels": levels})
     elif t == "set_thinking_level":
         STATE["thinkingLevel"] = cmd.get("level")
-        respond(cmd, t)
+        if os.path.exists("ignore-thinking-response-once"):
+            os.unlink("ignore-thinking-response-once")
+        else:
+            respond(cmd, t)
     elif t == "abort" and os.path.exists("refuse-abort"):
         respond(cmd, t, success=False, error="refused by the stub")
     elif t == "abort":
@@ -1448,6 +1529,19 @@ for raw in sys.stdin.buffer:
             emit({"type": "agent_end", "messages": [final], "willRetry": False})
             emit({"type": "agent_settled"})
             continue
+        if message == "late-start":
+            def late_start():
+                wait_for_file("late-start")
+                emit({"type": "agent_start"})
+                emit({"type": "message_start", "message": user_message("late-start", [], now_ms())})
+                wait_for_file("late-finish")
+            RUN["active"] = True
+            RUN["thread"] = threading.Thread(target=late_start, daemon=True)
+            RUN["thread"].start()
+            respond(cmd, t)
+            continue
+        if prompt_gate := os.environ.get("STUB_PI_PROMPT_GATE"):
+            wait_for_file(prompt_gate, timeout=60.0)
         if message == "hang":
             continue
         if message == "die":
@@ -1510,21 +1604,8 @@ for raw in sys.stdin.buffer:
             respond(cmd, t)
             continue
         if message.startswith("/shepherd-retry"):
-            # pi runs an extension command at once, even while streaming; the command refuses then.
             respond(cmd, t)
-            try:
-                at = int(message.split(" ", 1)[1])
-            except (IndexError, ValueError):
-                at = None
-            original = None if streaming or at is None else retry_command(at)
-            if original is None:
-                ui("notify", message="That message is no longer in this conversation." if not streaming
-                   else "Retry once the agent has stopped.", notifyType="warning")
-                continue
-            again = dict(original, timestamp=max(now_ms(), original["timestamp"] + 1))
-            turn_aborted = False
-            turn_thread = threading.Thread(target=flaky_turn, args=(again,), daemon=True)
-            turn_thread.start()
+            ui("notify", message="Continue requires message-free checkpoint recovery support.", notifyType="warning")
             continue
         if re.search(r"tools:\d+", message):
             RUN["active"] = True
@@ -1543,7 +1624,7 @@ for raw in sys.stdin.buffer:
             with open(log_path, "ab") as f:
                 f.write(json.dumps({"type": "stub-images", "count": len(cmd["images"]),
                                     "mimeTypes": [i.get("mimeType") for i in cmd["images"]]}).encode() + b"\n")
-        if message == "ask":
+        if message == "ask" or message.endswith("\n\nask"):  # an executor prompt ends with its task
             pending_ui = "uuid-2"
             emit({"type": "agent_start"})
             user = {"role": "user", "content": message, "timestamp": now_ms()}

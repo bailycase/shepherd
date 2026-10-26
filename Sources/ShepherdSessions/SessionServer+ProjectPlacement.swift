@@ -7,6 +7,16 @@ extension SessionServer {
     /// Advertised by the owner's transport directory, not by a viewer or a model.
     public func setProjectExecutionSpaces(_ spaces: [ProjectHostReference: [Space]]) {
         queue.async {
+            // Mirror only currently visible routes, not historical tombstones. Reappearing routes get new grants.
+            // Display-only changes and refreshes of other Spaces must not revoke this exact path/binding.
+            var authority: [ProjectHostReference: [SpaceID: UUID]] = [:]
+            for (host, directory) in spaces {
+                for space in directory where !space.hidden {
+                    let unchanged = self.projectExecutionSpaces[host]?.contains { $0.id == space.id && $0.path == space.path && !$0.hidden } == true
+                    authority[host, default: [:]][space.id] = unchanged ? (self.projectExecutionSpaceAuthority[host]?[space.id] ?? UUID()) : UUID()
+                }
+            }
+            self.projectExecutionSpaceAuthority = authority
             self.projectExecutionSpaces = spaces
         }
     }
@@ -51,11 +61,15 @@ extension SessionServer {
         guard let model = task.model ?? project.settings.threadModel ?? defaultModel else {
             throw LogicalProjectsError("project_model", "Choose an explicit worker model before remote placement; the owner default is unavailable.")
         }
+        let memory = project.memory.map { var entry = $0; entry.text = NativeRedaction.projectData(entry.text)
+            entry.source = NativeRedaction.projectData(entry.source); return entry }
         var assignment = ProjectExecutionAssignment(key: .init(ownerID: project.ownerID, projectID: project.id, operationID: task.operationID),
             taskID: task.id, reservedWorkerID: task.workerAgentID, executorSpaceID: task.spaceID,
             title: NativeRedaction.projectData(task.title), prompt: NativeRedaction.projectData(task.prompt),
             goal: NativeRedaction.projectData(project.goal), instructions: NativeRedaction.projectData(project.settings.instructions),
-            memory: NativeRedaction.projectData(project.memory.map(\.text).joined(separator: "\n")), model: model)
+            memory: Project.briefMemory(memory), model: model)
+        assignment.memoryFacts = Project.briefMemoryFacts(memory)
+        assignment.memoryOmittedCount = memory.count - (assignment.memoryFacts?.count ?? 0)
         assignment.thinking = task.thinking
         assignment.publicationsEnabled = true
         try assignment.validate()
@@ -92,7 +106,7 @@ extension SessionServer {
                   !project.paused, projectRunStarts[project.id] != nil else {
                 throw LogicalProjectsError("project_paused", "Project placement admission was revoked.")
             }
-        case .pause, .cancel, .snapshot, .publicationRead: break
+        case .pause, .cancel, .snapshot, .worker, .publicationRead, .result: break
         }
     }
 
@@ -153,6 +167,7 @@ extension SessionServer {
         changeRuntimeProject(assignment.key.projectID, { p in
             guard let i = p.tasks.firstIndex(where: { $0.id == task.id && $0.operationID == assignment.key.operationID }),
                   p.tasks[i].executionReceipt.map({ $0.revision < receipt.revision || (p.tasks[i].phase == .unknown && $0.revision == receipt.revision) }) ?? true else { return }
+            let wasResolved = p.tasks[i].phase == .resolved
             p.tasks[i].executionReceipt = receipt
             p.tasks[i].workerSessionID = receipt.sessionID
             p.tasks[i].question = receipt.phase == .waiting ? receipt.question : nil
@@ -167,13 +182,14 @@ extension SessionServer {
             case .cancelled: p.tasks[i].phase = receipt.matchedUserEntryID == nil ? .failed : .settled
             case .settled: p.tasks[i].phase = .settled
             }
+            if wasResolved { p.tasks[i].phase = .resolved; p.tasks[i].question = nil }
             if p.tasks[i].phase == .settled { p.tasks[i].settledAt = Date().timeIntervalSince1970 * 1000 }
             let kind: ProjectEventSource.Kind?
             switch receipt.phase { case .waiting: kind = .question; case .settled: kind = .settled; case .failed: kind = .failed; default: kind = nil }
-            if let kind {
+            if let kind, !wasResolved {
                 let source = ProjectEventSource(kind: kind, taskID: task.id, operationID: task.operationID,
                     workerAgentID: task.workerAgentID, sessionID: receipt.sessionID, dialogID: kind == .question ? receipt.questionID : nil,
-                    generation: kind == .question ? receipt.generation : nil)
+                    generation: receipt.generation)
                 let evidence = ["questionID": receipt.questionID, "question": receipt.question, "kind": receipt.questionKind,
                     "message": receipt.questionMessage, "resultEntryID": receipt.resultEntryID, "result": receipt.resultText, "outcome": receipt.outcome]
                 let data = String(decoding: try JSONEncoder().encode(evidence), as: UTF8.self)

@@ -61,10 +61,14 @@ struct NativeThreadWireTests {
         .compact(expectedSessionID: "s", generation: "g", operationID: op, instructions: "Keep the preview findings"),
         .retry(expectedSessionID: "s", generation: "g", operationID: op, entryID: "user:1733234570000"),
         .retry(expectedSessionID: "s", generation: "g", operationID: op, entryID: "user:1733234570000#1"),
+        .retry(expectedSessionID: "s", generation: "g", operationID: op, entryID: "user:1733234570000#1",
+               checkpoint: NativeRecoveryCheckpoint(token: "opaque-checkpoint", failedEntryID: "failed-entry")),
         .setServiceTier(expectedSessionID: "s", generation: "g", operationID: op, tier: "fast"),
         .setServiceTier(expectedSessionID: "s", generation: "g", operationID: op, tier: "standard"),
         .image(expectedSessionID: "s", imageID: "user:1733234570000|0|0123456789abcdef", offset: 0),
         .image(expectedSessionID: "s", imageID: "t:call_1|1|fedcba9876543210", offset: 262_144),
+        .artifact(expectedSessionID: "s", path: "docs/plan.md", offset: 0),
+        .artifact(expectedSessionID: "s", path: "/tmp/report.html", offset: 262_144),
         .send(expectedSessionID: "s", generation: "g", operationID: op, text: "taller", delivery: .followUp,
               designContext: NativeDesignContext(DesignViewRecord(
                 visibleBoards: ["A.dc.html"], selectedBoards: ["A.dc.html"], selected: [DesignElementID("A.dc.html#5:1/1/0")!],
@@ -115,6 +119,9 @@ struct NativeThreadWireTests {
 
     static let results: [NativeThreadResult] = [
         .snapshot(value: NativeThreadSnapshot(
+            piSessionID: "", generation: "startup", revision: 1, running: false, supportedActions: ["answer"],
+            dialogsSupported: true, dialogs: [], messages: [], provisional: [], clipped: false, runtime: "rpc", initializing: true)),
+        .snapshot(value: NativeThreadSnapshot(
             piSessionID: "s", generation: "g", revision: 11, running: true, supportedActions: ["send", "queue", "browserElements"],
             dialogsSupported: true, dialogs: [],
             messages: [NativeThreadMessage(entryID: "user:9", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "wider")],
@@ -133,6 +140,10 @@ struct NativeThreadWireTests {
         .imageChunk(value: NativeImageChunk(imageID: "user:1|0|0123456789abcdef", mimeType: "image/png", totalBytes: 300_000, offset: 0,
                                             data: Data([0x89, 0x50, 0x4E, 0x47]))),
         .failure(code: NativeImageCode.unknown, message: "That image is not in this thread."),
+        .artifactChunk(value: NativeArtifactChunk(path: "docs/plan.md", totalBytes: 300_000, offset: 0, data: Data([0x23, 0x20, 0x50]))),
+        .artifactChunk(value: NativeArtifactChunk(path: "empty.md", totalBytes: 0, offset: 0, data: Data())),
+        .failure(code: NativeArtifactCode.unknown, message: "That file is not one this thread made."),
+        .failure(code: NativeArtifactCode.unavailable, message: "That file can't be opened now."),
         .snapshot(value: NativeThreadSnapshot(
             piSessionID: "s", generation: "g", revision: 14, running: false, supportedActions: ["send", "images"], dialogsSupported: true,
             dialogs: [], messages: [NativeThreadMessage(entryID: "user:1", role: "user", blocks: [
@@ -237,6 +248,13 @@ struct NativeThreadWireTests {
 
     /// An older host sends no tier: the client draws no Speed control. A host that does sends the
     /// agent's tier and what its model offers; none offered is an empty list, not an absent one.
+    @Test func startupProgressIsOptionalForOlderHosts() throws {
+        let older = try Wire.decode(NativeThreadSnapshot.self, Self.v1Snapshot)
+        #expect(older.initializing == nil)
+        #expect(try Wire.object(older)["initializing"] == nil)
+        #expect(try Self.snapshot(adding: ["initializing": true]).initializing == true)
+    }
+
     @Test func anOlderSnapshotHasNoServiceTierAndAnEmptyOfferStaysOnTheWire() throws {
         let older = try Wire.decode(NativeThreadSnapshot.self, Self.v1Snapshot)
         #expect(older.serviceTier == nil && older.serviceTiers == nil)
@@ -583,5 +601,19 @@ struct NativeImageLimitTests {
     @Test func theImageCapabilityIsAdvertised() {
         #expect(RemoteProtocol.nativeImagesCapability == "native.images.v1")
         #expect(RemoteProtocol.capabilities.contains(RemoteProtocol.nativeImagesCapability))
+    }
+
+    /// A full piece of the largest artifact the host serves still fits one frame, with the envelope.
+    @Test func aFullArtifactChunkFitsTheFrame() throws {
+        let chunk = NativeArtifactChunk(path: String(repeating: "x", count: 1_000), totalBytes: NativeArtifactChunk.maxBytes,
+                                        offset: NativeArtifactChunk.maxBytes - NativeImage.chunkBytes, data: Data(repeating: 0xFF, count: NativeImage.chunkBytes))
+        let frame = try NDJSON.encode(RemoteReply.nativeThread(id: 9, result: .artifactChunk(value: chunk)))
+        #expect(frame.count - 1 <= NDJSON.maxPayloadBytes)
+        #expect(NativeArtifactChunk.maxBytes == 8 * 1024 * 1024)
+    }
+
+    @Test func theArtifactCapabilityIsAdvertised() {
+        #expect(RemoteProtocol.nativeArtifactsCapability == "native.artifacts.v1")
+        #expect(RemoteProtocol.capabilities.contains(RemoteProtocol.nativeArtifactsCapability))
     }
 }

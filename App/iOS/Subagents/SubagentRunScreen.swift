@@ -17,12 +17,18 @@ struct SubagentRunScreen: View {
         let run = store.subagents.first { $0.runID == runID }
         SubagentRunView(ref: ref, store: store, runID: runID, compact: true)
             .background(Color.nw.bgWindow)
-            .navigationTitle(run.map { $0.role ?? nativeRunNames($0).name } ?? "Subagent")
+            .navigationTitle(run.map(nativeRunAgentName) ?? "Subagent")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .tabBar)
             .toolbar {
                 ToolbarItem(placement: .principal) { SubagentRunTitle(run: run) }
-                ToolbarItem(placement: .topBarTrailing) { SubagentRunMenu(store: store, run: run) }
+                // The run's controls in the system's ••• menu, which overflows with the bar where it
+                // runs down the side (iPhone Duo).
+                if let run {
+                    ToolbarOverflowMenu {
+                        SubagentControlItems(run: run, commands: SubagentCommands(store: store, enabled: store.takesSubagentCommands))
+                    }
+                }
             }
             .keepsThreadLive(ref)
     }
@@ -36,7 +42,7 @@ struct SubagentRunTitle: View {
     var body: some View {
         let phase = run.map(nativeRunPhase)
         VStack(spacing: NW.Space.xxs) {
-            Text(run.map { $0.role ?? nativeRunNames($0).name } ?? "Subagent").font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary)
+            Text(run.map(nativeRunAgentName) ?? "Subagent").font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary)
                 .lineLimit(1)
             HStack(spacing: NW.Space.s) {
                 Text(phase.map(nativeRunPhaseLabel) ?? "No longer listed")
@@ -49,25 +55,6 @@ struct SubagentRunTitle: View {
             .lineLimit(1)
         }
         .accessibilityElement(children: .combine)
-    }
-}
-
-/// The run's options: Pause or Continue, Stop, Re-run, and Copy transcript.
-struct SubagentRunMenu: View {
-    let store: NativeThreadStore
-    let run: NativeSubagent?
-    var copy: (() -> Void)?
-
-    var body: some View {
-        Menu {
-            if let run {
-                SubagentControlItems(run: run, commands: SubagentCommands(store: store, enabled: store.takesSubagentCommands))
-            }
-            if let copy { Button("Copy Transcript", systemImage: "doc.on.doc", action: copy) }
-        } label: {
-            Label("Subagent options", systemImage: "ellipsis")
-        }
-        .disabled(run == nil)
     }
 }
 
@@ -172,8 +159,8 @@ struct SubagentRunView: View {
             if let run, let summary, nativeRunAcceptsSteer(run) {
                 // The same Steer command, called Reply while the run waits on its parent's answer.
                 let words = nativeRunSteerWords(run)
-                // MobileSubagent: "Steer worker…", the agent, not the task (the iPad's names it by task).
-                let agent = compact ? summary.role ?? summary.name : summary.name
+                // "Steer worker…", the agent, not the task (MobileSubagent, iPadSteer).
+                let agent = summary.role ?? summary.name
                 NWSteerField(text: $draft, prompt: "\(words.label(agent))…",
                              caption: words.caption(agent),
                              isEnabled: commands.enabled, focus: $steering, accessibilityLabel: words.label(agent),

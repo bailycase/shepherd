@@ -1,4 +1,5 @@
 import Foundation
+import ShepherdRemote
 import ShepherdCore
 import ShepherdProtocol
 import Testing
@@ -26,6 +27,7 @@ struct ProjectPagePresentationTests {
                       task("Done", .resolved), task("Failed", .failed, error: "pi exited"), task("Lost", .unknown)])
         #expect(p.rows(in: .waiting).map(\.title) == ["Asking", "Failed", "Lost"], "a failed or unknown task needs the person too")
         #expect(p.rows(in: .working).map(\.title) == ["Running", "Queued"])
+        #expect(p.rows(in: .stopped).isEmpty)
         #expect(p.rows(in: .resolved).map(\.title) == ["Done"])
         #expect(p.rows.count == p.waiting + p.working + p.resolved + p.settled)
     }
@@ -37,7 +39,7 @@ struct ProjectPagePresentationTests {
     }
 
     @Test(arguments: [
-        (ProjectQuestionAnswer.Phase.queued, "Answer queued", "Sends when the project resumes."),
+        (ProjectQuestionAnswer.Phase.queued, "Answer queued", "Waiting to send."),
         (.delivering, "Answering", "How should I proceed?"),
         (.failed, "Answer failed", "The question changed before it could be sent. Open the thread to answer again."),
         (.unknown, "Answer unconfirmed", "Shepherd restarted before it knew the worker got it. Open the thread to check."),
@@ -66,16 +68,15 @@ struct ProjectPagePresentationTests {
                                                                                       workerAgentID: AgentID(), sessionID: nil))
         let all = [queued, delivering, unknown, failed, delivered, report]
 
-        let running = ProjectHeldMessages.held(messages: all, paused: false, consumed: [])
+        let running = ProjectHeldMessages.held(messages: all, consumed: [])
         #expect(running.map(\.text) == ["queued", "sending", "unknown", "failed"], "a delivered message is the transcript's, a worker report is the runtime's")
         #expect(running.map(\.note) == ["Waiting to send", "Sending", "Delivery unconfirmed. Send it again to retry.", "Not delivered. Send it again to retry."])
-        #expect(ProjectHeldMessages.held(messages: [queued], paused: true, consumed: []).first?.note == "Sends when the project resumes")
         // A definite refusal shows the owner's reason; an unknown outcome and a record without one show no invented text.
         var refused = failed
         refused.failureDetail = "The agent refused it: No API key found for the model provider"
         var unknownWithDetail = unknown
         unknownWithDetail.failureDetail = "must never show"
-        let notes = ProjectHeldMessages.held(messages: [refused, unknownWithDetail], paused: false, consumed: []).map(\.note)
+        let notes = ProjectHeldMessages.held(messages: [refused, unknownWithDetail], consumed: []).map(\.note)
         #expect(notes == ["Not delivered. The agent refused it: No API key found for the model provider. Send it again to retry.",
                           "Delivery unconfirmed. Send it again to retry."])
     }
@@ -84,9 +85,9 @@ struct ProjectPagePresentationTests {
         var m = ProjectMessage(id: UUID(), text: "hi", phase: .delivering)
         let native = UUID()
         m.nativeDeliveryID = native
-        #expect(ProjectHeldMessages.held(messages: [m], paused: false, consumed: [UUID()]).count == 1, "an unrelated operation consumes nothing")
-        #expect(ProjectHeldMessages.held(messages: [m], paused: false, consumed: [m.id]).isEmpty, "its own operation id")
-        #expect(ProjectHeldMessages.held(messages: [m], paused: false, consumed: [native]).isEmpty, "the native delivery id the owner recorded")
+        #expect(ProjectHeldMessages.held(messages: [m], consumed: [UUID()]).count == 1, "an unrelated operation consumes nothing")
+        #expect(ProjectHeldMessages.held(messages: [m], consumed: [m.id]).isEmpty, "its own operation id")
+        #expect(ProjectHeldMessages.held(messages: [m], consumed: [native]).isEmpty, "the native delivery id the owner recorded")
     }
 
     @Test func aTypedReferenceDrawsOnlyWhatStillExistsInThisProject() {
@@ -165,21 +166,88 @@ struct ProjectPagePresentationTests {
         #expect(ProjectRunStatus.text(startingThreads: starting, worker: worker, startedAt: startedAt, now: now) == words)
     }
 
-    /// A finished thread counts as done in the strip whether or not anyone has pressed Mark resolved yet (the user's report: three
-    /// scouts all reported back and the strip still said "0 of 3 done"). It is never "in progress", and only Resolved moves its group.
+    /// A Project is a long-lived workspace of many unrelated tasks, not one campaign: the strip counts execution facts, never "N of M
+    /// done". A stopped turn is its own fact (not working, not success), and resolution is not delivery.
     @Test func theStripShowsOnlyTheOwnersQuestionOrFailureNeverWorkerActivity() {
         let p = page([task("Run", .running), task("Ask", .waiting, question: "Which API?"),
                       task("Fail", .failed, error: "Launch failed"), task("Done", .resolved)])
-        #expect(p.rows.map(ProjectSummaryStrip.detail) == [nil, "Which API?", "Launch failed", nil])
+        #expect(p.rows.map(ProjectSummaryStrip.detail) == [nil, "Which API?", "Launch failed", nil], "a resolved task with no recorded outcome claims nothing")
     }
 
-    @Test func aFinishedThreadCountsAsDoneBeforeAnyoneResolvesIt() {
-        let p = page([task("A", .settled), task("B", .resolved), task("C", .running)])
-        #expect(p.settled == 1 && p.working == 1 && p.resolved == 1)
-        #expect(p.summary == "2 of 3 done · 1 in progress")
-        #expect(page([task("A", .settled), task("B", .settled), task("C", .settled)]).summary == "3 of 3 done")
-        #expect(p.rows[0].canResolve && !p.rows[0].canReopen)
-        #expect(p.rows[1].canReopen && !p.rows[1].canResolve)
+    @Test func aStoppedTurnIsNeitherWorkingNorDoneAndTheStripNamesEachFact() throws {
+        let p = page([task("A", .settled), task("B", .resolved), task("C", .running), task("D", .queued)])
+        #expect(p.settled == 1 && p.working == 2 && p.resolved == 1)
+        #expect(p.summary == "2 working · 1 stopped · 1 resolved")
+        #expect(page([task("A", .settled), task("B", .settled)]).summary == "2 stopped")
+        #expect(page([task("Q", .waiting, question: "?"), task("A", .settled)]).summary == "1 needs you · 1 stopped")
+        #expect(p.status == "2 threads are working.")
+        #expect(page([task("A", .settled)]).status == "Nothing is running.")
+        for summary in [p.summary, page([task("A", .resolved)]).summary] { #expect(summary?.contains("done") == false) }
+        let stopped = try #require(p.rows.first { $0.phase == .settled })
+        #expect(stopped.group == .stopped && stopped.tone == .stopped && stopped.lead == "Stopped" && stopped.detail == "No outcome recorded",
+                "settled proves only that the turn stopped; no review is implied")
+        #expect(![stopped.lead, stopped.detail, stopped.outcomeLine].compactMap { $0 }.contains { $0.localizedCaseInsensitiveContains("review") })
+        #expect(p.rows.first { $0.phase == .running }?.tone == .running)
+    }
+
+    /// Outcomes are bound to the exact activation. A legacy task, or a resolved one nobody recorded an outcome for, stays unknown; an
+    /// earlier activation's verdict never labels a later follow-up; a coordinator's claim is never drawn as the person's.
+    @Test func outcomesShowOnlyForTheirExactOperationAndUnknownStaysUnknown() throws {
+        let coordinator = AgentID()
+        var legacy = task("Legacy", .resolved)
+        #expect(legacy.outcomes == nil && legacy.currentOutcome == nil)
+        var followed = task("Followed", .settled)
+        let earlier = followed.operationID
+        followed.outcomes = [.init(id: UUID(), operationID: earlier, kind: .needsChanges, recordedBy: coordinator, recordedAt: 1)]
+        followed.previousOperations = [earlier]; followed.operationID = UUID()
+        var merged = task("Merged", .resolved)
+        merged.outcomes = [.init(id: UUID(), operationID: merged.operationID, kind: .accepted, recordedBy: coordinator, recordedAt: 1),
+                           .init(id: UUID(), operationID: merged.operationID, kind: .merged, evidence: "PR #12", recordedBy: coordinator, recordedAt: 2)]
+        var owner = task("Owner", .settled)
+        owner.outcomes = [.init(id: UUID(), operationID: owner.operationID, kind: .accepted, recordedAt: 1)]
+        legacy.title = "Legacy"
+        let rows = page([legacy, followed, merged, owner]).rows
+        #expect(rows[0].lead == nil && rows[0].detail == nil && rows[0].outcomeLine == nil, "resolved alone is not success")
+        #expect(rows[1].lead == "Stopped" && rows[1].detail == "No outcome recorded", "an earlier activation's verdict is not this one's")
+        #expect(rows[2].group == .resolved && rows[2].lead == "Merged" && rows[2].detail == "PR #12 · per coordinator")
+        #expect(merged.outcomes?.count == 2, "earlier facts are retained, not replaced")
+        #expect(rows[3].group == .stopped && rows[3].lead == "Accepted" && rows[3].detail == "recorded by owner",
+                "an owner-control record names its source and never reads as a person's approval")
+        #expect(rows.allSatisfy { !($0.outcomeLine ?? "").localizedCaseInsensitiveContains("approved") })
+        #expect(rows[3].canResolve, "recording an outcome never resolves or changes the phase")
+    }
+
+    /// A real fact for this run replaces the neutral line; it never coexists with an inferred review claim. A follow-up after a
+    /// verdict reads neutral again until its own fact exists.
+    @Test func aRecordedVerdictReplacesTheNeutralLineOnlyForItsOwnRun() {
+        let coordinator = AgentID()
+        var t = task("Iterated", .settled)
+        let first = t.operationID
+        t.outcomes = [.init(id: UUID(), operationID: first, kind: .needsChanges, recordedBy: coordinator, recordedAt: 1)]
+        var row = page([t]).rows[0]
+        #expect(row.lead == "Needs changes" && row.detail == "per coordinator" && row.outcomeLine == "Needs changes · per coordinator")
+        #expect(!(row.outcomeLine ?? "").contains(ProjectPagePresentation.noOutcome))
+        t.previousOperations = [first]; t.operationID = UUID()
+        row = page([t]).rows[0]
+        #expect(row.lead == "Stopped" && row.detail == ProjectPagePresentation.noOutcome)
+        t.outcomes?.append(.init(id: UUID(), operationID: t.operationID, kind: .accepted, recordedBy: coordinator, recordedAt: 2))
+        #expect(page([t]).rows[0].outcomeLine == "Accepted · per coordinator")
+        t.phase = .resolved
+        #expect(page([t]).rows[0].group == .resolved && page([t]).rows[0].lead == "Accepted")
+    }
+
+    /// Resolved Project tasks are terminal: the row offers nothing to send or resolve, keeps its worker (history opens through
+    /// "Open as a thread") and stays Resolved. Only a settled task offers Mark resolved; live, waiting, failed and unknown work does not.
+    @Test func onlyASettledTaskOffersResolveAndAResolvedOneKeepsItsThreadForHistory() throws {
+        let phases: [ProjectTask.Phase] = [.queued, .running, .waiting, .failed, .unknown, .settled, .resolved]
+        let tasks = phases.map { task("\($0)", $0, question: $0 == .waiting ? "Which API?" : nil, error: $0 == .failed ? "Launch failed" : nil) }
+        let p = page(tasks)
+        #expect(p.rows.map(\.canResolve) == phases.map { $0 == .settled })
+        let resolved = try #require(p.rows.first { $0.phase == .resolved })
+        #expect(resolved.group == .resolved && resolved.workerAgentID == tasks.last?.workerAgentID)
+        #expect(p.rows(in: .resolved).map(\.title) == ["resolved"])
+        let actions = Mirror(reflecting: resolved).children.compactMap(\.label).filter { $0.hasPrefix("can") }
+        #expect(actions == ["canResolve"], "a row offers Resolve as its only runtime action, never Reopen: \(actions)")
     }
 
     /// A relaunched Project keeps the coordinator's pi off until a message needs it, yet its composer said "Starting…" indefinitely.
@@ -200,12 +268,10 @@ struct ProjectPagePresentationTests {
         #expect(!ProjectComposerSend.isOffline(paused: false, messages: [message(.delivered)], coordinatorLive: true))
     }
 
-    /// The question card told people the worker "keeps going on its best guess", which is false for a blocking native question and
-    /// for a paused project (the owner holds the answer until Resume).
-    @Test func theQuestionFootersCopyIsTruthfulWhileRunningAndWhilePaused() {
-        #expect(TaskQuestion.footer(title: "Question check", paused: false) == "Or just reply in chat. Question check is waiting for your answer.")
-        #expect(TaskQuestion.footer(title: "Question check", paused: true) == "Or just reply in chat. Your answer waits until you resume.")
-        for paused in [false, true] { #expect(!TaskQuestion.footer(title: "X", paused: paused).contains("best guess")) }
+    /// The question card told people the worker "keeps going on its best guess", which is false for a blocking native question.
+    @Test func theQuestionFootersCopyIsTruthful() {
+        #expect(TaskQuestion.footer(title: "Question check") == "Or just reply in chat. Question check is waiting for your answer.")
+        #expect(!TaskQuestion.footer(title: "X").contains("best guess"))
     }
 
     @Test func aTaskWithAHeldAnswerSaysSoAndIsMarkedSoItsDockOffersNoSecondAnswer() {
@@ -213,15 +279,15 @@ struct ProjectPagePresentationTests {
         #expect(page([asking]).rows[0].answerHeld == false)
         asking.pendingAnswer = ProjectQuestionAnswer(operationID: UUID(), sessionID: "s", generation: "g", dialogID: "d", request: Data("x".utf8), phase: .queued)
         let row = page([asking], paused: true).rows[0]
-        #expect(row.answerHeld && row.lead == "Answer queued" && row.detail == "Sends when the project resumes.")
+        #expect(row.answerHeld && row.lead == "Answer queued" && row.detail == "Waiting to send.")
     }
 
     @Test func theSentenceUnderWelcomeBackReadsTheCounts() {
         #expect(page([]).status == "Nothing running yet.")
         #expect(page([task("A", .running), task("B", .running), task("C", .queued)]).status == "3 threads are working.")
         #expect(page([task("A", .waiting, question: "?")]).status == "1 thread is waiting on you.")
-        #expect(page([task("A", .waiting, question: "?")], paused: true).status == "Paused. 1 thread is still waiting on you.")
-        #expect(page([task("A", .running)], paused: true).status == "Paused.")
+        #expect(page([task("A", .waiting, question: "?")], paused: true).status == "1 thread is waiting on you.", "no Paused wording")
+        #expect(page([task("A", .running)], paused: true).status == "1 thread is working.")
     }
 
     @Test func noTasksMeansNoStripAndNoSummary() {

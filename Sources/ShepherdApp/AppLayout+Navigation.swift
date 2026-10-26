@@ -148,9 +148,10 @@ enum ShellLayout {
     /// least 380, at most half the column (380 wins), and the thread keeps 400; below that the
     /// pane overlays the thread and, with its 1pt edge, never exceeds the column. Nothing is
     /// ever negative.
-    static func rightPane(containerWidth: CGFloat, preferredWidth: CGFloat?) -> Pane {
+    static func rightPane(containerWidth: CGFloat, preferredWidth: CGFloat?,
+                          defaultWidth: CGFloat = AppLayout.paneDefaultWidth) -> Pane {
         let total = max(0, containerWidth)
-        let preferred = max(preferredWidth.flatMap { $0 > 0 ? $0 : nil } ?? AppLayout.paneDefaultWidth, AppLayout.paneMinWidth)
+        let preferred = max(preferredWidth.flatMap { $0 > 0 ? $0 : nil } ?? defaultWidth, AppLayout.paneMinWidth)
         if total >= paneDockThreshold {
             let edge = AppLayout.dividerWidth
             let widest = max(AppLayout.paneMinWidth, min(total * AppLayout.paneMaxFraction, total - edge - AppLayout.threadMinWidth))

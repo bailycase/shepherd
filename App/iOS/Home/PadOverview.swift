@@ -134,7 +134,7 @@ private struct OverviewColumns: View {
                 .equatable()
         }
         .buttonStyle(.nwRow(radius: 0))
-        .contextMenu { OpenInNewWindowButton(thread: row.ref.agentRef) }
+        .contextMenu { ThreadRowMenu(thread: row.ref.agentRef) }
     }
 
     /// A finished thread: a check (a cross for a failed last turn), its title over how it ended,
@@ -147,13 +147,22 @@ private struct OverviewColumns: View {
                 .equatable()
         }
         .buttonStyle(.nwRow(radius: 0))
-        .contextMenu { OpenInNewWindowButton(thread: row.ref.agentRef) }
+        .contextMenu { ThreadRowMenu(thread: row.ref.agentRef) }
     }
 
+    /// A column under its head; Needs you's is `lanternText` (iPadOverview).
     private func column(_ title: String, count: Int, @ViewBuilder content: () -> some View) -> some View {
-        VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-            NWSectionHeader(title, count: count)
-                .padding(.horizontal, NW.Space.xs)
+        let tint = title == "Needs you" && count > 0 ? Color.nw.lanternText : Color.nw.textTertiary
+        return VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
+            HStack(spacing: NW.Space.s) {
+                Text(title).font(.nw(.micro)).textCase(.uppercase).tracking(NWTextStyle.micro.size * 0.06)
+                    .foregroundStyle(tint).lineLimit(1)
+                Spacer(minLength: NW.Space.xs)
+                Text("\(count)").font(.nw(.micro)).foregroundStyle(tint)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isHeader)
+            .padding(.horizontal, NW.Space.xs)
             content()
         }
         .frame(minWidth: MobileLayout.overviewColumnMinWidth, maxWidth: .infinity, alignment: .topLeading)

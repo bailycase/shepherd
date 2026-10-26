@@ -122,6 +122,28 @@ struct RPCSessionTests {
         #expect(response.id?.hasPrefix(h.session.id.rawValue) == true)
     }
 
+    @Test func anAnsweredRequestDoesNotRetainItsImageUntilTheDeadline() async throws {
+        let h = try Harness()
+        defer { h.stop() }
+        // Only accessed on the harness queue.
+        final class PayloadProbe: @unchecked Sendable { weak var payload: NSString? }
+        let probe = await h.onQueue {
+            autoreleasepool {
+                // Bridging keeps this object as the String's storage, so a weak reference
+                // measures payload lifetime without a timing-sensitive RSS assertion.
+                let payload = NSString(string: String(repeating: "A", count: 2 * 1024 * 1024))
+                let probe = PayloadProbe()
+                probe.payload = payload
+                h.session.request(.prompt(message: "hello", images: [.init(data: payload as String, mimeType: "image/png")]),
+                                  timeout: RPCThreadState.promptTimeout) { _ in }
+                return probe
+            }
+        }
+        // The next response fences the prompt's processing; its ten-minute deadline is still pending.
+        #expect(try await h.request(.getState).get().success)
+        #expect(await h.onQueue { probe.payload == nil })
+    }
+
     /// Records split on LF only: a U+2028 inside a JSON string is not a line break, CRLF is
     /// tolerated, and unknown event types surface as `.unknown` instead of failing the reader.
     @Test func aStreamingTurnIsFramedOnLineFeedsOnly() async throws {

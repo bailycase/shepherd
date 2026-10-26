@@ -34,10 +34,15 @@ struct MobileRoot: View {
             .preferredColorScheme(app.appearance.mode.colorScheme)
         }
         .mobileEnvironment(app, navigator: navigator, window: window)
+        .background(DesignRenderAnchor().allowsHitTesting(false).accessibilityHidden(true))
         .focusedSceneValue(\.mobileNavigator, navigator)
         .tint(Color.nw.lantern)
         .preferredColorScheme(app.appearance.mode.colorScheme)
         .onChange(of: layout, initial: true) { _, layout in navigator.adopt(layout) }
+        // The hinge reports every degree as it moves; the navigator changes only as it shuts or opens.
+        .onHingeClosedChange { closed in if navigator.hingeClosed != closed { navigator.hingeClosed = closed } }
+        // Done's reading: opening another thread marks the one read before seen, as the Mac's sidebar does.
+        .onChange(of: navigator.selectedThread, initial: true) { _, thread in SidebarThreads.of(app.hosts).select(thread) }
         .onAppear { app.windows.register(window, navigator: navigator) }
         .onDisappear { app.windows.unregister(window.id, hosts: app.hosts) }
         .onChange(of: scenePhase, initial: true) { _, phase in
@@ -49,10 +54,12 @@ struct MobileRoot: View {
 }
 
 private extension MobileRoute {
-    /// The palette sizes its own sheet.
+    /// The palette sizes its own sheet, and an artifact fills it (a page has no height of its own to fit).
     var sizesItself: Bool {
-        if case .search(.palette) = self { return true }
-        return false
+        switch self {
+        case .search(.palette), .review(.artifact): true
+        default: false
+        }
     }
 }
 

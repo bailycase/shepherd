@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
-import ShepherdRemote
+@testable import ShepherdRemote
 @testable import ShepherdSessions
 import ShepherdTestSupport
 import ShepherdUI
@@ -16,12 +16,12 @@ import Testing
 @Suite("Project conversation and tasks", .mainActorExclusive)
 @MainActor
 struct LogicalProjectConversationTests {
-    @Test func theFirstMessageStartsTheConversationAndPausedMessagesWaitForResume() async {
+    @Test func theFirstMessageStartsTheConversationAndAMessageRestartsAPausedProject() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.conversation() } }
         expectScenarioCompleted(result)
     }
 
-    @Test func aTaskThatAsksIsWaitingOnYouAndSettledWorkResolvesAndReopens() async {
+    @Test func aTaskThatAsksIsWaitingOnYouAndItsDetailOpensAndCloses() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.tasks() } }
         expectScenarioCompleted(result)
     }
@@ -31,6 +31,34 @@ struct LogicalProjectConversationTests {
         expectScenarioCompleted(result)
     }
 
+    @Test func theThreadsPaneResizesAtItsDividerLikeAThreadsSidePane() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.paneResize() } }
+        expectScenarioCompleted(result)
+    }
+
+    /// The shared split's own divider under mouse events sent to its window (never posted), bound to the Project pane's real width:
+    /// the DragGesture's wiring to `RightPaneDrag`, which the event-free scenario cannot reach. CI's runner delivers these to the
+    /// split in a window of its own; cancelled by name only in a process that delivers no synthetic drag to SwiftUI at all.
+    @Test func theSharedSplitFollowsAMouseDragAtItsDivider() async throws {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.splitMouseDrag() } }
+        expectScenarioCompleted(result)
+        if String(decoding: result?.standardOutputContent ?? [], as: UTF8.self).contains(SyntheticMouse.undeliveredLine) {
+            try Test.cancel("this process does not deliver synthetic mouse events to SwiftUI gestures")
+        }
+    }
+
+    /// The Project page's divider in the whole window under the same events. CI's runner has delivered them to neither divider of
+    /// this window, not even the sidebar's (run 39206720931), so the scenario first drags the sidebar's divider (the app's own,
+    /// independent of the pane's gesture) and is cancelled by name only when that does not move; where it does, the pane's divider
+    /// must follow exactly.
+    @Test func theThreadsPaneFollowsAMouseDragAtItsDivider() async throws {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.paneMouseDrag() } }
+        expectScenarioCompleted(result)
+        if String(decoding: result?.standardOutputContent ?? [], as: UTF8.self).contains(SyntheticMouse.undeliveredLine) {
+            try Test.cancel("this window does not deliver synthetic mouse drags even to the sidebar's divider")
+        }
+    }
+
     @Test func aChosenFilterOffersShowAllAndChoosingItClearsTheFilter() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.filterReset() } }
         expectScenarioCompleted(result)
@@ -38,6 +66,13 @@ struct LogicalProjectConversationTests {
 
     @Test func aProposedSpaceIsOfferedAndEachChoiceGoesToTheOwnerWithItsRevision() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.offer() } }
+        expectScenarioCompleted(result)
+    }
+
+    /// The order CI run 39822019981 met: the first card is gone before the owner's reply to it lands, so the remaining offer is
+    /// still disabled. Holding that reply makes the order certain; the offer takes its one press once the reply is in.
+    @Test func theRemainingOfferTakesItsPressOnlyOnceTheFirstDecisionsReplyLands() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.offer(holdingFirstReply: true) } }
         expectScenarioCompleted(result)
     }
 
@@ -61,7 +96,7 @@ struct LogicalProjectConversationTests {
         expectScenarioCompleted(result)
     }
 
-    @Test func aPausedMessageStaysVisibleUntilResumeAndAnUnconfirmedOneIsNeverLostOrRetriedForThePerson() async {
+    @Test func aMessageSentToAPausedProjectRestartsItAndIsDrawnInExactlyOnePlace() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.heldMessages() } }
         expectScenarioCompleted(result)
     }
@@ -136,13 +171,28 @@ struct LogicalProjectConversationTests {
         expectScenarioCompleted(result)
     }
 
+    @Test func anExitedCoordinatorsNextMessagesRestartItAndLeaveStarting() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.coordinatorRelaunch() } }
+        expectScenarioCompleted(result)
+    }
+
+    @Test func aHeldOffCoordinatorsModelAndReasoningAreTheProjectsOwnSettingsAndItsNextLaunchUsesThem() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.heldOffModelAndReasoning() } }
+        expectScenarioCompleted(result)
+    }
+
     @Test func aSavedCoordinatorsHistoryShowsOnAColdLaunchAndTheNextMessageStartsItsPi() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.coldCoordinator() } }
         expectScenarioCompleted(result)
     }
 
-    @Test func aResolvedWorkersThreadDrawsNoComposerUntilItIsReopened() async {
+    @Test func aResolvedWorkersThreadDrawsNoComposerAndOffersNoReopenButKeepsItsHistory() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.resolvedHasNoComposer() } }
+        expectScenarioCompleted(result)
+    }
+
+    @Test func aSettledWorkersMoreMenuStillOffersMarkResolvedAndItResolves() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.settledMenuResolves() } }
         expectScenarioCompleted(result)
     }
 
@@ -151,7 +201,13 @@ struct LogicalProjectConversationTests {
         expectScenarioCompleted(result)
     }
 
-    @Test func thePausedFooterMatchesItsSourceGeometryAndTheResolvedFooterKeepsItsOwn() async {
+    @Test(arguments: ["pane-option", "pane-text", "project-text"], [false, true])
+    func aWorkersSelectAnsweredFromThePanesDockIsDeliveredOnceAndTheDockLeaves(route: String, rejectedFirst: Bool) async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { [route = route as String, rejectedFirst = rejectedFirst as Bool] in await completingScenario { try await Self.paneDockAnswer(route: route, rejectedFirst: rejectedFirst) } }
+        expectScenarioCompleted(result)
+    }
+
+    @Test func theResolvedFooterKeepsItsSourceGeometry() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.footerGeometry() } }
         expectScenarioCompleted(result)
     }
@@ -187,7 +243,7 @@ struct LogicalProjectConversationTests {
         let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
         defer { window.close() }
         try await eventuallyOnMain("the collapsed summary") { window.layout(); return window.element("Show project tasks") != nil }
-        #expect(window.controls().first { $0.label == "Show project tasks" }?.value == "Collapsed, 1 of 2 done · 1 in progress")
+        #expect(window.controls().first { $0.label == "Show project tasks" }?.value == "Collapsed, 1 working · 1 stopped")
         #expect(!window.controls().contains { $0.label?.hasPrefix(finished.title) == true })
         try window.press("Show project tasks")
         try await eventuallyOnMain("the expanded tasks") {
@@ -195,7 +251,7 @@ struct LogicalProjectConversationTests {
             return window.element("Hide project tasks") != nil && window.controls().contains { $0.label?.hasPrefix(finished.title) == true }
         }
         let header = try #require(window.controls().first { $0.label == "Hide project tasks" })
-        #expect(header.value == "Expanded, 1 of 2 done · 1 in progress")
+        #expect(header.value == "Expanded, 1 working · 1 stopped")
         // A worker's cached activity (refreshed only by the pane) never reaches the strip: the running row is its title alone.
         let ongoing = try #require(current.tasks.count == 1 ? r.vm.state.projects.first?.tasks.last : nil)
         let worker = r.vm.projectWorkerStore(.local, ongoing.workerAgentID)
@@ -213,7 +269,7 @@ struct LogicalProjectConversationTests {
         try await eventuallyOnMain("the selected worker opens in the pane") { window.layout(); return window.element("Open as a thread") != nil }
         r.vm.logicalProjectPaneOpen = false
 
-        // The open list follows the owner, without closing or changing what "done" counts.
+        // The open list follows the owner without closing; resolving moves a stopped task to resolved, never to "done".
         let latest = try #require(r.app.server.state.projects.first { $0.id == r.project.id })
         _ = try await r.vm.projectCoordinator.perform(projectID: r.project.id, expectedRevision: latest.revision,
             request: .resolve(taskID: finished.id, operationID: UUID()))
@@ -222,7 +278,7 @@ struct LogicalProjectConversationTests {
         }
         window.layout()
         #expect(window.element("Hide project tasks") != nil)
-        #expect(window.controls().first { $0.label == "Hide project tasks" }?.value == header.value)
+        #expect(window.controls().first { $0.label == "Hide project tasks" }?.value == "Expanded, 1 working · 1 resolved")
         let running = try #require(latest.tasks.last)
         guard case .snapshot(let snapshot) = try await r.app.server.nativeThread(agentID: running.workerAgentID, request: .snapshot()) else {
             throw RigError("no worker snapshot")
@@ -230,7 +286,7 @@ struct LogicalProjectConversationTests {
         _ = try await r.app.server.nativeThread(agentID: running.workerAgentID,
             request: .abort(expectedSessionID: snapshot.piSessionID, generation: snapshot.generation, operationID: UUID()))
         try await eventuallyOnMain("completion updates the expanded summary") {
-            window.layout(); return window.controls().first { $0.label == "Hide project tasks" }?.value == "Expanded, 2 of 2 done"
+            window.layout(); return window.controls().first { $0.label == "Hide project tasks" }?.value == "Expanded, 1 stopped · 1 resolved"
         }
         try window.press("Hide project tasks")
         try await eventuallyOnMain("collapse removes the rows") {
@@ -239,7 +295,7 @@ struct LogicalProjectConversationTests {
         try window.press("Show project tasks")
         r.vm.openLogicalProject(LogicalProjectRef(home: .local, id: other.id))
         try await eventuallyOnMain("another project starts collapsed") {
-            window.layout(); return window.controls().first { $0.label == "Show project tasks" }?.value == "Collapsed, 0 of 1 done · 1 in progress"
+            window.layout(); return window.controls().first { $0.label == "Show project tasks" }?.value == "Collapsed, 1 working"
         }
         #expect(!window.controls().contains { $0.label?.hasPrefix("Other work") == true })
         try window.press("Show project tasks")
@@ -321,22 +377,23 @@ struct LogicalProjectConversationTests {
         #expect(!r.vm.state.isOrdinaryThread(try #require(r.vm.state.agents.first { $0.id == coordinator })))
         #expect(r.vm.projectCoordinator.conversationStore(agentID: coordinator) === r.vm.threadStores.store(for: coordinator))
 
-        // Pause: the banner says so, Resume is a real control, and a message sent while paused is held, not delivered.
-        #expect(await r.vm.logicalProjects.setPaused(r.ref, true))
-        try await eventuallyOnMain("the paused banner") { window.layout(); return window.elements().contains { $0.label?.hasPrefix("Paused.") == true || $0.value?.hasPrefix("Paused.") == true } }
-        let held = await r.vm.logicalProjects.sendMessage(r.ref, text: "wait for me")
-        #expect(held, "the runtime accepts and keeps it: \(r.vm.logicalProjects.failure?.message ?? "no refusal")")
-        let messages = try #require(r.app.server.state.projects.first).messages
-        #expect(messages.contains { $0.text == "wait for me" && $0.phase == .queued }, "queued, not delivered, while paused: \(messages)")
-        try await eventuallyOnMain("the interruption is acknowledged") { r.app.server.state.projects.first?.interruptPending == false }
-        try await eventuallyOnMain("the banner's Resume is enabled once the interruption is acknowledged") {
-            window.layout(); return window.controls().contains { $0.label == "Resume" && $0.isEnabled }
+        // The runtime stops the Project (no person-facing Pause): the page draws no banner or Resume, and the person's next message
+        // starts it again and is delivered.
+        try await eventuallyOnMain("the first message is delivered") { r.app.server.state.projects.first?.messages.first?.phase == .delivered }
+        let running = try #require(r.app.server.state.projects.first)
+        _ = try await r.vm.projectCoordinator.perform(projectID: running.id, expectedRevision: running.revision, request: .pause)
+        try await eventuallyOnMain("paused and acknowledged") { r.app.server.state.projects.first.map { $0.paused && !$0.interruptPending } == true }
+        // The runtime call bypasses the model, so wait for its copy to reach the owner's revision before acting on it.
+        try await eventuallyOnMain("the page sees the owner's revision") { r.vm.logicalProjects.project(r.ref)?.revision == r.app.server.state.projects.first?.revision }
+        window.layout()
+        #expect(!window.elements().contains { ($0.label ?? $0.value ?? "").hasPrefix("Paused.") }, "no paused banner")
+        #expect(!window.controls().contains { $0.label == "Resume" }, "no Resume control")
+        let restarted = await r.vm.logicalProjects.sendMessage(r.ref, text: "wake up")
+        #expect(restarted, "\(r.vm.logicalProjects.failure?.message ?? "no refusal")")
+        try await eventuallyOnMain("restarted and delivered") {
+            let p = r.app.server.state.projects.first
+            return p?.paused == false && p?.messages.first { $0.text == "wake up" }?.phase == .delivered
         }
-        let resumes = window.controls().filter { $0.label == "Resume" }
-        let resume = try #require(resumes.first { $0.isEnabled })
-        #expect(ControlPress.undersized([resume], minimum: .desktop).isEmpty, "Resume is \(resume.frame.size)")
-        try window.press("Resume", nth: try #require(resumes.firstIndex { $0.isEnabled }))
-        try await eventuallyOnMain("resumed") { r.app.server.state.projects.first?.paused == false }
     }
 
     // MARK: Tasks
@@ -384,6 +441,217 @@ struct LogicalProjectConversationTests {
         try await eventuallyOnMain("the pane returns to Threads") { r.vm.logicalProjectPaneTask == nil }
     }
 
+    /// The Threads pane's leading edge is `RightPaneSplit`'s divider, as a thread's side pane is: a column-resize handle you drag, or
+    /// adjust with VoiceOver, that keeps the conversation 400pt while it docks, persists one width for every Project, and survives
+    /// Close, Expand, a narrower window and larger text. The drag is real mouse events sent to the off-screen window (never posted).
+    private static func paneResize() async throws {
+        let r = try await rig()
+        defer { r.app.stop() }
+        guard case .project(let other) = try await r.app.server.logicalProjects(
+            .create(projectID: ProjectID(), name: "Other project", goal: "", linkedSpaceIDs: [r.space.id])) else { throw RigError("no other project") }
+        try await eventuallyOnMain("both projects") { r.vm.state.projects.count == 2 }
+        r.vm.openLogicalProject(r.ref)
+        let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
+        defer { window.close() }
+        func handle() -> AccessibilityNode? { window.elements().first { $0.label == "Pane width" } }
+        /// The drawn pane's width: the window's trailing edge less the 1pt divider, which the 9pt handle centres on.
+        func paneWidth() -> String? { handle().map { "\(Int((window.window.frame.maxX - $0.frame.midX - AppLayout.dividerWidth / 2).rounded())) points" } }
+        func drawn() -> CGFloat? { handle().map { window.window.frame.maxX - $0.frame.midX - AppLayout.dividerWidth / 2 } }
+        func control(_ label: String) throws -> Control { try #require(window.controls().first { $0.label == label }, "\(label) on screen") }
+        /// The pane's header stays inside the window and the conversation's composer stays left of the divider.
+        func expectReachable(_ when: String) throws {
+            let edge = try #require(handle()).frame
+            let close = try control("Close")
+            let field = try #require(window.elements().first { $0.label == "Message the agent" }).frame
+            #expect(close.frame.maxX <= window.window.frame.maxX + 0.5 && close.frame.minX > edge.maxX, "Close is reachable \(when): \(close.frame) beside \(edge)")
+            #expect(field.maxX <= edge.minX, "the composer \(field) stays left of the divider \(edge) \(when)")
+        }
+        try await eventuallyOnMain("the divider") { paneWidth() == "479 points" }
+        // The default is the board's: a 1pt divider and the 479 pane, so the conversation keeps its 888.
+        let edge = try #require(handle()).frame
+        #expect(edge.width == AppLayout.resizeHandleWidth, "the shared 9pt handle: \(edge)")
+        #expect(abs(window.window.frame.maxX - (edge.midX - AppLayout.dividerWidth / 2) - NWLeadMetrics.paneWidth) < 0.5, "the divider and pane are the board's 480: \(edge)")
+        try expectReachable("by default")
+
+        // VoiceOver's increment widens it by the shared step, and the width is saved where a thread's pane keeps its own.
+        let increment = NSSelectorFromString("accessibilityPerformIncrement")
+        _ = try #require(handle()).object.perform(increment)
+        try await eventuallyOnMain("incremented") { paneWidth() == "\(479 + Int(AppLayout.paneAdjustStep)) points" }
+        let saved = r.app.defaults.double(forKey: ShepherdViewModel.logicalProjectPaneWidthKey)
+        #expect(saved == Double(479 + AppLayout.paneAdjustStep), "saved \(saved), the state holds \(r.vm.logicalProjectPane.width)")
+        #expect(r.app.defaults.object(forKey: RightPaneState.widthKey) == nil, "a thread's pane width is untouched")
+
+        // A drag, through the handle's own path: `RightPaneDrag` is what its DragGesture's onChanged builds from each pointer
+        // location and what its onEnded saves, and `RightPaneDrag.layout` is what the split draws meanwhile. Driven over the page's
+        // real split (its width checked against the drawn divider) and the view model's real binding, without mouse events, which
+        // CI's runner does not deliver to this window (theSharedSplitFollowsAMouseDragAtItsDivider and theThreadsPaneFollowsAMouseDragAtItsDivider send them).
+        // The page is the window less the 232 sidebar and its 1pt edge: 1367, so the widest pane (half of it) is 683.5.
+        let page = AppLayout.sidebarDefaultWidth + AppLayout.dividerWidth
+        let total = window.window.frame.width - page
+        let layout = RightPaneDrag.layout(nil, state: r.vm.logicalProjectPane, containerWidth: total)
+        #expect(layout == ShellLayout.Pane(mode: .docked, width: 519, contentWidth: total - 520), "the split lays out the saved width")
+        let line = try #require(handle()).frame.midX - AppLayout.dividerWidth / 2 - window.window.frame.minX
+        #expect(line == page + layout.contentWidth, "the divider is drawn where that layout puts it: \(line)")
+        /// One drag: the pointer taken at the divider's trailing edge, then moved by `deltas` in turn; each step previews without
+        /// saving, and letting go saves (and persists) what the last preview drew.
+        func drag(by deltas: [CGFloat], previews: [CGFloat], saves saved: CGFloat) throws {
+            let before = r.vm.logicalProjectPane.width
+            var pointer = total - before
+            var last: RightPaneDrag?
+            for (delta, preview) in zip(deltas, previews) {
+                pointer += delta
+                let step = RightPaneDrag(pointerX: pointer, containerWidth: total)
+                #expect(RightPaneDrag.layout(step, state: r.vm.logicalProjectPane, containerWidth: total).width == preview,
+                        "after \(delta) the pane previews \(preview)")
+                #expect(r.vm.logicalProjectPane.width == before, "nothing is saved while the drag lasts")
+                last = step
+            }
+            try #require(last).end(in: r.vm.logicalProjectPane, containerWidth: total)
+            #expect(r.vm.logicalProjectPane.width == saved)
+            #expect(r.app.defaults.double(forKey: ShepherdViewModel.logicalProjectPaneWidthKey) == Double(saved), "persisted")
+        }
+        // Past the widest (half the page, 683.5) and past the narrowest (380): each bound holds while dragging and when let go.
+        try drag(by: [-300, -400], previews: [683.5, 683.5], saves: 683.5)
+        try await eventuallyOnMain("the widest is drawn") { drawn().map { abs($0 - 683.5) <= 0.5 } == true }
+        try drag(by: [200, 200], previews: [483.5, 380], saves: 380)
+        try await eventuallyOnMain("the narrowest is drawn") { paneWidth() == "380 points" }
+        // Five 50pt moves add up, then 11 back: the pointer's place decides, so 239pt left of 380 is 619.
+        try drag(by: [-50, -50, -50, -50, -50, 11], previews: [430, 480, 530, 580, 630, 619], saves: 619)
+        #expect(r.app.defaults.object(forKey: RightPaneState.widthKey) == nil, "a thread's pane width is untouched")
+        try await eventuallyOnMain("the drawn width follows") { paneWidth() == "619 points" }
+        try expectReachable("after the drag")
+
+        // Another Project: one width for every Project, as one width serves every thread.
+        r.vm.openLogicalProject(LogicalProjectRef(home: .local, id: other.id))
+        try await eventuallyOnMain("the other project") { window.layout(); return window.elements().contains { $0.label == "Other project" } }
+        #expect(paneWidth() == "619 points")
+        r.vm.openLogicalProject(r.ref)
+
+        // A narrower window: the pane gives way so the conversation keeps 400 (1200 less the 232 sidebar and its edge is 967, half
+        // of which is 483); narrower still, it overlays the conversation as a thread's does. The saved width is kept for later.
+        window.window.setContentSize(CGSize(width: 1200, height: 900))
+        try await eventuallyOnMain("clamped") { paneWidth() == "483 points" }
+        try expectReachable("in a 1200 window")
+        #expect(r.vm.logicalProjectPane.width == 619)
+        window.window.setContentSize(CGSize(width: 960, height: 900))
+        try await eventuallyOnMain("overlaid") { window.layout(); return (try? control("Close").frame.maxX).map { $0 <= window.window.frame.maxX + 0.5 } == true }
+        window.window.setContentSize(CGSize(width: 1600, height: 900))
+        try await eventuallyOnMain("back to its width") { paneWidth() == "619 points" }
+
+        // Larger text: the header's controls stay inside the pane, in both appearances.
+        let original = ThemeStore.shared.textScale
+        defer { ThemeStore.shared.textScale = original }
+        for dark in [true, false] {
+            window.window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            window.host.appearance = window.window.appearance
+            ThemeStore.shared.textScale = 1.3
+            window.layout()
+            try expectReachable("at 1.3x in \(dark ? "dark" : "light")")
+        }
+        ThemeStore.shared.textScale = original
+
+        // Close hides the divider with the pane, Overview brings both back at the same width.
+        try window.press("Close")
+        try await eventuallyOnMain("closed") { !r.vm.logicalProjectPaneOpen && handle() == nil }
+        try window.press("Overview")
+        try await eventuallyOnMain("reopened") { paneWidth() == "619 points" }
+        // Expand covers the page with the pane and drops the divider; Collapse restores both.
+        try window.press("Expand")
+        try await eventuallyOnMain("expanded") { r.vm.logicalProjectPaneExpanded && handle() == nil }
+        try window.press("Collapse")
+        try await eventuallyOnMain("collapsed") { paneWidth() == "619 points" }
+
+        // The next launch reads the saved width (ShellLayoutTests covers an unsaved or too-narrow one restoring 479).
+        #expect(RightPaneState(widthKey: ShepherdViewModel.logicalProjectPaneWidthKey, defaultWidth: 479, defaults: r.app.defaults).width == 619)
+    }
+
+    /// `RightPaneSplit` alone, 1367 wide (the Project page beside the 232 sidebar in a 1600 window), on the Project pane's real state,
+    /// under mouse events: while the button is down the pane follows the pointer and nothing is saved; letting go saves (and
+    /// persists) where it was drawn, within half the column.
+    private static func splitMouseDrag() async throws {
+        let r = try await rig()
+        defer { r.app.stop() }
+        guard await SyntheticMouse.reachesSwiftUIGestures() else {
+            FileHandle.standardOutput.write(Data(SyntheticMouse.undeliveredLine.utf8))
+            return
+        }
+        final class Log: NSView { var widths: [CGFloat] = []
+            override func setFrameSize(_ size: NSSize) { super.setFrameSize(size); if widths.last != size.width { widths.append(size.width) } } }
+        struct Logged: NSViewRepresentable { let view: Log
+            func makeNSView(context: Context) -> Log { view }
+            func updateNSView(_ nsView: Log, context: Context) {} }
+        let pane = Log()
+        let total: CGFloat = 1367
+        let window = OffscreenWindow(size: CGSize(width: total, height: 700), dark: true,
+                                     RightPaneSplit(state: r.vm.logicalProjectPane, showPane: true) { Color.white } pane: { Logged(view: pane) })
+        defer { window.close() }
+        try await eventuallyOnMain("the default pane") { window.layout(); return pane.widths.last == 479 }
+        // At the 1pt line's trailing edge, so each width is whole.
+        let mouse = SyntheticMouse(window: window.window, y: 350)
+        let grab = total - 479
+        try mouse.press(at: grab)
+        for step in 1...5 { try mouse.move(to: grab - CGFloat(step) * 20) }
+        try await eventuallyOnMain("the pane follows the pointer") { window.layout(); return pane.widths.last == 579 }
+        #expect(r.vm.logicalProjectPane.width == 0, "nothing is saved while the button is down")
+        try mouse.move(to: grab - 1000)
+        // Half the 1367 column is 683.5, drawn on whole points at this window's 1x scale.
+        try await eventuallyOnMain("no wider than half the column") { window.layout(); return pane.widths.last.map { abs($0 - 683.5) <= 0.5 } == true }
+        try mouse.move(to: grab - 140)
+        try mouse.release(at: grab - 140)
+        try await eventuallyOnMain("saved where it was let go") { r.vm.logicalProjectPane.width == 619 }
+        #expect(r.app.defaults.double(forKey: ShepherdViewModel.logicalProjectPaneWidthKey) == 619)
+        #expect(r.app.defaults.object(forKey: RightPaneState.widthKey) == nil, "a thread's pane width is untouched")
+        try await eventuallyOnMain("drawn where it was saved") { window.layout(); return pane.widths.last == 619 }
+        #expect(!window.window.isKeyWindow, "local mouse dispatch never takes the user's focus")
+    }
+
+    /// The Project page's divider in the whole window under real mouse events: while the button is down the pane follows the
+    /// pointer and nothing is saved; letting go saves where it was drawn. Never posted, never key.
+    private static func paneMouseDrag() async throws {
+        let r = try await rig()
+        defer { r.app.stop() }
+        r.vm.openLogicalProject(r.ref)
+        let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
+        defer { window.close() }
+        func handle() -> AccessibilityNode? { window.elements().first { $0.label == "Pane width" } }
+        func paneWidth() -> String? { handle().map { "\(Int((window.window.frame.maxX - $0.frame.midX - AppLayout.dividerWidth / 2).rounded())) points" } }
+        try await eventuallyOnMain("the divider") { paneWidth() == "479 points" }
+        let mouse = SyntheticMouse(window: window.window, y: window.host.bounds.midY)
+        // Window coordinates from the window's own geometry, taken at the 1pt line's trailing edge so the widths are whole.
+        let grab = try #require(handle()).frame.midX + AppLayout.dividerWidth / 2 - window.window.frame.minX
+        try mouse.press(at: grab)
+        for step in 1...5 { try mouse.move(to: grab - CGFloat(step) * 20) }
+        do {
+            try await eventuallyOnMain("the pane follows the pointer") { paneWidth() == "579 points" }
+        } catch {
+            // Did this window deliver the drag at all? The sidebar's own divider (its handle centres on x 232.5), independent of
+            // the pane's gesture: where it does not move either, the window delivers no drag and the test is cancelled by name;
+            // where it moves, the pane's divider alone ignored the drag, which fails.
+            try mouse.release(at: grab - 100)
+            let sidebar = r.vm.settings.sidebarWidth
+            try mouse.press(at: sidebar + 0.5)
+            for step in 1...5 { try mouse.move(to: sidebar + 0.5 + CGFloat(step) * 10) }
+            try mouse.release(at: sidebar + 50.5)
+            if (try? await eventuallyOnMain("the sidebar follows", timeout: .seconds(2)) { r.vm.settings.sidebarWidth != sidebar }) == nil {
+                FileHandle.standardOutput.write(Data(SyntheticMouse.undeliveredLine.utf8))
+                return
+            }
+            Issue.record("the sidebar's divider followed the drag (\(sidebar) → \(r.vm.settings.sidebarWidth)) but the pane's did not")
+            throw error
+        }
+        #expect(r.vm.logicalProjectPane.width == 0, "nothing is saved while the button is down")
+        try mouse.move(to: grab - 1000)
+        try await eventuallyOnMain("no wider than half the page (683.5)") {
+            handle().map { abs(window.window.frame.maxX - $0.frame.midX - AppLayout.dividerWidth / 2 - 683.5) <= 0.5 } == true
+        }
+        try mouse.move(to: grab - 140)
+        try mouse.release(at: grab - 140)
+        try await eventuallyOnMain("saved where it was let go") { r.vm.logicalProjectPane.width == 619 }
+        #expect(r.app.defaults.double(forKey: ShepherdViewModel.logicalProjectPaneWidthKey) == 619)
+        try await eventuallyOnMain("drawn where it was saved") { paneWidth() == "619 points" }
+        #expect(!window.window.isKeyWindow, "local mouse dispatch never takes the user's focus")
+    }
+
     private static func paneHeader() async throws {
         let r = try await rig()
         defer { r.app.stop() }
@@ -418,7 +686,7 @@ struct LogicalProjectConversationTests {
         // Its items come from the real task groups; choosing one filters the list.
         // Choosing "Working" in the real menu filters the list to that group; "Show all" then clears it.
         let offered = try await NativeMenuChoice.choose("Working", from: filter)
-        #expect(offered == ["Waiting on you", "Working", "Resolved"], "the menu offers the task groups: \(offered)")
+        #expect(offered == ["Waiting on you", "Working", "Stopped", "Resolved"], "the menu offers the task groups, a stopped turn its own: \(offered)")
         try await eventuallyOnMain("the choice reached the view model") { r.vm.logicalProjectPaneFilter == [.working] }
         try await eventuallyOnMain("only working threads show") { window.layout()
             return window.controls().contains { $0.label == "Reading list research" } }
@@ -497,9 +765,22 @@ struct LogicalProjectConversationTests {
         try await eventuallyOnMain("Show all cleared the filter") { r.vm.logicalProjectPaneFilter.isEmpty }
     }
 
-    private static func offer() async throws {
+    private static func offer(holdingFirstReply: Bool = false) async throws {
         let r = try await rig()
         defer { r.app.stop() }
+        // The view model's own local wiring (`makeLogicalProjectsModel`), except that the owner's reply to an accepted Space is
+        // held after the owner committed it, until the scenario lets it through.
+        var heldReply: CheckedContinuation<Void, Never>?
+        if holdingFirstReply {
+            let vm = r.vm
+            vm.madeLogicalProjects = LogicalProjectsModel(
+                send: { _, request in try await vm.server.logicalProjects(request) }, pushed: { _ in vm.state.projects },
+                runtime: { ref, revision, request in
+                    let project = try await vm.projectCoordinator.perform(projectID: ref.id, expectedRevision: revision, request: request)
+                    if case .decideSpace(_, _, true) = request { await withCheckedContinuation { heldReply = $0 } }
+                    return project
+                })
+        }
         // A real conversation first, so the project has its coordinator; then two proposals through the owner's own request.
         #expect(await r.vm.logicalProjects.sendMessage(r.ref, text: "hello"))
         let web = r.app.dir.appendingPathComponent("sample-app-web")
@@ -536,6 +817,18 @@ struct LogicalProjectConversationTests {
                 && project?.linkedSpaces.contains { $0.provenance == .project } == true
         }
         try await eventuallyOnMain("one offer left") { window.layout(); return window.controls().filter { $0.label == "Add to project" }.count == 1 }
+        // The page runs one owner action at a time (`LogicalProjectsModel.busy`), and the pushed state that removed the first card
+        // can arrive before the owner's reply to it: until then the remaining offer is drawn disabled.
+        func remaining() -> [Control] { window.controls().filter { $0.label == "Not now" || $0.label == "Add to project" } }
+        if holdingFirstReply {
+            #expect(heldReply != nil, "the accepted decision's reply is held")
+            #expect(remaining().count == 2 && remaining().allSatisfy { !$0.isEnabled }, "no second decision while the first is in flight: \(remaining())")
+            heldReply?.resume()
+            heldReply = nil
+        }
+        try await eventuallyOnMain("the remaining offer is enabled once the first decision's reply lands") {
+            window.layout(); return remaining().count == 2 && remaining().allSatisfy(\.isEnabled)
+        }
         // "Not now" is consumed as a denial: nothing is linked and nothing stays actionable.
         let linked = r.app.server.state.projects.first?.linkedSpaces.count
         try window.press("Not now")
@@ -855,7 +1148,7 @@ private static func chipsAndLinks() async throws {
         func heldNow() -> [ProjectHeldMessage] {
             let project = r.vm.logicalProjects.project(r.ref)
             let consumed = Set((store.messages + store.pending + store.rows.flatMap(\.turn.messages)).compactMap { $0.operationID })
-            return ProjectHeldMessages.held(messages: project?.messages ?? [], paused: project?.paused ?? false, consumed: consumed)
+            return ProjectHeldMessages.held(messages: project?.messages ?? [], consumed: consumed)
         }
         // The shared Up next row's own label, and the transcript's bubble for the same words (with or without a note).
         let row = "Queued 1 of 1: send me later"
@@ -866,41 +1159,33 @@ private static func chipsAndLinks() async throws {
                 return label == "send me later" || label.hasPrefix("send me later, ")
             }.count
         }
-        // Pause through the real control, then send through the real composer: the owner accepts and holds it.
-        try window.press("Project settings")
-        try await eventuallyOnMain("settings") { window.layout(); return window.element("Pause") != nil }
-        try window.press("Pause")
-        try await eventuallyOnMain("paused") { r.app.server.state.projects.first?.paused == true }
-        r.vm.openLogicalProject(r.ref)
-        try await eventuallyOnMain("the page is back") { window.layout(); return window.controls().contains { $0.label == "Send" } }
+        // The runtime stops the Project (no person-facing Pause); then the person sends through the real composer, which restarts it.
+        let running = try #require(r.app.server.state.projects.first)
+        _ = try await r.vm.projectCoordinator.perform(projectID: running.id, expectedRevision: running.revision, request: .pause)
+        try await eventuallyOnMain("paused and acknowledged") { r.app.server.state.projects.first.map { $0.paused && !$0.interruptPending } == true }
+        // The runtime call bypasses the model, so wait for its copy to reach the owner's revision before acting on it.
+        try await eventuallyOnMain("the page sees the owner's revision") { r.vm.logicalProjects.project(r.ref)?.revision == r.app.server.state.projects.first?.revision }
+        try await eventuallyOnMain("Send is reachable") { window.layout(); return window.element("Message the agent") != nil }
         store.draft = "send me later"
         try await eventuallyOnMain("Send is offered") { window.layout(); return window.controls().contains { $0.label == "Send" && $0.isEnabled } }
-        try window.press("Send")
-        try await eventuallyOnMain("the owner holds it queued") {
-            r.app.server.state.projects.first?.messages.first { $0.text == "send me later" }?.phase == .queued
-        }
-        try await eventuallyOnMain("the draft cleared, so the person knows it was accepted") { store.draft.isEmpty }
-        // It is still represented, as a normal thread's queued message: the shared Up next row, its header Paused, and no bubble.
-        try await window.diagnosing(stores: [store], needles: [row, "send me later"], extra: {
-            ["held=\(heldNow().map { "\($0.text) | \($0.phase)" }) projectMessages=\((r.vm.logicalProjects.project(r.ref)?.messages ?? []).map { "\($0.text) \($0.phase)" })"]
-        }) {
-            try await eventuallyOnMain("the held message waits in Up next") { upNextRows() == 1 }
-        }
-        #expect(heldNow().map(\.text) == ["send me later"], "its own words are what is held")
-        #expect(window.element("Up next, 1 message") != nil, "the shared stack's header counts it")
-        #expect(window.elements().contains { $0.label == "Paused" || $0.value == "Paused" }, "the header says the Project holds it")
-        #expect(bubbles() == 0, "never a sent-looking transcript bubble while the owner holds it")
         // The owner offers no queue controls: none of the native stack's are drawn, and no empty options menu.
         let unsupported: Set = ["Queue options", "Steer now", "Send now", "Edit", "Delete", "Back to the queue", "Steer all now", "Send all now"]
-        #expect(!window.controls().contains { unsupported.contains($0.label ?? "") }, "\(window.controls().compactMap(\.label))")
-        // Resume: the owner hands it to pi only now. Until the native transcript holds its operation it stays in Up next; then it is the
-        // transcript's alone. Each observation is one place or (for a frame while the two pushes cross) none, never two.
-        try window.press("Resume", nth: 0)
-        var sawTwo = false
-        try await eventuallyOnMain("resumed and delivered") {
+        // Until the native transcript holds its operation it may wait in Up next; then it is the transcript's alone. Each observation
+        // is one place or (for a frame while the two pushes cross) none, never two.
+        try window.press("Send")
+        var sawTwo = false, sawControls = false, sawPaused = false
+        try await eventuallyOnMain("restarted and delivered") {
+            window.layout()
             if upNextRows() > 0 && bubbles() > 0 { sawTwo = true }
+            if window.controls().contains(where: { unsupported.contains($0.label ?? "") }) { sawControls = true }
+            if window.elements().contains(where: { $0.label == "Paused" || $0.value == "Paused" }) { sawPaused = true }
             return r.app.server.state.projects.first?.messages.first { $0.text == "send me later" }?.phase == .delivered
         }
+        #expect(r.app.server.state.projects.first?.paused == false, "the message restarted the Project")
+        // The composer clears its draft in its own task once the send returns, which can trail the delivery itself.
+        try await eventuallyOnMain("the draft cleared, so the person knows it was accepted") { store.draft.isEmpty }
+        #expect(!sawControls, "the owner's queue offers no native queue controls")
+        #expect(!sawPaused, "Up next never says Paused")
         // The thread's own bubble takes over once its native operation is consumed: nothing held, no row, never two.
         try await eventuallyOnMain("the Up next row gave way to the transcript") {
             heldNow().isEmpty && upNextRows() == 0 && window.element("Up next, 1 message") == nil
@@ -961,7 +1246,7 @@ private static func chipsAndLinks() async throws {
         func held() -> [ProjectHeldMessage] {
             let shown = vm.logicalProjects.project(ref)
             let consumed = Set((store.messages + store.pending + store.rows.flatMap(\.turn.messages)).compactMap { $0.operationID })
-            return ProjectHeldMessages.held(messages: shown?.messages ?? [], paused: shown?.paused ?? false, consumed: consumed)
+            return ProjectHeldMessages.held(messages: shown?.messages ?? [], consumed: consumed)
         }
         func labelled(_ text: String, note: String? = nil) -> Int {
             let labels = note.map { [$0, "\(text), \($0)"] } ?? [text]
@@ -973,7 +1258,8 @@ private static func chipsAndLinks() async throws {
         try await window.diagnosing(stores: [store], needles: [row], extra: { ["held=\(held().map { "\($0.text) \($0.phase)" })"] }) {
             try await eventuallyOnMain("the queued message waits in Up next") { window.layout(); return labelled(row) == 1 }
         }
-        #expect(window.elements().contains { $0.label == "Paused" || $0.value == "Paused" } && window.element("Up next, 1 message") != nil)
+        #expect(window.element("Up next, 1 message") != nil)
+        #expect(held().filter { $0.phase == .queued }.map(\.note) == ["Waiting to send"])
         #expect(labelled(waiting.text) == 0 && echoes() == 0, "no transcript bubble while the owner holds it")
         // The image goes by the name the owner holds; this Mac draws no bytes for it.
         #expect(ProjectHeldMessages.upNext(held()).queue.map { $0.images.map(\.name) } == [["sketch.png"]])
@@ -983,8 +1269,9 @@ private static func chipsAndLinks() async throws {
 
         // The relaunch holds the coordinator off on purpose (nothing can be delivered while paused), as a cold Project does.
         try await eventuallyOnMain("the restored coordinator is held off") { store.offline && !store.starting && store.loadError == nil }
-        // Resume: the owner starts the coordinator's pi, which is still booting. Resume alone sends nothing, so nothing looks sent.
-        #expect(await vm.logicalProjects.setPaused(ref, false))
+        // The runtime's resume: the owner starts the coordinator's pi, which is still booting. Resume alone sends nothing, so nothing looks sent.
+        let pausedProject = try #require(app.server.state.projects.first)
+        _ = try await vm.projectCoordinator.perform(projectID: pausedProject.id, expectedRevision: pausedProject.revision, request: .resume)
         let watchedUntil = ContinuousClock.now + .milliseconds(900)
         var moved = false
         try await eventuallyOnMain("the start is watched") {
@@ -993,7 +1280,6 @@ private static func chipsAndLinks() async throws {
             return ContinuousClock.now >= watchedUntil
         }
         #expect(!moved, "while pi starts, the message stays queued and in Up next only: \(String(describing: message(waiting.id)?.phase))")
-        #expect(!window.elements().contains { $0.label == "Paused" || $0.value == "Paused" }, "resumed: the header no longer says Paused")
 
         // pi serves: the owner hands the message over. Once the transcript holds the delivery's pending row it is there alone, still
         // `.delivering`: pi has neither accepted nor started it.
@@ -1212,8 +1498,8 @@ private static func chipsAndLinks() async throws {
     }
 
     /// ProjectLead-ThreadRunning's left composer. The coordinator's turn is held by the engine's own `project-action` script (it waits for
-    /// `continue-1`, which this test never creates), so the thread is running while the composer is drawn. The board draws the disabled arrow,
-    /// not Stop (a Stop would pause the Project). With words typed, Send is enabled and remains the only action.
+    /// `continue-1`, which this test never creates), so the thread is running while the composer is drawn. The composer is the ordinary one:
+    /// Stop while the field is empty (it ends the coordinator's turn only), Send once words are typed.
     private static func projectComposerWhileRunning() async throws {
         let r = try await rig()
         defer { r.app.stop() }
@@ -1245,15 +1531,14 @@ private static func chipsAndLinks() async throws {
         Task { await store.run(request: { try await server.nativeThread(agentID: coordinator, request: $0) }) }
         try await eventuallyOnMain("the coordinator's turn is running") { window.layout(); return store.running }
         #expect(store.draft.isEmpty, "the field is empty")
-        let sends = window.controls().filter { $0.label == "Send" }
-        #expect(sends.count == 1 && sends.allSatisfy { !$0.isEnabled }, "the Project's own composer shows a disabled arrow: \(sends.map(\.description))")
-        #expect(!window.controls().contains { $0.label == "Stop" }, "and no Stop while its field is empty")
+        #expect(window.controls().contains { $0.label == "Stop" && $0.isEnabled }, "an empty field offers Stop, as any thread does")
+        #expect(!window.controls().contains { $0.label == "Send" }, "and Stop is the one action")
         store.draft = "one more thing"
         try await eventuallyOnMain("a draft enables the single Send action") {
             window.layout()
             return window.controls().contains { $0.label == "Send" && $0.isEnabled }
         }
-        #expect(!window.controls().contains { $0.label == "Stop" }, "typing never adds a second action to the Project composer")
+        #expect(!window.controls().contains { $0.label == "Stop" }, "Send replaces Stop; never both")
         #expect(r.app.server.state.projects.first?.paused == false, "nothing paused the Project")
     }
 
@@ -1278,14 +1563,14 @@ private static func chipsAndLinks() async throws {
         #expect(stops.count == 1, "one Stop in the window (the conversation has no turn): \(stops.map(\.description))")
         #expect(ControlPress.undersized(stops, minimum: .desktop).isEmpty, "Stop is \(stops.map(\.frame.size))")
         #expect(!window.controls().contains { $0.label == "Send" && $0.frame.minX > 1100 }, "the worker's empty composer draws no Send")
-        // Board 08 markup, 1600x900 window: Stop is 28 x 28 at (1534, 855); Attach 26 x 26 at (1143, 856). The AX frame of a 28pt disc is
-        // its 34pt hit target centred on it (x 1531, y 852 here).
+        // Board 08 markup, 1600x900 window: Stop 28 x 28 at x 1534, Attach 26 x 26 at x 1143. The card is the ordinary composer's, so its
+        // controls row sits 4pt under the field and 6 over the line (the board drew 9 and 1): 5pt above the board's y 855 and 856.
         let origin = try #require(window.elements().first { $0.role == "AXGroup" }?.frame)
         func rect(_ c: Control) -> CGRect { CGRect(x: c.frame.minX - origin.minX, y: origin.maxY - c.frame.maxY, width: c.frame.width, height: c.frame.height) }
         let stopRect = rect(try #require(stops.first))
         let attach = try #require(window.controls().filter { $0.label == "Attach file" }.map(rect).first { $0.minX > 1100 })
-        #expect(stopRect.midX == 1548 && stopRect.midY == 869, "Stop centre \(stopRect.midX), \(stopRect.midY); board 1548, 869")
-        #expect(attach.minX == 1143 && attach.minY == 856, "Attach at \(attach.origin); board 1143, 856")
+        #expect(stopRect.midX == 1548 && stopRect.midY == 864, "Stop centre \(stopRect.midX), \(stopRect.midY); expected 1548, 864")
+        #expect(attach.minX == 1143 && attach.minY == 851, "Attach at \(attach.origin); expected 1143, 851")
         try window.press("Stop")
         try await eventuallyOnMain("the worker's turn was aborted") { !store.running }
         #expect(r.app.server.state.projects.first?.paused == false, "a worker's Stop does not pause the project")
@@ -1390,6 +1675,34 @@ private static func chipsAndLinks() async throws {
         #expect(r.vm.threadStores.existing(for: real)?.isLive == true, "and it keeps polling")
     }
 
+    private static func coordinatorRelaunch() async throws {
+        let r = try await rig()
+        defer { r.app.stop() }
+        r.vm.openLogicalProject(r.ref)
+        let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
+        defer { window.close() }
+        #expect(await r.vm.logicalProjects.sendMessage(r.ref, text: "hello"))
+        try await eventuallyOnMain("first message delivered") {
+            window.layout()
+            return r.app.server.state.projects.first?.messages.first?.phase == .delivered
+        }
+        let coordinator = try #require(r.app.server.state.projects.first?.coordinatorAgentID)
+        let agent = try #require(r.vm.state.agents.first { $0.id == coordinator })
+        let pane = try #require(agent.paneID)
+        let oldSession = try #require(r.vm.sessions.liveSession(forPane: pane))
+        await r.app.server.stopKeepingAgent(sessionID: oldSession)
+        try await eventuallyOnMain("coordinator exits") { r.vm.sessions.liveSession(forPane: pane) == nil }
+        #expect(await r.vm.logicalProjects.sendMessage(r.ref, text: "second message"))
+        #expect(await r.vm.logicalProjects.sendMessage(r.ref, text: "third message"))
+        try await eventuallyOnMain("queued messages delivered after coordinator relaunch", timeout: .seconds(40)) {
+            window.layout()
+            return r.app.server.state.projects.first?.messages.allSatisfy { $0.phase == .delivered } == true
+        }
+        let store = r.vm.threadStores.store(for: coordinator)
+        try await eventuallyOnMain("the same conversation leaves starting") { window.layout(); return store.ready && !store.awaitingPi }
+        #expect(r.vm.sessions.liveSession(forPane: pane) != oldSession)
+    }
+
     // MARK: Cold launch of a saved conversation
 
     /// A relaunched app with a Project whose coordinator already has a saved pi session, paused by the person (a
@@ -1446,7 +1759,7 @@ private static func chipsAndLinks() async throws {
         }
         #expect(!saidStarting, "a cold Project's composer says nothing about starting")
         #expect(store.offline && store.loadError == nil && !store.starting, "the store knows the owner holds the pi off on purpose")
-        #expect(window.elements().contains { ($0.value ?? $0.label ?? "").hasPrefix("Paused.") })
+        #expect(!window.elements().contains { ($0.value ?? $0.label ?? "").hasPrefix("Paused.") }, "no paused banner")
 
         // Leaving the page and coming back must not lose the owner's "held off on purpose".
         for _ in 0..<3 {
@@ -1485,19 +1798,110 @@ private static func chipsAndLinks() async throws {
                 "a store made for a cold Project's coordinator starts held off")
         vm.adopt(app.server.state)
 
-        // Resume alone launches nothing; the next message starts the saved coordinator's pi and the thread goes ready.
-        #expect(await vm.logicalProjects.setPaused(ref, false))
-        #expect(store.offline, "a resumed Project with nothing to deliver still holds its pi off")
-        #expect(!window.elements().contains { $0.label == startingLabel })
+        // The person's next message restarts the Project, starts the saved coordinator's pi, and the thread goes ready.
         #expect(await vm.logicalProjects.sendMessage(ref, text: "Reply with exactly READY2"))
+        try await eventuallyOnMain("the message restarted the Project") { app.server.state.projects.first?.paused == false }
         try await eventuallyOnMain("the coordinator's pi serves its thread") { window.layout(); return store.ready && !store.offline }
         try await eventuallyOnMain("the message is delivered") { app.server.state.projects.first?.messages.last?.phase == .delivered }
     }
 
+    /// The reported case: a relaunched Project whose coordinator's pi is held off (here paused). Its composer is the ordinary one, and its
+    /// model and reasoning controls open: no git chip, the model picker and the Thinking segments from the catalog's levels for the model.
+    /// A pick changes the Project's own coordinator settings on the owner (never a task thread's), a model's new levels clamp the saved
+    /// level as pi would, and the owner applies both to the relaunched coordinator before it delivers the next message.
+    private static func heldOffModelAndReasoning() async throws {
+        AccessibilityNode.enable()
+        try StubPi.installAsEngine()
+        let directory = try makeScratchDirectory("mdl")
+        let folder = directory.appendingPathComponent("logical-project")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let held = Space(name: "Projects", path: folder.path, hidden: true, holdsProjects: true)
+        var fixture = Fixture.agent("Sample App", in: held)
+        var project = Project(name: "Sample App", goal: "", coordinatorAgentID: fixture.agent.id, paused: true)
+        project.settings.threadModel = "anthropic/claude-haiku-4-5"
+        fixture.agent.coordinatorFor = project.id
+        project.messages = [ProjectMessage(id: UUID(), text: "hello", phase: .delivered)]
+        var state = Fixture.state(spaces: [held], agents: [fixture])
+        state.projects = [project]
+        try JSONEncoder().encode(state).write(to: directory.appendingPathComponent("state.json"))
+        let app = try AppHarness(directory: directory)
+        defer { app.stop() }
+        app.settings.projectsEnabled = true
+        let vm = try await app.start()
+        let ref = LogicalProjectRef(home: .local, id: project.id)
+        vm.openLogicalProject(ref)
+        let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: vm))
+        defer { window.close() }
+        let store = vm.threadStores.store(for: fixture.agent.id)
+        func owner() -> LogicalProjectSettings? { app.server.state.projects.first?.settings }
+        func chip() -> Control? { window.controls().first { $0.label?.hasPrefix("Model settings:") == true } }
+        try await eventuallyOnMain("the held-off coordinator's composer") {
+            window.layout(); return store.offline && !store.ready && chip()?.isEnabled == true
+        }
+        // Nothing is saved and pi is off: this existing coordinator resumes its own level, which nothing here knows, so the chip names none.
+        #expect((chip()?.value ?? "").isEmpty, "no reasoning level is invented: \(String(describing: chip()?.value))")
+        #expect(!window.elements().contains { ($0.label ?? "").localizedCaseInsensitiveContains("branch") || ($0.label ?? "").localizedCaseInsensitiveContains("worktree") },
+                "the Project composer draws no git affordance")
+
+        // The model, from the full picker: the owner's setting for the coordinator, not the task threads'.
+        try window.press(try #require(chip()?.label))
+        try await eventuallyOnMain("the settings popover with the Project's levels") {
+            window.layout(); return window.element("All models\u{2026}") != nil && !window.buttons(in: "Thinking").isEmpty
+        }
+        // The default model is not one the catalog lists, so the standard four are offered.
+        #expect(window.buttons(in: "Thinking").compactMap(\.label) == ["Off", "Low", "Medium", "High"])
+        try window.press("All models\u{2026}")
+        let pick = "openai/gpt-5"
+        try await eventuallyOnMain("the full picker lists the pick") {
+            window.layout(); return window.controls().contains { $0.label?.hasPrefix(pick + ", ") == true && $0.isEnabled }
+        }
+        try window.press(try #require(window.controls().first { $0.label?.hasPrefix(pick + ", ") == true }?.label))
+        try await eventuallyOnMain("the owner saved the coordinator's model") { owner()?.conversationModel == pick && !vm.logicalProjects.busy.contains(ref) }
+        #expect(owner()?.threadModel == "anthropic/claude-haiku-4-5", "the task threads' model is untouched")
+        try await eventuallyOnMain("the chip names it") { window.layout(); return chip()?.label == "Model settings: \(pick)" }
+
+        // Reasoning: the levels the catalog lists for that model, and a pick is the Project's setting.
+        try window.press("Model settings: \(pick)")
+        try await eventuallyOnMain("the Thinking segments for gpt-5") { window.layout(); return !window.buttons(in: "Thinking").isEmpty }
+        let offered = window.buttons(in: "Thinking").compactMap(\.label)
+        #expect(!offered.contains("Minimal") && offered.contains("Extra high"), "gpt-5's own levels (no Minimal, Extra high): \(offered)")
+        try window.press("Extra high", in: "Thinking")
+        // One owner write at a time: each save is acknowledged before the next control is pressed.
+        try await eventuallyOnMain("the owner saved the coordinator's level") { owner()?.conversationThinking == "xhigh" && !vm.logicalProjects.busy.contains(ref) }
+        try await eventuallyOnMain("the chip names it") { window.layout(); return chip()?.value?.contains("Extra high") == true }
+        #expect(store.offline && !store.ready, "setting the Project's coordinator starts nothing")
+
+        // Back to a model whose levels lack Extra high: the saved level is clamped with it, as pi would. A level leaves the popover open,
+        // as in any thread.
+        try window.press("All models\u{2026}")
+        let back = "anthropic/claude-opus-4-5"
+        try await eventuallyOnMain("the full picker lists it") {
+            window.layout(); return window.controls().contains { $0.label?.hasPrefix(back + ", ") == true && $0.isEnabled }
+        }
+        try window.press(try #require(window.controls().first { $0.label?.hasPrefix(back + ", ") == true }?.label))
+        try await eventuallyOnMain("the model and its clamped level are saved together") {
+            owner()?.conversationModel == back && owner()?.conversationThinking == "high" && !vm.logicalProjects.busy.contains(ref)
+        }
+
+        // The next message relaunches the coordinator: the owner's launch carries the Project's model and level. (This harness's owner
+        // lists stand-in models, not the composer's catalog, so the launch is refused here and the Project re-pauses; the owner applying
+        // both to a running coordinator before delivery is `ProjectCoordinatorFlowTests`'.)
+        let launching = app.server.onProjectRuntimeLaunch
+        let launched = Locked<[ProjectRuntimeLaunch]>([])
+        app.server.onProjectRuntimeLaunch = { request, done in launched.withValue { $0.append(request) }; launching?(request, done) }
+        #expect(await vm.logicalProjects.sendMessage(ref, text: "hello again"), "the message itself restarts the stopped Project")
+        try await eventuallyOnMain("the owner launches the coordinator") { !launched.current.isEmpty }
+        let launch = try #require(launched.current.first)
+        #expect(launch.coordinator && launch.agentID == fixture.agent.id, "the coordinator, never a task thread")
+        #expect(launch.model == back && launch.thinking == "high", "launched with the Project's model and level: \(String(describing: launch.model)) \(String(describing: launch.thinking))")
+    }
+
     // MARK: A resolved worker
 
-    /// A real worker settles; its thread in the pane shows the steering composer. Marking it resolved removes the composer entirely
-    /// (the footer card and Reopen stand in): absent, not disabled. Reopen brings it back.
+    /// A real worker settles; its thread in the pane shows the steering composer and an enabled Mark resolved. Marking it resolved
+    /// removes the composer entirely: absent, not disabled. A resolved task is terminal, so nothing in the detail (header, More menu,
+    /// footer) offers Reopen, yet its history stays drawn and Open as a thread still selects it. One native menu per scenario
+    /// (`NativeMenuChoice` leaves tracking open); the settled task's menu is `settledMenuResolves`.
     private static func resolvedHasNoComposer() async throws {
         let r = try await rig()
         defer { r.app.stop() }
@@ -1510,20 +1914,76 @@ private static func chipsAndLinks() async throws {
         let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
         defer { window.close() }
         // The conversation's composer is in the left column; the worker's is in the pane on the right.
-        func paneComposers() -> Int {
-            let paneLeft = window.window.frame.maxX - NWLeadMetrics.paneWidth
-            return window.elements().filter { $0.label == "Message the agent" && $0.frame.minX > paneLeft }.count
+        let paneLeft = window.window.frame.maxX - NWLeadMetrics.paneWidth
+        func paneComposers() -> Int { window.elements().filter { $0.label == "Message the agent" && $0.frame.minX > paneLeft }.count }
+        func reopenOffers() -> [String] {
+            window.elements().compactMap { node in [node.label, node.value].compactMap { $0 }.first { $0.localizedCaseInsensitiveContains("reopen") } }
         }
         try await eventuallyOnMain("the settled worker's thread shows its steering composer") {
             window.layout(); return window.element("Mark resolved") != nil && paneComposers() == 1
         }
+        // Positive control: an unresolved (settled) task keeps every action it had, and none of them is Reopen.
+        #expect(try #require(window.controls().first { $0.label == "Mark resolved" }).isEnabled, "a settled task can be resolved")
+        #expect(reopenOffers().isEmpty, "nothing offers Reopen before resolving: \(reopenOffers())")
+        // The worker's own transcript, as drawn in the pane (the stub's streamed reply), before resolving.
+        func history() -> [String] {
+            window.elements().filter { $0.frame.minX > paneLeft && $0.role == "AXStaticText" }.map { $0.value ?? $0.label ?? "" }.filter { $0.contains("Hello") }
+        }
+        try await eventuallyOnMain("the settled worker's history is drawn") { !history().isEmpty }
+        let historyBeforeResolving = history()
+
         try window.press("Mark resolved")
         try await eventuallyOnMain("resolved on the owner") { r.app.server.state.projects.first?.tasks.first?.phase == .resolved }
-        try await eventuallyOnMain("the resolved footer is drawn") { window.layout(); return window.controls().contains { $0.label == "Reopen" } }
+        try await eventuallyOnMain("the resolved footer is drawn") {
+            window.layout(); return window.elements().contains { ($0.value ?? $0.label ?? "") == "This thread is resolved." }
+        }
         #expect(paneComposers() == 0, "the resolved worker draws no composer: absent, not disabled")
-        try window.press("Reopen")
-        try await eventuallyOnMain("reopened on the owner") { r.app.server.state.projects.first?.tasks.first?.phase == .settled }
-        try await eventuallyOnMain("the composer is back") { window.layout(); return paneComposers() == 1 }
+        // No Reopen anywhere in the window: not the header's check, not the footer, not the More menu.
+        #expect(reopenOffers().isEmpty, "a resolved task offers no Reopen: \(reopenOffers())")
+        #expect(!window.controls().contains { $0.label == "Mark resolved" }, "a resolved task's check is a status, not a control")
+        #expect(window.element("Resolved") != nil, "the resolved status is named for VoiceOver")
+        #expect(window.elements().contains { ($0.value ?? $0.label ?? "") == "Its history stays here. New work starts a new thread." })
+        // The footer card is text only: no button in the pane below the transcript.
+        let footer = try #require(window.elements().first { ($0.value ?? $0.label ?? "") == "This thread is resolved." }).frame
+        #expect(!window.controls().contains { $0.frame.minX > paneLeft && abs($0.frame.midY - footer.midY) < NWLeadMetrics.footerHeight },
+                "the resolved footer carries no action: \(window.controls().filter { $0.frame.minX > paneLeft && abs($0.frame.midY - footer.midY) < NWLeadMetrics.footerHeight }.map(\.label))")
+        // History stays readable: the same worker transcript that was drawn before resolving is still drawn in the pane.
+        try await eventuallyOnMain("the resolved worker's history is still drawn") { history() == historyBeforeResolving }
+        // Historical access survives: More offers only Open as a thread, and it selects the worker's ordinary thread.
+        let resolvedMenu = try await NativeMenuChoice.choose("Open as a thread", from: try detailMore(window))
+        #expect(resolvedMenu == ["Open as a thread"], "the resolved task's More menu offers no Reopen or Resolve: \(resolvedMenu)")
+        try await eventuallyOnMain("Open as a thread selects the resolved worker") { r.vm.selectedAgentID == task.workerAgentID }
+        #expect(r.app.server.state.projects.first?.tasks.first?.phase == .resolved, "opening history never reopens the task")
+        #expect(r.vm.logicalProjects.failure == nil, "no refused action was sent: \(r.vm.logicalProjects.failure?.message ?? "")")
+    }
+
+    /// The positive control for the resolved menu: an unresolved (settled) task's More menu still offers Open as a thread and Mark
+    /// resolved, and choosing Mark resolved resolves it on the owner.
+    private static func settledMenuResolves() async throws {
+        let r = try await rig()
+        defer { r.app.stop() }
+        _ = try await r.vm.projectCoordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
+                                                      request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Publish file", prompt: "hello"))
+        try await eventuallyOnMain("the worker's turn ends") { r.app.server.state.projects.first?.tasks.first?.phase == .settled }
+        let task = try #require(r.app.server.state.projects.first?.tasks.first)
+        r.vm.openLogicalProject(r.ref)
+        r.vm.logicalProjectPaneTask = task.id
+        let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
+        defer { window.close() }
+        try await eventuallyOnMain("the settled worker's detail") { window.layout(); return window.element("Mark resolved") != nil }
+        let offered = try await NativeMenuChoice.choose("Mark resolved", from: try detailMore(window))
+        #expect(offered == ["Open as a thread", "Mark resolved"], "the settled task's More menu: \(offered)")
+        try await eventuallyOnMain("resolved on the owner from the menu") { r.app.server.state.projects.first?.tasks.first?.phase == .resolved }
+    }
+
+    /// The task detail's More menu. SwiftUI exposes this Menu's name as its help, not its label (as
+    /// `ProjectSettingsFidelityControlTests.popup` finds popups).
+    private static func detailMore(_ window: OffscreenWindow) throws -> AccessibilityNode {
+        let paneLeft = window.window.frame.maxX - NWLeadMetrics.paneWidth
+        return try #require(window.elements().first { node in
+            node.role == ControlRole.menuButton && node.frame.minX > paneLeft
+                && (node.object.perform(NSSelectorFromString("accessibilityHelp"))?.takeUnretainedValue() as? String) == "More"
+        }, "the detail's More menu")
     }
 
     // MARK: A blocking question
@@ -1551,9 +2011,15 @@ private static func chipsAndLinks() async throws {
         #expect(footer() == "Or just reply in chat. Library API draft is waiting for your answer.", "\(footer() ?? "none")")
         #expect(!(footer() ?? "").contains("best guess"))
 
-        // Paused: the footer says an answer waits until Resume.
-        #expect(await r.vm.logicalProjects.setPaused(r.ref, true))
-        try await eventuallyOnMain("the paused footer") { window.layout(); return footer() == "Or just reply in chat. Your answer waits until you resume." }
+        // Paused by the runtime: the footer's wording does not change (there is no Resume to wait for).
+        let running = try #require(r.app.server.state.projects.first)
+        _ = try await r.vm.projectCoordinator.perform(projectID: running.id, expectedRevision: running.revision, request: .pause)
+        try await eventuallyOnMain("paused and acknowledged, and the page sees the owner's revision") {
+            r.app.server.state.projects.first.map { $0.paused && !$0.interruptPending } == true
+                && r.vm.logicalProjects.project(r.ref)?.revision == r.app.server.state.projects.first?.revision
+        }
+        window.layout()
+        #expect(footer() == "Or just reply in chat. Library API draft is waiting for your answer.", "\(footer() ?? "none")")
 
         // Answer while paused through the card's own option button: the owner holds it, and no second active answer remains.
         try window.press("ALPHA")
@@ -1578,10 +2044,138 @@ private static func chipsAndLinks() async throws {
         #expect(paneOptions().allSatisfy { !$0.isEnabled }, "no second answer is offered while the owner holds one: \(paneOptions().map { "\($0.label ?? "") \($0.isEnabled)" })")
     }
 
+    // MARK: Pane dock answer (#301)
+
+    /// Real Project choice-input: offered buttons and a final field, answered from either surface.
+    /// Rejection preserves the pick/text; acceptance delivers one answer and removes both views.
+    private static func paneDockAnswer(route: String, rejectedFirst: Bool) async throws {
+        let r = try await rig()
+        defer { r.app.stop() }
+        let options = ["Use SQLite", "Use Postgres"]
+        let hints = String(decoding: try JSONEncoder().encode(options), as: UTF8.self)
+        let script: [String: Any] = ["prompts": ["ask-store": [["ask": ["method": "input", "title": "Which store should the API use?\n\nOptions:\n" + hints, "placeholder": "Say anything"]]]],
+                                     "socket": r.app.scratch.socketPath]
+        try JSONSerialization.data(withJSONObject: script).write(to: URL(fileURLWithPath: r.space.path).appendingPathComponent("project-script.json"))
+        _ = try await r.vm.projectCoordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
+                                                      request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Library API draft", prompt: "ask-store"))
+        try await eventuallyOnMain("the worker is waiting on its question") { r.vm.state.projects.first?.tasks.first?.phase == .waiting }
+        let task = try #require(r.vm.state.projects.first?.tasks.first)
+        r.vm.openLogicalProject(r.ref)
+        let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
+        defer { window.close() }
+        let store = r.vm.projectWorkerStore(.local, task.workerAgentID)
+        try await eventuallyOnMain("the worker list has connected its store") { window.layout(); return store.ready }
+        let inPane = route != "project-text", typed = route != "pane-option"
+        if inPane { r.vm.openProjectTask(task.id) }
+        func onTarget(_ frame: CGRect) -> Bool {
+            (frame.minX > window.window.frame.maxX - NWLeadMetrics.paneWidth) == inPane
+        }
+        func controls(_ label: String) -> [Control] {
+            window.controls().filter { $0.role == ControlRole.button && $0.label == label && onTarget($0.frame) }
+        }
+        func field() -> AccessibilityNode? {
+            window.elements().first { $0.label == "Say anything" && ["AXTextField", "AXTextArea"].contains($0.role ?? "") && onTarget($0.frame) }
+        }
+        func type(_ value: String) throws {
+            let node = try #require(field()), setter = NSSelectorFromString("setAccessibilityValue:")
+            try #require(node.object.responds(to: setter))
+            _ = node.object.perform(setter, with: value)
+            if let editor = node.object as? NSTextView { NotificationCenter.default.post(name: NSText.didChangeNotification, object: editor) }
+            func native(_ view: NSView) -> NSTextField? {
+                if let text = view as? NSTextField, text.stringValue == value { return text }
+                return view.subviews.compactMap(native).first
+            }
+            let text = node.object as? NSTextField ?? (node.object as? NSCell)?.controlView as? NSTextField ?? native(window.host)
+            text?.delegate?.controlTextDidChange?(Notification(name: NSControl.textDidChangeNotification, object: text))
+        }
+        let submit = inPane ? "Answer" : "Send"
+        try await eventuallyOnMain("offered choices and a final field, not a Say anything button") {
+            window.layout(); return options.allSatisfy { !controls($0).isEmpty } && field() != nil
+        }
+        #expect(controls("Say anything").isEmpty)
+        #expect(controls(submit).first?.isEnabled == false)
+        let words = "  Use an in-memory cache instead.  "
+        let expected = typed ? words.trimmingCharacters(in: .whitespacesAndNewlines) : "Use Postgres"
+        if typed {
+            try type("   ")
+            #expect(controls(submit).first?.isEnabled == false, "whitespace is not an answer")
+            if inPane {
+                #expect(try #require(controls("Use Postgres").first).node.press())
+                try await eventuallyOnMain("picking clears the field") { field()?.value == "" }
+            }
+            try type(words)
+        } else {
+            #expect(try #require(controls("Use Postgres").first).node.press())
+        }
+        try await eventuallyOnMain("the answer can be submitted") { window.layout(); return controls(submit).first?.isEnabled == true }
+        if !typed { #expect(controls("Use Postgres").first?.isSelected == true) }
+        else if inPane {
+            try await eventuallyOnMain("typing clears the pick") { controls("Use Postgres").first?.isSelected == false }
+        }
+        if rejectedFirst {
+            let session = try #require(store.session), dialog = try #require(store.dialogs.first)
+            let reply = NativeThreadRequest.answer(expectedSessionID: "stale-session", generation: session.generation,
+                                                   operationID: UUID(), dialogID: dialog.id, answer: .input(value: expected))
+            if inPane {
+                await store.answer(dialogID: dialog.id, sessionID: "stale-session", generation: session.generation, answer: .input(value: expected))
+            } else {
+                #expect(await r.vm.logicalProjects.answer(r.ref, task: task.id, request: reply) == false)
+            }
+            let notice = try #require(inPane ? store.notice : r.vm.logicalProjects.failure?.message)
+            do {
+                try await eventuallyOnMain("the rejection is visible beside the answer") {
+                    window.layout(); return window.elements().contains { ($0.label ?? "").contains(notice) || ($0.value ?? "").contains(notice) }
+                }
+            } catch {
+                if let dir = ProcessInfo.processInfo.environment["SHEPHERD_PREVIEW_DIR"] {
+                    let nodes = window.elements().map { "\($0.role ?? ""): \($0.label ?? "") = \($0.value ?? "")" }
+                    try ("Expected notice: \(notice)\n" + nodes.joined(separator: "\n")).write(
+                        to: URL(fileURLWithPath: dir).appendingPathComponent("\(route)-failure-AX.txt"), atomically: true, encoding: .utf8)
+                    let frames = await MotionProbe.record(window) {}
+                    try frames.settled.bitmap.representation(using: .png, properties: [:])?.write(
+                        to: URL(fileURLWithPath: dir).appendingPathComponent("\(route)-failure.png"))
+                }
+                throw error
+            }
+            if typed { #expect(field()?.value == words, "a refusal preserves the typed draft") }
+            else { #expect(controls("Use Postgres").first?.isSelected == true) }
+            #expect(controls(submit).first?.isEnabled == true, "the same answer can be retried")
+            #expect(store.dialogs.first?.id == dialog.id, "a rejection does not dismiss the dialog")
+        }
+        if let dir = ProcessInfo.processInfo.environment["SHEPHERD_PREVIEW_DIR"] {
+            for dark in [false, true] {
+                let frames = await MotionProbe.record(window) {
+                    window.window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+                    window.host.appearance = window.window.appearance
+                }
+                let png = try #require(frames.settled.bitmap.representation(using: .png, properties: [:]))
+                try png.write(to: URL(fileURLWithPath: dir).appendingPathComponent("ProjectQuestion-\(route)-\(rejectedFirst ? "Rejected" : "Ready")-\(dark ? "dark" : "light").png"))
+            }
+        }
+
+        #expect(try #require(controls(submit).first).node.press())
+        let worker = task.workerAgentID
+        func snapshot() async throws -> NativeThreadSnapshot? {
+            guard case .snapshot(let value) = try await r.app.server.nativeThread(agentID: worker, request: .snapshot()) else { return nil }
+            return value
+        }
+        try await eventuallyAsync("pi takes the answer and the dialog closes") { try await snapshot()?.dialogs.isEmpty == true }
+        let answered = try #require(try await snapshot())
+        let records = (answered.messages + answered.provisional).compactMap(\.question)
+        #expect(records.count == 1 && records.first?.answer == expected, "one native answer, exactly as selected or typed: \(records)")
+        try await eventuallyOnMain("the task leaves waiting") { r.app.server.state.projects.first?.tasks.first?.phase != .waiting }
+        try await eventuallyOnMain("the question leaves both surfaces") {
+            window.layout()
+            return !window.elements().contains { $0.label == "Say anything" && ["AXTextField", "AXTextArea"].contains($0.role ?? "") }
+                && !window.controls().contains { $0.label == "Use Postgres" }
+        }
+        #expect(r.vm.logicalProjects.failure == nil, "\(r.vm.logicalProjects.failure?.message ?? "")")
+        #expect(r.vm.projectWorkerStore(.local, worker).notice == nil, "no silent refusal: \(r.vm.projectWorkerStore(.local, worker).notice ?? "")")
+    }
+
     // MARK: Footer geometry
 
-    /// ProjectLead-PausedV2's footer: 8pt from the pane's sides and bottom (margin 0 / 8 / 8) around a 46pt card (padding 8, a 28pt
-    /// button, a 1pt line). The resolved footer is its own wrapper (12 / 16 / 16) and keeps its 50pt card.
+    /// The resolved footer is its own wrapper (12 / 16 / 16) and keeps its 50pt card.
     private static func footerGeometry() async throws {
         let r = try await rig()
         defer { r.app.stop() }
@@ -1589,33 +2183,20 @@ private static func chipsAndLinks() async throws {
                                                       request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Publish file", prompt: "hello"))
         try await eventuallyOnMain("the worker settles") { r.app.server.state.projects.first?.tasks.first?.phase == .settled }
         let task = try #require(r.app.server.state.projects.first?.tasks.first)
-        let paused = try #require(r.app.server.state.projects.first)
-        _ = try await r.vm.projectCoordinator.perform(projectID: paused.id, expectedRevision: paused.revision, request: .pause)
-        try await eventuallyOnMain("paused and acknowledged") { r.app.server.state.projects.first?.paused == true && r.app.server.state.projects.first?.interruptPending == false }
         r.vm.openLogicalProject(r.ref)
         let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
         defer { window.close() }
-        try await eventuallyOnMain("the paused footer is drawn in the pane") {
-            window.layout(); return window.elements().contains { ($0.value ?? $0.label ?? "") == "The project is paused." }
-        }
         let paneRight = window.window.frame.maxX, paneBottom = window.window.frame.minY
-        let resume = try #require(window.controls().filter { $0.label == "Resume" }.max { $0.frame.minX < $1.frame.minX }?.frame)
-        // The button sits 8pt in from the card's right edge, and the card 8pt in from the pane's edge: 16 from the window's right.
-        #expect(abs(paneRight - resume.maxX - (NWLeadMetrics.pausedFooterMargin + NW.Space.m)) <= 1.5, "Resume ends \(paneRight - resume.maxX) from the pane's edge")
-        // The card is 46 tall around the 28pt button (8 above and below), 8 from the bottom: the button's bottom is 16 from the window's.
-        #expect(abs(resume.minY - paneBottom - (NWLeadMetrics.pausedFooterMargin + NW.Space.m)) <= 1.5, "Resume sits \(resume.minY - paneBottom) above the bottom")
-        #expect(NWLeadMetrics.pausedFooterHeight == 46 && NWLeadMetrics.pausedFooterHeight < NWLeadMetrics.footerHeight)
-
-        // The resolved footer is unchanged: its own 16pt inset and 50pt card.
-        _ = try await r.vm.projectCoordinator.perform(projectID: paused.id, expectedRevision: try #require(r.app.server.state.projects.first).revision, request: .resume)
+        // The resolved footer: its own 16pt inset and 50pt card.
         r.vm.logicalProjectPaneTask = task.id
-        try await eventuallyOnMain("resumed") { r.app.server.state.projects.first?.paused == false }
         try await eventuallyOnMain("the worker detail opens") { window.layout(); return window.element("Mark resolved") != nil }
         try window.press("Mark resolved")
         try await eventuallyOnMain("the resolved footer is drawn") { window.layout(); return window.elements().contains { ($0.value ?? $0.label ?? "") == "This thread is resolved." } }
-        let reopen = try #require(window.controls().first { $0.label == "Reopen" }?.frame)
-        #expect(abs(paneRight - reopen.maxX - (NWLeadMetrics.footerInset + NW.Space.m)) <= 1.5, "Reopen ends \(paneRight - reopen.maxX) from the pane's edge")
-        #expect(abs(reopen.minY - paneBottom - (NWLeadMetrics.footerInset + (NWLeadMetrics.footerHeight - 28) / 2)) <= 2, "Reopen sits \(reopen.minY - paneBottom) above the bottom")
+        // The card has no action now (a resolved task is terminal); its title still sits inside the 50pt card at its leading edge.
+        let title = try #require(window.elements().first { ($0.value ?? $0.label ?? "") == "This thread is resolved." }?.frame)
+        let cardBottom = paneBottom + NWLeadMetrics.footerInset, cardTop = cardBottom + NWLeadMetrics.footerHeight
+        #expect(title.minY > cardBottom && title.maxY < cardTop, "the title \(title) sits inside the 50pt card \(cardBottom)...\(cardTop)")
+        #expect(title.minX < paneRight - NWLeadMetrics.paneWidth / 2, "the title leads the card: \(title)")
     }
 
     // MARK: Hidden coordinator
@@ -1695,7 +2276,6 @@ private static func chipsAndLinks() async throws {
         #expect(r.vm.state.agents.isEmpty, "no coordinator was created")
         #expect(!window.elements().contains { $0.label?.contains("Lost connection") == true || $0.label?.contains("no longer exists") == true },
                 "the page draws no lost connection for an agent that was never created")
-        #expect(window.controls().contains { $0.label == "Resume" }, "the pause is shown with its Resume")
         #expect(window.element("Message the agent") != nil, "and the composer stays")
     }
 
@@ -1749,7 +2329,8 @@ private static func chipsAndLinks() async throws {
 
     /// A served coordinator thread (a scripted host that records every request and applies a model or level as the real one does,
     /// `ComposerThread`'s way) under the Project's own composer wiring. A pick is saved as the Project's conversation model FIRST and
-    /// only then reaches the thread as a native `setModel`; a refused save sends none. A level goes to the thread as `setThinking`.
+    /// only then reaches the thread as a native `setModel`; a refused save sends none. A level is saved as the Project's reasoning level
+    /// first, then reaches the thread as `setThinking`.
     private static func liveModelPick() async throws {
         AccessibilityNode.enable()
         try StubPi.installAsEngine()
@@ -1760,6 +2341,7 @@ private static func chipsAndLinks() async throws {
         let input = ThreadInput()
         let requests = Locked<[NativeThreadRequest]>([])
         let saved = Locked<[String]>([])
+        let savedLevels = Locked<[String]>([])
         let accept = Locked(true)
         let host = Locked(snapshot)
         let request: NativeThreadStore.Request = { value in
@@ -1771,6 +2353,7 @@ private static func chipsAndLinks() async throws {
                 host.withValue { $0.model = model; $0.revision += 1 }
                 return .accepted(operationID: operation)
             case .setThinking(_, _, let operation, let level):
+                #expect(savedLevels.current.last == level, "the accepted Project save precedes the native setThinking")
                 host.withValue { $0.thinking = level; $0.revision += 1 }
                 return .accepted(operationID: operation)
             default: return .snapshot(value: host.current)
@@ -1778,8 +2361,11 @@ private static func chipsAndLinks() async throws {
         }
         let send = ProjectComposerSend(
             placeholder: "Ask Sample App a question or start a task\u{2026}", send: { _, _ in true },
-            model: ProjectConversationModel(current: nil, pending: false, choose: { id in
+            model: ProjectConversationModel(current: nil, choose: { id, _ in
                 saved.withValue { $0.append(id) }
+                return accept.current
+            }, chooseThinking: { level in
+                savedLevels.withValue { $0.append(level) }
                 return accept.current
             }))
         let window = OffscreenWindow(size: CGSize(width: 1000, height: 700), dark: true)
@@ -1834,6 +2420,7 @@ private static func chipsAndLinks() async throws {
             requests.current.contains { if case .setThinking(_, _, _, let level) = $0 { level == "high" } else { false } }
         }
         try await eventuallyOnMain("the thread reports high") { store.thinking == "high" }
+        #expect(savedLevels.current == ["high"], "the level is the Project's coordinator setting first: \(savedLevels.current)")
     }
 
     /// The coordinator's ID is reserved before its agent exists. With the app's real launch held there, the page's own request closure

@@ -3,6 +3,8 @@ import SwiftUI
 import Testing
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
+import ShepherdSessions
 import ShepherdTestSupport
 import ShepherdUI
 @testable import ShepherdApp
@@ -77,7 +79,9 @@ struct LogicalProjectPreviewTests {
         // The thread polls only while it is on screen: the page's own ThreadView runs the store once it is mounted, so
         // nothing is awaited here (its poll loop never returns).
         _ = coordinator
-        if paused { _ = await vm.logicalProjects.setPaused(ref, true) }
+        if paused, let p = vm.state.projects.first {
+            _ = try await vm.projectCoordinator.perform(projectID: p.id, expectedRevision: p.revision, request: .pause)
+        }
         vm.openLogicalProject(ref)
         return (world, ref)
     }
@@ -106,6 +110,69 @@ struct LogicalProjectPreviewTests {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                 .background(Color.nw.bgWindow)
             }
+        }
+    }
+
+    /// A broad, goal-less workspace from the real runtime and owner: one running, one stopped with no outcome, one stopped with a
+    /// coordinator-style needs-changes fact on an EARLIER run (its follow-up reads neutral), one stopped and accepted by the owner's
+    /// control, one resolved with a merged fact and one resolved with nothing recorded. Strip (collapsed/expanded) and pane rows.
+    @Test func executionAndOutcomeStatesInABroadProject() async throws {
+        try StubPi.installAsEngine()
+        let (world, projects) = try await world(projects: [("Workspace", "")])
+        defer { world.stop() }
+        let vm = world.vm, server = world.server, ref = LogicalProjectRef(home: .local, id: projects[0].id)
+        let space = try #require(vm.state.spaces.last { !$0.hidden })
+        func perform(_ request: ProjectRuntimeRequest) async throws {
+            for _ in 0..<32 {
+                let revision = try #require(server.state.projects.first?.revision)
+                do { _ = try await server.projectRuntime(ref.id, expectedRevision: revision, request: request); return }
+                catch let error as LogicalProjectsError where ["stale_project", "project_busy", "workspace_changed"].contains(error.code) { continue }
+            }
+            throw PreviewError("owner kept refusing \(request)")
+        }
+        func task(_ title: String) throws -> ProjectTask { try #require(server.state.projects.first?.tasks.first { $0.title == title }) }
+        for (title, prompt) in [("Flaky test triage", "slow"), ("Dependency audit", "hello"), ("Sidebar parity review", "hello"),
+                                ("Crash log read", "hello"), ("Release notes", "hello"), ("Legacy import check", "hello")] {
+            try await perform(.assign(operationID: UUID(), spaceID: space.id, title: title, prompt: prompt))
+        }
+        try await eventuallyOnMain("five stopped, one running") {
+            let tasks = server.state.projects.first?.tasks ?? []
+            return tasks.filter { $0.phase == .settled }.count == 5 && tasks.contains { $0.phase == .running }
+        }
+        let review = try task("Sidebar parity review")
+        try await perform(.recordOutcome(operationID: UUID(), taskID: review.id, taskOperationID: review.operationID, kind: .needsChanges))
+        try await perform(.followUp(taskID: review.id, operationID: UUID(), text: "hello"))
+        try await eventuallyOnMain("follow-up stopped") { (try? task("Sidebar parity review"))?.phase == .settled && (try? task("Sidebar parity review"))?.operationID != review.operationID }
+        let crash = try task("Crash log read")
+        try await perform(.recordOutcome(operationID: UUID(), taskID: crash.id, taskOperationID: crash.operationID, kind: .accepted))
+        for (title, merged) in [("Release notes", true), ("Legacy import check", false)] {
+            let t = try task(title)
+            if merged { try await perform(.recordOutcome(operationID: UUID(), taskID: t.id, taskOperationID: t.operationID, kind: .accepted)) }
+            try await perform(.resolve(taskID: t.id, operationID: UUID()))
+            if merged { try await perform(.recordOutcome(operationID: UUID(), taskID: t.id, taskOperationID: t.operationID, kind: .merged, evidence: "PR #318")) }
+        }
+        try await eventuallyOnMain("the viewer has the owner's record") { vm.state.projects.first?.revision == server.state.projects.first?.revision }
+        let project = try #require(vm.state.projects.first)
+        let presentation = ProjectPagePresentation(project)
+        #expect(project.goal.isEmpty)
+        #expect(presentation.summary == "1 working · 3 stopped · 2 resolved")
+        let lines = Dictionary(uniqueKeysWithValues: presentation.rows.map { ($0.title, $0.outcomeLine) })
+        #expect(lines["Dependency audit"] == "Stopped · No outcome recorded")
+        #expect(lines["Sidebar parity review"] == "Stopped · No outcome recorded", "the earlier run's verdict is not the follow-up's")
+        #expect(lines["Crash log read"] == "Accepted · recorded by owner")
+        #expect(lines["Release notes"] == "Merged · PR #318 · recorded by owner")
+        #expect(lines["Legacy import check"] == .some(nil))
+        for expanded in [false, true] {
+            try await Preview.renderMatrix("lead-outcomes-strip-\(expanded ? "expanded" : "collapsed")", size: CGSize(width: 700, height: 420), scales: [1, 1.3]) {
+                ProjectSummaryStrip(vm: vm, ref: ref, summary: presentation.summary ?? "", rows: presentation.rows, expanded: expanded)
+                    .padding(NW.Space.l)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .background(Color.nw.bgWindow)
+            }
+        }
+        try await Preview.renderMatrix("lead-outcomes-pane", size: CGSize(width: 420, height: 640), scales: [1, 1.3]) {
+            LogicalProjectPane(vm: vm, ref: ref, project: project, presentation: presentation)
+                .frame(width: 420, height: 640).background(Color.nw.bgWindow)
         }
     }
 
@@ -171,8 +238,8 @@ struct LogicalProjectPreviewTests {
 
     /// Paused, from the real runtime: Pause aborts running turns, so a worker that was only asking ends its turn and its task is
     /// `.settled`, not `.waiting` (ProjectLead-PausedV2 draws a paused Project that still has a question: not reachable
-    /// from this data, reported to the runtime owner). This renders what the runtime really does: the banner, both Resume
-    /// controls, and the settled rows.
+    /// from this data, reported to the runtime owner). This renders what the runtime really does: no banner or Resume (the next
+    /// message restarts it), and the settled rows.
     @Test func pausedAsTheRuntimeActuallyLeavesIt() async throws {
         let (world, ref) = try await running([("Reading list research", "slow"), ("Library API draft", "ask-choice")], paused: true)
         defer { world.stop() }
@@ -189,8 +256,8 @@ struct LogicalProjectPreviewTests {
         _ = ref
     }
 
-    /// A paused Project holding a message with an image, beside one the engine refused: the queued one in the composer's shared Up next
-    /// (read-only, Paused, the image by name), the refused one in the transcript with the owner's reason. All from the real runtime.
+    /// A Project paused by the runtime holding a message with an image, beside one the engine refused: the queued one in the composer's
+    /// shared Up next (read-only, the image by name), the refused one in the transcript with the owner's reason. All from the real runtime.
     @Test func pausedQueueWithAnImageAndARefusedMessage() async throws {
         let (world, ref) = try await running([])
         defer { world.stop() }
@@ -198,7 +265,8 @@ struct LogicalProjectPreviewTests {
         // The stub engine refuses a prompt with "refuse" in it: a definite refusal, recorded with its reason.
         #expect(await vm.logicalProjects.sendMessage(ref, text: "Please refuse this one so its note shows."))
         try await eventuallyOnMain("the refusal is recorded") { vm.state.projects.first?.messages.contains { $0.phase == .failed } == true }
-        #expect(await vm.logicalProjects.setPaused(ref, true))
+        let running = try #require(vm.state.projects.first)
+        _ = try await vm.projectCoordinator.perform(projectID: running.id, expectedRevision: running.revision, request: .pause)
         try await eventuallyOnMain("paused and acknowledged") { vm.state.projects.first.map { $0.paused && !$0.interruptPending } == true }
         let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==")!
         #expect(await vm.logicalProjects.sendMessage(ref, text: "Use this sketch for the reading-list layout when you continue.",
@@ -256,6 +324,26 @@ struct LogicalProjectPreviewTests {
         vm.logicalProjectPaneTask = task.id
         try await Preview.renderMatrix("win-thread-running", size: CGSize(width: 1600, height: 900), scales: [1, 1.3]) { window(vm, style: .projects) }
         _ = ref
+    }
+
+    /// The Threads pane after a drag at its divider: the board's 480 box, a wide 760 pane, and a 1100 window where the pane gives
+    /// way so the conversation keeps 400 (the shared side-pane bounds). Real tasks from the stub engine.
+    @Test func threadsPaneAtDefaultWideAndNarrowWidths() async throws {
+        let (world, _) = try await running([("Reading list research", "slow"), ("Library API draft", "slow")])
+        defer { world.stop() }
+        let vm = world.vm
+        let ready: @MainActor () -> Bool = { vm.state.projects.first.flatMap { $0.coordinatorAgentID }.flatMap { vm.projectCoordinator.conversationStore(agentID: $0) }?.rows.isEmpty == false }
+        try await Preview.renderMatrix("lead-pane-default", size: CGSize(width: 1600, height: 900), ready: ready) { window(vm, style: .projects) }
+        vm.logicalProjectPane.width = 760
+        try await Preview.renderMatrix("lead-pane-wide", size: CGSize(width: 1600, height: 900), ready: ready) { window(vm, style: .projects) }
+        try await Preview.renderMatrix("lead-pane-narrow", size: CGSize(width: 1100, height: 900), ready: ready) {
+            HStack(spacing: 0) {
+                SidebarView(vm: vm).frame(width: 232).background(Color.nw.bgBase)
+                    .overlay(alignment: .trailing) { Rectangle().fill(Color.nw.lineSubtle).frame(width: 1) }
+                LogicalProjectDestination(vm: vm).frame(width: 1100 - 232)
+            }
+        }
+        vm.logicalProjectPane.width = 0
     }
 
     /// ProjectLead-AddsSpace: a real pending proposal (from the owner's own `proposeSpace`), drawn as the offer card over the composer.
@@ -412,6 +500,44 @@ struct LogicalProjectPreviewTests {
         let vm = world.vm
         try await Preview.renderMatrix("lead-delete-project", size: CGSize(width: 560, height: 360)) {
             DeleteLogicalProjectDialog(vm: vm, ref: LogicalProjectRef(home: .local, id: projects[0].id), project: projects[0], dismiss: {})
+        }
+    }
+}
+
+extension LogicalProjectPreviewTests {
+    /// The reported case: a Project whose coordinator's pi is held off (paused, or a relaunch with nothing to deliver), through the real
+    /// ThreadView and Composer with the Project's composer wiring. Its model settings are open with the Project's own model and reasoning
+    /// level and the levels the catalog lists for that model, and it draws no branch or worktree chip. An ordinary thread's composer with
+    /// its git chip renders beside it for comparison. (The page's own wiring and the owner's save are `LogicalProjectConversationTests`'.)
+    @Test func projectComposerModelAndReasoningWhileItsCoordinatorIsHeldOff() async throws {
+        let send = ProjectComposerSend(placeholder: "Paused. Your message waits until you resume\u{2026}", send: { _, _ in false },
+                                       model: ProjectConversationModel(current: "openai/gpt-5", thinking: "xhigh", choose: { _, _ in false },
+                                                                       chooseThinking: { _ in false }))
+        let held = NativeThreadStore()
+        held.offline = true
+        let catalog = ModelCatalog([PiModelCatalog.Entry(id: "openai/gpt-5", context: "400K"), PiModelCatalog.Entry(id: "anthropic/claude-opus-4-5", context: "200K")],
+                                   levels: ["openai/gpt-5": ["off", "low", "medium", "high", "xhigh"]])
+        var snapshot = ActivityThreads.idle
+        snapshot.model = "anthropic/claude-opus-4-5"
+        snapshot.thinking = "medium"
+        snapshot.thinkingLevels = ["off", "low", "medium", "high"]
+        let ordinary = ThreadFixture(snapshot)
+        defer { ordinary.store.stop() }
+        try await Preview.renderMatrix("project-composer-model-held-off", size: CGSize(width: 1500, height: 560),
+                                       ready: { ordinary.store.ready }) {
+            HStack(alignment: .bottom, spacing: NW.Space.xl) {
+                ThreadView(store: held, active: true, isFocused: false, request: { _ in .failure(code: NativeThreadCode.starting, message: "held off") },
+                           agentName: "Sample App", listModels: { catalog }, modelSettingsOpen: true)
+                    .environment(\.projectComposerSend, send)
+                    .frame(width: 720)
+                ThreadView(store: ordinary.store, active: true, isFocused: false, request: ordinary.request, agentName: "Review the composer",
+                           workingDirectory: "~/Developer/Shepherd",
+                           branch: AgentBranchLabel(kind: .worktree, branch: "agent/swiftui-previews", changedFiles: 3),
+                           showChanges: {}, listModels: { catalog }, modelSettingsOpen: true)
+                    .frame(width: 720)
+            }
+            .padding(NW.Space.l)
+            .background(Color.nw.bgWindow)
         }
     }
 }

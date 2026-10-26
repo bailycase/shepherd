@@ -3,7 +3,9 @@ import ShepherdUI
 import ShepherdRemote
 
 /// The iPhone Home tab's root (MobileAgents board; home track): Automations and More, hosts that
-/// are not connected with Retry, a short Needs you list, and Recents across every host.
+/// are not connected with Retry, a short Needs you list, the Mac sidebar's Working, Done and
+/// Pinned (`SidebarThreads`), and Recents across every host. A row's long press is the Mac's row
+/// menu (`ThreadRowMenu`).
 struct HomeScreen: View {
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
@@ -47,9 +49,11 @@ private struct HomeSections: View {
     let selected: AgentRef?
     @Environment(MobileNavigator.self) private var navigator
     @Environment(MobileHosts.self) private var hosts
+    @Environment(MobileProjects.self) private var projects
 
     var body: some View {
         let designs = MobileDesigns.of(hosts).model
+        let groups = SidebarThreads.of(hosts).groups(model)
         NWListCard {
             // Designs, while a host serves them (MobileAgents: between Missions and Automations).
             if designs.available {
@@ -58,6 +62,11 @@ private struct HomeSections: View {
                 }
                 .buttonStyle(.nwRow(radius: 0))
             }
+            // Always listed: with no host serving Projects, its screen says why.
+            Button { navigator.open(.projects(.list)) } label: {
+                NWListRow("Projects", leading: .symbol("square.stack.3d.up"), trailing: projectsTrailing)
+            }
+            .buttonStyle(.nwRow(radius: 0))
             destination("Automations", symbol: "bolt", trailing: model.automations.isEmpty ? .none : .value(String(model.automations.count)), route: .automations)
             destination("More", symbol: "ellipsis", trailing: model.offlineSummary.map { .alert($0) } ?? .none, route: .more)
         }
@@ -66,15 +75,14 @@ private struct HomeSections: View {
                 ForEach(model.offlineHosts) { card in HostNotice(card: card).equatable() }
             }
         }
-        if !model.needsYou.isEmpty {
-            section("Needs you", attention: true, count: model.needsYou.count) {
+        if !groups.needsYou.isEmpty {
+            section("Needs you", attention: true, count: groups.needsYou.count) {
                 NWListCard {
-                    ForEach(model.needsYou.prefix(HomeLimits.needsYou)) { item in
-                        Button { navigator.open(item.route) } label: { AttentionRow(item: item).equatable() }
-                            .buttonStyle(.nwRow(radius: 0))
+                    ForEach(groups.needsYou.prefix(HomeLimits.needsYou)) { item in
+                        attentionRow(item)
                     }
                     Button { navigator.open(.home(.needsYou)) } label: {
-                        Text(model.needsYou.count > HomeLimits.needsYou ? "See all \(model.needsYou.count)" : "Answer in Needs you")
+                        Text(groups.needsYou.count > HomeLimits.needsYou ? "See all \(groups.needsYou.count)" : "Answer in Needs you")
                             .font(.nw(.caption, weight: .medium))
                             .foregroundStyle(Color.nw.textSecondary)
                             .frame(maxWidth: .infinity, minHeight: NW.Height.touch)
@@ -83,18 +91,40 @@ private struct HomeSections: View {
                 }
             }
         }
+        // The Mac's Working, Done and Pinned, in its order (docs/design/sidebar.md).
+        if !groups.working.isEmpty {
+            section("Working", count: groups.working.count) {
+                NWListCard { ForEach(groups.working) { row in threadRow(row) } }
+            }
+        }
+        if !groups.done.isEmpty {
+            section("Done", count: groups.done.count, trailing: MarkAllSeenChip(rows: groups.done)) {
+                NWListCard { ForEach(groups.done) { row in threadRow(row) } }
+            }
+        }
+        if !groups.pinned.isEmpty {
+            section("Pinned", count: groups.pinned.count) {
+                NWListCard {
+                    ForEach(groups.pinned) { pinned in
+                        VStack(spacing: 0) {
+                            switch pinned {
+                            case .thread(let row): threadRow(row)
+                            case .attention(let item): attentionRow(item)
+                            }
+                        }
+                    }
+                }
+            }
+        }
         section("Recents", count: nil) {
-            if model.recents.isEmpty {
+            if groups.recents.isEmpty {
                 NWListCard { EmptyRecents() }
             } else {
                 NWListCard {
-                    ForEach(model.recents.prefix(HomeLimits.recents)) { row in
-                        Button { navigator.open(row.route) } label: {
-                            ThreadRow(row: row, selected: row.ref.agentRef == selected).equatable()
-                        }
-                        .buttonStyle(.nwRow(radius: 0))
+                    ForEach(groups.recents.prefix(HomeLimits.recents)) { row in
+                        threadRow(row)
                     }
-                    if model.recents.count > HomeLimits.recents {
+                    if groups.recents.count > HomeLimits.recents {
                         Button { navigator.open(.home(.recents)) } label: {
                             Text("Show all recents")
                                 .font(.nw(.caption, weight: .medium))
@@ -108,6 +138,13 @@ private struct HomeSections: View {
         }
     }
 
+    private var projectsTrailing: NWListRow.Trailing {
+        let rows = projects.rows
+        let needsYou = rows.reduce(0) { $0 + $1.needsYou }
+        if needsYou > 0 { return .alert("\(needsYou) needs you") }
+        return rows.isEmpty ? .none : .value(String(rows.count))
+    }
+
     private func destination(_ title: String, symbol: String, trailing: NWListRow.Trailing, route: HomeRoute) -> some View {
         Button { navigator.open(.home(route)) } label: {
             NWListRow(title, leading: .symbol(symbol), trailing: trailing)
@@ -115,12 +152,30 @@ private struct HomeSections: View {
         .buttonStyle(.nwRow(radius: 0))
     }
 
-    private func section(_ title: String, attention: Bool = false, count: Int?,
+    private func section(_ title: String, attention: Bool = false, count: Int?, trailing: MarkAllSeenChip? = nil,
                          @ViewBuilder content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-            NWListHeader(title, attention: attention, count: count)
+            HStack(alignment: .center, spacing: NW.Space.s) {
+                NWListHeader(title, attention: attention, count: count)
+                trailing
+            }
             content()
         }
+    }
+
+    /// A thread or design row; a design's row keeps its own route and has no thread menu.
+    private func threadRow(_ row: FleetThreadRow) -> some View {
+        Button { navigator.open(row.route) } label: {
+            ThreadRow(row: row, selected: row.ref.agentRef == selected).equatable()
+        }
+        .buttonStyle(.nwRow(radius: 0))
+        .contextMenu { if row.design == nil { ThreadRowMenu(thread: row.ref.agentRef) } }
+    }
+
+    private func attentionRow(_ item: FleetAttention) -> some View {
+        Button { navigator.open(projects.route(item)) } label: { AttentionRow(item: item).equatable() }
+            .buttonStyle(.nwRow(radius: 0))
+            .contextMenu { ThreadRowMenu(thread: item.ref.agentRef) }
     }
 }
 

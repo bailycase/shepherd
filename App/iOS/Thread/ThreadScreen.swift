@@ -45,15 +45,16 @@ struct ThreadScreen: View {
         // Where the agent works (the branch chip); the host is named once there is more than one.
         let branch = agent.flatMap { AgentBranchLabel(agent: $0, host: hosts.hosts.count > 1 ? host?.name : nil) }
         ThreadTranscript(ref: ref, store: store, banner: banner(host: host, agent: agent, store: store, supported: supported))
+            .environment(\.openArtifact, store.supports("artifacts") || !store.artifacts.isEmpty ? { [navigator, ref] path in
+                ArtifactHooks.open(thread: ref, path: path, navigator: navigator)
+            } : nil)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if agent != nil {
                     ThreadComposer(ref: ref)
                         .composerTextDrop(ref)
                         .environment(\.composerMaxHeight, height > 0 ? height * MobileLayout.composerShare : .infinity)
-                        // iPad: as wide as the thread's column, and a question's card wider (iPadQuestion).
-                        .frame(maxWidth: sizeClass == .regular
-                               ? (store.dialogs.isEmpty ? MobileLayout.threadMaxWidth : MobileLayout.questionMaxWidth) + 2 * MobileLayout.padThreadGutter
-                               : .infinity)
+                        // iPad: as wide as the thread's column, a question's card too (iPadQuestion).
+                        .frame(maxWidth: sizeClass == .regular ? MobileLayout.threadMaxWidth + 2 * MobileLayout.padThreadGutter : .infinity)
                         .frame(maxWidth: .infinity)
                         .background(Color.nw.bgWindow)
                 }
@@ -83,8 +84,12 @@ struct ThreadScreen: View {
                             }
                         }
                         ThreadStopButton(store: store, enabled: key.session != nil)
-                        ThreadOptionsMenu(ref: ref, store: store, enabled: key.session != nil)
                     }
+                }
+                // The system's ••• menu, so it overflows with the bar's items where the bar runs
+                // down the side (iPhone Duo).
+                if agent != nil {
+                    ToolbarOverflowMenu { ThreadOptionsItems(ref: ref, store: store, enabled: key.session != nil) }
                 }
             }
             .onAppear { visible = true }
@@ -127,12 +132,20 @@ struct ThreadTranscript: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.composerDesignChat) private var designChat
     @Environment(\.designMarkupCanvas) private var markupCanvas
+    /// A Project's coordinator or worker: its key is no agent's, so no ordinary-thread action is offered.
+    @Environment(\.projectTranscript) private var projectTranscript
     /// Follows the tail until the reader drags away from it (docs/design/thread.md › Thread › Following).
     private var presentation: ComposerPresentation { navigator.composerPresentation.state(for: ref) }
     private var follower: NativeScrollFollower { presentation.scrollFollower }
     @State private var historyPaging = NativeHistoryPaging()
 
     private static let bottomID = "thread-bottom"
+
+    // iOS 27.1's bottom anchor can retain a lazy stack's estimated height after a fold.
+    // Use the same explicit following as macOS 27.
+    private var nativeTail: Bool {
+        if #available(iOS 27.1, *) { false } else { true }
+    }
 
     var body: some View {
         @Bindable var presentation = presentation
@@ -190,13 +203,12 @@ struct ThreadTranscript: View {
             .scrollPosition(id: $presentation.visibleTurn, anchor: .top)
             .onChange(of: historyEnabled) { _, _ in loadVisibleHistory() }
             .onChange(of: store.sessionKey) { _, _ in loadVisibleHistory() }
-            .defaultScrollAnchor(follower.sticky ? .bottom : .top, for: .initialOffset)
-            .defaultScrollAnchor(follower.sticky ? .bottom : nil, for: .sizeChanges)
+            .defaultScrollAnchor(nativeTail ? (follower.sticky ? .bottom : .top) : nil, for: .initialOffset)
+            .defaultScrollAnchor(nativeTail ? (follower.sticky ? .bottom : nil) : (follower.sticky ? nil : .top), for: .sizeChanges)
             .onScrollGeometryChange(for: NativeScrollProbe.self, of: Self.probe) { old, new in
-                // The size-change anchor follows neither the composer's nor the keyboard's inset,
-                // nor rows re-wrapping beside a docked review: while stuck, every layout change
-                // lands on the tail, above the composer.
-                if follow({ $0.observe(from: old, to: new, gesture: $0.userScrolling) }) {
+                // Insets and row wrapping can settle separately from scroll offsets.
+                // While following, keep the tail above the composer through every change.
+                if follow({ $0.observe(from: old, to: new, gesture: $0.userScrolling, nativeAnchor: nativeTail) }) {
                     proxy.scrollTo(Self.bottomID, anchor: .bottom)
                 }
             }
@@ -318,6 +330,7 @@ struct ThreadTranscript: View {
         let ref = ref
         let navigator = navigator
         var actions = AgentTurnActions()
+        guard !projectTranscript else { return actions }
         if store.canRetry(row, running: running) {
             actions.retry = { [store] in Task { await store.retry(row) } }
         }
@@ -497,26 +510,22 @@ private struct ThreadStopButton: View {
     }
 }
 
-/// The thread's options: refresh, subagents, the terminal (Terminal/), Open in new window
-/// (Windows/), and the agent actions (Search/).
-private struct ThreadOptionsMenu: View {
+/// The thread's options, in the bar's ••• menu: refresh, subagents, the terminal (Terminal/),
+/// Open in new window (Windows/), and the agent actions (Search/).
+private struct ThreadOptionsItems: View {
     let ref: AgentRef
     let store: NativeThreadStore
     let enabled: Bool
     @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
-        Menu {
-            Button("Refresh", systemImage: "arrow.clockwise") { Task { await store.refresh(fresh: true) } }
-                .disabled(!enabled)
-            if store.hasSubagents {
-                Button("Subagents", systemImage: "person.2") { navigator.open(SubagentHooks.list(thread: ref)) }
-            }
-            TerminalMenuItems(thread: ref)
-            OpenInNewWindowButton(thread: ref)
-            AgentActionsMenu(thread: ref)
-        } label: {
-            Label("Thread options", systemImage: "ellipsis")
+        Button("Refresh", systemImage: "arrow.clockwise") { Task { await store.refresh(fresh: true) } }
+            .disabled(!enabled)
+        if store.hasSubagents {
+            Button("Subagents", systemImage: "person.2") { navigator.open(SubagentHooks.list(thread: ref)) }
         }
+        TerminalMenuItems(thread: ref)
+        OpenInNewWindowButton(thread: ref)
+        AgentActionsMenu(thread: ref)
     }
 }

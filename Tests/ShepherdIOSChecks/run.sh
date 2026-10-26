@@ -1,8 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+mode=${1:-all}
+case "$mode" in all|--sidebar-only) ;; *) echo "Unknown check selection: $mode" >&2; exit 2 ;; esac
 build=$(mktemp -d /tmp/shepherd-ios-check.XXXXXX)
-trap 'rm -rf "$build"' EXIT
+if [ -n "${GITHUB_ENV:-}" ]; then printf 'MOBILE_CLIENT_CHECK_BUILD=%s\n' "$build" >> "$GITHUB_ENV"; fi
+# Retain compiler outputs on failure; CI collects this owned root with the failing log.
+trap 'result=$?; if [ "$result" -ne 0 ]; then echo "Retained failed client check: $build"; fi' EXIT
 sdk=$(xcrun --sdk macosx --show-sdk-path)
 flags=(-sdk "$sdk" -target "$(uname -m)-apple-macos26.0" -swift-version 5 -I "$build" -L "$build")
 xcrun swiftc "${flags[@]}" -parse-as-library Tests/ShepherdIOSChecks/Fixtures/FixtureCheck.swift \
@@ -20,7 +24,7 @@ done
 echo 'PASS: fixture readiness failures exit without READY'
 
 for module in ShepherdCore ShepherdProtocol ShepherdRemote; do
-    links=()
+    links=(-L "$build")
     if [[ "$module" != ShepherdCore ]]; then links+=(-lShepherdCore); fi
     if [[ "$module" == ShepherdRemote ]]; then links+=(-lShepherdProtocol); fi
     xcrun swiftc "${flags[@]}" "${links[@]}" -enable-testing -emit-library -emit-module \
@@ -31,6 +35,15 @@ xcrun swiftc "${flags[@]}" -lShepherdCore -lShepherdProtocol -lShepherdRemote -p
     App/iOS/Hosts/MobileHosts.swift App/iOS/Hosts/HostTokens.swift App/iOS/Support/AgentRef.swift \
     Tests/ShepherdIOSChecks/MobileHostsCheck.swift -o "$build/hosts-check"
 DYLD_LIBRARY_PATH="$build" "$build/hosts-check"
+
+xcrun swiftc "${flags[@]}" -lShepherdCore -lShepherdProtocol -lShepherdRemote -parse-as-library \
+    App/iOS/Hosts/MobileHosts.swift App/iOS/Hosts/HostTokens.swift App/iOS/Support/AgentRef.swift \
+    App/iOS/Home/SidebarThreads.swift App/iOS/Search/AgentActions.swift \
+    App/iOS/Review/FinalizeStore.swift App/iOS/Review/ReviewErrors.swift \
+    Tests/ShepherdIOSChecks/SidebarThreadsCheck.swift -o "$build/sidebar-check"
+DYLD_LIBRARY_PATH="$build" "$build/sidebar-check"
+echo 'SIDEBAR CHECK COMPLETE'
+if [ "$mode" = --sidebar-only ]; then exit 0; fi
 
 xcrun swiftc "${flags[@]}" -lShepherdCore -lShepherdProtocol -lShepherdRemote \
     -parse-as-library Tests/ShepherdIOSChecks/ThreadStoreCheck.swift \
