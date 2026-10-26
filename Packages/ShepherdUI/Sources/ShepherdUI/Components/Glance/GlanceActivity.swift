@@ -68,7 +68,7 @@ public struct SHGlanceHeader: View {
         HStack(spacing: SH.Space.m) {
             SHGlanceMark(glance.urgent, stale: stale)
             if stale {
-                Text(Self.staleLine(glance, now: now))
+                Self.staleLine(glance)
                     .font(.shSans(SHGlanceMetrics.body))
                     .foregroundStyle(Color.sh.textSecondary)
                     .lineLimit(1)
@@ -96,11 +96,18 @@ public struct SHGlanceHeader: View {
         return Text("\(head)\(Text(" · \(rest)").font(font).foregroundStyle(Color.sh.textPrimary))")
     }
 
-    /// "Last update 6m ago · This Mac unreachable".
-    public static func staleLine(_ glance: SHGlance, now: Date) -> String {
-        var line = "Last update \(SHGlanceAgo.text(glance.updated, now: now)) ago"
-        if let unreachable = glance.unreachable { line += " · \(unreachable) unreachable" }
-        return line
+    /// "Last update 6 minutes ago · This Mac unreachable". The age counts on its own: a stale
+    /// card is not redrawn, so a computed "6m" would freeze at the moment it went stale.
+    public static func staleLine(_ glance: SHGlance) -> Text {
+        let ago = staleAge(glance)
+        guard let unreachable = glance.unreachable else { return Text("Last update \(ago)") }
+        return Text("Last update \(ago) · \(unreachable) unreachable")
+    }
+
+    /// "6 minutes ago", counting on its own. A counting text never wraps, so a narrow surface
+    /// puts it on a line of its own.
+    public static func staleAge(_ glance: SHGlance) -> Text {
+        Text(.currentDate, format: .reference(to: glance.updated, allowedFields: [.minute, .hour, .day], maxFieldCount: 1))
     }
 }
 
@@ -119,7 +126,7 @@ struct SHGlanceLead: View {
     var body: some View {
         VStack(alignment: .leading, spacing: SH.Space.xxs) {
             HStack(spacing: SH.Space.m) {
-                SHGlanceMark(item.state, stale: stale && item.state == .running)
+                SHGlanceMark(item.state, stale: stale && item.state == .running, dotForQuestion: true)
                 Text(item.title)
                     .font(.shSans(SHGlanceMetrics.lead, .semibold))
                     .foregroundStyle(stale ? Color.sh.textSecondary : Color.sh.textPrimary)
@@ -190,7 +197,7 @@ public struct SHGlanceFollowCard<Buttons: View>: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: SH.Space.xs) {
             HStack(spacing: SH.Space.m) {
-                SHGlanceMark(item.state, stale: stale)
+                SHGlanceMark(item.state, stale: stale, dotForQuestion: true)
                 Text(item.title)
                     .font(.shSans(SHGlanceMetrics.title, .semibold))
                     .foregroundStyle(stale ? Color.sh.textSecondary : Color.sh.textPrimary)
@@ -200,7 +207,7 @@ public struct SHGlanceFollowCard<Buttons: View>: View {
             }
             VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 if stale {
-                    Text(SHGlanceHeader.staleLine(glance, now: now)).font(.shSans(SHGlanceMetrics.body)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
+                    SHGlanceHeader.staleLine(glance).font(.shSans(SHGlanceMetrics.body)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
                 }
                 if let line = SHGlanceLead.line(item, stale: stale) { line.lineLimit(2) }
                 if !stale, item.state == .running {
@@ -301,7 +308,7 @@ public struct SHGlanceIslandTrailing: View {
         let font = Font.shMono(SHGlanceMetrics.compactText, .semibold)
         Group {
             if stale {
-                Text(SHGlanceAgo.text(glance.updated, now: now)).font(font).foregroundStyle(Color.sh.islandSecondary)
+                SHGlanceElapsed(since: glance.updated, size: SHGlanceMetrics.compactText, color: Color.sh.islandSecondary)
             } else if let follow, expanded, follow.state != .running {
                 Text([follow.hostName, follow.since.map { SHGlanceAgo.text($0, now: now) }].compactMap { $0 }.joined(separator: " · "))
                     .font(.shMono(SHGlanceMetrics.mono)).foregroundStyle(Color.sh.islandSecondary)
@@ -387,7 +394,7 @@ public struct SHGlanceIslandBody<Buttons: View>: View {
             Text(item.title).font(.shSans(SHGlanceMetrics.title + 1, .semibold)).foregroundStyle(sh.islandText).lineLimit(1)
             Group {
                 if stale {
-                    Text(SHGlanceHeader.staleLine(glance, now: now))
+                    SHGlanceHeader.staleLine(glance)
                 } else {
                     switch item.state {
                     case .needsYou: Text(item.question ?? "Waiting on you")

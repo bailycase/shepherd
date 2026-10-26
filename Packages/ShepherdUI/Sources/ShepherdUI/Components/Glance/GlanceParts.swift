@@ -61,11 +61,15 @@ public struct SHGlanceMark: View {
     let state: SHGlance.State?
     let stale: Bool
     let size: CGFloat
+    let dotForQuestion: Bool
 
-    public init(_ state: SHGlance.State?, stale: Bool = false, size: CGFloat = SHGlanceMetrics.mark) {
+    /// `dotForQuestion`: a thread that needs you is its lantern dot (a lead, a followed thread);
+    /// otherwise the crook (a header, the island).
+    public init(_ state: SHGlance.State?, stale: Bool = false, size: CGFloat = SHGlanceMetrics.mark, dotForQuestion: Bool = false) {
         self.state = state
         self.stale = stale
         self.size = size
+        self.dotForQuestion = dotForQuestion
     }
 
     public var body: some View {
@@ -83,6 +87,8 @@ public struct SHGlanceMark: View {
                     Image(systemName: state?.agentState.symbolName ?? "")
                         .font(.system(size: size - 3, weight: .semibold))
                         .foregroundStyle(state?.agentState.color ?? Color.sh.textTertiary)
+                case .needsYou where dotForQuestion:
+                    SHGlanceDot(.needsYou, size: SHGlanceMetrics.dot + 1)
                 case .needsYou, nil:
                     SHGlanceCrook(color: state == nil ? Color.sh.textTertiary : Color.sh.lantern)
                 }
@@ -114,18 +120,30 @@ public struct SHGlanceCrook: View {
 public struct SHGlanceElapsed: View {
     let since: Date
     let size: CGFloat
+    let color: Color?
 
-    public init(since: Date, size: CGFloat = SHGlanceMetrics.mono) {
+    /// `color`: nil is running's.
+    public init(since: Date, size: CGFloat = SHGlanceMetrics.mono, color: Color? = nil) {
         self.since = since
         self.size = size
+        self.color = color
     }
 
     public var body: some View {
-        Text(timerInterval: since...Date.distantFuture, countsDown: false)
+        // A system timer takes all the width it is offered, and a fixed-size parent offers
+        // infinity: the card then lays out infinitely wide and draws blank. A hidden sample of
+        // the widest reading sizes it instead.
+        let hours = Int(Date().timeIntervalSince(since) / 3600)
+        // Wide enough for the hours it can reach before it ends (twelve past now).
+        Text(hours < 1 ? "00:00" : String(repeating: "0", count: String(hours + 12).count) + ":00:00")
+            .hidden()
+            .overlay(alignment: .trailing) {
+                Text(timerInterval: since...max(since, Date()).addingTimeInterval(12 * 3600), countsDown: false)
+                    .multilineTextAlignment(.trailing)
+                    .foregroundStyle(color ?? Color.sh.running)
+            }
             .font(.shMono(size, .semibold))
             .monospacedDigit()
-            .foregroundStyle(Color.sh.running)
-            .multilineTextAlignment(.trailing)
             .lineLimit(1)
             .fixedSize()
     }

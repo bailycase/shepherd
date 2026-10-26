@@ -60,7 +60,11 @@ public struct SHGlanceSmall: View {
     @ViewBuilder private func detail(_ item: SHGlance.Item) -> some View {
         let body = Font.shSans(SHGlanceMetrics.row)
         if stale {
-            Text(SHGlanceHeader.staleLine(glance, now: now)).font(body).foregroundStyle(Color.sh.textTertiary).lineLimit(3)
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Last update")
+                SHGlanceHeader.staleAge(glance)
+            }
+            .font(body).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
         } else {
             switch item.state {
             case .needsYou:
@@ -163,7 +167,7 @@ public struct SHGlanceList: View {
             if stale {
                 HStack(spacing: SH.Space.s) {
                     SHGlanceMark(nil, stale: true, size: SHGlanceMetrics.mark - 2)
-                    Text(SHGlanceHeader.staleLine(glance, now: now)).font(.shSans(SHGlanceMetrics.row)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
+                    SHGlanceHeader.staleLine(glance).font(.shSans(SHGlanceMetrics.row)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
                 }
                 .padding(.bottom, SH.Space.xxs)
             }
@@ -310,7 +314,7 @@ public struct SHGlanceRectangular: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: SH.Space.xs) {
                 SHGlanceCrook(color: Color.sh.textPrimary).frame(width: SHGlanceMetrics.mono, height: SHGlanceMetrics.mono)
-                Text(stale ? "Last update \(SHGlanceAgo.text(glance.updated, now: now)) ago" : glance.summary)
+                (stale ? SHGlanceHeader.staleLine(SHGlance(items: [], hosts: [], updated: glance.updated)) : Text(glance.summary))
                     .font(.shSans(SHGlanceMetrics.body, .semibold)).lineLimit(1)
             }
             if let lead = glance.lead {

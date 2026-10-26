@@ -22,6 +22,9 @@ final class GlanceBridge {
     private var heartbeat: Task<Void, Never>?
     /// The person swiped the Watch away: it stays gone until nothing runs.
     private var watchDismissed = false
+    /// A forced publish waits for the hosts to settle (back in front, a heartbeat): what the
+    /// surfaces show must be marked fresh even when nothing in it changed.
+    private var forcePending = false
 
     /// While in front, the snapshot is republished this often so its stale time moves on.
     static let heartbeatInterval: Duration = .seconds(60)
@@ -32,6 +35,7 @@ final class GlanceBridge {
         self.hosts = hosts
         self.windows = windows
         feed = HomeFeed.of(hosts)
+        glance = GlanceStore.read()
         GlanceActions.handler = { [weak self] command in
             guard let self else { throw GlanceFailure("Open Shepherd and try again.") }
             try await self.perform(command)
@@ -74,9 +78,15 @@ final class GlanceBridge {
     /// is not news.
     private func publish(force: Bool) {
         guard hosts.foreground else { return }
-        let next = Self.glance(feed.model, now: Date())
+        if force { forcePending = true }
+        // A host still connecting (the app just came to the front, or just launched) is no news:
+        // its threads would read as gone and end the Watch.
+        let model = feed.model
+        guard !model.hosts.contains(where: { $0.phase == .connecting || $0.phase == .disconnected }) else { return }
+        let next = Self.glance(model, now: Date())
         let changed = glance.map { $0.items != next.items || $0.hosts != next.hosts } ?? true
-        guard changed || force else { return }
+        guard changed || forcePending else { return }
+        forcePending = false
         glance = next
         GlanceStore.write(next)
         WidgetCenter.shared.reloadAllTimelines()
@@ -93,6 +103,8 @@ final class GlanceBridge {
             for watch in watches { await watch.end(content, dismissalPolicy: .after(Date().addingTimeInterval(Self.quietLinger))) }
         } else if let watch = watches.first {
             await watch.update(content)
+            // One Watch: any other (a launch before this one started its own) goes.
+            for extra in watches.dropFirst() { await extra.end(nil, dismissalPolicy: .immediate) }
         } else if !watchDismissed, hosts.foreground, ActivityAuthorizationInfo().areActivitiesEnabled,
                   let watch = try? Activity.request(attributes: WatchActivity(), content: content) {
             watchDismissal(watch)

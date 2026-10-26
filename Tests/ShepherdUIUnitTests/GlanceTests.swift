@@ -47,7 +47,7 @@ struct GlanceTests {
                               updated: Self.now)
         #expect(!glance.isStale(at: Self.now.addingTimeInterval(SHGlance.staleAfter)))
         #expect(glance.isStale(at: Self.now.addingTimeInterval(SHGlance.staleAfter + 1)))
-        #expect(SHGlanceHeader.staleLine(glance, now: Self.now.addingTimeInterval(360)) == "Last update 6m ago · This Mac unreachable")
+        #expect(glance.unreachable == "This Mac")
         #expect(glance.hostsLine == "build-01 online · This Mac offline")
         #expect(glance.summary == "Nothing running")
     }
