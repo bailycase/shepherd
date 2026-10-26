@@ -6799,6 +6799,11 @@ public final class SessionServer: @unchecked Sendable {
                 if let operation { server.projectPromptStarted(agentID: agentID, deliveryID: operation) }
                 server.executionUserStarted(agentID: agentID, session: thread.piSessionID, generation: thread.generation, operation: operation, entryID: entry)
             }
+            thread.onUnconsumedDispatchRetired = { [weak serverWeak, weak thread] deliveryID in
+                guard let server = serverWeak, let thread, let agentID = server.agentID(forSession: sid),
+                      server.rpcThread(forAgent: agentID) === thread else { return }
+                server.projectPromptRetired(agentID: agentID, deliveryID: deliveryID, thread: thread)
+            }
             thread.onActualTurnSettled = { [weak serverWeak, weak thread] in
                 guard let server = serverWeak, let thread, let agentID = server.agentID(forSession: sid) else { return }
                 server.designMergeTurnSettled(agentID: agentID, thread: thread)

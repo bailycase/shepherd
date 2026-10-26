@@ -65,7 +65,11 @@ extension RPCThreadState {
         inputActive = true
         let generation = generation
         session.request(.prompt(message: prompt, images: images, streamingBehavior: delivery), timeout: timeout,
-                        onLateResponse: { [weak self] _ in self?.inputOutcomeUnknown = false }) { [weak self] result in
+                        onLateResponse: { [weak self] _ in
+                            guard let self else { return }
+                            self.inputOutcomeUnknown = false
+                            for dispatch in self.dispatches where dispatch.responded { self.confirmDispatch(dispatch.id) }
+                        }) { [weak self] result in
             guard let self else { return }
             if case .failure(.timeout) = result { self.inputOutcomeUnknown = true }
             let failure = Self.dispatchFailure(result)

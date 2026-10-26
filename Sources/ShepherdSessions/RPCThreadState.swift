@@ -433,6 +433,8 @@ final class RPCThreadState {
 
     /// Installed by SessionServer: the queue was expected to go when pi settled, and did not.
     var onIdleAfterQueue: (() -> Void)?
+    /// pi is idle and a responded dispatch never produced a user message. Its delivery remains unconfirmed.
+    var onUnconsumedDispatchRetired: ((UUID) -> Void)?
     /// Installed by SessionServer: queued messages carrying design references were deleted
     /// before pi read them, and these copies go with them. Called on the session queue.
     var onDesignPayloadsWithdrawn: (([UUID]) -> Void)?
