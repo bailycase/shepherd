@@ -199,6 +199,9 @@ final class ShepherdViewModel {
     /// leaves are persisted long enough for layout writes, then purged on the
     /// next app start by the session server.
     var reviewSessions: [PaneID: ReviewSession] = [:]
+    /// Per-agent file tree models for the Files tab, keyed by agent ID. Created on first
+    /// Files tab open; removed when the thread is gone.
+    var fileTrees: [AgentID: FileTreeModel] = [:]
     /// When each agent entered its current status this run: the sidebar's running elapsed
     /// time. Ephemeral; an agent restored at launch counts from its first report.
     var statusSince: [AgentID: Date] = [:]
@@ -1169,6 +1172,7 @@ final class ShepherdViewModel {
         checkouts?.sync(agents: state.agents.map(\.id))
         pruneReviewSessions()
         pruneDesigns()
+        pruneFileTrees()
         // A deleted agent waits on no sign-in.
         if notSignedIn.keys.contains(where: { id in !state.agents.contains { $0.id == id } }) {
             notSignedIn = notSignedIn.filter { entry in state.agents.contains { $0.id == entry.key } }

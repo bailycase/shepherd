@@ -78,6 +78,8 @@ final class AppSettings {
         static let childContext = "shepherd.pi.children.context"
         static let shellPath = "shepherd.pane.shell"
         static let editor = "shepherd.files.editor"
+        static let filesWordWrap = "shepherd.files.wordWrap"
+        static let filesMarkdownPreview = "shepherd.files.markdownPreview"
         static let uiDensity = "shepherd.ui.density"
         static let uiTextScale = "shepherd.ui.textScale"
         static let sidebarWidth = "shepherd.ui.sidebarWidth"
@@ -115,6 +117,7 @@ final class AppSettings {
             worktreeMergeMethod, skillsInSlashMenu, hiddenSlashCommands,
             mcpProjectConfig, mcpSameEverywhere,
             goalsEnabled, projectsEnabled, designToolEnabled, implementOpensThread,
+            filesWordWrap, filesMarkdownPreview,
         ]
 
         /// What Reset settings clears: everything but Remote's listener, which only its own
@@ -339,6 +342,16 @@ final class AppSettings {
         didSet { if let editor { store.set(editor, forKey: Key.editor) } else { store.removeObject(forKey: Key.editor) } }
     }
 
+    /// Files tab: wrap long lines instead of horizontal scrolling.
+    var filesWordWrap: Bool {
+        didSet { store.set(filesWordWrap, forKey: Key.filesWordWrap) }
+    }
+
+    /// Files tab: render Markdown files as formatted prose instead of source.
+    var filesMarkdownPreview: Bool {
+        didSet { store.set(filesMarkdownPreview, forKey: Key.filesMarkdownPreview) }
+    }
+
     /// Row-height multiplier for app chrome (sidebar rows, headers). 1.0 is
     /// the designed density; smaller packs more agents on screen.
     var uiDensity: Double {
@@ -536,6 +549,8 @@ final class AppSettings {
         childContext = ["fresh", "fork"].contains(context) ? context : "fresh"
         shellPath = store.string(forKey: Key.shellPath) ?? Defaults.shellPath
         editor = store.string(forKey: Key.editor).flatMap { $0.isEmpty ? nil : $0 }
+        filesWordWrap = store.bool(forKey: Key.filesWordWrap)
+        filesMarkdownPreview = store.bool(forKey: Key.filesMarkdownPreview)
         let density = store.double(forKey: Key.uiDensity)
         uiDensity = min(max(density == 0 ? 1 : density, Self.uiDensityRange.lowerBound), Self.uiDensityRange.upperBound)
         let textScale = store.double(forKey: Key.uiTextScale)

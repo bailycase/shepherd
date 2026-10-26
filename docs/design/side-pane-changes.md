@@ -8,11 +8,10 @@ sits at the workspace's trailing edge beside the thread and its terminal panel, 
 height, and the dock rule measures the main column, never the thread alone. Its sizes and
 adaptive rule are in "Window and adaptive layout" above. It shows only the tabs Shepherd has:
 **Changes**, the Changes pane, **Browser** (Side pane: Browser, below) for a local thread and
-for a remote thread whose host carries Browser tunnels (an older host: Changes alone), and **Subagents** (SubagentList,
-in [subagents](subagents.md)), the thread's runs, once it has one. Artifacts and Files are
-specified below and are not built, so they have no tab and no placeholder (the user's decision,
-2026-09-25: "dont show browser, artifacts, files, etc, only show the things we have"); each joins
-`SidePaneTab` when it is. A tray row, a record line, and the footer's "3 subagents" open the
+for a remote thread whose host carries Browser tunnels, **Files** ([FileOpenSplit](side-pane-files.md)),
+**Artifacts** ([Artifacts](side-pane-artifacts.md)) once the thread has one, and **Subagents**
+(SubagentList, in [subagents](subagents.md)), the thread's runs, once it has one. Files browses
+local threads; remote threads explicitly state that file browsing is unavailable. A tray row, a record line, and the footer's "3 subagents" open the
 inspector; the tray's Steer opens it with its Steer field focused.
 
 - **Showing and hiding:** ⇧⌘B, the header's side-pane button, or View › Show Side Pane / Hide Side
@@ -20,7 +19,7 @@ inspector; the tray's Steer opens it with its Steer field focused.
   inspected subagent, and discards the review like a cancel. ⌃1 (View › Changes) shows Changes in
   front of an inspected subagent, ⌃2 (View › Browser) the Browser (a remote thread on a host without tunnels beeps), ⌃3
   (View › Artifacts) the Artifacts tab (a thread with no artifact beeps) and ⌃4 (View › Subagents) the Subagents tab (a thread with
-  no run beeps); they are fixed, like ⌘1–9.
+  no run beeps), and ⌃5 (View › Files) the file browser; they are fixed, like ⌘1–9.
   Review Changes (a sidebar row's menu), the palette's Review diff, the chip's Show Changes, a
   thread's "review ›" link and the inspector's file links show Changes too.
 - **Nothing opens by itself** (PaneStates): when pi opens something for the pane (today, an
