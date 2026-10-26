@@ -73,4 +73,67 @@ public enum HostSettingsPresentation {
     public static func title(_ method: HostSettings.MergeMethod) -> String {
         method.rawValue.capitalized
     }
+
+    // MARK: Host updates
+
+    /// The version line for a host's update status: "Shepherd 1.2.3" or "Shepherd 1.2.3 Nightly".
+    public static func versionLine(_ status: HostUpdateStatus) -> String {
+        let channel = status.channel == "nightly" ? " Nightly" : ""
+        return "Shepherd \(status.version)\(channel)"
+    }
+
+    /// One-line summary of the update phase: what the status row or fact says.
+    public static func updateSummary(_ status: HostUpdateStatus) -> String {
+        switch status.phase {
+        case .upToDate: "Up to date"
+        case .checking: "Checking for updates…"
+        case .available: "Update available: \(status.offeredVersion ?? "newer version")"
+        case .downloading: "Downloading update…"
+        case .installing: "Installing update…"
+        case .failed: status.error ?? "Update failed"
+        case .idle: "Up to date"
+        case .unsupported: "Updates not available"
+        }
+    }
+
+    /// Which `AgentState` name an update phase maps to, for coloring in the view layer.
+    /// Returns the raw value so this module doesn't depend on ShepherdUI.
+    public enum UpdateTone: Sendable {
+        case idle, running, attention, failed
+    }
+
+    public static func updateTone(_ status: HostUpdateStatus) -> UpdateTone {
+        switch status.phase {
+        case .upToDate, .idle: return .idle
+        case .checking, .downloading, .installing: return .running
+        case .available: return .attention
+        case .failed: return .failed
+        case .unsupported: return .idle
+        }
+    }
+
+    /// Whether the "Check for update" action makes sense in this phase.
+    public static func canCheck(_ status: HostUpdateStatus) -> Bool {
+        switch status.phase {
+        case .upToDate, .idle, .available, .failed: return true
+        case .checking, .downloading, .installing, .unsupported: return false
+        }
+    }
+
+    /// Whether the "Update and restart" action makes sense: an offer exists and the host says it can install.
+    public static func canInstall(_ status: HostUpdateStatus) -> Bool {
+        status.phase == .available && status.canInstall && status.offerID != nil
+    }
+
+    /// Why install is refused, when an update is available but `canInstall` is false.
+    public static func installBlockReason(_ status: HostUpdateStatus) -> String? {
+        guard status.phase == .available, !status.canInstall else { return nil }
+        return status.error ?? "This host can't install updates right now."
+    }
+
+    /// The confirmation message before installing: what happens and what to expect.
+    public static func installConfirmation(host: String) -> String {
+        "Shepherd on \(host) will download, verify and install the update, then restart. "
+        + "All clients disconnect while it restarts. Agents must be idle before updating."
+    }
 }

@@ -205,6 +205,28 @@
     at most eight live tabs and no restart restoration. A remote tab list masks titles and URLs
     of pages outside `BrowserViewerPolicy`.
 
+  - `hostUpdate` (`host.update.v1`, only an installed supported app with its updater bridge):
+    `status`, `check`, and `install(offerID:authorized:)`, answered with `HostUpdateStatus`.
+    Check is non-destructive; installation requires explicit confirmation of the current offer
+    (expires after five minutes), then downloads, verifies with Sparkle's existing signed feed,
+    installs and restarts as one operation. There is no remote channel switch or force install.
+    Status exposes version/build/channel/phase/offer/error/canInstall and is explicitly polled,
+    including after reconnect; installation is never automatically retried after disconnect.
+    The host refuses active/queued native work, unpaused Projects, execution/publication activity
+    and conservatively every live terminal session. Reservation fences new native sends and
+    session creation; restart rechecks activity and drains queued remote replies (five-second
+    bound), and bypasses local QuitConfirmation only through a noninteractive idle recheck.
+    Checks time out after 60 seconds; authorized installation after ten minutes. A timeout
+    after installer handoff reports an unknown outcome and keeps host admission reserved until
+    process exit: Sparkle's consumed choice callback cannot cancel an in-progress installer.
+    Pre-handoff cancellation releases admission only when Sparkle finishes abort/cleanup.
+    Termination replies and their five-second timeout run in common run-loop modes, not the
+    main dispatch queue, which AppKit may not drain during termination. Packages and
+    ordinarily privilege-requiring installs are refused by ownership/writability preflight,
+    repeated before installation and extraction. External permission changes can still race
+    Sparkle's installer and require attention on the host; a timeout reports this, never success.
+    Dev/headless/unsupported bundles do not advertise the capability. Nothing resumes on restart.
+
   Capabilities gate newer features. The client falls back (raw bracketed paste) or refuses (terminal
   control) against older hosts. A host answers an authenticated request it cannot decode (a kind
   or action from another version's client) with `unsupported` and keeps the connection; a frame
