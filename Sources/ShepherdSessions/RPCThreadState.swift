@@ -385,6 +385,10 @@ final class RPCThreadState {
     var runFailed = false
     /// That error's message, when pi gave one.
     private var runError: String?
+    // Ephemeral push eligibility: restored history/recovery never replays notifications.
+    var pushRunArmed = false
+    var pushAwaitingStart = false
+    var pushQuestion: String?
     /// The user stopped this run: pi ends a run stopped mid-tool-call with an error reply,
     /// which is not a turn that failed.
     var stopRequested = false
@@ -1500,6 +1504,8 @@ final class RPCThreadState {
             ShepherdLog.warning("rpc session \(sessionID) refused its opening prompt: its images are over the limits")
             return
         }
+        pushRunArmed = true
+        pushAwaitingStart = !running
         send(id: id, text: text, delivery: .followUp, images: images) { result in
             guard case .failure(let code, let message) = result else { return }
             ShepherdLog.warning("rpc session \(sessionID) refused its opening prompt: \(code) \(message)")

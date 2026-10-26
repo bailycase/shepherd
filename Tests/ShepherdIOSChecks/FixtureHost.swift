@@ -289,6 +289,12 @@ final class FixtureHost: @unchecked Sendable {
         case .browserClaim, .browserRelease, .browserAnswer:
             mutation("browser")
             return []
+        case .pushRegistration(let id, _):
+            note("pushRegistration")
+            return [.ok(id: id)]
+        case .pushUnregister(let id, _):
+            note("pushUnregister")
+            return [.ok(id: id)]
         case .hello, .stateFetch, .listModels, .listDir, .creationOptions, .agentQuery:
             return nil
         }
