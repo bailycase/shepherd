@@ -1139,6 +1139,8 @@ final class TerminalSessionStore {
             instructions: (try InstructionsExtension.installedPath(), ShepherdPaths.instructionsDirectory().path),
             suggestFiles: suggestFiles.map(\.fileName),
             design: try agent.designID.map { (try DesignExtension.installedPath(), $0, try DesignExtension.installedSkillDirectory()) },
+            designTools: settings.designToolEnabled && agent.designID == nil && agent.coordinatorFor == nil && !isAutomation
+                ? (try DesignExtension.installedPath(), try DesignExtension.installedSkillDirectory()) : nil,
             designReferences: Self.wantsDesignReferences(for: agent, enabled: settings.piDesignReferences,
                                                          designTool: settings.designToolEnabled)
                 ? (try DesignReferencesExtension.installedPath(), !agent.designGrants.isEmpty) : nil,
