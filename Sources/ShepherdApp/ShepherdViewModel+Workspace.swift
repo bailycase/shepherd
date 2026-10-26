@@ -373,7 +373,11 @@ extension ShepherdViewModel {
                 try verifyCheckoutUnused(canonical, except: id)
                 hostBusyWorktrees.insert(canonical)
                 defer { hostBusyWorktrees.remove(canonical) }
-                let fingerprint = try await Task.detached { try GitWorktree.deletionFingerprint(worktree: path) }.value
+                let (checkoutBranch, fingerprint) = try await Task.detached {
+                    let identity = try GitWorktree.identity(at: path)
+                    try GitWorktree.verifyIdentity(worktree: path, repo: repo, branch: identity.branch)
+                    return (identity.branch, try GitWorktree.deletionFingerprint(worktree: path))
+                }.value
                 try await deleteAgentPersisted(id, worktreeOperation: true)
                 let deadline = ContinuousClock.now + .seconds(10)
                 for sessionID in sessionIDs {
@@ -383,7 +387,7 @@ extension ShepherdViewModel {
                     }
                 }
                 try verifyCheckoutUnused(canonical, except: id)
-                try await Task.detached { try GitWorktree.remove(repo: repo, branch: branch, worktree: path, fingerprint: fingerprint) }.value
+                try await Task.detached { try GitWorktree.remove(repo: repo, branch: branch, worktree: path, fingerprint: fingerprint, checkoutBranch: checkoutBranch) }.value
             } catch { remoteActionError = String(describing: error) }
         }
     }
