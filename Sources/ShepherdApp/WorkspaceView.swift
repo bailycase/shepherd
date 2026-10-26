@@ -920,6 +920,15 @@ private struct RemotePaneLeafView: View {
     var hasThread = false
     var active = true
 
+    @State private var visible = false
+    @Environment(\.scenePhase) private var scenePhase
+
+    private struct TerminalDemand: Equatable {
+        var paneID: PaneID
+        var transport: UUID
+        var active: Bool
+    }
+
     /// What the leaf shows, for its cross-fade.
     private enum Showing: Equatable {
         case thread, review, loadingReview, terminal(SessionID), starting
@@ -968,6 +977,16 @@ private struct RemotePaneLeafView: View {
         .background(Color.sh.bgWindow)
         .contentShape(Rectangle())
         .simultaneousGesture(TapGesture().onEnded { vm.remoteFocusedPaneID = leaf.id })
+        .onAppear { visible = true }
+        .onDisappear { visible = false }
+        .task(id: TerminalDemand(paneID: leaf.id, transport: connection.transportID,
+                                 active: visible && active && scenePhase == .active && !vm.showSettings && vm.selectedRemoteAgent == ref && connection.phase == .connected && connection.supportsTerminalStart)) {
+            guard visible, active, scenePhase == .active, !vm.showSettings, vm.selectedRemoteAgent == ref, connection.phase == .connected,
+                  connection.supportsTerminalStart, agent == nil, leaf.isReview != true else { return }
+            // Bootstrap retains last run's sessionID. Demand must not depend on it being nil.
+            do { try await vm.remoteHosts.agentAction(ref, action: .startTerminal(paneID: leaf.id)) }
+            catch { vm.remoteActionError = String(describing: error) }
+        }
     }
 }
 

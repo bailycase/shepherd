@@ -171,6 +171,7 @@ final class RemoteHostStore {
         var supportsCreateAgentServiceTier: Bool { client?.capabilities.contains(RemoteProtocol.createAgentServiceTierCapability) == true }
         /// The host takes the terminal panel's Rename tab and Kill process.
         var supportsTerminalControl: Bool { client?.capabilities.contains(RemoteProtocol.terminalControlCapability) == true }
+        var supportsTerminalStart: Bool { client?.capabilities.contains(RemoteProtocol.terminalStartCapability) == true }
         /// The host takes a new thread's images with its opening prompt.
         var supportsCreateAgentImages: Bool { client?.capabilities.contains(RemoteProtocol.createAgentImagesCapability) == true }
         var supportsWorktreeCreation: Bool {

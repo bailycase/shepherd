@@ -250,10 +250,16 @@ struct RemoteHostClientTests {
     }
 
     @Test(arguments: [RemoteAgentAction.rename(name: "t"), .deleteKeepingWorktree, .reorder(target: AgentID()),
-                      .openTerminal(cwd: "/r", command: "pnpm dev")])
+                      .openTerminal(cwd: "/r", command: "pnpm dev"), .startTerminal(paneID: PaneID())])
     func agentActionsAreGatedBeforeSending(_ action: RemoteAgentAction) async {
         let client = RemoteHostClient()
         #expect(await code { try await client.agentAction(agentID: AgentID(), action: action) } == "update_required")
+    }
+
+    @Test func startingRestoredTerminalsHasItsOwnCapability() {
+        #expect(RemoteAgentAction.startTerminal(paneID: PaneID()).capability == RemoteProtocol.terminalStartCapability)
+        #expect(RemoteProtocol.capabilities.contains(RemoteProtocol.terminalStartCapability))
+        #expect(RemoteAgentAction.renameTerminal(paneID: PaneID(), title: nil).capability == RemoteProtocol.terminalControlCapability)
     }
 
     /// The Browser's host side (dev servers, Start) and its tunnels come with one capability: a

@@ -594,6 +594,11 @@ final class TerminalSessionStore {
         }
     }
 
+    /// Remote demand starts only this validated auxiliary pane, without selecting its agent.
+    func activateTerminal(_ pane: LeafPane, in tab: Tab) {
+        activatePane(pane, in: tab)
+    }
+
     /// Explicit native/remote demand starts the primary thread, not hidden terminals.
     func activateAgent(_ agentID: AgentID) {
         guard let state = serverState, let agent = state.agents.first(where: { $0.id == agentID }),

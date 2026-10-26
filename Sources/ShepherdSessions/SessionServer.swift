@@ -2172,7 +2172,7 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
             // An action of a capability this host does not offer (an older host would not know it).
-            if action.capability == RemoteProtocol.browserTunnelCapability, !offeredCapabilities.contains(action.capability) {
+            if [RemoteProtocol.browserTunnelCapability, RemoteProtocol.terminalStartCapability].contains(action.capability), !offeredCapabilities.contains(action.capability) {
                 send(.error(id: id, code: "unsupported", message: "This host does not take this action."), to: client)
                 return
             }
