@@ -49,9 +49,9 @@ one. The New agent sheet (⇧⌘T) stays for its directory and base fields.
   normal composer's shared model-settings button, a spacer, then the workplace chip. Thinking
   appears only while the model takes a level; the settings popover's Speed row only while the target
   supports choosing a tier at creation and the model offers one. The button uses compact labels when needed to
-  fit, with Send outside the fitting candidates. Send is a 28pt `lantern` circle at 35% until there is a prompt and a space. ↩ sends and ⇧↩ adds a
-  line. Why Send cannot go is its tooltip ("Describe the task first.", "Add a space to start a
-  thread.", "Loading demo-mac's defaults…"), and a failure shows under the card in `failed`.
+  fit, with Send outside the fitting candidates. Send is a 28pt `lantern` circle at 35% until there is a prompt and the target's defaults have loaded. ↩ sends and ⇧↩ adds a
+  line. Why Send cannot go is its tooltip ("Describe the task first.", "Loading models…",
+  "Loading demo-mac's defaults…"), and a failure shows under the card in `failed`.
 - **Images** (the user's decision, 2026-09-25: "Build it (Recommended)") attach as in a thread's
   composer (Composer › Images, `ComposerAttachments`): by drop, paste, or the paperclip, the
   composer's attach button, always shown here; resized on the way in, at most four of 2 MiB each,
@@ -80,7 +80,10 @@ one. The New agent sheet (⇧⌘T) stays for its directory and base fields.
   mono ("shepherd"), a `textTertiary` "·", a display glyph and the host in mono ("This Mac"), and a
   10pt `textTertiary` chevron, as a 26pt chip in 12 `textSecondary`. It picks where the thread runs,
   and opens the **workplace menu** (`NWPlaceMenu`, the composer menus' anatomy, 320pt, 8pt under the
-  card): one section per host, This Mac then each connected host, listing its spaces (its visible
+  card): one section per host, This Mac then each connected host. This Mac starts with **No space**,
+  which creates a standalone thread in `<support>/threads/<agentID>` without registering a user
+  space. These threads stay in Activity and across restarts; their folders are kept when a thread
+  is deleted. No worktree controls appear for No space. Each host lists its spaces (its visible
   spaces, nested ones flat, each with its path in mono 11 `textTertiary` and a check on the chosen
   one), each section ending in "Add folder…" (this Mac's directory picker, or the host's); then,
   when the chosen space is a git checkout on this Mac or on a host that makes worktrees, **New
@@ -95,8 +98,8 @@ one. The New agent sheet (⇧⌘T) stays for its directory and base fields.
   with what the sidebar's space rows offered: Rename…, New Worktree… and Import Existing Worktree…
   (git checkouts), and Remove Space…; the palette offers Rename space… and Remove space… for the
   chosen space while the page shows. A host's space offers New Agent with Options….
-- The page opens in the space of the thread last on screen (a remote thread's, on its host), else
-  the one chosen before, else This Mac's first, else a connected host's first.
+- The page keeps its previous choice, including No space, while available; otherwise it uses the
+  last thread's space, This Mac's first, a connected host's first, then No space when no spaces exist.
 - **Model, Thinking and Speed:** the target's defaults (Settings ▸ Agents on this Mac, the host's
   `creationOptions` on a host), changed through the same settings button and popover as the thread composer,
   opening under the card over what is beneath. The model listing comes from pi's composed models

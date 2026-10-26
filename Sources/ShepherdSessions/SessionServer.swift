@@ -1643,13 +1643,18 @@ public final class SessionServer: @unchecked Sendable {
         let isSend: Bool = { if case .send = request { return true } else { return false } }()
         refreshExecutionSpaceAuthority(before: store.state.spaces)
         let spaceAuthority = executionSpaceAuthority[agent.spaceID]
-        let recoveryCwd = agent.worktreePath ?? store.state.spaces.first(where: { $0.id == agent.spaceID })?.path
+        // Standalone storage is not a Project execution destination. Bind its recovery to the
+        // exact backing space instead, while using the thread's own folder, not the storage root.
+        let recoverySpace = store.state.spaces.first { $0.id == agent.spaceID }
+        let standalone = recoverySpace?.holdsThreads == true
+        let recoveryCwd = agent.worktreePath ?? recoverySpace.map { standalone ? leaf.cwd : $0.path }
         let recoveryAuthority = nativeRecoveryAuthority[agentID] ?? UUID()
         if case .retry = request { nativeRecoveryAuthority[agentID] = recoveryAuthority }
         let recoveryAuthorization = { [weak self, weak thread] in
-            guard let self, let thread, transportAuthorization(), let spaceAuthority,
+            guard let self, let thread, transportAuthorization(), spaceAuthority != nil || standalone,
                   self.nativeRecoveryAuthority[agentID] == recoveryAuthority,
                   self.executionSpaceAuthority[agent.spaceID] == spaceAuthority,
+                  !standalone || self.store.state.spaces.first(where: { $0.id == agent.spaceID }) == recoverySpace,
                   let current = self.store.state.agents.first(where: { $0.id == agentID }),
                   self.store.state.isOrdinaryThread(current),
                   (!self.isProjectWorker(agentID) || self.projectChildTakenOver.contains { scope in
@@ -5746,6 +5751,23 @@ public final class SessionServer: @unchecked Sendable {
             let running = await enqueueValue { sessions.contains { self.sessions[$0]?.isAlive == true } }
             if !running { return }
             try? await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
+    /// Internal storage and a private working folder for a thread with no user space.
+    /// Keeping a backing space preserves existing state and remote-client layout contracts.
+    public func standaloneThreadFolder(for agentID: AgentID) async throws -> (spaceID: SpaceID, directory: String) {
+        try await enqueue {
+            guard UUID(uuidString: agentID.rawValue) != nil else { throw CocoaError(.fileWriteInvalidFileName) }
+            let root = self.store.url.deletingLastPathComponent().appendingPathComponent("threads", isDirectory: true)
+            let folder = root.appendingPathComponent(agentID.rawValue, isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            if let space = self.store.state.spaces.first(where: \.holdsThreads) {
+                return (space.id, folder.path)
+            }
+            let space = Space(name: "No space", path: root.path, hidden: true, holdsThreads: true)
+            try self.mutateState { $0.spaces.append(space) }
+            return (space.id, folder.path)
         }
     }
 

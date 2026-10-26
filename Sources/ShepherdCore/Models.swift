@@ -2,9 +2,8 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
     public var id: SpaceID
     public var name: String
     public var path: String
-    /// Hidden spaces never render in the sidebar tree or space pickers. Two reserved spaces are
-    /// the only producers: automation agents and design agents must live in a space (the state
-    /// contract), but their UI is the Automations section and the designs, not a space row.
+    /// Hidden spaces never render in the sidebar tree or space pickers. Reserved spaces back
+    /// automations, designs, project coordinators and standalone threads without a user space.
     /// Decodes false from old files.
     public var hidden: Bool
     /// The reserved hidden space design agents live in (`holdsDesigns`): a design belongs to no
@@ -12,6 +11,8 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
     /// Decodes false from older files, and is written only when true.
     public var holdsDesigns: Bool
     public var holdsProjects: Bool
+    /// Internal storage for ordinary threads with no user space. Their rows remain in Activity.
+    public var holdsThreads: Bool
     /// The user hid this project from the sidebar's project tree (its menu's Hide from Sidebar;
     /// the + beside Projects brings it back). Its threads stay in the palette and Activity. Not
     /// `hidden`, which marks the reserved spaces. Decodes false from older files, and is written
@@ -29,6 +30,7 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
         hidden: Bool = false,
         holdsDesigns: Bool = false,
         holdsProjects: Bool = false,
+        holdsThreads: Bool = false,
         sidebarHidden: Bool = false,
         parentID: SpaceID? = nil,
         parentIsExplicit: Bool = false
@@ -39,6 +41,7 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
         self.hidden = hidden
         self.holdsDesigns = holdsDesigns
         self.holdsProjects = holdsProjects
+        self.holdsThreads = holdsThreads
         self.sidebarHidden = sidebarHidden
         self.parentID = parentID
         self.parentIsExplicit = parentIsExplicit
@@ -49,11 +52,14 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
         Space(id: id, name: "Designs", path: "~", hidden: true, holdsDesigns: true)
     }
 
-    /// The reserved automations space: hidden, and not the designs'.
-    public var holdsAutomations: Bool { hidden && !holdsDesigns && !holdsProjects }
+    /// Hidden storage that still exposes ordinary thread rows.
+    public var showsThreads: Bool { !hidden || holdsThreads }
+
+    /// The reserved automations space, excluding other reserved storage.
+    public var holdsAutomations: Bool { hidden && !holdsDesigns && !holdsProjects && !holdsThreads }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, path, hidden, holdsDesigns, holdsProjects, sidebarHidden, parentID, parentIsExplicit
+        case id, name, path, hidden, holdsDesigns, holdsProjects, holdsThreads, sidebarHidden, parentID, parentIsExplicit
     }
 
     public init(from decoder: Decoder) throws {
@@ -64,6 +70,8 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
         hidden = try c.decodeIfPresent(Bool.self, forKey: .hidden) ?? false
         holdsDesigns = try c.decodeIfPresent(Bool.self, forKey: .holdsDesigns) ?? false
         holdsProjects = try c.decodeIfPresent(Bool.self, forKey: .holdsProjects) ?? false
+        holdsThreads = try c.decodeIfPresent(Bool.self, forKey: .holdsThreads) ?? false
+        if holdsThreads { hidden = true }
         sidebarHidden = try c.decodeIfPresent(Bool.self, forKey: .sidebarHidden) ?? false
         parentID = try c.decodeIfPresent(SpaceID.self, forKey: .parentID)
         parentIsExplicit = try c.decodeIfPresent(Bool.self, forKey: .parentIsExplicit) ?? false
@@ -74,9 +82,12 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
         try c.encode(id, forKey: .id)
         try c.encode(name, forKey: .name)
         try c.encode(path, forKey: .path)
-        try c.encode(hidden, forKey: .hidden)
+        // Older readers treat unknown hidden storage as disposable automation runs. Let them
+        // show a normal "No space" row instead of deleting these conversations on startup.
+        try c.encode(hidden && !holdsThreads, forKey: .hidden)
         if holdsDesigns { try c.encode(holdsDesigns, forKey: .holdsDesigns) }
         if holdsProjects { try c.encode(holdsProjects, forKey: .holdsProjects) }
+        if holdsThreads { try c.encode(holdsThreads, forKey: .holdsThreads) }
         if sidebarHidden { try c.encode(sidebarHidden, forKey: .sidebarHidden) }
         try c.encodeIfPresent(parentID, forKey: .parentID)
         if parentIsExplicit { try c.encode(parentIsExplicit, forKey: .parentIsExplicit) }

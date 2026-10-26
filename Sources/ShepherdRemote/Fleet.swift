@@ -453,7 +453,7 @@ public struct FleetModel: Equatable, Sendable {
                 needs += attention.count
                 needsYou.append(contentsOf: attention)
                 // Automation runs live under Automations, not among the threads.
-                guard ordinary, automation == nil, space?.hidden != true else { continue }
+                guard ordinary, automation == nil, space?.showsThreads != false else { continue }
                 if agent.status == .working { running += 1 }
                 let row = Self.row(agent, ref: ref, digest: digest, space: space, hostName: host.name, hostTag: tag,
                                    offline: !connected)
@@ -581,7 +581,7 @@ public struct FleetModel: Equatable, Sendable {
         case .connected: break
         }
         let agents = host.state.agents.filter { agent in
-            !(host.state.spaces.first { $0.id == agent.spaceID }?.hidden ?? false) && !host.state.isDesignAgent(agent)
+            host.state.spaces.first { $0.id == agent.spaceID }?.showsThreads != false && !host.state.isDesignAgent(agent)
         }
         guard !agents.isEmpty else { return "No threads yet" }
         let busy = Set(agents.filter { $0.status == .working }.map(\.spaceID))

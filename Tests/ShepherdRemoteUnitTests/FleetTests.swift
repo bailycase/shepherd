@@ -234,6 +234,17 @@ struct FleetTests {
         #expect(!model.tagsHosts)
     }
 
+    @Test func standaloneThreadsRemainVisibleOnRemoteClients() {
+        let storage = Space(name: "No space", path: "/tmp/threads", hidden: true, holdsThreads: true)
+        let agent = Self.agent("research", .working, space: storage)
+        let host = FleetHost(id: Self.studio, name: "Studio", address: "studio.local", port: 7433, phase: .connected,
+                             state: ShepherdState(spaces: [storage], agents: [agent]))
+        let model = FleetModel(hosts: [host], digests: [:])
+        #expect(model.running.map(\.ref) == [Self.ref("research")])
+        #expect(model.recents.map(\.ref) == [Self.ref("research")])
+        #expect(model.hosts.first?.summary == "1 thread running · No space")
+    }
+
     @Test func automationRunsAndHiddenSpacesStayOutOfTheThreads() {
         let run = Self.agent("run", .blocked, space: Self.hidden)
         let automation = Automation(id: AutomationID(rawValue: "a1"), name: "Nightly", prompt: "p", cwd: "/src/Shepherd",

@@ -339,13 +339,22 @@ struct NewThreadPlacesTests {
     @Test func everyHostsProjectsAreListedFlatWithTheChosenOneChecked() {
         let sections = NewThreadPlaces.sections(hosts, chosen: NewThreadPlace(host: nil, space: sub.id))
         #expect(sections.map(\.title) == ["This Mac", "horizon"])
-        #expect(sections[0].options.map(\.title) == ["mono", "sub"])
-        #expect(sections[0].options.map(\.detail) == ["~/mono", "~/mono/sub"])
-        #expect(sections[0].options.map(\.isCurrent) == [false, true])
+        #expect(sections[0].options.map(\.title) == ["No space", "mono", "sub"])
+        #expect(sections[0].options.dropFirst().map(\.detail) == ["~/mono", "~/mono/sub"])
+        #expect(sections[0].options.map(\.isCurrent) == [false, false, true])
         #expect(sections.allSatisfy { $0.addTitle == "Add folder…" })
         #expect(NewThreadPlaces.place(sections[1].options[0]) == NewThreadPlace(host: hostID, space: web.id))
         #expect(NewThreadPlaces.host(of: sections[0]) == nil)
         #expect(NewThreadPlaces.host(of: sections[1]) == hostID)
+    }
+
+    @Test func noSpaceCanBeChosenAndSurvivesReopeningWithSpacesAvailable() {
+        let standalone = NewThreadPlace(host: nil, space: nil)
+        let options = NewThreadPlaces.sections(hosts, chosen: standalone)
+        #expect(NewThreadPlaces.place(options[0].options[0]) == standalone)
+        #expect(options[0].options[0].isCurrent)
+        #expect(NewThreadPlaces.chip(hosts, chosen: standalone) == ("No space", "This Mac"))
+        #expect(NewThreadPlaces.fallback(hosts, chosen: standalone, recent: NewThreadPlace(host: nil, space: mono.id)) == standalone)
     }
 
     @Test func theChipSaysProjectAndHost() {
@@ -364,7 +373,8 @@ struct NewThreadPlacesTests {
         #expect(NewThreadPlaces.fallback(hosts, chosen: gone, recent: nil) == NewThreadPlace(host: nil, space: mono.id))
         let remoteOnly = [NewThreadPlaces.Host(id: nil, name: "This Mac", spaces: []), hosts[1]]
         #expect(NewThreadPlaces.fallback(remoteOnly, chosen: nil, recent: nil) == recent)
-        #expect(NewThreadPlaces.fallback([NewThreadPlaces.Host(id: nil, name: "This Mac", spaces: [])], chosen: nil, recent: nil) == nil)
+        #expect(NewThreadPlaces.fallback([NewThreadPlaces.Host(id: nil, name: "This Mac", spaces: [])], chosen: nil, recent: nil)
+                == NewThreadPlace(host: nil, space: nil))
     }
 }
 
