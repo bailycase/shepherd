@@ -141,9 +141,21 @@ extension SHProseTable.Alignment {
 struct SHTableLayout: Layout {
     let columns: Int
     let fitting: Bool
-    /// The cells' text, to find each column's widest word.
-    let table: SHProseTable
-    let size: SHProseSize
+    private let words: [CGFloat]
+
+    /// Prepare font measurements while the view builds on the main actor. SwiftUI can
+    /// construct a Sendable layout's cache on a background thread.
+    @MainActor
+    init(columns: Int, fitting: Bool, table: SHProseTable, size: SHProseSize) {
+        self.columns = columns
+        self.fitting = fitting
+        self.words = (0..<columns).map { column in
+            var widest = SHTableWords.widest(table.header[column], header: true, size: size)
+            for row in table.rows { widest = max(widest, SHTableWords.widest(row[column], header: false, size: size)) }
+            let inset = SHPlatform.showsHoverDetails && column == columns - 1 ? SHThreadMetrics.codeCopyButton : 0
+            return (widest + SHTableCell.horizontalPadding + inset).rounded(.up) + 1
+        }
+    }
 
     struct Cache {
         /// Each column's widest cell, unwrapped.
@@ -159,15 +171,6 @@ struct SHTableLayout: Layout {
         var ideal = Array(repeating: CGFloat.zero, count: columns)
         for (index, subview) in subviews.enumerated() {
             ideal[index % columns] = max(ideal[index % columns], subview.sizeThatFits(.unspecified).width.rounded(.up))
-        }
-        // SwiftUI lays out on the main thread.
-        let words = MainActor.assumeIsolated { [table, size, columns] in
-            (0..<columns).map { column in
-                var widest = SHTableWords.widest(table.header[column], header: true, size: size)
-                for row in table.rows { widest = max(widest, SHTableWords.widest(row[column], header: false, size: size)) }
-                let inset = SHPlatform.showsHoverDetails && column == columns - 1 ? SHThreadMetrics.codeCopyButton : 0
-                return (widest + SHTableCell.horizontalPadding + inset).rounded(.up) + 1
-            }
         }
         return Cache(ideal: ideal, words: words)
     }

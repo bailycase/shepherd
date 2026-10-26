@@ -492,10 +492,11 @@ struct WorkspaceNavigationTests {
 
     /// A layout's hosting view takes the workspace's environment, and its changes, hidden or
     /// not: an appearance switched while an agent was hidden shows when it is selected.
-    @Test func anEnvironmentChangeReachesLayoutsHiddenWhenItChanged() async throws {
+    @Test(arguments: [3, 112])
+    func anEnvironmentChangeReachesLayoutsHiddenWhenItChanged(agentCount: Int) async throws {
         let app = try AppHarness()
         defer { app.stop() }
-        let (vm, agents) = try await MountedWorkspace.start(3, in: app)
+        let (vm, agents) = try await MountedWorkspace.start(agentCount, in: app)
         let scheme = Scheme()
         let window = OffscreenWindow(size: CGSize(width: 1000, height: 700), dark: true, SchemedWorkspace(scheme: scheme, vm: vm))
         defer { window.close() }

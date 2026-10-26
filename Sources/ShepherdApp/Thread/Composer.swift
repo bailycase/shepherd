@@ -1379,10 +1379,10 @@ struct ComposerControlsMinimum: Layout {
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         guard let row = subviews.first else { return .zero }
         if let width = proposal.width, width < AppLayout.composerControlsNarrowest {
-            MainActor.assumeIsolated { SHRenderProbe.tick("layout.composerControlsMinimum") }
+            SHRenderProbe.tick("layout.composerControlsMinimum")
             return CGSize(width: max(0, width), height: SHComposerMetrics.actionSize)
         }
-        MainActor.assumeIsolated { SHRenderProbe.tick("layout.composerControlsMeasured") }
+        SHRenderProbe.tick("layout.composerControlsMeasured")
         return row.sizeThatFits(proposal)
     }
 
