@@ -541,7 +541,7 @@ extension RPCThreadState {
                 return
             }
             let commandDone = self.beginCommandWindow(for: prompt)
-            self.requestInput(id: id, prompt: prompt, images: rpcImages, delivery: .followUp) { [weak self] failure in
+            self.requestInput(prompt: prompt, images: rpcImages, delivery: .followUp) { [weak self] failure in
                 commandDone?()
                 guard let self else { return }
                 if let failure, case .failure(let code, _) = failure, code != "outcome_unknown" {
@@ -622,7 +622,7 @@ extension RPCThreadState {
         steersInFlight += 1
         let rpcImages = item.images.map { RPCImage(data: $0.data.base64EncodedString(), mimeType: $0.mimeType) }
         let commandDone = beginCommandWindow(for: item.promptText)
-        requestInput(id: id, prompt: item.promptText, images: rpcImages, delivery: .steer) { [weak self] failure in
+        requestInput(prompt: item.promptText, images: rpcImages, delivery: .steer) { [weak self] failure in
             commandDone?()
             guard let self else { return }
             self.unboundSteers.removeAll { $0 == id }
@@ -692,7 +692,7 @@ extension RPCThreadState {
     func restorePiQueue(steering: [String], followUp: [String]) {
         func restoreUnowned(_ text: String, delivery: RPCStreamingBehavior) {
             let id = UUID()
-            requestInput(id: id, prompt: text, images: [], delivery: delivery) { [weak self] failure in
+            requestInput(prompt: text, images: [], delivery: delivery) { [weak self] failure in
                 guard let self, case .failure(let code, let message) = failure, code != "outcome_unknown" else { return }
                 self.items.append(QueueItem(entry: NativeQueuedMessage(id: id, text: text, sentAt: Date().timeIntervalSince1970 * 1000), images: []))
                 self.paused = true

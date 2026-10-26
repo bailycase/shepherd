@@ -437,8 +437,7 @@ extension ShepherdViewModel {
     /// Settings ▸ Pi ▸ Sign-in's nav dot: a sign-in expired, or a provider an agent waits on
     /// isn't signed in.
     var piSignInNeedsAttention: Bool {
-        piAuth.needed.contains(CLIProxyAPIStore.provider)
-            || PiSignInPage.make(survey: yourPi.survey ?? YourPiSurvey(), expired: piAuth.expired, needed: piAuth.needed).needsAttention
+        PiSignInPage.make(survey: yourPi.survey ?? YourPiSurvey(), expired: piAuth.expired, needed: piAuth.needed).needsAttention
     }
 
     /// Opens Settings ▸ Pi ▸ Sign-in, scrolled to `provider` when there is one, and starts its

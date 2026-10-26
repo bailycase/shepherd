@@ -127,7 +127,7 @@ class AffectedTestsTests(unittest.TestCase):
             ("Sources/ShepherdApp/CodeHighlight.swift", "ShepherdAppIntegrationTests.ReviewCommitTests/commit()"),
             ("Sources/ShepherdApp/Thread/ModelSettingsPopover.swift", "ShepherdAppIntegrationTests.ModelSettingsPopoverTests/open()"),
             ("Sources/ShepherdApp/Thread/ThreadView.swift", "ShepherdAppIntegrationTests.BlockedModelComposerTests/send()"),
-            ("Sources/ShepherdSessions/CLIProxyAPI.swift", "ShepherdSessionsIntegrationTests.ServiceTierTests/patch()"),
+            ("Sources/ShepherdSessions/ServiceTierExtension.swift", "ShepherdSessionsIntegrationTests.ServiceTierTests/patch()"),
             ("Sources/ShepherdSessions/PiSignIn.swift", "ShepherdSessionsIntegrationTests.RPCSessionTests/historyDecodeStillProgressesAfterSignInBridgesAreReleased()"),
             ("Sources/ShepherdApp/SettingsView.swift", "ShepherdAppIntegrationTests.SubagentSettingsControlTests/press()"),
             ("Sources/ShepherdApp/Thread/ThreadView.swift", "ShepherdPreviewTests.ThreadPreviewTests/threadHistoryLayoutMatrix()"),

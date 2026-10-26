@@ -19,7 +19,7 @@ struct BlockedModelComposerTests {
         AccessibilityNode.enable()
         let store = NativeThreadStore(), input = ThreadInput()
         let snapshot = ComposerThread.snapshot(messages: 0, commands: [])
-        let message = RPCThreadState.modelUnavailableMessage("claude-opus-4-5")
+        let message = "This conversation's model is unavailable. Your message wasn't sent. Choose a model."
         let image = ImageAttachment(name: "design.png", image: NativeImage(mimeType: "image/png", data: Data([1, 2, 3])))
         input.attachments.add([(image.name, image)])
         store.draft = "Please update the design"

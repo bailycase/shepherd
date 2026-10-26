@@ -18,7 +18,6 @@ const root = path.resolve(here, "../..");
 const pkg = process.env.PI_PACKAGE_DIR;
 if (!pkg) throw Error("Set PI_PACKAGE_DIR to the installed Pi package");
 const tierSource = path.join(root, "Extensions/shepherd-service-tier.ts");
-const proxySource = path.join(root, "Extensions/shepherd-cliproxyapi.ts");
 const { createJiti } = createRequire(path.join(pkg, "package.json"))("jiti");
 const { ruleFor, tiersFor, wireValue } = await createJiti(import.meta.url).import(tierSource);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -36,10 +35,9 @@ const COST = { input: 0.2, output: 0.75, cacheRead: 0, cacheWrite: 0 };
 const table = JSON.parse(fs.readFileSync(path.join(here, "service-tier-support.json"), "utf8")).rows;
 
 test("the extension's support table is the one Swift's ServiceTierSupport is tested against", () => {
-  assert.ok(table.length >= 40);
   for (const row of table) {
-    const model = { provider: row.provider, api: row.api, id: row.id, ownedBy: row.ownedBy };
-    const label = `${row.provider} ${row.api} ${row.id} owner ${row.ownedBy}`;
+    const model = { provider: row.provider, api: row.api, id: row.id };
+    const label = `${row.provider} ${row.api} ${row.id}`;
     assert.deepEqual(tiersFor(model), row.tiers, label);
     assert.equal(wireValue("fast", model), row.fast ?? undefined, label);
     assert.equal(wireValue("standard", model), undefined, `${label}: Standard sends nothing`);
@@ -51,7 +49,7 @@ test("the extension's support table is the one Swift's ServiceTierSupport is tes
 
 // pi in RPC mode with the tier extension on a fake provider. `models` is models.json's providers; `model` is what
 // --model takes; `tier` is what the agent's tier file holds (null: no file).
-async function startPi(t, { providers, model, tier = "fast", extensions = [], tierFirst = false, proxy, env = {}, settings = {}, inert = false }) {
+async function startPi(t, { providers, model, tier = "fast", extensions = [], tierFirst = false, env = {}, settings = {}, inert = false }) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sh-tier-"));
   const config = path.join(dir, "config");
   fs.mkdirSync(config);
@@ -61,19 +59,12 @@ async function startPi(t, { providers, model, tier = "fast", extensions = [], ti
   const setTier = (value) => fs.writeFileSync(tierFile, typeof value === "string" && value.startsWith("{") ? value : JSON.stringify({ tier: value }));
   if (tier !== null) setTier(tier);
   const args = [path.join(pkg, "dist/bundle/cli.js"), "--mode", "rpc", "--session-dir", path.join(dir, "sessions"), "-ne", "-ns", "-np", "--model", model];
-  const extra = {};
-  if (proxy) {
-    const file = path.join(dir, "proxy.json");
-    fs.writeFileSync(file, JSON.stringify({ enabled: true, apiKey: "fixture-key", updatedAt: 1, ...proxy }));
-    extra.SHEPHERD_CLIPROXYAPI_CONFIG = file;
-    args.push("-e", proxySource);
-  }
   if (tierFirst) args.push("-e", tierSource);
   for (const source of extensions) args.push("-e", source);
   if (!tierFirst) args.push("-e", tierSource);
   const child = spawn(process.execPath, args, { cwd: dir, stdio: ["pipe", "pipe", "pipe"],
     env: { PATH: process.env.PATH, HOME: dir, PI_CODING_AGENT_DIR: config, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0",
-      ...(inert ? {} : { SHEPHERD_EXT_SERVICE_TIER: tierFile }), ...extra, ...env } });
+      ...(inert ? {} : { SHEPHERD_EXT_SERVICE_TIER: tierFile }), ...env } });
   const events = [];
   let out = "", err = "", next = 0;
   child.stdout.on("data", (chunk) => {
@@ -266,48 +257,6 @@ test("a pi started later reads the file at once: nothing to hand over, and a cha
   const second = await startPi(t, { providers, model: "openai/gpt-6-luna", tier: "fast" });
   await second.turn();
   assert.equal(tierOf(fake.requests[1]), "priority");
-});
-
-// MARK: CLIProxyAPI, the managed provider
-
-const proxy = (port, models) => ({ baseURL: `http://127.0.0.1:${port}/v1`, models });
-
-test("the managed CLIProxyAPI provider: Fast reaches an OpenAI model's body and its own payload rewriting still runs", { timeout: 120000 }, async (t) => {
-  const fake = await provider(t);
-  const pi = await startPi(t, { providers: {}, model: "cliproxyapi/gpt-6-sol", tier: "fast",
-    proxy: proxy(fake.port, [{ id: "gpt-6-sol", owned_by: "openai" }, { id: "claude-opus-5", owned_by: "anthropic" }]) });
-  await pi.turn();
-  const [request] = fake.requests;
-  assert.equal(request.path, "/v1/responses", "the proxy's Responses route");
-  assert.equal(tierOf(request), "priority");
-  assert.equal(request.headers.authorization, "Bearer fixture-key", "the provider's own auth is untouched");
-  const functions = request.body.tools.filter((tool) => tool.type === "function");
-  assert.ok(functions.length > 0);
-  assert.ok(functions.every((tool) => tool.strict === null), "the provider's strict:null rewrite ran after the tier was added");
-  pi.setTier("standard");
-  await pi.turn();
-  assert.ok(!hasTier(fake.requests[1]));
-  assert.ok(fake.requests[1].body.tools.filter((tool) => tool.type === "function").every((tool) => tool.strict === null), "and still runs without it");
-});
-
-test("CLIProxyAPI models the table leaves out get nothing: another owner, and a chat-completions route", { timeout: 180000 }, async (t) => {
-  const models = [{ id: "gpt-6-sol", owned_by: "openai" }, { id: "claude-opus-5", owned_by: "anthropic" },
-    { id: "gpt-oss-120b-medium", owned_by: "antigravity" }, { id: "gpt-not-in-pis-catalog-9", owned_by: "openai" },
-    // Another owner's model that pi's catalog knows on the Responses API: only its owner keeps it out.
-    { id: "muse-spark-1.2", owned_by: "Meta" }];
-  for (const [id, path] of [["claude-opus-5", "/v1/chat/completions"], ["gpt-oss-120b-medium", "/v1/chat/completions"],
-    ["gpt-not-in-pis-catalog-9", "/v1/chat/completions"], ["muse-spark-1.2", "/v1/responses"]]) {
-    const fake = await startProvider();
-    const pi = await startPi(t, { providers: {}, model: `cliproxyapi/${id}`, tier: "fast", proxy: proxy(fake.port, models) });
-    try {
-      await pi.turn();
-      assert.equal(fake.requests[0].path, path, id);
-      assert.ok(!hasTier(fake.requests[0]), `${id}: ${JSON.stringify(Object.keys(fake.requests[0].body))}`);
-    } finally {
-      await pi.stop();
-      await fake.stop();
-    }
-  }
 });
 
 // MARK: pi's hook

@@ -16,7 +16,7 @@ extension ThreadPreviewTests {
         snapshot.running = false
         snapshot.messages = []
         let model = long ? String(repeating: "long-model-name-", count: 8) : "gpt-6.1-sol"
-        let failure = RPCThreadState.modelUnavailableMessage(model)
+        let failure = "This conversation's model is unavailable. Your message wasn't sent. Choose a model."
         let request: NativeThreadStore.Request = { action in
             if case .send = action { return .failure(code: "model_unavailable", message: failure) }
             return .snapshot(value: snapshot)

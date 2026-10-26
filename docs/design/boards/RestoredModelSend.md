@@ -1,16 +1,15 @@
 # Restored model send failure
 
-The user's requested behavior is the reference for this change: recover the exact saved provider
-and model once; otherwise retain the message and show an inline error with a model-picker action.
-The earlier screenshot demonstrates the bug, not a new layout to copy.
+The model-failure presentation remains available for host errors. The former managed-provider
+recovery and blocked-input event producer have been removed.
 
 ## Checklist
 
 - Above the composer, reuse `NWBanner(.failed)` with its existing failed-state glyph, color,
   caption fonts, padding, radius and layout. No new dimensions or colors.
 - Title: "Message wasn't sent."
-- Message comes from the host's validated blocked-input event: "Couldn't restore this
-  conversation's model: CLIProxyAPI / <model ID>. Your message wasn't sent. Try again or choose
+- Message comes from the host's model-unavailable error: "Couldn't restore this
+  conversation's model: <model ID>. Your message wasn't sent. Try again or choose
   a model."
 - "Choose model" uses the existing small secondary button and opens the composer's existing
   model picker. The already-selected model can be explicitly selected again after this error.

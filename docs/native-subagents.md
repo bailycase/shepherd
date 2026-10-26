@@ -61,10 +61,8 @@ At every child launch and resume, pi's resource resolver supplies the user's ena
 extensions. It respects package filters and skips missing packages without installing anything.
 Children load those paths explicitly under `--no-extensions`, so extension-registered providers
 keep pi's own configuration and authentication. This also inherits user extension hooks, so it
-is not a provider-only sandbox. Shepherd also explicitly loads its managed CLIProxyAPI provider
-from its pi home and retains `SHEPHERD_CLIPROXYAPI_CONFIG`, so direct starts, workflow children and
-resumes use the same managed catalog and authentication as the parent. Other project and parent
-CLI-only extensions still need explicit profile `extensions` entries.
+is not a provider-only sandbox. Project and parent CLI-only extensions still need explicit
+profile `extensions` entries.
 
 `shepherd_child_agents` lists effective profiles, their owned source files, and diagnostics.
 Settings > Subagents manages the same Markdown definitions. Both use the exported parser in
@@ -239,20 +237,12 @@ leaves out in-flight tool calls and never branches the parent's live session.
 with the package's `dist/bundle/cli.js`, never a `pi` from PATH; a parent not running on node, or
 with no bundle, can't start one and the run fails saying so. Children inherit the launcher's
 pins from the parent's pi, and run with `PI_OFFLINE=1`. They strip `SHEPHERD_*`, session, and
-model variables, except the managed provider's config path above. A startup
+model variables. A startup
 exit returns its exit diagnostic to pending commands rather than only "Child exited". They get
 `--no-skills --no-prompt-templates --no-themes --no-approve`, plus `--no-context-files` when the
 profile doesn't inherit project context. [pi-home.md](pi-home.md#the-launcher) lists what a child
 inherits and what it doesn't.
 
-- **The managed provider, exactly.** A child isn't started through Shepherd's launcher, which is
-  what gives an agent the CLIProxyAPI provider, so `childLaunch` gives it too: from the parent's
-  pinned `SHEPHERD_CLIPROXYAPI_CONFIG` it passes `-e <home>/shepherd-cliproxyapi.ts` (beside the
-  connection file) and sets the variable after the `SHEPHERD_*` filter, the only one that
-  survives. It does so only while both files exist: with no connection a child is launched as it
-  always was, and a launch never fails on a missing extension file. A `cliproxyapi/<id>` model then
-  works in a child as in its parent; it is the only provider a child gets beyond pi's own, the
-  user's enabled extensions and a profile's `extensions`.
 - **A design agent's design tools.** A helper has none of its parent's identity, so it can't call
   the design tools itself. A profile of a helper started by a design agent may list them in `tools:`
   (`design_read`, `design_check`, `system_read`, `comment_list`, `board_write`, `board_edit`,
@@ -272,8 +262,7 @@ inherits and what it doesn't.
   or a role"). An unknown name lists the roles and the discovered profiles, and the nearest. A model
   that no provider of the parent's pi lists fails at the start, naming who asked for it (the call,
   a profile or the default), the providers that are loaded and, when the same id exists under
-  another provider, `provider/id` to use instead (a `cpa/…` model whose id is under `cliproxyapi`
-  reads `cliproxyapi/<id>`). A child that dies before it serves returns pi's own stderr, and for a
+  another provider, `provider/id` to use instead. A child that dies before it serves returns pi's own stderr, and for a
   model the parent could resolve but pi refused, says the child doesn't load that provider; one
   that starts without the model in its catalog names the providers it does have.
 
@@ -588,10 +577,7 @@ PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" \
   trust and model precedence, model and default
   propagation, resume, mission isolation and interruption, workflow sequencing, steering,
   errors and cancellation, evaluator limits, command-name collisions, the RPC fallbacks, and the
-  inspector's input handling. Managed CLIProxyAPI runs exercise start, resume and workflows against
-  a local fake provider, with parent controls and ambient project extensions still excluded. On top
-  of that: what a child is launched with (which `-e`, which `SHEPHERD_*` survive, the no-connection
-  case), the messages for a bad role, profile or model, and a design agent's design tools relayed to
+  inspector's input handling. On top of that: what a child is launched with (which `-e`, which `SHEPHERD_*` survive, legacy managed-provider files ignored), the messages for a bad role, profile or model, and a design agent's design tools relayed to
   real children through a real parent (`native-children-provider`, `design-relay` and
   `native-children-design` tests). `native-children-questions` runs real children that ask: the
   rule in the child's prompt and tool, the notice and instructions the parent gets (idle, working,

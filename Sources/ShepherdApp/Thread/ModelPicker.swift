@@ -73,7 +73,6 @@ struct ModelCatalog: Sendable {
         var sections: [NWModelSection] = []
         let recentOptions = recent.compactMap { id -> NWModelOption? in
             if let model = model(id) { return q.isEmpty || model.key.contains(q) ? option(model) : nil }
-            guard !id.hasPrefix(CLIProxyAPIStore.provider + "/") else { return nil }
             return q.isEmpty
                 ? NWModelOption(id: id, title: nativeModelShortName(id), subtitle: subtitle(id, catalog: nil), isCurrent: id == current)
                 : nil
@@ -110,7 +109,7 @@ struct ModelCatalog: Sendable {
     // MARK: This Mac's catalog
 
     /// Coalesce simultaneous loads; PiModelCatalog owns persistence and invalidation. Keeping
-    /// another permanent cache here would hide sign-ins and managed connection changes.
+    /// another permanent cache here would hide sign-ins and custom-provider changes.
     @MainActor private static var loadingLocal: [ObjectIdentifier: Task<ModelCatalog, Never>] = [:]
 
     /// Read the fingerprinted catalog and derive picker rows off the main actor.

@@ -205,61 +205,18 @@ struct EngineSmokeTests {
         try Data(#"{"openai":{"type":"api_key","key":"fixture-only"}}"#.utf8).write(to: home.directory.appendingPathComponent("auth.json"))
         try Data(#"{"providers":{"fixture":{"baseUrl":"http://127.0.0.1:9/v1","apiKey":"fixture-only","api":"openai-responses","models":[{"id":"max","reasoning":true,"thinkingLevelMap":{"minimal":null,"xhigh":"xhigh","max":"max"}}]}}}"#.utf8)
             .write(to: home.directory.appendingPathComponent("models.json"))
-        let connection = CLIProxyAPIStore.Connection(enabled: true, baseURL: "http://127.0.0.1:9/v1", apiKey: "fixture-only",
-            models: [.init(id: "~openai/gpt-5.4", owned_by: "openai")], updatedAt: 1)
-        try PiHome.write(JSONEncoder().encode(connection), to: home.directory.appendingPathComponent(CLIProxyAPIStore.fileName), mode: 0o600)
         let environment = ["HOME": scratch.path, "TMPDIR": scratch.path + "/", "ZDOTDIR": scratch.path, "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"]
         let catalog = PiModelCatalog(home: home, timeout: 20, environment: environment, ready: { true })
         let entries = catalog.entries()
         let custom = try #require(entries.first { $0.id == "fixture/max" })
         #expect(custom.thinkingLevels == ["off", "low", "medium", "high", "xhigh", "max"])
         let builtIn = try #require(entries.first { $0.id == "openai/gpt-5.4" })
-        let proxy = try #require(entries.first { $0.id == "cliproxyapi/~openai/gpt-5.4" })
         #expect(builtIn.thinkingLevels?.contains("xhigh") == true)
-        #expect(proxy.thinkingLevels == builtIn.thinkingLevels && proxy.api == "openai-responses")
         let listing = catalog.listing()
         #expect(listing.defaultModel != nil, "pi supplies its automatic default when settings pin none")
         #expect(listing.offeredThinkingLevels("fixture/max").map(\.rawValue) == ["off", "low", "medium", "high", "xhigh", "max"])
-        #expect(listing.offeredServiceTiers(proxy.id) == [.standard, .fast])
+        #expect(listing.offeredServiceTiers(builtIn.id) == [.standard, .fast])
         #expect(!FileManager.default.fileExists(atPath: home.sessions.path), "reading capabilities creates no saved conversation")
-    }
-
-    @Test func managedProxyLoadsInIsolatedSessionsAndRefreshesWithoutRestarting() async throws {
-        let engine = try #require(EngineSmoke.engine)
-        let scratch = try makeScratchDirectory("engine-cpa")
-        let files = FileManager.default
-        let home = PiHome(directory: scratch.appendingPathComponent("pi"), engine: .bundled(engine), userHome: scratch.path)
-        try home.install()
-        let path = home.directory.appendingPathComponent(CLIProxyAPIStore.fileName)
-        var connection = CLIProxyAPIStore.Connection(enabled: true, baseURL: "http://127.0.0.1:9/v1", apiKey: "!literal-$KEY",
-            models: [.init(id: "fixture-model", owned_by: nil)], updatedAt: 1)
-        try PiHome.write(JSONEncoder().encode(connection), to: path, mode: 0o600)
-        let pi = try RPCProcess(executable: home.launcher.path,
-            arguments: ["--mode", "rpc", "--no-session", "--no-extensions", "--model", "cliproxyapi/fixture-model"],
-            directory: scratch, environment: ["HOME": scratch.path, "TMPDIR": scratch.path + "/", "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"])
-        defer { pi.stop() }
-        let state = try await pi.request(["type": "get_state"])
-        #expect(state["success"] as? Bool == true, "\(pi.errors)")
-        let model = (state["data"] as? [String: Any])?["model"] as? [String: Any]
-        #expect(model?["provider"] as? String == "cliproxyapi")
-        connection.models.append(.init(id: "second-model", owned_by: nil))
-        connection.updatedAt = 2
-        try PiHome.write(JSONEncoder().encode(connection), to: path, mode: 0o600)
-        try await eventually("the existing runtime to adopt the new catalog") {
-            let listing = try await pi.request(["type": "get_available_models"])
-            let models = (listing["data"] as? [String: Any])?["models"] as? [[String: Any]] ?? []
-            return models.contains { $0["provider"] as? String == "cliproxyapi" && $0["id"] as? String == "second-model" }
-        }
-        connection.enabled = false
-        try PiHome.write(JSONEncoder().encode(connection), to: path, mode: 0o600)
-        try await eventually("disabled proxy models to leave the existing runtime") {
-            let listing = try await pi.request(["type": "get_available_models"])
-            let models = (listing["data"] as? [String: Any])?["models"] as? [[String: Any]] ?? []
-            return !models.contains { $0["provider"] as? String == "cliproxyapi" }
-        }
-        #expect(!pi.errors.contains("!literal-$KEY"))
-        _ = try await pi.finish()
-        #expect(!files.fileExists(atPath: scratch.appendingPathComponent(".pi").path))
     }
 
     /// Ad-hoc builds (the Dev scheme, CI's unsigned releases) run node without the hardened

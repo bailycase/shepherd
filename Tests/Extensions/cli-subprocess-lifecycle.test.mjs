@@ -46,8 +46,8 @@ for (const scenario of ["untrusted", "missing", "timeout", "blocked", "child-blo
       if (child && scenario === "child-blocked" && body.messages.some(m => m.role === "tool")) return { outputText: "Child shell denied" };
       if (child && scenario === "nested") return body.messages.some(m => m.role === "tool") ? { outputText: "Nested dispatch denied" } : { call: "pi -p 'nested prompt'" };
       if (child) return { call: `echo $BASHPID > ${JSON.stringify(childPID)}; sleep 60` };
-      // Cold helper startup can exceed one second on CI; cancellation still has a bounded deadline.
-      if (!body.messages.some(m => m.role === "tool")) return { tool: { name: "bash", arguments: { command: scenario === "ordinary" ? "printf ordinary-ok" : `pi -p '/speckit.${scenario === "missing" ? "missing" : "fixture"}'`, timeout: 5 } } };
+      // Include child startup in the budget; only the timeout scenario should expire.
+      if (!body.messages.some(m => m.role === "tool")) return { tool: { name: "bash", arguments: { command: scenario === "ordinary" ? "printf ordinary-ok" : `pi -p '/speckit.${scenario === "missing" ? "missing" : "fixture"}'`, timeout: scenario === "timeout" ? 5 : 10 } } };
       return { outputText: "stopped" };
     },
   }, async pi => {

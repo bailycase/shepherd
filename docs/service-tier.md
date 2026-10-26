@@ -12,8 +12,7 @@ Composer (ComposerSpeed); this page is how it works and what was verified.
 - **Standard** sends nothing: the provider's default tier.
 - **Fast** puts `service_tier: "priority"` in the model request. OpenAI renamed "priority
   processing" Fast mode and accepts `"fast"` and `"priority"` alike; Codex's Fast mode sends
-  `"priority"`, and so do CLIProxyAPI's translators (they drop every other value), so
-  `"priority"` is the one value used everywhere. It is billed at a higher rate (OpenAI: a
+  `"priority"`, so both providers use that value. It is billed at a higher rate (OpenAI: a
   per-token premium; Codex: 2x credits, 2.5x of a subscription's included limits) and the
   provider may fall back to Standard under load, reporting `service_tier: "default"`.
 
@@ -22,14 +21,13 @@ Composer (ComposerSpeed); this page is how it works and what was verified.
 One table, `ServiceTierSupport.rules` (`Sources/ShepherdCore/ServiceTier.swift`), read by the
 composer, the host's snapshot and the new-thread default. `Extensions/shepherd-service-tier.ts`
 holds the same table for its request-time check. Both are tested against
-`Tests/Extensions/service-tier-support.json` (43 rows: Swift's `ServiceTierTests` and the node
+`Tests/Extensions/service-tier-support.json` (Swift's `ServiceTierTests` and the node
 test), so neither can drift.
 
 | Provider (pi's id) | APIs | Offered when |
 | --- | --- | --- |
 | `openai` | `openai-responses`, `openai-completions` | always (pi's catalog has only Responses models) |
 | `openai-codex` (ChatGPT sign-in) | `openai-codex-responses` | always |
-| `cliproxyapi` (the managed provider) | `openai-responses` | the model's `owned_by` in the connection file is `openai`, `codex` or `openai-codex`; with no owner, its id reads as OpenAI's (`gpt-…`, `o3…`, `codex-…`, or routed through `openai/`) |
 
 Everything else offers nothing, and its requests are never touched: Anthropic, Gemini, Bedrock,
 Azure (`azure-openai-responses`), xAI, Meta, Copilot, OpenRouter and every other provider. Ids
@@ -37,14 +35,6 @@ that are not chat models (image, realtime, audio, tts, transcribe, whisper, embe
 moderation, dall-e) are left out wherever they appear. A model with no tier shows no control, not
 a disabled one.
 
-- **CLIProxyAPI's chat-completions route drops the field** for Codex
-  (router-for-me/CLIProxyAPI#6138), so a proxied model pi reaches through `openai-completions`
-  (an id newer than pi's catalog with no sibling to borrow from) offers nothing. The Responses
-  route forwards it.
-- **Through the proxy the field is forgiving.** Sent `service_tier: "priority"` to DeepSeek and
-  Meta models through a local CLIProxyAPI, both answered 200 and ignored it, so a wrong guess
-  would not break a turn; the table is strict anyway, so the control never promises what nothing
-  honors.
 - **Adding Flex** (or any tier) is a data change: a `ServiceTier` case (`flex`, title, summary),
   a `wire` entry per rule that takes it (`[.flex: "flex"]`), the same in the extension's `RULES`,
   and rows in the JSON table. The snapshot, the Speed control (one segment per offered tier), the
@@ -76,9 +66,7 @@ Why a file and not a message on the extension socket:
 code) writes the file first, then persists, and puts the file back if persisting fails.
 Deleting the agent removes its file. Every serving thread shows its agent's tier in its
 snapshot (`serviceTier`) with the tiers its model offers (`serviceTiers`), worked out from what
-pi's `get_state` says the model is (provider, API, id) and, for the managed provider, who owns
-the model (`ServiceTierOffers` reads the connection file's `owned_by`, cached by modification
-time).
+pi's `get_state` says the model is (provider, API, id).
 
 **Subagents** (native children) are other pi processes that the children extension starts
 without any `SHEPHERD_` variable, so they run on Standard whatever their parent's tier is. The
@@ -97,9 +85,7 @@ The extension hooks pi's `before_provider_request` (not in pi's written docs; be
   WebSocket and SSE transports, which pi builds from the same object).
 - A handler that throws is caught: pi emits an `extension_error` (`event: "before_provider_request"`)
   and the request goes on with the payload as it was. The extension never throws anyway.
-- It runs for the agent loop's requests only (not compaction or summaries), and it composes with
-  the managed provider's own `onPayload` rewrite (`strict: null` on function tools): pi's hook
-  runs first, then the provider's, so both are applied.
+- It runs for the agent loop's requests only (not compaction or summaries).
 - Payload shapes the extension checks before adding the field: `input` (an array) for
   `openai-responses` and `openai-codex-responses` (whose body has `model`, `store`, `stream`,
   `instructions`, `input`, `tools`…), `messages` for `openai-completions`, and `payload.model`
@@ -113,16 +99,13 @@ The extension hooks pi's `before_provider_request` (not in pi's written docs; be
 
 | What | How |
 | --- | --- |
-| The body pi sends, per API | Real pi against a local fake provider: OpenAI Responses, Chat Completions, the Codex backend's API (zstd-compressed SSE to `/backend-api/codex/responses`), the managed CLIProxyAPI provider with its rewrite still applied; Standard, Fast, mid-turn and between-turn changes, restarts, Anthropic and unlisted providers never touched |
-| Codex's wire value | pi's Codex provider code (`body.service_tier = options.serviceTier` and its priority multiplier), Codex's documentation (`service_tier = "fast"` in its config) and reports of its client's wire format (Fast serializes as `"priority"`), and CLIProxyAPI's translators (they keep only `"priority"`) |
+| The body pi sends, per API | Real pi against a local fake provider: OpenAI Responses, Chat Completions, the Codex backend's API (zstd-compressed SSE to `/backend-api/codex/responses`); Standard, Fast, mid-turn and between-turn changes, restarts, Anthropic and unlisted providers never touched |
+| Codex's wire value | pi's Codex provider code (`body.service_tier = options.serviceTier` and its priority multiplier), Codex's documentation (`service_tier = "fast"` in its config) and reports of its client's wire format (Fast serializes as `"priority"`) |
 | OpenAI's | OpenAI's Fast mode docs: `service_tier` `"fast"` or `"priority"` on Responses and Chat Completions; the response's `service_tier` names the tier used |
 | Through Shepherd | `ServiceTierEngineTests` (opt-in, the staged engine): the composer's store call, the real server and launcher, real pi, a fake provider's recorded bodies, a relaunch and a pi restarted in place |
 
-**Not verified:** a priority request against Codex or OpenAI themselves. The local CLIProxyAPI's
-Codex sign-in was unavailable (every `gpt-*` and `codex-*` model answered 503
-`auth_unavailable`), so neither the speedup nor the provider's echoed tier was measured; pi's
-real request with `service_tier: "priority"` did reach the proxy's `/v1/responses` and the
-proxy accepted the shape. Third-party reports say the ChatGPT backend also keys priority routing
+**Not verified:** a priority request against Codex or OpenAI themselves. Third-party reports say
+the ChatGPT backend also keys priority routing
 on Codex's own client headers (`originator`, `x-codex-routing-hint: model=<id>;tier=priority`);
 pi sends its own `originator` and no routing hint, so Fast through the direct `openai-codex`
 provider may be accepted but served at Standard speed. Shepherd does not imitate another client's

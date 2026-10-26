@@ -301,7 +301,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                    "Instructions", "Skills", "Prompts", "Themes", "Imported extensions"]
         case .extensions: ["Terminals and agent tools", "Diff review tool", "MCP servers", "Browser tools", "Design references"]
         case .piSignIn: ["Re-import from pi", "Subscriptions", "Anthropic", "OpenAI Codex", "GitHub Copilot", "xAI", "Kimi", "Radius",
-                         "API keys", "Add an API key", "CLIProxyAPI", "Custom providers"]
+                         "API keys", "Add an API key", "Custom providers"]
         case .piSlashCommands: ["Search commands", "Extensions", "Prompt templates", "Skills", "Disabled commands"]
         case .instructions: ["Same on every host", "AGENTS.md", "APPEND_SYSTEM.md", "History"]
         case .skills: ["Installed skills", "Browse skills.sh", "Add from repo",
@@ -350,7 +350,6 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                                            "sign out", "expired"],
                          "API keys": ["api key", "key", "environment", "variable", "auth.json", "sign out"],
                          "Add an API key": ["groq", "mistral", "openrouter", "deepseek"],
-                         "CLIProxyAPI": ["cpa", "proxy", "server", "connection", "refresh models"],
                          "Custom providers": ["models.json", "ollama", "gateway"],
                          "Re-import from pi": ["import", "copy", "your pi"]]
         case .piSlashCommands: ["Search commands": ["slash", "/ menu", "command", "composer", "hide", "turn off", "switch"],

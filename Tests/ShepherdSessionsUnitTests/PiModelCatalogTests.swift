@@ -13,15 +13,15 @@ struct PiModelCatalogTests {
     """
 
     @Test func rpcModelsKeepComposedThinkingLevelsAndOnlyCapabilityFields() {
-        let reply = #"{"type":"response","id":"shepherd-models","command":"get_available_models","success":true,"data":{"models":[{"provider":"cliproxyapi","id":"~openai/gpt-5","api":"openai-responses","contextWindow":400000,"reasoning":true,"thinkingLevelMap":{"minimal":null,"xhigh":"xhigh","max":"max"},"headers":{"Authorization":"fixture-only"}},{"provider":"fixture","id":"plain","reasoning":false,"contextWindow":1000000}]}}"#
+        let reply = #"{"type":"response","id":"shepherd-models","command":"get_available_models","success":true,"data":{"models":[{"provider":"custom","id":"~openai/gpt-5","api":"openai-responses","contextWindow":400000,"reasoning":true,"thinkingLevelMap":{"minimal":null,"xhigh":"xhigh","max":"max"},"headers":{"Authorization":"fixture-only"}},{"provider":"fixture","id":"plain","reasoning":false,"contextWindow":1000000}]}}"#
         let entries = PiModelCatalog.parseEntries(reply)
-        #expect(entries.map(\.id) == ["cliproxyapi/~openai/gpt-5", "fixture/plain"])
+        #expect(entries.map(\.id) == ["custom/~openai/gpt-5", "fixture/plain"])
         #expect(entries.first?.context == "400K" && entries.last?.context == "1M")
         #expect(entries.first?.api == "openai-responses")
         #expect(entries.first?.thinkingLevels == ["off", "low", "medium", "high", "xhigh", "max"])
         #expect(entries.last?.thinkingLevels == ["off"])
         let listing = ModelListing(entries: entries, defaultModel: entries.first?.id,
-                                   levelMaps: ["cliproxyapi/~openai/gpt-5": ["minimal": "minimal"]])
+                                   levelMaps: ["custom/~openai/gpt-5": ["minimal": "minimal"]])
         #expect(listing.offeredThinkingLevels(nil).map(\.rawValue) == ["off", "low", "medium", "high", "xhigh", "max"],
                 "pi's composed map wins over incomplete configuration")
         #expect(listing.offeredThinkingLevels("fixture/plain").isEmpty)

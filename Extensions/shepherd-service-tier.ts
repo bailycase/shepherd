@@ -14,46 +14,30 @@ import * as fs from "node:fs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 type Tier = "standard" | "fast";
-type Model = { provider: string; id: string; api?: string | null; ownedBy?: string | null };
-type Rule = { provider: string; apis: string[]; wire: Partial<Record<Tier, string>>; owners?: string[] };
+type Model = { provider: string; id: string; api?: string | null };
+type Rule = { provider: string; apis: string[]; wire: Partial<Record<Tier, string>> };
 
 export const RULES: Rule[] = [
   { provider: "openai", apis: ["openai-responses", "openai-completions"], wire: { fast: "priority" } },
   { provider: "openai-codex", apis: ["openai-codex-responses"], wire: { fast: "priority" } },
-  { provider: "cliproxyapi", apis: ["openai-responses"], wire: { fast: "priority" }, owners: ["openai", "codex", "openai-codex"] },
 ];
 
-// Models that are not chat models, whatever their owner.
+// Models that are not chat models.
 const EXCLUDED = ["image", "realtime", "audio", "tts", "transcribe", "whisper", "embedding", "moderation", "dall-e"];
 
 const normalized = (text: string) => text.toLowerCase().trim();
 const baseName = (id: string) => {
   const last = id.split("/").filter(Boolean).at(-1) ?? id;
-  return normalized(last.startsWith("~") ? last.slice(1) : last);
+  return normalized(last);
 };
-// An ownerless model's id reads as OpenAI's: routed through `openai/`, or named like one.
-function impliesOwner(id: string, owners: string[]) {
-  const parts = id.split("/").filter(Boolean).map(normalized);
-  const route = parts.length > 1 ? parts[parts.length - 2] : undefined;
-  if (route && owners.includes(route.startsWith("~") ? route.slice(1) : route)) return true;
-  const name = baseName(id);
-  return name.startsWith("gpt-") || name.startsWith("codex-") || /^o\d/.test(name);
-}
-
 export function ruleFor(model: Model): Rule | undefined {
   const rule = RULES.find((item) => item.provider === model.provider);
   if (!rule) return;
   if (model.api) {
     if (!rule.apis.includes(model.api)) return;
-  } else if (rule.owners) {
-    return;
   }
   const name = baseName(model.id);
   if (EXCLUDED.some((word) => name.includes(word))) return;
-  if (rule.owners) {
-    const owner = normalized(model.ownedBy ?? "");
-    if (owner ? !rule.owners.includes(owner) : !impliesOwner(model.id, rule.owners)) return;
-  }
   return rule;
 }
 
@@ -75,31 +59,6 @@ function readTier(path: string): Tier {
   }
 }
 
-// CLIProxyAPI's own listing says who owns a model; the launcher points this at Shepherd's
-// connection file, which also holds its key, so only `owned_by` is read and nothing is kept.
-let owners: { stamp: string; byID: Map<string, string | undefined> } | undefined;
-function ownerOf(id: string): string | undefined {
-  const path = process.env.SHEPHERD_CLIPROXYAPI_CONFIG;
-  if (!path) return;
-  try {
-    const info = fs.statSync(path);
-    const stamp = `${info.mtimeMs}:${info.size}`;
-    if (owners?.stamp !== stamp) {
-      const models = JSON.parse(fs.readFileSync(path, "utf8"))?.models;
-      const byID = new Map<string, string | undefined>();
-      if (Array.isArray(models)) {
-        for (const model of models) {
-          if (typeof model?.id === "string") byID.set(model.id, typeof model.owned_by === "string" ? model.owned_by : undefined);
-        }
-      }
-      owners = { stamp, byID };
-    }
-    return owners.byID.get(id);
-  } catch {
-    return;
-  }
-}
-
 export default function shepherdServiceTier(pi: ExtensionAPI) {
   const file = process.env.SHEPHERD_EXT_SERVICE_TIER ?? "";
   if (!file) return;
@@ -110,9 +69,7 @@ export default function shepherdServiceTier(pi: ExtensionAPI) {
       if (tier === "standard") return;
       const current = ctx.model;
       if (!current) return;
-      const model: Model = { provider: current.provider, id: current.id, api: current.api,
-        ownedBy: current.provider === "cliproxyapi" ? ownerOf(current.id) : undefined };
-      const value = wireValue(tier, model);
+      const value = wireValue(tier, current);
       if (!value) return;
       const payload = event.payload as Record<string, unknown> | undefined;
       if (!payload || typeof payload !== "object" || Array.isArray(payload)) return;

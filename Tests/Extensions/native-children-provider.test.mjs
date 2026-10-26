@@ -1,12 +1,10 @@
 import { projectConfigHost } from "./fixtures/project-config-host.mjs";
-// What a native helper is launched with (the exact `-e` and `SHEPHERD_*`, the managed CLIProxyAPI provider among
-// them) and what it says when a role, profile or model can't be used. Real pi processes against a local fake
-// provider: no model call. A real helper on the managed provider is in native-children.test.mjs.
+// Native helper launch isolation and actionable errors for missing profiles and providers.
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { children, childrenSource, harness, installManagedProvider, providerServer, scratchHome, tempDir, withEnv } from "./fixtures/children-harness.mjs";
+import { children, childrenSource, harness, providerServer, scratchHome, tempDir, withEnv } from "./fixtures/children-harness.mjs";
 process.env.SHEPHERD_MISSIONS = "1"; // These tests cover mission records and the mission parameters, which are off unless this is set (docs/native-subagents.md › Missions).
 
 const PARENT = (dir, home) => ({
@@ -19,17 +17,16 @@ async function withParent(dir, home, fn) {
   finally { await host.close(); }
 }
 const put = (file, text) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, text); };
-const run = (dir, extra = {}) => ({ id: "native-x", dir, sessionFile: path.join(dir, "session.jsonl"), model: "cliproxyapi/m", thinking: "off",
+const run = (dir, extra = {}) => ({ id: "native-x", dir, sessionFile: path.join(dir, "session.jsonl"), model: "custom/m", thinking: "off",
   tools: ["read", "grep"], systemPromptMode: "append", inheritProjectContext: true, skills: [], extensions: [], ...extra });
 
 // ---- A: what a helper is launched with ----
 
-test("a helper from a home with a connection gets the managed provider and only the SHEPHERD_* it needs", () => {
+test("a helper loads enabled extensions once and only the SHEPHERD_* it needs", () => {
   const dir = tempDir("launch");
   try {
     const home = path.join(dir, "home");
     fs.mkdirSync(home);
-    installManagedProvider(home, { baseURL: "http://127.0.0.1:1/v1", models: ["m"] });
     const bridge = path.join(dir, "bridge.ts"), userExtension = path.join(dir, "user.ts");
     put(bridge, ""); put(userExtension, "");
     const parentEnv = {
@@ -40,16 +37,15 @@ test("a helper from a home with a connection gets the managed provider and only 
       SHEPHERD_EXT_CHILDREN: bridge, SHEPHERD_NATIVE_CHILDREN: "1", SHEPHERD_MODEL: "parent/model", SHEPHERD_CHILD_CONCURRENCY: "4",
       SHEPHERD_CLIPROXYAPI_CONFIG: path.join(home, "shepherd-cliproxyapi.json"),
     };
-    const launch = children.childLaunch({ run: run(dir), bridge, inherited: [userExtension, path.join(home, "shepherd-cliproxyapi.ts")], parentEnv });
+    const launch = children.childLaunch({ run: run(dir), bridge, inherited: [userExtension, userExtension], parentEnv });
 
     const loaded = launch.args.flatMap((arg, index) => arg === "-e" ? [launch.args[index + 1]] : []);
-    assert.deepEqual(loaded, [bridge, path.join(home, "shepherd-cliproxyapi.ts"), userExtension],
-      "the bridge, the managed provider, then the user's extensions, each once (the provider is not repeated from `inherited`)");
+    assert.deepEqual(loaded, [bridge, userExtension], "the bridge and enabled extensions, each once");
     assert(launch.args.includes("--no-extensions"), "everything else stays opt-in");
     const shepherd = Object.keys(launch.env).filter((key) => key.startsWith("SHEPHERD_")).sort();
-    assert.deepEqual(shepherd, ["SHEPHERD_CHILD", "SHEPHERD_CHILD_TOOLS", "SHEPHERD_CLIPROXYAPI_CONFIG"],
+    assert.deepEqual(shepherd, ["SHEPHERD_CHILD", "SHEPHERD_CHILD_TOOLS"],
       "no agent id, socket, design, extension path, model or default reaches a helper");
-    assert.equal(launch.env.SHEPHERD_CLIPROXYAPI_CONFIG, path.join(home, "shepherd-cliproxyapi.json"), "the parent's pinned file, kept past the filter");
+    assert.equal(launch.env.SHEPHERD_CLIPROXYAPI_CONFIG, undefined, "legacy provider configuration is not inherited");
     assert.equal(launch.env.SHEPHERD_CHILD, "1");
     assert.deepEqual(JSON.parse(launch.env.SHEPHERD_CHILD_TOOLS), ["read", "grep", "shepherd_parent_message"]);
 
@@ -66,53 +62,33 @@ test("a helper from a home with a connection gets the managed provider and only 
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("without a connection file, a helper is launched exactly as before", () => {
-  const dir = tempDir("launch-plain");
+test("legacy managed provider files are ignored by helper launches", () => {
+  const dir = tempDir("launch-legacy");
   try {
-    const home = path.join(dir, "home");
-    fs.mkdirSync(home);
-    const bridge = path.join(dir, "bridge.ts");
+    const home = path.join(dir, "home"), bridge = path.join(dir, "bridge.ts");
     put(bridge, "");
-    const parentEnv = { HOME: dir, PI_CODING_AGENT_DIR: home, SHEPHERD_AGENT_ID: "parent-agent", SHEPHERD_SOCKET: "/s", SHEPHERD_CLIPROXYAPI_CONFIG: path.join(home, "shepherd-cliproxyapi.json") };
-    const expected = (args) => ["--mode", "rpc", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-approve",
-      "-e", bridge, "--session", path.join(dir, "session.jsonl"), "--model", "cliproxyapi/m", "--thinking", "off", "--tools", "read,grep,shepherd_parent_message",
-      "--append-system-prompt", path.join(dir, "prompt.md"), ...args];
-    // Neither file: the launch is what it was.
-    let launch = children.childLaunch({ run: run(dir), bridge, parentEnv });
-    assert.deepEqual(launch.args, expected([]));
-    assert.deepEqual(Object.keys(launch.env).filter((key) => key.startsWith("SHEPHERD_")).sort(), ["SHEPHERD_CHILD", "SHEPHERD_CHILD_TOOLS"]);
-    // The extension without its connection, and a connection without the extension, are neither a provider.
     put(path.join(home, "shepherd-cliproxyapi.ts"), "");
-    assert.deepEqual(children.childLaunch({ run: run(dir), bridge, parentEnv }).args, expected([]));
-    fs.unlinkSync(path.join(home, "shepherd-cliproxyapi.ts"));
     put(path.join(home, "shepherd-cliproxyapi.json"), "{}");
-    launch = children.childLaunch({ run: run(dir), bridge, parentEnv });
-    assert.deepEqual(launch.args, expected([]));
-    assert.equal(launch.env.SHEPHERD_CLIPROXYAPI_CONFIG, undefined, "the parent's own pin is filtered like every SHEPHERD_*");
-    // No pin, a relative one, or one into a folder that isn't there names no file.
-    assert.equal(children.managedProvider({}), undefined);
-    assert.equal(children.managedProvider({ SHEPHERD_CLIPROXYAPI_CONFIG: "relative/shepherd-cliproxyapi.json" }), undefined);
-    assert.equal(children.managedProvider({ SHEPHERD_CLIPROXYAPI_CONFIG: path.join(dir, "gone", "shepherd-cliproxyapi.json") }), undefined);
-    // Both files: it is the provider.
-    put(path.join(home, "shepherd-cliproxyapi.ts"), "");
-    assert.deepEqual(children.managedProvider(parentEnv), { extension: path.join(home, "shepherd-cliproxyapi.ts"), config: path.join(home, "shepherd-cliproxyapi.json") });
+    const launch = children.childLaunch({ run: run(dir), bridge,
+      parentEnv: { HOME: dir, PI_CODING_AGENT_DIR: home, SHEPHERD_CLIPROXYAPI_CONFIG: path.join(home, "shepherd-cliproxyapi.json") } });
+    assert.deepEqual(launch.args.flatMap((arg, index) => arg === "-e" ? [launch.args[index + 1]] : []), [bridge]);
+    assert.equal(launch.env.SHEPHERD_CLIPROXYAPI_CONFIG, undefined);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("a helper whose home has no connection exits on a cliproxyapi model, and the message carries why", { timeout: 120000 }, async () => {
+test("a helper exits when its custom provider isn't loaded, and the message carries why", { timeout: 120000 }, async () => {
   const dir = tempDir("unmanaged");
   const fixture = providerServer(() => ({ text: "never asked" }));
   const port = await fixture.listen();
   try {
     const home = scratchHome(dir, { port });
-    // The parent's registry lists the proxy's model (its launcher loaded the provider); the helper's own pi,
-    // with no connection file in the home, has only the fixture provider and refuses the --model.
+    // The parent lists a custom model, but the helper has only the fixture provider.
     await withParent(dir, home, async () => {
-      const h = await harness(dir, { models: [{ provider: "fixture", id: "fixture" }, { provider: "cliproxyapi", id: "fixture-model" }] });
+      const h = await harness(dir, { models: [{ provider: "fixture", id: "fixture" }, { provider: "custom", id: "fixture-model" }] });
       try {
-        await assert.rejects(h.call("start", { task: "x", role: "scout", model: "cliproxyapi/fixture-model", mission: false }), (error) => {
-          assert.match(error.message, /^Child exited before clean settlement \(1\): Error: Model "cliproxyapi\/fixture-model" not found\./);
-          assert.match(error.message, /cliproxyapi\/fixture-model resolves in this Pi, so its provider is one the helper doesn't load/);
+        await assert.rejects(h.call("start", { task: "x", role: "scout", model: "custom/fixture-model", mission: false }), (error) => {
+          assert.match(error.message, /^Child exited before clean settlement \(1\): Error: Model "custom\/fixture-model" not found\./);
+          assert.match(error.message, /custom\/fixture-model resolves in this Pi, so its provider is one the helper doesn't load/);
           return true;
         });
         const [failed] = await h.call("result", {});
@@ -179,28 +155,27 @@ test("an unknown role lists the roles and the discovered profiles, and suggests 
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("a model whose provider isn't loaded fails at the start, says which providers are, and suggests cliproxyapi for a cpa model", async () => {
+test("a model whose provider isn't loaded fails at the start, says which providers are, and suggests custom for a missing model", async () => {
   const dir = tempDir("model");
   try {
     const home = scratchHome(dir);
-    put(path.join(home, "agents", "design-composer-editor.md"), "---\nname: design-composer-editor\ndescription: edits boards\nmodel: cpa/gpt-6-astra\ntools: [read]\n---\nEdit boards.\n");
-    const models = [{ provider: "fixture", id: "fixture" }, { provider: "cliproxyapi", id: "gpt-6-astra" }, { provider: "cliproxyapi", id: "claude-sonnet-5" }];
+    put(path.join(home, "agents", "design-composer-editor.md"), "---\nname: design-composer-editor\ndescription: edits boards\nmodel: missing/gpt-6-astra\ntools: [read]\n---\nEdit boards.\n");
+    const models = [{ provider: "fixture", id: "fixture" }, { provider: "custom", id: "gpt-6-astra" }, { provider: "custom", id: "claude-sonnet-5" }];
     await withParent(dir, home, async () => {
       const h = await harness(dir, { models });
       try {
         // A profile names it: the message names the profile, once, before anything launches.
         await assert.rejects(h.call("start", { task: "x", agent: "design-composer-editor" }), (error) => {
-          assert.match(error.message, /^Agent profile design-composer-editor names cpa\/gpt-6-astra, but provider "cpa" isn't loaded in this Pi\./);
-          assert.match(error.message, /Did you mean cliproxyapi\/gpt-6-astra\?/);
-          assert.match(error.message, /"cpa" was the provider of the old pi-cliproxyapi-provider package/);
-          assert.match(error.message, /Providers this Pi has: cliproxyapi, fixture\.$/);
+          assert.match(error.message, /^Agent profile design-composer-editor names missing\/gpt-6-astra, but provider "missing" isn't loaded in this Pi\./);
+          assert.match(error.message, /Did you mean custom\/gpt-6-astra\?/);
+          assert.match(error.message, /Providers this Pi has: custom, fixture\.$/);
           return true;
         });
         // A call names it.
-        await assert.rejects(h.call("start", { task: "x", role: "scout", model: "cpa/gpt-6-astra:high" }), /The model argument names cpa\/gpt-6-astra:high, but provider "cpa" isn't loaded.*Did you mean cliproxyapi\/gpt-6-astra\?/);
+        await assert.rejects(h.call("start", { task: "x", role: "scout", model: "missing/gpt-6-astra:high" }), /The model argument names missing\/gpt-6-astra:high, but provider "missing" isn't loaded.*Did you mean custom\/gpt-6-astra\?/);
         // A loaded provider without that id (Pi would take it as a custom model, which a helper never lists).
-        await assert.rejects(h.call("start", { task: "x", role: "scout", model: "cliproxyapi/claude-sonnet-5-5" }), (error) => {
-          assert.match(error.message, /provider "cliproxyapi" has no model "claude-sonnet-5-5" in this Pi\./);
+        await assert.rejects(h.call("start", { task: "x", role: "scout", model: "custom/claude-sonnet-5-5" }), (error) => {
+          assert.match(error.message, /provider "custom" has no model "claude-sonnet-5-5" in this Pi\./);
           assert.match(error.message, /Its models that look like it: claude-sonnet-5\./);
           return true;
         });
@@ -215,7 +190,7 @@ test("a model whose provider isn't loaded fails at the start, says which provide
 test("the message helpers are pure, and cap a long provider list", () => {
   const many = Array.from({ length: 30 }, (_, i) => ({ provider: `p${String(i).padStart(2, "0")}`, id: "m" }));
   assert.match(children.modelNotFound("x/y", many), /Providers this Pi has: p00, .*, p23 and 6 more\.$/);
-  assert.equal(children.modelNotFound("cpa/m", [{ provider: "cliproxyapi", id: "m" }, { provider: "other", id: "m" }], { origin: "Profile a" }).includes("cliproxyapi/m or other/m"), true);
+  assert.equal(children.modelNotFound("missing/m", [{ provider: "custom", id: "m" }, { provider: "other", id: "m" }], { origin: "Profile a" }).includes("custom/m or other/m"), true);
   assert.match(children.unknownAgentMessage("a", [{ name: "a", source: "user", filePath: "/x/a.md" }, { name: "a", source: "project", filePath: "/p/a.md" }], [{ name: "a", source: "user", filePath: "/x/a.md" }, { name: "a", source: "project", filePath: "/p/a.md" }]),
     /^Ambiguous agent "a": it names a \(user, \/x\/a\.md\) and a \(project, \/p\/a\.md\)\./);
   assert.match(children.unknownAgentMessage("q", [{ name: "scout", source: "bundled" }]), /Profiles: none discovered/);
