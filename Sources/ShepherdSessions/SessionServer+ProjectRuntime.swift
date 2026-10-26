@@ -907,17 +907,23 @@ extension SessionServer {
         guard !thread.piBusy, thread.items.isEmpty else {
             completion(.failure(code: "send_cancelled", message: "Project delivery waits for ordinary native work.")); return
         }
+        // A configuration timeout is not an unknown prompt outcome: no input was dispatched.
+        let configurationFailed: (NativeThreadResult) -> Void = { result in
+            if case .failure("outcome_unknown", let detail) = result {
+                completion(.failure(code: "project_configuration_failed", message: detail))
+            } else { completion(result) }
+        }
         // The task's thinking level follows its model: pi clamps a level the model lacks.
         let withThinking = {
             if let thinking, thinking != thread.thinking, let session = thread.piSessionID {
                 thread.handle(.setThinking(expectedSessionID: session, generation: thread.generation, operationID: UUID(), level: thinking)) { result in
-                    if case .accepted = result { send() } else { completion(result) }
+                    if case .accepted = result { send() } else { configurationFailed(result) }
                 }
             } else { send() }
         }
         if let model, model != thread.model, let session = thread.piSessionID {
             thread.handle(.setModel(expectedSessionID: session, generation: thread.generation, operationID: UUID(), model: model)) { result in
-                if case .accepted = result { withThinking() } else { completion(result) }
+                if case .accepted = result { withThinking() } else { configurationFailed(result) }
             }
         } else { withThinking() }
     }
