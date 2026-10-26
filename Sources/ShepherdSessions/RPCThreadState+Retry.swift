@@ -266,6 +266,11 @@ extension RPCThreadState {
                                   authorized: @escaping () -> Bool, completion: @escaping (NativeThreadResult) -> Void) {
         // A new, fenced Continue is authorization; a late agent_start after Stop is not.
         stopRequested = false
+        restartRequestID = nil
+        recoveryDispatchID = nil
+        recoveryToken = nil
+        recoveryFence = nil
+        recoveryResumePending = false
         recoveryAttempts = 0
         restoringRecovery = false
         recoveryAtLaunch = nil

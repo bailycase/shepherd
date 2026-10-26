@@ -6,6 +6,11 @@ import ShepherdRemote
 @testable import ShepherdSessions
 import ShepherdTestSupport
 
+private final class RestartPreparationGate: @unchecked Sendable {
+    // Scratch server queue owned.
+    var pending: (() -> Void)?
+}
+
 @Suite("Durable ordinary agent recovery", .integrationTimeLimit)
 struct AgentRecoveryTests {
     private func store(_ host: ScratchServer) -> AgentRecoveryStore {
@@ -41,9 +46,9 @@ struct AgentRecoveryTests {
         let restarted = try ScratchServer(dir: h.dir)
         defer { restarted.stop() }
         let restored = try await resume(pi, on: restarted)
-        let continuation = try await restored.waitForStdin("prompt")
-        #expect(continuation["message"] as? String == RPCThreadState.recoveryPrompt)
-        let queued = try await restored.waitForStdin("prompt", count: 2)
+        let continuation = try await restored.waitForStdin("resume_session")
+        #expect(continuation["message"] == nil)
+        let queued = try await restored.waitForStdin("prompt")
         #expect(queued["message"] as? String == "queued work")
         let images = try #require(queued["images"] as? [[String: Any]])
         #expect(images.first?["data"] as? String == image.data.base64EncodedString())
@@ -107,9 +112,10 @@ struct AgentRecoveryTests {
         let restored = try await resume(pi, on: restarted)
         _ = try await restored.ready()
         if previousAttempts < AgentRecoveryStore.attemptLimit {
-            #expect(try await restored.waitForStdin("prompt")["message"] as? String == RPCThreadState.recoveryPrompt)
+            _ = try await restored.waitForStdin("resume_session")
+            #expect(restored.stdin("prompt").isEmpty)
         } else {
-            #expect(restored.stdin("prompt").isEmpty, "No fourth automatic continuation")
+            #expect(restored.stdin("prompt").isEmpty && restored.stdin("resume_session").isEmpty, "No fourth automatic continuation")
         }
     }
 
@@ -130,10 +136,10 @@ struct AgentRecoveryTests {
         let restarted = try ScratchServer(dir: crashDirectory)
         defer { restarted.stop() }
         let restored = try await resume(pi, on: restarted)
-        #expect(try await restored.waitForStdin("prompt")["message"] as? String == RPCThreadState.recoveryPrompt)
-        let pending = try #require(try await restored.waitForStdin("prompt", count: 2)["message"] as? String)
-        #expect(pending.hasPrefix(RPCThreadState.pendingRecoveryPrefix) && pending.hasSuffix("tools:0 hold-start"))
-        #expect(restored.stdin("prompt").count == 2)
+        let paused = try await restored.snapshot { $0.queue?.paused == true }
+        #expect(paused.queue?.items.first?.text == "tools:0 hold-start")
+        #expect(restored.stdin("prompt").isEmpty)
+        #expect(restored.stdin("resume_session").isEmpty, "Unknown input delivery must not cause a continuation")
     }
 
     @Test func heldQueueEditsWaitWhileTheInterruptedTurnRecovers() async throws {
@@ -149,10 +155,10 @@ struct AgentRecoveryTests {
         let restarted = try ScratchServer(dir: h.dir)
         defer { restarted.stop() }
         let restored = try await resume(pi, on: restarted)
-        _ = try await restored.waitForStdin("prompt")
+        _ = try await restored.waitForStdin("resume_session")
         let settled = try await restored.snapshot { !$0.running && $0.queue?.paused == true }
         #expect(settled.queue?.items.first?.text == "being edited")
-        #expect(restored.stdin("prompt").count == 1, "Recover the turn, but not the unfinished queue edit")
+        #expect(restored.stdin("prompt").isEmpty, "Recover the turn without injecting input or sending the unfinished queue edit")
     }
 
     @Test(arguments: ["automation", "goal"])
@@ -233,13 +239,9 @@ struct AgentRecoveryTests {
         let restarted = try ScratchServer(dir: h.dir)
         defer { restarted.stop() }
         let restored = try await resume(pi, on: restarted, env: ["STUB_PI_MESSAGES_FILE": messages.path])
-        let sent = try #require(try await restored.waitForStdin("prompt")["message"] as? String)
-        if expanded {
-            #expect(sent.hasPrefix(RPCThreadState.pendingRecoveryPrefix) && sent.hasSuffix(text))
-            #expect(!sent.hasPrefix("/"), "An uncertain extension/skill command must not be executed again as a command")
-        } else {
-            #expect(sent == RPCThreadState.recoveryPrompt, "Already-consumed input continues without being sent twice")
-        }
+        let paused = try await restored.snapshot { $0.queue?.paused == true }
+        #expect(paused.queue?.items.first?.text == text, "Uncertain user input remains unchanged, never wrapped in host instructions")
+        #expect(restored.stdin("prompt").isEmpty && restored.stdin("resume_session").isEmpty)
     }
 
     @Test func repeatedCrashesDuringRecoveryHitTheDurableAttemptBound() async throws {
@@ -252,18 +254,135 @@ struct AgentRecoveryTests {
         for attempt in 1...(AgentRecoveryStore.attemptLimit + 1) {
             let restarted = try ScratchServer(dir: h.dir)
             let restored = try await resume(pi, on: restarted,
-                                            env: ["STUB_PI_PROMPT_GATE": h.dir.appendingPathComponent("never").path])
+                                            env: ["STUB_PI_RESUME_GATE": h.dir.appendingPathComponent("never").path])
             _ = try await restored.ready()
             if attempt <= AgentRecoveryStore.attemptLimit {
-                _ = try await restored.waitForStdin("prompt")
+                _ = try await restored.waitForStdin("resume_session")
                 let checkpoint = try #require(try store(restarted).checkpoint(for: pi.agent.id))
                 #expect(checkpoint.attempts == attempt)
                 #expect(checkpoint.active && checkpoint.pending.isEmpty, "Host recovery instructions must not become queued user inputs")
             } else {
-                #expect(restored.stdin("prompt").isEmpty, "Repeated crashes cannot cause an unlimited recovery loop")
+                #expect(restored.stdin("prompt").isEmpty && restored.stdin("resume_session").isEmpty, "Repeated crashes cannot cause an unlimited recovery loop")
             }
             restarted.stop(keepFiles: true)
         }
+    }
+
+    @Test(arguments: [false, true])
+    func restartReservationPrecedesPreparationAndStopCanCancelIt(stop: Bool) async throws {
+        let h = try ScratchServer.fresh()
+        let pi = try await PiAgent.launch(on: h)
+        _ = try await pi.ready()
+        h.stop(keepFiles: true)
+        try store(h).save(.init(sessionID: "stub-session", active: true, items: [], pending: [], paused: false,
+                               mode: .oneAtATime), for: pi.agent.id)
+        let restarted = try ScratchServer(dir: h.dir)
+        defer { restarted.stop() }
+        let restored = try await resume(pi, on: restarted, env: ["STUB_PI_STARTUP_GATE": "restart-boot"])
+        let gate = RestartPreparationGate()
+        try await restarted.server.enqueue {
+            restarted.server.rpcThread(forAgent: pi.agent.id)?.beforePrompt = { gate.pending = $0 }
+        }
+        FileManager.default.createFile(atPath: h.dir.appendingPathComponent("restart-boot").path, contents: nil)
+        try await eventually("restart preparation") { try await restarted.server.enqueue { gate.pending != nil } }
+        let saved = try #require(try store(restarted).checkpoint(for: pi.agent.id))
+        #expect(saved.operationID != nil && saved.token != nil && saved.fence != nil && saved.active)
+        #expect(restored.stdin("resume_session").isEmpty && restored.stdin("prompt").isEmpty)
+        if stop {
+            let ready = try await restored.ready()
+            #expect(try await restored.request(.abort(expectedSessionID: ready.piSessionID, generation: ready.generation,
+                                                     operationID: UUID())).failureCode == nil)
+        }
+        try await restarted.server.enqueue { gate.pending?(); gate.pending = nil }
+        if stop {
+            #expect(restored.stdin("resume_session").isEmpty)
+        } else {
+            let sent = try await restored.waitForStdin("resume_session")
+            #expect((sent["operationID"] as? String)?.lowercased() == saved.operationID?.uuidString.lowercased())
+            #expect(sent["token"] as? String == saved.token)
+        }
+        #expect(restored.stdin("prompt").isEmpty)
+    }
+
+    @Test(arguments: ["unknown", "settled", "absent", "absent-new-runtime", "changed-fence", "legacy"])
+    func restartOperationsReconcileBeforeAnyNewModelCall(outcome: String) async throws {
+        let h = try ScratchServer.fresh()
+        let pi = try await PiAgent.launch(on: h)
+        _ = try await pi.ready()
+        h.stop(keepFiles: true)
+        let id = UUID()
+        let queued = RPCThreadState.QueueItem(entry: NativeQueuedMessage(id: UUID(), text: "actual queued input", sentAt: 1000), images: [])
+        try store(h).save(.init(sessionID: "stub-session", active: true, items: [queued], pending: [], paused: false,
+                               mode: .oneAtATime, attempts: 1, operationID: id, token: String(repeating: "a", count: 64),
+                               fence: outcome == "legacy" ? nil : String(repeating: "b", count: 64)), for: pi.agent.id)
+        let restarted = try ScratchServer(dir: h.dir)
+        defer { restarted.stop() }
+        var env: [String: String] = [:]
+        if ["unknown", "settled"].contains(outcome) { env["STUB_PI_RESTART_RECEIPT_STATE"] = outcome }
+        if outcome == "absent-new-runtime" { env["STUB_PI_RESTART_TOKEN"] = String(repeating: "c", count: 64) }
+        if outcome == "changed-fence" { env["STUB_PI_RESTART_FENCE"] = String(repeating: "d", count: 64) }
+        let restored = try await resume(pi, on: restarted, env: env)
+        _ = try await restored.waitForStdin("get_recovery_operation")
+        if ["unknown", "changed-fence", "legacy"].contains(outcome) {
+            _ = try await restored.snapshot { $0.queue?.paused == true }
+            #expect(restored.stdin("resume_session").isEmpty && restored.stdin("prompt").isEmpty)
+        } else {
+            if outcome.hasPrefix("absent") {
+                let operation = try await restored.waitForStdin("resume_session")
+                #expect((operation["operationID"] as? String)?.lowercased() == id.uuidString.lowercased())
+                #expect(operation["token"] as? String == String(repeating: outcome == "absent-new-runtime" ? "c" : "a", count: 64))
+            }
+            #expect(try await restored.waitForStdin("prompt")["message"] as? String == "actual queued input")
+            if outcome == "settled" { #expect(restored.stdin("resume_session").isEmpty) }
+        }
+    }
+
+    @Test(arguments: [false, true])
+    func stopOrNewInputFencesADelayedEngineRecoveryCheck(stop: Bool) async throws {
+        let h = try ScratchServer.fresh()
+        let pi = try await PiAgent.launch(on: h)
+        _ = try await pi.ready()
+        h.stop(keepFiles: true)
+        try store(h).save(.init(sessionID: "stub-session", active: true, items: [], pending: [], paused: false,
+                               mode: .oneAtATime), for: pi.agent.id)
+        let restarted = try ScratchServer(dir: h.dir)
+        defer { restarted.stop() }
+        let gate = h.dir.appendingPathComponent("release-recovery")
+        let restored = try await resume(pi, on: restarted, env: ["STUB_PI_RESTART_CHECK_GATE": gate.path])
+        _ = try await restored.waitForStdin("get_restart_recovery")
+        let ready = try await restored.ready()
+        if stop {
+            #expect(try await restored.request(.abort(expectedSessionID: ready.piSessionID, generation: ready.generation,
+                                                     operationID: UUID())).failureCode == nil)
+        } else {
+            #expect(try await restored.send("new actual input", from: ready).failureCode == nil)
+            #expect(try await restored.waitForStdin("prompt")["message"] as? String == "new actual input")
+        }
+        FileManager.default.createFile(atPath: gate.path, contents: nil)
+        _ = try await restored.snapshot { !$0.running }
+        #expect(restored.stdin("resume_session").isEmpty, "Late recovery preflight cannot override newer user intent")
+    }
+
+    @Test(arguments: ["recovery_uncertain_tool", "recovery_completed"])
+    func engineCheckpointsKeepUnsafeWorkPausedAndDrainAfterDurableCompletion(reason: String) async throws {
+        let h = try ScratchServer.fresh()
+        let pi = try await PiAgent.launch(on: h)
+        _ = try await pi.ready()
+        h.stop(keepFiles: true)
+        let queued = RPCThreadState.QueueItem(entry: NativeQueuedMessage(id: UUID(), text: "keep queued", sentAt: 1000), images: [])
+        try store(h).save(.init(sessionID: "stub-session", active: true, items: [queued], pending: [], paused: false,
+                               mode: .oneAtATime), for: pi.agent.id)
+        let restarted = try ScratchServer(dir: h.dir)
+        defer { restarted.stop() }
+        let restored = try await resume(pi, on: restarted, env: ["STUB_PI_RESTART_REFUSAL": reason])
+        if reason == "recovery_completed" {
+            #expect(try await restored.waitForStdin("prompt")["message"] as? String == "keep queued")
+        } else {
+            let paused = try await restored.snapshot { $0.queue?.paused == true }
+            #expect(paused.queue?.items.first?.text == "keep queued")
+            #expect(restored.stdin("prompt").isEmpty)
+        }
+        #expect(restored.stdin("resume_session").isEmpty)
     }
 
     @Test func stopSurvivesALateAgentStartAndAnUncleanRestart() async throws {
@@ -338,7 +457,8 @@ struct AgentRecoveryTests {
         }
     }
 
-    @Test func stopAlsoCancelsRecoveryWhileHistoryIsUnavailable() async throws {
+    @Test(arguments: [false, true])
+    func stopAlsoCancelsRecoveryWhileHistoryIsUnavailable(reserved: Bool) async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
         let pi = try await PiAgent.launch(on: h)
@@ -346,19 +466,28 @@ struct AgentRecoveryTests {
         let working = try await pi.snapshot { $0.running }
         _ = try await pi.send("old queued work", from: working)
         h.stop(keepFiles: true)
+        if reserved {
+            var saved = try #require(try store(h).checkpoint(for: pi.agent.id))
+            saved.operationID = UUID()
+            saved.token = String(repeating: "a", count: 64)
+            saved.fence = String(repeating: "b", count: 64)
+            try store(h).save(saved, for: pi.agent.id)
+        }
         let deferred = try ScratchServer(dir: h.dir)
         let waiting = try await resume(pi, on: deferred, env: ["STUB_PI_HISTORY_FAILURE_GATE": h.dir.appendingPathComponent("never-ready").path])
         let degraded = try await waiting.snapshot { $0.clips?.history == true }
         _ = try await waiting.request(.abort(expectedSessionID: degraded.piSessionID, generation: degraded.generation, operationID: UUID()))
         let saved = try #require(try store(deferred).checkpoint(for: pi.agent.id))
         #expect(!saved.active && saved.paused && saved.items.first?.entry.text == "old queued work")
+        #expect(saved.operationID == nil && saved.token == nil && saved.fence == nil)
         deferred.stop(keepFiles: true)
         let restarted = try ScratchServer(dir: h.dir)
         defer { restarted.stop() }
         let restored = try await resume(pi, on: restarted)
         let idle = try await restored.ready()
         #expect(idle.queue?.paused == true && idle.queue?.items.first?.text == "old queued work")
-        #expect(restored.stdin("prompt").isEmpty)
+        #expect(restored.stdin("prompt").isEmpty && restored.stdin("resume_session").isEmpty)
+        #expect(restored.stdin("get_recovery_operation").isEmpty, "Stop discards the reservation, not just its active flag")
     }
 
     @Test func corruptCheckpointsAreQuarantinedWithoutBlockingNewAuthorizedWork() async throws {

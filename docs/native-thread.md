@@ -173,7 +173,14 @@ events come out on stdout, one record per LF.
 - **Recovery** checkpoints ordinary interactive agents' active intent, host queue, and prompts
   not yet consumed, independently of ephemeral sidebar status. Writes precede input delivery;
   startup waits for the matching pi session and readable history before reconciling pending
-  user messages and continuing interrupted work. Explicit Stop, questions, and held queue edits
+  input. `get_restart_recovery` seals a safe current engine boundary; `resume_session` records an
+  exact-operation receipt before continuing its SDK run without appending input. The host saves
+  operation identity before transport and checks `get_recovery_operation` after an interruption.
+  Only a null receipt plus an unchanged durable branch/configuration fence permits reacquiring
+  executable authority in a new runtime; legacy reservations without that fence stay paused.
+  Stop clears deferred reservations as well as active intent. Unknown accepted operations and uncertain tool or input outcomes stay paused rather than being
+  replayed or wrapped in model instructions. Manual Continue retains its stricter failed-turn
+  executable seal. Explicit Stop, questions, and held queue edits
   do not drain automatically. Three consecutive automatic recovery attempts are allowed; no
   tool call is replayed by the host. Feature-owned unattended work remains excluded.
 - **Events** update the projection in place. The run pi is streaming is one ordered list of

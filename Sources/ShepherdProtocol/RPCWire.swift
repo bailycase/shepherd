@@ -135,6 +135,8 @@ public enum RPCCommand: Encodable, Hashable, Sendable {
     case getState
     case getMessages
     case recoverCheckpoint(token: String, operationID: UUID)
+    case getRestartRecovery
+    case resumeSession(token: String, operationID: UUID)
     case getRecoveryOperation(operationID: UUID)
     case getSessionStats
     case getCommands
@@ -159,6 +161,8 @@ public enum RPCCommand: Encodable, Hashable, Sendable {
         case .clearQueue: return "clear_queue"
         case .getState: return "get_state"
         case .getMessages: return "get_messages"
+        case .getRestartRecovery: return "get_restart_recovery"
+        case .resumeSession: return "resume_session"
         case .recoverCheckpoint: return "recover_checkpoint"
         case .getRecoveryOperation: return "get_recovery_operation"
         case .getSessionStats: return "get_session_stats"
@@ -199,12 +203,12 @@ public enum RPCCommand: Encodable, Hashable, Sendable {
             try c.encodeIfPresent(customInstructions, forKey: .customInstructions)
         case .getMessages:
             try c.encode(true, forKey: .history)
-        case .recoverCheckpoint(let token, let operationID):
+        case .recoverCheckpoint(let token, let operationID), .resumeSession(let token, let operationID):
             try c.encode(token, forKey: .token)
             try c.encode(operationID.uuidString, forKey: .operationID)
         case .getRecoveryOperation(let operationID):
             try c.encode(operationID.uuidString, forKey: .operationID)
-        case .abort, .clearQueue, .getState, .getSessionStats, .getCommands, .refreshSkills, .getAvailableThinkingLevels, .newSession:
+        case .abort, .clearQueue, .getState, .getRestartRecovery, .getSessionStats, .getCommands, .refreshSkills, .getAvailableThinkingLevels, .newSession:
             break
         }
     }

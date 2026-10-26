@@ -90,7 +90,7 @@ extension RPCThreadState {
 
     /// pi is working, or about to be on a prompt it has not answered: a send now waits in the
     /// queue (or steers).
-    var piBusy: Bool { running || retryDispatch != nil || !dispatches.isEmpty || settleCapture != nil }
+    var piBusy: Bool { running || recoveryResumePending || retryDispatch != nil || !dispatches.isEmpty || settleCapture != nil }
 
     /// pi settling does not leave the agent idle: a prompt of ours is on its way, or the
     /// queue goes next.
@@ -170,8 +170,19 @@ extension RPCThreadState {
             }
             return
         }
+        // Fresh user input supersedes an idle recovery preflight. Do not strand it in a
+        // queue whose only future event was the now-cancelled recovery callback.
+        if recoveryResumePending, !running {
+            restartRequestID = nil
+            recoveryResumePending = false
+        }
         guard piBusy else {
             recoveryAttempts = 0
+            restartRequestID = nil
+            recoveryDispatchID = nil
+            recoveryToken = nil
+            recoveryFence = nil
+            recoveryResumePending = false
             restoringRecovery = false
             recoveryAtLaunch = nil
             if delivery == .interrupt { interruptGoal() }
@@ -189,6 +200,11 @@ extension RPCThreadState {
         item.direct = delivery == .interrupt
         guard admitsQueue(items + [item]) else { completion(queueFull); return }
         recoveryAttempts = 0
+        restartRequestID = nil
+        recoveryDispatchID = nil
+        recoveryToken = nil
+        recoveryFence = nil
+        recoveryResumePending = false
         restoringRecovery = false
         recoveryAtLaunch = nil
         if delivery == .interrupt { interruptGoal() }
@@ -508,6 +524,11 @@ extension RPCThreadState {
                   designPayloads: [UUID] = [], completion: @escaping (NativeThreadResult) -> Void) {
         let prompt = Self.prompt(text, context: context)
         if let failure = goalCommandFailure(prompt) { completion(failure); return }
+        restartRequestID = nil
+        recoveryDispatchID = nil
+        recoveryToken = nil
+        recoveryFence = nil
+        recoveryResumePending = false
         stopRequested = false
         let expectsMessage = !isExtensionCommand(prompt)
         dispatches.append(Dispatch(id: id, text: prompt, images: images, sentAt: Date().timeIntervalSince1970 * 1000,
@@ -808,6 +829,11 @@ extension RPCThreadState {
             session.send(.prompt(message: "/shepherd-goal {\"action\":\"pause\"}", streamingBehavior: .steer))
         }
         stopRequested = true
+        restartRequestID = nil
+        recoveryResumePending = false
+        recoveryDispatchID = nil
+        recoveryToken = nil
+        recoveryFence = nil
         // Stop wins over an interrupt under way: its messages stay queued, and the queue waits.
         interrupting = nil
         // A settle or a released editor can arrive before clear_queue answers.

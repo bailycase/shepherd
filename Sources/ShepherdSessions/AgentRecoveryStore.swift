@@ -15,6 +15,9 @@ final class AgentRecoveryStore {
         var paused: Bool
         var mode: NativeQueueMode
         var attempts = 0
+        var operationID: UUID?
+        var token: String?
+        var fence: String?
     }
 
     private let directory: URL

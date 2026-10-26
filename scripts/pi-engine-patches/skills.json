@@ -79,7 +79,7 @@
     {
       "path": "dist/bundle/chunks/chunk-33XOIQ5N.js",
       "before": "1fbf59b1126d78129049710d1c825afaf3a905333a62a680fdb2174fdb6d3aca",
-      "after": "b9686052d06e84187ebd9461d787f2f4293f5744b368f3f08958a99c1c9edd39",
+      "after": "2f6f6e80ab91a5f179d7d4ef384b1775bbe6236b8b10ea0157320e2a04ab937f",
       "edits": [
         {
           "old": "import{ProjectTrustStore,addMcpServerConfig,",
@@ -179,11 +179,11 @@
         },
         {
           "old": "import { createRequire as __piCreateRequire } from \"node:module\";",
-          "new": "import { acceptRecovery, finishRecovery, invalidateRecoveryGeneration, recordRecoveryCheckpoint, recoveryState, recoveryOperation, recoveryTranscript } from \"../../core/shepherd-checkpoint-recovery.js\";\nimport { createRequire as __piCreateRequire } from \"node:module\";"
+          "new": "import { acceptRecovery, finishRecovery, invalidateRecoveryGeneration, recordRecoveryCheckpoint, recoveryState, recoveryOperation, recoveryTranscript, restartRecoveryState, resumeSession } from \"../../core/shepherd-checkpoint-recovery.js\";\nimport { createRequire as __piCreateRequire } from \"node:module\";"
         },
         {
           "old": "async _runAgentPrompt(messages){this._agentRunAbortRequested=!1,this._failedResponse=void 0,",
-          "new": "    getRecoveryState() {\n        return recoveryState(this, this._cwd);\n    }\n    getRecoveryOperation(operationID) { return recoveryOperation(this, operationID); }\n    getRecoveryTranscript() { return recoveryTranscript(this); }\n    recoverCheckpoint(token, operationID) {\n        const accepted = acceptRecovery(this, token, operationID, this._cwd);\n        if (accepted.replay) return accepted.receipt;\n        const failed = this.sessionManager.getEntry(accepted.receipt.failedEntryID).message;\n        try { this._omitRecoveryAttempt(failed); }\n        catch (error) {\n            finishRecovery(this, accepted.receipt, \"unknown\", String(error));\n            throw error;\n        }\n        // This is an SDK-owned run, not an extension mutating Agent.state or inventing input.\n        this._runAgentPrompt(undefined, failed).then(() => {\n            finishRecovery(this, accepted.receipt, \"settled\");\n        }, error => {\n            finishRecovery(this, accepted.receipt, \"unknown\", String(error));\n            this._emit({ type: \"extension_error\", extensionPath: \"checkpoint-recovery\", event: \"recovery\", error: String(error) });\n        });\n        return accepted.receipt;\n    }\nasync _runAgentPrompt(messages,recoveredFailure){const recoverySessionID=this.sessionId;this._agentRunAbortRequested=!1,this._failedResponse=recoveredFailure,"
+          "new": "    getRestartRecoveryState() { return restartRecoveryState(this, this._cwd); }\n    resumeSession(token, operationID) { return resumeSession(this, token, operationID, this._cwd); }\n    getRecoveryState() {\n        return recoveryState(this, this._cwd);\n    }\n    getRecoveryOperation(operationID) { return recoveryOperation(this, operationID); }\n    getRecoveryTranscript() { return recoveryTranscript(this); }\n    recoverCheckpoint(token, operationID) {\n        const accepted = acceptRecovery(this, token, operationID, this._cwd);\n        if (accepted.replay) return accepted.receipt;\n        const failed = this.sessionManager.getEntry(accepted.receipt.failedEntryID).message;\n        try { this._omitRecoveryAttempt(failed); }\n        catch (error) {\n            finishRecovery(this, accepted.receipt, \"unknown\", String(error));\n            throw error;\n        }\n        // This is an SDK-owned run, not an extension mutating Agent.state or inventing input.\n        this._runAgentPrompt(undefined, failed).then(() => {\n            finishRecovery(this, accepted.receipt, \"settled\");\n        }, error => {\n            finishRecovery(this, accepted.receipt, \"unknown\", String(error));\n            this._emit({ type: \"extension_error\", extensionPath: \"checkpoint-recovery\", event: \"recovery\", error: String(error) });\n        });\n        return accepted.receipt;\n    }\nasync _runAgentPrompt(messages,recoveredFailure){const recoverySessionID=this.sessionId;this._agentRunAbortRequested=!1,this._failedResponse=recoveredFailure,"
         },
         {
           "old": "for(await this.agent.prompt(messages);!this._agentRunAbortRequested;)",
@@ -199,7 +199,7 @@
         },
         {
           "old": "switch(command.type){case\"prompt\":",
-          "new": "switch(command.type){case\"recover_checkpoint\":{if(pendingExtensionRequests.size)return error(id,command.type,\"recovery_busy\");return success(id,command.type,session.recoverCheckpoint(command.token,command.operationID))}case\"get_recovery_operation\":return success(id,command.type,{receipt:session.getRecoveryOperation(command.operationID)??null});case\"prompt\":"
+          "new": "switch(command.type){case\"get_restart_recovery\":return success(id,command.type,pendingExtensionRequests.size?{version:1,refusal:\"recovery_busy\"}:session.getRestartRecoveryState());case\"resume_session\":{if(pendingExtensionRequests.size)return error(id,command.type,\"recovery_busy\");return success(id,command.type,session.resumeSession(command.token,command.operationID))}case\"recover_checkpoint\":{if(pendingExtensionRequests.size)return error(id,command.type,\"recovery_busy\");return success(id,command.type,session.recoverCheckpoint(command.token,command.operationID))}case\"get_recovery_operation\":return success(id,command.type,{receipt:session.getRecoveryOperation(command.operationID)??null});case\"prompt\":"
         },
         {
           "old": "pendingMessageCount:session.pendingMessageCount};return success(id,\"get_state\",state2)",
@@ -409,7 +409,7 @@
     {
       "path": "dist/core/agent-session.js",
       "before": "476722dd363a0347049d450b5a0c67386cf156ecae2b039676962aa00a857161",
-      "after": "9c209135b546a748b96196cb72b16b600adc8629f9d71c85ea3595eeae320cf5",
+      "after": "85500c73aa7dd91dbbb39e97f231e32ed65930998246df5c0f7ba4861250cb34",
       "edits": [
         {
           "old": "    async reload(options) {",
@@ -417,7 +417,7 @@
         },
         {
           "old": "import { readFileSync } from \"node:fs\";",
-          "new": "import { acceptRecovery, finishRecovery, invalidateRecoveryGeneration, recordRecoveryCheckpoint, recoveryState, recoveryOperation, recoveryTranscript } from \"./shepherd-checkpoint-recovery.js\";\nimport { readFileSync } from \"node:fs\";"
+          "new": "import { acceptRecovery, finishRecovery, invalidateRecoveryGeneration, recordRecoveryCheckpoint, recoveryState, recoveryOperation, recoveryTranscript, restartRecoveryState, resumeSession } from \"./shepherd-checkpoint-recovery.js\";\nimport { readFileSync } from \"node:fs\";"
         },
         {
           "old": "    async _runAgentPrompt(messages) {",
@@ -437,7 +437,7 @@
         },
         {
           "old": "    async _runAgentPrompt(messages, recoveredFailure) {",
-          "new": "    getRecoveryState() {\n        return recoveryState(this, this._cwd);\n    }\n    getRecoveryOperation(operationID) { return recoveryOperation(this, operationID); }\n    getRecoveryTranscript() { return recoveryTranscript(this); }\n    recoverCheckpoint(token, operationID) {\n        const accepted = acceptRecovery(this, token, operationID, this._cwd);\n        if (accepted.replay) return accepted.receipt;\n        const failed = this.sessionManager.getEntry(accepted.receipt.failedEntryID).message;\n        try { this._omitRecoveryAttempt(failed); }\n        catch (error) {\n            finishRecovery(this, accepted.receipt, \"unknown\", String(error));\n            throw error;\n        }\n        // This is an SDK-owned run, not an extension mutating Agent.state or inventing input.\n        this._runAgentPrompt(undefined, failed).then(() => {\n            finishRecovery(this, accepted.receipt, \"settled\");\n        }, error => {\n            finishRecovery(this, accepted.receipt, \"unknown\", String(error));\n            this._emit({ type: \"extension_error\", extensionPath: \"checkpoint-recovery\", event: \"recovery\", error: String(error) });\n        });\n        return accepted.receipt;\n    }\n    async _runAgentPrompt(messages, recoveredFailure) {"
+          "new": "    getRestartRecoveryState() { return restartRecoveryState(this, this._cwd); }\n    resumeSession(token, operationID) { return resumeSession(this, token, operationID, this._cwd); }\n    getRecoveryState() {\n        return recoveryState(this, this._cwd);\n    }\n    getRecoveryOperation(operationID) { return recoveryOperation(this, operationID); }\n    getRecoveryTranscript() { return recoveryTranscript(this); }\n    recoverCheckpoint(token, operationID) {\n        const accepted = acceptRecovery(this, token, operationID, this._cwd);\n        if (accepted.replay) return accepted.receipt;\n        const failed = this.sessionManager.getEntry(accepted.receipt.failedEntryID).message;\n        try { this._omitRecoveryAttempt(failed); }\n        catch (error) {\n            finishRecovery(this, accepted.receipt, \"unknown\", String(error));\n            throw error;\n        }\n        // This is an SDK-owned run, not an extension mutating Agent.state or inventing input.\n        this._runAgentPrompt(undefined, failed).then(() => {\n            finishRecovery(this, accepted.receipt, \"settled\");\n        }, error => {\n            finishRecovery(this, accepted.receipt, \"unknown\", String(error));\n            this._emit({ type: \"extension_error\", extensionPath: \"checkpoint-recovery\", event: \"recovery\", error: String(error) });\n        });\n        return accepted.receipt;\n    }\n    async _runAgentPrompt(messages, recoveredFailure) {"
         },
         {
           "old": "    async _runAgentPrompt(messages, recoveredFailure) {\n        this._agentRunAbortRequested = false;",
@@ -468,7 +468,7 @@
     {
       "path": "dist/modes/rpc/rpc-mode.js",
       "before": "631697cd35928fc827f4a423538c43ff227b8cbf63c2a2f11060616f55eba6db",
-      "after": "1fcece78edc3bcd70ee3f1e69f7ec07bf7287919bc80e52db01b1c12f69cf46a",
+      "after": "14540e3e84af872dc40f1a34858d320687b38d1d8ce90aa0c04bac65882e6a03",
       "edits": [
         {
           "old": "    // Handle a single command",
@@ -520,7 +520,7 @@
         },
         {
           "old": "        switch (command.type) {",
-          "new": "        switch (command.type) {\n            case \"recover_checkpoint\": {\n                if (pendingExtensionRequests.size || skillRefreshPrompts) return error(id, command.type, \"recovery_busy\");\n                return success(id, command.type, session.recoverCheckpoint(command.token, command.operationID));\n            }\n            case \"get_recovery_operation\": {\n                return success(id, command.type, { receipt: session.getRecoveryOperation(command.operationID) ?? null });\n            }"
+          "new": "        switch (command.type) {\n            case \"get_restart_recovery\":\n                return success(id, command.type, pendingExtensionRequests.size || skillRefreshPrompts ? { version: 1, refusal: \"recovery_busy\" } : session.getRestartRecoveryState());\n            case \"resume_session\": {\n                if (pendingExtensionRequests.size || skillRefreshPrompts) return error(id, command.type, \"recovery_busy\");\n                return success(id, command.type, session.resumeSession(command.token, command.operationID));\n            }\n            case \"recover_checkpoint\": {\n                if (pendingExtensionRequests.size || skillRefreshPrompts) return error(id, command.type, \"recovery_busy\");\n                return success(id, command.type, session.recoverCheckpoint(command.token, command.operationID));\n            }\n            case \"get_recovery_operation\": {\n                return success(id, command.type, { receipt: session.getRecoveryOperation(command.operationID) ?? null });\n            }"
         },
         {
           "old": "                    pendingMessageCount: session.pendingMessageCount,",
@@ -750,28 +750,28 @@
     {
       "path": "dist/core/agent-session.d.ts",
       "before": "2e50b35a37f9c7149c6297ae554b2d965bd74dbfcb8ccd7be44f13226ce497e7",
-      "after": "2b5f08ee2001fe819e42ed306bfb730e4e3d6b1f3ee114154f06f3bd789f7ed1",
+      "after": "0509501bf8170a011a380df8c503a71e27c41bbded7d48da65234106a24f43ab",
       "edits": [
         {
           "old": "    get messages(): AgentMessage[];",
-          "new": "    get messages(): AgentMessage[];\n    /** New provider request from an exact settled checkpoint, never synthetic user input. */\n    getRecoveryState(): import(\"./shepherd-checkpoint-recovery.js\").CheckpointRecoveryState;\n    getRecoveryOperation(operationID: string): import(\"./shepherd-checkpoint-recovery.js\").CheckpointRecoveryReceipt | undefined;\n    getRecoveryTranscript(): AgentMessage[];\n    recoverCheckpoint(token: string, operationID: string): import(\"./shepherd-checkpoint-recovery.js\").CheckpointRecoveryReceipt;"
+          "new": "    get messages(): AgentMessage[];\n    /** New provider request from an exact settled checkpoint, never synthetic user input. */\n    getRestartRecoveryState(): import(\"./shepherd-checkpoint-recovery.js\").RestartRecoveryState;\n    resumeSession(token: string, operationID: string): import(\"./shepherd-checkpoint-recovery.js\").CheckpointRecoveryReceipt;\n    getRecoveryState(): import(\"./shepherd-checkpoint-recovery.js\").CheckpointRecoveryState;\n    getRecoveryOperation(operationID: string): import(\"./shepherd-checkpoint-recovery.js\").CheckpointRecoveryReceipt | undefined;\n    getRecoveryTranscript(): AgentMessage[];\n    recoverCheckpoint(token: string, operationID: string): import(\"./shepherd-checkpoint-recovery.js\").CheckpointRecoveryReceipt;"
         }
       ]
     },
     {
       "path": "dist/core/shepherd-checkpoint-recovery.js",
       "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "after": "034e9ff4581f3e795afc26ac9907cb6cd44bd8e8bc8b369d5d8a48131acc897b",
+      "after": "b87b0f4cf6a0ec6f603feb4cfae1bc0ae0c8683640695400c966eb4bae73bdd6",
       "source": "checkpoint-recovery.js"
     },
     {
       "path": "dist/modes/rpc/rpc-types.d.ts",
       "before": "68b6dc2e47a3969c09c961a40d0462473407b6786f3bd02715fa035e816e2af1",
-      "after": "1e63ef117fa96b32ee676290e55d6f0c4d127eea8d043ee5302b311582b63da1",
+      "after": "9d48f03c0d39f334502b1117f527e85603f24c9083fb228633310c91671c72a6",
       "edits": [
         {
           "old": "export type RpcCommand = {",
-          "new": "export type RpcCommand = {\n    id?: string;\n    type: \"recover_checkpoint\";\n    token: string;\n    operationID: string;\n} | {\n    id?: string;\n    type: \"get_recovery_operation\";\n    operationID: string;\n} | {"
+          "new": "export type RpcCommand = { id?: string; type: \"get_restart_recovery\"; } | { id?: string; type: \"resume_session\"; token: string; operationID: string; } | {\n    id?: string;\n    type: \"recover_checkpoint\";\n    token: string;\n    operationID: string;\n} | {\n    id?: string;\n    type: \"get_recovery_operation\";\n    operationID: string;\n} | {"
         },
         {
           "old": "    type: \"get_messages\";",
@@ -783,16 +783,15 @@
         },
         {
           "old": "export type RpcResponse = {",
-          "new": "export type RpcResponse = {\n    id?: string;\n    type: \"response\";\n    command: \"recover_checkpoint\";\n    success: true;\n    data: import(\"../../core/shepherd-checkpoint-recovery.js\").CheckpointRecoveryReceipt;\n} | {\n    id?: string;\n    type: \"response\";\n    command: \"get_recovery_operation\";\n    success: true;\n    data: { receipt: import(\"../../core/shepherd-checkpoint-recovery.js\").CheckpointRecoveryReceipt | null };\n} | {"
+          "new": "export type RpcResponse = { id?: string; type: \"response\"; command: \"get_restart_recovery\"; success: true; data: import(\"../../core/shepherd-checkpoint-recovery.js\").RestartRecoveryState; } | { id?: string; type: \"response\"; command: \"resume_session\"; success: true; data: import(\"../../core/shepherd-checkpoint-recovery.js\").CheckpointRecoveryReceipt; } | {\n    id?: string;\n    type: \"response\";\n    command: \"recover_checkpoint\";\n    success: true;\n    data: import(\"../../core/shepherd-checkpoint-recovery.js\").CheckpointRecoveryReceipt;\n} | {\n    id?: string;\n    type: \"response\";\n    command: \"get_recovery_operation\";\n    success: true;\n    data: { receipt: import(\"../../core/shepherd-checkpoint-recovery.js\").CheckpointRecoveryReceipt | null };\n} | {"
         }
       ]
     },
     {
       "path": "dist/core/shepherd-checkpoint-recovery.d.ts",
       "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "after": "9e0be7c336d60bc54de3bb9f04904203d1715caefb20412123d12e7c7bd9cdc2",
+      "after": "aa75ab60b25e9ae1fec663611b5e0f9cadf13791fe5ea11874c502d99c8dbd1a",
       "source": "checkpoint-recovery.d.ts"
-
     },
     {
       "path": "dist/extensions/mcp/index.js",

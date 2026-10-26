@@ -1,3 +1,8 @@
+export interface RestartRecoveryState {
+    version: 1;
+    checkpoint?: { token: string; fence: string; leafID: string };
+    refusal?: string;
+}
 export interface CheckpointRecoveryState {
     version: 1;
     checkpoint?: { token: string; failedEntryID: string };

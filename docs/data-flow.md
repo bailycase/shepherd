@@ -52,8 +52,11 @@
   order: the agent on screen first (and any agent selected while it waits), then the rest a
   few at a time. Every agent still starts. Ordinary agents recover unfinished authorized work and
   queued input from atomic `agent-recovery` checkpoints beside `state.json`, after pi has served
-  the matching session and history. Active turns get a reconciliation instruction, not a replay
-  of interrupted tools; unconsumed inputs retain their images and order. Stop persists before
+  the matching session and history. Active turns use the engine's `get_restart_recovery` /
+  `resume_session` continuation without appending user or instruction messages. The engine refuses
+  incomplete/failed tool evidence and unknown prior deliveries instead of replaying actions;
+  inputs whose delivery cannot be established stay paused, unchanged. Queued inputs retain their
+  images and order. Stop persists before
   its asynchronous acknowledgement, waiting/held queues remain paused, and idle or completed
   turns never get a continuation. Recovery attempts are committed before prompting and stop
   after three consecutive interruptions; a completed turn or fresh user input resets the bound.

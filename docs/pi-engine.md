@@ -121,7 +121,13 @@ reload extensions, tools, providers or settings. The same watcher also reloads t
 bounds, discovery scope and busy behavior. Host launches go through `PiLaunch` and
 `BundledPiEngine.entryPath`, upstream's `dist/cli.js`: agents, catalog and print launches use the
 patched modular runtime. No dependency was added; the modular SDK and its locked dependencies
-already ship. Native children still launch `dist/bundle/cli.js`, and SDK-only sign-in and
+already ship. The checkpoint-recovery helper also exposes `get_restart_recovery` / `resume_session` for
+host-authorized restart continuation. Both SDK variants continue the existing session without
+synthetic user/custom messages; a durable accepted receipt precedes any provider call. Incomplete
+or failed tool evidence and unknown accepted operations refuse continuation. This does not relax
+manual Continue's failed-turn executable seal.
+
+Native children still launch `dist/bundle/cli.js`, and SDK-only sign-in and
 definition-discovery imports still use `bundle/index.js`; provider patches cover both runtimes.
 
 Anthropic OAuth compatibility automatically uses a full source port of

@@ -177,6 +177,85 @@ export function recordRecoveryCheckpoint(session, sessionID, forcedPrompt, cwd) 
     }
 }
 
+// Restart recovery makes a NEW model decision using today's tool runtime. Unlike manual
+// Continue it never authorizes redelivery of an old executable or weakens its sealed checkpoint.
+export function restartRecoveryState(session, cwd) {
+    try {
+        if (generations.get(session) === null) throw Error("recovery_stale");
+        if (!session.isIdle || session.isBashRunning || session.pendingMessageCount || session._recoveryPrompts ||
+            session._isEmittingAgentSettled || session._pendingNextTurnMessages.length || session._pendingCustomMessages.length ||
+            session._pendingBashMessages.length || session._branchSummaryAbortController) throw Error("recovery_busy");
+        const latest = new Map(receipts(session).map(e => [e.data.operationID, e.data]));
+        if ([...latest.values()].some(r => r.state === "accepted" || unconfirmedOperations.get(session)?.has(r.operationID))) {
+            throw Error("recovery_unknown");
+        }
+        const branch = session.sessionManager.getBranch();
+        const messages = branch.flatMap(sessionEntryToContextMessages);
+        const last = messages.filter(m => m.role !== "system").at(-1);
+        if (!last || last.role === "assistant" && last.stopReason === "stop") throw Error("recovery_completed");
+        if (!["user", "toolResult", "assistant"].includes(last.role)) throw Error("recovery_uncertain_context");
+        const pending = new Map();
+        let start = messages.findLastIndex(m => m.role === "assistant" && m.stopReason === "stop") + 1;
+        for (const message of messages.slice(start)) {
+            if (message.role === "assistant") {
+                for (const call of message.content.filter(p => p.type === "toolCall")) {
+                    if (pending.has(call.id)) throw Error("recovery_uncertain_tool");
+                    pending.set(call.id, call.name);
+                }
+            } else if (message.role === "toolResult") {
+                if (pending.get(message.toolCallId) !== message.toolName || message.isError ||
+                    message.nestedCalls && (!message.nestedCalls.complete || message.nestedCalls.calls.some(c => c.status !== "ok"))) {
+                    throw Error("recovery_uncertain_tool");
+                }
+                pending.delete(message.toolCallId);
+            }
+        }
+        if (pending.size || last.role === "assistant" && !["error", "aborted"].includes(last.stopReason)) throw Error("recovery_uncertain_tool");
+        // Hash the actual branch, not just provider context (compaction can hide tool evidence).
+        const leafID = session.sessionManager.getLeafId();
+        const fence = digest({ sessionID: session.sessionId, leafID, branch, cwd, model: session.model,
+            thinking: session.thinkingLevel, systemPrompt: session.systemPrompt,
+            tools: { registered: session.getAllTools().map(t => session.getToolDefinition(t.name)), active: session.agent.state.tools } });
+        // JSON seals the durable/declarative context above; callable identity additionally
+        // fences dispatch within this runtime and must be reacquired after a proven non-delivery.
+        const token = digest({ fence, tools: recoveryTools(session) });
+        return { version: 1, checkpoint: { token, fence, leafID } };
+    } catch (error) { return { version: 1, refusal: error.message }; }
+}
+
+export function resumeSession(session, token, operationID, cwd) {
+    if (generations.get(session) === null) throw Error("recovery_stale");
+    operationID = operationKey(operationID);
+    if (!operationID || typeof token !== "string" || !/^[a-f0-9]{64}$/.test(token)) throw Error("recovery_invalid");
+    const prior = recoveryOperation(session, operationID);
+    if (prior) {
+        if (prior.token !== token || prior.kind !== "restart") throw Error("recovery_operation_conflict");
+        return prior;
+    }
+    const state = restartRecoveryState(session, cwd);
+    if (!state.checkpoint) throw Error(state.refusal);
+    if (state.checkpoint.token !== token) throw Error("recovery_stale");
+    if (!generations.has(session)) generations.set(session, randomUUID());
+    const receipt = { operationID, token, sessionID: session.sessionId, kind: "restart",
+        failedEntryID: state.checkpoint.leafID, leafID: state.checkpoint.leafID,
+        generation: generations.get(session), state: "accepted" };
+    session.sessionManager.appendCustomEntry(receiptType, receipt);
+    syncReceipt(session); // A crash from here onward is UNKNOWN, never permission to replay.
+    if (!activeOperations.has(session)) activeOperations.set(session, new Set());
+    activeOperations.get(session).add(operationID);
+    const last = session.sessionManager.buildSessionProjection().entries.filter(e => e.messages.length).at(-1)?.messages.at(-1);
+    const failed = last?.role === "assistant" && ["error", "aborted"].includes(last.stopReason) ? last : undefined;
+    try {
+        if (failed) session._omitRecoveryAttempt(failed);
+        session._runAgentPrompt(undefined, failed).then(() => finishRecovery(session, receipt, "settled"),
+            error => finishRecovery(session, receipt, "unknown", String(error)));
+    } catch (error) {
+        finishRecovery(session, receipt, "unknown", String(error));
+        throw error;
+    }
+    return receipt;
+}
+
 export function recoveryTranscript(session) {
     // Provider omission/compaction affects context, not the inspectable branch transcript.
     return session.sessionManager.getBranch().flatMap(sessionEntryToContextMessages);
