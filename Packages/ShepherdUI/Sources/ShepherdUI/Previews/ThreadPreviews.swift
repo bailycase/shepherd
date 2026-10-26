@@ -158,3 +158,32 @@ extension NWTurnError.Content {
         .frame(width: 560)
     }
 }
+
+#Preview("Response visibility") {
+    NWPreviewBoth {
+        HStack(alignment: .top, spacing: NW.Space.xxl) {
+            VStack(alignment: .leading, spacing: NW.Space.s) {
+                NWLiveLine("Waiting for response", since: .now.addingTimeInterval(-4), help: "Request sent. No reply from the model yet.")
+                NWThinking.live(since: .now.addingTimeInterval(-18))
+                NWThinking.live(since: .now.addingTimeInterval(-30), blocks: [.paragraph("**Choosing a screen for the composer**"),
+                                                                             .paragraph("Compared keeping the composer under the thread.")],
+                                isExpanded: .constant(true))
+                NWActivityLine(kind: .edit, label: "Writing", meta: "App/iOS/Thread/DuoComposerPlacement.swift",
+                               status: .live(since: .now.addingTimeInterval(-6), tail: []), received: "18 KB received")
+                NWRetryLine(count: "2 of 3") { _ in "Anthropic returned 529 overloaded · retrying in 8s" }
+            }
+            .frame(width: 520)
+            NWResponseTiming(NWResponseTimingModel(
+                source: "claude-opus-4-5 · Anthropic", total: "45.0s", totalSeconds: 45, axisEnd: "45s",
+                segments: [.init(label: "Waiting for response", value: "1.4s", seconds: 1.4, tone: .waiting),
+                           .init(label: "Thinking", value: "30.4s", seconds: 30.4, tone: .thinking),
+                           .init(label: "Writing the reply", value: "13.2s", seconds: 13.2, tone: .writing)],
+                marks: [.init(label: "Request sent", value: "0s"), .init(label: "Headers received", value: "1.2s"),
+                        .init(label: "First model event", value: "1.4s"), .init(label: "First visible text", value: "31.8s"),
+                        .init(label: "Response ended", value: "45.0s")],
+                usage: "14.2k in · 2.9k out",
+                note: "The phases follow one another, so they add up to the total. Times are what this Mac saw."))
+            .nwPopover()
+        }
+    }
+}

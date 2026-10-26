@@ -508,8 +508,7 @@ public struct RPCMessage: Codable, Hashable, Sendable {
     public var sections: [String: String?]?
     public var toolsAdded: [JSONValue]?
     public var toolsRemoved: [JSONValue]?
-    /// Assistant messages that failed (`stopReason: "error"`): the provider and model the
-    /// request went to. Decoded only for those, so a long history's decode stays as it was.
+    /// Assistant messages: the provider and model the request went to (pi's ids).
     public var provider: String?
     public var model: String?
     /// Assistant messages: what the provider reported for the call (decoded only for that role).
@@ -591,10 +590,9 @@ public struct RPCMessage: Codable, Hashable, Sendable {
             toolsRemoved = try? c.decodeIfPresent([JSONValue].self, forKey: .toolsRemoved)
         case "assistant":
             usage = try? c.decodeIfPresent(RPCUsage.self, forKey: .usage)
-            if stopReason == "error" {
-                provider = try? c.decodeIfPresent(String.self, forKey: .provider)
-                model = try? c.decodeIfPresent(String.self, forKey: .model)
-            }
+            // Two short ids: the error card's facts, and the response timing's header.
+            provider = try? c.decodeIfPresent(String.self, forKey: .provider)
+            model = try? c.decodeIfPresent(String.self, forKey: .model)
         default:
             break
         }

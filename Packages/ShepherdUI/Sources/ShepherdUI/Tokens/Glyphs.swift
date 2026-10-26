@@ -32,6 +32,8 @@ public enum NWGlyph: CaseIterable, Sendable {
     case gitBranch
     /// A pinned space (the user's request, 2026-10-16; no board): the outline pin beside its name.
     case pin
+    /// Response visibility: the finished reply’s measured timing.
+    case responseTiming
     /// A file the agent made (PaneArtifacts, iPadPaneArtifacts: the Artifacts tab and "Made an artifact"). The boards draw a page with a
     /// sparkle in it, which no SF Symbol matches; the page with a plus is the nearest ("made").
     case artifact
@@ -48,6 +50,7 @@ public enum NWGlyph: CaseIterable, Sendable {
         case .failedStep: "xmark.circle"
         case .gitBranch: "arrow.triangle.branch"
         case .pin: "pin"
+        case .responseTiming: "stopwatch"
         case .artifact: "doc.badge.plus"
         }
     }
