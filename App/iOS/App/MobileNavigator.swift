@@ -35,6 +35,9 @@ final class MobileNavigator {
     /// Portrait: the sidebar slides over the thread, so choosing a row hides it again; with no
     /// thread chosen it stays out.
     var padSidebarOverlays = false
+    /// The window leaves the thread too little beside the sidebar and the Changes pane
+    /// (`MobileLayout.reviewThreadMinWidth`), so a review takes the window (`PadShell`).
+    var padReviewCrowded = false
     /// iPhone Duo's hinge: true folded shut (the outer display), false open or half open (the
     /// inner one), nil on a device without a hinge (`onHingeClosedChange`).
     var hingeClosed: Bool?

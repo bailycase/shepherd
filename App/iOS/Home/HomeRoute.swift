@@ -21,7 +21,7 @@ struct HomeDestination: View {
         switch route {
         case .needsYou: NeedsYouScreen()
         case .automations: AutomationsScreen()
-        // On iPad More expands in the sidebar, and its Hosts row opens the Hosts destination.
+        // On iPad the Hosts destination (the sidebar's footer opens Settings ▸ Hosts).
         case .more: if navigator.layout == .pad { PadHostsScreen() } else { MoreScreen() }
         case .recents: RecentsScreen()
         }

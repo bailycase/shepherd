@@ -24,6 +24,13 @@ struct PadShell: View {
         return navigator.padSidebarOverlays && (navigator.padSelection != nil || !navigator.padPath.isEmpty) ? .detailOnly : .all
     }
 
+    /// Whether the thread, beside the sidebar and the docked Changes pane, would be narrower
+    /// than it reads (iPhone Duo's inner display, open or half open).
+    static func reviewCrowded(window: CGFloat) -> Bool {
+        let detail = window - MobileLayout.sidebarWidth
+        return detail - min(MobileLayout.reviewDockWidth, detail * MobileLayout.reviewDockShare) < MobileLayout.reviewThreadMinWidth
+    }
+
     var body: some View {
         @Bindable var navigator = navigator
         GeometryReader { proxy in
@@ -61,6 +68,11 @@ struct PadShell: View {
                 if navigator.padColumns != columns { navigator.padColumns = columns }
                 Task { @MainActor in navigator.padColumns = Self.columns(navigator) }
             }
+            .onChange(of: Self.reviewCrowded(window: proxy.size.width), initial: true) { _, crowded in
+                navigator.padReviewCrowded = crowded
+                let columns = Self.columns(navigator)
+                if navigator.padColumns != columns { navigator.padColumns = columns }
+            }
             .onChange(of: navigator.padPath.isEmpty) { _, _ in
                 let columns = Self.columns(navigator)
                 if navigator.padColumns != columns { navigator.padColumns = columns }
@@ -86,12 +98,13 @@ struct PadShell: View {
 }
 
 private extension MobileNavigator {
-    /// A design takes the whole window, the sidebar out, and so does a review on iPhone Duo's
-    /// inner display: beside the sidebar its 951pt leave the thread a 240pt column, and half open
-    /// the thread and its pane each take a side of the fold.
+    /// A design takes the whole window, the sidebar out, and so does a review where the thread
+    /// would be too narrow beside both (`padReviewCrowded`; iPhone Duo's inner display, whose
+    /// 951pt leave it 274pt, and half open the thread and its pane each take a side of the fold).
+    /// By width, not the hinge: the hinge may not report (an older SDK, the simulator).
     var padTakesWindow: Bool {
         if padShowsDesign { return true }
-        guard hingeClosed == false, case .review(let route)? = padPath.last else { return false }
+        guard padReviewCrowded, case .review(let route)? = padPath.last else { return false }
         switch route {
         case .changes, .diff: return true
         default: return false
