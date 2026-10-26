@@ -146,6 +146,9 @@ final class RemoteHostStore {
         var supportsInstructions: Bool { client?.capabilities.contains(RemoteProtocol.instructionsCapability) == true }
         /// The host serves Settings ▸ Skills (`skills.v1`).
         var supportsSkills: Bool { client?.capabilities.contains(RemoteProtocol.skillsCapability) == true }
+        var supportsHostUpdate: Bool { client?.capabilities.contains(RemoteProtocol.hostUpdateCapability) == true }
+        /// The client for update requests, while connected and capable.
+        var updateClient: RemoteHostClient? { supportsHostUpdate ? client : nil }
         var supportsProjects: Bool {
             client?.capabilities.contains(RemoteProtocol.projectsV2Capability) == true
                 || client?.capabilities.contains(RemoteProtocol.projectsCapability) == true

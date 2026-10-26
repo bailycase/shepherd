@@ -698,6 +698,31 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
     }
 
+    /// Poll after reconnect or while an operation is in flight. Never automatically retry install.
+    public func hostUpdate(_ request: RemoteHostUpdateRequest = .status) async throws -> HostUpdateStatus {
+        guard capabilities.contains(RemoteProtocol.hostUpdateCapability) else {
+            throw RemoteHostClientError.rejected(code: "unsupported", message: "This host does not support remote updates.")
+        }
+        let reply: RemoteReply
+        do { reply = try await self.request { .hostUpdate(id: $0, request: request) } }
+        catch RemoteHostClientError.timeout {
+            if case .install = request {
+                throw RemoteHostClientError.outcomeUnknown(message: "Update outcome unknown. Reconnect and refresh status; do not retry installation automatically.")
+            }
+            throw RemoteHostClientError.timeout
+        } catch RemoteHostClientError.disconnected {
+            if case .install = request {
+                throw RemoteHostClientError.outcomeUnknown(message: "Host disconnected during update. Reconnect and refresh status; do not retry installation automatically.")
+            }
+            throw RemoteHostClientError.disconnected
+        }
+        switch reply {
+        case .hostUpdate(_, let status): return status
+        case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
+        default: throw RemoteHostClientError.rejected(code: "protocol", message: "Unexpected update reply")
+        }
+    }
+
     /// Reads or changes one of the host's settings (Settings on the iPhone and the iPad), and
     /// answers with its settings as they are afterwards. A host without `hostSettingsCapability`
     /// shares none: this throws `update_required` before sending anything.
@@ -1118,7 +1143,7 @@ public final class RemoteHostClient: @unchecked Sendable {
              .state(let id, _), .attached(let id, _),
              .dirListing(let id, _, _, _), .models(let id, _, _, _, _, _, _),
              .spaceAdded(let id, _), .agentCreated(let id, _), .automationResult(let id, _), .instructions(let id, _),
-             .suggestions(let id, _), .hostSettings(let id, _), .skills(let id, _), .projects(let id, _), .logicalProjects(let id, _), .logicalProjectRuntime(let id, _), .projectExecution(let id, _), .design(let id, _),
+             .suggestions(let id, _), .hostSettings(let id, _), .hostUpdate(let id, _), .skills(let id, _), .projects(let id, _), .logicalProjects(let id, _), .logicalProjectRuntime(let id, _), .projectExecution(let id, _), .design(let id, _),
              .browserClaimed(let id, _):
             resumePending(id: id, with: reply)
         case .error(let id, _, _):

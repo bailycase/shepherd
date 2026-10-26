@@ -6,6 +6,7 @@ import ShepherdCore
 /// the extension socket. The transport security is the user's own VPN; the
 /// token only keeps other devices on that network honest.
 public enum RemoteProtocol {
+    public static let hostUpdateCapability = "host.update.v1"
     public static let uploadChunkBytes = 256 * 1024
     public static let uploadMaxBytes = 32 * 1024 * 1024
     public static let uploadCapability = "session.upload.v1"
@@ -140,7 +141,7 @@ public enum RemoteProtocol {
     public static let browserTabsCapability = "browser.tabs.v1"
 
     public static let moveThreadCapability = "agent.move.v1"
-    public static let capabilities = [projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectTrustCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, designContextCapability, designsCapability, designMarkupCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, nativeArtifactsCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability]
+    public static let capabilities = [hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectTrustCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, designContextCapability, designsCapability, designMarkupCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, nativeArtifactsCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -533,6 +534,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     case suggestions(id: Int, request: RemoteSuggestionsRequest)
     /// Read or change the host's settings (`RemoteProtocol.hostSettingsCapability`).
     case hostSettings(id: Int, request: RemoteHostSettingsRequest)
+    case hostUpdate(id: Int, request: RemoteHostUpdateRequest)
     /// Read or change the host's agent skills (`RemoteProtocol.skillsCapability`).
     case skills(id: Int, request: RemoteSkillsRequest)
     /// Project-only files, never the host's global settings (`projectsV2Capability`; older hosts use v1).
@@ -574,7 +576,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case listDir, listModels, addSpace, createAgent, agentAction, agentQuery, upload, creationOptions
         case automation
         case logicalProjectRuntime
-        case instructions, suggestions, hostSettings, skills, projects, logicalProjects
+        case instructions, suggestions, hostSettings, hostUpdate, skills, projects, logicalProjects
         case design
         case tunnel
         case browserClaim, browserRelease, browserAnswer
@@ -605,6 +607,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case .suggestions:
             self = .suggestions(id: try c.decode(Int.self, forKey: .id),
                                 request: try c.decode(RemoteSuggestionsRequest.self, forKey: .request))
+        case .hostUpdate:
+            self = .hostUpdate(id: try c.decode(Int.self, forKey: .id), request: try c.decode(RemoteHostUpdateRequest.self, forKey: .request))
         case .hostSettings:
             self = .hostSettings(id: try c.decode(Int.self, forKey: .id),
                                  request: try c.decode(RemoteHostSettingsRequest.self, forKey: .request))
@@ -770,6 +774,10 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(Kind.suggestions, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(request, forKey: .request)
+        case .hostUpdate(let id, let request):
+            try c.encode(Kind.hostUpdate, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(request, forKey: .request)
         case .hostSettings(let id, let request):
             try c.encode(Kind.hostSettings, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -927,6 +935,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     case suggestions(id: Int, snapshot: SuggestionsSnapshot)
     /// The host's settings after a settings request (`RemoteRequest.hostSettings`).
     case hostSettings(id: Int, settings: HostSettings)
+    case hostUpdate(id: Int, status: HostUpdateStatus)
     /// A skills request's answer (`RemoteRequest.skills`).
     case skills(id: Int, result: RemoteSkillsResult)
     case projects(id: Int, result: RemoteProjectsResult)
@@ -958,7 +967,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case type, id, protocolVersion, capabilities, code, message, state
         case sessionID, data, exitCode, spaceID, agentID, paneID
         case path, parent, dirs, models, defaultModel, withoutThinking, thinkingLevels, serviceTiers, contexts, attachment, options
-        case snapshot, settings
+        case snapshot, settings, status
         case designID, revision, commentsRevision
         case url, push
     }
@@ -968,7 +977,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case agentResult, helloOk, ok, paneOpened, error, state, stateChanged, attached, output, sessionExited
         case dirListing, models, spaceAdded, agentCreated, uploadResult, creationOptions
         case automationResult
-        case instructions, suggestions, hostSettings, skills, projects, logicalProjects
+        case instructions, suggestions, hostSettings, hostUpdate, skills, projects, logicalProjects
         case design, designChanged, capabilitiesChanged
         case tunnel
         case browserClaimed, browserDrive, logicalProjectRuntime
@@ -1015,6 +1024,8 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case .suggestions:
             self = .suggestions(id: try c.decode(Int.self, forKey: .id),
                                 snapshot: try c.decode(SuggestionsSnapshot.self, forKey: .snapshot))
+        case .hostUpdate:
+            self = .hostUpdate(id: try c.decode(Int.self, forKey: .id), status: try c.decode(HostUpdateStatus.self, forKey: .status))
         case .hostSettings:
             self = .hostSettings(id: try c.decode(Int.self, forKey: .id),
                                  settings: try c.decode(HostSettings.self, forKey: .settings))
@@ -1141,6 +1152,10 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             try c.encode(Kind.suggestions, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(snapshot, forKey: .snapshot)
+        case .hostUpdate(let id, let status):
+            try c.encode(Kind.hostUpdate, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(status, forKey: .status)
         case .hostSettings(let id, let settings):
             try c.encode(Kind.hostSettings, forKey: .type)
             try c.encode(id, forKey: .id)

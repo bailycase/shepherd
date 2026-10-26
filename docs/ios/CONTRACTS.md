@@ -176,6 +176,12 @@ them except the navigator, which is each window's own ([Windows](#windows-ipad))
   `RemoteHostClient` advertises v2 for both Mac and iOS. Current hosts reject project requests
   from legacy clients before file access or approval, without disabling other remote features.
   Keep the inventoried native path/schema; do not alias host files. Wire shapes/version stay 1.
+- **Host updates** (`host.update.v1`): shared `RemoteHostClient.hostUpdate(_:)` takes `.status`,
+  `.check`, or `.install(offerID:authorized:)`, returning `HostUpdateStatus`. Poll explicitly
+  while visible/in progress and after reconnect. Confirm download, installation and restart
+  before setting `authorized: true`; use the current offer ID and never replay installation on
+  reconnect. Busy hosts must stop work, pause Projects and close terminals. Sparkle may still
+  require attention on the host if installation permissions change; do not promise no OS dialog.
 - **Browser tunnels** (`browser.tunnel.v1`; the Mac's remote Browser tab, docs/browser.md › Remote).
   The iPad's Browser tab reuses the whole protocol layer and none of the Mac's page:
   `host.connectedClient?.tunnels` is the connection's `BrowserTunnelHub` (`bridge(fd:agentID:port:)`

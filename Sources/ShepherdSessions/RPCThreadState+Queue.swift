@@ -154,6 +154,10 @@ extension RPCThreadState {
     func send(id: UUID, text: String, delivery: NativeThreadDelivery, images: [NativeImage], alone: Bool = false,
               context: String? = nil, designPayloads: [UUID] = [], elements: [BrowserElement] = [],
               completion: @escaping (NativeThreadResult) -> Void) {
+        guard workAdmission() else {
+            completion(.failure(code: "host_updating", message: "Host update in progress."))
+            return
+        }
         // From here the copies are pi's (a prompt) or wait in the queue, which withholds them.
         sendingDesignPayloads.subtract(designPayloads)
         if let failure = goalCommandFailure(text, context: context) { completion(failure); return }
@@ -522,6 +526,10 @@ extension RPCThreadState {
     /// treats it as a plain prompt. A fenced design record (`context`) goes ahead of the text.
     func dispatch(id: UUID, text: String, context: String? = nil, images: [NativeImage], parts: [NativeQueuePart]?, items batch: [QueueItem],
                   designPayloads: [UUID] = [], completion: @escaping (NativeThreadResult) -> Void) {
+        guard workAdmission() else {
+            completion(.failure(code: "host_updating", message: "Host update in progress."))
+            return
+        }
         let prompt = Self.prompt(text, context: context)
         if let failure = goalCommandFailure(prompt) { completion(failure); return }
         restartRequestID = nil

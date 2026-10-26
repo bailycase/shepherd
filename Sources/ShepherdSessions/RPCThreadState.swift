@@ -395,6 +395,8 @@ final class RPCThreadState {
     private var stoppedReplies: Set<Double> = []
 
     // Queue state (RPCThreadState+Queue.swift).
+    /// Server-queue admission fence while an explicitly authorized host update is installing.
+    var workAdmission: () -> Bool = { true }
     var items: [QueueItem] = []
     var dispatches: [Dispatch] = []
     /// A Retry on its way (`RPCThreadState+Retry.swift`): its dispatch, until the run it starts
