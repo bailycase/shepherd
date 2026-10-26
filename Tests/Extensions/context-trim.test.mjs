@@ -470,6 +470,66 @@ test("a restarted pi sends what the first one sent, markers and all, and makes n
   assert.equal(sessionEntries(second).filter((e) => e.type === "custom" && e.customType === ENTRY).length, batches.length, "the session already said where it stopped: no new batch");
 });
 
+test("compaction does not resurrect cleared design HTML, including a split-turn prefix", { timeout: 120000 }, async (t) => {
+  for (const [trim, automatic] of [[false, false], [true, false], [true, true]]) {
+    const summaries = [];
+    const thread = await lone(t, {
+      trim, contextWindow: 64_000, usage: () => ({ input: 100, output: 10 }),
+      settings: { compaction: { enabled: automatic, keepRecentTokens: 1 } },
+      onRequest: (entry) => {
+        const input = JSON.stringify(entry.body.input);
+        if (!input.includes("<conversation>") && !input.includes("# Conversation")) return { outputText: "ready" };
+        summaries.push(input);
+        return input.length > 32_000
+          ? { status: 400, text: "prompt is too long" }
+          : { outputText: "## Goal\nKeep the blue header and working navigation." };
+      },
+    });
+    await thread.turn("set up");
+    const entries = sessionEntries(thread);
+    let parentId = entries.at(-1).id;
+    const append = (entry) => {
+      const id = (++serial).toString(16).padStart(8, "0");
+      entries.push({ ...entry, id, parentId, timestamp: new Date().toISOString() });
+      parentId = id;
+    };
+    // Seed the same stored messages produced by repeated design writes, not truncated wire copies.
+    const html = `<html>${"<div>old design revision</div>".repeat(3000)}</html>`;
+    for (const goal of ["Keep the blue header", "Keep working navigation"]) {
+      append({ type: "message", message: user(goal) });
+      for (let i = 0; i < 3; i++) {
+        for (const message of round({ tool: "write", args: { path: "Board.dc.html", content: html }, result: "Successfully wrote Board.dc.html" })) {
+          append({ type: "message", message });
+        }
+      }
+      append({ type: "message", message: { ...round()[0], content: text("Design decisions retained."), stopReason: "stop" } });
+    }
+    const boundary = tick();
+    for (const message of rounds(10, { result: "ok" })) append({ type: "message", message });
+    const latest = { ...round()[0], content: text("Latest revision is ready."), stopReason: "stop" };
+    if (automatic) latest.usage = { ...latest.usage, input: 100_000, totalTokens: 100_001 };
+    append({ type: "message", message: latest });
+    append({ type: "custom", customType: ENTRY, data: { v: 1, before: boundary, at: clock } });
+    const seeded = path.join(thread.dir, "design-history.jsonl");
+    fs.writeFileSync(seeded, entries.map(e => JSON.stringify(e)).join("\n") + "\n");
+    assert.equal((await thread.request({ type: "switch_session", sessionPath: seeded })).success, true);
+    if (automatic) await thread.turn("continue");
+    const compacted = automatic
+      ? { success: thread.events.some(e => e.type === "compaction_end" && e.reason === "threshold" && e.result) }
+      : await thread.request({ type: "compact" });
+    assert.equal(compacted.success, trim, JSON.stringify(compacted));
+    if (!trim) {
+      assert.match(compacted.error, /prompt is too long/);
+      continue;
+    }
+    assert.equal(summaries.length, 2, "history and the split-turn prefix are both summarized");
+    assert.ok(summaries.every(s => s.includes("characters removed from context") && !s.includes(html)), "neither summary revives the cleared HTML");
+    assert.ok(summaries[0].includes("Keep the blue header") && summaries.at(-1).includes("Keep working navigation"), "the user's requirements stay in the summaries");
+    assert.deepEqual(fs.readFileSync(seeded, "utf8").trim().split("\n").slice(0, entries.length).map(JSON.parse), entries, "stored history stays intact");
+    assert.ok(!thread.events.some(e => e.type === "extension_error"));
+  }
+});
+
 test("compaction, a new session and /compact still work with the extension on", { timeout: 240000 }, async (t) => {
   const thread = await lone(t, { onRequest: scriptedBashCalls([[SEQ], [SEQ]]) });
   await thread.turn("one");

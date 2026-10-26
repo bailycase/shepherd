@@ -41,8 +41,8 @@ deferred tool that is sent anyway, and a kept one that is not.
 ## Clearing
 
 Old tool results are cleared from later requests once they are far enough behind the newest turn
-and the window is past a share; the session file keeps everything, and a compaction summary still
-sees it. The Context card on a thread shows the split (system prompt and tools, instructions,
+and the window is past a share; the session file keeps everything. Compaction summary requests
+use the same clipping and recorded clearing boundary, so they do not resend cleared tool contents. The Context card on a thread shows the split (system prompt and tools, instructions,
 messages, tool results) and where Compact at sits. Settings ▸ Agents ▸ Context ▸ Compact at
 writes pi's per-model `compaction.modelOverrides[…].reserveTokens`, never below pi's 16,384.
 

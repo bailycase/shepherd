@@ -757,8 +757,8 @@ draw no context meter.
   entry (`t:<call id>`) so a client can find it. System messages never become thread rows.
 - **What the model is sent is shorter than what the thread holds** while Settings ▸ Agents ▸
   Context ▸ "Trim old tool output from the model’s context" is on: the bundled context extension
-  (`shepherd-context.ts`) edits the request pi sends in its `context` event and nothing else. The
-  session file, `get_messages`, the thread and the Changes pane keep everything. It clips one
+  (`shepherd-context.ts`) edits ordinary requests in `context` and compaction summary inputs in
+  `session_before_compact`, using the same recorded clearing boundary. The session file, `get_messages`, the thread and the Changes pane keep everything. It clips one
   result to about 6k tokens; and, in batches, once the context passes 55% of the window, clears
   the oldest tool results, images, written-file arguments, hidden notices and reasoning payloads
   (OpenAI Responses APIs only) down to about 33%, never touching the last eight calls and at most
