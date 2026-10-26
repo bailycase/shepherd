@@ -5278,6 +5278,7 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Delete only the saved unscoped watcher, never its agent (which keeps its report/history).
     /// Recheck the link and actual pi settlement on the queue: an old event cannot delete a new run.
+    /// Paused/held follow-ups still belong to this run even though they won't drain yet.
     private func scheduleAutomationCleanup(agentID: AgentID) {
         guard let thread = rpcThread(forAgent: agentID) else { return }
         let ids = store.state.automations.filter {
@@ -5286,7 +5287,7 @@ public final class SessionServer: @unchecked Sendable {
         guard !ids.isEmpty else { return }
         queue.async { [weak self, weak thread] in
             guard let self, let thread, self.rpcThread(forAgent: agentID) === thread,
-                  thread.actualTurnSettled, !thread.piBusy, !thread.continuesAfterSettle,
+                  thread.actualTurnSettled, !thread.piBusy, !thread.continuesAfterSettle, thread.items.isEmpty,
                   !thread.stopRequested, thread.dialogs.isEmpty, thread.goal?.isActive != true,
                   thread.goal?.state != .needsYou,
                   self.store.state.agents.first(where: { $0.id == agentID })?.status != .blocked else { return }
