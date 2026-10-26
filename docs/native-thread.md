@@ -173,7 +173,14 @@ events come out on stdout, one record per LF.
 - **Recovery** checkpoints ordinary interactive agents' active intent, host queue, and prompts
   not yet consumed, independently of ephemeral sidebar status. Writes precede input delivery;
   startup waits for the matching pi session and readable history before reconciling pending
-  user messages and continuing interrupted work. Explicit Stop, questions, and held queue edits
+  input. `get_restart_recovery` seals a safe current engine boundary; `resume_session` records an
+  exact-operation receipt before continuing its SDK run without appending input. The host saves
+  operation identity before transport and checks `get_recovery_operation` after an interruption.
+  Only a null receipt plus an unchanged durable branch/configuration fence permits reacquiring
+  executable authority in a new runtime; legacy reservations without that fence stay paused.
+  Stop clears deferred reservations as well as active intent. Unknown accepted operations and uncertain tool or input outcomes stay paused rather than being
+  replayed or wrapped in model instructions. Manual Continue retains its stricter failed-turn
+  executable seal. Explicit Stop, questions, and held queue edits
   do not drain automatically. Three consecutive automatic recovery attempts are allowed; no
   tool call is replayed by the host. Feature-owned unattended work remains excluded.
 - **Events** update the projection in place. The run pi is streaming is one ordered list of
@@ -999,7 +1006,8 @@ The pure derivations live in ShepherdRemote:
 
 - **`NativeTurnPresentation`:** a reply's items, built once per turn change, in the order they
   happened: thinking (folded into one block at the start of each stretch of work between
-  prose; finished text parsed as Markdown once, memoised by the store, live thinking never),
+  prose; readable text parsed as Markdown once per change, memoised by the store, including a
+  provider-exposed live thinking summary),
   prose (Markdown parsed once), activity lines, the subagent record lines (the spawn
   calls they stand for leave the activity), notes, errors, steers (`.steer`: a message the user
   steered in, where pi read it), and question records (`.question`, `NativeQuestionRecordRow`:
@@ -1034,7 +1042,8 @@ components ([docs/design/thread.md](design/thread.md) specifies their look):
 - **`ThreadView`:** the scroll view, tail following, turn jumps (⌥⌘↑/↓), notices, and the empty
   thread.
 - **`ThreadTurns`:** the user bubble, the agent turn (its parts, then the changes card and the
-  footer with copy and retry, the latest turn only; see Retry), and, between tools, the live "Thinking…" (docs/design/thread.md › Thread ›
+  footer with Copy, Retry (the latest turn only; see Retry), and measured Response timing), and,
+  between tools, the observed live response phase (docs/design/thread.md › Thread ›
   Live text). A turn tracks the pointer over it
   (`MessageHover`): its time and footer show only while it is hovered.
 - **`ThreadTools`:** activity lines, their calls, and the sheet for a call's full output or raw

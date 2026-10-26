@@ -3139,7 +3139,7 @@ public final class SessionServer: @unchecked Sendable {
         }
         if coordinatorPeer {
             switch message {
-            case .setAgentStatus, .setAgentName, .setAgentSession, .helloAgent, .projectRuntime: break
+            case .setAgentStatus, .setAgentName, .setAgentSession, .helloAgent, .projectRuntime, .responseTiming: break
             default:
                 if let id = message.replyID { reply(.error(id: id, code: "project_scope", message: "Coordinator peer, automation and external tools are unavailable."), to: client) }
                 return
@@ -3218,6 +3218,9 @@ public final class SessionServer: @unchecked Sendable {
             }
         case .setAgentStatus(let agentID, let status):
             applyAgentStatus(agentID: agentID, status: status)
+        case .responseTiming(let agentID, let seq, let mark, let at):
+            // Display-only: the thread's response timing (RPCThreadState.recordResponseMark).
+            rpcThread(forAgent: agentID)?.recordResponseMark(mark, seq: seq, at: at)
         case .setAgentName(let agentID, let name, let sessionID):
             applyAgentName(agentID: agentID, name: name, sessionID: sessionID)
         case .setAgentSession(let agentID, let piSessionID):
@@ -7274,6 +7277,9 @@ public final class SessionServer: @unchecked Sendable {
                 deferred.active = false
                 deferred.paused = true
                 deferred.pending = []
+                deferred.operationID = nil
+                deferred.token = nil
+                deferred.fence = nil
                 try agentRecovery.save(deferred, for: id)
                 thread.recoveryAtLaunch = deferred
                 return true
@@ -7329,6 +7335,11 @@ public final class SessionServer: @unchecked Sendable {
         guard let thread = sessions[sessionID]?.thread else { return }
         thread.stopRequested = true
         thread.paused = true
+        thread.restartRequestID = nil
+        thread.recoveryResumePending = false
+        thread.recoveryDispatchID = nil
+        thread.recoveryToken = nil
+        thread.recoveryFence = nil
         thread.recoveryAtLaunch = nil
         thread.restoringRecovery = false
         checkpointAgentRecovery(sessionID: sessionID, thread: thread)

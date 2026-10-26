@@ -106,18 +106,24 @@ struct ThinkingRow: View, Equatable {
     let seconds: Double?
     let blocks: [NativeMarkdownBlock]
     let live: Bool
+    /// Live thinking: when the host saw it start (ms), for its clock; nil draws none.
+    var since: Double? = nil
     let isExpanded: Bool
     let toggle: () -> Void
 
     static func == (lhs: ThinkingRow, rhs: ThinkingRow) -> Bool {
-        lhs.seconds == rhs.seconds && lhs.live == rhs.live && lhs.isExpanded == rhs.isExpanded && lhs.blocks == rhs.blocks
+        lhs.seconds == rhs.seconds && lhs.live == rhs.live && lhs.since == rhs.since && lhs.isExpanded == rhs.isExpanded
+            && lhs.blocks == rhs.blocks
     }
 
     var body: some View {
+        let expanded = Binding(get: { isExpanded }, set: { if $0 != isExpanded { toggle() } })
+        // Live: the shared summary so far opens under "Thinking… · 30s" (ResponseVisibility › B);
+        // with none, the live line and its clock.
         live
-            ? NWThinking.live()
-            : NWThinking(nativeThoughtText(seconds), blocks: Prose.proseBlocks(blocks),
-                         isExpanded: Binding(get: { isExpanded }, set: { if $0 != isExpanded { toggle() } }),
+            ? NWThinking.live(since: since.map { Date(timeIntervalSince1970: $0 / 1000) }, blocks: Prose.proseBlocks(blocks),
+                              isExpanded: expanded)
+            : NWThinking(nativeThoughtText(seconds), blocks: Prose.proseBlocks(blocks), isExpanded: expanded,
                          spokenTitle: nativeThoughtSpokenText(seconds))
     }
 }

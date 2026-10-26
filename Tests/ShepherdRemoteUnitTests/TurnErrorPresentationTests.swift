@@ -48,6 +48,10 @@ struct TurnErrorPresentationTests {
         let retrying = nativeTurnPresentation([failed(at: 0)], live: true, errors: NativeTurnErrorContext(retry: retry))
         guard case .retrying(_, let line)? = retrying.items.last else { Issue.record("expected the retry line"); return }
         #expect(line == NativeRetryLine(title: "Reconnecting to Anthropic", glyph: "arrow.clockwise", attempt: 2, maxAttempts: 3, retryAt: 90_000))
+        let typed = nativeTurnPresentation([failed(#"529 {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}"#, at: 0)],
+                                           live: true, errors: NativeTurnErrorContext(retry: retry))
+        guard case .retrying(_, let typedLine)? = typed.items.last else { Issue.record("expected the retry line"); return }
+        #expect(typedLine.text(now: 82_000) == "Reconnecting to Anthropic · retrying in 8s")
         #expect(!retrying.betweenTools)
 
         let waiting = nativeTurnPresentation([failed(at: 0)], live: true)

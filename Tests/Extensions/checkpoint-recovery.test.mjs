@@ -57,6 +57,39 @@ for (const api of ["openai-completions", "openai-responses"]) test(`${api}: reco
   });
 });
 
+test("restart RPC continues the reopened session without synthetic input or tool redelivery", { timeout: 60000 }, async t => {
+  await withPi(t, { ...options, onRequest: ({ index }) => index === 0
+    ? { tool: { name: "write", arguments: { path: "completed.txt", content: "done" } } }
+    : index === 1 ? { status: 400, text: "FAKE interrupted stream" } : {} }, async pi => {
+    await pi.prompt("Finish my actual task");
+    const before = await entries(pi);
+    const state = (await pi.request({ type: "get_state" })).data;
+    const reserved = (await pi.request({ type: "get_restart_recovery" })).data.checkpoint;
+    const operationID = randomUUID();
+    fs.writeFileSync(path.join(pi.work, "host-reservation.json"), JSON.stringify({ operationID, ...reserved }));
+    await pi.reopen(state.sessionFile);
+    assert.equal((await pi.request({ type: "get_recovery_operation", operationID })).data.receipt, null);
+    const checkpoint = (await pi.request({ type: "get_restart_recovery" })).data.checkpoint;
+    assert(checkpoint);
+    const intent = JSON.parse(fs.readFileSync(path.join(pi.work, "host-reservation.json"), "utf8"));
+    assert.equal(checkpoint.fence, intent.fence);
+    assert.notEqual(checkpoint.token, intent.token, "new process, newly sealed executable authority");
+    const mark = pi.events.length;
+    const response = await pi.request({ type: "resume_session", token: checkpoint.token, operationID });
+    assert.equal(response.success, true, JSON.stringify(response));
+    await until("restarted turn settled", () => pi.events.slice(mark).some(e => e.type === "agent_settled"));
+    const after = await entries(pi);
+    assert.deepEqual(users(after), users(before));
+    assert.equal(after.filter(e => e.type === "custom_message").length, 0);
+    assert.equal((await pi.request({ type: "get_state" })).data.sessionId, state.sessionId);
+    assert.equal(pi.provider.requests.length, 3);
+    assert.equal(fs.readFileSync(path.join(pi.work, "completed.txt"), "utf8"), "done");
+    const count = pi.provider.requests.length;
+    assert.equal((await pi.request({ type: "resume_session", token: checkpoint.token, operationID })).data.state, "settled");
+    assert.equal(pi.provider.requests.length, count);
+  });
+});
+
 test("steering and attachment identities remain unchanged across recovery", { timeout: 60000 }, async t => {
   let release;
   const first = new Promise(resolve => { release = resolve; });

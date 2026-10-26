@@ -39,6 +39,9 @@ struct RPCWireTests {
         (.refreshSkills, nil, #"{"type":"refresh_skills"}"#),
         (.recoverCheckpoint(token: "checkpoint", operationID: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!), nil,
          #"{"type":"recover_checkpoint","token":"checkpoint","operationID":"11111111-1111-1111-1111-111111111111"}"#),
+        (.getRestartRecovery, nil, #"{"type":"get_restart_recovery"}"#),
+        (.resumeSession(token: "checkpoint", operationID: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!), nil,
+         #"{"type":"resume_session","token":"checkpoint","operationID":"11111111-1111-1111-1111-111111111111"}"#),
         (.getRecoveryOperation(operationID: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!), nil,
          #"{"type":"get_recovery_operation","operationID":"11111111-1111-1111-1111-111111111111"}"#),
         (.setModel(provider: "anthropic", modelId: "claude-sonnet-4"), nil,
@@ -311,12 +314,17 @@ struct RPCWireTests {
         #expect(user.summary == nil && user.sections == nil)
     }
 
-    /// A failed reply carries the provider and model it went to; other messages don't read them.
-    @Test func aFailedReplyDecodesItsProviderAndModel() throws {
+    /// Both failed and successful replies identify the request for error cards and response
+    /// timing. Older replies may omit the ids; other roles still ignore them.
+    @Test func assistantRepliesDecodeTheirProviderAndModel() throws {
         let failed = try JSONDecoder().decode(RPCMessage.self, from: Data(#"{"role":"assistant","content":[],"stopReason":"error","errorMessage":"401","provider":"openai","model":"gpt-5"}"#.utf8))
         #expect(failed.provider == "openai" && failed.model == "gpt-5")
         let reply = try JSONDecoder().decode(RPCMessage.self, from: Data(#"{"role":"assistant","content":[],"stopReason":"stop","provider":"openai","model":"gpt-5"}"#.utf8))
-        #expect(reply.provider == nil && reply.model == nil)
+        #expect(reply.provider == "openai" && reply.model == "gpt-5")
+        let legacy = try JSONDecoder().decode(RPCMessage.self, from: Data(#"{"role":"assistant","content":[],"stopReason":"stop"}"#.utf8))
+        #expect(legacy.provider == nil && legacy.model == nil)
+        let user = try JSONDecoder().decode(RPCMessage.self, from: Data(#"{"role":"user","content":"hi","provider":"openai","model":"gpt-5"}"#.utf8))
+        #expect(user.provider == nil && user.model == nil)
     }
 
     @Test(arguments: simpleEvents)

@@ -49,6 +49,9 @@ public struct NativeTurnError: Equatable, Hashable, Sendable {
     public var kind: Kind
     /// "OpenAI rejected the API key".
     public var title: String
+    /// The retry line's words while pi retries it: what came back, never a cause guessed from
+    /// it ("Anthropic returned 529 overloaded"); `title` when no status came back.
+    public var retryTitle: String
     /// The provider's words, cleaned.
     public var message: [Span]
     /// Status and type as small chips ("401", "authentication_error").
@@ -121,6 +124,10 @@ public struct NativeTurnError: Equatable, Hashable, Sendable {
         let kind = parsed.kind
         self.kind = kind
         title = Self.title(kind, provider: providerName, model: model)
+        retryTitle = parsed.status.map { status in
+            let type = parsed.label.map { " " + $0.replacingOccurrences(of: "_error", with: "").replacingOccurrences(of: "_", with: " ") } ?? ""
+            return "\(providerName ?? "The provider") returned \(status)" + type
+        } ?? title
 
         var chips: [String] = []
         var message: [Span]

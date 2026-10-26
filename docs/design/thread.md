@@ -264,13 +264,15 @@ the turn has finished, the changes card and the footer end it. A running turn ha
     code spans and links inline (as in prose); paragraphs, lists and quotes as blocks, 8pt
     apart; headings semibold at the same size; fenced code as a code block. It is parsed once per
     change of the turn (`NativeTurnPresentation`, memoised by the store, so a reply streaming
-    under it never parses it again), and live thinking, which shows no text, is never parsed.
+    under it never parses it again). Live thinking is parsed only when the provider shared
+    readable summary text.
     The host normalizes the text first (docs/native-thread.md › Thinking text), so a summary
     part pi left empty leaves no gap.
-  - Live (LiveText): "Thinking…" in italic `ui` (12.5) shimmering on a 26pt row, with no clock
-    and no chevron (nothing opens yet; see the departures), its words where the finished row's
-    are. It is the thread's live line between tools (see Live text), and when thinking ends it
-    cross-fades in place into what the finished row is (below), or leaves.
+  - Live (Response visibility B): after an observed thinking event, "Thinking…" on a 26pt
+    row with its elapsed clock. With a provider-exposed summary, "Thinking… · 30s" opens the
+    existing disclosure and the caption "Summary shared by the model. Its full reasoning isn’t
+    shown." With no readable summary, there is no chevron or empty disclosure. When thinking
+    ends it settles in place into the finished row below. Detached readers keep their place.
   - Finished, by what the stretch carries. Providers often keep their reasoning back
     (Anthropic's redacted or omitted thinking, OpenAI's encrypted reasoning, a proxy that
     streams none), and pi keeps that as a thinking block with no text; readable text is
@@ -361,10 +363,14 @@ the turn has finished, the changes card and the footer end it. A running turn ha
   - A call being written: the line is live from the moment the model names the call, while its
     arguments stream (a big write takes long), and goes on as the running call when pi starts it
     (docs/native-thread.md › Events). The words the reply wrote before it are finished, not
-    "being written", so the turn never ends in a static paragraph with nothing moving.
+    "being written", so the turn never ends in a static paragraph with nothing moving. Its
+    meta adds UTF-8 argument bytes received (in KB/MB) beside the elapsed clock; bodies are not
+    retained to count them, and this does not claim anything has been written to disk.
   - Between tools (no call running or being written, no thinking or reply streaming; also before
-    pi's reply has a row): the turn ends in live thinking, "Thinking…" shimmering. When pi's
-    thinking streams it is the same line, and it settles into "Thought for Ns".
+    pi's reply has a row): "Waiting for response" until the first observed model event, with
+    elapsed time from request dispatch when measured. The model may already be processing input
+    or thinking; no cause is inferred. After the first event with nothing visible, "Response
+    started"; only an actual thinking event says "Thinking…".
   - Replying: the text being written is the indicator; no line joins it.
   - Async children keep moving in the tray after their parent ends its turn. A running row's
     words shimmer beside its still dot (Subagents › A row); no standalone wait tool keeps the
@@ -379,7 +385,12 @@ the turn has finished, the changes card and the footer end it. A running turn ha
   VoiceOver "Retry turn"; Main's labels) as 24pt icon buttons 4pt apart, then, 4pt further, "2:44 PM · 3m 12s · 23 tool
   calls" in mono 10.5 tertiary (when the prompt was sent, how long the turn took when that was a
   second or more, and the tool calls a reader can count), and "· 3 subagents" as a `running` link to
-  the first run. The whole row, link included, shows only while the turn is hovered.
+  the first run. When measured, Response timing follows Copy/Retry and opens a standard 300pt
+  popover: observed dispatch, headers, first provider event, first text and end marks, disjoint
+  phases and reported usage. Mixed thinking/text/tool streams show overall Responding rather
+  than an inferred split. Unavailable timing stays absent, including history from before this
+  host observed it. The row also stays visible while focused, copying, timing is open, or
+  VoiceOver runs (Details on hover, below).
 - **Retry** (the footer's and the error card's) retries the turn in place
   (docs/native-thread.md › Retry): the prompt and the reply leave the thread, and the prompt goes
   again as it was, text and images, streaming in their place, so the thread and the model see it

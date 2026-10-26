@@ -10,6 +10,18 @@ import ShepherdCore
 /// `ExtensionReply` lines on the same connection, so an agent can drive its
 /// own workspace: open panes, run commands in them, read what they printed,
 /// and close them.
+/// A moment of a model request the status extension reports (`ExtensionMessage.responseTiming`).
+public enum ResponseTimingMark: String, Codable, Hashable, Sendable {
+    /// The request is leaving for the provider (`before_provider_request`).
+    case sent
+    /// The provider's response headers arrived (`after_provider_response`).
+    case headers
+    /// The response stream's first parsed event (`provider_stream_event`).
+    case firstEvent
+    /// Correlates this request with pi’s assistant-message timestamp, not a duration mark.
+    case message
+}
+
 public enum ExtensionMessage: Codable, Hashable, Sendable {
     /// Lifecycle status for one agent.
     case setAgentStatus(agentID: AgentID, status: AgentStatus)
@@ -23,6 +35,11 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     /// Full replacement of an agent's live subagent (child run) projection,
     /// from the subagents extension. Display-only: never persisted.
     case setAgentChildren(agentID: AgentID, children: [ChildRun])
+    /// A moment of one model request as the agent's pi saw it (the status extension's provider
+    /// hooks): `seq` numbers the requests of that pi process, `at` is ms since the epoch on its
+    /// clock (`message` instead carries the assistant-message timestamp for correlation). Display-only and fire-and-forget: the thread's response timing, never persisted, and
+    /// it carries no payload, header or credential.
+    case responseTiming(agentID: AgentID, seq: Int, mark: ResponseTimingMark, at: Double)
     /// A custom system notification from the notify extension's tool.
     /// Fire-and-forget, like status: never persisted, dies with the app.
     case notify(agentID: AgentID, title: String, body: String)
@@ -210,10 +227,11 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case what
         case server, challenge, report
         case parentPath, create, projectID, expectedRevision, projectScopes, userTimestamp
+        case seq, mark, at
     }
 
     private enum Kind: String, Codable {
-        case setAgentStatus, setAgentName, setAgentSession, setAgentChildren, notify, helloAgent
+        case setAgentStatus, setAgentName, setAgentSession, setAgentChildren, notify, helloAgent, responseTiming
         case helloChildren, childCommandResult, childScope, prepareProjectConfiguration
         case listPanes, openPane, closePane, focusPane, sendPaneInput, readPane, requestReview
         case createAutomation, listAutomations, updateAutomation, deleteAutomation
@@ -261,6 +279,13 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             self = .refreshProjects(
                 id: try c.decode(Int.self, forKey: .id),
                 agentID: try c.decode(AgentID.self, forKey: .agentID)
+            )
+        case .responseTiming:
+            self = .responseTiming(
+                agentID: try c.decode(AgentID.self, forKey: .agentID),
+                seq: try c.decode(Int.self, forKey: .seq),
+                mark: try c.decode(ResponseTimingMark.self, forKey: .mark),
+                at: try c.decode(Double.self, forKey: .at)
             )
         case .setAgentStatus:
             self = .setAgentStatus(
@@ -608,6 +633,12 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(Kind.refreshProjects, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(agentID, forKey: .agentID)
+        case .responseTiming(let agentID, let seq, let mark, let at):
+            try c.encode(Kind.responseTiming, forKey: .type)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(seq, forKey: .seq)
+            try c.encode(mark, forKey: .mark)
+            try c.encode(at, forKey: .at)
         case .setAgentStatus(let agentID, let status):
             try c.encode(Kind.setAgentStatus, forKey: .type)
             try c.encode(agentID, forKey: .agentID)

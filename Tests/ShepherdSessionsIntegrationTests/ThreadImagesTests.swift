@@ -458,6 +458,36 @@ struct ThreadImagesTests {
     // MARK: A second client
 
     /// A remote client with the capability sees the same names and bytes; one without it is not offered the action.
+    @Test func remoteScreenshotsFitTheListenerForSendsAndNewThreads() async throws {
+        let host = try ScratchServer.fresh(); defer { host.stop() }
+        let pi = try await PiAgent.launch(on: host)
+        let idle = try await pi.ready()
+        let tokenURL = host.dir.appendingPathComponent("remote-token")
+        let port = try host.server.startRemoteListener(port: 0, tokenURL: tokenURL)
+        let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        let client = RemoteHostClient(); defer { client.disconnect() }
+        _ = try await client.connect(host: "127.0.0.1", port: port, token: token, clientName: "images")
+        let images = Array(repeating: Self.nativeImage(Self.png(side: 48, bytes: 900_000)), count: 4)
+        let result = try await client.nativeThread(agentID: pi.agent.id,
+            request: .send(expectedSessionID: idle.piSessionID, generation: idle.generation, operationID: UUID(),
+                           text: "remote screenshots", delivery: .followUp, images: images))
+        guard case .accepted = result else { Issue.record("Expected image delivery: \(result)"); return }
+        let prompt = try await pi.waitForStdin("prompt")
+        let sent = try #require(prompt["images"] as? [[String: Any]])
+        #expect(sent.count == 4)
+        #expect(sent.allSatisfy { ($0["data"] as? String).flatMap { Data(base64Encoded: $0) }?.count ?? Int.max < 900_000 })
+        let captured = Locked<[NativeImage]>([])
+        host.server.onRemoteCreateAgent = { request, done in
+            captured.withValue { $0 = request.initialImages }
+            done(.success(AgentID()))
+        }
+        defer { host.server.onRemoteCreateAgent = nil }
+        _ = try await client.createAgent(spaceID: pi.agent.spaceID, cwd: nil, model: nil, thinking: nil, initialPrompt: "opening screenshots", initialImages: images)
+        #expect(captured.current.count == 4)
+        #expect(captured.current.allSatisfy { $0.data.count < 900_000 && $0.name == "shot.png" })
+        #expect(try await client.nativeThread(agentID: pi.agent.id, request: .snapshot()).snapshotValue != nil)
+    }
+
     @Test func aRemoteClientFetchesTheSameImage() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }

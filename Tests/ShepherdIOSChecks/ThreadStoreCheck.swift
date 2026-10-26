@@ -115,7 +115,9 @@ struct ThreadStoreCheck {
         precondition(store.draft == "keep on unknown" && store.sentCount == 2)
 
         current = try snapshot(ids: ["new"], cursor: "new", revision: 4, dialogs: true)
-        await store.refresh(fresh: true)
+        // This fixture replaces unrelated history; do not let the gap-joining pull consume
+        // the continuation reserved for the stale-page race below.
+        await store.refresh(fresh: true, resetHistory: true)
         let stalePage = Task { await store.loadOlder() }
         try await wait { pendingPage != nil }
         current.piSessionID = "replacement"
