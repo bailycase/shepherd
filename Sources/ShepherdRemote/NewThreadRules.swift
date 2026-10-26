@@ -116,7 +116,7 @@ public enum NewThreadRows {
         case .connecting: return "connecting…"
         case .offline: return host.phase.failure?.headline.lowercased() ?? "unreachable"
         case .connected:
-            let hidden = Set(host.state.spaces.filter(\.hidden).map(\.id))
+            let hidden = Set(host.state.spaces.filter { !$0.showsThreads }.map(\.id))
             let visible = host.state.agents.filter { !hidden.contains($0.spaceID) && !host.state.isDesignAgent($0) }
             let running = visible.filter { $0.status == .working }.count
             if running > 0 { return "connected · \(running) \(running == 1 ? "thread" : "threads") running" }
