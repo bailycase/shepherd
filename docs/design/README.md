@@ -135,7 +135,8 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | BrowserTabsTwo | [side-pane-browser](side-pane-browser.md) | Side pane: Browser | Built; site initials and 24pt close targets approved |
 | PaneArtifacts | [side-pane-artifacts](side-pane-artifacts.md) | Side pane: Artifacts | Built, without versions, Edit and Open in a window (departures.md) |
 | PaneArtifactEdit | [side-pane-artifacts](side-pane-artifacts.md) | Side pane (Artifacts › Editing in place) | Not built (the user's decision: no editing in place) |
-| PaneFiles | [ios-ipad-pages](ios-ipad-pages.md) | Side pane (Files) | Not built yet |
+| FileOpenSplit | [board](boards/FileOpenSplit.png), [side-pane-files](side-pane-files.md) | Selected Files direction: viewer and collapsible tree on the right | Built for local threads; remote transport and thread-origin badge not implemented |
+| PaneFiles | [ios-ipad-pages](ios-ipad-pages.md) | Side pane (Files) | Superseded on Mac by FileOpenSplit |
 | PaneStates | [ios-ipad-pages](ios-ipad-pages.md), [side-pane-browser](side-pane-browser.md), [side-pane-artifacts](side-pane-artifacts.md) | Side pane (tabs, dot, narrow, ⋯, button); Side pane: Browser; Side pane: Artifacts, Files | Partial (Browser: nothing open, viewport, the agent using it and the tab's tip built, on a remote thread too; Artifacts and its ⌃3 built) |
 | ContextDetails | [composer](composer.md) | Composer, questions, and menus › Context meter | Built |
 | ContextFull | [composer](composer.md) | Composer, questions, and menus › Context meter | Built |

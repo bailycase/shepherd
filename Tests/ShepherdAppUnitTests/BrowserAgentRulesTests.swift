@@ -411,7 +411,8 @@ struct BrowserAgentRulesTests {
         #expect(SidePaneTabs.tip(opened: (url, opened)) == NWSidePaneTabTip(text: "localhost:5173/checkout?step=2", openedAt: opened))
         #expect(SidePaneTabs.tip(opened: nil) == nil)
         let items = SidePaneTabs.items(news: [.browser], changedFiles: nil, browserTip: NWSidePaneTabTip(text: "localhost:5173", openedAt: opened))
-        #expect(items.last?.tip?.text == "localhost:5173" && items.first?.tip == nil)
+        let browserTab = items.first { $0.id == "browser" }
+        #expect(browserTab?.tip?.text == "localhost:5173" && items.first?.tip == nil)
     }
 }
 
