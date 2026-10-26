@@ -2,7 +2,7 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
-import ShepherdSessions
+@testable import ShepherdSessions
 import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
@@ -294,15 +294,14 @@ struct AgentStartupTests {
         }
     }
 
-    /// A launch starts every restored agent's pi without waiting for its layout to mount: the
-    /// agent on screen first, alone while it boots; one selected meanwhile at once; then the rest.
-    @Test func atLaunchTheAgentOnScreenStartsFirstAndEveryAgentStarts() async throws {
+    /// Mounting hidden layouts is not demand. Selection starts only that agent and its terminals.
+    @Test func settledRestoredAgentsStayDormantUntilSelectedOrDemanded() async throws {
         try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         try Self.holdPi(in: app.dir)
         let space = Fixture.space(path: app.dir.path)
-        let agents = (0..<5).map { Fixture.agent("worker \($0)", in: space, order: $0, piSession: SessionID()) }
+        let agents = (0..<112).map { Fixture.agent("worker \($0)", in: space, order: $0, auxiliary: 1, piSession: SessionID()) }
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents), restoringAgents: true)
         let server = app.server
         let onScreen = try #require(vm.selectedAgentID)
@@ -318,7 +317,12 @@ struct AgentStartupTests {
         }
 
         try await eventuallyAsync("the agent on screen to start") { await started().contains(onScreen) }
-        #expect(await started() == [onScreen], "the others wait while it boots")
+        // Exercise precisely what the native hidden layout deck does, including utility panes.
+        for agent in agents where agent.agent.id != onScreen {
+            for pane in agent.tab.layout.leaves { _ = vm.sessions.session(for: pane, in: agent.tab) }
+        }
+        #expect(vm.sessions.startQueue.waiting.isEmpty)
+        #expect(await started() == [onScreen], "settled hidden threads are not queued")
         let selected = try #require(agents.last?.agent.id)
         vm.selectAgent(selected)
         try await eventuallyAsync("the agent selected meanwhile to start at once") { await started().contains(selected) }
@@ -326,7 +330,73 @@ struct AgentStartupTests {
 
         Self.releasePi(in: app.dir)
 
-        try await eventuallyAsync("every restored agent to start", timeout: .seconds(30)) { await started().count == agents.count }
+        try await eventuallyOnMain("selected threads to finish booting") { vm.sessions.startQueue.ahead.isEmpty }
+        #expect(await started() == [onScreen, selected])
+        #expect(vm.sessions.startQueue.waiting.isEmpty)
+
+        let demanded = agents[1].agent.id
+        _ = try await server.nativeThread(agentID: demanded, request: .snapshot())
+        try await eventuallyAsync("remote/native demand to start only its thread") { await started().contains(demanded) }
+        #expect(await started() == [onScreen, selected, demanded])
+        #expect(vm.sessions.liveSession(forPane: agents[1].auxiliary[0].id) == nil)
+        // An explicit design/worktree launch remains a start, even without selection.
+        let explicit = agents[2].agent.id
+        vm.sessions.startRestoredAgents([explicit], first: [], in: vm.state)
+        try await eventuallyAsync("explicit restore to start") { await started().contains(explicit) }
+        #expect(await started() == [onScreen, selected, demanded, explicit])
+    }
+
+    @Test func hiddenMountedThreadsDoNotDemandTheirDormantProcesses() async throws {
+        try StubPi.installAsEngine()
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space(path: app.dir.path)
+        let agents = (0..<4).map { Fixture.agent("worker \($0)", in: space, order: $0, auxiliary: 1, piSession: SessionID()) }
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents), restoringAgents: true)
+        let window = OffscreenWindow(size: CGSize(width: 1000, height: 700), dark: true, WorkspaceView(vm: vm))
+        defer { window.close() }
+        try await eventuallyOnMain("all hidden native layouts to mount") { vm.mountedTabs.count == agents.count }
+        let selected = try #require(vm.selectedAgentID)
+        try await eventuallyOnMain("the visible native thread to serve") { vm.threadStores.store(for: selected).ready }
+        #expect(vm.sessions.startQueue.started == [selected])
+        #expect(vm.sessions.startQueue.waiting.isEmpty)
+        for agent in agents where agent.agent.id != selected {
+            #expect(vm.sessions.liveSession(forPane: agent.piPane.id) == nil)
+            #expect(vm.sessions.liveSession(forPane: agent.auxiliary[0].id) == nil)
+        }
+        let hidden = try #require(agents.first { $0.agent.id != selected })
+        let mounted = vm.mountedTabs.map(\.id)
+        vm.selectAgent(hidden.agent.id)
+        try await eventuallyOnMain("the selected dormant native thread to serve") { vm.threadStores.store(for: hidden.agent.id).ready }
+        #expect(vm.mountedTabs.map(\.id) == mounted, "selection is still a visibility flip")
+        #expect(vm.sessions.startQueue.started == [selected, hidden.agent.id])
+    }
+
+    @Test func unfinishedOrdinaryWorkAndItsQueueStartWithoutSelection() async throws {
+        try StubPi.installAsEngine()
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space(path: app.dir.path)
+        var selected = Fixture.agent("selected", in: space, order: 0)
+        selected.agent.lastActiveAt = 10
+        var recovering = Fixture.agent("recovering", in: space, order: 1, auxiliary: 1)
+        recovering.agent.piSessionID = "stub-session"
+        let saved = AgentRecoveryStore.Checkpoint(sessionID: "stub-session", active: true,
+            items: [.init(entry: NativeQueuedMessage(id: UUID(), text: "recovered queued input", sentAt: 1), images: [])],
+            pending: [], paused: false, mode: .oneAtATime)
+        try AgentRecoveryStore(directory: app.dir.appendingPathComponent("agent-recovery")).save(saved, for: recovering.agent.id)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [selected, recovering]), restoringAgents: true)
+        #expect(vm.selectedAgentID == selected.agent.id)
+        // Observe binding, not native snapshots: the latter are explicit demand themselves.
+        try await eventuallyOnMain("durable unfinished work to start without demand") {
+            vm.sessions.liveSession(forPane: recovering.piPane.id) != nil
+        }
+        try await eventuallyAsync("the recovered queue to finish") {
+            guard case .snapshot(let snapshot) = try await app.server.nativeThread(agentID: recovering.agent.id, request: .snapshot()) else { return false }
+            return !snapshot.running && snapshot.messages.contains { $0.role == "user" && $0.blocks.contains { $0.text == "recovered queued input" } }
+        }
+        #expect(vm.sessions.liveSession(forPane: recovering.auxiliary[0].id) == nil)
+        #expect(vm.selectedAgentID == selected.agent.id)
     }
 
     /// A new agent's pi is its creation's to spawn: it never waits in the launch queue behind the
@@ -364,7 +434,9 @@ struct AgentStartupTests {
             #expect(await started() == [onScreen, created], "the restored ones still wait")
         }
         Self.releasePi(in: app.dir)
-        try await eventuallyAsync("every agent to start", timeout: .seconds(30)) { await started().count == agents.count + 1 }
+        try await eventuallyOnMain("the selected thread to serve") { vm.sessions.startQueue.ahead.isEmpty }
+        #expect(await started() == [onScreen, created])
+        #expect(vm.sessions.startQueue.waiting.isEmpty)
     }
 
     /// The agent on screen at launch whose pi exits while it boots stops holding the queue at
@@ -387,6 +459,8 @@ struct AgentStartupTests {
         #expect(vm.selectedAgentID == brokenID)
         let server = app.server
         let others = Set(agents.dropFirst().map(\.agent.id))
+        // Explicit background starts still use the bounded queue (as recovery starts do).
+        vm.sessions.startRestoredAgents(agents.dropFirst().map(\.agent.id), first: [], in: vm.state)
 
         Self.releasePi(in: broken)
         try await eventuallyOnMain("the broken agent's pi to exit, keeping the agent") { vm.cannotStart.contains(brokenID) }

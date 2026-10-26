@@ -47,10 +47,11 @@
   clears on a turn status, a failed start, deletion, or a native-thread revision showing no
   running turn or pending message. Revision subscriptions cover these opening threads even
   when their views are not mounted; no timer or extra polling loop runs.
-- A new agent's pi spawns with its creation. At launch every restored agent's pi starts from
-  the first adoption of the workspace, not when its layout mounts, in `AgentStartQueue`'s
-  order: the agent on screen first (and any agent selected while it waits), then the rest a
-  few at a time. Every agent still starts. Ordinary agents recover unfinished authorized work and
+- A new agent's pi spawns with its creation. At launch settled restored agents and their terminals
+  stay dormant, even when their hidden layouts mount. Selection starts that agent and its terminals;
+  native/remote thread demand starts only its pi. The selected agent starts first; unfinished ordinary
+  work starts a few at a time through `AgentStartQueue`. Explicit design/worktree starts still launch
+  without selection. Ordinary agents recover unfinished authorized work and
   queued input from atomic `agent-recovery` checkpoints beside `state.json`, after pi has served
   the matching session and history. Active turns use the engine's `get_restart_recovery` /
   `resume_session` continuation without appending user or instruction messages. The engine refuses

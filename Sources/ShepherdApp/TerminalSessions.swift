@@ -264,10 +264,15 @@ final class TerminalSessionStore {
     /// The order restored agents' pi start in, and the work that starts each one queued.
     private(set) var startQueue = AgentStartQueue()
     private var queuedStarts: [AgentID: () async -> Bool] = [:]
+    /// Restored panes may mount in the hidden layout deck without starting a process.
+    private var dormantPanes: Set<PaneID> = []
 
     init(server: SessionServer, ownershipTimeout: Duration = .seconds(3)) {
         self.server = server
         self.ownershipTimeout = ownershipTimeout
+        server.onNativeThreadDemand = { [weak self] agentID in
+            self?.activateAgent(agentID)
+        }
         server.onSequencedOutput = { [weak self] sessionID, data, sequence in
             self?.session(forSessionID: sessionID)?.receive(data, sequence: sequence)
         }
@@ -537,12 +542,17 @@ final class TerminalSessionStore {
         }
         let session = makeSession(paneID: pane.id, isRPC: rpc)
         sessions[pane.id] = session
-        // The agent-creation flow spawns a new agent's pi and adopts this session.
-        if reservedPanes.contains(pane.id) { return session }
+        scheduleStart(session, pane: pane, tab: tab)
+        return session
+    }
+
+    private func scheduleStart(_ session: PaneSession, pane: LeafPane, tab: Tab) {
+        // Creation owns reserved panes; hidden restored layouts own no processes yet.
+        guard !reservedPanes.contains(pane.id), !dormantPanes.contains(pane.id) else { return }
         // Only an agent's first start waits its turn; a pane session made again later starts now.
-        guard rpc, let agentID = pane.agentID, !startQueue.started.contains(agentID) else {
+        guard session.isRPC, let agentID = pane.agentID, !startQueue.started.contains(agentID) else {
             Task { await start(session, pane: pane, tab: tab) }
-            return session
+            return
         }
         // An agent's pi starts in the queue's order: the ones on screen first.
         queuedStarts[agentID] = { [weak self, weak session] in
@@ -551,19 +561,45 @@ final class TerminalSessionStore {
         }
         if startQueue.enqueue(agentID) { beginStart(agentID, ahead: true) }
         pumpStarts()
-        return session
     }
 
-    /// At launch: starts every restored agent's pi (in `order`, the sidebar's), whether or not its
-    /// layout has mounted, with `first` (the agents on screen) ahead of the rest
-    /// (`AgentStartQueue`).
+    /// Classify before hidden layouts mount. Only selection, demand, or durable unfinished
+    /// ordinary work starts a restored pi; recovery never starts its auxiliary terminals.
+    func restoreAgents(_ order: [AgentID], first: [AgentID], in state: ShepherdState) {
+        let tabs = Set(state.agents.map(\.tabID))
+        dormantPanes.formUnion(state.tabs.filter { tabs.contains($0.id) }.flatMap { $0.layout.leaves.map(\.id) })
+        for id in first { startAhead(id) }
+        Task { [weak self] in
+            guard let self else { return }
+            let recovery = await server.agentsNeedingStartupRecovery()
+            for id in order where recovery.contains(id) { activateAgent(id) }
+        }
+    }
+
+    private func activatePane(_ pane: LeafPane, in tab: Tab) {
+        if dormantPanes.remove(pane.id) != nil, let session = sessions[pane.id] {
+            scheduleStart(session, pane: pane, tab: tab)
+        } else {
+            _ = session(for: pane, in: tab)
+        }
+    }
+
+    /// Explicit native/remote demand starts the primary thread, not hidden terminals.
+    func activateAgent(_ agentID: AgentID) {
+        guard let state = serverState, let agent = state.agents.first(where: { $0.id == agentID }),
+              let paneID = agent.paneID, let tab = state.tabs.first(where: { $0.id == agent.tabID }),
+              let pane = tab.layout.leaf(withID: paneID) else { return }
+        activatePane(pane, in: tab)
+    }
+
+    /// Explicit design/worktree restoration starts the requested agents in queue order.
     func startRestoredAgents(_ order: [AgentID], first: [AgentID], in state: ShepherdState) {
         for agentID in first { startAhead(agentID) }
         for agentID in first + order {
             guard let agent = state.agents.first(where: { $0.id == agentID }), let paneID = agent.paneID,
                   let tab = state.tabs.first(where: { $0.id == agent.tabID }),
                   let pane = tab.layout.leaf(withID: paneID) else { continue }
-            _ = session(for: pane, in: tab)
+            activatePane(pane, in: tab)
         }
     }
 
@@ -573,6 +609,13 @@ final class TerminalSessionStore {
         // A new agent's pi is its creation's to spawn, never queued.
         if let paneID = serverState?.agents.first(where: { $0.id == agentID })?.paneID, reservedPanes.contains(paneID) { return }
         if startQueue.startAhead(agentID) { beginStart(agentID, ahead: true) }
+        activateAgent(agentID)
+        if let state = serverState, let agent = state.agents.first(where: { $0.id == agentID }),
+           let tab = state.tabs.first(where: { $0.id == agent.tabID }) {
+            for pane in tab.layout.leaves where dormantPanes.contains(pane.id) {
+                activatePane(pane, in: tab)
+            }
+        }
     }
 
     /// Holds every queued agent start (`AgentStartQueue.hold`): the first launch's copy from the

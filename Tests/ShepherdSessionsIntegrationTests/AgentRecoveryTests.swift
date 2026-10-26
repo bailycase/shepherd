@@ -39,6 +39,8 @@ struct AgentRecoveryTests {
         _ = try await pi.send("queued work", images: [image], from: working)
         let saved = try #require(try store(h).checkpoint(for: pi.agent.id))
         #expect(saved.active && saved.items.first?.entry.text == "queued work")
+        #expect(await h.server.agentsNeedingStartupRecovery() == [pi.agent.id])
+        #expect(try store(h).checkpoint(for: pi.agent.id) == saved, "Admission does not consume a recovery attempt")
         #expect(saved.items.first?.images == [image])
         h.stop(keepFiles: true)
         #expect(try store(h).checkpoint(for: pi.agent.id) == saved, "Shutdown must not replace active intent with idle")
@@ -65,6 +67,7 @@ struct AgentRecoveryTests {
         _ = try await pi.request(.abort(expectedSessionID: working.piSessionID, generation: working.generation, operationID: UUID()))
         let paused = try await pi.snapshot { !$0.running && $0.queue?.paused == true }
         #expect(paused.queue?.items.first?.text == "stay queued")
+        #expect(await h.server.agentsNeedingStartupRecovery().isEmpty)
         h.stop(keepFiles: true)
         let restarted = try ScratchServer(dir: h.dir)
         defer { restarted.stop() }
@@ -91,6 +94,7 @@ struct AgentRecoveryTests {
             _ = try await pi.snapshot { !$0.running && !$0.provisional.contains { $0.entryID.hasPrefix("pending:") } }
         }
         #expect(try store(h).checkpoint(for: pi.agent.id) == nil)
+        #expect(await h.server.agentsNeedingStartupRecovery().isEmpty)
         h.stop(keepFiles: true)
         let restarted = try ScratchServer(dir: h.dir)
         defer { restarted.stop() }
@@ -99,16 +103,19 @@ struct AgentRecoveryTests {
         #expect(restored.stdin("prompt").isEmpty)
     }
 
-    @Test(arguments: [AgentRecoveryStore.attemptLimit - 1, AgentRecoveryStore.attemptLimit])
-    func recoveryAttemptsAreDurablyBounded(previousAttempts: Int) async throws {
+    @Test(arguments: [AgentRecoveryStore.attemptLimit - 1, AgentRecoveryStore.attemptLimit], [false, true])
+    func recoveryAttemptsAreDurablyBoundedEvenWithAPausedQueue(previousAttempts: Int, paused: Bool) async throws {
         let h = try ScratchServer.fresh()
         let pi = try await PiAgent.launch(on: h)
         _ = try await pi.ready()
         h.stop(keepFiles: true)
-        try store(h).save(.init(sessionID: "stub-session", active: true, items: [], pending: [], paused: false,
+        try store(h).save(.init(sessionID: "stub-session", active: true, items: [], pending: [], paused: paused,
                                mode: .oneAtATime, attempts: previousAttempts), for: pi.agent.id)
         let restarted = try ScratchServer(dir: h.dir)
         defer { restarted.stop() }
+        let admitted = await restarted.server.agentsNeedingStartupRecovery()
+        #expect(admitted == (previousAttempts < AgentRecoveryStore.attemptLimit ? [pi.agent.id] : []),
+                "A paused queue does not cancel its active turn's authorized recovery")
         let restored = try await resume(pi, on: restarted)
         _ = try await restored.ready()
         if previousAttempts < AgentRecoveryStore.attemptLimit {

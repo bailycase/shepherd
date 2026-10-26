@@ -564,7 +564,7 @@ final class ShepherdViewModel {
     @ObservationIgnored var parkSweepTimer: Timer?
     /// One-shot launch guard for autoStartAutomations.
     var didAutoStartAutomations = false
-    /// The first adoption starts every restored agent's pi (`TerminalSessionStore.startRestoredAgents`).
+    /// The first adoption starts selected/restorable work, leaving settled agents dormant.
     /// Off in harnesses that seed agents only to draw them: their pi then starts when a layout
     /// mounts or a test asks, as before.
     @ObservationIgnored let restoresAgentsAtLaunch: Bool
@@ -1214,11 +1214,11 @@ final class ShepherdViewModel {
                 selectedSpaceID = agent.spaceID
             }
         }
-        // First adoption of the restored workspace: every agent's pi starts now, not when its
-        // layout mounts, the one on screen first and the rest a few at a time, in Recents order.
+        // Classify restored panes before hidden layouts mount. Selected and unfinished ordinary
+        // work start now; settled threads wait for selection or explicit native/remote demand.
         if restoresAgentsAtLaunch, !didStartRestoredAgents {
             didStartRestoredAgents = true
-            sessions.startRestoredAgents(localRecentsOrder + state.agents.map(\.id),
+            sessions.restoreAgents(localRecentsOrder + state.agents.map(\.id),
                                          first: selectedAgentID.map { [$0] } ?? [], in: state)
         }
         focusMemory.prune(liveTabs: Set(state.tabs.map(\.id)))
