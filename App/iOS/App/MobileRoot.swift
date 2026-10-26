@@ -52,6 +52,7 @@ struct MobileRoot: View {
             // The first phase can arrive before onAppear: the window counts only once registered.
             app.windows.register(window, navigator: navigator)
             app.windows.setPhase(window.id, phase, hosts: app.hosts)
+            app.pushRouter.drainPending(hosts: app.hosts, windows: app.windows)
         }
     }
 }
