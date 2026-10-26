@@ -3,16 +3,14 @@ import ShepherdUI
 import ShepherdRemote
 
 /// The iPad sidebar (iPadThread, iPadSidebar, iPadHosts boards; home track): New thread,
-/// Designs (while a host serves them, DesignPad/), Automations and More (which expands in place
-/// to Hosts and Extensions), Needs you with each item's reason, automation runs, then the Mac
+/// Designs (while a host serves them, DesignPad/), Projects, Automations, Needs you with each
+/// item's reason, automation runs, then the Mac
 /// sidebar's Working, Done (with Mark all seen) and Pinned (`SidebarThreads`), Recents with their
 /// hosts and the designs among them, and a footer with the hosts and Settings. A thread row's
 /// long press is the Mac's row menu (`ThreadRowMenu`).
 struct PadSidebar: View {
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
-    /// More's sub-rows show (iPadHosts); kept per window.
-    @SceneStorage("shepherd.ios.sidebar.moreExpanded") private var moreExpanded = false
     @Environment(MobileProjects.self) private var projects
 
     private var projectsTrailing: NWListRow.Trailing {
@@ -46,30 +44,6 @@ struct PadSidebar: View {
                 SidebarItem("Automations", leading: .symbol("bolt"), selected: pushed == .home(.automations),
                             trailing: model.automations.isEmpty ? .none : .value(String(model.automations.count))) {
                     navigator.open(.home(.automations))
-                }
-                // More expands in place; folded, it carries the offline summary.
-                SidebarItem("More", leading: .symbol(moreExpanded ? "chevron.down" : "chevron.right"),
-                            trailing: moreExpanded ? .none : model.offlineSummary.map { .alert($0) } ?? .none) {
-                    withNWAnimation(.disclosure) { moreExpanded.toggle() }
-                }
-                .accessibilityValue(moreExpanded ? "Expanded" : "Collapsed")
-                if moreExpanded {
-                    // The sub-rows' content sits further in; their selection keeps the full width.
-                    Group {
-                        SidebarItem("Hosts", leading: .symbol("desktopcomputer"), selected: pushed == .home(.more),
-                                    trailing: model.offlineCount > 0 ? .alert("\(model.offlineCount) offline") : .none,
-                                    indent: MobileLayout.sidebarSubrowIndent) {
-                            navigator.open(.home(.more))
-                        }
-                        if !model.hosts.isEmpty {
-                            SidebarItem(SettingsPage.pi.title, leading: .symbol(SettingsPage.pi.symbol),
-                                        selected: pushed == .settings(SettingsPage.pi.route),
-                                        indent: MobileLayout.sidebarSubrowIndent) {
-                                navigator.open(.settings(SettingsPage.pi.route))
-                            }
-                        }
-                    }
-                    .nwTransition(.content)
                 }
                 if !groups.needsYou.isEmpty {
                     SidebarHeader(title: "Needs you", attention: true, count: groups.needsYou.count) {
@@ -151,10 +125,6 @@ struct PadSidebar: View {
             SidebarFooter(count: model.hosts.count, offline: model.offlineCount, names: model.hostNames)
         }
         .task { await feed.watch() }
-        // A page under More, opened from elsewhere, shows its row.
-        .onChange(of: pushed, initial: true) { _, pushed in
-            if pushed == .home(.more) || pushed == .settings(SettingsPage.pi.route), !moreExpanded { moreExpanded = true }
-        }
         // The board's bar has no title: Search and the split view's Hide sidebar.
         .navigationTitle("Shepherd")
         .toolbarTitleDisplayMode(.inline)
@@ -193,22 +163,20 @@ private struct SidebarItem: View {
     let leading: NWListRow.Leading
     let selected: Bool
     let trailing: NWListRow.Trailing
-    let indent: CGFloat
     let action: () -> Void
 
     init(_ title: String, leading: NWListRow.Leading, selected: Bool = false, trailing: NWListRow.Trailing = .none,
-         indent: CGFloat = 0, action: @escaping () -> Void) {
+         action: @escaping () -> Void) {
         self.title = title
         self.leading = leading
         self.selected = selected
         self.trailing = trailing
-        self.indent = indent
         self.action = action
     }
 
     var body: some View {
         Button(action: action) {
-            NWListRow(title, leading: leading, trailing: trailing, chevron: false, selected: selected, compact: true, indent: indent)
+            NWListRow(title, leading: leading, trailing: trailing, chevron: false, selected: selected, compact: true)
                 .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
         }
         .buttonStyle(.nwRow(radius: NW.Radius.m))

@@ -7,6 +7,9 @@ extension MobileLayout {
     /// of the detail, so the thread keeps a readable column.
     static let reviewDockWidth: CGFloat = 640
     static let reviewDockShare: CGFloat = 0.58
+    /// The narrowest thread kept beside the pane and the sidebar; narrower (iPhone Duo's inner
+    /// display leaves it 274pt), the review takes the window and the sidebar goes.
+    static let reviewThreadMinWidth: CGFloat = 320
     /// The full-screen review's file list.
     static let reviewFileListWidth: CGFloat = 260
     /// The summary card's progress bar.

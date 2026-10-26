@@ -56,6 +56,7 @@
 | MobileCommit: the sheet's title "Commit" | "Commit n files", as the Mac's commit sheet | The phone and the Mac share the commit form's parts |
 | iPadReview: Revert file in a file's header | Not offered on iOS | The remote protocol has no revert; the Mac's local review keeps it (docs/ios/README.md › Review) |
 | iPadSubagents: Fork as new agent on a finished run | Re-run and Copy transcript | Remote agents have no Fork (docs/native-subagents.md) |
+| iPadSidebar, iPadHosts: More in the sidebar, expanding to Hosts and Extensions | No More row | The user's decision: the footer opens Settings ▸ Hosts and Settings holds Extensions, so More repeated them |
 | iPad sidebar footer: the person (avatar, name, "This Mac · build-01") and Settings | The hosts ("2 of 3 offline" and their names, opening Settings ▸ Hosts) and Settings | Shepherd has no accounts, only hosts (docs/ios/README.md › iPad: "a footer with the hosts and Settings") |
 | ModelPicker: ⌘M opens the model picker (the ⌘M hint in its search field) | **⇧⌘M**, the hint the search field shows (from `KeybindingsStore`), and the palette's Choose model… row and the menu bar | ⌘M is the system Minimize chord |
 | ModelPicker: each row's second line describes the model ("Faster, cheaper", "Fastest") | Model rows' second line lists the model's thinking levels instead of the board's notes ("Off · Minimal · Low · Medium · High", or "No thinking"), on the Mac and in the iOS picker | The user's decision, 2026-09-25 (pi has no model descriptions) |
