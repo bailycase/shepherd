@@ -371,6 +371,29 @@ struct RPCSessionTests {
         try await eventually("the dying words on stderr") { h.stderr.current.contains("stub-pi: dying") }
     }
 
+    @Test(arguments: [false, true])
+    func alreadyExitedChildReportsStderrBeforeItsExit(terminatedLine: Bool) async throws {
+        let dir = try makeScratchDirectory("rpc-exit")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let queue = DispatchQueue(label: "test.rpc.exit-stderr")
+        let format = terminatedLine ? "No models available\\n" : "No models available"
+        let session = try RPCSession(params: CreateSessionParams(cwd: dir.path,
+            command: ["/bin/sh", "-c", "printf '\(format)' >&2; exit 1"], runtime: .rpc), queue: queue)
+        defer { queue.sync { session.shutdown() } }
+        let callbacks = Locked<[String]>([])
+        session.onStderr = { line in callbacks.withValue { $0.append("stderr:\(line)") } }
+        session.onExit = { code in callbacks.withValue { $0.append("exit:\(code ?? -1)") } }
+        // Observe death without reaping: the session must handle buffered stderr on registration.
+        try await eventually("the child to exit before its readers start") {
+            var info = siginfo_t()
+            return waitid(P_PID, id_t(session.processIdentifier), &info, WEXITED | WNOHANG | WNOWAIT) == 0
+                && info.si_pid == session.processIdentifier
+        }
+        session.start()
+        try await eventually("the exit callback") { callbacks.current.contains("exit:1") }
+        #expect(callbacks.current == ["stderr:No models available", "exit:1"])
+    }
+
     @Test func killTerminatesWithSIGTERM() async throws {
         let script = """
         import signal, sys
