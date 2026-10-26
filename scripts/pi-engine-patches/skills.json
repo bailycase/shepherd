@@ -79,7 +79,7 @@
     {
       "path": "dist/bundle/chunks/chunk-33XOIQ5N.js",
       "before": "1fbf59b1126d78129049710d1c825afaf3a905333a62a680fdb2174fdb6d3aca",
-      "after": "2f6f6e80ab91a5f179d7d4ef384b1775bbe6236b8b10ea0157320e2a04ab937f",
+      "after": "f597156e1a70da83e6036cd38fb7451d98a802fce28d1d204684826b7dd793f6",
       "edits": [
         {
           "old": "import{ProjectTrustStore,addMcpServerConfig,",
@@ -179,7 +179,15 @@
         },
         {
           "old": "import { createRequire as __piCreateRequire } from \"node:module\";",
-          "new": "import { acceptRecovery, finishRecovery, invalidateRecoveryGeneration, recordRecoveryCheckpoint, recoveryState, recoveryOperation, recoveryTranscript, restartRecoveryState, resumeSession } from \"../../core/shepherd-checkpoint-recovery.js\";\nimport { createRequire as __piCreateRequire } from \"node:module\";"
+          "new": "import { acceptRecovery, finishRecovery, invalidateRecoveryGeneration, recordRecoveryCheckpoint, recoveryState, recoveryOperation, recoveryTranscript, restartRecoveryState, resumeSession, normalizeEmptyCompletion, isEmptyCompletionError } from \"../../core/shepherd-checkpoint-recovery.js\";\nimport { createRequire as __piCreateRequire } from \"node:module\";"
+        },
+        {
+          "old": "_handleAgentEvent=async event=>{",
+          "new": "_handleAgentEvent=async event=>{if(event.type===\"message_end\")normalizeEmptyCompletion(event.message);"
+        },
+        {
+          "old": "_isRetryableError(message){return isContextOverflow(message,(this._modelForMessage(message)??this.model)?.contextWindow??0)?!1:isRetryableAssistantError(message)}",
+          "new": "_isRetryableError(message){return isContextOverflow(message,(this._modelForMessage(message)??this.model)?.contextWindow??0)?!1:isEmptyCompletionError(message)||isRetryableAssistantError(message)}"
         },
         {
           "old": "async _runAgentPrompt(messages){this._agentRunAbortRequested=!1,this._failedResponse=void 0,",
@@ -224,6 +232,10 @@
         {
           "old": "setThinkingLevel(level,options={}){let availableLevels=",
           "new": "setThinkingLevel(level,options={}){invalidateRecoveryGeneration(this);let availableLevels="
+        },
+        {
+          "old": "        this._runAgentPrompt(undefined, failed).then(() => {",
+          "new": "        this._runSystemPromptOptions = accepted.promptOptions;\n        this._runAgentPrompt(undefined, failed).then(() => {"
         }
       ]
     },
@@ -409,7 +421,7 @@
     {
       "path": "dist/core/agent-session.js",
       "before": "476722dd363a0347049d450b5a0c67386cf156ecae2b039676962aa00a857161",
-      "after": "85500c73aa7dd91dbbb39e97f231e32ed65930998246df5c0f7ba4861250cb34",
+      "after": "48509c11fea895a25aa2e30ca3d738cddb21d334c54c5fc227a1f151c6dc1cd8",
       "edits": [
         {
           "old": "    async reload(options) {",
@@ -417,7 +429,15 @@
         },
         {
           "old": "import { readFileSync } from \"node:fs\";",
-          "new": "import { acceptRecovery, finishRecovery, invalidateRecoveryGeneration, recordRecoveryCheckpoint, recoveryState, recoveryOperation, recoveryTranscript, restartRecoveryState, resumeSession } from \"./shepherd-checkpoint-recovery.js\";\nimport { readFileSync } from \"node:fs\";"
+          "new": "import { acceptRecovery, finishRecovery, invalidateRecoveryGeneration, recordRecoveryCheckpoint, recoveryState, recoveryOperation, recoveryTranscript, restartRecoveryState, resumeSession, normalizeEmptyCompletion, isEmptyCompletionError } from \"./shepherd-checkpoint-recovery.js\";\nimport { readFileSync } from \"node:fs\";"
+        },
+        {
+          "old": "    _handleAgentEvent = async (event) => {",
+          "new": "    _handleAgentEvent = async (event) => {\n        if (event.type === \"message_end\") normalizeEmptyCompletion(event.message);"
+        },
+        {
+          "old": "        return isRetryableAssistantError(message);",
+          "new": "        return isEmptyCompletionError(message) || isRetryableAssistantError(message);"
         },
         {
           "old": "    async _runAgentPrompt(messages) {",
@@ -462,6 +482,10 @@
         {
           "old": "    setThinkingLevel(level, options = {}) {\n",
           "new": "    setThinkingLevel(level, options = {}) {\n        invalidateRecoveryGeneration(this);\n"
+        },
+        {
+          "old": "        this._runAgentPrompt(undefined, failed).then(() => {",
+          "new": "        this._runSystemPromptOptions = accepted.promptOptions;\n        this._runAgentPrompt(undefined, failed).then(() => {"
         }
       ]
     },
@@ -761,7 +785,7 @@
     {
       "path": "dist/core/shepherd-checkpoint-recovery.js",
       "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "after": "b87b0f4cf6a0ec6f603feb4cfae1bc0ae0c8683640695400c966eb4bae73bdd6",
+      "after": "1ec3b7379fcfabe61a9810bb439578806eb87b49c6d8da19555cd020d9fc31fb",
       "source": "checkpoint-recovery.js"
     },
     {

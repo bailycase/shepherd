@@ -83,6 +83,21 @@ public struct NativeTurnError: Equatable, Hashable, Sendable {
         }.joined()
     }
 
+    /// A transient failure can arrive just before Pi announces its bounded retry.
+    /// Keep it quiet while the turn is live; a settled failure always shows its card.
+    var canRecoverWhileLive: Bool {
+        switch kind {
+        case .timeout, .overloaded, .server, .rateLimit, .network: true
+        case .auth, .contextTooLong, .other:
+            messageText == "The provider returned no answer or tool call. Retry to continue the interrupted turn."
+        }
+    }
+
+    var recoveryTitle: String {
+        let provider = facts.first { $0.label == "Provider" }?.value ?? "the provider"
+        return kind == .rateLimit ? "Waiting for \(provider)" : "Reconnecting to \(provider)"
+    }
+
     /// The glyph beside the title (SF Symbols): an hourglass for a timeout, a crossed-out wave
     /// for the network, arrows in for a thread too long, a warning otherwise.
     public var glyph: String { Self.glyph(kind) }

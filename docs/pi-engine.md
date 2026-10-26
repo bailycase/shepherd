@@ -104,7 +104,16 @@ initialization. Its hash is recorded in the engine pin.
 The same patch adds message-free checkpoint recovery to the readable SDK, RPC and bundled SDK/CLI.
 `checkpoint-recovery.js` owns validation and append-only receipts; its declaration file describes
 that SDK contract. This is a Shepherd patch, not a claim that unpatched upstream Pi exposes recovery.
-It reuses Pi's provider-context omission without changing automatic retry classification.
+It reuses Pi's provider-context omission. Empty assistant completions (including thinking-only
+and whitespace-only responses) use Pi's existing automatic retry budget and abortable backoff:
+three additional requests by default, to the same chosen model and provider. No user message is
+invented, and completed tool results stay in context. Stop, disabled retries, authentication,
+quota and context-limit errors remain terminal. Recovery never resumes automatically on restart.
+
+Checkpoint seals validate the configured prompt separately from the extension-adjusted run
+prompt. Unchanged guidelines can be restored for a manual retry without treating their cleanup
+after a failed run as a user configuration change. Real prompt, model, thinking, tool and
+session changes, plus uncertain tool execution, still reject recovery.
 See [Retry](native-thread.md#retry) for safety gates and limits.
 Staging verifies the pi version, full original file hashes, unique replacement anchors and final
 file hashes; verification also checks the shipped patched files. A source, patch or pin mismatch

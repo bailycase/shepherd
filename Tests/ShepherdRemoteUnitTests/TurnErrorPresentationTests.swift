@@ -42,27 +42,54 @@ struct TurnErrorPresentationTests {
         #expect(!final && folded)
     }
 
-    /// While pi retries, the live turn ends in the retry line and nothing else moves; without a
-    /// retry the error shows as a card with no Retry until the turn is over.
+    /// Retry uses a quiet progress line; a transient error doesn't flash a card before it.
     @Test func whilePiRetriesTheTurnEndsInTheRetryLine() throws {
         let retry = NativeThreadRetry(attempt: 2, maxAttempts: 3, retryAt: 90_000)
         let retrying = nativeTurnPresentation([failed(at: 0)], live: true, errors: NativeTurnErrorContext(retry: retry))
         guard case .retrying(_, let line)? = retrying.items.last else { Issue.record("expected the retry line"); return }
-        // What came back, not a cause guessed from it (ResponseVisibility › A, Retrying).
-        #expect(line == NativeRetryLine(title: "Anthropic returned 529", glyph: "arrow.clockwise", attempt: 2, maxAttempts: 3, retryAt: 90_000))
+        #expect(line == NativeRetryLine(title: "Reconnecting to Anthropic", glyph: "arrow.clockwise", attempt: 2, maxAttempts: 3, retryAt: 90_000))
         let typed = nativeTurnPresentation([failed(#"529 {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}"#, at: 0)],
                                            live: true, errors: NativeTurnErrorContext(retry: retry))
         guard case .retrying(_, let typedLine)? = typed.items.last else { Issue.record("expected the retry line"); return }
-        #expect(typedLine.text(now: 82_000) == "Anthropic returned 529 overloaded · retrying in 8s")
+        #expect(typedLine.text(now: 82_000) == "Reconnecting to Anthropic · retrying in 8s")
         #expect(!retrying.betweenTools)
 
         let waiting = nativeTurnPresentation([failed(at: 0)], live: true)
-        let (_, final, folded) = try #require(error(waiting.items.last))
-        #expect(!final && !folded && !waiting.betweenTools)
+        #expect(waiting.items.isEmpty)
+        #expect(waiting.betweenTools)
 
         let timeout = nativeTurnPresentation([failed("Request timed out.", at: 0)], live: true, errors: NativeTurnErrorContext(retry: retry))
         guard case .retrying(_, let slow)? = timeout.items.last else { Issue.record("expected the retry line"); return }
-        #expect(slow.glyph == "hourglass" && slow.title == "Anthropic didn’t respond in time")
+        #expect(slow.glyph == "hourglass" && slow.title == "Reconnecting to Anthropic")
+    }
+
+    @Test(arguments: ["529 overloaded", "Request timed out.", "500 server error", "429 rate limited",
+                      "Connection reset", "The provider returned no answer or tool call. Retry to continue the interrupted turn."])
+    func aTransientFailureStaysQuietUntilTheTurnSettles(_ text: String) throws {
+        let messages = [failed(text, at: 0)]
+        let live = nativeTurnPresentation(messages, live: true)
+        #expect(live.items.isEmpty)
+        #expect(live.betweenTools)
+        let settled = nativeTurnPresentation(messages, live: false)
+        let (_, final, folded) = try #require(error(settled.items.last))
+        #expect(final && !folded)
+    }
+
+    @Test(arguments: ["401 authentication failed", "context length exceeded", "Unrecognized permanent failure"])
+    func permanentFailuresRemainVisible(_ text: String) throws {
+        let presentation = nativeTurnPresentation([failed(text, at: 0)], live: true)
+        let (_, final, folded) = try #require(error(presentation.items.last))
+        #expect(!final && !folded && !presentation.betweenTools)
+    }
+
+    @Test func rateLimitProgressWaitsForTheProvider() {
+        let retry = NativeThreadRetry(attempt: 1, maxAttempts: 3, retryAt: 90_000)
+        let presentation = nativeTurnPresentation([failed("429 rate limited", at: 0)], live: true,
+                                                   errors: NativeTurnErrorContext(retry: retry))
+        guard case .retrying(_, let line)? = presentation.items.last else {
+            Issue.record("expected retry progress"); return
+        }
+        #expect(line.title == "Waiting for Anthropic")
     }
 
     /// The earlier of two replies that failed the same way folds; one followed by a reply that

@@ -3,6 +3,16 @@ import { createHash, randomUUID } from "node:crypto";
 import { openSync, fsyncSync, closeSync } from "node:fs";
 import { dirname } from "node:path";
 import { sessionEntryToContextMessages } from "./session-manager.js";
+import { buildSystemPrompt } from "./system-prompt.js";
+
+const emptyCompletionError = "The provider returned no answer or tool call. Retry to continue the interrupted turn.";
+export function normalizeEmptyCompletion(message) {
+    if (message.role !== "assistant" || !["stop", "length"].includes(message.stopReason)) return;
+    if (message.content.some(part => part.type === "text" ? part.text.trim().length > 0 : part.type !== "thinking")) return;
+    message.stopReason = "error";
+    message.errorMessage = emptyCompletionError;
+}
+export const isEmptyCompletionError = message => message.stopReason === "error" && message.errorMessage === emptyCompletionError;
 
 const generations = new WeakMap();
 const activeOperations = new WeakMap();
@@ -67,7 +77,8 @@ export function recoveryCheckpoint(session, cwd) {
         unconfirmedOperations.get(session)?.has(receipt.operationID))) throw Error("recovery_unknown");
     const seal = manager.getBranch().findLast(e => e.type === "custom" && e.customType === checkpointType && e.data?.failedEntryID === failed.id)?.data;
     if (unavailableCheckpoints.has(session) || !seal || seal.sessionID !== session.sessionId) throw Error("recovery_checkpoint_unavailable");
-    if (seal.forcedPrompt || seal.context !== recoveryContext(session, cwd)) throw Error("recovery_context_changed");
+    if (seal.forcedPrompt || (seal.baseContext ?? seal.context) !== recoveryContext(session, cwd) ||
+        seal.promptOptions && seal.context !== recoveryContext(session, cwd, buildSystemPrompt(seal.promptOptions))) throw Error("recovery_context_changed");
     // A partial tool call is not an executable checkpoint. A result marked as failed may have
     // performed a side effect before failing. Neither is permission to redeliver it.
     if (failed.message.content.some(p => p.type === "toolCall")) throw Error("recovery_uncertain_tool");
@@ -140,7 +151,8 @@ export function acceptRecovery(session, token, operationID, cwd) {
     syncReceipt(session);
     if (!activeOperations.has(session)) activeOperations.set(session, new Set());
     activeOperations.get(session).add(operationID);
-    return { replay: false, receipt };
+    const seal = session.sessionManager.getBranch().findLast(e => e.type === "custom" && e.customType === checkpointType && e.data?.failedEntryID === checkpoint.failedEntryID)?.data;
+    return { replay: false, receipt, promptOptions: seal?.promptOptions };
 }
 
 export function finishRecovery(session, receipt, state, error) {
@@ -158,8 +170,8 @@ export function finishRecovery(session, receipt, state, error) {
     }
 }
 
-const recoveryContext = (session, cwd) => digest({ cwd, model: session.model, thinking: session.thinkingLevel,
-    systemPrompt: session.systemPrompt, tools: recoveryTools(session) });
+const recoveryContext = (session, cwd, systemPrompt = session.systemPrompt) => digest({ cwd, model: session.model, thinking: session.thinkingLevel,
+    systemPrompt, tools: recoveryTools(session) });
 
 export function recordRecoveryCheckpoint(session, sessionID, forcedPrompt, cwd) {
     if (sessionID !== session.sessionId || generations.get(session) === null) return;
@@ -167,7 +179,11 @@ export function recordRecoveryCheckpoint(session, sessionID, forcedPrompt, cwd) 
     const failed = manager.buildSessionProjection().entries.filter(e => e.messages.length).at(-1)?.sourceEntry;
     if (failed?.type !== "message" || failed.message.role !== "assistant" || !["error", "aborted"].includes(failed.message.stopReason)) return;
     try {
-        manager.appendCustomEntry(checkpointType, { sessionID, failedEntryID: failed.id, context: recoveryContext(session, cwd), forcedPrompt });
+        // Seal the configured baseline separately from the exact extension-adjusted run.
+        // Recovery restores the latter only after validating the former and every authority guard.
+        const promptOptions = structuredClone(session._runSystemPromptOptions);
+        manager.appendCustomEntry(checkpointType, { sessionID, failedEntryID: failed.id, context: recoveryContext(session, cwd),
+            baseContext: recoveryContext(session, cwd, buildSystemPrompt(session._baseSystemPromptOptions)), promptOptions, forcedPrompt });
         syncReceipt(session);
         unavailableCheckpoints.delete(session);
     } catch {
