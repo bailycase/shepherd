@@ -13,7 +13,7 @@ request squash auto-merge once ready for review; required CI and branch protecti
 The auto-merge workflow requires the `AUTO_MERGE_TOKEN` Actions secret with repository Contents
 and Pull requests read/write permissions so merges still trigger release workflows.
 Every push to `nightly` ships a Shepherd Nightly build. Nightly pushes build and publish without running tests, including the release
-test preflight. Signing, notarization and artifact verification still run. CI tests pull requests
+test preflight. Signing, notarization and artifact verification still run. CI tests pull requests targeting `master`
 and pushes to `master`; its daily run also tests `master` (docs/testing.md). A separate hosted
 `Build cache` workflow compiles reusable test products on relevant Nightly pushes without
 running tests. Release jobs do not depend on it. It maintains bounded retention of recognized

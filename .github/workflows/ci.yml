@@ -12,6 +12,7 @@ on:
   push:
     branches: [master]
   pull_request:
+    branches: [master]
     types: [opened, synchronize, reopened, labeled, unlabeled, closed]
   schedule:
     # Only the default branch's copy of this file is scheduled, so this starts once master has it.
@@ -41,7 +42,7 @@ defaults:
     shell: bash
 
 jobs:
-  # Ordinary nightly PRs retain unit + smoke + affected suites; shared/unknown paths run all.
+  # Only PRs targeting master run CI; nightly PRs do not start this workflow.
   plan:
     name: plan
     if: github.event.action != 'closed'
