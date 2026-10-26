@@ -15,7 +15,7 @@ struct DesignRulesTests {
     }
 
     /// New code names its sizes, takes status colors from AgentState, uses color roles, and draws
-    /// shared glyphs through NWGlyph.
+    /// shared glyphs through SHGlyph.
     @Test(arguments: DesignRule.allCases)
     func newCodeBreaksNoDesignRule(_ rule: DesignRule) {
         let ceilings = Self.ceilings(for: rule)
@@ -68,21 +68,21 @@ struct DesignRulesTests {
     /// Each pattern fires on what its rule names and stays quiet on what the rules allow.
     @Test(arguments: [
         // A literal size is a violation; a named one is a metric.
-        (".font(.nwMono(11))", [DesignRule.rawFontSize]),
-        (".font(.nwSans(12.5, .medium))", [.rawFontSize]),
+        (".font(.shMono(11))", [DesignRule.rawFontSize]),
+        (".font(.shSans(12.5, .medium))", [.rawFontSize]),
         (".font(.system(size: 14, weight: .medium))", [.rawFontSize]),
-        (".nwText(size: 12.5, lineHeight: 1.45)", [.rawFontSize]),
-        (".font(.nwMono(NWGoalMetrics.labelFont))", []),
-        (".font(.nwSans(size - 0.5))", []),
-        (".font(.system(size: NWComposerMetrics.chipSymbol, weight: .medium))", []),
-        (".font(.nw(.caption))", []),
+        (".shText(size: 12.5, lineHeight: 1.45)", [.rawFontSize]),
+        (".font(.shMono(SHGoalMetrics.labelFont))", []),
+        (".font(.shSans(size - 0.5))", []),
+        (".font(.system(size: SHComposerMetrics.chipSymbol, weight: .medium))", []),
+        (".font(.sh(.caption))", []),
         // A status color with an opacity is a hand-made tint; a neutral role's fade is not.
-        (".foregroundStyle(nw.lantern.opacity(0.6))", [.statusTintByOpacity]),
-        (".background(Color.nw.failedTint.opacity(M.failureFillOpacity), in: shape)", [.statusTintByOpacity]),
-        ("var tint: Color { color.opacity(NWGoalMetrics.tintOpacity) }", [.statusTintByOpacity]),
+        (".foregroundStyle(sh.lantern.opacity(0.6))", [.statusTintByOpacity]),
+        (".background(Color.sh.failedTint.opacity(M.failureFillOpacity), in: shape)", [.statusTintByOpacity]),
+        ("var tint: Color { color.opacity(SHGoalMetrics.tintOpacity) }", [.statusTintByOpacity]),
         (".fill(state.tint?.opacity(0.5))", [.statusTintByOpacity]),
-        ("LinearGradient(colors: [Color.nw.bgWindow.opacity(0), Color.nw.bgWindow])", []),
-        (".opacity(enabled ? 1 : NWControlMetrics.disabledOpacity)", []),
+        ("LinearGradient(colors: [Color.sh.bgWindow.opacity(0), Color.sh.bgWindow])", []),
+        (".opacity(enabled ? 1 : SHControlMetrics.disabledOpacity)", []),
         (".fill(state.tint)", []),
         // A color is a role.
         ("Color(red: 0.1, green: 0.2, blue: 0.3)", [.rawColor]),
@@ -90,14 +90,14 @@ struct DesignRulesTests {
         (".foregroundStyle(.white)", [.rawColor]),
         (".background(Color.indigo, in: shape)", [.rawColor]),
         ("attributes: [.foregroundColor: NSColor.systemRed]", [.rawColor]),
-        (".foregroundStyle(Color.nw.textPrimary)", []),
-        (".foregroundStyle(.nw.lantern)", []),
+        (".foregroundStyle(Color.sh.textPrimary)", []),
+        (".foregroundStyle(.sh.lantern)", []),
         ("Color(light: swatch.light, dark: swatch.dark)", []),
-        // A shared glyph is NWGlyph's.
+        // A shared glyph is SHGlyph's.
         ("Image(systemName: \"bolt.fill\")", [.rawGlyphName]),
         (".glyph(\"bolt\", attention: true)", [.rawGlyphName]),
         ("Image(systemName: tier == .standard ? \"bolt\" : \"bolt.fill\")", [.rawGlyphName]),
-        ("Image(systemName: NWGlyph.automation.symbolName)", []),
+        ("Image(systemName: SHGlyph.automation.symbolName)", []),
         ("Image(systemName: \"bolt.circle\")", []),
         ("Text(\"A bolt of lightning\")", []),
     ] as [(String, [DesignRule])])
@@ -106,18 +106,18 @@ struct DesignRulesTests {
         #expect(rules.isEmpty || DesignRules.prefilterAccepts(code), "the scan's quick test must let a violating line through: \(code)")
     }
 
-    /// A glyph added to `NWGlyph` is policed at once: the scan's quick test and its rule both know it.
-    @Test(arguments: NWGlyph.allCases)
-    func everyRegisteredGlyphIsPolicedAsARawString(glyph: NWGlyph) {
+    /// A glyph added to `SHGlyph` is policed at once: the scan's quick test and its rule both know it.
+    @Test(arguments: SHGlyph.allCases)
+    func everyRegisteredGlyphIsPolicedAsARawString(glyph: SHGlyph) {
         let line = "Image(systemName: \"\(glyph.symbolName)\")"
         #expect(DesignRules.prefilterAccepts(line), "\(line)")
         #expect(DesignRules.rules(violatedBy: line) == [.rawGlyphName], "\(line)")
     }
 
     @Test(arguments: [
-        ("let size = 12 // .nwMono(11) in a comment", "let size = 12 "),
+        ("let size = 12 // .shMono(11) in a comment", "let size = 12 "),
         ("Text(\"https://example.com\") // note", "Text(\"https://example.com\") "),
-        ("let url = \"//server/.nwMono(11)\"", "let url = \"//server/.nwMono(11)\""),
+        ("let url = \"//server/.shMono(11)\"", "let url = \"//server/.shMono(11)\""),
         ("let a = b // c // d", "let a = b "),
     ])
     func aTrailingCommentIsNotCode(line: String, code: String) {

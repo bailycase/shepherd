@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Search's own measures (MobileSearch and iPadPalette boards).
-public enum NWSearchMetrics {
+public enum SHSearchMetrics {
     /// A result row on a phone's card: 52pt, never under the touch minimum.
     public static let rowHeight: CGFloat = 52
     /// A result row in the iPad palette's list.
@@ -20,14 +20,14 @@ public enum NWSearchMetrics {
     public static let statusDot: CGFloat = 8
     /// How far the clear button's touch target reaches past its glyph on each side.
     #if os(iOS)
-    public static let clearTargetOverhang: CGFloat = max(0, (NW.Height.touch - iconSize) / 2)
+    public static let clearTargetOverhang: CGFloat = max(0, (SH.Height.touch - iconSize) / 2)
     #else
     public static let clearTargetOverhang: CGFloat = 0
     #endif
 }
 
 /// A run of text, and whether it matched the query.
-public struct NWHighlightRun: Hashable, Sendable {
+public struct SHHighlightRun: Hashable, Sendable {
     public var text: String
     public var highlighted: Bool
 
@@ -39,15 +39,15 @@ public struct NWHighlightRun: Hashable, Sendable {
 
 /// Text with the query's matches in the lantern's text color at semibold (the boards'
 /// highlight), the rest in `color`. One line unless `lines` says more, tail-truncated.
-public struct NWHighlightedText: View, Equatable {
-    let runs: [NWHighlightRun]
-    let style: NWTextStyle
-    let color: NWHighlightColor
+public struct SHHighlightedText: View, Equatable {
+    let runs: [SHHighlightRun]
+    let style: SHTextStyle
+    let color: SHHighlightColor
     let lines: Int
 
-    public enum NWHighlightColor: Hashable, Sendable { case primary, secondary, tertiary }
+    public enum SHHighlightColor: Hashable, Sendable { case primary, secondary, tertiary }
 
-    public init(_ runs: [NWHighlightRun], style: NWTextStyle, color: NWHighlightColor = .primary, lines: Int = 1) {
+    public init(_ runs: [SHHighlightRun], style: SHTextStyle, color: SHHighlightColor = .primary, lines: Int = 1) {
         self.runs = runs
         self.style = style
         self.color = color
@@ -55,23 +55,23 @@ public struct NWHighlightedText: View, Equatable {
     }
 
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let base: Color = switch color {
-        case .primary: nw.textPrimary
-        case .secondary: nw.textSecondary
-        case .tertiary: nw.textTertiary
+        case .primary: sh.textPrimary
+        case .secondary: sh.textSecondary
+        case .tertiary: sh.textTertiary
         }
         var text = AttributedString()
         for run in runs {
             var part = AttributedString(run.text)
             if run.highlighted {
-                part.foregroundColor = nw.lanternText
-                part.font = .nw(style, weight: .semibold)
+                part.foregroundColor = sh.lanternText
+                part.font = .sh(style, weight: .semibold)
             }
             text.append(part)
         }
         return Text(text)
-            .font(.nw(style))
+            .font(.sh(style))
             .foregroundStyle(base)
             .lineLimit(lines)
             .truncationMode(.tail)
@@ -82,15 +82,15 @@ public struct NWHighlightedText: View, Equatable {
 /// an action), the title over a detail line, both with the query highlighted, the host as a
 /// tag, and a chevron when it opens a screen. `selected` is the palette's keyboard highlight
 /// (running tint). The caller makes it a button; the row draws only.
-public struct NWSearchResultRow: View, Equatable {
+public struct SHSearchResultRow: View, Equatable {
     public enum Leading: Hashable, Sendable {
         case status(AgentState)
         case symbol(String)
     }
 
     let leading: Leading
-    let title: [NWHighlightRun]
-    let detail: [NWHighlightRun]
+    let title: [SHHighlightRun]
+    let detail: [SHHighlightRun]
     let tag: String?
     let shortcut: String?
     let chevron: Bool
@@ -105,9 +105,9 @@ public struct NWSearchResultRow: View, Equatable {
             && lhs.dimmed == rhs.dimmed && lhs.minHeight == rhs.minHeight
     }
 
-    public init(leading: Leading, title: [NWHighlightRun], detail: [NWHighlightRun] = [], tag: String? = nil,
+    public init(leading: Leading, title: [SHHighlightRun], detail: [SHHighlightRun] = [], tag: String? = nil,
                 shortcut: String? = nil, chevron: Bool = false, selected: Bool = false, dimmed: Bool = false,
-                minHeight: CGFloat = NWSearchMetrics.rowHeight) {
+                minHeight: CGFloat = SHSearchMetrics.rowHeight) {
         self.leading = leading
         self.title = title
         self.detail = detail
@@ -120,46 +120,46 @@ public struct NWSearchResultRow: View, Equatable {
     }
 
     public var body: some View {
-        let _ = NWRenderProbe.tick("search.row")
-        let nw = Color.nw
-        HStack(spacing: NW.Space.l) {
+        let _ = SHRenderProbe.tick("search.row")
+        let sh = Color.sh
+        HStack(spacing: SH.Space.l) {
             Group {
                 switch leading {
                 case .status(let state):
-                    NWStatusDot(state, size: NWSearchMetrics.statusDot)
+                    SHStatusDot(state, size: SHSearchMetrics.statusDot)
                 case .symbol(let name):
                     Image(systemName: name)
-                        .font(.system(size: NWSearchMetrics.iconSize, weight: .regular))
-                        .foregroundStyle(selected ? nw.running : nw.textSecondary)
+                        .font(.system(size: SHSearchMetrics.iconSize, weight: .regular))
+                        .foregroundStyle(selected ? sh.running : sh.textSecondary)
                 }
             }
-            .frame(width: NWSearchMetrics.iconColumn)
+            .frame(width: SHSearchMetrics.iconColumn)
             .accessibilityHidden(true)
             // At accessibility sizes the text wraps and the tag moves under it, so the title
             // keeps the row's width.
             let large = typeSize.isAccessibilitySize
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                NWHighlightedText(title, style: .ui, lines: large ? 3 : 1)
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                SHHighlightedText(title, style: .ui, lines: large ? 3 : 1)
                 if !detail.isEmpty {
-                    NWHighlightedText(detail, style: .caption, color: .tertiary, lines: large ? 3 : 1)
+                    SHHighlightedText(detail, style: .caption, color: .tertiary, lines: large ? 3 : 1)
                 }
-                if large, let tag { NWTag(tag, mono: true) }
+                if large, let tag { SHTag(tag, mono: true) }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            if !large, let tag { NWTag(tag, mono: true) }
-            if let shortcut { NWKeycap(shortcut) }
+            if !large, let tag { SHTag(tag, mono: true) }
+            if let shortcut { SHKeycap(shortcut) }
             if chevron {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: NWSearchMetrics.chevronSize, weight: .semibold))
-                    .foregroundStyle(nw.textTertiary)
+                    .font(.system(size: SHSearchMetrics.chevronSize, weight: .semibold))
+                    .foregroundStyle(sh.textTertiary)
                     .accessibilityHidden(true)
             }
         }
-        .padding(.horizontal, NW.Space.l)
-        .padding(.vertical, NW.Space.m)
-        .frame(maxWidth: .infinity, minHeight: max(minHeight, NW.Height.touch), alignment: .leading)
-        .background(selected ? nw.runningTint : .clear, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-        .opacity(dimmed ? NWSearchResultRow.dimmedOpacity : 1)
+        .padding(.horizontal, SH.Space.l)
+        .padding(.vertical, SH.Space.m)
+        .frame(maxWidth: .infinity, minHeight: max(minHeight, SH.Height.touch), alignment: .leading)
+        .background(selected ? sh.runningTint : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+        .opacity(dimmed ? SHSearchResultRow.dimmedOpacity : 1)
         .contentShape(Rectangle())
     }
 
@@ -170,7 +170,7 @@ public struct NWSearchResultRow: View, Equatable {
 /// The touch search field: a glass, the field, and a clear button once there is text, on a
 /// filled capsule (`large` is the palette's plain 56pt row). Focus stays with the caller, so it
 /// can focus the field on appear and read keys (`.onKeyPress`) while it is focused.
-public struct NWTouchSearchField: View {
+public struct SHTouchSearchField: View {
     let placeholder: String
     @Binding var text: String
     let focus: FocusState<Bool>.Binding
@@ -187,17 +187,17 @@ public struct NWTouchSearchField: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        let row = HStack(spacing: NW.Space.m) {
+        let sh = Color.sh
+        let row = HStack(spacing: SH.Space.m) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: NWSearchMetrics.iconSize, weight: .regular))
-                .foregroundStyle(nw.textTertiary)
+                .font(.system(size: SHSearchMetrics.iconSize, weight: .regular))
+                .foregroundStyle(sh.textTertiary)
                 .accessibilityHidden(true)
-            TextField(placeholder, text: $text, prompt: Text(placeholder).foregroundStyle(nw.textTertiary))
+            TextField(placeholder, text: $text, prompt: Text(placeholder).foregroundStyle(sh.textTertiary))
                 .textFieldStyle(.plain)
-                .font(large ? .nw(.headline, weight: .regular) : .nw(.body))
-                .foregroundStyle(nw.textPrimary)
-                .tint(nw.lantern)
+                .font(large ? .sh(.headline, weight: .regular) : .sh(.body))
+                .foregroundStyle(sh.textPrimary)
+                .tint(sh.lantern)
                 .focused(focus)
                 .submitLabel(.search)
                 .autocorrectionDisabled()
@@ -209,23 +209,23 @@ public struct NWTouchSearchField: View {
             if !text.isEmpty {
                 Button { text = "" } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: NWSearchMetrics.iconSize, weight: .regular))
-                        .foregroundStyle(nw.textTertiary)
+                        .font(.system(size: SHSearchMetrics.iconSize, weight: .regular))
+                        .foregroundStyle(sh.textTertiary)
                         // A 44pt target that reaches past the glyph without growing the field,
                         // so typing the first letter never makes the field jump.
-                        .contentShape(Rectangle().inset(by: -NWSearchMetrics.clearTargetOverhang))
+                        .contentShape(Rectangle().inset(by: -SHSearchMetrics.clearTargetOverhang))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear search")
             }
         }
         if large {
-            row.padding(.horizontal, NW.Space.xl)
-                .frame(minHeight: NWSearchMetrics.largeFieldHeight)
+            row.padding(.horizontal, SH.Space.xl)
+                .frame(minHeight: SHSearchMetrics.largeFieldHeight)
         } else {
-            row.padding(.horizontal, NW.Space.l)
-                .frame(minHeight: NWSearchMetrics.fieldHeight)
-                .background(nw.bgSelected, in: RoundedRectangle(cornerRadius: NW.Radius.l))
+            row.padding(.horizontal, SH.Space.l)
+                .frame(minHeight: SHSearchMetrics.fieldHeight)
+                .background(sh.bgSelected, in: RoundedRectangle(cornerRadius: SH.Radius.l))
         }
     }
 }
@@ -234,26 +234,26 @@ public struct NWTouchSearchField: View {
     @Previewable @State var query = "funnel"
     @Previewable @State var empty = ""
     @Previewable @FocusState var focused: Bool
-    let match = [NWHighlightRun("Checkout "), NWHighlightRun("funnel", highlighted: true), NWHighlightRun(" events")]
-    let snippet = [NWHighlightRun("“…"), NWHighlightRun("funnel", highlighted: true), NWHighlightRun(" rows can’t be joined…”")]
-    NWPreviewBoth {
-        VStack(alignment: .leading, spacing: NW.Space.l) {
-            NWTouchSearchField("Search threads", text: $query, focus: $focused)
-            NWTouchSearchField("Search threads and actions", text: $empty, focus: $focused, large: true)
+    let match = [SHHighlightRun("Checkout "), SHHighlightRun("funnel", highlighted: true), SHHighlightRun(" events")]
+    let snippet = [SHHighlightRun("“…"), SHHighlightRun("funnel", highlighted: true), SHHighlightRun(" rows can’t be joined…”")]
+    SHPreviewBoth {
+        VStack(alignment: .leading, spacing: SH.Space.l) {
+            SHTouchSearchField("Search threads", text: $query, focus: $focused)
+            SHTouchSearchField("Search threads and actions", text: $empty, focus: $focused, large: true)
             VStack(spacing: 0) {
-                NWSearchResultRow(leading: .status(.attention), title: match, detail: [NWHighlightRun("Needs you · Shepherd")],
+                SHSearchResultRow(leading: .status(.attention), title: match, detail: [SHHighlightRun("Needs you · Shepherd")],
                                   tag: "Studio", chevron: true)
-                NWHairline()
-                NWSearchResultRow(leading: .symbol("text.bubble"), title: [NWHighlightRun("Plan shepherd extensions")],
+                SHHairline()
+                SHSearchResultRow(leading: .symbol("text.bubble"), title: [SHHighlightRun("Plan shepherd extensions")],
                                   detail: snippet, tag: "build-01", chevron: true)
-                NWHairline()
-                NWSearchResultRow(leading: .status(.idle), title: [NWHighlightRun("Old notes")], detail: [NWHighlightRun("Idle")],
+                SHHairline()
+                SHSearchResultRow(leading: .status(.idle), title: [SHHighlightRun("Old notes")], detail: [SHHighlightRun("Idle")],
                                   tag: "MacBook Air", chevron: true, dimmed: true)
             }
-            .nwCard(radius: NW.Radius.l)
-            NWSearchResultRow(leading: .symbol("pencil"), title: [NWHighlightRun("Rename…")],
-                              detail: [NWHighlightRun("Investigate SwiftUI live preview")], shortcut: "↩", selected: true,
-                              minHeight: NWSearchMetrics.compactRowHeight)
+            .shCard(radius: SH.Radius.l)
+            SHSearchResultRow(leading: .symbol("pencil"), title: [SHHighlightRun("Rename…")],
+                              detail: [SHHighlightRun("Investigate SwiftUI live preview")], shortcut: "↩", selected: true,
+                              minHeight: SHSearchMetrics.compactRowHeight)
         }
         .frame(width: 390)
     }

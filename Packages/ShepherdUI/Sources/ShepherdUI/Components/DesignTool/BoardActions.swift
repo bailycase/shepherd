@@ -1,15 +1,15 @@
 import SwiftUI
 
-/// The board actions (NWBoardActions; NWDesignTool, DZCanvas), floating over the selected board:
+/// The board actions (SHBoardActions; SHDesignTool, DZCanvas), floating over the selected board:
 /// Comment (`text.bubble`), Tweak (`slider.horizontal.3`), Variations (`square.grid.2x2`),
 /// Duplicate (`doc.on.doc`), Implement… (the code glyph, RefImplementMenu) where the selection can go
 /// to a thread, and ••• (a circle). A `bgRaised` bar with the popover's line and
 /// shadow; each item a 13pt glyph in `textSecondary` beside its label in `textPrimary`.
 ///
-/// `.regular` is NWDesignTool's specimen; `.compact` is how DZCanvas draws it over a board.
+/// `.regular` is SHDesignTool's specimen; `.compact` is how DZCanvas draws it over a board.
 /// ••• holds Play for an interactive board, and is disabled otherwise: what else it lists is not
 /// drawn.
-public struct NWBoardActions: View {
+public struct SHBoardActions: View {
     public enum Size: Sendable {
         case regular
         case compact
@@ -45,46 +45,46 @@ public struct NWBoardActions: View {
     }
 
     public var body: some View {
-        let M = NWDesignMetrics.self
+        let M = SHDesignMetrics.self
         let compact = size == .compact
         let itemHeight = compact ? M.compactActionItemHeight : M.actionItemHeight
         HStack(spacing: M.actionsSpacing) {
-            NWBoardAction("Comment", symbol: "text.bubble", size: size, action: actions.comment)
-            NWBoardAction("Tweak", symbol: "slider.horizontal.3", size: size, action: actions.tweak)
-            NWBoardAction("Variations", symbol: "square.grid.2x2", size: size, action: actions.variations)
-            NWBoardAction("Duplicate", symbol: "doc.on.doc", size: size, action: actions.duplicate)
+            SHBoardAction("Comment", symbol: "text.bubble", size: size, action: actions.comment)
+            SHBoardAction("Tweak", symbol: "slider.horizontal.3", size: size, action: actions.tweak)
+            SHBoardAction("Variations", symbol: "square.grid.2x2", size: size, action: actions.variations)
+            SHBoardAction("Duplicate", symbol: "doc.on.doc", size: size, action: actions.duplicate)
             if let implement = actions.implement {
-                NWBoardAction("Implement…", symbol: "chevron.left.forwardslash.chevron.right", size: size, action: implement)
+                SHBoardAction("Implement…", symbol: "chevron.left.forwardslash.chevron.right", size: size, action: implement)
             }
             Menu {
                 if let play = actions.play { Button("Play", systemImage: "play.fill", action: play) }
             } label: {
                 Image(systemName: "ellipsis")
-                    .font(.nwSans(M.moreGlyph))
+                    .font(.shSans(M.moreGlyph))
             }
             .menuStyle(.button)
             .menuIndicator(.hidden)
-            .buttonStyle(.nwIcon(size: itemHeight))
+            .buttonStyle(.shIcon(size: itemHeight))
             .fixedSize()
             .disabled(actions.play == nil)
             .accessibilityLabel("More")
         }
         .padding(M.actionsPadding)
         .frame(height: compact ? M.compactActionsHeight : nil)
-        .nwPopover(radius: compact ? M.compactActionsRadius : M.actionsRadius)
+        .shPopover(radius: compact ? M.compactActionsRadius : M.actionsRadius)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Board actions")
     }
 }
 
 /// One of the board actions: its glyph and label, the hover fill on `bgHover`.
-private struct NWBoardAction: View {
+private struct SHBoardAction: View {
     let title: String
     let symbol: String
-    let size: NWBoardActions.Size
+    let size: SHBoardActions.Size
     let action: () -> Void
 
-    init(_ title: String, symbol: String, size: NWBoardActions.Size, action: @escaping () -> Void) {
+    init(_ title: String, symbol: String, size: SHBoardActions.Size, action: @escaping () -> Void) {
         self.title = title
         self.symbol = symbol
         self.size = size
@@ -94,33 +94,33 @@ private struct NWBoardAction: View {
     @State private var hovering = false
 
     var body: some View {
-        let M = NWDesignMetrics.self
+        let M = SHDesignMetrics.self
         let compact = size == .compact
         let radius = compact ? M.compactActionItemRadius : M.actionItemRadius
         Button(action: action) {
             HStack(spacing: M.actionItemGap) {
                 Image(systemName: symbol)
-                    .font(.nwSans(M.actionGlyph))
-                    .foregroundStyle(Color.nw.textSecondary)
+                    .font(.shSans(M.actionGlyph))
+                    .foregroundStyle(Color.sh.textSecondary)
                 Text(title)
-                    .font(.nwSans(compact ? M.compactActionTextSize : M.actionTextSize))
-                    .foregroundStyle(Color.nw.textPrimary)
+                    .font(.shSans(compact ? M.compactActionTextSize : M.actionTextSize))
+                    .foregroundStyle(Color.sh.textPrimary)
                     .lineLimit(1)
             }
             .padding(.horizontal, compact ? M.compactActionItemPadding : M.actionItemPadding)
             .frame(height: compact ? M.compactActionItemHeight : M.actionItemHeight)
-            .background(hovering ? Color.nw.bgHover : .clear, in: RoundedRectangle(cornerRadius: radius))
+            .background(hovering ? Color.sh.bgHover : .clear, in: RoundedRectangle(cornerRadius: radius))
             .contentShape(RoundedRectangle(cornerRadius: radius))
         }
         .buttonStyle(.plain)
         .fixedSize()
         .onHover { hovering = $0 }
-        .nwAnimation(.hover, value: hovering)
+        .shAnimation(.hover, value: hovering)
         .help(title)
     }
 }
 
-extension NWBoardActions {
+extension SHBoardActions {
     /// Where the bar goes over a board whose frame is `board` on screen, its leading edge at the
     /// frame's middle (DZCanvas), kept `inset` inside a canvas of `canvas` along its width. Its
     /// bottom sits `actionsGap` above the board's label, as the board draws it. Where that leaves
@@ -128,10 +128,10 @@ extension NWBoardActions {
     /// `actionsGap` under the board, above the canvas toolbar's band. Where neither fits, it sits
     /// just inside the board's top edge, kept on the canvas. Nil when the board is off screen.
     public static func origin(over board: CGRect, bar: CGSize, canvas: CGSize, labels: [CGRect] = [],
-                              inset: CGFloat = NWDesignMetrics.toolbarInset) -> CGPoint? {
+                              inset: CGFloat = SHDesignMetrics.toolbarInset) -> CGPoint? {
         guard board.intersects(CGRect(origin: .zero, size: canvas)) else { return nil }
-        let M = NWDesignMetrics.self
-        let margin = NW.Space.xs
+        let M = SHDesignMetrics.self
+        let margin = SH.Space.xs
         let x = min(max(board.midX, inset), max(inset, canvas.width - bar.width - inset))
         let floor = canvas.height - M.toolbarHeight - inset - margin
         func fits(_ y: CGFloat) -> Bool {
@@ -150,7 +150,7 @@ extension NWBoardActions {
 
 /// "Ask for another direction" (DZCanvas): a dashed 300×190 tile after the last board, a `plus`
 /// over the words. It asks the design agent for one more direction.
-public struct NWDirectionTile: View {
+public struct SHDirectionTile: View {
     let action: () -> Void
     @State private var hovering = false
 
@@ -159,33 +159,33 @@ public struct NWDirectionTile: View {
     }
 
     public var body: some View {
-        let M = NWDesignMetrics.self
+        let M = SHDesignMetrics.self
         let shape = RoundedRectangle(cornerRadius: M.directionTileRadius)
         Button(action: action) {
             VStack(spacing: M.directionTileSpacing) {
                 Image(systemName: "plus")
-                    .font(.nwSans(M.directionTileGlyph))
+                    .font(.shSans(M.directionTileGlyph))
                 Text("Ask for another direction")
-                    .font(.nwSans(M.directionTileTextSize))
+                    .font(.shSans(M.directionTileTextSize))
             }
-            .foregroundStyle(hovering ? Color.nw.textSecondary : Color.nw.textTertiary)
+            .foregroundStyle(hovering ? Color.sh.textSecondary : Color.sh.textTertiary)
             .frame(width: M.directionTileSize.width, height: M.directionTileSize.height)
-            .nwBorder(Color.nw.lineStrong, in: shape, dash: M.directionTileDash)
+            .shBorder(Color.sh.lineStrong, in: shape, dash: M.directionTileDash)
             .contentShape(shape)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .nwAnimation(.hover, value: hovering)
+        .shAnimation(.hover, value: hovering)
     }
 
     /// Where the tile goes after the last board, whose frame is `board` on screen.
     public static func origin(after board: CGRect) -> CGPoint {
-        CGPoint(x: board.maxX + NWDesignMetrics.directionTileGap, y: board.minY)
+        CGPoint(x: board.maxX + SHDesignMetrics.directionTileGap, y: board.minY)
     }
 }
 
 /// A note on the canvas, read-only: a title (`title1`) or a sticky, at its canvas position.
-public struct NWCanvasNote: Identifiable, Equatable, Sendable {
+public struct SHCanvasNote: Identifiable, Equatable, Sendable {
     public enum Kind: Sendable {
         case title
         case sticky
@@ -210,7 +210,7 @@ public struct NWCanvasNote: Identifiable, Equatable, Sendable {
     /// Roughly where it lies on the canvas (its width, and a line or two of height), to find the
     /// notes on screen.
     public var bounds: CGRect {
-        let M = NWDesignMetrics.self
+        let M = SHDesignMetrics.self
         switch kind {
         case .title:
             return CGRect(x: origin.x, y: origin.y, width: width ?? M.titleNoteSize * 20, height: M.titleNoteSize * 3)
@@ -222,17 +222,17 @@ public struct NWCanvasNote: Identifiable, Equatable, Sendable {
 
 /// A note as the canvas draws it at `zoom`: a title's words in `textPrimary` semibold, or a
 /// sticky's in a raised card with a line. It takes no events.
-struct NWCanvasNoteView: View, Equatable {
-    let note: NWCanvasNote
+struct SHCanvasNoteView: View, Equatable {
+    let note: SHCanvasNote
     let zoom: CGFloat
 
     var body: some View {
-        let M = NWDesignMetrics.self
+        let M = SHDesignMetrics.self
         switch note.kind {
         case .title:
             let words = Text(note.text)
-                .font(.nwSans(M.titleNoteSize * zoom, .semibold))
-                .foregroundStyle(Color.nw.textPrimary)
+                .font(.shSans(M.titleNoteSize * zoom, .semibold))
+                .foregroundStyle(Color.sh.textPrimary)
             if let width = note.width {
                 words
                     .fixedSize(horizontal: false, vertical: true)
@@ -242,13 +242,13 @@ struct NWCanvasNoteView: View, Equatable {
             }
         case .sticky:
             Text(note.text)
-                .font(.nwSans(M.stickyTextSize * zoom))
-                .foregroundStyle(Color.nw.textPrimary)
+                .font(.shSans(M.stickyTextSize * zoom))
+                .foregroundStyle(Color.sh.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(M.stickyPadding * zoom)
                 .frame(width: (note.width ?? M.stickyWidth) * zoom, alignment: .topLeading)
-                .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: M.stickyRadius * zoom))
-                .nwBorder(Color.nw.lineStrong, radius: M.stickyRadius * zoom)
+                .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: M.stickyRadius * zoom))
+                .shBorder(Color.sh.lineStrong, radius: M.stickyRadius * zoom)
         }
     }
 }
@@ -256,7 +256,7 @@ struct NWCanvasNoteView: View, Equatable {
 /// One board shown focused over the canvas (Present, Play): a `scrim` over everything, and the
 /// board fitted into the view in its frame. A click on the scrim closes it. The slot draws the
 /// board's page, which takes its own events here, so its links work.
-public struct NWBoardPresentation<Slot: View>: View {
+public struct SHBoardPresentation<Slot: View>: View {
     let title: String
     let boardSize: CGSize
     let close: () -> Void
@@ -274,12 +274,12 @@ public struct NWBoardPresentation<Slot: View>: View {
         GeometryReader { proxy in
             let zoom = Self.zoom(for: boardSize, in: proxy.size)
             ZStack {
-                Color.nw.scrim
+                Color.sh.scrim
                     .contentShape(Rectangle())
                     .onTapGesture(perform: close)
                     .accessibilityAddTraits(.isButton)
                     .accessibilityLabel("Close")
-                NWBoardSurface(size: CGSize(width: boardSize.width * zoom, height: boardSize.height * zoom), selected: false) {
+                SHBoardSurface(size: CGSize(width: boardSize.width * zoom, height: boardSize.height * zoom), selected: false) {
                     slot(zoom)
                 }
                 .accessibilityElement(children: .contain)
@@ -291,8 +291,8 @@ public struct NWBoardPresentation<Slot: View>: View {
     /// The board fitted into a view of `size` with the canvas's fitted margins around it, never
     /// larger than 100%.
     public static func zoom(for board: CGSize, in size: CGSize) -> CGFloat {
-        let room = CGSize(width: size.width - NWDesignMetrics.fitLeading * 2, height: size.height - NWDesignMetrics.fitTop * 2)
-        guard board.width > 0, board.height > 0, room.width > 0, room.height > 0 else { return NWCanvasViewport.zoomRange.lowerBound }
-        return NWCanvasViewport.clamp(min(1, room.width / board.width, room.height / board.height))
+        let room = CGSize(width: size.width - SHDesignMetrics.fitLeading * 2, height: size.height - SHDesignMetrics.fitTop * 2)
+        guard board.width > 0, board.height > 0, room.width > 0, room.height > 0 else { return SHCanvasViewport.zoomRange.lowerBound }
+        return SHCanvasViewport.clamp(min(1, room.width / board.width, room.height / board.height))
     }
 }

@@ -15,10 +15,10 @@ struct LogicalProjectSidebarRow: View {
     var body: some View {
         Group {
             if spaces {
-                NWLeadSpaceProjectRow(project.name, selected: project.selected, count: project.count, needsYou: project.needsYou)
+                SHLeadSpaceProjectRow(project.name, selected: project.selected, count: project.count, needsYou: project.needsYou)
                     .equatable()
             } else {
-                NWLeadProjectRow(project.name, selected: project.selected, summary: project.summary, needsYou: project.needsYou)
+                SHLeadProjectRow(project.name, selected: project.selected, summary: project.summary, needsYou: project.needsYou)
                     .equatable()
             }
         }
@@ -42,7 +42,7 @@ struct LogicalProjectTaskRow: View {
     let task: ProjectTaskRow
 
     var body: some View {
-        NWLeadTaskRow(title: task.title, attention: task.group == .waiting, word: task.group == .waiting ? "answer" : nil)
+        SHLeadTaskRow(title: task.title, attention: task.group == .waiting, word: task.group == .waiting ? "answer" : nil)
             .equatable()
             .sidebarTapRow {
                 vm.openLogicalProject(ref)

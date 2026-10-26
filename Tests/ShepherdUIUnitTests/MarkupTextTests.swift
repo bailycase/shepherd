@@ -7,10 +7,10 @@ import Testing
 @Suite("Markup text")
 struct MarkupTextTests {
     @Test func codeAndOptionNamesBecomeTheirOwnPieces() {
-        #expect(NWMarkupTextParser.parse("passes no `--model` at all.") == [
+        #expect(SHMarkupTextParser.parse("passes no `--model` at all.") == [
             .plain("passes no "), .code("--model"), .plain(" at all."),
         ])
-        #expect(NWMarkupTextParser.parse("**Remote default** starts clean. **Current branch** stacks.") == [
+        #expect(SHMarkupTextParser.parse("**Remote default** starts clean. **Current branch** stacks.") == [
             .strong("Remote default"), .plain(" starts clean. "), .strong("Current branch"), .plain(" stacks."),
         ])
     }
@@ -21,13 +21,13 @@ struct MarkupTextTests {
         "Sidebar order; hold ⌘ to see the numbers.",
     ])
     func textWithoutMarkupStaysOnePlainPiece(source: String) {
-        #expect(NWMarkupTextParser.parse(source) == [.plain(source)])
+        #expect(SHMarkupTextParser.parse(source) == [.plain(source)])
     }
 
     /// Underscores inside a code span are the tool's name, never emphasis.
     @Test func codeKeepsItsCharacters() {
-        #expect(NWMarkupTextParser.parse("with `review_diff`.") == [.plain("with "), .code("review_diff"), .plain(".")])
-        #expect(NWMarkupTextParser.parse("Runs `pi update --extensions` once a day.") == [
+        #expect(SHMarkupTextParser.parse("with `review_diff`.") == [.plain("with "), .code("review_diff"), .plain(".")])
+        #expect(SHMarkupTextParser.parse("Runs `pi update --extensions` once a day.") == [
             .plain("Runs "), .code("pi update --extensions"), .plain(" once a day."),
         ])
     }
@@ -39,6 +39,6 @@ struct MarkupTextTests {
         ("review_diff", "review_diff"),
     ])
     func codeBreaksOnlyAtItsSpaces(code: String, shown: String) {
-        #expect(NWMarkupText.unbroken(code) == shown)
+        #expect(SHMarkupText.unbroken(code) == shown)
     }
 }

@@ -16,10 +16,10 @@ User requirement: add a Codemode toggle, enabled by default, and a per-project o
 
 - Settings > Agents > Context retains its existing rows in order, then adds `Codemode` with the existing `SettingsSwitch`, on for a fresh settings store.
 - The row explains: `Lets the agent run JavaScript to batch tool calls and filter results, up to 128 calls and five minutes per script. Direct tool calls stay available. Scripts cannot call classifier or image models directly. Projects can override this default.` The section says changes apply when agents start or restart.
-- Settings > Spaces > Pi settings adds a `Codemode` row before the `.shepherd/settings.json` editor. Its existing `NWSegmentedPicker` offers `Use global default`, `On`, and `Off`. The accessible group name is `Project codemode`.
+- Settings > Spaces > Pi settings adds a `Codemode` row before the `.shepherd/settings.json` editor. Its existing `SHSegmentedPicker` offers `Use global default`, `On`, and `Off`. The accessible group name is `Project codemode`.
 - The space row explains: `Overrides this host's global setting for this space. Save the file, then start or restart the agent.` The choice updates the JSON draft. Existing Save, dirty-navigation confirmation, conflict detection, and file validation remain responsible for writing it.
 - Missing space settings inherit. Invalid JSON or incompatible codemode-related fields disable the picker and explain the problem without rewriting the draft. Offline and loading states remain read-only.
-- Use `SettingsGroup`, `SettingsRow`, `SettingsSwitch`, `NWSegmentedPicker`, and existing Night Watch colors, fonts, spacing, corner radii, and hit-area tokens. Add no glyphs or literal view dimensions.
+- Use `SettingsGroup`, `SettingsRow`, `SettingsSwitch`, `SHSegmentedPicker`, and existing Shepherd Design colors, fonts, spacing, corner radii, and hit-area tokens. Add no glyphs or literal view dimensions.
 - Preserve unrelated JSON fields, extensions, and tool selections. Global changes take effect before the next agent launch, without restarting a running agent. Per-project values use Pi's native settings precedence, not a separate Shepherd execution engine.
 - Render global on/off and space inherit/on/off, missing/invalid/long settings in light and dark at text scale 1 and 1.3. Drive the real settings/model/file producer.
 - Press the global switch and every space segment through `ControlPress`, then Save. Read back persisted settings, verify inherited behavior, and test write conflicts.

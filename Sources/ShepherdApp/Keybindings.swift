@@ -450,7 +450,7 @@ final class KeybindingsStore {
 
     /// The question dock's keys (fixed; QuestionStates › Keyboard) as its tooltips spell them:
     /// ↩ answers, Esc hides or shows it, and 1–9 pick its options.
-    var questionKeys: NWQuestionDockKeys { NWQuestionDockKeys(answer: sendDisplay, hide: "Esc") }
+    var questionKeys: SHQuestionDockKeys { SHQuestionDockKeys(answer: sendDisplay, hide: "Esc") }
 
     // MARK: Assignment
 

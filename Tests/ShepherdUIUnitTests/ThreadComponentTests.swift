@@ -9,19 +9,19 @@ struct ThreadComponentTests {
     @Test(arguments: [false, true])
     @MainActor func nativeCodeKeepsUnicodeAndSyntaxColorsWhenTheAppearanceChanges(dark: Bool) throws {
         var keyword = AttributedString("let")
-        keyword.foregroundColor = Color.nw.synKeyword
+        keyword.foregroundColor = Color.sh.synKeyword
         let source = keyword + AttributedString(" sheep = \"🐑\"\nlet tail")
-        let font = NSFont.monospacedSystemFont(ofSize: NWTextStyle.code.size, weight: .regular)
-        let native = NWNativeCodeText.attributedCode(String(source.characters), highlighted: source,
+        let font = NSFont.monospacedSystemFont(ofSize: SHTextStyle.code.size, weight: .regular)
+        let native = SHNativeCodeText.attributedCode(String(source.characters), highlighted: source,
                                                     font: font, lineSpacing: 4)
         #expect(native.string == "let sheep = \"🐑\"\nlet tail")
-        #expect(source.runs.first?.foregroundColor == Color.nw.synKeyword, "cached highlights stay untouched")
+        #expect(source.runs.first?.foregroundColor == Color.sh.synKeyword, "cached highlights stay untouched")
         #expect(native.attribute(.font, at: 0, effectiveRange: nil) as? NSFont == font)
         let color = try #require(native.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor)
         let plain = try #require(native.attribute(.foregroundColor, at: 4, effectiveRange: nil) as? NSColor)
         // Resolve the same native attributes in both appearances, as a retained block does.
         for appearance in [dark, !dark] {
-            let theme = appearance ? ThemeDefinition.nightWatch.dark : ThemeDefinition.nightWatch.light
+            let theme = appearance ? ThemeDefinition.shepherdDesign.dark : ThemeDefinition.shepherdDesign.light
             let expected = try #require(HexColor(theme.syntax.keyword))
             let expectedPlain = try #require(HexColor(theme.colors.textPrimary))
             NSAppearance(named: appearance ? .darkAqua : .aqua)!.performAsCurrentDrawingAppearance {
@@ -38,14 +38,14 @@ struct ThreadComponentTests {
     @Test(arguments: [false, true])
     @MainActor func nativeCodeConversionMatchesTheGeneralBridge(extraAttributes: Bool) {
         var keyword = AttributedString("let")
-        keyword.foregroundColor = Color.nw.synKeyword
+        keyword.foregroundColor = Color.sh.synKeyword
         var value = AttributedString("e\u{301} 👩🏾‍💻 🐑")
-        value.foregroundColor = Color.nw.synString
+        value.foregroundColor = Color.sh.synString
         if extraAttributes { value.link = URL(string: "https://example.com/code") }
         let source = keyword + AttributedString(" value = \"") + value + AttributedString("\"\n") + keyword
         let untouched = source
-        let font = NSFont.monospacedSystemFont(ofSize: NWTextStyle.code.size, weight: .regular)
-        let actual = NWNativeCodeText.attributedCode(String(source.characters), highlighted: source, font: font, lineSpacing: 4)
+        let font = NSFont.monospacedSystemFont(ofSize: SHTextStyle.code.size, weight: .regular)
+        let actual = SHNativeCodeText.attributedCode(String(source.characters), highlighted: source, font: font, lineSpacing: 4)
 
         // The original Foundation bridge is the reference, including attributes that the
         // syntax-only fast path must leave to it. Compare UTF-16 runs, not just visible words.
@@ -54,7 +54,7 @@ struct ThreadComponentTests {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 4
         paragraph.lineBreakMode = .byClipping
-        expected.addAttributes([.font: font, .foregroundColor: NSColor(Color.nw.textPrimary),
+        expected.addAttributes([.font: font, .foregroundColor: NSColor(Color.sh.textPrimary),
                                 .paragraphStyle: paragraph], range: range)
         let key = NSAttributedString.Key(AttributeScopes.SwiftUIAttributes.ForegroundColorAttribute.name)
         expected.enumerateAttribute(key, in: range) { value, run, _ in
@@ -66,17 +66,17 @@ struct ThreadComponentTests {
     }
 
     @Test @MainActor func recreatedCodeCachesReuseValuesButNotDifferentStyles() {
-        let font = NSFont.monospacedSystemFont(ofSize: NWTextStyle.code.size, weight: .regular)
-        let content = NWNativeCodeText.Content(code: "// shared-cache fixture 🐑", highlighted: nil,
-                                               font: font, lineSpacing: 4, foreground: Color.nw.textPrimary)
-        let original = NWNativeCodeText.Cache()
+        let font = NSFont.monospacedSystemFont(ofSize: SHTextStyle.code.size, weight: .regular)
+        let content = SHNativeCodeText.Content(code: "// shared-cache fixture 🐑", highlighted: nil,
+                                               font: font, lineSpacing: 4, foreground: Color.sh.textPrimary)
+        let original = SHNativeCodeText.Cache()
         let value = original.value(for: content)
         original.intrinsicSize = CGSize(width: 220, height: 20)
-        let recreated = NWNativeCodeText.Cache()
+        let recreated = SHNativeCodeText.Cache()
         #expect(recreated.value(for: content) === value)
         #expect(recreated.intrinsicSize == original.intrinsicSize)
 
-        let changed = NWNativeCodeText.Content(code: content.code, highlighted: content.highlighted,
+        let changed = SHNativeCodeText.Content(code: content.code, highlighted: content.highlighted,
                                                font: font, lineSpacing: 8, foreground: content.foreground)
         #expect(recreated.value(for: changed) !== value)
         #expect(recreated.intrinsicSize == nil, "a same-text cache hit must not reuse different geometry")
@@ -84,11 +84,11 @@ struct ThreadComponentTests {
     }
 
     @Test @MainActor func oversizedCodeIsNotRetainedAcrossViews() {
-        let font = NSFont.monospacedSystemFont(ofSize: NWTextStyle.code.size, weight: .regular)
-        let content = NWNativeCodeText.Content(code: String(repeating: "x", count: 3 * 1024 * 1024), highlighted: nil,
-                                               font: font, lineSpacing: 4, foreground: Color.nw.textPrimary)
-        let first = NWNativeCodeText.Cache().value(for: content)
-        let second = NWNativeCodeText.Cache().value(for: content)
+        let font = NSFont.monospacedSystemFont(ofSize: SHTextStyle.code.size, weight: .regular)
+        let content = SHNativeCodeText.Content(code: String(repeating: "x", count: 3 * 1024 * 1024), highlighted: nil,
+                                               font: font, lineSpacing: 4, foreground: Color.sh.textPrimary)
+        let first = SHNativeCodeText.Cache().value(for: content)
+        let second = SHNativeCodeText.Cache().value(for: content)
         #expect(first !== second, "an entry over the estimated byte budget is owned only by its live view")
     }
 
@@ -100,10 +100,10 @@ struct ThreadComponentTests {
         (live: true, blocks: [.paragraph("hmm")], kind: .liveDisclosure),
         (live: false, blocks: [], kind: .plain),
         (live: false, blocks: [.paragraph("**Inspecting SSH config**")], kind: .disclosure),
-    ] as [(live: Bool, blocks: [NWProseBlock], kind: NWThinking.Kind)])
-    func thinkingOpensOnlyOntoText(live: Bool, blocks: [NWProseBlock], kind: NWThinking.Kind) {
-        #expect(NWThinking.Kind(live: live, blocks: blocks) == kind)
-        #expect(NWThinking.Kind(live: live, blocks: blocks).opens == (kind == .disclosure || kind == .liveDisclosure))
+    ] as [(live: Bool, blocks: [SHProseBlock], kind: SHThinking.Kind)])
+    func thinkingOpensOnlyOntoText(live: Bool, blocks: [SHProseBlock], kind: SHThinking.Kind) {
+        #expect(SHThinking.Kind(live: live, blocks: blocks) == kind)
+        #expect(SHThinking.Kind(live: live, blocks: blocks).opens == (kind == .disclosure || kind == .liveDisclosure))
     }
 
     /// Plain-text thinking (no Markdown read) is a paragraph per blank-line run, with no empty
@@ -115,7 +115,7 @@ struct ThreadComponentTests {
         ("One.\n\n\n\nTwo.\n\n", ["One.", "Two."]),
     ] as [(String, [String])])
     @MainActor func plainTextThinkingIsItsParagraphs(text: String, paragraphs: [String]) {
-        let thinking = NWThinking("Thought", text: text, isExpanded: .constant(true))
+        let thinking = SHThinking("Thought", text: text, isExpanded: .constant(true))
         #expect(thinking.blocks == paragraphs.map { .paragraph(AttributedString($0)) })
     }
 
@@ -132,6 +132,6 @@ struct ThreadComponentTests {
     func messageDetailsShowOnlyWhenTheMessageIsHoveredOrReachedAnotherWay(
         hovering: Bool, focused: Bool, confirming: Bool, voiceOver: Bool, shown: Bool
     ) {
-        #expect(NWMessageDetails.shown(hovering: hovering, focused: focused, confirming: confirming, voiceOver: voiceOver) == shown)
+        #expect(SHMessageDetails.shown(hovering: hovering, focused: focused, confirming: confirming, voiceOver: voiceOver) == shown)
     }
 }

@@ -6,7 +6,7 @@ import ShepherdUI
 extension AppLayout {
     /// The column: at most this wide, centered, 24pt between its parts.
     static let referenceColumnWidth: CGFloat = 960
-    static let referencePartSpacing: CGFloat = NW.Space.xxl
+    static let referencePartSpacing: CGFloat = SH.Space.xxl
     /// Above the first part, clear of the contents button; below the last.
     static let referenceTopPadding: CGFloat = 64
     static let referenceBottomPadding: CGFloat = 64
@@ -33,7 +33,7 @@ extension AppLayout {
     static let referenceValueChipWidth: CGFloat = 160
     /// The contents menu: 224pt, its button 16pt from the corner.
     static let referenceMenuWidth: CGFloat = 224
-    static let referenceMenuInset: CGFloat = NW.Space.xl
+    static let referenceMenuInset: CGFloat = SH.Space.xl
     /// The measure of Principles and Voice copy.
     static let referenceProseLineSpacing: CGFloat = 4
 }

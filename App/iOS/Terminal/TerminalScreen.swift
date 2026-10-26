@@ -32,34 +32,34 @@ struct TerminalScreen: View {
         let selected = model.selected
         let focusedSession = selected?.leaf.sessionID.map { terminals.session(host: ref.host, id: $0) }
         VStack(spacing: 0) {
-            NWTerminalTabBar(model.items, selection: selected?.id.rawValue, select: { id in
+            SHTerminalTabBar(model.items, selection: selected?.id.rawValue, select: { id in
                 if let tab = model.tab(for: id) { terminals.choose(tab, in: ref) }
             }, close: model.canChangeTerminals && model.connected ? { id in closing = model.tab(for: id) } : nil,
                newTab: model.canChangeTerminals && model.connected ? { newTab(model) } : nil) {
                 EmptyView()
             }
             if let problem = terminals.problems[ref] {
-                NWBanner(.failed, title: problem) {
-                    Button("Dismiss") { terminals.problems[ref] = nil }.buttonStyle(.nw(.ghost, size: .s))
+                SHBanner(.failed, title: problem) {
+                    Button("Dismiss") { terminals.problems[ref] = nil }.buttonStyle(.sh(.ghost, size: .s))
                 }
-                .padding(NW.Space.m)
+                .padding(SH.Space.m)
             }
             ZStack {
                 if let selected {
                     TerminalPaneView(ref: ref, pane: selected.leaf)
                         .id(selected.id)
                 } else {
-                    VStack(spacing: NW.Space.m) {
+                    VStack(spacing: SH.Space.m) {
                         if !model.connected {
                             Text("\(model.hostName) is offline.")
-                                .font(.nw(.ui))
-                                .foregroundStyle(Color.nw.textSecondary)
+                                .font(.sh(.ui))
+                                .foregroundStyle(Color.sh.textSecondary)
                         } else if !model.canChangeTerminals {
                             Text("Update Shepherd on \(model.hostName) to open terminals here.")
-                                .font(.nw(.ui))
-                                .foregroundStyle(Color.nw.textSecondary)
+                                .font(.sh(.ui))
+                                .foregroundStyle(Color.sh.textSecondary)
                         } else {
-                            NWTerminalNotice("starting session…")
+                            SHTerminalNotice("starting session…")
                         }
                     }
                     .multilineTextAlignment(.center)
@@ -71,7 +71,7 @@ struct TerminalScreen: View {
                 TerminalKeys(session: focusedSession)
             }
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .onChange(of: model.seenMark, initial: true) { _, mark in terminals.markSeen(ref, sessions: mark.sessions) }
         // Sessions the host no longer lists let go of their screens, as the iPad panel's do.
         .onChange(of: liveSessions, initial: true) { _, live in

@@ -1,20 +1,20 @@
 import SwiftUI
 
 /// Sheet geometry shared by every dialog part, so rows, lists and the footer line up.
-public enum NWDialogMetrics {
+public enum SHDialogMetrics {
     /// The dialog's outer inset: header, rows, footer.
-    public static let inset: CGFloat = NW.Space.xxl
+    public static let inset: CGFloat = SH.Space.xxl
     /// The label column of a labeled row.
     public static let labelWidth: CGFloat = 96
     /// A labeled row fits a default control with a step of air above and below.
-    public static let rowMinHeight: CGFloat = NW.Height.controlM + 2 * NW.Space.m
+    public static let rowMinHeight: CGFloat = SH.Height.controlM + 2 * SH.Space.m
     public static let width: CGFloat = 460
 }
 
 /// A modal sheet: a title, an optional explanation, the body (labeled rows, banners, lists),
 /// and a footer with an optional status on the leading edge and the actions trailing. Flat on
 /// `bgWindow`. Exactly one primary action is the ⏎ default; a destructive action never is.
-public struct NWDialog<Content: View, Status: View, Actions: View>: View {
+public struct SHDialog<Content: View, Status: View, Actions: View>: View {
     let title: String
     let message: String?
     let width: CGFloat
@@ -22,7 +22,7 @@ public struct NWDialog<Content: View, Status: View, Actions: View>: View {
     let status: Status
     let actions: Actions
 
-    public init(_ title: String, message: String? = nil, width: CGFloat = NWDialogMetrics.width,
+    public init(_ title: String, message: String? = nil, width: CGFloat = SHDialogMetrics.width,
                 @ViewBuilder content: () -> Content, @ViewBuilder status: () -> Status,
                 @ViewBuilder actions: () -> Actions) {
         self.title = title
@@ -34,50 +34,50 @@ public struct NWDialog<Content: View, Status: View, Actions: View>: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        let inset = NWDialogMetrics.inset
+        let sh = Color.sh
+        let inset = SHDialogMetrics.inset
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: NW.Space.xs) {
+            VStack(alignment: .leading, spacing: SH.Space.xs) {
                 Text(title)
-                    .nwText(.title)
-                    .foregroundStyle(nw.textPrimary)
+                    .shText(.title)
+                    .foregroundStyle(sh.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
                 if let message {
                     Text(message)
-                        .nwText(.body)
-                        .foregroundStyle(nw.textSecondary)
+                        .shText(.body)
+                        .foregroundStyle(sh.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(EdgeInsets(top: inset, leading: inset, bottom: NW.Space.l, trailing: inset))
+            .padding(EdgeInsets(top: inset, leading: inset, bottom: SH.Space.l, trailing: inset))
 
             content
 
-            HStack(spacing: NW.Space.m) {
+            HStack(spacing: SH.Space.m) {
                 status
-                Spacer(minLength: NW.Space.l)
+                Spacer(minLength: SH.Space.l)
                 // Actions never truncate; the status wraps instead.
-                HStack(spacing: NW.Space.m) { actions }
+                HStack(spacing: SH.Space.m) { actions }
                     .fixedSize(horizontal: true, vertical: false)
             }
-            .padding(EdgeInsets(top: NW.Space.xl, leading: inset, bottom: inset, trailing: inset))
+            .padding(EdgeInsets(top: SH.Space.xl, leading: inset, bottom: inset, trailing: inset))
         }
         .frame(width: width)
-        .background(nw.bgWindow)
+        .background(sh.bgWindow)
     }
 }
 
-extension NWDialog where Status == EmptyView {
-    public init(_ title: String, message: String? = nil, width: CGFloat = NWDialogMetrics.width,
+extension SHDialog where Status == EmptyView {
+    public init(_ title: String, message: String? = nil, width: CGFloat = SHDialogMetrics.width,
                 @ViewBuilder content: () -> Content, @ViewBuilder actions: () -> Actions) {
         self.init(title, message: message, width: width, content: content, status: { EmptyView() }, actions: actions)
     }
 }
 
 /// The footer's status line: a caption in `textSecondary`, or `failed` for an error.
-public struct NWDialogStatus: View {
+public struct SHDialogStatus: View {
     let text: String
     let isError: Bool
 
@@ -88,8 +88,8 @@ public struct NWDialogStatus: View {
 
     public var body: some View {
         Text(text)
-            .nwText(.caption)
-            .foregroundStyle(isError ? Color.nw.failed : Color.nw.textSecondary)
+            .shText(.caption)
+            .foregroundStyle(isError ? Color.sh.failed : Color.sh.textSecondary)
             .lineLimit(2)
             .textSelection(.enabled)
     }
@@ -97,7 +97,7 @@ public struct NWDialogStatus: View {
 
 /// One labeled row of a sheet: the label column, the control filling the rest, a hairline
 /// underneath. No form chrome and no grouped boxes.
-public struct NWSheetRow<Control: View>: View {
+public struct SHSheetRow<Control: View>: View {
     let label: String
     let alignment: VerticalAlignment
     let control: Control
@@ -110,19 +110,19 @@ public struct NWSheetRow<Control: View>: View {
     }
 
     public var body: some View {
-        let inset = NWDialogMetrics.inset
-        HStack(alignment: alignment, spacing: NW.Space.l) {
+        let inset = SHDialogMetrics.inset
+        HStack(alignment: alignment, spacing: SH.Space.l) {
             Text(label)
-                .font(.nw(.ui))
-                .foregroundStyle(Color.nw.textSecondary)
-                .frame(width: NWDialogMetrics.labelWidth, alignment: .leading)
+                .font(.sh(.ui))
+                .foregroundStyle(Color.sh.textSecondary)
+                .frame(width: SHDialogMetrics.labelWidth, alignment: .leading)
             control
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, inset)
-        .padding(.vertical, NW.Space.m)
-        .frame(minHeight: NWDialogMetrics.rowMinHeight)
-        .overlay(alignment: .bottom) { NWHairline().padding(.leading, inset) }
+        .padding(.vertical, SH.Space.m)
+        .frame(minHeight: SHDialogMetrics.rowMinHeight)
+        .overlay(alignment: .bottom) { SHHairline().padding(.leading, inset) }
         .accessibilityElement(children: .contain)
     }
 }
@@ -132,8 +132,8 @@ public struct NWSheetRow<Control: View>: View {
 ///
 /// The glyph, the label's color and the detail fade as the state moves on, and the glyph pops
 /// once when a step passes. A remedy that comes and goes (`showsRemedy`) discloses; animate the
-/// list around it (`nwAnimation(.disclosure, value:)`) so the rows below make room in step.
-public struct NWChecklistRow<Remedy: View>: View {
+/// list around it (`shAnimation(.disclosure, value:)`) so the rows below make room in step.
+public struct SHChecklistRow<Remedy: View>: View {
     let title: String
     let state: AgentState
     let stateLabel: String
@@ -155,49 +155,49 @@ public struct NWChecklistRow<Remedy: View>: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        let inset = NWDialogMetrics.inset
+        let sh = Color.sh
+        let inset = SHDialogMetrics.inset
         let titleColor: Color = switch state {
-        case .queued, .idle: nw.textTertiary
-        case .failed, .stuck: nw.failed
-        case .done: nw.textSecondary
-        case .running, .attention: nw.textPrimary
+        case .queued, .idle: sh.textTertiary
+        case .failed, .stuck: sh.failed
+        case .done: sh.textSecondary
+        case .running, .attention: sh.textPrimary
         }
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: NW.Space.m) {
-                NWStateGlyph(state)
-                    .nwPop(trigger: passes)
+            HStack(spacing: SH.Space.m) {
+                SHStateGlyph(state)
+                    .shPop(trigger: passes)
                 Text(title)
-                    .font(.nw(.ui))
+                    .font(.sh(.ui))
                     .foregroundStyle(titleColor)
                     .lineLimit(1)
-                Spacer(minLength: NW.Space.m)
+                Spacer(minLength: SH.Space.m)
                 if let detail {
                     Text(detail)
-                        .font(.nw(.caption))
-                        .foregroundStyle(state == .failed ? nw.failed : nw.textTertiary)
+                        .font(.sh(.caption))
+                        .foregroundStyle(state == .failed ? sh.failed : sh.textTertiary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .help(detail)
-                        .nwContentTransition(.crossFade)
+                        .shContentTransition(.crossFade)
                 }
             }
-            .frame(minHeight: NW.Height.row)
-            .nwComponentAnimation(.content, value: detail)
-            .nwComponentAnimation(.content, value: state)
+            .frame(minHeight: SH.Height.row)
+            .shComponentAnimation(.content, value: detail)
+            .shComponentAnimation(.content, value: state)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel([title, stateLabel, detail].compactMap(\.self).joined(separator: ", "))
             if hasRemedy {
                 remedy
-                    .padding(.leading, NWChecklistMetrics.glyph + NW.Space.m)
-                    .padding(.bottom, NW.Space.m)
-                    .nwTransition(.disclosure)
+                    .padding(.leading, SHChecklistMetrics.glyph + SH.Space.m)
+                    .padding(.bottom, SH.Space.m)
+                    .shTransition(.disclosure)
             }
         }
         .padding(.horizontal, inset)
         // A disclosing remedy shows as the row makes room for it, never over what follows.
         .clipped()
-        .overlay(alignment: .bottom) { NWHairline().padding(.leading, inset) }
+        .overlay(alignment: .bottom) { SHHairline().padding(.leading, inset) }
         .accessibilityElement(children: .contain)
         .onChange(of: state) { old, new in
             // A step that passes pops once; leaving done (a re-run) doesn't.
@@ -206,21 +206,21 @@ public struct NWChecklistRow<Remedy: View>: View {
     }
 }
 
-extension NWChecklistRow where Remedy == EmptyView {
+extension SHChecklistRow where Remedy == EmptyView {
     public init(_ title: String, state: AgentState, stateLabel: String? = nil, detail: String? = nil) {
         self.init(title, state: state, stateLabel: stateLabel, detail: detail, showsRemedy: false) { EmptyView() }
     }
 }
 
-enum NWChecklistMetrics {
-    /// `NWStateGlyph`'s default size: the remedy indents past it.
+enum SHChecklistMetrics {
+    /// `SHStateGlyph`'s default size: the remedy indents past it.
     static let glyph: CGFloat = 14
 }
 
 /// A row of Settings' navigation (every Settings board): 32pt, scaled by density, radius `s`; a
 /// 15pt icon in `textSecondary` (`textPrimary` when selected), then the page name in Geist 13,
 /// on `bgSelected` at medium weight when selected, `bgHover` while hovered.
-public struct NWSettingsNavRow: View {
+public struct SHSettingsNavRow: View {
     let title: String
     let systemImage: String
     let selected: Bool
@@ -228,7 +228,7 @@ public struct NWSettingsNavRow: View {
     let attention: Bool
     let action: () -> Void
 
-    private let artwork: NWGlyph.Settings?
+    private let artwork: SHGlyph.Settings?
 
     public init(_ title: String, systemImage: String, selected: Bool, attention: Bool = false, action: @escaping () -> Void) {
         self.title = title
@@ -239,7 +239,7 @@ public struct NWSettingsNavRow: View {
         self.artwork = nil
     }
 
-    public init(_ title: String, glyph: NWGlyph.Settings, selected: Bool, attention: Bool = false, action: @escaping () -> Void) {
+    public init(_ title: String, glyph: SHGlyph.Settings, selected: Bool, attention: Bool = false, action: @escaping () -> Void) {
         self.title = title
         self.systemImage = ""
         self.selected = selected
@@ -249,31 +249,31 @@ public struct NWSettingsNavRow: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         Button(action: action) {
-            HStack(spacing: NWSettingsNavMetrics.iconGap) {
+            HStack(spacing: SHSettingsNavMetrics.iconGap) {
                 // Scales with the text size, like the name beside it.
                 Group {
                     if let artwork { artwork.image }
-                    else { Image(systemName: systemImage).font(.nwSans(NWSettingsNavMetrics.glyphSize)).symbolRenderingMode(.monochrome) }
-                }.foregroundStyle(selected ? nw.textPrimary : nw.textSecondary)
-                    .frame(width: NWSettingsNavMetrics.iconSize).accessibilityHidden(true)
+                    else { Image(systemName: systemImage).font(.shSans(SHSettingsNavMetrics.glyphSize)).symbolRenderingMode(.monochrome) }
+                }.foregroundStyle(selected ? sh.textPrimary : sh.textSecondary)
+                    .frame(width: SHSettingsNavMetrics.iconSize).accessibilityHidden(true)
                 Text(title)
-                    .font(.nwSans(NWSettingsNavMetrics.textSize, selected ? .medium : .regular))
-                    .offset(y: artwork != nil ? NWSettingsNavMetrics.textBaseline * ThemeStore.shared.textScale : 0)
-                    .foregroundStyle(nw.textPrimary)
+                    .font(.shSans(SHSettingsNavMetrics.textSize, selected ? .medium : .regular))
+                    .offset(y: artwork != nil ? SHSettingsNavMetrics.textBaseline * ThemeStore.shared.textScale : 0)
+                    .foregroundStyle(sh.textPrimary)
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 if attention {
-                    Circle().fill(nw.lantern).frame(width: NWSettingsNavMetrics.attentionDot, height: NWSettingsNavMetrics.attentionDot)
+                    Circle().fill(sh.lantern).frame(width: SHSettingsNavMetrics.attentionDot, height: SHSettingsNavMetrics.attentionDot)
                         .accessibilityHidden(true)
                 }
             }
-            .padding(.horizontal, NWSettingsNavMetrics.rowPadding)
-            .frame(minHeight: NW.Height.scaled(NWSettingsNavMetrics.rowHeight))
+            .padding(.horizontal, SHSettingsNavMetrics.rowPadding)
+            .frame(minHeight: SH.Height.scaled(SHSettingsNavMetrics.rowHeight))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.nwRow(selected: selected, selectedFill: Color.nw.settingsNavSelected, focusColor: artwork != nil ? .nw.running : nil))
+        .buttonStyle(.shRow(selected: selected, selectedFill: Color.sh.settingsNavSelected, focusColor: artwork != nil ? .sh.running : nil))
         .accessibilityLabel(title)
         .accessibilityLabel(attention ? "\(title), needs you" : title)
         .accessibilityAddTraits(selected ? [.isSelected] : [])
@@ -281,7 +281,7 @@ public struct NWSettingsNavRow: View {
 }
 
 /// Settings' navigation rows (every Settings board).
-public enum NWSettingsNavMetrics {
+public enum SHSettingsNavMetrics {
     /// Before density.
     public static let rowHeight: CGFloat = 32
     public static let iconSize: CGFloat = 15

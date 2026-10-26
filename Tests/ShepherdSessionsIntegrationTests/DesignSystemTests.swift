@@ -156,19 +156,19 @@ struct DesignSystemTests {
         let w = try await workspace()
         defer { w.h.stop() }
         w.h.server.designSystems.register(.init(
-            info: DesignSystemInfo(namespace: "night-watch", title: "Night Watch", revision: 1, createdAt: 0),
-            files: ["tokens.json": try DesignSystemTokens(name: "Night Watch", colors: [.init(name: "--lantern", value: "#e39a26")]).encoded(),
-                    "README.md": Data("# Night Watch\n".utf8)]))
+            info: DesignSystemInfo(namespace: "shepherd-design", title: "Shepherd Design", revision: 1, createdAt: 0),
+            files: ["tokens.json": try DesignSystemTokens(name: "Shepherd Design", colors: [.init(name: "--lantern", value: "#e39a26")]).encoded(),
+                    "README.md": Data("# Shepherd Design\n".utf8)]))
         _ = try await w.h.server.writeDesignSystem(Self.write(), for: w.design)
-        try await w.h.server.installDesignSystem(w.design, namespace: "night-watch")
+        try await w.h.server.installDesignSystem(w.design, namespace: "shepherd-design")
         let agent = try ExtensionClient(path: w.h.socketPath)
 
         try agent.send(.designSystemRead(id: 1, agentID: w.drawer, designID: w.design, namespace: nil))
         guard case .designSystems(1, let listing) = try await agent.reply() else { Issue.record("no listing"); return }
-        #expect(listing.systems.map(\.namespace) == ["night-watch", "acme-web"])
+        #expect(listing.systems.map(\.namespace) == ["shepherd-design", "acme-web"])
         #expect(listing.systems.first?.builtIn == true)
-        #expect(listing.primary == "night-watch", "the system installed last is the one the design is drawn in")
-        #expect(listing.installed.map(\.namespace) == ["night-watch", "acme-web"])
+        #expect(listing.primary == "shepherd-design", "the system installed last is the one the design is drawn in")
+        #expect(listing.installed.map(\.namespace) == ["shepherd-design", "acme-web"])
         #expect(listing.installed.last?.tokens?.colors.first?.source?.label == "tokens.css:6")
         #expect(listing.installed.last?.tokensFile == "ds/acme-web/tokens.json")
 
@@ -195,9 +195,9 @@ struct DesignSystemTests {
         let files = try await w.h.server.designSystemContents("acme-web")
         #expect(Set(files.keys) == ["tokens.json", "tokens.css", "README.md", "components/Button.html"])
         #expect(files["components/Button.html"] == Data("<button class=\"btn\">Export CSV</button>\n".utf8))
-        w.h.server.designSystems.register(.init(info: DesignSystemInfo(namespace: "night-watch", title: "Night Watch", createdAt: 0),
+        w.h.server.designSystems.register(.init(info: DesignSystemInfo(namespace: "shepherd-design", title: "Shepherd Design", createdAt: 0),
                                                 files: ["tokens.css": Data(":root{}".utf8)]))
-        #expect(try await w.h.server.designSystemContents("night-watch") == ["tokens.css": Data(":root{}".utf8)])
+        #expect(try await w.h.server.designSystemContents("shepherd-design") == ["tokens.css": Data(":root{}".utf8)])
         await #expect(throws: DesignSystemError.invalidNamespace("Acme Web")) { try await w.h.server.designSystemContents("Acme Web") }
         await #expect(throws: DesignSystemError.self) { try await w.h.server.designSystemContents("nope") }
     }
@@ -206,7 +206,7 @@ struct DesignSystemTests {
         let w = try await workspace()
         defer { w.h.stop() }
         w.h.server.designSystems.register(.init(
-            info: DesignSystemInfo(namespace: "night-watch", title: "Night Watch", revision: 1, createdAt: 0),
+            info: DesignSystemInfo(namespace: "shepherd-design", title: "Shepherd Design", revision: 1, createdAt: 0),
             files: ["tokens.json": Data("{}".utf8)]))
         let agent = try ExtensionClient(path: w.h.socketPath)
         try agent.send(.designSystemWrite(id: 1, agentID: w.drawer, designID: w.design, system: Self.write(install: false)))
@@ -222,7 +222,7 @@ struct DesignSystemTests {
         try agent.send(.designSystemWrite(id: 3, agentID: w.stranger, designID: w.design, system: edit))
         guard case .error(3, "not_your_design", _) = try await agent.reply() else { Issue.record("a stranger wrote"); return }
         try agent.send(.designSystemWrite(id: 4, agentID: w.drawer, designID: w.design,
-                                          system: DesignSystemWrite(namespace: "night-watch", tokens: .object([:]))))
+                                          system: DesignSystemWrite(namespace: "shepherd-design", tokens: .object([:]))))
         guard case .error(4, "read_only_system", _) = try await agent.reply() else { Issue.record("a built-in was written"); return }
         // A write based on an old revision, bad files and bad tokens.
         edit.baseRevision = 0

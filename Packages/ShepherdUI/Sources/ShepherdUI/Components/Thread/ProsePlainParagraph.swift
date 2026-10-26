@@ -9,16 +9,16 @@ import AppKit
 /// "…a partner / would embed." at the same width and font, so a plain paragraph in a Project thread is an `NSTextField` label whose
 /// paragraph style sets `lineBreakStrategy = []` (selectable, one static-text accessibility node, as `Text` is). Paragraphs with links,
 /// task chips, code or emphasis keep `Text` and its chip hit targets.
-struct NWPlainParagraph: View {
+struct SHPlainParagraph: View {
     let text: String
-    let size: NWProseSize
+    let size: SHProseSize
     let lineSpacing: CGFloat
     @Environment(\.self) private var environment
 
     var body: some View {
         let scale = ThemeStore.shared.textScale
-        let color = Color.nw.textPrimary.resolve(in: environment)
-        NWPlainParagraphLabel(text: text, points: (NWTextStyle.body.size - size.step) * scale, lineSpacing: lineSpacing,
+        let color = Color.sh.textPrimary.resolve(in: environment)
+        SHPlainParagraphLabel(text: text, points: (SHTextStyle.body.size - size.step) * scale, lineSpacing: lineSpacing,
                               color: NSColor(cgColor: color.cgColor) ?? .labelColor)
     }
 
@@ -31,7 +31,7 @@ struct NWPlainParagraph: View {
     }
 }
 
-private struct NWPlainParagraphLabel: NSViewRepresentable {
+private struct SHPlainParagraphLabel: NSViewRepresentable {
     let text: String
     let points: CGFloat
     let lineSpacing: CGFloat
@@ -49,7 +49,7 @@ private struct NWPlainParagraphLabel: NSViewRepresentable {
         let style = NSMutableParagraphStyle()
         style.lineBreakStrategy = []
         style.lineSpacing = lineSpacing
-        let font = NSFont(name: NWFonts.postScriptName(mono: false, weight: .regular), size: points) ?? .systemFont(ofSize: points)
+        let font = NSFont(name: SHFonts.postScriptName(mono: false, weight: .regular), size: points) ?? .systemFont(ofSize: points)
         let attributed = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: color, .paragraphStyle: style])
         if label.attributedStringValue != attributed { label.attributedStringValue = attributed }
     }
@@ -62,11 +62,11 @@ private struct NWPlainParagraphLabel: NSViewRepresentable {
     }
 }
 #else
-struct NWPlainParagraph: View {
+struct SHPlainParagraph: View {
     let text: String
-    let size: NWProseSize
+    let size: SHProseSize
     let lineSpacing: CGFloat
-    var body: some View { Text(text).nwText(.body, size: size) }
+    var body: some View { Text(text).shText(.body, size: size) }
     static func isPlain(_ text: AttributedString) -> Bool { false }
 }
 #endif

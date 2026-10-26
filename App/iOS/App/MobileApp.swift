@@ -16,7 +16,7 @@ final class MobileApp {
     let windows = MobileWindows()
 
     init(hosts: MobileHosts, appearance: MobileAppearance) {
-        NWFonts.register()
+        SHFonts.register()
         self.hosts = hosts
         projects = MobileProjects(hosts: hosts)
         navigator = MobileNavigator()

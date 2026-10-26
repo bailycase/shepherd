@@ -5,7 +5,7 @@ import AppKit
 
 /// One file's two horizontal positions. Vertical scrolling remains the containing diff's.
 @MainActor @Observable
-public final class NWSplitDiffScroll {
+public final class SHSplitDiffScroll {
     public var oldOffset: CGFloat = 0
     public var newOffset: CGFloat = 0
     public private(set) var oldLimit: CGFloat = 0
@@ -29,19 +29,19 @@ public final class NWSplitDiffScroll {
 }
 
 extension EnvironmentValues {
-    @Entry public var splitDiffScroll: NWSplitDiffScroll? = nil
+    @Entry public var splitDiffScroll: SHSplitDiffScroll? = nil
 }
 
 #if os(macOS)
 /// Two native scrollbars per file, not a scroll view per line. Code canvases read their own
 /// column's offset; gutters, comments and the center divider stay at the viewport's positions.
-public struct NWSplitDiffScrollbars: View {
-    let scroll: NWSplitDiffScroll
-    public init(_ scroll: NWSplitDiffScroll) { self.scroll = scroll }
+public struct SHSplitDiffScrollbars: View {
+    let scroll: SHSplitDiffScroll
+    public init(_ scroll: SHSplitDiffScroll) { self.scroll = scroll }
     public var body: some View {
         HStack(spacing: 0) {
             SplitScroller(scroll: scroll, old: true)
-            Color.nw.lineSubtle.frame(width: 1)
+            Color.sh.lineSubtle.frame(width: 1)
             SplitScroller(scroll: scroll, old: false)
         }
         .frame(height: NSScroller.scrollerWidth(for: .small, scrollerStyle: .legacy))
@@ -49,11 +49,11 @@ public struct NWSplitDiffScrollbars: View {
 }
 
 private struct SplitScroller: NSViewRepresentable {
-    let scroll: NWSplitDiffScroll
+    let scroll: SHSplitDiffScroll
     let old: Bool
     func makeNSView(context: Context) -> Control {
         let height = NSScroller.scrollerWidth(for: .small, scrollerStyle: .legacy)
-        let view = Control(frame: CGRect(x: 0, y: 0, width: NWDiffMetrics.numberWidth * 2, height: height))
+        let view = Control(frame: CGRect(x: 0, y: 0, width: SHDiffMetrics.numberWidth * 2, height: height))
         view.controlSize = .small
         view.scrollerStyle = .legacy
         view.target = view
@@ -66,7 +66,7 @@ private struct SplitScroller: NSViewRepresentable {
         view.updatePosition()
     }
     final class Control: NSScroller {
-        var scroll: NWSplitDiffScroll?
+        var scroll: SHSplitDiffScroll?
         var old = false
         override func setFrameSize(_ newSize: NSSize) {
             super.setFrameSize(newSize)
@@ -77,7 +77,7 @@ private struct SplitScroller: NSViewRepresentable {
             let limit = old ? scroll.oldLimit : scroll.newLimit
             isEnabled = limit > 0
             doubleValue = limit > 0 ? Double((old ? scroll.oldOffset : scroll.newOffset) / limit) : 0
-            let viewport = max(1, bounds.width - NWDiffMetrics.splitCodeLeading - NWDiffMetrics.commentSlotWidth)
+            let viewport = max(1, bounds.width - SHDiffMetrics.splitCodeLeading - SHDiffMetrics.commentSlotWidth)
             knobProportion = viewport / (viewport + limit)
         }
         @objc func changed() {

@@ -127,7 +127,7 @@ struct ProjectSettingsFidelityPreviewTests {
         // The Automations caption reads real run history: the owner's run log, read once the page asks for it.
         let ready: @MainActor () -> Bool = { vm.logicalProjects.project(ref) != nil }
         try await Preview.renderMatrix("settings-\(tab.rawValue.lowercased())-\(name ?? "\(fill)")", size: Self.size, ready: ready) {
-            LogicalProjectSettingsDestination(vm: vm).background(Color.nw.bgWindow)
+            LogicalProjectSettingsDestination(vm: vm).background(Color.sh.bgWindow)
         }
     }
 
@@ -164,7 +164,7 @@ struct ProjectSettingsFidelityPreviewTests {
         vm.logicalProjects.ownerHosts = { _ in [local, remote] }
         vm.openLogicalProjectSettings(LogicalProjectRef(home: .local, id: both.id), tab: .spaces)
         try await Preview.renderMatrix("settings-spaces-two-hosts", size: Self.size) {
-            LogicalProjectSettingsDestination(vm: vm).background(Color.nw.bgWindow)
+            LogicalProjectSettingsDestination(vm: vm).background(Color.sh.bgWindow)
         }
     }
 
@@ -189,7 +189,7 @@ struct ProjectSettingsFidelityPreviewTests {
         vm.logicalProjects.ownerHosts = { _ in [ProjectHostOption(reference: .local, name: "This Mac"), host] }
         vm.openLogicalProjectSettings(LogicalProjectRef(home: .local, id: linked.id), tab: .spaces)
         try await Preview.renderMatrix("settings-spaces-narrowest", size: CGSize(width: AppLayout.windowMinWidth - AppLayout.sidebarDefaultWidth, height: 700)) {
-            LogicalProjectSettingsDestination(vm: vm).background(Color.nw.bgWindow)
+            LogicalProjectSettingsDestination(vm: vm).background(Color.sh.bgWindow)
         }
     }
 

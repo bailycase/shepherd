@@ -5,15 +5,15 @@ import SwiftUI
 // what a switch or a row does is the caller's.
 
 /// How an automation's last run reads in a table or history row.
-public struct NWRunOutcome: Equatable, Sendable {
+public struct SHRunOutcome: Equatable, Sendable {
     public var text: String
     /// Colors the dot and the words; nil is quiet (stopped, off, host offline): a hollow
     /// `textTertiary` dot and `textTertiary` words.
     public var state: AgentState?
     /// A live run counts up; a finished one says how long ago it moved.
-    public var clock: NWRowClock?
+    public var clock: SHRowClock?
 
-    public init(_ text: String, state: AgentState? = nil, clock: NWRowClock? = nil) {
+    public init(_ text: String, state: AgentState? = nil, clock: SHRowClock? = nil) {
         self.text = text
         self.state = state
         self.clock = clock
@@ -22,23 +22,23 @@ public struct NWRunOutcome: Equatable, Sendable {
 
 /// The outcome's dot and words ("finished · 6h ago" in `done`, "asked you · 1h ago" in
 /// `lanternText` with a glowing dot, "host offline" quiet).
-public struct NWRunOutcomeLabel: View, Equatable {
-    let outcome: NWRunOutcome
+public struct SHRunOutcomeLabel: View, Equatable {
+    let outcome: SHRunOutcome
 
-    public init(_ outcome: NWRunOutcome) { self.outcome = outcome }
+    public init(_ outcome: SHRunOutcome) { self.outcome = outcome }
 
     public var body: some View {
-        HStack(spacing: NW.Space.s) {
+        HStack(spacing: SH.Space.s) {
             if let state = outcome.state {
-                NWStatusDot(state, size: NWPageMetrics.dot)
+                SHStatusDot(state, size: SHPageMetrics.dot)
             } else {
-                Circle().strokeBorder(Color.nw.textTertiary, lineWidth: 1)
-                    .frame(width: NWPageMetrics.dot, height: NWPageMetrics.dot)
+                Circle().strokeBorder(Color.sh.textTertiary, lineWidth: 1)
+                    .frame(width: SHPageMetrics.dot, height: SHPageMetrics.dot)
                     .accessibilityHidden(true)
             }
             words
-                .font(.nwSans(12))
-                .foregroundStyle(outcome.state?.textColor ?? Color.nw.textTertiary)
+                .font(.shSans(12))
+                .foregroundStyle(outcome.state?.textColor ?? Color.sh.textTertiary)
                 .lineLimit(1)
         }
     }
@@ -48,12 +48,12 @@ public struct NWRunOutcomeLabel: View, Equatable {
         case .none:
             Text(outcome.text)
         case .elapsed(let since)?:
-            TimelineView(NWElapsedSchedule(start: since)) { context in
-                Text(outcome.text + " · " + NWDuration.text(context.date.timeIntervalSince(since)))
+            TimelineView(SHElapsedSchedule(start: since)) { context in
+                Text(outcome.text + " · " + SHDuration.text(context.date.timeIntervalSince(since)))
             }
         case .ago(let at)?:
-            TimelineView(NWElapsedSchedule(start: at)) { context in
-                Text(outcome.text + " · " + NWDuration.text(context.date.timeIntervalSince(at)) + " ago")
+            TimelineView(SHElapsedSchedule(start: at)) { context in
+                Text(outcome.text + " · " + SHDuration.text(context.date.timeIntervalSince(at)) + " ago")
             }
         }
     }
@@ -62,22 +62,22 @@ public struct NWRunOutcomeLabel: View, Equatable {
 /// One automation in the page's table: its switch and name, what each run starts (a thread),
 /// its host, and its last run, on the table's columns. The row selects on a click (its detail
 /// shows beside the table); the switch turns it on or off without selecting it.
-public struct NWAutomationTableRow: View, Equatable {
+public struct SHAutomationTableRow: View, Equatable {
     let name: String
     let isOn: Bool
     let switchEnabled: Bool
     let starts: String
     let host: String
-    let outcome: NWRunOutcome?
+    let outcome: SHRunOutcome?
     let selected: Bool
-    let columns: [NWTableColumns.Column]
+    let columns: [SHTableColumns.Column]
     let toggle: ((Bool) -> Void)?
     /// Whether it has a switch, for `==` (closures are the main actor's).
     private let togglable: Bool
     let select: () -> Void
 
     public init(_ name: String, isOn: Bool, switchEnabled: Bool = true, starts: String = "thread", host: String,
-                outcome: NWRunOutcome?, selected: Bool, columns: [NWTableColumns.Column],
+                outcome: SHRunOutcome?, selected: Bool, columns: [SHTableColumns.Column],
                 toggle: ((Bool) -> Void)?, select: @escaping () -> Void) {
         self.name = name
         self.isOn = isOn
@@ -92,59 +92,59 @@ public struct NWAutomationTableRow: View, Equatable {
         self.select = select
     }
 
-    public nonisolated static func == (a: NWAutomationTableRow, b: NWAutomationTableRow) -> Bool {
+    public nonisolated static func == (a: SHAutomationTableRow, b: SHAutomationTableRow) -> Bool {
         a.name == b.name && a.isOn == b.isOn && a.switchEnabled == b.switchEnabled && a.starts == b.starts
             && a.host == b.host && a.outcome == b.outcome && a.selected == b.selected && a.columns == b.columns
             && a.togglable == b.togglable
     }
 
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         // The row is a button under the cells, so a click anywhere selects and the switch
         // (above it) flips without selecting.
         ZStack {
             Button(action: select) { Color.clear.contentShape(Rectangle()) }
-                .buttonStyle(.nwRow(selected: selected, radius: 0))
+                .buttonStyle(.shRow(selected: selected, radius: 0))
                 .accessibilityLabel(accessibilityText)
                 .accessibilityAddTraits(selected ? .isSelected : [])
-            NWTableColumns(columns) {
-                HStack(spacing: NWPageMetrics.switchGap) {
-                    NWAutomationSwitch(name, isOn: isOn, toggle: switchEnabled ? toggle : nil)
+            SHTableColumns(columns) {
+                HStack(spacing: SHPageMetrics.switchGap) {
+                    SHAutomationSwitch(name, isOn: isOn, toggle: switchEnabled ? toggle : nil)
                     Text(name)
-                        .font(.nwSans(13, .semibold))
-                        .foregroundStyle(nw.textPrimary)
+                        .font(.shSans(13, .semibold))
+                        .foregroundStyle(sh.textPrimary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .allowsHitTesting(false)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Label {
-                    Text(starts).font(.nwSans(12)).foregroundStyle(nw.textSecondary).lineLimit(1)
+                    Text(starts).font(.shSans(12)).foregroundStyle(sh.textSecondary).lineLimit(1)
                 } icon: {
                     Image(systemName: "text.bubble")
-                        .font(.nwSans(11))
-                        .foregroundStyle(nw.textTertiary)
+                        .font(.shSans(11))
+                        .foregroundStyle(sh.textTertiary)
                 }
-                .labelStyle(NWPageCellLabelStyle())
+                .labelStyle(SHPageCellLabelStyle())
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .allowsHitTesting(false)
                 Text(host)
-                    .font(.nwMono(11))
-                    .foregroundStyle(nw.textSecondary)
+                    .font(.shMono(11))
+                    .foregroundStyle(sh.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .allowsHitTesting(false)
                 Group {
-                    if let outcome { NWRunOutcomeLabel(outcome) } else { Color.clear.frame(height: 1) }
+                    if let outcome { SHRunOutcomeLabel(outcome) } else { Color.clear.frame(height: 1) }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .allowsHitTesting(false)
             }
-            .padding(.horizontal, NWPageMetrics.sideInset)
-            .padding(.vertical, NWPageMetrics.rowVertical)
+            .padding(.horizontal, SHPageMetrics.sideInset)
+            .padding(.vertical, SHPageMetrics.rowVertical)
         }
-        .overlay(alignment: .top) { NWHairline() }
+        .overlay(alignment: .top) { SHHairline() }
     }
 
     private var accessibilityText: String {
@@ -153,9 +153,9 @@ public struct NWAutomationTableRow: View, Equatable {
 }
 
 /// A glyph 6pt before a cell's words.
-private struct NWPageCellLabelStyle: LabelStyle {
+private struct SHPageCellLabelStyle: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: NW.Space.s) {
+        HStack(spacing: SH.Space.s) {
             configuration.icon
             configuration.title
         }
@@ -165,7 +165,7 @@ private struct NWPageCellLabelStyle: LabelStyle {
 /// One run in the Automations detail's history (the boards' 28pt rows): its outcome's dot, when
 /// it started in mono, what happened, and how long it took. A run whose thread still exists
 /// opens it on a click.
-public struct NWAutomationRunLine: View, Equatable {
+public struct SHAutomationRunLine: View, Equatable {
     let started: String
     let word: String
     let state: AgentState?
@@ -183,7 +183,7 @@ public struct NWAutomationRunLine: View, Equatable {
         opens = open != nil
     }
 
-    public nonisolated static func == (a: NWAutomationRunLine, b: NWAutomationRunLine) -> Bool {
+    public nonisolated static func == (a: SHAutomationRunLine, b: SHAutomationRunLine) -> Bool {
         a.started == b.started && a.word == b.word && a.state == b.state && a.duration == b.duration
             && a.opens == b.opens
     }
@@ -191,7 +191,7 @@ public struct NWAutomationRunLine: View, Equatable {
     public var body: some View {
         if let open {
             Button(action: open) { content }
-                .buttonStyle(.nwRow(radius: NW.Radius.s))
+                .buttonStyle(.shRow(radius: SH.Radius.s))
                 .accessibilityHint("Opens its thread")
         } else {
             content
@@ -199,23 +199,23 @@ public struct NWAutomationRunLine: View, Equatable {
     }
 
     private var content: some View {
-        let nw = Color.nw
-        return HStack(spacing: NW.Space.m) {
+        let sh = Color.sh
+        return HStack(spacing: SH.Space.m) {
             if let state {
-                NWStatusDot(state, size: NWPageMetrics.dot)
+                SHStatusDot(state, size: SHPageMetrics.dot)
             } else {
-                Circle().strokeBorder(nw.textTertiary, lineWidth: 1)
-                    .frame(width: NWPageMetrics.dot, height: NWPageMetrics.dot)
+                Circle().strokeBorder(sh.textTertiary, lineWidth: 1)
+                    .frame(width: SHPageMetrics.dot, height: SHPageMetrics.dot)
                     .accessibilityHidden(true)
             }
-            Text(started).font(.nwMono(12)).foregroundStyle(nw.textSecondary).fixedSize()
-            Text(word).font(.nwSans(12)).foregroundStyle(nw.textTertiary).lineLimit(1)
-            Spacer(minLength: NW.Space.s)
+            Text(started).font(.shMono(12)).foregroundStyle(sh.textSecondary).fixedSize()
+            Text(word).font(.shSans(12)).foregroundStyle(sh.textTertiary).lineLimit(1)
+            Spacer(minLength: SH.Space.s)
             if let duration {
-                Text(duration).font(.nw(.micro, weight: .regular)).foregroundStyle(nw.textTertiary).fixedSize()
+                Text(duration).font(.sh(.micro, weight: .regular)).foregroundStyle(sh.textTertiary).fixedSize()
             }
         }
-        .frame(maxWidth: .infinity, minHeight: NW.Height.controlM, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: SH.Height.controlM, alignment: .leading)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }

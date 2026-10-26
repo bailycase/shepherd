@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The Changes pane's measures (ChangesStates › Toolbar): a 44pt toolbar row, a 32pt compare row,
 /// a 48pt send bar (58pt on iPad), and the maximized pane's 260pt file list.
-public enum NWChangesMetrics {
+public enum SHChangesMetrics {
     public static let toolbarHeight: CGFloat = 44
     public static let compareHeight: CGFloat = 32
     public static let sendBarHeight: CGFloat = 48
@@ -15,7 +15,7 @@ public enum NWChangesMetrics {
 }
 
 /// What the toolbar's scope button names (ScopeMenu): its glyph by scope.
-public enum NWChangesScopeGlyph: Sendable {
+public enum SHChangesScopeGlyph: Sendable {
     case lastTurn, uncommitted, staged, commits, branch, pullRequest, reference
 
     public var systemImage: String {
@@ -24,7 +24,7 @@ public enum NWChangesScopeGlyph: Sendable {
         case .uncommitted: "pencil"
         case .staged: "tray"
         case .commits: "smallcircle.filled.circle"
-        case .branch: NWGlyph.gitBranch.symbolName
+        case .branch: SHGlyph.gitBranch.symbolName
         case .pullRequest: "arrow.triangle.pull"
         case .reference: "number"
         }
@@ -33,13 +33,13 @@ public enum NWChangesScopeGlyph: Sendable {
 
 /// The scope button (ChangesToolbar): 28pt, radius 7, a strong line on `bgRaised`, its glyph,
 /// the scope in 12.5 semibold, and a chevron. It opens the scope menu (⌘E).
-public struct NWScopeButton: View {
+public struct SHScopeButton: View {
     let title: String
-    let glyph: NWChangesScopeGlyph
+    let glyph: SHChangesScopeGlyph
     let isOpen: Bool
     let action: () -> Void
 
-    public init(title: String, glyph: NWChangesScopeGlyph, isOpen: Bool, action: @escaping () -> Void) {
+    public init(title: String, glyph: SHChangesScopeGlyph, isOpen: Bool, action: @escaping () -> Void) {
         self.title = title
         self.glyph = glyph
         self.isOpen = isOpen
@@ -47,19 +47,19 @@ public struct NWScopeButton: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         Button(action: action) {
             HStack(spacing: 7) {
-                Image(systemName: glyph.systemImage).font(.system(size: 11, weight: .medium)).foregroundStyle(nw.textSecondary)
-                Text(title).font(.nw(.ui, weight: .semibold)).foregroundStyle(nw.textPrimary).lineLimit(1)
-                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold)).foregroundStyle(nw.textTertiary)
+                Image(systemName: glyph.systemImage).font(.system(size: 11, weight: .medium)).foregroundStyle(sh.textSecondary)
+                Text(title).font(.sh(.ui, weight: .semibold)).foregroundStyle(sh.textPrimary).lineLimit(1)
+                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold)).foregroundStyle(sh.textTertiary)
             }
             .padding(.leading, 10)
             .padding(.trailing, 9)
-            .frame(height: NW.Height.controlM)
-            .background(isOpen ? nw.bgSelected : nw.bgRaised, in: RoundedRectangle(cornerRadius: NWChangesMetrics.scopeButtonRadius))
-            .nwBorder(nw.lineStrong, radius: NWChangesMetrics.scopeButtonRadius)
-            .contentShape(RoundedRectangle(cornerRadius: NWChangesMetrics.scopeButtonRadius))
+            .frame(height: SH.Height.controlM)
+            .background(isOpen ? sh.bgSelected : sh.bgRaised, in: RoundedRectangle(cornerRadius: SHChangesMetrics.scopeButtonRadius))
+            .shBorder(sh.lineStrong, radius: SHChangesMetrics.scopeButtonRadius)
+            .contentShape(RoundedRectangle(cornerRadius: SHChangesMetrics.scopeButtonRadius))
         }
         .buttonStyle(.plain)
         .fixedSize()
@@ -70,7 +70,7 @@ public struct NWScopeButton: View {
 }
 
 /// "2/5 viewed" (ChangesToolbar): a 24pt pill on `bgSunken`, an eye, the count in mono.
-public struct NWViewedPill: View {
+public struct SHViewedPill: View {
     let viewed: Int
     let total: Int
 
@@ -80,17 +80,17 @@ public struct NWViewedPill: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        HStack(spacing: NW.Space.s) {
+        let sh = Color.sh
+        HStack(spacing: SH.Space.s) {
             Image(systemName: "eye").font(.system(size: 10, weight: .medium))
-            Text("\(Text("\(viewed)/\(total)").font(.nwMono(11.5))) viewed")
-                .font(.nw(.caption))
+            Text("\(Text("\(viewed)/\(total)").font(.shMono(11.5))) viewed")
+                .font(.sh(.caption))
                 .contentTransition(.numericText())
         }
-        .foregroundStyle(nw.textSecondary)
-        .padding(.horizontal, NW.Space.m)
-        .frame(height: NW.Height.controlS)
-        .background(nw.bgSunken, in: Capsule())
+        .foregroundStyle(sh.textSecondary)
+        .padding(.horizontal, SH.Space.m)
+        .frame(height: SH.Height.controlS)
+        .background(sh.bgSunken, in: Capsule())
         .fixedSize()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(viewed) of \(total) files viewed")
@@ -101,7 +101,7 @@ public struct NWViewedPill: View {
 /// when the scope has one (Branch), or for a turn "The agent’s last turn" with its times and the
 /// message that started it (ChangesLastTurn); then a trailing note in mono 10.5 ("merge base
 /// 3f2a91c").
-public struct NWCompareRow: View {
+public struct SHCompareRow: View {
     public enum Lead: Equatable, Sendable {
         case compare(head: String, base: String)
         /// "The agent’s last turn", "3:07–3:11 PM · after “Wrap errors with context”".
@@ -125,47 +125,47 @@ public struct NWCompareRow: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        HStack(spacing: NW.Space.m) {
+        let sh = Color.sh
+        HStack(spacing: SH.Space.m) {
             switch lead {
             case .compare(let head, let base):
-                Text(head).font(.nw(.mono)).foregroundStyle(nw.textSecondary).lineLimit(1).truncationMode(.middle)
-                Image(systemName: "arrow.right").font(.system(size: 10, weight: .medium)).foregroundStyle(nw.textTertiary)
+                Text(head).font(.sh(.mono)).foregroundStyle(sh.textSecondary).lineLimit(1).truncationMode(.middle)
+                Image(systemName: "arrow.right").font(.system(size: 10, weight: .medium)).foregroundStyle(sh.textTertiary)
                     .accessibilityLabel("against")
                 if let pickBase {
                     Button(action: pickBase) {
                         HStack(spacing: 5) {
-                            Text(base).font(.nw(.mono)).foregroundStyle(nw.textPrimary).lineLimit(1)
-                            Image(systemName: "chevron.down").font(.system(size: 7, weight: .semibold)).foregroundStyle(nw.textTertiary)
+                            Text(base).font(.sh(.mono)).foregroundStyle(sh.textPrimary).lineLimit(1)
+                            Image(systemName: "chevron.down").font(.system(size: 7, weight: .semibold)).foregroundStyle(sh.textTertiary)
                         }
-                        .padding(.horizontal, NW.Space.s)
+                        .padding(.horizontal, SH.Space.s)
                         .frame(height: 22)
-                        .background(pickerOpen ? nw.bgSelected : .clear, in: RoundedRectangle(cornerRadius: 5))
+                        .background(pickerOpen ? sh.bgSelected : .clear, in: RoundedRectangle(cornerRadius: 5))
                         .contentShape(RoundedRectangle(cornerRadius: 5))
                     }
-                    .buttonStyle(.nwRow(radius: 5))
+                    .buttonStyle(.shRow(radius: 5))
                     .fixedSize()
                     .help("Compare against another branch")
                     .accessibilityLabel("Base: \(base)")
                     .accessibilityHint("Chooses what to compare against")
                 } else {
-                    Text(base).font(.nw(.mono)).foregroundStyle(nw.textPrimary).lineLimit(1).truncationMode(.middle)
+                    Text(base).font(.sh(.mono)).foregroundStyle(sh.textPrimary).lineLimit(1).truncationMode(.middle)
                 }
             case .turn(let title, let detail):
-                Image(systemName: NWChangesScopeGlyph.lastTurn.systemImage).font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(nw.textSecondary)
-                Text(title).font(.nwSans(12)).foregroundStyle(nw.textSecondary).lineLimit(1).fixedSize()
-                Text(detail).font(.nwMono(11)).foregroundStyle(nw.textTertiary).lineLimit(1).truncationMode(.tail)
+                Image(systemName: SHChangesScopeGlyph.lastTurn.systemImage).font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(sh.textSecondary)
+                Text(title).font(.shSans(12)).foregroundStyle(sh.textSecondary).lineLimit(1).fixedSize()
+                Text(detail).font(.shMono(11)).foregroundStyle(sh.textTertiary).lineLimit(1).truncationMode(.tail)
             }
-            Spacer(minLength: NW.Space.m)
+            Spacer(minLength: SH.Space.m)
             if let note {
-                Text(note).font(.nwMono(10.5)).foregroundStyle(nw.textTertiary).lineLimit(1)
+                Text(note).font(.shMono(10.5)).foregroundStyle(sh.textTertiary).lineLimit(1)
             }
         }
-        .padding(.horizontal, NW.Space.l)
-        .frame(height: NWChangesMetrics.compareHeight)
-        .background(nw.bgBase)
-        .overlay(alignment: .bottom) { NWHairline() }
+        .padding(.horizontal, SH.Space.l)
+        .frame(height: SHChangesMetrics.compareHeight)
+        .background(sh.bgBase)
+        .overlay(alignment: .bottom) { SHHairline() }
     }
 }
 
@@ -174,17 +174,17 @@ public struct NWCompareRow: View {
 /// The maximized pane's file list (ChangesWide): "5 FILES" with the scope's diff stat over a row
 /// per file: its status letter, the filename in semibold mono over its directory, and its stat
 /// over its comment count or a viewed check. The current file has the selected fill.
-public struct NWChangesFileList: View {
+public struct SHChangesFileList: View {
     public struct Item: Identifiable, Equatable, Sendable {
         public let id: String
         public let path: String
-        public let status: NWFileStatus
+        public let status: SHFileStatus
         public let added: Int
         public let removed: Int
         public let comments: Int
         public let isViewed: Bool
 
-        public init(id: String, path: String, status: NWFileStatus, added: Int, removed: Int, comments: Int = 0, isViewed: Bool = false) {
+        public init(id: String, path: String, status: SHFileStatus, added: Int, removed: Int, comments: Int = 0, isViewed: Bool = false) {
             self.id = id
             self.path = path
             self.status = status
@@ -210,81 +210,81 @@ public struct NWChangesFileList: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         VStack(spacing: 0) {
             HStack {
                 Text("\(items.count) file\(items.count == 1 ? "" : "s")")
-                    .font(.nwMono(10.5, .medium))
+                    .font(.shMono(10.5, .medium))
                     .textCase(.uppercase)
                     .tracking(0.63)
-                    .foregroundStyle(nw.textTertiary)
+                    .foregroundStyle(sh.textTertiary)
                     .accessibilityAddTraits(.isHeader)
-                Spacer(minLength: NW.Space.m)
-                NWDiffStat(added: added, removed: removed, font: .nwMono(10.5))
+                Spacer(minLength: SH.Space.m)
+                SHDiffStat(added: added, removed: removed, font: .shMono(10.5))
             }
-            .padding(.horizontal, NW.Space.l)
-            .frame(height: NWChangesMetrics.compareHeight)
+            .padding(.horizontal, SH.Space.l)
+            .frame(height: SHChangesMetrics.compareHeight)
             ScrollView {
-                LazyVStack(spacing: NW.Space.xxs) {
+                LazyVStack(spacing: SH.Space.xxs) {
                     ForEach(items) { item in
-                        NWChangesFileRow(item: item, selected: item.id == selection) { onSelect(item.id) }
+                        SHChangesFileRow(item: item, selected: item.id == selection) { onSelect(item.id) }
                             .equatable()
                     }
                 }
-                .padding(.horizontal, NW.Space.s)
-                .padding(.bottom, NW.Space.s)
+                .padding(.horizontal, SH.Space.s)
+                .padding(.bottom, SH.Space.s)
             }
             .scrollIndicators(.hidden)
         }
-        .frame(width: NWChangesMetrics.fileListWidth)
-        .background(nw.bgWindow)
-        .overlay(alignment: .trailing) { NWHairline(.vertical) }
+        .frame(width: SHChangesMetrics.fileListWidth)
+        .background(sh.bgWindow)
+        .overlay(alignment: .trailing) { SHHairline(.vertical) }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Changed files")
     }
 }
 
-private struct NWChangesFileRow: View, Equatable {
-    let item: NWChangesFileList.Item
+private struct SHChangesFileRow: View, Equatable {
+    let item: SHChangesFileList.Item
     let selected: Bool
     let action: () -> Void
 
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.item == rhs.item && lhs.selected == rhs.selected }
 
     var body: some View {
-        let _ = NWRenderProbe.tick("review.fileRow")
-        let nw = Color.nw
-        let (directory, name) = NWFileHeader.split(item.path)
+        let _ = SHRenderProbe.tick("review.fileRow")
+        let sh = Color.sh
+        let (directory, name) = SHFileHeader.split(item.path)
         Button(action: action) {
             HStack(alignment: .top, spacing: 10) {
-                Text(item.status.letter).font(.nwMono(10.5, .bold)).foregroundStyle(item.status.color)
+                Text(item.status.letter).font(.shMono(10.5, .bold)).foregroundStyle(item.status.color)
                     .frame(height: 16)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(name).font(.nw(.code, weight: .semibold)).foregroundStyle(item.isViewed ? nw.textSecondary : nw.textPrimary)
+                    Text(name).font(.sh(.code, weight: .semibold)).foregroundStyle(item.isViewed ? sh.textSecondary : sh.textPrimary)
                         .lineLimit(1).truncationMode(.middle)
-                    Text(directory.isEmpty ? "/" : directory).font(.nwMono(10.5)).foregroundStyle(nw.textTertiary)
+                    Text(directory.isEmpty ? "/" : directory).font(.shMono(10.5)).foregroundStyle(sh.textTertiary)
                         .lineLimit(1).truncationMode(.head)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 VStack(alignment: .trailing, spacing: 2) {
-                    NWDiffStat(added: item.added, removed: item.removed, font: .nwMono(10.5))
+                    SHDiffStat(added: item.added, removed: item.removed, font: .shMono(10.5))
                     if item.comments > 0 {
                         HStack(spacing: 3) {
                             Image(systemName: "text.bubble").font(.system(size: 8, weight: .medium))
-                            Text("\(item.comments)").font(.nwMono(10.5))
+                            Text("\(item.comments)").font(.shMono(10.5))
                         }
-                        .foregroundStyle(nw.running)
+                        .foregroundStyle(sh.running)
                     } else if item.isViewed {
-                        Image(systemName: "checkmark").font(.system(size: 9, weight: .semibold)).foregroundStyle(nw.done)
+                        Image(systemName: "checkmark").font(.system(size: 9, weight: .semibold)).foregroundStyle(sh.done)
                     }
                 }
             }
-            .padding(.horizontal, NW.Space.s)
-            .padding(.vertical, NW.Space.m)
-            .frame(minHeight: NWChangesMetrics.fileListRowHeight, alignment: .top)
+            .padding(.horizontal, SH.Space.s)
+            .padding(.vertical, SH.Space.m)
+            .frame(minHeight: SHChangesMetrics.fileListRowHeight, alignment: .top)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.nwRow(selected: selected))
+        .buttonStyle(.shRow(selected: selected))
         .help(item.path)
         .accessibilityLabel("\(name), \(item.status.label), \(item.added) added, \(item.removed) removed"
                             + (item.comments > 0 ? ", \(item.comments) comments" : "") + (item.isViewed ? ", viewed" : ""))

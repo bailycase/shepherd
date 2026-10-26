@@ -494,7 +494,7 @@ final class ShepherdViewModel {
     /// An image open full size (ThreadImageOpen); nil when none is.
     var imageViewer: ImageViewerState?
     /// Stable identity in the window environment, independent of shell geometry.
-    let diagramPresentation = NWDiagramPresentation()
+    let diagramPresentation = SHDiagramPresentation()
     /// A Mermaid diagram open full screen (its source); nil when none is.
     var diagramViewer: String? {
         get { diagramPresentation.source }
@@ -607,7 +607,7 @@ final class ShepherdViewModel {
         self.settings = settings ?? .shared
         self.sidebarDefaults = sidebarDefaults
         logicalProjectPane = RightPaneState(widthKey: Self.logicalProjectPaneWidthKey,
-                                            defaultWidth: NWLeadMetrics.paneWidth - AppLayout.dividerWidth, defaults: sidebarDefaults)
+                                            defaultWidth: SHLeadMetrics.paneWidth - AppLayout.dividerWidth, defaults: sidebarDefaults)
         LegacyTerminalAgents.forgetPresentationPreferences(in: sidebarDefaults)
         self.keybindings = keybindings ?? .shared
         self.themeManager = themeManager ?? .shared

@@ -572,8 +572,8 @@ const SUMMARY = {
           ownerDesignID: "d1", spaceID: "s1", sources: ["web/static/tokens.css"] },
   builtIn: false, counts: { colors: 11, type: 4, lengths: 7, components: 9 }, unreadable: false,
 };
-const NIGHT_WATCH = {
-  info: { namespace: "night-watch", title: "Night Watch", revision: 1, createdAt: 0, updatedAt: 0, sources: [] },
+const SHEPHERD_DESIGN = {
+  info: { namespace: "shepherd-design", title: "Shepherd Design", revision: 1, createdAt: 0, updatedAt: 0, sources: [] },
   builtIn: true, counts: { colors: 31, type: 9, lengths: 12, components: 0 }, unreadable: false,
 };
 const ACME_TOKENS = {
@@ -589,7 +589,7 @@ const ACME_TOKENS = {
   fonts: [], components: [{ name: "Button", source: { file: "templates/partials/button.html" }, specimen: "components/Button.html", export: "Acme.Button" }],
 };
 const LISTING = {
-  systems: [NIGHT_WATCH, SUMMARY],
+  systems: [SHEPHERD_DESIGN, SUMMARY],
   installed: [{ namespace: "acme-web", title: "acme-web", shepherd: true, version: "3", tokens: ACME_TOKENS, tokensFile: "ds/acme-web/tokens.json" }],
   primary: "acme-web",
 };
@@ -603,7 +603,7 @@ test("system_read lists the systems and the design's installed ones, fenced as d
     assert.deepEqual(frames[0], { type: "designSystemRead", id: frames[0].id, agentID: "a1", designID: "d1" });
     const text = all.content[0].text;
     assert.match(text, /^2 design systems on this host:\n/);
-    assert.match(text, /- night-watch "Night Watch" · built into Shepherd · 31 colors, 9 type styles, 12 spacing and radius steps, 0 components/);
+    assert.match(text, /- shepherd-design "Shepherd Design" · built into Shepherd · 31 colors, 9 type styles, 12 spacing and radius steps, 0 components/);
     assert.match(text, /- acme-web "acme-web" · built by this design · synced 4m ago · 11 colors/);
     assert.match(text, /Installed in this design:\n[^\n]*\n<design-data nonce="[0-9a-f]+">\n- acme-web at ds\/acme-web\/, the design's own\n/);
     assert.deepEqual(all.details, { systems: 2, installed: ["acme-web"] });
@@ -627,7 +627,7 @@ test("system_write sends the system, and says what Shepherd wrote and installed"
   const results = {
     write: { summary: SUMMARY, changed: true, installed: { revision: 12, changed: true, warnings: [], boardCount: 4 },
              notes: ["tokens.css is the one you wrote, so it was left as it is"] },
-    install: { summary: NIGHT_WATCH, changed: false, installed: { revision: 13, changed: true, warnings: [], boardCount: 4 }, notes: [] },
+    install: { summary: SHEPHERD_DESIGN, changed: false, installed: { revision: 13, changed: true, warnings: [], boardCount: 4 }, notes: [] },
   };
   const answer = (frame) => frame.system.namespace === "theirs"
     ? { type: "error", code: "not_your_system", message: "theirs was built by another design's agent" }
@@ -649,9 +649,9 @@ test("system_write sends the system, and says what Shepherd wrote and installed"
     assert.match(lines[2], /^Note: tokens\.css is the one you wrote/);
     assert.deepEqual(done.details, { namespace: "acme-web", revision: 3, installed: true });
 
-    const installed = await tool.execute("t2", { namespace: "night-watch", install: true });
-    assert.deepEqual(frames[1].system, { namespace: "night-watch", install: true }, "an install sends no tokens");
-    assert.match(installed.content[0].text, /^Installed night-watch in this design at ds\/night-watch\//);
+    const installed = await tool.execute("t2", { namespace: "shepherd-design", install: true });
+    assert.deepEqual(frames[1].system, { namespace: "shepherd-design", install: true }, "an install sends no tokens");
+    assert.match(installed.content[0].text, /^Installed shepherd-design in this design at ds\/shepherd-design\//);
 
     await assert.rejects(tool.execute("t3", { namespace: "theirs", tokens: {} }), /another design's agent \(not_your_system\)/);
     await assert.rejects(tool.execute("t4", { namespace: "acme-web", tokens: [] }), /tokens is a JSON object/);

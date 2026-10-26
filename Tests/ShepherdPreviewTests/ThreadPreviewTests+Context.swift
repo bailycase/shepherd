@@ -155,7 +155,7 @@ extension ThreadPreviewTests {
     /// ContextIdeas › The ring and Click for details: every ring state in its button, and the
     /// details' other variants (simple, compacting, just compacted, nothing yet).
     @Test func contextComponents() async throws {
-        let rings: [(String, NWContextRingState)] = [
+        let rings: [(String, SHContextRingState)] = [
             ("empty", .empty), ("21%", .fill(0.21, .calm)), ("68%", .fill(0.68, .warning)), ("89%", .fill(0.89, .critical)),
             ("compacting", .compacting), ("after compaction", .estimated),
         ]
@@ -177,23 +177,23 @@ extension ThreadPreviewTests {
                     ForEach(rings, id: \.0) { name, state in
                         VStack(spacing: 10) {
                             HStack(spacing: 18) {
-                                NWContextMeterButton(state, expanded: false, help: name, accessibilityLabel: name) {}
-                                NWContextMeterButton(state, expanded: true, help: name, accessibilityLabel: name) {}
+                                SHContextMeterButton(state, expanded: false, help: name, accessibilityLabel: name) {}
+                                SHContextMeterButton(state, expanded: true, help: name, accessibilityLabel: name) {}
                             }
-                            Text(name).font(.nwMono(11)).foregroundStyle(Color.nw.textSecondary)
+                            Text(name).font(.shMono(11)).foregroundStyle(Color.sh.textSecondary)
                         }
                         .frame(width: 190)
                     }
                 }
                 HStack(alignment: .top, spacing: 24) {
                     ForEach(Array(variants.enumerated()), id: \.offset) { _, details in
-                        NWContextDetails(NWContextDetailsModel(details), actions: NWContextDetailsActions())
+                        SHContextDetails(SHContextDetailsModel(details), actions: SHContextDetailsActions())
                     }
                 }
             }
             .padding(28)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
     }
 
@@ -221,10 +221,10 @@ extension ThreadPreviewTests {
         expansion.expand("open")
         try await Preview.render("context-touch", size: CGSize(width: 1240, height: 720)) {
             HStack(alignment: .top, spacing: 28) {
-                NWContextDetails(NWContextDetailsModel(split), actions: NWContextDetailsActions(), presentation: .sheet)
-                    .frame(width: 390).background(Color.nw.bgRaised)
-                NWContextDetails(NWContextDetailsModel(full), actions: NWContextDetailsActions(), presentation: .sheet)
-                    .frame(width: 390).background(Color.nw.bgRaised)
+                SHContextDetails(SHContextDetailsModel(split), actions: SHContextDetailsActions(), presentation: .sheet)
+                    .frame(width: 390).background(Color.sh.bgRaised)
+                SHContextDetails(SHContextDetailsModel(full), actions: SHContextDetailsActions(), presentation: .sheet)
+                    .frame(width: 390).background(Color.sh.bgRaised)
                 VStack(alignment: .leading, spacing: 18) {
                     ForEach(rows, id: \.id) { CompactionItem(row: $0) }
                     CompactionItem(row: summary)
@@ -234,7 +234,7 @@ extension ThreadPreviewTests {
             }
             .padding(28)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
     }
 
@@ -260,7 +260,7 @@ extension ThreadPreviewTests {
             .environment(\.compactionExpansion, expansion)
             .padding(28)
             .frame(width: 900, height: 620, alignment: .topLeading)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
     }
 }

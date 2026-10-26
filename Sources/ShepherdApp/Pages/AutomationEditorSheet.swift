@@ -66,7 +66,7 @@ struct AutomationEditorSheet: View {
             VStack(spacing: 0) {
                 if editing == nil, hosts.count > 1 {
                     SheetRow("Host") {
-                        NWPopupMenu(hostName, minWidth: AppLayout.settingsPopupWidth) {
+                        SHPopupMenu(hostName, minWidth: AppLayout.settingsPopupWidth) {
                             ForEach(hosts, id: \.id) { option in
                                 Button(option.name) {
                                     if host != option.id { folder = "" }
@@ -78,43 +78,43 @@ struct AutomationEditorSheet: View {
                     }
                 }
                 SheetRow("Name") {
-                    TextField("Name", text: $name, prompt: Text("Nightly migrations dry run").foregroundStyle(Color.nw.textTertiary))
-                        .textFieldStyle(.nw)
+                    TextField("Name", text: $name, prompt: Text("Nightly migrations dry run").foregroundStyle(Color.sh.textTertiary))
+                        .textFieldStyle(.sh)
                 }
                 SheetRow("Folder") {
-                    HStack(spacing: NW.Space.m) {
-                        TextField("Folder", text: $folder, prompt: Text("~/code/project").foregroundStyle(Color.nw.textTertiary))
-                            .textFieldStyle(.nw(mono: true))
+                    HStack(spacing: SH.Space.m) {
+                        TextField("Folder", text: $folder, prompt: Text("~/code/project").foregroundStyle(Color.sh.textTertiary))
+                            .textFieldStyle(.sh(mono: true))
                         Button("Choose…") { picking = true }
-                            .buttonStyle(.nw(.ghost, size: .s))
+                            .buttonStyle(.sh(.ghost, size: .s))
                             .accessibilityLabel("Choose folder")
                     }
                 }
                 SheetRow("Prompt", alignment: .firstTextBaseline) {
                     TextEditor(text: $prompt)
                         .focused($promptFocused)
-                        .nwText(.body)
-                        .foregroundStyle(Color.nw.textPrimary)
+                        .shText(.body)
+                        .foregroundStyle(Color.sh.textPrimary)
                         .scrollContentBackground(.hidden)
                         .frame(height: AppLayout.promptEditorHeight)
-                        .padding(NW.Space.m)
-                        .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.s))
-                        .nwBorder(Color.nw.lineStrong, radius: NW.Radius.s)
+                        .padding(SH.Space.m)
+                        .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+                        .shBorder(Color.sh.lineStrong, radius: SH.Radius.s)
                         .overlay {
                             Color.clear
-                                .nwFocusRing(promptFocused, radius: NW.Radius.s)
+                                .shFocusRing(promptFocused, radius: SH.Radius.s)
                                 .allowsHitTesting(false)
                         }
                         .accessibilityLabel("Prompt")
                 }
                 SheetRow("On") {
-                    HStack(spacing: NW.Space.m) {
+                    HStack(spacing: SH.Space.m) {
                         Toggle("Starts with Shepherd", isOn: $enabled)
-                            .toggleStyle(.nwSwitch)
+                            .toggleStyle(.shSwitch)
                             .labelsHidden()
                         Text(enabled ? "Runs whenever Shepherd starts on \(hostName)" : "Runs only when you run it")
-                            .font(.nw(.caption))
-                            .foregroundStyle(Color.nw.textSecondary)
+                            .font(.sh(.caption))
+                            .foregroundStyle(Color.sh.textSecondary)
                     }
                 }
             }

@@ -239,20 +239,20 @@ struct DiffDrawingTests {
         var text = AttributedString(String(repeating: "Highlighted words ", count: 30))
         text.foregroundColor = Color(.sRGB, red: 1, green: 0, blue: 0, opacity: 1)
         text.backgroundColor = Color(.sRGB, red: 0, green: 0, blue: 1, opacity: 1)
-        let line = NWDiffLineContent(id: "sample", key: 1, kind: .added, oldNumber: nil, newNumber: 12345,
+        let line = SHDiffLineContent(id: "sample", key: 1, kind: .added, oldNumber: nil, newNumber: 12345,
                                      text: text, source: String(text.characters))
-        let size = CGSize(width: 360, height: NWDiffMetrics.lineHeight)
+        let size = CGSize(width: 360, height: SHDiffMetrics.lineHeight)
         let window = OffscreenWindow(size: size, dark: false)
         defer { window.close() }
         if split {
-            window.show(NWSplitDiffSide(line, side: .new, onComment: {}).background(Color.white))
+            window.show(SHSplitDiffSide(line, side: .new, onComment: {}).background(Color.white))
         } else {
-            window.show(NWDiffLine(line, onComment: {}).background(Color.white))
+            window.show(SHDiffLine(line, onComment: {}).background(Color.white))
         }
         let capture = FrameTimer.capture(window, CGRect(origin: .zero, size: size))
         var red = 0, blue = 0, leaking = 0
-        let codeStart = Int(NWDiffMetrics.barWidth + NWDiffMetrics.numberWidth * (split ? 1 : 2)
-                            + (split ? 0 : NWDiffMetrics.signWidth))
+        let codeStart = Int(SHDiffMetrics.barWidth + SHDiffMetrics.numberWidth * (split ? 1 : 2)
+                            + (split ? 0 : SHDiffMetrics.signWidth))
         // The comment slot reserves 18pt plus two 6pt side gaps.
         let codeEnd = Int(size.width - 30)
         for y in 0..<capture.height {

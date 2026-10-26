@@ -24,7 +24,7 @@ struct ChangesScreen: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: MobileLayout.reviewCardSpacing) {
                     if let error = store.loadError, store.loaded {
-                        NWBanner(.failed, title: "Couldn't refresh the changes", message: error)
+                        SHBanner(.failed, title: "Couldn't refresh the changes", message: error)
                     }
                     let branch = store.overview?.branch ?? agent?.worktreeBranch
                     if !store.entries.isEmpty || branch != nil {
@@ -38,17 +38,17 @@ struct ChangesScreen: View {
                         VStack(spacing: 0) {
                             ForEach(store.summaries) { summary in
                                 Button { navigator.open(.review(.diff(ref, path: summary.path))) } label: {
-                                    NWReviewFileRow(NWReviewFileRow.Item(summary), selected: summary.id == highlighted).equatable()
+                                    SHReviewFileRow(SHReviewFileRow.Item(summary), selected: summary.id == highlighted).equatable()
                                 }
                                 .buttonStyle(.plain)
                                 .id(summary.id)
-                                if summary.id != store.summaries.last?.id { NWHairline() }
+                                if summary.id != store.summaries.last?.id { SHHairline() }
                             }
                         }
-                        .nwCard(radius: MobileLayout.cardRadius)
+                        .shCard(radius: MobileLayout.cardRadius)
                         if !store.comments.isEmpty {
                             ReviewSectionHead(title: "Your comments", note: "\(store.comments.count)")
-                                .padding(.top, NW.Space.s)
+                                .padding(.top, SH.Space.s)
                             ForEach(store.comments) { comment in
                                 ReviewCommentCard(comment: comment, showsFile: true,
                                                   onEdit: { open(comment, store: store) },
@@ -57,13 +57,13 @@ struct ChangesScreen: View {
                         }
                     }
                 }
-                .padding(MobileLayout.gutter - NW.Space.xxs)
+                .padding(MobileLayout.gutter - SH.Space.xxs)
             }
             .onChange(of: store.summaries.count, initial: true) { _, _ in
                 if let highlighted { proxy.scrollTo(highlighted, anchor: .center) }
             }
         }
-        .background(Color.nw.bgBase)
+        .background(Color.sh.bgBase)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             ReviewActionBar(store: store, commitDirectly: CommitHooks.available(host: host)
                             ? { navigator.present(.review(.commit(ref))) } : nil) { sent in if sent { dismiss() } }
@@ -109,41 +109,41 @@ struct ReviewActionBar: View {
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        VStack(spacing: NW.Space.m) {
+        VStack(spacing: SH.Space.m) {
             if let error = store.actionError {
-                NWBanner(.failed, title: "Couldn't send the review", message: error) {
-                    Button("Dismiss") { store.actionError = nil }.buttonStyle(.nw(.ghost, size: .s))
+                SHBanner(.failed, title: "Couldn't send the review", message: error) {
+                    Button("Dismiss") { store.actionError = nil }.buttonStyle(.sh(.ghost, size: .s))
                 }
             }
             // Side by side, or stacked where an accessibility text size would cut the labels.
-            let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: NW.Space.m)) : AnyLayout(HStackLayout(spacing: NW.Space.m))
+            let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: SH.Space.m)) : AnyLayout(HStackLayout(spacing: SH.Space.m))
             layout {
                 Button(store.sendTitle) {
                     Task { finished(await store.sendComments(hosts: hosts)) }
                 }
-                .buttonStyle(.nwReviewBar(.secondary))
+                .buttonStyle(.shReviewBar(.secondary))
                 .disabled(!store.canSend)
                 .accessibilityHint(store.comments.isEmpty ? "Tap a line in a diff to comment on it" : "Sends your comments as the agent's next message")
                 if let commitDirectly {
                     Button("Commit\u{2026}", action: commitDirectly)
-                        .buttonStyle(.nwReviewBar(.primary))
+                        .buttonStyle(.shReviewBar(.primary))
                         .disabled(!store.canCommit)
                         .accessibilityHint("Choose the files and message, then commit on the host")
                 } else {
                     Button("Commit") {
                         Task { finished(await store.commit(hosts: hosts)) }
                     }
-                    .buttonStyle(.nwReviewBar(.primary))
+                    .buttonStyle(.shReviewBar(.primary))
                     .disabled(!store.canCommit)
                     .accessibilityHint("Asks the agent to commit these changes")
                 }
             }
         }
-        .padding(.horizontal, MobileLayout.gutter - NW.Space.xxs)
-        .padding(.top, NW.Space.l)
-        .padding(.bottom, NW.Space.s)
-        .background(Color.nw.bgWindow)
-        .overlay(alignment: .top) { NWHairline() }
+        .padding(.horizontal, MobileLayout.gutter - SH.Space.xxs)
+        .padding(.top, SH.Space.l)
+        .padding(.bottom, SH.Space.s)
+        .background(Color.sh.bgWindow)
+        .overlay(alignment: .top) { SHHairline() }
     }
 }
 

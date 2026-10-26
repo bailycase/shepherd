@@ -87,8 +87,8 @@ enum MotionProbe {
     /// Captures `region` of the window's content (all of it when nil) before `change`, then
     /// every few milliseconds until the picture has changed and held still for `stillFrames`
     /// captures, or `timeout` passes. `change` runs outside any animation, as a view model's
-    /// mutation does: the view under test must attach its own motion (`nwAnimation`,
-    /// `nwTransition`). Wrap `change` in `withNWAnimation` to test an action-driven change.
+    /// mutation does: the view under test must attach its own motion (`shAnimation`,
+    /// `shTransition`). Wrap `change` in `withSHAnimation` to test an action-driven change.
     ///
     /// Keep the region thin: every capture draws it.
     static func record(_ window: OffscreenWindow, region: CGRect? = nil, stillFrames: Int = 12,

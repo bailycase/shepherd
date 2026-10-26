@@ -18,7 +18,7 @@ struct SkillsSettings: View {
     @State private var query = ""
     @State private var expanded: String?
     @State private var sheet: SkillsSheet?
-    @State private var toast: NWToast?
+    @State private var toast: SHToast?
     @State private var resolving: ClientSkills.Unacknowledged?
 
     var body: some View {
@@ -28,17 +28,17 @@ struct SkillsSettings: View {
         VStack(alignment: .leading, spacing: AppLayout.skillsBlockSpacing) {
             header
             HStack(alignment: .top, spacing: AppLayout.skillsColumnSpacing) {
-                VStack(alignment: .leading, spacing: NW.Space.l) {
+                VStack(alignment: .leading, spacing: SH.Space.l) {
                     toolbar(hosts)
                     if let problem = model.problem {
-                        HStack(spacing: NW.Space.m) {
-                            NWInlineProblem(problem)
+                        HStack(spacing: SH.Space.m) {
+                            SHInlineProblem(problem)
                             if let entry = model.unacknowledged {
-                                Button("Resolve…") { resolving = entry }.buttonStyle(.nwLink)
+                                Button("Resolve…") { resolving = entry }.buttonStyle(.shLink)
                             }
-                            Button("Dismiss") { model.dismissProblem() }.buttonStyle(.nwLink)
+                            Button("Dismiss") { model.dismissProblem() }.buttonStyle(.shLink)
                         }
-                        .nwTransition(.disclosure)
+                        .shTransition(.disclosure)
                     }
                     ScrollView(.vertical) {
                         SkillsList(vm: vm, model: model, hosts: hosts, rows: rows,
@@ -58,10 +58,10 @@ struct SkillsSettings: View {
             }
             .frame(maxHeight: .infinity, alignment: .top)
         }
-        .nwAnimation(.disclosure, value: expanded)
-        .nwAnimation(.list, value: rows.map(\.id))
-        .nwAnimation(.list, value: groups.map { $0.rows.map(\.id) })
-        .nwAnimation(.disclosure, value: model.problem)
+        .shAnimation(.disclosure, value: expanded)
+        .shAnimation(.list, value: rows.map(\.id))
+        .shAnimation(.list, value: groups.map { $0.rows.map(\.id) })
+        .shAnimation(.disclosure, value: model.problem)
         .confirmationDialog("Stop waiting for this skill change?", isPresented: Binding(get: { resolving != nil }, set: { if !$0 { resolving = nil } }), presenting: resolving) { entry in
             Button("Continue without retrying") {
                 resolving = nil
@@ -80,27 +80,27 @@ struct SkillsSettings: View {
                 AddSkillsSheet(vm: vm, model: model, initialRepo: repo) { self.sheet = nil }
             }
         }
-        .nwToast(item: $toast)
+        .shToast(item: $toast)
         .onChange(of: model.removal) { _, removal in
             guard let removal else { return }
-            toast = NWToast(.idle, message: SkillsPresentation.removed(removal), action: .init("Undo") {
+            toast = SHToast(.idle, message: SkillsPresentation.removed(removal), action: .init("Undo") {
                 model.undoRemoval(in: vm.skillsHosts)
             })
         }
     }
 
     private var header: some View {
-        HStack(alignment: .bottom, spacing: NW.Space.xl) {
+        HStack(alignment: .bottom, spacing: SH.Space.xl) {
             SettingsHeader(title: "Skills",
                            explanation: "Instructions and scripts the agent picks up when a task calls for them. Installed skills are "
                                + "global: every thread and automation on every host gets the same set.")
                 .frame(maxWidth: AppLayout.skillsExplanationWidth, alignment: .leading)
-            Spacer(minLength: NW.Space.l)
-            HStack(spacing: NW.Space.m) {
+            Spacer(minLength: SH.Space.l)
+            HStack(spacing: SH.Space.m) {
                 Button { sheet = .repo(nil) } label: { Label("Add from repo…", systemImage: "plus") }
-                    .buttonStyle(.nw(.secondary))
+                    .buttonStyle(.sh(.secondary))
                 Button { sheet = .browse } label: { Label("Browse skills.sh", systemImage: "magnifyingglass") }
-                    .buttonStyle(.nw(.primary))
+                    .buttonStyle(.sh(.primary))
             }
             .fixedSize()
         }
@@ -108,30 +108,30 @@ struct SkillsSettings: View {
 
     private func toolbar(_ hosts: [SkillsHost]) -> some View {
         let updates = model.count(.updates, in: hosts)
-        return HStack(spacing: NW.Space.m + NW.Space.xxs) {
-            NWSearchField("Filter skills", text: $query)
+        return HStack(spacing: SH.Space.m + SH.Space.xxs) {
+            SHSearchField("Filter skills", text: $query)
                 .frame(width: AppLayout.skillsFilterWidth)
-            NWSegmentedPicker("Show", selection: $filter, options: [
+            SHSegmentedPicker("Show", selection: $filter, options: [
                 (.all, "All \(model.count(.all, in: hosts))"),
                 (.on, "On \(model.count(.on, in: hosts))"),
                 (.updates, "Updates \(updates)"),
             ])
-            Spacer(minLength: NW.Space.m)
+            Spacer(minLength: SH.Space.m)
             TimelineView(.periodic(from: .now, by: 60)) { context in
                 Text(SkillsPresentation.checkedLine(model.checkedAt(in: hosts), now: context.date))
-                    .font(.nwSans(AppLayout.skillsNoteSize))
-                    .foregroundStyle(Color.nw.textTertiary)
+                    .font(.shSans(AppLayout.skillsNoteSize))
+                    .foregroundStyle(Color.sh.textTertiary)
                     .lineLimit(1)
             }
             if updates > 0 {
                 Button { Task { await model.updateAll(in: vm.skillsHosts) } } label: {
                     Label("Update \(updates)", systemImage: "arrow.down.to.line")
                 }
-                .buttonStyle(.nw(.secondary, size: .s))
-                .nwTransition(.disclosure)
+                .buttonStyle(.sh(.secondary, size: .s))
+                .shTransition(.disclosure)
             }
         }
-        .nwAnimation(.disclosure, value: updates > 0)
+        .shAnimation(.disclosure, value: updates > 0)
     }
 
     /// The read-only part of the list: each group's title and rows, why pi's skills couldn't be
@@ -204,7 +204,7 @@ private struct SkillsList: View {
     let empty: String
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         LazyVStack(spacing: 0) {
             SkillsListHeader()
             if showsInstalled {
@@ -213,11 +213,11 @@ private struct SkillsList: View {
                     .equatable()
                 if rows.isEmpty {
                     Text(empty)
-                        .font(.nwSans(AppLayout.skillsSummarySize))
-                        .foregroundStyle(nw.textTertiary)
+                        .font(.shSans(AppLayout.skillsSummarySize))
+                        .foregroundStyle(sh.textTertiary)
                         .frame(maxWidth: .infinity, minHeight: AppLayout.skillsRowMinHeight)
-                        .overlay(alignment: .top) { NWHairline() }
-                        .nwTransition(.disclosure)
+                        .overlay(alignment: .top) { SHHairline() }
+                        .shTransition(.disclosure)
                 }
                 ForEach(rows) { row in
                     let open = expanded == row.id
@@ -226,7 +226,7 @@ private struct SkillsList: View {
                             .equatable()
                         if open {
                             SkillDetail(vm: vm, model: model, hosts: hosts, row: row)
-                                .nwTransition(.disclosure)
+                                .shTransition(.disclosure)
                         }
                     }
                 }
@@ -244,27 +244,27 @@ private struct SkillsList: View {
                         PiSkillsListRow(row: row, actions: local ? piActions(for: row) : nil)
                             .equatable()
                     case .problem(let text):
-                        NWInlineProblem(text)
+                        SHInlineProblem(text)
                             .frame(maxWidth: .infinity, minHeight: AppLayout.skillsRowMinHeight, alignment: .leading)
-                            .padding(.horizontal, NW.Space.xl)
-                            .overlay(alignment: .top) { NWHairline() }
+                            .padding(.horizontal, SH.Space.xl)
+                            .overlay(alignment: .top) { SHHairline() }
                     case .note(let text):
                         Text(text)
-                            .nwText(size: AppLayout.skillsNoteSize, lineHeight: AppLayout.skillsNoteLineHeight)
-                            .foregroundStyle(nw.textTertiary)
+                            .shText(size: AppLayout.skillsNoteSize, lineHeight: AppLayout.skillsNoteLineHeight)
+                            .foregroundStyle(sh.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.vertical, NW.Space.l)
-                            .padding(.horizontal, NW.Space.xl)
-                            .background(nw.bgSunken)
-                            .overlay(alignment: .top) { NWHairline() }
+                            .padding(.vertical, SH.Space.l)
+                            .padding(.horizontal, SH.Space.xl)
+                            .background(sh.bgSunken)
+                            .overlay(alignment: .top) { SHHairline() }
                     }
                 }
             }
         }
-        .background(nw.bgWindow)
+        .background(sh.bgWindow)
         .clipShape(RoundedRectangle(cornerRadius: AppLayout.skillsCardRadius))
-        .nwBorder(nw.lineSubtle, radius: AppLayout.skillsCardRadius)
+        .shBorder(sh.lineSubtle, radius: AppLayout.skillsCardRadius)
     }
 
     private func actions(for row: SkillRow) -> SkillsListRow.Actions {
@@ -324,42 +324,42 @@ private struct SkillsGroupTitle: View, Equatable {
     }
 
     var body: some View {
-        let nw = Color.nw
-        HStack(spacing: NW.Space.s) {
+        let sh = Color.sh
+        HStack(spacing: SH.Space.s) {
             if readOnly {
                 Image(systemName: "lock")
-                    .font(.nwSans(AppLayout.skillsLabelSize, .semibold))
-                    .foregroundStyle(nw.textTertiary)
+                    .font(.shSans(AppLayout.skillsLabelSize, .semibold))
+                    .foregroundStyle(sh.textTertiary)
                     .frame(width: AppLayout.skillsSwitchColumn)
-                    .padding(.trailing, AppLayout.skillsColumnGap - NW.Space.s)
+                    .padding(.trailing, AppLayout.skillsColumnGap - SH.Space.s)
                     .accessibilityHidden(true)
             }
             Text(title)
-                .font(.nwSans(AppLayout.skillsNoteSize, .semibold))
-                .foregroundStyle(nw.textSecondary)
+                .font(.shSans(AppLayout.skillsNoteSize, .semibold))
+                .foregroundStyle(sh.textSecondary)
                 .lineLimit(1)
             if let count {
                 Text("\(count)")
-                    .font(.nwMono(AppLayout.skillsMetaSize))
-                    .foregroundStyle(nw.textTertiary)
+                    .font(.shMono(AppLayout.skillsMetaSize))
+                    .foregroundStyle(sh.textTertiary)
             }
-            Spacer(minLength: NW.Space.m)
+            Spacer(minLength: SH.Space.m)
             if let trailing {
                 Text(trailing)
-                    .font(.nwMono(AppLayout.skillsMetaSize - 0.5))
-                    .foregroundStyle(nw.textTertiary)
+                    .font(.shMono(AppLayout.skillsMetaSize - 0.5))
+                    .foregroundStyle(sh.textTertiary)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
             if let open {
                 Button("Show folder", action: open)
-                    .buttonStyle(.nw(.ghost, size: .s))
+                    .buttonStyle(.sh(.ghost, size: .s))
                     .help("Show pi’s skills folder in Finder")
             }
         }
-        .padding(.horizontal, NW.Space.xl)
+        .padding(.horizontal, SH.Space.xl)
         .frame(minHeight: AppLayout.skillsGroupHeight)
-        .overlay(alignment: .top) { if rule { NWHairline() } }
+        .overlay(alignment: .top) { if rule { SHHairline() } }
         .help(help)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
@@ -384,28 +384,28 @@ private struct PiSkillsListRow: View, Equatable {
     }
 
     var body: some View {
-        let _ = NWRenderProbe.tick("skills.row")
-        let nw = Color.nw
+        let _ = SHRenderProbe.tick("skills.row")
+        let sh = Color.sh
         let skill = row.skill
         HStack(spacing: AppLayout.skillsColumnGap) {
             Color.clear.frame(width: AppLayout.skillsSwitchColumn)
-            VStack(alignment: .leading, spacing: NW.Space.xxs + 1) {
-                HStack(spacing: NW.Space.s) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs + 1) {
+                HStack(spacing: SH.Space.s) {
                     Text(skill.name)
-                        .font(.nwMono(AppLayout.skillsNameSize, .semibold))
-                        .foregroundStyle(skill.isUsed ? nw.textPrimary : nw.textSecondary)
+                        .font(.shMono(AppLayout.skillsNameSize, .semibold))
+                        .foregroundStyle(skill.isUsed ? sh.textPrimary : sh.textSecondary)
                         .lineLimit(1)
-                    if !skill.isUsed { NWTag("not used") }
+                    if !skill.isUsed { SHTag("not used") }
                 }
                 Text(skill.shadowedBy.map(SkillsPresentation.shadowNote) ?? skill.summary)
-                    .font(.nwSans(AppLayout.skillsSummarySize))
-                    .foregroundStyle(skill.isUsed ? nw.textSecondary : nw.textTertiary)
+                    .font(.shSans(AppLayout.skillsSummarySize))
+                    .foregroundStyle(skill.isUsed ? sh.textSecondary : sh.textTertiary)
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Text(SkillsPresentation.source(skill))
-                .font(.nwMono(AppLayout.skillsMetaSize))
-                .foregroundStyle(nw.textSecondary)
+                .font(.shMono(AppLayout.skillsMetaSize))
+                .foregroundStyle(sh.textSecondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .help(skill.path)
@@ -414,10 +414,10 @@ private struct PiSkillsListRow: View, Equatable {
                 .frame(width: AppLayout.skillsUseColumn, alignment: .leading)
             Color.clear.frame(width: AppLayout.skillsUpdatedColumn + AppLayout.skillsColumnGap + AppLayout.skillsChevronColumn)
         }
-        .padding(.vertical, NW.Space.m)
-        .padding(.horizontal, NW.Space.xl)
+        .padding(.vertical, SH.Space.m)
+        .padding(.horizontal, SH.Space.xl)
         .frame(minHeight: AppLayout.skillsRowMinHeight)
-        .overlay(alignment: .top) { NWHairline() }
+        .overlay(alignment: .top) { SHHairline() }
         .contentShape(Rectangle())
         .help(skill.shadowedBy.map { _ in skill.summary } ?? "")
         .contextMenu {
@@ -435,21 +435,21 @@ private struct SkillUseTag: View {
     let invocation: SkillInvocation
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let text = Text(SkillsPresentation.use(invocation)).lineLimit(1)
         if invocation == .automatic {
-            text.font(.nwSans(AppLayout.skillsMetaSize))
-                .foregroundStyle(nw.textSecondary)
-                .padding(.horizontal, NW.Space.s + 1)
+            text.font(.shSans(AppLayout.skillsMetaSize))
+                .foregroundStyle(sh.textSecondary)
+                .padding(.horizontal, SH.Space.s + 1)
                 .frame(height: AppLayout.skillsTagHeight)
-                .nwBorder(nw.lineStrong, radius: NW.Radius.xs)
+                .shBorder(sh.lineStrong, radius: SH.Radius.xs)
                 .fixedSize()
         } else {
-            text.font(.nwMono(AppLayout.skillsMetaSize - 0.5))
-                .foregroundStyle(nw.textSecondary)
-                .padding(.horizontal, NW.Space.s + 1)
+            text.font(.shMono(AppLayout.skillsMetaSize - 0.5))
+                .foregroundStyle(sh.textSecondary)
+                .padding(.horizontal, SH.Space.s + 1)
                 .frame(height: AppLayout.skillsTagHeight)
-                .background(nw.bgSelected, in: RoundedRectangle(cornerRadius: NW.Radius.xs))
+                .background(sh.bgSelected, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
                 .fixedSize()
         }
     }
@@ -458,7 +458,7 @@ private struct SkillUseTag: View {
 /// The list's column labels.
 private struct SkillsListHeader: View {
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         HStack(spacing: AppLayout.skillsColumnGap) {
             Color.clear.frame(width: AppLayout.skillsSwitchColumn)
             label("Skill").frame(maxWidth: .infinity, alignment: .leading)
@@ -467,15 +467,15 @@ private struct SkillsListHeader: View {
             label("Updated").frame(width: AppLayout.skillsUpdatedColumn, alignment: .leading)
             Color.clear.frame(width: AppLayout.skillsChevronColumn)
         }
-        .padding(.horizontal, NW.Space.xl)
+        .padding(.horizontal, SH.Space.xl)
         .frame(height: AppLayout.skillsHeaderHeight)
-        .background(nw.bgSunken)
-        .overlay(alignment: .bottom) { NWHairline() }
+        .background(sh.bgSunken)
+        .overlay(alignment: .bottom) { SHHairline() }
         .accessibilityHidden(true)
     }
 
     private func label(_ text: String) -> some View {
-        Text(text).nwSettingsLabel(table: true).lineLimit(1)
+        Text(text).shSettingsLabel(table: true).lineLimit(1)
     }
 }
 
@@ -499,27 +499,27 @@ private struct SkillsListRow: View, Equatable {
     }
 
     var body: some View {
-        let _ = NWRenderProbe.tick("skills.row")
-        let nw = Color.nw
+        let _ = SHRenderProbe.tick("skills.row")
+        let sh = Color.sh
         let skill = row.skill
         HStack(spacing: AppLayout.skillsColumnGap) {
             Toggle(skill.name, isOn: Binding(get: { skill.isOn }, set: actions.toggle))
-                .toggleStyle(.nwSwitch)
+                .toggleStyle(.shSwitch)
                 .labelsHidden()
                 .frame(width: AppLayout.skillsSwitchColumn)
-            VStack(alignment: .leading, spacing: NW.Space.xxs + 1) {
-                HStack(spacing: NW.Space.s) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs + 1) {
+                HStack(spacing: SH.Space.s) {
                     Text(skill.name)
-                        .font(.nwMono(AppLayout.skillsNameSize, .semibold))
-                        .foregroundStyle(skill.isOn && row.shadowedBy == nil ? nw.textPrimary : nw.textSecondary)
+                        .font(.shMono(AppLayout.skillsNameSize, .semibold))
+                        .foregroundStyle(skill.isOn && row.shadowedBy == nil ? sh.textPrimary : sh.textSecondary)
                         .lineLimit(1)
                     if let winner = row.shadowedBy {
-                        NWTag("not used").help(SkillsPresentation.shadowNote(winner))
+                        SHTag("not used").help(SkillsPresentation.shadowNote(winner))
                     }
                 }
                 Text(skill.summary)
-                    .font(.nwSans(AppLayout.skillsSummarySize))
-                    .foregroundStyle(nw.textSecondary)
+                    .font(.shSans(AppLayout.skillsSummarySize))
+                    .foregroundStyle(sh.textSecondary)
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -527,16 +527,16 @@ private struct SkillsListRow: View, Equatable {
             SkillUseTag(invocation: skill.invocation).frame(width: AppLayout.skillsUseColumn, alignment: .leading)
             updated.frame(width: AppLayout.skillsUpdatedColumn, alignment: .leading)
             Image(systemName: open ? "chevron.down" : "chevron.right")
-                .font(.nwSans(AppLayout.skillsMetaSize, .semibold))
-                .foregroundStyle(nw.textTertiary)
+                .font(.shSans(AppLayout.skillsMetaSize, .semibold))
+                .foregroundStyle(sh.textTertiary)
                 .frame(width: AppLayout.skillsChevronColumn)
                 .accessibilityHidden(true)
         }
-        .padding(.vertical, NW.Space.m)
-        .padding(.horizontal, NW.Space.xl)
+        .padding(.vertical, SH.Space.m)
+        .padding(.horizontal, SH.Space.xl)
         .frame(minHeight: AppLayout.skillsRowMinHeight)
-        .background(open || hovering ? nw.bgHover : Color.clear)
-        .overlay(alignment: .top) { NWHairline() }
+        .background(open || hovering ? sh.bgHover : Color.clear)
+        .overlay(alignment: .top) { SHHairline() }
         .contentShape(Rectangle())
         .onTapGesture(perform: actions.open)
         .onHover { hovering = $0 }
@@ -545,17 +545,17 @@ private struct SkillsListRow: View, Equatable {
     }
 
     @ViewBuilder private func source(_ skill: InstalledSkill) -> some View {
-        let nw = Color.nw
+        let sh = Color.sh
         if let source = skill.source {
             Text(source.repo)
-                .font(.nwMono(AppLayout.skillsMetaSize))
-                .foregroundStyle(nw.textSecondary)
+                .font(.shMono(AppLayout.skillsMetaSize))
+                .foregroundStyle(sh.textSecondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
         } else {
             Label(SkillsPresentation.source(skill), systemImage: skill.copiedFrom != nil ? "square.and.arrow.down" : "folder")
-                .font(.nwSans(AppLayout.skillsNoteSize))
-                .foregroundStyle(nw.textTertiary)
+                .font(.shSans(AppLayout.skillsNoteSize))
+                .foregroundStyle(sh.textTertiary)
                 .labelStyle(.titleAndIcon)
                 .help(SkillsPresentation.unmanagedNote(skill))
         }
@@ -564,17 +564,17 @@ private struct SkillsListRow: View, Equatable {
     @ViewBuilder private var updated: some View {
         if row.isUpdating {
             Text("Updating")
-                .font(.nwSans(AppLayout.skillsMetaSize, .medium))
-                .nwShimmer(active: true)
+                .font(.shSans(AppLayout.skillsMetaSize, .medium))
+                .shShimmer(active: true)
                 .lineLimit(1)
         } else if row.skill.update != nil {
-            Button(action: actions.update) { NWUpdatePill() }
+            Button(action: actions.update) { SHUpdatePill() }
                 .buttonStyle(.plain)
                 .help("Install the newer commit on every host")
         } else {
             Text(SkillsPresentation.date(row.skill.updatedAt))
-                .font(.nwMono(AppLayout.skillsMetaSize))
-                .foregroundStyle(Color.nw.textTertiary)
+                .font(.shMono(AppLayout.skillsMetaSize))
+                .foregroundStyle(Color.sh.textTertiary)
                 .lineLimit(1)
         }
     }
@@ -592,17 +592,17 @@ private struct SkillDetail: View {
     @Environment(\.openURL) private var openURL
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let skill = row.skill
         VStack(alignment: .leading, spacing: AppLayout.skillsDetailSpacing) {
             HStack(alignment: .top, spacing: AppLayout.skillsDetailColumnSpacing) {
                 block("Use it") {
-                    VStack(alignment: .leading, spacing: NW.Space.m + NW.Space.xxs) {
-                        NWRadioOption("Automatically", note: SkillsPresentation.automaticNote(skill, directory: model.directory(in: hosts)),
+                    VStack(alignment: .leading, spacing: SH.Space.m + SH.Space.xxs) {
+                        SHRadioOption("Automatically", note: SkillsPresentation.automaticNote(skill, directory: model.directory(in: hosts)),
                                       selected: skill.invocation == .automatic) {
                             model.setInvocation(skill.name, .automatic, in: vm.skillsHosts)
                         }
-                        NWRadioOption(SkillsPresentation.slashOption(skill.name), note: "Stays out of the agent’s prompt until you call it.",
+                        SHRadioOption(SkillsPresentation.slashOption(skill.name), note: "Stays out of the agent’s prompt until you call it.",
                                       selected: skill.invocation == .slashOnly) {
                             model.setInvocation(skill.name, .slashOnly, in: vm.skillsHosts)
                         }
@@ -614,98 +614,98 @@ private struct SkillDetail: View {
                 block("Hosts") {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(model.copies(of: skill.name, in: hosts)) { copy in
-                            NWHostStateRow(copy.name, detail: SkillsPresentation.copy(copy.state), mark: Self.mark(copy.state))
+                            SHHostStateRow(copy.name, detail: SkillsPresentation.copy(copy.state), mark: Self.mark(copy.state))
                         }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            HStack(spacing: NW.Space.s) {
+            HStack(spacing: SH.Space.s) {
                 ForEach(skill.files) { entry in
-                    NWSkillFileChip(SkillsPresentation.chip(entry), count: entry.isDirectory ? entry.fileCount : nil,
+                    SHSkillFileChip(SkillsPresentation.chip(entry), count: entry.isDirectory ? entry.fileCount : nil,
                                     kind: entry.isDirectory ? (entry.name == "scripts" ? .code : .folder) : .file)
                 }
-                Spacer(minLength: NW.Space.m)
+                Spacer(minLength: SH.Space.m)
                 let here = vm.skillFolder(skill.name) != nil
                 Button("Open SKILL.md") { vm.openSkillFile(skill.name) }
-                    .buttonStyle(.nw(.secondary, size: .s))
+                    .buttonStyle(.sh(.secondary, size: .s))
                     .disabled(!here)
                 Button("Show folder") { vm.showSkillFolder(skill.name) }
-                    .buttonStyle(.nw(.ghost, size: .s))
+                    .buttonStyle(.sh(.ghost, size: .s))
                     .disabled(!here)
                 Button("Remove") { model.remove(skill.name, in: vm.skillsHosts) }
-                    .buttonStyle(.nw(.danger, size: .s))
+                    .buttonStyle(.sh(.danger, size: .s))
                     .help("Take it off every host. Undo puts it back.")
             }
             .padding(.top, AppLayout.skillsDetailSpacing)
-            .overlay(alignment: .top) { NWHairline() }
+            .overlay(alignment: .top) { SHHairline() }
         }
         .padding(.vertical, AppLayout.skillsDetailSpacing)
         .padding(.leading, AppLayout.skillsDetailLeading)
-        .padding(.trailing, NW.Space.xl)
+        .padding(.trailing, SH.Space.xl)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(nw.bgSunken)
-        .overlay(alignment: .top) { NWHairline() }
+        .background(sh.bgSunken)
+        .overlay(alignment: .top) { SHHairline() }
     }
 
     @ViewBuilder private func version(_ skill: InstalledSkill) -> some View {
-        let nw = Color.nw
-        VStack(alignment: .leading, spacing: NW.Space.s) {
+        let sh = Color.sh
+        VStack(alignment: .leading, spacing: SH.Space.s) {
             if let source = skill.source {
-                let repo = Text(source.repo).foregroundStyle(nw.textSecondary)
-                let path = Text(source.path.isEmpty ? "" : " › \(source.path)").foregroundStyle(nw.textTertiary)
+                let repo = Text(source.repo).foregroundStyle(sh.textSecondary)
+                let path = Text(source.path.isEmpty ? "" : " › \(source.path)").foregroundStyle(sh.textTertiary)
                 Text("\(repo)\(path)")
-                    .font(.nwMono(AppLayout.skillsDetailTextSize))
+                    .font(.shMono(AppLayout.skillsDetailTextSize))
                     .lineLimit(1)
                     .truncationMode(.middle)
-                VStack(alignment: .leading, spacing: NW.Space.xxs + 1) {
+                VStack(alignment: .leading, spacing: SH.Space.xxs + 1) {
                     let installed = SkillsPresentation.installed(source)
-                    let installedCommit = Text(installed.commit).font(.nwMono(AppLayout.skillsDetailTextSize)).foregroundStyle(nw.textSecondary)
+                    let installedCommit = Text(installed.commit).font(.shMono(AppLayout.skillsDetailTextSize)).foregroundStyle(sh.textSecondary)
                     let when = installed.date.map { " · " + $0 } ?? ""
                     Text("Installed \(installedCommit)\(when)")
-                        .foregroundStyle(nw.textTertiary)
+                        .foregroundStyle(sh.textTertiary)
                     if let update = skill.update {
                         let newer = SkillsPresentation.newer(update)
-                        let newCommit = Text(newer.commit).font(.nwMono(AppLayout.skillsDetailTextSize))
+                        let newCommit = Text(newer.commit).font(.shMono(AppLayout.skillsDetailTextSize))
                         Text("New \(newCommit) · \(newer.detail)")
-                            .foregroundStyle(nw.lanternText)
+                            .foregroundStyle(sh.lanternText)
                     }
                 }
-                .font(.nwSans(AppLayout.skillsDetailTextSize))
+                .font(.shSans(AppLayout.skillsDetailTextSize))
                 if let update = skill.update {
-                    HStack(spacing: NW.Space.s) {
+                    HStack(spacing: SH.Space.s) {
                         Button { Task { await model.update(skill.name, in: vm.skillsHosts) } } label: {
                             Label("Update", systemImage: "arrow.down.to.line")
                         }
-                        .buttonStyle(.nw(.primary, size: .s))
+                        .buttonStyle(.sh(.primary, size: .s))
                         .disabled(row.isUpdating)
                         if let compare = SkillsText.compareURL(repo: source.repo, from: source.commit, to: update.commit) {
                             Button("What changed") { openURL(compare) }
-                                .buttonStyle(.nw(.ghost, size: .s))
+                                .buttonStyle(.sh(.ghost, size: .s))
                                 .help("Opens the comparison on GitHub")
                         }
                     }
                 }
             } else {
                 Label(SkillsPresentation.source(skill), systemImage: skill.copiedFrom != nil ? "square.and.arrow.down" : "folder")
-                    .font(.nwSans(AppLayout.skillsDetailTextSize))
-                    .foregroundStyle(nw.textSecondary)
+                    .font(.shSans(AppLayout.skillsDetailTextSize))
+                    .foregroundStyle(sh.textSecondary)
                 Text(SkillsPresentation.unmanagedNote(skill))
-                    .nwText(size: AppLayout.skillsNoteSize, lineHeight: AppLayout.skillsNoteLineHeight)
-                    .foregroundStyle(nw.textTertiary)
+                    .shText(size: AppLayout.skillsNoteSize, lineHeight: AppLayout.skillsNoteLineHeight)
+                    .foregroundStyle(sh.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
 
     private func block<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: NW.Space.m) {
-            Text(title).nwSettingsLabel(table: true)
+        VStack(alignment: .leading, spacing: SH.Space.m) {
+            Text(title).shSettingsLabel(table: true)
             content()
         }
     }
 
-    static func mark(_ state: SkillCopy.State) -> NWHostStateRow.Mark {
+    static func mark(_ state: SkillCopy.State) -> SHHostStateRow.Mark {
         switch state {
         case .installed: .done
         case .updating: .working
@@ -732,42 +732,42 @@ private struct SkillsRail: View {
     }
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let loaded = model.loadedSkills(in: hosts)
         VStack(alignment: .leading, spacing: AppLayout.skillsRailSpacing) {
-            VStack(alignment: .leading, spacing: NW.Space.m) {
-                NWSectionHeader("How the agent uses them", style: .settings).padding(.horizontal, NW.Space.xxs)
-                let command = Text("/skill:name").font(.nwMono(AppLayout.skillsRailTextSize - 0.5)).foregroundStyle(nw.textPrimary)
+            VStack(alignment: .leading, spacing: SH.Space.m) {
+                SHSectionHeader("How the agent uses them", style: .settings).padding(.horizontal, SH.Space.xxs)
+                let command = Text("/skill:name").font(.shMono(AppLayout.skillsRailTextSize - 0.5)).foregroundStyle(sh.textPrimary)
                 // One literal, so `command` is interpolated as styled text.
                 Text("The agent sees the name and description of every automatic skill. When a task matches one, it reads that skill’s files and follows them. Type \(command) to use one on purpose.")
-                    .nwText(size: AppLayout.skillsRailTextSize, lineHeight: AppLayout.skillsRailLineHeight)
-                    .foregroundStyle(nw.textSecondary)
+                    .shText(size: AppLayout.skillsRailTextSize, lineHeight: AppLayout.skillsRailLineHeight)
+                    .foregroundStyle(sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, NW.Space.xxs)
-                VStack(alignment: .leading, spacing: NW.Space.m) {
+                    .padding(.horizontal, SH.Space.xxs)
+                VStack(alignment: .leading, spacing: SH.Space.m) {
                     HStack {
                         Text("In every prompt")
-                            .font(.nwSans(AppLayout.skillsOptionTitleSize, .medium))
-                            .foregroundStyle(nw.textPrimary)
-                        Spacer(minLength: NW.Space.m)
+                            .font(.shSans(AppLayout.skillsOptionTitleSize, .medium))
+                            .foregroundStyle(sh.textPrimary)
+                        Spacer(minLength: SH.Space.m)
                         Text(SkillsText.tokenNote(model.promptTokens(in: hosts)))
-                            .font(.nwMono(AppLayout.skillsNoteSize))
-                            .foregroundStyle(nw.textSecondary)
+                            .font(.shMono(AppLayout.skillsNoteSize))
+                            .foregroundStyle(sh.textSecondary)
                     }
-                    NWBudgetBar(loaded.map { $0.invocation == .automatic })
+                    SHBudgetBar(loaded.map { $0.invocation == .automatic })
                     Text(SkillsPresentation.automaticCount(loaded.filter { $0.invocation == .automatic }.count))
-                        .nwText(size: AppLayout.skillsNoteSize, lineHeight: AppLayout.skillsNoteLineHeight)
-                        .foregroundStyle(nw.textTertiary)
+                        .shText(size: AppLayout.skillsNoteSize, lineHeight: AppLayout.skillsNoteLineHeight)
+                        .foregroundStyle(sh.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(.vertical, NW.Space.l)
-                .padding(.horizontal, NW.Space.l + NW.Space.xxs)
-                .background(nw.bgWindow, in: RoundedRectangle(cornerRadius: AppLayout.skillsCardRadius))
-                .nwBorder(nw.lineSubtle, radius: AppLayout.skillsCardRadius)
+                .padding(.vertical, SH.Space.l)
+                .padding(.horizontal, SH.Space.l + SH.Space.xxs)
+                .background(sh.bgWindow, in: RoundedRectangle(cornerRadius: AppLayout.skillsCardRadius))
+                .shBorder(sh.lineSubtle, radius: AppLayout.skillsCardRadius)
                 .help("The context meter counts this as part of the system prompt.")
             }
             VStack(alignment: .leading, spacing: 0) {
-                NWSectionHeader("Options", style: .settings).padding(.horizontal, NW.Space.xxs).padding(.bottom, NW.Space.m)
+                SHSectionHeader("Options", style: .settings).padding(.horizontal, SH.Space.xxs).padding(.bottom, SH.Space.m)
                 option("Skills in the / menu", note: "List every skill as /skill:name in the composer’s slash menu.",
                        isOn: $settings.skillsInSlashMenu)
                 option("Same skills on every host", note: "Installs, updates and removals go to all hosts. Offline hosts catch up.",
@@ -775,52 +775,52 @@ private struct SkillsRail: View {
                 option("Update automatically", note: "Off: new versions wait here with an Update badge.",
                        isOn: Binding(get: { model.autoUpdate(in: hosts) }, set: { model.setAutoUpdate($0, in: vm.skillsHosts) }))
             }
-            VStack(alignment: .leading, spacing: NW.Space.s) {
-                NWSectionHeader("Hosts", style: .settings) {
+            VStack(alignment: .leading, spacing: SH.Space.s) {
+                SHSectionHeader("Hosts", style: .settings) {
                     Text(model.directory(in: hosts))
-                        .font(.nwMono(AppLayout.skillsMetaSize - 0.5))
-                        .foregroundStyle(nw.textTertiary)
+                        .font(.shMono(AppLayout.skillsMetaSize - 0.5))
+                        .foregroundStyle(sh.textTertiary)
                         .lineLimit(1)
                 }
-                .padding(.horizontal, NW.Space.xxs)
+                .padding(.horizontal, SH.Space.xxs)
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(hosts) { host in
                         let state = model.state(of: host)
-                        NWHostStateRow(host.name, detail: SkillsPresentation.host(state, owed: model.owes(host.id)),
+                        SHHostStateRow(host.name, detail: SkillsPresentation.host(state, owed: model.owes(host.id)),
                                        mark: Self.mark(state))
                     }
                 }
-                .padding(.horizontal, NW.Space.xxs)
+                .padding(.horizontal, SH.Space.xxs)
                 Text("Skills you copy into that folder by hand show up as Local.")
-                    .nwText(size: AppLayout.skillsNoteSize, lineHeight: AppLayout.skillsNoteLineHeight)
-                    .foregroundStyle(nw.textTertiary)
+                    .shText(size: AppLayout.skillsNoteSize, lineHeight: AppLayout.skillsNoteLineHeight)
+                    .foregroundStyle(sh.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, NW.Space.xxs)
-                    .padding(.top, NW.Space.s)
+                    .padding(.horizontal, SH.Space.xxs)
+                    .padding(.top, SH.Space.s)
             }
         }
     }
 
     private func option(_ title: String, note: String, isOn: Binding<Bool>) -> some View {
-        let nw = Color.nw
-        return HStack(alignment: .top, spacing: NW.Space.l + NW.Space.xxs) {
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+        let sh = Color.sh
+        return HStack(alignment: .top, spacing: SH.Space.l + SH.Space.xxs) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 Text(title)
-                    .font(.nwSans(AppLayout.skillsOptionTitleSize, .medium))
-                    .foregroundStyle(nw.textPrimary)
+                    .font(.shSans(AppLayout.skillsOptionTitleSize, .medium))
+                    .foregroundStyle(sh.textPrimary)
                 Text(note)
-                    .nwText(size: AppLayout.skillsNoteSize, lineHeight: AppLayout.skillsNoteLineHeight)
-                    .foregroundStyle(nw.textTertiary)
+                    .shText(size: AppLayout.skillsNoteSize, lineHeight: AppLayout.skillsNoteLineHeight)
+                    .foregroundStyle(sh.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
-            Toggle(title, isOn: isOn).toggleStyle(.nwSwitch).labelsHidden()
+            Toggle(title, isOn: isOn).toggleStyle(.shSwitch).labelsHidden()
         }
-        .padding(.vertical, NW.Space.m + NW.Space.xxs)
-        .overlay(alignment: .top) { NWHairline() }
+        .padding(.vertical, SH.Space.m + SH.Space.xxs)
+        .overlay(alignment: .top) { SHHairline() }
     }
 
-    static func mark(_ state: HostSkills) -> NWHostStateRow.Mark {
+    static func mark(_ state: HostSkills) -> SHHostStateRow.Mark {
         switch state {
         case .loaded: .done
         case .loading: .working

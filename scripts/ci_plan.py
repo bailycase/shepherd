@@ -100,7 +100,7 @@ AREAS = (
       PREVIEW + r"(PreviewTests|ProjectBrowserPreviewTests)")),
     (("Sources/ShepherdApp/Design*.swift", "Sources/ShepherdApp/NewDesignPage.swift",
       "Sources/ShepherdApp/RemoteDesigns.swift", "Sources/ShepherdApp/ShepherdViewModel+Design*.swift",
-      "Sources/ShepherdApp/NightWatchSystem.swift", "Sources/ShepherdApp/ImplementSheet.swift",
+      "Sources/ShepherdApp/ShepherdDesignSystem.swift", "Sources/ShepherdApp/ImplementSheet.swift",
       "Sources/ShepherdSessions/Design*.swift", "Sources/ShepherdSessions/RemoteDesigns.swift",
       "Sources/DesignSurfaceKit/*", "Tests/Designs/*", "Packages/ShepherdUI/Sources/ShepherdUI/Components/DesignTool/*"),
      (APP + r"(Design|RemoteDesignFlow|ListPerformance)", SES + r"(Design|RemoteDesign)", r"^DesignSurfaceKitIntegrationTests\.",

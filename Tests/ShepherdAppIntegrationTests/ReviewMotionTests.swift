@@ -66,7 +66,7 @@ struct ReviewMotionTests {
         #expect(recording.settled.firstRow(differingFrom: recording.before) != nil, "the file folds")
         #expect(!recording.inBetween.isEmpty, "the chevron turns")
         let moving = recording.inBetween.compactMap { $0.lastColumn(differingFrom: recording.settled) }
-        #expect(moving.allSatisfy { $0 < Int(NWDiffMetrics.numberWidth) }, "only the chevron moves: columns up to \(moving.max() ?? -1)")
+        #expect(moving.allSatisfy { $0 < Int(SHDiffMetrics.numberWidth) }, "only the chevron moves: columns up to \(moving.max() ?? -1)")
     }
 
     @Test(arguments: [false, true])
@@ -103,7 +103,7 @@ struct ReviewMotionTests {
 
         #expect(recording.settled.firstRow(differingFrom: recording.before) != nil, "the file folds")
         let moving = recording.inBetween.compactMap { $0.lastColumn(differingFrom: recording.settled) }
-        #expect(moving.allSatisfy { $0 < Int(NWDiffMetrics.numberWidth) }, "only the chevron moves: columns up to \(moving.max() ?? -1)")
+        #expect(moving.allSatisfy { $0 < Int(SHDiffMetrics.numberWidth) }, "only the chevron moves: columns up to \(moving.max() ?? -1)")
     }
 
     private static func diffScroll(_ window: OffscreenWindow) -> NSScrollView? {
@@ -238,7 +238,7 @@ struct ReviewMotionTests {
 
         let click = await MotionProbe.record(window, region: Self.diff) { model.select("f4.txt") }
         #expect(click.settled.firstRow(differingFrom: click.before) != nil, "a click moves to its file")
-        if !NW.Motion.systemReduceMotion {
+        if !SH.Motion.systemReduceMotion {
             #expect(!click.inBetween.isEmpty, "a click scrolls there")
         }
     }

@@ -7,7 +7,7 @@ import ShepherdRemote
 // MARK: Dock
 
 /// A question in the composer's place (the question dock): pi's own (select, confirm, input,
-/// editor), drawn by `NWQuestionDock` from its shared presentation (`NativeQuestionPrompt`). A
+/// editor), drawn by `SHQuestionDock` from its shared presentation (`NativeQuestionPrompt`). A
 /// subagent's never is: it asks its parent. It keeps the person's picks while it waits, answers through
 /// `answer`, and takes the dock's keys (1–9, ↩, Esc) while its thread has the keyboard.
 struct QuestionDock: View {
@@ -22,8 +22,8 @@ struct QuestionDock: View {
     let focused: Bool
     let answer: (NativeQuestionAnswer) -> Void
     let setHidden: (Bool) -> Void
-    @State private var selection: NWQuestionDockSelection
-    @FocusState private var field: NWQuestionDockField?
+    @State private var selection: SHQuestionDockSelection
+    @FocusState private var field: SHQuestionDockField?
     @State private var keys = QuestionKeyMonitor()
 
     /// `picks`: what is already picked and typed (previews); else nothing, and an open
@@ -38,7 +38,7 @@ struct QuestionDock: View {
         self.answer = answer
         self.setHidden = setHidden
         let picks = picks ?? NativeQuestionPicks(prompt)
-        _selection = State(initialValue: NWQuestionDockSelection(picked: picks.picked, text: picks.text))
+        _selection = State(initialValue: SHQuestionDockSelection(picked: picks.picked, text: picks.text))
     }
 
     var body: some View {
@@ -47,15 +47,15 @@ struct QuestionDock: View {
         // hiding and showing keep the key monitor watching.
         ZStack(alignment: .bottom) {
             if hidden {
-                NWQuestionDockHidden(question: prompt.question, keys: hints) { setHidden(false) }
-                    .nwTransition(.content)
+                SHQuestionDockHidden(question: prompt.question, keys: hints) { setHidden(false) }
+                    .shTransition(.content)
             } else {
                 // A question that cannot be answered here says why, and its answers stand down.
-                NWQuestionDock(Self.content(prompt, count: count), selection: $selection, focus: $field,
+                SHQuestionDock(Self.content(prompt, count: count), selection: $selection, focus: $field,
                                enabled: enabled && prompt.blocked == nil,
                                answerEnabled: enabled && prompt.answer(Self.picks(selection)) != nil, keys: hints,
                                answer: { send($0) }, hide: { setHidden(true) })
-                    .nwTransition(.content)
+                    .shTransition(.content)
             }
         }
         .background { QuestionKeyReader(monitor: keys) }
@@ -121,25 +121,25 @@ struct QuestionDock: View {
         return true
     }
 
-    private func send(_ selection: NWQuestionDockSelection) {
+    private func send(_ selection: SHQuestionDockSelection) {
         guard enabled, let answer = prompt.answer(Self.picks(selection)) else { return }
         self.answer(answer)
     }
 
-    static func picks(_ selection: NWQuestionDockSelection) -> NativeQuestionPicks {
+    static func picks(_ selection: SHQuestionDockSelection) -> NativeQuestionPicks {
         NativeQuestionPicks(picked: selection.picked, text: selection.text)
     }
 
     /// What the dock draws for `prompt`.
-    static func content(_ prompt: NativeQuestionPrompt, count: Int = 1) -> NWQuestionDockContent {
-        let kind: NWQuestionDockKind = switch prompt.kind {
+    static func content(_ prompt: NativeQuestionPrompt, count: Int = 1) -> SHQuestionDockContent {
+        let kind: SHQuestionDockKind = switch prompt.kind {
         case .choice: .choice
         case .yesNo: .yesNo
         case .open: .open
         }
-        return NWQuestionDockContent(
+        return SHQuestionDockContent(
             count: count, question: prompt.question, message: prompt.message, kind: kind,
-            options: prompt.options.map { NWQuestionDockOption(number: $0.number, title: $0.title, detail: $0.detail, recommended: $0.recommended) },
+            options: prompt.options.map { SHQuestionDockOption(number: $0.number, title: $0.title, detail: $0.detail, recommended: $0.recommended) },
             placeholder: prompt.placeholder, multiline: prompt.multiline,
             notice: prompt.blocked ?? (prompt.mayTimeOut ? timeoutNotice : nil), showsAnswer: prompt.showsAnswer,
             allowsText: prompt.allowsText)

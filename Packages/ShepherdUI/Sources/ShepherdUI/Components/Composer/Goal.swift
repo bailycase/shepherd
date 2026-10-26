@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The goal's presentation, independent of an agent's turn or the goal runner.
-public enum NWGoalState: CaseIterable, Equatable, Sendable {
+public enum SHGoalState: CaseIterable, Equatable, Sendable {
     case working, checking, met, paused, needsYou
 
     static let confirmationExplanation = "Confirm that every requirement is met despite missing recorded evidence. This is your attestation, not independent verification."
@@ -35,50 +35,50 @@ public enum NWGoalState: CaseIterable, Equatable, Sendable {
 
     @MainActor var color: Color { agentState.textColor }
     @MainActor var markColor: Color { agentState.color }
-    @MainActor var tint: Color { agentState.tint ?? Color.nw.bgSelected }
+    @MainActor var tint: Color { agentState.tint ?? Color.sh.bgSelected }
 }
 
-public enum NWGoalSize: Equatable, Sendable {
+public enum SHGoalSize: Equatable, Sendable {
     case desktop, touch
 
-    public var cardHeight: CGFloat { self == .desktop ? NWGoalMetrics.desktopHeight : NWGoalMetrics.touchHeight }
-    public var headerHeight: CGFloat { self == .desktop ? NWGoalMetrics.desktopHeaderHeight : NWGoalMetrics.touchHeaderHeight }
-    public var radius: CGFloat { self == .desktop ? NWGoalMetrics.desktopRadius : NWGoalMetrics.touchRadius }
-    public var pillHeight: CGFloat { self == .desktop ? NWGoalMetrics.desktopPillHeight : NWGoalMetrics.touchPillHeight }
-    public var actionSize: CGFloat { self == .desktop ? NWGoalMetrics.desktopActionSize : NWGoalMetrics.touchActionSize }
+    public var cardHeight: CGFloat { self == .desktop ? SHGoalMetrics.desktopHeight : SHGoalMetrics.touchHeight }
+    public var headerHeight: CGFloat { self == .desktop ? SHGoalMetrics.desktopHeaderHeight : SHGoalMetrics.touchHeaderHeight }
+    public var radius: CGFloat { self == .desktop ? SHGoalMetrics.desktopRadius : SHGoalMetrics.touchRadius }
+    public var pillHeight: CGFloat { self == .desktop ? SHGoalMetrics.desktopPillHeight : SHGoalMetrics.touchPillHeight }
+    public var actionSize: CGFloat { self == .desktop ? SHGoalMetrics.desktopActionSize : SHGoalMetrics.touchActionSize }
     public var hitTarget: CGFloat {
         #if os(iOS)
-        NW.Height.touch
+        SH.Height.touch
         #else
-        self == .desktop ? actionSize : NW.Height.touch
+        self == .desktop ? actionSize : SH.Height.touch
         #endif
     }
     public var textLines: Int { self == .desktop ? 1 : 2 }
 
-    var labelFont: CGFloat { self == .desktop ? NWGoalMetrics.desktopLabelFont : NWGoalMetrics.touchLabelFont }
-    var textFont: CGFloat { self == .desktop ? NWGoalMetrics.desktopTextFont : NWGoalMetrics.touchTextFont }
-    var pillFont: CGFloat { self == .desktop ? NWGoalMetrics.desktopPillFont : NWGoalMetrics.touchPillFont }
-    var actionGlyph: CGFloat { self == .desktop ? NWGoalMetrics.desktopActionGlyph : NWGoalMetrics.touchActionGlyph }
-    var resumeFont: CGFloat { self == .desktop ? NWGoalMetrics.desktopResumeFont : NWGoalMetrics.touchResumeFont }
-    var resumePadding: CGFloat { self == .desktop ? NWGoalMetrics.desktopResumePadding : NWGoalMetrics.touchResumePadding }
-    var resumeRadius: CGFloat { self == .desktop ? NW.Radius.s : NW.Radius.m }
-    var leadingInset: CGFloat { self == .desktop ? NW.Space.l : NWGoalMetrics.textInset }
-    var trailingInset: CGFloat { self == .desktop ? NW.Space.s : NW.Space.xs }
+    var labelFont: CGFloat { self == .desktop ? SHGoalMetrics.desktopLabelFont : SHGoalMetrics.touchLabelFont }
+    var textFont: CGFloat { self == .desktop ? SHGoalMetrics.desktopTextFont : SHGoalMetrics.touchTextFont }
+    var pillFont: CGFloat { self == .desktop ? SHGoalMetrics.desktopPillFont : SHGoalMetrics.touchPillFont }
+    var actionGlyph: CGFloat { self == .desktop ? SHGoalMetrics.desktopActionGlyph : SHGoalMetrics.touchActionGlyph }
+    var resumeFont: CGFloat { self == .desktop ? SHGoalMetrics.desktopResumeFont : SHGoalMetrics.touchResumeFont }
+    var resumePadding: CGFloat { self == .desktop ? SHGoalMetrics.desktopResumePadding : SHGoalMetrics.touchResumePadding }
+    var resumeRadius: CGFloat { self == .desktop ? SH.Radius.s : SH.Radius.m }
+    var leadingInset: CGFloat { self == .desktop ? SH.Space.l : SHGoalMetrics.textInset }
+    var trailingInset: CGFloat { self == .desktop ? SH.Space.s : SH.Space.xs }
     var actionTopInset: CGFloat { min((hitTarget - actionSize) / 2, (headerHeight - actionSize) / 2) }
     func actionOffset(scale: CGFloat) -> CGFloat { max(0, (headerHeight * scale - actionSize) / 2 - actionTopInset) }
 }
 
 /// Goal card, MobileGoal and iPadGoal: shared anatomy that grows with text size.
-public enum NWGoalMetrics {
+public enum SHGoalMetrics {
     public static let desktopHeight: CGFloat = 70
     public static let touchHeight: CGFloat = 92
     public static let desktopHeaderHeight: CGFloat = 32
     public static let touchHeaderHeight: CGFloat = 40
     public static let desktopRadius: CGFloat = 10
-    public static let touchRadius: CGFloat = NW.Radius.l
+    public static let touchRadius: CGFloat = SH.Radius.l
     public static let desktopPillHeight: CGFloat = 20
     public static let touchPillHeight: CGFloat = 24
-    public static let desktopActionSize: CGFloat = NW.Height.controlS
+    public static let desktopActionSize: CGFloat = SH.Height.controlS
     public static let touchActionSize: CGFloat = 34
     public static let glyph: CGFloat = 13
     public static let glyphStroke: CGFloat = glyph * 1.5 / 16
@@ -104,12 +104,12 @@ public enum NWGoalMetrics {
 
 /// The condition above the composer. Unframed, it is the first section of the shared dock,
 /// above Subagents and Up next; the caller draws that dock's fill, border and separators.
-public struct NWGoalCard: View {
-    let state: NWGoalState
+public struct SHGoalCard: View {
+    let state: SHGoalState
     let time: String
     let meta: String
     let text: String
-    let size: NWGoalSize
+    let size: SHGoalSize
     let framed: Bool
     let resumeEnabled: Bool
     let confirmationRequired: Bool
@@ -122,8 +122,8 @@ public struct NWGoalCard: View {
     let edit: () -> Void
     let clear: () -> Void
 
-    public init(state: NWGoalState, time: String, meta: String, text: String,
-                size: NWGoalSize = .desktop, framed: Bool = true, resumeEnabled: Bool = true,
+    public init(state: SHGoalState, time: String, meta: String, text: String,
+                size: SHGoalSize = .desktop, framed: Bool = true, resumeEnabled: Bool = true,
                 confirmationRequired: Bool = false, checkedBy: String? = nil, confirmedByUser: Bool = false,
                 clockStart: Date? = nil,
                 pause: @escaping () -> Void, resume: @escaping () -> Void,
@@ -146,44 +146,44 @@ public struct NWGoalCard: View {
     }
 
     public var body: some View {
-        let _ = NWRenderProbe.tick("goal.card")
+        let _ = SHRenderProbe.tick("goal.card")
         let scale = max(1, ThemeStore.shared.textScale * dynamicScale)
         VStack(spacing: 0) {
-            NWGoalCardHeader(state: state, time: time, meta: meta, size: size, scale: scale,
+            SHGoalCardHeader(state: state, time: time, meta: meta, size: size, scale: scale,
                              resumeEnabled: resumeEnabled, confirmationRequired: confirmationRequired,
                              clockStart: clockStart, pause: pause, resume: resume, edit: edit, clear: clear)
             VStack(alignment: .leading, spacing: 0) {
                 Text(text)
                     .help(text)
-                    .font(.nwSans(size.textFont))
-                    .foregroundStyle(Color.nw.textPrimary)
+                    .font(.shSans(size.textFont))
+                    .foregroundStyle(Color.sh.textPrimary)
                     .lineLimit(size.textLines)
                     .truncationMode(.tail)
-                    .padding(.top, max(NW.Space.m * scale, size.hitTarget - size.headerHeight * scale))
-                    .padding(.bottom, NW.Space.m * scale)
+                    .padding(.top, max(SH.Space.m * scale, size.hitTarget - size.headerHeight * scale))
+                    .padding(.bottom, SH.Space.m * scale)
                     .frame(maxWidth: .infinity, minHeight: (size.cardHeight - size.headerHeight) * scale, alignment: .leading)
                 let touchConfirmation = size == .touch && state == .needsYou && confirmationRequired
                 if touchConfirmation || checkedBy != nil || confirmedByUser {
-                    VStack(alignment: .leading, spacing: NW.Space.s) {
+                    VStack(alignment: .leading, spacing: SH.Space.s) {
                         if touchConfirmation {
                             Text("looks met, evidence incomplete, confirm")
-                                .font(.nw(.caption))
+                                .font(.sh(.caption))
                                 .foregroundStyle(AgentState.attention.textColor)
                         }
                         if let checkedBy { Text("Checked by \(checkedBy)") }
                         if confirmedByUser { Text("Confirmed by you") }
                     }
-                    .font(.nwMono(NWGoalMetrics.metaFont))
-                    .foregroundStyle(Color.nw.textSecondary)
+                    .font(.shMono(SHGoalMetrics.metaFont))
+                    .foregroundStyle(Color.sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.bottom, NW.Space.m * scale)
+                    .padding(.bottom, SH.Space.m * scale)
                 }
             }
-            .padding(.horizontal, NWGoalMetrics.textInset)
-            .overlay(alignment: .top) { NWHairline() }
+            .padding(.horizontal, SHGoalMetrics.textInset)
+            .overlay(alignment: .top) { SHHairline() }
         }
-        .background(framed ? Color.nw.bgRaised : .clear, in: RoundedRectangle(cornerRadius: size.radius))
-        .nwBorder(framed ? Color.nw.lineStrong : .clear, radius: size.radius)
+        .background(framed ? Color.sh.bgRaised : .clear, in: RoundedRectangle(cornerRadius: size.radius))
+        .shBorder(framed ? Color.sh.lineStrong : .clear, radius: size.radius)
         .contentShape(RoundedRectangle(cornerRadius: size.radius))
         .contextMenu {
             if size == .touch {
@@ -193,8 +193,8 @@ public struct NWGoalCard: View {
                     if state == .needsYou && confirmationRequired {
                         Button("Confirm goal", action: resume)
                             .disabled(!resumeEnabled)
-                            .help(NWGoalState.confirmationExplanation)
-                            .accessibilityHint(NWGoalState.confirmationExplanation)
+                            .help(SHGoalState.confirmationExplanation)
+                            .accessibilityHint(SHGoalState.confirmationExplanation)
                     } else {
                         Button("Resume goal", systemImage: "play", action: resume).disabled(!resumeEnabled)
                     }
@@ -207,11 +207,11 @@ public struct NWGoalCard: View {
     }
 }
 
-private struct NWGoalCardHeader: View {
-    let state: NWGoalState
+private struct SHGoalCardHeader: View {
+    let state: SHGoalState
     let time: String
     let meta: String
-    let size: NWGoalSize
+    let size: SHGoalSize
     let scale: CGFloat
     let resumeEnabled: Bool
     let confirmationRequired: Bool
@@ -223,7 +223,7 @@ private struct NWGoalCardHeader: View {
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: NW.Space.m) {
+            HStack(alignment: .top, spacing: SH.Space.m) {
                 heading
                 if size == .desktop { metadata }
                 else if state.offersResume { Spacer(minLength: 0) }
@@ -232,7 +232,7 @@ private struct NWGoalCardHeader: View {
             .frame(height: size.headerHeight * scale, alignment: .top)
             VStack(alignment: .leading, spacing: 0) {
                 heading
-                HStack(alignment: .top, spacing: NW.Space.m) {
+                HStack(alignment: .top, spacing: SH.Space.m) {
                     if size == .desktop { metadata } else { Spacer(minLength: 0) }
                     actions
                 }
@@ -245,10 +245,10 @@ private struct NWGoalCardHeader: View {
     }
 
     private var heading: some View {
-        HStack(spacing: NW.Space.m) {
-            NWGoalGlyph().foregroundStyle(Color.nw.textSecondary)
-            Text("Goal").font(.nwSans(size.labelFont, .semibold)).foregroundStyle(Color.nw.textSecondary)
-            NWGoalPill(state: state, time: time, size: size, clockStart: clockStart)
+        HStack(spacing: SH.Space.m) {
+            SHGoalGlyph().foregroundStyle(Color.sh.textSecondary)
+            Text("Goal").font(.shSans(size.labelFont, .semibold)).foregroundStyle(Color.sh.textSecondary)
+            SHGoalPill(state: state, time: time, size: size, clockStart: clockStart)
         }
         .fixedSize(horizontal: true, vertical: false)
         .frame(minHeight: size.headerHeight * scale)
@@ -258,10 +258,10 @@ private struct NWGoalCardHeader: View {
     }
 
     private var metadata: some View {
-        Text(meta).font(.nwMono(NWGoalMetrics.metaFont)).foregroundStyle(Color.nw.textTertiary)
+        Text(meta).font(.shMono(SHGoalMetrics.metaFont)).foregroundStyle(Color.sh.textTertiary)
             .lineLimit(1).truncationMode(.tail)
             .frame(maxWidth: .infinity, alignment: .trailing)
-            .padding(.trailing, NW.Space.s)
+            .padding(.trailing, SH.Space.s)
             .help(meta)
             .frame(minHeight: size.headerHeight * scale)
     }
@@ -270,32 +270,32 @@ private struct NWGoalCardHeader: View {
         if state.offersResume {
             let confirming = state == .needsYou && confirmationRequired
             Button(confirming ? "Confirm" : "Resume", action: resume)
-                .buttonStyle(NWGoalActionStyle(size: size, icon: false))
+                .buttonStyle(SHGoalActionStyle(size: size, icon: false))
                 .padding(.top, size.actionOffset(scale: scale))
                 .disabled(!resumeEnabled)
-                .help(confirming ? NWGoalState.confirmationExplanation : "Resume goal")
-                .accessibilityHint(confirming ? NWGoalState.confirmationExplanation : "")
+                .help(confirming ? SHGoalState.confirmationExplanation : "Resume goal")
+                .accessibilityHint(confirming ? SHGoalState.confirmationExplanation : "")
                 .accessibilityLabel(confirming ? "Confirm goal" : "Resume goal")
         }
-        if state.offersPause { NWGoalIconButton(symbol: "pause", label: "Pause goal", size: size, action: pause) }
+        if state.offersPause { SHGoalIconButton(symbol: "pause", label: "Pause goal", size: size, action: pause) }
         if size == .desktop && state.offersEdit {
-            NWGoalIconButton(symbol: "pencil", label: "Edit goal", size: size, action: edit)
+            SHGoalIconButton(symbol: "pencil", label: "Edit goal", size: size, action: edit)
         }
-        NWGoalIconButton(symbol: "xmark", label: "Clear goal", size: size, action: clear)
+        SHGoalIconButton(symbol: "xmark", label: "Clear goal", size: size, action: clear)
     }
 }
 
 /// Working pulses, Checking spins, and the other states stay legible without motion.
-/// The existing layer indicators honor Reduce Motion and `nwMotionPaused` without frame ticks.
-public struct NWGoalPill: View {
-    let state: NWGoalState
+/// The existing layer indicators honor Reduce Motion and `shMotionPaused` without frame ticks.
+public struct SHGoalPill: View {
+    let state: SHGoalState
     let time: String
-    let size: NWGoalSize
+    let size: SHGoalSize
     @ScaledMetric(relativeTo: .body) private var dynamicScale = 1
 
     let clockStart: Date?
 
-    public init(state: NWGoalState, time: String, size: NWGoalSize = .desktop, clockStart: Date? = nil) {
+    public init(state: SHGoalState, time: String, size: SHGoalSize = .desktop, clockStart: Date? = nil) {
         self.state = state
         self.time = time
         self.size = size
@@ -304,9 +304,9 @@ public struct NWGoalPill: View {
 
     public var body: some View {
         if let clockStart, state.offersPause {
-            TimelineView(NWElapsedSchedule(start: clockStart, style: .long)) { context in
-                let _ = NWRenderProbe.tick("goal.clock")
-                pill(time: NWGoalTime.text(context.date.timeIntervalSince(clockStart)))
+            TimelineView(SHElapsedSchedule(start: clockStart, style: .long)) { context in
+                let _ = SHRenderProbe.tick("goal.clock")
+                pill(time: SHGoalTime.text(context.date.timeIntervalSince(clockStart)))
             }
         } else {
             pill(time: time)
@@ -314,16 +314,16 @@ public struct NWGoalPill: View {
     }
 
     private func pill(time: String) -> some View {
-        HStack(spacing: NW.Space.s) {
-            NWGoalStatusMark(state: state)
-                .frame(width: state.offersPause ? NWGoalMetrics.statusGlyph : nil)
-            Text(state.offersPause ? NWGoalState.checking.pillText(time: time) : state.pillText(time: time))
+        HStack(spacing: SH.Space.s) {
+            SHGoalStatusMark(state: state)
+                .frame(width: state.offersPause ? SHGoalMetrics.statusGlyph : nil)
+            Text(state.offersPause ? SHGoalState.checking.pillText(time: time) : state.pillText(time: time))
                 .hidden()
                 .overlay(alignment: .leading) { Text(state.pillText(time: time)) }
-                .font(.nwMono(size.pillFont)).monospacedDigit()
+                .font(.shMono(size.pillFont)).monospacedDigit()
         }
         .foregroundStyle(state.color)
-        .padding(.horizontal, NW.Space.m)
+        .padding(.horizontal, SH.Space.m)
         .frame(height: size.pillHeight * max(1, ThemeStore.shared.textScale * dynamicScale))
         .background(state.tint, in: Capsule())
         .fixedSize()
@@ -333,7 +333,7 @@ public struct NWGoalPill: View {
 }
 
 /// The compact "Goal · time" marker in a thread's header.
-public struct NWGoalHeaderPill: View {
+public struct SHGoalHeaderPill: View {
     let time: String
 
     let clockStart: Date?
@@ -345,9 +345,9 @@ public struct NWGoalHeaderPill: View {
 
     public var body: some View {
         if let clockStart {
-            TimelineView(NWElapsedSchedule(start: clockStart, style: .long)) { context in
-                let _ = NWRenderProbe.tick("goal.headerClock")
-                pill(time: NWGoalTime.text(context.date.timeIntervalSince(clockStart)))
+            TimelineView(SHElapsedSchedule(start: clockStart, style: .long)) { context in
+                let _ = SHRenderProbe.tick("goal.headerClock")
+                pill(time: SHGoalTime.text(context.date.timeIntervalSince(clockStart)))
             }
         } else {
             pill(time: time)
@@ -355,21 +355,21 @@ public struct NWGoalHeaderPill: View {
     }
 
     private func pill(time: String) -> some View {
-        HStack(spacing: NW.Space.s) {
-            NWGoalGlyph()
-            Text(time.isEmpty ? "Goal" : "Goal · \(time)").font(.nwMono(NWGoalMetrics.desktopPillFont)).monospacedDigit()
+        HStack(spacing: SH.Space.s) {
+            SHGoalGlyph()
+            Text(time.isEmpty ? "Goal" : "Goal · \(time)").font(.shMono(SHGoalMetrics.desktopPillFont)).monospacedDigit()
         }
         .foregroundStyle(AgentState.running.textColor)
-        .padding(.horizontal, NW.Space.m)
-        .frame(height: NWGoalMetrics.desktopPillHeight)
+        .padding(.horizontal, SH.Space.m)
+        .frame(height: SHGoalMetrics.desktopPillHeight)
         .background(AgentState.running.tint ?? .clear, in: Capsule())
         .fixedSize()
         .accessibilityElement(children: .combine)
     }
 }
 
-/// Goal clocks retain the native goal's unpadded minutes/seconds copy, not NWDuration's row copy.
-enum NWGoalTime {
+/// Goal clocks retain the native goal's unpadded minutes/seconds copy, not SHDuration's row copy.
+enum SHGoalTime {
     static func text(_ elapsed: TimeInterval) -> String {
         let seconds = Int(min(max(elapsed, 0), Double(Int.max / 2)))
         if seconds >= 3600 { return "\(seconds / 3600)h \(seconds % 3600 / 60)m" }
@@ -377,22 +377,22 @@ enum NWGoalTime {
     }
 }
 
-private struct NWGoalStatusMark: View {
-    let state: NWGoalState
+private struct SHGoalStatusMark: View {
+    let state: SHGoalState
 
     var body: some View {
         Group {
             switch state {
             case .working:
-                NWLayerGlowDot(color: state.markColor).frame(width: NWGoalMetrics.dot, height: NWGoalMetrics.dot)
+                SHLayerGlowDot(color: state.markColor).frame(width: SHGoalMetrics.dot, height: SHGoalMetrics.dot)
             case .checking:
-                NWLayerSpinner(size: NWGoalMetrics.statusGlyph, color: state.markColor, lineWidth: NWGoalMetrics.spinnerStroke)
+                SHLayerSpinner(size: SHGoalMetrics.statusGlyph, color: state.markColor, lineWidth: SHGoalMetrics.spinnerStroke)
             case .met:
-                Image(systemName: "checkmark").font(.system(size: NWGoalMetrics.statusGlyph, weight: .semibold))
+                Image(systemName: "checkmark").font(.system(size: SHGoalMetrics.statusGlyph, weight: .semibold))
             case .paused:
-                Image(systemName: "pause").font(.system(size: NWGoalMetrics.pauseGlyph, weight: .semibold))
+                Image(systemName: "pause").font(.system(size: SHGoalMetrics.pauseGlyph, weight: .semibold))
             case .needsYou:
-                NWLayerGlowDot(color: state.markColor).frame(width: NWGoalMetrics.dot, height: NWGoalMetrics.dot)
+                SHLayerGlowDot(color: state.markColor).frame(width: SHGoalMetrics.dot, height: SHGoalMetrics.dot)
             }
         }
         .foregroundStyle(state.markColor)
@@ -402,17 +402,17 @@ private struct NWGoalStatusMark: View {
 }
 
 /// Two stroked rings, rather than SF's target with a third ring or a filled center.
-public struct NWGoalGlyph: View {
+public struct SHGoalGlyph: View {
     public init() {}
 
     public var body: some View {
-        NWGoalRings().stroke(lineWidth: NWGoalMetrics.glyphStroke)
-            .frame(width: NWGoalMetrics.glyph, height: NWGoalMetrics.glyph)
+        SHGoalRings().stroke(lineWidth: SHGoalMetrics.glyphStroke)
+            .frame(width: SHGoalMetrics.glyph, height: SHGoalMetrics.glyph)
             .accessibilityHidden(true)
     }
 }
 
-private struct NWGoalRings: Shape {
+private struct SHGoalRings: Shape {
     func path(in rect: CGRect) -> Path {
         let unit = min(rect.width, rect.height) / 16
         var path = Path()
@@ -424,17 +424,17 @@ private struct NWGoalRings: Shape {
     }
 }
 
-private struct NWGoalIconButton: View {
+private struct SHGoalIconButton: View {
     let symbol: String
     let label: String
-    let size: NWGoalSize
+    let size: SHGoalSize
     let action: () -> Void
     @ScaledMetric(relativeTo: .body) private var dynamicScale = 1
 
     var body: some View {
         let scale = max(1, ThemeStore.shared.textScale * dynamicScale)
         Button(action: action) { Image(systemName: symbol) }
-            .buttonStyle(NWGoalActionStyle(size: size, icon: true))
+            .buttonStyle(SHGoalActionStyle(size: size, icon: true))
             .padding(.top, size.actionOffset(scale: scale))
             .help(label)
             .accessibilityLabel(label)
@@ -444,18 +444,18 @@ private struct NWGoalIconButton: View {
 /// Touch retains the board's 34pt chrome inside a nonoverlapping 44pt rectangular hit area,
 /// including in desktop previews of the touch size. At the base size the extra hit height
 /// extends into the body's padding, never outside the card.
-private struct NWGoalActionStyle: ButtonStyle {
-    let size: NWGoalSize
+private struct SHGoalActionStyle: ButtonStyle {
+    let size: SHGoalSize
     let icon: Bool
 
     func makeBody(configuration: Configuration) -> some View {
-        NWGoalAction(configuration: configuration, size: size, icon: icon)
+        SHGoalAction(configuration: configuration, size: size, icon: icon)
     }
 }
 
-private struct NWGoalAction: View {
+private struct SHGoalAction: View {
     let configuration: ButtonStyleConfiguration
-    let size: NWGoalSize
+    let size: SHGoalSize
     let icon: Bool
     @Environment(\.isEnabled) private var enabled
     @State private var hovering = false
@@ -464,22 +464,22 @@ private struct NWGoalAction: View {
         let active = enabled && (hovering || configuration.isPressed)
         let radius = icon ? size.actionSize / 2 : size.resumeRadius
         configuration.label
-            .font(icon ? .system(size: size.actionGlyph, weight: .medium) : .nwSans(size.resumeFont, .medium))
+            .font(icon ? .system(size: size.actionGlyph, weight: .medium) : .shSans(size.resumeFont, .medium))
             .symbolRenderingMode(.monochrome)
-            .foregroundStyle(icon && !active ? Color.nw.textSecondary : Color.nw.textPrimary)
+            .foregroundStyle(icon && !active ? Color.sh.textSecondary : Color.sh.textPrimary)
             .lineLimit(1)
             .padding(.horizontal, icon ? 0 : size.resumePadding)
             .frame(minWidth: size.actionSize, minHeight: size.actionSize)
-            .background(active ? Color.nw.bgSelected : icon ? .clear : Color.nw.bgBubble,
+            .background(active ? Color.sh.bgSelected : icon ? .clear : Color.sh.bgBubble,
                         in: RoundedRectangle(cornerRadius: radius))
-            .nwBorder(icon ? .clear : Color.nw.lineStrong, radius: radius)
-            .nwFocusRing(radius: radius)
+            .shBorder(icon ? .clear : Color.sh.lineStrong, radius: radius)
+            .shFocusRing(radius: radius)
             .padding(.top, size.actionTopInset)
             .padding(.bottom, size.hitTarget - size.actionSize - size.actionTopInset)
             .padding(.horizontal, icon ? (size.hitTarget - size.actionSize) / 2 : 0)
             .contentShape(Rectangle())
-            .nwEnabledOpacity(enabled)
+            .shEnabledOpacity(enabled)
             .onHover { hovering = $0 }
-            .nwAnimation(.hover, value: hovering)
+            .shAnimation(.hover, value: hovering)
     }
 }

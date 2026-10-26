@@ -18,8 +18,8 @@ code and your taste, and a difference from it is the user's decision, never your
 ## Build
 
 - Draw what the design draws: every element in its order, its copy, its glyph (`bolt` is not
-  `bolt.fill`), and its size, spacing, radius and color as tokens (`NW.Space`, `NW.Radius`,
-  `NW.Height`, `Color.nw.<role>`, a ramp style). Status text, dots and fills come from
+  `bolt.fill`), and its size, spacing, radius and color as tokens (`SH.Space`, `SH.Radius`,
+  `SH.Height`, `Color.sh.<role>`, a ramp style). Status text, dots and fills come from
   `AgentState`, never a role with an alpha. `DesignRulesTests` fails on the literals
   ([rules.md](rules.md), Design tokens only).
 - The board's copy is a mock. The app shows what its code produces (a store's presentation type,

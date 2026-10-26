@@ -7,7 +7,7 @@ import ShepherdProtocol
 public enum DesignSystemError: Error, Hashable, Sendable, CustomStringConvertible {
     case invalidNamespace(String)
     case noSuchSystem(String)
-    /// Built into Shepherd (Night Watch): read and installed, never written or synced.
+    /// Built into Shepherd (Shepherd Design): read and installed, never written or synced.
     case readOnly(String)
     /// Another design's agent built it: only that agent writes it.
     case notYours(String)
@@ -76,7 +76,7 @@ public enum DesignSystemError: Error, Hashable, Sendable, CustomStringConvertibl
 
 /// Every design system this host keeps, under the support directory's `design-systems/<ns>/`:
 /// `tokens.json`, `tokens.css`, `README.md`, components, and Shepherd's own `system.json`
-/// beside them (docs/designs.md › Design systems). Built-in systems (Night Watch) live in
+/// beside them (docs/designs.md › Design systems). Built-in systems (Shepherd Design) live in
 /// memory, handed over by the app.
 ///
 /// Every read and write runs on the store's own serial queue, never the server's. A system is

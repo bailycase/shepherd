@@ -1,19 +1,19 @@
 import SwiftUI
 
-/// A board on the canvas (NWBoardFrame; DZCanvas): its label 24pt above it where the boards
+/// A board on the canvas (SHBoardFrame; DZCanvas): its label 24pt above it where the boards
 /// around it leave room (the name in 12 semibold, `textPrimary` when selected, else
 /// `textSecondary`, then its size in mono 10.5 `textTertiary`), and the board's page at the canvas's zoom in a radius-4 frame with a hairline
 /// and a soft drop shadow. A selected board wears a 2pt `running` ring outside the frame.
 ///
 /// The slot draws the board: a live view, or a snapshot. The frame compares its board and zoom
-/// alone (`NWCanvasBoard.content` moves when the slot's drawing does), so the canvas panning or
+/// alone (`SHCanvasBoard.content` moves when the slot's drawing does), so the canvas panning or
 /// another board changing never redraws it.
-public struct NWBoardFrame<Slot: View>: View, Equatable {
-    let board: NWCanvasBoard
+public struct SHBoardFrame<Slot: View>: View, Equatable {
+    let board: SHCanvasBoard
     let zoom: CGFloat
     let slot: Slot
 
-    public init(board: NWCanvasBoard, zoom: CGFloat, @ViewBuilder slot: () -> Slot) {
+    public init(board: SHCanvasBoard, zoom: CGFloat, @ViewBuilder slot: () -> Slot) {
         self.board = board
         self.zoom = zoom
         self.slot = slot()
@@ -22,19 +22,19 @@ public struct NWBoardFrame<Slot: View>: View, Equatable {
     public nonisolated static func == (a: Self, b: Self) -> Bool { a.board == b.board && a.zoom == b.zoom }
 
     public var body: some View {
-        let _ = NWRenderProbe.tick("design.board")
+        let _ = SHRenderProbe.tick("design.board")
         let size = CGSize(width: board.frame.width * zoom, height: board.frame.height * zoom)
         // A board drawn narrower than its label (a phone at a low zoom) lets it run past, up to
         // the next board; where the row above is closer than the label, it moves down toward
-        // the frame, and isn't drawn where it would lie over that row (`NWLabelRoom`).
+        // the frame, and isn't drawn where it would lie over that row (`SHLabelRoom`).
         let label = board.labelRoom.layout(width: size.width, zoom: zoom)
         VStack(alignment: .leading, spacing: 0) {
-            NWBoardLabel(title: board.title, size: board.size, usage: board.usage, selected: board.isSelected)
-                .frame(width: label.width, height: NWDesignMetrics.labelHeight, alignment: .leading)
+            SHBoardLabel(title: board.title, size: board.size, usage: board.usage, selected: board.isSelected)
+                .frame(width: label.width, height: SHDesignMetrics.labelHeight, alignment: .leading)
                 .padding(.bottom, label.gap)
-                .frame(height: NWDesignMetrics.labelHeight + NWDesignMetrics.labelGap, alignment: .bottom)
+                .frame(height: SHDesignMetrics.labelHeight + SHDesignMetrics.labelGap, alignment: .bottom)
                 .opacity(label.shown ? 1 : 0)
-            NWBoardSurface(size: size, selected: board.isSelected) { slot }
+            SHBoardSurface(size: size, selected: board.isSelected) { slot }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(board.title), \(board.size)\(board.usage.map { ", \($0)" } ?? "")")
@@ -45,7 +45,7 @@ public struct NWBoardFrame<Slot: View>: View, Equatable {
 /// A board's label: its name and, 8pt after it, its size, then (for a shared piece other boards
 /// import) how many use it, "used in 3 boards", in sans 10.5 `textTertiary`, left out of a label
 /// too narrow to hold it beside the name and size.
-public struct NWBoardLabel: View {
+public struct SHBoardLabel: View {
     let title: String
     let size: String
     let usage: String?
@@ -71,22 +71,22 @@ public struct NWBoardLabel: View {
     }
 
     private func row(_ usage: String?) -> some View {
-        HStack(spacing: NWDesignMetrics.labelSpacing) {
+        HStack(spacing: SHDesignMetrics.labelSpacing) {
             Text(title)
-                .font(.nwSans(NWDesignMetrics.labelSize, .semibold))
-                .foregroundStyle(selected ? Color.nw.textPrimary : Color.nw.textSecondary)
+                .font(.shSans(SHDesignMetrics.labelSize, .semibold))
+                .foregroundStyle(selected ? Color.sh.textPrimary : Color.sh.textSecondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .layoutPriority(1)
             Text(size)
-                .font(.nwMono(NWDesignMetrics.labelSizeTextSize))
-                .foregroundStyle(Color.nw.textTertiary)
+                .font(.shMono(SHDesignMetrics.labelSizeTextSize))
+                .foregroundStyle(Color.sh.textTertiary)
                 .lineLimit(1)
                 .fixedSize()
             if let usage {
                 Text(usage)
-                    .font(.nwSans(NWDesignMetrics.labelSizeTextSize))
-                    .foregroundStyle(Color.nw.textTertiary)
+                    .font(.shSans(SHDesignMetrics.labelSizeTextSize))
+                    .foregroundStyle(Color.sh.textTertiary)
                     .lineLimit(1)
                     .fixedSize()
             }
@@ -96,7 +96,7 @@ public struct NWBoardLabel: View {
 
 /// The board's page in its frame: clipped to radius 4 with a hairline, casting the popover's
 /// shadow, and ringed while selected. Its fill shows until the slot draws.
-public struct NWBoardSurface<Slot: View>: View {
+public struct SHBoardSurface<Slot: View>: View {
     let size: CGSize
     let selected: Bool
     let slot: Slot
@@ -108,17 +108,17 @@ public struct NWBoardSurface<Slot: View>: View {
     }
 
     public var body: some View {
-        let shape = RoundedRectangle(cornerRadius: NWDesignMetrics.frameRadius)
+        let shape = RoundedRectangle(cornerRadius: SHDesignMetrics.frameRadius)
         slot
             .frame(width: size.width, height: size.height, alignment: .topLeading)
-            .background { shape.fill(Color.nw.bgRaised).shadow(color: .nw.popoverShadow, radius: NWDesignMetrics.frameShadowRadius, y: NWDesignMetrics.frameShadowY) }
+            .background { shape.fill(Color.sh.bgRaised).shadow(color: .sh.popoverShadow, radius: SHDesignMetrics.frameShadowRadius, y: SHDesignMetrics.frameShadowY) }
             .clipShape(shape)
-            .nwBorder(Color.nw.lineStrong, radius: NWDesignMetrics.frameRadius)
+            .shBorder(Color.sh.lineStrong, radius: SHDesignMetrics.frameRadius)
             .overlay {
                 if selected {
-                    RoundedRectangle(cornerRadius: NWDesignMetrics.frameRadius + NWDesignMetrics.ringWidth)
-                        .inset(by: -NWDesignMetrics.ringWidth)
-                        .strokeBorder(Color.nw.running, lineWidth: NWDesignMetrics.ringWidth)
+                    RoundedRectangle(cornerRadius: SHDesignMetrics.frameRadius + SHDesignMetrics.ringWidth)
+                        .inset(by: -SHDesignMetrics.ringWidth)
+                        .strokeBorder(Color.sh.running, lineWidth: SHDesignMetrics.ringWidth)
                         .allowsHitTesting(false)
                 }
             }

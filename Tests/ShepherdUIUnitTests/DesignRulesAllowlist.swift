@@ -22,19 +22,19 @@ struct DesignRuleException: Sendable {
 enum DesignRuleAllowlist {
     private static let font = "Predates the rule: a literal font size in a view. Name it in the component's metrics enum, or use a ramp style, when the file is next changed."
     private static let tint = "Predates the rule: a status color tinted with an alpha. Take it from AgentState's tint and text roles when the file is next changed."
-    private static let bolt = "Predates NWGlyph: the outline automation bolt as a plain symbol string. Pass NWGlyph.automation.symbolName when the file is next changed."
+    private static let bolt = "Predates SHGlyph: the outline automation bolt as a plain symbol string. Pass SHGlyph.automation.symbolName when the file is next changed."
 
-    private static let document = "Predates NWGlyph.document: the outline file glyph as a plain symbol string. Pass NWGlyph.document.symbolName when the file is next changed, with an iOS build to check it."
-    private static let resolved = "Predates NWGlyph.resolved: the outline checkmark.circle as a plain symbol string. Pass NWGlyph.resolved.symbolName when the file is next changed, with an iOS build to check it."
+    private static let document = "Predates SHGlyph.document: the outline file glyph as a plain symbol string. Pass SHGlyph.document.symbolName when the file is next changed, with an iOS build to check it."
+    private static let resolved = "Predates SHGlyph.resolved: the outline checkmark.circle as a plain symbol string. Pass SHGlyph.resolved.symbolName when the file is next changed, with an iOS build to check it."
 
-    private static let chevrons = "Predates NWGlyph.popupChevrons: the up-down popup chevrons as a plain symbol string. Pass NWGlyph.popupChevrons when the file is next changed."
+    private static let chevrons = "Predates SHGlyph.popupChevrons: the up-down popup chevrons as a plain symbol string. Pass SHGlyph.popupChevrons when the file is next changed."
 
     static let entries: [DesignRuleException] = [
         // Raw colors: each is something other than app chrome, or a known fix.
         .init(.rawColor, "App/iOS/DesignPad/PadDesignMarkup.swift", 1, "Flattens an exported drawing onto a white page: image content, not chrome."),
         .init(.rawColor, "App/iOS/Designs/DesignHost.swift", 1, "Builds a UIColor from a pixel sampled from a board's snapshot: content, not chrome."),
         .init(.rawColor, "App/iOS/Terminal/TerminalSurface.swift", 1, "Converts the terminal theme's palette into SwiftTerm's own color type: the palette is the theme's."),
-        .init(.rawColor, "Packages/ShepherdUI/Sources/ShepherdUI/Components/DesignTool/DesignCanvas.swift", 1, "An AppKit menu item's destructive title takes an NSColor: use NSColor(Color.nw.failed) when the file is next changed."),
+        .init(.rawColor, "Packages/ShepherdUI/Sources/ShepherdUI/Components/DesignTool/DesignCanvas.swift", 1, "An AppKit menu item's destructive title takes an NSColor: use NSColor(Color.sh.failed) when the file is next changed."),
         .init(.rawColor, "Sources/ShepherdApp/DesignSystemPageModel.swift", 1, "A design system that names no background draws on white, as its boards do: the design's content, not chrome."),
         .init(.rawColor, "Sources/ShepherdApp/ShepherdApp.swift", 2, "The Debug build's DEV badge, drawn into the Dock icon at runtime: not shipped UI."),
         // Status colors tinted by an alpha.
@@ -47,7 +47,7 @@ enum DesignRuleAllowlist {
         .init(.rawGlyphName, "App/iOS/Settings/InstructionsScreens.swift", 1, document),
         .init(.rawGlyphName, "App/iOS/Settings/SettingsRoute.swift", 1, document),
         .init(.rawGlyphName, "App/iOS/Settings/SkillsScreens.swift", 1, document),
-        .init(.rawGlyphName, "App/iOS/Composer/ComposerControls.swift", 1, "The iOS composer draws its own Fast bolt, which NWFastBolt and NWGlyph.fastBolt exist to prevent. Move it to NWGlyph.fastBolt, with an iOS build to check it."),
+        .init(.rawGlyphName, "App/iOS/Composer/ComposerControls.swift", 1, "The iOS composer draws its own Fast bolt, which SHFastBolt and SHGlyph.fastBolt exist to prevent. Move it to SHGlyph.fastBolt, with an iOS build to check it."),
         .init(.rawGlyphName, "App/iOS/Home/AutomationRow.swift", 1, bolt),
         .init(.rawGlyphName, "App/iOS/Home/HomeRows.swift", 2, bolt),
         .init(.rawGlyphName, "App/iOS/Home/HomeScreen.swift", 1, bolt),
@@ -83,7 +83,7 @@ enum DesignRuleAllowlist {
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Controls/Toggles.swift", 1, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/DesignTool/ReferenceSpecimens.swift", 1, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Fleet/HostPageCard.swift", 1, font),
-        .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Navigation/NWDensity.swift", 1, font),
+        .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Navigation/SHDensity.swift", 1, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Navigation/Pages.swift", 2, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Navigation/Palette.swift", 5, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Navigation/SidePane.swift", 2, font),

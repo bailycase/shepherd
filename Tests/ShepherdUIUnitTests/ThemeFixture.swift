@@ -3,7 +3,7 @@ import Testing
 
 /// Every built-in theme variant, named for test output. Add new built-ins to `themes`.
 struct Variant: Sendable, CustomTestStringConvertible {
-    static let themes: [ThemeDefinition] = [.nightWatch]
+    static let themes: [ThemeDefinition] = [.shepherdDesign]
     static let all: [Variant] = themes.flatMap { [Variant(theme: $0, isDark: false), Variant(theme: $0, isDark: true)] }
 
     let theme: ThemeDefinition

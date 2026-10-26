@@ -70,10 +70,10 @@ struct BrowserTests {
 
     @Test func theMenuOffersTheBoardsWidthsInOrder() {
         #expect(BrowserViewport.allCases.map(\.option) == [
-            NWViewportOption(id: "fit", title: "Fit the pane"),
-            NWViewportOption(id: "phone", title: "iPhone 16", width: "393"),
-            NWViewportOption(id: "tablet", title: "iPad mini", width: "744"),
-            NWViewportOption(id: "laptop", title: "Laptop", width: "1280"),
+            SHViewportOption(id: "fit", title: "Fit the pane"),
+            SHViewportOption(id: "phone", title: "iPhone 16", width: "393"),
+            SHViewportOption(id: "tablet", title: "iPad mini", width: "744"),
+            SHViewportOption(id: "laptop", title: "Laptop", width: "1280"),
         ])
     }
 

@@ -17,16 +17,16 @@ extension MobileLayout {
     /// The header's back label and title: 16pt, the title 17 in a narrow window (iPadSplitView).
     static let padDesignHeaderText: CGFloat = 16
     /// The header's leading and trailing insets (iPadDesign's 12pt; iPadSplitView's 16 and 14).
-    static let padDesignHeaderInset: CGFloat = NW.Space.l
+    static let padDesignHeaderInset: CGFloat = SH.Space.l
     /// The chat button in a narrow window's header (iPadSplitView's 40pt).
     static let padDesignHeaderButton: CGFloat = 40
     /// The design agent's latest word over a narrow window's canvas (iPadSplitView): 360pt wide.
     static let padDesignReplyCardWidth: CGFloat = 360
-    static let padDesignReplyCardPaddingVertical: CGFloat = NW.Space.l
+    static let padDesignReplyCardPaddingVertical: CGFloat = SH.Space.l
     static let padDesignReplyCardPaddingHorizontal: CGFloat = 14
     /// The Comments tab's cards: 16pt in, 12 apart.
-    static let padDesignCommentsPadding: CGFloat = NW.Space.xl
-    static let padDesignCommentsSpacing: CGFloat = NW.Space.l
+    static let padDesignCommentsPadding: CGFloat = SH.Space.xl
+    static let padDesignCommentsSpacing: CGFloat = SH.Space.l
     /// A Tweak prop's text field.
     static let padDesignTweakFieldWidth: CGFloat = 140
     /// The Designs list's cards: at least this wide, in as many columns as fit.

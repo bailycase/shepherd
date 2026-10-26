@@ -41,7 +41,7 @@ struct DesignPerformanceTests {
             window.layout()
             return screen.snapshot?.index.boards.count == Self.boards.count && screen.viewport.zoom < 1
         }
-        screen.viewport = NWCanvasViewport(offset: CGPoint(x: 44, y: 52), zoom: zoom)
+        screen.viewport = SHCanvasViewport(offset: CGPoint(x: 44, y: 52), zoom: zoom)
         screen.planLive()
         try await eventuallyOnMain("every board on screen to draw", timeout: .seconds(90)) {
             window.layout()
@@ -75,7 +75,7 @@ struct DesignPerformanceTests {
         let first = host.liveBoards
         var seen = first
         for step in 1...4 {
-            screen.viewport = NWCanvasViewport(offset: CGPoint(x: 44 - CGFloat(step) * 600, y: 52 - CGFloat(step) * 180), zoom: 0.5)
+            screen.viewport = SHCanvasViewport(offset: CGPoint(x: 44 - CGFloat(step) * 600, y: 52 - CGFloat(step) * 180), zoom: 0.5)
             screen.planLive()
             try await eventuallyOnMain("the boards on screen after pan \(step) to draw", timeout: .seconds(60)) {
                 window.layout()
@@ -109,7 +109,7 @@ struct DesignPerformanceTests {
         let steps: [CGFloat] = [0.3, 0.15, 0.5, 1, 1.25, 2, 3, 1, 0.5]
         for zoom in steps {
             let before = host.liveBoards.compactMap { host.liveView($0) }
-            screen.viewport = NWCanvasViewport(offset: CGPoint(x: 44, y: 52), zoom: zoom)
+            screen.viewport = SHCanvasViewport(offset: CGPoint(x: 44, y: 52), zoom: zoom)
             screen.planLive()
             try await eventuallyOnMain("the canvas at \(zoom) to draw", timeout: .seconds(60)) {
                 window.layout()
@@ -163,12 +163,12 @@ struct DesignPerformanceTests {
         let heading = CGPoint(x: 100, y: 45)
 
         let counts = try await ListPerf.countingAsync {
-            screen.pick(NWCanvasPick(board: target.rawValue, point: heading))
+            screen.pick(SHCanvasPick(board: target.rawValue, point: heading))
             try await eventuallyOnMain("an element on \(target) to be selected", timeout: .seconds(30)) {
                 window.layout()
                 return !screen.isPicking && screen.selectedElements.count == 1
             }
-            screen.pointer(NWCanvasPick(board: target.rawValue, point: heading))
+            screen.pointer(SHCanvasPick(board: target.rawValue, point: heading))
             try await eventuallyOnMain("the element under the pointer to be ringed", timeout: .seconds(30)) {
                 window.layout()
                 return screen.hover != nil
@@ -187,7 +187,7 @@ struct DesignPerformanceTests {
         defer { window.close() }
         let tweak = try #require(screen.tweak)
         let target = try #require(screen.visibleBoards.first { host.liveBoards.contains($0) })
-        screen.pick(NWCanvasPick(board: target.rawValue, point: CGPoint(x: 100, y: 45)))
+        screen.pick(SHCanvasPick(board: target.rawValue, point: CGPoint(x: 100, y: 45)))
         try await eventuallyOnMain("an element on \(target) to be selected", timeout: .seconds(30)) {
             !screen.isPicking && screen.selectedElements.count == 1
         }
@@ -233,13 +233,13 @@ struct DesignPerformanceTests {
         let steps = 5
         let dragging = try await ListPerf.countingAsync {
             for step in 1...steps {
-                screen.move(NWBoardMove(board: target.rawValue, offset: CGSize(width: Double(step) * 12, height: 0), ended: false))
+                screen.move(SHBoardMove(board: target.rawValue, offset: CGSize(width: Double(step) * 12, height: 0), ended: false))
                 window.layout()
             }
         }
         #expect(dragging["design.board", default: 0] == steps, "\(dragging)")
         #expect(try await app.server.designSnapshot(screen.designID).revision == before, "nothing written while dragging")
-        await screen.move(NWBoardMove(board: target.rawValue, offset: CGSize(width: 60, height: 0), ended: true))?.value
+        await screen.move(SHBoardMove(board: target.rawValue, offset: CGSize(width: 60, height: 0), ended: true))?.value
         #expect(try await app.server.designSnapshot(screen.designID).revision == before + 1)
     }
 }
@@ -248,13 +248,13 @@ extension ListPerf {
     /// `counting` for work that awaits.
     @MainActor
     static func countingAsync(_ work: () async throws -> Void) async throws -> [String: Int] {
-        NWRenderProbe.start()
+        SHRenderProbe.start()
         do {
             try await work()
         } catch {
-            NWRenderProbe.stop()
+            SHRenderProbe.stop()
             throw error
         }
-        return NWRenderProbe.stop()
+        return SHRenderProbe.stop()
     }
 }

@@ -26,7 +26,7 @@ struct DesignGitPresentationTests {
     }
 
     @Test(arguments: [
-        (nil, "Share with Git", NWGitTone.primary),
+        (nil, "Share with Git", SHGitTone.primary),
         (DesignGitState(status: status()), "main · Up to date", .done),
         (DesignGitState(status: status(files: [.init(path: "project/A.dc.html", letter: "M"), .init(path: "project/canvas.json", letter: "M"),
                                                .init(path: "project/A-phone.dc.html", letter: "M")])), "main · 3 changes", .primary),
@@ -37,8 +37,8 @@ struct DesignGitPresentationTests {
         (DesignGitState(status: status(ahead: 1, behind: 1), merge: merge(.running)), "main · Merging", .running),
         (DesignGitState(status: status(ahead: 1, behind: 1), merge: merge(.ready)), "main · Merge ready", .attention),
         (DesignGitState(status: status(offline: true)), "main · Offline", .secondary),
-    ] as [(DesignGitState?, String, NWGitTone)])
-    func theChipSaysTheBranchAndItsMostUrgentState(state: DesignGitState?, label: String, tone: NWGitTone) {
+    ] as [(DesignGitState?, String, SHGitTone)])
+    func theChipSaysTheBranchAndItsMostUrgentState(state: DesignGitState?, label: String, tone: SHGitTone) {
         let chip = DesignGitPresentation.chip(state, drawing: false)
         #expect(chip.label == label)
         #expect(chip.tone == tone)
@@ -90,7 +90,7 @@ struct DesignGitPresentationTests {
         let panel = DesignGitPresentation.panel(.init(state: state, drawing: false, working: false, selected: nil, preview: nil, boards: [:], lastChecked: nil))
         #expect(panel.sync == "1 commit to pull · no local changes" && panel.syncTone == .running)
         #expect(panel.canPull && panel.pullHint == "Pull the new commit and reload the design")
-        #expect(panel.incoming == NWGitPanelState.Incoming(subject: "Clarify phone step labels", author: "Sam", hash: "c71d9e4",
+        #expect(panel.incoming == SHGitPanelState.Incoming(subject: "Clarify phone step labels", author: "Sam", hash: "c71d9e4",
                                                            files: ["A-phone.dc.html"]))
         #expect(panel.changes == nil)
     }
@@ -152,11 +152,11 @@ struct DesignGitPresentationTests {
 
     @Test(arguments: [
         (DesignGitMerge.Phase.conflict, nil),
-        (.running, NWGitMergePhase.running),
+        (.running, SHGitMergePhase.running),
         (.ready, .ready),
         (.stopped, .stopped(nil)),
-    ] as [(DesignGitMerge.Phase, NWGitMergePhase?)])
-    func theChatShowsTheMergeOnlyOnceItIsTheAgents(phase: DesignGitMerge.Phase, card: NWGitMergePhase?) {
+    ] as [(DesignGitMerge.Phase, SHGitMergePhase?)])
+    func theChatShowsTheMergeOnlyOnceItIsTheAgents(phase: DesignGitMerge.Phase, card: SHGitMergePhase?) {
         #expect(DesignGitPresentation.mergePhase(Self.merge(phase)) == card)
     }
 }

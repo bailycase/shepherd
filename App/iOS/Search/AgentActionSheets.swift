@@ -23,26 +23,26 @@ struct RenameAgentSheet: View {
         Form {
             Section {
                 TextField("Name", text: $name)
-                    .font(.nw(.ui))
+                    .font(.sh(.ui))
                     .focused($focused)
                     .submitLabel(.done)
                     .onSubmit { if next != nil { save(next) } }
                     .accessibilityLabel("Thread name")
             } footer: {
-                VStack(alignment: .leading, spacing: NW.Space.xs) {
+                VStack(alignment: .leading, spacing: SH.Space.xs) {
                     if let error {
-                        Text(error).foregroundStyle(Color.nw.failed)
+                        Text(error).foregroundStyle(Color.sh.failed)
                     }
                     if let host {
                         Text(agent == nil ? "This agent is no longer on \(host.name)." : "On \(host.name). The new name replaces the one the agent chose.")
                     }
                 }
-                .font(.nw(.caption))
-                .foregroundStyle(Color.nw.textTertiary)
+                .font(.sh(.caption))
+                .foregroundStyle(Color.sh.textTertiary)
             }
         }
         .scrollContentBackground(.hidden)
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .navigationTitle("Rename")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -51,7 +51,7 @@ struct RenameAgentSheet: View {
             }
             ToolbarItem(placement: .confirmationAction) {
                 if saving {
-                    ProgressView().progressViewStyle(NWSpinnerStyle())
+                    ProgressView().progressViewStyle(SHSpinnerStyle())
                 } else {
                     Button("Save") { save(next) }.disabled(next == nil || agent == nil)
                 }
@@ -102,7 +102,7 @@ struct DeleteAgentSheet: View {
             }
         }
         .scrollContentBackground(.hidden)
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .navigationBarTitleDisplayMode(.inline)
         // The worktree's confirmation needs the whole height: details, the warning, both deletes.
         .presentationDetents(worktree || navigator.layout == .pad ? [.large] : [.medium, .large])
@@ -125,22 +125,22 @@ private struct DeleteAgentForm: View {
                 LabeledContent("Host") { Text(hostName ?? "Forgotten") }
             } footer: {
                 Text("The agent stops and its thread closes on every device. Its folder and files stay.")
-                    .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                    .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
             }
             if let error {
-                Section { Text(error).font(.nw(.caption)).foregroundStyle(Color.nw.failed) }
+                Section { Text(error).font(.sh(.caption)).foregroundStyle(Color.sh.failed) }
             }
             Section {
                 Button(role: .destructive, action: delete) {
-                    HStack(spacing: NW.Space.m) {
+                    HStack(spacing: SH.Space.m) {
                         Text("Delete agent")
-                        if deleting { ProgressView().progressViewStyle(NWSpinnerStyle()) }
+                        if deleting { ProgressView().progressViewStyle(SHSpinnerStyle()) }
                     }
                 }
                 .disabled(deleting || name == nil)
             }
         }
-        .font(.nw(.ui))
+        .font(.sh(.ui))
         .navigationTitle("Delete agent")
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
@@ -189,19 +189,19 @@ private struct DeleteWorktreeAgentForm: View {
                 LabeledContent("Host") { Text(host?.name ?? "Forgotten") }
                 if let info {
                     LabeledContent("Worktree") {
-                        Text(info.path).font(.nw(.mono)).lineLimit(1).truncationMode(.middle)
+                        Text(info.path).font(.sh(.mono)).lineLimit(1).truncationMode(.middle)
                     }
-                    LabeledContent("Branch") { Text(info.branch).font(.nw(.mono)).lineLimit(1) }
+                    LabeledContent("Branch") { Text(info.branch).font(.sh(.mono)).lineLimit(1) }
                 } else if loading && !running {
-                    HStack(spacing: NW.Space.m) {
-                        ProgressView().progressViewStyle(NWSpinnerStyle())
-                        Text("Checking the worktree on \(host?.name ?? "the host")…").foregroundStyle(Color.nw.textSecondary)
+                    HStack(spacing: SH.Space.m) {
+                        ProgressView().progressViewStyle(SHSpinnerStyle())
+                        Text("Checking the worktree on \(host?.name ?? "the host")…").foregroundStyle(Color.sh.textSecondary)
                     }
                 }
             }
             if let info, let warning = info.warning, operation == nil, !running {
                 Section {
-                    NWBanner(.attention, title: "Unreconciled work", message: WorktreeDeletion.lossMessage(warning))
+                    SHBanner(.attention, title: "Unreconciled work", message: WorktreeDeletion.lossMessage(warning))
                         .listRowInsets(EdgeInsets())
                         .listRowBackground(Color.clear)
                 }
@@ -212,26 +212,26 @@ private struct DeleteWorktreeAgentForm: View {
             if let operation {
                 Section("On \(host?.name ?? "the host")") {
                     ForEach(Array(operation.progress.enumerated()), id: \.offset) { _, line in
-                        Text(line).font(.nw(.mono)).foregroundStyle(Color.nw.textSecondary)
+                        Text(line).font(.sh(.mono)).foregroundStyle(Color.sh.textSecondary)
                     }
                     if let failure = operation.error {
-                        Text(failure).font(.nw(.caption)).foregroundStyle(Color.nw.failed)
+                        Text(failure).font(.sh(.caption)).foregroundStyle(Color.sh.failed)
                     }
                     if operation.finished, operation.error == nil {
                         Label("Agent, checkout and local branch removed", systemImage: "checkmark.circle")
-                            .foregroundStyle(Color.nw.done)
+                            .foregroundStyle(Color.sh.done)
                     }
                 }
             } else if running {
                 Section {
-                    HStack(spacing: NW.Space.m) {
-                        ProgressView().progressViewStyle(NWSpinnerStyle())
-                        Text("Deleting on the host. Closing this only stops watching it.").foregroundStyle(Color.nw.textSecondary)
+                    HStack(spacing: SH.Space.m) {
+                        ProgressView().progressViewStyle(SHSpinnerStyle())
+                        Text("Deleting on the host. Closing this only stops watching it.").foregroundStyle(Color.sh.textSecondary)
                     }
                 }
             }
             if let error {
-                Section { Text(error).font(.nw(.caption)).foregroundStyle(Color.nw.failed) }
+                Section { Text(error).font(.sh(.caption)).foregroundStyle(Color.sh.failed) }
             }
             if !running, operation == nil {
                 Section {
@@ -241,11 +241,11 @@ private struct DeleteWorktreeAgentForm: View {
                         .disabled(submitting || info == nil && loading)
                 } footer: {
                     Text("Delete agent only keeps the checkout and its branch. The remote branch is never deleted.")
-                        .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                        .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                 }
             }
         }
-        .font(.nw(.ui))
+        .font(.sh(.ui))
         .navigationTitle("Delete worktree agent")
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
@@ -359,13 +359,13 @@ struct ActionProblemSheet: View {
     @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
-        NWEmptyState(Text(title), message: message, showsMark: false) {
+        SHEmptyState(Text(title), message: message, showsMark: false) {
             Button("OK") { navigator.dismissPresented() }
-                .buttonStyle(.nw(.secondary, size: .l))
-                .nwTouchTarget(height: NW.Height.controlL)
+                .buttonStyle(.sh(.secondary, size: .l))
+                .shTouchTarget(height: SH.Height.controlL)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .presentationDetents(navigator.layout == .pad ? [.large] : [.medium])
     }
 }

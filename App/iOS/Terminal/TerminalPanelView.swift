@@ -30,8 +30,8 @@ private struct ThreadTerminalPanel: ViewModifier {
         let shows = sizeClass == .regular && panel.shown
         let maximized = shows && panel.maximized
         let height = TerminalPanelHeight.clamp(Double(terminals.panelHeight), container: Double(columnHeight),
-                                               minimum: Double(NWTerminalMetrics.minimumPanelHeight),
-                                               threadMinimum: Double(NWTerminalMetrics.minimumThreadHeight))
+                                               minimum: Double(SHTerminalMetrics.minimumPanelHeight),
+                                               threadMinimum: Double(SHTerminalMetrics.minimumThreadHeight))
         VStack(spacing: 0) {
             content
                 .frame(maxHeight: maximized ? 0 : .infinity)
@@ -45,13 +45,13 @@ private struct ThreadTerminalPanel: ViewModifier {
                 TerminalPanelHost(ref: ref, columnHeight: columnHeight)
                     .frame(height: maximized ? nil : CGFloat(height))
                     .frame(maxHeight: maximized ? .infinity : nil)
-                    .nwTransition(.pane, edge: .bottom)
+                    .shTransition(.pane, edge: .bottom)
             }
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { if columnHeight != $0 { columnHeight = $0 } }
         .background { TerminalPanelCloser(ref: ref) }
-        .nwAnimation(.pane, value: shows)
-        .nwAnimation(.pane, value: maximized)
+        .shAnimation(.pane, value: shows)
+        .shAnimation(.pane, value: maximized)
         .onAppear { visible = true }
         .onDisappear { visible = false }
         // The tabs' states and the header toggle's dot, while the thread is on screen (iPad).
@@ -135,7 +135,7 @@ struct TerminalPanelView: View {
         let selected = model.selected
         let focusedSession = selected?.leaf.sessionID.map { terminals.session(host: model.ref.host, id: $0) }
         VStack(spacing: 0) {
-            NWTerminalTabBar(model.items, selection: selected?.id.rawValue, select: select,
+            SHTerminalTabBar(model.items, selection: selected?.id.rawValue, select: select,
                              close: model.canChangeTerminals && model.connected ? { id in closing = model.tab(for: id) } : nil,
                              newTab: model.canChangeTerminals && model.connected ? newTab : nil) {
                 Button {
@@ -151,10 +151,10 @@ struct TerminalPanelView: View {
             }
             .overlay(alignment: .top) { grabber }
             if let problem {
-                NWBanner(.failed, title: problem) {
-                    Button("Dismiss") { terminals.problems[model.ref] = nil }.buttonStyle(.nw(.ghost, size: .s))
+                SHBanner(.failed, title: problem) {
+                    Button("Dismiss") { terminals.problems[model.ref] = nil }.buttonStyle(.sh(.ghost, size: .s))
                 }
-                .padding(NW.Space.m)
+                .padding(SH.Space.m)
             }
             ZStack {
                 if let selected {
@@ -169,7 +169,7 @@ struct TerminalPanelView: View {
                 TerminalKeys(session: focusedSession)
             }
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Terminal")
         .confirmationDialog(closeConfirmation?.title ?? "", isPresented: closingShown, titleVisibility: .visible) {
@@ -189,30 +189,30 @@ struct TerminalPanelView: View {
     /// asked for is on its way. The panel is never shown empty for want of a terminal: opening it
     /// with none opens one (`TerminalHooks.toggle`).
     private var unavailable: some View {
-        VStack(spacing: NW.Space.m) {
+        VStack(spacing: SH.Space.m) {
             if !model.connected {
                 Text("\(model.hostName) is offline.")
-                    .font(.nw(.ui))
-                    .foregroundStyle(Color.nw.textSecondary)
+                    .font(.sh(.ui))
+                    .foregroundStyle(Color.sh.textSecondary)
             } else if !model.canChangeTerminals {
                 Text("Update Shepherd on \(model.hostName) to open terminals here.")
-                    .font(.nw(.ui))
-                    .foregroundStyle(Color.nw.textSecondary)
+                    .font(.sh(.ui))
+                    .foregroundStyle(Color.sh.textSecondary)
             } else {
-                NWTerminalNotice("starting session…")
+                SHTerminalNotice("starting session…")
             }
         }
         .multilineTextAlignment(.center)
-        .padding(NW.Space.xl)
+        .padding(SH.Space.xl)
     }
 
     /// Drag the panel's top edge: it snaps at a third, half and two-thirds of the column.
     private var grabber: some View {
         Capsule()
-            .fill(Color.nw.lineStrong)
+            .fill(Color.sh.lineStrong)
             .frame(width: MobileLayout.terminalGrabber.width, height: MobileLayout.terminalGrabber.height)
-            .padding(.top, NW.Space.xs)
-            .frame(width: NW.Height.touch * 2, height: NW.Height.touch / 2, alignment: .top)
+            .padding(.top, SH.Space.xs)
+            .frame(width: SH.Height.touch * 2, height: SH.Height.touch / 2, alignment: .top)
             .contentShape(Rectangle())
             .opacity(model.panel.maximized ? 0 : 1)
             .allowsHitTesting(!model.panel.maximized)
@@ -223,9 +223,9 @@ struct TerminalPanelView: View {
                     if dragStart == nil { dragStart = start }
                     terminals.panelHeight = CGFloat(TerminalPanelHeight.resolve(
                         Double(start - value.translation.height), container: Double(columnHeight),
-                        minimum: Double(NWTerminalMetrics.minimumPanelHeight),
-                        threadMinimum: Double(NWTerminalMetrics.minimumThreadHeight),
-                        tolerance: Double(NWTerminalMetrics.snapTolerance)))
+                        minimum: Double(SHTerminalMetrics.minimumPanelHeight),
+                        threadMinimum: Double(SHTerminalMetrics.minimumThreadHeight),
+                        tolerance: Double(SHTerminalMetrics.snapTolerance)))
                 }
                 .onEnded { _ in dragStart = nil })
             .accessibilityElement()
@@ -236,8 +236,8 @@ struct TerminalPanelView: View {
                 let step: CGFloat = direction == .increment ? 40 : -40
                 terminals.panelHeight = CGFloat(TerminalPanelHeight.clamp(
                     Double(terminals.panelHeight + step), container: Double(columnHeight),
-                    minimum: Double(NWTerminalMetrics.minimumPanelHeight),
-                    threadMinimum: Double(NWTerminalMetrics.minimumThreadHeight)))
+                    minimum: Double(SHTerminalMetrics.minimumPanelHeight),
+                    threadMinimum: Double(SHTerminalMetrics.minimumThreadHeight)))
             }
     }
 

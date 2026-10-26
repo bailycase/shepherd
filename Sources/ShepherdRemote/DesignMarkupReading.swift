@@ -29,7 +29,7 @@ public struct DesignMarkupInk: Equatable, Sendable {
 }
 
 /// Where the canvas looks, as the markup layer maps the screen: the screen position of the
-/// canvas's origin and the zoom (`NWCanvasViewport`'s numbers).
+/// canvas's origin and the zoom (`SHCanvasViewport`'s numbers).
 public struct DesignMarkupViewport: Equatable, Sendable {
     public var offset: CGPoint
     public var zoom: CGFloat

@@ -104,12 +104,12 @@ struct ProjectsPreviewTests {
         try await Preview.renderMatrix("projects-mcp-offline", size: size) { SettingsView(vm: fixture.vm) }
         model.selected?.host.unavailable = nil
         try await Preview.renderMatrix("projects-mcp-detail", size: CGSize(width: 1040, height: 720)) {
-            ProjectMCPSettings(model: model, initiallyExpanded: "docs").padding(NW.Space.xxl)
-                .frame(width: 1040, height: 720).background(Color.nw.bgWindow)
+            ProjectMCPSettings(model: model, initiallyExpanded: "docs").padding(SH.Space.xxl)
+                .frame(width: 1040, height: 720).background(Color.sh.bgWindow)
         }
         try await Preview.renderMatrix("projects-mcp-filtered", size: CGSize(width: 1040, height: 720)) {
-            ProjectMCPSettings(model: model, initialQuery: "nothing-matches").padding(NW.Space.xxl)
-                .frame(width: 1040, height: 720).background(Color.nw.bgWindow)
+            ProjectMCPSettings(model: model, initialQuery: "nothing-matches").padding(SH.Space.xxl)
+                .frame(width: 1040, height: 720).background(Color.sh.bgWindow)
         }
         try await Preview.renderMatrix("projects-mcp-edit", size: CGSize(width: 570, height: 780)) {
             AddMCPServerSheet(project: model, initialKind: nil, editing: entries[0]) {}
@@ -123,8 +123,8 @@ struct ProjectsPreviewTests {
         let oauth = MCPServerEntry(name: "linear-with-a-long-project-server-name", json: ["url": .string("https://linear.example.invalid/mcp")])
         try await model.saveMCP([oauth])
         try await Preview.renderMatrix("projects-mcp-oauth-unsigned", size: CGSize(width: 1040, height: 720)) {
-            ProjectMCPSettings(model: model, initiallyExpanded: oauth.name).padding(NW.Space.xxl)
-                .frame(width: 1040, height: 720).background(Color.nw.bgWindow)
+            ProjectMCPSettings(model: model, initiallyExpanded: oauth.name).padding(SH.Space.xxl)
+                .frame(width: 1040, height: 720).background(Color.sh.bgWindow)
         }
         let auth = fixture.local.dir.appendingPathComponent("pi/mcp-auth.json")
         try FileManager.default.createDirectory(at: auth.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -133,8 +133,8 @@ struct ProjectsPreviewTests {
         await model.refreshMCPCredentials()
         #expect(model.mcpSignedIn.contains(oauth.name))
         try await Preview.renderMatrix("projects-mcp-oauth-signed", size: CGSize(width: 1040, height: 720)) {
-            ProjectMCPSettings(model: model, initiallyExpanded: oauth.name).padding(NW.Space.xxl)
-                .frame(width: 1040, height: 720).background(Color.nw.bgWindow)
+            ProjectMCPSettings(model: model, initiallyExpanded: oauth.name).padding(SH.Space.xxl)
+                .frame(width: 1040, height: 720).background(Color.sh.bgWindow)
         }
         try FileManager.default.removeItem(at: auth)
         await model.refreshMCPCredentials()
@@ -150,8 +150,8 @@ struct ProjectsPreviewTests {
         await model.navigate(.file(shared))
         try await model.saveMCP([entries[0]])
         try await Preview.renderMatrix("projects-mcp-shared", size: CGSize(width: 1040, height: 720)) {
-            ProjectMCPSettings(model: model, initiallyExpanded: "docs").padding(NW.Space.xxl)
-                .frame(width: 1040, height: 720).background(Color.nw.bgWindow)
+            ProjectMCPSettings(model: model, initiallyExpanded: "docs").padding(SH.Space.xxl)
+                .frame(width: 1040, height: 720).background(Color.sh.bgWindow)
         }
         await model.navigate(.file(native))
         for name in model.mcp.entries.map(\.name) { try await model.removeMCP(name) }

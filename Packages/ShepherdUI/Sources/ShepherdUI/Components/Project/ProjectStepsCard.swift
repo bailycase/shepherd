@@ -2,7 +2,7 @@ import SwiftUI
 
 /// A worker's own plan as the boards draw it (ProjectLead-ThreadRunning, -Resolved): a bordered list named "Steps", one row per step.
 /// It takes plain values from the typed native plan and parses nothing.
-public struct NWLeadStepsCard: View {
+public struct SHLeadStepsCard: View {
     public enum State: Sendable, Equatable { case pending, current, done, failed }
 
     public struct Step: Sendable, Equatable {
@@ -16,20 +16,20 @@ public struct NWLeadStepsCard: View {
     public init(steps: [Step]) { self.steps = steps }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: NWLeadMetrics.stepsGap) {
+        VStack(alignment: .leading, spacing: SHLeadMetrics.stepsGap) {
             ForEach(Array(steps.enumerated()), id: \.offset) { _, step in
-                HStack(spacing: NW.Space.m) {
-                    glyph(step.state).frame(width: NWLeadMetrics.stepsGlyphBox, height: NWLeadMetrics.stepsGlyphBox).accessibilityHidden(true)
-                    Text(step.text).font(.nw(.ui, weight: .regular)).foregroundStyle(step.state == .pending ? Color.nw.textSecondary : Color.nw.textPrimary)
+                HStack(spacing: SH.Space.m) {
+                    glyph(step.state).frame(width: SHLeadMetrics.stepsGlyphBox, height: SHLeadMetrics.stepsGlyphBox).accessibilityHidden(true)
+                    Text(step.text).font(.sh(.ui, weight: .regular)).foregroundStyle(step.state == .pending ? Color.sh.textSecondary : Color.sh.textPrimary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityValue(Self.word(step.state))
             }
         }
-        .padding(NWLeadMetrics.stepsPadding + NWLeadMetrics.stepsBorder)
+        .padding(SHLeadMetrics.stepsPadding + SHLeadMetrics.stepsBorder)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .nwBorder(Color.nw.lineStrong, radius: NWLeadMetrics.stepsRadius)
+        .shBorder(Color.sh.lineStrong, radius: SHLeadMetrics.stepsRadius)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Steps")
     }
@@ -48,16 +48,16 @@ public struct NWLeadStepsCard: View {
         case .current:
             // `border-right-color: transparent` on a circle leaves a 90 degree gap centred on 3 o'clock.
             Circle().trim(from: 0.125, to: 0.875)
-                .stroke(Color.nw.textSecondary, style: StrokeStyle(lineWidth: NWLeadMetrics.stepsCurrentStroke, lineCap: .butt))
-                .frame(width: NWLeadMetrics.stepsRing, height: NWLeadMetrics.stepsRing)
+                .stroke(Color.sh.textSecondary, style: StrokeStyle(lineWidth: SHLeadMetrics.stepsCurrentStroke, lineCap: .butt))
+                .frame(width: SHLeadMetrics.stepsRing, height: SHLeadMetrics.stepsRing)
         case .pending:
-            Circle().stroke(Color.nw.textTertiary, style: StrokeStyle(lineWidth: NWLeadMetrics.stepsPendingStroke, dash: NWLeadMetrics.stepsPendingDash))
-                .frame(width: NWLeadMetrics.stepsRing, height: NWLeadMetrics.stepsRing)
+            Circle().stroke(Color.sh.textTertiary, style: StrokeStyle(lineWidth: SHLeadMetrics.stepsPendingStroke, dash: SHLeadMetrics.stepsPendingDash))
+                .frame(width: SHLeadMetrics.stepsRing, height: SHLeadMetrics.stepsRing)
         case .done:
-            Image(systemName: NWGlyph.resolved.symbolName).font(.system(size: NWLeadMetrics.stepsGlyphBox)).foregroundStyle(Color.nw.textSecondary)
+            Image(systemName: SHGlyph.resolved.symbolName).font(.system(size: SHLeadMetrics.stepsGlyphBox)).foregroundStyle(Color.sh.textSecondary)
         case .failed:
             // The boards draw no failed step; a plan the worker marked failed gets the same outline circle with a cross, in `failed`.
-            Image(systemName: NWGlyph.failedStep.symbolName).font(.system(size: NWLeadMetrics.stepsGlyphBox)).foregroundStyle(Color.nw.failed)
+            Image(systemName: SHGlyph.failedStep.symbolName).font(.system(size: SHLeadMetrics.stepsGlyphBox)).foregroundStyle(Color.sh.failed)
         }
     }
 }
@@ -65,17 +65,17 @@ public struct NWLeadStepsCard: View {
 /// The live line a Project's thread ends in while its turn works (ProjectLead-Started "Starting threads", -ThreadRunning
 /// "Working · 52s"): a 14pt ellipsis glyph and the words in `caption` on `textTertiary`, 8pt apart. The words come from the
 /// owner's typed state (`ProjectRunStatus`), never from the text of a reply.
-public struct NWLeadStatusLine: View {
+public struct SHLeadStatusLine: View {
     let text: String
     public init(_ text: String) { self.text = text }
 
     public var body: some View {
-        HStack(spacing: NW.Space.m) {
-            Image(systemName: "ellipsis").font(.system(size: NWLeadMetrics.footerGlyph))
-                .frame(width: NWLeadMetrics.footerGlyph, height: NWLeadMetrics.footerGlyph).accessibilityHidden(true)
-            Text(text).font(.nw(.caption))
+        HStack(spacing: SH.Space.m) {
+            Image(systemName: "ellipsis").font(.system(size: SHLeadMetrics.footerGlyph))
+                .frame(width: SHLeadMetrics.footerGlyph, height: SHLeadMetrics.footerGlyph).accessibilityHidden(true)
+            Text(text).font(.sh(.caption))
         }
-        .foregroundStyle(Color.nw.textTertiary)
+        .foregroundStyle(Color.sh.textTertiary)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(text)

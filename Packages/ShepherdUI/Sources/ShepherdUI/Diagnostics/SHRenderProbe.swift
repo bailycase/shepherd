@@ -5,11 +5,11 @@ import SwiftUI
 /// while a test turns it on, and release builds compile it out.
 ///
 ///     var body: some View {
-///         let _ = NWRenderProbe.tick("sidebar.row")
+///         let _ = SHRenderProbe.tick("sidebar.row")
 ///         …
 ///     }
 @MainActor
-public enum NWRenderProbe {
+public enum SHRenderProbe {
     #if DEBUG
     public static var isRecording = false
     public private(set) static var counts: [String: Int] = [:]

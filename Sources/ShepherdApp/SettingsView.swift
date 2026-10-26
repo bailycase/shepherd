@@ -26,10 +26,10 @@ struct SettingsView: View {
     var body: some View {
         HStack(spacing: 0) {
             nav
-            NWHairline(.vertical, width: NWSettingsNavMetrics.borderWidth)
+            SHHairline(.vertical, width: SHSettingsNavMetrics.borderWidth)
             detail
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .overlay {
             if vm.settingsSection == .projects, vm.projects.showingBrowser,
                let project = vm.projects.selected, let removal = vm.projectCookies.pending {
@@ -41,8 +41,8 @@ struct SettingsView: View {
         .ignoresSafeArea()
         // Settings replaces the window content: it cross-fades in and out on the sheet motion
         // however `showSettings` changed (⌘,, the app menu, Back, Esc, the palette).
-        .transition(NW.Motion.content.transition(reduceMotion: reduceMotion)
-            .animation(NW.Motion.sheet.animation(reduceMotion: reduceMotion)))
+        .transition(SH.Motion.content.transition(reduceMotion: reduceMotion)
+            .animation(SH.Motion.sheet.animation(reduceMotion: reduceMotion)))
         .onChange(of: searchText) { Self.showFirstMatch(of: matchingSections, in: vm) }
         .background {
             // ⌘F focuses the search field.
@@ -69,31 +69,31 @@ struct SettingsView: View {
                     else { vm.showSettings = false }
                 }
             } label: {
-                HStack(spacing: NW.Space.m) {
-                    NWGlyph.Settings.back.image.frame(width: AppLayout.settingsBackGlyphWidth)
+                HStack(spacing: SH.Space.m) {
+                    SHGlyph.Settings.back.image.frame(width: AppLayout.settingsBackGlyphWidth)
                         .accessibilityHidden(true)
-                    Text("Back to Shepherd").font(.nwSans(NWSettingsNavMetrics.textSize))
+                    Text("Back to Shepherd").font(.shSans(SHSettingsNavMetrics.textSize))
                     Spacer(minLength: 0)
                 }
-                .foregroundStyle(Color.nw.textSecondary)
-                .padding(.horizontal, NW.Space.m)
+                .foregroundStyle(Color.sh.textSecondary)
+                .padding(.horizontal, SH.Space.m)
                 .frame(minHeight: AppLayout.settingsBackRowHeight)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.nwRow(focusColor: .nw.running))
+            .buttonStyle(.shRow(focusColor: .sh.running))
             .keyboardShortcut(.escape, modifiers: [])
-            .padding(.horizontal, NWSettingsNavMetrics.sidePadding)
+            .padding(.horizontal, SHSettingsNavMetrics.sidePadding)
 
-            NWSettingsSearchField("Search settings", text: $searchText, placement: .navigation)
+            SHSettingsSearchField("Search settings", text: $searchText, placement: .navigation)
                 .focused($searchFocused)
-                .padding(.horizontal, NWSettingsNavMetrics.sidePadding)
+                .padding(.horizontal, SHSettingsNavMetrics.sidePadding)
                 .padding(.top, AppLayout.settingsSearchTop)
-                .padding(.bottom, NW.Space.l)
+                .padding(.bottom, SH.Space.l)
 
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: AppLayout.settingsNavRowSpacing) {
                     ForEach(sections) { section in
-                        NWSettingsNavRow(section.title, glyph: section.artwork, selected: vm.settingsSection == section,
+                        SHSettingsNavRow(section.title, glyph: section.artwork, selected: vm.settingsSection == section,
                                          attention: section == .piSignIn && vm.piSignInNeedsAttention) {
                             navigate(to: section)
                         }
@@ -109,31 +109,31 @@ struct SettingsView: View {
                     }
                     if sections.isEmpty {
                         Text("No matching settings")
-                            .font(.nw(.caption))
-                            .foregroundStyle(Color.nw.textTertiary)
-                            .padding(.horizontal, NW.Space.m)
-                            .padding(.top, NW.Space.xs)
+                            .font(.sh(.caption))
+                            .foregroundStyle(Color.sh.textTertiary)
+                            .padding(.horizontal, SH.Space.m)
+                            .padding(.top, SH.Space.xs)
                     }
                 }
-                .padding(.horizontal, NWSettingsNavMetrics.sidePadding)
+                .padding(.horizontal, SHSettingsNavMetrics.sidePadding)
             }
             .scrollIndicators(.hidden)
 
             Spacer(minLength: 0)
             Text(versions)
-                .font(.nwMono(NWTextStyle.micro.size))
-                .foregroundStyle(Color.nw.textTertiary)
+                .font(.shMono(SHTextStyle.micro.size))
+                .foregroundStyle(Color.sh.textTertiary)
                 .lineLimit(1).truncationMode(.tail)
                 // Aligned with the rows' icons.
-                .padding(.horizontal, NWSettingsNavMetrics.sidePadding + NWSettingsNavMetrics.rowPadding)
-                .padding(.bottom, NW.Space.l)
+                .padding(.horizontal, SHSettingsNavMetrics.sidePadding + SHSettingsNavMetrics.rowPadding)
+                .padding(.bottom, SH.Space.l)
         }
         .disabled((vm.settingsSection == .projects && (vm.projectCookies.pending != nil || vm.projectCookies.clearing)) ||
                   (vm.settingsSection == .subagents && ((vm.subagentDefinitions.busy && vm.subagentDefinitions.editing) || vm.subagentDefinitions.confirmation != nil)))
         .accessibilityHidden((vm.settingsSection == .projects && vm.projectCookies.pending != nil) ||
                              (vm.settingsSection == .subagents && vm.subagentDefinitions.confirmation != nil))
-        .frame(width: AppLayout.settingsNavWidth - NWSettingsNavMetrics.borderWidth)
-        .background(Color.nw.bgBase.ignoresSafeArea())
+        .frame(width: AppLayout.settingsNavWidth - SHSettingsNavMetrics.borderWidth)
+        .background(Color.sh.bgBase.ignoresSafeArea())
     }
 
     private func navigate(to section: SettingsSection) {
@@ -199,7 +199,7 @@ struct SettingsView: View {
             } else if vm.settingsSection.isWide || (vm.settingsSection == .subagents && vm.subagentDefinitions.editing) {
                 // A wide page fills the area and scrolls inside itself (its editor, its side column).
                 Group { page }
-                    .nwTransition(.content)
+                    .shTransition(.content)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .contentShape(Rectangle())
                     .accessibilityElement(children: .contain)
@@ -211,7 +211,7 @@ struct SettingsView: View {
             } else {
                 ScrollView(.vertical) {
                     Group { page }
-                        .nwTransition(.content)
+                        .shTransition(.content)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
                         .accessibilityElement(children: .contain)
@@ -221,14 +221,14 @@ struct SettingsView: View {
                         .padding(.horizontal, AppLayout.settingsWideSides)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         // A page picked in the nav cross-fades in place; search switches pages at once.
-                        .nwAnimation(.content, value: vm.settingsSection)
+                        .shAnimation(.content, value: vm.settingsSection)
                 }
                 .scrollContentBackground(.hidden)
-                .nwTransition(.content)
+                .shTransition(.content)
             }
         }
-        .nwAnimation(.content, value: vm.settingsSection.isWide || vm.subagentDefinitions.editing)
-        .background(Color.nw.bgWindow)
+        .shAnimation(.content, value: vm.settingsSection.isWide || vm.subagentDefinitions.editing)
+        .background(Color.sh.bgWindow)
         .overlay(alignment: .top) {
             // The window has no title bar; the strip above the content still drags it.
             Color.clear.frame(height: AppLayout.settingsWindowStripHeight).contentShape(Rectangle()).gesture(WindowDragGesture())
@@ -245,14 +245,14 @@ private struct SettingsSearchHit: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.nw(.caption))
-                .foregroundStyle(Color.nw.textSecondary)
+                .font(.sh(.caption))
+                .foregroundStyle(Color.sh.textSecondary)
                 .lineLimit(1)
-                .padding(.leading, NWSettingsNavMetrics.rowPadding + NWSettingsNavMetrics.iconSize + NWSettingsNavMetrics.iconGap)
-                .frame(maxWidth: .infinity, minHeight: NW.Height.controlS, alignment: .leading)
+                .padding(.leading, SHSettingsNavMetrics.rowPadding + SHSettingsNavMetrics.iconSize + SHSettingsNavMetrics.iconGap)
+                .frame(maxWidth: .infinity, minHeight: SH.Height.controlS, alignment: .leading)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.nwRow())
+        .buttonStyle(.shRow())
         .accessibilityLabel("\(title), in \(section)")
     }
 }
@@ -319,7 +319,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     /// Words people search for that aren't row titles ("dark" → Appearance).
     private var keywords: [String: [String]] {
         switch self {
-        case .appearance: ["Mode": ["dark", "light", "color", "night watch", "theme"], "Text size": ["font", "zoom", "scale"], "Sidebar rows": ["row height", "comfortable"], "Density": ["compact", "spacing"],
+        case .appearance: ["Mode": ["dark", "light", "color", "shepherd design", "theme"], "Text size": ["font", "zoom", "scale"], "Sidebar rows": ["row height", "comfortable"], "Density": ["compact", "spacing"],
                            "Organize by": ["spaces", "activity", "folders", "sidebar style", "tree"],
                            "Group by host": ["hosts", "machines"], "Keep idle threads": ["archive", "idle"]]
         case .terminal: ["Font family": ["ghostty", "monospace"], "Shell": ["zsh", "bash", "fish"]]
@@ -389,7 +389,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         } + rows.filter { $0.localizedCaseInsensitiveContains(query) }
     }
 
-    var artwork: NWGlyph.Settings {
+    var artwork: SHGlyph.Settings {
         switch self {
         case .appearance: .appearance
         case .terminal: .terminal
@@ -423,10 +423,10 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .piSignIn: return "lock"
         case .extensions: return "puzzlepiece.extension"
         case .piSlashCommands: return "chevron.left.forwardslash.chevron.right"
-        case .instructions: return NWGlyph.document.symbolName
+        case .instructions: return SHGlyph.document.symbolName
         case .skills: return "graduationcap"
         case .mcp: return "server.rack"
-        case .remote: return NWGlyph.remoteConnection.symbolName
+        case .remote: return SHGlyph.remoteConnection.symbolName
         case .keyboard: return "keyboard"
         case .advanced: return "gearshape"
         case .experiments: return "flask"

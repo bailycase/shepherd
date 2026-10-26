@@ -20,7 +20,7 @@ struct ProseComponentTests {
     }
 
     private func runs(_ text: String) -> [Run] {
-        let attributed = NWProseInline.styled(text)
+        let attributed = SHProseInline.styled(text)
         return attributed.runs.map { run in
             let intent = run.inlinePresentationIntent ?? []
             return Run(text: String(attributed[run.range].characters), code: intent.contains(.code), strong: intent.contains(.stronglyEmphasized),
@@ -29,7 +29,7 @@ struct ProseComponentTests {
         }
     }
 
-    private func plain(_ text: String) -> String { String(NWProseInline.styled(text).characters) }
+    private func plain(_ text: String) -> String { String(SHProseInline.styled(text).characters) }
 
     @Test(arguments: [
         // Inline HTML is never shown raw.
@@ -54,20 +54,20 @@ struct ProseComponentTests {
     // MARK: Project task references (ProjectLead-Question)
 
     private let known = "shepherd-project-task://p/t1"
-    private var table: NWProseTaskLinks { .init(links: [known: .init(title: "Library API draft", tone: .attention)]) }
+    private var table: SHProseTaskLinks { .init(links: [known: .init(title: "Library API draft", tone: .attention)]) }
 
     /// What the paragraph shows, with each chip's room run (a hair space) and its non-breaking title.
     private func chipText(_ markdown: String) -> String {
-        let attributed = NWProseInline.styled(markdown)
-        guard NWProseTaskLinks.hasReference(attributed) else { return String(attributed.characters) }
+        let attributed = SHProseInline.styled(markdown)
+        guard SHProseTaskLinks.hasReference(attributed) else { return String(attributed.characters) }
         // The runs the renderer builds are Text values; their words are what the layout holds.
         var words = ""
         for run in attributed.runs {
             let piece = AttributedString(attributed[run.range])
-            if let url = run.link, url.scheme == NWProseTaskLinks.scheme, let link = table.links[url.absoluteString] {
+            if let url = run.link, url.scheme == SHProseTaskLinks.scheme, let link = table.links[url.absoluteString] {
                 words += "\u{200A}" + link.title.replacingOccurrences(of: " ", with: "\u{00A0}")
             } else {
-                words += String(NWProseTaskLinks.inert(piece).characters)
+                words += String(SHProseTaskLinks.inert(piece).characters)
             }
         }
         return words
@@ -83,9 +83,9 @@ struct ProseComponentTests {
         "[bad](shepherd-project-task://)",
     ])
     func aStaleCrossProjectOrMalformedReferenceIsPlainWordsWithNoLink(markdown: String) {
-        let attributed = NWProseInline.styled(markdown)
-        let inert = NWProseTaskLinks.inert(attributed)
-        #expect(!NWProseTaskLinks.hasReference(inert), "no link survives")
+        let attributed = SHProseInline.styled(markdown)
+        let inert = SHProseTaskLinks.inert(attributed)
+        #expect(!SHProseTaskLinks.hasReference(inert), "no link survives")
         #expect(inert.runs.allSatisfy { $0.link == nil && $0.foregroundColor == nil })
         #expect(String(inert.characters) == String(attributed.characters), "the words are as written")
         #expect(table.links[attributed.runs.first?.link?.absoluteString ?? ""] == nil)
@@ -93,16 +93,16 @@ struct ProseComponentTests {
 
     @Test func aReferenceStillBeingWrittenIsPlainTextUntilItCloses() {
         for partial in ["[Partner API", "[Library API draft](", "[Library API draft](shepherd-project-task://p/t", "[Library API draft](shepherd-project-task://p/t1"] {
-            #expect(!NWProseTaskLinks.hasReference(NWProseInline.styled(partial)), "\(partial) is not a link")
+            #expect(!SHProseTaskLinks.hasReference(SHProseInline.styled(partial)), "\(partial) is not a link")
         }
-        #expect(NWProseTaskLinks.hasReference(NWProseInline.styled("[Library API draft](\(known))")))
+        #expect(SHProseTaskLinks.hasReference(SHProseInline.styled("[Library API draft](\(known))")))
     }
 
     @Test func aLongTitleStaysOneNonBreakingRunAndOrdinaryLinksAreUntouched() {
         let long = String(repeating: "Very long task name ", count: 12)
-        let link = NWProseTaskLinks(links: [known: .init(title: long, tone: .running)])
+        let link = SHProseTaskLinks(links: [known: .init(title: long, tone: .running)])
         #expect(link.links[known]?.title == long)
-        #expect(!NWProseTaskLinks.hasReference(NWProseInline.styled("[site](https://example.com)")), "an ordinary link is not a task reference")
+        #expect(!SHProseTaskLinks.hasReference(SHProseInline.styled("[site](https://example.com)")), "an ordinary link is not a task reference")
         #expect(runs("[site](https://example.com)") == [Run(text: "site", link: "https://example.com")])
     }
 
@@ -161,7 +161,7 @@ struct ProseComponentTests {
 
     @Test(arguments: columnCases)
     func tableColumnsSizeToContentUpToACap(ideal: [CGFloat], available: CGFloat?, fitting: Bool, widths: [CGFloat]) {
-        #expect(NWTableLayout.widths(for: available, ideal: ideal, fitting: fitting, minimum: 100, maximum: 300) == widths)
+        #expect(SHTableLayout.widths(for: available, ideal: ideal, fitting: fitting, minimum: 100, maximum: 300) == widths)
     }
 
     /// A column never shrinks under its widest word (an identifier stays whole), up to the cap.
@@ -173,7 +173,7 @@ struct ProseComponentTests {
 
     @Test(arguments: wordCases)
     func aColumnKeepsItsWidestWordWhole(words: [CGFloat], available: CGFloat?, widths: [CGFloat]) {
-        #expect(NWTableLayout.widths(for: available, ideal: [300, 300], words: words, fitting: true, minimum: 100, maximum: 300) == widths)
+        #expect(SHTableLayout.widths(for: available, ideal: [300, 300], words: words, fitting: true, minimum: 100, maximum: 300) == widths)
     }
 
     @Test(arguments: [
@@ -191,9 +191,9 @@ struct ProseComponentTests {
         ("shepherd-project-task://project/task", "/work", "shepherd-project-task://project/task"),
     ])
     func proseLinksResolveAgainstTheAgentsDirectory(source: String, root: String?, expected: String?) throws {
-        let markdown = NWProseInline.styled("[plan](\(source))")
+        let markdown = SHProseInline.styled("[plan](\(source))")
         let link = try #require(markdown.runs.first?.link)
-        let destination = NWProseLink.destination(link, root: root.map { URL(fileURLWithPath: $0, isDirectory: true) })
+        let destination = SHProseLink.destination(link, root: root.map { URL(fileURLWithPath: $0, isDirectory: true) })
         #expect(destination?.absoluteString == expected)
     }
 
@@ -212,7 +212,7 @@ struct ProseComponentTests {
         ("data:image/png;base64,AAAA", "/work", "unavailable data:image/png;base64,AAAA"),
     ])
     func imageSourcesResolveOnlyWhereTheFilesAre(source: String, root: String?, resolved: String) {
-        let value = NWProseImageSource(source, root: root.map { URL(fileURLWithPath: $0, isDirectory: true) })
+        let value = SHProseImageSource(source, root: root.map { URL(fileURLWithPath: $0, isDirectory: true) })
         let text = switch value {
         case .file(let url): "file \(url.path)"
         case .web(let url): "web \(url.absoluteString)"
@@ -231,12 +231,12 @@ struct ProseComponentTests {
         ("LaTeX", "LaTeX · math source", true),
     ])
     func diagramAndMathFencesSayTheyAreSource(language: String?, label: String, glyph: Bool) {
-        let kind = NWFenceKind(language)
+        let kind = SHFenceKind(language)
         #expect(kind.label == label)
         #expect((kind.glyph != nil) == glyph)
     }
 
     @Test func bulletsChangeWithDepth() {
-        #expect((0..<4).map { NWProseBlocks<EmptyView>.bullet(depth: $0) } == ["•", "◦", "▪\u{FE0E}", "•"])
+        #expect((0..<4).map { SHProseBlocks<EmptyView>.bullet(depth: $0) } == ["•", "◦", "▪\u{FE0E}", "•"])
     }
 }

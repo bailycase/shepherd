@@ -138,6 +138,6 @@ struct AppTerminalView: View {
             // SwiftUI resizes a hosted NSView on every frame of an animated layout change, and
             // each Ghostty resize is a PTY resize: the surface takes its final frame at once
             // while panes and columns around it move (docs/design/motion.md › Motion).
-            .nwInstant()
+            .shInstant()
     }
 }

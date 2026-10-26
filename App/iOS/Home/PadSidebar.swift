@@ -13,7 +13,7 @@ struct PadSidebar: View {
     @Environment(MobileNavigator.self) private var navigator
     @Environment(MobileProjects.self) private var projects
 
-    private var projectsTrailing: NWListRow.Trailing {
+    private var projectsTrailing: SHListRow.Trailing {
         let needsYou = projects.rows.reduce(0) { $0 + $1.needsYou }
         if needsYou > 0 { return .alert("\(needsYou) needs you") }
         return projects.rows.isEmpty ? .none : .value(String(projects.rows.count))
@@ -66,9 +66,9 @@ struct PadSidebar: View {
                             Button { navigator.open(.thread(run.agentRef)) } label: {
                                 AutomationRow(row: row, selected: run.agentRef == selected)
                                     .equatable()
-                                    .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+                                    .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
                             }
-                            .buttonStyle(.nwRow(radius: NW.Radius.m))
+                            .buttonStyle(.shRow(radius: SH.Radius.m))
                             .contextMenu { AutomationRunMenu(row: row) }
                         }
                     }
@@ -108,19 +108,19 @@ struct PadSidebar: View {
                                 Button { PadDesignHooks.open(row.ref, navigator: navigator) } label: {
                                     PadDesignRecentRow(row: row, selected: pushed == .padDesign(.design(row.ref)))
                                         .equatable()
-                                        .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+                                        .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
                                 }
-                                .buttonStyle(.nwRow(radius: NW.Radius.m))
+                                .buttonStyle(.shRow(radius: SH.Radius.m))
                                 .contextMenu { PadDesignWindowButton(design: row.ref) }
                             }
                         }
                     }
                 }
             }
-            .padding(.horizontal, NW.Space.m)
-            .padding(.bottom, NW.Space.l)
+            .padding(.horizontal, SH.Space.m)
+            .padding(.bottom, SH.Space.l)
         }
-        .background(Color.nw.bgBase)
+        .background(Color.sh.bgBase)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             SidebarFooter(count: model.hosts.count, offline: model.offlineCount, names: model.hostNames)
         }
@@ -140,9 +140,9 @@ struct PadSidebar: View {
         Button { navigator.open(.thread(row.ref.agentRef)) } label: {
             ThreadRow(row: row, selected: row.ref.agentRef == selected, compact: true)
                 .equatable()
-                .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+                .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
         }
-        .buttonStyle(.nwRow(radius: NW.Radius.m))
+        .buttonStyle(.shRow(radius: SH.Radius.m))
         .contextMenu { ThreadRowMenu(thread: row.ref.agentRef) }
     }
 
@@ -150,9 +150,9 @@ struct PadSidebar: View {
         Button { navigator.open(projects.route(item)) } label: {
             AttentionRow(item: item, selected: pushed == item.route || item.ref.agentRef == selected, compact: true)
                 .equatable()
-                .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+                .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
         }
-        .buttonStyle(.nwRow(radius: NW.Radius.m))
+        .buttonStyle(.shRow(radius: SH.Radius.m))
         .contextMenu { ThreadRowMenu(thread: item.ref.agentRef) }
     }
 }
@@ -160,12 +160,12 @@ struct PadSidebar: View {
 /// A destination at the sidebar's top: a 44pt row.
 private struct SidebarItem: View {
     let title: String
-    let leading: NWListRow.Leading
+    let leading: SHListRow.Leading
     let selected: Bool
-    let trailing: NWListRow.Trailing
+    let trailing: SHListRow.Trailing
     let action: () -> Void
 
-    init(_ title: String, leading: NWListRow.Leading, selected: Bool = false, trailing: NWListRow.Trailing = .none,
+    init(_ title: String, leading: SHListRow.Leading, selected: Bool = false, trailing: SHListRow.Trailing = .none,
          action: @escaping () -> Void) {
         self.title = title
         self.leading = leading
@@ -176,10 +176,10 @@ private struct SidebarItem: View {
 
     var body: some View {
         Button(action: action) {
-            NWListRow(title, leading: leading, trailing: trailing, chevron: false, selected: selected, compact: true)
-                .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+            SHListRow(title, leading: leading, trailing: trailing, chevron: false, selected: selected, compact: true)
+                .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
         }
-        .buttonStyle(.nwRow(radius: NW.Radius.m))
+        .buttonStyle(.shRow(radius: SH.Radius.m))
     }
 }
 
@@ -193,10 +193,10 @@ private struct SidebarHeader: View {
 
     var body: some View {
         // A touch tall, so Needs you's header is a full target; the text sits on its bottom.
-        let header = NWListHeader(title, attention: attention, count: count, style: .sidebar)
-            .padding(.horizontal, NW.Space.m)
-            .padding(.bottom, NW.Space.xs)
-            .frame(minHeight: NW.Height.touch, alignment: .bottom)
+        let header = SHListHeader(title, attention: attention, count: count, style: .sidebar)
+            .padding(.horizontal, SH.Space.m)
+            .padding(.bottom, SH.Space.xs)
+            .frame(minHeight: SH.Height.touch, alignment: .bottom)
         if let action {
             Button(action: action) { header.contentShape(Rectangle()) }
                 .buttonStyle(.plain)
@@ -221,39 +221,39 @@ private struct SidebarFooter: View, Equatable {
     }
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         VStack(spacing: 0) {
-            NWHairline()
-            HStack(spacing: NW.Space.m) {
+            SHHairline()
+            HStack(spacing: SH.Space.m) {
                 Button { navigator.open(.settings(.hosts)) } label: {
-                    HStack(spacing: NW.Space.m) {
+                    HStack(spacing: SH.Space.m) {
                         Image(systemName: "desktopcomputer")
-                            .font(.nw(.ui, weight: .medium))
-                            .foregroundStyle(offline > 0 ? nw.failed : nw.textSecondary)
-                            .frame(width: NWListMetrics.leadingWidth)
-                        VStack(alignment: .leading, spacing: NW.Space.xxs) {
+                            .font(.sh(.ui, weight: .medium))
+                            .foregroundStyle(offline > 0 ? sh.failed : sh.textSecondary)
+                            .frame(width: SHListMetrics.leadingWidth)
+                        VStack(alignment: .leading, spacing: SH.Space.xxs) {
                             Text(count == 0 ? "No hosts" : offline > 0 ? "\(offline) of \(count) offline" : "\(count) connected")
-                                .font(.nw(.ui, weight: .medium))
-                                .foregroundStyle(offline > 0 ? nw.failed : nw.textPrimary)
+                                .font(.sh(.ui, weight: .medium))
+                                .foregroundStyle(offline > 0 ? sh.failed : sh.textPrimary)
                             if !names.isEmpty {
-                                Text(names).font(.nw(.mono)).foregroundStyle(nw.textTertiary).lineLimit(1)
+                                Text(names).font(.sh(.mono)).foregroundStyle(sh.textTertiary).lineLimit(1)
                             }
                         }
                         Spacer(minLength: 0)
                     }
-                    .frame(minHeight: NW.Height.touch)
+                    .frame(minHeight: SH.Height.touch)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Hosts")
                 .accessibilityValue(offline > 0 ? "\(offline) offline" : "\(count) connected")
                 Button { navigator.open(.settings(.root)) } label: { Image(systemName: "gearshape") }
-                    .buttonStyle(.nw(.ghost))
+                    .buttonStyle(.sh(.ghost))
                     .accessibilityLabel("Settings")
             }
-            .padding(.horizontal, NW.Space.l)
-            .padding(.vertical, NW.Space.xs)
+            .padding(.horizontal, SH.Space.l)
+            .padding(.vertical, SH.Space.xs)
         }
-        .background(nw.bgBase)
+        .background(sh.bgBase)
     }
 }

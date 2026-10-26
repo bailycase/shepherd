@@ -34,26 +34,26 @@ struct DiffScreen: View {
                 } else {
                     ReviewLoadState(store: store) { store.refresh() }
                     if store.loaded, !store.entries.isEmpty {
-                        NWEmptyState(Text("Not in this diff"), message: "\(path) has no changes here.")
+                        SHEmptyState(Text("Not in this diff"), message: "\(path) has no changes here.")
                     }
                 }
             }
-            .padding(.top, NW.Space.xs)
+            .padding(.top, SH.Space.xs)
         }
         .scrollDismissesKeyboard(.interactively)
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if let label = store.selectionLabel, let selection = store.selection, selection.fileID == entry?.id {
-                NWLineCommentBar(lineLabel: label, text: store.draftBinding, isFocused: $commentFocused,
+                SHLineCommentBar(lineLabel: label, text: store.draftBinding, isFocused: $commentFocused,
                                  canDelete: store.comment(fileID: selection.fileID, lineID: selection.lineID) != nil,
                                  onSend: { store.saveDraft(); commentFocused = false },
                                  onDelete: { store.deleteComment(fileID: selection.fileID, lineID: selection.lineID) },
                                  onDone: { store.clearSelection(); commentFocused = false })
-                    .padding(.horizontal, NW.Space.l)
-                    .padding(.top, NW.Space.m)
-                    .padding(.bottom, NW.Space.s)
-                    .background(Color.nw.bgWindow)
-                    .overlay(alignment: .top) { NWHairline() }
+                    .padding(.horizontal, SH.Space.l)
+                    .padding(.top, SH.Space.m)
+                    .padding(.bottom, SH.Space.s)
+                    .background(Color.sh.bgWindow)
+                    .overlay(alignment: .top) { SHHairline() }
             }
         }
         .toolbar(.hidden, for: .tabBar)
@@ -69,7 +69,7 @@ struct DiffScreen: View {
                     Button(viewed ? "Mark unviewed" : "Mark viewed", systemImage: viewed ? "checkmark.circle.fill" : "checkmark.circle") {
                         store.toggleViewed(entry.id)
                     }
-                    .tint(viewed ? Color.nw.done : nil)
+                    .tint(viewed ? Color.sh.done : nil)
                     if let next = store.entry(after: entry.id) {
                         Button("Next file", systemImage: "chevron.down") {
                             store.clearSelection()
@@ -101,15 +101,15 @@ private struct DiffTitle: View {
     let count: Int
 
     var body: some View {
-        VStack(spacing: NW.Space.xxs) {
-            Text(summary?.name ?? "Diff").font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary).lineLimit(1).truncationMode(.middle)
+        VStack(spacing: SH.Space.xxs) {
+            Text(summary?.name ?? "Diff").font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary).lineLimit(1).truncationMode(.middle)
             if let summary {
-                HStack(spacing: NW.Space.s) {
+                HStack(spacing: SH.Space.s) {
                     Text(subtitle(summary)).lineLimit(1).truncationMode(.head)
-                    NWDiffStat(added: summary.added, removed: summary.removed, font: .nw(.micro, weight: .regular))
+                    SHDiffStat(added: summary.added, removed: summary.removed, font: .sh(.micro, weight: .regular))
                 }
-                .font(.nw(.micro, weight: .regular))
-                .foregroundStyle(Color.nw.textTertiary)
+                .font(.sh(.micro, weight: .regular))
+                .foregroundStyle(Color.sh.textTertiary)
             }
         }
         .accessibilityElement(children: .combine)

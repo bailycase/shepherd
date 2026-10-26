@@ -11,7 +11,7 @@ struct DesignsDestination: View {
     @State private var dropTargeted = false
 
     var body: some View {
-        let _ = NWRenderProbe.tick("page.designs")
+        let _ = SHRenderProbe.tick("page.designs")
         let thumbnails = vm.designRendering.thumbnails
         DesignsPage(model: vm.designsPage, filter: vm.designsPageFilter, actions: DesignsPageActions(
             setFilter: { vm.designsPageFilter = $0 },
@@ -31,7 +31,7 @@ struct DesignsDestination: View {
             systemMenu: { vm.performDesignSystemMenu($0, on: $1) }),
             thumbnail: { thumbnails.image($0) }, chrome: chrome)
             // Over the page under its header (ImportDrop).
-            .overlay { if dropTargeted { NWDesignsDropTarget().padding(.top, NWPageMetrics.headerHeight) } }
+            .overlay { if dropTargeted { SHDesignsDropTarget().padding(.top, SHPageMetrics.headerHeight) } }
             .onDrop(of: DesignsDropDelegate.types, delegate: DesignsDropDelegate(targeted: $dropTargeted) { vm.importDesignProject($0) })
             .task(id: vm.designThumbnailSignature) { await vm.loadDesignThumbnails() }
             .task(id: vm.remoteDesignsSignature) { await vm.loadRemoteDesigns() }
@@ -72,26 +72,26 @@ struct DesignsPage: View {
     var body: some View {
         VStack(spacing: 0) {
             DestinationPageHeader(title: "Designs", chrome: chrome) {
-                NWPageFilterField("Filter designs", text: Binding(get: { filter }, set: actions.setFilter))
+                SHPageFilterField("Filter designs", text: Binding(get: { filter }, set: actions.setFilter))
                 Button("Open from Git", action: actions.openGit)
-                    .buttonStyle(.nw(.secondary))
+                    .buttonStyle(.sh(.secondary))
                 Button("New design", systemImage: "plus", action: actions.create)
-                    .buttonStyle(.nw(.primary))
+                    .buttonStyle(.sh(.primary))
             }
             ScrollView(.vertical) {
                 // One lazy stack, one view per element: a section's label, a row of cards, the
                 // systems' grid. Only the rows on screen are built.
-                LazyVStack(alignment: .leading, spacing: NWPageMetrics.columnGap) {
+                LazyVStack(alignment: .leading, spacing: SHPageMetrics.columnGap) {
                     ForEach(Self.items(model)) { item in
                         VStack(alignment: .leading, spacing: 0) {
                             switch item {
                             case .label(let title, let first), .hostLabel(_, let title, let first):
                                 Text(title)
-                                    .font(.nw(.caption, weight: .medium))
-                                    .foregroundStyle(Color.nw.textTertiary)
+                                    .font(.sh(.caption, weight: .medium))
+                                    .foregroundStyle(Color.sh.textTertiary)
                                     .accessibilityAddTraits(.isHeader)
-                                    .padding(.top, first ? 0 : AppLayout.designsSectionSpacing - NWPageMetrics.columnGap)
-                                    .padding(.bottom, NW.Space.l - NWPageMetrics.columnGap)
+                                    .padding(.top, first ? 0 : AppLayout.designsSectionSpacing - SHPageMetrics.columnGap)
+                                    .padding(.bottom, SH.Space.l - SHPageMetrics.columnGap)
                             case .cards(let row):
                                 DesignCardRow(slots: row, open: actions.open, thumbnail: thumbnail,
                                               menu: { actions.designMenu($0, .local($1)) })
@@ -106,18 +106,18 @@ struct DesignsPage: View {
                                 DesignSystemCardRow(systems: row, tile: tile, projects: model.projects,
                                                     open: actions.openSystem, build: actions.build, menu: actions.systemMenu)
                                     .equatable()
-                                    .padding(.top, first ? 0 : NWPageMetrics.columnGap)
+                                    .padding(.top, first ? 0 : SHPageMetrics.columnGap)
                             }
                         }
                     }
                 }
-                .padding(.vertical, NWPageMetrics.bodyVertical)
-                .padding(.horizontal, NWPageMetrics.sideInset)
+                .padding(.vertical, SHPageMetrics.bodyVertical)
+                .padding(.horizontal, SHPageMetrics.sideInset)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .scrollIndicators(.hidden)
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
     }
 
     /// The page's elements, in order.
@@ -174,17 +174,17 @@ struct DesignSystemCardRow: View, Equatable {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: NWPageMetrics.columnGap) {
+        HStack(alignment: .top, spacing: SHPageMetrics.columnGap) {
             ForEach(systems) { system in
                 let colors = system.swatches.map { Color(light: $0.light, dark: $0.dark) }
                 Group {
                     if let items = system.menu {
-                        NWDesignSystemCard(name: system.name, source: system.source, count: system.count, colors: colors, tag: system.tag,
+                        SHDesignSystemCard(name: system.name, source: system.source, count: system.count, colors: colors, tag: system.tag,
                                            action: { open(system.id) }) {
                             DesignMenuItems(menu: items) { menu($0, system.id) }
                         }
                     } else {
-                        NWDesignSystemCard(name: system.name, source: system.source, count: system.count, colors: colors, tag: system.tag,
+                        SHDesignSystemCard(name: system.name, source: system.source, count: system.count, colors: colors, tag: system.tag,
                                            dashed: system.dashed)
                     }
                 }
@@ -205,18 +205,18 @@ struct DesignSystemCardRow: View, Equatable {
     /// to read without one.
     @ViewBuilder private var buildTile: some View {
         if projects.count == 1, let project = projects.first {
-            Button { build(project.id) } label: { NWDesignSystemBuildTile() }
+            Button { build(project.id) } label: { SHDesignSystemBuildTile() }
                 .buttonStyle(.plain)
                 .help("Build a design system from \(project.name)")
         } else if projects.isEmpty {
-            NWDesignSystemBuildTile(enabled: false)
+            SHDesignSystemBuildTile(enabled: false)
                 .help("Add a space to build a design system from it")
         } else {
             Menu {
                 ForEach(projects) { project in
                     Button(project.name) { build(project.id) }
                 }
-            } label: { NWDesignSystemBuildTile() }
+            } label: { SHDesignSystemBuildTile() }
                 .menuStyle(.button)
                 .buttonStyle(.plain)
                 .menuIndicator(.hidden)
@@ -236,7 +236,7 @@ struct DesignCardRow: View, Equatable {
     nonisolated static func == (a: Self, b: Self) -> Bool { a.slots == b.slots }
 
     var body: some View {
-        HStack(alignment: .top, spacing: NWPageMetrics.columnGap) {
+        HStack(alignment: .top, spacing: SHPageMetrics.columnGap) {
             ForEach(slots) { slot in
                 Group {
                     switch slot {
@@ -244,7 +244,7 @@ struct DesignCardRow: View, Equatable {
                         DesignCardView(card: card, open: open, image: thumbnail(card.id), menu: menu)
                             .equatable()
                     case .importing(let importing):
-                        NWImportingCard(title: importing.shownTitle, done: importing.done, total: importing.total, system: importing.system)
+                        SHImportingCard(title: importing.shownTitle, done: importing.done, total: importing.total, system: importing.system)
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -266,7 +266,7 @@ struct DesignCardView: View, Equatable {
     nonisolated static func == (a: Self, b: Self) -> Bool { a.card == b.card }
 
     var body: some View {
-        NWDesignCard(name: card.name, system: card.system, detail: card.detail, edited: card.edited, board: card.board,
+        SHDesignCard(name: card.name, system: card.system, detail: card.detail, edited: card.edited, board: card.board,
                      selected: card.selected, action: { open(card.id) }) {
             DesignThumbnailSlot(image: image)
         } menu: {

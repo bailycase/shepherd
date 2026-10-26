@@ -4,12 +4,12 @@ import ShepherdProtocol
 import ShepherdRemote
 
 /// Child runs projected onto the Agents components' values (the tray and the inspector). Pure
-/// and clock-free: a live figure carries the date it counts from, and `NWElapsedText` does the
+/// and clock-free: a live figure carries the date it counts from, and `SHElapsedText` does the
 /// counting.
 enum SubagentPresentation {
     // MARK: State
 
-    /// A run on Night Watch's one status enum. A queued run, a run paused before its next model
+    /// A run on Shepherd Design's one status enum. A queued run, a run paused before its next model
     /// request and a run waiting on its parent's answer all wait: hollow and outlined. None of
     /// them is `attention`, which is the user's.
     static func state(_ run: ChildRun) -> AgentState {
@@ -45,7 +45,7 @@ enum SubagentPresentation {
 
     // MARK: Tray
 
-    /// A phase on Night Watch's one status enum: queued runs, paused runs and runs waiting on
+    /// A phase on Shepherd Design's one status enum: queued runs, paused runs and runs waiting on
     /// their parent all wait.
     static func state(_ phase: NativeRunPhase) -> AgentState {
         switch phase {
@@ -57,21 +57,21 @@ enum SubagentPresentation {
     }
 
     /// The store's tray as the tray's rows and header draw it.
-    static func tray(_ tray: NativeSubagentTray) -> (summary: NWSubagentTraySummary, rows: [NWSubagentTrayRun]) {
-        let summary = NWSubagentTraySummary(title: tray.title, cells: tray.cells.map(state),
-                                            tally: tray.tally.map { NWSubagentTraySummary.Part($0.text, state: $0.phase.map(state)) })
+    static func tray(_ tray: NativeSubagentTray) -> (summary: SHSubagentTraySummary, rows: [SHSubagentTrayRun]) {
+        let summary = SHSubagentTraySummary(title: tray.title, cells: tray.cells.map(state),
+                                            tally: tray.tally.map { SHSubagentTraySummary.Part($0.text, state: $0.phase.map(state)) })
         return (summary, tray.rows.map(row))
     }
 
-    static func row(_ row: NativeTrayRow) -> NWSubagentTrayRun {
-        let line: NWSubagentTrayRun.Line = switch row.line {
+    static func row(_ row: NativeTrayRow) -> SHSubagentTrayRun {
+        let line: SHSubagentTrayRun.Line = switch row.line {
         case .working(let verb, let subject, let live): .working(verb: verb, subject: subject, live: live)
         case .waiting(let text): .waiting(text)
         case .asked(let question): .asked(question)
         case .result(let text): .result(text)
         case .failed(let reason): .failed(reason)
         }
-        return NWSubagentTrayRun(id: row.id, name: row.name, role: row.role, state: state(row.phase), line: line, added: row.added, removed: row.removed,
+        return SHSubagentTrayRun(id: row.id, name: row.name, role: row.role, state: state(row.phase), line: line, added: row.added, removed: row.removed,
                                  since: row.since.map(date), until: row.until.map(date), accessibilityLabel: row.accessibilityLabel)
     }
 

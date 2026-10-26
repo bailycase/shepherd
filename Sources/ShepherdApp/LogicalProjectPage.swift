@@ -14,7 +14,7 @@ struct LogicalProjectDestination: View {
     var chrome = PageHeaderChrome()
 
     var body: some View {
-        let _ = NWRenderProbe.tick("page.project")
+        let _ = SHRenderProbe.tick("page.project")
         VStack(spacing: 0) {
             if let ref = vm.selectedLogicalProject, let project = vm.logicalProjects.project(ref) {
                 let presentation = ProjectPagePresentation(project)
@@ -34,10 +34,10 @@ struct LogicalProjectDestination: View {
                 }
             } else {
                 PlainHeader(title: "Project", leadingInset: chrome.leadingInset, showSidebar: chrome.showSidebar)
-                NWEmptyState(Text("This project is gone"), message: "It was deleted on its host.") {}
+                SHEmptyState(Text("This project is gone"), message: "It was deleted on its host.") {}
             }
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
     }
 }
 
@@ -51,14 +51,14 @@ private struct LogicalProjectToolbar: View {
     let chrome: PageHeaderChrome
 
     var body: some View {
-        NWLeadToolbar(project.name, leadingInset: chrome.leadingInset, sidebar: chrome.showSidebar) {
+        SHLeadToolbar(project.name, leadingInset: chrome.leadingInset, sidebar: chrome.showSidebar) {
             // Overview is the page shown; a dot says something waits on you (Paused, Resolved boards).
             // Overview is the Threads pane's switch: selected while the pane is open (ProjectLead-Started vs -Question).
-            NWLeadToolbarButton("Overview", symbol: "list.bullet", selected: vm.logicalProjectPaneOpen && vm.logicalProjectPaneTask == nil,
+            SHLeadToolbarButton("Overview", symbol: "list.bullet", selected: vm.logicalProjectPaneOpen && vm.logicalProjectPaneTask == nil,
                                 dot: presentation.needsYou > 0) { vm.logicalProjectPaneOpen.toggle() }
             Button { vm.openLogicalProjectSettings(ref) } label: { Image(systemName: "gearshape") }
-                .buttonStyle(.nwIcon)
-                .nwHelp("Project settings")
+                .buttonStyle(.shIcon)
+                .shHelp("Project settings")
                 .accessibilityLabel("Project settings")
         }
     }
@@ -79,22 +79,22 @@ struct LogicalProjectOverview: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NWLeadMetrics.overviewGap) {
-            HStack(spacing: NWLeadMetrics.overviewTitleGap) {
-                NWProjectGlyphView(tint: .nw.lantern, size: NWLeadMetrics.overviewGlyph)
-                Text(project.name).font(.nw(.title, weight: .semibold)).foregroundStyle(Color.nw.textPrimary).lineLimit(2)
+        VStack(alignment: .leading, spacing: SHLeadMetrics.overviewGap) {
+            HStack(spacing: SHLeadMetrics.overviewTitleGap) {
+                SHProjectGlyphView(tint: .sh.lantern, size: SHLeadMetrics.overviewGlyph)
+                Text(project.name).font(.sh(.title, weight: .semibold)).foregroundStyle(Color.sh.textPrimary).lineLimit(2)
                     .accessibilityAddTraits(.isHeader)
             }
             if !project.goal.isEmpty {
-                Text(project.goal).font(.nw(.body)).lineSpacing(NWLeadMetrics.overviewGoalLineSpacing)
-                    .foregroundStyle(Color.nw.textSecondary).fixedSize(horizontal: false, vertical: true)
+                Text(project.goal).font(.sh(.body)).lineSpacing(SHLeadMetrics.overviewGoalLineSpacing)
+                    .foregroundStyle(Color.sh.textSecondary).fixedSize(horizontal: false, vertical: true)
             }
             contextCard
             if !suggestions.isEmpty { suggestionsCard }
         }
-        .frame(maxWidth: NWLeadMetrics.columnWidth, alignment: .leading)
+        .frame(maxWidth: SHLeadMetrics.columnWidth, alignment: .leading)
         .frame(maxWidth: .infinity)
-        .padding(.top, NWLeadMetrics.overviewTop)
+        .padding(.top, SHLeadMetrics.overviewTop)
     }
 
     private var contextCard: some View {
@@ -103,24 +103,24 @@ struct LogicalProjectOverview: View {
                        detail: spaceNames.isEmpty ? "None yet · add in settings"
                            : spaceNames.prefix(2).joined(separator: ", ") + (spaceNames.count > 2 ? " +\(spaceNames.count - 2)" : "") + " · add more in settings",
                        tab: .spaces)
-            NWHairline()
-            contextRow(symbol: NWGlyph.document.symbolName, title: "Instructions, memory", detail: "In project settings", tab: .memory)
+            SHHairline()
+            contextRow(symbol: SHGlyph.document.symbolName, title: "Instructions, memory", detail: "In project settings", tab: .memory)
         }
-        .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.l))
-        .nwBorder(Color.nw.lineStrong, radius: NW.Radius.l)
+        .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.l))
+        .shBorder(Color.sh.lineStrong, radius: SH.Radius.l)
     }
 
     private func contextRow(symbol: String, title: String, detail: String, tab: LogicalProjectSettingsTab) -> some View {
         Button { vm.openLogicalProjectSettings(ref, tab: tab) } label: {
-            HStack(spacing: NW.Space.l) {
-                Image(systemName: symbol).font(.system(size: NWLeadMetrics.toolbarGlyph)).foregroundStyle(Color.nw.textSecondary)
+            HStack(spacing: SH.Space.l) {
+                Image(systemName: symbol).font(.system(size: SHLeadMetrics.toolbarGlyph)).foregroundStyle(Color.sh.textSecondary)
                     .accessibilityHidden(true)
-                Text(title).font(.nw(.ui, weight: .regular)).foregroundStyle(Color.nw.textPrimary)
-                Spacer(minLength: NW.Space.l)
-                Text(detail).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary).lineLimit(1).truncationMode(.tail)
+                Text(title).font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textPrimary)
+                Spacer(minLength: SH.Space.l)
+                Text(detail).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).lineLimit(1).truncationMode(.tail)
             }
-            .padding(.horizontal, NW.Space.l)
-            .padding(.vertical, NW.Space.m)
+            .padding(.horizontal, SH.Space.l)
+            .padding(.vertical, SH.Space.m)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
@@ -139,18 +139,18 @@ struct LogicalProjectOverview: View {
 
     private var suggestionsCard: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Suggestions").font(.nw(.caption, weight: .medium)).foregroundStyle(Color.nw.textSecondary)
-                .padding(EdgeInsets(top: NW.Space.m, leading: NW.Space.l, bottom: NW.Space.xs, trailing: NW.Space.l))
+            Text("Suggestions").font(.sh(.caption, weight: .medium)).foregroundStyle(Color.sh.textSecondary)
+                .padding(EdgeInsets(top: SH.Space.m, leading: SH.Space.l, bottom: SH.Space.xs, trailing: SH.Space.l))
             ForEach(suggestions, id: \.self) { (text: String) in
                 Button { vm.useProjectSuggestion(text, in: ref) } label: {
-                    HStack(spacing: NW.Space.l) {
-                        Image(systemName: "sparkles").font(.system(size: NWLeadMetrics.toolbarGlyph)).foregroundStyle(Color.nw.textSecondary)
+                    HStack(spacing: SH.Space.l) {
+                        Image(systemName: "sparkles").font(.system(size: SHLeadMetrics.toolbarGlyph)).foregroundStyle(Color.sh.textSecondary)
                             .accessibilityHidden(true)
-                        Text(text).font(.nw(.ui, weight: .regular)).foregroundStyle(Color.nw.textPrimary)
+                        Text(text).font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textPrimary)
                         Spacer(minLength: 0)
                     }
-                    .padding(.horizontal, NW.Space.l)
-                    .frame(minHeight: NWLeadMetrics.suggestionRow)
+                    .padding(.horizontal, SH.Space.l)
+                    .frame(minHeight: SHLeadMetrics.suggestionRow)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -158,7 +158,7 @@ struct LogicalProjectOverview: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.l))
-        .nwBorder(Color.nw.lineStrong, radius: NW.Radius.l)
+        .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.l))
+        .shBorder(Color.sh.lineStrong, radius: SH.Radius.l)
     }
 }

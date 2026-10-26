@@ -39,7 +39,7 @@ final class SubagentTrayState {
 /// tray, every row once expanded (scrolling past `AppLayout.trayExpandedMaxRows`).
 enum SubagentTrayLayout {
     enum Item: Equatable, Identifiable {
-        case run(NWSubagentTrayRun)
+        case run(SHSubagentTrayRun)
         case more(hidden: Int, expanded: Bool)
 
         var id: String {
@@ -50,7 +50,7 @@ enum SubagentTrayLayout {
         }
     }
 
-    static func items(_ runs: [NWSubagentTrayRun], expanded: Bool) -> [Item] {
+    static func items(_ runs: [SHSubagentTrayRun], expanded: Bool) -> [Item] {
         let shown = NativeSubagentTray.shownRows
         guard runs.count > shown else { return runs.map(Item.run) }
         if expanded { return runs.map(Item.run) + [.more(hidden: 0, expanded: true)] }
@@ -71,14 +71,14 @@ struct SubagentTrayView: View {
         let items = SubagentTrayLayout.items(values.rows, expanded: state.expanded)
         let byID = Dictionary(runs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         VStack(spacing: 0) {
-            NWSubagentTray(values.summary, collapsed: state.collapsed,
-                           onToggle: { withNWAnimation(.disclosure) { state.collapsed.toggle() } }) {
+            SHSubagentTray(values.summary, collapsed: state.collapsed,
+                           onToggle: { withSHAnimation(.disclosure) { state.collapsed.toggle() } }) {
                 if state.expanded, values.rows.count > AppLayout.trayExpandedMaxRows {
                     // A workflow of hundreds of runs scrolls inside, building only the rows on screen.
                     ScrollView {
                         LazyVStack(spacing: 0) { list(items.dropLast(), byID) }
                     }
-                    .frame(height: CGFloat(AppLayout.trayExpandedMaxRows) * NWSubagentTrayMetrics.pointer.rowHeight)
+                    .frame(height: CGFloat(AppLayout.trayExpandedMaxRows) * SHSubagentTrayMetrics.pointer.rowHeight)
                     if let last = items.last { item(last, byID) }
                 } else {
                     VStack(spacing: 0) { list(items[...], byID) }
@@ -109,8 +109,8 @@ struct SubagentTrayView: View {
                         .equatable()
                 }
             case .more(let hidden, let expanded):
-                NWSubagentTrayMoreRow(hidden: hidden, expanded: expanded) {
-                    withNWAnimation(.disclosure) { state.expanded.toggle() }
+                SHSubagentTrayMoreRow(hidden: hidden, expanded: expanded) {
+                    withSHAnimation(.disclosure) { state.expanded.toggle() }
                 }
             }
         }
@@ -120,7 +120,7 @@ struct SubagentTrayView: View {
 /// One run's row: it compares by what it draws, so a poll that leaves a run alone skips it.
 /// Its live controls sit on hover and in its context menu and accessibility actions.
 struct SubagentTrayRow: View, Equatable {
-    let value: NWSubagentTrayRun
+    let value: SHSubagentTrayRun
     let run: ChildRun
     let selected: Bool
     let actions: SubagentActions
@@ -139,7 +139,7 @@ struct SubagentTrayRow: View, Equatable {
         // The same Steer command either way; a run that asked its parent has it called Reply.
         let words = nativeRunSteerWords(run)
         let steer = { (actions.steer ?? actions.inspect)(run) }
-        NWSubagentTrayRow(value, selected: selected, enabled: enabled, hovering: hovering, actions: NWSubagentTrayActions(
+        SHSubagentTrayRow(value, selected: selected, enabled: enabled, hovering: hovering, actions: SHSubagentTrayActions(
             open: { actions.inspect(run) },
             steer: live ? steer : nil, steerLabel: words.label(value.name), steerHelp: words.help,
             stop: live ? { actions.command(run, .cancel, nil, nil) } : nil))
@@ -177,7 +177,7 @@ struct ComposerDock<Queue: View>: View {
 
     var body: some View {
         if goalStore?.hasGoal == true || (tray != nil && actions != nil) {
-            NWDockStack(showsTray: true, showsQueue: showsQueue) {
+            SHDockStack(showsTray: true, showsQueue: showsQueue) {
                 VStack(spacing: 0) {
                     if let goalStore, goalStore.hasGoal {
                         ThreadGoalCard(store: goalStore, active: goalActive, framed: false)
@@ -186,7 +186,7 @@ struct ComposerDock<Queue: View>: View {
                         SubagentTrayView(tray: tray, state: trayState, runs: runs, actions: actions,
                                          goalPresent: goalStore?.hasGoal == true)
                             .overlay(alignment: .top) {
-                                if goalStore?.hasGoal == true { NWHairline(color: Color.nw.lineStrong) }
+                                if goalStore?.hasGoal == true { SHHairline(color: Color.sh.lineStrong) }
                             }
                     }
                 }

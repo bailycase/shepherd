@@ -45,23 +45,23 @@ struct NewThreadPage: View {
     private var mentionShown: Bool { mentions.isOpen && references != nil }
 
     var body: some View {
-        let _ = NWRenderProbe.tick("newThread.page")
+        let _ = SHRenderProbe.tick("newThread.page")
         VStack(spacing: 0) {
             DestinationPageHeader(title: "New thread", chrome: chrome)
             VStack(spacing: AppLayout.newThreadGap) {
                 Text("What should the agent work on?")
-                    .font(.nwSans(AppLayout.newThreadHeadingSize, .semibold))
+                    .font(.shSans(AppLayout.newThreadHeadingSize, .semibold))
                     .tracking(AppLayout.newThreadHeadingTracking)
-                    .foregroundStyle(Color.nw.textPrimary)
+                    .foregroundStyle(Color.sh.textPrimary)
                     .multilineTextAlignment(.center)
                     .accessibilityAddTraits(.isHeader)
                 composer
                     .frame(maxWidth: AppLayout.newThreadComposerWidth)
                     .zIndex(1)
                 if let notice = draft.notice(vm) {
-                    Text(notice).font(.nw(.caption)).foregroundStyle(Color.nw.failed)
+                    Text(notice).font(.sh(.caption)).foregroundStyle(Color.sh.failed)
                         .frame(maxWidth: AppLayout.newThreadComposerWidth, alignment: .leading)
-                        .nwTransition(.content)
+                        .shTransition(.content)
                 }
                 ContinueCards(card: vm.continueCard, open: { vm.selectSidebarRow($0) },
                               design: vm.designToolEnabled ? { vm.openNewDesign() } : nil)
@@ -77,8 +77,8 @@ struct NewThreadPage: View {
                 dismissMention()
             }
         }
-        .background(Color.nw.bgWindow)
-        .nwAnimation(.content, value: draft.notice(vm))
+        .background(Color.sh.bgWindow)
+        .shAnimation(.content, value: draft.notice(vm))
         .onChange(of: draft.focusRequest, initial: true) { composing = true }
         .onChange(of: menu != nil || mentionShown, initial: true) { _, open in
             let (menu, mentions, state) = ($menu, $mentions, vm.newThread)
@@ -109,17 +109,17 @@ struct NewThreadPage: View {
     // MARK: Composer
 
     private var composer: some View {
-        NWComposer(isFocused: composing || menu != nil || mentionShown || dropTargeted) {
+        SHComposer(isFocused: composing || menu != nil || mentionShown || dropTargeted) {
             // Design pieces sit first, above the words (DesignReferenceChip(ref)).
             ForEach(draft.references) { attached in
                 ComposerReferenceChip(attached: attached, references: references) { draft.detach(reference: attached.id) }
-                    .nwTransition(.list, edge: .leading)
+                    .shTransition(.list, edge: .leading)
             }
             ForEach(draft.attachments.items) { attachment in
-                NWAttachmentChip(attachment.name, thumbnail: attachment.thumbnail) {
+                SHAttachmentChip(attachment.name, thumbnail: attachment.thumbnail) {
                     draft.attachments.remove(attachment.id)
                 }
-                .nwTransition(.list, edge: .leading)
+                .shTransition(.list, edge: .leading)
             }
         } field: {
             ComposerTextField(text: Binding(get: { draft.prompt }, set: { draft.prompt = $0 }),
@@ -188,8 +188,8 @@ struct NewThreadPage: View {
         } controls: {
             controls
         }
-        .nwAnimation(.list, value: draft.attachments.ids)
-        .nwAnimation(.list, value: draft.references.map(\.id))
+        .shAnimation(.list, value: draft.attachments.ids)
+        .shAnimation(.list, value: draft.references.map(\.id))
         .onDrop(of: [.image, .fileURL], isTargeted: $dropTargeted) { providers in
             draft.attach(providers)
             return true
@@ -207,22 +207,22 @@ struct NewThreadPage: View {
 
     private var controls: some View {
         ComposerControlsMinimum {
-            HStack(spacing: NW.Space.xxs) {
+            HStack(spacing: SH.Space.xxs) {
                 ViewThatFits(in: .horizontal) {
                     controlChips(short: false)
                     controlChips(short: true)
                 }
-                .nwAnimation(.content, value: [draft.model, draft.thinking.rawValue, draft.serviceTier.rawValue])
+                .shAnimation(.content, value: [draft.model, draft.thinking.rawValue, draft.serviceTier.rawValue])
                 if draft.starting {
-                    ProgressView().progressViewStyle(.nwSpinner(color: Color.nw.textTertiary))
-                        .frame(width: NWComposerMetrics.actionSize, height: NWComposerMetrics.actionSize)
+                    ProgressView().progressViewStyle(.shSpinner(color: Color.sh.textTertiary))
+                        .frame(width: SHComposerMetrics.actionSize, height: SHComposerMetrics.actionSize)
                         .accessibilityLabel("Starting")
                 } else {
-                    NWComposerActionButton(.send, enabled: draft.blocker(vm) == nil) { draft.send(vm) }
+                    SHComposerActionButton(.send, enabled: draft.blocker(vm) == nil) { draft.send(vm) }
                         .help(draft.blocker(vm) ?? "Send (\(KeybindingsStore.shared.sendDisplay))")
                 }
             }
-            .nwAnimation(.content, value: draft.starting)
+            .shAnimation(.content, value: draft.starting)
         }
     }
 
@@ -230,25 +230,25 @@ struct NewThreadPage: View {
         let chip = NewThreadPlaces.chip(NewThreadState.hosts(vm), chosen: draft.place)
         let levels = draft.thinkingLevels(vm)
         let tiers = draft.serviceTiers(vm)
-        return HStack(spacing: NW.Space.xxs) {
+        return HStack(spacing: SH.Space.xxs) {
             Button { picking = true } label: { Image(systemName: "paperclip") }
-                .buttonStyle(.nwIcon(size: NWComposerMetrics.chipHeight))
+                .buttonStyle(.shIcon(size: SHComposerMetrics.chipHeight))
                 .disabled(draft.attachments.isFull)
                 .help("Attach images (drop or paste also works), up to \(NativeImage.maxPerSend)")
                 .accessibilityLabel("Attach file")
             let summary = ModelSettingsSummary(model: draft.model, thinking: draft.thinkingLevel(vm).rawValue, thinkingOffered: !levels.isEmpty,
                                                speed: draft.serviceTier, speedOffered: tiers.count > 1, shortenedName: short)
             Button { toggle(.settings) } label: {
-                NWModelSettingsLabel(model: summary.name, thinking: summary.thinking, fast: summary.fast)
+                SHModelSettingsLabel(model: summary.name, thinking: summary.thinking, fast: summary.fast)
             }
-            .buttonStyle(.nwComposerChip(active: menu == .settings || menu == .models))
+            .buttonStyle(.shComposerChip(active: menu == .settings || menu == .models))
             .background { ComposerMenuRegion(dismissal: dismissal) }
             .help("Model settings: \(draft.model)")
             .accessibilityLabel("Model settings: \(draft.model.isEmpty ? "default model" : draft.model)")
             .accessibilityValue(summary.value)
-            Spacer(minLength: NW.Space.m)
-            Button { toggle(.place) } label: { NWPlaceChipLabel(project: chip.project, host: chip.host) }
-                .buttonStyle(.nwComposerChip(active: menu == .place || menu == .base))
+            Spacer(minLength: SH.Space.m)
+            Button { toggle(.place) } label: { SHPlaceChipLabel(project: chip.project, host: chip.host) }
+                .buttonStyle(.shComposerChip(active: menu == .place || menu == .base))
                 .background { ComposerMenuRegion(dismissal: dismissal) }
                 .help(draft.worktree ? "In a new worktree of \(chip.project) on \(chip.host)" : "\(chip.project) on \(chip.host)")
         }
@@ -262,7 +262,7 @@ struct NewThreadPage: View {
         ZStack(alignment: .topLeading) {
             switch menu {
             case .place:
-                placeMenu.nwTransition(.overlay, anchor: .topLeading)
+                placeMenu.shTransition(.overlay, anchor: .topLeading)
             case .base:
                 if let space = draft.place.flatMap({ place in vm.state.spaces.first { $0.id == place.space } }) {
                     WorktreeBasePicker(vm: vm, repo: space.path, selected: draft.worktreeBase) { base in
@@ -270,28 +270,28 @@ struct NewThreadPage: View {
                         menu = nil
                         composing = true
                     } close: { menu = .place }
-                    .nwTransition(.overlay, anchor: .topLeading)
+                    .shTransition(.overlay, anchor: .topLeading)
                 }
             case .models:
                 if let picker {
-                    ModelPicker(state: picker, maxHeight: NWComposerMetrics.modelPickerMaxHeight) { id in
+                    ModelPicker(state: picker, maxHeight: SHComposerMetrics.modelPickerMaxHeight) { id in
                         menu = nil
                         composing = true
                         RecentModels.record(id, thread: nil)
                         draft.setModel(id)
                     } close: { menu = nil; composing = true }
-                    .nwTransition(.overlay, anchor: .topLeading)
+                    .shTransition(.overlay, anchor: .topLeading)
                 }
             case .settings:
                 let levels = draft.thinkingLevels(vm)
                 let tiers = draft.serviceTiers(vm)
-                NWModelSettings(models: ModelCatalog.settingsModels(catalog: draft.catalog, current: draft.model, recent: RecentModels.load().map(\.id),
+                SHModelSettings(models: ModelCatalog.settingsModels(catalog: draft.catalog, current: draft.model, recent: RecentModels.load().map(\.id),
                                                                     currentOffersFast: tiers.count > 1),
                                 thinking: NativeThinkingLevel.levels(levels.map(\.rawValue)).map {
-                                    NWThinkingOption(id: $0.id, title: $0.title, note: $0.note)
+                                    SHThinkingOption(id: $0.id, title: $0.title, note: $0.note)
                                 }, currentThinking: draft.thinkingLevel(vm).rawValue,
                                 speeds: tiers.count > 1 ? tiers.map {
-                                    NWSpeedOption(id: $0.rawValue, title: $0.title, detail: $0.summary, boosted: $0 != .standard)
+                                    SHSpeedOption(id: $0.rawValue, title: $0.title, detail: $0.summary, boosted: $0 != .standard)
                                 } : [], currentSpeed: draft.serviceTier.rawValue,
                                 chooseModel: { model in
                                     RecentModels.record(model.id, thread: nil)
@@ -303,7 +303,7 @@ struct NewThreadPage: View {
                                 }, chooseSpeed: { id in
                                     if let tier = ServiceTier(rawValue: id) { draft.setServiceTier(tier) }
                                 }, allModels: openModels, close: { menu = nil; composing = true })
-                    .nwTransition(.overlay, anchor: .topLeading)
+                    .shTransition(.overlay, anchor: .topLeading)
             case nil:
                 EmptyView()
             }
@@ -311,17 +311,17 @@ struct NewThreadPage: View {
         .fixedSize()
         .background { ComposerMenuRegion(dismissal: dismissal) }
         .alignmentGuide(.bottom) { $0[.top] - AppLayout.menuGap }
-        .nwAnimation(.overlay, value: menu)
+        .shAnimation(.overlay, value: menu)
     }
 
     private var placeMenu: some View {
         let hosts = NewThreadState.hosts(vm)
         let offers = draft.offersWorktree(vm)
-        return NWPlaceMenu(
+        return SHPlaceMenu(
             sections: NewThreadPlaces.sections(hosts, chosen: draft.place),
-            worktree: offers ? NWPlaceWorktree(isOn: draft.worktree, caption: NewThreadRules.worktreeCaption(base: draft.worktreeBase ?? ""),
+            worktree: offers ? SHPlaceWorktree(isOn: draft.worktree, caption: NewThreadRules.worktreeCaption(base: draft.worktreeBase ?? ""),
                                                base: draft.place?.host == nil ? draft.worktreeBase ?? "Default" : nil) : nil,
-            maxHeight: NWComposerMetrics.modelPickerMaxHeight,
+            maxHeight: SHComposerMetrics.modelPickerMaxHeight,
             onChoose: { option in
                 if let place = NewThreadPlaces.place(option) { draft.choose(host: place.host, space: place.space, vm: vm) }
                 menu = nil
@@ -351,20 +351,20 @@ struct NewThreadPage: View {
         ZStack(alignment: .topLeading) {
             if mentionShown, menu == nil {
                 let content = mentions.content
-                NWMentionPicker(sections: content.sections, crumbs: content.crumbs, empty: content.empty, highlighted: mentions.highlighted,
-                                maxHeight: NWComposerMetrics.modelPickerMaxHeight, choose: { chooseMention($0) }, drill: { chooseMention($0) },
+                SHMentionPicker(sections: content.sections, crumbs: content.crumbs, empty: content.empty, highlighted: mentions.highlighted,
+                                maxHeight: SHComposerMetrics.modelPickerMaxHeight, choose: { chooseMention($0) }, drill: { chooseMention($0) },
                                 back: { mentionBack() }, hover: { mentions.highlighted = $0 }, startDesign: references?.io.startDesign,
                                 retry: { references?.startCatalogRead() },
                                 appear: { id in
                                     if let item = mentions.content.items[id] { references?.rowAppeared(item) }
                                 })
-                    .nwTransition(.overlay, anchor: .topLeading)
+                    .shTransition(.overlay, anchor: .topLeading)
             }
         }
         .fixedSize(horizontal: false, vertical: true)
         .background { ComposerMenuRegion(dismissal: dismissal) }
         .alignmentGuide(.bottom) { $0[.top] - AppLayout.menuGap }
-        .nwAnimation(.overlay, value: mentionShown && menu == nil)
+        .shAnimation(.overlay, value: mentionShown && menu == nil)
     }
 
     /// Esc, a click away, or the Design tool going: the picker closes for the prompt as typed.
@@ -410,7 +410,7 @@ struct NewThreadPage: View {
 
     /// A row chosen: a design or board drills in; anything else joins the message as a chip, its
     /// mention taken out of the words.
-    private func chooseMention(_ row: NWMentionRow) {
+    private func chooseMention(_ row: SHMentionRow) {
         switch mentions.choose(row) {
         case .drill(let text):
             draft.prompt = text
@@ -521,18 +521,18 @@ private struct ContinueCards: View, Equatable {
                 if let card {
                     SuggestionCard(card: card) { open(card.id) }
                         .frame(width: max(0, width))
-                        .nwTransition(.content)
+                        .shTransition(.content)
                 }
                 if let design {
                     DesignSuggestionCard(action: design)
                         .frame(width: max(0, width))
-                        .nwTransition(.content)
+                        .shTransition(.content)
                 }
                 Spacer(minLength: 0)
             }
         }
         .frame(height: SuggestionCard.height)
-        .nwAnimation(.content, value: card?.id)
+        .shAnimation(.content, value: card?.id)
     }
 }
 
@@ -545,24 +545,24 @@ private struct DesignSuggestionCard: View {
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: AppLayout.newThreadCardSpacing) {
-                HStack(spacing: NW.Space.m) {
-                    Image(systemName: "pencil.tip").font(.nwSans(12))
-                        .foregroundStyle(Color.nw.textSecondary)
-                    Text("Need a mockup first?").font(.nwSans(11.5)).foregroundStyle(Color.nw.textTertiary)
+                HStack(spacing: SH.Space.m) {
+                    Image(systemName: "pencil.tip").font(.shSans(12))
+                        .foregroundStyle(Color.sh.textSecondary)
+                    Text("Need a mockup first?").font(.shSans(11.5)).foregroundStyle(Color.sh.textTertiary)
                 }
-                Text("Start a design").font(.nwSans(13, .medium)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
-                Text("HTML boards on a canvas").font(.nwSans(11)).foregroundStyle(Color.nw.textTertiary).lineLimit(1)
+                Text("Start a design").font(.shSans(13, .medium)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
+                Text("HTML boards on a canvas").font(.shSans(11)).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
             }
-            .padding(.vertical, NW.Space.l)
+            .padding(.vertical, SH.Space.l)
             .padding(.horizontal, AppLayout.newThreadCardPadding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(hovering ? Color.nw.bgHover : .clear, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-            .nwBorder(Color.nw.lineSubtle, radius: NW.Radius.m)
-            .contentShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+            .background(hovering ? Color.sh.bgHover : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+            .shBorder(Color.sh.lineSubtle, radius: SH.Radius.m)
+            .contentShape(RoundedRectangle(cornerRadius: SH.Radius.m))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .nwAnimation(.hover, value: hovering)
+        .shAnimation(.hover, value: hovering)
         .accessibilityLabel("Start a design, HTML boards on a canvas")
     }
 }
@@ -579,33 +579,33 @@ private struct SuggestionCard: View {
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: AppLayout.newThreadCardSpacing) {
-                HStack(spacing: NW.Space.m) {
-                    Image(systemName: "bubble.left").font(.system(size: AppLayout.chipSymbol, weight: .regular)).foregroundStyle(Color.nw.textSecondary)
-                    Text("Continue").font(.nwSans(11.5)).foregroundStyle(Color.nw.textTertiary)
+                HStack(spacing: SH.Space.m) {
+                    Image(systemName: "bubble.left").font(.system(size: AppLayout.chipSymbol, weight: .regular)).foregroundStyle(Color.sh.textSecondary)
+                    Text("Continue").font(.shSans(11.5)).foregroundStyle(Color.sh.textTertiary)
                 }
-                Text(card.title).font(.nwSans(13, .medium)).foregroundStyle(Color.nw.textPrimary).lineLimit(1).truncationMode(.tail)
+                Text(card.title).font(.shSans(13, .medium)).foregroundStyle(Color.sh.textPrimary).lineLimit(1).truncationMode(.tail)
                 Group {
                     if let since = card.since {
-                        TimelineView(NWElapsedSchedule(start: since)) { context in
-                            Text("running · \(NWDuration.text(context.date.timeIntervalSince(since)))")
+                        TimelineView(SHElapsedSchedule(start: since)) { context in
+                            Text("running · \(SHDuration.text(context.date.timeIntervalSince(since)))")
                         }
                     } else {
                         Text("running")
                     }
                 }
-                .font(.nwSans(11))
-                .foregroundStyle(Color.nw.textTertiary)
+                .font(.shSans(11))
+                .foregroundStyle(Color.sh.textTertiary)
             }
-            .padding(.vertical, NW.Space.l)
+            .padding(.vertical, SH.Space.l)
             .padding(.horizontal, AppLayout.newThreadCardPadding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(hovering ? Color.nw.bgHover : .clear, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-            .nwBorder(Color.nw.lineSubtle, radius: NW.Radius.m)
-            .contentShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+            .background(hovering ? Color.sh.bgHover : .clear, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+            .shBorder(Color.sh.lineSubtle, radius: SH.Radius.m)
+            .contentShape(RoundedRectangle(cornerRadius: SH.Radius.m))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .nwAnimation(.hover, value: hovering)
+        .shAnimation(.hover, value: hovering)
         .accessibilityLabel("Continue \(card.title), running")
     }
 }

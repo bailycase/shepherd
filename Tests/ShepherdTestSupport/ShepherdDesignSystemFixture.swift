@@ -5,30 +5,30 @@ import ShepherdSessions
 import ShepherdUI
 
 /// A synthetic built-in system for reference-page tests and previews only.
-/// The app no longer ships or registers a Night Watch design system.
-public enum NightWatchSystem {
-    public static let namespace = "night-watch"
-    public static let title = "Night Watch"
+/// The app no longer ships or registers a Shepherd Design design system.
+public enum ShepherdDesignSystem {
+    public static let namespace = "shepherd-design"
+    public static let title = "Shepherd Design"
 
-    public static func tokens(_ theme: ThemeDefinition = .nightWatch) -> DesignSystemTokens {
+    public static func tokens(_ theme: ThemeDefinition = .shepherdDesign) -> DesignSystemTokens {
         var tokens = DesignSystemTokens(name: title, namespace: namespace)
         tokens.colors = roles(theme.light.colors, theme.dark.colors, prefix: "")
             + roles(theme.light.syntax, theme.dark.syntax, prefix: "syn-")
-        tokens.type = NWTextStyle.allCases.map { style in
+        tokens.type = SHTextStyle.allCases.map { style in
             DesignSystemTokens.TypeStyle(
                 name: "\(style)", size: Double(style.size), weight: weight(style.weight), lineHeight: Double(style.lineHeight),
-                family: style.isMonospaced ? NWFonts.monoFamily : NWFonts.sansFamily,
+                family: style.isMonospaced ? SHFonts.monoFamily : SHFonts.sansFamily,
                 transform: style == .micro ? "uppercase" : nil)
         }
         tokens.spacing = [
-            ("xxs", NW.Space.xxs), ("xs", NW.Space.xs), ("s", NW.Space.s), ("m", NW.Space.m), ("l", NW.Space.l),
-            ("xl", NW.Space.xl), ("xxl", NW.Space.xxl), ("xxxl", NW.Space.xxxl),
+            ("xxs", SH.Space.xxs), ("xs", SH.Space.xs), ("s", SH.Space.s), ("m", SH.Space.m), ("l", SH.Space.l),
+            ("xl", SH.Space.xl), ("xxl", SH.Space.xxl), ("xxxl", SH.Space.xxxl),
         ].map { DesignSystemTokens.Length(name: "--space-\($0.0)", px: Double($0.1)) }
-        tokens.radii = [("xs", NW.Radius.xs), ("s", NW.Radius.s), ("m", NW.Radius.m), ("l", NW.Radius.l)]
+        tokens.radii = [("xs", SH.Radius.xs), ("s", SH.Radius.s), ("m", SH.Radius.m), ("l", SH.Radius.l)]
             .map { DesignSystemTokens.Length(name: "--radius-\($0.0)", px: Double($0.1)) }
         tokens.fonts = [
-            DesignSystemTokens.Font(name: "sans", family: NWFonts.sansFamily, fallback: "system-ui, -apple-system, sans-serif"),
-            DesignSystemTokens.Font(name: "mono", family: NWFonts.monoFamily, fallback: "ui-monospace, SFMono-Regular, Menlo, monospace"),
+            DesignSystemTokens.Font(name: "sans", family: SHFonts.sansFamily, fallback: "system-ui, -apple-system, sans-serif"),
+            DesignSystemTokens.Font(name: "mono", family: SHFonts.monoFamily, fallback: "ui-monospace, SFMono-Regular, Menlo, monospace"),
         ]
         return tokens
     }
@@ -78,16 +78,16 @@ public enum NightWatchSystem {
 
     public static func readme(_ tokens: DesignSystemTokens) -> String {
         """
-        # Night Watch
+        # Shepherd Design
 
         Shepherd's own design system, generated from the app's tokens: \(tokens.colors.count) colors (every role, light \
         and dark), \(tokens.type.count) type styles, \(tokens.spacing.count) spacing steps and \(tokens.radii.count) radii.
 
         ## Consuming this system
 
-        Namespace: `night-watch`. It has no component bundle: build components as markup from its tokens.
+        Namespace: `shepherd-design`. It has no component bundle: build components as markup from its tokens.
 
-        - Link its variables after the `support.js` line: `<link rel="stylesheet" href="ds/night-watch/tokens.css">`.
+        - Link its variables after the `support.js` line: `<link rel="stylesheet" href="ds/shepherd-design/tokens.css">`.
         - Colors are `var(--bg-window)`, `var(--text-primary)`, `var(--lantern)`, `var(--running)` and the other roles;
           code colors are `var(--syn-keyword)` and the rest.
         - The dark variant is opt-in: put `data-theme="dark"` on the board's root element.
@@ -98,7 +98,7 @@ public enum NightWatchSystem {
         """ + "\n"
     }
 
-    public static func builtIn(_ theme: ThemeDefinition = .nightWatch) -> DesignSystemStore.BuiltIn {
+    public static func builtIn(_ theme: ThemeDefinition = .shepherdDesign) -> DesignSystemStore.BuiltIn {
         let tokens = tokens(theme)
         var files: [String: Data] = [
             DesignSystemFile.stylesheet: Data(tokens.css().utf8),

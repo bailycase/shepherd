@@ -17,7 +17,7 @@ struct DesignSystemDestination: View {
     var chrome = PageHeaderChrome()
 
     var body: some View {
-        let _ = NWRenderProbe.tick("page.designSystem")
+        let _ = SHRenderProbe.tick("page.designSystem")
         let namespace = vm.designSystemShown
         let model = namespace.map { vm.designSystemPage(.system($0)) } ?? DesignSystemPageModel()
         if let reference = model.reference {
@@ -44,7 +44,7 @@ struct DesignSystemDestination: View {
                                 resync: { vm.resyncDesignSystem($0) }, openDesign: { vm.openDesign($0) })
                 .equatable()
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .task { await vm.loadDesignSystems() }
         .task(id: "\(namespace ?? "")/\(model.revision)") {
             if let namespace { await vm.loadDesignSpecimens(namespace) }
@@ -61,7 +61,7 @@ struct DesignSystemLayoutView: View {
     let thread: AgentLayoutModel.Thread
 
     var body: some View {
-        let _ = NWRenderProbe.tick("layout.designSystem")
+        let _ = SHRenderProbe.tick("layout.designSystem")
         HStack(spacing: 0) {
             DesignSystemBuildPane(vm: vm, designID: designID)
             DesignSystemChatPane(vm: vm, model: model, thread: thread)
@@ -97,7 +97,7 @@ struct DesignSystemChatPane: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            NWDesignPaneTabs([NWDesignPaneTabs.Tab(id: "chat", title: "Chat")], selection: "chat")
+            SHDesignPaneTabs([SHDesignPaneTabs.Tab(id: "chat", title: "Chat")], selection: "chat")
             if let pane = model.tab.layout.leaf(withID: thread.paneID) {
                 let agentID = thread.agentID
                 AgentThreadPane(
@@ -113,12 +113,12 @@ struct DesignSystemChatPane: View {
                     workingDirectory: pane.cwd,
                     restartPi: { [vm] in vm.retryAgentStart(agentID, newConversation: $0) },
                     designChat: true)
-                .nwComposerSize(.compact)
+                .shComposerSize(.compact)
             }
         }
         .frame(maxHeight: .infinity)
-        .background(Color.nw.bgWindow)
-        .overlay(alignment: .leading) { NWHairline(.vertical) }
+        .background(Color.sh.bgWindow)
+        .overlay(alignment: .leading) { SHHairline(.vertical) }
         .simultaneousGesture(TapGesture().onEnded { [vm] in vm.focusedPaneID = thread.paneID })
     }
 }
@@ -142,14 +142,14 @@ struct DesignSystemHeader: View, Equatable {
     }
 
     var body: some View {
-        NWDesignHeader(model.title, style: toolbar ? .toolbar : .page, section: "Design systems", status: model.status,
+        SHDesignHeader(model.title, style: toolbar ? .toolbar : .page, section: "Design systems", status: model.status,
                        leadingInset: leadingInset, sidebar: showSidebar,
                        sidebarShortcut: KeybindingsStore.shared.display(.toggleSidebar), designs: designs) {
             if let namespace = model.namespace {
-                NWDesignSystemChip(namespace, colors: model.chip.map { Color(light: $0.light, dark: $0.dark) })
+                SHDesignSystemChip(namespace, colors: model.chip.map { Color(light: $0.light, dark: $0.dark) })
             }
             if let menu {
-                NWDesignToolbarMore(label: "More for \(model.title)") { DesignMenuItems(menu: menu, perform: perform) }
+                SHDesignToolbarMore(label: "More for \(model.title)") { DesignMenuItems(menu: menu, perform: perform) }
             }
         }
     }
@@ -170,11 +170,11 @@ struct DesignSystemContent: View, Equatable {
     nonisolated static func == (a: Self, b: Self) -> Bool { a.model == b.model }
 
     var body: some View {
-        let _ = NWRenderProbe.tick("design.systemContent")
+        let _ = SHRenderProbe.tick("design.systemContent")
         ScrollViewReader { proxy in
             HStack(spacing: 0) {
                 if !model.sections.isEmpty {
-                    NWSectionRail(model.sections, selection: section) { id in
+                    SHSectionRail(model.sections, selection: section) { id in
                         section = id
                         proxy.scrollTo(id, anchor: .top)
                     }
@@ -194,7 +194,7 @@ struct DesignSystemContent: View, Equatable {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
     }
 
     /// The page's elements, in order.
@@ -248,38 +248,38 @@ struct DesignSystemContent: View, Equatable {
             heading
         case .label(let section):
             Text(section.title)
-                .nwSectionLabel()
+                .shSectionLabel()
                 .accessibilityAddTraits(.isHeader)
                 .padding(.top, AppLayout.designSystemSectionSpacing)
-                .padding(.bottom, NW.Space.s)
+                .padding(.bottom, SH.Space.s)
         case .colors(let row, let first):
             DesignSystemSwatchRow(swatches: row)
                 .equatable()
                 .padding(.top, first ? 0 : AppLayout.designSystemColorGap)
         case .type(let style):
-            NWTypeSpecimen(style.name, spec: style.spec) {
+            SHTypeSpecimen(style.name, spec: style.spec) {
                 Text(style.sample).font(Self.font(style))
             }
         case .step(let step):
-            NWTypeSpecimen(step.name, spec: step.detail) { EmptyView() }
+            SHTypeSpecimen(step.name, spec: step.detail) { EmptyView() }
         case .components(let row, let first):
             DesignSystemSpecimenRow(namespace: model.namespace ?? "", components: row, background: model.background,
                                     specimens: specimens)
                 .padding(.top, first ? 0 : AppLayout.designSystemComponentGap)
         case .board(let design):
             Button { openDesign(design.id) } label: {
-                HStack(spacing: NW.Space.xl) {
+                HStack(spacing: SH.Space.xl) {
                     Text(design.name)
-                        .font(.nw(.body))
-                        .foregroundStyle(Color.nw.textPrimary)
+                        .font(.sh(.body))
+                        .foregroundStyle(Color.sh.textPrimary)
                         .lineLimit(1)
-                    Spacer(minLength: NW.Space.xl)
+                    Spacer(minLength: SH.Space.xl)
                     Text(design.detail)
-                        .font(.nwMono(NWDesignMetrics.typeSpecSize))
-                        .foregroundStyle(Color.nw.textTertiary)
+                        .font(.shMono(SHDesignMetrics.typeSpecSize))
+                        .foregroundStyle(Color.sh.textTertiary)
                 }
-                .padding(.vertical, NW.Space.m)
-                .overlay(alignment: .top) { NWHairline() }
+                .padding(.vertical, SH.Space.m)
+                .overlay(alignment: .top) { SHHairline() }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -288,21 +288,21 @@ struct DesignSystemContent: View, Equatable {
     }
 
     private var heading: some View {
-        HStack(alignment: .bottom, spacing: NW.Space.xl) {
-            VStack(alignment: .leading, spacing: NW.Space.s) {
+        HStack(alignment: .bottom, spacing: SH.Space.xl) {
+            VStack(alignment: .leading, spacing: SH.Space.s) {
                 Text(model.title)
-                    .font(.nwMono(AppLayout.designSystemNameSize, .semibold))
-                    .foregroundStyle(Color.nw.textPrimary)
+                    .font(.shMono(AppLayout.designSystemNameSize, .semibold))
+                    .foregroundStyle(Color.sh.textPrimary)
                     .lineLimit(1)
                     .accessibilityAddTraits(.isHeader)
                 Self.sourceLine(model.source)
-                    .foregroundStyle(Color.nw.textSecondary)
+                    .foregroundStyle(Color.sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: NW.Space.xl)
+            Spacer(minLength: SH.Space.xl)
             if let namespace = model.namespace, !model.builtIn {
                 Button("Re-sync", systemImage: "arrow.clockwise") { resync(namespace) }
-                    .buttonStyle(.nw(.secondary))
+                    .buttonStyle(.sh(.secondary))
                     .disabled(!model.canResync || model.syncing)
                     .help(model.canResync ? "Read \(namespace)'s stylesheets again from its space"
                           : "Nothing to read again: it names no stylesheets, or its space is gone")
@@ -314,7 +314,7 @@ struct DesignSystemContent: View, Equatable {
     static func sourceLine(_ segments: [DesignSystemPageModel.Segment]) -> Text {
         segments.reduce(Text(verbatim: "")) { line, segment in
             let run = Text(verbatim: segment.text)
-                .font(segment.mono ? .nwMono(AppLayout.designSystemSourceSize) : .nwSans(AppLayout.designSystemSourceSize))
+                .font(segment.mono ? .shMono(AppLayout.designSystemSourceSize) : .shSans(AppLayout.designSystemSourceSize))
             return Text("\(line)\(run)")
         }
     }
@@ -349,7 +349,7 @@ struct DesignSystemSwatchRow: View, Equatable {
     var body: some View {
         HStack(alignment: .top, spacing: AppLayout.designSystemColorGap) {
             ForEach(swatches) { swatch in
-                NWTokenSwatch(swatch.name, detail: swatch.detail,
+                SHTokenSwatch(swatch.name, detail: swatch.detail,
                               color: swatch.hex.map { Color(light: $0, dark: $0) } ?? .clear)
                     .frame(maxWidth: .infinity)
             }
@@ -370,10 +370,10 @@ struct DesignSystemSpecimenRow: View {
 
     var body: some View {
         let _ = specimens.version
-        let fill = background.map { Color(light: $0, dark: $0) } ?? Color.nw.bgSunken
+        let fill = background.map { Color(light: $0, dark: $0) } ?? Color.sh.bgSunken
         HStack(alignment: .top, spacing: AppLayout.designSystemComponentGap) {
             ForEach(components) { component in
-                NWComponentSpecimen(component.name, template: component.template, background: fill) {
+                SHComponentSpecimen(component.name, template: component.template, background: fill) {
                     if let image = specimens.image(namespace, component.id) {
                         Image(decorative: image, scale: 1)
                             .resizable()

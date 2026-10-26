@@ -361,10 +361,10 @@ struct LogicalProjectConversationTests {
             // The page beside a 480 pane is 888 wide, and the 680 column is centred in it: 104 each side, so the column starts at 336 (a
             // 479 pane left 336.5). The composer's accessibility frame is the field inside the card, so it is the column less its own insets.
             let sidebar = AppLayout.sidebarDefaultWidth
-            let columnLeft = sidebar + (page.width - sidebar - NWLeadMetrics.paneWidth - NWLeadMetrics.columnWidth) / 2
+            let columnLeft = sidebar + (page.width - sidebar - SHLeadMetrics.paneWidth - SHLeadMetrics.columnWidth) / 2
             let inset = field.minX - page.minX - columnLeft
             #expect(columnLeft == 336, "the column starts at \(columnLeft) in \(dark ? "dark" : "light") x\(scale)")
-            #expect(inset == 15 && field.width < NWLeadMetrics.columnWidth, "the composer's field starts \(inset) inside the column and within it: \(field.minX - page.minX) + \(field.width)")
+            #expect(inset == 15 && field.width < SHLeadMetrics.columnWidth, "the composer's field starts \(inset) inside the column and within it: \(field.minX - page.minX) + \(field.width)")
         }
 
         // Sending is the Project runtime's: the first message creates the coordinator and delivers once.
@@ -470,7 +470,7 @@ struct LogicalProjectConversationTests {
         // The default is the board's: a 1pt divider and the 479 pane, so the conversation keeps its 888.
         let edge = try #require(handle()).frame
         #expect(edge.width == AppLayout.resizeHandleWidth, "the shared 9pt handle: \(edge)")
-        #expect(abs(window.window.frame.maxX - (edge.midX - AppLayout.dividerWidth / 2) - NWLeadMetrics.paneWidth) < 0.5, "the divider and pane are the board's 480: \(edge)")
+        #expect(abs(window.window.frame.maxX - (edge.midX - AppLayout.dividerWidth / 2) - SHLeadMetrics.paneWidth) < 0.5, "the divider and pane are the board's 480: \(edge)")
         try expectReachable("by default")
 
         // VoiceOver's increment widens it by the shared step, and the width is saved where a thread's pane keeps its own.
@@ -1424,8 +1424,8 @@ private static func chipsAndLinks() async throws {
             // The pane is a 480 box (a 1pt leading line, then the 479 aside), so the box begins where the conversation, the page minus 480,
             // ends, and the Steps card sits the aside's 16pt gutter in from there.
             let page = window.elements().first { $0.role == "AXGroup" }?.frame ?? .zero
-            let boxLeft = card.frame.minX - page.minX - NWLeadMetrics.paneBorder - NWLeadMetrics.paneThreadGutter
-            #expect(abs(boxLeft - (page.width - NWLeadMetrics.paneWidth)) < 0.5, "the pane box begins at \(boxLeft) in \(mode); the page is \(page.width) wide")
+            let boxLeft = card.frame.minX - page.minX - SHLeadMetrics.paneBorder - SHLeadMetrics.paneThreadGutter
+            #expect(abs(boxLeft - (page.width - SHLeadMetrics.paneWidth)) < 0.5, "the pane box begins at \(boxLeft) in \(mode); the page is \(page.width) wide")
             let gap = rows.count == 2 ? abs(rows[1].frame.minY - rows[0].frame.maxY) : -1
             #expect(abs(gap - 6) < 0.6 || abs(rows[0].frame.minY - rows[1].frame.maxY - 6) < 0.6, "6pt between rows in \(mode)")
             #expect(abs((card.frame.minY - live.frame.maxY) - 16) < 0.5, "live line \(card.frame.minY - live.frame.maxY) under the card in \(mode); board 16")
@@ -1914,7 +1914,7 @@ private static func chipsAndLinks() async throws {
         let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
         defer { window.close() }
         // The conversation's composer is in the left column; the worker's is in the pane on the right.
-        let paneLeft = window.window.frame.maxX - NWLeadMetrics.paneWidth
+        let paneLeft = window.window.frame.maxX - SHLeadMetrics.paneWidth
         func paneComposers() -> Int { window.elements().filter { $0.label == "Message the agent" && $0.frame.minX > paneLeft }.count }
         func reopenOffers() -> [String] {
             window.elements().compactMap { node in [node.label, node.value].compactMap { $0 }.first { $0.localizedCaseInsensitiveContains("reopen") } }
@@ -1945,8 +1945,8 @@ private static func chipsAndLinks() async throws {
         #expect(window.elements().contains { ($0.value ?? $0.label ?? "") == "Its history stays here. New work starts a new thread." })
         // The footer card is text only: no button in the pane below the transcript.
         let footer = try #require(window.elements().first { ($0.value ?? $0.label ?? "") == "This thread is resolved." }).frame
-        #expect(!window.controls().contains { $0.frame.minX > paneLeft && abs($0.frame.midY - footer.midY) < NWLeadMetrics.footerHeight },
-                "the resolved footer carries no action: \(window.controls().filter { $0.frame.minX > paneLeft && abs($0.frame.midY - footer.midY) < NWLeadMetrics.footerHeight }.map(\.label))")
+        #expect(!window.controls().contains { $0.frame.minX > paneLeft && abs($0.frame.midY - footer.midY) < SHLeadMetrics.footerHeight },
+                "the resolved footer carries no action: \(window.controls().filter { $0.frame.minX > paneLeft && abs($0.frame.midY - footer.midY) < SHLeadMetrics.footerHeight }.map(\.label))")
         // History stays readable: the same worker transcript that was drawn before resolving is still drawn in the pane.
         try await eventuallyOnMain("the resolved worker's history is still drawn") { history() == historyBeforeResolving }
         // Historical access survives: More offers only Open as a thread, and it selects the worker's ordinary thread.
@@ -1979,7 +1979,7 @@ private static func chipsAndLinks() async throws {
     /// The task detail's More menu. SwiftUI exposes this Menu's name as its help, not its label (as
     /// `ProjectSettingsFidelityControlTests.popup` finds popups).
     private static func detailMore(_ window: OffscreenWindow) throws -> AccessibilityNode {
-        let paneLeft = window.window.frame.maxX - NWLeadMetrics.paneWidth
+        let paneLeft = window.window.frame.maxX - SHLeadMetrics.paneWidth
         return try #require(window.elements().first { node in
             node.role == ControlRole.menuButton && node.frame.minX > paneLeft
                 && (node.object.perform(NSSelectorFromString("accessibilityHelp"))?.takeUnretainedValue() as? String) == "More"
@@ -2037,7 +2037,7 @@ private static func chipsAndLinks() async throws {
         // The pane's own question dock for the same worker: it stays (the worker still waits) but offers no second answer.
         r.vm.logicalProjectPaneTask = task.id
         func paneOptions() -> [Control] {
-            let paneLeft = window.window.frame.maxX - NWLeadMetrics.paneWidth
+            let paneLeft = window.window.frame.maxX - SHLeadMetrics.paneWidth
             return window.controls().filter { ($0.label?.hasPrefix("ALPHA") == true || $0.label?.hasPrefix("BETA") == true) && $0.frame.minX > paneLeft }
         }
         try await eventuallyOnMain("the pane's dock is drawn") { window.layout(); return !paneOptions().isEmpty }
@@ -2068,7 +2068,7 @@ private static func chipsAndLinks() async throws {
         let inPane = route != "project-text", typed = route != "pane-option"
         if inPane { r.vm.openProjectTask(task.id) }
         func onTarget(_ frame: CGRect) -> Bool {
-            (frame.minX > window.window.frame.maxX - NWLeadMetrics.paneWidth) == inPane
+            (frame.minX > window.window.frame.maxX - SHLeadMetrics.paneWidth) == inPane
         }
         func controls(_ label: String) -> [Control] {
             window.controls().filter { $0.role == ControlRole.button && $0.label == label && onTarget($0.frame) }
@@ -2194,9 +2194,9 @@ private static func chipsAndLinks() async throws {
         try await eventuallyOnMain("the resolved footer is drawn") { window.layout(); return window.elements().contains { ($0.value ?? $0.label ?? "") == "This thread is resolved." } }
         // The card has no action now (a resolved task is terminal); its title still sits inside the 50pt card at its leading edge.
         let title = try #require(window.elements().first { ($0.value ?? $0.label ?? "") == "This thread is resolved." }?.frame)
-        let cardBottom = paneBottom + NWLeadMetrics.footerInset, cardTop = cardBottom + NWLeadMetrics.footerHeight
+        let cardBottom = paneBottom + SHLeadMetrics.footerInset, cardTop = cardBottom + SHLeadMetrics.footerHeight
         #expect(title.minY > cardBottom && title.maxY < cardTop, "the title \(title) sits inside the 50pt card \(cardBottom)...\(cardTop)")
-        #expect(title.minX < paneRight - NWLeadMetrics.paneWidth / 2, "the title leads the card: \(title)")
+        #expect(title.minX < paneRight - SHLeadMetrics.paneWidth / 2, "the title leads the card: \(title)")
     }
 
     // MARK: Hidden coordinator

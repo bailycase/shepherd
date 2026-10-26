@@ -3,9 +3,9 @@ import SwiftUI
 /// Which size of the shared controls a surface draws. The Settings boards draw their pages'
 /// controls larger than the Controls board does (a 32pt button at radius 7 in Geist 13, a
 /// segmented control on a filled track, a 180pt slider with an 18pt knob, 22pt keycaps), so a
-/// Settings page sets `.nwControlScale(.settings)` once and every Night Watch control inside it
+/// Settings page sets `.shControlScale(.settings)` once and every Shepherd Design control inside it
 /// takes that size. Everywhere else the Controls board's sizes hold.
-public enum NWControlScale: Sendable {
+public enum SHControlScale: Sendable {
     /// The Controls board.
     case standard
     /// The Settings boards' pages.
@@ -13,19 +13,19 @@ public enum NWControlScale: Sendable {
 }
 
 extension EnvironmentValues {
-    @Entry public var nwControlScale: NWControlScale = .standard
+    @Entry public var shControlScale: SHControlScale = .standard
 }
 
 extension View {
-    /// Draws the Night Watch controls inside at `scale`'s sizes.
-    public func nwControlScale(_ scale: NWControlScale) -> some View {
-        environment(\.nwControlScale, scale)
+    /// Draws the Shepherd Design controls inside at `scale`'s sizes.
+    public func shControlScale(_ scale: SHControlScale) -> some View {
+        environment(\.shControlScale, scale)
     }
 }
 
 /// The Settings boards' control measures, as the canvas renders them (a 30pt CSS box plus its
 /// 1px lines is 32pt).
-public enum NWSettingsControlMetrics {
+public enum SHSettingsControlMetrics {
     /// Buttons and popups: 32pt, radius 7, Geist 13.
     public static let controlHeight: CGFloat = 32
     public static let radius: CGFloat = 7

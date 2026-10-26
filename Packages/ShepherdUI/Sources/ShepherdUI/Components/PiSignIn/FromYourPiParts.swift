@@ -4,7 +4,7 @@ import SwiftUI
 // with Re-import, and the user's extensions with their switches.
 
 /// How Shepherd's copy of an item stands (`ReimportRow(item)`).
-public enum NWFreshness: Equatable, Sendable {
+public enum SHFreshness: Equatable, Sendable {
     case same
     case newer
     case changed
@@ -27,7 +27,7 @@ public enum NWFreshness: Equatable, Sendable {
 
 /// One item that came over, with Re-import (`ReimportRow(item)`): its badge, title and detail
 /// (the key masked, a path in mono), a second line saying why it differs, and its freshness.
-public struct NWReimportRow: View {
+public struct SHReimportRow: View {
     public struct Detail: Equatable, Sendable {
         public var text: String
         public var mono: Bool
@@ -41,11 +41,11 @@ public struct NWReimportRow: View {
     let badge: String?
     let detail: [Detail]
     let why: String?
-    let freshness: NWFreshness?
+    let freshness: SHFreshness?
     let problem: String?
     let reimport: (() -> Void)?
 
-    public init(_ title: String, badge: String? = nil, detail: [Detail] = [], why: String? = nil, freshness: NWFreshness?,
+    public init(_ title: String, badge: String? = nil, detail: [Detail] = [], why: String? = nil, freshness: SHFreshness?,
                 problem: String? = nil, reimport: (() -> Void)?) {
         self.title = title
         self.badge = badge
@@ -57,64 +57,64 @@ public struct NWReimportRow: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        let M = NWPiSignInMetrics.self
+        let sh = Color.sh
+        let M = SHPiSignInMetrics.self
         HStack(spacing: M.rowGap) {
-            if let badge { NWProviderBadge(badge) }
+            if let badge { SHProviderBadge(badge) }
             VStack(alignment: .leading, spacing: M.lineGap) {
-                Text(title).font(.nwSans(M.nameSize, .medium)).foregroundStyle(nw.textPrimary)
+                Text(title).font(.shSans(M.nameSize, .medium)).foregroundStyle(sh.textPrimary)
                 if !detail.isEmpty {
-                    HStack(spacing: NW.Space.xs) {
+                    HStack(spacing: SH.Space.xs) {
                         ForEach(Array(detail.enumerated()), id: \.offset) { _, part in
                             Text(part.text)
-                                .font(part.mono ? .nwMono(M.statusSmallMonoSize) : .nwSans(M.statusSize))
-                                .foregroundStyle(part.mono ? nw.textPrimary : nw.textSecondary)
+                                .font(part.mono ? .shMono(M.statusSmallMonoSize) : .shSans(M.statusSize))
+                                .foregroundStyle(part.mono ? sh.textPrimary : sh.textSecondary)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                         }
                     }
                 }
                 if let why {
-                    Text(why).font(.nwSans(M.stepDetailSize)).foregroundStyle(nw.textTertiary).fixedSize(horizontal: false, vertical: true)
+                    Text(why).font(.shSans(M.stepDetailSize)).foregroundStyle(sh.textTertiary).fixedSize(horizontal: false, vertical: true)
                 }
-                if let problem { NWInlineProblem(problem).nwTransition(.disclosure) }
+                if let problem { SHInlineProblem(problem).shTransition(.disclosure) }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if let freshness {
                 Text(freshness.word)
-                    .font(.nwSans(NWTextStyle.caption.size))
-                    .nwShimmer(active: freshness == .reimporting)
+                    .font(.shSans(SHTextStyle.caption.size))
+                    .shShimmer(active: freshness == .reimporting)
                     .foregroundStyle(color(freshness))
                     .fixedSize()
             }
             if let reimport {
                 Button("Re-import", action: reimport)
-                    .buttonStyle(.nw(freshness?.differs == true ? .secondary : .ghost, size: .s))
+                    .buttonStyle(.sh(freshness?.differs == true ? .secondary : .ghost, size: .s))
                     .disabled(freshness == .reimporting)
-                    .nwControlScale(.standard)
+                    .shControlScale(.standard)
                     .accessibilityLabel("Re-import \(title.lowercased()) from your pi")
             }
         }
         .padding(.vertical, M.rowVertical)
         .padding(.horizontal, M.rowSides)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .nwAnimation(.content, value: freshness)
-        .nwAnimation(.disclosure, value: problem)
+        .shAnimation(.content, value: freshness)
+        .shAnimation(.disclosure, value: problem)
     }
 
-    private func color(_ freshness: NWFreshness) -> Color {
+    private func color(_ freshness: SHFreshness) -> Color {
         switch freshness {
-        case .same: .nw.textTertiary
-        case .newer: .nw.lanternText
-        case .changed: .nw.textSecondary
-        case .reimporting: .nw.textSecondary
-        case .reimported: .nw.done
+        case .same: .sh.textTertiary
+        case .newer: .sh.lanternText
+        case .changed: .sh.textSecondary
+        case .reimporting: .sh.textSecondary
+        case .reimported: .sh.done
         }
     }
 }
 
 /// A sub-label inside a card ("Logins", "Settings"): 11/600 caps `textTertiary`.
-public struct NWCardLabel: View {
+public struct SHCardLabel: View {
     let text: String
 
     public init(_ text: String) {
@@ -123,12 +123,12 @@ public struct NWCardLabel: View {
 
     public var body: some View {
         Text(text.uppercased())
-            .font(.nwSans(11, .semibold))
+            .font(.shSans(11, .semibold))
             .tracking(11 * 0.06)
-            .foregroundStyle(Color.nw.textTertiary)
-            .padding(.horizontal, NW.Space.xl)
+            .foregroundStyle(Color.sh.textTertiary)
+            .padding(.horizontal, SH.Space.xl)
             .padding(.top, 10)
-            .padding(.bottom, NW.Space.xs)
+            .padding(.bottom, SH.Space.xs)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityAddTraits(.isHeader)
     }
@@ -136,7 +136,7 @@ public struct NWCardLabel: View {
 
 /// One of the user's extensions (`ExtensionRow(extension)`): off by default; on adds the
 /// full-access note; failed keeps the switch on and says why it didn't load.
-public struct NWExtensionRow: View {
+public struct SHExtensionRow: View {
     public enum Status: Equatable, Sendable {
         case off
         case on
@@ -162,67 +162,67 @@ public struct NWExtensionRow: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        let M = NWPiSignInMetrics.self
+        let sh = Color.sh
+        let M = SHPiSignInMetrics.self
         HStack(alignment: .top, spacing: M.rowGap) {
             VStack(alignment: .leading, spacing: M.lineGap) {
-                HStack(spacing: NW.Space.m) {
-                    Text(name).font(.nwMono(13, .medium)).foregroundStyle(nw.textPrimary)
-                    Text(path).font(.nwMono(M.statusSmallMonoSize)).foregroundStyle(nw.textTertiary).lineLimit(1).truncationMode(.middle)
+                HStack(spacing: SH.Space.m) {
+                    Text(name).font(.shMono(13, .medium)).foregroundStyle(sh.textPrimary)
+                    Text(path).font(.shMono(M.statusSmallMonoSize)).foregroundStyle(sh.textTertiary).lineLimit(1).truncationMode(.middle)
                 }
                 if let summary, !summary.isEmpty {
-                    Text(summary).font(.nwSans(M.statusSize)).foregroundStyle(nw.textSecondary).fixedSize(horizontal: false, vertical: true)
+                    Text(summary).font(.shSans(M.statusSize)).foregroundStyle(sh.textSecondary).fixedSize(horizontal: false, vertical: true)
                 }
                 switch state {
                 case .off:
                     EmptyView()
                 case .on:
-                    HStack(alignment: .firstTextBaseline, spacing: NW.Space.s) {
-                        Image(systemName: "exclamationmark.shield").font(.nwSans(M.noteSize - 0.5)).accessibilityHidden(true)
+                    HStack(alignment: .firstTextBaseline, spacing: SH.Space.s) {
+                        Image(systemName: "exclamationmark.shield").font(.shSans(M.noteSize - 0.5)).accessibilityHidden(true)
                         Text("Runs with full access to your files, shell and network, like it does in your terminal. New agents load it; running ones on /reload.")
-                            .font(.nwSans(M.noteSize))
+                            .font(.shSans(M.noteSize))
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    .foregroundStyle(nw.textTertiary)
-                    .padding(.top, NW.Space.xxs)
-                    .nwTransition(.disclosure)
+                    .foregroundStyle(sh.textTertiary)
+                    .padding(.top, SH.Space.xxs)
+                    .shTransition(.disclosure)
                 case .failed(let reason, let lines):
-                    VStack(alignment: .leading, spacing: NW.Space.s) {
-                        HStack(alignment: .firstTextBaseline, spacing: NW.Space.s) {
-                            Text("Didn’t load:").font(.nwSans(M.statusSize, .medium)).foregroundStyle(nw.failed)
-                            Text(reason).font(.nwMono(M.statusSmallMonoSize)).foregroundStyle(nw.textPrimary)
+                    VStack(alignment: .leading, spacing: SH.Space.s) {
+                        HStack(alignment: .firstTextBaseline, spacing: SH.Space.s) {
+                            Text("Didn’t load:").font(.shSans(M.statusSize, .medium)).foregroundStyle(sh.failed)
+                            Text(reason).font(.shMono(M.statusSmallMonoSize)).foregroundStyle(sh.textPrimary)
                                 .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                         }
-                        HStack(spacing: NW.Space.s) {
-                            Button("Try again", action: tryAgain).buttonStyle(.nw(.secondary, size: .s))
+                        HStack(spacing: SH.Space.s) {
+                            Button("Try again", action: tryAgain).buttonStyle(.sh(.secondary, size: .s))
                             if !lines.isEmpty {
-                                Button(showsLog ? "Hide log" : "Show log") { showsLog.toggle() }.buttonStyle(.nw(.ghost, size: .s))
+                                Button(showsLog ? "Hide log" : "Show log") { showsLog.toggle() }.buttonStyle(.sh(.ghost, size: .s))
                             }
                         }
-                        .nwControlScale(.standard)
+                        .shControlScale(.standard)
                         if showsLog {
                             Text(lines.joined(separator: "\n"))
-                                .font(.nwMono(11))
-                                .foregroundStyle(nw.textSecondary)
+                                .font(.shMono(11))
+                                .foregroundStyle(sh.textSecondary)
                                 .textSelection(.enabled)
                                 .fixedSize(horizontal: false, vertical: true)
-                                .padding(NW.Space.m)
+                                .padding(SH.Space.m)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(nw.bgSunken, in: RoundedRectangle(cornerRadius: NW.Radius.s))
-                                .nwTransition(.disclosure)
+                                .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+                                .shTransition(.disclosure)
                         }
                     }
-                    .padding(.top, NW.Space.xxs)
-                    .nwTransition(.disclosure)
+                    .padding(.top, SH.Space.xxs)
+                    .shTransition(.disclosure)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Toggle(name, isOn: isOn).toggleStyle(.nwSwitch).labelsHidden()
+            Toggle(name, isOn: isOn).toggleStyle(.shSwitch).labelsHidden()
         }
         .padding(.vertical, M.rowVertical)
         .padding(.horizontal, M.rowSides)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .nwAnimation(.disclosure, value: state)
-        .nwAnimation(.disclosure, value: showsLog)
+        .shAnimation(.disclosure, value: state)
+        .shAnimation(.disclosure, value: showsLog)
     }
 }

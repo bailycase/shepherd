@@ -13,12 +13,12 @@ struct TerminalTabMenuTests {
     @Test func aSecondaryClickOnATabFindsItAndOtherClicksPassThrough() async throws {
         let window = OffscreenWindow(size: CGSize(width: 600, height: 60))
         defer { window.close() }
-        let tabs = [NWTerminalTab(id: "zsh", title: "zsh"), NWTerminalTab(id: "logs", title: "tail -f logs")]
-        window.show(NWTerminalTabBar(tabs, selection: "zsh", select: { _ in }, newTab: {}, menu: { _, _ in }) {}
+        let tabs = [SHTerminalTab(id: "zsh", title: "zsh"), SHTerminalTab(id: "logs", title: "tail -f logs")]
+        window.show(SHTerminalTabBar(tabs, selection: "zsh", select: { _ in }, newTab: {}, menu: { _, _ in }) {}
             .frame(width: 600))
 
-        func monitor(in view: NSView) -> NWSecondaryClickRegions.Monitor? {
-            if let monitor = view as? NWSecondaryClickRegions.Monitor { return monitor }
+        func monitor(in view: NSView) -> SHSecondaryClickRegions.Monitor? {
+            if let monitor = view as? SHSecondaryClickRegions.Monitor { return monitor }
             return view.subviews.lazy.compactMap(monitor).first
         }
         try await eventuallyOnMain("both tabs to be measured") {
@@ -37,7 +37,7 @@ struct TerminalTabMenuTests {
         #expect(regions.region(for: press(.leftMouseDown, .control)) == "logs")
         #expect(regions.region(for: press(.leftMouseDown)) == nil, "a plain click selects the tab as before")
         let superview = try #require(window.host.superview)
-        #expect(!(window.host.hitTest(superview.convert(point, from: nil)) is NWSecondaryClickRegions.Monitor),
+        #expect(!(window.host.hitTest(superview.convert(point, from: nil)) is SHSecondaryClickRegions.Monitor),
                 "nothing sits over the tabs")
     }
 }

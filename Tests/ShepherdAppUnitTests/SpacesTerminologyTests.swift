@@ -11,10 +11,10 @@ import Testing
 @MainActor
 struct SpacesTerminologyTests {
     @Test func theFolderSidebarStyleReadsSpacesAndStoresProjects() {
-        #expect(NWSidebarStyle.projects.title == "Spaces")
-        #expect(NWSidebarStyle.projects.summary == "A folder for each space with its threads inside.")
-        #expect(NWSidebarStyle.projects.rawValue == "projects", "older preferences keep decoding")
-        #expect(NWSidebarStyle.activity.title == "Activity")
+        #expect(SHSidebarStyle.projects.title == "Spaces")
+        #expect(SHSidebarStyle.projects.summary == "A folder for each space with its threads inside.")
+        #expect(SHSidebarStyle.projects.rawValue == "projects", "older preferences keep decoding")
+        #expect(SHSidebarStyle.activity.title == "Activity")
     }
 
     @Test func settingsPageIsSpacesAndItsSearchFindsTheOldWordToo() {

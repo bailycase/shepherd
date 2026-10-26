@@ -121,7 +121,7 @@ struct DesignSystemReference: Equatable {
     var title = ""
     var tagline: String?
     var summary: String?
-    /// Where the system says it came from ("Made in Shepherd chat UI from the app's Night Watch values."); nil when
+    /// Where the system says it came from ("Made in Shepherd chat UI from the app's Shepherd Design values."); nil when
     /// it says nothing, and the page says what Shepherd knows instead (its project, its stylesheets).
     var source: String?
     var principles: [Principle] = []

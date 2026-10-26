@@ -6,12 +6,12 @@ no input while the thread works. No new screens; each change is on the surface t
 
 ## Checklist
 
-**New worktree base** (New thread page, workplace menu `NWPlaceMenu`; New Worktree sheet)
+**New worktree base** (New thread page, workplace menu `SHPlaceMenu`; New Worktree sheet)
 - With New worktree on, for a project on this Mac, a **Base** row follows the switch: "Base" in
   `.ui` `textPrimary`, the branch in mono 11 `textTertiary` ("Default" until one is picked,
   truncating in the middle), a 10pt `chevron.right`. A host's project has no row; the host
   resolves its base.
-- The row opens `WorktreeBasePicker`, the Changes pane's base picker (`NWChangesMenu`, 316pt):
+- The row opens `WorktreeBasePicker`, the Changes pane's base picker (`SHChangesMenu`, 316pt):
   a "Search branches" field, "Branch from", then every branch (`arrow.triangle.branch`, mono,
   "default" and "worktree" tags, a check on the pick). The checked-out branch is listed.
   Reading: "Reading branches…". Esc returns to the workplace menu; choosing closes the menu.

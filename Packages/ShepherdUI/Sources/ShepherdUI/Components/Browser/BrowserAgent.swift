@@ -5,7 +5,7 @@ import SwiftUI
 // points; the words and Take over are the bar under the page (BrowserTabs.swift). All of it is drawn
 // over or under the page by the app, never in it. The app supplies the words and the pointer's place.
 
-public enum NWBrowserAgentMetrics {
+public enum SHBrowserAgentMetrics {
     /// The ring inset the page.
     public static let ringWidth: CGFloat = 2
     /// The pointer glyph (18pt wide; the board's arrow is 18 × 20).
@@ -14,11 +14,11 @@ public enum NWBrowserAgentMetrics {
     /// Where the arrow's tip is inside the glyph's box.
     public static let pointerTip = CGPoint(x: 2, y: 2)
     /// The notice card sits this far from the pane's sides and under the toolbar.
-    public static let cardInset: CGFloat = NW.Space.l
+    public static let cardInset: CGFloat = SH.Space.l
     public static let cardGlyph: CGFloat = 12
     public static let cardGap: CGFloat = 10
-    public static let cardLeading: CGFloat = NW.Space.l
-    public static let cardOther: CGFloat = NW.Space.m
+    public static let cardLeading: CGFloat = SH.Space.l
+    public static let cardOther: CGFloat = SH.Space.m
     /// The tab's brief tip: 300pt wide, a little more for a long page.
     public static let tabTipWidth: CGFloat = 300
     public static let tabTipMaxWidth: CGFloat = 420
@@ -27,36 +27,36 @@ public enum NWBrowserAgentMetrics {
 }
 
 /// The 2pt `running` ring inset the page.
-public struct NWAgentRing: View {
+public struct SHAgentRing: View {
     public init() {}
 
     public var body: some View {
         Rectangle()
-            .strokeBorder(Color.nw.running, lineWidth: NWBrowserAgentMetrics.ringWidth)
+            .strokeBorder(Color.sh.running, lineWidth: SHBrowserAgentMetrics.ringWidth)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
     }
 }
 
 /// The pointer glyph: the board's arrow, `running` with a white edge.
-public struct NWAgentPointer: View {
+public struct SHAgentPointer: View {
     public init() {}
 
     public var body: some View {
-        NWAgentPointerShape()
-            .fill(Color.nw.running)
-            .overlay { NWAgentPointerShape().stroke(Color.nw.selectionHandle, style: StrokeStyle(lineWidth: 1.4, lineJoin: .round)) }
-            .frame(width: NWBrowserAgentMetrics.pointerWidth, height: NWBrowserAgentMetrics.pointerHeight)
+        SHAgentPointerShape()
+            .fill(Color.sh.running)
+            .overlay { SHAgentPointerShape().stroke(Color.sh.selectionHandle, style: StrokeStyle(lineWidth: 1.4, lineJoin: .round)) }
+            .frame(width: SHBrowserAgentMetrics.pointerWidth, height: SHBrowserAgentMetrics.pointerHeight)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
     }
 }
 
 /// `M2 2l13 7-6 1.4L6.5 17z` in an 18 × 20 box.
-struct NWAgentPointerShape: Shape {
+struct SHAgentPointerShape: Shape {
     func path(in rect: CGRect) -> Path {
-        let sx = rect.width / NWBrowserAgentMetrics.pointerWidth
-        let sy = rect.height / NWBrowserAgentMetrics.pointerHeight
+        let sx = rect.width / SHBrowserAgentMetrics.pointerWidth
+        let sy = rect.height / SHBrowserAgentMetrics.pointerHeight
         func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: rect.minX + x * sx, y: rect.minY + y * sy) }
         var path = Path()
         path.move(to: point(2, 2))
@@ -69,10 +69,10 @@ struct NWAgentPointerShape: Shape {
 }
 
 /// The ring and the pointer over the page area. `pointer` is where the last action pointed, in
-/// this view's own points; nil draws none. The words and Take over are `NWAgentBar`, under the
+/// this view's own points; nil draws none. The words and Take over are `SHAgentBar`, under the
 /// page (BrowserTabsAgent). Nothing here takes a click: it all reaches the page, and a click there
 /// is the user taking it back.
-public struct NWBrowserAgentOverlay: View {
+public struct SHBrowserAgentOverlay: View {
     let pointer: CGPoint?
 
     public init(pointer: CGPoint?) {
@@ -81,22 +81,22 @@ public struct NWBrowserAgentOverlay: View {
 
     public var body: some View {
         ZStack(alignment: .topLeading) {
-            NWAgentRing()
+            SHAgentRing()
             if let pointer {
-                NWAgentPointer()
-                    .offset(x: pointer.x - NWBrowserAgentMetrics.pointerTip.x, y: pointer.y - NWBrowserAgentMetrics.pointerTip.y)
-                    .nwTransition(.overlay, edge: .top)
+                SHAgentPointer()
+                    .offset(x: pointer.x - SHBrowserAgentMetrics.pointerTip.x, y: pointer.y - SHBrowserAgentMetrics.pointerTip.y)
+                    .shTransition(.overlay, edge: .top)
             }
         }
         .allowsHitTesting(false)
-        .nwAnimation(.overlay, value: pointer)
+        .shAnimation(.overlay, value: pointer)
     }
 }
 
 // MARK: The tab's tip
 
 /// What pi opened in a tab, for its brief tip.
-public struct NWSidePaneTabTip: Equatable, Sendable {
+public struct SHSidePaneTabTip: Equatable, Sendable {
     /// The page, host and path ("localhost:5173/checkout").
     public let text: String
     public let openedAt: Date
@@ -110,10 +110,10 @@ public struct NWSidePaneTabTip: Equatable, Sendable {
 /// "Agent opened localhost:5173/checkout   10s" under the tab (PaneStates › SidePaneTabs · the agent
 /// opened a tab): 300pt, a popover with padding 4, a row of 4 × 6 with a 12pt globe, Geist 12, the
 /// URL in mono and its age in `textTertiary`.
-public struct NWPaneTabTip: View {
-    let tip: NWSidePaneTabTip
+public struct SHPaneTabTip: View {
+    let tip: SHSidePaneTabTip
 
-    public init(_ tip: NWSidePaneTabTip) {
+    public init(_ tip: SHSidePaneTabTip) {
         self.tip = tip
     }
 
@@ -126,30 +126,30 @@ public struct NWPaneTabTip: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        HStack(spacing: NW.Space.m) {
+        let sh = Color.sh
+        HStack(spacing: SH.Space.m) {
             Image(systemName: "globe")
-                .font(.system(size: NWBrowserAgentMetrics.cardGlyph))
-                .foregroundStyle(nw.textSecondary)
+                .font(.system(size: SHBrowserAgentMetrics.cardGlyph))
+                .foregroundStyle(sh.textSecondary)
                 .accessibilityHidden(true)
-            (Text("Agent opened ").font(.nwSans(12)) + Text(tip.text).font(.nwMono(12)))
-                .foregroundStyle(nw.textPrimary)
+            (Text("Agent opened ").font(.shSans(12)) + Text(tip.text).font(.shMono(12)))
+                .foregroundStyle(sh.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.middle)
-            Spacer(minLength: NW.Space.m)
+            Spacer(minLength: SH.Space.m)
             TimelineView(.periodic(from: tip.openedAt, by: 1)) { context in
                 Text(Self.age(seconds: context.date.timeIntervalSince(tip.openedAt)))
-                    .font(.nwSans(12))
-                    .foregroundStyle(nw.textTertiary)
+                    .font(.shSans(12))
+                    .foregroundStyle(sh.textTertiary)
                     .monospacedDigit()
             }
         }
-        .padding(.horizontal, NW.Space.s)
-        .padding(.vertical, NW.Space.xs)
-        .padding(NW.Space.xs)
+        .padding(.horizontal, SH.Space.s)
+        .padding(.vertical, SH.Space.xs)
+        .padding(SH.Space.xs)
         // 300pt as drawn; a longer page widens it a little rather than cutting the address.
-        .frame(minWidth: NWBrowserAgentMetrics.tabTipWidth, maxWidth: NWBrowserAgentMetrics.tabTipMaxWidth)
-        .nwPopover(radius: NW.Radius.l)
+        .frame(minWidth: SHBrowserAgentMetrics.tabTipWidth, maxWidth: SHBrowserAgentMetrics.tabTipMaxWidth)
+        .shPopover(radius: SH.Radius.l)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Agent opened \(tip.text)")
     }

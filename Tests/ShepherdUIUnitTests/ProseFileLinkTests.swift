@@ -25,17 +25,17 @@ struct ProseFileLinkTests {
     ])
     func linksResolveOnlyWhereTheFilesAre(link: String, root: String?, path: String?) throws {
         let url = try #require(URL(string: link))
-        let resolved = NWProseFileLinks.resolve(url, root: root.map { URL(fileURLWithPath: $0, isDirectory: true) })
+        let resolved = SHProseFileLinks.resolve(url, root: root.map { URL(fileURLWithPath: $0, isDirectory: true) })
         #expect(resolved?.path == path.map { URL(fileURLWithPath: $0).standardizedFileURL.path })
     }
 
     @Test func aRemoteAgentsFileLinkIsOnlyWords() {
-        let text = NWProseInline.styled("See [plan](temporal/PLAN.md) and [site](https://example.com).")
-        let inert = NWProseFileLinks.inert(text)
+        let text = SHProseInline.styled("See [plan](temporal/PLAN.md) and [site](https://example.com).")
+        let inert = SHProseFileLinks.inert(text)
         #expect(inert.runs.compactMap(\.link) == [URL(string: "https://example.com")!])
-        #expect(NWProseFileLinks.hasLocalLink(text) && !NWProseFileLinks.hasLocalLink(inert))
-        let actions = NWProseFileLinks(editorName: { _ in "" }, editors: { [] }, open: { _, _ in }, reveal: { _ in })
-        #expect(NWProseFileLinks.targets(text, root: nil, actions: actions) == nil)
-        #expect(NWProseFileLinks.targets(text, root: URL(fileURLWithPath: "/work"), actions: actions) == actions)
+        #expect(SHProseFileLinks.hasLocalLink(text) && !SHProseFileLinks.hasLocalLink(inert))
+        let actions = SHProseFileLinks(editorName: { _ in "" }, editors: { [] }, open: { _, _ in }, reveal: { _ in })
+        #expect(SHProseFileLinks.targets(text, root: nil, actions: actions) == nil)
+        #expect(SHProseFileLinks.targets(text, root: URL(fileURLWithPath: "/work"), actions: actions) == actions)
     }
 }

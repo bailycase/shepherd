@@ -30,5 +30,5 @@ extension MobileLayout {
     /// The base picker's popover.
     static let reviewBasePickerSize = CGSize(width: 380, height: 520)
     /// Between the cards of the changes screen.
-    static let reviewCardSpacing: CGFloat = NW.Space.m + NW.Space.xxs
+    static let reviewCardSpacing: CGFloat = SH.Space.m + SH.Space.xxs
 }

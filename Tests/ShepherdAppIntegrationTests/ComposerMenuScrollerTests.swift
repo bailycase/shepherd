@@ -43,10 +43,10 @@ struct ComposerMenuScrollerTests {
         try await thread.waitUntilReady()
         let top = thread.cardTop - AppLayout.menuGap - ComposerMenuTests.Menu.models.height
         let points = stride(from: top + 10, to: thread.cardTop - AppLayout.menuGap, by: 60).flatMap { y in
-            stride(from: thread.columnLeading + 10, to: thread.columnLeading + NWComposerMetrics.modelPickerWidth, by: 90)
+            stride(from: thread.columnLeading + 10, to: thread.columnLeading + SHComposerMetrics.modelPickerWidth, by: 90)
                 .map { CGPoint(x: $0, y: y) }
         }
-        NWMenuDiagnostics.listReturns = 0
+        SHMenuDiagnostics.listReturns = 0
         if menu == "models" { thread.openModelPicker() } else { thread.openSlashMenu() }
 
         let all = CGRect(origin: .zero, size: thread.size)
@@ -60,7 +60,7 @@ struct ComposerMenuScrollerTests {
         }
         let scroll = try #require(thread.menuScroll, "the menu opened")
         #expect(scroll.scrollerStyle == (legacy ? .legacy : .overlay))
-        #expect(NWMenuDiagnostics.listReturns <= returnsBudget,
-                "the list was put back at its top \(NWMenuDiagnostics.listReturns) times while the menu grew")
+        #expect(SHMenuDiagnostics.listReturns <= returnsBudget,
+                "the list was put back at its top \(SHMenuDiagnostics.listReturns) times while the menu grew")
     }
 }

@@ -26,7 +26,7 @@ struct HomeScreen: View {
             .frame(maxWidth: MobileLayout.homeMaxWidth)
             .frame(maxWidth: .infinity)
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .refreshable {
             hosts.retryAll()
             await feed.refresh()
@@ -54,57 +54,57 @@ private struct HomeSections: View {
     var body: some View {
         let designs = MobileDesigns.of(hosts).model
         let groups = SidebarThreads.of(hosts).groups(model)
-        NWListCard {
+        SHListCard {
             // Designs, while a host serves them (MobileAgents: between Missions and Automations).
             if designs.available {
                 Button { navigator.open(.designs(.list)) } label: {
-                    NWListRow("Designs", leading: .symbol("pencil.tip"), trailing: designs.count.map { .value($0) } ?? .none)
+                    SHListRow("Designs", leading: .symbol("pencil.tip"), trailing: designs.count.map { .value($0) } ?? .none)
                 }
-                .buttonStyle(.nwRow(radius: 0))
+                .buttonStyle(.shRow(radius: 0))
             }
             // Always listed: with no host serving Projects, its screen says why.
             Button { navigator.open(.projects(.list)) } label: {
-                NWListRow("Projects", leading: .symbol("square.stack.3d.up"), trailing: projectsTrailing)
+                SHListRow("Projects", leading: .symbol("square.stack.3d.up"), trailing: projectsTrailing)
             }
-            .buttonStyle(.nwRow(radius: 0))
+            .buttonStyle(.shRow(radius: 0))
             destination("Automations", symbol: "bolt", trailing: model.automations.isEmpty ? .none : .value(String(model.automations.count)), route: .automations)
             destination("More", symbol: "ellipsis", trailing: model.offlineSummary.map { .alert($0) } ?? .none, route: .more)
         }
         if !model.offlineHosts.isEmpty {
-            NWListCard {
+            SHListCard {
                 ForEach(model.offlineHosts) { card in HostNotice(card: card).equatable() }
             }
         }
         if !groups.needsYou.isEmpty {
             section("Needs you", attention: true, count: groups.needsYou.count) {
-                NWListCard {
+                SHListCard {
                     ForEach(groups.needsYou.prefix(HomeLimits.needsYou)) { item in
                         attentionRow(item)
                     }
                     Button { navigator.open(.home(.needsYou)) } label: {
                         Text(groups.needsYou.count > HomeLimits.needsYou ? "See all \(groups.needsYou.count)" : "Answer in Needs you")
-                            .font(.nw(.caption, weight: .medium))
-                            .foregroundStyle(Color.nw.textSecondary)
-                            .frame(maxWidth: .infinity, minHeight: NW.Height.touch)
+                            .font(.sh(.caption, weight: .medium))
+                            .foregroundStyle(Color.sh.textSecondary)
+                            .frame(maxWidth: .infinity, minHeight: SH.Height.touch)
                     }
-                    .buttonStyle(.nwRow(radius: 0))
+                    .buttonStyle(.shRow(radius: 0))
                 }
             }
         }
         // The Mac's Working, Done and Pinned, in its order (docs/design/sidebar.md).
         if !groups.working.isEmpty {
             section("Working", count: groups.working.count) {
-                NWListCard { ForEach(groups.working) { row in threadRow(row) } }
+                SHListCard { ForEach(groups.working) { row in threadRow(row) } }
             }
         }
         if !groups.done.isEmpty {
             section("Done", count: groups.done.count, trailing: MarkAllSeenChip(rows: groups.done)) {
-                NWListCard { ForEach(groups.done) { row in threadRow(row) } }
+                SHListCard { ForEach(groups.done) { row in threadRow(row) } }
             }
         }
         if !groups.pinned.isEmpty {
             section("Pinned", count: groups.pinned.count) {
-                NWListCard {
+                SHListCard {
                     ForEach(groups.pinned) { pinned in
                         VStack(spacing: 0) {
                             switch pinned {
@@ -118,45 +118,45 @@ private struct HomeSections: View {
         }
         section("Recents", count: nil) {
             if groups.recents.isEmpty {
-                NWListCard { EmptyRecents() }
+                SHListCard { EmptyRecents() }
             } else {
-                NWListCard {
+                SHListCard {
                     ForEach(groups.recents.prefix(HomeLimits.recents)) { row in
                         threadRow(row)
                     }
                     if groups.recents.count > HomeLimits.recents {
                         Button { navigator.open(.home(.recents)) } label: {
                             Text("Show all recents")
-                                .font(.nw(.caption, weight: .medium))
-                                .foregroundStyle(Color.nw.textSecondary)
-                                .frame(maxWidth: .infinity, minHeight: NW.Height.touch)
+                                .font(.sh(.caption, weight: .medium))
+                                .foregroundStyle(Color.sh.textSecondary)
+                                .frame(maxWidth: .infinity, minHeight: SH.Height.touch)
                         }
-                        .buttonStyle(.nwRow(radius: 0))
+                        .buttonStyle(.shRow(radius: 0))
                     }
                 }
             }
         }
     }
 
-    private var projectsTrailing: NWListRow.Trailing {
+    private var projectsTrailing: SHListRow.Trailing {
         let rows = projects.rows
         let needsYou = rows.reduce(0) { $0 + $1.needsYou }
         if needsYou > 0 { return .alert("\(needsYou) needs you") }
         return rows.isEmpty ? .none : .value(String(rows.count))
     }
 
-    private func destination(_ title: String, symbol: String, trailing: NWListRow.Trailing, route: HomeRoute) -> some View {
+    private func destination(_ title: String, symbol: String, trailing: SHListRow.Trailing, route: HomeRoute) -> some View {
         Button { navigator.open(.home(route)) } label: {
-            NWListRow(title, leading: .symbol(symbol), trailing: trailing)
+            SHListRow(title, leading: .symbol(symbol), trailing: trailing)
         }
-        .buttonStyle(.nwRow(radius: 0))
+        .buttonStyle(.shRow(radius: 0))
     }
 
     private func section(_ title: String, attention: Bool = false, count: Int?, trailing: MarkAllSeenChip? = nil,
                          @ViewBuilder content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-            HStack(alignment: .center, spacing: NW.Space.s) {
-                NWListHeader(title, attention: attention, count: count)
+            HStack(alignment: .center, spacing: SH.Space.s) {
+                SHListHeader(title, attention: attention, count: count)
                 trailing
             }
             content()
@@ -168,13 +168,13 @@ private struct HomeSections: View {
         Button { navigator.open(row.route) } label: {
             ThreadRow(row: row, selected: row.ref.agentRef == selected).equatable()
         }
-        .buttonStyle(.nwRow(radius: 0))
+        .buttonStyle(.shRow(radius: 0))
         .contextMenu { if row.design == nil { ThreadRowMenu(thread: row.ref.agentRef) } }
     }
 
     private func attentionRow(_ item: FleetAttention) -> some View {
         Button { navigator.open(projects.route(item)) } label: { AttentionRow(item: item).equatable() }
-            .buttonStyle(.nwRow(radius: 0))
+            .buttonStyle(.shRow(radius: 0))
             .contextMenu { ThreadRowMenu(thread: item.ref.agentRef) }
     }
 }
@@ -184,15 +184,15 @@ struct EmptyRecents: View {
     @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NW.Space.m) {
-            Text("No threads yet").font(.nw(.ui, weight: .semibold)).foregroundStyle(Color.nw.textPrimary)
+        VStack(alignment: .leading, spacing: SH.Space.m) {
+            Text("No threads yet").font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.textPrimary)
             Text("Start one on any host; it shows here with the host it runs on.")
-                .nwText(.caption).foregroundStyle(Color.nw.textSecondary)
+                .shText(.caption).foregroundStyle(Color.sh.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             Button("New thread", systemImage: "square.and.pencil") { NewThreadHooks.open(navigator: navigator) }
-                .buttonStyle(.nw(.secondary))
+                .buttonStyle(.sh(.secondary))
         }
-        .padding(NW.Space.l)
+        .padding(SH.Space.l)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -202,8 +202,8 @@ struct NoHostsState: View {
     @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
-        NWEmptyState(Text("Add a host"), message: "Connect to a Mac running Shepherd to see its threads.") {
-            Button("Add host") { navigator.present(.settings(.host(nil))) }.buttonStyle(.nw(.primary))
+        SHEmptyState(Text("Add a host"), message: "Connect to a Mac running Shepherd to see its threads.") {
+            Button("Add host") { navigator.present(.settings(.host(nil))) }.buttonStyle(.sh(.primary))
         }
         .frame(maxWidth: .infinity)
         .padding(.top, MobileLayout.sectionSpacing)

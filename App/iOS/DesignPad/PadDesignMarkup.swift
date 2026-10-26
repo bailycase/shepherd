@@ -13,7 +13,7 @@ import ShepherdUI
 // that goes with it) and sends the design agent one record of them through `designs.v1`
 // (`sendMarkup`), which the host checks and hands on fenced as data, as a turn of its own. The
 // agent's proposals from it are kept as comments at once and come back in the chat
-// (`NWMarkupProposals`), where Apply sends each to it as a comment and Keep as comments leaves them
+// (`SHMarkupProposals`), where Apply sends each to it as a comment and Keep as comments leaves them
 // on the canvas as they are.
 // docs/designs.md › Pencil markup.
 
@@ -27,8 +27,8 @@ final class PadDesignMarkup {
     private(set) var draft = PKDrawing()
     /// Ink the design agent has been sent: it stays until its proposals are applied or kept.
     private(set) var sent = PKDrawing()
-    var tool: NWMarkupPalette.Tool = .pen
-    var ink: NWMarkupPalette.Ink = .lantern
+    var tool: SHMarkupPalette.Tool = .pen
+    var ink: SHMarkupPalette.Ink = .lantern
     /// Done is reading the markup and sending it.
     private(set) var reading = false
     /// Moves when the ink changes other than by the viewer's hand (Done, a fixture), so the ink
@@ -96,7 +96,7 @@ struct PadDesignMarkupLayer: View {
     /// Not drawn: where the canvas is too narrow (portrait) for the centered palette to clear the
     /// toolbar in the bottom-leading corner, the palette rises above the toolbar.
     private var paletteBottom: CGFloat {
-        let M = NWDesignMetrics.self
+        let M = SHDesignMetrics.self
         return (width - paletteWidth) / 2 < M.markupToolbarClearance ? M.markupLiftedBottom : M.markupBottom
     }
 
@@ -111,16 +111,16 @@ struct PadDesignMarkupLayer: View {
                          zooming: { canvas.setZooming($0) },
                          comment: { point in commentWithPencil(at: point) })
             if enabled, markup.showsPalette {
-                NWMarkupPalette(tool: Bindable(markup).tool, ink: Bindable(markup).ink, reading: markup.reading) {
+                SHMarkupPalette(tool: Bindable(markup).tool, ink: Bindable(markup).ink, reading: markup.reading) {
                     canvas.finishMarkup()
                 }
                 .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { paletteWidth = $0 }
                 .padding(.bottom, paletteBottom)
-                .nwTransition(.overlay)
+                .shTransition(.overlay)
             }
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
-        .nwAnimation(.content, value: markup.showsPalette)
+        .shAnimation(.content, value: markup.showsPalette)
         .onChange(of: markup.tool) { _, tool in
             // The palette's Comment is the canvas's: a tap on an element opens the editor.
             if tool == .comment {
@@ -144,9 +144,9 @@ struct PadDesignMarkupLayer: View {
 private struct PadMarkupInk: UIViewRepresentable {
     let markup: PadDesignMarkup
     let draftRevision: Int
-    let viewport: NWCanvasViewport
-    let tool: NWMarkupPalette.Tool
-    let ink: NWMarkupPalette.Ink
+    let viewport: SHCanvasViewport
+    let tool: SHMarkupPalette.Tool
+    let ink: SHMarkupPalette.Ink
     let enabled: Bool
     let pan: (CGSize) -> Void
     let zoom: (CGFloat, CGPoint) -> Void
@@ -187,8 +187,8 @@ final class PadMarkupInkView: UIView, PKCanvasViewDelegate, UIGestureRecognizerD
     private var toScreen = CGAffineTransform.identity
     private var shownRevision = -1
     private var applying = false
-    private var tool: NWMarkupPalette.Tool = .pen
-    private var ink: NWMarkupPalette.Ink = .lantern
+    private var tool: SHMarkupPalette.Tool = .pen
+    private var ink: SHMarkupPalette.Ink = .lantern
     /// The ink view's tool is the palette's (unset until first shown, and again when the
     /// appearance changes the ink's color).
     private var configured = false
@@ -266,16 +266,16 @@ final class PadMarkupInkView: UIView, PKCanvasViewDelegate, UIGestureRecognizerD
         applying = false
     }
 
-    func use(tool: NWMarkupPalette.Tool, ink: NWMarkupPalette.Ink) {
+    func use(tool: SHMarkupPalette.Tool, ink: SHMarkupPalette.Ink) {
         guard !configured || tool != self.tool || ink != self.ink else { return }
         configured = true
         self.tool = tool
         self.ink = ink
         switch tool {
         case .pen:
-            draftView.tool = PKInkingTool(.pen, color: inkColor(ink), width: NWDesignMetrics.markupPenWidth)
+            draftView.tool = PKInkingTool(.pen, color: inkColor(ink), width: SHDesignMetrics.markupPenWidth)
         case .marker:
-            draftView.tool = PKInkingTool(.marker, color: inkColor(ink), width: NWDesignMetrics.markupMarkerWidth)
+            draftView.tool = PKInkingTool(.marker, color: inkColor(ink), width: SHDesignMetrics.markupMarkerWidth)
         case .eraser:
             draftView.tool = PKEraserTool(.vector)
         case .comment:
@@ -286,7 +286,7 @@ final class PadMarkupInkView: UIView, PKCanvasViewDelegate, UIGestureRecognizerD
 
     /// PencilKit keeps ink in light-appearance colors and shows it adapted in dark: the ink's
     /// token as this appearance draws it, stored the way PencilKit reads it.
-    private func inkColor(_ ink: NWMarkupPalette.Ink) -> UIColor {
+    private func inkColor(_ ink: SHMarkupPalette.Ink) -> UIColor {
         let color = UIColor(ink.color).resolvedColor(with: traitCollection)
         return traitCollection.userInterfaceStyle == .dark ? PKInkingTool.convertColor(color, from: .dark, to: .light) : color
     }
@@ -486,10 +486,10 @@ extension PadDesignCanvas {
     /// proposals as comments when the agent makes them; one not seen yet takes the next number),
     /// named as the comment cards name boards ("A · phone › Steps list"), and whether the viewer
     /// has applied or kept them.
-    func markupCard(_ proposals: NativeMarkupProposals) -> (cards: [NWMarkupProposals.Card], state: NWMarkupProposals.State) {
+    func markupCard(_ proposals: NativeMarkupProposals) -> (cards: [SHMarkupProposals.Card], state: SHMarkupProposals.State) {
         let kept = Dictionary(comments.compactMap { comment in comment.proposal.map { ($0, comment) } }, uniquingKeysWith: { a, _ in a })
         var next = (comments.map(\.number).max() ?? 0) + 1
-        let cards = proposals.proposals.compactMap { draft -> NWMarkupProposals.Card? in
+        let cards = proposals.proposals.compactMap { draft -> SHMarkupProposals.Card? in
             guard let id = draft.proposal else { return nil }
             let number: Int
             if let comment = kept[id] {
@@ -500,7 +500,7 @@ extension PadDesignCanvas {
             }
             let name = draft.target ?? draft.label
             let board = nativeBoardName(draft.board.rawValue)
-            return NWMarkupProposals.Card(id: id, number: number, target: name.map { "\(board) › \($0)" } ?? board, text: draft.text)
+            return SHMarkupProposals.Card(id: id, number: number, target: name.map { "\(board) › \($0)" } ?? board, text: draft.text)
         }
         let key = proposals.ids.joined(separator: "|")
         if applyingProposals.contains(key) { return (cards, .working) }
@@ -559,7 +559,7 @@ struct PadMarkupReadLine: View, Equatable {
     let counts: NativeMarkupCounts
 
     var body: some View {
-        NWActivityLine(kind: .drew, label: "Read your markup", meta: counts.text)
+        SHActivityLine(kind: .drew, label: "Read your markup", meta: counts.text)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -573,7 +573,7 @@ struct PadMarkupProposalsView: View {
 
     var body: some View {
         let card = canvas.markupCard(proposals)
-        NWMarkupProposals(cards: card.cards, state: card.state, footnote: card.state == .open ? Self.footnote : nil,
+        SHMarkupProposals(cards: card.cards, state: card.state, footnote: card.state == .open ? Self.footnote : nil,
                           apply: { canvas.applyProposals(proposals, deliver: true) },
                           keep: { canvas.applyProposals(proposals, deliver: false) })
             .equatable()

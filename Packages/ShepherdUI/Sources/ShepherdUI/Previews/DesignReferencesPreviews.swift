@@ -4,8 +4,8 @@ import SwiftUI
 // stages, the board actions, the sheets, the toasts, the agent's line and the thread's pin.
 
 #Preview("Design references") {
-    NWPreviewBoth {
-        ScrollView { NWDesignReferenceSpecimens() }
+    SHPreviewBoth {
+        ScrollView { SHDesignReferenceSpecimens() }
     }
     .frame(width: 2600, height: 2400)
 }

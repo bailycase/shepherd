@@ -11,10 +11,10 @@ import ShepherdTestSupport
 @Suite("Design system reference")
 @MainActor
 struct DesignSystemReferenceTests {
-    /// Shepherd UI as the user's system holds it: Night Watch's values, light and dark, and the page copy and
+    /// Shepherd UI as the user's system holds it: Shepherd Design's values, light and dark, and the page copy and
     /// components its tokens.json carries.
     private static var shepherdUI: DesignSystemTokens {
-        var tokens = NightWatchSystem.tokens()
+        var tokens = ShepherdDesignSystem.tokens()
         tokens.name = "Shepherd UI"
         tokens.namespace = "shepherd-ui"
         tokens.radii = tokens.radii.map { step in
@@ -32,7 +32,7 @@ struct DesignSystemReferenceTests {
         tokens.extra["page"] = .object([
             "tagline": .string("The app’s own components and tokens. Quiet chrome around agents at work."),
             "summary": .string("Shepherd UI is what the Shepherd app draws with."),
-            "source": .string("Made in Shepherd chat UI from the app’s Night Watch values."),
+            "source": .string("Made in Shepherd chat UI from the app’s Shepherd Design values."),
             "principles": .array([.object(["lead": .string("Readable measure."), "text": .string("The thread column is at most 820pt.")]),
                                   .object(["text": .string("A principle with no lead is left out.")])]),
             "voice": .object(["lead": .string("Write like an engineer handing over work."),
@@ -98,11 +98,11 @@ struct DesignSystemReferenceTests {
     @Test func typeStylesGroupIntoDisplayTextAndMono() {
         let reference = Self.reference()
         #expect(reference.type.map(\.title) == ["Display", "Text", "Mono"])
-        #expect(reference.typeCount == NWTextStyle.allCases.count)
+        #expect(reference.typeCount == SHTextStyle.allCases.count)
         #expect(reference.type[0].rows.first?.tag == "Geist · 28 / 600")
         #expect(reference.type[2].rows.last?.uppercase == true)
         #expect(reference.type[2].rows.last?.sample == DesignSystemReference.Copy.microSample.uppercased())
-        #expect(reference.typographySub == "Geist and Geist Mono · \(NWTextStyle.allCases.count) styles")
+        #expect(reference.typographySub == "Geist and Geist Mono · \(SHTextStyle.allCases.count) styles")
     }
 
     @Test func stepsComeFromTheTokensAndSayWhatTheyAreForWhenTheSystemSays() {
@@ -118,7 +118,7 @@ struct DesignSystemReferenceTests {
         let reference = Self.reference()
         #expect(reference.tagline == "The app’s own components and tokens. Quiet chrome around agents at work.")
         #expect(reference.summary == "Shepherd UI is what the Shepherd app draws with.")
-        #expect(reference.source == "Made in Shepherd chat UI from the app’s Night Watch values.")
+        #expect(reference.source == "Made in Shepherd chat UI from the app’s Shepherd Design values.")
         #expect(reference.principles == [.init(lead: "Readable measure.", text: "The thread column is at most 820pt.")])
         #expect(reference.voiceLead == "Write like an engineer handing over work.")
         #expect(reference.examples == [.init(say: "Tests failed twice. Open the log?", avoid: "Oops! Something went wrong.")])

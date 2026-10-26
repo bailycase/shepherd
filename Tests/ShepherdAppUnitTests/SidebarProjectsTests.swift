@@ -242,7 +242,7 @@ struct SidebarProjectsTests {
         #expect(built.sections.map { $0.projects.map(\.id) } == [
             [.local(shepherd.id)], [.remote(hostID: host, theirs.id)], [.remote(hostID: away, dashboard.id)],
         ])
-        #expect(built.sections[1].projects.first?.rows.first?.accessory == NWSidebarRow.Accessory.none)
+        #expect(built.sections[1].projects.first?.rows.first?.accessory == SHSidebarRow.Accessory.none)
         #expect(built.sections[2].projects.first?.dimmed == true)
         #expect(built.sections[2].projects.first?.rows.first?.offline == true)
     }

@@ -121,8 +121,8 @@ struct PreviewTests {
                 ModelPicker(state: picker, choose: { _ in }, close: {})
                 Spacer(minLength: 0)
             }
-            .padding(NW.Space.l)
-            .background(Color.nw.bgWindow)
+            .padding(SH.Space.l)
+            .background(Color.sh.bgWindow)
         }
     }
 

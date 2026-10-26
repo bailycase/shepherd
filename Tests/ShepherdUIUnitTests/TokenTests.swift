@@ -5,7 +5,7 @@ import Testing
 
 /// The palette, type ramp, scales, and `AgentState`. Text scale and density live on the shared
 /// `ThemeStore`, so the suite is serialized and restores the defaults.
-@Suite("Night Watch tokens", .serialized)
+@Suite("Shepherd Design tokens", .serialized)
 @MainActor
 struct TokenTests {
     private func resolved(_ color: Color, dark: Bool) -> HexColor {
@@ -24,36 +24,36 @@ struct TokenTests {
     /// Each palette color follows the appearance it is drawn in.
     @Test(arguments: ["bgWindow", "lantern", "textSecondary", "bgSelected", "failedTint"])
     func paletteColorsResolveToTheThemeInEachAppearance(_ name: String) throws {
-        let pairs: [String: (KeyPath<NWPalette, Color>, KeyPath<ThemeColors, String>)] = [
+        let pairs: [String: (KeyPath<SHPalette, Color>, KeyPath<ThemeColors, String>)] = [
             "bgWindow": (\.bgWindow, \.bgWindow), "lantern": (\.lantern, \.lantern),
             "textSecondary": (\.textSecondary, \.textSecondary), "bgSelected": (\.bgSelected, \.bgSelected),
             "failedTint": (\.failedTint, \.failedTint),
         ]
         let (token, role) = try #require(pairs[name])
-        let palette = NWPalette(.nightWatch)
-        #expect(close(resolved(palette[keyPath: token], dark: true), HexColor(ThemeDefinition.nightWatch.dark.colors[keyPath: role])!))
-        #expect(close(resolved(palette[keyPath: token], dark: false), HexColor(ThemeDefinition.nightWatch.light.colors[keyPath: role])!))
+        let palette = SHPalette(.shepherdDesign)
+        #expect(close(resolved(palette[keyPath: token], dark: true), HexColor(ThemeDefinition.shepherdDesign.dark.colors[keyPath: role])!))
+        #expect(close(resolved(palette[keyPath: token], dark: false), HexColor(ThemeDefinition.shepherdDesign.light.colors[keyPath: role])!))
     }
 
     @Test func syntaxColorsResolveToTheThemesSyntaxRoles() {
-        let palette = NWPalette(.nightWatch)
-        #expect(close(resolved(palette.synKeyword, dark: true), HexColor(ThemeDefinition.nightWatch.dark.syntax.keyword)!))
-        #expect(close(resolved(palette.synString, dark: false), HexColor(ThemeDefinition.nightWatch.light.syntax.string)!))
+        let palette = SHPalette(.shepherdDesign)
+        #expect(close(resolved(palette.synKeyword, dark: true), HexColor(ThemeDefinition.shepherdDesign.dark.syntax.keyword)!))
+        #expect(close(resolved(palette.synString, dark: false), HexColor(ThemeDefinition.shepherdDesign.light.syntax.string)!))
     }
 
     /// The Composer board puts the command palette "over a 30% scrim".
     @Test(arguments: [false, true])
     func theScrimIsBlackAtThirtyPercent(dark: Bool) {
-        #expect(close(resolved(NWPalette(.nightWatch).scrim, dark: dark), HexColor(red: 0, green: 0, blue: 0, alpha: 0.3)))
+        #expect(close(resolved(SHPalette(.shepherdDesign).scrim, dark: dark), HexColor(red: 0, green: 0, blue: 0, alpha: 0.3)))
     }
 
     /// A pane divider bordering the focused pane is running at 34%, a derived color rather than
     /// an alpha picked in the view.
     @Test(arguments: [false, true])
     func theFocusedPanesDividerIsRunningAtThirtyFourPercent(dark: Bool) throws {
-        let colors = dark ? ThemeDefinition.nightWatch.dark.colors : ThemeDefinition.nightWatch.light.colors
+        let colors = dark ? ThemeDefinition.shepherdDesign.dark.colors : ThemeDefinition.shepherdDesign.light.colors
         let running = try #require(HexColor(colors.running))
-        #expect(close(resolved(NWPalette(.nightWatch).focusDivider, dark: dark),
+        #expect(close(resolved(SHPalette(.shepherdDesign).focusDivider, dark: dark),
                       HexColor(red: running.red, green: running.green, blue: running.blue, alpha: 0.34)))
     }
 
@@ -62,9 +62,9 @@ struct TokenTests {
         let store = ThemeStore()
         let first = store.palette
         #expect(store.palette === first)
-        store.select(.nightWatch)
+        store.select(.shepherdDesign)
         #expect(store.palette === first, "selecting the same theme keeps the palette")
-        var other = ThemeDefinition.nightWatch
+        var other = ThemeDefinition.shepherdDesign
         other.id = "other"
         other.dark.colors.lantern = "#ff0000"
         store.select(other)
@@ -73,7 +73,7 @@ struct TokenTests {
     }
 
     @Test func settingsGlyphsUseEverySuppliedVectorAsset() throws {
-        for glyph in NWGlyph.Settings.allCases where glyph.systemSymbolName == nil {
+        for glyph in SHGlyph.Settings.allCases where glyph.systemSymbolName == nil {
             let svg = try String(contentsOf: #require(glyph.resourceURL), encoding: .utf8)
             #expect(svg.contains("<svg") && svg.contains("stroke="))
             #expect(!svg.contains("<script") && !svg.contains("href="))
@@ -82,14 +82,14 @@ struct TokenTests {
 
     /// A user saw a lumpy, hand-traced gear on Advanced; it is the system `gearshape` the board draws.
     @Test func advancedDrawsTheSystemGear() throws {
-        #expect(NWGlyph.Settings.advanced.systemSymbolName == "gearshape")
-        #expect(NWGlyph.Settings.advanced.resourceURL == nil)
-        #expect(NSImage(systemSymbolName: try #require(NWGlyph.Settings.advanced.systemSymbolName), accessibilityDescription: nil) != nil)
-        #expect(NWGlyph.Settings.allCases.filter { $0.systemSymbolName != nil } == [.advanced])
+        #expect(SHGlyph.Settings.advanced.systemSymbolName == "gearshape")
+        #expect(SHGlyph.Settings.advanced.resourceURL == nil)
+        #expect(NSImage(systemSymbolName: try #require(SHGlyph.Settings.advanced.systemSymbolName), accessibilityDescription: nil) != nil)
+        #expect(SHGlyph.Settings.allCases.filter { $0.systemSymbolName != nil } == [.advanced])
     }
 
     @Test func theBundledFacesAreRegistered() {
-        #expect(NWFonts.isAvailable)
+        #expect(SHFonts.isAvailable)
         for name in ["Geist-Regular", "Geist-Medium", "Geist-SemiBold", "Geist-Bold", "Geist-Italic", "GeistMono-Regular", "GeistMono-Medium"] {
             let font = CTFontCreateWithName(name as CFString, 12, nil)
             #expect(CTFontCopyPostScriptName(font) as String == name)
@@ -98,13 +98,13 @@ struct TokenTests {
 
     /// The Foundations board's ramp.
     @Test func theTypeRampMatchesTheBoard() {
-        let spec: [NWTextStyle: (CGFloat, Font.Weight, CGFloat, Bool)] = [
+        let spec: [SHTextStyle: (CGFloat, Font.Weight, CGFloat, Bool)] = [
             .display: (28, .semibold, 1.15, false), .title: (15, .semibold, 1.3, false),
             .headline: (13.5, .semibold, 1.35, false), .body: (13.5, .regular, 1.6, false),
             .ui: (12.5, .medium, 1.3, false), .caption: (11.5, .regular, 1.35, false),
             .code: (12, .regular, 1.55, true), .mono: (11.5, .regular, 1.3, true), .micro: (10.5, .medium, 1.2, true),
         ]
-        for style in NWTextStyle.allCases {
+        for style in SHTextStyle.allCases {
             let (size, weight, lineHeight, mono) = spec[style]!
             #expect(style.size == size && style.weight == weight && style.lineHeight == lineHeight && style.isMonospaced == mono, "\(style)")
         }
@@ -113,8 +113,8 @@ struct TokenTests {
     /// A side transcript (the subagent inspector) sets prose one step under the thread: `.body`
     /// at the `.ui` size, still at the body's line height.
     @Test func smallProseIsOneStepUnderTheThread() {
-        let ramp = NWTypeRamp(scale: 1)
-        #expect(NWProseSize.regular.step == 0 && NWProseSize.small.step == NWTextStyle.body.size - NWTextStyle.ui.size)
+        let ramp = SHTypeRamp(scale: 1)
+        #expect(SHProseSize.regular.step == 0 && SHProseSize.small.step == SHTextStyle.body.size - SHTextStyle.ui.size)
         #if os(macOS)
         #expect(ramp.font(.body) == Font.custom("Geist-Regular", fixedSize: 13.5))
         #expect(ramp.font(.body, size: .small) == Font.custom("Geist-Regular", fixedSize: 12.5))
@@ -132,11 +132,11 @@ struct TokenTests {
         let saved = ThemeStore.shared.textScale
         defer { ThemeStore.shared.textScale = saved }
         ThemeStore.shared.textScale = 1
-        let base = NWTextStyle.body.lineSpacing
+        let base = SHTextStyle.body.lineSpacing
         ThemeStore.shared.textScale = CGFloat(scale)
         #expect(ThemeStore.shared.typeRamp.scale == CGFloat(scale))
-        #expect(NWTextStyle.body.lineSpacing >= base)
-        #expect(NWTextStyle.body.lineSpacing > NWTextStyle.ui.lineSpacing, "prose is looser than controls")
+        #expect(SHTextStyle.body.lineSpacing >= base)
+        #expect(SHTextStyle.body.lineSpacing > SHTextStyle.ui.lineSpacing, "prose is looser than controls")
     }
 
     @Test(arguments: [(1.0, 22.0, 28.0, 36.0), (0.85, 19.0, 24.0, 31.0), (1.2, 26.0, 34.0, 43.0)])
@@ -144,17 +144,17 @@ struct TokenTests {
         let saved = ThemeStore.shared.density
         defer { ThemeStore.shared.density = saved }
         ThemeStore.shared.density = CGFloat(density)
-        #expect(NW.Height.rowCompact == CGFloat(compact))
-        #expect(NW.Height.row == CGFloat(row))
-        #expect(NW.Height.rowComfortable == CGFloat(comfortable))
-        #expect(NW.Height.controlS == 24 && NW.Height.controlM == 28 && NW.Height.controlL == 32 && NW.Height.touch == 44)
+        #expect(SH.Height.rowCompact == CGFloat(compact))
+        #expect(SH.Height.row == CGFloat(row))
+        #expect(SH.Height.rowComfortable == CGFloat(comfortable))
+        #expect(SH.Height.controlS == 24 && SH.Height.controlM == 28 && SH.Height.controlL == 32 && SH.Height.touch == 44)
     }
 
     @Test func theScalesMatchTheBoard() {
-        #expect([NW.Space.xxs, NW.Space.xs, NW.Space.s, NW.Space.m, NW.Space.l, NW.Space.xl, NW.Space.xxl, NW.Space.xxxl]
+        #expect([SH.Space.xxs, SH.Space.xs, SH.Space.s, SH.Space.m, SH.Space.l, SH.Space.xl, SH.Space.xxl, SH.Space.xxxl]
             == [2, 4, 6, 8, 12, 16, 24, 32])
-        #expect([NW.Radius.xs, NW.Radius.s, NW.Radius.m, NW.Radius.l] == [4, 6, 8, 12])
-        #expect(NW.hairline(2) == 0.5 && NW.hairline(1) == 1)
+        #expect([SH.Radius.xs, SH.Radius.s, SH.Radius.m, SH.Radius.l] == [4, 6, 8, 12])
+        #expect(SH.hairline(2) == 0.5 && SH.hairline(1) == 1)
     }
 
     @Test func agentStatesHaveTheirWordsAndOnlyAttentionGlows() {
@@ -164,10 +164,10 @@ struct TokenTests {
     }
 
     @Test func agentStatesUseTheirStateColors() {
-        let nw = Color.nw
-        #expect(AgentState.running.color == nw.running && AgentState.attention.color == nw.lantern)
-        #expect(AgentState.done.color == nw.done && AgentState.failed.color == nw.failed && AgentState.stuck.color == nw.failed)
-        #expect(AgentState.attention.textColor == nw.lanternText && AgentState.attention.tint == nw.lanternTint)
+        let sh = Color.sh
+        #expect(AgentState.running.color == sh.running && AgentState.attention.color == sh.lantern)
+        #expect(AgentState.done.color == sh.done && AgentState.failed.color == sh.failed && AgentState.stuck.color == sh.failed)
+        #expect(AgentState.attention.textColor == sh.lanternText && AgentState.attention.tint == sh.lanternTint)
         #expect(AgentState.idle.tint == nil && AgentState.queued.tint == nil)
     }
 }

@@ -4,7 +4,7 @@
 
 ## Status language
 
-One enum, `AgentState`, drives every status surface (NWStatus), and color always comes with a
+One enum, `AgentState`, drives every status surface (SHStatus), and color always comes with a
 word or a glyph's shape: a pill in headers and cards, a dot (with its word where the row has
 room) in rows, a glyph in tool rows, steps, and checklists, a spinner for work in progress
 outside the thread (in the thread, live text shimmers instead: LiveText), a bar for steps and
@@ -31,11 +31,11 @@ failed, and queued (queued, paused, or waiting on its parent, hollow). A subagen
 
 **Not built yet: stuck.** `AgentState.stuck` marks an agent or run that has been running too
 long without progress. Its dot and pill take `failed`'s color and tint and say for how long
-("Stuck 14m", NWStatus); where a glyph stands alone it is `exclamationmark.triangle`. Nothing
+("Stuck 14m", SHStatus); where a glyph stands alone it is `exclamationmark.triangle`. Nothing
 detects it yet, and the board fixes no threshold.
 
 A turn fails when pi's last reply is a provider error (not a Stop). The thread shows the error
-(`NWTurnError`), and the agent's row (an automation's too) and its palette subtitle read failed
+(`SHTurnError`), and the agent's row (an automation's too) and its palette subtitle read failed
 until its next turn starts. On iPhone and iPad the thread's header reads Failed from the thread
 itself (`NativeThreadStore.lastTurnFailed`): a remote client hears no turn failure from the host.
 
@@ -56,21 +56,21 @@ composing chrome by hand. Debug builds have a **Component Gallery** (View menu,
 
 | Domain | Components | Owned in the app by |
 | --- | --- | --- |
-| Controls | `.buttonStyle(.nw(_:size:tint:))` (primary, secondary, ghost, danger, dangerFill; s 24 · m 28 · l 32), `.nwIcon` and `.nwIcon(bordered:isOn:size:tint:)` (a circle, 28pt, 44 on iOS; "on" is lantern tint), `.nwLink`, `.nwRow(selected:)`, `.nwRowBackground(selected:hovering:)`; `.toggleStyle(.nwSwitch)` (30×18) and `.nwCheckbox` (14pt); `NWSegmentedPicker` (m 24, s 20), `NWPopupMenu` and `NWPopupLabel`, `NWValueSlider`, `NWStepper`; `.textFieldStyle(.nw)` and `.nw(mono:error:)` (28pt, radius 6), `.nwField(focused:error:mono:)`, `.nwFieldMessage(_:alignment:)`, `.textFieldStyle(.nwSearch)`, `NWSearchField`; `NWButtonTitle` (a title and its chord), `NWRadioGroup`; `NWKeycap`, `NWCountBadge`, `NWTag`, `.nwHelp(_:shortcut:)` | across the app; `NWRadioGroup` has no app use |
-| Status | `NWStatusPill` (20pt, radius 4; a glyph in place of its dot), `NWStatusDot` (6pt), `NWStateGlyph` (14pt), `.progressViewStyle(.nwSpinner)` and `.nwBar` (4pt), `NWStepStrip`, `NWSparkline`, `NWBanner`, `.nwToast(item:)` with `NWToast`, `NWEmptyState`, `.nwShimmer()` and `NWLoadingRows`, `NWWordmark`, `NWCrook` | across the app; `NWSparkline` and `.nwToast(item:)` have no app use (see departures); `NWLoadingRows` in the directory picker |
-| Containers | `NWSectionHeader`, `NWGroupCard`, `NWCardRow`, `NWHairline`, `NWChoiceRow` (`NWChoiceRowMetrics`), `NWFlowLayout`, `NWMarkupText` | `SettingsComponents.swift`; hairlines everywhere; `NWMarkupText` for Settings' descriptions (Mac and iOS); `NWChoiceRow` in the iOS client's New thread pickers; `NWFlowLayout` for wrapping chips and answers (iOS) |
-| Navigation | `NWSidebar`, `NWSidebarTopBar`, `NWSidebarDestination`, `NWSidebarSection`, `NWSidebarRow`, `NWSidebarFooter`, `NWDropIndicator`, `NWDensity`; `NWThreadToolbar`, `NWPaneToggle`, `NWOptionsMenu`, `NWPaneHeader`; `.nwCommandPalette(isPresented:)`, `NWPaletteCard`, `NWPaletteSearchRow`, `NWPaletteSectionHeader`, `NWPaletteRow` | `SidebarView.swift`, `ThreadHeader.swift`, `RootView.swift`, `CommandPaletteView.swift`; the review's header (`DiffReviewView.swift`) and the inspector's ⋯ menu (`Thread/SubagentInspector.swift`) |
-| Thread | `NWUserBubble` (its time shown while `revealed`; `origin: .steered`), `NWQueueDivider`, `NWAgentProse`, `NWCodeBlock`, `NWThinking`, `NWActivityLine`, `NWActivityCalls`, `NWChangesCard`, `NWDiffStat`, `NWInlineCode`, `NWAttachmentChip`, `NWTurnFooter` (shown while `revealed`), `NWTurnError` (card, Details, folded), `NWRetryLine`, `NWJumpToLatest`, `.nwShimmer(active:)` (live text) | `Thread/ThreadView.swift`, `ThreadTurns.swift` (with each turn's `MessageHover`), `ThreadTools.swift`, `ThreadMarkdown.swift` |
-| Composer | `NWComposer`, `.nwComposerChip(active:)`, `NWChipChevron`, `NWComposerActionButton` (Send, Stop, Send's ring), `NWMenuHeader`, `NWSlashMenu`, `NWModelPicker`, `NWModelSettings` (`NWModelSettingsLabel`, `NWComposerBranchLabel`, `NWFastBolt`), `NWSendMenu`, `NWPlaceMenu` and `NWPlaceChipLabel` (the New thread page's workplace); the question dock: `NWQuestionDock` (`NWQuestionDockContent`, `NWQuestionDockMetrics`, `.nwQuestionCard()`), `NWQuestionHead`, `NWQuestionDockHidden` (over `NWQuestionHiddenLine`); the queue: `NWQueueStack`, `NWQueueRow`, `NWQueueEditor`, `NWQueueDeletedRow`, `NWQueueMoreRow`, `NWQueueNumber`, `NWQueueGlyph`, `NWGripGlyph`, `NWQueueMetrics` | `Thread/Composer.swift`, `Thread/QuestionDock.swift`, `Thread/QueueStack.swift` |
-| Agents | `NWSubagentTray` (`NWSubagentTrayRun`, `NWSubagentTraySummary`, `NWSubagentTrayRow`, `NWSubagentTrayMoreRow`), `NWDockStack`, `NWSubagentRecordLine`, `NWInspectorHeader`, `NWRunBrief`, `NWRunActions`, `NWBranchGlyph`, `NWElapsedText`, `NWDuration`, `NWInlineMarkup`, `.nwRunArrival`; touch forms for iOS (the tray's `.pad` and `.phone` sizes, `NWRunCard`, `NWRunHeader`, `NWRunTabs`, `NWSteerField`, …) | `Thread/Subagents.swift`, `Thread/SubagentInspector.swift`, `Thread/SubagentPresentation.swift`; the iOS client |
-| Review | The Changes pane: `NWScopeButton`, `NWViewedPill`, `NWCompareRow`, `NWFileStrip`, `NWFileHeader`, `NWViewedCheckbox`, `NWDiffView` over `NWChangesRow`s (`NWDiffLine`, `NWSplitDiffLine`, `NWDiffHatch`, `NWDiffFoldRow`), `NWInlineComment`, `NWCommentEditor`, `NWReviewSendBar`, `NWChangesFileList`, the menus (`NWChangesMenu`, `NWChangesMenuRow`, `NWChangesMenuToggle`, `NWChangesMenuSearch`), `NWDiffMetrics`, `NWChangesMetrics`; the commit form (`NWCommitMessageEditor`, `NWCommitFileRow`, `NWCommitOptionRow`); touch forms for iOS (`NWTouchDiffLine`, `NWSplitDiffRow`, `NWTouchFileStrip`, `NWLineCommentBar`, `NWReviewFileRow`, `NWReviewComposer`, …) | `DiffReviewView.swift`, `ChangesMenus.swift`, `ChangesRows.swift`, `ReviewCommitSheet.swift`; the iOS client |
-| Dialogs | `NWDialog` (`NWDialogMetrics`), `NWDialogStatus`, `NWSheetRow`, `NWChecklistRow`, `NWSettingsNavRow` | `DialogSheet.swift`, `AppDialogs.swift`, the sheets, `QuitConfirmation.swift`, `SettingsView.swift` |
-| Pi sign-in (`Components/PiSignIn/`) | `NWProviderBadge`, `NWProviderRow` (`NWProviderStatus`, `NWProviderStatusLine`, `NWProviderDot`), `NWProviderMenuButton`, `NWKeySourceLabel` (`NWKeySource`), `NWSharedLoginNote`, `NWReimportRow` (`NWFreshness`), `NWCardLabel`, `NWExtensionRow`, `NWSheetHeader`, `NWSheetSubtitle`, `NWSheetFooter`, `NWSheetCard`, `NWStepMark`, `NWImportStepRow`, `NWImportSummary`, `NWImportSignInRow`, `NWSignInChoiceTile`, `NWSignInStepRow` and `NWSignInSteps`, `NWDeviceCode`, `NWFailureBox`, `NWNoteCard`, `NWFieldLabel`, `NWAgentWaitingLine`, `NWAgentNotSignedInCard`, `NWPiSignInMetrics`; `NWSidebarRow.Leading.waiting` | `SettingsPiSignIn.swift`, `SettingsPiFromYourPi.swift`, `PiImportSheet.swift`, `PiSignInSheet.swift`, `Thread/ThreadView.swift` |
-| Automations | `NWAutomationRow` (a row with its switch), `NWAutomationSwitch`, `NWFactRow` and `NWFactText`, `NWAutomationPrompt`, `NWRunBars`, `NWRunRow`, `NWAutomationMetrics`; the Mac's table: `NWAutomationTableRow`, `NWRunOutcome` and `NWRunOutcomeLabel`, `NWAutomationRunLine` | `Pages/AutomationsPage.swift`; the iOS client's `Automations/` |
-| Pages | `NWPageHeader`, `NWPageFilterField`, `NWTableColumns` and `NWTableHead`, `.nwPageCard()`, `NWPageFact`, `NWPageSectionLabel`, `NWPageQuote`, `NWPageMetrics`; `NWHostPageCard` and `NWHostFact` (`NWHostPageMetrics`, in `Fleet/`) | `Pages/` (the sidebar destinations' pages) |
-| Design tool (partly built; `Components/DesignTool/`) | `NWDesignCanvas`, `NWBoardFrame`, `NWSelectionRing`, `NWCommentPin`, `NWBoardActions`, `NWCanvasToolbar`, `NWCommentCard`, `NWCommentThread`, `NWTweakRow`, `NWTokenChip`, `NWTweakScope`, `NWTweakPieceNote`, `NWDesignSystemChip`, `NWTokenSwatch`, `NWExportFormatCard`, `NWLiveLinkField` (see Design tool). Built: the canvas, frames, selection ring, toolbar, system chip, the comment pin, thread and card, the export format card (with `NWExportSheet`), and `NWActivityLine`'s `.drew` and `.checked` kinds | `Thread/ThreadTools.swift` (the activity lines), `DesignScreen.swift`, `DesignExportSheet.swift`, `Thread/ThreadView.swift` (a comment's card in the chat) |
-| Missions map (not built yet; `Components/MissionMap/`) | `NWMissionMap`, `NWStation`, `NWTerminus`, `NWFlowWire`, `NWDataWire`, `NWForkBar`, `NWJoinBar`, `NWOutcomeChip`, `NWPinRow`, `NWLane`, `NWFog`, `NWFrontierChip` (see Missions: the map) | nothing yet |
-| Mission screens (not built yet; `Components/Missions/`) | `NWMissionHeader`, `NWPhaseBar`, `NWBudgetMeter`, `NWHostChip`, `NWChoiceCard`, the mission question card, `NWPlannerNote`, `NWAttemptRow`, `NWCheckpointRow`, `NWSpendBar`, `NWTrainCard`, `NWTrainGateRow`, `NWTrainRuleRow`, `NWRepoTimeline`, `NWPathLockRow`, `NWContractRow`, `NWDiffAnnotation`, `NWTraceSpan`, `NWMergeActions`, `NWRollbackRow`, `NWTemplateInput`; iPhone: `NWMissionLiveActivity`, `NWMissionNotification`, `NWLaneStrip`; in `Components/Agents`: `NWMissionNode`, `NWInboxItem`, `NWClaimRow` (see Missions: motion, keyboard and parts to build; Mission components) | nothing yet |
+| Controls | `.buttonStyle(.sh(_:size:tint:))` (primary, secondary, ghost, danger, dangerFill; s 24 · m 28 · l 32), `.shIcon` and `.shIcon(bordered:isOn:size:tint:)` (a circle, 28pt, 44 on iOS; "on" is lantern tint), `.shLink`, `.shRow(selected:)`, `.shRowBackground(selected:hovering:)`; `.toggleStyle(.shSwitch)` (30×18) and `.shCheckbox` (14pt); `SHSegmentedPicker` (m 24, s 20), `SHPopupMenu` and `SHPopupLabel`, `SHValueSlider`, `SHStepper`; `.textFieldStyle(.sh)` and `.sh(mono:error:)` (28pt, radius 6), `.shField(focused:error:mono:)`, `.shFieldMessage(_:alignment:)`, `.textFieldStyle(.shSearch)`, `SHSearchField`; `SHButtonTitle` (a title and its chord), `SHRadioGroup`; `SHKeycap`, `SHCountBadge`, `SHTag`, `.shHelp(_:shortcut:)` | across the app; `SHRadioGroup` has no app use |
+| Status | `SHStatusPill` (20pt, radius 4; a glyph in place of its dot), `SHStatusDot` (6pt), `SHStateGlyph` (14pt), `.progressViewStyle(.shSpinner)` and `.shBar` (4pt), `SHStepStrip`, `SHSparkline`, `SHBanner`, `.shToast(item:)` with `SHToast`, `SHEmptyState`, `.shShimmer()` and `SHLoadingRows`, `SHWordmark`, `SHCrook` | across the app; `SHSparkline` and `.shToast(item:)` have no app use (see departures); `SHLoadingRows` in the directory picker |
+| Containers | `SHSectionHeader`, `SHGroupCard`, `SHCardRow`, `SHHairline`, `SHChoiceRow` (`SHChoiceRowMetrics`), `SHFlowLayout`, `SHMarkupText` | `SettingsComponents.swift`; hairlines everywhere; `SHMarkupText` for Settings' descriptions (Mac and iOS); `SHChoiceRow` in the iOS client's New thread pickers; `SHFlowLayout` for wrapping chips and answers (iOS) |
+| Navigation | `SHSidebar`, `SHSidebarTopBar`, `SHSidebarDestination`, `SHSidebarSection`, `SHSidebarRow`, `SHSidebarFooter`, `SHDropIndicator`, `SHDensity`; `SHThreadToolbar`, `SHPaneToggle`, `SHOptionsMenu`, `SHPaneHeader`; `.shCommandPalette(isPresented:)`, `SHPaletteCard`, `SHPaletteSearchRow`, `SHPaletteSectionHeader`, `SHPaletteRow` | `SidebarView.swift`, `ThreadHeader.swift`, `RootView.swift`, `CommandPaletteView.swift`; the review's header (`DiffReviewView.swift`) and the inspector's ⋯ menu (`Thread/SubagentInspector.swift`) |
+| Thread | `SHUserBubble` (its time shown while `revealed`; `origin: .steered`), `SHQueueDivider`, `SHAgentProse`, `SHCodeBlock`, `SHThinking`, `SHActivityLine`, `SHActivityCalls`, `SHChangesCard`, `SHDiffStat`, `SHInlineCode`, `SHAttachmentChip`, `SHTurnFooter` (shown while `revealed`), `SHTurnError` (card, Details, folded), `SHRetryLine`, `SHJumpToLatest`, `.shShimmer(active:)` (live text) | `Thread/ThreadView.swift`, `ThreadTurns.swift` (with each turn's `MessageHover`), `ThreadTools.swift`, `ThreadMarkdown.swift` |
+| Composer | `SHComposer`, `.shComposerChip(active:)`, `SHChipChevron`, `SHComposerActionButton` (Send, Stop, Send's ring), `SHMenuHeader`, `SHSlashMenu`, `SHModelPicker`, `SHModelSettings` (`SHModelSettingsLabel`, `SHComposerBranchLabel`, `SHFastBolt`), `SHSendMenu`, `SHPlaceMenu` and `SHPlaceChipLabel` (the New thread page's workplace); the question dock: `SHQuestionDock` (`SHQuestionDockContent`, `SHQuestionDockMetrics`, `.shQuestionCard()`), `SHQuestionHead`, `SHQuestionDockHidden` (over `SHQuestionHiddenLine`); the queue: `SHQueueStack`, `SHQueueRow`, `SHQueueEditor`, `SHQueueDeletedRow`, `SHQueueMoreRow`, `SHQueueNumber`, `SHQueueGlyph`, `SHGripGlyph`, `SHQueueMetrics` | `Thread/Composer.swift`, `Thread/QuestionDock.swift`, `Thread/QueueStack.swift` |
+| Agents | `SHSubagentTray` (`SHSubagentTrayRun`, `SHSubagentTraySummary`, `SHSubagentTrayRow`, `SHSubagentTrayMoreRow`), `SHDockStack`, `SHSubagentRecordLine`, `SHInspectorHeader`, `SHRunBrief`, `SHRunActions`, `SHBranchGlyph`, `SHElapsedText`, `SHDuration`, `SHInlineMarkup`, `.shRunArrival`; touch forms for iOS (the tray's `.pad` and `.phone` sizes, `SHRunCard`, `SHRunHeader`, `SHRunTabs`, `SHSteerField`, …) | `Thread/Subagents.swift`, `Thread/SubagentInspector.swift`, `Thread/SubagentPresentation.swift`; the iOS client |
+| Review | The Changes pane: `SHScopeButton`, `SHViewedPill`, `SHCompareRow`, `SHFileStrip`, `SHFileHeader`, `SHViewedCheckbox`, `SHDiffView` over `SHChangesRow`s (`SHDiffLine`, `SHSplitDiffLine`, `SHDiffHatch`, `SHDiffFoldRow`), `SHInlineComment`, `SHCommentEditor`, `SHReviewSendBar`, `SHChangesFileList`, the menus (`SHChangesMenu`, `SHChangesMenuRow`, `SHChangesMenuToggle`, `SHChangesMenuSearch`), `SHDiffMetrics`, `SHChangesMetrics`; the commit form (`SHCommitMessageEditor`, `SHCommitFileRow`, `SHCommitOptionRow`); touch forms for iOS (`SHTouchDiffLine`, `SHSplitDiffRow`, `SHTouchFileStrip`, `SHLineCommentBar`, `SHReviewFileRow`, `SHReviewComposer`, …) | `DiffReviewView.swift`, `ChangesMenus.swift`, `ChangesRows.swift`, `ReviewCommitSheet.swift`; the iOS client |
+| Dialogs | `SHDialog` (`SHDialogMetrics`), `SHDialogStatus`, `SHSheetRow`, `SHChecklistRow`, `SHSettingsNavRow` | `DialogSheet.swift`, `AppDialogs.swift`, the sheets, `QuitConfirmation.swift`, `SettingsView.swift` |
+| Pi sign-in (`Components/PiSignIn/`) | `SHProviderBadge`, `SHProviderRow` (`SHProviderStatus`, `SHProviderStatusLine`, `SHProviderDot`), `SHProviderMenuButton`, `SHKeySourceLabel` (`SHKeySource`), `SHSharedLoginNote`, `SHReimportRow` (`SHFreshness`), `SHCardLabel`, `SHExtensionRow`, `SHSheetHeader`, `SHSheetSubtitle`, `SHSheetFooter`, `SHSheetCard`, `SHStepMark`, `SHImportStepRow`, `SHImportSummary`, `SHImportSignInRow`, `SHSignInChoiceTile`, `SHSignInStepRow` and `SHSignInSteps`, `SHDeviceCode`, `SHFailureBox`, `SHNoteCard`, `SHFieldLabel`, `SHAgentWaitingLine`, `SHAgentNotSignedInCard`, `SHPiSignInMetrics`; `SHSidebarRow.Leading.waiting` | `SettingsPiSignIn.swift`, `SettingsPiFromYourPi.swift`, `PiImportSheet.swift`, `PiSignInSheet.swift`, `Thread/ThreadView.swift` |
+| Automations | `SHAutomationRow` (a row with its switch), `SHAutomationSwitch`, `SHFactRow` and `SHFactText`, `SHAutomationPrompt`, `SHRunBars`, `SHRunRow`, `SHAutomationMetrics`; the Mac's table: `SHAutomationTableRow`, `SHRunOutcome` and `SHRunOutcomeLabel`, `SHAutomationRunLine` | `Pages/AutomationsPage.swift`; the iOS client's `Automations/` |
+| Pages | `SHPageHeader`, `SHPageFilterField`, `SHTableColumns` and `SHTableHead`, `.shPageCard()`, `SHPageFact`, `SHPageSectionLabel`, `SHPageQuote`, `SHPageMetrics`; `SHHostPageCard` and `SHHostFact` (`SHHostPageMetrics`, in `Fleet/`) | `Pages/` (the sidebar destinations' pages) |
+| Design tool (partly built; `Components/DesignTool/`) | `SHDesignCanvas`, `SHBoardFrame`, `SHSelectionRing`, `SHCommentPin`, `SHBoardActions`, `SHCanvasToolbar`, `SHCommentCard`, `SHCommentThread`, `SHTweakRow`, `SHTokenChip`, `SHTweakScope`, `SHTweakPieceNote`, `SHDesignSystemChip`, `SHTokenSwatch`, `SHExportFormatCard`, `SHLiveLinkField` (see Design tool). Built: the canvas, frames, selection ring, toolbar, system chip, the comment pin, thread and card, the export format card (with `SHExportSheet`), and `SHActivityLine`'s `.drew` and `.checked` kinds | `Thread/ThreadTools.swift` (the activity lines), `DesignScreen.swift`, `DesignExportSheet.swift`, `Thread/ThreadView.swift` (a comment's card in the chat) |
+| Missions map (not built yet; `Components/MissionMap/`) | `SHMissionMap`, `SHStation`, `SHTerminus`, `SHFlowWire`, `SHDataWire`, `SHForkBar`, `SHJoinBar`, `SHOutcomeChip`, `SHPinRow`, `SHLane`, `SHFog`, `SHFrontierChip` (see Missions: the map) | nothing yet |
+| Mission screens (not built yet; `Components/Missions/`) | `SHMissionHeader`, `SHPhaseBar`, `SHBudgetMeter`, `SHHostChip`, `SHChoiceCard`, the mission question card, `SHPlannerNote`, `SHAttemptRow`, `SHCheckpointRow`, `SHSpendBar`, `SHTrainCard`, `SHTrainGateRow`, `SHTrainRuleRow`, `SHRepoTimeline`, `SHPathLockRow`, `SHContractRow`, `SHDiffAnnotation`, `SHTraceSpan`, `SHMergeActions`, `SHRollbackRow`, `SHTemplateInput`; iPhone: `SHMissionLiveActivity`, `SHMissionNotification`, `SHLaneStrip`; in `Components/Agents`: `SHMissionNode`, `SHInboxItem`, `SHClaimRow` (see Missions: motion, keyboard and parts to build; Mission components) | nothing yet |
 
 Rules for every component:
 
@@ -79,20 +79,20 @@ Rules for every component:
   has no public style (a segmented or popup picker, a stepper, a slider), the component draws
   its own control and represents itself to accessibility as the native one (see departures).
 - **States come from the style**, never from the view that uses it. Hover and pressed fills
-  fade on the `hover` motion. The focus ring (`.nwFocusRing()`: `focusRing`, 2pt wide, 2pt
+  fade on the `hover` motion. The focus ring (`.shFocusRing()`: `focusRing`, 2pt wide, 2pt
   outside the control, following its shape) shows for keyboard focus only, never on a click.
-  Disabled is 40% opacity (`nwEnabledOpacity`), fading on `hover`, while the label changes at
+  Disabled is 40% opacity (`shEnabledOpacity`), fading on `hover`, while the label changes at
   once.
 - **Icon-only buttons** always carry an accessibility label.
 - **Banners** sit inside the pane they concern. Agent events and tool calls never open approval
   modals.
 
-### Controls (NWControls, NWControlsLight)
+### Controls (SHControls, SHControlsLight)
 
 The light board changes only colors: every measure below holds in both appearances, and every
 color is a role.
 
-**Buttons** (`.buttonStyle(.nw(kind, size:))` on a native `Button`):
+**Buttons** (`.buttonStyle(.sh(kind, size:))` on a native `Button`):
 
 | Kind | Rest | Hover | Pressed | Use |
 | --- | --- | --- | --- | --- |
@@ -103,9 +103,9 @@ color is a role.
 | `dangerFill` | `failed` fill, white (`textOnFailed`) semibold | unchanged | the fill sunk (`#d24f4b`, `#bf3a35`) | the confirmed destructive action (Delete) |
 
 - **Sizes:** s 24 (8pt side padding, a 12pt label), m 28 (10pt, 12.5), l 32 (14pt, 13), from
-  `NW.Height.controlS/M/L`, which never scale with Density. Radius 6 (`NW.Radius.s`). Pressed
+  `SH.Height.controlS/M/L`, which never scale with Density. Radius 6 (`SH.Radius.s`). Pressed
   also nudges the button down 0.5pt. On iOS a button keeps its drawn height and grows its hit
-  area to 44 (`nwTouchTarget`). `tint:` recolors a secondary or ghost label (the review's
+  area to 44 (`shTouchTarget`). `tint:` recolors a secondary or ghost label (the review's
   Commit in `done`).
 - **Primary appears at most once per view**, and a destructive action is never the ⏎ default.
 - **With an icon:** a `Label` ("Fork" with `arrow.branch`, "Re-run" with `arrow.clockwise`),
@@ -113,140 +113,140 @@ color is a role.
 - **With a shortcut:** only on the view's main action. The chord is bound (⌘⏎:
   `.keyboardShortcut(.return, modifiers: .command)`) and drawn after the title in Geist Mono
   10.5 regular at 60% opacity, 6pt after it ("Land ⌘⏎", "New agent ⌘N"): the label is
-  `NWButtonTitle("Land", chord: "⌘↩")`, and VoiceOver hears the title alone. The Changes pane's
+  `SHButtonTitle("Land", chord: "⌘↩")`, and VoiceOver hears the title alone. The Changes pane's
   Send to agent draws ⌘↩ on the Mac (the touch bar has no chord to teach). In a sheet the primary
   is the ⏎ default instead (Dialogs and sheets).
 
-**Icon buttons** (`.buttonStyle(.nwIcon)`, `.nwIcon(bordered:isOn:size:tint:)`): always a
+**Icon buttons** (`.buttonStyle(.shIcon)`, `.shIcon(bordered:isOn:size:tint:)`): always a
 circle, 28pt (`controlM`; 44 on iOS), the SF Symbol at 14pt medium, monochrome.
 
 - rest: no fill, `textSecondary`; hover: `bgHover`, `textPrimary`; pressed: `bgSelected`
 - on: `lanternTint` with the symbol in `lanternText` (the side-pane button while the pane shows,
   however it opened)
 - bordered: a 1px `lineStrong` ring (the board's `ellipsis`); focus: the ring as a circle
-  (`.nwFocusRingCircle()`); disabled: 40%
+  (`.shFocusRingCircle()`); disabled: 40%
 - The board's set: `sidebar.left`, `square.and.pencil` (hover), a pane toggle (on),
   `ellipsis` (bordered), `xmark` (focus), `paperclip` (disabled).
 
-**Links and rows** (app additions): `.nwLink` is inline text that acts ("Show all", "Reset"),
-in `caption` and `running` unless given a color, 70% while pressed. `.nwRow(selected:)` and
-`.nwRowBackground(selected:hovering:)` give a row `bgSelected` when selected and `bgHover` while
+**Links and rows** (app additions): `.shLink` is inline text that acts ("Show all", "Reset"),
+in `caption` and `running` unless given a color, 70% while pressed. `.shRow(selected:)` and
+`.shRowBackground(selected:hovering:)` give a row `bgSelected` when selected and `bgHover` while
 hovered (while pressed on iOS), radius 6.
 
 **Selection:**
 
-- **Segmented** (`NWSegmentedPicker`): scopes and view modes, 2–4 options ("Local | PR #24",
+- **Segmented** (`SHSegmentedPicker`): scopes and view modes, 2–4 options ("Local | PR #24",
   "All | Commands | Agents"). A `bgSunken` track, radius 6, with a 1px `lineSubtle` line, 2pt
   padding, and 2pt between segments. Segments are 24pt (m; s is 20) with 10pt side padding (8
   at s) and 12pt labels: medium `textSecondary`, the selected one semibold `textPrimary` on a
   `bgSelected` pill with a 1px `lineStrong` line, radius 4. The pill slides to a new segment on
   the `content` motion (a cross-fade in place under Reduce Motion); disabled dims the segments
   and the pill.
-- **Switch** (`.toggleStyle(.nwSwitch)`): settings that apply immediately ("Check for
+- **Switch** (`.toggleStyle(.shSwitch)`): settings that apply immediately ("Check for
   updates"). A 30×18 capsule, `lantern` on and `lineStrong` off, with a 14pt knob 2pt inside
   (`knobOn` white when on, `knobOff` when off, a small `knobShadow`) that slides on `content`.
   The label, when shown, sits 8pt before it. Settings rows use it through `SettingsSwitch`.
-- **Checkbox** (`.toggleStyle(.nwCheckbox)`): lists and "done when" checks. 14pt, radius 4:
+- **Checkbox** (`.toggleStyle(.shCheckbox)`): lists and "done when" checks. 14pt, radius 4:
   off is `bgRaised` with a 1.5pt `lineStrong` border; on is `lantern` with a `textOnLantern`
   checkmark; mixed is `lantern` with a 7×2 `textOnLantern` dash. The label sits 8pt after the
   box, and only the box animates.
-- **Radio group** (`NWRadioGroup(_:selection:options:)`; the board's
-  `Picker(…).pickerStyle(.radioGroup).tint(.nw.lantern)`): rare; prefer segmented or a popup.
+- **Radio group** (`SHRadioGroup(_:selection:options:)`; the board's
+  `Picker(…).pickerStyle(.radioGroup).tint(.sh.lantern)`): rare; prefer segmented or a popup.
   14pt circles: off `bgRaised` with a 1.5pt `lineStrong` ring, on `lantern` with a 6pt
   `textOnLantern` center; each label (`ui`, `textPrimary`) 8pt after its circle, options 8pt
   apart, and only the circle animates. It draws its own circles, because the system's radio
   ignores the tint, and represents itself to accessibility as a native radio-group `Picker`.
   Nothing in the app needs one yet (the Component Gallery shows it).
 
-**Inputs** (native `TextField`, `Picker`, `Stepper`, and `Slider` in Night Watch styles; every
+**Inputs** (native `TextField`, `Picker`, `Stepper`, and `Slider` in Shepherd Design styles; every
 one 28pt, radius 6, on `bgRaised` with a 1px `lineStrong` line):
 
-- **Text field** (`.textFieldStyle(.nw)`, or `.nwField(focused:error:mono:)` where the caller
+- **Text field** (`.textFieldStyle(.sh)`, or `.shField(focused:error:mono:)` where the caller
   binds focus): 8pt side padding, 12.5pt text in `textPrimary`, the placeholder in
   `textTertiary`, a `lantern` caret. `mono` (Geist Mono 12) for paths, file names, and ids
   ("shepherd.sock", "~/dev/shepherd"). States: default; focus (the ring 2pt outside); error (the
   line turns `failed`, and the message sits 6pt under the field in `caption` `failed`: "Socket
   path already in use"); disabled (40%). The line and the ring fade on their own layer, so
   focusing never animates the text. Settings fields are 220pt (`AppLayout.settingsFieldWidth`).
-  The message is `.nwFieldMessage(_:)` (trailing-aligned under a field that ends a Settings row).
+  The message is `.shFieldMessage(_:)` (trailing-aligned under a field that ends a Settings row).
   A field whose own value is refused shows it this way: Settings ▸ Remote's port refuses anything
   outside 1–65535 ("Ports run from 1 to 65535."); a problem with a whole setting stays its row's
   problem line (Settings).
-- **Search field** (`NWSearchField`; `.textFieldStyle(.nwSearch)` for the glass alone): a 13pt
+- **Search field** (`SHSearchField`; `.textFieldStyle(.shSearch)` for the glass alone): a 13pt
   `magnifyingglass` in `textTertiary` 6pt before the text; the placeholder names what it
   searches ("Search agents", "Search settings"). While empty, the shortcut's keycaps trail
   (⌘F); with text, a clear `xmark` in `textTertiary` takes their place ("Clear search" to
   VoiceOver). `large` is the command palette's 56pt search row, without the chrome.
-- **Popup** (`NWPopupMenu`, a native `Menu` whose label is `NWPopupLabel`): longer option lists
+- **Popup** (`SHPopupMenu`, a native `Menu` whose label is `SHPopupLabel`): longer option lists
   ("claude-opus", "Nightly"). 10pt leading and 8pt trailing padding, the value in 12pt (Geist
   Mono for a model id), and a `chevron.down` in `textTertiary` 8pt after it; 200pt wide (the
-  board's; `NWPopupMenu`'s default minimum, and `AppLayout.settingsPopupWidth` in Settings). Its
+  board's; `SHPopupMenu`'s default minimum, and `AppLayout.settingsPopupWidth` in Settings). Its
   items are real menu items.
-- **Stepper** (`NWStepper`): small integer settings ("− 3M tok +"). 24pt − and + buttons in
+- **Stepper** (`SHStepper`): small integer settings ("− 3M tok +"). 24pt − and + buttons in
   `textSecondary` either side of the value in Geist Mono 12, at least 52pt wide between 1px
   `lineSubtle` rules. A bound disables its button, and the digits roll (down after −).
-- **Slider** (`NWValueSlider`): 200×16, a 3pt `lineStrong` track filled with `lantern` up to a
+- **Slider** (`SHValueSlider`): 200×16, a 3pt `lineStrong` track filled with `lantern` up to a
   14pt `knobOn` knob with a hairline `lineStrong` ring and `knobShadow`. The app adds the value
   in `mono` `textSecondary` 12pt after the track ("105%"); double-clicking it restores the
   neutral value, and ← → step it while it has keyboard focus.
 
 **Small parts:**
 
-- **Keycap** (`NWKeycap("⇧⌘B")`, one cap per key, 3pt apart): at least 18×18 with 4pt side
+- **Keycap** (`SHKeycap("⇧⌘B")`, one cap per key, 3pt apart): at least 18×18 with 4pt side
   padding, Geist Mono 10.5 in `textSecondary` on `bgRaised`, radius 4, a 1px `lineStrong` line
   with a heavier bottom edge (1.5px). Only for a real, wired chord read from
   `KeybindingsStore`; in menus, the palette, Settings, search fields, and empty states (see
   departures), never under the composer.
-- **Count badge** (`NWCountBadge(3, tone: .attention)`): a capsule at least 18×16 with 5pt side
+- **Count badge** (`SHCountBadge(3, tone: .attention)`): a capsule at least 18×16 with 5pt side
   padding, Geist Mono 10 semibold: `neutral` is `textSecondary` on `bgSelected` ("19"),
   `attention` `textOnLantern` on `lantern` (needs you, "3"), `failed` white on `failed` ("1").
   Its digits roll when the count changes.
-- **Tag** (`NWTag("worker")`, `NWTag("claude-sonnet", mono: true)`): roles, models, kinds. 18pt,
+- **Tag** (`SHTag("worker")`, `SHTag("claude-sonnet", mono: true)`): roles, models, kinds. 18pt,
   6pt side padding, radius 4, `textSecondary` on `bgSelected`, Geist 11 (Geist Mono 10.5 when
   `mono`).
-- **Tooltip** (`.nwHelp("Review changes", shortcut: "⇧⌘B")`): the label and its shortcut. The
+- **Tooltip** (`.shHelp("Review changes", shortcut: "⇧⌘B")`): the label and its shortcut. The
   board draws a 24pt tip after 600ms of hover (8pt side padding, the label at 12, the chord as
-  keycaps 8pt after it, `.nwPopover` chrome at radius 6); the app renders the system tooltip
+  keycaps 8pt after it, `.shPopover` chrome at radius 6); the app renders the system tooltip
   with the chord as text (see departures).
 
-### Status and feedback (NWStatus, NWStatusLight)
+### Status and feedback (SHStatus, SHStatusLight)
 
 Everything that tells you what an agent is doing comes from `AgentState` (Theme model › One
 status enum); a view never picks a status color itself. Only `attention` animates: its dot
 glows from full to 35% opacity and back over 1.6s, static under Reduce Motion. The light board
 changes only colors.
 
-- **Pill** (`NWStatusPill(state)`), in headers and cards: 20pt, radius 4, a 6pt dot and the
+- **Pill** (`SHStatusPill(state)`), in headers and cards: 20pt, radius 4, a 6pt dot and the
   state's word 6pt apart, 6pt leading and 7pt trailing padding, the word in Geist 11.5 medium
   in the state's text color on its tint. Queued and idle have no tint: a 1px `lineStrong` line
   and `textSecondary` words. `label:` replaces the word where the state says more ("Stuck
   14m", "Running · 0:31"), and `symbol:` puts an 11pt SF Symbol in the dot's place (the
   queue's Steering). A new state cross-fades its word and tint; a label that ticks changes at
   once.
-- **Dot** (`NWStatusDot(state)`), in rows: 6pt, filled in the state's color. Queued is a hollow 1px
+- **Dot** (`SHStatusDot(state)`), in rows: 6pt, filled in the state's color. Queued is a hollow 1px
   ring in `textTertiary`; idle is a filled `textTertiary` dot. A row that names the state puts its
   word 8pt after the dot in `textSecondary`. The sidebar's agent rows draw their own dot
-  (`NWSidebarRow`), hollow while idle as well as queued, as the Navigation boards do (Sidebar; the
+  (`SHSidebarRow`), hollow while idle as well as queued, as the Navigation boards do (Sidebar; the
   Status language table's "hollow ring").
-- **Glyph** (`NWStateGlyph`, 14pt), in tool rows, steps, and checklists: a spinner while
+- **Glyph** (`SHStateGlyph`, 14pt), in tool rows, steps, and checklists: a spinner while
   running, otherwise the state's symbol in its color; queued and idle are a 1.5pt ring.
-- **Spinner** (`ProgressView().progressViewStyle(.nwSpinner)`): a tool or turn in progress. A
+- **Spinner** (`ProgressView().progressViewStyle(.shSpinner)`): a tool or turn in progress. A
   13pt three-quarter arc in `running`, about 1.9pt wide, one turn a second, linear; drawn by
   Core Animation (Motion) and static under Reduce Motion.
-- **Bar** (`ProgressView(value:).progressViewStyle(.nwBar)`, `.nwBar(tint:)`): steps and budget.
+- **Bar** (`ProgressView(value:).progressViewStyle(.shBar)`, `.shBar(tint:)`): steps and budget.
   4pt, radius 2, on a `lineSubtle` track; the fill is `running` unless tinted with a state's
   color (the board shows running, lantern, and done fills). VoiceOver reads a percentage. The iOS
   run cards and the iOS review's progress (tinted `done`) use it.
-- **Step strip** (`NWStepStrip`): one 3pt segment per step, 3pt apart, radius 2, each at least
+- **Step strip** (`SHStepStrip`): one 3pt segment per step, 3pt apart, radius 2, each at least
   14pt and sharing the row. Done, running, and needs-you steps take their colors; pending,
   queued, and idle steps are `lineStrong`. The board draws a mission's steps; the app draws
   subagent runs with it (iOS run cards). VoiceOver reads "n of m
   steps done".
-- **Sparkline** (`NWSparkline`): tool calls per minute over the last 10 minutes, 36×12, a
+- **Sparkline** (`SHSparkline`): tool calls per minute over the last 10 minutes, 36×12, a
   1.2pt `running` line. The board puts it on running sidebar rows; the app shows elapsed time
   there instead (see departures).
 
-**Banners** (`NWBanner(state, title:message:systemImage:)`) sit inline, inside the pane they
+**Banners** (`SHBanner(state, title:message:systemImage:)`) sit inline, inside the pane they
 concern: 12pt vertical and 14pt side padding, radius 8, the state's tint (`bgRaised` for queued
 and idle) with a 1px `lineSubtle` line. A 15pt icon in the state's color, 2pt down; 12pt after
 it the title in Geist 13 semibold (`lanternText` for attention, else `textPrimary`), and 4pt
@@ -266,7 +266,7 @@ message as one text element and keeps each action a separately labelled button. 
   diagnosis that says whether retrying helps ("3 snapshot tests fail at Dynamic Type XL.
   Retrying won't help."), and **Open replay** (secondary). **Not built yet:** nothing counts
   repeated failures or diagnoses them, and the board fixes no threshold. Today a failed turn
-  shows `NWTurnError` with its tries ("Tried 3 times over 2m") and Retry, and a failed subagent
+  shows `SHTurnError` with its tries ("Tried 3 times over 2m") and Retry, and a failed subagent
   card offers Open replay and Re-run.
 - **A host reconnecting** (running, `point.topleft.down.to.point.bottomright.curvepath`):
   "<host> reconnecting", "Last seen 3h ago. Remote agents resume when it's back.", and **Retry
@@ -288,14 +288,14 @@ thread, Automations).
 
 **Transient and empty:**
 
-- **Toast** (`.nwToast(item:)` with an `NWToast`): background agent events only ("**worker**
+- **Toast** (`.shToast(item:)` with an `SHToast`): background agent events only ("**worker**
   finished · 5 files", Open). Bottom-trailing, 16pt in, one at a time (a new one replaces the
   current one), gone after 4s, rising from the bottom on the `sheet` motion. 36pt, 12pt leading
   and 8pt trailing padding, a 7pt state dot, then the subject in semibold and the message in
   12.5 `textPrimary` (two lines at most), 10pt apart, and an optional small ghost action that
-  also dismisses it; `.nwPopover(radius: NW.Radius.m)` chrome. The app posts system
+  also dismisses it; `.shPopover(radius: SH.Radius.m)` chrome. The app posts system
   notifications instead (see departures), so nothing shows one.
-- **Empty state** (`NWEmptyState(Text(title), message:)`): one sentence, one or two actions.
+- **Empty state** (`SHEmptyState(Text(title), message:)`): one sentence, one or two actions.
   Centered, 28pt vertical padding, 10pt between parts: the 28pt lantern crook (`showsMark`),
   the title in Geist 17 semibold tracked −0.02em in `textPrimary`, the sentence in 12.5
   `textSecondary` at a 1.5 line height and at most 280pt wide, then the actions 6pt apart, 4pt
@@ -304,11 +304,11 @@ thread, Automations).
   built, Missions). `framed` draws a dashed `lineStrong` border at radius 8 (the empty
   thread, which also hides the crook with `showsMark: false`). The app's copy is under Empty
   workspace and Thread.
-- **Loading placeholder** (`NWLoadingRows`, pulsing with `.nwShimmer()`; the board's
-  `.redacted(reason: .placeholder).nwShimmer()`): a remote host's list while it loads. Four rows
-  of `NW.Height.row` (28pt), each a 6pt dot and an 8pt-tall bar (radius 4) in `bgSelected`, 10pt
+- **Loading placeholder** (`SHLoadingRows`, pulsing with `.shShimmer()`; the board's
+  `.redacted(reason: .placeholder).shShimmer()`): a remote host's list while it loads. Four rows
+  of `SH.Height.row` (28pt), each a 6pt dot and an 8pt-tall bar (radius 4) in `bgSelected`, 10pt
   apart, the bars at 70%, 52%, 64%, and 40% of the width. The block pulses between 55% and full
-  opacity over 1.4s (`shimmer`), static under Reduce Motion and while hidden (`nwMotionPaused`),
+  opacity over 1.4s (`shimmer`), static under Reduce Motion and while hidden (`shMotionPaused`),
   and reads "Loading" to VoiceOver. The directory picker shows it while a host's first listing is
   on its way (the footer says "Loading…"); a remote agent's thread keeps its own placeholder and
   banner (A host reconnecting, above).

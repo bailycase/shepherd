@@ -2,7 +2,7 @@ import SwiftUI
 import ImageIO
 
 /// Markdown paths have no scheme; Launch Services needs an absolute file URL, not a relative URL.
-enum NWProseLink {
+enum SHProseLink {
     static func destination(_ url: URL, root: URL?) -> URL? {
         guard url.scheme == nil || url.isFileURL else { return url }
         // A remote agent's path must never open a same-named file on this device.
@@ -16,35 +16,35 @@ enum NWProseLink {
 
 // MARK: Images
 
-/// An image in prose. A local file this device can read (`nwProseFileRoot` set: the agent's
+/// An image in prose. A local file this device can read (`shProseFileRoot` set: the agent's
 /// files are here) draws as a thumbnail within `proseImageMaxWidth` × `proseImageMaxHeight`,
 /// radius 8 with a hairline `lineSubtle` border, and opens in the default app on click. Anything
 /// else is a chip (the attachment chip's anatomy with the `photo` glyph): a remote URL is never
 /// fetched, only opened in the browser from its chip, and a file on another machine names itself.
-struct NWProseImageView: View {
-    let image: NWProseImage
-    @Environment(\.nwProseFileRoot) private var root
+struct SHProseImageView: View {
+    let image: SHProseImage
+    @Environment(\.shProseFileRoot) private var root
     @Environment(\.openURL) private var openURL
     @Environment(\.displayScale) private var displayScale
     @State private var thumbnail: (url: URL, image: CGImage)?
 
     var body: some View {
-        let source = NWProseImageSource(image.source, root: root)
+        let source = SHProseImageSource(image.source, root: root)
         Group {
             if case .file(let url) = source,
-               let cg = (thumbnail?.url == url ? thumbnail?.image : nil) ?? NWProseThumbnails.cached(url) {
+               let cg = (thumbnail?.url == url ? thumbnail?.image : nil) ?? SHProseThumbnails.cached(url) {
                 Button { openURL(url) } label: {
                     Image(decorative: cg, scale: displayScale)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: min(CGFloat(cg.width) / displayScale, NWThreadMetrics.proseImageMaxWidth),
-                               maxHeight: min(CGFloat(cg.height) / displayScale, NWThreadMetrics.proseImageMaxHeight),
+                        .frame(maxWidth: min(CGFloat(cg.width) / displayScale, SHThreadMetrics.proseImageMaxWidth),
+                               maxHeight: min(CGFloat(cg.height) / displayScale, SHThreadMetrics.proseImageMaxHeight),
                                alignment: .leading)
-                        .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
-                        .nwBorder(Color.nw.lineSubtle, radius: NW.Radius.m)
+                        .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
+                        .shBorder(Color.sh.lineSubtle, radius: SH.Radius.m)
                 }
                 .buttonStyle(.plain)
-                .nwFocusRing(radius: NW.Radius.m)
+                .shFocusRing(radius: SH.Radius.m)
                 .help(url.path)
                 .accessibilityLabel(image.alt.isEmpty ? url.lastPathComponent : image.alt)
                 .accessibilityAddTraits(.isImage)
@@ -53,19 +53,19 @@ struct NWProseImageView: View {
             }
         }
         .task(id: source) {
-            guard case .file(let url) = source, NWProseThumbnails.cached(url) == nil else { return }
-            let loaded = await NWProseThumbnails.load(url, pixels: NWThreadMetrics.proseImageMaxWidth * displayScale)
+            guard case .file(let url) = source, SHProseThumbnails.cached(url) == nil else { return }
+            let loaded = await SHProseThumbnails.load(url, pixels: SHThreadMetrics.proseImageMaxWidth * displayScale)
             guard !Task.isCancelled else { return }
             thumbnail = loaded.map { (url, $0) }
         }
     }
 
-    @ViewBuilder private func chip(_ source: NWProseImageSource) -> some View {
-        let label = NWProseImageChip(name: image.alt.isEmpty ? source.name : image.alt, detail: source.detail)
+    @ViewBuilder private func chip(_ source: SHProseImageSource) -> some View {
+        let label = SHProseImageChip(name: image.alt.isEmpty ? source.name : image.alt, detail: source.detail)
         if case .web(let url) = source {
             Button { openURL(url) } label: { label }
                 .buttonStyle(.plain)
-                .nwFocusRing(radius: NW.Radius.s)
+                .shFocusRing(radius: SH.Radius.s)
                 .help(url.absoluteString)
                 .accessibilityHint("Opens the image in your browser")
         } else {
@@ -75,7 +75,7 @@ struct NWProseImageView: View {
 }
 
 /// Where an image in prose lives, and whether this device may draw it.
-enum NWProseImageSource: Hashable {
+enum SHProseImageSource: Hashable {
     /// A file this device can read.
     case file(URL)
     /// A web image: never fetched, opened in the browser on request.
@@ -122,26 +122,26 @@ enum NWProseImageSource: Hashable {
 
 /// An image that is not drawn: the `photo` glyph, its name, and its host, 26pt with a 1px
 /// `lineStrong` line and radius 6, as an attachment chip.
-struct NWProseImageChip: View {
+struct SHProseImageChip: View {
     let name: String
     let detail: String?
 
     var body: some View {
-        let nw = Color.nw
-        HStack(spacing: NW.Space.s) {
+        let sh = Color.sh
+        HStack(spacing: SH.Space.s) {
             Image(systemName: "photo")
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(nw.textSecondary)
+                .foregroundStyle(sh.textSecondary)
                 .accessibilityHidden(true)
-            Text(name).foregroundStyle(nw.textPrimary).lineLimit(1).truncationMode(.middle)
+            Text(name).foregroundStyle(sh.textPrimary).lineLimit(1).truncationMode(.middle)
             if let detail {
-                Text(detail).font(.nwMono(10.5)).foregroundStyle(nw.textTertiary).lineLimit(1)
+                Text(detail).font(.shMono(10.5)).foregroundStyle(sh.textTertiary).lineLimit(1)
             }
         }
-        .font(.nwSans(12))
-        .padding(.horizontal, NW.Space.m)
-        .frame(height: NWThreadMetrics.attachmentHeight)
-        .nwBorder(nw.lineStrong, radius: NW.Radius.s)
+        .font(.shSans(12))
+        .padding(.horizontal, SH.Space.m)
+        .frame(height: SHThreadMetrics.attachmentHeight)
+        .shBorder(sh.lineStrong, radius: SH.Radius.s)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Image, \(name)")
@@ -151,7 +151,7 @@ struct NWProseImageChip: View {
 /// Thumbnails of local images, decoded off the main actor at the size they are drawn (ImageIO
 /// never decodes the full image) and kept for the session.
 @MainActor
-enum NWProseThumbnails {
+enum SHProseThumbnails {
     private static var values: [URL: CGImage] = [:]
 
     static func cached(_ url: URL) -> CGImage? { values[url] }
@@ -183,19 +183,19 @@ enum NWProseThumbnails {
 /// the blocks inside sit 12pt past a 2pt `lineStrong` rule, as expanded thinking does. With
 /// nothing inside, the summary is a plain line: its chevron's place stays, empty, and nothing
 /// opens.
-struct NWProseDetails<Code: View>: View {
+struct SHProseDetails<Code: View>: View {
     let summary: AttributedString
-    let blocks: [NWProseBlock]
+    let blocks: [SHProseBlock]
     let path: [Int]
     let depth: Int
-    let voice: NWProseVoice
+    let voice: SHProseVoice
     let code: (String, String?) -> Code
     @State private var open: Bool
-    @Environment(\.nwProseSize) private var size
+    @Environment(\.shProseSize) private var size
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// `open` starts it open (previews).
-    init(summary: AttributedString, blocks: [NWProseBlock], path: [Int] = [], depth: Int, voice: NWProseVoice = .reply, open: Bool = false,
+    init(summary: AttributedString, blocks: [SHProseBlock], path: [Int] = [], depth: Int, voice: SHProseVoice = .reply, open: Bool = false,
          code: @escaping (String, String?) -> Code) {
         self.summary = summary
         self.blocks = blocks
@@ -207,47 +207,47 @@ struct NWProseDetails<Code: View>: View {
     }
 
     var body: some View {
-        let nw = Color.nw
-        VStack(alignment: .leading, spacing: NW.Space.m) {
+        let sh = Color.sh
+        VStack(alignment: .leading, spacing: SH.Space.m) {
             if blocks.isEmpty {
                 label(expandable: false)
             } else {
                 Button {
-                    withAnimation(NW.Motion.disclosure.animation(reduceMotion: reduceMotion)) { open.toggle() }
+                    withAnimation(SH.Motion.disclosure.animation(reduceMotion: reduceMotion)) { open.toggle() }
                 } label: {
                     label(expandable: true)
                 }
                 .buttonStyle(.plain)
-                .nwFocusRing(radius: NW.Radius.xs)
+                .shFocusRing(radius: SH.Radius.xs)
                 .accessibilityValue(open ? "Expanded" : "Collapsed")
             }
             if open, !blocks.isEmpty {
-                VStack(alignment: .leading, spacing: voice == .thinking ? NW.Space.m : NW.Space.l) {
-                    NWProseBlocks(blocks: blocks, path: path, nested: true, depth: depth, voice: voice, code: code)
+                VStack(alignment: .leading, spacing: voice == .thinking ? SH.Space.m : SH.Space.l) {
+                    SHProseBlocks(blocks: blocks, path: path, nested: true, depth: depth, voice: voice, code: code)
                 }
-                .padding(.leading, NW.Space.l)
-                .overlay(alignment: .leading) { nw.lineStrong.frame(width: NWThreadMetrics.ruleWidth) }
-                .nwTransition(.disclosure)
+                .padding(.leading, SH.Space.l)
+                .overlay(alignment: .leading) { sh.lineStrong.frame(width: SHThreadMetrics.ruleWidth) }
+                .shTransition(.disclosure)
             }
         }
     }
 
     private func label(expandable: Bool) -> some View {
-        let nw = Color.nw
-        return HStack(alignment: .firstTextBaseline, spacing: NW.Space.s) {
-            NWThreadChevron(isExpanded: open, shown: expandable).foregroundStyle(nw.textSecondary)
+        let sh = Color.sh
+        return HStack(alignment: .firstTextBaseline, spacing: SH.Space.s) {
+            SHThreadChevron(isExpanded: open, shown: expandable).foregroundStyle(sh.textSecondary)
             Group {
                 if voice == .thinking {
-                    Text(summary).font(NWThinking.headingFont).italic().foregroundStyle(nw.textSecondary)
+                    Text(summary).font(SHThinking.headingFont).italic().foregroundStyle(sh.textSecondary)
                 } else {
-                    Text(summary).font(.nw(.body, weight: .medium, size: size)).foregroundStyle(nw.textPrimary)
+                    Text(summary).font(.sh(.body, weight: .medium, size: size)).foregroundStyle(sh.textPrimary)
                 }
             }
             .multilineTextAlignment(.leading)
             .fixedSize(horizontal: false, vertical: true)
         }
         #if os(iOS)
-        .frame(minHeight: expandable ? NW.Height.touch : nil)
+        .frame(minHeight: expandable ? SH.Height.touch : nil)
         #endif
         .contentShape(Rectangle())
     }
@@ -257,24 +257,24 @@ struct NWProseDetails<Code: View>: View {
 
 /// The message's notes after a hairline: each number in caption tertiary where a list's
 /// marker sits, and its text in caption `textSecondary`.
-struct NWProseFootnotes: View {
-    let notes: [NWProseFootnote]
-    @Environment(\.nwProseFileRoot) private var fileRoot
-    @Environment(\.nwProseFileLinks) private var fileLinks
+struct SHProseFootnotes: View {
+    let notes: [SHProseFootnote]
+    @Environment(\.shProseFileRoot) private var fileRoot
+    @Environment(\.shProseFileLinks) private var fileLinks
 
     var body: some View {
-        let nw = Color.nw
-        VStack(alignment: .leading, spacing: NW.Space.xs) {
-            NWHairline().padding(.bottom, NW.Space.xs)
+        let sh = Color.sh
+        VStack(alignment: .leading, spacing: SH.Space.xs) {
+            SHHairline().padding(.bottom, SH.Space.xs)
             ForEach(notes, id: \.number) { note in
                 HStack(alignment: .firstTextBaseline, spacing: 0) {
-                    Text("\(note.number)").font(.nw(.caption)).foregroundStyle(nw.textTertiary).monospacedDigit()
-                        .frame(width: NWThreadMetrics.listIndent - NW.Space.s, alignment: .trailing)
-                        .padding(.trailing, NW.Space.s)
-                    NWProseFileLinks.prose(note.text, root: fileRoot, actions: fileLinks).nwText(.caption).foregroundStyle(nw.textSecondary)
+                    Text("\(note.number)").font(.sh(.caption)).foregroundStyle(sh.textTertiary).monospacedDigit()
+                        .frame(width: SHThreadMetrics.listIndent - SH.Space.s, alignment: .trailing)
+                        .padding(.trailing, SH.Space.s)
+                    SHProseFileLinks.prose(note.text, root: fileRoot, actions: fileLinks).shText(.caption).foregroundStyle(sh.textSecondary)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
-                        .modifier(NWFileLinkTargets(actions: NWProseFileLinks.targets(note.text, root: fileRoot, actions: fileLinks)))
+                        .modifier(SHFileLinkTargets(actions: SHProseFileLinks.targets(note.text, root: fileRoot, actions: fileLinks)))
                 }
                 .accessibilityElement(children: .combine)
             }

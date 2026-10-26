@@ -35,7 +35,7 @@ struct ProjectTaskQuestion: View {
                 .id(session.key + ":" + dialog.id)
             } else {
                 Text(store.loadError ?? task.detail ?? "Loading question…")
-                    .font(.nw(.caption)).foregroundStyle(Color.nw.textSecondary)
+                    .font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
             }
         }
         .task(id: key) {
@@ -59,7 +59,7 @@ struct ProjectSpaceOffer: View {
     var body: some View {
         let space = proposal.spaceID.flatMap { id in projects.host(ref)?.state.spaces.first { $0.id == id } }
         let path = space?.path ?? proposal.displayPath
-        NWLeadSpaceOffer(name: space?.name ?? (path as NSString).lastPathComponent,
+        SHLeadSpaceOffer(name: space?.name ?? (path as NSString).lastPathComponent,
                          path: "\(path) · \(projects.host(ref)?.name ?? "Host")", enabled: projects.canRun(ref)) {
             Task { _ = await projects.model.decideSpace(ref, proposal: proposal, accept: false) }
         } add: {

@@ -25,17 +25,17 @@ struct HostsPage: View {
         VStack(spacing: 0) {
             DestinationPageHeader(title: "Hosts", subtitle: model.subtitle, chrome: chrome) {
                 Button("Add host", systemImage: "plus", action: actions.addHost)
-                    .buttonStyle(.nw(.primary))
+                    .buttonStyle(.sh(.primary))
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: AppLayout.hostExplainerSpacing) {
                     Text(Self.explainer)
-                        .font(.nw(.ui, weight: .regular))
-                        .lineSpacing(NWTextStyle.caption.lineSpacing)
-                        .foregroundStyle(Color.nw.textSecondary)
+                        .font(.sh(.ui, weight: .regular))
+                        .lineSpacing(SHTextStyle.caption.lineSpacing)
+                        .foregroundStyle(Color.sh.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: AppLayout.hostExplainerMaxWidth, alignment: .leading)
-                    Grid(horizontalSpacing: NWPageMetrics.columnGap, verticalSpacing: NWPageMetrics.columnGap) {
+                    Grid(horizontalSpacing: SHPageMetrics.columnGap, verticalSpacing: SHPageMetrics.columnGap) {
                         ForEach(model.rows, id: \.first?.id) { row in
                             GridRow {
                                 ForEach(row) { card in
@@ -49,12 +49,12 @@ struct HostsPage: View {
                         }
                     }
                 }
-                .padding(.vertical, NWPageMetrics.bodyVertical)
-                .padding(.horizontal, NWPageMetrics.sideInset)
+                .padding(.vertical, SHPageMetrics.bodyVertical)
+                .padding(.horizontal, SHPageMetrics.sideInset)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
     }
 }
 
@@ -67,21 +67,21 @@ struct HostPageCardView: View, Equatable {
 
     var body: some View {
         if case .remote(let id) = card.id {
-            NWHostPageCard(name: card.name, subtitle: card.subtitle, offlineSince: card.offlineSince, status: card.status,
+            SHHostPageCard(name: card.name, subtitle: card.subtitle, offlineSince: card.offlineSince, status: card.status,
                            state: card.state, facts: card.facts, note: card.note) {
                 if card.canRetry {
                     Button("Retry", systemImage: "arrow.clockwise") { actions.retry(id) }
-                        .buttonStyle(.nw(.secondary, size: .s))
+                        .buttonStyle(.sh(.secondary, size: .s))
                         .accessibilityLabel("Retry \(card.name)")
                 }
                 if card.canRemove {
                     Button("Remove") { actions.remove(id) }
-                        .buttonStyle(.nw(.ghost, size: .s))
+                        .buttonStyle(.sh(.ghost, size: .s))
                         .accessibilityLabel("Remove \(card.name)")
                 }
             }
         } else {
-            NWHostPageCard(name: card.name, subtitle: card.subtitle, status: card.status, state: card.state,
+            SHHostPageCard(name: card.name, subtitle: card.subtitle, status: card.status, state: card.state,
                            facts: card.facts, note: card.note)
         }
     }

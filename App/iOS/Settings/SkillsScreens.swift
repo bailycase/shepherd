@@ -34,23 +34,23 @@ struct SkillsScreen: View {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
                 VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
                     Text("Global: every host gets the same skills. Tap one for how it’s used, its files and hosts.")
-                        .nwText(.caption)
-                        .foregroundStyle(Color.nw.textSecondary)
+                        .shText(.caption)
+                        .foregroundStyle(Color.sh.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, NW.Space.xs)
-                    NWTouchSearchField("Search skills.sh", text: $query, focus: $searchFocused)
+                        .padding(.horizontal, SH.Space.xs)
+                    SHTouchSearchField("Search skills.sh", text: $query, focus: $searchFocused)
                 }
                 if let problem = model.problem {
-                    NWBanner(.failed, title: problem) {
+                    SHBanner(.failed, title: problem) {
                         if let entry = model.unacknowledged {
-                            Button("Resolve…") { resolving = entry }.buttonStyle(.nw(.secondary))
+                            Button("Resolve…") { resolving = entry }.buttonStyle(.sh(.secondary))
                         }
-                        Button("OK") { model.dismissProblem() }.buttonStyle(.nw(.secondary))
+                        Button("OK") { model.dismissProblem() }.buttonStyle(.sh(.secondary))
                     }
                 }
                 if let removal = model.removal {
-                    NWBanner(.idle, title: SkillsPresentation.removed(removal), systemImage: "trash") {
-                        Button("Undo") { model.undoRemoval(in: skillsHosts) }.buttonStyle(.nw(.secondary))
+                    SHBanner(.idle, title: SkillsPresentation.removed(removal), systemImage: "trash") {
+                        Button("Undo") { model.undoRemoval(in: skillsHosts) }.buttonStyle(.sh(.secondary))
                     }
                 }
                 if term.isEmpty {
@@ -80,8 +80,8 @@ struct SkillsScreen: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .refreshable { await store.refresh() }
-        .background(Color.nw.bgWindow)
-        .nwAnimation(.content, value: term.isEmpty)
+        .background(Color.sh.bgWindow)
+        .shAnimation(.content, value: term.isEmpty)
         .navigationTitle("Skills")
         .navigationBarTitleDisplayMode(inColumn ? .inline : .large)
         .toolbar {
@@ -133,10 +133,10 @@ private struct InstalledSkills: View {
             let rows = model.rows(in: hosts)
             let updates = rows.filter { $0.skill.update != nil }.count
             VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-                NWListHeader("Installed · \(rows.count)") {
+                SHListHeader("Installed · \(rows.count)") {
                     if updates > 0 {
                         Button("Update \(updates)") { Task { await model.updateAll(in: hosts) } }
-                            .buttonStyle(.nwLink(font: .nw(.caption, weight: .medium)))
+                            .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
                             .disabled(rows.contains(where: \.isUpdating))
                     }
                 }
@@ -153,14 +153,14 @@ private struct InstalledSkills: View {
                             .equatable()
                         }
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: NWListMetrics.cardRadius))
-                    .nwCard(radius: NWListMetrics.cardRadius)
+                    .clipShape(RoundedRectangle(cornerRadius: SHListMetrics.cardRadius))
+                    .shCard(radius: SHListMetrics.cardRadius)
                 }
                 if let note = SkillsPresentation.offlineNote(hosts) {
                     SettingsFootnote(note)
                 }
             }
-            .nwAnimation(.list, value: rows.map(\.id))
+            .shAnimation(.list, value: rows.map(\.id))
         } else {
             unavailable
         }
@@ -184,7 +184,7 @@ private struct InstalledSkills: View {
         } else if !failures.isEmpty, !connected.contains(where: { model.state(of: $0) == .loading }) {
             SettingsFootnote(failures[0], tone: .failed)
         } else {
-            ProgressView().progressViewStyle(NWSpinnerStyle())
+            ProgressView().progressViewStyle(SHSpinnerStyle())
                 .frame(maxWidth: .infinity)
         }
     }
@@ -204,54 +204,54 @@ private struct SkillListRow: View, Equatable {
     }
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let skill = row.skill
         ZStack(alignment: .trailing) {
             Button(action: open) {
-                HStack(spacing: NW.Space.m + NW.Space.xxs) {
+                HStack(spacing: SH.Space.m + SH.Space.xxs) {
                     VStack(alignment: .leading, spacing: MobileLayout.skillLineSpacing) {
                         Text(skill.name)
-                            .font(.nwSans(MobileLayout.skillNameSize, .bold))
-                            .foregroundStyle(skill.isOn ? nw.textPrimary : nw.textSecondary)
+                            .font(.shSans(MobileLayout.skillNameSize, .bold))
+                            .foregroundStyle(skill.isOn ? sh.textPrimary : sh.textSecondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
                         Text(SkillsPresentation.mobileSummary(skill))
-                            .font(.nwSans(MobileLayout.skillSummarySize))
-                            .foregroundStyle(nw.textTertiary)
+                            .font(.shSans(MobileLayout.skillSummarySize))
+                            .foregroundStyle(sh.textTertiary)
                             .lineLimit(2)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     if row.isUpdating {
                         Text("Updating")
-                            .font(.nw(.caption, weight: .medium))
-                            .foregroundStyle(nw.running)
-                            .nwShimmer(active: true)
+                            .font(.sh(.caption, weight: .medium))
+                            .foregroundStyle(sh.running)
+                            .shShimmer(active: true)
                     } else if skill.update != nil {
-                        NWUpdatePill()
+                        SHUpdatePill()
                     }
                     Color.clear
                         .frame(width: MobileLayout.skillSwitchSlot, height: 1)
                         .accessibilityHidden(true)
                     Image(systemName: "chevron.right")
-                        .font(.nw(.caption, weight: .semibold))
-                        .foregroundStyle(nw.textTertiary)
+                        .font(.sh(.caption, weight: .semibold))
+                        .foregroundStyle(sh.textTertiary)
                         .frame(width: MobileLayout.skillChevronSlot)
                         .accessibilityHidden(true)
                 }
-                .padding(.vertical, NW.Space.m)
-                .padding(.horizontal, NW.Space.l + NW.Space.xxs)
+                .padding(.vertical, SH.Space.m)
+                .padding(.horizontal, SH.Space.l + SH.Space.xxs)
                 .frame(maxWidth: .infinity, minHeight: MobileLayout.skillRowHeight, alignment: .leading)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.nwRow(radius: 0))
+            .buttonStyle(.shRow(radius: 0))
             .accessibilityLabel(skill.update == nil ? skill.name : "\(skill.name), update available")
             .accessibilityHint(SkillsPresentation.mobileSummary(skill))
             Toggle(skill.name, isOn: Binding(get: { skill.isOn }, set: toggle))
-                .toggleStyle(.nwSwitch)
+                .toggleStyle(.shSwitch)
                 .labelsHidden()
-                .padding(.trailing, NW.Space.l + NW.Space.xxs + MobileLayout.skillChevronSlot + NW.Space.m + NW.Space.xxs)
+                .padding(.trailing, SH.Space.l + SH.Space.xxs + MobileLayout.skillChevronSlot + SH.Space.m + SH.Space.xxs)
         }
-        .overlay(alignment: .top) { if !first { NWHairline() } }
+        .overlay(alignment: .top) { if !first { SHHairline() } }
     }
 }
 
@@ -266,15 +266,15 @@ private struct PiSkillsSections: View {
             let groups = model.piGroups(in: hosts)
             ForEach(groups) { group in
                 VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-                    NWListHeader("\(SkillsPresentation.groupTitle(group.kind)) · \(group.rows.count)")
+                    SHListHeader("\(SkillsPresentation.groupTitle(group.kind)) · \(group.rows.count)")
                     LazyVStack(spacing: 0) {
                         ForEach(Array(group.rows.enumerated()), id: \.element.id) { index, row in
                             PiSkillListRow(row: row, first: index == 0)
                                 .equatable()
                         }
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: NWListMetrics.cardRadius))
-                    .nwCard(radius: NWListMetrics.cardRadius)
+                    .clipShape(RoundedRectangle(cornerRadius: SHListMetrics.cardRadius))
+                    .shCard(radius: SHListMetrics.cardRadius)
                 }
             }
             if let problem = pi.skills.problem {
@@ -294,28 +294,28 @@ private struct PiSkillListRow: View, Equatable {
     let first: Bool
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let skill = row.skill
         VStack(alignment: .leading, spacing: MobileLayout.skillLineSpacing) {
             Text(skill.name)
-                .font(.nwMono(MobileLayout.skillNameSize, .semibold))
-                .foregroundStyle(skill.isUsed ? nw.textPrimary : nw.textSecondary)
+                .font(.shMono(MobileLayout.skillNameSize, .semibold))
+                .foregroundStyle(skill.isUsed ? sh.textPrimary : sh.textSecondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
             Text(SkillsPresentation.mobileSummary(skill))
-                .font(.nwSans(MobileLayout.skillSummarySize))
-                .foregroundStyle(nw.textTertiary)
+                .font(.shSans(MobileLayout.skillSummarySize))
+                .foregroundStyle(sh.textTertiary)
                 .lineLimit(2)
             Text(SkillsPresentation.source(skill))
-                .font(.nwMono(MobileLayout.skillSummarySize - 1))
-                .foregroundStyle(nw.textTertiary)
+                .font(.shMono(MobileLayout.skillSummarySize - 1))
+                .foregroundStyle(sh.textTertiary)
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
-        .padding(.vertical, NW.Space.m)
-        .padding(.horizontal, NW.Space.l + NW.Space.xxs)
+        .padding(.vertical, SH.Space.m)
+        .padding(.horizontal, SH.Space.l + SH.Space.xxs)
         .frame(maxWidth: .infinity, minHeight: MobileLayout.skillRowHeight, alignment: .leading)
-        .overlay(alignment: .top) { if !first { NWHairline() } }
+        .overlay(alignment: .top) { if !first { SHHairline() } }
         .accessibilityElement(children: .combine)
     }
 }
@@ -335,7 +335,7 @@ private struct SkillSearchResults: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-            NWListHeader(searching && results.isEmpty ? "Searching skills.sh…" : SkillsPresentation.results(results.count, for: term))
+            SHListHeader(searching && results.isEmpty ? "Searching skills.sh…" : SkillsPresentation.results(results.count, for: term))
             if let failure {
                 SettingsFootnote(failure, tone: .failed)
             } else if results.isEmpty {
@@ -356,8 +356,8 @@ private struct SkillSearchResults: View {
                         .equatable()
                     }
                 }
-                .clipShape(RoundedRectangle(cornerRadius: NWListMetrics.cardRadius))
-                .nwCard(radius: NWListMetrics.cardRadius)
+                .clipShape(RoundedRectangle(cornerRadius: SHListMetrics.cardRadius))
+                .shCard(radius: SHListMetrics.cardRadius)
             }
         }
     }
@@ -378,21 +378,21 @@ private struct SkillResultLine: View, Equatable {
     }
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         ZStack(alignment: .trailing) {
             Button(action: open) {
-                HStack(spacing: NW.Space.m + NW.Space.xxs) {
+                HStack(spacing: SH.Space.m + SH.Space.xxs) {
                     VStack(alignment: .leading, spacing: MobileLayout.skillLineSpacing) {
-                        HStack(spacing: NW.Space.s) {
+                        HStack(spacing: SH.Space.s) {
                             Text(name)
-                                .font(.nwMono(MobileLayout.skillNameSize, .semibold))
+                                .font(.shMono(MobileLayout.skillNameSize, .semibold))
                                 .lineLimit(1)
                                 .truncationMode(.middle)
-                            if skill.official { NWOfficialSeal(size: MobileLayout.skillSummarySize) }
+                            if skill.official { SHOfficialSeal(size: MobileLayout.skillSummarySize) }
                         }
                         Text(SkillsPresentation.resultMeta(skill))
-                            .font(.nwSans(MobileLayout.skillSummarySize))
-                            .foregroundStyle(nw.textTertiary)
+                            .font(.shSans(MobileLayout.skillSummarySize))
+                            .foregroundStyle(sh.textTertiary)
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
@@ -401,53 +401,53 @@ private struct SkillResultLine: View, Equatable {
                         .frame(width: MobileLayout.skillStatusSlot, height: 1)
                         .accessibilityHidden(true)
                 }
-                .padding(.vertical, NW.Space.m)
-                .padding(.horizontal, NW.Space.l + NW.Space.xxs)
+                .padding(.vertical, SH.Space.m)
+                .padding(.horizontal, SH.Space.l + SH.Space.xxs)
                 .frame(maxWidth: .infinity, minHeight: MobileLayout.skillRowHeight, alignment: .leading)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.nwRow(radius: 0))
+            .buttonStyle(.shRow(radius: 0))
             .accessibilityLabel(skill.name)
             .accessibilityHint(SkillsPresentation.resultMeta(skill))
             status
                 .frame(width: MobileLayout.skillStatusSlot, alignment: .trailing)
-                .padding(.trailing, NW.Space.l + NW.Space.xxs)
+                .padding(.trailing, SH.Space.l + SH.Space.xxs)
         }
-        .overlay(alignment: .top) { if !first { NWHairline() } }
+        .overlay(alignment: .top) { if !first { SHHairline() } }
     }
 
     /// The name with the search's matches in lantern.
     private var name: AttributedString {
         var text = AttributedString(skill.name)
-        text.foregroundColor = Color.nw.textPrimary
+        text.foregroundColor = Color.sh.textPrimary
         for range in DirectoryPresentation.matches(of: term, in: skill.name) {
             guard let lower = AttributedString.Index(range.lowerBound, within: text),
                   let upper = AttributedString.Index(range.upperBound, within: text) else { continue }
-            text[lower..<upper].foregroundColor = Color.nw.lanternText
+            text[lower..<upper].foregroundColor = Color.sh.lanternText
         }
         return text
     }
 
     @ViewBuilder private var status: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         switch state {
         case .install:
             Button("Install", action: install)
-                .buttonStyle(.nw(.secondary, size: .s))
+                .buttonStyle(.sh(.secondary, size: .s))
                 .accessibilityLabel("Install \(skill.name)")
         case .installing(let progress):
             Text("\(progress.installed) of \(progress.steps.count) hosts")
-                .font(.nw(.caption))
-                .foregroundStyle(nw.textSecondary)
-                .nwShimmer(active: true)
+                .font(.sh(.caption))
+                .foregroundStyle(sh.textSecondary)
+                .shShimmer(active: true)
                 .lineLimit(1)
         case .installed:
             Label("Installed", systemImage: "checkmark")
-                .font(.nw(.caption))
-                .foregroundStyle(nw.done)
+                .font(.sh(.caption))
+                .foregroundStyle(sh.done)
                 .lineLimit(1)
         case .update:
-            NWUpdatePill()
+            SHUpdatePill()
         }
     }
 }
@@ -470,29 +470,29 @@ struct SkillResultScreen: View {
         let store = SettingsStore.of(hosts)
         let model = store.skills
         let skillsHosts = store.skillsHosts
-        let nw = Color.nw
+        let sh = Color.sh
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
-                VStack(alignment: .leading, spacing: NW.Space.s) {
-                    HStack(spacing: NW.Space.s) {
+                VStack(alignment: .leading, spacing: SH.Space.s) {
+                    HStack(spacing: SH.Space.s) {
                         Text(skill.name)
-                            .font(.nwMono(MobileLayout.skillTitleSize, .semibold))
-                            .foregroundStyle(nw.textPrimary)
+                            .font(.shMono(MobileLayout.skillTitleSize, .semibold))
+                            .foregroundStyle(sh.textPrimary)
                             .textSelection(.enabled)
-                        if skill.official { NWOfficialSeal(size: MobileLayout.skillSummarySize) }
+                        if skill.official { SHOfficialSeal(size: MobileLayout.skillSummarySize) }
                     }
                     Text(SkillsPresentation.resultMeta(skill))
-                        .font(.nw(.caption))
-                        .foregroundStyle(nw.textTertiary)
+                        .font(.sh(.caption))
+                        .foregroundStyle(sh.textTertiary)
                     if let summary = preview?.summary {
                         Text(summary)
-                            .nwText(.body)
-                            .foregroundStyle(nw.textSecondary)
+                            .shText(.body)
+                            .foregroundStyle(sh.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
-                            .padding(.top, NW.Space.xs)
+                            .padding(.top, SH.Space.xs)
                     }
                 }
-                .padding(.horizontal, NW.Space.xs)
+                .padding(.horizontal, SH.Space.xs)
                 installBlock(model: model, hosts: skillsHosts)
                 if let preview {
                     SettingsSection("SKILL.md") {
@@ -507,24 +507,24 @@ struct SkillResultScreen: View {
                 } else if unavailable {
                     SettingsFootnote("The skills directory didn't send this skill's files. It can still be installed.")
                 } else {
-                    ProgressView().progressViewStyle(NWSpinnerStyle())
+                    ProgressView().progressViewStyle(SHSpinnerStyle())
                         .frame(maxWidth: .infinity)
                 }
-                VStack(alignment: .leading, spacing: NW.Space.m) {
+                VStack(alignment: .leading, spacing: SH.Space.m) {
                     Button("Pick from all of \(skill.source)") { navigator.open(.settings(.skillsRepo(skill.source))) }
-                        .buttonStyle(.nwLink(font: .nw(.caption, weight: .medium)))
+                        .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
                     Button("View on skills.sh") { openURL(SkillsDirectory.page(of: skill)) }
-                        .buttonStyle(.nwLink(font: .nw(.caption, weight: .medium)))
+                        .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
                 }
-                .padding(.horizontal, NW.Space.xs)
+                .padding(.horizontal, SH.Space.xs)
             }
             .padding(.horizontal, MobileLayout.gutter)
             .padding(.bottom, MobileLayout.sectionSpacing)
             .frame(maxWidth: MobileLayout.homeMaxWidth)
             .frame(maxWidth: .infinity)
         }
-        .background(Color.nw.bgWindow)
-        .nwAnimation(.disclosure, value: model.installs[skill.id])
+        .background(Color.sh.bgWindow)
+        .shAnimation(.disclosure, value: model.installs[skill.id])
         .navigationTitle(skill.name)
         .navigationBarTitleDisplayMode(.inline)
         .task { await store.watch() }
@@ -539,7 +539,7 @@ struct SkillResultScreen: View {
         VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
             switch state {
             case .install, .installing:
-                NWListCard {
+                SHListCard {
                     SettingsControlRow("Use it", note: invocation == .automatic
                                        ? "The agent reads it when a task calls for it."
                                        : "Only when you type /skill:\(skill.slug).") {
@@ -554,21 +554,21 @@ struct SkillResultScreen: View {
                     Label("Install", systemImage: "arrow.down.to.line")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.nw(.primary, size: .l))
+                .buttonStyle(.sh(.primary, size: .l))
                 .disabled(state != .install || model.targets(in: hosts).isEmpty)
                 if case .install = state {
                     SettingsFootnote(SkillsPresentation.destinations(model.targets(in: hosts)))
                 }
             case .installed:
-                HStack(spacing: NW.Space.m) {
+                HStack(spacing: SH.Space.m) {
                     Label("Installed", systemImage: "checkmark")
-                        .font(.nw(.ui, weight: .medium))
-                        .foregroundStyle(Color.nw.done)
-                    Spacer(minLength: NW.Space.m)
+                        .font(.sh(.ui, weight: .medium))
+                        .foregroundStyle(Color.sh.done)
+                    Spacer(minLength: SH.Space.m)
                     Button("Open") { navigator.open(.settings(.skill(skill.slug))) }
-                        .buttonStyle(.nw(.secondary))
+                        .buttonStyle(.sh(.secondary))
                 }
-                .padding(.horizontal, NW.Space.xs)
+                .padding(.horizontal, SH.Space.xs)
             case .update:
                 Button {
                     Task { await model.update(skill.slug, in: hosts) }
@@ -576,12 +576,12 @@ struct SkillResultScreen: View {
                     Label("Update", systemImage: "arrow.down.to.line")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.nw(.primary, size: .l))
+                .buttonStyle(.sh(.primary, size: .l))
                 .disabled(model.row(skill.slug, in: hosts)?.isUpdating == true)
             }
             if let install = model.installs[skill.id], install.isRunning || install.failure != nil {
                 SkillInstallSteps(install: install) { model.cancelInstall(skill.id) }
-                    .nwTransition(.disclosure)
+                    .shTransition(.disclosure)
             }
         }
     }
@@ -618,7 +618,7 @@ struct SkillDetailScreen: View {
                 if let row = model.row(name, in: skillsHosts) {
                     content(row, model: model, hosts: skillsHosts)
                 } else if model.reference(in: skillsHosts) == nil {
-                    ProgressView().progressViewStyle(NWSpinnerStyle())
+                    ProgressView().progressViewStyle(SHSpinnerStyle())
                         .frame(maxWidth: .infinity)
                 } else {
                     SettingsFootnote("No host has \(name) now.")
@@ -630,7 +630,7 @@ struct SkillDetailScreen: View {
             .frame(maxWidth: .infinity)
         }
         .refreshable { await store.refresh() }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .navigationTitle(name)
         .navigationBarTitleDisplayMode(.inline)
         .task { await store.watch() }
@@ -638,46 +638,46 @@ struct SkillDetailScreen: View {
 
     @ViewBuilder
     private func content(_ row: SkillRow, model: ClientSkills, hosts: [SkillsHost]) -> some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let skill = row.skill
-        VStack(alignment: .leading, spacing: NW.Space.s) {
+        VStack(alignment: .leading, spacing: SH.Space.s) {
             Text(skill.name)
-                .font(.nwMono(MobileLayout.skillTitleSize, .semibold))
-                .foregroundStyle(nw.textPrimary)
+                .font(.shMono(MobileLayout.skillTitleSize, .semibold))
+                .foregroundStyle(sh.textPrimary)
                 .textSelection(.enabled)
             if !skill.summary.isEmpty {
                 Text(skill.summary)
-                    .nwText(.body)
-                    .foregroundStyle(nw.textSecondary)
+                    .shText(.body)
+                    .foregroundStyle(sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(.horizontal, NW.Space.xs)
+        .padding(.horizontal, SH.Space.xs)
         if let problem = model.problem {
-            NWBanner(.failed, title: problem) {
-                Button("OK") { model.dismissProblem() }.buttonStyle(.nw(.secondary))
+            SHBanner(.failed, title: problem) {
+                Button("OK") { model.dismissProblem() }.buttonStyle(.sh(.secondary))
             }
         }
-        NWListCard {
+        SHListCard {
             SettingsSwitchRow("On", note: skill.isOn ? "Agents can use it." : "No agent sees it until it's back on.",
                               isOn: skill.isOn) { on in
                 model.setOn(skill.name, on, in: hosts)
             }
         }
         SettingsSection("Use it") {
-            VStack(alignment: .leading, spacing: NW.Space.l) {
-                NWRadioOption("Automatically", note: SkillsPresentation.automaticNote(skill, directory: model.directory(in: hosts)),
+            VStack(alignment: .leading, spacing: SH.Space.l) {
+                SHRadioOption("Automatically", note: SkillsPresentation.automaticNote(skill, directory: model.directory(in: hosts)),
                               selected: skill.invocation == .automatic) {
                     model.setInvocation(skill.name, .automatic, in: hosts)
                 }
-                NWRadioOption(SkillsPresentation.slashOption(skill.name), note: "Stays out of the agent’s prompt until you call it.",
+                SHRadioOption(SkillsPresentation.slashOption(skill.name), note: "Stays out of the agent’s prompt until you call it.",
                               selected: skill.invocation == .slashOnly) {
                     model.setInvocation(skill.name, .slashOnly, in: hosts)
                 }
             }
-            .padding(NW.Space.l)
+            .padding(SH.Space.l)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .nwCard(radius: NWListMetrics.cardRadius)
+            .shCard(radius: SHListMetrics.cardRadius)
         }
         SettingsSection("Version") {
             SkillVersionCard(row: row) {
@@ -685,7 +685,7 @@ struct SkillDetailScreen: View {
             }
         }
         SettingsSection("Hosts") {
-            NWListCard {
+            SHListCard {
                 ForEach(model.copies(of: skill.name, in: hosts)) { copy in
                     SkillHostLine(copy: copy)
                 }
@@ -704,7 +704,7 @@ struct SkillDetailScreen: View {
             Label(hosts.count > 1 ? "Remove from every host" : "Remove", systemImage: "trash")
                 .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.nw(.danger, size: .l))
+        .buttonStyle(.sh(.danger, size: .l))
         .accessibilityHint("Undo on the Skills list puts it back.")
     }
 }
@@ -717,51 +717,51 @@ private struct SkillVersionCard: View {
     @Environment(\.openURL) private var openURL
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let skill = row.skill
-        VStack(alignment: .leading, spacing: NW.Space.s) {
+        VStack(alignment: .leading, spacing: SH.Space.s) {
             if let source = skill.source {
                 Text(source.path.isEmpty ? source.repo : "\(source.repo) › \(source.path)")
-                    .font(.nw(.mono))
-                    .foregroundStyle(nw.textSecondary)
+                    .font(.sh(.mono))
+                    .foregroundStyle(sh.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 let installed = SkillsPresentation.installed(source)
                 let when = installed.date.map { " · " + $0 } ?? ""
                 Text("Installed \(installed.commit)\(when)")
-                    .font(.nw(.caption))
-                    .foregroundStyle(nw.textTertiary)
+                    .font(.sh(.caption))
+                    .foregroundStyle(sh.textTertiary)
                 if let newer = skill.update {
                     let words = SkillsPresentation.newer(newer)
                     Text("New \(words.commit) · \(words.detail)")
-                        .font(.nw(.caption))
-                        .foregroundStyle(nw.lanternText)
-                    HStack(spacing: NW.Space.m) {
+                        .font(.sh(.caption))
+                        .foregroundStyle(sh.lanternText)
+                    HStack(spacing: SH.Space.m) {
                         Button(action: update) {
                             Label(row.isUpdating ? "Updating…" : "Update", systemImage: "arrow.down.to.line")
                         }
-                        .buttonStyle(.nw(.primary))
+                        .buttonStyle(.sh(.primary))
                         .disabled(row.isUpdating)
                         if let compare = SkillsText.compareURL(repo: source.repo, from: source.commit, to: newer.commit) {
                             Button("What changed") { openURL(compare) }
-                                .buttonStyle(.nw(.ghost))
+                                .buttonStyle(.sh(.ghost))
                         }
                     }
-                    .padding(.top, NW.Space.xs)
+                    .padding(.top, SH.Space.xs)
                 }
             } else {
                 Label("Local", systemImage: "folder")
-                    .font(.nw(.ui))
-                    .foregroundStyle(nw.textSecondary)
+                    .font(.sh(.ui))
+                    .foregroundStyle(sh.textSecondary)
                 Text("Copied into the skills folder by hand. It never updates.")
-                    .font(.nw(.caption))
-                    .foregroundStyle(nw.textTertiary)
+                    .font(.sh(.caption))
+                    .foregroundStyle(sh.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(NW.Space.l)
+        .padding(SH.Space.l)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .nwCard(radius: NWListMetrics.cardRadius)
+        .shCard(radius: SHListMetrics.cardRadius)
     }
 }
 
@@ -771,33 +771,33 @@ private struct SkillHostLine: View {
     let copy: SkillCopy
 
     var body: some View {
-        let nw = Color.nw
-        HStack(spacing: NW.Space.l) {
+        let sh = Color.sh
+        HStack(spacing: SH.Space.l) {
             Image(systemName: "desktopcomputer")
-                .font(.nw(.caption, weight: .medium))
-                .foregroundStyle(nw.textSecondary)
-                .frame(width: NWListMetrics.leadingWidth)
+                .font(.sh(.caption, weight: .medium))
+                .foregroundStyle(sh.textSecondary)
+                .frame(width: SHListMetrics.leadingWidth)
                 .accessibilityHidden(true)
             Text(copy.name)
-                .font(.nwMono(NWTextStyle.ui.size))
-                .foregroundStyle(nw.textPrimary)
+                .font(.shMono(SHTextStyle.ui.size))
+                .foregroundStyle(sh.textPrimary)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Text(SkillsPresentation.copy(copy.state))
-                .font(.nw(.caption))
+                .font(.sh(.caption))
                 .foregroundStyle(tone)
                 .lineLimit(1)
         }
-        .padding(.horizontal, NW.Space.l)
+        .padding(.horizontal, SH.Space.l)
         .frame(maxWidth: .infinity, minHeight: MobileLayout.instructionsHostRowHeight, alignment: .leading)
         .accessibilityElement(children: .combine)
     }
 
     private var tone: Color {
         switch copy.state {
-        case .installed: Color.nw.done
-        case .updating, .checking: Color.nw.running
-        case .missing, .owed, .offline, .unsupported: Color.nw.textTertiary
+        case .installed: Color.sh.done
+        case .updating, .checking: Color.sh.running
+        case .missing, .owed, .offline, .unsupported: Color.sh.textTertiary
         }
     }
 }
@@ -827,27 +827,27 @@ struct AddSkillsScreen: View {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
                 VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
                     Text("A GitHub owner/repo or URL. Shepherd copies the skills you pick into its own pi's skills on every host.")
-                        .nwText(.caption)
-                        .foregroundStyle(Color.nw.textSecondary)
+                        .shText(.caption)
+                        .foregroundStyle(Color.sh.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, NW.Space.xs)
-                    HStack(spacing: NW.Space.m) {
+                        .padding(.horizontal, SH.Space.xs)
+                    HStack(spacing: SH.Space.m) {
                         TextField("owner/repo or a GitHub URL", text: $input)
-                            .font(.nw(.code))
-                            .foregroundStyle(Color.nw.textPrimary)
-                            .tint(Color.nw.lantern)
+                            .font(.sh(.code))
+                            .foregroundStyle(Color.sh.textPrimary)
+                            .tint(Color.sh.lantern)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .keyboardType(.URL)
                             .submitLabel(.search)
                             .onSubmit { Task { await lookUp(model: model, hosts: skillsHosts) } }
-                            .padding(.horizontal, NW.Space.l)
+                            .padding(.horizontal, SH.Space.l)
                             .frame(minHeight: MobileLayout.skillRepoFieldHeight)
-                            .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.l))
-                            .nwBorder(Color.nw.lineStrong, radius: NW.Radius.l)
+                            .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.l))
+                            .shBorder(Color.sh.lineStrong, radius: SH.Radius.l)
                             .accessibilityLabel("Repository")
                         Button("Look up") { Task { await lookUp(model: model, hosts: skillsHosts) } }
-                            .buttonStyle(.nw(.secondary, size: .l))
+                            .buttonStyle(.sh(.secondary, size: .l))
                             .disabled(input.trimmingCharacters(in: .whitespaces).isEmpty || lookingUp)
                     }
                     if let problem {
@@ -855,7 +855,7 @@ struct AddSkillsScreen: View {
                     }
                 }
                 if lookingUp {
-                    ProgressView().progressViewStyle(NWSpinnerStyle())
+                    ProgressView().progressViewStyle(SHSpinnerStyle())
                         .frame(maxWidth: .infinity)
                 } else if let found {
                     picker(found, model: model, hosts: skillsHosts)
@@ -868,8 +868,8 @@ struct AddSkillsScreen: View {
             .frame(maxWidth: .infinity)
         }
         .scrollDismissesKeyboard(.interactively)
-        .background(Color.nw.bgWindow)
-        .nwAnimation(.disclosure, value: installKey.flatMap { model.installs[$0] })
+        .background(Color.sh.bgWindow)
+        .shAnimation(.disclosure, value: installKey.flatMap { model.installs[$0] })
         .navigationTitle("Add from repo")
         .navigationBarTitleDisplayMode(.inline)
         .task { await store.watch() }
@@ -885,9 +885,9 @@ struct AddSkillsScreen: View {
     private func picker(_ found: RepoSkills, model: ClientSkills, hosts: [SkillsHost]) -> some View {
         let newPaths = found.skills.filter { model.row($0.name, in: hosts) == nil }.map(\.path)
         VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-            NWListHeader(SkillsPresentation.selection(picked.count, new: newPaths.count)) {
+            SHListHeader(SkillsPresentation.selection(picked.count, new: newPaths.count)) {
                 Button("Select all new") { picked = Set(newPaths) }
-                    .buttonStyle(.nwLink(font: .nw(.caption, weight: .medium)))
+                    .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
                     .disabled(newPaths.isEmpty || picked.count == newPaths.count)
             }
             LazyVStack(spacing: 0) {
@@ -901,8 +901,8 @@ struct AddSkillsScreen: View {
                     .equatable()
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: NWListMetrics.cardRadius))
-            .nwCard(radius: NWListMetrics.cardRadius)
+            .clipShape(RoundedRectangle(cornerRadius: SHListMetrics.cardRadius))
+            .shCard(radius: SHListMetrics.cardRadius)
             SettingsFootnote(SkillsPresentation.repoLine(found))
         }
     }
@@ -912,7 +912,7 @@ struct AddSkillsScreen: View {
     private func footer(_ found: RepoSkills, model: ClientSkills, hosts: [SkillsHost]) -> some View {
         let install = installKey.flatMap { model.installs[$0] }
         VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
-            NWListCard {
+            SHListCard {
                 SettingsControlRow("Use them") {
                     SettingsPicker("Use them", selection: invocation, options: [SkillInvocation.automatic, .slashOnly],
                                    title: SkillsPresentation.invocationTitle) { invocation = $0 }
@@ -922,7 +922,7 @@ struct AddSkillsScreen: View {
                 SkillInstallSteps(install: install) {
                     if let installKey { model.cancelInstall(installKey) }
                 }
-                    .nwTransition(.disclosure)
+                    .shTransition(.disclosure)
             } else {
                 SettingsFootnote(SkillsPresentation.destinations(model.targets(in: hosts)))
             }
@@ -932,7 +932,7 @@ struct AddSkillsScreen: View {
                 Text(SkillsPresentation.installTitle(max(picked.count, 1)))
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.nw(.primary, size: .l))
+            .buttonStyle(.sh(.primary, size: .l))
             .disabled(picked.isEmpty || install?.isRunning == true)
         }
     }
@@ -990,45 +990,45 @@ private struct SkillPickLine: View, Equatable {
     }
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let dimmed = installed != nil
         Button(action: toggle) {
-            HStack(alignment: .top, spacing: NW.Space.l) {
+            HStack(alignment: .top, spacing: SH.Space.l) {
                 Image(systemName: picked ? "checkmark.circle.fill" : "circle")
-                    .font(.nw(.ui))
-                    .foregroundStyle(picked && !dimmed ? nw.running : nw.textTertiary)
+                    .font(.sh(.ui))
+                    .foregroundStyle(picked && !dimmed ? sh.running : sh.textTertiary)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: MobileLayout.skillLineSpacing) {
-                    HStack(spacing: NW.Space.m) {
+                    HStack(spacing: SH.Space.m) {
                         Text(skill.name)
-                            .font(.nwMono(MobileLayout.skillNameSize, .semibold))
-                            .foregroundStyle(dimmed ? nw.textTertiary : nw.textPrimary)
+                            .font(.shMono(MobileLayout.skillNameSize, .semibold))
+                            .foregroundStyle(dimmed ? sh.textTertiary : sh.textPrimary)
                             .lineLimit(1)
                             .truncationMode(.middle)
                         if let installed {
                             Text(installed)
-                                .font(.nw(.caption))
-                                .foregroundStyle(installed == "Installed" ? nw.textTertiary : nw.lanternText)
+                                .font(.sh(.caption))
+                                .foregroundStyle(installed == "Installed" ? sh.textTertiary : sh.lanternText)
                                 .lineLimit(1)
                         }
                     }
                     if !skill.summary.isEmpty {
                         Text(skill.summary)
-                            .font(.nwSans(MobileLayout.skillSummarySize))
-                            .foregroundStyle(nw.textTertiary)
+                            .font(.shSans(MobileLayout.skillSummarySize))
+                            .foregroundStyle(sh.textTertiary)
                             .lineLimit(2)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.vertical, NW.Space.m)
-            .padding(.horizontal, NW.Space.l + NW.Space.xxs)
+            .padding(.vertical, SH.Space.m)
+            .padding(.horizontal, SH.Space.l + SH.Space.xxs)
             .frame(maxWidth: .infinity, minHeight: MobileLayout.skillRowHeight, alignment: .leading)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.nwRow(radius: 0))
+        .buttonStyle(.shRow(radius: 0))
         .disabled(dimmed)
-        .overlay(alignment: .top) { if !first { NWHairline() } }
+        .overlay(alignment: .top) { if !first { SHHairline() } }
         .accessibilityAddTraits(picked ? .isSelected : [])
     }
 }
@@ -1042,41 +1042,41 @@ private struct SkillInstallSteps: View {
     let cancel: () -> Void
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-            HStack(spacing: NW.Space.m) {
+            HStack(spacing: SH.Space.m) {
                 Text(SkillsPresentation.installLine(install))
-                    .font(.nw(.caption, weight: .semibold))
-                    .foregroundStyle(install.failure != nil && install.installed == 0 ? nw.failed : nw.textSecondary)
-                    .nwShimmer(active: install.isRunning)
+                    .font(.sh(.caption, weight: .semibold))
+                    .foregroundStyle(install.failure != nil && install.installed == 0 ? sh.failed : sh.textSecondary)
+                    .shShimmer(active: install.isRunning)
                     .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: NW.Space.m)
+                Spacer(minLength: SH.Space.m)
                 if install.isRunning {
                     Button("Cancel", action: cancel)
-                        .buttonStyle(.nwLink(font: .nw(.caption, weight: .medium)))
+                        .buttonStyle(.shLink(font: .sh(.caption, weight: .medium)))
                 }
             }
-            .padding(.horizontal, NW.Space.xs)
-            NWListCard {
+            .padding(.horizontal, SH.Space.xs)
+            SHListCard {
                 ForEach(install.steps) { step in
-                    HStack(spacing: NW.Space.l) {
+                    HStack(spacing: SH.Space.l) {
                         Image(systemName: "desktopcomputer")
-                            .font(.nw(.caption, weight: .medium))
-                            .foregroundStyle(nw.textSecondary)
-                            .frame(width: NWListMetrics.leadingWidth)
+                            .font(.sh(.caption, weight: .medium))
+                            .foregroundStyle(sh.textSecondary)
+                            .frame(width: SHListMetrics.leadingWidth)
                             .accessibilityHidden(true)
                         Text(step.name)
-                            .font(.nwMono(NWTextStyle.ui.size))
-                            .foregroundStyle(nw.textPrimary)
+                            .font(.shMono(SHTextStyle.ui.size))
+                            .foregroundStyle(sh.textPrimary)
                             .lineLimit(1)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         Text(SkillsPresentation.step(step.state))
-                            .font(.nw(.caption))
+                            .font(.sh(.caption))
                             .foregroundStyle(Self.tone(step.state))
                             .multilineTextAlignment(.trailing)
                             .lineLimit(2)
                     }
-                    .padding(.horizontal, NW.Space.l)
+                    .padding(.horizontal, SH.Space.l)
                     .frame(maxWidth: .infinity, minHeight: MobileLayout.instructionsHostRowHeight, alignment: .leading)
                     .accessibilityElement(children: .combine)
                 }
@@ -1086,10 +1086,10 @@ private struct SkillInstallSteps: View {
 
     private static func tone(_ state: SkillInstall.Step.State) -> Color {
         switch state {
-        case .installed: Color.nw.done
-        case .copying: Color.nw.running
-        case .waiting, .owed: Color.nw.textTertiary
-        case .failed: Color.nw.failed
+        case .installed: Color.sh.done
+        case .copying: Color.sh.running
+        case .waiting, .owed: Color.sh.textTertiary
+        case .failed: Color.sh.failed
         }
     }
 }
@@ -1099,9 +1099,9 @@ private struct SkillFileChips: View {
     let entries: [SkillFileEntry]
 
     var body: some View {
-        NWWrapStack(spacing: NW.Space.s, lineSpacing: NW.Space.s) {
+        SHWrapStack(spacing: SH.Space.s, lineSpacing: SH.Space.s) {
             ForEach(entries) { entry in
-                NWSkillFileChip(SkillsPresentation.chip(entry), count: entry.isDirectory ? entry.fileCount : nil,
+                SHSkillFileChip(SkillsPresentation.chip(entry), count: entry.isDirectory ? entry.fileCount : nil,
                                 kind: entry.isDirectory ? (entry.name == "scripts" ? .code : .folder) : .file)
             }
         }
@@ -1116,57 +1116,57 @@ private struct SkillFilePreview: View {
     let tokens: Int
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: NW.Space.m) {
+            HStack(spacing: SH.Space.m) {
                 Image(systemName: "doc.text")
-                    .font(.nw(.caption))
-                    .foregroundStyle(nw.textTertiary)
+                    .font(.sh(.caption))
+                    .foregroundStyle(sh.textTertiary)
                     .accessibilityHidden(true)
                 Text("SKILL.md")
-                    .font(.nw(.mono))
-                    .foregroundStyle(nw.textSecondary)
-                Spacer(minLength: NW.Space.m)
+                    .font(.sh(.mono))
+                    .foregroundStyle(sh.textSecondary)
+                Spacer(minLength: SH.Space.m)
                 if tokens > 0 {
                     Text("\(SkillsText.tokenNote(tokens)) when used")
-                        .font(.nw(.caption))
-                        .foregroundStyle(nw.textTertiary)
+                        .font(.sh(.caption))
+                        .foregroundStyle(sh.textTertiary)
                 }
             }
-            .padding(.horizontal, NW.Space.l)
+            .padding(.horizontal, SH.Space.l)
             .frame(height: MobileLayout.skillPreviewHeaderHeight)
-            .background(nw.bgSunken)
-            .overlay(alignment: .bottom) { NWHairline() }
+            .background(sh.bgSunken)
+            .overlay(alignment: .bottom) { SHHairline() }
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(lines) { line in
                     HStack(alignment: .firstTextBaseline, spacing: 0) {
                         Text("\(line.number)")
-                            .font(.nwMono(MobileLayout.instructionsNumberSize))
-                            .foregroundStyle(nw.textTertiary)
-                            .frame(width: MobileLayout.skillPreviewGutter - NW.Space.m, alignment: .trailing)
-                            .padding(.trailing, NW.Space.m)
+                            .font(.shMono(MobileLayout.instructionsNumberSize))
+                            .foregroundStyle(sh.textTertiary)
+                            .frame(width: MobileLayout.skillPreviewGutter - SH.Space.m, alignment: .trailing)
+                            .padding(.trailing, SH.Space.m)
                         Text(line.text)
-                            .font(.nwMono(MobileLayout.skillPreviewTextSize))
+                            .font(.shMono(MobileLayout.skillPreviewTextSize))
                             .lineLimit(1)
                     }
                     .frame(maxWidth: .infinity, minHeight: MobileLayout.skillPreviewLineHeight, alignment: .leading)
                 }
                 if total > lines.count {
                     Text("\(total - lines.count) more \(total - lines.count == 1 ? "line" : "lines")")
-                        .font(.nw(.caption))
-                        .foregroundStyle(nw.textTertiary)
-                        .padding(.top, NW.Space.s)
+                        .font(.sh(.caption))
+                        .foregroundStyle(sh.textTertiary)
+                        .padding(.top, SH.Space.s)
                         .padding(.leading, MobileLayout.skillPreviewGutter)
                 }
             }
-            .padding(.vertical, NW.Space.m)
-            .padding(.trailing, NW.Space.l)
+            .padding(.vertical, SH.Space.m)
+            .padding(.trailing, SH.Space.l)
             .textSelection(.enabled)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(nw.bgWindow)
-        .clipShape(RoundedRectangle(cornerRadius: NWListMetrics.cardRadius))
-        .nwBorder(nw.lineSubtle, radius: NWListMetrics.cardRadius)
+        .background(sh.bgWindow)
+        .clipShape(RoundedRectangle(cornerRadius: SHListMetrics.cardRadius))
+        .shBorder(sh.lineSubtle, radius: SHListMetrics.cardRadius)
     }
 }
 
@@ -1180,10 +1180,10 @@ struct SkillFileLine: Identifiable, Equatable {
     /// The file's first `limit` lines, with the instructions editor's highlighting.
     @MainActor
     static func lines(_ text: String, limit: Int) -> [SkillFileLine] {
-        let nw = Color.nw
+        let sh = Color.sh
         return InstructionsText.lines(text).prefix(limit).enumerated().map { index, line in
             var styled = AttributedString(line)
-            styled.foregroundColor = nw.textSecondary
+            styled.foregroundColor = sh.textSecondary
             let units = line.utf16
             for span in InstructionsText.highlight(line: line) {
                 guard let start = units.index(units.startIndex, offsetBy: span.range.lowerBound, limitedBy: units.endIndex),
@@ -1191,10 +1191,10 @@ struct SkillFileLine: Identifiable, Equatable {
                       let lower = AttributedString.Index(start, within: styled),
                       let upper = AttributedString.Index(end, within: styled), lower < upper else { continue }
                 switch span.role {
-                case .headingMarker: styled[lower..<upper].foregroundColor = nw.textTertiary
-                case .heading: styled[lower..<upper].foregroundColor = nw.textPrimary
-                case .bullet: styled[lower..<upper].foregroundColor = nw.lanternText
-                case .code: styled[lower..<upper].foregroundColor = nw.synString
+                case .headingMarker: styled[lower..<upper].foregroundColor = sh.textTertiary
+                case .heading: styled[lower..<upper].foregroundColor = sh.textPrimary
+                case .bullet: styled[lower..<upper].foregroundColor = sh.lanternText
+                case .code: styled[lower..<upper].foregroundColor = sh.synString
                 }
             }
             return SkillFileLine(number: index + 1, text: styled)

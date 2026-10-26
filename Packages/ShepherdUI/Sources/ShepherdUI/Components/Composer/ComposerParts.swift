@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The composer's dimensions (NWComposer board).
-public enum NWComposerMetrics {
+/// The composer's dimensions (SHComposer board).
+public enum SHComposerMetrics {
     /// Chips and the attach button under the field.
     public static let chipHeight: CGFloat = 26
     /// Send and Stop.
@@ -28,15 +28,15 @@ public enum NWComposerMetrics {
     public static let modelPickerMaxHeight: CGFloat = 360
     /// The `bgSelected` ring around a focused composer card (the thread's and the Steer card).
     public static let focusRing: CGFloat = 3
-    /// A chip's glyph (the Fast bolt, `NWFastBolt`).
+    /// A chip's glyph (the Fast bolt, `SHFastBolt`).
     public static let chipSymbol: CGFloat = 11
 }
 
-/// The composer's size (NWDesignTool › Chat composer). `.regular` is the thread's and New
+/// The composer's size (SHDesignTool › Chat composer). `.regular` is the thread's and New
 /// design's; `.compact` is for a pane under 520pt (a design's 420pt chat), where the
 /// model-settings button drops the thinking level and keeps the Fast bolt. The controls, the
 /// ring and Send are the same at both sizes.
-public enum NWComposerSize: Sendable, Hashable {
+public enum SHComposerSize: Sendable, Hashable {
     case regular
     case compact
 
@@ -48,37 +48,37 @@ public enum NWComposerSize: Sendable, Hashable {
 }
 
 extension EnvironmentValues {
-    @Entry public var nwComposerSize: NWComposerSize = .regular
+    @Entry public var shComposerSize: SHComposerSize = .regular
 }
 
 extension View {
-    /// Draws the composers inside at `size` (`NWComposerSize`).
-    public func nwComposerSize(_ size: NWComposerSize) -> some View {
-        environment(\.nwComposerSize, size)
+    /// Draws the composers inside at `size` (`SHComposerSize`).
+    public func shComposerSize(_ size: SHComposerSize) -> some View {
+        environment(\.shComposerSize, size)
     }
 }
 
 /// The commands chip's label: "/ commands", or "/" alone at the compact size or when the row
 /// is short of room.
-public struct NWComposerCommandsLabel: View {
+public struct SHComposerCommandsLabel: View {
     let short: Bool
-    @Environment(\.nwComposerSize) private var size
+    @Environment(\.shComposerSize) private var size
 
     public init(short: Bool = false) { self.short = short }
 
     public var body: some View {
-        HStack(spacing: NW.Space.s) {
-            Text("/").font(.nw(.code))
+        HStack(spacing: SH.Space.s) {
+            Text("/").font(.sh(.code))
             if size.showsChipWords(short: short) { Text("commands") }
         }
     }
 }
 
-/// The composer card (NWComposer board): `bgRaised`, a 1px strong line, radius 8. While the
+/// The composer card (SHComposer board): `bgRaised`, a 1px strong line, radius 8. While the
 /// field has focus (or a menu is open, or a drop hovers) the line turns `textTertiary` with a
 /// 3pt `bgSelected` ring. Top: attachments; then the field (it grows to 8 lines); then one row
 /// of controls. Nothing else lives under the field.
-public struct NWComposer<Top: View, Field: View, Controls: View>: View {
+public struct SHComposer<Top: View, Field: View, Controls: View>: View {
     let isFocused: Bool
     let top: Top
     let field: Field
@@ -93,25 +93,25 @@ public struct NWComposer<Top: View, Field: View, Controls: View>: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        let shape = RoundedRectangle(cornerRadius: NW.Radius.m)
+        let sh = Color.sh
+        let shape = RoundedRectangle(cornerRadius: SH.Radius.m)
         VStack(alignment: .leading, spacing: 0) {
             Group(subviews: top) { subviews in
                 if !subviews.isEmpty {
                     // Chips wrap to more rows (design references are wide).
-                    NWFlowLayout(spacing: NW.Space.s, lineSpacing: NW.Space.s) { subviews }
+                    SHFlowLayout(spacing: SH.Space.s, lineSpacing: SH.Space.s) { subviews }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.top, 10)
-                        .padding(.horizontal, NW.Space.l)
+                        .padding(.horizontal, SH.Space.l)
                 }
             }
             field
-                .padding(EdgeInsets(top: NW.Space.l, leading: 14, bottom: NW.Space.xs, trailing: 14))
-                .frame(minHeight: NWComposerMetrics.fieldMinHeight, alignment: .topLeading)
-            HStack(spacing: NW.Space.xxs) { controls }
-                .padding(EdgeInsets(top: NW.Space.xs, leading: NW.Space.s, bottom: NW.Space.s, trailing: NW.Space.s))
+                .padding(EdgeInsets(top: SH.Space.l, leading: 14, bottom: SH.Space.xs, trailing: 14))
+                .frame(minHeight: SHComposerMetrics.fieldMinHeight, alignment: .topLeading)
+            HStack(spacing: SH.Space.xxs) { controls }
+                .padding(EdgeInsets(top: SH.Space.xs, leading: SH.Space.s, bottom: SH.Space.s, trailing: SH.Space.s))
         }
-        .background(nw.bgRaised, in: shape)
+        .background(sh.bgRaised, in: shape)
         // As the card eases to a new height (a question taking the field's place, attachments
         // arriving), what it holds is revealed by its edge rather than drawn outside it.
         .clipShape(shape)
@@ -119,20 +119,20 @@ public struct NWComposer<Top: View, Field: View, Controls: View>: View {
         // card as it grows.
         .overlay {
             Color.clear
-                .nwBorder(isFocused ? nw.textTertiary : nw.lineStrong, radius: NW.Radius.m)
-                .nwAnimation(.hover, value: isFocused)
+                .shBorder(isFocused ? sh.textTertiary : sh.lineStrong, radius: SH.Radius.m)
+                .shAnimation(.hover, value: isFocused)
                 .allowsHitTesting(false)
         }
         .background {
-            RoundedRectangle(cornerRadius: NW.Radius.m + NWComposerMetrics.focusRing)
-                .inset(by: -NWComposerMetrics.focusRing).fill(nw.bgSelected)
+            RoundedRectangle(cornerRadius: SH.Radius.m + SHComposerMetrics.focusRing)
+                .inset(by: -SHComposerMetrics.focusRing).fill(sh.bgSelected)
                 .opacity(isFocused ? 1 : 0)
-                .nwAnimation(.hover, value: isFocused)
+                .shAnimation(.hover, value: isFocused)
         }
     }
 }
 
-extension NWComposer where Top == EmptyView {
+extension SHComposer where Top == EmptyView {
     public init(isFocused: Bool, @ViewBuilder field: () -> Field, @ViewBuilder controls: () -> Controls) {
         self.init(isFocused: isFocused, top: { EmptyView() }, field: field, controls: controls)
     }
@@ -140,21 +140,21 @@ extension NWComposer where Top == EmptyView {
 
 /// A ghost chip in the composer's action row (commands, model, thinking): 26pt, 12pt
 /// `textSecondary`, radius 6; hover and active fill `bgHover`.
-public struct NWComposerChipStyle: ButtonStyle {
+public struct SHComposerChipStyle: ButtonStyle {
     let active: Bool
 
     public init(active: Bool = false) { self.active = active }
 
     public func makeBody(configuration: Configuration) -> some View {
-        NWComposerChip(configuration: configuration, active: active)
+        SHComposerChip(configuration: configuration, active: active)
     }
 }
 
-extension ButtonStyle where Self == NWComposerChipStyle {
-    public static func nwComposerChip(active: Bool = false) -> NWComposerChipStyle { NWComposerChipStyle(active: active) }
+extension ButtonStyle where Self == SHComposerChipStyle {
+    public static func shComposerChip(active: Bool = false) -> SHComposerChipStyle { SHComposerChipStyle(active: active) }
 }
 
-private struct NWComposerChip: View {
+private struct SHComposerChip: View {
     let configuration: ButtonStyleConfiguration
     let active: Bool
     @Environment(\.isEnabled) private var enabled
@@ -163,28 +163,28 @@ private struct NWComposerChip: View {
     var body: some View {
         let filled = enabled && (active || hovering || configuration.isPressed)
         configuration.label
-            .font(.nwSans(12))
-            .foregroundStyle(.nw.textSecondary)
+            .font(.shSans(12))
+            .foregroundStyle(.sh.textSecondary)
             .lineLimit(1)
-            .padding(.horizontal, NW.Space.m)
-            .frame(height: NWComposerMetrics.chipHeight)
+            .padding(.horizontal, SH.Space.m)
+            .frame(height: SHComposerMetrics.chipHeight)
             .background {
-                RoundedRectangle(cornerRadius: NW.Radius.s).fill(filled ? Color.nw.bgHover : .clear)
-                    .nwAnimation(.hover, value: filled)
+                RoundedRectangle(cornerRadius: SH.Radius.s).fill(filled ? Color.sh.bgHover : .clear)
+                    .shAnimation(.hover, value: filled)
             }
-            .contentShape(RoundedRectangle(cornerRadius: NW.Radius.s))
+            .contentShape(RoundedRectangle(cornerRadius: SH.Radius.s))
             .onHover { hovering = $0 }
-            .nwFocusRing(radius: NW.Radius.s)
-            .nwTouchTarget(height: NWComposerMetrics.chipHeight)
+            .shFocusRing(radius: SH.Radius.s)
+            .shTouchTarget(height: SHComposerMetrics.chipHeight)
     }
 }
 
 /// The down chevron chips and popups use (10pt, `textTertiary`).
-public struct NWChipChevron: View {
+public struct SHChipChevron: View {
     public init() {}
 
     public var body: some View {
-        Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold)).foregroundStyle(.nw.textTertiary)
+        Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold)).foregroundStyle(.sh.textTertiary)
             .frame(width: 10, height: 10)
             .accessibilityHidden(true)
     }
@@ -193,7 +193,7 @@ public struct NWChipChevron: View {
 /// The composer's action, a 28pt circle: Send (an arrow on the lantern fill, 35% until there is
 /// something to send) or Stop (a square on `failed`) while a turn runs and there is nothing to
 /// send. It is the composer's only action: with input while a turn runs it is Send again.
-public struct NWComposerActionButton: View {
+public struct SHComposerActionButton: View {
     public enum Mode: Sendable { case send, stop }
 
     let mode: Mode
@@ -213,37 +213,37 @@ public struct NWComposerActionButton: View {
     /// in place, together. (A symbol replace runs on SF Symbols' own, slower clock: it left an
     /// arrow on the red Stop fill for a moment.)
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let send = mode == .send
         Button(action: action) {
             Image(systemName: send ? "arrow.up" : "stop.fill")
                 .font(.system(size: send ? 13 : 10, weight: .semibold))
-                .foregroundStyle(send ? nw.textOnLantern : nw.textOnFailed)
-                .nwContentTransition(.crossFade)
+                .foregroundStyle(send ? sh.textOnLantern : sh.textOnFailed)
+                .shContentTransition(.crossFade)
         }
-        .buttonStyle(NWComposerActionStyle(fill: send ? nw.lantern : nw.failed))
+        .buttonStyle(SHComposerActionStyle(fill: send ? sh.lantern : sh.failed))
         .disabled(!enabled)
         .background {
-            Circle().inset(by: -NWComposerMetrics.focusRing).fill(nw.lanternTint)
+            Circle().inset(by: -SHComposerMetrics.focusRing).fill(sh.lanternTint)
                 .opacity(ringed ? 1 : 0)
-                .nwAnimation(.hover, value: ringed)
+                .shAnimation(.hover, value: ringed)
         }
-        .nwAnimation(.content, value: send)
+        .shAnimation(.content, value: send)
         .accessibilityLabel(send ? "Send" : "Stop")
     }
 }
 
 /// The action's circle. Its own style, because the plain style dims a disabled label again on
 /// top of the board's 35%.
-private struct NWComposerActionStyle: ButtonStyle {
+private struct SHComposerActionStyle: ButtonStyle {
     let fill: Color
 
     func makeBody(configuration: Configuration) -> some View {
-        NWComposerActionCircle(configuration: configuration, fill: fill)
+        SHComposerActionCircle(configuration: configuration, fill: fill)
     }
 }
 
-private struct NWComposerActionCircle: View {
+private struct SHComposerActionCircle: View {
     let configuration: ButtonStyleConfiguration
     let fill: Color
     @Environment(\.isEnabled) private var enabled
@@ -252,15 +252,15 @@ private struct NWComposerActionCircle: View {
     var body: some View {
         let pressed = enabled && configuration.isPressed
         configuration.label
-            .frame(width: NWComposerMetrics.actionSize, height: NWComposerMetrics.actionSize)
+            .frame(width: SHComposerMetrics.actionSize, height: SHComposerMetrics.actionSize)
             .background(fill.mix(with: .black, by: pressed ? 0.1 : 0), in: Circle())
             // Send brightens as soon as there is something to send.
             .opacity(enabled ? 1 : 0.35)
-            .nwAnimation(.hover, value: enabled)
-            .nwAnimation(.hover, value: hovering)
+            .shAnimation(.hover, value: enabled)
+            .shAnimation(.hover, value: hovering)
             .contentShape(Circle())
             .onHover { hovering = $0 }
-            .nwFocusRingCircle()
-            .nwTouchTarget(height: NWComposerMetrics.actionSize, width: NWComposerMetrics.actionSize)
+            .shFocusRingCircle()
+            .shTouchTarget(height: SHComposerMetrics.actionSize, width: SHComposerMetrics.actionSize)
     }
 }
