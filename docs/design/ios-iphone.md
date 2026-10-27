@@ -53,18 +53,14 @@ components first), with these differences for touch:
   `AppLayout`.
 - **Terminal** (iPadTerminal board; `App/iOS/Terminal`, `SHTerminalTabBar`, `SHTerminalKeyRow`; the
   terminal itself as in Terminal):
-  - **iPad:** the Mac's panel under the thread and composer, across the thread's width
-    (`.threadTerminal(_:)`), 340pt tall by default (`shepherd.ios.terminalHeight`), sliding up from
-    the bottom edge (`.pane`). Its strip is 46pt with 32pt tabs and 34pt icon buttons hit at 44
-    (`SHTerminalMetrics`), in the Mac's order and states. The divider is a 36×4pt `lineStrong`
-    grabber centered on the strip's top edge (an 88×22pt hit area) in place of a pointer handle,
-    snapping and clamping as on the Mac, adjustable with VoiceOver, and hidden while maximized. The
-    strip and key row stop growing at xxxLarge.
-  - **Toggle:** the thread's options menu: Show Terminal or Hide Terminal on iPad (iPhone:
-    Terminal), absent while the host is offline. With no terminal in the thread it opens one (the
-    panel shows on it once the host has made it; a failure gives a haptic with no panel up, and the
-    panel's banner while it is). There is no header button; iPadTerminal's is a departure
-    (Terminal panel › Show and hide).
+  - **iPad and iPhone Duo open:** the side pane's Terminal tab beside the thread (iPad › Thread ›
+    Side pane), its strip 46pt with 32pt tabs and 34pt icon buttons hit at 44
+    (`SHTerminalMetrics`), in the Mac's order and states. The panel under the thread is retired:
+    one right sidebar holds everything, as on the Mac (DuoOpenSidePane). It stays when its last
+    terminal closes and says + opens one.
+  - **Toggle:** the thread's ••• menu: Terminal ("1 running" while a command runs); with no
+    terminal in the thread it opens one once the screen or tab shows. There is no
+    header button; iPadTerminal's is a departure (Terminal panel › Show and hide).
   - **Key row** (`SHTerminalKeyRow`), while a terminal has the keyboard, under it and over the
     software keyboard: `bgWindow` with a `lineSubtle` hairline on top, 8pt top and bottom padding
     and 12pt sides, keys 6pt apart (the board adds 26pt under the row for the home indicator). Keys:
@@ -76,9 +72,9 @@ components first), with these differences for touch:
     into two rows of six equal keys (the arrows together in the second), and only where two rows
     don't fit either does it scroll, with its scroll bar showing. A hardware keyboard types
     directly.
-  - **iPhone** (no board): the options menu's Terminal opens the terminals full screen
-    ("Terminal" as the inline title, the tab bar hidden) with the same tabs and +, without
-    Maximize or Hide, and the same key row. It opens a terminal as it appears when there is none,
+  - **iPhone** (DuoClosedThreadMenu): the ••• menu's Terminal opens the terminals full screen
+    ("Terminal" as the inline title, the tab bar hidden) with the same tabs and +, and the same key
+    row. It opens a terminal as it appears when there is none,
     and goes back with its last terminal.
   - **The terminal** (iPadTerminal): Geist Mono 13 at 1.6 line height, 10×16 inset, the prompt's
     user in `done`, its path in `running`, its branch in `lanternText` and `$` in `textTertiary`,
@@ -273,13 +269,17 @@ follows the Mac's rules (Thread) with the phone's measures below.
   MobileThread, MobileQueue) or "· ⌂ your checkout" in `lanternText` for the space's own checkout
   (MobileQuestion). The boards dropped the turn and context counts and the clock for it, and so
   does the app; the word stays whole. Trailing, the thread's
-  options (•••: Refresh, Subagents while the thread has runs, Terminal, then Rename…, Move up and
-  Move down, and Delete agent… or Delete worktree agent…) at rest; ••• stays at rest and
+  options in the system's ••• (DuoClosedThreadMenu): the side pane's tabs as rows, each pushed
+  over the thread (Changes with its totals, Files, Terminal and Subagents with "1 running",
+  Browser; Files and Browser say they are coming until their tracks land), then Stop agent and
+  More… (Refresh, Open in new window, Rename…, Move up and Move down, and Delete agent… or Delete
+  worktree agent…). Where the bars run down the side (iPhone Duo closed), Back tops the column,
+  then •••, and the tab bar stays under a pushed thread. ••• stays at rest and
   while the agent runs: Stop is no longer in the header (the user's decision, 2026-10-10: the Send
   button is the stop button while the thread is active and nothing is typed). The composer's corner
   is Stop while the agent runs and the field and attachments are empty, and Send with any input.
-  While pi asks, the question replaces the composer, so the header keeps a Stop (`failed` stop
-  square, "Stop agent" to VoiceOver), the one way to refuse the question.
+  While pi asks, the question replaces the composer, so the header keeps a Stop (`stop.circle` in
+  `failed`, "Stop agent"), the one way to refuse the question.
 - **Column:** 20pt from the header, 16pt sides, 22pt between turns, 12pt between a turn's parts
   (`MobileLayout.turnItemSpacing`). The app pads the column 16pt at the top and spaces turns 24pt
   (`MobileLayout.turnSpacing`, `SH.Space.xxl`).

@@ -7,7 +7,7 @@ wide phone. Open, it's a small, nearly square tablet. Half open, its fold splits
 in two. Everything in [platform-iphone.md](platform-iphone.md) holds on the outer display and
 everything in [platform-ipad.md](platform-ipad.md) on the inner one. This file covers what the Duo
 changes. A proposal mock that applies it to Shepherd is in `docs/design/mockups/iphone-duo/`
-(not built).
+(partly built: Shepherd today, below).
 
 ## Geometry (Xcode 27.1 simulator profile)
 
@@ -81,8 +81,8 @@ languages. On the outer display it's roughly 76pt wide and leaves Shepherd a col
 - **Custom views read `GeometryProxy.reservedRegions(kind: .division)`.** Shepherd wraps this as
   `GeometryProxy.verticalFold` (`App/iOS/Support/Fold.swift`). It's nil when the phone is closed,
   fully open, or held sideways. `onHingeClosedChange` reports only whether the phone is shut, not
-  every degree of the hinge. Review (`PadReviewScreen`) and Designs (`PadDesignScreen`) end one
-  pane at the fold and start the next after it.
+  every degree of the hinge. The side pane (`ThreadWithSidePane`), the full-screen review and
+  Designs (`PadDesignScreen`) end one pane at the fold and start the next after it.
 - **Grids use an even number of columns,** so the content divides cleanly at the fold.
 - **Nothing important sits under the fold or the camera** unless the system moves it.
 
@@ -100,8 +100,9 @@ UIKit) lays out two views around the fold:
   (secondary) gives you reading above the fold and typing below it in the laptop pose, with no
   code for the pose.
 - **Never put an ArrangementView inside a `NavigationSplitView`, list or scroll view.** Navigation
-  goes around it, not inside it. In Shepherd that means the view must take the whole window, as
-  Review does (`MobileNavigator.padTakesWindow`).
+  goes around it, not inside it. In Shepherd that means the view must take the whole window: in
+  the laptop pose `PadShell` swaps its split view for the arranged thread's own stack
+  (`PadArrangedThread`, `ThreadArrangement`) until Back.
 
 ## Continuity
 
@@ -122,6 +123,13 @@ UIKit) lays out two views around the fold:
   arrow.up) so they join the column.
 - The four destination rows on Home take about 40% of the outer display's 678pt height. Height is
   the Duo's scarcest resource.
+- **Inner display (built 2026-10):** the thread's side pane (Changes, Files, Terminal, Subagents,
+  Browser) docks beside it by the Mac's rule, sending the 300pt sidebar over the thread on the
+  951pt display; half open, thread and pane meet the fold. Landscape puts the thread's title at the
+  top of its column, level with the pane's tabs, and its controls (side pane, Stop, •••, New
+  thread lowest) in the column. Closed, the ••• menu lists the same tabs and pushes each; unfolding
+  with one pushed opens it in the pane. The laptop pose arranges the thread (`ArrangementView`,
+  overlay). Files and Browser are placeholders until their tracks land.
 
 ## Checking it
 

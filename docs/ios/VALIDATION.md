@@ -134,12 +134,20 @@ that the field keeps the focus above the keyboard and, on an iPad in portrait, t
 stays a hidden overlay; `composer-focus-rotate` focuses in landscape, turns the iPad to portrait,
 and checks the same with no second tap (the field keeps the focus through the turn) (run both in portrait; `-r landscape` shots draw the keyboard
 sideways). Attaching changes a host's PTY size, so the terminal screens
-(`terminal`, `terminal-keys`, `terminal-maximized`, `terminal-phone`, `terminal-phone-keys`, and
-the ones below) never attach: their sessions draw canned screens (`MobileTerminals.cannedScreens`), and the host answers only the read `terminals`
-query. `terminal-close` and `terminal-phone-close` open a one-shell tab's close confirmation
-(`MobileTerminals.cannedClose`). `terminal-relaunched` and `terminal-phone-relaunched` have the
-host push the layout it has after a relaunch (the shell's terminal under a new session) and
-check that the terminal draws the new session's own screen.
+(`terminal`, `terminal-keys`, and the ones below; pushed on iPhone, the side pane's Terminal tab
+on iPad) never attach: their sessions draw canned screens (`MobileTerminals.cannedScreens`), set
+before the terminals open, and the host answers only the read `terminals` query and offers no
+`terminal.start.v1`. `terminal-close` opens a one-shell tab's close confirmation
+(`MobileTerminals.cannedClose`). `terminal-relaunched` has the host push the layout it has after
+a relaunch (the shell's terminal under a new session) and checks that the terminal draws the new
+session's own screen.
+
+**iPhone Duo** (`Fixtures/DuoFixtures.swift`): `duo-subagents`, `duo-subagent-run`, `duo-terminal`
+and `duo-files` draw the side pane's tabs (`-f open`); `duo-unfold` starts closed on Subagents,
+unfolds itself and checks the pane opened on that tab (`-f closed`); `duo-laptop` and
+`duo-laptop-open` check the laptop arrangement and that it and its draft stay laid flat (`-f book
+-r landscape`, the inner display upright with the fold across). The navigator's unfold and
+restore rules are in `client-state-regressions`.
 
 **Windows.** Without `-w` the fixture app is single-window, as the screens of the other tracks
 expect. With it, the app permits multiple scenes and resizing, matching production (CONTRACTS.md ›

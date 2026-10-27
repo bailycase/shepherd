@@ -274,8 +274,8 @@ controller before the host interrupts work.
 | Open in new window | `Windows/WindowHooks.swift` (I) | the thread's options menu, the iPad sidebar's rows, the palette's rows and preview | `OpenInNewWindowButton(thread: AgentRef, prominent: Bool = false, before: (() -> Void)? = nil)` |
 | Send to… and drag | `Windows/WindowHooks.swift` (I) | each turn in `ThreadScreen` | `.turnTransfer(_ row: NativeThreadRow, thread: AgentRef)`, `SendToMenu(text:source:)` |
 | Text dropped on a composer | `Windows/WindowHooks.swift` (I) | `ThreadScreen`, on `ThreadComposer` | `.composerTextDrop(_ thread: AgentRef)` |
-| Terminal panel | `Terminal/TerminalPanelView.swift` (J) | `ThreadScreen`, on its content (the transcript with the composer) | `.threadTerminal(_ ref: AgentRef)`; adds nothing in compact width |
-| Terminal menu item | `Terminal/TerminalRoute.swift` (J) | the thread's options menu (menu items only; the terminal has no header button) | `TerminalMenuItems(thread: AgentRef)` |
+| Terminal activity | `Terminal/TerminalActivityWatch.swift` (J) | `ThreadScreen`, on its content | `.watchesTerminals(_ ref: AgentRef)`, `runningTerminals(_ ref:) -> Int` (the pane's dot, the menu's "1 running") |
+| Side pane tabs | `SidePane/ThreadSidePane.swift` | `PadDetailRoot`, a pushed thread on regular width (`ThreadDestination`) | `ThreadWithSidePane(ref:)`; Files and Browser are `SidePaneComingSoon(tab:)` until `ThreadFilesPane(thread:)` and `ThreadBrowserPane(thread:)` replace them; their phone screens are `MobileRoute.sidePane(.files/.browser)` |
 | Open or start a design | `Designs/DesignsRoute.swift` (K) | Recents' design rows, search, the Designs screen | `DesignsHooks.open(_ ref: HostDesignRef, navigator:)` (the design's canvas in the iPad's split view), `DesignsHooks.create(brief: String = "", host: UUID? = nil, navigator:)` |
 
 Each hook ships with the foundation's minimal version so the app builds and navigates end to end;

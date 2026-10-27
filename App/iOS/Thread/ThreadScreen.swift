@@ -570,14 +570,16 @@ private struct ThreadSidePaneButton: View {
     }
 }
 
-/// Stop while the agent runs or waits on a question (DuoOpenThread's ◎). A question takes the composer's place, and with it the
-/// composer's Stop, so this is then the one way to refuse it.
+/// Stop while the agent waits on a question, and on regular width while it runs too (DuoOpenThread's ◎; a phone keeps it in the
+/// ••• menu and the composer's corner). A question takes the composer's place, and with it the composer's Stop, so this is then
+/// the one way to refuse it.
 private struct ThreadStopButton: View {
     let store: NativeThreadStore
     let enabled: Bool
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
-        if store.running || !store.dialogs.isEmpty {
+        if !store.dialogs.isEmpty || store.running && sizeClass == .regular {
             Button("Stop agent", systemImage: "stop.circle") { Task { await store.abort() } }
                 .tint(Color.sh.failed)
                 .disabled(!enabled || !store.supports("abort"))
