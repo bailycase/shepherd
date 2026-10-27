@@ -84,6 +84,25 @@ struct RemoteUpdateDriverTests {
         #expect(replied)
     }
 
+    @Test func writableUserOwnedAppSupportsInstallationWithASupplementaryGroup() throws {
+        let directory = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let bundle = directory.appendingPathComponent("Shepherd.app")
+        try FileManager.default.createDirectory(at: bundle, withIntermediateDirectories: false)
+        let count = getgroups(0, nil)
+        #expect(count > 0)
+        var groups = [gid_t](repeating: 0, count: max(0, Int(count)))
+        let result = groups.withUnsafeMutableBufferPointer { getgroups(count, $0.baseAddress) }
+        #expect(result == count)
+        let group = try #require(groups.first { $0 != getgid() })
+        try FileManager.default.setAttributes([.groupOwnerAccountID: NSNumber(value: group)], ofItemAtPath: bundle.path)
+
+        #expect(RemoteUpdateDriver.supportsNoninteractiveInstallation(bundle))
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: bundle.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: bundle.path) }
+        #expect(!RemoteUpdateDriver.supportsNoninteractiveInstallation(bundle))
+    }
+
     @Test func staleOffersAndMissingOffersNeverBeginInstallation() {
         let driver = driver()
         driver.begin()
