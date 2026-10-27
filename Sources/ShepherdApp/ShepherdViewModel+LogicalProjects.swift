@@ -138,7 +138,7 @@ extension ShepherdViewModel {
     var sidebarLogicalProjects: [SidebarLogicalProject] {
         allLogicalProjects.map { owner in
             let ref = LogicalProjectRef(home: owner.home, id: owner.project.id)
-            let page = ProjectPagePresentation(owner.project)
+            let page = ProjectPagePresentation.memoized(owner.project)
             // The summary is counted from the tasks the owner reports: "1 needs you" first, else "2 working", else nothing.
             let summary = page.waiting > 0 ? "\(page.waiting) needs you" : page.working > 0 ? "\(page.working) working" : nil
             return SidebarLogicalProject(ref: ref, name: owner.project.name, hostName: owner.hostName, summary: summary,
