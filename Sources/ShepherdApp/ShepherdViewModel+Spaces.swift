@@ -15,7 +15,7 @@ extension ShepherdViewModel {
               state.spaces[index].name != trimmed else { return }
         state.spaces[index].name = trimmed
         sessions.stateDidChange(state)
-        enqueuePersistence("rename space") { _ = try await $0.editProject(id, edit: ProjectEdit(name: trimmed)) }
+        enqueuePersistence("rename space", failureTitle: "Couldn’t rename the space") { _ = try await $0.editProject(id, edit: ProjectEdit(name: trimmed)) }
         let committed = persistenceTail
         Task { @MainActor [weak self] in
             await committed?.value
@@ -66,7 +66,7 @@ extension ShepherdViewModel {
         }
         sessions.stateDidChange(state)
         syncFocus()
-        enqueuePersistence("space deletion") { try await $0.deleteSpace(id) }
+        enqueuePersistence("space deletion", failureTitle: "Couldn’t remove the space") { try await $0.deleteSpace(id) }
     }
 }
 

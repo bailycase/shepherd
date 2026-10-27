@@ -106,6 +106,22 @@ struct AuditViewModelFlowTests {
         #expect(vm.worktreeDeleteTarget == worktree.agent.id, "⌘K's delete confirms like the menu's")
         #expect(vm.state.agents.count == 2)
     }
+
+    /// A person's own edit that the server refuses says so instead of snapping back in silence.
+    @Test func aRefusedRenameReportsItsFailure() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (state, _) = fleet(app)
+        let vm = try await app.start(with: state)
+        // An agent the server never had: its rename is refused and the optimistic edit reconciles away.
+        let ghost = Fixture.agent("ghost", in: state.spaces[0], order: 9)
+        vm.state.agents.append(ghost.agent)
+        vm.renameAgent(ghost.agent.id, to: "named")
+        await app.settle()
+        #expect(vm.actionError?.title == "Couldn’t rename the agent")
+        #expect(vm.actionError?.message.contains("rawValue") == false)
+        #expect(!vm.state.agents.contains { $0.id == ghost.agent.id }, "the server's snapshot wins")
+    }
 }
 
 private final class ChangeFlag: @unchecked Sendable {

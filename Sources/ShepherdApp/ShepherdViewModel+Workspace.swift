@@ -133,8 +133,11 @@ extension ShepherdViewModel {
     /// Append one workspace write to the serialized server-mutation tail.
     /// Local state may lead briefly for responsive UI, but a failed write
     /// always restores both mirrors from the server's committed snapshot.
+    /// `failureTitle` names a person's own edit ("Couldn’t rename the agent"): its failure shows
+    /// in the error sheet instead of snapping back in silence. Exit cleanups pass none.
     func enqueuePersistence(
         _ description: String,
+        failureTitle: String? = nil,
         operation: @escaping @Sendable (SessionServer) async throws -> Void
     ) {
         let previous = persistenceTail
@@ -150,6 +153,7 @@ extension ShepherdViewModel {
                 // reconcile, and audible feedback here beeps from test runs
                 // and post-hoc races (e.g. removing an already-removed tab).
                 NSLog("Shepherd: \(description) failed: \(error)")
+                if let failureTitle { self.fail(failureTitle, error) }
                 self.reconcileFromServer()
             }
         }
@@ -394,7 +398,7 @@ extension ShepherdViewModel {
         guard !trimmed.isEmpty,
               let agent = state.agents.first(where: { $0.id == id }),
               agent.name != trimmed else { return }
-        enqueuePersistence("agent rename") { try await $0.renameAgent(id, to: trimmed) }
+        enqueuePersistence("agent rename", failureTitle: "Couldn’t rename the agent") { try await $0.renameAgent(id, to: trimmed) }
     }
 
     /// Persist retirement and wait for the actual process exits before removing a checkout.
