@@ -900,6 +900,36 @@ public final class NativeThreadStore {
         }
     }
 
+    /// The thread is far from the screen (many others were shown since): lets its history, what
+    /// was derived from it and the images held go, so visited threads do not add up in memory,
+    /// and keeps what is the user's (the draft, attached files, images queued with a message).
+    /// As `stop`, and the first pull when it is shown again reloads it whole. Nothing happens
+    /// while it is on screen.
+    public func release() {
+        guard !isLive else { return }
+        stop()
+        images.releaseHeld()
+        if snapshot != nil { snapshot = nil }
+        if !messages.isEmpty { messages = [] }
+        if olderCursor != nil { olderCursor = nil }
+        if previewing { previewing = false }
+        if !pending.isEmpty { pending = [] }
+        aliases = [:]
+        lastPromptAt = nil
+        echoAccepted = [:]
+        overlays = []
+        presentationCache = [:]
+        callCache = [:]
+        thinkingCache = [:]
+        proseCache = [:]
+        contextInputs = (nil, nil, false, true)
+        deriveQueue()
+        derive()
+    }
+
+    /// Whether `release` has anything to let go.
+    public var holdsHistory: Bool { snapshot != nil || !messages.isEmpty || images.heldBytes > 0 }
+
     /// `catchingUp`: the first pull since the thread came on screen, which lands what happened
     /// while it was away all at once, a finished turn included.
     private func settleRunning(_ running: Bool, catchingUp: Bool) {

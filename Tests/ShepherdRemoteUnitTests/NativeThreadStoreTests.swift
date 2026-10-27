@@ -1915,6 +1915,28 @@ struct NativeThreadStoreTests {
         }
     }
 
+    /// A thread far from the screen lets its history go and keeps the draft; shown again, it
+    /// pulls a fresh snapshot. On screen, release does nothing.
+    @Test func releaseLetsHistoryGoKeepsTheDraftAndReloadsWhenShownAgain() async {
+        let (store, host, task) = await started(F.snapshot(messages: [F.user("go", id: "u"), hi]))
+        store.draft = "keep me"
+        #expect(store.holdsHistory && store.rows.count == 2)
+
+        store.release()
+        #expect(store.holdsHistory && store.rows.count == 2, "nothing goes while the thread is on screen")
+
+        task.cancel()
+        store.suspend()
+        store.release()
+        #expect(!store.holdsHistory && store.rows.isEmpty && store.messages.isEmpty && !store.ready)
+        #expect(store.draft == "keep me")
+
+        let again = await start(store, host)
+        defer { again.cancel() }
+        #expect(host.requests.last == .snapshot(), "the first pull after a release is fresh")
+        #expect(store.ready && store.rows.count == 2)
+    }
+
     @Test func stopDetachesTheStoreFromItsHost() async {
         let (store, host, task) = await started()
         defer { task.cancel() }
