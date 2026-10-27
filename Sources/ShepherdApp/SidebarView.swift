@@ -195,7 +195,7 @@ struct SidebarRowMenu: View {
                     Divider()
                     Button("Delete Worktree Agent…", role: .destructive) { vm.worktreeDeleteTarget = id }
                 } else {
-                    Button("Delete Agent", role: .destructive) { vm.deleteAgent(id) }
+                    Button("Delete Agent…", role: .destructive) { vm.agentDeleteTarget = id }
                 }
             }
         case .design(let id):

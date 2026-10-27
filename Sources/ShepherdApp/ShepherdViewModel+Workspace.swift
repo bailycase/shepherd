@@ -344,8 +344,15 @@ extension ShepherdViewModel {
             return
         }
         guard let agent = selectedAgent else { return }
-        if agent.worktreeBranch != nil { worktreeDeleteTarget = agent.id }
-        else { deleteAgent(agent.id) }
+        requestDeleteAgent(agent.id)
+    }
+
+    /// Every delete of a local agent confirms first: a worktree agent through its own dialog
+    /// (the checkout may go too), any other through the plain one.
+    func requestDeleteAgent(_ id: AgentID) {
+        guard let agent = state.agents.first(where: { $0.id == id }) else { return }
+        if agent.worktreeBranch != nil { worktreeDeleteTarget = id }
+        else { agentDeleteTarget = id }
     }
 
     /// A hand-typed name is final: pi's namer must never overwrite it.
@@ -388,7 +395,7 @@ extension ShepherdViewModel {
                 }
                 try verifyCheckoutUnused(canonical, except: id)
                 try await Task.detached { try GitWorktree.remove(repo: repo, branch: branch, worktree: path, fingerprint: fingerprint, checkoutBranch: checkoutBranch) }.value
-            } catch { remoteActionError = String(describing: error) }
+            } catch { fail("Couldn’t delete the worktree", error) }
         }
     }
 
@@ -402,7 +409,7 @@ extension ShepherdViewModel {
                 await MainActor.run { completion?(nil) }
             } catch {
                 await MainActor.run {
-                    self.remoteActionError = String(describing: error)
+                    self.fail("Couldn’t delete the agent", error)
                     completion?(error)
                 }
                 throw error

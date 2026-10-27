@@ -97,11 +97,14 @@ struct AppDialogs: ViewModifier {
                     vm.agentRenameTarget = nil
                 }
             }
-            .sheet(item: $vm.worktreeDeleteAgent) { agent in
+            .sheet(item: $vm.worktreeDeleteAgent, onDismiss: vm.runAfterDialogDismiss) { agent in
                 WorktreeDeleteDialog(vm: vm, agent: agent)
                     .dialogSheetFrame()
             }
-            .sheet(item: $vm.spaceDeleteSpace) { space in
+            .sheet(item: $vm.agentDeleteAgent, onDismiss: vm.runAfterDialogDismiss) { agent in
+                AgentDeleteDialog(vm: vm, agent: agent)
+            }
+            .sheet(item: $vm.spaceDeleteSpace, onDismiss: vm.runAfterDialogDismiss) { space in
                 SpaceDeleteDialog(vm: vm, space: space)
             }
             .sheet(item: $vm.designDeleteRequest) { request in
@@ -125,7 +128,7 @@ struct AppDialogs: ViewModifier {
                 }
             }
             .sheet(item: $vm.actionErrorItem) { item in
-                ActionErrorDialog(message: item.value) { vm.remoteActionError = nil }
+                ActionErrorDialog(error: item.value) { vm.actionError = nil }
             }
     }
 
@@ -256,14 +259,38 @@ struct WorktreeDeleteDialog: View {
     }
 
     /// Same dismissal choreography as Remove Space: deleting tears down a mounted layout, so
-    /// the sheet finishes dismissing first.
+    /// the sheet finishes dismissing first (`onDismiss`).
     private func confirm(removeWorktree: Bool) {
         let id = agent.id
+        vm.afterDialogDismiss = { vm.deleteWorktreeAgent(id, removeWorktree: removeWorktree) }
         vm.worktreeDeleteTarget = nil
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(300))
-            vm.deleteWorktreeAgent(id, removeWorktree: removeWorktree)
-        }
+    }
+}
+
+/// Delete Agent: always confirmed. It stops the agent's run and drops the thread from the sidebar,
+/// and nothing in the app brings it back.
+struct AgentDeleteDialog: View {
+    var vm: ShepherdViewModel
+    let agent: Agent
+
+    var body: some View {
+        DialogSheet(
+            title: "Delete agent",
+            subtitle: Self.subtitle(agent),
+            actions: [
+                DialogAction("Cancel", kind: .cancel) { vm.agentDeleteTarget = nil },
+                DialogAction("Delete", kind: .destructive) {
+                    let id = agent.id
+                    vm.afterDialogDismiss = { vm.deleteAgent(id) }
+                    vm.agentDeleteTarget = nil
+                },
+            ]
+        )
+    }
+
+    static func subtitle(_ agent: Agent) -> String {
+        let stops = agent.status == .idle ? "Removes" : "Stops and removes"
+        return "\(stops) “\(agent.name)”. Its conversation stays on disk, but the thread leaves the sidebar and cannot be reopened here."
     }
 }
 
@@ -304,14 +331,11 @@ struct SpaceDeleteDialog: View {
                 DialogAction("Cancel", kind: .cancel) { vm.spaceDeleteTarget = nil },
                 DialogAction("Remove space", kind: .destructive) {
                     let id = space.id
-                    vm.spaceDeleteTarget = nil
                     // Deleting a space tears down mounted terminal layouts — a huge view-tree
-                    // change. Let the sheet finish dismissing first; mutating its host
-                    // mid-dismissal wedges the modal session.
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(300))
-                        vm.deleteSpace(id)
-                    }
+                    // change. The sheet's `onDismiss` runs it once the sheet is gone; mutating
+                    // its host mid-dismissal wedges the modal session.
+                    vm.afterDialogDismiss = { vm.deleteSpace(id) }
+                    vm.spaceDeleteTarget = nil
                 },
             ]
         )
