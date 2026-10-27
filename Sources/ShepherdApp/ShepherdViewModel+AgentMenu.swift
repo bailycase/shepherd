@@ -1,18 +1,85 @@
 import AppKit
 import Foundation
 import ShepherdCore
+import ShepherdUI
 
-/// The agent menu's actions beyond rename, review and delete (SHComposer › Menus): Fork from
+/// The actions on one of this Mac's threads, listed once: the Agent menu, ⌘K's "This thread"
+/// section and the sidebar row's menu all offer this list, so nothing is reachable from one
+/// surface alone.
+enum ThreadCommand: String, CaseIterable, Identifiable {
+    case fork, copyTranscript, reviewChanges, openInFinder, finalizeWorktree, delete
+
+    var id: String { rawValue }
+
+    /// Menu casing ("Copy Transcript").
+    var title: String {
+        switch self {
+        case .fork: "Fork Thread"
+        case .copyTranscript: "Copy Transcript"
+        case .reviewChanges: "Review Changes"
+        case .openInFinder: "Open in Finder"
+        case .finalizeWorktree: "Finalize Worktree…"
+        case .delete: "Delete Agent…"
+        }
+    }
+
+    /// Palette casing ("Copy transcript").
+    var paletteTitle: String {
+        switch self {
+        case .fork: "Fork thread"
+        case .copyTranscript: "Copy transcript"
+        case .reviewChanges: "Review changes"
+        case .openInFinder: "Open in Finder"
+        case .finalizeWorktree: "Finalize worktree…"
+        case .delete: "Delete agent…"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .fork: "arrow.branch"
+        case .copyTranscript: "doc.on.doc"
+        case .reviewChanges: "plus.forwardslash.minus"
+        case .openInFinder: "folder"
+        case .finalizeWorktree: SHGlyph.gitBranch.symbolName
+        case .delete: "trash"
+        }
+    }
+
+    var isDestructive: Bool { self == .delete }
+
+    var shortcut: ShortcutAction? { self == .delete ? .deleteAgent : nil }
+
+    /// Finalize is a worktree agent's alone; the rest apply to any of this Mac's threads.
+    func applies(to agent: Agent) -> Bool {
+        self != .finalizeWorktree || agent.worktreeBranch != nil
+    }
+
+    static func commands(for agent: Agent) -> [ThreadCommand] { allCases.filter { $0.applies(to: agent) } }
+}
+
+/// The agent menu's actions beyond rename, review and delete (SHComposer › Menus): Fork
 /// Here, Copy Transcript and Open in Finder, for This Mac's agents, read from pi's session file.
 @MainActor
 extension ShepherdViewModel {
+    func perform(_ command: ThreadCommand, on id: AgentID) {
+        switch command {
+        case .fork: forkAgent(id)
+        case .copyTranscript: copyAgentTranscript(id)
+        case .reviewChanges: selectAgent(id); openUserReview()
+        case .openInFinder: openAgentInFinder(id)
+        case .finalizeWorktree: beginFinalizeWorktree(id)
+        case .delete: requestDeleteAgent(id)
+        }
+    }
+
     /// The agent's session file and the directory pi runs in; nil for an agent no longer listed.
     private func sessionSource(_ id: AgentID) -> (sessionID: String, cwd: String, agent: Agent)? {
         guard let agent = state.agents.first(where: { $0.id == id }) else { return nil }
         return (agent.effectivePiSessionID, TerminalSessionStore.resolvedCwd(agentCwd(agent)), agent)
     }
 
-    /// Fork from Here: the whole conversation so far, copied into a new pi session, becomes a new
+    /// Fork Thread: the whole conversation so far, copied into a new pi session, becomes a new
     /// agent beside this one ("<name> (fork)", named again by the namer from its next turn). A
     /// failure says why and creates nothing.
     func forkAgent(_ id: AgentID) {
@@ -27,12 +94,12 @@ extension ShepherdViewModel {
                     return try PiSessionFile.fork(sessionFile: file.path, cwd: cwd, sessionsRoot: root)
                 }.value
                 var config = NewAgentConfig(spaceID: source.agent.spaceID, workingDirectory: cwd, model: source.agent.model,
-                                            thinking: source.agent.thinkingLevel ?? .medium, initialPrompt: nil)
+                                            thinking: source.agent.thinkingLevel ?? settings.defaultThinking, initialPrompt: nil)
                 config.initialName = Self.forkName(source.agent.name)
                 config.piSessionID = forked
                 try await startAgent(config)
             } catch {
-                remoteActionError = "Couldn’t fork “\(source.agent.name)”: \(error)"
+                actionError = ActionError(title: "Couldn’t fork “\(source.agent.name)”", message: ActionError.describe(error))
             }
         }
     }

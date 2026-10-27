@@ -136,8 +136,10 @@ final class DesignSchemeHandler: NSObject, WKURLSchemeHandler {
             return serve(file, inside: base)
         case .blob(let id):
             let assets = folder.appendingPathComponent("assets", isDirectory: true)
+            // The bare id first; the folder is listed only for an `<id>.<ext>` name (and never sorted whole).
+            if let body = serve(assets.appendingPathComponent(id), inside: assets) { return body }
             let names = (try? FileManager.default.contentsOfDirectory(atPath: assets.path)) ?? []
-            guard let name = names.sorted().first(where: { $0 == id || $0.hasPrefix(id + ".") }) else { return nil }
+            guard let name = names.filter({ $0.hasPrefix(id + ".") }).min() else { return nil }
             return serve(assets.appendingPathComponent(name), inside: assets)
         case .refused:
             return nil

@@ -224,12 +224,12 @@ struct RevertFileDialog: View {
 
 /// A failed agent action (rename, delete, a remote request): the error, selectable.
 struct ActionErrorDialog: View {
-    let message: String
+    let error: ActionError
     let dismiss: () -> Void
 
     var body: some View {
-        DialogSheet(title: "Agent action failed", actions: [DialogAction("OK", kind: .prominent, action: dismiss)]) {
-            Text(message)
+        DialogSheet(title: error.title, actions: [DialogAction("OK", kind: .prominent, action: dismiss)]) {
+            Text(error.message)
                 .shText(.body)
                 .foregroundStyle(Color.sh.textSecondary)
                 .textSelection(.enabled)

@@ -131,7 +131,7 @@ The pages, in nav order. Each names its board; the strings in quotes are the boa
 "How Shepherd looks. The terminal has its own font settings."
 
 - **Theme:** Mode, "System follows your Mac and switches with it.": System · Light · Dark, default
-  System (`ThemeManager`; the Appearance menu sets the same thing). Above it the app adds a Theme
+  System (`ThemeManager`; View ▸ Appearance sets the same thing). Above it the app adds a Theme
   row, "Shepherd Design ships with Shepherd, in light and dark.", naming the theme in
   `ui`/`textSecondary`: a name, not a popup, while one theme ships.
 - **Sidebar** (SettingsAppearance, SettingsAppearanceProjects):
@@ -177,9 +177,12 @@ shell they run."
 "Defaults and behavior for your agents. Existing agents keep their model, thinking level and speed."
 
 - **New agents:**
-  - Default model, "Preselected in the New Agent sheet. "Use the agent's default" passes no `--model` at
-    all.": a popup whose first item is "Use the agent’s default · <pi's own default model>", then a divider
-    and the catalog's model ids. The catalog and pi's default load in a task, never in `body`.
+  - Default model, "Preselected in the New Agent sheet. "Use the agent's default" starts every thread,
+    automation and Project on the model Shepherd’s pi names as its own.": a popup whose first item is
+    "Use the agent’s default · <pi's own default model>", then a divider and the catalog's model ids.
+    The catalog and pi's default load in a task, never in `body`. Every launch path resolves the
+    default the same way (`AppSettings.defaultModel(piHome:)`: this setting, else pi's own), so pi
+    never picks a provider on its own; the automation editor names the model a run will use.
   - Default thinking level, "Can be changed per agent from the composer.": Off · Minimal · Low ·
     Medium · High · Extra high · Max, default Medium (pi uses the nearest level a model has).
   - Speed for new threads, "New threads start on this speed. Each thread keeps its own after
@@ -204,6 +207,9 @@ shell they run."
   - When a turn ends, send the queue, "All at once arrives as one turn, in the order you queued
     it.": One per turn · All at once, default All at once. It is the
     host's default for its agents; Up next's ••• menu sets one agent's own.
+  - Notify when a turn finishes, "A banner for each thread you are not looking at. Questions,
+    failures and threads waiting on you always notify.": a switch, default on
+    (`AppSettings.notifyOnTurnFinished`); off mutes only the "Turn finished" banner.
 - **Context** (no board draws it; the user's decision, 2026-10-01, with the Context card's parts
   list; docs/context-budget.md). Every row applies to agents started after a change; a running agent
   keeps what it started with and follows at its next launch.
@@ -271,7 +277,8 @@ automated step of the worktree flows can be turned off here.
 
 ## Remote (SettingsRemote)
 
-"Connect to agents on other Macs over your VPN, or let other Macs connect to this one."
+"Connect to agents on other Macs over your VPN, or let other Macs and Shepherd on your iPhone or iPad
+connect to this one."
 
 - **Hosts:** one row per host (`RemoteHostRow`, a `SettingsActionRow`): the name as its title; under
   it a line: the address in mono 12
@@ -292,12 +299,13 @@ automated step of the worktree flows can be turned off here.
   Add host (secondary), disabled until all four are valid. Edit loads a host into the same form: the
   group is titled Edit host, and its action row reads Cancel (ghost) and Save.
 - **Serve this Mac** (footnote "Remote sessions run on the host Mac; your VPN is the transport and
-  the token keeps other devices out."):
+  the token keeps other devices out. The iPhone and iPad app pairs the same way: Settings ▸ Hosts ▸
+  Add host there takes this Mac's address, port and token."):
   - Listener, "Let other Macs with your token connect to agents here.": a switch. While it is bound
     the description reads "Serving on port 7433. Other Macs with your token connect to agents here."
     A bind failure is the row's problem, "Couldn't start: port 7433 is already in use."
-  - Token, "Paste this into the other Mac's Token field. To revoke every client, delete the file and
-    turn the listener off and on." (the board: "Delete the file to revoke every client."; see the
+  - Token, "Paste this into the other Mac's, iPhone's or iPad's Token field. To revoke every client,
+    delete the file and turn the listener off and on." (the board: "Delete the file to revoke every client."; see the
     departures): a `PathRow` for `remote-token` with Reveal.
   - What a token opens, for the Browser: a connected client can ask this Mac to carry a connection
     to one of its own **loopback** ports (`127.0.0.1` or `::1`, never another address) for a thread

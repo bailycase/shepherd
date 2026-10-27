@@ -41,14 +41,15 @@ struct SubagentRunTitle: View {
 
     var body: some View {
         let phase = run.map(nativeRunPhase)
+        let timing = run.map(nativeTrayRow)
         VStack(spacing: SH.Space.xxs) {
             Text(run.map(nativeRunAgentName) ?? "Subagent").font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary)
                 .lineLimit(1)
             HStack(spacing: SH.Space.s) {
                 Text(phase.map(nativeRunPhaseLabel) ?? "No longer listed")
-                if let started = run?.startedAt {
+                if let started = timing?.since {
                     Text("·")
-                    SHElapsedText(since: SubagentValues.date(started)!, until: SubagentValues.date(run?.isTerminal == true ? run?.endedAt : nil))
+                    SHElapsedText(since: SubagentValues.date(started)!, until: SubagentValues.date(timing?.until))
                 }
             }
             .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
@@ -68,6 +69,7 @@ struct SubagentRunView: View {
     let compact: Bool
     @State private var transcript = SubagentTranscriptModel()
     @State private var draft = ""
+    @State private var follower = NativeScrollFollower()
     @State private var copyNotice: String?
     @FocusState private var steering: Bool
     @Environment(\.scenePhase) private var scenePhase
@@ -107,6 +109,12 @@ struct SubagentRunView: View {
                     if !compact {
                         Text("Its run").shSectionLabel().padding(.top, SH.Space.s)
                     }
+                    if let error = transcript.loadError {
+                        Text(error).font(.sh(.caption)).foregroundStyle(Color.sh.failed)
+                        Button("Retry") { Task { await transcript.reload(store: store) } }
+                            .buttonStyle(.sh(.secondary))
+                            .disabled(transcript.loading)
+                    }
                     SubagentTranscriptList(model: transcript, live: run.flatMap(nativeRunLive),
                                            emptyText: run == nil ? "This run is no longer listed." : "No transcript yet.",
                                            showsTask: !compact)
@@ -120,8 +128,28 @@ struct SubagentRunView: View {
             .defaultScrollAnchor(run?.isTerminal == true ? .top : .bottom, for: .initialOffset)
             .scrollDismissesKeyboard(.interactively)
             .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar(run, summary: summary, commands: commands) }
-            .onChange(of: transcript.turns.count) { _, _ in
-                if run?.isTerminal == false { proxy.scrollTo("run-bottom", anchor: .bottom) }
+            .onScrollGeometryChange(for: NativeScrollProbe.self, of: Self.probe) { old, new in
+                if follower.observe(from: old, to: new, gesture: follower.userScrolling, nativeAnchor: false), run?.isTerminal == false {
+                    proxy.scrollTo("run-bottom", anchor: .bottom)
+                }
+            }
+            .onScrollPhaseChange { old, phase, context in
+                follower.userScrolling = phase == .interacting
+                if phase == .idle, old == .interacting || old == .decelerating {
+                    follower.observe(distanceFromBottom: Self.probe(context.geometry).distance, userIntent: true)
+                }
+            }
+            .onChange(of: transcript.turns.last) { _, _ in
+                follower.contentArrived()
+                if follower.sticky, !transcript.loadingOlder, run?.isTerminal == false {
+                    proxy.scrollTo("run-bottom", anchor: .bottom)
+                }
+            }
+            .overlay(alignment: .bottom) {
+                SHJumpToLatest(action: follower.showsJump(running: run?.isTerminal == false) ? {
+                    follower.jumpToLatest()
+                    proxy.scrollTo("run-bottom", anchor: .bottom)
+                } : nil)
             }
         }
         .task(id: FollowKey(runID: runID, startedAt: run?.startedAt, ready: store.ready, active: scenePhase == .active)) {
@@ -129,6 +157,12 @@ struct SubagentRunView: View {
             let store = store, runID = runID
             await transcript.follow(store: store, runID: runID) { store.subagents.first { $0.runID == runID }?.isTerminal != true }
         }
+    }
+
+    private static func probe(_ geometry: ScrollGeometry) -> NativeScrollProbe {
+        NativeScrollProbe(content: geometry.contentSize.height, offset: geometry.contentOffset.y,
+                          container: geometry.containerSize.height, insetTop: geometry.contentInsets.top,
+                          insetBottom: geometry.contentInsets.bottom)
     }
 
     /// "step 1 of 3 · 62%" beside a live run's goal.
@@ -144,7 +178,10 @@ struct SubagentRunView: View {
         if transcript.earlierCount > 0 {
             HStack(spacing: SH.Space.s) {
                 Text(nativeCount(transcript.earlierCount, "earlier turn")).font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary)
-                Button(transcript.loadingOlder ? "Loading…" : "Show all") { Task { await transcript.loadAll(store: store) } }
+                Button(transcript.loadingOlder ? "Loading…" : "Show all") {
+                    follower.beginJump()
+                    Task { await transcript.loadAll(store: store) }
+                }
                     .buttonStyle(.sh(.ghost, size: .s))
                     .disabled(transcript.loadingOlder)
             }

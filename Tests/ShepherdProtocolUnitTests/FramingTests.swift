@@ -65,6 +65,16 @@ struct LineBufferTests {
         #expect(try buffer.append(Data("c\n".utf8)) == [Data("bc".utf8)])
     }
 
+    /// A frame arriving in many fragments is scanned from where the last fragment ended: the
+    /// newline that opens a fragment, or ends a later one, is found and nothing before it is lost.
+    @Test func aFrameInManyFragmentsYieldsOnceAtTheNewlineWhereverItFalls() throws {
+        var buffer = LineBuffer()
+        let body = Data(repeating: 0x61, count: 10_000)
+        for _ in 0..<50 { #expect(try buffer.append(body).isEmpty) }
+        #expect(try buffer.append(Data("\nb".utf8)) == [Data(repeating: 0x61, count: 500_000)])
+        #expect(try buffer.append(Data("c\nd\n".utf8)) == [Data("bc".utf8), Data("d".utf8)])
+    }
+
     @Test func aPayloadExactlyAtTheCapIsAccepted() throws {
         var buffer = LineBuffer()
         let payload = Data(repeating: 0x61, count: NDJSON.maxPayloadBytes)

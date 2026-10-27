@@ -129,7 +129,8 @@ extension ChangesService {
         let branchBase = mergeBase(base, head)
         entries.append(entry(.branch(base: nil), branchBase, working,
                              unavailable: base == nil ? "No base branch to compare against." : branchBase == nil ? "No shared history with \(base!)." : nil))
-        _ = pullDone.wait(timeout: .now() + 12)
+        // gh over a slow or absent network must not hold the overview; a later poll fills the row in.
+        _ = pullDone.wait(timeout: .now() + 3)
         let pull = pullBox.withValue { $0 }
         if let pull, let prBase = pullRequestBase(pull, repository: repository), let head, let old = mergeBase(prBase, head) {
             entries.append(entry(.pullRequest, old, head))
@@ -167,6 +168,9 @@ extension ChangesService {
             return .changesTurn(try await undoTurn(agentID: agentID, turnID: turnID))
         case .changesRedoTurn(let turnID):
             return .changesTurn(try await redoTurn(agentID: agentID, turnID: turnID))
+        case .changesRevertFile(let revision, let path, let oldPath):
+            try await revertFile(agentID: agentID, revision: revision, path: path, oldPath: oldPath)
+            return .ok
         default:
             throw ChangesError(ChangesError.invalid, "Not a changes query.")
         }

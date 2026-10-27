@@ -201,4 +201,11 @@ struct PaletteEntryTests {
         }
         #expect(snippet == nil)
     }
+
+    /// The empty list never says "No matches" while transcripts are still being searched.
+    @Test func theEmptyListSaysWhenConversationsAreStillBeingSearched() {
+        #expect(PaletteCard.emptyText(query: "", searching: false) == "Nothing here yet")
+        #expect(PaletteCard.emptyText(query: "zebra", searching: true) == "Searching conversations…")
+        #expect(PaletteCard.emptyText(query: "zebra", searching: false) == "No matches")
+    }
 }

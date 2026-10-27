@@ -1425,7 +1425,7 @@ enum DesignExporter {
             for path in files.boards {
                 try checkBudget(outputs.values.reduce(0) { $0 + $1.count })
                 let image = try await render(path, files: files, surface: surface) { try await $0.image(scale: 2) }
-                outputs[DesignExportNames.png(path)] = try DesignImageFile.png(image)
+                outputs[DesignExportNames.png(path)] = try await DesignImageFile.pngDetached(image)
             }
         case .pdf:
             var documents: [Data] = []
@@ -1434,7 +1434,7 @@ enum DesignExporter {
                 let mode = files.index.boards[path].map(DesignPrint.of) ?? .fixed
                 documents.append(try await render(path, files: files, surface: surface) { try await $0.pdf(mode) })
             }
-            outputs[DesignExportNames.destination(.pdf, boards: files.boards, design: name).name] = try DesignPDF.merge(documents)
+            outputs[DesignExportNames.destination(.pdf, boards: files.boards, design: name).name] = try await DesignPDF.mergeDetached(documents)
         case .zip:
             // The pages, tokens.css and the uploads they use, beside the canvas as a project
             // folder (format.md), narrowed to these boards and the ones they import.
@@ -1501,7 +1501,7 @@ enum DesignExporter {
                 guard !crop.isEmpty, let cut = drawn.cropping(to: crop) else { throw DesignExportFailure("The element has no size on \(path).") }
                 drawn = cut
             }
-            let image = (data: try DesignImageFile.png(drawn), width: drawn.width, height: drawn.height)
+            let image = (data: try await DesignImageFile.pngDetached(drawn), width: drawn.width, height: drawn.height)
             let page = Self.baked(try await view.staticPage(), path: path, files: files, assets: .inline)
             var detail: DesignElementDetail?
             if let tid = element?.tid {

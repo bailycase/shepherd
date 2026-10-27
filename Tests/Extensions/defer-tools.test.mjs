@@ -20,10 +20,10 @@ const BROWSER = ["browser_open", "browser_read", "browser_click", "browser_type"
   "browser_tabs", "browser_new_tab", "browser_select_tab", "browser_close_tab"];
 const PEERS = ["agent_list", "agent_send", "agent_read", "agent_steer", "agent_interrupt", "agent_wait", "agent_delete", "agent_spawn", "agent_move"];
 const AUTOMATIONS = ["automation_create", "automation_list", "automation_update", "automation_delete", "automation_start", "automation_stop"];
-const DEFERRED = [...BROWSER, ...PEERS, ...AUTOMATIONS, "review_diff"];
+const CHILDREN_EXTRAS = ["shepherd_child_agents", "shepherd_child_cancel", "shepherd_workflow"];
+const DEFERRED = [...BROWSER, ...PEERS, ...AUTOMATIONS, "review_diff", ...CHILDREN_EXTRAS, "codemode"];
 const DIRECT = ["read", "bash", "edit", "write", "terminal_list", "terminal_open", "terminal_run", "terminal_read", "terminal_focus", "terminal_close", "notify",
-  "shepherd_child_agents", "shepherd_child_start", "shepherd_child_message", "shepherd_child_result", "shepherd_child_cancel",
-  "shepherd_child_resume", "shepherd_workflow"];
+  "shepherd_child_start", "shepherd_child_message", "shepherd_child_result", "shepherd_child_resume", "ask_user"];
 
 const names = (request) => request.body.tools.map((tool) => tool.name);
 const outputs = (request) => request.body.input.filter((item) => item.type === "function_call_output").map((item) => String(item.output));
@@ -70,7 +70,8 @@ test("a thread's first request carries none of the deferred tools or their lines
   // One line, naming each family, and the rule about what arrives, written once.
   const lines = system.split("\\n- ").filter((line) => line.startsWith("Shepherd tools you load with tool_search"));
   assert.equal(lines.length, 1, "one line");
-  assert.match(lines[0], /agent_\* \(other agent threads, only when the user explicitly asks you to\); automation_\* \(Shepherd automations, the saved watch tasks\); review_diff \(.*\); browser_\* \(this thread's Browser page/);
+  assert.match(lines[0], /agent_\* \(other agent threads, only when the user explicitly asks you to\); automation_\* \(Shepherd automations, the saved watch tasks\); review_diff \(.*\); shepherd_\* \(more native helper tools.*\); browser_\* \(this thread's Browser page/);
+  assert.match(lines[0], /codemode \(codemode, a script that calls several tools at once\); /);
   assert.equal(system.split("A message that begins with [from: <name>]").length, 2);
   assert.ok(!system.includes("Use agent_send, agent_steer"), "the rule about using the tools joins when they load");
   assert.ok(!system.includes("browser_* tools drive"), "and the browser's own rules too");
@@ -253,7 +254,7 @@ test("a watch agent keeps agent_send, terminals and notify direct and defers the
   for (const name of [...PEERS.filter((name) => name !== "agent_send"), ...AUTOMATIONS]) assert.ok(!run1.toolSources[name], `${name} is not registered for a watch agent`);
   const system = JSON.stringify(run1.body.input);
   const line = /Shepherd tools you load with tool_search when you need them: ([^"\\]*)/.exec(system)[1];
-  assert.match(line, /^review_diff \(.*\); browser_\* \(/, line);
+  assert.match(line, /^codemode \(.*\); review_diff \(.*\); shepherd_\* \(more native helper tools.*\); browser_\* \(/, line);
   assert.ok(!/agent_\*|automation_\*/.test(line), "the line names only what it can load");
   assert.ok(system.includes("Use agent_send, agent_steer"), "agent_send carries the rules it always did");
 });

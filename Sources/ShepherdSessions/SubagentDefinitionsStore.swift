@@ -15,12 +15,17 @@ public final class SubagentDefinitionsStore: @unchecked Sendable {
         public var error: String?
         public var disabled: Bool?
         public var fingerprint: String?
+        /// Tools the profile lists that no child's pi can provide (not pi's own, not a design
+        /// agent's relayed tools, and no explicit extension to supply them): the helper runs without them.
+        public var unavailableTools: [String]?
         public var id: String { file }
         public var isDefault: Bool { ["scout.md", "reviewer.md", "planner.md", "worker.md"].contains(file) }
         public var diagnostic: String? { error.map { $0 + ". The profile did not load." } ?? (disabled == true ? "This subagent is disabled." : nil) }
         public var capability: String {
             let readOnly = tools.map { $0.allSatisfy { ["read", "grep", "find", "ls", "shepherd_parent_message"].contains($0) } } ?? false
-            return (readOnly ? "read-only" : "can edit") + (context == "fork" ? " · fork" : "")
+            var text = (readOnly ? "read-only" : "can edit") + (context == "fork" ? " · fork" : "")
+            if let missing = unavailableTools, !missing.isEmpty { text += " · pi has no " + missing.joined(separator: ", ") }
+            return text
         }
     }
     public struct File: Equatable, Sendable {
@@ -201,7 +206,8 @@ public final class SubagentDefinitionsStore: @unchecked Sendable {
           try { if(error) throw Error(error); result = config.parseChildAgent(text, path.join(q.directory,file)); }
           catch(e) { result = config.childAgentError(text ?? '', path.join(q.directory,file), e); }
           const {name,description,tools,context,error:problem,disabled} = result;
-          return {file,fingerprint,name,description,tools,context,error:problem,disabled};
+          const unavailableTools = problem ? undefined : config.unavailableTools(result);
+          return {file,fingerprint,name,description,tools,context,error:problem,disabled,unavailableTools:unavailableTools?.length ? unavailableTools : undefined};
         });
         const counts = new Map(); for(const d of definitions) counts.set(d.name,(counts.get(d.name)||0)+1);
         for(const d of definitions) if(counts.get(d.name)>1) d.error = `Duplicate subagent name: ${d.name}`;

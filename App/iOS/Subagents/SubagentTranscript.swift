@@ -28,11 +28,19 @@ final class SubagentTranscriptModel {
     private(set) var turns: [Turn] = []
     private(set) var earlierCount = 0
     private(set) var loaded = false
+    private(set) var loadError: String?
+    private(set) var loading = false
     private(set) var loadingOlder = false
     @ObservationIgnored private var olderCursor: String?
     @ObservationIgnored private var runID: String?
     @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private var live = false
+    /// The liveness the turns were last derived with: a run that stops without another message
+    /// still redraws its last turn settled.
+    @ObservationIgnored private var derivedLive = false
+    /// Older pages read in by "Show all" land this many at a time, so a long run is regrouped a
+    /// few times, not once per page.
+    static let loadAllBatch = 4
     /// Each agent turn's presentation, kept while its messages and liveness stand.
     @ObservationIgnored private var presentations: [String: (messages: [NativeThreadMessage], live: Bool, value: NativeTurnPresentation)] = [:]
 
@@ -56,12 +64,16 @@ final class SubagentTranscriptModel {
 
     func reload(store: NativeThreadStore) async {
         guard let runID else { return }
+        guard !loading else { return }
         let epoch = generation
+        loading = true
+        defer { if generation == epoch { loading = false } }
         guard let page = await store.subagentTranscript(runID: runID) else {
-            if generation == epoch, store.ready, !loaded { loaded = true }
+            if generation == epoch { loadError = "Couldn't load this transcript. Try again." }
             return
         }
         guard generation == epoch, self.runID == runID else { return }
+        loadError = nil
         let spliced = nativeTranscriptSplice(messages, newest: page)
         if spliced.replaced {
             olderCursor = page.olderCursor
@@ -81,25 +93,36 @@ final class SubagentTranscriptModel {
         let epoch = generation
         loadingOlder = true
         defer { if generation == epoch { loadingOlder = false } }
+        // Pages wait here and land together: the newest page may be reloaded meanwhile, so they
+        // are prepended to what the model holds when they land.
+        var batch: [NativeSubagentTranscript] = []
+        func land() {
+            guard let last = batch.last else { return }
+            setMessages(batch.reduce(messages) { nativeTranscriptPrepend($0, older: $1) })
+            setEarlier(last.earlierCount)
+            batch = []
+        }
         while !Task.isCancelled, let cursor = olderCursor, generation == epoch {
             guard let page = await store.subagentTranscript(runID: runID, beforeEntryID: cursor), generation == epoch,
                   page.olderCursor != cursor else { break }
-            setMessages(nativeTranscriptPrepend(messages, older: page))
+            batch.append(page)
             olderCursor = page.olderCursor
-            setEarlier(page.earlierCount)
+            if batch.count == Self.loadAllBatch { land() }
         }
+        if generation == epoch { land() }
     }
 
     /// The whole transcript as text, once every page is in; nil when a page failed to load.
     func copyText(store: NativeThreadStore) async -> String? {
         await loadAll(store: store)
-        guard olderCursor == nil else { return nil }
+        guard loaded, loadError == nil, olderCursor == nil else { return nil }
         return nativeTranscriptText(messages)
     }
 
     private func setMessages(_ value: [NativeThreadMessage]) {
-        guard value != messages else { return }
+        guard value != messages || live != derivedLive else { return }
         messages = value
+        derivedLive = live
         let grouped = nativeTurns(value)
         let lastAgent = grouped.lastIndex { !$0.isUser }
         var next: [Turn] = []
@@ -135,9 +158,12 @@ final class SubagentTranscriptModel {
         olderCursor = nil
         messages = []
         turns = []
+        derivedLive = false
         presentations = [:]
         earlierCount = 0
         loaded = false
+        loadError = nil
+        loading = false
         loadingOlder = false
     }
 }
@@ -156,7 +182,10 @@ struct SubagentTranscriptList: View {
     var body: some View {
         let turns = model.turns
         LazyVStack(alignment: .leading, spacing: MobileLayout.turnItemSpacing) {
-            if turns.isEmpty, model.loaded {
+            if !model.loaded, model.loadError == nil {
+                Text("Loading transcript…").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+            }
+            if turns.isEmpty, model.loaded, model.loadError == nil {
                 Text(emptyText).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
             }
             ForEach(!showsTask && turns.first?.presentation == nil ? Array(turns.dropFirst()) : turns) { turn in

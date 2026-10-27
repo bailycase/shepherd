@@ -197,6 +197,27 @@ struct FleetTests {
         #expect(item.question == "Q")
     }
 
+    /// Home never reads an idle thread's snapshot (that would start its pi on the host, L23): its
+    /// row moves and sorts by the host's own `lastActiveAt`, and a blocked one asks what the host's
+    /// live state says it is waiting on.
+    @Test func aThreadNeverReadMovesByTheHostsStateAndAsksWhatItSays() throws {
+        var idle = Self.agent("idle", .idle)
+        idle.lastActiveAt = 7_000
+        var older = Self.agent("older", .done)
+        older.lastActiveAt = 3_000
+        var asking = Self.agent("asking", .blocked)
+        asking.lastActiveAt = 5_000
+        asking.waitingOn = "Keep the old branch?"
+        asking.waitingReason = "branch?"
+        let model = FleetModel(hosts: [Self.host(Self.studio, "Studio", agents: [older, idle, asking])], digests: [:])
+        #expect(model.recents.map(\.ref) == [Self.ref("idle"), Self.ref("older")])
+        #expect(model.recents.map(\.clock) == [.ago(7_000), .ago(3_000)])
+        let item = try #require(model.needsYou.first)
+        #expect(item.question == "Keep the old branch?")
+        #expect(item.reason == "branch?")
+        #expect(item.since == 5_000)
+    }
+
     @Test func aBlockedAgentWithoutItsSnapshotYetStillNeedsYou() throws {
         let model = FleetModel(hosts: [Self.host(Self.studio, "Studio", agents: [Self.agent("dock", .blocked)])], digests: [:])
         let item = try #require(model.needsYou.first)
@@ -388,7 +409,7 @@ struct FleetTests {
     @Test func aDesignsAgentIsItsDesignsRowAndNeverAThread() {
         // Design agents live in the host's reserved, hidden designs space.
         let reserved = Space.designs(id: SpaceID(rawValue: "designs"))
-        let drawing = Agent(id: AgentID(rawValue: "designer"), name: "Checkout funnel dashboard", spaceID: reserved.id,
+        let drawing = Agent(id: AgentID(rawValue: "designer"), name: "The original prompt for a dashboard",  spaceID: reserved.id,
                             tabID: TabID(rawValue: "t-d"), status: .working, nameIsFinal: true, designID: DesignID(rawValue: "d1"))
         var building = Agent(id: AgentID(rawValue: "builder"), name: "acme-web", spaceID: reserved.id, tabID: TabID(rawValue: "t-b"),
                              status: .blocked, nameIsFinal: true, designID: DesignID(rawValue: "d2"))
@@ -407,6 +428,7 @@ struct FleetTests {
                              designs: true)
         let model = FleetModel(hosts: [host], digests: digests)
         let row = model.recents.first { $0.ref == Self.ref("designer") }
+        #expect(row?.title == "Checkout funnel dashboard")
         #expect(row?.design == FleetDesign(id: DesignID(rawValue: "d1"), boards: 4))
         #expect(row?.detail == "design · 4 boards")
         #expect(row?.clock == nil)

@@ -107,6 +107,17 @@ test("workflow JSON boundary rejects host constructors, imports, thenables and h
   await assert.rejects(executeWorkflow('throw { get message() { while(true) {} } };', call, { timeoutMs: 200 }), /deadline|synchronous/);
 });
 
+test("workflow calls drain as replies arrive, not on the safety tick", async () => {
+  const start = Date.now();
+  const output = await executeWorkflow(`
+    let total = 0;
+    for (let i = 0; i < 40; i++) total += (await runs.status("k" + i)).n;
+    return total;
+  `, async () => ({ n: 1 }), { timeoutMs: 5000 });
+  assert.equal(output, 40);
+  assert(Date.now() - start < 2000, "forty chained calls settle in well under forty safety ticks");
+});
+
 test("worker deadlines cover synchronous, async and microtask loops and stalled dispatch; admission is bounded", async () => {
   for (const script of ['while(true) {}', 'await Promise.resolve(); while(true) {}', 'await new Promise(() => {});', 'await new Promise(() => { function spin() { Promise.resolve().then(spin); } spin(); });']) {
     const start = Date.now();

@@ -453,4 +453,17 @@ struct NavigationKeyTests {
     @Test func noKeyAtAllFallsThrough() {
         #expect(classify() == nil)
     }
+
+    /// ⌘↑/⌘↓ stay the text view's caret motion in a draft of several lines; a one-line draft,
+    /// any other chord, or the turn chords still reach the app.
+    @Test func aMultiLineDraftKeepsTheVerticalChords() {
+        let up = KeyChord(key: "up", command: true)
+        let down = KeyChord(key: "down", command: true)
+        #expect(ShepherdViewModel.draftTakesVerticalChord(up, draft: "first\nsecond"))
+        #expect(ShepherdViewModel.draftTakesVerticalChord(down, draft: "first\nsecond"))
+        #expect(!ShepherdViewModel.draftTakesVerticalChord(up, draft: "one line"))
+        #expect(!ShepherdViewModel.draftTakesVerticalChord(up, draft: ""))
+        #expect(!ShepherdViewModel.draftTakesVerticalChord(KeyChord(key: "up", command: true, option: true), draft: "a\nb"))
+        #expect(!ShepherdViewModel.draftTakesVerticalChord(nil, draft: "a\nb"))
+    }
 }

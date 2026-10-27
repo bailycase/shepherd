@@ -134,16 +134,37 @@ extension ShepherdViewModel {
         return rows
     }
 
-    /// The Projects the sidebar lists, with the one on screen marked.
+    /// What `sidebarLogicalProjects` is built from; the same inputs give the same rows.
+    struct SidebarProjectsKey: Equatable {
+        var projects: [(home: LogicalProjectHome, hostName: String?, project: Project)]
+        var selected: LogicalProjectRef?
+        var shown: MainDestination?
+
+        static func == (a: Self, b: Self) -> Bool {
+            a.selected == b.selected && a.shown == b.shown && a.projects.count == b.projects.count
+                && zip(a.projects, b.projects).allSatisfy { $0.home == $1.home && $0.hostName == $1.hostName && $0.project == $1.project }
+        }
+    }
+
+    /// The Projects the sidebar lists, with the one on screen marked. Derived again only when a
+    /// project, the selection or the page changes: the sidebar body asks on every render.
     var sidebarLogicalProjects: [SidebarLogicalProject] {
-        allLogicalProjects.map { owner in
+        let key = SidebarProjectsKey(projects: allLogicalProjects, selected: selectedLogicalProject, shown: shownDestination)
+        if let cached = sidebarProjectsCache, cached.key == key { return cached.rows }
+        let rows = Self.sidebarLogicalProjects(key)
+        sidebarProjectsCache = (key, rows)
+        return rows
+    }
+
+    private static func sidebarLogicalProjects(_ key: SidebarProjectsKey) -> [SidebarLogicalProject] {
+        key.projects.map { owner in
             let ref = LogicalProjectRef(home: owner.home, id: owner.project.id)
-            let page = ProjectPagePresentation(owner.project)
+            let page = ProjectPagePresentation.memoized(owner.project)
             // The summary is counted from the tasks the owner reports: "1 needs you" first, else "2 working", else nothing.
             let summary = page.waiting > 0 ? "\(page.waiting) needs you" : page.working > 0 ? "\(page.working) working" : nil
             return SidebarLogicalProject(ref: ref, name: owner.project.name, hostName: owner.hostName, summary: summary,
                                          needsYou: page.waiting > 0, count: page.total - page.resolved,
-                                         selected: ref == selectedLogicalProject && (shownDestination == .project || shownDestination == .projectSettings))
+                                         selected: ref == key.selected && (key.shown == .project || key.shown == .projectSettings))
         }
     }
 

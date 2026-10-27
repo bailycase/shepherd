@@ -27,7 +27,8 @@ struct SidebarCompletions: Equatable {
         }
         let runs = Dictionary(source.openRuns.values.compactMap { run in run.agentID.map { ($0, run) } },
                               uniquingKeysWith: { first, _ in first })
-        for agent in source.local.agents where source.local.isSidebarThread(agent) {
+        let workers = source.local.projectWorkerIDs
+        for agent in source.local.agents where source.local.isSidebarThread(agent, workers: workers) {
             let settled = runs[agent.id]?.settledAt
             observe(.local(agent.id), finished: agent.status == .done || (agent.status == .idle && settled != nil),
                     activity: agent.lastActiveAt, completedAt: agent.lastActiveAt ?? settled.map { $0 * 1000 }
@@ -39,7 +40,8 @@ struct SidebarCompletions: Equatable {
                 if case .remote(let ref) = id, ref.hostID == host.id { return live.contains(ref.agentID) }
                 return true
             }
-            for agent in host.state.agents where host.state.isSidebarThread(agent) {
+            let hostWorkers = host.state.projectWorkerIDs
+            for agent in host.state.agents where host.state.isSidebarThread(agent, workers: hostWorkers) {
                 observe(.remote(.init(hostID: host.id, agentID: agent.id)), finished: agent.status == .done,
                         activity: agent.lastActiveAt, completedAt: agent.lastActiveAt)
             }
@@ -73,8 +75,9 @@ extension ShepherdViewModel {
         let kept = sidebarSeenCompletions.filter { completions.records[$0.key] != nil }
         if kept != sidebarSeenCompletions { sidebarSeenCompletions = kept }
         let live = Set(state.agents.map(\.id))
-        let samples = sidebarActivitySamples.filter { live.contains($0.key) }
-        if samples != sidebarActivitySamples { sidebarActivitySamples = samples }
+        if sidebarActivityBoxes.keys.contains(where: { !live.contains($0) }) {
+            sidebarActivityBoxes = sidebarActivityBoxes.filter { live.contains($0.key) }
+        }
         sidebarActivityLast = sidebarActivityLast.filter { live.contains($0.key) }
     }
 }

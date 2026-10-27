@@ -15,6 +15,7 @@ public enum StubPi {
     anthropic  claude-opus-4-5            200K     64K      yes       yes
     anthropic  claude-sonnet-4-5          1M       64K      yes       yes
     anthropic  claude-haiku-4-5           200K     64K      yes       yes
+    anthropic  claude-fixture-4           200K     64K      yes       yes
     openai     gpt-5                      400K     128K     yes       yes
     google     gemini-2.5-pro             1M       64K      yes       yes
     """

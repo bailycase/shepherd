@@ -220,3 +220,12 @@ struct TerminalSelectionTests {
         #expect(ShepherdViewModel.draft(draft, adding: selection) == result)
     }
 }
+
+/// The + menu's first row names where the tab opens: only a worktree thread's says "in the worktree".
+@Suite("Terminal new-tab title")
+struct TerminalNewTabTitleTests {
+    @Test func onlyAWorktreeThreadOpensInTheWorktree() {
+        #expect(ShepherdViewModel.newTerminalTitle(worktree: true) == "New terminal in the worktree")
+        #expect(ShepherdViewModel.newTerminalTitle(worktree: false) == "New terminal")
+    }
+}

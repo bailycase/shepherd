@@ -155,7 +155,7 @@ extension ShepherdViewModel {
             adopt(canonical)
         }
         let defaults = settings.agentDefaults
-        var config = NewAgentConfig(spaceID: spaceID, workingDirectory: folder, model: model ?? defaults.model,
+        var config = NewAgentConfig(spaceID: spaceID, workingDirectory: folder, model: model ?? settings.defaultModel(piHome: server.pi.home),
                                     thinking: thinking ?? defaults.thinking, initialPrompt: brief)
         config.initialImages = images
         config.initialName = design.name
@@ -347,7 +347,7 @@ final class NewDesignState {
     /// This Mac's model and level (Settings, else pi's default model) and its catalog, the
     /// catalog read once.
     private func loadDefaults(_ vm: ShepherdViewModel) {
-        if !edited.model { model = vm.settings.agentDefaults.model ?? PiConfig.defaultModel(in: vm.server.pi.home) ?? "" }
+        if !edited.model { model = vm.settings.defaultModel(piHome: vm.server.pi.home) ?? "" }
         if !edited.thinking { thinking = vm.settings.defaultThinking }
         guard listing == nil, !loadingDefaults else { return }
         loadingDefaults = true

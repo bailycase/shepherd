@@ -569,6 +569,8 @@ struct PaneLeafView: View, Equatable {
                 // Design references reach an ordinary thread only (docs/designs.md › Isolation).
                 .environment(\.designReferences, vm.designReferenceChips(for: agentID))
                 .environment(\.openArtifact, { [vm] path in vm.selectAgent(agentID); vm.showArtifact(.local(agentID), path: path) })
+                // A login that no longer works: the error card's Sign in again opens the provider's sign-in.
+                .environment(\.turnErrorSignIn, { [vm] in vm.openSignIn(vm.provider(of: agentID), origin: .agentCard) })
             } else {
                 LiveTerminalPane(
                     session: vm.sessions.session(for: pane, in: tab),
@@ -577,6 +579,11 @@ struct PaneLeafView: View, Equatable {
                     onFocusAcquired: { [vm] in vm.focusedPaneID = pane.id },
                     addToMessage: model.threadAgentID.map { agentID in { [vm] in vm.addTerminalSelection($0, to: .local(agentID)) } }
                 )
+                // A restored terminal stays dormant until its tab shows; showing it is the demand
+                // that spawns its shell (visible-first, as the iOS client asks its host).
+                .onChange(of: model.isVisible, initial: true) { _, visible in
+                    if visible { vm.sessions.activateTerminal(pane, in: tab) }
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -662,7 +669,9 @@ struct LiveTerminalPane: View {
     var body: some View {
         // A hidden restored pane mounts its surface only on first demand. Once activated,
         // it stays mounted across selection changes and connecting → live transitions.
-        if !session.isDormant {
+        if session.isDormant {
+            PanePlaceholder(text: "starting shell…")
+        } else {
             ZStack {
                 switch session.phase {
                 case .connecting, .live:
@@ -985,7 +994,7 @@ private struct RemotePaneLeafView: View {
                   connection.supportsTerminalStart, agent == nil, leaf.isReview != true else { return }
             // Bootstrap retains last run's sessionID. Demand must not depend on it being nil.
             do { try await vm.remoteHosts.agentAction(ref, action: .startTerminal(paneID: leaf.id)) }
-            catch { vm.remoteActionError = String(describing: error) }
+            catch { vm.fail("Couldn’t start the terminal", error) }
         }
     }
 }

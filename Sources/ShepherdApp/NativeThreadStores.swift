@@ -26,6 +26,8 @@ final class NativeThreadStores<Key: Hashable> {
     var hostName: ((Key) -> String?)?
     /// Sets what the owner's state says about a store when it is made (a coordinator held off on purpose starts held off).
     var configure: ((Key, NativeThreadStore) -> Void)?
+    /// Unsent drafts kept across launches, for keys with a string raw value (an `AgentID`); nil keeps none.
+    var drafts: ComposerDrafts?
 
     func store(for key: Key) -> NativeThreadStore {
         if let store = stores[key] { return store }
@@ -33,7 +35,24 @@ final class NativeThreadStores<Key: Hashable> {
         store.hostName = hostName?(key)
         configure?(key, store)
         install(store, for: key)
+        if let drafts, let id = Self.draftID(key) {
+            if store.draft.isEmpty, let saved = drafts.restore(id) { store.draft = saved }
+            watchDraft(store, key: key, id: id, drafts: drafts)
+        }
         return store
+    }
+
+    private static func draftID(_ key: Key) -> String? { (key as? any RawRepresentable)?.rawValue as? String }
+
+    /// Each change of the store's draft is noted (debounced in `drafts`), for as long as the store is this key's.
+    private func watchDraft(_ store: NativeThreadStore, key: Key, id: String, drafts: ComposerDrafts) {
+        withObservationTracking { _ = store.draft } onChange: { [weak self, weak store] in
+            Task { @MainActor [weak self, weak store] in
+                guard let self, let store, stores[key] === store else { return }
+                drafts.note(id, draft: store.draft)
+                watchDraft(store, key: key, id: id, drafts: drafts)
+            }
+        }
     }
 
     /// Gives `key` a store made elsewhere (a test's, which never polls on its own).

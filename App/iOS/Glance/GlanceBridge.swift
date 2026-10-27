@@ -138,14 +138,22 @@ final class GlanceBridge {
     // MARK: Follow
 
     func isFollowing(_ ref: AgentRef) -> Bool {
-        Activity<FollowActivity>.activities.contains { $0.attributes.item == Self.id(ref) && $0.activityState == .active }
+        Activity<FollowActivity>.activities.contains {
+            $0.attributes.item == Self.id(ref) && ($0.activityState == .active || $0.activityState == .stale)
+        }
     }
 
-    /// Puts one thread on the Lock Screen, in full, until it ends or the person stops following.
-    func follow(_ ref: AgentRef) {
-        guard !isFollowing(ref), let item = followed(Self.id(ref)) else { return }
+    /// Puts one thread on the Lock Screen; local updates arrive only while Shepherd is open.
+    func follow(_ ref: AgentRef) throws {
+        guard !isFollowing(ref) else { return }
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+            throw GlanceFailure("Live Activities are disabled. Enable them for Shepherd in Settings.")
+        }
+        guard let item = followed(Self.id(ref)) else {
+            throw GlanceFailure("This thread isn't available to follow yet. Refresh Home and try again.")
+        }
         let glance = SHGlance(items: [item], hosts: glance?.hosts ?? [], updated: Date())
-        _ = try? Activity.request(attributes: FollowActivity(item: item.id),
+        _ = try Activity.request(attributes: FollowActivity(item: item.id),
                                   content: ActivityContent(state: glance.forActivity(kept: 1),
                                                            staleDate: glance.updated.addingTimeInterval(SHGlance.staleAfter)))
     }

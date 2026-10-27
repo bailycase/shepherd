@@ -269,13 +269,24 @@ enum CodeHighlightCache {
         return last.value + AttributedString(String(key.code.dropFirst(last.key.code.count)))
     }
 
-    @MainActor private static var values: [Key: AttributedString] = [:]
+    private final class Entry {
+        let value: AttributedString
+        init(_ value: AttributedString) { self.value = value }
+    }
 
-    @MainActor static func cached(_ key: Key) -> AttributedString? { values[key] }
+    /// Each throttled render of a growing fence is a new key: evict the oldest, never everything.
+    @MainActor private static let values: NSCache<NSString, Entry> = {
+        let cache = NSCache<NSString, Entry>()
+        cache.countLimit = 256
+        return cache
+    }()
+
+    @MainActor private static func name(_ key: Key) -> NSString { "\(key.language ?? "")\n\(key.code)" as NSString }
+
+    @MainActor static func cached(_ key: Key) -> AttributedString? { values.object(forKey: name(key))?.value }
 
     @MainActor static func store(_ value: AttributedString, for key: Key) {
-        if values.count > 256 { values.removeAll(keepingCapacity: true) }
-        values[key] = value
+        values.setObject(Entry(value), forKey: name(key))
     }
 
     /// The block's colors, nil when the language has no grammar (the block stays plain) or the

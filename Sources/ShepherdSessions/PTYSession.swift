@@ -389,7 +389,7 @@ final class PTYSession: @unchecked Sendable {
     /// Hard shutdown for app/server stop: signal the whole group and then
     /// force it down. Must run under the session's queue hierarchy. onExit is
     /// not invoked because the app is already tearing down its callbacks.
-    func shutdown() {
+    func shutdown(reapDeadline: DispatchTime = .now() + .seconds(2)) {
         guard !exitDelivered else { return }
         if !reaped {
             signalProcessGroup(SIGHUP)
@@ -407,7 +407,7 @@ final class PTYSession: @unchecked Sendable {
             // the child can sit in uninterruptible sleep — and this runs on
             // the quit path with the main thread blocked behind it. Never
             // hang the app for a child the OS will reparent and reap anyway.
-            let deadline = DispatchTime.now() + .seconds(2)
+            let deadline = reapDeadline
             var status: Int32 = 0
             while true {
                 let r = waitpid(childPID, &status, WNOHANG)

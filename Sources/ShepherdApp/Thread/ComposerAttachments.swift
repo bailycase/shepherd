@@ -104,8 +104,10 @@ final class ThreadInput {
         let session = store.sessionKey
         Task {
             let urls = await AppImageDrop.resolve(providers)
+            // Read and decoded off the main actor: a few dropped screenshots must not freeze the composer.
+            let files = await Task.detached(priority: .userInitiated) { urls.map { ($0, ImageFile(url: $0)) } }.value
             guard available, self.generation == generation, store.sessionKey == session else { return }
-            add(urls: urls, store: store, localFiles: localFiles, imagesSupported: imagesSupported)
+            add(files: files, store: store, localFiles: localFiles, imagesSupported: imagesSupported)
         }
     }
 
@@ -123,9 +125,15 @@ final class ThreadInput {
     }
 
     func add(urls: [URL], store: NativeThreadStore, localFiles: Bool, imagesSupported: Bool? = nil) {
+        add(files: urls.map { ($0, ImageFile(url: $0)) }, store: store, localFiles: localFiles, imagesSupported: imagesSupported)
+    }
+
+    /// Each URL with what it read as an image (nil where it is not one).
+    func add(files: [(URL, ImageFile?)], store: NativeThreadStore, localFiles: Bool, imagesSupported: Bool? = nil) {
         var rejection: String?
-        for url in urls {
-            if let image = ImageAttachment(url: url) {
+        for (url, file) in files {
+            if let file {
+                let image = ImageAttachment(file)
                 guard imagesSupported ?? store.supportedActions.contains("sendImages") else {
                     rejection = "This agent does not support image attachments."
                     continue
@@ -145,6 +153,34 @@ final class ThreadInput {
             }
         }
         if let rejection { attachments.reject(rejection) }
+    }
+}
+
+/// What an attachment reads from its file, off the main actor: the bytes, the pixel size from the
+/// header, and a thumbnail decoded no larger than the thread's own (ImageIO scales while decoding,
+/// so a 2000px drop is never decoded at full size, let alone three times). nil when the file is
+/// not a raster image.
+struct ImageFile: Sendable {
+    let url: URL
+    let data: Data
+    let mimeType: String
+    let pixels: CGSize?
+    let thumbnail: CGImage?
+
+    init?(url: URL) {
+        guard let type = UTType(filenameExtension: url.pathExtension.lowercased()), type.conforms(to: .image),
+              let data = try? Data(contentsOf: url), let source = CGImageSourceCreateWithData(data as CFData, nil),
+              CGImageSourceGetCount(source) > 0,
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int, let height = properties[kCGImagePropertyPixelHeight] as? Int
+        else { return nil }
+        self.url = url
+        self.data = data
+        mimeType = type == .jpeg ? "image/jpeg" : type == .gif ? "image/gif" : type == .webP ? "image/webp" : "image/png"
+        pixels = CGSize(width: width, height: height)
+        let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true,
+                                        kCGImageSourceThumbnailMaxPixelSize: Int(ThreadImageLoad.thumbnailPixels)]
+        thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
     }
 }
 
@@ -206,13 +242,13 @@ struct ImageAttachment: Identifiable, Equatable {
 
     /// nil when the file is not a raster image.
     init?(url: URL) {
-        guard let type = UTType(filenameExtension: url.pathExtension.lowercased()), type.conforms(to: .image),
-              let data = try? Data(contentsOf: url), NSBitmapImageRep(data: data) != nil else { return nil }
-        let mimeType = type == .jpeg ? "image/jpeg" : type == .gif ? "image/gif" : type == .webP ? "image/webp" : "image/png"
-        let rep = NSBitmapImageRep(data: data)
-        self.init(name: url.lastPathComponent, image: NativeImage(mimeType: mimeType, data: data),
-                  thumbnail: NSImage(data: data).map { Image(nsImage: $0) }, source: url,
-                  pixels: rep.map { CGSize(width: $0.pixelsWide, height: $0.pixelsHigh) })
+        guard let file = ImageFile(url: url) else { return nil }
+        self.init(file)
+    }
+
+    init(_ file: ImageFile) {
+        self.init(name: file.url.lastPathComponent, image: NativeImage(mimeType: file.mimeType, data: file.data),
+                  thumbnail: file.thumbnail.map { Image(nsImage: NSImage(cgImage: $0, size: .zero)) }, source: file.url, pixels: file.pixels)
     }
 
     /// The thumbnail is derived from `image`, so identity and bytes say everything.

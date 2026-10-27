@@ -83,6 +83,7 @@ final class ShepherdViewModel {
     /// The sidebar's More is open, showing Hosts and Extensions. Ephemeral.
     /// Activity groups, cached on their source, pins and seen completion generations.
     @ObservationIgnored var sidebarListsCache: (source: SidebarSource, pins: SidebarPins, seen: [SidebarRowID: Int], lists: SidebarLists)?
+    @ObservationIgnored var sidebarProjectsCache: (key: SidebarProjectsKey, rows: [SidebarLogicalProject])?
     var sidebarCompletions = SidebarCompletions()
     /// Prompted creations belong in Working before pi reports its first turn.
     var sidebarOpeningTurns: Set<AgentID> = [] {
@@ -93,8 +94,19 @@ final class ShepherdViewModel {
         }
     }
     @ObservationIgnored var sidebarPreparingOpeningTurns: Set<AgentID> = []
-    /// Last ten measured tool-completion rates, not a decorative waveform.
-    var sidebarActivitySamples: [AgentID: [Double]] = [:]
+    /// Last ten measured tool-completion rates per agent, not a decorative waveform. Each agent's
+    /// box is observed by its own row alone, so one agent's tool call redraws no other row.
+    @ObservationIgnored var sidebarActivityBoxes: [AgentID: SidebarActivityBox] = [:]
+    var sidebarActivitySamples: [AgentID: [Double]] {
+        sidebarActivityBoxes.compactMapValues { $0.samples.isEmpty ? nil : $0.samples }
+    }
+    /// The agent's box, made on first ask so the row observing it sees the samples arrive.
+    func sidebarActivityBox(_ id: AgentID) -> SidebarActivityBox {
+        if let box = sidebarActivityBoxes[id] { return box }
+        let box = SidebarActivityBox()
+        sidebarActivityBoxes[id] = box
+        return box
+    }
     @ObservationIgnored var sidebarActivityLast: [AgentID: Date] = [:]
     var sidebarSeenCompletions: [SidebarRowID: Int] = [:]
     /// Last opened thread, even while a destination covers it.
@@ -216,8 +228,8 @@ final class ShepherdViewModel {
     /// When each agent entered its current status this run: the sidebar's running elapsed
     /// time. Ephemeral; an agent restored at launch counts from its first report.
     var statusSince: [AgentID: Date] = [:]
-    /// Agents whose last turn ended in an error: done, but their sidebar row reads failed.
-    /// Ephemeral, like the status it qualifies.
+    /// Agents whose last turn ended in an error: done, but their sidebar row reads failed. An
+    /// agent restored idle with `Agent.lastFailure` reads failed too, until a turn starts.
     var failedTurns: Set<AgentID> = []
     /// Agents whose pi stopped before it served, waiting for Retry: their sidebar row reads "can't
     /// start" (docs/design/thread.md › Thread › Can't start). Ephemeral: a relaunch starts every pi again.
@@ -308,7 +320,18 @@ final class ShepherdViewModel {
     var remoteRenameTarget: RemoteAgentRef?
     /// A terminal tab being renamed (the panel's Rename tab).
     var terminalRenameTarget: TerminalRenameTarget?
-    var remoteActionError: String?
+    /// The failure the error sheet shows: what was attempted, and why it failed.
+    var actionError: ActionError?
+    /// The message alone, under a generic title; `fail(_:_:)` names the action.
+    var remoteActionError: String? {
+        get { actionError?.message }
+        set { actionError = newValue.map { ActionError(title: ActionError.genericTitle, message: $0) } }
+    }
+
+    /// Reports a failed action under its own title ("Couldn’t fork"), with the error worded for a person.
+    func fail(_ title: String, _ error: Error) {
+        actionError = ActionError(title: title, message: ActionError.describe(error))
+    }
 
     /// Configured remote Shepherd hosts and their live connections.
     let remoteHosts: RemoteHostStore
@@ -411,6 +434,17 @@ final class ShepherdViewModel {
     /// Worktree agent pending delete confirmation (alert in RootView) —
     /// deleting may also remove the checkout, so it always confirms.
     var worktreeDeleteTarget: AgentID?
+    /// Automation pending delete confirmation (sheet in RootView): its prompt, schedule and
+    /// settings go with it and nothing brings them back.
+    var automationDeleteTarget: AutomationID?
+    /// Agent pending delete confirmation (sheet in RootView): deleting stops a run and drops the
+    /// thread from the sidebar with nothing to bring it back, so it always confirms.
+    var agentDeleteTarget: AgentID?
+    /// The last `WorkspaceSelection` and its mounted layouts (`resolvedMountedTabs`).
+    @ObservationIgnored var mountedTabsCache: (selection: WorkspaceSelection, tabs: [Tab])?
+    /// A confirmed deletion runs after its sheet has dismissed (`sheet(item:onDismiss:)`):
+    /// tearing a mounted layout down mid-dismissal wedges the modal session.
+    @ObservationIgnored var afterDialogDismiss: (@MainActor () -> Void)?
 
     /// A snapshot of the agent + space whose Finalize Worktree sheet is
     /// open. Copies, not IDs: the pipeline's last act retires the agent, and
@@ -550,7 +584,8 @@ final class ShepherdViewModel {
     @ObservationIgnored private var resignActiveObserver: NSObjectProtocol?
     @ObservationIgnored private var becomeActiveObserver: NSObjectProtocol?
     @ObservationIgnored var missingSpaceWatch: Task<Void, Never>?
-    @ObservationIgnored var missingSpaceCheck = (running: false, again: false)
+    /// `paths`: the spaces the last adopt-time pass read, so a broadcast that moved no space runs none.
+    @ObservationIgnored var missingSpaceCheck = (running: false, again: false, paths: [String]?.none)
     /// Reads each local agent's branch and changed files for the header (`CheckoutMonitor`);
     /// nil when the harness turned it off.
     @ObservationIgnored private(set) var checkouts: CheckoutMonitor?
@@ -627,6 +662,7 @@ final class ShepherdViewModel {
         threadStores.hostName = { _ in localHostName }
         remoteThreadStores.hostName = { [weak hosts] ref in hosts?.connections.first { $0.id == ref.hostID }?.config.name }
         let instructions = InstructionsModel(store: server.instructions, remoteHosts: hosts, defaults: sidebarDefaults)
+        instructions.piHome = server.pi.home
         self.instructions = instructions
         self.suggestions = SuggestionsModel(store: server.suggestions, instructionsStore: server.instructions, instructions: instructions)
         self.skills = ClientSkills(defaults: sidebarDefaults)
@@ -667,6 +703,10 @@ final class ShepherdViewModel {
             Task { await yourPi?.refresh() }
         }
         self.piAuth.onSignedIn = { [weak self] provider in self?.signInLanded(provider) ?? 0 }
+        // The first launch checks what came over against Shepherd's own pi: its default model and its logins.
+        self.yourPi.settingsDefaultModel = { [weak self] in self?.settings.agentDefaults.model }
+        self.yourPi.onDefaultChosen = { [weak self] model in self?.settings.defaultModel = model }
+        self.yourPi.checkLogins = { [weak piAuth = self.piAuth] providers in await piAuth?.checkLogins(providers) ?? [:] }
         // Logins re-imported from your pi: agents waiting on a sign-in try again.
         self.yourPi.onSignInsChanged = { [weak self] in _ = self?.retrySignedOutAgents(nil) }
         // Settings ▸ Instructions follows a remote client's save here, and sends a host that
@@ -702,6 +742,7 @@ final class ShepherdViewModel {
         // screen (those whose poll loop runs), and the store pulls at most every
         // `NativeThreadStore.pushedPullSpacing`. The polls stay as the fallback.
         threadStores.configure = { [weak self] agent, store in store.offline = self?.coordinatorHeldOff(agent) ?? false }
+        threadStores.drafts = ComposerDrafts(defaults: sidebarDefaults)
         threadStores.onLiveChange = { [weak self] live in
             guard let self else { return }
             sessions.watchThreadRevisions(of: live.union(sidebarOpeningTurns))
@@ -848,6 +889,7 @@ final class ShepherdViewModel {
         self.settings.onDesignToolChange = { [weak server] on in server?.setDesignsServed(on) }
         installRemoteInspection()
         installHostSettings()
+        installHostInventory()
         installCompactionThreshold()
         server.onRemoteAgentAction = { [weak self] agentID, action, completion in
             Task { @MainActor in
@@ -885,7 +927,7 @@ final class ShepherdViewModel {
                         : GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: fetch)
                 }.value
                 completion(.success(.init(base: resolution.display, note: resolution.note, fetchFirst: fetch,
-                                          model: self.settings.agentDefaults.model ?? PiConfig.defaultModel(in: self.server.pi.home),
+                                          model: self.settings.defaultModel(piHome: self.server.pi.home),
                                           thinking: self.settings.defaultThinking, serviceTier: self.settings.defaultServiceTier)))
             }
         }
@@ -899,7 +941,7 @@ final class ShepherdViewModel {
             var config = NewAgentConfig(
                 spaceID: request.spaceID,
                 workingDirectory: request.cwd ?? space?.path ?? "~",
-                model: request.model ?? self.settings.agentDefaults.model,
+                model: request.model ?? self.settings.defaultModel(piHome: self.server.pi.home),
                 thinking: request.thinking ?? self.settings.defaultThinking,
                 initialPrompt: request.initialPrompt
             )
@@ -1008,6 +1050,8 @@ final class ShepherdViewModel {
         releaseStarts()
         sessions.releaseHeldAgents()
         if !waitingForImport.isEmpty { waitingForImport = [] }
+        // The copy (or a default chosen on the sheet) changed what a new thread starts on: the open page's chip names it.
+        if destination == .newThread { newThread.prepare(for: self) }
     }
 
     /// Who waits for the first launch's sheet: nobody, everyone, or the agents whose model's
@@ -1050,7 +1094,7 @@ final class ShepherdViewModel {
             if sheet.stage == .newUser {
                 finishImport()
             } else {
-                Task { await yourPi.signInLanded() }
+                Task { await yourPi.signInLanded(provider) }
             }
         }
         return retrySignedOutAgents(provider)
@@ -1141,11 +1185,25 @@ final class ShepherdViewModel {
             selectAgentDigit(digit)
             return true
         case .adjacentAgent(let delta):
+            // ⌘↑ and ⌘↓ in a draft of several lines are the text view's own: the caret goes to
+            // the document's start or end, as in every Mac text view, and the agent stays.
+            if let text = NSApp.keyWindow?.firstResponder as? NSTextView,
+               Self.draftTakesVerticalChord(KeyChord(event: event), draft: text.string) {
+                text.interpretKeyEvents([event])
+                return true
+            }
             selectAdjacentAgent(delta)
             return true
         case nil:
             return false
         }
+    }
+
+    /// Whether a plain ⌘↑ or ⌘↓ belongs to the text view under the keyboard: only when the
+    /// draft spans more than one line, so a one-line composer still switches agents.
+    static func draftTakesVerticalChord(_ chord: KeyChord?, draft: String) -> Bool {
+        guard let chord, chord == KeyChord(key: "up", command: true) || chord == KeyChord(key: "down", command: true) else { return false }
+        return draft.contains(where: \.isNewline)
     }
 
     /// Delayed reveal so ordinary chords don't flash the badges: agent rows show their ⌘1–9
@@ -1164,8 +1222,37 @@ final class ShepherdViewModel {
         }
     }
 
+    /// The thread stores follow the owner's state on every adoption, equal snapshot or not: a store is
+    /// cheap to check and "held off" also reads session liveness, which no snapshot carries.
+    private func reconcileThreadStores() {
+        // A Project's coordinator ID is recorded before its agent is registered, while its page already holds the store: keep it.
+        threadStores.prune(live: Set(state.agents.map(\.id)).union(state.projects.compactMap(\.coordinatorAgentID)))
+        // The owner's state, not a page's lifetime, says whether a coordinator's pi is held off on purpose: every adoption restates it.
+        for agent in state.projects.compactMap(\.coordinatorAgentID) {
+            guard let store = threadStores.existing(for: agent) else { continue }
+            let held = coordinatorHeldOff(agent)
+            if store.offline != held { store.offline = held }
+        }
+    }
+
     /// Adopt a server snapshot wholesale, keeping selection when IDs persist.
     func adopt(_ serverState: ShepherdState) {
+        // The run log is current by the time a broadcast lands; it is the one thing a broadcast
+        // of an unchanged workspace can carry.
+        let runs = server.openAutomationRuns
+        if runs != openAutomationRuns { openAutomationRuns = runs }
+        // A status report and a checkout read each broadcast the whole workspace, equal or not.
+        // Assigning `state` invalidates every view that read any part of it, so an equal snapshot
+        // stops here: one `==` instead of the sidebar, workspace, menu and palette fan-out.
+        guard !didAdopt || state != serverState else {
+            reconcileThreadStores()
+            return
+        }
+        // A restored agent's last outcome, before any status report this run: the row reads
+        // failed as it did at quit, not idle.
+        for agent in serverState.agents where statusSince[agent.id] == nil && Self.persistedTurnFailed(agent) != failedTurns.contains(agent.id) {
+            if Self.persistedTurnFailed(agent) { failedTurns.insert(agent.id) } else { failedTurns.remove(agent.id) }
+        }
         let shownBefore = shownDesign?.id
         if !sidebarOpeningTurns.isEmpty {
             let removed = Set(state.agents.map(\.id)).subtracting(serverState.agents.map(\.id))
@@ -1177,18 +1264,14 @@ final class ShepherdViewModel {
         if destination == nil, selectedRemoteAgent == nil, let agent = selectedAgent, selectedSpaceID != agent.spaceID {
             selectedSpaceID = agent.spaceID
         }
-        checkMissingSpaces()
-        let runs = server.openAutomationRuns
-        if runs != openAutomationRuns { openAutomationRuns = runs }
-        reconcileSidebarCompletions()
-        // A Project's coordinator ID is recorded before its agent is registered, while its page already holds the store: keep it.
-        threadStores.prune(live: Set(state.agents.map(\.id)).union(state.projects.compactMap(\.coordinatorAgentID)))
-        // The owner's state, not a page's lifetime, says whether a coordinator's pi is held off on purpose: every adoption restates it.
-        for agent in state.projects.compactMap(\.coordinatorAgentID) {
-            guard let store = threadStores.existing(for: agent) else { continue }
-            let held = coordinatorHeldOff(agent)
-            if store.offline != held { store.offline = held }
+        // A status or checkout broadcast changes no folder: the stat pass runs when the spaces do.
+        let paths = state.spaces.map(\.path)
+        if paths != missingSpaceCheck.paths {
+            missingSpaceCheck.paths = paths
+            checkMissingSpaces()
         }
+        reconcileSidebarCompletions()
+        reconcileThreadStores()
         browsers.prune(state: state)
         notifyLocalQuestions()
         checkouts?.sync(agents: state.agents.map(\.id))
@@ -1261,19 +1344,27 @@ final class ShepherdViewModel {
             if status != .idle { sidebarOpeningTurns.remove(id) }
             if old != status || statusSince[id] == nil { statusSince[id] = Date() }
             if old != status, old != .blocked, status == .working {
-                sidebarActivitySamples.removeValue(forKey: id)
+                sidebarActivityBoxes[id]?.samples = []
                 sidebarActivityLast[id] = Date()
             }
             // A turn starting or ending may have changed files.
             if old != status { checkouts?.refresh(id, after: .milliseconds(300)) }
-            let failed = status == .done && failure != nil
+            // A session (re)start reports idle; the server still remembers the failure until a
+            // turn starts, so the row keeps reading failed.
+            let failed = status == .done ? failure != nil : status == .idle && Self.persistedTurnFailed(state.agents[index])
             // pi said a subscription's refresh failed: Sign-in says it expired.
-            if let message = failure?.message { piAuth.noteTurnError(message) }
+            if let message = failure?.message { piAuth.noteTurnError(message, provider: provider(of: id)) }
             if failed != failedTurns.contains(id) {
                 if failed { failedTurns.insert(id) } else { failedTurns.remove(id) }
             }
             notifyStatus(state.agents[index], from: old, failure: failure)
         }
+    }
+
+    /// Whether the server kept the agent's last turn (or start problem) as failed across a
+    /// relaunch: `Agent.lastFailure`, cleared when a turn starts or ends well.
+    static func persistedTurnFailed(_ agent: Agent) -> Bool {
+        agent.lastFailure != nil
     }
 
     /// Runs the ChildRuns TTL/staleness sweep only while rows exist; the

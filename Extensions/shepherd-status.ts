@@ -69,6 +69,13 @@ export default function shepherdStatus(pi: ExtensionAPI) {
   });
   const deferTools = process.env.SHEPHERD_DEFER_TOOLS === "1";
   let codemodeEnabled = false;
+  // Deferred with the rest (docs/context-budget.md): its definition and pi's script-writing guidelines cost ~875
+  // tokens in every request for a tool a minority of turns use; tool_search loads it when a script is the way.
+  const CODEMODE = {
+    name: "shepherd_codemode",
+    description: "codemode, a script that calls several tools at once",
+    instructions: "codemode: run a JavaScript script that calls many tools in one step (loops over files, batches of reads or edits).",
+  };
 
   // Use Pi's executor, loadout and discovery unchanged. Its standalone defaults have no
   // deadline and allow calls to other providers, which are not part of Shepherd's tool toggle.
@@ -86,6 +93,7 @@ export default function shepherdStatus(pi: ExtensionAPI) {
       registerTool(tool) {
         pi.registerTool({
           ...tool,
+          ...(deferTools ? { exposure: "deferred" as const, namespace: CODEMODE } : {}),
           promptGuidelines: [...(tool.promptGuidelines ?? []), "Shepherd limits each script to 5 minutes and 128 tool calls. Direct classifier and image-model APIs are disabled."],
           async execute(id, input, signal, update, ctx) {
             let calls = 0, remaining = 32 * 1024;
@@ -120,7 +128,8 @@ export default function shepherdStatus(pi: ExtensionAPI) {
         });
       },
     });
-    pi.setActiveTools([...new Set([...pi.getActiveTools(), "codemode"])]);
+    // A deferred codemode is activated by tool_search, not here.
+    if (!deferTools) pi.setActiveTools([...new Set([...pi.getActiveTools(), "codemode"])]);
   });
 
   let socket: net.Socket | undefined;

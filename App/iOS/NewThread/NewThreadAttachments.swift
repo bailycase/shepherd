@@ -79,14 +79,18 @@ struct NewThreadAttachButton: View {
                     .contentShape(Rectangle())
             }
         }
-        .disabled(!supported || room <= 0)
+        .disabled(!supported || room <= 0 || model.pendingImports > 0 || model.starting)
         .accessibilityLabel("Attach images")
         .accessibilityHint(supported ? "Up to \(NativeImage.maxPerSend) images go with the first message."
                                      : "Update Shepherd on \(model.host?.name ?? "the host") to send images.")
         .onChange(of: picked) { _, items in
             guard !items.isEmpty else { return }
             picked = []
-            Task { await load(items) }
+            model.pendingImports += 1
+            Task {
+                defer { model.pendingImports -= 1 }
+                await load(items)
+            }
         }
     }
 

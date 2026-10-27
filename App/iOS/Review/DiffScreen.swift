@@ -77,6 +77,9 @@ struct DiffScreen: View {
                         }
                         .accessibilityHint("Shows \(reviewPathParts(next.path).name)")
                     }
+                    if ReviewRevertStore.available(store, host: hosts.host(ref.host)) {
+                        ReviewRevertButton(store: store, file: entry)
+                    }
                 }
             }
         }
