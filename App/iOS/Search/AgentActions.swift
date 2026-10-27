@@ -111,8 +111,7 @@ extension MobileNavigator {
             default: false
             }
         }
-        homePath.removeAll(where: belongs)
-        settingsPath.removeAll(where: belongs)
+        for tab in Tab.allCases { self[path: tab].removeAll(where: belongs) }
         padPath.removeAll(where: belongs)
         if padSelection == ref {
             padSelection = nil

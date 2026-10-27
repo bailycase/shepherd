@@ -3,11 +3,13 @@ import ShepherdUI
 import ShepherdCore
 import ShepherdRemote
 
-/// iPhone: a thread's terminals full screen, from the thread's options. The tab strip on top (+
-/// opens another under the thread, as on iPad), the selected tab's terminal, and the key row
-/// while it has the keyboard. With no terminal yet the screen opens one.
+/// A thread's terminals: full screen on iPhone, from the thread's menu; the side pane's Terminal
+/// tab on regular width (`embedded`). The tab strip on top (+ opens another), the selected tab's
+/// terminal, and the key row while it has the keyboard. With no terminal yet it opens one.
 struct TerminalScreen: View {
     let ref: AgentRef
+    /// In the side pane: no title or bars of its own, and it stays when its last terminal closes.
+    var embedded = false
     @Environment(MobileHosts.self) private var hosts
     @State private var closing: TerminalPanelTab?
     /// The first terminal was asked for, once: closing it later never opens another by itself.
@@ -58,6 +60,10 @@ struct TerminalScreen: View {
                             Text("Update Shepherd on \(model.hostName) to open terminals here.")
                                 .font(.sh(.ui))
                                 .foregroundStyle(Color.sh.textSecondary)
+                        } else if embedded, askedForFirst, model.tabs.isEmpty {
+                            Text("No terminals. + opens one.")
+                                .font(.sh(.ui))
+                                .foregroundStyle(Color.sh.textSecondary)
                         } else {
                             SHTerminalNotice("starting session…")
                         }
@@ -86,13 +92,11 @@ struct TerminalScreen: View {
             askedForFirst = true
             newTab(model)
         }
-        // The screen closes with its last terminal, as the iPad's panel does.
+        // The screen closes with its last terminal.
         .onChange(of: model.tabs.count) { before, after in
-            if TerminalPanel.closesWithLastTerminal(before: before, after: after) { dismiss() }
+            if !embedded, TerminalPanel.closesWithLastTerminal(before: before, after: after) { dismiss() }
         }
-        .toolbar(.hidden, for: .tabBar)
-        .navigationTitle("Terminal")
-        .navigationBarTitleDisplayMode(.inline)
+        .modifier(PushedTerminalChrome(active: !embedded))
         .confirmationDialog(closing.map { model.closeConfirmation($0).title } ?? "",
                             isPresented: Binding(get: { closing != nil }, set: { if !$0 { closing = nil } }),
                             titleVisibility: .visible) {
@@ -118,5 +122,21 @@ struct TerminalScreen: View {
     private func newTab(_ model: TerminalModel) {
         guard let layout = model.layout, let client = hosts.host(ref.host)?.connectedClient else { return }
         Task { await MobileTerminals.shared.newTab(ref, layout: layout, thread: model.thread, client: client) }
+    }
+}
+
+/// The full-screen terminal's bar: its title, no tab bar.
+private struct PushedTerminalChrome: ViewModifier {
+    let active: Bool
+
+    func body(content: Content) -> some View {
+        if active {
+            content
+                .toolbar(.hidden, for: .tabBar)
+                .navigationTitle("Terminal")
+                .navigationBarTitleDisplayMode(.inline)
+        } else {
+            content
+        }
     }
 }

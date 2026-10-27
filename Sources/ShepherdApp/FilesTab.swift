@@ -9,8 +9,7 @@ import ImageIO
 
 /// The side pane's Files tab (FileOpenSplit board): the space's file tree on the right,
 /// a code/image viewer on the left. Read-only browser of the local workspace.
-/// Remote threads show an unavailable message — the transport for arbitrary file reads
-/// is not wired (gap: remote file browsing).
+/// A remote thread's tree reads its host over `files.v1`; a host without it shows an unavailable message.
 struct FilesTab: View {
     let model: FileTreeModel
     @State private var showTree = true
@@ -964,7 +963,10 @@ private struct FileTreeRow: View {
 
 // MARK: - Unavailable remote files
 
+/// A remote thread whose host has no `files.v1` (an older Shepherd), or one this Mac isn't connected to.
 struct FilesUnavailableView: View {
+    let host: String?
+
     var body: some View {
         VStack(spacing: SH.Space.m) {
             Image(systemName: SHGlyph.document.symbolName)
@@ -973,7 +975,7 @@ struct FilesUnavailableView: View {
             Text("Files unavailable")
                 .font(.sh(.headline))
                 .foregroundStyle(Color.sh.textPrimary)
-            Text("File browsing is available for local threads only. Remote file transport is not yet supported.")
+            Text("Files needs a newer Shepherd on \(host ?? "this thread's host").")
                 .font(.sh(.caption))
                 .foregroundStyle(Color.sh.textSecondary)
                 .multilineTextAlignment(.center)

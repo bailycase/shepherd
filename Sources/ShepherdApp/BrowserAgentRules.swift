@@ -2,6 +2,7 @@ import CoreGraphics
 import Foundation
 import ImageIO
 import ShepherdProtocol
+import ShepherdRemote
 import UniformTypeIdentifiers
 
 // The rules of an agent's browser tools (docs/browser.md), pure so they are tested without

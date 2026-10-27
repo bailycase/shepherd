@@ -88,6 +88,9 @@ final class NewThreadModel {
 
     var blocker: NewThreadBlocker? { NewThreadRules.blocker(draft) }
 
+    /// The phone's Send (DuoClosedNewThread): nothing blocks it and there's a prompt to send.
+    var canSend: Bool { blocker == nil && !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
     // MARK: Lifetime
 
     /// Starts following the hosts and picks where the thread runs.
@@ -121,8 +124,8 @@ final class NewThreadModel {
             return
         }
         if let pendingSpace, host.spaces.contains(where: { $0.id == pendingSpace }) { self.pendingSpace = nil }
-        if space == nil, pendingSpace == nil || pendingSpace != spaceID, let first = host.spaces.first {
-            spaceID = first.id
+        if space == nil, pendingSpace == nil || pendingSpace != spaceID, let first = NewThreadRules.lastUsedSpace(host) ?? host.spaces.first?.id {
+            spaceID = first
             rebuildRows()
         }
         // A host that comes back (or a repo that arrives) gets its defaults once per connection.
@@ -140,7 +143,8 @@ final class NewThreadModel {
     }
 
     /// The host asked for, else the thread on screen's, else the first connected host with a
-    /// repo. With nothing connected, an offline host is still chosen so the form says why.
+    /// repo. With nothing connected, an offline host is still chosen so the form says why. The
+    /// repo is the thread on screen's, else the one the host last worked in.
     private func chooseInitialTarget() {
         guard hostID == nil, !inputs.isEmpty else { return }
         let connected = inputs.filter(\.phase.isConnected)
@@ -153,8 +157,9 @@ final class NewThreadModel {
         guard let pick else { return }
         hostID = pick
         let contextSpace = context?.host == pick ? hosts.agent(context!)?.spaceID : nil
-        let spaces = inputs.first { $0.id == pick }?.spaces ?? []
-        spaceID = spaces.first { $0.id == contextSpace }?.id ?? spaces.first?.id
+        let input = inputs.first { $0.id == pick }
+        let spaces = input?.spaces ?? []
+        spaceID = spaces.first { $0.id == contextSpace }?.id ?? input.flatMap(NewThreadRules.lastUsedSpace) ?? spaces.first?.id
         rebuildRows()
         loadDefaults()
         refreshBase()
@@ -165,7 +170,7 @@ final class NewThreadModel {
     func choose(host id: UUID) {
         guard id != hostID, hostRows.first(where: { $0.id == id })?.selectable == true else { return }
         hostID = id
-        if space == nil { spaceID = host?.spaces.first?.id }
+        if space == nil { spaceID = host.flatMap(NewThreadRules.lastUsedSpace) ?? host?.spaces.first?.id }
         errorText = nil
         rebuildRows()
         loadDefaults()

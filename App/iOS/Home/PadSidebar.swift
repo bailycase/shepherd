@@ -6,7 +6,8 @@ import ShepherdRemote
 /// Designs (while a host serves them, DesignPad/), Projects, Automations, Needs you with each
 /// item's reason, automation runs, then the Mac
 /// sidebar's Working, Done (with Mark all seen) and Pinned (`SidebarThreads`), Recents with their
-/// hosts and the designs among them, and a footer with the hosts and Settings. A thread row's
+/// hosts and the designs among them, and Settings in the footer, as on the Mac (DuoOpenThread),
+/// with the hosts beside it only while one is offline. A thread row's
 /// long press is the Mac's row menu (`ThreadRowMenu`).
 struct PadSidebar: View {
     @Environment(MobileHosts.self) private var hosts
@@ -29,11 +30,12 @@ struct PadSidebar: View {
         let pushed = navigator.padPath.last
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                SidebarItem("New thread", leading: .badge("plus")) { NewThreadHooks.open(navigator: navigator) }
+                SidebarItem("New thread", leading: .symbol("square.and.pencil")) { NewThreadHooks.open(navigator: navigator) }
                     .disabled(model.hosts.isEmpty)
                 // The Design tool's destination, only while a host offers it (iPadSidebar).
                 if designs.available {
-                    SidebarItem("Designs", leading: .symbol("pencil.tip"), selected: pushed?.isPadDesign == true) {
+                    SidebarItem("Designs", leading: .symbol("pencil.tip"), selected: pushed?.isPadDesign == true,
+                                trailing: designs.rows.isEmpty ? .none : .value(String(designs.rows.count))) {
                         PadDesignHooks.openList(navigator: navigator)
                     }
                 }
@@ -209,7 +211,8 @@ private struct SidebarHeader: View {
     }
 }
 
-/// The sidebar's foot: the hosts (opening Settings ▸ Hosts) and Settings.
+/// The sidebar's foot (DuoOpenThread): Settings, as on the Mac; while a host is offline, "1 of 2 offline" beside it opens Settings ▸
+/// Hosts.
 private struct SidebarFooter: View, Equatable {
     let count: Int
     let offline: Int
@@ -225,31 +228,33 @@ private struct SidebarFooter: View, Equatable {
         VStack(spacing: 0) {
             SHHairline()
             HStack(spacing: SH.Space.m) {
-                Button { navigator.open(.settings(.hosts)) } label: {
+                Button { navigator.open(.settings(.root)) } label: {
                     HStack(spacing: SH.Space.m) {
-                        Image(systemName: "desktopcomputer")
+                        Image(systemName: "gearshape")
                             .font(.sh(.ui, weight: .medium))
-                            .foregroundStyle(offline > 0 ? sh.failed : sh.textSecondary)
+                            .foregroundStyle(sh.textSecondary)
                             .frame(width: SHListMetrics.leadingWidth)
-                        VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                            Text(count == 0 ? "No hosts" : offline > 0 ? "\(offline) of \(count) offline" : "\(count) connected")
-                                .font(.sh(.ui, weight: .medium))
-                                .foregroundStyle(offline > 0 ? sh.failed : sh.textPrimary)
-                            if !names.isEmpty {
-                                Text(names).font(.sh(.mono)).foregroundStyle(sh.textTertiary).lineLimit(1)
-                            }
-                        }
+                        Text("Settings").font(.sh(.ui, weight: .medium)).foregroundStyle(sh.textPrimary)
                         Spacer(minLength: 0)
                     }
                     .frame(minHeight: SH.Height.touch)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Hosts")
-                .accessibilityValue(offline > 0 ? "\(offline) offline" : "\(count) connected")
-                Button { navigator.open(.settings(.root)) } label: { Image(systemName: "gearshape") }
-                    .buttonStyle(.sh(.ghost))
-                    .accessibilityLabel("Settings")
+                if offline > 0 {
+                    Button { navigator.open(.settings(.hosts)) } label: {
+                        Label("\(offline) of \(count) offline", systemImage: "desktopcomputer")
+                            .font(.sh(.caption, weight: .medium))
+                            .foregroundStyle(sh.failed)
+                            .lineLimit(1)
+                            .frame(minHeight: SH.Height.touch)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Hosts")
+                    .accessibilityValue("\(offline) offline")
+                    .accessibilityHint(names)
+                }
             }
             .padding(.horizontal, SH.Space.l)
             .padding(.vertical, SH.Space.xs)

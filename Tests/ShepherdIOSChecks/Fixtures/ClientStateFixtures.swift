@@ -292,19 +292,31 @@ enum ClientStateChecks {
             nav.homePath = [.thread(b), route]
             check(nav.selectedThread == b, "a compact child route belongs to its current thread")
             nav.adopt(.pad)
-            check(nav.padSelection == b && nav.padPath == [route], "widening keeps the pushed screen, not stale thread A")
+            check(nav.padSelection == b && nav.padPath.isEmpty && nav.sidePane.isOpen && nav.sidePane.tab == route.sidePaneTab,
+                  "unfolding opens the thread's pushed screen as its side-pane tab, not stale thread A")
             let restored = MobileNavigator()
             restored.restore(nav.restoration, hosts: [a.host])
+            check(restored.padSelection == b && restored.sidePane.isOpen && restored.sidePane.tab == route.sidePaneTab,
+                  "restoration keeps the open pane and its tab")
             restored.adopt(.phone)
-            check(restored.homePath == [.thread(b), route], "restoration at another width keeps the whole stack")
+            check(restored.homePath == [.thread(b)], "folding keeps the thread; the pane waits for the next unfold")
+            restored.adopt(.pad)
+            check(restored.padSelection == b && restored.sidePane.isOpen, "unfolding again brings the pane back")
         }
         let fromNeedsYou = MobileNavigator()
         fromNeedsYou.homePath = [.home(.needsYou), .thread(b), .review(.diff(b, path: "file.swift"))]
-        let chain = fromNeedsYou.homePath
         fromNeedsYou.adopt(.pad)
-        check(fromNeedsYou.selectedThread == b, "a pushed thread after Home still owns its child screen")
+        check(fromNeedsYou.selectedThread == b && fromNeedsYou.padPath == [.home(.needsYou), .thread(b)]
+              && fromNeedsYou.sidePane.tab == .changes, "a pushed thread after Home keeps its child screen, in its pane")
         fromNeedsYou.adopt(.phone)
-        check(fromNeedsYou.homePath == chain, "a Home prefix and thread stack round trip without duplication")
+        check(fromNeedsYou.homePath == [.home(.needsYou), .thread(b)], "a Home prefix and thread stack round trip without duplication")
+        let opened = MobileNavigator()
+        opened.adopt(.pad)
+        opened.open(.thread(a))
+        opened.open(.home(.automations))
+        opened.open(.subagents(.run(b, runID: "run-1")))
+        check(opened.padSelection == b && opened.padPath.isEmpty && opened.sidePane.tab == .subagents
+              && SubagentInspection.of(opened).selected(in: b) == "run-1", "a run opened on iPad shows in the pane beside its thread")
         let nav = MobileNavigator()
         nav.padSelection = a
         nav.tab = .settings
@@ -319,10 +331,60 @@ enum ClientStateChecks {
         nav.adopt(.phone)
         check(nav.tab == .settings && nav.settingsPath.isEmpty, "Settings root round trips")
         nav.tab = .home
-        nav.homePath = [.home(.more)]
+        nav.homePath = [.home(.needsYou)]
         nav.adopt(.pad)
         nav.adopt(.phone)
-        check(nav.homePath == [.home(.more)], "a non-thread destination round trips")
+        check(nav.tab == .home && nav.homePath == [.home(.needsYou)], "a non-thread destination round trips")
+        tabs()
+    }
+
+    /// Which tab a route lands in on iPhone (DuoClosedHome's five tabs).
+    static func tabs() {
+        typealias Tab = MobileNavigator.Tab
+        let a = FixtureData.ref(FixtureData.preview)
+        let landings: [(MobileRoute, Tab, Tab, String)] = [
+            (.settings(.hosts), .home, .settings, "a Settings page"),
+            (.home(.more), .home, .settings, "More is Settings now"),
+            (.home(.automations), .home, .automations, "Automations is its tab"),
+            (.automations(.detail(host: a.host, automation: AutomationID(rawValue: "x"))), .home, .automations, "an automation"),
+            (.designs(.list), .home, .designs, "Designs is its tab"),
+            (.designs(.design(HostDesignRef(host: a.host, design: DesignID(rawValue: "d")))), .settings, .designs, "a design"),
+            (.designs(.systems), .settings, .settings, "design systems stay in Settings"),
+            (.designs(.systems), .designs, .designs, "design systems stay in Designs"),
+            (.projects(.list), .home, .projects, "Projects is its tab"),
+            (.home(.needsYou), .projects, .home, "Needs you is Home's"),
+            (.thread(a), .projects, .projects, "a thread opens over the tab that opened it"),
+            (.thread(a), .settings, .home, "a thread never opens in Settings"),
+            (.search(.search(query: "")), .designs, .designs, "search opens where it was asked"),
+        ]
+        for (route, from, to, name) in landings {
+            check(Tab.landing(of: route, from: from) == to, "tab: \(name)")
+        }
+        let nav = MobileNavigator()
+        nav.tab = .projects
+        nav.projectsPath = [.projects(.tasks(LogicalProjectRef(home: .host(a.host), id: ProjectID(rawValue: "p"))))]
+        nav.open(.projects(.list))
+        check(nav.tab == .projects && nav.projectsPath.isEmpty, "a tab's root empties its stack")
+        nav.open(.thread(a))
+        check(nav.tab == .projects && nav.projectsPath == [.thread(a)], "a thread pushes on the tab on show")
+        nav.tab = .settings
+        nav.reveal(.thread(a))
+        check(nav.tab == .home && nav.homePath == [.thread(a)], "a notification's thread lands in Home")
+        nav.open(.home(.more))
+        check(nav.tab == .settings && nav.settingsPath.isEmpty, "More opens Settings' root")
+        nav.tab = .automations
+        nav.automationsPath = [.automations(.detail(host: a.host, automation: AutomationID(rawValue: "x")))]
+        nav.adopt(.pad)
+        check(nav.padPath.first == .home(.automations) && nav.padPath.count == 2, "widening puts the tab's root under its stack")
+        nav.adopt(.phone)
+        check(nav.tab == .automations && nav.automationsPath.count == 1, "narrowing returns to the tab without its root")
+        let old = #"{"pad":false,"tab":{"settings":{}},"homePath":[],"settingsPath":[],"padPath":[]}"#
+        let decoded = try? JSONDecoder().decode(MobileNavigator.Restoration.self, from: Data(old.utf8))
+        check(decoded?.tab == .settings && decoded?.designsPath == [], "a window saved with two tabs restores")
+        let restored = MobileNavigator()
+        restored.restore(MobileNavigator.Restoration(pad: false, tab: .home, homePath: [.home(.more), .thread(a)], settingsPath: [],
+                                                     padSelection: nil, padPath: []), hosts: [a.host])
+        check(restored.homePath == [.thread(a)], "a saved More on Home's stack is dropped")
     }
 
     static func creation(_ app: MobileApp) async {

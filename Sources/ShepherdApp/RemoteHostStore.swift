@@ -136,6 +136,9 @@ final class RemoteHostStore {
         /// The host carries Browser tunnels, lists its threads' dev servers and starts them
         /// (`browser.tunnel.v1`): its threads get a Browser tab here.
         var supportsBrowser: Bool { client?.capabilities.contains(RemoteProtocol.browserTunnelCapability) == true }
+        /// The host lists and reads its threads' folders for this Mac (`files.v1`): their Files tab here.
+        var supportsFiles: Bool { client?.capabilities.contains(RemoteProtocol.filesCapability) == true }
+        var filesClient: RemoteHostClient? { phase == .connected && supportsFiles ? client : nil }
         /// This connection's client, for what a page asks of its host (Browser).
         var browserClient: RemoteHostClient? { phase == .connected ? client : nil }
         /// The host answers `changes*` queries: its reviews use the Changes engine.

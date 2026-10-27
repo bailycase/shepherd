@@ -41,26 +41,12 @@ final class SubagentInspection {
     }
 }
 
-/// Opens a thread's runs the way the layout shows them: pushed on iPhone; on iPad in the
-/// inspector beside the thread, switched in place when it is already open there.
+/// Opens a thread's runs the way the layout shows them: pushed on iPhone; on iPad in the side
+/// pane's Subagents tab beside the thread (`MobileNavigator.open`).
 @MainActor
 enum SubagentOpening {
     static func open(_ route: SubagentsRoute, navigator: MobileNavigator) {
-        let thread = route.thread
-        let runID: String? = if case .run(_, let id) = route { id } else { nil }
-        let inspection = SubagentInspection.of(navigator)
-        if navigator.layout == .pad, inspection.thread == thread {
-            inspection.show(thread, runID: runID)
-            return
-        }
-        if navigator.layout == .pad {
-            // The inspector's screen is the same thread with the inspector beside it: no slide.
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) { navigator.open(.subagents(route)) }
-        } else {
-            navigator.open(.subagents(route))
-        }
+        navigator.open(.subagents(route))
     }
 }
 

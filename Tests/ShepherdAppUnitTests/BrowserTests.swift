@@ -2,6 +2,7 @@ import CoreGraphics
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 import ShepherdTestKit
 import ShepherdUI
 import Testing

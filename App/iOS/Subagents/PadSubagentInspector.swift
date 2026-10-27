@@ -3,47 +3,11 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
-/// The iPad's subagents (iPadSteer, iPadSubagents boards): the thread keeps its place and the
-/// runs open in an inspector beside it. The screen is the thread itself with the inspector
-/// attached, so closing the inspector returns to the thread as it was.
-struct PadSubagentsScreen: View {
-    let route: SubagentsRoute
-    @State private var shown = true
-    @Environment(\.dismiss) private var dismiss
-    @Environment(MobileNavigator.self) private var navigator
-
-    var body: some View {
-        let ref = route.thread
-        ThreadScreen(ref: ref)
-            .environment(\.threadSidePaneOpen, shown)
-            .inspector(isPresented: $shown) {
-                PadSubagentInspector(ref: ref) { shown = false }
-                    .inspectorColumnWidth(min: MobileLayout.subagentInspectorMinWidth, ideal: MobileLayout.subagentInspectorIdealWidth,
-                                          max: MobileLayout.subagentInspectorMaxWidth)
-            }
-            .navigationBarBackButtonHidden(true)
-            .onAppear {
-                let runID: String? = if case .run(_, let id) = route { id } else { nil }
-                SubagentInspection.of(navigator).show(ref, runID: runID)
-            }
-            .onDisappear { SubagentInspection.of(navigator).close(ref) }
-            .onChange(of: shown) { _, shown in
-                guard !shown else { return }
-                SubagentInspection.of(navigator).close(ref)
-                var transaction = Transaction()
-                transaction.disablesAnimations = true
-                withTransaction(transaction) { dismiss() }
-            }
-            .keepsThreadLive(ref)
-    }
-}
-
-/// The inspector's column: the thread's runs, or one run with its live siblings as tabs (up to
-/// four; otherwise ‹ › step through them), its card, goal, transcript, and steer field or
-/// finished actions.
+/// The side pane's Subagents tab (iPadSteer, iPadSubagents, DuoSidePaneTabs boards): the thread's runs, or one run with its live
+/// siblings as tabs (up to four; otherwise ‹ › step through them), its card, goal, transcript, and steer field or finished actions.
+/// The pane's tabs name it, so the list has no head of its own.
 struct PadSubagentInspector: View {
     let ref: AgentRef
-    let close: () -> Void
     @Environment(ThreadStores.self) private var threads
     @Environment(MobileNavigator.self) private var navigator
 
@@ -53,14 +17,10 @@ struct PadSubagentInspector: View {
         let runID = inspection.selected(in: ref)
         VStack(spacing: 0) {
             if let runID {
-                PadRunHeader(ref: ref, store: store, runID: runID, close: close)
+                PadRunHeader(ref: ref, store: store, runID: runID)
                 SubagentRunView(ref: ref, store: store, runID: runID, compact: false)
                     .id(runID)
             } else {
-                let tally = nativeRunTally(store.subagents)
-                SHRunHeader("Subagents", state: tally.map { AgentState($0.phase) } ?? .idle, meta: tally?.text ?? "") {
-                    closeButton
-                }
                 ScrollView {
                     SubagentListContent(ref: ref, store: store) { inspection.show(ref, runID: $0) }
                         .padding(MobileLayout.gutter)
@@ -70,23 +30,16 @@ struct PadSubagentInspector: View {
         }
         .background(Color.sh.bgWindow)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Subagent inspector")
-    }
-
-    private var closeButton: some View {
-        Button(action: close) { Image(systemName: "xmark") }
-            .buttonStyle(.shIcon)
-            .accessibilityLabel("Close inspector")
+        .accessibilityLabel("Subagents")
     }
 }
 
 /// The run's head in the inspector: tabs between its siblings when there are a few, else its
-/// name with "k of n" and ‹ ›; a button back to every run; and close.
+/// name with "k of n" and ‹ ›; and a button back to every run.
 private struct PadRunHeader: View {
     let ref: AgentRef
     let store: NativeThreadStore
     let runID: String
-    let close: () -> Void
     @Environment(\.dynamicTypeSize) private var dynamicType
     @Environment(MobileNavigator.self) private var navigator
 
@@ -103,7 +56,6 @@ private struct PadRunHeader: View {
                           tabs: siblings.map { (id: $0.runID, title: nativeRunAgentName($0)) })
                 if let run { controls(run) }
                 allRuns
-                closeButton
             }
             .padding(.leading, SH.Space.l)
             .padding(.trailing, SH.Space.s)
@@ -126,7 +78,6 @@ private struct PadRunHeader: View {
                 }
                 if let run { controls(run) }
                 allRuns
-                closeButton
             }
         }
     }
@@ -145,11 +96,5 @@ private struct PadRunHeader: View {
         Button { SubagentInspection.of(navigator).show(ref, runID: nil) } label: { Image(systemName: "list.bullet") }
             .buttonStyle(.shIcon)
             .accessibilityLabel("All subagents")
-    }
-
-    private var closeButton: some View {
-        Button(action: close) { Image(systemName: "xmark") }
-            .buttonStyle(.shIcon)
-            .accessibilityLabel("Close inspector")
     }
 }

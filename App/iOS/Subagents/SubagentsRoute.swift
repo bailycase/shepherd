@@ -20,20 +20,15 @@ enum SubagentHooks {
     static func run(thread: AgentRef, runID: String) -> MobileRoute { .subagents(.run(thread, runID: runID)) }
 }
 
-/// iPhone pushes the list (MobileSubagents) and a run (MobileSubagent); iPad keeps the thread and
-/// opens either in the inspector beside it (iPadSubagents, iPadSteer).
+/// The phone pushes the list (MobileSubagents) and a run (MobileSubagent); on regular width the
+/// navigator shows either in the side pane's Subagents tab instead (`PadSubagentInspector`).
 struct SubagentsDestination: View {
     let route: SubagentsRoute
-    @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
-        if navigator.layout == .pad {
-            PadSubagentsScreen(route: route)
-        } else {
-            switch route {
-            case .list(let ref): SubagentListScreen(ref: ref)
-            case .run(let ref, let runID): SubagentRunScreen(ref: ref, runID: runID)
-            }
+        switch route {
+        case .list(let ref): SubagentListScreen(ref: ref)
+        case .run(let ref, let runID): SubagentRunScreen(ref: ref, runID: runID)
         }
     }
 }

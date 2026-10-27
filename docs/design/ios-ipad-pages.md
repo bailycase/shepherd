@@ -181,12 +181,12 @@ Instructions, SettingsInstructions; `Settings/InstructionsScreens.swift`):
 
 ## Side pane (iPadPaneBrowser, iPadPaneArtifacts, iPadPaneFiles)
 
-Built: the side pane beside a thread (`PadReviewScreen`), its head the segmented control of the tabs
-Shepherd has, Changes (the docked review) and Artifacts (iPadPaneArtifacts, once the thread has made a file); the header's
-side-pane button shows and hides it (Thread › Header buttons). Artifacts: the list ("This thread · N"), and the open
+Built: the side pane beside a thread (`ThreadWithSidePane`; DuoOpenSidePane, DuoSidePaneTabs), its head the tabs Changes,
+Files, Terminal, Subagents, Browser, and Artifacts (iPadPaneArtifacts, once the thread has made a file), the open one labelled;
+the header's side-pane button shows and hides it (Thread › Side pane). Artifacts: the list ("This thread · N"), and the open
 artifact under a 52pt bar (All artifacts, the kind tile, the name, Preview | Source, Save a copy), Markdown in Shepherd Design colors,
 HTML and SVG in a locked-down web view on their own background, 18pt in; "Made an artifact" opens it here (on iPhone, in a
-sheet over the thread). **Not built: Browser, Files**, the board's version chip, Edit and Open in a window (departures.md).
+sheet over the thread). **Not built: Browser, Files** (placeholder tabs), the board's version chip, Edit and Open in a window (departures.md).
 
 **Not built yet: the rest of the side pane.** Show side pane (a 40pt circle in the thread's header; Hide side
 pane, on `bgSelected`, while it shows) opens a pane on the thread's trailing side, with a 1px

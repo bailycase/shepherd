@@ -124,20 +124,37 @@ selected thread, or the Overview when none is. Other screens push over the detai
   running clock: "Running · 37m"; "Failed" on `failedTint` after a reply that failed,
   iPadThreadError); then, trailing, 44pt icon buttons in `textPrimary`. The
   counters ("17 turns · 42k ctx") are gone, as on the boards.
-- **Header buttons on the board:** Subagents, Review changes, and Thread options (•••). A
-  button whose pane is open takes a `runningTint` fill and a `running` glyph: Subagents while
-  the inspector shows (iPadSubagents), Review changes while the review does (iPadReview);
-  iPadSteer's 76pt header draws the open one on `bgSelected` instead. The app has one
-  side-pane button, as the Mac (see the departures): Show side pane (`sidebar.right`) opens the
-  Changes pane; while the review docks or the subagent inspector shows it is lit (a
-  `runningTint` fill, its glyph in `running`) and reads Hide side pane, which closes that pane
-  (`threadSidePaneOpen`). Then •••, and Stop (`stop.fill` in `failed`) only while pi asks. While pi runs, Stop is the
-  card's corner when the field and attachments are empty, and Send with any input, as on the Mac
-  (the user's decision, 2026-10-10: iPadSteer and iPadQueue's header Stop is the composer's action
-  now). Subagents is in the ••• menu (while the thread has runs), a
-  card's Open and the footer's link. The ••• menu: Refresh, Subagents, Show or Hide Terminal
-  (the terminal has no header button), Open in new window, and the agent actions (rename, move,
-  delete).
+- **Header buttons on the board:** Subagents, Review changes, and Thread options (•••). The app
+  has one side-pane button, as the Mac (see the departures): Show side pane (`sidebar.right`)
+  opens the side pane on the tab it last showed; while it is open its glyph is `lantern` and it
+  reads Hide side pane. Then Stop agent (`stop.circle` in `failed`) while pi runs or asks, and
+  •••. Where the bars run down the side (iPhone Duo open in landscape) the title heads the
+  thread's column instead of a bar, level with the pane's tabs, and New thread
+  (`square.and.pencil`, prominent) sits lowest in the column (DuoOpenThread). The ••• menu
+  (DuoClosedThreadMenu, the same on every width): Changes (+N −M), Files, Terminal (n running),
+  Subagents (n running), Browser, then Stop agent and More… (Refresh, Open in new window, the
+  agent actions). On regular width each tab row opens the side pane on it.
+- **Side pane** (DuoOpenSidePane, DuoSidePaneTabs; `ThreadWithSidePane`, `ThreadSidePane`): the
+  Mac's right sidebar beside the thread, a 1px `lineStrong` edge between. It docks by the Mac's
+  rule (`PadSplitLayout.pane`): while the thread keeps 400pt and the pane 380pt, at most half the
+  column and 600pt; narrower, it takes the thread's column. Where the docked 300pt sidebar leaves
+  too little (iPhone Duo's inner display; `PadSplitLayout.sidebarFitsBesidePane`), opening the
+  pane sends the sidebar over the thread, and Show sidebar (`sidebar.left`, a glass circle by the
+  title) brings it back. Half open, the thread ends at the fold and the pane starts after it.
+  The head (52pt, `SHPadPaneHead`): Changes, Files, Terminal, Subagents, Browser, and Artifacts
+  once the thread has made a file; the open tab shows its glyph, label and count on `bgSelected`,
+  the others their glyph alone; Terminal and Subagents carry a `running` dot while something
+  runs; the pane's ⋯ trails (the tab's options, Hide side pane). Changes is the review (Review),
+  Terminal the thread's terminals (`TerminalScreen`), Subagents the runs (Subagents), Artifacts
+  the files pi made. Files and Browser are their own tracks' (`SidePaneComingSoon` until then).
+  Pushing a thread's Changes, Terminal or Subagents opens that tab instead of a screen, and so
+  does unfolding a phone with one pushed. The pane and its tab are the window's
+  (`SidePaneState`, in the navigator), so they survive the hinge and a restore.
+- **Laptop pose** (DuoLaptop, DuoLaptopOpen): with the inner display upright and half open, the
+  open thread takes the window (`PadArrangedThread`, no split view around it) as an overlay
+  `ArrangementView`: the transcript, or the terminal (the bar's Transcript and Terminal), above
+  the fold, the composer below it; laid flat, the composer floats over the transcript's foot as
+  a card, until Back. Older SDKs keep the thread as it is.
 - **Column:** 780pt wide beside the sidebar (772pt in portrait), 24pt gutters, 24pt above the
   first turn; turns 26pt apart and a turn's parts 14pt apart. Beside the review the column is
   512pt (prose 15, bubbles 14), and beside the subagent inspector 672pt (prose 15, bubbles 15).
@@ -228,8 +245,8 @@ Up next follows iOS (and Composer › Up next); on iPad it is a card above the c
 - **Swipe** a queued row left: Edit (80pt, `bgSelected`, a 17pt `pencil` over "Edit" at 12/500)
   and Delete (80pt, `failed`, white). Long-press: Steer now, Edit, Move to top, Delete. A delete
   leaves an Undo row.
-- **Header while it runs:** "Running · 5m" and the side-pane button (iPadQueue). Stop is the
-  composer's corner.
+- **Header while it runs:** "Running · 5m", the side-pane button and Stop agent (DuoOpenThread's
+  ◎, which the newer board adds to iPadQueue's header); the composer's corner stops too.
 
 ## Questions (iPadQuestion)
 
@@ -314,10 +331,9 @@ shadow, the window dimmed behind it.
 
 ## Subagents (iPadSubagents, iPadSteer)
 
-Runs open in an inspector beside the thread (`PadSubagentInspector`), never over it: 460pt on
-iPadSubagents and 400pt on iPadSteer (the app lets it range 340–480, 400 ideal), with a 1px
-`lineStrong` leading edge on `bgWindow`. Closing it returns to the thread as it was. With no run
-chosen (All subagents) it lists the thread's runs under a "Subagents" head with their tally.
+Runs open in the side pane's Subagents tab beside the thread (`PadSubagentInspector`), never
+over it (iPadSubagents, iPadSteer, DuoSidePaneTabs). With no run chosen (All subagents) it lists
+the thread's runs; the pane's tabs name it.
 
 - **The tray** (iPadSteer, iPadSubagents, iPadSplitView, SubagentTray › iPad;
   `SubagentTraySection`, `SHSubagentTray` at `.pad` size): above the composer, in one card with
@@ -371,19 +387,24 @@ chosen (All subagents) it lists the thread's runs under a "Subagents" head with 
 
 ## Review (iPadReview, iPadReviewSplit)
 
-`PadReviewScreen` has two layouts: the pane's ••• (Full screen) and "‹ Thread" switch between
-them. Both read the host's Changes engine (`changes.v1`) as the phone does (iPhone: Review):
-the scope menu, the base picker, a file's lines fetched as it nears the screen, word diffs.
+The side pane's Changes tab (`SidePaneChanges`) and Full screen (`PadChangesFull`), from the
+pane's ⋯; "‹ Thread" returns. Both read the host's Changes engine (`changes.v1`) as the phone
+does (iPhone: Review): the scope menu, the base picker, a file's lines fetched as it nears the
+screen, word diffs.
 
-**Docked** (iPadReview): the thread keeps the left and the Changes pane takes the right: 640pt,
-never more than 58% of the detail, with a 1px `lineStrong` leading edge on `bgWindow`. The board
-hides the sidebar so the thread keeps a 540pt column; the app keeps the sidebar in landscape
-(`PadShell`), so the pane narrows and its toolbar drops the viewed count, then the stat, rather
-than clip (Known gaps).
+**Changes tab** (DuoOpenSidePane, DuoBookSidePane): under the pane's tabs, three rows, then one
+file's diff (unified) and the send bar.
 
-- **Pane head** (52pt, a hairline under it): the side pane's tabs (`SHPadPaneHead`): "Changes 3"
-  (the file count once loaded), and Artifacts once the thread has made a file, then Full screen
-  (on Changes) and Close pane. The board's Browser and Files tabs are not built on iPad (Side pane).
+- **Compare row** (54pt, a hairline under it, mono): "agent/widgets vs main ⌄" (the base opens
+  the base picker where it can change), the scope's totals, and Commit… trailing.
+- **File switcher** (44pt): ‹ and › step through the files; the name ⌄ opens a menu of them all;
+  "1 of 3" in `textTertiary` and the file's stat. It replaces the file strip and the per-file
+  heads.
+- The pane's ⋯ holds Compare (the scope menu), Mark viewed, Full screen and the diff options
+  below.
+
+**Full screen** (iPadReviewSplit) keeps the layout this section describes from here:
+
 - **Toolbar** (54pt, 12pt inset, 8pt gaps, a hairline under it): the scope pill (44pt, radius 6,
   `bgRaised`, a 1px `lineStrong` line: "Branch" at 15 and a chevron), the scope's stat (mono 12),
   then Commit… (secondary, `l`) and Diff options (•••, 44pt): Refresh, Collapse all files (Expand
@@ -394,9 +415,6 @@ than clip (Known gaps).
 - **Compare row** (38pt, 12pt inset, a hairline under it, mono 12): the head in `textSecondary`,
   "vs" in `textTertiary`, the base in `textPrimary` with a chevron (Branch only: the base picker,
   a popover), and "1 of 3 viewed" trailing in `textSecondary`.
-- **File strip** (`SHTouchFileStrip`, 8pt inset, 6pt apart): 44pt chips with the file name in
-  mono 12 (`bgRaised`, a 1px `lineStrong` line, radius 6); the chip tapped is filled and the stack
-  scrolls its file to the top; viewed files dim.
 - **Files, stacked** in one lazy list: each file's head sticks while its file scrolls (44pt on
   `bgRaised`, a hairline under it, 10pt inset): "FleetView.swift · +9 −7" in mono 12, then Viewed
   (a 14pt checkbox and "Viewed" at 12 `textSecondary`); ticking Viewed folds the file away, and a
@@ -415,7 +433,7 @@ than clip (Known gaps).
   Edit and Delete, then the text at 14/1.5.
 - **Send bar** (only while comments wait; at least 56pt, 8×12 inset, a hairline above,
   `bgWindow`): "1 pending · FleetView.swift" (12 `textTertiary`), then Discard (ghost) and
-  "Send 1 comment" (primary). Sent, the review closes and opens next on Last turn. There is no
+  "Send 1 comment" (primary). Sent, the pane stays and the review opens next on Last turn. There is no
   overall comment box. A failed send shows "Couldn't send the comments" with Dismiss.
 
 **Full screen** (iPadReviewSplit): the review takes the detail column (the sidebar stays in
@@ -423,7 +441,7 @@ landscape, Known gaps).
 
 - **Head** (the bar): "‹ Thread" (back beside the thread) and "Review" at 15/600 leading, Close
   trailing (the system bar's glass button).
-- **Toolbar and compare row** as docked.
+- **Toolbar and compare row** as the old docked pane drew them (above).
 - **File list** (260pt, a 1px `lineSubtle` trailing edge): rows at least 56pt, 12pt inset, a
   hairline under each: the name in mono 13 over its stat in mono 11 `textTertiary`. The file tapped
   is filled (`bgSelected`) and scrolled to; viewed files dim.
@@ -432,7 +450,7 @@ landscape, Known gaps).
   their gutter bars; a side with no line opposite is hatched (`lineSubtle` stripes at 135°, every
   6pt). Folds sit on their side, blank `bgSunken` on the other. Comments sit under the side they
   were written on.
-- **Send bar** across the foot, as docked.
+- **Send bar** across the foot, as above.
 
 ## Commit (iPadCommit)
 

@@ -4,7 +4,7 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
 
-/// More ▸ Design systems (MobileMore's row): the hosts' systems, each opening its page.
+/// Settings ▸ Design systems (MobileMore's row, now in Settings): the hosts' systems, each opening its page.
 struct DesignSystemsScreen: View {
     @Environment(MobileHosts.self) private var hosts
 

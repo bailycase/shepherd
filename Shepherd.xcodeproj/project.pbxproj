@@ -89,6 +89,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				ExportOptions.plist,
+				Info.plist,
 			);
 			target = 15000000000000000000F001 /* Shepherd iOS */;
 		};
@@ -503,6 +504,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 4J6D7M7D79;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = App/iOS/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Shepherd;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
@@ -538,6 +540,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 4J6D7M7D79;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = App/iOS/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Shepherd;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
@@ -573,6 +576,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 4J6D7M7D79;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = App/iOS/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Shepherd;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;

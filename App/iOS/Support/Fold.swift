@@ -21,6 +21,22 @@ extension GeometryProxy {
     }
 }
 
+extension GeometryProxy {
+    /// iPhone Duo's fold while it splits this view into a top and a bottom part (the inner display
+    /// held in portrait, half open: the laptop pose). Nil otherwise.
+    var horizontalFold: ClosedRange<CGFloat>? {
+        #if canImport(SwiftUI, _version: 8.0.85)
+        guard #available(iOS 27.1, *) else { return nil }
+        let fold = reservedRegions(kind: .division).first {
+            $0.frame.width > $0.frame.height && $0.frame.minY > 0 && $0.frame.maxY < size.height
+        }
+        return fold.map { $0.frame.minY...$0.frame.maxY }
+        #else
+        return nil
+        #endif
+    }
+}
+
 extension View {
     /// Calls `action` with whether iPhone Duo is folded shut, at first and as its hinge moves;
     /// never on a device without a hinge, nor built with an SDK older than iOS 27.1's.
@@ -52,6 +68,34 @@ private struct HingeWatch: ViewModifier {
         #endif
     }
 }
+
+/// Whether the system draws this view's bars as a column at its side (iPhone Duo's outer display, and
+/// its inner one in landscape; `toolbarVerticalEdge`). Always false before the iOS 27.1 SDK and system.
+struct VerticalBars<Content: View>: View {
+    @ViewBuilder let content: (Bool) -> Content
+
+    var body: some View {
+        #if canImport(SwiftUI, _version: 8.0.85)
+        if #available(iOS 27.1, *) {
+            VerticalBarsReader(content: content)
+        } else {
+            content(false)
+        }
+        #else
+        content(false)
+        #endif
+    }
+}
+
+#if canImport(SwiftUI, _version: 8.0.85)
+@available(iOS 27.1, *)
+private struct VerticalBarsReader<Content: View>: View {
+    let content: (Bool) -> Content
+    @Environment(\.toolbarVerticalEdge) private var edge
+
+    var body: some View { content(edge != nil) }
+}
+#endif
 
 /// An iPad list beside its detail (Settings, Automations, Needs you, Hosts). Half open, the list
 /// ends at the fold and the detail starts after it. Where the detail would be narrower than

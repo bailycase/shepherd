@@ -231,7 +231,7 @@ struct ArtifactsPreviewTests {
             VStack(spacing: 0) {
                 SHPadPaneHead([SHPadPaneTab(id: "changes", title: "Changes", systemImage: "plus.forwardslash.minus", count: 2),
                                SHPadPaneTab(id: "artifacts", title: "Artifacts", systemImage: SHGlyph.artifact.symbolName, count: store.artifacts.count)],
-                              selection: "artifacts", select: { _ in }, close: {})
+                              selection: "artifacts", select: { _ in }) { EmptyView() }
                 if let open {
                     SHArtifactBar(name: open.name, symbol: open.kind.symbol, hasPreview: true, mode: $mode, pad: true, back: {}) {
                         Button {} label: { Image(systemName: "square.and.arrow.down") }.buttonStyle(.shIcon(size: SH.Height.touch - SH.Space.xs))

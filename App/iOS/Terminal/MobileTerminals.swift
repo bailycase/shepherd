@@ -6,8 +6,7 @@ import ShepherdProtocol
 import ShepherdRemote
 
 /// Terminals on the phone and iPad: one `MobileTerminalSession` per host session, attached
-/// while its view is on screen, and each thread's panel state (shown, the chosen tab, maximized,
-/// its height). The terminals and their shells are the host's; this never spawns or resizes
+/// while its view is on screen, and each thread's chosen tab. The terminals and their shells are the host's; this never spawns or resizes
 /// anything but through the host's own requests (attach, detach, input, resize, open and close).
 ///
 /// It owns the `onOutput` and `onSessionExited` callbacks of every host's `RemoteHostClient`
@@ -18,14 +17,10 @@ import ShepherdRemote
 final class MobileTerminals {
     static let shared = MobileTerminals()
 
-    /// One thread's panel.
+    /// One thread's terminals as this device shows them.
     struct Panel: Equatable {
-        /// iPad: the panel is open under the thread.
-        var shown = false
         /// The tab picked last; `TerminalPanel.selected` falls back when it closes.
         var chosenTab: PaneID?
-        /// The panel fills the thread; the thread folds away until it is restored.
-        var maximized = false
     }
 
     struct SessionKey: Hashable {
@@ -34,10 +29,6 @@ final class MobileTerminals {
     }
 
     private(set) var panels: [AgentRef: Panel] = [:]
-    /// The panel's height on iPad, shared by every thread (`shepherd.ios.terminalHeight`).
-    var panelHeight: CGFloat {
-        didSet { if panelHeight != oldValue { defaults.set(Double(panelHeight), forKey: Self.heightKey) } }
-    }
     /// Each thread's last terminal request that failed, for its panel to say so.
     var problems: [AgentRef: String] = [:]
     /// What each thread's terminals run, from its host (`RemoteAgentQuery.terminals`).
@@ -54,14 +45,6 @@ final class MobileTerminals {
 
     @ObservationIgnored private var sessions: [SessionKey: MobileTerminalSession] = [:]
     @ObservationIgnored private var wired: [UUID: ObjectIdentifier] = [:]
-    @ObservationIgnored private let defaults: UserDefaults
-    static let heightKey = "shepherd.ios.terminalHeight"
-
-    init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
-        let stored = defaults.double(forKey: Self.heightKey)
-        panelHeight = stored > 0 ? CGFloat(stored) : MobileLayout.terminalPanelHeight
-    }
 
     func panel(_ ref: AgentRef) -> Panel { panels[ref] ?? Panel() }
 
@@ -171,19 +154,14 @@ final class MobileTerminals {
     /// + in the tab bar, and the thread's options with no terminal yet: a new terminal under the
     /// thread, which the host makes a tab of its own. The request names the thread, as it always
     /// has: a current host opens a tab whatever it is told, an older one splits it to make one.
-    /// The panel shows on the new terminal once the host has made it; a failure shows the panel's
-    /// banner while it is up, and otherwise only a haptic, so an empty panel is never drawn.
+    /// The terminals show the new one once the host has made it; a failure shows their banner.
     func newTab(_ ref: AgentRef, layout: PaneNode, thread: PaneID?, client: RemoteHostClient) async {
         let anchor = TerminalPanel.newTabAnchor(in: layout, thread: thread)
         do {
             let opened = try await client.openPane(agentID: ref.agent, relativeTo: anchor.pane, axis: anchor.axis)
-            update(ref) {
-                $0.shown = true
-                $0.chosenTab = opened
-            }
+            update(ref) { $0.chosenTab = opened }
         } catch {
             problems[ref] = Self.message(error, doing: "open a terminal")
-            if !panel(ref).shown { UINotificationFeedbackGenerator().notificationOccurred(.error) }
         }
     }
 

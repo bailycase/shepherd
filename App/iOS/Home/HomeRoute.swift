@@ -1,13 +1,14 @@
 import SwiftUI
 import ShepherdUI
 
-/// Home's own screens (home track), pushed from Home's destinations list or the iPad sidebar.
+/// Home's own screens (home track). On iPhone, Automations and More are tab roots
+/// (`MobileRoute.isTabRoot`): opening one selects the Automations or Settings tab.
 enum HomeRoute: Hashable, Codable {
     /// Everything waiting on you, across hosts.
     case needsYou
     /// Automations on every host (read-only in this release).
     case automations
-    /// Hosts and everything else (MobileMore board).
+    /// Hosts: the iPad sidebar's (iPadHosts board); on iPhone, the Settings tab.
     case more
     /// Every recent thread, past Home's first few.
     case recents
@@ -21,8 +22,8 @@ struct HomeDestination: View {
         switch route {
         case .needsYou: NeedsYouScreen()
         case .automations: AutomationsScreen()
-        // On iPad the Hosts destination (the sidebar's footer opens Settings ▸ Hosts).
-        case .more: if navigator.layout == .pad { PadHostsScreen() } else { MoreScreen() }
+        // iPad's Hosts; the phone opens its Settings tab instead (`MobileNavigator.open`).
+        case .more: if navigator.layout == .pad { PadHostsScreen() } else { HostsScreen() }
         case .recents: RecentsScreen()
         }
     }

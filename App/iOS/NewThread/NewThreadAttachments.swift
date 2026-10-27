@@ -58,6 +58,8 @@ enum NewThreadImages {
 /// take images, saying why.
 struct NewThreadAttachButton: View {
     let model: NewThreadModel
+    /// The phone's toolbar item: a symbol with a title, which the bar draws itself.
+    var inToolbar = false
     @State private var picked: [PhotosPickerItem] = []
 
     var body: some View {
@@ -67,11 +69,15 @@ struct NewThreadAttachButton: View {
         let font = Font.sh(.ui)
         let color = Color.sh.textSecondary
         PhotosPicker(selection: $picked, maxSelectionCount: max(room, 1), matching: .images) {
-            Image(systemName: "paperclip")
-                .font(font)
-                .foregroundStyle(color)
-                .frame(width: SH.Height.touch, height: SH.Height.touch)
-                .contentShape(Rectangle())
+            if inToolbar {
+                Label("Attach", systemImage: "paperclip")
+            } else {
+                Image(systemName: "paperclip")
+                    .font(font)
+                    .foregroundStyle(color)
+                    .frame(width: SH.Height.touch, height: SH.Height.touch)
+                    .contentShape(Rectangle())
+            }
         }
         .disabled(!supported || room <= 0)
         .accessibilityLabel("Attach images")

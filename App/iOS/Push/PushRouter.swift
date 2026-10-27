@@ -46,7 +46,7 @@ final class PushRouter {
     @discardableResult
     private func navigate(to ref: AgentRef, windows: MobileWindows) -> Bool {
         guard let window = windows.notificationWindow else { return false }
-        window.navigator.open(.thread(ref))
+        window.navigator.reveal(.thread(ref))
         return true
     }
 }

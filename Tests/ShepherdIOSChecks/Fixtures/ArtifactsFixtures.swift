@@ -15,20 +15,20 @@ extension FixtureCatalog {
         let pane = MobileRoute.review(.changes(ref, file: nil))
         return [
             FixtureScreen(name: "artifacts-thread", hosts: ArtifactsFixture.hosts(), routes: [thread]),
-            FixtureScreen(name: "artifacts-list", hosts: ArtifactsFixture.hosts(), routes: [thread, pane], prepare: { _ in
-                ArtifactsFixture.open(nil)
+            FixtureScreen(name: "artifacts-list", hosts: ArtifactsFixture.hosts(), routes: [thread, pane], prepare: { app in
+                ArtifactsFixture.open(nil, app)
             }),
             FixtureScreen(name: "artifacts-html", hosts: ArtifactsFixture.hosts(), routes: [thread, pane], prepare: { app in
-                ArtifactsFixture.open(ArtifactsFixture.report)
+                ArtifactsFixture.open(ArtifactsFixture.report, app)
                 await ArtifactsFixture.fetched(app, ArtifactsFixture.report)
                 await ArtifactsFixture.checkPage()
             }),
             FixtureScreen(name: "artifacts-markdown", hosts: ArtifactsFixture.hosts(), routes: [thread, pane], prepare: { app in
-                ArtifactsFixture.open(ArtifactsFixture.plan)
+                ArtifactsFixture.open(ArtifactsFixture.plan, app)
                 await ArtifactsFixture.fetched(app, ArtifactsFixture.plan)
             }),
             FixtureScreen(name: "artifacts-svg", hosts: ArtifactsFixture.hosts(), routes: [thread, pane], prepare: { app in
-                ArtifactsFixture.open(ArtifactsFixture.diagram)
+                ArtifactsFixture.open(ArtifactsFixture.diagram, app)
                 await ArtifactsFixture.fetched(app, ArtifactsFixture.diagram)
             }),
             FixtureScreen(name: "artifacts-iphone", hosts: ArtifactsFixture.hosts(), routes: [thread],
@@ -36,8 +36,8 @@ extension FixtureCatalog {
                               await ArtifactsFixture.fetched(app, ArtifactsFixture.plan)
                           }),
             // A host without `native.artifacts.v1`: the thread still lists what it made; opening one must settle, not spin.
-            FixtureScreen(name: "artifacts-old-host", hosts: ArtifactsFixture.hosts(capable: false), routes: [thread, pane], prepare: { _ in
-                ArtifactsFixture.open(ArtifactsFixture.report)
+            FixtureScreen(name: "artifacts-old-host", hosts: ArtifactsFixture.hosts(capable: false), routes: [thread, pane], prepare: { app in
+                ArtifactsFixture.open(ArtifactsFixture.report, app)
                 try? await Task.sleep(for: .seconds(3))
             }),
         ]
@@ -153,8 +153,8 @@ enum ArtifactsFixture {
     @MainActor static var store: ReviewStore { ReviewStores.shared.store(for: FixtureData.ref(FixtureData.preview)) }
 
     /// The pane on its Artifacts tab: the list, or `path` open.
-    @MainActor static func open(_ path: String?) {
-        store.padTab = .artifacts
+    @MainActor static func open(_ path: String?, _ app: MobileApp) {
+        app.navigator.sidePane.show(.artifacts)
         store.artifact = path
     }
 

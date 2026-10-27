@@ -79,15 +79,16 @@ public final class BrowserPortForwarder: @unchecked Sendable {
             }
         }
 
-        /// What the pane says, for the host `hostName`.
-        public func message(hostName: String) -> String {
+        /// What the pane says, for the host `hostName`, on the device the page is on (`here`: "this
+        /// iPhone" on the iOS client).
+        public func message(hostName: String, here: String = "this Mac") -> String {
             switch self {
             case .inUse(let port):
-                "Port \(port) is in use on this Mac, so \(hostName)’s \(port) can’t be forwarded. Stop what is using it and try again."
+                "Port \(port) is in use on \(here), so \(hostName)’s \(port) can’t be forwarded. Stop what is using it and try again."
             case .forwardedFor(let port, let other):
                 "Port \(port) is already forwarded from \(other), for another thread’s page."
             case .privileged(let port):
-                "Port \(port) is below 1024, and this Mac doesn’t let Shepherd listen on it, so \(hostName)’s \(port) can’t be forwarded."
+                "Port \(port) is below 1024, and \(here) doesn’t let Shepherd listen on it, so \(hostName)’s \(port) can’t be forwarded."
             case .invalid(let port):
                 "\(port) is not a port."
             case .failed(let port, let code):

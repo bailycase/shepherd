@@ -117,6 +117,7 @@ The full rule is in [docs/rules.md](docs/rules.md) under the name in parentheses
 | Changing or staging the bundled engine | [docs/pi-engine.md](docs/pi-engine.md) |
 | Writing or changing a test, or CI | [docs/testing.md](docs/testing.md) |
 | Changing UI | [DESIGN.md](DESIGN.md), then your board's section via `design_section.py` |
+| Laying out for a platform (Mac, iPhone, iPad, iPhone Duo) | [docs/design/platforms.md](docs/design/platforms.md) |
 | Touching contracts, extensions, concurrency, terminals, browser, layouts, repos | [docs/rules.md](docs/rules.md) |
 | Changing the remote listener or protocol | [docs/remote-protocol.md](docs/remote-protocol.md), [docs/ios/CONTRACTS.md](docs/ios/CONTRACTS.md) |
 | Changing agent launch, status, automations | [docs/data-flow.md](docs/data-flow.md) |

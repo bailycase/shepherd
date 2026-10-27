@@ -37,7 +37,7 @@ struct MobileWindowRoot: View {
             // A window the system brings back before it saved a place opens its seed's thread,
             // unless that thread's host was forgotten meanwhile.
             navigator.adopt(sizeClass == .regular ? .pad : .phone)
-            navigator.open(route)
+            navigator.reveal(route)
         }
         ready = true
     }

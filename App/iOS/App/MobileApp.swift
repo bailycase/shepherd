@@ -35,8 +35,10 @@ final class MobileApp {
             Task { for host in hosts.hosts { await push.renew(host: host) } }
         }
         hosts.onHostConnected = { [weak push = self.push] host in
+            MobileBrowsers.shared.connected(host)
             Task { await push?.renewOnReconnect(host: host) }
         }
+        hosts.onHostDisconnected = { MobileBrowsers.shared.disconnected($0) }
         HomeFeed.of(hosts).projectNative = { [projects] ref, request in
             try await projects.native(agent: ref, request: request)
         }
@@ -59,8 +61,10 @@ final class MobileApp {
         SettingsStore.forget(host: host, in: hosts)
         AutomationsStore.forget(host: host, in: hosts)
         MobileTerminals.shared.forget(host: host)
+        MobileBrowsers.shared.forget(host: host)
         ComposerStates.shared.forget(host: host)
         ReviewStores.shared.forget(host: host)
+        ThreadFilesStores.shared.forget(host: host)
         CommitStores.shared.forget(host: host)
         WorktreeOperations.shared.forget(host: host)
         TurnUndoStore.shared.forget(host: host)

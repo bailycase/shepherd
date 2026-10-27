@@ -843,6 +843,11 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// What the host offers `client`: `files.v1` only to a client that listed it in `hello`. Server queue.
+    private func offeredCapabilities(to client: ExtensionConnection) -> [String] {
+        offeredCapabilities.filter { $0 != RemoteProtocol.filesCapability || client.clientCapabilities.contains($0) }
+    }
+
     /// Carries Browser tunnels for remote clients (`browser.tunnel.v1`) while `served`. Connected
     /// clients that read it are told what the host offers now, and every tunnel is closed when it
     /// goes off. On unless something turns it off (nothing does yet: docs/browser.md › Remote).
@@ -855,8 +860,10 @@ public final class SessionServer: @unchecked Sendable {
                 for client in self.clients.values { client.tunnels?.endAll(code: BrowserTunnelCode.unsupported) }
                 self.endAllBrowserOwnerships(reason: BrowserDriveEnd.unsupported)
             }
-            guard let payload = try? NDJSON.encode(RemoteReply.capabilitiesChanged(capabilities: self.offeredCapabilities)) else { return }
-            for client in readers { self.enqueuePayload(payload, to: client) }
+            for client in readers {
+                guard let payload = try? NDJSON.encode(RemoteReply.capabilitiesChanged(capabilities: self.offeredCapabilities(to: client))) else { continue }
+                self.enqueuePayload(payload, to: client)
+            }
         }
     }
     /// Which agent's own pane runs each session, for the store version it was built from.
@@ -938,11 +945,10 @@ public final class SessionServer: @unchecked Sendable {
         queue.async {
             guard self.designsServed != served else { return }
             self.designsServed = served
-            let capabilities = self.offeredCapabilities
-            guard let payload = try? NDJSON.encode(RemoteReply.capabilitiesChanged(capabilities: capabilities)) else { return }
             let readers = self.clients.values.filter { $0.isRemote && $0.authenticated && $0.knowsDesigns }
             for client in readers {
                 if !served { client.watchedDesigns.removeAll() }
+                guard let payload = try? NDJSON.encode(RemoteReply.capabilitiesChanged(capabilities: self.offeredCapabilities(to: client))) else { continue }
                 self.enqueuePayload(payload, to: client)
             }
             // What they are sent of the workspace changed with it: its designs and their agents.
@@ -1994,7 +2000,7 @@ public final class SessionServer: @unchecked Sendable {
             send(.helloOk(
                 id: id,
                 protocolVersion: RemoteProtocol.version,
-                capabilities: offeredCapabilities
+                capabilities: offeredCapabilities(to: client)
             ), to: client)
             ShepherdLog.info("remote client '\(clientName)' authenticated (fd \(client.fd))")
             return
@@ -2123,6 +2129,8 @@ public final class SessionServer: @unchecked Sendable {
             remoteBrowserAnswer(token: token, outcome: outcome, client: client)
         case .agentQuery(let id, let agentID, .devServers):
             remoteDevServers(id: id, agentID: agentID, client: client)
+        case .agentQuery(let id, let agentID, let query) where query.isFiles:
+            remoteFiles(id: id, agentID: agentID, query: query, client: client)
         case .agentQuery(let id, let agentID, let query) where query.isChanges:
             // The server owns the engine: answered here, without the GUI, off the queue.
             guard store.state.agents.contains(where: { $0.id == agentID }) else {
@@ -2547,6 +2555,44 @@ public final class SessionServer: @unchecked Sendable {
             self?.queue.async {
                 guard let self, self.clients[client.fd] === client else { return }
                 self.send(.agentResult(id: id, result: .devServers(servers)), to: client)
+            }
+        }
+    }
+
+    /// A thread's folder, read-only (`RemoteAgentQuery.files`, `.fileRead`; `files.v1`): only for a client that
+    /// listed the capability and is sent the agent (`remoteState`), inside the folder the thread runs in, read off
+    /// the server's queue.
+    private func remoteFiles(id: Int, agentID: AgentID, query: RemoteAgentQuery, client: ExtensionConnection) {
+        guard offeredCapabilities(to: client).contains(RemoteProtocol.filesCapability) else {
+            send(.error(id: id, code: "unsupported", message: "Files needs a newer Shepherd on this device."), to: client)
+            return
+        }
+        let shown = remoteState(store.state, for: client)
+        guard let agent = shown.agents.first(where: { $0.id == agentID }),
+              let folder = shown.tabs.first(where: { $0.id == agent.tabID })?.layout.firstLeaf.cwd
+                ?? shown.spaces.first(where: { $0.id == agent.spaceID })?.path else {
+            send(.error(id: id, code: "no_such_agent", message: "Agent no longer exists on the host."), to: client)
+            return
+        }
+        let root = (folder as NSString).expandingTildeInPath
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let reply: RemoteReply
+            switch query {
+            case .files(let path, let showHidden):
+                switch ThreadFileSystem.listing(path, in: root, showHidden: showHidden) {
+                case .success(let listing): reply = .agentResult(id: id, result: .files(listing))
+                case .failure(let error): reply = .error(id: id, code: error.code, message: error.localizedDescription)
+                }
+            case .fileRead(let path):
+                switch ThreadFileSystem.text(path, in: root) {
+                case .success(let data): reply = .agentResult(id: id, result: .fileData(data))
+                case .failure(let error): reply = .error(id: id, code: error.code, message: error.localizedDescription)
+                }
+            default: return
+            }
+            self?.queue.async {
+                guard let self, self.clients[client.fd] === client else { return }
+                self.send(reply, to: client)
             }
         }
     }
