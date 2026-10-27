@@ -4,7 +4,7 @@ import Testing
 @testable import ShepherdApp
 
 /// A remote agent's pane says its host is reconnecting only while Shepherd is trying a host that
-/// was connected earlier this launch (NWStatus › A host reconnecting).
+/// was connected earlier this launch (SHStatus › A host reconnecting).
 @Suite("Host away banner")
 @MainActor
 struct HostAwayTests {

@@ -5,7 +5,7 @@ import SwiftUI
 
 /// A sheet's header: a 38pt tile (a state's glyph, or a provider's badge), the title in 17/600
 /// over the subtitle, and a close button when it has one.
-public struct NWSheetHeader<Subtitle: View>: View {
+public struct SHSheetHeader<Subtitle: View>: View {
     public enum Leading: Equatable, Sendable {
         /// A glyph on its tone's tile.
         case glyph(String, Tone)
@@ -28,14 +28,14 @@ public struct NWSheetHeader<Subtitle: View>: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        let M = NWPiSignInMetrics.self
+        let sh = Color.sh
+        let M = SHPiSignInMetrics.self
         HStack(alignment: .top, spacing: 14) {
             tile
-            VStack(alignment: .leading, spacing: NW.Space.xs) {
+            VStack(alignment: .leading, spacing: SH.Space.xs) {
                 Text(title)
-                    .font(.nwSans(M.sheetTitleSize, .semibold))
-                    .foregroundStyle(nw.textPrimary)
+                    .font(.shSans(M.sheetTitleSize, .semibold))
+                    .foregroundStyle(sh.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
                 subtitle
@@ -45,10 +45,10 @@ public struct NWSheetHeader<Subtitle: View>: View {
             if let close {
                 Button(action: close) {
                     Image(systemName: "xmark")
-                        .font(.nwSans(12, .medium))
-                        .foregroundStyle(nw.textSecondary)
+                        .font(.shSans(12, .medium))
+                        .foregroundStyle(sh.textSecondary)
                         .frame(width: M.closeButton, height: M.closeButton)
-                        .overlay(Circle().strokeBorder(nw.lineStrong, lineWidth: 1))
+                        .overlay(Circle().strokeBorder(sh.lineStrong, lineWidth: 1))
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
@@ -62,20 +62,20 @@ public struct NWSheetHeader<Subtitle: View>: View {
     }
 
     @ViewBuilder private var tile: some View {
-        let nw = Color.nw
-        let M = NWPiSignInMetrics.self
+        let sh = Color.sh
+        let M = SHPiSignInMetrics.self
         switch leading {
         case .badge(let letters):
-            NWProviderBadge(letters, size: M.sheetTile)
+            SHProviderBadge(letters, size: M.sheetTile)
         case .glyph(let name, let tone):
             let (fill, ink, line): (Color, Color, Color?) = switch tone {
-            case .neutral: (nw.bgRaised, nw.textSecondary, nw.lineStrong)
-            case .done: (nw.doneTint, nw.done, nil)
-            case .attention: (nw.lanternTint, nw.lanternText, nil)
-            case .failed: (nw.failedTint, nw.failed, nil)
+            case .neutral: (sh.bgRaised, sh.textSecondary, sh.lineStrong)
+            case .done: (sh.doneTint, sh.done, nil)
+            case .attention: (sh.lanternTint, sh.lanternText, nil)
+            case .failed: (sh.failedTint, sh.failed, nil)
             }
             Image(systemName: name)
-                .font(.nwSans(17, .medium))
+                .font(.shSans(17, .medium))
                 .foregroundStyle(ink)
                 .frame(width: M.sheetTile, height: M.sheetTile)
                 .background(fill, in: RoundedRectangle(cornerRadius: M.sheetTileRadius))
@@ -85,14 +85,14 @@ public struct NWSheetHeader<Subtitle: View>: View {
     }
 }
 
-extension NWSheetHeader where Subtitle == NWSheetSubtitle {
+extension SHSheetHeader where Subtitle == SHSheetSubtitle {
     public init(_ title: String, subtitle: String, leading: Leading, close: (() -> Void)? = nil) {
-        self.init(title, leading: leading, close: close) { NWSheetSubtitle(subtitle) }
+        self.init(title, leading: leading, close: close) { SHSheetSubtitle(subtitle) }
     }
 }
 
 /// A sheet's subtitle: 13/1.5 `textSecondary`.
-public struct NWSheetSubtitle: View {
+public struct SHSheetSubtitle: View {
     let text: String
 
     public init(_ text: String) {
@@ -101,14 +101,14 @@ public struct NWSheetSubtitle: View {
 
     public var body: some View {
         Text(text)
-            .nwText(size: NWPiSignInMetrics.sheetSubtitleSize, lineHeight: 1.5)
-            .foregroundStyle(Color.nw.textSecondary)
+            .shText(size: SHPiSignInMetrics.sheetSubtitleSize, lineHeight: 1.5)
+            .foregroundStyle(Color.sh.textSecondary)
             .fixedSize(horizontal: false, vertical: true)
     }
 }
 
 /// A sheet's footer: on `bgSunken` over a hairline, its leading part, then its actions trailing.
-public struct NWSheetFooter<Leading: View, Actions: View>: View {
+public struct SHSheetFooter<Leading: View, Actions: View>: View {
     let leading: Leading
     let actions: Actions
 
@@ -118,30 +118,30 @@ public struct NWSheetFooter<Leading: View, Actions: View>: View {
     }
 
     public var body: some View {
-        let M = NWPiSignInMetrics.self
-        HStack(spacing: NW.Space.m) {
+        let M = SHPiSignInMetrics.self
+        HStack(spacing: SH.Space.m) {
             leading
-            Spacer(minLength: NW.Space.l)
-            HStack(spacing: NW.Space.m) { actions }.fixedSize()
+            Spacer(minLength: SH.Space.l)
+            HStack(spacing: SH.Space.m) { actions }.fixedSize()
         }
         .padding(.top, M.footerTop)
         .padding(.bottom, M.footerBottom)
         .padding(.leading, M.sheetInset)
         .padding(.trailing, M.footerTrailing)
         .frame(maxWidth: .infinity)
-        .background(Color.nw.bgSunken)
-        .overlay(alignment: .top) { NWHairline() }
+        .background(Color.sh.bgSunken)
+        .overlay(alignment: .top) { SHHairline() }
     }
 }
 
-extension NWSheetFooter where Leading == EmptyView {
+extension SHSheetFooter where Leading == EmptyView {
     public init(@ViewBuilder actions: () -> Actions) {
         self.init(leading: { EmptyView() }, actions: actions)
     }
 }
 
 /// A card of rows: `bgSunken`, radius 10, a `lineSubtle` line, hairlines between.
-public struct NWSheetCard<Content: View>: View {
+public struct SHSheetCard<Content: View>: View {
     let content: Content
 
     public init(@ViewBuilder content: () -> Content) {
@@ -149,50 +149,50 @@ public struct NWSheetCard<Content: View>: View {
     }
 
     public var body: some View {
-        let M = NWPiSignInMetrics.self
+        let M = SHPiSignInMetrics.self
         VStack(alignment: .leading, spacing: 0) {
             Group(subviews: content) { rows in
                 ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                    if index > 0 { NWHairline() }
+                    if index > 0 { SHHairline() }
                     row
                 }
             }
         }
-        .background(Color.nw.bgSunken, in: RoundedRectangle(cornerRadius: M.cardRadius))
-        .nwBorder(Color.nw.lineSubtle, radius: M.cardRadius)
+        .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: M.cardRadius))
+        .shBorder(Color.sh.lineSubtle, radius: M.cardRadius)
     }
 }
 
 /// A step's mark: done, now, pending, failed (the import's and the sign-in's).
-public enum NWStepState: Equatable, Sendable {
+public enum SHStepState: Equatable, Sendable {
     case done, now, pending, failed
 }
 
 /// An 18pt step mark: a check on `doneTint`, a `running` ring and dot, a `lineStrong` ring, a
 /// cross on `failedTint`.
-public struct NWStepMark: View {
-    let state: NWStepState
+public struct SHStepMark: View {
+    let state: SHStepState
 
-    public init(_ state: NWStepState) {
+    public init(_ state: SHStepState) {
         self.state = state
     }
 
     public var body: some View {
-        let nw = Color.nw
-        let M = NWPiSignInMetrics.self
+        let sh = Color.sh
+        let M = SHPiSignInMetrics.self
         ZStack {
             switch state {
             case .done:
-                Circle().fill(nw.doneTint)
-                Image(systemName: "checkmark").font(.nwSans(9, .bold)).foregroundStyle(nw.done)
+                Circle().fill(sh.doneTint)
+                Image(systemName: "checkmark").font(.shSans(9, .bold)).foregroundStyle(sh.done)
             case .failed:
-                Circle().fill(nw.failedTint)
-                Image(systemName: "xmark").font(.nwSans(9, .bold)).foregroundStyle(nw.failed)
+                Circle().fill(sh.failedTint)
+                Image(systemName: "xmark").font(.shSans(9, .bold)).foregroundStyle(sh.failed)
             case .now:
-                Circle().strokeBorder(nw.running, lineWidth: 1.5)
-                Circle().fill(nw.running).frame(width: 6, height: 6)
+                Circle().strokeBorder(sh.running, lineWidth: 1.5)
+                Circle().fill(sh.running).frame(width: 6, height: 6)
             case .pending:
-                Circle().strokeBorder(nw.lineStrong, lineWidth: 1.5)
+                Circle().strokeBorder(sh.lineStrong, lineWidth: 1.5)
             }
         }
         .frame(width: M.stepMark, height: M.stepMark)
@@ -202,13 +202,13 @@ public struct NWStepMark: View {
 
 /// One item of the first launch's copy (`PiImportStepRow(item, step)`): its mark, the title over
 /// its detail, and, once done, a count in mono trailing. Now shimmers; nothing spins.
-public struct NWImportStepRow: View, Equatable {
+public struct SHImportStepRow: View, Equatable {
     let title: String
     let detail: String?
     let count: String?
-    let state: NWStepState
+    let state: SHStepState
 
-    public init(_ title: String, detail: String? = nil, count: String? = nil, state: NWStepState) {
+    public init(_ title: String, detail: String? = nil, count: String? = nil, state: SHStepState) {
         self.title = title
         self.detail = detail
         self.count = count
@@ -216,19 +216,19 @@ public struct NWImportStepRow: View, Equatable {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        let M = NWPiSignInMetrics.self
+        let sh = Color.sh
+        let M = SHPiSignInMetrics.self
         HStack(spacing: M.rowGap) {
-            NWStepMark(state)
+            SHStepMark(state)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
-                    .font(.nwSans(M.stepTitleSize, state == .now ? .medium : .regular))
-                    .nwShimmer(active: state == .now)
-                    .foregroundStyle(state == .pending ? nw.textTertiary : nw.textPrimary)
+                    .font(.shSans(M.stepTitleSize, state == .now ? .medium : .regular))
+                    .shShimmer(active: state == .now)
+                    .foregroundStyle(state == .pending ? sh.textTertiary : sh.textPrimary)
                 if let detail {
                     Text(detail)
-                        .font(.nwSans(M.stepDetailSize))
-                        .foregroundStyle(state == .failed ? nw.failed : nw.textTertiary)
+                        .font(.shSans(M.stepDetailSize))
+                        .foregroundStyle(state == .failed ? sh.failed : sh.textTertiary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
@@ -236,21 +236,21 @@ public struct NWImportStepRow: View, Equatable {
             .frame(maxWidth: .infinity, alignment: .leading)
             if let count {
                 Text(count)
-                    .font(.nwMono(M.stepCountSize))
-                    .foregroundStyle(state == .done ? nw.textSecondary : nw.textTertiary)
+                    .font(.shMono(M.stepCountSize))
+                    .foregroundStyle(state == .done ? sh.textSecondary : sh.textTertiary)
                     .lineLimit(1)
                     .fixedSize()
             }
         }
-        .padding(.vertical, NW.Space.s)
+        .padding(.vertical, SH.Space.s)
         .padding(.horizontal, 14)
         .frame(minHeight: M.stepMinHeight)
-        .nwAnimation(.content, value: state)
+        .shAnimation(.content, value: state)
         .accessibilityElement(children: .combine)
         .accessibilityValue(Self.word(state))
     }
 
-    static func word(_ state: NWStepState) -> String {
+    static func word(_ state: SHStepState) -> String {
         switch state {
         case .done: "brought over"
         case .now: "bringing over"
@@ -262,7 +262,7 @@ public struct NWImportStepRow: View, Equatable {
 
 /// What came over, in one line (`PiImportSummary(result)`): counts in 600 `textPrimary`, the rest
 /// `textSecondary`, "·" in `textTertiary` between.
-public struct NWImportSummary: View {
+public struct SHImportSummary: View {
     public struct Part: Equatable, Sendable {
         public var count: Int?
         public var words: String
@@ -284,7 +284,7 @@ public struct NWImportSummary: View {
     let quiet: Bool
 
     /// `quiet` draws it smaller and tertiary (Something missing's line under the card).
-    public init(_ parts: [Part], size: CGFloat = NWPiSignInMetrics.sheetSubtitleSize, quiet: Bool = false) {
+    public init(_ parts: [Part], size: CGFloat = SHPiSignInMetrics.sheetSubtitleSize, quiet: Bool = false) {
         self.parts = parts
         self.size = size
         self.quiet = quiet
@@ -292,23 +292,23 @@ public struct NWImportSummary: View {
 
     public var body: some View {
         text
-            .font(.nwSans(size))
-            .lineSpacing(size * (NWPiSignInMetrics.summaryLineHeight - 1.2))
+            .font(.shSans(size))
+            .lineSpacing(size * (SHPiSignInMetrics.summaryLineHeight - 1.2))
             .fixedSize(horizontal: false, vertical: true)
     }
 
     private var text: Text {
-        let nw = Color.nw
-        let rest = quiet ? nw.textTertiary : nw.textSecondary
+        let sh = Color.sh
+        let rest = quiet ? sh.textTertiary : sh.textSecondary
         var result = Text("")
         for (index, part) in parts.enumerated() {
-            if index > 0 { result = result + (part.comma ? Text(", ").foregroundColor(rest) : Text(" · ").foregroundColor(nw.textTertiary)) }
+            if index > 0 { result = result + (part.comma ? Text(", ").foregroundColor(rest) : Text(" · ").foregroundColor(sh.textTertiary)) }
             if let count = part.count {
-                result = result + Text("\(count)").fontWeight(.semibold).foregroundColor(nw.textPrimary) + Text(" ")
+                result = result + Text("\(count)").fontWeight(.semibold).foregroundColor(sh.textPrimary) + Text(" ")
             }
             result = result + Text(part.words).foregroundColor(rest)
             if let value = part.value {
-                result = result + Text(" ") + Text(value).font(.nwMono(size - 0.5)).foregroundColor(nw.textPrimary)
+                result = result + Text(" ") + Text(value).font(.shMono(size - 0.5)).foregroundColor(sh.textPrimary)
             }
         }
         return result
@@ -317,7 +317,7 @@ public struct NWImportSummary: View {
 
 /// A provider that still needs a sign-in (`PiImportSignInRow(provider)`): its badge, name, why,
 /// and Sign in; once signed in, a check and "Signed in".
-public struct NWImportSignInRow: View {
+public struct SHImportSignInRow: View {
     let name: String
     let badge: String
     let detail: String
@@ -335,36 +335,36 @@ public struct NWImportSignInRow: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        let M = NWPiSignInMetrics.self
+        let sh = Color.sh
+        let M = SHPiSignInMetrics.self
         HStack(spacing: M.rowGap) {
-            NWProviderBadge(badge, size: M.badgeSmall)
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                Text(name).font(.nwSans(M.nameSize, .medium)).foregroundStyle(nw.textPrimary)
+            SHProviderBadge(badge, size: M.badgeSmall)
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                Text(name).font(.shSans(M.nameSize, .medium)).foregroundStyle(sh.textPrimary)
                 Text(signedIn ? "Signed in" : signingIn ? "Signing in…" : detail)
-                    .font(.nwSans(M.stepDetailSize))
-                    .nwShimmer(active: signingIn)
-                    .foregroundStyle(signedIn ? nw.done : nw.textTertiary)
+                    .font(.shSans(M.stepDetailSize))
+                    .shShimmer(active: signingIn)
+                    .foregroundStyle(signedIn ? sh.done : sh.textTertiary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if signedIn {
-                NWStepMark(.done)
+                SHStepMark(.done)
             } else {
                 Button("Sign in", action: signIn)
-                    .buttonStyle(.nw(.primary, size: .s))
+                    .buttonStyle(.sh(.primary, size: .s))
                     .disabled(signingIn)
                     .accessibilityLabel("Sign in to \(name)")
             }
         }
         .padding(.vertical, 10)
         .padding(.horizontal, 14)
-        .nwAnimation(.content, value: signedIn)
+        .shAnimation(.content, value: signedIn)
     }
 }
 
 /// A new user's choice (PiImportNew): a provider's badge (or a glyph), its name over its plan, and
 /// a chevron; the API-key tile is dashed.
-public struct NWSignInChoiceTile: View {
+public struct SHSignInChoiceTile: View {
     let title: String
     let detail: String
     let badge: String?
@@ -379,64 +379,64 @@ public struct NWSignInChoiceTile: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        let M = NWPiSignInMetrics.self
+        let sh = Color.sh
+        let M = SHPiSignInMetrics.self
         let dashed = badge == nil
         HStack(spacing: M.rowGap) {
             if let badge {
-                NWProviderBadge(badge)
+                SHProviderBadge(badge)
             } else {
                 Image(systemName: glyph ?? "key")
-                    .font(.nwSans(13))
-                    .foregroundStyle(nw.textSecondary)
+                    .font(.shSans(13))
+                    .foregroundStyle(sh.textSecondary)
                     .frame(width: M.badge, height: M.badge)
-                    .overlay(RoundedRectangle(cornerRadius: M.badgeRadius).strokeBorder(nw.lineStrong, lineWidth: 1))
+                    .overlay(RoundedRectangle(cornerRadius: M.badgeRadius).strokeBorder(sh.lineStrong, lineWidth: 1))
             }
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                Text(title).font(.nwSans(M.nameSize, .medium)).foregroundStyle(nw.textPrimary)
-                Text(detail).font(.nwSans(M.stepDetailSize)).foregroundStyle(nw.textTertiary).lineLimit(1)
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                Text(title).font(.shSans(M.nameSize, .medium)).foregroundStyle(sh.textPrimary)
+                Text(detail).font(.shSans(M.stepDetailSize)).foregroundStyle(sh.textTertiary).lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Image(systemName: "chevron.right").font(.nwSans(11, .medium)).foregroundStyle(nw.textTertiary)
+            Image(systemName: "chevron.right").font(.shSans(11, .medium)).foregroundStyle(sh.textTertiary)
         }
         .padding(.vertical, 11)
-        .padding(.horizontal, NW.Space.l)
-        .background(dashed ? Color.clear : (hovering ? nw.bgHover : nw.bgSunken), in: RoundedRectangle(cornerRadius: M.cardRadius))
-        .nwBorder(dashed ? nw.lineStrong : nw.lineSubtle, in: RoundedRectangle(cornerRadius: M.cardRadius), dash: dashed ? [4, 3] : [])
+        .padding(.horizontal, SH.Space.l)
+        .background(dashed ? Color.clear : (hovering ? sh.bgHover : sh.bgSunken), in: RoundedRectangle(cornerRadius: M.cardRadius))
+        .shBorder(dashed ? sh.lineStrong : sh.lineSubtle, in: RoundedRectangle(cornerRadius: M.cardRadius), dash: dashed ? [4, 3] : [])
         .contentShape(RoundedRectangle(cornerRadius: M.cardRadius))
         .onHover { hovering = $0 }
-        .nwAnimation(.hover, value: hovering)
+        .shAnimation(.hover, value: hovering)
     }
 }
 
 /// One step of a sign-in (`SignInSheet`): its mark, its title (shimmering while it's the live one),
 /// and a note under it.
-public struct NWSignInStepRow: View {
+public struct SHSignInStepRow: View {
     let title: String
     let note: String?
-    let state: NWStepState
+    let state: SHStepState
 
-    public init(_ title: String, note: String? = nil, state: NWStepState) {
+    public init(_ title: String, note: String? = nil, state: SHStepState) {
         self.title = title
         self.note = note
         self.state = state
     }
 
     public var body: some View {
-        let nw = Color.nw
-        let M = NWPiSignInMetrics.self
+        let sh = Color.sh
+        let M = SHPiSignInMetrics.self
         HStack(alignment: .top, spacing: M.rowGap) {
-            NWStepMark(state)
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+            SHStepMark(state)
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 Text(title)
-                    .font(.nwSans(M.stepTitleSize, state == .now ? .medium : .regular))
-                    .nwShimmer(active: state == .now)
-                    .foregroundStyle(state == .pending ? nw.textTertiary : nw.textPrimary)
+                    .font(.shSans(M.stepTitleSize, state == .now ? .medium : .regular))
+                    .shShimmer(active: state == .now)
+                    .foregroundStyle(state == .pending ? sh.textTertiary : sh.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
                 if let note {
                     Text(note)
-                        .font(state == .failed ? .nwMono(11.5) : .nwSans(M.stepDetailSize))
-                        .foregroundStyle(state == .failed ? nw.failed : nw.textTertiary)
+                        .font(state == .failed ? .shMono(11.5) : .shSans(M.stepDetailSize))
+                        .foregroundStyle(state == .failed ? sh.failed : sh.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                 }
@@ -449,7 +449,7 @@ public struct NWSignInStepRow: View {
 }
 
 /// The sign-in's steps in a card, 14 apart.
-public struct NWSignInSteps<Content: View>: View {
+public struct SHSignInSteps<Content: View>: View {
     let content: Content
 
     public init(@ViewBuilder content: () -> Content) {
@@ -457,18 +457,18 @@ public struct NWSignInSteps<Content: View>: View {
     }
 
     public var body: some View {
-        let M = NWPiSignInMetrics.self
+        let M = SHPiSignInMetrics.self
         VStack(alignment: .leading, spacing: 14) { content }
             .padding(.vertical, 14)
-            .padding(.horizontal, NW.Space.xl)
+            .padding(.horizontal, SH.Space.xl)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.nw.bgSunken, in: RoundedRectangle(cornerRadius: M.cardRadius))
-            .nwBorder(Color.nw.lineSubtle, radius: M.cardRadius)
+            .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: M.cardRadius))
+            .shBorder(Color.sh.lineSubtle, radius: M.cardRadius)
     }
 }
 
 /// A device sign-in's code, large: mono 26/600, tracked, centered in a `bgSunken` box.
-public struct NWDeviceCode: View {
+public struct SHDeviceCode: View {
     let code: String
     let dimmed: Bool
 
@@ -478,23 +478,23 @@ public struct NWDeviceCode: View {
     }
 
     public var body: some View {
-        let M = NWPiSignInMetrics.self
+        let M = SHPiSignInMetrics.self
         Text(code)
-            .font(.nwMono(M.deviceCodeSize, .semibold))
+            .font(.shMono(M.deviceCodeSize, .semibold))
             .tracking(M.deviceCodeSize * M.deviceCodeTracking)
-            .foregroundStyle(dimmed ? Color.nw.textTertiary : Color.nw.textPrimary)
+            .foregroundStyle(dimmed ? Color.sh.textTertiary : Color.sh.textPrimary)
             .textSelection(.enabled)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, NW.Space.xl)
-            .background(Color.nw.bgSunken, in: RoundedRectangle(cornerRadius: M.cardRadius))
-            .nwBorder(Color.nw.lineSubtle, radius: M.cardRadius)
+            .padding(.vertical, SH.Space.xl)
+            .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: M.cardRadius))
+            .shBorder(Color.sh.lineSubtle, radius: M.cardRadius)
             .accessibilityLabel("Code \(code.map(String.init).joined(separator: " "))")
     }
 }
 
 /// What failed, in a `failed` box: a line in `textPrimary` (a path in mono, or a title) and the
 /// reason under it.
-public struct NWFailureBox: View {
+public struct SHFailureBox: View {
     let title: String
     let detail: String?
     let monoTitle: Bool
@@ -508,31 +508,31 @@ public struct NWFailureBox: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        let M = NWPiSignInMetrics.self
-        VStack(alignment: .leading, spacing: NW.Space.s) {
+        let sh = Color.sh
+        let M = SHPiSignInMetrics.self
+        VStack(alignment: .leading, spacing: SH.Space.s) {
             Text(title)
-                .font(monoTitle ? .nwMono(12) : .nwSans(13, .medium))
-                .foregroundStyle(nw.textPrimary)
+                .font(monoTitle ? .shMono(12) : .shSans(13, .medium))
+                .foregroundStyle(sh.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
             if let detail {
                 Text(detail)
-                    .font(monoDetail ? .nwMono(11.5) : .nwSans(12.5))
-                    .foregroundStyle(monoDetail ? nw.failed : nw.textSecondary)
+                    .font(monoDetail ? .shMono(11.5) : .shSans(12.5))
+                    .foregroundStyle(monoDetail ? sh.failed : sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .textSelection(.enabled)
         .padding(.vertical, 10)
-        .padding(.horizontal, NW.Space.l)
+        .padding(.horizontal, SH.Space.l)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(nw.failedTint.opacity(M.failureFillOpacity), in: RoundedRectangle(cornerRadius: 9))
-        .nwBorder(nw.failed.opacity(M.failureLineOpacity), radius: 9)
+        .background(sh.failedTint.opacity(M.failureFillOpacity), in: RoundedRectangle(cornerRadius: 9))
+        .shBorder(sh.failed.opacity(M.failureLineOpacity), radius: 9)
     }
 }
 
 /// A note in a quiet card: a glyph, then its text and an optional link under it.
-public struct NWNoteCard<Text_: View>: View {
+public struct SHNoteCard<Text_: View>: View {
     let glyph: String
     let text: Text_
     let link: String?
@@ -546,26 +546,26 @@ public struct NWNoteCard<Text_: View>: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: glyph).font(.nwSans(13)).foregroundStyle(nw.textSecondary).accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: NW.Space.xs) {
+            Image(systemName: glyph).font(.shSans(13)).foregroundStyle(sh.textSecondary).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: SH.Space.xs) {
                 text
                 if let link, let action {
-                    Button(link, action: action).buttonStyle(.nwLink)
+                    Button(link, action: action).buttonStyle(.shLink)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, 10)
-        .padding(.horizontal, NW.Space.l)
-        .background(nw.bgSunken, in: RoundedRectangle(cornerRadius: 9))
-        .nwBorder(nw.lineSubtle, radius: 9)
+        .padding(.horizontal, SH.Space.l)
+        .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: 9))
+        .shBorder(sh.lineSubtle, radius: 9)
     }
 }
 
 /// A field's label over it: 11.5/500 `textSecondary`, 6 above.
-public struct NWFieldLabel: View {
+public struct SHFieldLabel: View {
     let text: String
 
     public init(_ text: String) {
@@ -574,7 +574,7 @@ public struct NWFieldLabel: View {
 
     public var body: some View {
         Text(text)
-            .font(.nwSans(NWPiSignInMetrics.fieldLabelSize, .medium))
-            .foregroundStyle(Color.nw.textSecondary)
+            .font(.shSans(SHPiSignInMetrics.fieldLabelSize, .medium))
+            .foregroundStyle(Color.sh.textSecondary)
     }
 }

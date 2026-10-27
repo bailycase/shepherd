@@ -24,7 +24,12 @@ final class MobileHost: Identifiable {
     /// When this device's connection to it last ended (saved apart from the record).
     fileprivate(set) var lastSeen: Date?
 
-    @ObservationIgnored fileprivate(set) var client: RemoteHostClient?
+    @ObservationIgnored fileprivate(set) var client: RemoteHostClient? {
+        didSet { tunnelSlot.hub = client?.tunnels }
+    }
+    /// The connection's Browser tunnels, for a page's forwarded ports (`BrowserPagePorts`): filled
+    /// with each new client, emptied when it goes, so a connection to a held port with no host resets.
+    @ObservationIgnored let tunnelSlot = BrowserTunnelHubSlot()
     @ObservationIgnored fileprivate var attempt = UUID()
     @ObservationIgnored fileprivate var connectTask: Task<Void, Never>?
     @ObservationIgnored fileprivate var retryTask: Task<Void, Never>?
@@ -86,6 +91,12 @@ final class MobileHosts {
     @ObservationIgnored private let makeClient: () -> RemoteHostClient
     @ObservationIgnored private let pause: (Duration) async throws -> Void
     @ObservationIgnored private(set) var foreground = false
+    /// Called when a host transitions to `.connected`: PushManager renews, a Browser page takes its ports again.
+    @ObservationIgnored var onHostConnected: ((MobileHost) -> Void)?
+    /// A host's connection ended (it dropped, the app went to the background, Retry, Forget).
+    @ObservationIgnored var onHostDisconnected: ((MobileHost) -> Void)?
+    /// The app came to the foreground or left it (`setForeground`).
+    @ObservationIgnored var onForegroundChanged: ((Bool) -> Void)?
 
     init(defaults: UserDefaults = .standard, tokens: HostTokens = .keychain, clientName: String = "Shepherd iOS",
          makeClient: @escaping () -> RemoteHostClient = { RemoteHostClient() },
@@ -208,6 +219,7 @@ final class MobileHosts {
         for host in hosts {
             if active { retry(host.id) } else { disconnect(host) }
         }
+        onForegroundChanged?(active)
     }
 
     /// Reconnects now, with the backoff reset.
@@ -244,6 +256,7 @@ final class MobileHosts {
             persistLastSeen()
         }
         host.set(.disconnected)
+        onHostDisconnected?(host)
     }
 
     private func connect(_ host: MobileHost) {
@@ -306,6 +319,7 @@ final class MobileHosts {
                 host.session = UUID()
                 host.set(.connected)
                 host.backoff.reset()
+                self?.onHostConnected?(host)
             } catch {
                 client.disconnect()
                 guard !Task.isCancelled, let self, let host else { return }

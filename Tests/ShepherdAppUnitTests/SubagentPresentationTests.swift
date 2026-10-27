@@ -98,7 +98,7 @@ struct SubagentPresentationTests {
     /// Four rows, then "Show N more"; open, every row, then "Show fewer".
     @Test(arguments: [(3, false, 3, nil as Int?), (4, false, 4, nil), (8, false, 4, 4), (8, true, 8, 0)])
     func aLongTrayShowsFourRowsThenMore(count: Int, expanded: Bool, rows: Int, hidden: Int?) {
-        let runs = (0..<count).map { NWSubagentTrayRun(id: "r\($0)", name: "r\($0)", state: .running, line: .waiting("")) }
+        let runs = (0..<count).map { SHSubagentTrayRun(id: "r\($0)", name: "r\($0)", state: .running, line: .waiting("")) }
         let items = SubagentTrayLayout.items(runs, expanded: expanded)
         #expect(items.filter { if case .run = $0 { true } else { false } }.count == rows)
         let more: Int? = items.last.flatMap { if case .more(let hidden, _) = $0 { hidden } else { nil } }

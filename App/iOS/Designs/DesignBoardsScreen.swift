@@ -22,25 +22,25 @@ struct DesignBoardsScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
                 if let failure = designs.failures[ref], index == nil {
-                    NWEmptyState(Text("Couldn't read this design"), message: failure, showsMark: false)
+                    SHEmptyState(Text("Couldn't read this design"), message: failure, showsMark: false)
                         .frame(maxWidth: .infinity)
-                        .padding(.top, NW.Space.xxxl)
+                        .padding(.top, SH.Space.xxxl)
                 } else if let index {
                     let boards = RemoteDesignPresentation.boards(index.snapshot.index)
                     if boards.isEmpty {
-                        NWEmptyState(Text("No boards yet"), message: "The design agent's boards show here as it draws them.", showsMark: false)
+                        SHEmptyState(Text("No boards yet"), message: "The design agent's boards show here as it draws them.", showsMark: false)
                             .frame(maxWidth: .infinity)
-                            .padding(.top, NW.Space.xxxl)
+                            .padding(.top, SH.Space.xxxl)
                     } else {
-                        NWListHeader(RemoteDesignPresentation.boardsText(boards.count), count: nil)
+                        SHListHeader(RemoteDesignPresentation.boardsText(boards.count), count: nil)
                         DesignBoardGrid(ref: ref, index: index, source: designs.source(ref), current: nil) { path in
                             navigator.open(.designs(.board(ref, path: path.rawValue)))
                         }
                     }
                 } else {
-                    ProgressView().progressViewStyle(.nwSpinner)
+                    ProgressView().progressViewStyle(.shSpinner)
                         .frame(maxWidth: .infinity)
-                        .padding(.top, NW.Space.xxxl)
+                        .padding(.top, SH.Space.xxxl)
                 }
             }
             .padding(.horizontal, MobileDesignLayout.gutter)
@@ -48,7 +48,7 @@ struct DesignBoardsScreen: View {
             .frame(maxWidth: MobileLayout.homeMaxWidth)
             .frame(maxWidth: .infinity)
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .refreshable { await designs.sync(ref) }
         .task { await designs.sync(ref) }
         // Boards the agent draws while this is on screen show as they land.
@@ -90,10 +90,10 @@ struct DesignBoardsSheet: View {
                         dismiss()
                     }
                     .padding(.horizontal, MobileDesignLayout.gutter)
-                    .padding(.vertical, NW.Space.l)
+                    .padding(.vertical, SH.Space.l)
                 }
             }
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
             .navigationTitle("Boards")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -132,13 +132,13 @@ struct DesignBoardGrid: View {
 
     var body: some View {
         let canvas = index.snapshot.index
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: NWPhoneDesignMetrics.gridColumnSpacing, alignment: .top),
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: SHPhoneDesignMetrics.gridColumnSpacing, alignment: .top),
                                  count: 2),
-                  spacing: NWPhoneDesignMetrics.gridRowSpacing) {
+                  spacing: SHPhoneDesignMetrics.gridRowSpacing) {
             ForEach(RemoteDesignPresentation.boards(canvas), id: \.self) { path in
                 if let board = canvas.boards[path] {
                     let size = CGSize(width: board.w, height: board.h)
-                    NWDesignTile(name: RemoteDesignPresentation.label(path, in: canvas), detail: RemoteDesignPresentation.size(board),
+                    SHDesignTile(name: RemoteDesignPresentation.label(path, in: canvas), detail: RemoteDesignPresentation.size(board),
                                  action: { open(path) }) {
                         GeometryReader { proxy in
                             let scale = RemoteDesignPresentation.tileScale(size, in: proxy.size)
@@ -150,9 +150,9 @@ struct DesignBoardGrid: View {
                     }
                     .overlay {
                         if path == current {
-                            RoundedRectangle(cornerRadius: NWPhoneDesignMetrics.tileRadius)
-                                .strokeBorder(Color.nw.running, lineWidth: NWDesignMetrics.ringWidth)
-                                .frame(height: NWPhoneDesignMetrics.tileHeight)
+                            RoundedRectangle(cornerRadius: SHPhoneDesignMetrics.tileRadius)
+                                .strokeBorder(Color.sh.running, lineWidth: SHDesignMetrics.ringWidth)
+                                .frame(height: SHPhoneDesignMetrics.tileHeight)
                                 .frame(maxHeight: .infinity, alignment: .top)
                                 .allowsHitTesting(false)
                         }

@@ -34,9 +34,9 @@ enum SidePaneTab: String, CaseIterable, Hashable, Sendable {
         switch self {
         case .changes: "plus.forwardslash.minus"
         case .browser: "globe"
-        case .artifacts: NWGlyph.artifact.symbolName
-        case .subagents: NWGlyph.gitBranch.symbolName
-        case .files: NWGlyph.document.symbolName
+        case .artifacts: SHGlyph.artifact.symbolName
+        case .subagents: SHGlyph.gitBranch.symbolName
+        case .files: SHGlyph.document.symbolName
         }
     }
 
@@ -238,6 +238,7 @@ extension ShepherdViewModel {
     /// The Files tab's tree for `owner`, created lazily. Replaces the model if the
     /// agent's cwd has changed (e.g. moved to a different worktree).
     func ensureFileTree(_ owner: SidePaneOwner) {
+        if case .remote(let ref) = owner { return ensureRemoteFileTree(ref) }
         guard case .local(let agentID) = owner else { return }
         guard let agent = state.agents.first(where: { $0.id == agentID }) else { return }
         let cwd = agentCwd(agent)
@@ -248,6 +249,19 @@ extension ShepherdViewModel {
 
     /// Reading from a view never creates stores or mutates observed state.
     func fileTree(for agentID: AgentID) -> FileTreeModel? { fileTrees[agentID] }
+    func fileTree(for ref: RemoteAgentRef) -> FileTreeModel? { remoteFileTrees[ref] }
+
+    /// A remote thread's tree, over its host's `files.v1`, rooted at the thread's folder there (as the host reads it).
+    private func ensureRemoteFileTree(_ ref: RemoteAgentRef) {
+        guard let connection = remoteHosts.connections.first(where: { $0.id == ref.hostID }), connection.supportsFiles,
+              let agent = connection.state.agents.first(where: { $0.id == ref.agentID }),
+              let folder = connection.state.tabs.first(where: { $0.id == agent.tabID })?.layout.firstLeaf.cwd
+                ?? connection.state.spaces.first(where: { $0.id == agent.spaceID })?.path else { return }
+        if remoteFileTrees[ref]?.rootPath == folder { return }
+        remoteFileTrees[ref] = FileTreeModel(rootPath: folder, source: .remote(root: folder, agentID: ref.agentID, host: connection.config.name) {
+            [weak connection] in connection?.filesClient
+        })
+    }
 
     /// Reconcile retained browsers on adoption, including moves while Files is open.
     func pruneFileTrees() {

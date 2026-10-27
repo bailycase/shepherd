@@ -220,7 +220,7 @@ final class FixtureHost: @unchecked Sendable {
             }
         case .attach(let id, _, _, _, _), .paste(let id, _, _, _), .openPane(let id, _, _, _), .closePane(let id, _, _),
              .resizePaneSplit(let id, _, _, _), .addSpace(let id, _), .createAgent(let id, _, _, _, _, _, _, _, _, _, _),
-             .agentAction(let id, _, _), .upload(let id, _):
+             .agentAction(let id, _, _), .upload(let id, _), .hostUpdate(let id, _):
             mutation(Self.kind(request))
             return [.error(id: id, code: "fixture", message: refused)]
         case .projectExecution(let id, _):
@@ -278,7 +278,12 @@ final class FixtureHost: @unchecked Sendable {
             mutation("design." + Self.kind(request))
             return [.error(id: id, code: "fixture", message: refused)]
         case .tunnel(let frame):
-            // The fixture host carries nothing: an open is refused, and the rest of a tunnel is dropped.
+            // A Browser screen's host serves its canned dev server through the tunnel (a read).
+            if let tunnel = data.tunnel {
+                note("tunnel")
+                return tunnel(frame).map { .tunnel($0) }
+            }
+            // Any other fixture host carries nothing: an open is refused, and the rest of a tunnel is dropped.
             mutation("tunnel")
             if case .open(let tunnel, _, _) = frame { return [.tunnel(.close(tunnel: tunnel, code: BrowserTunnelCode.unsupported))] }
             return []
@@ -289,6 +294,12 @@ final class FixtureHost: @unchecked Sendable {
         case .browserClaim, .browserRelease, .browserAnswer:
             mutation("browser")
             return []
+        case .pushRegistration(let id, _):
+            note("pushRegistration")
+            return [.ok(id: id)]
+        case .pushUnregister(let id, _):
+            note("pushUnregister")
+            return [.ok(id: id)]
         case .hello, .stateFetch, .listModels, .listDir, .creationOptions, .agentQuery:
             return nil
         }

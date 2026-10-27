@@ -19,8 +19,8 @@ python3 scripts/design_section.py --docs docs "<heading>"  # one section of any 
 ```
 
 App builds and engine staging: [docs/build-and-run.md](docs/build-and-run.md). Run the Mac app from
-`Shepherd.xcodeproj` (`Shepherd (Dev)`, My Mac), not `swift run`. [PR CI](docs/testing.md#ci) runs
-unit, smoke and affected suites; docs alone run no Swift.
+`Shepherd.xcodeproj` (`Shepherd (Dev)`, My Mac), not `swift run`. [PR CI](docs/testing.md#ci) runs only for PRs targeting `master`.
+Docs alone run no Swift.
 
 ## Map
 
@@ -32,7 +32,7 @@ unit, smoke and affected suites; docs alone run no Swift.
 | `Sources/ShepherdSessions` | `SessionServer`, RPC and PTY sessions, pi launch, Changes engine |
 | `Sources/ShepherdApp` | the Mac app: views, view model, settings, `AppLayout+*`, `Thread/` |
 | `Sources/TerminalSurfaceKit`, `DesignSurfaceKit` | Ghostty and design-board web view adapters |
-| `Packages/ShepherdUI` | Night Watch tokens and `NW*` components; imports no Shepherd module |
+| `Packages/ShepherdUI` | Shepherd Design tokens and `SH*` components; imports no Shepherd module |
 | `App/`, `App/iOS` | Mac launcher shim, entitlements, Info.plist; the iPhone and iPad client |
 | `Extensions/` | canonical pi extensions and scripts, shipped as bundle resources |
 | `Tests/` | `*UnitTests`, `*IntegrationTests`, `ShepherdPreviewTests`, `Release` (Python) |
@@ -51,7 +51,7 @@ How it fits together: [ARCHITECTURE.md](ARCHITECTURE.md).
   Unit tests use no processes, sockets, windows, git or sleeps. Integration tests use
   `Tests/ShepherdTestSupport` and wait with `eventually`, never a fixed sleep.
 - Run the smallest relevant checks. Expand for shared changes or wider regressions, not every edit.
-  Report actual results and gaps; required PR CI still gates merging.
+  Report actual results and gaps; required CI still gates PRs into `master`.
 - Fix only docs the change makes wrong. Don't write new docs for a feature unless asked.
 - Keep tool output small (`| head`, `--stat`, a file by range). Hand a broad search or a long log
   to a helper (`shepherd_child_start`).
@@ -73,8 +73,8 @@ How it fits together: [ARCHITECTURE.md](ARCHITECTURE.md).
   existing-component changes directly.
 - Find the surface's spec with `python3 scripts/design_section.py --boards | grep -i <word>` and
   print only that section. Don't read whole spec files.
-- Use ShepherdUI tokens and components: `Color.nw.<role>`, `Font.nw(_:)`, `NW.Space`/`Radius`/`Height`,
-  status colors from `AgentState`, a shared glyph as an `NWGlyph` case. Never hardcode a color,
+- Use ShepherdUI tokens and components: `Color.sh.<role>`, `Font.sh(_:)`, `SH.Space`/`Radius`/`Height`,
+  status colors from `AgentState`, a shared glyph as an `SHGlyph` case. Never hardcode a color,
   font size, dimension, duration or chord. `DesignRulesTests` catches the literals.
 - Render affected surfaces and states in light and dark from real data and inspect the PNGs.
   A control works or you disclose the gap. App-only behavior needs appropriate integration or manual
@@ -117,6 +117,7 @@ The full rule is in [docs/rules.md](docs/rules.md) under the name in parentheses
 | Changing or staging the bundled engine | [docs/pi-engine.md](docs/pi-engine.md) |
 | Writing or changing a test, or CI | [docs/testing.md](docs/testing.md) |
 | Changing UI | [DESIGN.md](DESIGN.md), then your board's section via `design_section.py` |
+| Laying out for a platform (Mac, iPhone, iPad, iPhone Duo) | [docs/design/platforms.md](docs/design/platforms.md) |
 | Touching contracts, extensions, concurrency, terminals, browser, layouts, repos | [docs/rules.md](docs/rules.md) |
 | Changing the remote listener or protocol | [docs/remote-protocol.md](docs/remote-protocol.md), [docs/ios/CONTRACTS.md](docs/ios/CONTRACTS.md) |
 | Changing agent launch, status, automations | [docs/data-flow.md](docs/data-flow.md) |

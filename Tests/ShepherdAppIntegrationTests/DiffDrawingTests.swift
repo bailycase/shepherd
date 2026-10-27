@@ -41,7 +41,7 @@ struct DiffDrawingTests {
         }
     }
 
-    @Test func longUnifiedLinesCanBeReachedByHorizontalScrolling() async throws {
+    @Test func longUnifiedLinesScrollInsideTheirFileNotThePane() async throws {
         let source = String(repeating: "long_identifier_", count: 35) + "VISIBLE_END"
         let files = DiffFile.parse("diff --git a/sample.txt b/sample.txt\n--- a/sample.txt\n+++ b/sample.txt\n@@ -1 +1 @@\n-old\n+\(source)\n")
         let model = ListFixtures.reviewModel(files)
@@ -49,62 +49,47 @@ struct DiffDrawingTests {
         let window = OffscreenWindow(size: CGSize(width: 600, height: 400), dark: false,
                                      ReviewPaneContent(model: model))
         defer { window.close() }
-        try await eventuallyOnMain("the diff to expose its horizontal extent") {
+        let file = try #require(files.first)
+        let position = model.splitScroll(for: file.id)
+        try await eventuallyOnMain("the unified code column to measure its extent") {
             window.layout()
-            guard let scroll = ListPerf.scrollView(in: window) else { return false }
-            return (scroll.documentView?.bounds.width ?? 0) > scroll.contentView.bounds.width + 1000
+            return position.newLimit > 1000
         }
         let scroll = try #require(ListPerf.scrollView(in: window))
-        let clip = scroll.contentView
-        let end = clip.constrainBoundsRect(NSRect(x: scroll.documentView!.bounds.width, y: clip.bounds.minY,
-                                                  width: clip.bounds.width, height: clip.bounds.height)).origin
-        clip.scroll(to: end)
-        scroll.reflectScrolledClipView(clip)
-        window.layout()
-        #expect(clip.bounds.minX > 1000)
-        #expect(abs(clip.bounds.maxX - scroll.documentView!.bounds.width) < 2,
-                "the trailing source must be reachable, not just present in a tooltip")
+        #expect(scroll.documentView!.bounds.width <= scroll.contentView.bounds.width + 1, "the pane never pans sideways")
+        func controls(_ view: NSView) -> [NSScroller] {
+            (view is NSScroller ? [view as! NSScroller] : []) + view.subviews.flatMap(controls)
+        }
+        let control = try #require(controls(window.host).first { $0.accessibilityLabel() == "Scroll new code horizontally" })
+        #expect(control.isEnabled)
+        control.doubleValue = 1
+        _ = control.sendAction(control.action, to: control.target)
+        #expect(position.newOffset == position.newLimit, "the trailing source must be reachable")
+        model.noteRowsTop(150, of: file.id)
+        #expect(model.scrollSplitCode(at: CGPoint(x: 100, y: 175), delta: 40, viewportWidth: 600))
+        #expect(position.newOffset == position.newLimit - 40)
+        #expect(scroll.contentView.bounds.minX == 0)
+
+        model.session.wrapLines = true
+        try await eventuallyOnMain("wrapped lines to drop the sideways extent") {
+            window.layout()
+            return position.newLimit == 0 && position.newOffset == 0
+                && !controls(window.host).contains { $0.accessibilityLabel() == "Scroll new code horizontally" && !$0.isHiddenOrHasHiddenAncestor }
+        }
+        #expect(!model.scrollSplitCode(at: CGPoint(x: 100, y: 175), delta: 40, viewportWidth: 600))
+        #expect(scroll.documentView!.bounds.width <= scroll.contentView.bounds.width + 1)
     }
 
     @Test(arguments: [false, true])
-    func fileAndChangeNavigationKeepsTheLeadingCodeVisible(dark: Bool) async throws {
-        let short = (0..<40).map { "+let value\($0) = \($0)" }.joined(separator: "\n")
-        let long = "+" + String(repeating: "long_identifier_", count: 35)
-        let files = DiffFile.parse([("a.swift", short, 40), ("b.swift", short, 40), ("long.swift", long, 1)].map { path, lines, count in
-            "diff --git a/\(path) b/\(path)\n--- /dev/null\n+++ b/\(path)\n@@ -0,0 +1,\(count) @@\n\(lines)\n"
-        }.joined())
-        let model = ListFixtures.reviewModel(files)
-        model.session.layoutChoice = .unified
-        model.session.focusFile = "a.swift"
-        let window = OffscreenWindow(size: CGSize(width: 600, height: 400), dark: dark,
-                                     ReviewPaneContent(model: model))
-        defer { window.close() }
-        try await eventuallyOnMain("the pending file focus and long-line extent") {
-            window.layout()
-            guard let scroll = ListPerf.scrollView(in: window) else { return false }
-            return model.session.focusFile == nil
-                && (scroll.documentView?.bounds.width ?? 0) > scroll.contentView.bounds.width + 1000
-        }
-        let scroll = try #require(ListPerf.scrollView(in: window))
-        _ = await MotionProbe.record(window, timeout: 1) {}
-        #expect(abs(scroll.contentView.bounds.minX) < 1, "opening a short file must not center it in the widest line")
-        #expect(model.currentFile == "a.swift")
-        for action in 0..<3 {
-            let clip = scroll.contentView
-            clip.scroll(to: CGPoint(x: 1000, y: clip.bounds.minY))
-            scroll.reflectScrolledClipView(clip)
-            #expect(clip.bounds.minX > 900)
-            _ = await MotionProbe.record(window) {
-                switch action {
-                case 0: model.select("b.swift")
-                case 1: #expect(model.handleKey("k"))
-                default: #expect(model.handleKey("n"))
-                }
-            }
-            #expect(abs(clip.bounds.minX) < 1, "file and hunk navigation must reveal code, not empty horizontal space")
-            #expect(model.currentFile == (action == 0 ? "b.swift" : "a.swift"))
-        }
-        #expect(model.currentChange != nil)
+    func wrappedLinesGrowTheirRow(split: Bool) {
+        let source = String(repeating: "long_identifier ", count: 30)
+        let line = SHDiffLineContent(id: "sample", key: 1, kind: .added, oldNumber: nil, newNumber: 1,
+                                     text: AttributedString(source), source: source)
+        let row: AnyView = split ? AnyView(SHSplitDiffLine(old: nil, new: line)) : AnyView(SHDiffLine(line))
+        let host = NSHostingView(rootView: row.environment(\.diffWrapsLines, true).frame(width: 400))
+        #expect(host.fittingSize.height > SHDiffMetrics.lineHeight * 3)
+        let flat = NSHostingView(rootView: row.frame(width: 400))
+        #expect(abs(flat.fittingSize.height - SHDiffMetrics.lineHeight) < 1)
     }
 
     @Test(arguments: [(false, false), (true, false), (false, true), (true, true)], [false, true])
@@ -239,20 +224,20 @@ struct DiffDrawingTests {
         var text = AttributedString(String(repeating: "Highlighted words ", count: 30))
         text.foregroundColor = Color(.sRGB, red: 1, green: 0, blue: 0, opacity: 1)
         text.backgroundColor = Color(.sRGB, red: 0, green: 0, blue: 1, opacity: 1)
-        let line = NWDiffLineContent(id: "sample", key: 1, kind: .added, oldNumber: nil, newNumber: 12345,
+        let line = SHDiffLineContent(id: "sample", key: 1, kind: .added, oldNumber: nil, newNumber: 12345,
                                      text: text, source: String(text.characters))
-        let size = CGSize(width: 360, height: NWDiffMetrics.lineHeight)
+        let size = CGSize(width: 360, height: SHDiffMetrics.lineHeight)
         let window = OffscreenWindow(size: size, dark: false)
         defer { window.close() }
         if split {
-            window.show(NWSplitDiffSide(line, side: .new, onComment: {}).background(Color.white))
+            window.show(SHSplitDiffSide(line, side: .new, onComment: {}).background(Color.white))
         } else {
-            window.show(NWDiffLine(line, onComment: {}).background(Color.white))
+            window.show(SHDiffLine(line, onComment: {}).background(Color.white))
         }
         let capture = FrameTimer.capture(window, CGRect(origin: .zero, size: size))
         var red = 0, blue = 0, leaking = 0
-        let codeStart = Int(NWDiffMetrics.barWidth + NWDiffMetrics.numberWidth * (split ? 1 : 2)
-                            + (split ? 0 : NWDiffMetrics.signWidth))
+        let codeStart = Int(SHDiffMetrics.barWidth + SHDiffMetrics.numberWidth * (split ? 1 : 2)
+                            + (split ? 0 : SHDiffMetrics.signWidth))
         // The comment slot reserves 18pt plus two 6pt side gaps.
         let codeEnd = Int(size.width - 30)
         for y in 0..<capture.height {

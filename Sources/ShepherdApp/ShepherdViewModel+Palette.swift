@@ -35,7 +35,7 @@ extension ShepherdViewModel {
             items.append(PaletteItem(id: "action.newRemoteSpace.\(connection.id.uuidString)",
                                      kind: .remoteSpace(hostID: connection.id), section: .commands,
                                      title: "New space on \(connection.config.name)…", subtitle: "remote",
-                                     icon: NWGlyph.remoteConnection.symbolName))
+                                     icon: SHGlyph.remoteConnection.symbolName))
         }
         items.append(PaletteItem(id: "action.toggleSidebar", kind: .action("toggleSidebar"), section: .commands,
                                  title: isSidebarVisible ? "Hide sidebar" : "Show sidebar",
@@ -56,7 +56,7 @@ extension ShepherdViewModel {
                                      kind: .remoteOperation(hostID: target.hostID, agentID: target.agentID),
                                      section: .commands, title: "Check remote worktree operation",
                                      subtitle: remoteHosts.connections.first { $0.id == target.hostID }?.config.name,
-                                     icon: NWGlyph.gitBranch.symbolName))
+                                     icon: SHGlyph.gitBranch.symbolName))
         }
 
         // This thread: what can be done to the agent on screen.
@@ -151,7 +151,7 @@ extension ShepherdViewModel {
     static func fastModePaletteItem(offered: Bool) -> PaletteItem? {
         guard offered else { return nil }
         return PaletteItem(id: "action.fastMode", kind: .action("fastMode"), section: .thisThread, title: "Toggle fast mode",
-                           subtitle: "Switch this thread between Standard and Fast", icon: NWGlyph.fastBolt.symbolName)
+                           subtitle: "Switch this thread between Standard and Fast", icon: SHGlyph.fastBolt.symbolName)
     }
 
     /// Switches the thread on screen between Standard and Fast, as the composer's Speed menu would.

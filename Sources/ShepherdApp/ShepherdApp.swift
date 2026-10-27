@@ -63,15 +63,15 @@ public struct ShepherdMacApp: App {
             SessionServer.shared.onDiagnosticDuration = { operation, seconds in
                 ShepherdDiagnostics.shared.recordDuration(operation, seconds: seconds)
             }
-            SessionServer.shared.onDiagnosticActivity = { name in
+            SessionServer.shared.onDiagnosticActivityDetails = { name, details in
                 guard let activity = ShepherdDiagnostics.Activity(rawValue: name) else { return }
-                ShepherdDiagnostics.shared.record(activity)
+                ShepherdDiagnostics.shared.record(activity, details: details)
             }
         }
         keys = KeybindingsStore.shared
         themes = ThemeManager.shared
         // Geist and Geist Mono ship in the ShepherdUI bundle; register them before any view draws.
-        NWFonts.register()
+        SHFonts.register()
         _vm = State(initialValue: ShepherdViewModel(server: .shared, welcomesYourPi: true, browserData: .persistent))
     }
 

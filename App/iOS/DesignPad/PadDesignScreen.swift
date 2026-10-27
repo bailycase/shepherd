@@ -120,52 +120,52 @@ private struct PadDesignHeader: View {
     let export: (() -> Void)?
 
     var body: some View {
-        let nw = Color.nw
-        HStack(spacing: NW.Space.m) {
+        let sh = Color.sh
+        HStack(spacing: SH.Space.m) {
             Button(action: back) {
-                HStack(spacing: NW.Space.xs) {
+                HStack(spacing: SH.Space.xs) {
                     Image(systemName: "chevron.left")
-                        .font(.nwSans(MobileLayout.padDesignHeaderText, .semibold))
-                    if wide { Text("Designs").font(.nwSans(MobileLayout.padDesignHeaderText)) }
+                        .font(.shSans(MobileLayout.padDesignHeaderText, .semibold))
+                    if wide { Text("Designs").font(.shSans(MobileLayout.padDesignHeaderText)) }
                 }
-                .foregroundStyle(nw.running)
-                .frame(minHeight: NW.Height.touch)
-                .contentShape(Rectangle().inset(by: -NW.Space.m))
+                .foregroundStyle(sh.running)
+                .frame(minHeight: SH.Height.touch)
+                .contentShape(Rectangle().inset(by: -SH.Space.m))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Designs")
             Text(title)
-                .font(wide ? .nw(.title) : .nw(.headline))
-                .foregroundStyle(nw.textPrimary)
+                .font(wide ? .sh(.title) : .sh(.headline))
+                .foregroundStyle(sh.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .accessibilityAddTraits(.isHeader)
-            Spacer(minLength: NW.Space.m)
+            Spacer(minLength: SH.Space.m)
             if let system {
-                NWDesignSystemChip(system, colors: swatches.map { Color(light: $0.light, dark: $0.dark) })
+                SHDesignSystemChip(system, colors: swatches.map { Color(light: $0.light, dark: $0.dark) })
             }
             if let chat {
                 Button(action: chat) {
                     Image(systemName: "text.bubble")
-                        .font(.nw(.headline, weight: .regular))
-                        .foregroundStyle(nw.textSecondary)
+                        .font(.sh(.headline, weight: .regular))
+                        .foregroundStyle(sh.textSecondary)
                         .frame(width: MobileLayout.padDesignHeaderButton, height: MobileLayout.padDesignHeaderButton)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .nwTouchTarget(height: MobileLayout.padDesignHeaderButton, width: MobileLayout.padDesignHeaderButton)
+                .shTouchTarget(height: MobileLayout.padDesignHeaderButton, width: MobileLayout.padDesignHeaderButton)
                 .accessibilityLabel("Chat")
             }
             Button("Export") { export?() }
-                .buttonStyle(.nw(.secondary, size: .l))
+                .buttonStyle(.sh(.secondary, size: .l))
                 .disabled(export == nil)
         }
         .padding(.horizontal, MobileLayout.padDesignHeaderInset)
         .frame(height: MobileLayout.padDesignHeaderHeight)
         .background {
-            if !wide { nw.bgWindow.ignoresSafeArea(edges: .top) }
+            if !wide { sh.bgWindow.ignoresSafeArea(edges: .top) }
         }
-        .overlay(alignment: .bottom) { if !wide { NWHairline() } }
+        .overlay(alignment: .bottom) { if !wide { SHHairline() } }
     }
 }
 
@@ -176,8 +176,8 @@ private struct PadDesignCanvasBackground: View {
 
     var body: some View {
         ZStack {
-            Color.nw.bgBase
-            if wide { NWDotGrid(spacing: NWDesignMetrics.gridSpacing) }
+            Color.sh.bgBase
+            if wide { SHDotGrid(spacing: SHDesignMetrics.gridSpacing) }
         }
         .ignoresSafeArea()
     }
@@ -199,7 +199,7 @@ struct PadDesignCanvasView: View {
         let host = canvas.host
         let zoom = canvas.viewport.zoom
         let boards = canvas.boards
-        NWDesignCanvas(boards: boards, viewport: $canvas.viewport, tool: $canvas.tool,
+        SHDesignCanvas(boards: boards, viewport: $canvas.viewport, tool: $canvas.tool,
                        selection: canvas.selectionRings,
                        pins: canvas.pins, openPin: { canvas.openThread($0) }, popoverAnchor: canvas.popoverAnchor,
                        notes: canvas.column ? [] : canvas.notes, actions: canvas.column ? nil : actions,
@@ -218,12 +218,12 @@ struct PadDesignCanvasView: View {
         .overlay(alignment: .bottomTrailing) {
             if let reply {
                 PadDesignReplyCard(canvas: canvas, agent: reply)
-                    .padding(NW.Space.xxl)
+                    .padding(SH.Space.xxl)
             }
         }
         .overlay {
             if let path = canvas.presented, let board = canvas.snapshot?.index.boards[path] {
-                NWBoardPresentation(title: canvas.title(path), boardSize: CGSize(width: board.w, height: board.h),
+                SHBoardPresentation(title: canvas.title(path), boardSize: CGSize(width: board.w, height: board.h),
                                     close: { canvas.present(nil) }) { zoom in
                     PadDesignPresentedSlot(host: host, path: path, zoom: zoom, content: host.tokens[path] ?? 0)
                 }
@@ -234,8 +234,8 @@ struct PadDesignCanvasView: View {
         .overlay(alignment: .top) {
             if let error = canvas.loadError, canvas.snapshot == nil {
                 Text(error)
-                    .font(.nw(.caption))
-                    .foregroundStyle(Color.nw.textTertiary)
+                    .font(.sh(.caption))
+                    .foregroundStyle(Color.sh.textTertiary)
                     .padding(MobileLayout.gutter)
             }
         }
@@ -244,10 +244,10 @@ struct PadDesignCanvasView: View {
     /// The board actions over the board picked whole: Comment takes the Comment tool, Tweak opens
     /// its tab, Variations asks the design agent, Duplicate copies the board on the host, and •••
     /// plays an interactive one.
-    private var actions: NWCanvasActions? {
+    private var actions: SHCanvasActions? {
         guard let path = canvas.actionsBoard else { return nil }
         let canvas = canvas
-        return NWCanvasActions(board: path.rawValue, actions: NWBoardActions.Actions(
+        return SHCanvasActions(board: path.rawValue, actions: SHBoardActions.Actions(
             comment: { canvas.tool = .comment },
             tweak: { canvas.paneTab = .tweak },
             variations: { canvas.askForVariations(of: path) },
@@ -264,19 +264,19 @@ private struct PadDesignCommentPopover: View {
 
     var body: some View {
         if let element = canvas.draftElement {
-            NWCommentEditor(text: $canvas.draftText, isFocused: $editorFocused, placeholder: "Comment for the design agent",
+            SHCommentEditor(text: $canvas.draftText, isFocused: $editorFocused, placeholder: "Comment for the design agent",
                             context: "on \(nativeBoardName(element.board.rawValue))\(element.words.map { " · \($0)" } ?? "")",
                             onSave: { canvas.submitComment() }, onCancel: { canvas.closeComment() })
                 .disabled(canvas.sendingComment)
                 .onAppear { editorFocused = true }
         } else if let comment = canvas.openThread {
             let now = Date()
-            NWCommentThread(
-                author: "You", age: nwCommentAge(since: comment.createdAt, now: now),
+            SHCommentThread(
+                author: "You", age: shCommentAge(since: comment.createdAt, now: now),
                 note: comment.detached ? "element changed" : nil, text: comment.text,
                 entries: comment.replies.map { reply in
-                    NWCommentEntry(id: reply.id.uuidString, author: reply.author == .agent ? "Design agent" : "You",
-                                   age: nwCommentAge(since: reply.createdAt, now: now), text: reply.text)
+                    SHCommentEntry(id: reply.id.uuidString, author: reply.author == .agent ? "Design agent" : "You",
+                                   age: shCommentAge(since: reply.createdAt, now: now), text: reply.text)
                 },
                 reply: $canvas.replyText,
                 onResolve: { canvas.resolve(comment.id) },
@@ -304,18 +304,18 @@ private struct PadDesignReplyCard: View {
         let store = threads.store(for: agent)
         if let reply = PadDesignReply(store: store) {
             let targets = windows.targets(from: window.id, excluding: agent)
-            VStack(alignment: .leading, spacing: NW.Space.m) {
+            VStack(alignment: .leading, spacing: SH.Space.m) {
                 Text("Design agent · \(reply.age)")
-                    .font(.nw(.caption))
-                    .foregroundStyle(Color.nw.textTertiary)
+                    .font(.sh(.caption))
+                    .foregroundStyle(Color.sh.textTertiary)
                 Text(reply.text)
-                    .font(.nw(.ui, weight: .regular))
-                    .foregroundStyle(Color.nw.textPrimary)
+                    .font(.sh(.ui, weight: .regular))
+                    .foregroundStyle(Color.sh.textPrimary)
                     .lineLimit(6)
                     .fixedSize(horizontal: false, vertical: true)
                 if targets.count == 1, let target = targets.first {
                     Button("Send to the thread") { send(to: target) }
-                        .buttonStyle(.nw(.primary, size: .l))
+                        .buttonStyle(.sh(.primary, size: .l))
                 } else if targets.count > 1 {
                     Menu {
                         ForEach(targets, id: \.self) { target in
@@ -330,13 +330,13 @@ private struct PadDesignReplyCard: View {
                     } label: {
                         Text("Send to the thread")
                     }
-                    .buttonStyle(.nw(.primary, size: .l))
+                    .buttonStyle(.sh(.primary, size: .l))
                 }
             }
             .padding(.vertical, MobileLayout.padDesignReplyCardPaddingVertical)
             .padding(.horizontal, MobileLayout.padDesignReplyCardPaddingHorizontal)
             .frame(width: MobileLayout.padDesignReplyCardWidth, alignment: .leading)
-            .nwPopover(radius: NW.Radius.l)
+            .shPopover(radius: SH.Radius.l)
             .accessibilityElement(children: .contain)
         }
     }
@@ -361,7 +361,7 @@ private struct PadDesignReply {
               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         self.text = text
         let at = row.turn.messages.last?.timestamp
-        age = at.map { nwCommentAge(since: $0) } ?? "now"
+        age = at.map { shCommentAge(since: $0) } ?? "now"
     }
 }
 

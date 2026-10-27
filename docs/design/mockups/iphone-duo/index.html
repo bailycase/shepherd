@@ -1,0 +1,1131 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>iPhone Duo · Shepherd design mock</title>
+<style>
+@font-face{font-family:Geist;src:url(Geist-Regular.otf) format("opentype");font-weight:400}
+@font-face{font-family:Geist;src:url(Geist-Italic.otf) format("opentype");font-weight:400;font-style:italic}
+@font-face{font-family:Geist;src:url(Geist-Medium.otf) format("opentype");font-weight:500}
+@font-face{font-family:Geist;src:url(Geist-SemiBold.otf) format("opentype");font-weight:600}
+@font-face{font-family:"Geist Mono";src:url(GeistMono-Regular.otf) format("opentype");font-weight:400}
+@font-face{font-family:"Geist Mono";src:url(GeistMono-Medium.otf) format("opentype");font-weight:500}
+
+/* Shepherd Design roles, verbatim from Packages/ShepherdUI/.../Tokens/ShepherdDesign.swift.
+   --pageBg/--pageText and --bezel are review chrome only; --bezel reuses a role value. */
+:root[data-theme=light]{
+  --bgBase:#f2f2f0;--bgWindow:#fbfbfa;--bgRaised:#ffffff;--bgSunken:#f5f5f3;--bgBubble:#efefec;
+  --bgHover:#0000000a;--bgSelected:#00000011;--lineSubtle:#e7e7e3;--lineStrong:#d6d6d1;
+  --textPrimary:#151618;--textSecondary:#5f636b;--textTertiary:#9a9ea5;--textOnLantern:#1a1206;
+  --lantern:#e39a26;--lanternText:#945b00;--lanternTint:#d98a1221;--running:#2f6fe0;--runningTint:#2f6fe01a;
+  --done:#1f9d5b;--doneTint:#1f9d5b1a;--failed:#d9443f;--failedTint:#d9443f17;
+  --synKeyword:#8a3fb5;--synFunction:#2a62c9;--synType:#1a7f55;--synString:#9a6400;
+  --popoverShadow:rgba(20,20,20,.12);--pageBg:#e6e6e2;--pageText:#5f636b;--bezel:#151618;
+}
+:root[data-theme=dark]{
+  --bgBase:#0a0b0c;--bgWindow:#0d0e10;--bgRaised:#15171a;--bgSunken:#111316;--bgBubble:#1a1d21;
+  --bgHover:#ffffff0b;--bgSelected:#ffffff14;--lineSubtle:#1f2226;--lineStrong:#2c3035;
+  --textPrimary:#e8e9ec;--textSecondary:#9aa0a9;--textTertiary:#5f656e;--textOnLantern:#17120a;
+  --lantern:#f2a93b;--lanternText:#f7c16e;--lanternTint:#f2a93b21;--running:#7aa7ff;--runningTint:#7aa7ff21;
+  --done:#46c37b;--doneTint:#46c37b1f;--failed:#f0625e;--failedTint:#f0625e1f;
+  --synKeyword:#d7a6ff;--synFunction:#8fc1ff;--synType:#7ee0b5;--synString:#e8c07a;
+  --popoverShadow:rgba(0,0,0,.55);--pageBg:#1b1c1f;--pageText:#9aa0a9;--bezel:#0a0b0c;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--pageBg);color:var(--pageText);font:14px/1.5 Geist,-apple-system,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+:focus-visible{outline:2px solid var(--running);outline-offset:2px;border-radius:6px}
+.mono{font-family:"Geist Mono",ui-monospace,monospace}
+svg.i{width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+svg.s{width:14px;height:14px}
+.spacer{flex:1}
+
+/* ── review chrome (outside the devices) ───────────────────────── */
+.page{max-width:1760px;margin:0 auto;padding:0 40px 64px}
+.review{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;padding:24px 0 8px}
+.review h1{font-size:16px;font-weight:600;margin:0;color:var(--textPrimary)}
+.mocktag{font:500 11px "Geist Mono";color:var(--textTertiary);border:1px solid var(--lineStrong);border-radius:4px;padding:2px 6px}
+.seg{display:inline-flex;background:var(--bgSunken);border:1px solid var(--lineSubtle);border-radius:6px;padding:2px;gap:2px}
+.seg button{height:26px;padding:0 12px;border-radius:4px;font-size:12px;font-weight:500;color:var(--textSecondary);border:1px solid transparent}
+.seg button[aria-pressed=true]{background:var(--bgSelected);border-color:var(--lineStrong);color:var(--textPrimary);font-weight:600}
+.lede{max-width:80ch;margin:0 0 12px;font-size:14px}
+.facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px 24px;border:1px solid var(--lineStrong);border-radius:8px;padding:12px 16px;font-size:12.5px;line-height:1.5;margin:0 0 12px}
+.facts h2{grid-column:1/-1;margin:0;font-size:13px;font-weight:600;color:var(--textPrimary)}
+.facts b{color:var(--textPrimary);font-weight:600}
+.facts .src{font:11px "Geist Mono";color:var(--textTertiary)}
+.facts .wide{grid-column:span 2}
+.legend{display:flex;flex-wrap:wrap;gap:16px;font-size:12px;margin:0 0 8px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+section.post{padding:40px 0 8px;border-top:1px solid var(--lineStrong);margin-top:40px}
+section.post>h2{margin:0 0 4px;font-size:15px;font-weight:600;color:var(--textPrimary)}
+section.post>p{margin:0 0 24px;max-width:80ch}
+.scenes{display:flex;flex-wrap:wrap;gap:56px 28px;align-items:flex-start}
+.scene{display:flex;gap:28px;align-items:flex-start}
+.cap{width:290px;font-size:13px;line-height:1.55}
+.cap .pn{font:500 11px "Geist Mono";color:var(--textTertiary);letter-spacing:.02em}
+.cap h3{margin:2px 0 4px;font-size:15px;font-weight:600;color:var(--textPrimary)}
+.cap p{margin:0 0 12px}
+.cap h4{margin:12px 0 4px;font-size:12px;font-weight:600;color:var(--textPrimary)}
+.cap ul{margin:0;padding-left:16px}
+.cap li{margin:0 0 5px}
+.cap code{font:12px "Geist Mono"}
+.hig{display:block;font:500 10.5px/1.45 "Geist Mono";color:var(--lanternText)}
+.note{display:flex;gap:8px;align-items:flex-start;border:1px dashed var(--lineStrong);border-radius:8px;padding:8px 12px;font-size:12.5px;line-height:1.5;color:var(--pageText);max-width:320px;margin-top:12px}
+.note b{color:var(--textPrimary);font-weight:600}
+.note .n{flex:none;width:18px;height:18px;border-radius:999px;background:var(--lantern);color:var(--textOnLantern);font:600 11px/18px Geist;text-align:center}
+.ftag{position:absolute;z-index:9;font:500 10.5px "Geist Mono";color:var(--textTertiary);white-space:nowrap}
+.pose{width:46px;height:28px;fill:none;stroke:var(--textSecondary);stroke-width:2;stroke-linejoin:round;stroke-linecap:round;vertical-align:middle}
+
+/* ── device frames, 1 pt = 1 px. Corner radii are the measured hardware values ── */
+.dev{position:relative;flex:none;margin:14px 14px 14px 24px}
+.scr{position:relative;overflow:hidden;background:var(--bgWindow);color:var(--textPrimary);font-size:15px;line-height:1.35;
+  box-shadow:0 0 0 1px var(--lineStrong),0 0 0 9px var(--bezel),0 0 0 10px var(--lineStrong),0 24px 60px var(--popoverShadow)}
+.outer .scr{width:466px;height:678px;border-radius:8px 59px 59px 8px}
+.outer::before{content:"";position:absolute;left:-20px;top:6px;bottom:6px;width:8px;border-radius:4px;background:var(--lineStrong)}
+.inner .scr{width:951px;height:669px;border-radius:55px}
+.port .scr{width:669px;height:951px;border-radius:55px}
+.fold{position:absolute;z-index:8;background:repeating-linear-gradient(45deg,var(--bgSelected) 0 2px,transparent 2px 7px),var(--bgSunken)}
+.fold.v{top:0;bottom:0;left:462px;width:27px;border-left:1px solid var(--lineStrong);border-right:1px solid var(--lineStrong);box-shadow:inset 9px 0 10px -9px var(--popoverShadow),inset -9px 0 10px -9px var(--popoverShadow)}
+.fold.h{left:0;right:0;top:462px;height:27px;border-top:1px solid var(--lineStrong);border-bottom:1px solid var(--lineStrong);box-shadow:inset 0 9px 10px -9px var(--popoverShadow),inset 0 -9px 10px -9px var(--popoverShadow)}
+
+/* the trailing control column (outer display; inner display in landscape) */
+.col{position:absolute;top:0;right:0;bottom:0;width:76px;display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 0 26px;z-index:6}
+.inner .col{padding-top:26px}
+.island{width:36px;height:36px;border-radius:999px;background:var(--bezel);box-shadow:0 0 0 1px var(--lineStrong);flex:none;margin-bottom:2px}
+.stat{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:13px;font-weight:600;line-height:1.1;margin-bottom:6px;flex:none}
+.stat svg{width:34px;height:34px;fill:none;stroke:var(--textPrimary);stroke-width:1.8;stroke-linecap:round}
+.g{width:44px;height:44px;border-radius:999px;background:var(--bgRaised);border:1px solid var(--lineSubtle);box-shadow:0 2px 10px var(--popoverShadow);display:grid;place-items:center;color:var(--textPrimary);flex:none}
+.g.pri{background:var(--lantern);color:var(--textOnLantern);border-color:var(--lantern)}
+.g.off{color:var(--textTertiary)}
+.gcap{width:44px;border-radius:999px;background:var(--bgRaised);border:1px solid var(--lineSubtle);box-shadow:0 2px 10px var(--popoverShadow);display:flex;flex-direction:column;align-items:center;padding:1px 0;flex:none}
+.gcap span{width:40px;height:44px;display:grid;place-items:center;border-radius:999px;color:var(--textPrimary)}
+.gcap span.on{background:var(--bgSelected);color:var(--lanternText)}
+.gcap span.tog{background:var(--lanternTint);color:var(--lanternText)}
+.gcap span.bdg{position:relative}
+.gcap span.bdg b{position:absolute;top:5px;right:3px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:var(--lantern);color:var(--textOnLantern);font:600 10px/16px Geist;text-align:center}
+.pullsearch{height:36px;border-radius:8px;margin:0 0 14px;background:var(--bgSunken);display:flex;align-items:center;gap:8px;padding:0 10px;color:var(--textTertiary);font-size:15px}
+.pullsearch .hint{margin-left:auto;font:400 10.5px "Geist Mono";color:var(--textTertiary)}
+.col .fill{flex:1}
+.g svg.i,.gcap svg.i{width:19px;height:19px}
+
+/* horizontal bars (a split view's leading pane; the inner display in portrait) */
+.pctl{height:44px;display:flex;align-items:center;justify-content:space-between;margin:20px 20px 6px;flex:none}
+.pctl .gcap{flex-direction:row;width:auto;padding:0 1px}
+.pctl .gcap span{width:46px;height:42px}
+.psearch{height:44px;border-radius:999px;margin:8px 16px 18px;background:var(--bgRaised);border:1px solid var(--lineSubtle);box-shadow:0 2px 10px var(--popoverShadow);display:flex;align-items:center;gap:8px;padding:0 16px;color:var(--textTertiary);font-size:15px;flex:none}
+.hbar{height:32px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:6px 36px 0;font-size:14px;font-weight:600}
+.hbar .r{display:inline-flex;gap:6px;align-items:center}
+.bat{display:block;width:24px;height:11px;border:1.5px solid var(--textPrimary);border-radius:4px;position:relative}
+.bat::after{content:"";position:absolute;inset:1.5px 5px 1.5px 1.5px;background:var(--textPrimary)}
+.hnav{height:60px;flex:none;display:flex;align-items:center;gap:12px;padding:0 20px}
+.hnav .tt{flex:1;min-width:0;font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hnav .gcap{flex-direction:row;width:auto;padding:0 1px}
+.hnav .gcap span{width:46px;height:42px}
+
+/* status: a shape and a word, never colour alone */
+.st{width:20px;height:20px;flex:none;display:grid;place-items:center}
+.st i{display:block;border-radius:999px}
+.st.need i{width:9px;height:9px;background:var(--lantern);box-shadow:0 0 0 3px var(--lanternTint),0 0 8px var(--lantern)}
+.st.done i{width:8px;height:8px;background:var(--done)}
+.st.run i{width:11px;height:11px;border:2px solid var(--runningTint);border-top-color:var(--running);border-right-color:var(--running)}
+
+/* lists */
+.cc{position:absolute;left:0;top:0;bottom:0;right:76px;display:flex;flex-direction:column}
+.scroll{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;gap:14px;padding:0 8px 0 16px}
+.bigttl h5{margin:0;font-size:30px;font-weight:600;letter-spacing:-.01em;line-height:1.15}
+.sub{font-size:12.5px;color:var(--textTertiary);display:flex;align-items:center;gap:6px}
+.sub .mono{color:var(--textSecondary)}
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.tile{height:62px;border-radius:8px;background:var(--bgRaised);border:1px solid var(--lineSubtle);padding:8px 10px;display:flex;flex-direction:column;justify-content:space-between;color:var(--textSecondary)}
+.tile .top{display:flex;justify-content:space-between;align-items:center}
+.tile .ct{font:500 12px "Geist Mono";color:var(--textSecondary)}
+.tile .lb{font-size:12px;font-weight:500;color:var(--textPrimary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sec{display:flex;flex-direction:column;gap:6px}
+.sh{display:flex;align-items:baseline;gap:6px;padding:0 4px;font-size:13px;font-weight:600;color:var(--textSecondary)}
+.sh .c{font:500 12px "Geist Mono";color:var(--textTertiary)}
+.sh.need{color:var(--lanternText)}
+.sh .act{margin-left:auto;font-weight:500;font-size:12.5px;color:var(--textTertiary)}
+.card{background:var(--bgRaised);border:1px solid var(--lineSubtle);border-radius:8px;overflow:hidden;flex:none}
+.row{min-height:54px;display:flex;align-items:center;gap:8px;padding:7px 12px 7px 8px;border-top:1px solid var(--lineSubtle)}
+.row:first-child{border-top:0}
+.row .tx{flex:1;min-width:0}
+.row .t{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .d{font-size:13px;color:var(--textSecondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .d.q{color:var(--lanternText)}
+.row .clk{font:12px "Geist Mono";color:var(--textTertiary);flex:none;align-self:flex-start;padding-top:2px}
+.row.sel{background:var(--bgSelected);box-shadow:inset 3px 0 0 var(--lantern)}
+.row.sel .t{font-weight:600}
+.fadeb{position:absolute;left:0;right:0;bottom:0;height:90px;background:linear-gradient(transparent,var(--bgWindow) 80%);z-index:2;pointer-events:none}
+.side{position:absolute;top:0;bottom:0;left:0;background:var(--bgBase);display:flex;flex-direction:column;border-right:1px solid var(--lineSubtle)}
+.side .scroll{padding:0 16px}
+.side .bigttl{padding:0 4px}
+.side .tiles{grid-template-columns:repeat(2,1fr)}
+.side .tile{height:44px;flex-direction:row;align-items:center;gap:8px}
+.side .tile .top{gap:8px;flex-direction:row-reverse}
+.side .tile .lb{flex:1}
+.side .fadeb{background:linear-gradient(transparent,var(--bgBase) 80%);bottom:70px;height:60px}
+
+/* thread */
+.pane{position:absolute;top:0;bottom:0;display:flex;flex-direction:column}
+.th-head{min-height:44px;flex:none;display:flex;align-items:center;gap:8px;padding:22px 16px 8px}
+.th-head .tt{flex:1;min-width:0;font-size:17px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pill{height:24px;display:inline-flex;align-items:center;gap:6px;padding:0 8px;border-radius:999px;font-size:12px;font-weight:500;color:var(--textSecondary);background:var(--bgBubble);flex:none}
+.pill .st{width:12px;height:12px}
+.pill .st.run i{width:9px;height:9px}
+.modes{display:flex;margin:4px 16px 8px;padding:2px;gap:2px;background:var(--bgSunken);border:1px solid var(--lineSubtle);border-radius:8px;flex:none}
+.modes span{flex:1;height:40px;border-radius:6px;display:flex;align-items:center;justify-content:center;gap:6px;font-size:13.5px;font-weight:500;color:var(--textSecondary)}
+.modes span.on{background:var(--bgRaised);color:var(--textPrimary);font-weight:600;box-shadow:0 0 0 1px var(--lineStrong),inset 0 -2px 0 var(--lantern)}
+.modes .n{font:12px "Geist Mono";color:var(--textTertiary)}
+.tr{flex:1;min-height:0;overflow:hidden;padding:8px 16px;display:flex;flex-direction:column;gap:12px;font-size:14.5px;line-height:1.5}
+.bubble{align-self:flex-end;max-width:88%;background:var(--bgBubble);border:1px solid var(--lineSubtle);border-radius:8px;padding:8px 12px}
+.who{font-size:11.5px;font-weight:600;color:var(--textTertiary);margin-bottom:2px;letter-spacing:.02em}
+.tool{display:flex;align-items:center;gap:8px;min-height:30px;font-size:13px;color:var(--textSecondary)}
+.tool .mono{font-size:12.5px;color:var(--textPrimary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.tool .clk{margin-left:auto;font:12px "Geist Mono";color:var(--textTertiary);flex:none}
+.ok{color:var(--done)}
+.add{color:var(--done)}.del{color:var(--failed)}
+.composer{flex:none;margin:8px 12px 14px;border:1px solid var(--lineStrong);border-radius:8px;background:var(--bgRaised);padding:10px 6px 4px 12px;display:flex;flex-direction:column;gap:4px}
+.composer .in{font-size:15px;min-height:22px}
+.composer .bar{display:flex;align-items:center;gap:4px;color:var(--textSecondary);font:12.5px "Geist Mono"}
+.ph{color:var(--textTertiary)}
+.ibtn{width:44px;height:44px;flex:none;border-radius:999px;display:grid;place-items:center;color:var(--textSecondary)}
+.ibtn.send{background:var(--lantern);color:var(--textOnLantern);width:36px;height:36px;margin:4px}
+.ibtn.send.off{background:var(--bgSelected);color:var(--textTertiary)}
+.term{font:12.5px/1.6 "Geist Mono";color:var(--textSecondary);background:var(--bgSunken);border:1px solid var(--lineSubtle);border-radius:8px;padding:10px 12px;white-space:pre;overflow:hidden;flex:none}
+.term .p{color:var(--lanternText)}.term .k{color:var(--done)}
+.live{position:absolute;right:20px;bottom:14px;z-index:3;height:36px;display:inline-flex;align-items:center;gap:6px;padding:0 14px;border-radius:999px;background:var(--bgRaised);border:1px solid var(--lineStrong);box-shadow:0 4px 12px var(--popoverShadow);font-size:12.5px;font-weight:500;color:var(--textSecondary)}
+
+/* composer parts */
+.editor{flex:1;min-height:0;padding:0 16px;font-size:18px;line-height:1.45;color:var(--textPrimary)}
+.caret{display:inline-block;width:2px;height:22px;background:var(--lantern);vertical-align:-4px;margin-left:1px}
+.chiprow{height:56px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px;border-top:1px solid var(--lineSubtle)}
+.chip{height:36px;flex:none;display:inline-flex;align-items:center;gap:6px;padding:0 10px;border-radius:999px;background:var(--bgRaised);border:1px solid var(--lineStrong);font:13px "Geist Mono";color:var(--textPrimary);white-space:nowrap}
+.chip svg.i{width:14px;height:14px;color:var(--textSecondary)}
+.chip .cv{width:10px;height:10px;color:var(--textTertiary)}
+.chip .sans{font-family:Geist}
+.chip .dim{color:var(--textTertiary)}
+.kb{position:absolute;left:0;right:0;bottom:0;background:var(--bgSunken);border-top:1px solid var(--lineSubtle);padding:10px 6px 30px;display:flex;flex-direction:column;gap:10px;z-index:7}
+.kr{display:flex;gap:6px;justify-content:center}
+.kr span{flex:1;max-width:42px;height:46px;border-radius:6px;background:var(--bgRaised);box-shadow:0 1px 0 var(--lineStrong);display:grid;place-items:center;font-size:18px;color:var(--textPrimary)}
+.kr span.w{max-width:none;flex:1.4;font-size:14px;color:var(--textSecondary)}
+.kr span.sp{max-width:none;flex:5;font-size:14px;color:var(--textSecondary)}
+.kr span.ret{max-width:none;flex:1.8;font-size:14px;color:var(--textSecondary)}
+.kr.r2{padding:0 22px}
+.port .kr span{max-width:60px}
+.port .kr span.w,.port .kr span.sp,.port .kr span.ret{max-width:none}
+
+/* diff */
+.dhead{display:flex;align-items:center;gap:8px;padding:0 16px 8px;font:12.5px "Geist Mono";color:var(--textSecondary);flex:none}
+.files{display:flex;gap:6px;padding:0 16px 10px;flex:none;overflow:hidden}
+.files span{height:32px;display:inline-flex;align-items:center;padding:0 10px;border-radius:6px;border:1px solid var(--lineSubtle);font:12px "Geist Mono";color:var(--textSecondary);white-space:nowrap}
+.files span.on{border-color:var(--lineStrong);background:var(--bgSelected);color:var(--textPrimary)}
+.diff{flex:1;min-height:0;overflow:hidden;font:12.5px/1.75 "Geist Mono";border-top:1px solid var(--lineSubtle)}
+.diff .fh{padding:6px 16px;background:var(--bgSunken);color:var(--textSecondary);border-bottom:1px solid var(--lineSubtle);display:flex;justify-content:space-between}
+.diff div.l{display:flex;white-space:pre;padding-right:8px}
+.diff .ln{width:38px;flex:none;text-align:right;padding-right:8px;color:var(--textTertiary)}
+.diff .sg{width:14px;flex:none}
+.diff .l.a{background:var(--doneTint)}.diff .l.a .sg{color:var(--done)}
+.diff .l.r{background:var(--failedTint)}.diff .l.r .sg{color:var(--failed)}
+.kw{color:var(--synKeyword)}.ty{color:var(--synType)}.str{color:var(--synString)}.fn{color:var(--synFunction)}
+.rpane{position:absolute;top:0;bottom:0;background:var(--bgWindow);border-left:1px solid var(--lineStrong);display:flex;flex-direction:column}
+.ptabs{display:flex;gap:2px;margin:22px 12px 10px;padding:2px;background:var(--bgSunken);border:1px solid var(--lineSubtle);border-radius:8px;flex:none}
+.ptabs span{flex:1;height:40px;border-radius:6px;display:flex;align-items:center;justify-content:center;gap:6px;font-size:13px;font-weight:500;color:var(--textSecondary)}
+.ptabs span.on{background:var(--bgRaised);color:var(--textPrimary);font-weight:600;box-shadow:0 0 0 1px var(--lineStrong),inset 0 -2px 0 var(--lantern)}
+.ptabs .n{font:11.5px "Geist Mono";color:var(--textTertiary)}
+.g.act{background:var(--lanternTint);color:var(--lanternText);border-color:var(--lanternTint)}
+.lbtn{position:absolute;left:16px;top:18px;z-index:3}
+/* Sidebar, as the Mac's and iPad's (SHNavigation, iPadSidebar): flat rows on bgBase, no cards. */
+.sbtop{height:44px;display:flex;align-items:center;gap:4px;margin:20px 12px 4px;flex:none}
+.ib{width:44px;height:44px;display:grid;place-items:center;color:var(--textSecondary);flex:none}
+.dest{display:flex;flex-direction:column;margin-bottom:14px}
+.drow{height:44px;display:flex;align-items:center;gap:14px;padding:0 8px;border-radius:8px;font-size:15px;color:var(--textPrimary)}
+.drow svg.i{width:19px;height:19px;color:var(--textSecondary)}
+.drow .c,.ssh .c{margin-left:auto;font:500 12px "Geist Mono";color:var(--textTertiary)}
+.drow.sel{background:var(--bgSelected);font-weight:600}
+.ssec{display:flex;flex-direction:column;margin-bottom:12px}
+.ssh{display:flex;align-items:center;gap:8px;height:28px;padding:0 8px;font-size:13px;font-weight:600;color:var(--textSecondary)}
+.ssh.need,.ssh.need .c{color:var(--lanternText)}
+.ssh .act{margin-left:auto;font-weight:500;font-size:12px;color:var(--textTertiary)}
+.ssh .act+.c{margin-left:8px}
+.srow{min-height:48px;display:flex;align-items:center;gap:10px;padding:4px 8px;border-radius:8px}
+.srow .tx{flex:1;min-width:0}
+.srow .t{font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.srow .d{font-size:12.5px;color:var(--textSecondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.srow .d.q{color:var(--lanternText)}
+.srow .clk{font:12px "Geist Mono";color:var(--textTertiary);flex:none;align-self:flex-start;padding-top:4px}
+.srow.sel{background:var(--bgSelected)}
+.srow.sel .t{font-weight:600}
+.sbfoot{flex:none;height:52px;display:flex;align-items:center;gap:6px;padding:0 12px 6px 8px;border-top:1px solid var(--lineSubtle);font-size:14px;color:var(--textSecondary)}
+/* Transcript, as the Mac's (iPadThread, MobileThread): no speaker labels. */
+.ts{align-self:flex-end;margin-top:-8px;font:12px "Geist Mono";color:var(--textTertiary)}
+.thought{display:flex;align-items:center;gap:8px;font-style:italic;color:var(--textSecondary)}
+.tools{display:flex;flex-direction:column}
+.tool svg.cv{color:var(--textTertiary)}
+.dim{color:var(--textTertiary)!important}
+.chipb{height:24px;display:inline-flex;align-items:center;gap:5px;padding:0 8px;border-radius:6px;background:var(--bgSunken);border:1px solid var(--lineSubtle);font:12px "Geist Mono";color:var(--textSecondary);flex:none;white-space:nowrap}
+/* Side pane tabs, as the Mac's (FileOpenSplit): pills, the open one filled. */
+.ptabs2{display:flex;align-items:center;gap:4px;padding:20px 10px 8px;flex:none}
+.ptabs2 span{height:36px;display:inline-flex;align-items:center;gap:6px;padding:0 10px;border-radius:8px;font-size:13.5px;font-weight:500;color:var(--textSecondary)}
+.ptabs2 span.on{background:var(--bgSelected);color:var(--textPrimary);font-weight:600}
+.ptabs2 .n{font:12px "Geist Mono";color:var(--textTertiary)}
+.cmp{display:flex;align-items:center;gap:8px;padding:0 12px 8px;flex:none}
+.cmp .btn-g{height:32px;display:inline-flex;align-items:center;gap:4px;padding:0 10px;border-radius:6px;border:1px solid var(--lineStrong);font-size:13px;color:var(--textPrimary)}
+.ghost{font-size:13px;color:var(--textSecondary);padding:0 8px}
+/* Side pane header: one tab row level with the thread's title, then the compare row, then the file. */
+.ptop{display:flex;align-items:center;gap:2px;min-height:44px;padding:12px 4px 8px 10px;flex:none}
+.ptop>span[role=tab]{height:32px;display:inline-flex;align-items:center;gap:6px;padding:0 10px;border-radius:6px;font-size:14px;font-weight:500;color:var(--textSecondary)}
+.ptop>span.on{background:var(--bgSelected);color:var(--textPrimary);font-weight:600}
+.ptop .n{font:12px "Geist Mono";color:var(--textTertiary)}
+.cmp2{display:flex;align-items:center;gap:10px;height:48px;padding:0 12px 0 16px;border-top:1px solid var(--lineSubtle);flex:none;font-size:12.5px}
+.cmp2 .scope{display:inline-flex;align-items:center;gap:4px;font:12.5px "Geist Mono";color:var(--textPrimary)}
+.cmp2 .btn-g{height:32px;display:inline-flex;align-items:center;padding:0 10px;border-radius:6px;border:1px solid var(--lineStrong);font-size:13px;color:var(--textPrimary)}
+.fsw{display:flex;align-items:center;gap:6px;height:44px;padding:0 0 0 4px;background:var(--bgSunken);border-top:1px solid var(--lineSubtle);border-bottom:1px solid var(--lineSubtle);flex:none;font-size:12.5px}
+.fsw .fname{display:inline-flex;align-items:center;gap:4px;font:500 12.5px "Geist Mono";color:var(--textPrimary);white-space:nowrap}
+.ib.sm{width:36px;height:44px}
+.ptop>span.ic{width:40px;padding:0;justify-content:center;position:relative}
+.ptop>span.bd b{position:absolute;top:6px;right:7px;width:7px;height:7px;border-radius:999px;background:var(--running)}
+/* Side pane tab gallery: each tab at the pane's real width */
+.pgal{display:grid;grid-template-columns:repeat(2,400px);gap:28px 32px;margin-top:8px}
+.pcard{width:400px;height:520px;border-radius:12px;background:var(--bgWindow);border:1px solid var(--lineStrong);box-shadow:0 8px 24px var(--popoverShadow);overflow:hidden;display:flex;flex-direction:column;position:relative}
+.pcard .ptop{padding-top:10px}
+.plab{font:11px "Geist Mono";color:var(--textTertiary);margin:0 0 8px 2px}
+.pfoot{flex:none;margin-top:auto;padding:10px 16px 14px;border-top:1px solid var(--lineSubtle);font-size:12.5px;color:var(--textTertiary)}
+.tree{padding:4px 8px;display:flex;flex-direction:column;font-size:14px}
+.tree .n{height:36px;display:flex;align-items:center;gap:8px;padding:0 8px;border-radius:6px;color:var(--textPrimary);white-space:nowrap}
+.tree .n svg.i{width:17px;height:17px;color:var(--textSecondary);flex:none}
+.tree .n .m{margin-left:auto;font:500 11.5px "Geist Mono";color:var(--done)}
+.tree .n .m.mod{color:var(--lanternText)}
+.tree .n.sel{background:var(--bgSelected);font-weight:600}
+.filt{margin:2px 16px 6px;height:36px;border-radius:8px;background:var(--bgSunken);border:1px solid var(--lineSubtle);display:flex;align-items:center;gap:8px;padding:0 10px;font-size:14px;color:var(--textTertiary);flex:none}
+.tsub{display:flex;align-items:center;gap:8px;height:40px;padding:0 16px;border-top:1px solid var(--lineSubtle);border-bottom:1px solid var(--lineSubtle);font:12.5px "Geist Mono";color:var(--textSecondary);flex:none}
+.term.full{flex:1;margin:0;border:0;border-radius:0;background:var(--bgSunken);white-space:pre-wrap}
+.tin{flex:none;height:44px;display:flex;align-items:center;gap:8px;padding:0 16px;border-top:1px solid var(--lineSubtle);font:13px "Geist Mono";color:var(--textTertiary)}
+.urlb{margin:0 12px 10px;height:40px;border-radius:8px;background:var(--bgSunken);border:1px solid var(--lineSubtle);display:flex;align-items:center;gap:8px;padding:0 4px 0 12px;font:13px "Geist Mono";color:var(--textPrimary);flex:none}
+.urlb .fw{font:11px Geist;color:var(--textTertiary);margin-left:auto}
+.webpage{flex:1;margin:0 12px;border:1px solid var(--lineSubtle);border-radius:8px;background:var(--bgRaised);padding:14px;display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:min-content;gap:10px;overflow:hidden}
+.webpage .wg{border-radius:12px;background:var(--bgSunken);border:1px solid var(--lineSubtle);padding:10px;font-size:12px;color:var(--textSecondary)}
+.webpage .wg b{display:block;font-size:13px;color:var(--textPrimary);margin-bottom:4px}
+.webpage .wg.wide{grid-column:span 2}
+.webpage .ttl{grid-column:span 2;font-size:15px;font-weight:600}
+/* A menu from the outer display's column */
+.menu{position:absolute;z-index:9;width:250px;border-radius:12px;background:var(--bgRaised);border:1px solid var(--lineStrong);box-shadow:0 16px 40px var(--popoverShadow);padding:6px;display:flex;flex-direction:column}
+.menu .mi{height:44px;display:flex;align-items:center;gap:12px;padding:0 10px;border-radius:8px;font-size:15px;color:var(--textPrimary)}
+.menu .mi svg.i{width:19px;height:19px;color:var(--textSecondary)}
+.menu .mi .v{margin-left:auto;font:12px "Geist Mono";color:var(--textTertiary)}
+.menu .mi.hl{background:var(--bgSelected)}
+.menu hr{border:0;border-top:1px solid var(--lineSubtle);margin:4px 6px}
+.scrim{position:absolute;inset:0;background:var(--bgBase);opacity:.35;z-index:8}
+.sendbar{flex:none;display:flex;align-items:center;gap:8px;padding:10px 12px 18px 16px;border-top:1px solid var(--lineSubtle);font-size:12.5px;color:var(--textTertiary)}
+.btn-l{height:40px;padding:0 16px;border-radius:999px;background:var(--lantern);color:var(--textOnLantern);font-weight:600;font-size:14px;display:inline-flex;align-items:center;gap:6px}
+
+/* inline draft settings */
+.settings{width:236px;flex:none;border-left:1px solid var(--lineSubtle);background:var(--bgBase);padding:20px 0 12px;display:flex;flex-direction:column}
+.settings .lbl{font-size:11.5px;font-weight:600;color:var(--textTertiary);padding:0 16px 4px;letter-spacing:.02em}
+.set{min-height:52px;display:flex;align-items:center;gap:10px;padding:4px 12px 4px 16px;border-top:1px solid var(--lineSubtle)}
+.set .k{font-size:11.5px;color:var(--textTertiary)}
+.set .v{font:13px "Geist Mono";color:var(--textPrimary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.set .v.sans{font-family:Geist}
+.set .tx{flex:1;min-width:0}
+.set svg.i{color:var(--textSecondary);width:16px;height:16px}
+.switch{width:44px;height:26px;border-radius:999px;background:var(--lantern);position:relative;flex:none}
+.switch::after{content:"";position:absolute;right:2px;top:2px;width:22px;height:22px;border-radius:999px;background:var(--bgRaised);box-shadow:0 1px 3px var(--popoverShadow)}
+.attach{margin:auto 12px 0;height:44px;border:1px dashed var(--lineStrong);border-radius:8px;display:flex;align-items:center;justify-content:center;gap:8px;font-size:13.5px;color:var(--textSecondary)}
+
+/* floating composer card (ArrangementView overlay, fully open) */
+.card-float{position:absolute;z-index:5;border-radius:12px;background:var(--bgRaised);border:1px solid var(--lineStrong);box-shadow:0 16px 40px var(--popoverShadow);display:flex;flex-direction:column}
+
+/* continuity minis (scaled 0.36) */
+.strip{display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+.mini{position:relative;flex:none;background:var(--bgWindow);color:var(--textPrimary);overflow:hidden;font-size:10.5px;line-height:1.3;
+  box-shadow:0 0 0 1px var(--lineStrong),0 0 0 5px var(--bezel),0 0 0 6px var(--lineStrong),0 12px 30px var(--popoverShadow)}
+.mini.o{width:168px;height:244px;border-radius:3px 21px 21px 3px}
+.mini.i{width:342px;height:241px;border-radius:20px}
+.mini .mc{position:absolute;right:0;top:0;bottom:0;width:28px;display:flex;flex-direction:column;align-items:center;gap:4px;padding-top:6px}
+.mini .mc b{width:16px;height:16px;border-radius:999px;background:var(--bgRaised);border:1px solid var(--lineStrong)}
+.mini .mc b.isl{background:var(--bezel);border-color:var(--lineStrong);width:13px;height:13px}
+.mini .mc b.pri{background:var(--lantern);border-color:var(--lantern)}
+.mini .mh{font-weight:600;font-size:11px;padding:10px 8px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mini .ln{height:5px;border-radius:999px;background:var(--bgSelected);margin:5px 8px}
+.mini .ln.s{width:50%}.mini .ln.m{width:72%}
+.mini .bub{margin:6px 8px 4px auto;width:62%;height:24px;border-radius:6px;background:var(--bgBubble);border:1px solid var(--lineSubtle)}
+.mini .cmp{position:absolute;left:6px;bottom:8px;border:1px solid var(--lantern);border-radius:6px;background:var(--bgRaised);padding:5px 6px;font-size:10px}
+.mini .side{width:120px;padding-top:8px}
+.mini .side .r{height:24px;display:flex;align-items:center;gap:5px;padding:0 6px;font-size:9.5px;white-space:nowrap;overflow:hidden}
+.mini .side .r.sel{background:var(--bgSelected);box-shadow:inset 2px 0 0 var(--lantern)}
+.mini .st{width:10px;height:10px}
+.mini .st i{transform:scale(.7)}
+.arrow{display:flex;flex-direction:column;align-items:center;gap:6px;font-size:12px;color:var(--textSecondary);width:80px;text-align:center}
+.arrow svg{width:56px;height:16px;stroke:var(--textTertiary);fill:none;stroke-width:1.5}
+.mwrap{display:flex;flex-direction:column;align-items:center;gap:16px}
+.mcap{font-size:12px;text-align:center;color:var(--pageText);max-width:240px}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-compose" viewBox="0 0 24 24"><path d="M12 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"/><path d="M17.5 3.5l3 3L12 15l-4 1 1-4z"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><path d="M10.3 3h3.4l.5 2.4 1.9 1.1 2.3-.8 1.7 2.9-1.8 1.6v2.2l1.8 1.6-1.7 2.9-2.3-.8-1.9 1.1-.5 2.4h-3.4l-.5-2.4-1.9-1.1-2.3.8-1.7-2.9 1.8-1.6v-2.2L3.9 8.6l1.7-2.9 2.3.8 1.9-1.1z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-nib" viewBox="0 0 24 24"><path d="M12 3l5 10-5 8-5-8z"/><path d="M12 3v7.5"/><circle cx="12" cy="12" r="1.4"/></symbol>
+    <symbol id="i-stack" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 12.5l9 5 9-5"/><path d="M3 16.5l9 5 9-5"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></symbol>
+    <symbol id="i-chev-d" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+    <symbol id="i-branch" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="7" r="2"/><path d="M6 7v10"/><path d="M18 9v1a4 4 0 0 1-4 4H9a3 3 0 0 0-3 3"/></symbol>
+    <symbol id="i-clip" viewBox="0 0 24 24"><path d="M20 11.5l-8 8a5 5 0 0 1-7-7l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7L9.7 17a1.7 1.7 0 0 1-2.4-2.4L15 7"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></symbol>
+    <symbol id="i-bulb" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M5 18V5a1 1 0 0 1 1-1h12v13H7a2 2 0 0 0-2 2 2 2 0 0 0 2 2h11"/></symbol>
+    <symbol id="i-display" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></symbol>
+    <symbol id="i-term" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M12 15h5"/></symbol>
+    <symbol id="i-diff" viewBox="0 0 24 24"><path d="M12 4v8M8 8h8M8 18h8"/></symbol>
+    <symbol id="i-text" viewBox="0 0 24 24"><path d="M4 6h16M4 11h16M4 16h10"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></symbol>
+    <symbol id="i-panel-r" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M15 5v14M17 9h1.5M17 12h1.5"/></symbol>
+    <symbol id="i-chev-r" viewBox="0 0 24 24"><path d="M10 7l5 5-5 5"/></symbol>
+    <symbol id="i-pen" viewBox="0 0 24 24"><path d="M5 19l1-4L16 5l3 3L9 18z"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M7 3.5h7l4 4v13H7z"/><path d="M14 3.5v4h4"/></symbol>
+    <symbol id="i-agents" viewBox="0 0 24 24"><circle cx="12" cy="5.5" r="2.2"/><circle cx="5.5" cy="18.5" r="2.2"/><circle cx="18.5" cy="18.5" r="2.2"/><path d="M12 7.7v4.3M12 12l-5.2 4.6M12 12l5.2 4.6"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.4 3.8 5.3 3.8 8.5s-1.2 6.1-3.8 8.5c-2.6-2.4-3.8-5.3-3.8-8.5s1.2-6.1 3.8-8.5z"/></symbol>
+    <symbol id="i-reload" viewBox="0 0 24 24"><path d="M19 12a7 7 0 1 1-2.1-5"/><path d="M19 4.5v4h-4"/></symbol>
+    <symbol id="i-sidebar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M9 5v14M5.5 9h1.5M5.5 12h1.5"/></symbol>
+    <symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 7h16M7 12h10M10 17h4"/></symbol>
+    <symbol id="i-expand" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><rect x="9" y="9" width="6" height="6" rx="1"/></symbol>
+    <symbol id="i-commit" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.5"/><path d="M3 12h5.5M15.5 12H21"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></symbol>
+    <!-- the status bar's Wi-Fi ring, as Apple draws it in the vertical column -->
+    <symbol id="i-wifi" viewBox="0 0 34 34"><path d="M6.5 25A13.5 13.5 0 1 1 27.5 25"/><path d="M11 15.5a8.5 8.5 0 0 1 12 0M13.6 18.6a4.8 4.8 0 0 1 6.8 0" stroke-width="1.8"/><circle cx="17" cy="21.6" r="1.2" fill="currentColor" stroke="none"/><circle cx="10.2" cy="28.6" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.6" cy="30.3" r="1.1" fill="currentColor" stroke="none"/><circle cx="19.4" cy="30.3" r="1.1" fill="currentColor" stroke="none"/><circle cx="23.8" cy="28.6" r="1.1" fill="currentColor" stroke="none"/></symbol>
+  </defs>
+</svg>
+
+<!-- The inner display's list pane, shared by P2 and P3 (data-list fills it). -->
+<template id="tpl-list">
+  <div class="sbtop"><span class="spacer"></span><span class="ib" aria-label="Search (⌘K)"><svg class="i"><use href="#i-search"/></svg></span><span class="ib" aria-label="Hide sidebar"><svg class="i"><use href="#i-sidebar"/></svg></span></div>
+  <div class="scroll">
+    <nav class="dest" aria-label="Destinations">
+      <div class="drow newrow"><svg class="i"><use href="#i-compose"/></svg>New thread</div>
+      <div class="drow"><svg class="i"><use href="#i-nib"/></svg>Designs<span class="c">5</span></div>
+      <div class="drow"><svg class="i"><use href="#i-stack"/></svg>Projects<span class="c">2</span></div>
+      <div class="drow"><svg class="i"><use href="#i-bolt"/></svg>Automations<span class="c">1</span></div>
+    </nav>
+    <div class="ssec"><div class="ssh need">Needs you<span class="c">1</span></div>
+      <div class="srow"><span class="st need"><i></i></span><div class="tx"><div class="t">Fix inventory sync retries</div><div class="d q">Retry 429s forever, or cap at 5?</div></div><span class=clk>2m</span></div></div>
+    <div class="ssec"><div class="ssh">Working<span class="c">2</span></div>
+      <div class="srow selrow"><span class="st run"><i></i></span><div class="tx"><div class="t">Design Shepherd widgets and app intents</div><div class="d">Running python</div></div><span class=clk>6s</span></div>
+      <div class="srow"><span class="st run"><i></i></span><div class="tx"><div class="t">Investigate thread resumption for child agents</div><div class="d">Thinking</div></div><span class=clk>3s</span></div></div>
+    <div class="ssec"><div class="ssh">Done<span class="act">Mark all seen</span><span class="c">4</span></div>
+      <div class="srow"><span class="st done"><i></i></span><div class="tx"><div class="t">Design Shepherd push notifications</div><div class="d">Shepherd</div></div><span class=clk>8m</span></div>
+      <div class="srow"><span class="st done"><i></i></span><div class="tx"><div class="t">Review graphql duplicate names</div><div class="d">rain.gg</div></div><span class=clk>29m</span></div>
+      <div class="srow"><span class="st done"><i></i></span><div class="tx"><div class="t">Explain Shepherd design requirements</div><div class="d">Shepherd</div></div><span class=clk>32m</span></div>
+      <div class="srow"><span class="st done"><i></i></span><div class="tx"><div class="t">Investigate Cloudflare Workers limits</div><div class="d">cardwave</div></div><span class=clk>1h</span></div></div>
+  </div>
+  <div class="sbfoot"><span class="ib" aria-label="Settings"><svg class="i"><use href="#i-gear"/></svg></span>Settings</div>
+</template>
+
+<!-- The widgets thread's transcript, shared by every inner-display frame. -->
+<template id="tpl-transcript">
+  <div class="bubble">Design Shepherd widgets and app intents: a Needs you widget, a Working count, and an intent that starts a thread from Shortcuts.</div>
+  <div class="ts">2:41 PM</div>
+  <div class="thought"><svg class="i s"><use href="#i-chev-r"/></svg>Thought for 4s</div>
+  <div>I'll mock the three widget sizes first, then wire the intents. Rendering the gallery so we can compare light and dark side by side.</div>
+  <div class="tools">
+    <div class="tool"><svg class="i s"><use href="#i-search"/></svg>Explored 6 files <span class="mono dim">read 6</span><svg class="i s cv"><use href="#i-chev-r"/></svg></div>
+    <div class="tool"><svg class="i s"><use href="#i-pen"/></svg>Edited 2 files <span class="mono"><span class="add">+125</span> <span class="del">−12</span></span><svg class="i s cv"><use href="#i-chev-r"/></svg></div>
+    <div class="tool"><span class="st run" style="width:14px;height:14px"><i></i></span>Running render.py <span class="mono dim">python</span><span class="clk">6s</span></div>
+  </div>
+  <div>The small widget shows the top Needs you item; medium adds the Working count. The intent takes a prompt and an optional repo.</div>
+</template>
+
+<template id="tpl-stat"><div class="stat"><span>9:41</span><svg aria-label="Wi-Fi"><use href="#i-wifi"/></svg></div></template>
+
+<div class="page">
+<header class="review">
+  <h1>Shepherd on iPhone Duo</h1>
+  <span class="mocktag">proposal mock · not built · rev 2 (HIG geometry)</span>
+  <span class="spacer"></span>
+  <div class="seg" role="group" aria-label="Theme" id="themeSeg">
+    <button data-theme="dark" aria-pressed="true">Dark</button>
+    <button data-theme="light" aria-pressed="false">Light</button>
+  </div>
+</header>
+<p class="lede">The proposal is to stop fighting the system and let iPhone Duo's own chrome do the work. Closed, the outer display is a thumb-sized inbox with the system's trailing control column. Open, the same app becomes a split view. Half open, the system splits that view at the fold, and Shepherd adds only one thing: an ArrangementView that puts the composer under the fold. Every device is drawn at 1 pt = 1 px.</p>
+
+<div class="facts" aria-label="Duo facts">
+  <h2>Duo facts</h2>
+  <div><b>Outer display 466 × 678 pt</b> (1398 × 2034 px). Wider and shorter than any other iPhone. Corners are 8 pt on the hinge (left) side and 59 pt on the right. The Dynamic Island is in the top-right corner.<br><span class="src">simulator profile · HIG device layout</span></div>
+  <div><b>Inner display 951 × 669 pt</b> landscape, or 669 × 951 pt in the laptop pose. 55 pt corners. Each half is about 462 × 669, roughly the size of the outer display.<br><span class="src">simulator profile</span></div>
+  <div><b>Fold ≈ 27 pt</b> through the centre (x or y ≈ 475). It's a reserved region <i>only while half open</i>. Fully open there's no fold in the UI. The inner camera is hidden unless active.<br><span class="src">HIG · Preparing your app for iPhone Duo</span></div>
+  <div><b>Vertical controls.</b> On the outer display, and on the inner display in landscape, the nav bar, toolbar and tab bar stack in a trailing column (island, time over Wi-Fi, toolbar, gap, tab bar). Items there are icon-only. The inner display in portrait keeps horizontal bars.<br><span class="src">HIG · Vertical controls</span></div>
+  <div class="wide"><b>Split view.</b> The leading pane keeps horizontal controls at the top (Mail). The detail's controls are vertical on the trailing edge. Fully open, the sidebar is narrower than the detail. Half open, the columns become equal halves at the fold (Notes).<br><span class="src">HIG · Split views · mail-full, notes-sidebar-folded</span></div>
+  <div class="wide"><b>One layout, not one per pose.</b> Start from compact width on the outer display and regular width on the inner one. Move only what has to clear the fold, and keep state the same across displays. ArrangementView overlay: the primary view floats over the secondary when open or closed, and goes below or after the fold when half open. Overflow runs bottom to top.<br><span class="src">HIG · Layout · ArrangementView (SwiftUI)</span></div>
+</div>
+<div class="legend" aria-label="Status legend">
+  <span><span class="st need"><i></i></span>Needs you (lantern, haloed)</span>
+  <span><span class="st run"><i></i></span>Running (blue, open ring)</span>
+  <span><span class="st done"><i></i></span>Done (green, solid)</span>
+  <span>Each dot sits under a section heading or beside a status word.</span>
+  <span><span class="hig">HIG ▸</span> marks the Apple rule a decision follows.</span>
+</div>
+
+<!-- ═════════════ P1 · closed ═════════════ -->
+<section class="post" aria-labelledby="p1">
+<h2 id="p1">P1 · Closed (outer display, 466 × 678)</h2>
+<p>A short, wide phone with the hinge on the left. The system takes the trailing 76 pt for the island, status and every bar, which leaves Shepherd a 390 pt content column. At 678 pt tall, the first screen holds about eleven rows, so every row the chrome gives back counts.</p>
+<div class="scenes">
+
+  <div class="scene">
+    <div class="dev outer"><div class="scr">
+      <div class="cc">
+        <div class="scroll" style="padding-top:18px">
+          <div class="bigttl"><h5>Shepherd</h5></div>
+          <div class="sec"><div class="sh need">Needs you <span class="c">1</span></div>
+            <div class="card"><div class="row"><span class="st need"><i></i></span><div class="tx"><div class="t">Fix inventory sync retries</div><div class="d q">Retry 429s forever, or cap at 5 attempts?</div></div><span class="clk">2m</span></div></div></div>
+          <div class="sec"><div class="sh">Working <span class="c">2</span></div>
+            <div class="card">
+              <div class="row"><span class="st run"><i></i></span><div class="tx"><div class="t">Design Shepherd widgets and app intents</div><div class="d">Running python</div></div><span class="clk">6s</span></div>
+              <div class="row"><span class="st run"><i></i></span><div class="tx"><div class="t">Investigate thread resumption for child agents</div><div class="d">Thinking</div></div><span class="clk">3s</span></div>
+            </div></div>
+          <div class="sec"><div class="sh">Done <span class="c">4</span><span class="act">Mark all seen</span></div>
+            <div class="card">
+              <div class="row"><span class="st done"><i></i></span><div class="tx"><div class="t">Design Shepherd push notifications</div><div class="d">Shepherd</div></div><span class="clk">8m</span></div>
+              <div class="row"><span class="st done"><i></i></span><div class="tx"><div class="t">Review graphql duplicate names</div><div class="d">rain.gg</div></div><span class="clk">29m</span></div>
+              <div class="row"><span class="st done"><i></i></span><div class="tx"><div class="t">Explain Shepherd design requirements</div><div class="d">Shepherd</div></div><span class="clk">32m</span></div>
+              <div class="row"><span class="st done"><i></i></span><div class="tx"><div class="t">Investigate Cloudflare Workers limits</div><div class="d">cardwave</div></div><span class="clk">1h</span></div>
+            </div></div>
+        </div>
+        <div class="fadeb"></div>
+      </div>
+      <div class="col">
+        <span class="island" aria-hidden="true"></span>
+        <div data-stat></div>
+        <span class="g pri" aria-label="New thread"><svg class="i"><use href="#i-compose"/></svg></span>
+        <span class="g" aria-label="Search"><svg class="i"><use href="#i-search"/></svg></span>
+        <span class="fill"></span>
+        <span class="gcap" role="tablist" aria-label="Tabs"><span class="on bdg" role="tab" aria-selected="true" aria-label="Home, 1 needs you"><svg class="i"><use href="#i-home"/></svg><b>1</b></span><span role="tab" aria-label="Designs"><svg class="i"><use href="#i-nib"/></svg></span><span role="tab" aria-label="Projects"><svg class="i"><use href="#i-stack"/></svg></span><span role="tab" aria-label="Automations"><svg class="i"><use href="#i-bolt"/></svg></span><span role="tab" aria-label="Settings"><svg class="i"><use href="#i-gear"/></svg></span></span>
+      </div>
+    </div></div>
+    <div class="cap">
+      <div class="pn">P1 · closed · Home</div>
+      <h3>Home, inbox first, five tabs</h3>
+      <p>Home is only the inbox. Designs, Projects and Automations are tabs beside Home and Settings, in the system column.</p>
+      <ul>
+        <li><span class="hig">HIG ▸ Tab bars are for navigation</span> Designs, Projects and Automations are top-level destinations, so they're tabs, not rows on Home. Five tabs is the most that fit before iOS adds a More tab, which the HIG says to avoid.</li>
+        <li><span class="hig">HIG ▸ Vertical controls</span> The column follows Apple's order: island, time over Wi-Fi, the toolbar (Compose), a gap, then the five-tab capsule. Search sits under Compose as a toolbar item; it opens the existing search palette.</li>
+        <li><span class="hig">HIG ▸ Badges for critical information</span> The Home tab carries the Needs you count. iOS draws badges red by default; this shows lantern (<code>AgentState.attention</code>) to match the dot.</li>
+        <li><span class="hig">HIG ▸ Don't hide tabs</span> Designs is a tab even when no host serves designs. Its screen says why, rather than the tab disappearing as the Home row does today.</li>
+        <li><span class="hig">HIG ▸ Overflow runs bottom to top</span> Compose is the top toolbar item, so it's the last to overflow. It's the screen's one lantern control.</li>
+        <li><span class="hig">HIG ▸ Icon-only when vertical</span> <code>square.and.pencil</code>, then <code>house</code>, <code>pencil.tip</code>, <code>square.stack.3d.up</code>, <code>bolt</code>, <code>gearshape</code> (the symbols the Home rows use today). The labels move to VoiceOver.</li>
+        <li><span class="hig">HIG ▸ Compact width is the base</span> The 390 pt content column is the familiar iPhone width, so the row layout is unchanged.</li>
+      </ul>
+      <h4>What changed vs today</h4>
+      <ul>
+        <li>The four nav rows (about 40% of 678 pt) are gone. Designs, Projects and Automations are tabs. More's contents (hosts, design systems, extensions) move into Settings.</li>
+        <li>Not a Duo-only change: it's the same <code>TabView</code> in <code>PhoneShell</code>, so a regular iPhone gets the same five tabs along the bottom.</li>
+        <li>No <code>macbook</code> badge on rows and no "connected" line under the title while there's one host and it's online. A host shows up only when something needs attention: the existing offline notice card at the top of the list. No chevrons either.</li>
+        <li>Working rows show a verb ("Running python") instead of the raw command.</li>
+        <li>Search moves up beside New thread, so both actions sit together at the top of the column and the list starts right under the title. Compose has the highest visibility priority, then Search; with five tabs the column still has about 150 pt to spare.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="scene">
+    <div class="dev outer"><div class="scr">
+      <div class="cc" style="bottom:300px">
+        <div style="padding:20px 16px 10px;font-size:13px;font-weight:600;color:var(--textSecondary)">New thread</div>
+        <div class="editor">Add a retry cap of 5 to the SKU sync, with exponential backoff, and log each give-up with the SKU id<span class="caret"></span></div>
+        <div class="chiprow">
+          <span class="chip" aria-label="Repo">ms-inventory-fetcher<svg class="i cv"><use href="#i-chev-d"/></svg></span>
+          <span class="chip" aria-label="Model and thinking">gpt-6.1-sol <span class="dim">·</span> <span class="sans">Medium</span><svg class="i cv"><use href="#i-chev-d"/></svg></span>
+        </div>
+      </div>
+      <div class="col" style="bottom:300px;padding-bottom:12px">
+        <span class="island" aria-hidden="true"></span>
+        <div data-stat></div>
+        <span class="g" aria-label="Cancel"><svg class="i"><use href="#i-x"/></svg></span>
+        <span class="g pri" aria-label="Send"><svg class="i"><use href="#i-up"/></svg></span>
+        <span class="gcap" role="group" aria-label="Thread options"><span class="tog" role="switch" aria-checked="true" aria-label="New worktree"><svg class="i"><use href="#i-branch"/></svg></span><span aria-label="Attach"><svg class="i"><use href="#i-clip"/></svg></span></span>
+      </div>
+      <div class="kb" style="height:300px">
+        <div class="kr"><span>q</span><span>w</span><span>e</span><span>r</span><span>t</span><span>y</span><span>u</span><span>i</span><span>o</span><span>p</span></div>
+        <div class="kr r2"><span>a</span><span>s</span><span>d</span><span>f</span><span>g</span><span>h</span><span>j</span><span>k</span><span>l</span></div>
+        <div class="kr"><span class="w">⇧</span><span>z</span><span>x</span><span>c</span><span>v</span><span>b</span><span>n</span><span>m</span><span class="w">⌫</span></div>
+        <div class="kr"><span class="w">123</span><span class="w">☺</span><span class="sp">space</span><span class="ret">return</span></div>
+      </div>
+    </div>
+      <span class="ftag" style="left:0;top:calc(100% + 16px)">↑ keyboard: full width, 300 pt (44% of 678)</span>
+    </div>
+    <div class="cap">
+      <div class="pn">P1 · closed · New thread, keyboard up</div>
+      <h3>New thread sheet</h3>
+      <p>Type, check one row of defaults, and send, all without the keyboard going down.</p>
+      <ul>
+        <li><span class="hig">HIG ▸ Sheets on the outer display get vertical bars</span> Cancel (<code>xmark</code>) is at the top of the column, then the prominent action, Send (<code>arrow.up</code>, lantern). Send stays grey until the prompt has text.</li>
+        <li><span class="hig">HIG ▸ A task view keeps its toolbar and drops the tab bar</span> The worktree toggle (<code>arrow.triangle.branch</code>, lantern tint when on) and Attach (<code>paperclip</code>) join the toolbar as a capsule.</li>
+        <li><span class="hig">HIG ▸ Icon-only when vertical</span> Every item has a symbol, so none is forced back into a horizontal bar.</li>
+      </ul>
+      <h4>What changed vs today</h4>
+      <ul>
+        <li>No Cancel / title / send row. The column holds all of it, and the editor gets the full 300 pt above the keyboard.</li>
+        <li>Four wrapping chips become one row: repo and model · thinking. Both fit at 390 pt without truncating, because worktree and attach moved to the column.</li>
+        <li>The host chip is hidden with one host. Repo and model are last used.</li>
+        <li>The grey "New worktree on …" line becomes the toggle. Long-press it for "Where it runs".</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="scene">
+    <div class="dev outer"><div class="scr">
+      <div class="cc">
+        <div class="th-head" style="padding-top:18px"><span class="tt">Design Shepherd widgets and app intents</span></div>
+        <div style="display:flex;gap:6px;padding:0 16px 6px"><span class="chipb">agent/widgets</span><span class="pill"><span class="st run"><i></i></span>Running</span></div>
+        <div class="tr" data-transcript></div>
+        <div class="composer"><div class="in ph">Follow up…</div>
+          <div class="bar"><span class="ibtn"><svg class="i"><use href="#i-clip"/></svg></span>gpt-6.1-sol · <span style="font-family:Geist">Medium</span><span class="spacer"></span><span class="ibtn send off"><svg class="i"><use href="#i-up"/></svg></span></div></div>
+      </div>
+      <div class="scrim" aria-hidden="true"></div>
+      <div class="menu" role="menu" aria-label="Thread" style="right:84px;top:150px">
+        <div class="mi"><svg class="i"><use href="#i-diff"/></svg>Changes<span class=v><span class="add">+137</span> <span class="del">−16</span></span></div>
+        <div class="mi"><svg class="i"><use href="#i-folder"/></svg>Files</div>
+        <div class="mi"><svg class="i"><use href="#i-term"/></svg>Terminal<span class=v>1 running</span></div>
+        <div class="mi hl"><svg class="i"><use href="#i-agents"/></svg>Subagents<span class=v>1 running</span></div>
+        <div class="mi"><svg class="i"><use href="#i-globe"/></svg>Browser<span class=v>:5173</span></div>
+        <hr>
+        <div class="mi"><svg class="i"><use href="#i-stop"/></svg>Stop agent</div>
+        <div class="mi"><svg class="i"><use href="#i-more"/></svg>More…</div>
+      </div>
+      <div class="col" style="z-index:10">
+        <span class="island" aria-hidden="true"></span>
+        <div data-stat></div>
+        <span class="g" aria-label="Back"><svg class="i"><use href="#i-back"/></svg></span>
+        <span class="g act" aria-label="Thread menu" aria-expanded="true"><svg class="i"><use href="#i-more"/></svg></span>
+        <span class="fill"></span>
+        <span class="gcap" role="tablist" aria-label="Tabs"><span class="on bdg" role="tab" aria-selected="true" aria-label="Home, 1 needs you"><svg class="i"><use href="#i-home"/></svg><b>1</b></span><span role="tab" aria-label="Designs"><svg class="i"><use href="#i-nib"/></svg></span><span role="tab" aria-label="Projects"><svg class="i"><use href="#i-stack"/></svg></span><span role="tab" aria-label="Automations"><svg class="i"><use href="#i-bolt"/></svg></span><span role="tab" aria-label="Settings"><svg class="i"><use href="#i-gear"/></svg></span></span>
+      </div>
+    </div></div>
+    <div class="cap">
+      <div class="pn">P1 · closed · a thread, its menu open</div>
+      <h3>The side pane, as a menu</h3>
+      <p>There's no room for a pane closed, so the same five tabs are rows in the thread's ⋯ menu. Each opens as its own screen, pushed over the thread, with Back at the top of the column.</p>
+      <ul>
+        <li><span class="hig">HIG ▸ Same functions on every display</span> Everything the open display's pane has is one tap away here, with the same names, icons and status (totals, "1 running", the port).</li>
+        <li><span class="hig">HIG ▸ Back first, then actions</span> Back (<code>chevron.left</code>) tops the column, then ⋯. The tab bar stays visible on a pushed screen.</li>
+        <li><span class="hig">HIG ▸ Use the system overflow menu</span> In the app this is the toolbar's overflow menu (<code>ToolbarOverflowMenu</code>), not a custom popover, so it lands where the system puts menus on the Duo.</li>
+      </ul>
+      <h4>What changed vs today</h4>
+      <ul>
+        <li>Changes, Terminal and Subagents are already separate screens on the phone; they gather in one menu. Files and Browser join them as they ship.</li>
+        <li>Unfold with Subagents open and it becomes the open pane's Subagents tab, beside the thread.</li>
+      </ul>
+    </div>
+  </div>
+
+</div>
+</section>
+
+<!-- ═════════════ P2 · open flat ═════════════ -->
+<section class="post" aria-labelledby="p2">
+<h2 id="p2">P2 · Open flat (inner display, 951 × 669)</h2>
+<p>The Mac's layout on a 951 pt screen: the sidebar on the left, the thread, and the side pane on the right. All three don't fit at once, so the sidebar steps aside while the side pane is open. There's no fold in the UI while it's flat.</p>
+<div class="scenes" style="flex-direction:column">
+
+  <div class="scene">
+    <div class="dev inner"><div class="scr">
+      <aside class="side" style="width:300px" data-list="sel"></aside>
+      <div class="pane" style="left:300px;right:76px">
+        <div class="th-head"><span class="tt">Design Shepherd widgets and app intents</span><span class="chipb">agent/widgets</span><span class="pill"><span class="st run"><i></i></span>Running</span></div>
+        <div class="tr" data-transcript></div>
+        <div class="composer">
+          <div class="in ph">Follow up, or / for commands…</div>
+          <div class="bar"><span class="ibtn"><svg class="i"><use href="#i-clip"/></svg></span>gpt-6.1-sol · <span style="font-family:Geist">Medium</span><svg class="i s"><use href="#i-chev-d"/></svg><span class="spacer"></span><span class="ibtn send off" aria-label="Send"><svg class="i"><use href="#i-up"/></svg></span></div>
+        </div>
+      </div>
+      <div class="col">
+        <div data-stat></div>
+        <span class="g" aria-label="Show side pane"><svg class="i"><use href="#i-panel-r"/></svg></span>
+        <span class="gcap" role="group" aria-label="Thread actions"><span aria-label="Stop agent"><svg class="i"><use href="#i-stop"/></svg></span><span aria-label="More"><svg class="i"><use href="#i-more"/></svg></span></span>
+        <span class="fill"></span>
+        <span class="g pri" aria-label="New thread"><svg class="i"><use href="#i-compose"/></svg></span>
+      </div>
+    </div></div>
+    <div class="cap">
+      <div class="pn">P2 · open flat · side pane closed</div>
+      <h3>Sidebar, thread</h3>
+      <p>The left sidebar stays docked beside the thread, as on the Mac. The side-pane button sits at the top of the thread's column.</p>
+      <ul>
+        <li><span class="hig">HIG ▸ Split view pane controls</span> The sidebar keeps horizontal controls at its top (search, sidebar toggle), as on the Mac and iPad. The thread's controls are the trailing column.</li>
+        <li><span class="hig">HIG ▸ Fully open, the sidebar is narrower</span> Sidebar 300 pt (the iPad's), thread 575 pt, column 76 pt.</li>
+        <li><span class="hig">HIG ▸ Overflow bottom to top</span> New thread sits low and stays longest. The side-pane button, Stop and More sit high.</li>
+      </ul>
+      <h4>What changed vs today</h4>
+      <ul>
+        <li>No Transcript / Changes / Terminal switch: the thread never leaves the screen. Changes and Terminal live in the side pane, as on the Mac.</li>
+        <li>The sidebar is the Mac's and iPad's (SHNavigation, iPadSidebar): New thread and the destinations as plain rows, then Needs you, Working and Done as flat rows, the selected row filled. Settings sits in the footer, as on the Mac. The destinations match the closed tabs.</li>
+        <li>The thread header is the Mac's: title, branch chip, status. The transcript has no speaker labels, and tool calls group into "Explored", "Edited" and "Running" rows, as on the Mac.</li>
+      </ul>
+      <div class="note"><span class="n">1</span><span><b>Continuity.</b> <span class="hig">HIG ▸ Keep state the same across displays</span> This is the thread that was open on the outer display when you unfolded, with the same scroll position and the same composer draft.</span></div>
+    </div>
+  </div>
+
+  <div class="scene">
+    <div class="dev inner"><div class="scr">
+      <div class="pane" style="left:0;width:475px">
+        <span class="g lbtn" aria-label="Show sidebar"><svg class="i"><use href="#i-sidebar"/></svg></span>
+        <div class="th-head" style="padding-left:72px"><span class="tt">Design Shepherd widgets and app intents</span><span class="chipb">agent/widgets</span><span class="pill"><span class="st run"><i></i></span>Running</span></div>
+        <div class="tr" data-transcript style="padding-left:28px"></div>
+        <div class="composer" style="margin-left:24px">
+          <div class="in ph">Follow up, or / for commands…</div>
+          <div class="bar"><span class="ibtn"><svg class="i"><use href="#i-clip"/></svg></span>gpt-6.1-sol · <span style="font-family:Geist">Medium</span><svg class="i s"><use href="#i-chev-d"/></svg><span class="spacer"></span><span class="ibtn send off" aria-label="Send"><svg class="i"><use href="#i-up"/></svg></span></div>
+        </div>
+      </div>
+      <div class="rpane" style="left:475px;right:76px" aria-label="Side pane">
+        <div class="ptop" role="tablist" aria-label="Side pane tabs">
+          <span class="on" role="tab" aria-selected="true"><svg class="i s"><use href="#i-diff"/></svg>Changes <span class="n">3</span></span>
+          <span class="ic" role="tab" aria-label="Files"><svg class="i"><use href="#i-folder"/></svg></span>
+          <span class="ic" role="tab" aria-label="Terminal, 1 running"><svg class="i"><use href="#i-term"/></svg></span>
+          <span class="ic bd" role="tab" aria-label="Subagents, 1 running"><svg class="i"><use href="#i-agents"/></svg><b></b></span>
+          <span class="ic" role="tab" aria-label="Browser"><svg class="i"><use href="#i-globe"/></svg></span>
+          <span class="spacer"></span><span class="ib" aria-label="Changes options: scope, base, diff style"><svg class="i"><use href="#i-more"/></svg></span>
+        </div>
+        <div class="cmp2"><span class="scope">agent/widgets <span class="dim">vs</span> main<svg class="i s"><use href="#i-chev-d"/></svg></span><span class="mono"><span class="add">+137</span> <span class="del">−16</span></span><span class="spacer"></span><span class="btn-g">Commit…</span></div>
+        <div class="fsw"><span class="ib sm" aria-label="Previous file"><svg class="i s"><use href="#i-back"/></svg></span><span class="fname">NeedsYouWidget.swift<svg class="i s"><use href="#i-chev-d"/></svg></span><span class="mono dim">1 of 3</span><span class="spacer"></span><span class="mono"><span class="add">+84</span> <span class="del">−12</span></span><span class="ib sm" aria-label="Next file"><svg class="i s"><use href="#i-chev-r"/></svg></span></div>
+        <div class="diff">
+          <div class="l"><span class="ln">12</span><span class="sg"> </span><span><span class="kw">struct</span> <span class="ty">NeedsYouWidget</span>: <span class="ty">Widget</span> {</span></div>
+          <div class="l r"><span class="ln">13</span><span class="sg">−</span><span>    <span class="kw">let</span> kind = <span class="str">"needs"</span></span></div>
+          <div class="l a"><span class="ln">13</span><span class="sg">+</span><span>    <span class="kw">let</span> kind = <span class="str">"shepherd.needs-you"</span></span></div>
+          <div class="l a"><span class="ln">14</span><span class="sg">+</span><span>    <span class="kw">var</span> body: <span class="kw">some</span> <span class="ty">WidgetConfiguration</span> {</span></div>
+          <div class="l a"><span class="ln">15</span><span class="sg">+</span><span>        <span class="fn">StaticConfiguration</span>(kind: kind,</span></div>
+          <div class="l a"><span class="ln">16</span><span class="sg">+</span><span>            provider: <span class="fn">Provider</span>()) { e <span class="kw">in</span></span></div>
+          <div class="l a"><span class="ln">17</span><span class="sg">+</span><span>            <span class="fn">NeedsYouView</span>(entry: e)</span></div>
+          <div class="l a"><span class="ln">18</span><span class="sg">+</span><span>        }</span></div>
+          <div class="l a"><span class="ln">19</span><span class="sg">+</span><span>        .<span class="fn">supportedFamilies</span>([.systemSmall,</span></div>
+          <div class="l a"><span class="ln">20</span><span class="sg">+</span><span>            .systemMedium])</span></div>
+          <div class="l a"><span class="ln">21</span><span class="sg">+</span><span>    }</span></div>
+          <div class="l"><span class="ln">22</span><span class="sg"> </span><span>}</span></div>
+          <div class="l"><span class="ln"></span><span class="sg"> </span><span style="color:var(--textTertiary)">⋯ 58 unchanged lines</span></div>
+          <div class="l r"><span class="ln">81</span><span class="sg">−</span><span>    <span class="kw">let</span> limit = <span class="str">3</span></span></div>
+          <div class="l a"><span class="ln">81</span><span class="sg">+</span><span>    <span class="kw">let</span> limit = family.<span class="fn">rows</span></span></div>
+        </div>
+      </div>
+      <div class="col">
+        <div data-stat></div>
+        <span class="g act" aria-label="Hide side pane" aria-pressed="true"><svg class="i"><use href="#i-panel-r"/></svg></span>
+        <span class="gcap" role="group" aria-label="Thread actions"><span aria-label="Stop agent"><svg class="i"><use href="#i-stop"/></svg></span><span aria-label="More"><svg class="i"><use href="#i-more"/></svg></span></span>
+        <span class="fill"></span>
+        <span class="g pri" aria-label="New thread"><svg class="i"><use href="#i-compose"/></svg></span>
+      </div>
+    </div></div>
+    <div class="cap">
+      <div class="pn">P2 · open flat · side pane open</div>
+      <h3>Thread, side pane</h3>
+      <p>Open the side pane and the left sidebar steps aside, so the thread and the pane each get half. The sidebar button brings the list back as an overlay.</p>
+      <ul>
+        <li><span class="hig">Mac rule ▸ ShellLayout</span> The same docking rule as the Mac: the side pane docks only while the layout keeps 400 pt and the pane 380. Beside a 300 pt sidebar that's 1,157 pt; the inner display has 875. So with the pane open, the sidebar hides and overlays on demand, exactly as in a narrow Mac window.</li>
+        <li><span class="hig">HIG ▸ Avoid extreme rearrangement</span> The thread ends at x 475, where the fold is. Half open, nothing moves: the thread is the left half and the pane the right.</li>
+        <li><span class="hig">HIG ▸ Inspectors keep horizontal bars</span> The pane's tabs stay a horizontal row on top, like the Mac's. Commit… stays in the Changes compare row, as on the Mac.</li>
+      </ul>
+      <h4>What changed vs today</h4>
+      <ul>
+        <li>Today the Changes pane can't dock on this display (<code>reviewCrowded</code>), so Review takes the whole window. Now it docks beside the thread and the sidebar makes room.</li>
+        <li>Terminal and Files are tabs in the same pane, so there's one right sidebar for everything, as on the Mac.</li>
+        <li>The pane's header is three rows: the tabs, level with the thread's title, with ⋯ holding the scope, base and diff options; the compare row (branch vs base, totals, Commit…); and a file switcher (‹ name ⌄ 1 of 3 ›) that replaces the strip of file chips and the separate file header.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="scene">
+    <div class="dev inner"><div class="scr">
+      <aside class="side" style="width:300px" data-list="draft"></aside>
+      <div class="pane" style="left:300px;right:76px;flex-direction:row">
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+          <div class="th-head"><span class="tt">New thread</span></div>
+          <div class="editor" style="padding:4px 16px">Find why the inventory fetcher double-counts SKUs after a partial page, and add a regression test that replays the 429 sequence<span class="caret"></span></div>
+        </div>
+        <div class="settings" aria-label="Where it runs">
+          <div class="lbl">WHERE IT RUNS</div>
+          <div class="set" style="border-top:0"><svg class="i"><use href="#i-book"/></svg><div class="tx"><div class="k">Repo</div><div class="v">ms-inventory-fetcher</div></div><svg class="i s" style="color:var(--textTertiary)"><use href="#i-chev-d"/></svg></div>
+          <div class="set"><svg class="i"><use href="#i-display"/></svg><div class="tx"><div class="k">Host</div><div class="v">macbook</div></div><svg class="i s" style="color:var(--textTertiary)"><use href="#i-chev-d"/></svg></div>
+          <div class="set"><svg class="i"><use href="#i-branch"/></svg><div class="tx"><div class="k">New worktree</div><div class="v sans" style="color:var(--textSecondary);font-size:12.5px">off main</div></div><span class="switch" role="switch" aria-checked="true" aria-label="New worktree"></span></div>
+          <div class="lbl" style="padding-top:14px">MODEL</div>
+          <div class="set" style="border-top:0"><svg class="i"><use href="#i-spark"/></svg><div class="tx"><div class="k">Model</div><div class="v">gpt-6.1-sol</div></div><svg class="i s" style="color:var(--textTertiary)"><use href="#i-chev-d"/></svg></div>
+          <div class="set"><svg class="i"><use href="#i-bulb"/></svg><div class="tx"><div class="k">Thinking</div><div class="v sans">Medium</div></div><svg class="i s" style="color:var(--textTertiary)"><use href="#i-chev-d"/></svg></div>
+          <div class="attach"><svg class="i s"><use href="#i-clip"/></svg>Attach files</div>
+        </div>
+      </div>
+      <div class="col">
+        <div data-stat></div>
+        <span class="g" aria-label="Discard draft"><svg class="i"><use href="#i-x"/></svg></span>
+        <span class="g pri" aria-label="Start thread"><svg class="i"><use href="#i-up"/></svg></span>
+      </div>
+    </div></div>
+    <div class="cap">
+      <div class="pn">P2 · open flat · New thread inline</div>
+      <h3>New thread in the detail</h3>
+      <p>The draft is the detail, not a sheet, so the list stays visible and the draft waits in the list if you tap away.</p>
+      <ul>
+        <li><span class="hig">HIG ▸ Detail controls are vertical on the trailing edge</span> Discard (<code>xmark</code>) and Start (<code>arrow.up</code>, lantern) take the detail's column like any other detail toolbar.</li>
+        <li><span class="hig">HIG ▸ Inner sheets: centred gets horizontal bars, trailing gets vertical</span> A centred sheet would flip the draft's bars to horizontal and hide the list. Keeping the draft in the detail gives the same vertical actions as the outer sheet.</li>
+        <li><span class="hig">HIG ▸ The inner display may show one more level</span> Every setting is visible in a labelled column (repo, host, worktree, model, thinking), with no popovers.</li>
+      </ul>
+      <h4>What changed vs today</h4>
+      <ul>
+        <li>No modal. New thread is selected in the sidebar while the draft is open, as the Mac's New thread page is (NavNewThread).</li>
+        <li>The prompt fills the pane. The host row shows here because there's room, and it's still last used.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="scene">
+    <div class="pgal"><div><div class="plab">Files · needs files.v1 on the host</div><div class="pcard"><div class="ptop" role="tablist" aria-label="Side pane tabs"><span class="ic" role="tab" aria-label="Changes"><svg class="i"><use href="#i-diff"/></svg></span><span class="on" role="tab" aria-selected="true"><svg class="i s"><use href="#i-folder"/></svg>Files</span><span class="ic" role="tab" aria-label="Terminal"><svg class="i"><use href="#i-term"/></svg></span><span class="ic bd" role="tab" aria-label="Subagents"><svg class="i"><use href="#i-agents"/></svg><b></b></span><span class="ic" role="tab" aria-label="Browser"><svg class="i"><use href="#i-globe"/></svg></span><span class="spacer"></span><span class="ib" aria-label="More"><svg class="i"><use href="#i-more"/></svg></span></div>
+  <div class="filt"><svg class="i s"><use href="#i-search"/></svg>Filter files</div>
+  <div class="tree">
+    <div class="n"><svg class="i"><use href="#i-chev-d"/></svg>Widgets</div>
+    <div class="n sel" style="padding-left:30px"><svg class="i"><use href="#i-file"/></svg>NeedsYouWidget.swift<span class="m mod">M</span></div>
+    <div class="n" style="padding-left:30px"><svg class="i"><use href="#i-file"/></svg>WorkingCountWidget.swift</div>
+    <div class="n"><svg class="i"><use href="#i-chev-d"/></svg>Intents</div>
+    <div class="n" style="padding-left:30px"><svg class="i"><use href="#i-file"/></svg>StartThreadIntent.swift<span class="m">A</span></div>
+    <div class="n"><svg class="i"><use href="#i-chev-r"/></svg>Sources</div>
+    <div class="n"><svg class="i"><use href="#i-chev-r"/></svg>Tests</div>
+    <div class="n"><svg class="i"><use href="#i-file"/></svg>render.py<span class="m">A</span></div>
+    <div class="n"><svg class="i"><use href="#i-file"/></svg>AGENTS.md</div>
+  </div>
+  <div class="pfoot">Read-only. The thread's worktree on macbook. Tap a file to read it here.</div>
+</div></div><div><div class="plab">Terminal · built today (App/iOS/Terminal)</div><div class="pcard"><div class="ptop" role="tablist" aria-label="Side pane tabs"><span class="ic" role="tab" aria-label="Changes"><svg class="i"><use href="#i-diff"/></svg></span><span class="ic" role="tab" aria-label="Files"><svg class="i"><use href="#i-folder"/></svg></span><span class="on" role="tab" aria-selected="true"><svg class="i s"><use href="#i-term"/></svg>Terminal</span><span class="ic bd" role="tab" aria-label="Subagents"><svg class="i"><use href="#i-agents"/></svg><b></b></span><span class="ic" role="tab" aria-label="Browser"><svg class="i"><use href="#i-globe"/></svg></span><span class="spacer"></span><span class="ib" aria-label="More"><svg class="i"><use href="#i-more"/></svg></span></div>
+  <div class="tsub"><span class="st run" style="width:14px;height:14px"><i></i></span>render.py<span class="spacer"></span><span class="dim">zsh</span></div>
+  <div class="term full"><span class="p">$</span> cd /tmp/gl-ui; python render.py
+rendering widgets.small.light   … <span class="k">ok</span>  412ms
+rendering widgets.small.dark    … <span class="k">ok</span>  398ms
+rendering widgets.medium.light  … <span class="k">ok</span>  611ms
+rendering widgets.medium.dark   … <span class="k">ok</span>  587ms
+rendering widgets.large.light   … <span class="k">ok</span>  744ms
+rendering widgets.large.dark    …</div>
+  <div class="tin"><span class="p" style="color:var(--lanternText)">$</span> Type a command</div>
+</div></div><div><div class="plab">Subagents · built today (App/iOS/Subagents)</div><div class="pcard"><div class="ptop" role="tablist" aria-label="Side pane tabs"><span class="ic" role="tab" aria-label="Changes"><svg class="i"><use href="#i-diff"/></svg></span><span class="ic" role="tab" aria-label="Files"><svg class="i"><use href="#i-folder"/></svg></span><span class="ic" role="tab" aria-label="Terminal"><svg class="i"><use href="#i-term"/></svg></span><span class="on" role="tab" aria-selected="true"><svg class="i s"><use href="#i-agents"/></svg>Subagents</span><span class="ic" role="tab" aria-label="Browser"><svg class="i"><use href="#i-globe"/></svg></span><span class="spacer"></span><span class="ib" aria-label="More"><svg class="i"><use href="#i-more"/></svg></span></div>
+  <div style="padding:4px 8px;display:flex;flex-direction:column">
+    <div class="ssh">Running<span class="c">1</span></div>
+    <div class="srow"><span class="st run"><i></i></span><div class="tx"><div class="t">Render the widget gallery</div><div class="d">worker · Running python</div></div><span class="clk">12s</span></div>
+    <div class="ssh" style="margin-top:8px">Done<span class="c">2</span></div>
+    <div class="srow"><span class="st done"><i></i></span><div class="tx"><div class="t">Check the App Intents schema</div><div class="d">scout · 3 findings</div></div><span class="clk">1m</span></div>
+    <div class="srow"><span class="st done"><i></i></span><div class="tx"><div class="t">Read the Needs you design spec</div><div class="d">scout · ios-iphone.md</div></div><span class="clk">2m</span></div>
+  </div>
+  <div class="pfoot">Tap one to read its transcript here, or steer it from the composer.</div>
+</div></div><div><div class="plab">Browser · protocol ready (browser.tunnel.v1), iOS not built</div><div class="pcard"><div class="ptop" role="tablist" aria-label="Side pane tabs"><span class="ic" role="tab" aria-label="Changes"><svg class="i"><use href="#i-diff"/></svg></span><span class="ic" role="tab" aria-label="Files"><svg class="i"><use href="#i-folder"/></svg></span><span class="ic" role="tab" aria-label="Terminal"><svg class="i"><use href="#i-term"/></svg></span><span class="ic bd" role="tab" aria-label="Subagents"><svg class="i"><use href="#i-agents"/></svg><b></b></span><span class="on" role="tab" aria-selected="true"><svg class="i s"><use href="#i-globe"/></svg>Browser</span><span class="spacer"></span><span class="ib" aria-label="More"><svg class="i"><use href="#i-more"/></svg></span></div>
+  <div class="urlb"><svg class="i s"><use href="#i-globe"/></svg>localhost:5173<span class="fw">from macbook</span><span class="ib sm" aria-label="Reload"><svg class="i s"><use href="#i-reload"/></svg></span></div>
+  <div class="webpage">
+    <div class="ttl">Widget gallery</div>
+    <div class="wg"><b>Needs you</b>Fix inventory sync retries</div>
+    <div class="wg"><b>Working</b>2 agents</div>
+    <div class="wg wide"><b>Needs you · Working</b>Fix inventory sync retries · 2 working</div>
+    <div class="wg"><b>Done</b>4 today</div>
+    <div class="wg"><b>Start a thread</b>Shortcuts intent</div>
+  </div>
+  <div class="pfoot" style="margin-top:10px">localhost here is the host's dev server, forwarded over Shepherd's connection.</div>
+</div></div></div>
+    <div class="cap">
+      <div class="pn">P2 · side pane tabs, drawn at the pane's 400 pt</div>
+      <h3>Five tabs, one pane</h3>
+      <p>Changes, Files, Terminal, Subagents and Browser share the right sidebar, as on the Mac. At 400 pt the tabs are icons, and the open one keeps its label, as the Mac's pane drops labels under 480 pt. A blue dot on Subagents means one is running.</p>
+      <ul>
+        <li><span class="hig">Changes, Terminal, Subagents</span> Built on iOS today as their own screens. They move into the pane; nothing new on the host.</li>
+        <li><span class="hig">Browser</span> The host already forwards dev servers (<code>browser.tunnel.v1</code>, <code>devServers</code>, Start on the host). iOS adds a loopback listener on the same port number feeding a <code>WKWebView</code>, as the Mac viewer does, and the local-networking ATS exception. Letting the agent drive this page (<code>browser.drive.v1</code>) comes later.</li>
+        <li><span class="hig">Files</span> Needs a new host capability (<code>files.v1</code>: list and bounded read, read-only, inside the thread's folder, no escaping symlinks). On an older host the tab stays and says "Files needs a newer Shepherd on macbook", rather than disappearing.</li>
+      </ul>
+    </div>
+  </div>
+
+</div>
+</section>
+
+<!-- ═════════════ P3 · book ═════════════ -->
+<section class="post" aria-labelledby="p3">
+<h2 id="p3">P3 · Half open like a book (vertical fold)</h2>
+<p>The system does this one. The same split view becomes equal halves at the 27 pt fold, and nothing is redesigned for the pose. With the side pane closed, the list and the thread take a half each. With it open, the thread and the pane do, because P2 already puts the thread's edge at the fold.</p>
+<div class="scenes" style="flex-direction:column">
+
+  <div class="scene">
+    <div class="dev inner"><div class="scr">
+      <aside class="side" style="width:462px;border-right:0" data-list="sel"></aside>
+      <div class="fold v" aria-hidden="true"></div>
+      <div class="pane" style="left:489px;right:76px">
+        <div class="th-head"><span class="tt">Design Shepherd widgets and app intents</span></div>
+        <div class="tr" data-transcript></div>
+        <div class="composer"><div class="in ph">Follow up…</div>
+          <div class="bar"><span class="ibtn"><svg class="i"><use href="#i-clip"/></svg></span>gpt-6.1-sol<span class="spacer"></span><span class="ibtn send off"><svg class="i"><use href="#i-up"/></svg></span></div></div>
+      </div>
+      <div class="col">
+        <div data-stat></div>
+        <span class="g" aria-label="Show side pane"><svg class="i"><use href="#i-panel-r"/></svg></span>
+        <span class="gcap"><span aria-label="Stop agent"><svg class="i"><use href="#i-stop"/></svg></span><span aria-label="More"><svg class="i"><use href="#i-more"/></svg></span></span>
+        <span class="fill"></span>
+        <span class="g pri" aria-label="New thread"><svg class="i"><use href="#i-compose"/></svg></span>
+      </div>
+    </div>
+      <span class="ftag" style="left:448px;top:-22px">27 pt fold ↓</span>
+    </div>
+    <div class="cap">
+      <div class="pn">P3 · book · split view, system default</div>
+      <h3>Equal halves at the fold</h3>
+      <p>The list is on one half and the thread on the other. Nothing scrolls under the hinge.</p>
+      <ul>
+        <li><span class="hig">HIG ▸ Half open, the split view's columns become equal halves at the fold</span> This is the Notes-folded pattern. <code>PadShell</code> already drops its column width when <code>verticalFold</code> is set.</li>
+        <li><span class="hig">HIG ▸ Don't design a custom layout for each pose</span> This is P2 with the columns moved. The controls, state and selection are identical.</li>
+        <li><span class="hig">HIG ▸ Folding region reserved only while half open</span> The 27 pt band is empty.</li>
+      </ul>
+      <h4>What changed vs today</h4>
+      <ul>
+        <li>Nothing new to build here, apart from the P2 changes (destinations, verbs, the side pane) showing up in each half.</li>
+        <li>Today's half-open thread already meets the fold. Keep it.</li>
+      </ul>
+      <p style="margin-top:10px"><svg class="pose" viewBox="0 0 46 28" role="img" aria-label="Book pose"><path d="M3 4l20 4 20-4v20l-20 3-20-3z"/><path d="M23 8v19"/></svg></p>
+    </div>
+  </div>
+
+  <div class="scene">
+    <div class="dev inner"><div class="scr">
+      <div class="pane" style="left:0;width:462px;border-right:0">
+        <div class="th-head" style="padding-left:28px"><span class="tt">Design Shepherd widgets and app intents</span><span class="chipb">agent/widgets</span><span class="pill"><span class="st run"><i></i></span>Running</span></div>
+        <div class="tr" data-transcript style="padding-left:28px"></div>
+        <div class="composer" style="margin-left:24px"><div class="in ph">Comment on a line, or reply…</div>
+          <div class="bar"><span class="ibtn"><svg class="i"><use href="#i-clip"/></svg></span>gpt-6.1-sol · <span style="font-family:Geist">Medium</span><span class="spacer"></span><span class="ibtn send off"><svg class="i"><use href="#i-up"/></svg></span></div></div>
+      </div>
+      <div class="fold v" aria-hidden="true"></div>
+      <div class="pane" style="left:489px;right:76px">
+        <div class="ptop" role="tablist" aria-label="Side pane tabs">
+          <span class="on" role="tab" aria-selected="true"><svg class="i s"><use href="#i-diff"/></svg>Changes <span class="n">3</span></span>
+          <span class="ic" role="tab" aria-label="Files"><svg class="i"><use href="#i-folder"/></svg></span>
+          <span class="ic" role="tab" aria-label="Terminal, 1 running"><svg class="i"><use href="#i-term"/></svg></span>
+          <span class="ic bd" role="tab" aria-label="Subagents, 1 running"><svg class="i"><use href="#i-agents"/></svg><b></b></span>
+          <span class="ic" role="tab" aria-label="Browser"><svg class="i"><use href="#i-globe"/></svg></span>
+          <span class="spacer"></span><span class="ib" aria-label="Changes options: scope, base, diff style"><svg class="i"><use href="#i-more"/></svg></span>
+        </div>
+        <div class="cmp2"><span class="scope">agent/widgets <span class="dim">vs</span> main<svg class="i s"><use href="#i-chev-d"/></svg></span><span class="mono"><span class="add">+137</span> <span class="del">−16</span></span><span class="spacer"></span><span class="btn-g">Commit…</span></div>
+        <div class="fsw"><span class="ib sm" aria-label="Previous file"><svg class="i s"><use href="#i-back"/></svg></span><span class="fname">NeedsYouWidget.swift<svg class="i s"><use href="#i-chev-d"/></svg></span><span class="mono dim">1 of 3</span><span class="spacer"></span><span class="mono"><span class="add">+84</span> <span class="del">−12</span></span><span class="ib sm" aria-label="Next file"><svg class="i s"><use href="#i-chev-r"/></svg></span></div>
+        <div class="diff">
+          <div class="l"><span class="ln">12</span><span class="sg"> </span><span><span class="kw">struct</span> <span class="ty">NeedsYouWidget</span>: <span class="ty">Widget</span> {</span></div>
+          <div class="l r"><span class="ln">13</span><span class="sg">−</span><span>    <span class="kw">let</span> kind = <span class="str">"needs"</span></span></div>
+          <div class="l a"><span class="ln">13</span><span class="sg">+</span><span>    <span class="kw">let</span> kind = <span class="str">"shepherd.needs-you"</span></span></div>
+          <div class="l a"><span class="ln">14</span><span class="sg">+</span><span>    <span class="kw">var</span> body: <span class="kw">some</span> <span class="ty">WidgetConfiguration</span> {</span></div>
+          <div class="l a"><span class="ln">15</span><span class="sg">+</span><span>        <span class="fn">StaticConfiguration</span>(kind: kind,</span></div>
+          <div class="l a"><span class="ln">16</span><span class="sg">+</span><span>            provider: <span class="fn">Provider</span>()) { e <span class="kw">in</span></span></div>
+          <div class="l a"><span class="ln">17</span><span class="sg">+</span><span>            <span class="fn">NeedsYouView</span>(entry: e)</span></div>
+          <div class="l a"><span class="ln">18</span><span class="sg">+</span><span>        }</span></div>
+          <div class="l a"><span class="ln">19</span><span class="sg">+</span><span>        .<span class="fn">supportedFamilies</span>([.systemSmall,</span></div>
+          <div class="l a"><span class="ln">20</span><span class="sg">+</span><span>            .systemMedium])</span></div>
+          <div class="l a"><span class="ln">21</span><span class="sg">+</span><span>    }</span></div>
+          <div class="l"><span class="ln">22</span><span class="sg"> </span><span>}</span></div>
+          <div class="l"><span class="ln"></span><span class="sg"> </span><span style="color:var(--textTertiary)">⋯ 58 unchanged lines</span></div>
+          <div class="l r"><span class="ln">81</span><span class="sg">−</span><span>    <span class="kw">let</span> limit = <span class="str">3</span></span></div>
+          <div class="l a"><span class="ln">81</span><span class="sg">+</span><span>    <span class="kw">let</span> limit = family.<span class="fn">rows</span></span></div>
+        </div>
+        <div class="sendbar"><span>1 pending · NeedsYouWidget.swift</span><span class="spacer"></span><span class="ghost">Discard</span><span class="btn-l">Send 1 comment</span></div>
+      </div>
+      <div class="col">
+        <div data-stat></div>
+        <span class="g act" aria-label="Hide side pane" aria-pressed="true"><svg class="i"><use href="#i-panel-r"/></svg></span>
+        <span class="gcap" role="group" aria-label="Thread actions"><span aria-label="Stop agent"><svg class="i"><use href="#i-stop"/></svg></span><span aria-label="More"><svg class="i"><use href="#i-more"/></svg></span></span>
+      </div>
+    </div></div>
+    <div class="cap">
+      <div class="pn">P3 · book · side pane open</div>
+      <h3>Thread and side pane, split at the fold</h3>
+      <p>Read what the agent says on one half and check what it changed on the other.</p>
+      <ul>
+        <li><span class="hig">HIG ▸ Move only what's needed to clear the fold</span> This is P2 with the side pane open. The thread already ends at the fold, so half open, the system only clears the 27 pt band. No pose-specific code.</li>
+        <li><span class="hig">HIG ▸ Detail controls vertical</span> The side-pane toggle, then Stop and More, the same column as flat. Commit… stays in the Changes compare row, as on the Mac. Send comments stays with the diff it sends.</li>
+        <li><span class="hig">HIG ▸ Avoid extreme rearrangement</span> You open the side pane on purpose. Folding never opens or closes it.</li>
+      </ul>
+      <h4>What changed vs today</h4>
+      <ul>
+        <li>Changes is a side-pane tab (Changes, Terminal, Files), not a separate full-window Review. Its text items (Commit…) get symbols so they can go vertical.</li>
+        <li>The diff is unified in a 386 pt half. Side-by-side comes back when the phone is flat.</li>
+      </ul>
+    </div>
+  </div>
+
+</div>
+</section>
+
+<!-- ═════════════ P4 · laptop ═════════════ -->
+<section class="post" aria-labelledby="p4">
+<h2 id="p4">P4 · Half open like a laptop (horizontal fold, inner 669 × 951)</h2>
+<p>The thread view is an <code>ArrangementView</code> in the overlay style. The transcript is the secondary view and the composer is the primary. Apple's built-in behaviour then puts reading above the fold and typing below it. The same view fully open is a composer card floating over the transcript.</p>
+<div class="scenes">
+
+  <div class="scene">
+    <div class="dev port"><div class="scr">
+      <div class="pane" style="left:0;right:0;top:0;height:462px">
+        <div class="hbar"><span>9:41</span><span class="r"><svg class="i s" style="width:16px"><use href="#i-wifi"/></svg><span class="bat"></span></span></div>
+        <div class="hnav">
+          <span class="g" aria-label="Back"><svg class="i"><use href="#i-back"/></svg></span>
+          <span class="tt">Design Shepherd widgets and app intents</span>
+          <span class="gcap" role="group" aria-label="Thread actions"><span aria-label="Transcript"><svg class="i"><use href="#i-text"/></svg></span><span class="on" aria-label="Terminal, selected"><svg class="i"><use href="#i-term"/></svg></span><span aria-label="More"><svg class="i"><use href="#i-more"/></svg></span></span>
+        </div>
+        <div class="tr" style="gap:10px;padding:4px 24px">
+          <div class="tool"><svg class="i s ok"><use href="#i-check"/></svg>Created <span class="mono">Intents/StartThreadIntent.swift</span> <span class="mono add">+41</span></div>
+          <div class="term"><span class="p">$</span> cd /tmp/gl-ui; python render.py
+rendering widgets.small.light   … <span class="k">ok</span>  412ms
+rendering widgets.small.dark    … <span class="k">ok</span>  398ms
+rendering widgets.medium.light  … <span class="k">ok</span>  611ms
+rendering widgets.medium.dark   … <span class="k">ok</span>  587ms
+rendering widgets.large.light   … <span class="k">ok</span>  744ms
+rendering widgets.large.dark    …</div>
+          <div style="color:var(--textSecondary);font-size:14px">Small and medium look right in both themes. Large is next.</div>
+        </div>
+        <span class="live"><span class="st run" style="width:14px;height:14px"><i></i></span>Following live<svg class="i s"><use href="#i-down"/></svg></span>
+      </div>
+      <div class="fold h" aria-hidden="true"></div>
+      <div class="pane" style="left:0;right:0;top:489px;bottom:0">
+        <div class="editor" style="padding:16px 24px 0;font-size:17px">Also render the large size, and keep the Working count when nothing needs you<span class="caret"></span></div>
+        <div class="chiprow" style="padding:0 20px;margin-bottom:266px">
+          <span class="chip">gpt-6.1-sol <span class="dim">·</span> <span class="sans">Medium</span><svg class="i cv"><use href="#i-chev-d"/></svg></span>
+          <span class="chip"><span class="sans">Steer now</span><svg class="i cv"><use href="#i-chev-d"/></svg></span>
+          <span class="spacer"></span>
+          <span class="ibtn" aria-label="Attach"><svg class="i"><use href="#i-clip"/></svg></span>
+          <span class="ibtn send" style="width:44px;height:44px;margin:0" aria-label="Send"><svg class="i"><use href="#i-up"/></svg></span>
+        </div>
+        <div class="kb" style="height:266px;padding-bottom:34px">
+          <div class="kr"><span>q</span><span>w</span><span>e</span><span>r</span><span>t</span><span>y</span><span>u</span><span>i</span><span>o</span><span>p</span></div>
+          <div class="kr r2"><span>a</span><span>s</span><span>d</span><span>f</span><span>g</span><span>h</span><span>j</span><span>k</span><span>l</span></div>
+          <div class="kr"><span class="w">⇧</span><span>z</span><span>x</span><span>c</span><span>v</span><span>b</span><span>n</span><span>m</span><span class="w">⌫</span></div>
+          <div class="kr"><span class="w">123</span><span class="sp">space</span><span class="ret">return</span></div>
+        </div>
+      </div>
+    </div>
+      <span class="ftag" style="left:calc(100% + 16px);top:200px">secondary · transcript / terminal</span>
+      <span class="ftag" style="left:calc(100% + 16px);top:481px">← 27 pt fold</span>
+      <span class="ftag" style="left:calc(100% + 16px);top:640px">primary · composer</span>
+    </div>
+    <div class="cap" style="margin-left:200px">
+      <div class="pn">P4 · laptop · ArrangementView overlay, half open</div>
+      <h3>Watch above, steer below</h3>
+      <p>The live output stays in view while you write the next instruction. The keyboard never covers what the agent is doing.</p>
+      <ul>
+        <li><span class="hig">HIG ▸ Inner display in portrait keeps horizontal bars</span> Status across the top, then Back, the title, and a Transcript / Terminal / More capsule.</li>
+        <li><span class="hig">HIG ▸ ArrangementView overlay, half open</span> The primary view (composer) goes to the bottom part and the secondary (transcript) to the top part. Apple does this; Shepherd only declares which view is which.</li>
+        <li><span class="hig">HIG ▸ Folding region reserved</span> Neither view draws in the band. Each half owns its scroll.</li>
+      </ul>
+      <h4>What changed vs today</h4>
+      <ul>
+        <li>Today the keyboard rises over the transcript. Now the top half is read-only and follows live output. Scrolling up pauses following, and "Following live" resumes it.</li>
+        <li>The chip row offers the existing Steer now / Queue choice. The draft is the same one the closed composer had.</li>
+      </ul>
+      <div class="note"><span class="n">2</span><span><b>The fold separates reading from typing,</b> and it's a real API (<code>ArrangementView</code>, overlay style), not custom code. One catch: the HIG says not to put an ArrangementView inside a NavigationSplitView. The thread would have to take the whole window here, the way Review does today (<code>padTakesWindow</code>).</span></div>
+      <p style="margin-top:10px"><svg class="pose" viewBox="0 0 46 28" role="img" aria-label="Laptop pose"><path d="M9 2h28v18H9z"/><path d="M9 20l-6 6h40l-6-6"/></svg></p>
+    </div>
+  </div>
+
+  <div class="scene">
+    <div class="dev inner"><div class="scr">
+      <div class="pane" style="left:0;right:76px">
+        <div class="th-head" style="padding-left:40px"><span class="tt">Design Shepherd widgets and app intents</span><span class="chipb">agent/widgets</span><span class="pill"><span class="st run"><i></i></span>Running</span></div>
+        <div class="tr" data-transcript style="padding:8px 40px;opacity:.55"></div>
+      </div>
+      <div class="card-float" style="left:150px;width:575px;bottom:20px">
+        <div style="padding:14px 16px 8px;font-size:16px;line-height:1.45">Also render the large size, and keep the Working count when nothing needs you<span class="caret"></span></div>
+        <div class="chiprow" style="border-top:1px solid var(--lineSubtle)">
+          <span class="chip">gpt-6.1-sol <span class="dim">·</span> <span class="sans">Medium</span><svg class="i cv"><use href="#i-chev-d"/></svg></span>
+          <span class="chip"><span class="sans">Steer now</span><svg class="i cv"><use href="#i-chev-d"/></svg></span>
+          <span class="spacer"></span>
+          <span class="ibtn" aria-label="Attach"><svg class="i"><use href="#i-clip"/></svg></span>
+          <span class="ibtn send" style="width:44px;height:44px;margin:0" aria-label="Send"><svg class="i"><use href="#i-up"/></svg></span>
+        </div>
+      </div>
+      <div class="col">
+        <div data-stat></div>
+        <span class="g" aria-label="Back"><svg class="i"><use href="#i-back"/></svg></span>
+        <span class="gcap" role="group" aria-label="Thread actions"><span class="on" aria-label="Transcript, selected"><svg class="i"><use href="#i-text"/></svg></span><span aria-label="Terminal"><svg class="i"><use href="#i-term"/></svg></span><span aria-label="More"><svg class="i"><use href="#i-more"/></svg></span></span>
+      </div>
+    </div></div>
+    <div class="cap">
+      <div class="pn">P4′ · same view, fully open</div>
+      <h3>The overlay, unfolded</h3>
+      <p>Lay the phone flat and the composer becomes a card floating over the transcript. Closed, it does the same on the outer display.</p>
+      <ul>
+        <li><span class="hig">HIG ▸ ArrangementView overlay, fully open or closed</span> The primary view floats over the secondary as a bottom-aligned card.</li>
+        <li><span class="hig">HIG ▸ Inner landscape gets vertical bars</span> The same Back and the same capsule as the portrait bar, now in the trailing column.</li>
+        <li><span class="hig">HIG ▸ Keep state the same</span> Same draft, caret, chips and scroll position as the half-open pose.</li>
+      </ul>
+      <h4>What changed vs today</h4>
+      <ul>
+        <li>Today the composer is pinned under the transcript. As a card it leaves the transcript full width and full height behind it.</li>
+      </ul>
+    </div>
+  </div>
+
+</div>
+</section>
+
+<!-- ═════════════ continuity ═════════════ -->
+<section class="post" aria-labelledby="p5">
+<h2 id="p5">Continuity across the hinge</h2>
+<p><span class="hig" style="display:inline">HIG ▸ Keep state and functionality the same across displays</span> Folding and unfolding change where the thread is drawn, not which thread you're on.</p>
+<div class="strip">
+  <div class="mwrap">
+    <div class="mini o">
+      <div class="mh" style="padding-right:32px">Design Shepherd widgets…</div>
+      <div class="bub" style="margin-right:32px"></div><div class="ln m"></div><div class="ln"></div><div class="ln s"></div><div class="ln m"></div>
+      <div class="cmp" style="right:34px">Also render the large<span class="caret" style="height:10px;vertical-align:-1px"></span></div>
+      <div class="mc"><b class="isl"></b><b></b><b></b></div>
+    </div>
+    <div class="mcap">Closed: a thread open, a reply half typed</div>
+  </div>
+  <div class="arrow"><svg viewBox="0 0 56 16"><path d="M2 8h50M46 2l6 6-6 6"/></svg>Unfold</div>
+  <div class="mwrap">
+    <div class="mini i" style="display:flex">
+      <div class="side" style="position:relative;width:120px">
+        <div class="r"><span class="st need"><i></i></span>Fix inventory sync…</div>
+        <div class="r sel"><span class="st run"><i></i></span><b style="font-weight:600">Design Shepherd wid…</b></div>
+        <div class="r"><span class="st run"><i></i></span>Investigate thread…</div>
+        <div class="r"><span class="st done"><i></i></span>Design Shepherd pus…</div>
+        <div class="r"><span class="st done"><i></i></span>Review graphql dupl…</div>
+      </div>
+      <div style="flex:1;min-width:0;position:relative;padding-right:28px">
+        <div class="mh">Design Shepherd widgets…</div>
+        <div class="bub"></div><div class="ln m"></div><div class="ln"></div><div class="ln s"></div>
+        <div class="cmp" style="right:32px">Also render the large<span class="caret" style="height:10px;vertical-align:-1px"></span></div>
+      </div>
+      <div class="mc"><b style="margin-top:22px"></b><b></b></div>
+    </div>
+    <div class="mcap">P2: the same thread selected, same scroll, same draft</div>
+  </div>
+  <div class="arrow"><svg viewBox="0 0 56 16"><path d="M2 8h50M46 2l6 6-6 6"/></svg>Fold</div>
+  <div class="mwrap">
+    <div class="mini o">
+      <div class="mh" style="padding-right:32px">Design Shepherd widgets…</div>
+      <div class="bub" style="margin-right:32px"></div><div class="ln m"></div><div class="ln"></div><div class="ln s"></div><div class="ln m"></div>
+      <div class="cmp" style="right:34px">Also render the large size, and keep<span class="caret" style="height:10px;vertical-align:-1px"></span></div>
+      <div class="mc"><b class="isl"></b><b></b><b></b></div>
+    </div>
+    <div class="mcap">Closed again: back on that thread, not on Home</div>
+  </div>
+  <div class="note" style="margin:0 0 0 16px"><span class="n">3</span><span><b>Drafts survive the hinge.</b> The composer text, caret, attachments and chip choices carry across every posture change, and so does a New thread draft. Folding never discards, sends or dismisses anything.</span></div>
+</div>
+<p style="margin-top:28px;max-width:80ch;font-size:12.5px"><b style="color:var(--textPrimary)">Not drawn:</b> the tent pose (the outer display shared, folded outwards) and closed landscape (678 × 466, controls on the trailing side, camera bottom-right). Both follow from P1 with no extra layout. Closed landscape gets the same trailing column with the tab bar collapsed, which is Apple's compact-layout diagram.</p>
+</section>
+
+</div>
+<script>
+// Fill the shared fragments, then the theme toggle (?theme=light|dark also works).
+const tpl = id => document.getElementById(id).content;
+document.querySelectorAll("[data-stat]").forEach(el => el.replaceWith(tpl("tpl-stat").cloneNode(true)));
+document.querySelectorAll("[data-transcript]").forEach(el => el.append(tpl("tpl-transcript").cloneNode(true)));
+document.querySelectorAll("[data-list]").forEach(el => {
+  el.append(tpl("tpl-list").cloneNode(true));
+  const draft = el.dataset.list === "draft";
+  el.querySelector(draft ? ".newrow" : ".selrow").classList.add("sel");
+});
+const seg = document.getElementById("themeSeg");
+function setTheme(t){ document.documentElement.dataset.theme = t; seg.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.theme === t))); }
+seg.addEventListener("click", e => { const b = e.target.closest("button"); if (b) setTheme(b.dataset.theme); });
+const q = new URLSearchParams(location.search).get("theme"); if (q) setTheme(q);
+</script>
+</body>
+</html>

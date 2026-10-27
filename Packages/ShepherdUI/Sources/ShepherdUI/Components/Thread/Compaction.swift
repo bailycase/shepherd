@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Compaction in the thread (ContextIdeas › In the thread, ContextCompacted).
-public enum NWCompactionMetrics {
+public enum SHCompactionMetrics {
     /// The rules on either side of the line, 12pt from it; its parts 7pt apart.
     public static let ruleGap: CGFloat = 12
     public static let partGap: CGFloat = 7
@@ -22,7 +22,7 @@ public enum NWCompactionMetrics {
 /// icon, what happened ("Compacted automatically"), the context before and after in mono, and
 /// Show summary, which opens what the agent kept in place. While it runs the words shimmer; an
 /// overflow is said in `lanternText`; one that stopped changed nothing and offers no summary.
-public struct NWCompactionDivider: View {
+public struct SHCompactionDivider: View {
     public enum Tone: Equatable, Sendable { case normal, warning, quiet }
 
     let title: String
@@ -49,9 +49,9 @@ public struct NWCompactionDivider: View {
         // The one line when it fits; on a phone (or at a large text size) the rules go first,
         // then Show summary moves under the words, which wrap.
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: NWCompactionMetrics.ruleGap) {
+            HStack(spacing: SHCompactionMetrics.ruleGap) {
                 rule
-                HStack(spacing: NWCompactionMetrics.partGap) {
+                HStack(spacing: SHCompactionMetrics.partGap) {
                     words
                     summaryToggle(separated: true)
                 }
@@ -59,14 +59,14 @@ public struct NWCompactionDivider: View {
                 .fixedSize()
                 rule
             }
-            HStack(spacing: NWCompactionMetrics.partGap) {
+            HStack(spacing: SHCompactionMetrics.partGap) {
                 words
                 summaryToggle(separated: true)
             }
             .lineLimit(1)
             .fixedSize()
-            VStack(spacing: NW.Space.xs) {
-                HStack(alignment: .firstTextBaseline, spacing: NWCompactionMetrics.partGap) { words }
+            VStack(spacing: SH.Space.xs) {
+                HStack(alignment: .firstTextBaseline, spacing: SHCompactionMetrics.partGap) { words }
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                 summaryToggle(separated: false)
@@ -80,49 +80,49 @@ public struct NWCompactionDivider: View {
 
     /// The glyph, what happened, and the sizes.
     @ViewBuilder private var words: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let warning = tone == .warning
         if !running {
             Image(systemName: warning ? "exclamationmark.triangle" : "arrow.down.right.and.arrow.up.left")
-                .font(.system(size: NWCompactionMetrics.icon - 1, weight: .medium))
-                .foregroundStyle(warning ? nw.lanternText : nw.textTertiary)
+                .font(.system(size: SHCompactionMetrics.icon - 1, weight: .medium))
+                .foregroundStyle(warning ? sh.lanternText : sh.textTertiary)
         }
         Group {
-            if running { Text(title).nwShimmer() } else { Text(title) }
+            if running { Text(title).shShimmer() } else { Text(title) }
         }
-        .font(.nwSans(12)).foregroundStyle(warning ? nw.lanternText : nw.textSecondary)
-        if let tokens { Text(tokens).font(.nwMono(11)).foregroundStyle(nw.textTertiary).fixedSize() }
+        .font(.shSans(12)).foregroundStyle(warning ? sh.lanternText : sh.textSecondary)
+        if let tokens { Text(tokens).font(.shMono(11)).foregroundStyle(sh.textTertiary).fixedSize() }
     }
 
     /// "· Show summary", or Hide summary while it is open.
     @ViewBuilder private func summaryToggle(separated: Bool) -> some View {
-        let nw = Color.nw
+        let sh = Color.sh
         if let expanded {
-            if separated { Text("·").font(.nwSans(12)).foregroundStyle(nw.lineStrong) }
+            if separated { Text("·").font(.shSans(12)).foregroundStyle(sh.lineStrong) }
             Button(action: toggle) {
-                HStack(spacing: NW.Space.xs) {
-                    Text(expanded ? "Hide summary" : "Show summary").font(.nwSans(12)).foregroundStyle(nw.textPrimary)
+                HStack(spacing: SH.Space.xs) {
+                    Text(expanded ? "Hide summary" : "Show summary").font(.shSans(12)).foregroundStyle(sh.textPrimary)
                     Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                        .font(.system(size: NWCompactionMetrics.chevron - 1, weight: .semibold))
-                        .foregroundStyle(nw.textTertiary)
+                        .font(.system(size: SHCompactionMetrics.chevron - 1, weight: .semibold))
+                        .foregroundStyle(sh.textTertiary)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .fixedSize()
             // A 44pt target on touch; nothing changes on the Mac.
-            .nwTouchTarget(height: NWCompactionMetrics.toggleHeight)
+            .shTouchTarget(height: SHCompactionMetrics.toggleHeight)
             .accessibilityLabel(expanded ? "Hide what the agent kept" : "Show what the agent kept")
         }
     }
 
     private var rule: some View {
-        Rectangle().fill(Color.nw.lineSubtle).frame(height: 1).frame(maxWidth: .infinity)
+        Rectangle().fill(Color.sh.lineSubtle).frame(height: 1).frame(maxWidth: .infinity)
     }
 }
 
 /// One section of what the agent kept.
-public struct NWSummarySection: Equatable, Sendable, Identifiable {
+public struct SHSummarySection: Equatable, Sendable, Identifiable {
     public var id: Int
     public var title: String
     public var text: AttributedString
@@ -139,70 +139,70 @@ public struct NWSummarySection: Equatable, Sendable, Identifiable {
 
 /// What the agent kept (`CompactionSummary`): the agent's own summary in its sections, on a
 /// sunken card, with its size and Copy.
-public struct NWCompactionSummary: View {
+public struct SHCompactionSummary: View {
     let size: String?
-    let sections: [NWSummarySection]
+    let sections: [SHSummarySection]
     let copy: () -> Void
 
-    public init(size: String?, sections: [NWSummarySection], copy: @escaping () -> Void) {
+    public init(size: String?, sections: [SHSummarySection], copy: @escaping () -> Void) {
         self.size = size
         self.sections = sections
         self.copy = copy
     }
 
     public var body: some View {
-        let nw = Color.nw
-        VStack(alignment: .leading, spacing: NWCompactionMetrics.sectionGap) {
-            HStack(spacing: NW.Space.m) {
-                Image(systemName: "text.alignleft").font(.system(size: NWCompactionMetrics.icon - 1, weight: .medium))
-                    .foregroundStyle(nw.textTertiary)
+        let sh = Color.sh
+        VStack(alignment: .leading, spacing: SHCompactionMetrics.sectionGap) {
+            HStack(spacing: SH.Space.m) {
+                Image(systemName: "text.alignleft").font(.system(size: SHCompactionMetrics.icon - 1, weight: .medium))
+                    .foregroundStyle(sh.textTertiary)
                 // The size beside the title when it fits; on a phone it goes under it.
                 ViewThatFits(in: .horizontal) {
-                    HStack(spacing: NW.Space.m) { title; meta }
-                    VStack(alignment: .leading, spacing: NW.Space.xxs) { title; meta }
+                    HStack(spacing: SH.Space.m) { title; meta }
+                    VStack(alignment: .leading, spacing: SH.Space.xxs) { title; meta }
                 }
-                Spacer(minLength: NW.Space.m)
+                Spacer(minLength: SH.Space.m)
                 Button(action: copy) {
                     Image(systemName: "doc.on.doc").font(.system(size: 12))
-                        .frame(width: NWCompactionMetrics.copySize, height: NWCompactionMetrics.copySize)
+                        .frame(width: SHCompactionMetrics.copySize, height: SHCompactionMetrics.copySize)
                 }
-                .buttonStyle(.nwIcon(size: NWCompactionMetrics.copySize))
+                .buttonStyle(.shIcon(size: SHCompactionMetrics.copySize))
                 .help("Copy summary")
                 .accessibilityLabel("Copy summary")
             }
             ForEach(sections) { section in
-                VStack(alignment: .leading, spacing: section.files.isEmpty ? 3 : NW.Space.xs) {
+                VStack(alignment: .leading, spacing: section.files.isEmpty ? 3 : SH.Space.xs) {
                     if !section.title.isEmpty {
-                        Text(section.title).font(.nwSans(12, .semibold)).foregroundStyle(nw.textPrimary)
+                        Text(section.title).font(.shSans(12, .semibold)).foregroundStyle(sh.textPrimary)
                     }
                     if section.files.isEmpty {
-                        Text(section.text).font(.nwSans(12.5)).lineSpacing(3).foregroundStyle(nw.textSecondary)
+                        Text(section.text).font(.shSans(12.5)).lineSpacing(3).foregroundStyle(sh.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
                     } else {
-                        NWFlowLayout(spacing: NW.Space.l, lineSpacing: NW.Space.xs) {
+                        SHFlowLayout(spacing: SH.Space.l, lineSpacing: SH.Space.xs) {
                             ForEach(section.files, id: \.self) { name in
-                                Text(name).font(.nwMono(11)).foregroundStyle(nw.textSecondary)
+                                Text(name).font(.shMono(11)).foregroundStyle(sh.textSecondary)
                             }
                         }
                     }
                 }
             }
         }
-        .padding(.vertical, NWCompactionMetrics.cardVertical)
-        .padding(.horizontal, NWCompactionMetrics.cardHorizontal)
+        .padding(.vertical, SHCompactionMetrics.cardVertical)
+        .padding(.horizontal, SHCompactionMetrics.cardHorizontal)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .nwCard(fill: nw.bgSunken, line: nw.lineSubtle)
+        .shCard(fill: sh.bgSunken, line: sh.lineSubtle)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("What the agent kept")
     }
 
     private var title: some View {
-        Text("What the agent kept").font(.nwSans(12, .semibold)).foregroundStyle(Color.nw.textPrimary).lineLimit(1).fixedSize()
+        Text("What the agent kept").font(.shSans(12, .semibold)).foregroundStyle(Color.sh.textPrimary).lineLimit(1).fixedSize()
     }
 
     private var meta: some View {
         Text([size, "written by the agent"].compactMap { $0 }.joined(separator: " · "))
-            .font(.nwMono(10.5)).foregroundStyle(Color.nw.textTertiary).lineLimit(1).fixedSize()
+            .font(.shMono(10.5)).foregroundStyle(Color.sh.textTertiary).lineLimit(1).fixedSize()
     }
 }

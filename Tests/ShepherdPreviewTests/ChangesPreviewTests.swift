@@ -9,7 +9,7 @@ import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
 
-/// The Changes pane and its Night Watch parts (ChangesSplit, ChangesScope, ChangesBase,
+/// The Changes pane and its Shepherd Design parts (ChangesSplit, ChangesScope, ChangesBase,
 /// ChangesUnified, ChangesLastTurn, ChangesWide, ChangesStates), in light and dark:
 ///
 ///     SHEPHERD_PREVIEW_DIR=/tmp/previews swift test --filter ChangesPreviewTests
@@ -89,6 +89,15 @@ struct ChangesPreviewTests {
         }
     }
 
+    /// Narrow and unified with Wrap lines on: long lines wrap under their numbers.
+    @Test func changesWrapped() async throws {
+        let session = ChangesBoard.session()
+        session.wrapLines = true
+        try await Preview.render("changes-wrapped", size: CGSize(width: AppLayout.paneDefaultWidth, height: 720)) {
+            pane(session, width: AppLayout.paneDefaultWidth, height: 720)
+        }
+    }
+
     /// Scrolled into the first file: its header stays pinned over the diff.
     @Test func changesScrolled() async throws {
         let session = ChangesBoard.session()
@@ -117,7 +126,7 @@ struct ChangesPreviewTests {
             HStack(spacing: 0) {
                 ForEach([loading, empty, failed, legacy]) { session in
                     ReviewPane(session: session, actions: Reviews.actions).frame(width: AppLayout.paneMinWidth - 1)
-                    NWHairline(.vertical)
+                    SHHairline(.vertical)
                 }
             }
         }
@@ -134,25 +143,25 @@ struct ChangesPreviewTests {
 
     /// A long file (a lockfile): five- and six-digit line numbers fit their 34pt gutters.
     @Test func changesLargeLineNumbers() async throws {
-        let code: [(NWDiffLineKind, Int?, Int?, String)] = [
+        let code: [(SHDiffLineKind, Int?, Int?, String)] = [
             (.context, 9_998, 9_998, #"    "node_modules/zod": {"#),
             (.removed, 9_999, nil, #"      "version": "3.23.8","#),
             (.added, nil, 9_999, #"      "version": "3.24.1","#),
             (.context, 10_000, 10_000, #"      "license": "MIT""#),
             (.context, 123_456, 123_456, "    }"),
         ]
-        let rows: [NWChangesRow] = code.enumerated().map { index, line in
-            .line(NWDiffLineContent(id: "l\(index)", key: index, kind: line.0, oldNumber: line.1, newNumber: line.2,
+        let rows: [SHChangesRow] = code.enumerated().map { index, line in
+            .line(SHDiffLineContent(id: "l\(index)", key: index, kind: line.0, oldNumber: line.1, newNumber: line.2,
                                     text: AttributedString(line.3), source: line.3))
         }
         try await Preview.render("changes-large-line-numbers", size: CGSize(width: 480, height: 160)) {
             VStack(spacing: 0) {
-                NWFileHeader(path: "package-lock.json", status: .modified, added: 1, removed: 1, isExpanded: true, isViewed: false,
+                SHFileHeader(path: "package-lock.json", status: .modified, added: 1, removed: 1, isExpanded: true, isViewed: false,
                              toggle: {}, toggleViewed: {})
-                NWDiffView(rows, onReveal: { _, _ in })
+                SHDiffView(rows, onReveal: { _, _ in })
             }
             .frame(maxHeight: .infinity, alignment: .top)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
     }
 }
@@ -164,110 +173,110 @@ private struct ChangesComponentsBoard: View {
     @State private var off = false
     @FocusState private var editorFocused: Bool
 
-    private static let files: [NWFileStrip.Item] = [
+    private static let files: [SHFileStrip.Item] = [
         .init(id: "a", path: "ledger/outbox.go", status: .modified, added: 21, removed: 8),
         .init(id: "b", path: "ledger/refund.go", status: .added, added: 64, removed: 0, isViewed: true),
         .init(id: "c", path: "ledger/refund_test.go", status: .added, added: 96, removed: 0),
         .init(id: "d", path: "migrations/0042_refund_events.sql", status: .added, added: 18, removed: 0, isViewed: true),
     ]
 
-    private static func line(_ id: Int, _ kind: NWDiffLineKind, _ old: Int?, _ new: Int?, _ code: String, word: String? = nil) -> NWDiffLineContent {
+    private static func line(_ id: Int, _ kind: SHDiffLineKind, _ old: Int?, _ new: Int?, _ code: String, word: String? = nil) -> SHDiffLineContent {
         var text = CodeHighlight.highlightLines([code], path: "outbox.go", style: .theme).first ?? AttributedString(code)
-        if let word, let range = text.range(of: word) { text[range].backgroundColor = kind == .added ? Color.nw.doneTint : Color.nw.failedTint }
-        return NWDiffLineContent(id: "l\(id)", key: id, kind: kind, oldNumber: old, newNumber: new, text: text, source: code)
+        if let word, let range = text.range(of: word) { text[range].backgroundColor = kind == .added ? Color.sh.doneTint : Color.sh.failedTint }
+        return SHDiffLineContent(id: "l\(id)", key: id, kind: kind, oldNumber: old, newNumber: new, text: text, source: code)
     }
 
-    private static let split: [NWChangesRow] = [
+    private static let split: [SHChangesRow] = [
         .pair(id: "p1", old: line(1, .context, 37, 40, "type Outbox struct {"), new: line(1, .context, 37, 40, "type Outbox struct {")),
         .pair(id: "p2", old: line(2, .context, 38, 41, "\tdb    *sql.DB"), new: line(2, .context, 38, 41, "\tdb    *sql.DB")),
         .pair(id: "p3", old: line(3, .removed, 39, nil, "\tnow func() time.Time", word: "now"),
               new: line(4, .added, nil, 42, "\tnow   func() time.Time", word: "now  ")),
         .pair(id: "p4", old: nil, new: line(5, .added, nil, 43, "\tcodec events.Codec")),
         .pair(id: "p5", old: line(6, .context, 40, 44, "}"), new: line(6, .context, 40, 44, "}")),
-        .fold(NWDiffFold(id: "f", count: 28)),
+        .fold(SHDiffFold(id: "f", count: 28)),
     ]
 
     private static let cardFiles = [
-        NWChangedFile(path: "ledger/outbox.go", directory: "ledger/", name: "outbox.go", status: .modified, added: 21, removed: 8),
-        NWChangedFile(path: "ledger/refund.go", directory: "ledger/", name: "refund.go", status: .added, added: 64, removed: 0),
-        NWChangedFile(path: "ledger/refund_test.go", directory: "ledger/", name: "refund_test.go", status: .added, added: 96, removed: 0),
+        SHChangedFile(path: "ledger/outbox.go", directory: "ledger/", name: "outbox.go", status: .modified, added: 21, removed: 8),
+        SHChangedFile(path: "ledger/refund.go", directory: "ledger/", name: "refund.go", status: .added, added: 64, removed: 0),
+        SHChangedFile(path: "ledger/refund_test.go", directory: "ledger/", name: "refund_test.go", status: .added, added: 96, removed: 0),
     ]
 
     var body: some View {
-        let nw = Color.nw
-        VStack(alignment: .leading, spacing: NW.Space.xxl) {
-            HStack(alignment: .top, spacing: NW.Space.xxl) {
+        let sh = Color.sh
+        VStack(alignment: .leading, spacing: SH.Space.xxl) {
+            HStack(alignment: .top, spacing: SH.Space.xxl) {
                 VStack(spacing: 0) {
                     HStack(spacing: 10) {
-                        NWScopeButton(title: "Branch", glyph: .branch, isOpen: false) {}
-                        NWDiffStat(added: 200, removed: 8, font: .nw(.code))
+                        SHScopeButton(title: "Branch", glyph: .branch, isOpen: false) {}
+                        SHDiffStat(added: 200, removed: 8, font: .sh(.code))
                         Spacer()
-                        NWViewedPill(viewed: 2, total: 5)
-                        Button {} label: { Label("Commit…", systemImage: "smallcircle.filled.circle") }.buttonStyle(.nw(.secondary, size: .s))
+                        SHViewedPill(viewed: 2, total: 5)
+                        Button {} label: { Label("Commit…", systemImage: "smallcircle.filled.circle") }.buttonStyle(.sh(.secondary, size: .s))
                     }
-                    .padding(.horizontal, NW.Space.l)
-                    .frame(height: NWChangesMetrics.toolbarHeight)
-                    NWCompareRow(head: "agent/refund-events", base: "origin/main", note: "merge base 3f2a91c") {}
-                    NWFileStrip(Self.files, selection: "a") { _ in }
+                    .padding(.horizontal, SH.Space.l)
+                    .frame(height: SHChangesMetrics.toolbarHeight)
+                    SHCompareRow(head: "agent/refund-events", base: "origin/main", note: "merge base 3f2a91c") {}
+                    SHFileStrip(Self.files, selection: "a") { _ in }
                 }
-                .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
-                .nwBorder(nw.lineSubtle, radius: NW.Radius.m)
+                .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
+                .shBorder(sh.lineSubtle, radius: SH.Radius.m)
                 .frame(width: 620)
-                NWReviewSendBar(count: "2 comments", detail: "on outbox.go, not sent yet", onDiscard: {}, onSend: {})
-                    .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+                SHReviewSendBar(count: "2 comments", detail: "on outbox.go, not sent yet", onDiscard: {}, onSend: {})
+                    .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
                     .frame(width: 620)
             }
-            HStack(alignment: .top, spacing: NW.Space.xxl) {
-                NWChangesCard(title: "Edited 5 files", added: 200, removed: 8, files: Self.cardFiles, total: 5,
+            HStack(alignment: .top, spacing: SH.Space.xxl) {
+                SHChangesCard(title: "Edited 5 files", added: 200, removed: 8, files: Self.cardFiles, total: 5,
                               onReview: {}, onOpen: { _ in }, onUndo: {})
                     .frame(width: 420)
-                NWChangesCard(title: "Undid the agent’s edits to 5 files", added: 200, removed: 8, files: [], total: 5, phase: .undone,
+                SHChangesCard(title: "Undid the agent’s edits to 5 files", added: 200, removed: 8, files: [], total: 5, phase: .undone,
                               onRedo: {})
                     .frame(width: 420)
-                NWChangesCard(title: "Edited 2 files", added: 12, removed: 3, files: Array(Self.cardFiles.prefix(2)),
+                SHChangesCard(title: "Edited 2 files", added: 12, removed: 3, files: Array(Self.cardFiles.prefix(2)),
                               notice: "Didn’t undo: outbox.go changed after the turn. Nothing was touched.", onReview: {}, onUndo: {})
                     .frame(width: 420)
             }
-            HStack(alignment: .top, spacing: NW.Space.xl) {
-                NWChangesMenu(width: NWChangesMenuMetrics.scopeWidth) {
-                    NWChangesMenuRow("Last turn", subtitle: "What the agent changed since your last message",
-                                     systemImage: NWChangesScopeGlyph.lastTurn.systemImage, trailing: .stat(added: 12, removed: 3)) {}
-                    NWChangesMenuDivider()
-                    NWChangesMenuRow("Uncommitted", systemImage: NWChangesScopeGlyph.uncommitted.systemImage, trailing: .stat(added: 33, removed: 11)) {}
-                    NWChangesMenuRow("Unstaged", systemImage: nil, trailing: .stat(added: 21, removed: 8)) {}
-                    NWChangesMenuRow("Staged", systemImage: nil, trailing: .stat(added: 12, removed: 3)) {}
-                    NWChangesMenuDivider()
-                    NWChangesMenuRow("Commits", systemImage: NWChangesScopeGlyph.commits.systemImage, trailing: .text("4"), hasSubmenu: true) {}
-                    NWChangesMenuRow("Branch", subtitle: "agent/refund-events vs origin/main", systemImage: NWChangesScopeGlyph.branch.systemImage,
+            HStack(alignment: .top, spacing: SH.Space.xl) {
+                SHChangesMenu(width: SHChangesMenuMetrics.scopeWidth) {
+                    SHChangesMenuRow("Last turn", subtitle: "What the agent changed since your last message",
+                                     systemImage: SHChangesScopeGlyph.lastTurn.systemImage, trailing: .stat(added: 12, removed: 3)) {}
+                    SHChangesMenuDivider()
+                    SHChangesMenuRow("Uncommitted", systemImage: SHChangesScopeGlyph.uncommitted.systemImage, trailing: .stat(added: 33, removed: 11)) {}
+                    SHChangesMenuRow("Unstaged", systemImage: nil, trailing: .stat(added: 21, removed: 8)) {}
+                    SHChangesMenuRow("Staged", systemImage: nil, trailing: .stat(added: 12, removed: 3)) {}
+                    SHChangesMenuDivider()
+                    SHChangesMenuRow("Commits", systemImage: SHChangesScopeGlyph.commits.systemImage, trailing: .text("4"), hasSubmenu: true) {}
+                    SHChangesMenuRow("Branch", subtitle: "agent/refund-events vs origin/main", systemImage: SHChangesScopeGlyph.branch.systemImage,
                                      trailing: .stat(added: 200, removed: 8), checked: true) {}
-                    NWChangesMenuRow("Pull request", systemImage: NWChangesScopeGlyph.pullRequest.systemImage, trailing: .text("#31 draft")) {}
+                    SHChangesMenuRow("Pull request", systemImage: SHChangesScopeGlyph.pullRequest.systemImage, trailing: .text("#31 draft")) {}
                 }
-                NWChangesMenu(width: NWChangesMenuMetrics.optionsWidth) {
-                    NWChangesMenuTitle("Diff")
-                    NWChangesMenuToggle("Word diffs", systemImage: "text.word.spacing", isOn: $on)
-                    NWChangesMenuToggle("Hide whitespace changes", systemImage: "space", isOn: $off)
-                    NWChangesMenuToggle("Load full files", subtitle: "Expand past folds without a round trip", systemImage: "folder", isOn: $on)
-                    NWChangesMenuDivider()
-                    NWChangesMenuRow("Copy git apply command", systemImage: "terminal") {}
-                    NWChangesMenuRow("Copy as patch", systemImage: "doc.on.doc") {}
-                    NWChangesMenuRow("Open in your editor", systemImage: "arrow.up.forward.square", trailing: .text("⇧⌘O")) {}
+                SHChangesMenu(width: SHChangesMenuMetrics.optionsWidth) {
+                    SHChangesMenuTitle("Diff")
+                    SHChangesMenuToggle("Word diffs", systemImage: "text.word.spacing", isOn: $on)
+                    SHChangesMenuToggle("Hide whitespace changes", systemImage: "space", isOn: $off)
+                    SHChangesMenuToggle("Load full files", subtitle: "Expand past folds without a round trip", systemImage: "folder", isOn: $on)
+                    SHChangesMenuDivider()
+                    SHChangesMenuRow("Copy git apply command", systemImage: "terminal") {}
+                    SHChangesMenuRow("Copy as patch", systemImage: "doc.on.doc") {}
+                    SHChangesMenuRow("Open in your editor", systemImage: "arrow.up.forward.square", trailing: .text("⇧⌘O")) {}
                 }
                 VStack(spacing: 0) {
-                    NWFileHeader(path: "ledger/outbox.go", status: .modified, added: 21, removed: 8, isExpanded: true, isViewed: false,
+                    SHFileHeader(path: "ledger/outbox.go", status: .modified, added: 21, removed: 8, isExpanded: true, isViewed: false,
                                  toggle: {}, toggleViewed: {}, comment: {}, open: {})
-                    NWDiffView(Self.split, notes: [5: true], onComment: { _ in }, onReveal: { _, _ in }) { _, _ in
-                        NWCommentEditor(text: $draft, isFocused: $editorFocused, context: "on line 43", onSave: {}, onCancel: {})
+                    SHDiffView(Self.split, notes: [5: true], onComment: { _ in }, onReveal: { _, _ in }) { _, _ in
+                        SHCommentEditor(text: $draft, isFocused: $editorFocused, context: "on line 43", onSave: {}, onCancel: {})
                     }
-                    NWFileHeader(path: "ledger/refund.go", status: .added, added: 64, removed: 0, isExpanded: false, isViewed: true,
+                    SHFileHeader(path: "ledger/refund.go", status: .added, added: 64, removed: 0, isExpanded: false, isViewed: true,
                                  toggle: {}, toggleViewed: {}, comment: {}, open: {})
                 }
-                .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
-                .nwBorder(nw.lineSubtle, radius: NW.Radius.m)
+                .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
+                .shBorder(sh.lineSubtle, radius: SH.Radius.m)
                 .frame(width: 600)
             }
         }
-        .padding(NW.Space.xxl)
+        .padding(SH.Space.xxl)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(nw.bgWindow)
+        .background(sh.bgWindow)
     }
 }

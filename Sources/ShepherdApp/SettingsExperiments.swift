@@ -34,10 +34,10 @@ struct ExperimentsSettings: View {
                             MissionsExperimentCard(settings: settings, active: missionsActive)
                             if model.settings.enabled || !model.snapshot.waiting.isEmpty {
                                 WaitingSuggestions(model: model, instructions: instructions, now: context.date)
-                                    .nwTransition(.disclosure)
+                                    .shTransition(.disclosure)
                             }
                             if let problem = model.problem {
-                                NWInlineProblem(problem).nwTransition(.disclosure)
+                                SHInlineProblem(problem).shTransition(.disclosure)
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -53,8 +53,8 @@ struct ExperimentsSettings: View {
                 .frame(maxHeight: .infinity, alignment: .top)
             }
         }
-        .nwAnimation(.disclosure, value: model.settings.enabled)
-        .nwAnimation(.list, value: model.snapshot.waiting.map(\.id))
+        .shAnimation(.disclosure, value: model.settings.enabled)
+        .shAnimation(.list, value: model.snapshot.waiting.map(\.id))
         .task { await model.refresh() }
     }
 }
@@ -67,34 +67,34 @@ private struct DesignToolCard: View {
     @Bindable var settings: AppSettings
 
     var body: some View {
-        let nw = Color.nw
-        HStack(alignment: .top, spacing: NW.Space.l + NW.Space.xxs) {
-            RoundedRectangle(cornerRadius: NW.Radius.m)
-                .fill(nw.lanternTint)
+        let sh = Color.sh
+        HStack(alignment: .top, spacing: SH.Space.l + SH.Space.xxs) {
+            RoundedRectangle(cornerRadius: SH.Radius.m)
+                .fill(sh.lanternTint)
                 .frame(width: AppLayout.experimentTileSize, height: AppLayout.experimentTileSize)
                 .overlay {
                     Image(systemName: "pencil.tip")
-                        .font(.nwSans(AppLayout.experimentGlyphSize))
-                        .foregroundStyle(nw.lanternText)
+                        .font(.shSans(AppLayout.experimentGlyphSize))
+                        .foregroundStyle(sh.lanternText)
                 }
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 Text("Design tool")
-                    .font(.nwSans(AppLayout.experimentNameSize, .semibold))
-                    .foregroundStyle(nw.textPrimary)
+                    .font(.shSans(AppLayout.experimentNameSize, .semibold))
+                    .foregroundStyle(sh.textPrimary)
                 Text("Describe a page or flow and a design agent draws it as HTML boards on a canvas you pan and zoom. "
                      + "Adds Designs to the sidebar and “Start a design” to New thread.")
-                    .nwText(size: AppLayout.experimentDescriptionSize, lineHeight: AppLayout.experimentDescriptionLineHeight)
-                    .foregroundStyle(nw.textSecondary)
+                    .shText(size: AppLayout.experimentDescriptionSize, lineHeight: AppLayout.experimentDescriptionLineHeight)
+                    .foregroundStyle(sh.textSecondary)
                     .frame(maxWidth: AppLayout.experimentDescriptionWidth, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: NW.Space.xxl)
+            Spacer(minLength: SH.Space.xxl)
             SettingsSwitch(label: "Design tool", isOn: $settings.designToolEnabled)
         }
-        .padding(.vertical, NW.Space.l + NW.Space.xxs)
-        .padding(.horizontal, NW.Space.xl)
-        .nwCard(fill: nw.bgWindow, line: nw.lineStrong)
+        .padding(.vertical, SH.Space.l + SH.Space.xxs)
+        .padding(.horizontal, SH.Space.xl)
+        .shCard(fill: sh.bgWindow, line: sh.lineStrong)
     }
 }
 
@@ -103,29 +103,29 @@ private struct GoalExperimentCard: View {
     @Bindable var settings: AppSettings
 
     var body: some View {
-        let nw = Color.nw
-        HStack(alignment: .top, spacing: NW.Space.l + NW.Space.xxs) {
-            RoundedRectangle(cornerRadius: NW.Radius.m)
-                .fill(nw.lanternTint)
+        let sh = Color.sh
+        HStack(alignment: .top, spacing: SH.Space.l + SH.Space.xxs) {
+            RoundedRectangle(cornerRadius: SH.Radius.m)
+                .fill(sh.lanternTint)
                 .frame(width: AppLayout.experimentTileSize, height: AppLayout.experimentTileSize)
-                .overlay { NWGoalGlyph().foregroundStyle(nw.lanternText) }
+                .overlay { SHGoalGlyph().foregroundStyle(sh.lanternText) }
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 Text("Goals")
-                    .font(.nwSans(AppLayout.experimentNameSize, .semibold))
-                    .foregroundStyle(nw.textPrimary)
+                    .font(.shSans(AppLayout.experimentNameSize, .semibold))
+                    .foregroundStyle(sh.textPrimary)
                 Text("Keep a conversation working toward a condition you set with /goal. No time or token budgets. Turning this off pauses active goals without clearing them.")
-                    .nwText(size: AppLayout.experimentDescriptionSize, lineHeight: AppLayout.experimentDescriptionLineHeight)
-                    .foregroundStyle(nw.textSecondary)
+                    .shText(size: AppLayout.experimentDescriptionSize, lineHeight: AppLayout.experimentDescriptionLineHeight)
+                    .foregroundStyle(sh.textSecondary)
                     .frame(maxWidth: AppLayout.experimentDescriptionWidth, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: NW.Space.xxl)
+            Spacer(minLength: SH.Space.xxl)
             SettingsSwitch(label: "Goals", isOn: $settings.goalsEnabled)
         }
-        .padding(.vertical, NW.Space.l + NW.Space.xxs)
-        .padding(.horizontal, NW.Space.xl)
-        .nwCard(fill: nw.bgWindow, line: nw.lineStrong)
+        .padding(.vertical, SH.Space.l + SH.Space.xxs)
+        .padding(.horizontal, SH.Space.xl)
+        .shCard(fill: sh.bgWindow, line: sh.lineStrong)
     }
 }
 
@@ -135,29 +135,29 @@ private struct ProjectsExperimentCard: View {
     @Bindable var settings: AppSettings
 
     var body: some View {
-        let nw = Color.nw
-        HStack(alignment: .top, spacing: NW.Space.l + NW.Space.xxs) {
-            RoundedRectangle(cornerRadius: NW.Radius.m)
-                .fill(nw.lanternTint)
+        let sh = Color.sh
+        HStack(alignment: .top, spacing: SH.Space.l + SH.Space.xxs) {
+            RoundedRectangle(cornerRadius: SH.Radius.m)
+                .fill(sh.lanternTint)
                 .frame(width: AppLayout.experimentTileSize, height: AppLayout.experimentTileSize)
-                .overlay { NWProjectGlyphView(tint: nw.lanternText, size: AppLayout.experimentGlyphSize) }
+                .overlay { SHProjectGlyphView(tint: sh.lanternText, size: AppLayout.experimentGlyphSize) }
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 Text("Projects")
-                    .font(.nwSans(AppLayout.experimentNameSize, .semibold))
-                    .foregroundStyle(nw.textPrimary)
+                    .font(.shSans(AppLayout.experimentNameSize, .semibold))
+                    .foregroundStyle(sh.textPrimary)
                 Text("Coordinate work across threads and spaces. Turning this off pauses project work and keeps your projects and files.")
-                    .nwText(size: AppLayout.experimentDescriptionSize, lineHeight: AppLayout.experimentDescriptionLineHeight)
-                    .foregroundStyle(nw.textSecondary)
+                    .shText(size: AppLayout.experimentDescriptionSize, lineHeight: AppLayout.experimentDescriptionLineHeight)
+                    .foregroundStyle(sh.textSecondary)
                     .frame(maxWidth: AppLayout.experimentDescriptionWidth, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: NW.Space.xxl)
+            Spacer(minLength: SH.Space.xxl)
             SettingsSwitch(label: "Projects", isOn: $settings.projectsEnabled)
         }
-        .padding(.vertical, NW.Space.l + NW.Space.xxs)
-        .padding(.horizontal, NW.Space.xl)
-        .nwCard(fill: nw.bgWindow, line: nw.lineStrong)
+        .padding(.vertical, SH.Space.l + SH.Space.xxs)
+        .padding(.horizontal, SH.Space.xl)
+        .shCard(fill: sh.bgWindow, line: sh.lineStrong)
     }
 }
 
@@ -172,42 +172,42 @@ struct MissionsExperimentCard: View {
     var locked: Bool { settings.missionsEnabled && active }
 
     var body: some View {
-        let nw = Color.nw
-        HStack(alignment: .top, spacing: NW.Space.l + NW.Space.xxs) {
-            RoundedRectangle(cornerRadius: NW.Radius.m)
+        let nw = Color.sh
+        HStack(alignment: .top, spacing: SH.Space.l + SH.Space.xxs) {
+            RoundedRectangle(cornerRadius: SH.Radius.m)
                 .fill(nw.lanternTint)
                 .frame(width: AppLayout.experimentTileSize, height: AppLayout.experimentTileSize)
                 .overlay {
-                    NWGlyph.mission.image
-                        .font(.nwSans(AppLayout.experimentGlyphSize))
+                    SHGlyph.mission.image
+                        .font(.shSans(AppLayout.experimentGlyphSize))
                         .foregroundStyle(nw.lanternText)
                 }
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 Text("Missions")
-                    .font(.nwSans(AppLayout.experimentNameSize, .semibold))
+                    .font(.shSans(AppLayout.experimentNameSize, .semibold))
                     .foregroundStyle(nw.textPrimary)
                 Text("Describe an end state across your repositories; a planner maps it, agents do the work, independent checks validate it, and you publish the pull requests. "
                      + "Adds Missions to the sidebar. Turning this off hides them and keeps your missions and files.")
-                    .nwText(size: AppLayout.experimentDescriptionSize, lineHeight: AppLayout.experimentDescriptionLineHeight)
+                    .shText(size: AppLayout.experimentDescriptionSize, lineHeight: AppLayout.experimentDescriptionLineHeight)
                     .foregroundStyle(nw.textSecondary)
                     .frame(maxWidth: AppLayout.experimentDescriptionWidth, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
                 if locked {
                     Text("Pause or stop running missions before turning this off.")
-                        .nwText(size: AppLayout.experimentDescriptionSize, lineHeight: AppLayout.experimentDescriptionLineHeight)
+                        .shText(size: AppLayout.experimentDescriptionSize, lineHeight: AppLayout.experimentDescriptionLineHeight)
                         .foregroundStyle(nw.lanternText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            Spacer(minLength: NW.Space.xxl)
+            Spacer(minLength: SH.Space.xxl)
             SettingsSwitch(label: "Missions", isOn: $settings.missionsEnabled)
                 .disabled(locked)
                 .help(locked ? "Pause or stop running missions before turning this off." : "Missions")
         }
-        .padding(.vertical, NW.Space.l + NW.Space.xxs)
-        .padding(.horizontal, NW.Space.xl)
-        .nwCard(fill: nw.bgWindow, line: nw.lineStrong)
+        .padding(.vertical, SH.Space.l + SH.Space.xxs)
+        .padding(.horizontal, SH.Space.xl)
+        .shCard(fill: nw.bgWindow, line: nw.lineStrong)
     }
 }
 
@@ -219,47 +219,47 @@ private struct SuggestedInstructionsCard: View {
     let openInstructions: () -> Void
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         VStack(spacing: 0) {
-            HStack(alignment: .top, spacing: NW.Space.l + NW.Space.xxs) {
-                RoundedRectangle(cornerRadius: NW.Radius.m)
-                    .fill(nw.lanternTint)
+            HStack(alignment: .top, spacing: SH.Space.l + SH.Space.xxs) {
+                RoundedRectangle(cornerRadius: SH.Radius.m)
+                    .fill(sh.lanternTint)
                     .frame(width: AppLayout.experimentTileSize, height: AppLayout.experimentTileSize)
                     .overlay {
                         Image(systemName: "flask")
-                            .font(.nwSans(AppLayout.experimentGlyphSize))
-                            .foregroundStyle(nw.lanternText)
+                            .font(.shSans(AppLayout.experimentGlyphSize))
+                            .foregroundStyle(sh.lanternText)
                     }
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                    HStack(spacing: NW.Space.m) {
+                VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                    HStack(spacing: SH.Space.m) {
                         Text("Suggested instructions")
-                            .font(.nwSans(AppLayout.experimentNameSize, .semibold))
-                            .foregroundStyle(nw.textPrimary)
+                            .font(.shSans(AppLayout.experimentNameSize, .semibold))
+                            .foregroundStyle(sh.textPrimary)
                         if let since = SuggestionsPresentation.sinceTag(model.settings) {
                             Text(since)
-                                .font(.nwMono(AppLayout.experimentTagSize))
-                                .foregroundStyle(nw.lanternText)
-                                .padding(.horizontal, NW.Space.s)
+                                .font(.shMono(AppLayout.experimentTagSize))
+                                .foregroundStyle(sh.lanternText)
+                                .padding(.horizontal, SH.Space.s)
                                 .frame(height: AppLayout.experimentTagHeight)
-                                .background(nw.lanternTint, in: RoundedRectangle(cornerRadius: NW.Radius.xs))
-                                .nwTransition(.disclosure)
+                                .background(sh.lanternTint, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
+                                .shTransition(.disclosure)
                         }
                     }
                     Text("When an agent learns something the hard way (a re-run, a failed check, a correction from you) it "
                          + "drafts one line for your root instructions. Nothing is written until you add it.")
-                        .nwText(size: AppLayout.experimentDescriptionSize, lineHeight: AppLayout.experimentDescriptionLineHeight)
-                        .foregroundStyle(nw.textSecondary)
+                        .shText(size: AppLayout.experimentDescriptionSize, lineHeight: AppLayout.experimentDescriptionLineHeight)
+                        .foregroundStyle(sh.textSecondary)
                         .frame(maxWidth: AppLayout.experimentDescriptionWidth, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer(minLength: NW.Space.xxl)
+                Spacer(minLength: SH.Space.xxl)
                 SettingsSwitch(label: "Suggested instructions",
                                isOn: Binding(get: { model.settings.enabled }, set: { on in Task { await model.setEnabled(on) } }))
                     .disabled(model.busy)
             }
-            .padding(.vertical, NW.Space.l + NW.Space.xxs)
-            .padding(.horizontal, NW.Space.xl)
+            .padding(.vertical, SH.Space.l + SH.Space.xxs)
+            .padding(.horizontal, SH.Space.xl)
 
             if model.settings.enabled {
                 VStack(spacing: 0) {
@@ -277,24 +277,24 @@ private struct SuggestedInstructionsCard: View {
                                         note: "Lines go where Settings › Instructions sends them: right now that's "
                                             + (instructions.sameEverywhere ? "every host." : "This Mac alone.")) {
                         Button("Open Instructions", action: openInstructions)
-                            .buttonStyle(.nwLink(font: .nwSans(AppLayout.experimentOptionNoteSize)))
+                            .buttonStyle(.shLink(font: .shSans(AppLayout.experimentOptionNoteSize)))
                     }
                 }
                 .disabled(model.busy)
-                .background(nw.bgBase)
-                .nwTransition(.disclosure)
+                .background(sh.bgBase)
+                .shTransition(.disclosure)
             }
         }
-        .nwCard(fill: nw.bgWindow, line: nw.lineStrong)
+        .shCard(fill: sh.bgWindow, line: sh.lineStrong)
     }
 
     private func checkbox(_ title: String, on: Bool, change: @escaping (Bool) async -> Void) -> some View {
         Toggle(isOn: Binding(get: { on }, set: { value in Task { await change(value) } })) {
             Text(title)
-                .font(.nwSans(AppLayout.suggestionNameSize))
-                .foregroundStyle(Color.nw.textPrimary)
+                .font(.shSans(AppLayout.suggestionNameSize))
+                .foregroundStyle(Color.sh.textPrimary)
         }
-        .toggleStyle(.nwCheckbox)
+        .toggleStyle(.shCheckbox)
     }
 }
 
@@ -306,15 +306,15 @@ private struct ExperimentOptionRow<Control: View>: View {
     @ViewBuilder var control: Control
 
     var body: some View {
-        let nw = Color.nw
-        HStack(spacing: NW.Space.xxl) {
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+        let sh = Color.sh
+        HStack(spacing: SH.Space.xxl) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 Text(title)
-                    .font(.nwSans(AppLayout.experimentOptionTitleSize, .medium))
-                    .foregroundStyle(nw.textPrimary)
+                    .font(.shSans(AppLayout.experimentOptionTitleSize, .medium))
+                    .foregroundStyle(sh.textPrimary)
                 Text(note)
-                    .nwText(size: AppLayout.experimentOptionNoteSize, lineHeight: AppLayout.experimentOptionNoteLineHeight)
-                    .foregroundStyle(nw.textSecondary)
+                    .shText(size: AppLayout.experimentOptionNoteSize, lineHeight: AppLayout.experimentOptionNoteLineHeight)
+                    .foregroundStyle(sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
@@ -322,9 +322,9 @@ private struct ExperimentOptionRow<Control: View>: View {
         }
         // As a Settings row: the content at least 48pt, 10pt inside the top and bottom.
         .frame(minHeight: AppLayout.experimentOptionMinHeight)
-        .padding(.vertical, NWCardRowMetrics.settingsVerticalPadding)
-        .padding(.horizontal, NW.Space.xl)
-        .overlay(alignment: .top) { NWHairline() }
+        .padding(.vertical, SHCardRowMetrics.settingsVerticalPadding)
+        .padding(.horizontal, SH.Space.xl)
+        .overlay(alignment: .top) { SHHairline() }
         .accessibilityElement(children: .contain)
     }
 }
@@ -339,25 +339,25 @@ private struct WaitingSuggestions: View {
 
     var body: some View {
         let waiting = model.snapshot.waiting
-        VStack(alignment: .leading, spacing: NW.Space.m) {
-            NWSectionHeader(SuggestionsPresentation.waitingTitle(waiting.count), style: .settings) {
+        VStack(alignment: .leading, spacing: SH.Space.m) {
+            SHSectionHeader(SuggestionsPresentation.waitingTitle(waiting.count), style: .settings) {
                 if waiting.count > 1 {
                     Button("Add all") { Task { await model.addAll() } }
-                        .buttonStyle(.nwLink(font: .nwSans(AppLayout.suggestionOriginSize)))
+                        .buttonStyle(.shLink(font: .shSans(AppLayout.suggestionOriginSize)))
                         .disabled(model.busy)
                 }
             }
-            .padding(.horizontal, NW.Space.xxs)
+            .padding(.horizontal, SH.Space.xxs)
             if waiting.isEmpty {
                 Text("Nothing is waiting. When an agent learns something the hard way, its line shows up here.")
-                    .nwText(size: AppLayout.settingsFootnoteSize, lineHeight: AppLayout.settingsFootnoteLineHeight)
-                    .foregroundStyle(Color.nw.textTertiary)
-                    .padding(.horizontal, NW.Space.xxs)
+                    .shText(size: AppLayout.settingsFootnoteSize, lineHeight: AppLayout.settingsFootnoteLineHeight)
+                    .foregroundStyle(Color.sh.textTertiary)
+                    .padding(.horizontal, SH.Space.xxs)
             }
             ForEach(waiting) { suggestion in
                 SuggestionCard(model: model, suggestion: suggestion,
                                hosts: SuggestionsPresentation.hostsWord(sameEverywhere: instructions.sameEverywhere), now: now)
-                    .nwTransition(.list)
+                    .shTransition(.list)
             }
         }
     }
@@ -377,69 +377,69 @@ private struct SuggestionCard: View {
     private var editing: String? { model.edits[suggestion.id] }
 
     var body: some View {
-        let nw = Color.nw
-        VStack(alignment: .leading, spacing: NW.Space.m) {
-            HStack(spacing: NW.Space.m) {
+        let sh = Color.sh
+        VStack(alignment: .leading, spacing: SH.Space.m) {
+            HStack(spacing: SH.Space.m) {
                 Image(systemName: suggestion.source.kind == .automation ? "bolt" : "bubble.left")
-                    .font(.nwSans(AppLayout.suggestionGlyphSize))
-                    .foregroundStyle(nw.textSecondary)
+                    .font(.shSans(AppLayout.suggestionGlyphSize))
+                    .foregroundStyle(sh.textSecondary)
                     .accessibilityHidden(true)
                 Text(suggestion.source.name)
-                    .font(.nwSans(AppLayout.suggestionNameSize, .semibold))
-                    .foregroundStyle(nw.textPrimary)
+                    .font(.shSans(AppLayout.suggestionNameSize, .semibold))
+                    .foregroundStyle(sh.textPrimary)
                     .lineLimit(1)
                 Text(SuggestionsPresentation.origin(suggestion, now: now))
-                    .font(.nwSans(AppLayout.suggestionOriginSize))
-                    .foregroundStyle(nw.textTertiary)
+                    .font(.shSans(AppLayout.suggestionOriginSize))
+                    .foregroundStyle(sh.textTertiary)
                     .lineLimit(1)
-                Spacer(minLength: NW.Space.m)
+                Spacer(minLength: SH.Space.m)
                 target
             }
             if let editing {
                 TextField("Line", text: Binding(get: { editing }, set: { model.setEdit($0, for: suggestion) }))
-                    .textFieldStyle(.nw(mono: true))
+                    .textFieldStyle(.sh(mono: true))
                     .focused($fieldFocused)
                     .onAppear { fieldFocused = true }
                     .onSubmit { Task { await model.add(suggestion) } }
             } else {
                 Text(Self.addedLine(suggestion.line))
-                    .nwText(size: AppLayout.suggestionLineSize, mono: true, lineHeight: AppLayout.suggestionLineHeight)
+                    .shText(size: AppLayout.suggestionLineSize, mono: true, lineHeight: AppLayout.suggestionLineHeight)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.vertical, NW.Space.s)
-                    .padding(.horizontal, NW.Space.m + NW.Space.xxs)
+                    .padding(.vertical, SH.Space.s)
+                    .padding(.horizontal, SH.Space.m + SH.Space.xxs)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(nw.doneTint, in: RoundedRectangle(cornerRadius: NW.Radius.s))
+                    .background(sh.doneTint, in: RoundedRectangle(cornerRadius: SH.Radius.s))
                     .accessibilityLabel("Adds: \(SuggestionsPresentation.plainLine(suggestion.line))")
             }
-            HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
+            HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
                 Text(suggestion.reason)
-                    .nwText(size: AppLayout.suggestionReasonSize, lineHeight: AppLayout.suggestionReasonLineHeight)
-                    .foregroundStyle(nw.textSecondary)
+                    .shText(size: AppLayout.suggestionReasonSize, lineHeight: AppLayout.suggestionReasonLineHeight)
+                    .foregroundStyle(sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if editing != nil {
                     Button("Cancel") { model.cancelEdit(suggestion) }
-                        .buttonStyle(.nw(.ghost, size: .s))
+                        .buttonStyle(.sh(.ghost, size: .s))
                 } else {
                     Button("Dismiss") { Task { await model.dismiss(suggestion) } }
-                        .buttonStyle(.nw(.ghost, size: .s))
+                        .buttonStyle(.sh(.ghost, size: .s))
                     Button("Edit first") { model.edit(suggestion) }
-                        .buttonStyle(.nw(.ghost, size: .s))
+                        .buttonStyle(.sh(.ghost, size: .s))
                 }
                 Button(SuggestionsPresentation.addTitle(file)) { Task { await model.add(suggestion) } }
-                    .buttonStyle(.nw(.secondary, size: .s))
+                    .buttonStyle(.sh(.secondary, size: .s))
             }
             .disabled(model.busy)
         }
-        .padding(.vertical, NW.Space.l)
-        .padding(.horizontal, NW.Space.l + NW.Space.xxs)
-        .nwCard(fill: nw.bgRaised, line: nw.lineSubtle)
+        .padding(.vertical, SH.Space.l)
+        .padding(.horizontal, SH.Space.l + SH.Space.xxs)
+        .shCard(fill: sh.bgRaised, line: sh.lineSubtle)
         .accessibilityElement(children: .contain)
     }
 
     /// The chip that says where the line goes, and retargets its file.
     private var target: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         return Menu {
             ForEach(InstructionFile.allCases, id: \.self) { option in
                 Button { model.retarget(suggestion, to: option) } label: {
@@ -447,30 +447,30 @@ private struct SuggestionCard: View {
                 }
             }
         } label: {
-            HStack(spacing: NW.Space.s) {
-                Image(systemName: NWGlyph.document.symbolName)
-                    .font(.nwSans(AppLayout.suggestionTargetGlyphSize))
-                    .foregroundStyle(nw.textSecondary)
+            HStack(spacing: SH.Space.s) {
+                Image(systemName: SHGlyph.document.symbolName)
+                    .font(.shSans(AppLayout.suggestionTargetGlyphSize))
+                    .foregroundStyle(sh.textSecondary)
                 Text(file.fileName)
-                    .font(.nwMono(AppLayout.suggestionTargetSize))
-                    .foregroundStyle(nw.textPrimary)
+                    .font(.shMono(AppLayout.suggestionTargetSize))
+                    .foregroundStyle(sh.textPrimary)
                 Text("·")
-                    .font(.nwSans(AppLayout.suggestionTargetSize))
-                    .foregroundStyle(nw.textTertiary)
+                    .font(.shSans(AppLayout.suggestionTargetSize))
+                    .foregroundStyle(sh.textTertiary)
                 Image(systemName: "desktopcomputer")
-                    .font(.nwSans(AppLayout.suggestionTargetGlyphSize))
-                    .foregroundStyle(nw.textSecondary)
+                    .font(.shSans(AppLayout.suggestionTargetGlyphSize))
+                    .foregroundStyle(sh.textSecondary)
                 Text(hosts)
-                    .font(.nwSans(AppLayout.suggestionTargetSize))
-                    .foregroundStyle(nw.textSecondary)
+                    .font(.shSans(AppLayout.suggestionTargetSize))
+                    .foregroundStyle(sh.textSecondary)
                 Image(systemName: "chevron.down")
-                    .font(.nwSans(AppLayout.suggestionChevronSize, .semibold))
-                    .foregroundStyle(nw.textTertiary)
+                    .font(.shSans(AppLayout.suggestionChevronSize, .semibold))
+                    .foregroundStyle(sh.textTertiary)
             }
-            .padding(.horizontal, NW.Space.m)
+            .padding(.horizontal, SH.Space.m)
             .frame(height: AppLayout.suggestionTargetHeight)
-            .nwBorder(nw.lineStrong, radius: NW.Radius.s)
-            .contentShape(RoundedRectangle(cornerRadius: NW.Radius.s))
+            .shBorder(sh.lineStrong, radius: SH.Radius.s)
+            .contentShape(RoundedRectangle(cornerRadius: SH.Radius.s))
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
@@ -484,9 +484,9 @@ private struct SuggestionCard: View {
     /// `synString`, the rest `textPrimary`.
     @MainActor static func addedLine(_ line: String) -> AttributedString {
         var result = AttributedString("+ ")
-        result.foregroundColor = Color.nw.done
+        result.foregroundColor = Color.sh.done
         var body = AttributedString(line)
-        body.foregroundColor = Color.nw.textPrimary
+        body.foregroundColor = Color.sh.textPrimary
         let units = line.utf16
         for span in InstructionsText.highlight(line: line) {
             guard let lower = units.index(units.startIndex, offsetBy: span.range.lowerBound, limitedBy: units.endIndex),
@@ -494,8 +494,8 @@ private struct SuggestionCard: View {
                   let from = AttributedString.Index(lower, within: body),
                   let to = AttributedString.Index(upper, within: body) else { continue }
             switch span.role {
-            case .bullet, .headingMarker: body[from..<to].foregroundColor = Color.nw.lanternText
-            case .code: body[from..<to].foregroundColor = Color.nw.synString
+            case .bullet, .headingMarker: body[from..<to].foregroundColor = Color.sh.lanternText
+            case .code: body[from..<to].foregroundColor = Color.sh.synString
             case .heading: break
             }
         }
@@ -518,74 +518,74 @@ private struct ExperimentsSideColumn: View {
     ]
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         VStack(alignment: .leading, spacing: AppLayout.experimentsSideSpacing) {
-            VStack(alignment: .leading, spacing: NW.Space.m) {
-                NWSectionHeader("How it works", style: .settings).padding(.horizontal, NW.Space.xxs)
+            VStack(alignment: .leading, spacing: SH.Space.m) {
+                SHSectionHeader("How it works", style: .settings).padding(.horizontal, SH.Space.xxs)
                 VStack(spacing: 0) {
                     ForEach(Array(Self.steps.enumerated()), id: \.offset) { index, step in
-                        HStack(alignment: .firstTextBaseline, spacing: NW.Space.m + NW.Space.xxs) {
+                        HStack(alignment: .firstTextBaseline, spacing: SH.Space.m + SH.Space.xxs) {
                             Text("\(index + 1)")
-                                .font(.nwMono(AppLayout.instructionsNumberSize))
-                                .foregroundStyle(nw.textSecondary)
+                                .font(.shMono(AppLayout.instructionsNumberSize))
+                                .foregroundStyle(sh.textSecondary)
                                 .frame(width: AppLayout.experimentStepRing, height: AppLayout.experimentStepRing)
-                                .nwBorder(nw.lineStrong, in: Circle())
-                            let lead = Text(step.lead).font(.nwSans(AppLayout.experimentStepTextSize, .semibold)).foregroundStyle(nw.textPrimary)
-                            let rest = Text(step.rest).foregroundStyle(nw.textSecondary)
+                                .shBorder(sh.lineStrong, in: Circle())
+                            let lead = Text(step.lead).font(.shSans(AppLayout.experimentStepTextSize, .semibold)).foregroundStyle(sh.textPrimary)
+                            let rest = Text(step.rest).foregroundStyle(sh.textSecondary)
                             Text("\(lead) \(rest)")
-                                .nwText(size: AppLayout.experimentStepTextSize, lineHeight: AppLayout.experimentDescriptionLineHeight)
+                                .shText(size: AppLayout.experimentStepTextSize, lineHeight: AppLayout.experimentDescriptionLineHeight)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        .padding(.vertical, NW.Space.m)
-                        .overlay(alignment: .top) { if index > 0 { NWHairline() } }
+                        .padding(.vertical, SH.Space.m)
+                        .overlay(alignment: .top) { if index > 0 { SHHairline() } }
                         .accessibilityElement(children: .combine)
                     }
                 }
             }
             if !model.snapshot.added.isEmpty {
-                VStack(alignment: .leading, spacing: NW.Space.m) {
-                    NWSectionHeader("Added from suggestions", style: .settings).padding(.horizontal, NW.Space.xxs)
+                VStack(alignment: .leading, spacing: SH.Space.m) {
+                    SHSectionHeader("Added from suggestions", style: .settings).padding(.horizontal, SH.Space.xxs)
                     VStack(spacing: 0) {
                         ForEach(model.snapshot.added) { added in
-                            HStack(spacing: NW.Space.m + NW.Space.xxs) {
-                                VStack(alignment: .leading, spacing: NW.Space.xxs) {
+                            HStack(spacing: SH.Space.m + SH.Space.xxs) {
+                                VStack(alignment: .leading, spacing: SH.Space.xxs) {
                                     Text(SuggestionsPresentation.plainLine(added.line))
-                                        .font(.nwSans(AppLayout.addedLineSize))
-                                        .foregroundStyle(nw.textPrimary)
+                                        .font(.shSans(AppLayout.addedLineSize))
+                                        .foregroundStyle(sh.textPrimary)
                                         .lineLimit(2)
                                     Text(SuggestionsPresentation.addedNote(added))
-                                        .font(.nwSans(AppLayout.addedNoteSize))
-                                        .foregroundStyle(nw.textTertiary)
+                                        .font(.shSans(AppLayout.addedNoteSize))
+                                        .foregroundStyle(sh.textTertiary)
                                         .lineLimit(1)
                                 }
-                                Spacer(minLength: NW.Space.m)
+                                Spacer(minLength: SH.Space.m)
                                 Button("Undo") { Task { await model.undo(added) } }
-                                    .buttonStyle(.nwLink(font: .nwSans(AppLayout.suggestionOriginSize)))
+                                    .buttonStyle(.shLink(font: .shSans(AppLayout.suggestionOriginSize)))
                                     .disabled(model.busy)
                                     .accessibilityLabel("Undo: take “\(SuggestionsPresentation.plainLine(added.line))” out of \(added.file.fileName)")
                             }
-                            .padding(.vertical, NW.Space.s)
+                            .padding(.vertical, SH.Space.s)
                             .frame(minHeight: AppLayout.addedRowMinHeight)
-                            .overlay(alignment: .top) { NWHairline() }
-                            .nwTransition(.list)
+                            .overlay(alignment: .top) { SHHairline() }
+                            .shTransition(.list)
                         }
                     }
                 }
-                .nwTransition(.disclosure)
+                .shTransition(.disclosure)
             }
-            VStack(alignment: .leading, spacing: NW.Space.m) {
-                NWSectionHeader("About experiments", style: .settings).padding(.horizontal, NW.Space.xxs)
+            VStack(alignment: .leading, spacing: SH.Space.m) {
+                SHSectionHeader("About experiments", style: .settings).padding(.horizontal, SH.Space.xxs)
                 SettingsNote(text: "Experiments can change or go away. Turning this one off keeps the lines you added and drops what's waiting.")
-                    .padding(.horizontal, NW.Space.xxs)
+                    .padding(.horizontal, SH.Space.xxs)
                 Button { openURL(ExperimentsSettings.feedbackURL) } label: {
                     Label("Send feedback", systemImage: "bubble.left")
                 }
-                .buttonStyle(.nw(.secondary, size: .s))
-                .padding(.horizontal, NW.Space.xxs)
+                .buttonStyle(.sh(.secondary, size: .s))
+                .padding(.horizontal, SH.Space.xxs)
                 .help("Opens a new issue for Shepherd on GitHub")
             }
         }
-        .nwAnimation(.list, value: model.snapshot.added.map(\.id))
+        .shAnimation(.list, value: model.snapshot.added.map(\.id))
     }
 }

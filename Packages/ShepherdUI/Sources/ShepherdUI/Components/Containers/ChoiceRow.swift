@@ -2,7 +2,7 @@ import SwiftUI
 
 /// A choice row's measures (the Where it runs board): a 15pt mono name over a 12pt detail, at
 /// least 56pt tall, with a 20pt leading column for the icon or status dot.
-public enum NWChoiceRowMetrics {
+public enum SHChoiceRowMetrics {
     public static let titleSize: CGFloat = 15
     public static let minHeight: CGFloat = 56
     public static let leadingWidth: CGFloat = 20
@@ -11,8 +11,8 @@ public enum NWChoiceRowMetrics {
 
 /// One option in a picker list (a repo, a host): a leading icon or status dot, the name over a
 /// detail line and an optional note, and a checkmark when chosen. `trailing` takes an inline
-/// action instead (Retry). Draw it as a button's label, inside an `NWGroupCard`.
-public struct NWChoiceRow<Leading: View, Trailing: View>: View {
+/// action instead (Retry). Draw it as a button's label, inside an `SHGroupCard`.
+public struct SHChoiceRow<Leading: View, Trailing: View>: View {
     let title: String
     let detail: String?
     let note: String?
@@ -35,45 +35,45 @@ public struct NWChoiceRow<Leading: View, Trailing: View>: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        HStack(spacing: NW.Space.l) {
+        let sh = Color.sh
+        HStack(spacing: SH.Space.l) {
             leading()
-                .frame(width: NWChoiceRowMetrics.leadingWidth)
+                .frame(width: SHChoiceRowMetrics.leadingWidth)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 Text(title)
-                    .font(mono ? .nwMono(NWChoiceRowMetrics.titleSize, .medium) : .nw(.ui))
-                    .foregroundStyle(dimmed ? nw.textTertiary : nw.textPrimary)
+                    .font(mono ? .shMono(SHChoiceRowMetrics.titleSize, .medium) : .sh(.ui))
+                    .foregroundStyle(dimmed ? sh.textTertiary : sh.textPrimary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 if let detail {
-                    Text(detail).nwText(.caption).foregroundStyle(dimmed ? nw.textTertiary : nw.textSecondary)
+                    Text(detail).shText(.caption).foregroundStyle(dimmed ? sh.textTertiary : sh.textSecondary)
                         .lineLimit(2)
                 }
                 if let note {
-                    Text(note).nwText(.caption).foregroundStyle(nw.lanternText)
+                    Text(note).shText(.caption).foregroundStyle(sh.lanternText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            Spacer(minLength: NW.Space.m)
+            Spacer(minLength: SH.Space.m)
             trailing()
             if selected {
                 Image(systemName: "checkmark")
-                    .font(.nw(.ui, weight: .semibold))
-                    .foregroundStyle(nw.running)
+                    .font(.sh(.ui, weight: .semibold))
+                    .foregroundStyle(sh.running)
                     .accessibilityHidden(true)
             }
         }
-        .padding(.horizontal, NW.Space.xl)
-        .padding(.vertical, NW.Space.m)
-        .frame(maxWidth: .infinity, minHeight: NWChoiceRowMetrics.minHeight, alignment: .leading)
+        .padding(.horizontal, SH.Space.xl)
+        .padding(.vertical, SH.Space.m)
+        .frame(maxWidth: .infinity, minHeight: SHChoiceRowMetrics.minHeight, alignment: .leading)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
-extension NWChoiceRow where Trailing == EmptyView {
+extension SHChoiceRow where Trailing == EmptyView {
     public init(_ title: String, detail: String? = nil, note: String? = nil, mono: Bool = true, selected: Bool = false, dimmed: Bool = false,
                 @ViewBuilder leading: @escaping () -> Leading) {
         self.init(title, detail: detail, note: note, mono: mono, selected: selected, dimmed: dimmed, leading: leading, trailing: { EmptyView() })
@@ -81,27 +81,27 @@ extension NWChoiceRow where Trailing == EmptyView {
 }
 
 #Preview("Choice rows") {
-    NWPreviewBoth {
-        VStack(alignment: .leading, spacing: NW.Space.l) {
-            NWGroupCard {
-                NWChoiceRow("shepherd", detail: "~/code/shepherd", selected: true) {
-                    NWGlyph.repository.image.foregroundStyle(Color.nw.textSecondary)
+    SHPreviewBoth {
+        VStack(alignment: .leading, spacing: SH.Space.l) {
+            SHGroupCard {
+                SHChoiceRow("shepherd", detail: "~/code/shepherd", selected: true) {
+                    SHGlyph.repository.image.foregroundStyle(Color.sh.textSecondary)
                 }
-                NWChoiceRow("orders-svc", detail: "on build-01") {
-                    NWGlyph.repository.image.foregroundStyle(Color.nw.textSecondary)
+                SHChoiceRow("orders-svc", detail: "on build-01") {
+                    SHGlyph.repository.image.foregroundStyle(Color.sh.textSecondary)
                 }
             }
-            NWGroupCard {
-                NWChoiceRow("Studio", detail: "connected · 2 threads running", selected: true) {
-                    NWStatusDot(.done, size: NWChoiceRowMetrics.statusDot)
+            SHGroupCard {
+                SHChoiceRow("Studio", detail: "connected · 2 threads running", selected: true) {
+                    SHStatusDot(.done, size: SHChoiceRowMetrics.statusDot)
                 }
-                NWChoiceRow("build-01", detail: "connected", note: "Update Shepherd on build-01 to send images.") {
-                    NWStatusDot(.done, size: NWChoiceRowMetrics.statusDot)
+                SHChoiceRow("build-01", detail: "connected", note: "Update Shepherd on build-01 to send images.") {
+                    SHStatusDot(.done, size: SHChoiceRowMetrics.statusDot)
                 }
-                NWChoiceRow("horizon", detail: "unreachable", dimmed: true) {
-                    NWStatusDot(.failed, size: NWChoiceRowMetrics.statusDot)
+                SHChoiceRow("horizon", detail: "unreachable", dimmed: true) {
+                    SHStatusDot(.failed, size: SHChoiceRowMetrics.statusDot)
                 } trailing: {
-                    Button("Retry") {}.buttonStyle(.nwLink)
+                    Button("Retry") {}.buttonStyle(.shLink)
                 }
             }
         }

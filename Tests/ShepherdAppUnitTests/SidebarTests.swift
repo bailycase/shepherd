@@ -4,6 +4,7 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdTestKit
 import ShepherdUI
+import SwiftUI
 import Testing
 @testable import ShepherdApp
 
@@ -75,7 +76,7 @@ struct SidebarRecentsTests {
                                        state: ShepherdState(spaces: [space], agents: [agent("remote", status: .working, at: 1)]))]))
         let rows = Dictionary(uniqueKeysWithValues: lists.all.map { ($0.title, $0) })
         #expect(rows["failed"]?.leading == .dot(.failed))
-        #expect(rows["failed"]?.accessory == NWSidebarRow.Accessory.none)
+        #expect(rows["failed"]?.accessory == SHSidebarRow.Accessory.none)
         #expect(rows["running"]?.leading == .dot(.running))
         #expect(rows["running"]?.accessory == .elapsed(since: since))
         #expect(rows["idle"]?.leading == .dot(.idle))
@@ -123,7 +124,7 @@ struct SidebarRecentsTests {
         #expect(rows["Nightly"]?.accessory == .text("can't start", tone: .failed))
     }
 
-    /// PiAuthStates' `NWSidebarRow(agent) · .waiting, .notSignedIn`: a restored agent the first
+    /// PiAuthStates' `SHSidebarRow(agent) · .waiting, .notSignedIn`: a restored agent the first
     /// launch's copy holds says "waiting" with a clock; one that isn't signed in moves to Needs you
     /// with "sign in", ahead of its "can't start".
     @Test func anAgentWaitingForYourPiOrNotSignedInSaysSo() {
@@ -182,7 +183,7 @@ struct SidebarRecentsTests {
         let presented = lists.presented(selected: .local(agents[2].id), shortcuts: true)
         #expect(presented.recents.map(\.selected) == (0..<11).map { $0 == 2 })
         #expect(presented.recents.prefix(9).map(\.accessory) == (1...9).map { .shortcut("⌘\($0)") })
-        #expect(presented.recents.dropFirst(9).allSatisfy { $0.accessory == NWSidebarRow.Accessory.none })
+        #expect(presented.recents.dropFirst(9).allSatisfy { $0.accessory == SHSidebarRow.Accessory.none })
         // ⌘1–9 are Recents': Needs you keeps its reason.
         #expect(presented.needsYou.first?.accessory == .reason("Ship it?"))
     }
@@ -261,12 +262,12 @@ struct SidebarNeedsYouTests {
     ])
     func aReasonIsOneShortLine(text: String, reason: String) {
         #expect(SidebarDerivation.shortened(text) == reason)
-        #expect(SidebarDerivation.shortened(text).count <= NWSidebarMetrics.reasonLength)
+        #expect(SidebarDerivation.shortened(text).count <= SHSidebarMetrics.reasonLength)
     }
 
     /// The iPad's chips cut at the Mac's length.
     @Test func theIPadCutsReasonsAtTheMacsLength() {
-        #expect(NeedsYouReason.length == NWSidebarMetrics.reasonLength)
+        #expect(NeedsYouReason.length == SHSidebarMetrics.reasonLength)
     }
 
     /// An automation run that asks leads with its bolt in lantern; a remote one keeps its reason
@@ -319,11 +320,11 @@ struct SidebarDestinationTests {
 
     @Test(arguments: [("Alex Example", "A"), ("  ada", "A"), ("", "")])
     func theFootersAvatarIsTheInitial(name: String, initial: String) {
-        #expect(NWSidebarFooter.initial(name) == initial)
+        #expect(SHSidebarFooter.initial(name) == initial)
     }
 }
 
-/// The New thread page's workplace chip: every host's projects (nested spaces flattened), the
+/// The New thread page's workplace chip: every host's projects (nested spaces as a tree), the
 /// chosen one checked, "Add folder…" on each host.
 @Suite("New thread workplace")
 struct NewThreadPlacesTests {
@@ -340,13 +341,45 @@ struct NewThreadPlacesTests {
     @Test func everyHostsProjectsAreListedFlatWithTheChosenOneChecked() {
         let sections = NewThreadPlaces.sections(hosts, chosen: NewThreadPlace(host: nil, space: sub.id))
         #expect(sections.map(\.title) == ["This Mac", "horizon"])
-        #expect(sections[0].options.map(\.title) == ["mono", "sub"])
-        #expect(sections[0].options.map(\.detail) == ["~/mono", "~/mono/sub"])
-        #expect(sections[0].options.map(\.isCurrent) == [false, true])
+        #expect(sections[0].options.map(\.title) == ["No space", "mono", "sub"])
+        #expect(sections[0].options.dropFirst().map(\.detail) == ["~/mono", "~/mono/sub"])
+        #expect(sections[0].options.map(\.isCurrent) == [false, false, true])
         #expect(sections.allSatisfy { $0.addTitle == "Add folder…" })
         #expect(NewThreadPlaces.place(sections[1].options[0]) == NewThreadPlace(host: hostID, space: web.id))
         #expect(NewThreadPlaces.host(of: sections[0]) == nil)
         #expect(NewThreadPlaces.host(of: sections[1]) == hostID)
+    }
+
+    @Test func nestedSpacesFoldUnderTheirParentAndSearchFindsThemFlat() {
+        let other = Fixture.space("other", path: "/Users/dev/other")
+        let deep = Fixture.space("deep", path: "/Users/dev/mono/sub/deep")
+        // Given out of tree order: the sub space still lands under its parent.
+        let tree = [NewThreadPlaces.Host(id: nil, name: "This Mac", spaces: [sub, other, mono, deep])]
+        let sections = NewThreadPlaces.sections(tree, chosen: nil)
+        #expect(sections[0].options.map(\.title) == ["No space", "other", "mono", "sub", "deep"])
+        let monoID = sections[0].options[2].id
+        // Folder nesting takes the outermost project as parent, as the sidebar does.
+        #expect(sections[0].options[3].ancestors == [monoID] && sections[0].options[4].ancestors == [monoID])
+
+        let closed = SHPlaceMenu<EmptyView>.visible(sections, query: "", expanded: [])
+        #expect(closed[0].options.map(\.title) == ["No space", "other", "mono"])
+        let open = SHPlaceMenu<EmptyView>.visible(sections, query: "", expanded: [monoID])
+        #expect(open[0].options.map(\.title) == ["No space", "other", "mono", "sub", "deep"])
+
+        let found = SHPlaceMenu<EmptyView>.visible(sections, query: "DEEP", expanded: [])
+        #expect(found[0].options.map(\.title) == ["deep"])
+        #expect(found[0].options[0].ancestors.isEmpty && found[0].addTitle == nil)
+        #expect(SHPlaceMenu<EmptyView>.visible(sections, query: "mono/sub", expanded: []).flatMap(\.options).map(\.title) == ["sub", "deep"])
+        #expect(SHPlaceMenu<EmptyView>.visible(sections, query: "nothing", expanded: []).isEmpty)
+    }
+
+    @Test func noSpaceCanBeChosenAndSurvivesReopeningWithSpacesAvailable() {
+        let standalone = NewThreadPlace(host: nil, space: nil)
+        let options = NewThreadPlaces.sections(hosts, chosen: standalone)
+        #expect(NewThreadPlaces.place(options[0].options[0]) == standalone)
+        #expect(options[0].options[0].isCurrent)
+        #expect(NewThreadPlaces.chip(hosts, chosen: standalone) == ("No space", "This Mac"))
+        #expect(NewThreadPlaces.fallback(hosts, chosen: standalone, recent: NewThreadPlace(host: nil, space: mono.id)) == standalone)
     }
 
     @Test func theChipSaysProjectAndHost() {
@@ -365,7 +398,8 @@ struct NewThreadPlacesTests {
         #expect(NewThreadPlaces.fallback(hosts, chosen: gone, recent: nil) == NewThreadPlace(host: nil, space: mono.id))
         let remoteOnly = [NewThreadPlaces.Host(id: nil, name: "This Mac", spaces: []), hosts[1]]
         #expect(NewThreadPlaces.fallback(remoteOnly, chosen: nil, recent: nil) == recent)
-        #expect(NewThreadPlaces.fallback([NewThreadPlaces.Host(id: nil, name: "This Mac", spaces: [])], chosen: nil, recent: nil) == nil)
+        #expect(NewThreadPlaces.fallback([NewThreadPlaces.Host(id: nil, name: "This Mac", spaces: [])], chosen: nil, recent: nil)
+                == NewThreadPlace(host: nil, space: nil))
     }
 }
 

@@ -1,15 +1,15 @@
 import SwiftUI
 
-/// The sidebar column (NWNavigation, `NWSidebar`): the 44pt top bar (room for the window
+/// The sidebar column (SHNavigation, `SHSidebar`): the 44pt top bar (room for the window
 /// controls, then Search and Hide sidebar at its trailing end; it drags the window), the
 /// destinations and lists, and the footer behind a 1px rule. On `bgBase`; the caller draws the
 /// trailing edge.
-public struct NWSidebar<Content: View, Footer: View>: View {
-    let topBar: NWSidebarTopBar
+public struct SHSidebar<Content: View, Footer: View>: View {
+    let topBar: SHSidebarTopBar
     @ViewBuilder let content: () -> Content
     @ViewBuilder let footer: () -> Footer
 
-    public init(topBar: NWSidebarTopBar, @ViewBuilder content: @escaping () -> Content,
+    public init(topBar: SHSidebarTopBar, @ViewBuilder content: @escaping () -> Content,
                 @ViewBuilder footer: @escaping () -> Footer) {
         self.topBar = topBar
         self.content = content
@@ -23,18 +23,18 @@ public struct NWSidebar<Content: View, Footer: View>: View {
                 .frame(maxHeight: .infinity, alignment: .top)
             footer()
         }
-        .background(Color.nw.bgBase)
+        .background(Color.sh.bgBase)
     }
 }
 
-extension NWSidebar where Footer == EmptyView {
-    public init(topBar: NWSidebarTopBar, @ViewBuilder content: @escaping () -> Content) {
+extension SHSidebar where Footer == EmptyView {
+    public init(topBar: SHSidebarTopBar, @ViewBuilder content: @escaping () -> Content) {
         self.init(topBar: topBar, content: content, footer: { EmptyView() })
     }
 }
 
-/// The sidebar's fixed measures (NWNavigation). Row heights follow `NWDensity`.
-public enum NWSidebarMetrics {
+/// The sidebar's fixed measures (SHNavigation). Row heights follow `SHDensity`.
+public enum SHSidebarMetrics {
     /// The top bar: room for the window controls, unified with the title bar (the toolbar
     /// beside it is as tall).
     public static let topBarHeight: CGFloat = 44
@@ -68,29 +68,29 @@ public enum NWSidebarMetrics {
 
 /// The measures that change with the row density: Standard is the boards' value, Compact the
 /// Compact sample's; Comfortable takes Standard's spacing at its own height.
-extension NWDensity {
+extension SHDensity {
     /// A row's side padding and the gap after its leading slot.
-    public var sidebarRowPadding: CGFloat { self == .compact ? NW.Space.s : NW.Space.m }
+    public var sidebarRowPadding: CGFloat { self == .compact ? SH.Space.s : SH.Space.m }
     public var sidebarRowGap: CGFloat { self == .compact ? 7 : 9 }
     /// A section header's top padding.
     public var sidebarHeaderTop: CGFloat { self == .compact ? 10 : 14 }
     /// A destination's title and icon.
-    @MainActor public var destinationFont: Font { self == .compact ? .nwSans(12) : .nwSans(13) }
+    @MainActor public var destinationFont: Font { self == .compact ? .shSans(12) : .shSans(13) }
     @MainActor public func destinationFont(weight: Font.Weight) -> Font {
-        self == .compact ? .nwSans(12, weight) : .nwSans(13, weight)
+        self == .compact ? .shSans(12, weight) : .shSans(13, weight)
     }
     public var destinationIcon: CGFloat { self == .compact ? 13 : 15 }
     /// A list row's glyph (an automation's bolt).
     public var rowGlyph: CGFloat { self == .compact ? 11 : 13 }
     /// A destination's height at the current density scale.
-    @MainActor public var destinationHeight: CGFloat { rowHeight + NWSidebarMetrics.destinationExtra }
+    @MainActor public var destinationHeight: CGFloat { rowHeight + SHSidebarMetrics.destinationExtra }
 }
 
 // MARK: Top bar
 
 /// The 44pt top bar: the window controls' room, a spacer that drags the window, then Search
 /// (⌘K) and Hide sidebar (⇧⌘S) as 26pt circular icon buttons with 14pt glyphs.
-public struct NWSidebarTopBar: View {
+public struct SHSidebarTopBar: View {
     let searchShortcut: String?
     let hideShortcut: String?
     let search: (() -> Void)?
@@ -104,10 +104,10 @@ public struct NWSidebarTopBar: View {
     }
 
     public var body: some View {
-        HStack(spacing: NWSidebarMetrics.topBarButtonGap) {
+        HStack(spacing: SHSidebarMetrics.topBarButtonGap) {
             Color.clear
                 .contentShape(Rectangle())
-                .nwWindowDrag()
+                .shWindowDrag()
             if let search {
                 button("magnifyingglass", label: "Search", shortcut: searchShortcut, action: search)
             }
@@ -115,25 +115,25 @@ public struct NWSidebarTopBar: View {
                 button("sidebar.left", label: "Hide sidebar", shortcut: hideShortcut, action: hide)
             }
         }
-        .padding(.trailing, NWSidebarMetrics.topBarTrailing)
-        .frame(height: NWSidebarMetrics.topBarHeight)
+        .padding(.trailing, SHSidebarMetrics.topBarTrailing)
+        .frame(height: SHSidebarMetrics.topBarHeight)
     }
 
     private func button(_ symbol: String, label: String, shortcut: String?, action: @escaping () -> Void) -> some View {
         Button(action: action) { Image(systemName: symbol) }
-            .buttonStyle(.nwIcon(size: NWSidebarMetrics.topBarButton))
-            .nwHelp(label, shortcut: shortcut)
+            .buttonStyle(.shIcon(size: SHSidebarMetrics.topBarButton))
+            .shHelp(label, shortcut: shortcut)
             .accessibilityLabel(label)
     }
 }
 
 // MARK: Destinations
 
-/// A destination (NWNavigation, `NWSidebarDestination`): New thread with its chord, Automations,
+/// A destination (SHNavigation, `SHSidebarDestination`): New thread with its chord, Automations,
 /// More and More's rows. 30pt (24 in Compact), radius 8, a 20pt icon slot, the title in Geist 13
 /// (12). The selected one is `bgSelected` with its title in semibold and its icon in
 /// `textPrimary`; hover is `bgHover`. A button; compared without its action.
-public struct NWSidebarDestination: View, Equatable {
+public struct SHSidebarDestination: View, Equatable {
     public enum Icon: Equatable, Sendable {
         /// A 15pt (13) stroke in `textSecondary`.
         case symbol(String)
@@ -157,7 +157,7 @@ public struct NWSidebarDestination: View, Equatable {
     let child: Bool
     let trailing: Trailing
     let action: () -> Void
-    @Environment(\.nwDensity) private var density
+    @Environment(\.shDensity) private var density
     @State private var hovering = false
 
     /// `child` indents one of More's rows.
@@ -171,32 +171,32 @@ public struct NWSidebarDestination: View, Equatable {
         self.action = action
     }
 
-    public nonisolated static func == (a: NWSidebarDestination, b: NWSidebarDestination) -> Bool {
+    public nonisolated static func == (a: SHSidebarDestination, b: SHSidebarDestination) -> Bool {
         a.title == b.title && a.icon == b.icon && a.selected == b.selected && a.child == b.child && a.trailing == b.trailing
     }
 
     public var body: some View {
-        let _ = NWRenderProbe.tick("sidebar.destination")
+        let _ = SHRenderProbe.tick("sidebar.destination")
         Button(action: action) {
             HStack(spacing: density.sidebarRowGap) {
                 iconView
-                    .frame(width: NWSidebarMetrics.destinationIconSlot, height: NWSidebarMetrics.destinationIconSlot)
+                    .frame(width: SHSidebarMetrics.destinationIconSlot, height: SHSidebarMetrics.destinationIconSlot)
                 Text(title)
                     .font(density.destinationFont(weight: selected ? .semibold : .regular))
-                    .foregroundStyle(.nw.textPrimary)
+                    .foregroundStyle(.sh.textPrimary)
                     .lineLimit(1)
-                Spacer(minLength: NW.Space.xs)
+                Spacer(minLength: SH.Space.xs)
                 trailingView
             }
-            .padding(.leading, child ? NWSidebarMetrics.destinationChildLeading : density.sidebarRowPadding)
+            .padding(.leading, child ? SHSidebarMetrics.destinationChildLeading : density.sidebarRowPadding)
             .padding(.trailing, density.sidebarRowPadding)
             .frame(maxWidth: .infinity, minHeight: density.destinationHeight, alignment: .leading)
-            .nwRowBackground(selected: selected, hovering: hovering, radius: NW.Radius.m)
-            .contentShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+            .shRowBackground(selected: selected, hovering: hovering, radius: SH.Radius.m)
+            .contentShape(RoundedRectangle(cornerRadius: SH.Radius.m))
         }
-        .buttonStyle(NWPlainPressStyle())
+        .buttonStyle(SHPlainPressStyle())
         .onHover { hovering = $0 }
-        .nwAnimation(.hover, value: hovering)
+        .shAnimation(.hover, value: hovering)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
@@ -205,21 +205,21 @@ public struct NWSidebarDestination: View, Equatable {
         case .symbol(let name):
             Image(systemName: name)
                 .font(.system(size: density.destinationIcon - 2, weight: .regular))
-                .foregroundStyle(selected ? Color.nw.textPrimary : Color.nw.textSecondary)
+                .foregroundStyle(selected ? Color.sh.textPrimary : Color.sh.textSecondary)
                 .accessibilityHidden(true)
         case .newThread:
             Image(systemName: "plus")
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.nw.textPrimary)
-                .frame(width: NWSidebarMetrics.destinationIconSlot, height: NWSidebarMetrics.destinationIconSlot)
-                .background(Color.nw.bgSelected, in: Circle())
+                .foregroundStyle(.sh.textPrimary)
+                .frame(width: SHSidebarMetrics.destinationIconSlot, height: SHSidebarMetrics.destinationIconSlot)
+                .background(Color.sh.bgSelected, in: Circle())
                 .accessibilityHidden(true)
         case .disclosure(let open):
             Image(systemName: "chevron.right")
                 .font(.system(size: density.destinationIcon - 5, weight: .semibold))
-                .foregroundStyle(.nw.textTertiary)
+                .foregroundStyle(.sh.textTertiary)
                 .rotationEffect(.degrees(open ? 90 : 0))
-                .nwAnimation(.disclosure, value: open)
+                .shAnimation(.disclosure, value: open)
                 .accessibilityHidden(true)
         }
     }
@@ -229,22 +229,22 @@ public struct NWSidebarDestination: View, Equatable {
         case .none:
             EmptyView()
         case .keycaps(let chord):
-            NWKeycap(chord)
+            SHKeycap(chord)
         case .alert(let text):
-            Text(text).font(.nwMono(10)).foregroundStyle(.nw.failed).lineLimit(1).fixedSize()
-                .nwContentTransition(.numeric())
+            Text(text).font(.shMono(10)).foregroundStyle(.sh.failed).lineLimit(1).fixedSize()
+                .shContentTransition(.numeric())
         }
     }
 }
 
 // MARK: Lists
 
-/// A list's header (NWNavigation, `NWSidebarSection`): "Needs you" in Geist 11.5 medium
+/// A list's header (SHNavigation, `SHSidebarSection`): "Needs you" in Geist 11.5 medium
 /// `lanternText` with its count in mono 10.5, or "Pinned" or "Recents" in `textTertiary`; in the project tree
 /// grouped by host, a host's name in `textTertiary` with "unreachable" in mono 10 `failed` while
-/// it is not connected (SidebarTree, `NWSidebarSection(host)`). Padded 14pt (10) above, 4pt
+/// it is not connected (SidebarTree, `SHSidebarSection(host)`). Padded 14pt (10) above, 4pt
 /// below, and 8pt (6) at the sides.
-public struct NWSidebarSection: View, Equatable {
+public struct SHSidebarSection: View, Equatable {
     public enum Kind: Equatable, Sendable {
         case needsYou(count: Int)
         /// The threads the user pinned, above Recents (SidebarPinned).
@@ -254,37 +254,37 @@ public struct NWSidebarSection: View, Equatable {
     }
 
     let kind: Kind
-    @Environment(\.nwDensity) private var density
+    @Environment(\.shDensity) private var density
 
     public init(_ kind: Kind) { self.kind = kind }
 
-    public nonisolated static func == (a: NWSidebarSection, b: NWSidebarSection) -> Bool { a.kind == b.kind }
+    public nonisolated static func == (a: SHSidebarSection, b: SHSidebarSection) -> Bool { a.kind == b.kind }
 
     public var body: some View {
-        let _ = NWRenderProbe.tick("sidebar.header")
+        let _ = SHRenderProbe.tick("sidebar.header")
         let attention = if case .needsYou = kind { true } else { false }
-        let tone = attention ? Color.nw.lanternText : Color.nw.textTertiary
-        HStack(spacing: NW.Space.s) {
+        let tone = attention ? Color.sh.lanternText : Color.sh.textTertiary
+        HStack(spacing: SH.Space.s) {
             Text(title)
-                .font(.nwSans(11.5, .medium))
+                .font(.shSans(11.5, .medium))
                 .foregroundStyle(tone)
                 .lineLimit(1)
-            Spacer(minLength: NW.Space.xs)
+            Spacer(minLength: SH.Space.xs)
             switch kind {
             case .needsYou(let count):
                 Text("\(count)")
-                    .font(.nwMono(10.5))
+                    .font(.shMono(10.5))
                     .foregroundStyle(tone)
                     .monospacedDigit()
-                    .nwContentTransition(.numeric())
-                    .nwAnimation(.content, value: count)
+                    .shContentTransition(.numeric())
+                    .shAnimation(.content, value: count)
             case .host(_, unreachable: true):
-                Text("unreachable").font(.nwMono(10)).foregroundStyle(.nw.failed).lineLimit(1).fixedSize()
+                Text("unreachable").font(.shMono(10)).foregroundStyle(.sh.failed).lineLimit(1).fixedSize()
             case .pinned, .recents, .host:
                 EmptyView()
             }
         }
-        .padding(EdgeInsets(top: density.sidebarHeaderTop, leading: density.sidebarRowPadding, bottom: NW.Space.xs,
+        .padding(EdgeInsets(top: density.sidebarHeaderTop, leading: density.sidebarRowPadding, bottom: SH.Space.xs,
                             trailing: density.sidebarRowPadding))
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
@@ -300,11 +300,11 @@ public struct NWSidebarSection: View, Equatable {
     }
 }
 
-/// One item in Needs you or Recents (NWNavigation, `NWSidebarRow`): a 14pt leading slot (the
+/// One item in Needs you or Recents (SHNavigation, `SHSidebarRow`): a 14pt leading slot (the
 /// thread's state dot, or the kind's glyph), the title in the row font (semibold when selected),
 /// and one trailing accessory. The density's height (a minimum), radius 8; hover `bgHover`,
 /// selected `bgSelected`. Interaction is the caller's.
-public struct NWSidebarRow: View, Equatable {
+public struct SHSidebarRow: View, Equatable {
     public enum Leading: Equatable, Sendable {
         /// The state dot: hollow while idle, glowing while it needs you.
         case dot(AgentState)
@@ -340,11 +340,11 @@ public struct NWSidebarRow: View, Equatable {
     let accessory: Accessory
     let hasGoal: Bool
     let nested: Bool
-    @Environment(\.nwDensity) private var density
+    @Environment(\.shDensity) private var density
     @State private var hovering = false
 
     /// `nested` is a thread inside a project of the project tree: its leading slot sits under
-    /// the project's folder (`NWDensity.treeChildLeading`).
+    /// the project's folder (`SHDensity.treeChildLeading`).
     public init(_ title: String, leading: Leading, selected: Bool = false, dimmed: Bool = false, accessory: Accessory = .none,
                 hasGoal: Bool = false, nested: Bool = false) {
         self.title = title
@@ -362,79 +362,79 @@ public struct NWSidebarRow: View, Equatable {
         self.init(title, leading: .dot(state), selected: selected, dimmed: dimmed, accessory: accessory, hasGoal: hasGoal, nested: nested)
     }
 
-    public nonisolated static func == (a: NWSidebarRow, b: NWSidebarRow) -> Bool {
+    public nonisolated static func == (a: SHSidebarRow, b: SHSidebarRow) -> Bool {
         a.title == b.title && a.leading == b.leading && a.selected == b.selected && a.dimmed == b.dimmed
             && a.accessory == b.accessory && a.hasGoal == b.hasGoal && a.nested == b.nested
     }
 
     public var body: some View {
-        let _ = NWRenderProbe.tick("sidebar.row")
+        let _ = SHRenderProbe.tick("sidebar.row")
         // A status report, a settled name, or ⌘ held changes one part in place (`.content`);
         // selection is not animated here, so it lands at once.
         HStack(spacing: density.sidebarRowGap) {
             leadingView
-                .frame(width: NWSidebarMetrics.rowSlot)
-                .nwAnimation(.content, value: leading)
+                .frame(width: SHSidebarMetrics.rowSlot)
+                .shAnimation(.content, value: leading)
             Text(title)
                 .font(density.rowTitleFont(weight: selected ? .semibold : .regular))
-                .foregroundStyle(.nw.textPrimary)
+                .foregroundStyle(.sh.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .nwContentTransition(.crossFade)
-                .nwAnimation(.content, value: title)
-            Spacer(minLength: NW.Space.xs)
-            if hasGoal { NWGoalGlyph().foregroundStyle(Color.nw.textTertiary) }
-            NWSidebarAccessoryView(accessory: accessory)
-                .nwAnimation(.content, value: accessory)
+                .shContentTransition(.crossFade)
+                .shAnimation(.content, value: title)
+            Spacer(minLength: SH.Space.xs)
+            if hasGoal { SHGoalGlyph().foregroundStyle(Color.sh.textTertiary) }
+            SHSidebarAccessoryView(accessory: accessory)
+                .shAnimation(.content, value: accessory)
         }
         .padding(.leading, nested ? density.treeChildLeading : density.sidebarRowPadding)
         .padding(.trailing, density.sidebarRowPadding)
         .frame(maxWidth: .infinity, minHeight: density.rowHeight, alignment: .leading)
-        .nwRowBackground(selected: selected, hovering: hovering, radius: NW.Radius.m)
-        .contentShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+        .shRowBackground(selected: selected, hovering: hovering, radius: SH.Radius.m)
+        .contentShape(RoundedRectangle(cornerRadius: SH.Radius.m))
         .onHover { hovering = $0 }
-        .nwAnimation(.hover, value: hovering)
-        .opacity(dimmed ? NWListMetrics.dimmedOpacity : 1)
+        .shAnimation(.hover, value: hovering)
+        .opacity(dimmed ? SHListMetrics.dimmedOpacity : 1)
     }
 
     @ViewBuilder private var leadingView: some View {
         switch leading {
         case .dot(let state):
-            NWSidebarDot(state: state)
+            SHSidebarDot(state: state)
         case .glyph(let name, let attention):
             Image(systemName: name)
                 .font(.system(size: density.rowGlyph - 1, weight: .regular))
-                .foregroundStyle(attention ? Color.nw.lanternText : Color.nw.textTertiary)
+                .foregroundStyle(attention ? Color.sh.lanternText : Color.sh.textTertiary)
                 .accessibilityHidden(true)
         case .waiting:
             Image(systemName: "clock")
                 .font(.system(size: density.rowGlyph - 2, weight: .regular))
-                .foregroundStyle(Color.nw.textSecondary)
+                .foregroundStyle(Color.sh.textSecondary)
                 .accessibilityHidden(true)
         }
     }
 }
 
 /// The row dot: hollow while idle or queued, glowing while it needs you.
-struct NWSidebarDot: View {
+struct SHSidebarDot: View {
     let state: AgentState
 
     /// A ZStack, so a hollow dot and a filled one cross-fade in one place.
     var body: some View {
         ZStack {
             if state == .idle || state == .queued {
-                Circle().strokeBorder(Color.nw.textTertiary, lineWidth: 1)
+                Circle().strokeBorder(Color.sh.textTertiary, lineWidth: 1)
                     .frame(width: 6, height: 6)
                     .accessibilityHidden(true)
             } else {
-                NWStatusDot(state)
+                SHStatusDot(state)
             }
         }
     }
 }
 
-private struct NWSidebarAccessoryView: View {
-    let accessory: NWSidebarRow.Accessory
+private struct SHSidebarAccessoryView: View {
+    let accessory: SHSidebarRow.Accessory
 
     /// A ZStack, so the old and new accessory cross-fade in one slot; nothing at all without
     /// one, so the row's spacing leaves the title its room.
@@ -449,52 +449,52 @@ private struct NWSidebarAccessoryView: View {
         case .none:
             EmptyView()
         case .reason(let text):
-            Text(text).font(.nwMono(10)).foregroundStyle(.nw.lanternText).lineLimit(1).fixedSize()
+            Text(text).font(.shMono(10)).foregroundStyle(.sh.lanternText).lineLimit(1).fixedSize()
         case .elapsed(let since):
-            TimelineView(NWElapsedSchedule(start: since)) { context in
-                Text(NWDuration.text(context.date.timeIntervalSince(since)))
-                    .font(.nwMono(10)).foregroundStyle(.nw.textTertiary).monospacedDigit().fixedSize()
+            TimelineView(SHElapsedSchedule(start: since)) { context in
+                Text(SHDuration.text(context.date.timeIntervalSince(since)))
+                    .font(.shMono(10)).foregroundStyle(.sh.textTertiary).monospacedDigit().fixedSize()
             }
         case .activity(let samples):
-            NWSidebarActivityLine(samples: samples)
-                .stroke(Color.nw.running, style: StrokeStyle(lineWidth: 1.2, lineCap: .round, lineJoin: .round))
-                .frame(width: NWSidebarMetrics.activityWidth, height: NWSidebarMetrics.activityHeight)
+            SHSidebarActivityLine(samples: samples)
+                .stroke(Color.sh.running, style: StrokeStyle(lineWidth: 1.2, lineCap: .round, lineJoin: .round))
+                .frame(width: SHSidebarMetrics.activityWidth, height: SHSidebarMetrics.activityHeight)
                 .accessibilityHidden(true)
         case .age(let since):
-            TimelineView(NWElapsedSchedule(start: since)) { context in
-                Text("\(NWDuration.text(max(0, context.date.timeIntervalSince(since)))) ago")
-                    .font(.nwMono(NWSidebarMetrics.accessoryFont)).foregroundStyle(.nw.textTertiary).monospacedDigit().fixedSize()
+            TimelineView(SHElapsedSchedule(start: since)) { context in
+                Text("\(SHDuration.text(max(0, context.date.timeIntervalSince(since)))) ago")
+                    .font(.shMono(SHSidebarMetrics.accessoryFont)).foregroundStyle(.sh.textTertiary).monospacedDigit().fixedSize()
             }
         case .text(let text, let tone):
-            Text(text).font(.nwMono(10)).foregroundStyle(color(tone)).lineLimit(1).fixedSize()
+            Text(text).font(.shMono(10)).foregroundStyle(color(tone)).lineLimit(1).fixedSize()
         case .tag(let name):
             Text(name)
-                .font(.nwMono(10))
-                .foregroundStyle(.nw.textTertiary)
+                .font(.shMono(10))
+                .foregroundStyle(.sh.textTertiary)
                 .lineLimit(1)
-                .padding(.horizontal, NW.Space.xs)
-                .nwBorder(Color.nw.lineSubtle, radius: NW.Radius.xs)
+                .padding(.horizontal, SH.Space.xs)
+                .shBorder(Color.sh.lineSubtle, radius: SH.Radius.xs)
                 .fixedSize()
         case .shortcut(let text):
-            Text(text).font(.nw(.micro, weight: .regular)).foregroundStyle(.nw.textTertiary).fixedSize()
+            Text(text).font(.sh(.micro, weight: .regular)).foregroundStyle(.sh.textTertiary).fixedSize()
         }
     }
 
     private func color(_ tone: AgentState?) -> Color {
         switch tone {
-        case .failed?, .stuck?: .nw.failed
-        case .attention?: .nw.lanternText
-        default: .nw.textTertiary
+        case .failed?, .stuck?: .sh.failed
+        case .attention?: .sh.lanternText
+        default: .sh.textTertiary
         }
     }
 }
 
 // MARK: Footer
 
-/// The sidebar's footer (NWNavigation): behind a hairline, a 26pt `bgSelected` circle with the
+/// The sidebar's footer (SHNavigation): behind a hairline, a 26pt `bgSelected` circle with the
 /// initial, the name in `ui` medium over where it runs in mono 10 `textTertiary` ("This Mac ·
 /// demo-mac"), and a Settings gear. Padded 10pt above and below and 12pt at the sides.
-public struct NWSidebarFooter: View, Equatable {
+public struct SHSidebarFooter: View, Equatable {
     let name: String
     let detail: String
     let settingsShortcut: String?
@@ -507,7 +507,7 @@ public struct NWSidebarFooter: View, Equatable {
         self.settings = settings
     }
 
-    public nonisolated static func == (a: NWSidebarFooter, b: NWSidebarFooter) -> Bool {
+    public nonisolated static func == (a: SHSidebarFooter, b: SHSidebarFooter) -> Bool {
         a.name == b.name && a.detail == b.detail && a.settingsShortcut == b.settingsShortcut
     }
 
@@ -519,30 +519,30 @@ public struct NWSidebarFooter: View, Equatable {
     public var body: some View {
         HStack(spacing: 10) {
             Text(Self.initial(name))
-                .font(.nwSans(11.5, .semibold))
-                .foregroundStyle(.nw.textPrimary)
-                .frame(width: NWSidebarMetrics.footerAvatar, height: NWSidebarMetrics.footerAvatar)
-                .background(Color.nw.bgSelected, in: Circle())
+                .font(.shSans(11.5, .semibold))
+                .foregroundStyle(.sh.textPrimary)
+                .frame(width: SHSidebarMetrics.footerAvatar, height: SHSidebarMetrics.footerAvatar)
+                .background(Color.sh.bgSelected, in: Circle())
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
-                Text(name).font(.nw(.ui, weight: .medium)).foregroundStyle(.nw.textPrimary).lineLimit(1)
-                Text(detail).font(.nwMono(10)).foregroundStyle(.nw.textTertiary).lineLimit(1)
+                Text(name).font(.sh(.ui, weight: .medium)).foregroundStyle(.sh.textPrimary).lineLimit(1)
+                Text(detail).font(.shMono(10)).foregroundStyle(.sh.textTertiary).lineLimit(1)
             }
             .accessibilityElement(children: .combine)
             Spacer(minLength: 0)
             Button(action: settings) { Image(systemName: "gearshape") }
-                .buttonStyle(.nwIcon(size: NWSidebarMetrics.footerAvatar))
-                .nwHelp("Settings", shortcut: settingsShortcut)
+                .buttonStyle(.shIcon(size: SHSidebarMetrics.footerAvatar))
+                .shHelp("Settings", shortcut: settingsShortcut)
                 .accessibilityLabel("Settings")
         }
         // The boards' footer is 52pt tall and its rule is 46pt above the bottom edge: the content is the 26pt avatar, 9pt below the rule
         // and 10pt above the bottom; 6pt of the footer's height sits above the rule.
-        .frame(height: NWSidebarMetrics.footerAvatar)
-        .padding(.top, NWSidebarMetrics.footerRuleToContent + 1)
-        .padding(.bottom, NWSidebarMetrics.footerBottom)
-        .padding(.horizontal, NW.Space.l)
-        .overlay(alignment: .top) { NWHairline() }
-        .padding(.top, NWSidebarMetrics.footerAboveRule)
+        .frame(height: SHSidebarMetrics.footerAvatar)
+        .padding(.top, SHSidebarMetrics.footerRuleToContent + 1)
+        .padding(.bottom, SHSidebarMetrics.footerBottom)
+        .padding(.horizontal, SH.Space.l)
+        .overlay(alignment: .top) { SHHairline() }
+        .padding(.top, SHSidebarMetrics.footerAboveRule)
     }
 }
 
@@ -550,7 +550,7 @@ public struct NWSidebarFooter: View, Equatable {
 
 /// The 2pt drop line a reorder drag shows at a row's top or bottom edge (`lantern` in the
 /// composer's queue).
-public struct NWDropIndicator: View {
+public struct SHDropIndicator: View {
     /// The line's height.
     public static let thickness: CGFloat = 2
 
@@ -559,24 +559,24 @@ public struct NWDropIndicator: View {
     public init(color: Color? = nil) { self.color = color }
 
     public var body: some View {
-        Rectangle().fill(color ?? Color.nw.running).frame(height: Self.thickness)
+        Rectangle().fill(color ?? Color.sh.running).frame(height: Self.thickness)
             .allowsHitTesting(false).accessibilityHidden(true)
     }
 }
 
 /// A plain button that dims while pressed and draws the focus ring; for rows and fields that
 /// carry their own chrome.
-struct NWPlainPressStyle: ButtonStyle {
+struct SHPlainPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .opacity(configuration.isPressed ? 0.75 : 1)
-            .nwFocusRing(radius: NW.Radius.s)
+            .shFocusRing(radius: SH.Radius.s)
     }
 }
 
 extension View {
     /// Drags the window from this view's empty area (a title bar region). No-op off macOS.
-    @ViewBuilder func nwWindowDrag() -> some View {
+    @ViewBuilder func shWindowDrag() -> some View {
         #if os(macOS)
         gesture(WindowDragGesture())
         #else

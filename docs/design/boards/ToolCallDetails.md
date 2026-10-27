@@ -4,7 +4,7 @@ User requirement: clicking the codemode block expands to show its script. Expand
 
 ## Implementation checklist
 
-- Keep the existing activity glyphs, labels, status, rail, dimensions and Night Watch tokens unchanged.
+- Keep the existing activity glyphs, labels, status, rail, dimensions and Shepherd Design tokens unchanged.
 - In each expanded burst, put an input row before the existing call/output row. Codemode's input row is `script` with `JavaScript` as its detail; other tools use `input` with the tool name.
 - Decode codemode's saved `code` argument as source text. Other inputs show the saved JSON arguments. Never reconstruct missing input; missing arguments or empty source add no input row.
 - Opening a codemode burst shows the first 12 script lines immediately. Input rows toggle their preview independently of output rows.
@@ -17,7 +17,7 @@ User requirement: clicking the codemode block expands to show its script. Expand
 
 | Element | Requirement and implementation | Result |
 | --- | --- | --- |
-| Activity header and rail | Existing NWActivityLine and NWActivityCalls, unchanged glyphs, status and tokens | Matched |
+| Activity header and rail | Existing SHActivityLine and SHActivityCalls, unchanged glyphs, status and tokens | Matched |
 | Script | Saved RPC assistant tool-call arguments flow through projectHistory into the decoded source preview | Matched |
 | Inputs and output | Separate input and existing output rows, independently expandable | Matched |
 | Long source | First 12 lines, existing full-text sheet and Copy/Done controls | Matched |

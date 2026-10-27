@@ -11,26 +11,26 @@ import UIKit
 /// one that cannot fit without squeezing a column under `tableColumnMin` scrolls sideways inside
 /// its card, never widening the thread. Copy (on hover on the Mac, always on iOS) copies it as
 /// Markdown.
-struct NWProseTableView: View, Equatable {
-    let table: NWProseTable
-    @Environment(\.nwProseSize) private var size
+struct SHProseTableView: View, Equatable {
+    let table: SHProseTable
+    @Environment(\.shProseSize) private var size
     @State private var hovering = false
     @State private var copied = false
     @State private var copies = 0
     @FocusState private var copyFocused: Bool
 
-    nonisolated static func == (lhs: NWProseTableView, rhs: NWProseTableView) -> Bool { lhs.table == rhs.table }
+    nonisolated static func == (lhs: SHProseTableView, rhs: SHProseTableView) -> Bool { lhs.table == rhs.table }
 
     var body: some View {
-        let _ = NWRenderProbe.tick("prose.table")
-        let nw = Color.nw
+        let _ = SHRenderProbe.tick("prose.table")
+        let sh = Color.sh
         // Drawn directly when its columns fit, and in a scroll view only when they do not.
         ViewThatFits(in: .horizontal) {
             grid(fitting: true)
             ScrollView(.horizontal) { grid(fitting: false) }
         }
-        .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
-        .nwBorder(nw.lineSubtle, radius: NW.Radius.m)
+        .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
+        .shBorder(sh.lineSubtle, radius: SH.Radius.m)
         .overlay(alignment: .topTrailing) { copyButton }
         .onHover { hovering = $0 }
         .accessibilityElement(children: .contain)
@@ -40,35 +40,35 @@ struct NWProseTableView: View, Equatable {
     private func grid(fitting: Bool) -> some View {
         let columns = table.columns
         let rows = table.rows.count
-        return NWTableLayout(columns: columns, fitting: fitting, table: table, size: size) {
+        return SHTableLayout(columns: columns, fitting: fitting, table: table, size: size) {
             ForEach(0..<(columns * (rows + 1)), id: \.self) { index in
                 let row = index / columns - 1
                 let column = index % columns
-                NWTableCell(text: row < 0 ? table.header[column] : table.rows[row][column],
+                SHTableCell(text: row < 0 ? table.header[column] : table.rows[row][column],
                             header: row < 0, alignment: table.alignments[column], last: row == rows - 1,
-                            copyInset: NWPlatform.showsHoverDetails && column == columns - 1)
+                            copyInset: SHPlatform.showsHoverDetails && column == columns - 1)
             }
         }
     }
 
     private var copyButton: some View {
         Button {
-            NWPasteboard.copy(table.markdown)
+            SHPasteboard.copy(table.markdown)
             copied = true
             copies += 1
             Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
         } label: {
-            NWCopyGlyph(copied: copied, copies: copies)
+            SHCopyGlyph(copied: copied, copies: copies)
         }
-        .buttonStyle(.nwIcon(size: NWThreadMetrics.codeCopyButton))
-        .background(Color.nw.bgSunken, in: RoundedRectangle(cornerRadius: NW.Radius.s))
+        .buttonStyle(.shIcon(size: SHThreadMetrics.codeCopyButton))
+        .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.s))
         .focused($copyFocused)
         // Centered on the header's first line.
-        .padding(.top, ((NWTableCell.verticalPadding * 2 + NWTextStyle.ui.size * NWTextStyle.ui.lineHeight
-                         - NWThreadMetrics.codeCopyButton) / 2).rounded())
-        .padding(.trailing, NW.Space.xs)
-        .opacity(NWPlatform.showsHoverDetails || hovering || copyFocused || copied ? 1 : 0)
-        .nwAnimation(.hover, value: hovering || copyFocused || copied)
+        .padding(.top, ((SHTableCell.verticalPadding * 2 + SHTextStyle.ui.size * SHTextStyle.ui.lineHeight
+                         - SHThreadMetrics.codeCopyButton) / 2).rounded())
+        .padding(.trailing, SH.Space.xs)
+        .opacity(SHPlatform.showsHoverDetails || hovering || copyFocused || copied ? 1 : 0)
+        .shAnimation(.hover, value: hovering || copyFocused || copied)
         .help("Copy as Markdown")
         .accessibilityLabel(copied ? "Copied" : "Copy table as Markdown")
     }
@@ -76,45 +76,45 @@ struct NWProseTableView: View, Equatable {
 
 /// One cell: its text wraps at the column's width, and it fills its row so the header's fill
 /// and the row's hairline span the whole row.
-struct NWTableCell: View {
-    static let verticalPadding = NW.Space.m
-    static let horizontalPadding = NW.Space.l * 2
+struct SHTableCell: View {
+    static let verticalPadding = SH.Space.m
+    static let horizontalPadding = SH.Space.l * 2
 
     let text: AttributedString
     let header: Bool
-    let alignment: NWProseTable.Alignment
+    let alignment: SHProseTable.Alignment
     /// The last row: the card's border closes it, so it draws no hairline.
     let last: Bool
     /// Where Copy always shows (iOS), the last column leaves room for it, so it never covers
     /// the header and the column's alignment holds. On the Mac it shows on hover, over the
     /// header's end.
     let copyInset: Bool
-    @Environment(\.nwProseSize) private var size
-    @Environment(\.nwProseFileRoot) private var fileRoot
-    @Environment(\.nwProseFileLinks) private var fileLinks
+    @Environment(\.shProseSize) private var size
+    @Environment(\.shProseFileRoot) private var fileRoot
+    @Environment(\.shProseFileLinks) private var fileLinks
 
     var body: some View {
-        let _ = NWRenderProbe.tick("prose.tableCell")
-        let nw = Color.nw
-        NWProseFileLinks.prose(text, root: fileRoot, actions: fileLinks)
-            .font(header ? .nw(.ui, weight: .semibold) : .nw(.body, size: size))
-            .lineSpacing(header ? NWTextStyle.ui.lineSpacing(size) : NWTextStyle.headline.lineSpacing(size))
-            .foregroundStyle(header ? nw.textSecondary : nw.textPrimary)
+        let _ = SHRenderProbe.tick("prose.tableCell")
+        let sh = Color.sh
+        SHProseFileLinks.prose(text, root: fileRoot, actions: fileLinks)
+            .font(header ? .sh(.ui, weight: .semibold) : .sh(.body, size: size))
+            .lineSpacing(header ? SHTextStyle.ui.lineSpacing(size) : SHTextStyle.headline.lineSpacing(size))
+            .foregroundStyle(header ? sh.textSecondary : sh.textPrimary)
             .multilineTextAlignment(alignment.text)
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
-            .modifier(NWFileLinkTargets(actions: NWProseFileLinks.targets(text, root: fileRoot, actions: fileLinks)))
+            .modifier(SHFileLinkTargets(actions: SHProseFileLinks.targets(text, root: fileRoot, actions: fileLinks)))
             .padding(.vertical, Self.verticalPadding)
-            .padding(.leading, NW.Space.l)
-            .padding(.trailing, NW.Space.l + (copyInset ? NWThreadMetrics.codeCopyButton : 0))
+            .padding(.leading, SH.Space.l)
+            .padding(.trailing, SH.Space.l + (copyInset ? SHThreadMetrics.codeCopyButton : 0))
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment.frame)
-            .background(header ? nw.bgSunken : .clear)
-            .overlay(alignment: .bottom) { if !last { NWHairline() } }
+            .background(header ? sh.bgSunken : .clear)
+            .overlay(alignment: .bottom) { if !last { SHHairline() } }
             .accessibilityAddTraits(header ? .isHeader : [])
     }
 }
 
-extension NWProseTable.Alignment {
+extension SHProseTable.Alignment {
     var text: TextAlignment {
         switch self {
         case .leading: .leading
@@ -138,12 +138,24 @@ extension NWProseTable.Alignment {
 /// `tableColumnMin` when it must (its ideal width is the sum of those minimums, so
 /// `ViewThatFits` picks it only when that fits). Otherwise columns keep their natural widths
 /// (inside a scroll view). Every row is as tall as its tallest cell.
-struct NWTableLayout: Layout {
+struct SHTableLayout: Layout {
     let columns: Int
     let fitting: Bool
-    /// The cells' text, to find each column's widest word.
-    let table: NWProseTable
-    let size: NWProseSize
+    private let words: [CGFloat]
+
+    /// Prepare font measurements while the view builds on the main actor. SwiftUI can
+    /// construct a Sendable layout's cache on a background thread.
+    @MainActor
+    init(columns: Int, fitting: Bool, table: SHProseTable, size: SHProseSize) {
+        self.columns = columns
+        self.fitting = fitting
+        self.words = (0..<columns).map { column in
+            var widest = SHTableWords.widest(table.header[column], header: true, size: size)
+            for row in table.rows { widest = max(widest, SHTableWords.widest(row[column], header: false, size: size)) }
+            let inset = SHPlatform.showsHoverDetails && column == columns - 1 ? SHThreadMetrics.codeCopyButton : 0
+            return (widest + SHTableCell.horizontalPadding + inset).rounded(.up) + 1
+        }
+    }
 
     struct Cache {
         /// Each column's widest cell, unwrapped.
@@ -159,15 +171,6 @@ struct NWTableLayout: Layout {
         var ideal = Array(repeating: CGFloat.zero, count: columns)
         for (index, subview) in subviews.enumerated() {
             ideal[index % columns] = max(ideal[index % columns], subview.sizeThatFits(.unspecified).width.rounded(.up))
-        }
-        // SwiftUI lays out on the main thread.
-        let words = MainActor.assumeIsolated { [table, size, columns] in
-            (0..<columns).map { column in
-                var widest = NWTableWords.widest(table.header[column], header: true, size: size)
-                for row in table.rows { widest = max(widest, NWTableWords.widest(row[column], header: false, size: size)) }
-                let inset = NWPlatform.showsHoverDetails && column == columns - 1 ? NWThreadMetrics.codeCopyButton : 0
-                return (widest + NWTableCell.horizontalPadding + inset).rounded(.up) + 1
-            }
         }
         return Cache(ideal: ideal, words: words)
     }
@@ -198,7 +201,7 @@ struct NWTableLayout: Layout {
     /// Column widths in `available` points (nil: unconstrained).
     func widths(for available: CGFloat?, cache: Cache) -> [CGFloat] {
         Self.widths(for: available, ideal: cache.ideal, words: cache.words, fitting: fitting,
-                    minimum: NWThreadMetrics.tableColumnMin, maximum: NWThreadMetrics.tableColumnMax)
+                    minimum: SHThreadMetrics.tableColumnMin, maximum: SHThreadMetrics.tableColumnMax)
     }
 
     /// `words` raises a column's minimum to its widest word (never past `maximum`).
@@ -242,17 +245,17 @@ struct NWTableLayout: Layout {
 /// CoreText in the faces the cell draws: Geist for text (semibold in the header, bold where
 /// strong), Geist Mono for code spans, at the current text scale. Cached per text.
 @MainActor
-enum NWTableWords {
+enum SHTableWords {
     private struct Key: Hashable {
         var text: AttributedString
         var header: Bool
-        var size: NWProseSize
+        var size: SHProseSize
         var scale: CGFloat
     }
 
     private static var cache: [Key: CGFloat] = [:]
 
-    static func widest(_ text: AttributedString, header: Bool, size: NWProseSize) -> CGFloat {
+    static func widest(_ text: AttributedString, header: Bool, size: SHProseSize) -> CGFloat {
         let key = Key(text: text, header: header, size: size, scale: ThemeStore.shared.textScale)
         if let cached = cache[key] { return cached }
         var widest: CGFloat = 0
@@ -281,13 +284,13 @@ enum NWTableWords {
         return widest
     }
 
-    private static func font(code: Bool, strong: Bool, style: NWTextStyle, size: NWProseSize) -> CTFont {
-        let points = code ? NWTextStyle.code.size : style.size - (style == .body ? size.step : 0)
+    private static func font(code: Bool, strong: Bool, style: SHTextStyle, size: SHProseSize) -> CTFont {
+        let points = code ? SHTextStyle.code.size : style.size - (style == .body ? size.step : 0)
         var scaled = points * ThemeStore.shared.textScale
         #if os(iOS)
         scaled = UIFontMetrics(forTextStyle: code ? .callout : style == .ui ? .callout : .body).scaledValue(for: scaled)
         #endif
-        let name = NWFonts.postScriptName(mono: code, weight: code ? .regular : strong ? (style == .ui ? .semibold : .bold) : .regular)
+        let name = SHFonts.postScriptName(mono: code, weight: code ? .regular : strong ? (style == .ui ? .semibold : .bold) : .regular)
         return CTFontCreateWithName(name as CFString, scaled, nil)
     }
 

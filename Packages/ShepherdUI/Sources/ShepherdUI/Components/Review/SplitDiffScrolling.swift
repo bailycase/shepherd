@@ -3,9 +3,10 @@ import SwiftUI
 import AppKit
 #endif
 
-/// One file's two horizontal positions. Vertical scrolling remains the containing diff's.
+/// One file's horizontal positions: a split file's two sides, or a unified file's code (the new
+/// side's). Vertical scrolling remains the containing diff's.
 @MainActor @Observable
-public final class NWSplitDiffScroll {
+public final class SHSplitDiffScroll {
     public var oldOffset: CGFloat = 0
     public var newOffset: CGFloat = 0
     public private(set) var oldLimit: CGFloat = 0
@@ -29,31 +30,40 @@ public final class NWSplitDiffScroll {
 }
 
 extension EnvironmentValues {
-    @Entry public var splitDiffScroll: NWSplitDiffScroll? = nil
+    @Entry public var splitDiffScroll: SHSplitDiffScroll? = nil
+    /// Diff lines wrap at the pane's edge instead of scrolling sideways.
+    @Entry public var diffWrapsLines = false
 }
 
 #if os(macOS)
-/// Two native scrollbars per file, not a scroll view per line. Code canvases read their own
-/// column's offset; gutters, comments and the center divider stay at the viewport's positions.
-public struct NWSplitDiffScrollbars: View {
-    let scroll: NWSplitDiffScroll
-    public init(_ scroll: NWSplitDiffScroll) { self.scroll = scroll }
+/// Native scrollbars per file (two in split, one in unified), not a scroll view per line. Code
+/// canvases read their own column's offset; gutters, comments and the center divider stay at the
+/// viewport's positions.
+public struct SHSplitDiffScrollbars: View {
+    let scroll: SHSplitDiffScroll
+    let unified: Bool
+    public init(_ scroll: SHSplitDiffScroll, unified: Bool = false) { self.scroll = scroll; self.unified = unified }
     public var body: some View {
         HStack(spacing: 0) {
-            SplitScroller(scroll: scroll, old: true)
-            Color.nw.lineSubtle.frame(width: 1)
-            SplitScroller(scroll: scroll, old: false)
+            if unified {
+                SplitScroller(scroll: scroll, old: false, codeLeading: SHDiffMetrics.codeLeading)
+            } else {
+                SplitScroller(scroll: scroll, old: true, codeLeading: SHDiffMetrics.splitCodeLeading)
+                Color.sh.lineSubtle.frame(width: 1)
+                SplitScroller(scroll: scroll, old: false, codeLeading: SHDiffMetrics.splitCodeLeading)
+            }
         }
         .frame(height: NSScroller.scrollerWidth(for: .small, scrollerStyle: .legacy))
     }
 }
 
 private struct SplitScroller: NSViewRepresentable {
-    let scroll: NWSplitDiffScroll
+    let scroll: SHSplitDiffScroll
     let old: Bool
+    let codeLeading: CGFloat
     func makeNSView(context: Context) -> Control {
         let height = NSScroller.scrollerWidth(for: .small, scrollerStyle: .legacy)
-        let view = Control(frame: CGRect(x: 0, y: 0, width: NWDiffMetrics.numberWidth * 2, height: height))
+        let view = Control(frame: CGRect(x: 0, y: 0, width: SHDiffMetrics.numberWidth * 2, height: height))
         view.controlSize = .small
         view.scrollerStyle = .legacy
         view.target = view
@@ -62,12 +72,13 @@ private struct SplitScroller: NSViewRepresentable {
         return view
     }
     func updateNSView(_ view: Control, context: Context) {
-        view.scroll = scroll; view.old = old
+        view.scroll = scroll; view.old = old; view.codeLeading = codeLeading
         view.updatePosition()
     }
     final class Control: NSScroller {
-        var scroll: NWSplitDiffScroll?
+        var scroll: SHSplitDiffScroll?
         var old = false
+        var codeLeading = SHDiffMetrics.splitCodeLeading
         override func setFrameSize(_ newSize: NSSize) {
             super.setFrameSize(newSize)
             updatePosition()
@@ -77,7 +88,7 @@ private struct SplitScroller: NSViewRepresentable {
             let limit = old ? scroll.oldLimit : scroll.newLimit
             isEnabled = limit > 0
             doubleValue = limit > 0 ? Double((old ? scroll.oldOffset : scroll.newOffset) / limit) : 0
-            let viewport = max(1, bounds.width - NWDiffMetrics.splitCodeLeading - NWDiffMetrics.commentSlotWidth)
+            let viewport = max(1, bounds.width - codeLeading - SHDiffMetrics.commentSlotWidth)
             knobProportion = viewport / (viewport + limit)
         }
         @objc func changed() {

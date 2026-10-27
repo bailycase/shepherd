@@ -16,10 +16,10 @@ counts, paths, dates and host state come from `ProjectSettingsStore` and `Projec
   The editor expands beside a 250pt context column with a 20pt gap. Stack the context below
   the editor when the available content width is below 938pt. The page no longer scrolls
   a fixed-width column horizontally.
-- Breadcrumb `Spaces`, the supplied outline chevron, `NWGlyph.Settings.next`, then the
+- Breadcrumb `Spaces`, the supplied outline chevron, `SHGlyph.Settings.next`, then the
   real space name. Pressing
   Spaces returns to the list, with discard confirmation for an unsaved draft.
-- Identity uses the supplied outline folder, `NWGlyph.Settings.folder`, in a 32pt raised
+- Identity uses the supplied outline folder, `SHGlyph.Settings.folder`, in a 32pt raised
   content square, 34pt including its 1pt border,
   with rounded corners, a 22pt semibold space
   name, its monospaced display path, and the host name aligned right.

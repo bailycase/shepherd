@@ -3,19 +3,18 @@ import ShepherdUI
 import ShepherdRemote
 
 /// The iPad sidebar (iPadThread, iPadSidebar, iPadHosts boards; home track): New thread,
-/// Designs (while a host serves them, DesignPad/), Automations and More (which expands in place
-/// to Hosts and Extensions), Needs you with each item's reason, automation runs, then the Mac
+/// Designs (while a host serves them, DesignPad/), Projects, Automations, Needs you with each
+/// item's reason, automation runs, then the Mac
 /// sidebar's Working, Done (with Mark all seen) and Pinned (`SidebarThreads`), Recents with their
-/// hosts and the designs among them, and a footer with the hosts and Settings. A thread row's
+/// hosts and the designs among them, and Settings in the footer, as on the Mac (DuoOpenThread),
+/// with the hosts beside it only while one is offline. A thread row's
 /// long press is the Mac's row menu (`ThreadRowMenu`).
 struct PadSidebar: View {
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
-    /// More's sub-rows show (iPadHosts); kept per window.
-    @SceneStorage("shepherd.ios.sidebar.moreExpanded") private var moreExpanded = false
     @Environment(MobileProjects.self) private var projects
 
-    private var projectsTrailing: NWListRow.Trailing {
+    private var projectsTrailing: SHListRow.Trailing {
         let needsYou = projects.rows.reduce(0) { $0 + $1.needsYou }
         if needsYou > 0 { return .alert("\(needsYou) needs you") }
         return projects.rows.isEmpty ? .none : .value(String(projects.rows.count))
@@ -31,11 +30,12 @@ struct PadSidebar: View {
         let pushed = navigator.padPath.last
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                SidebarItem("New thread", leading: .badge("plus")) { NewThreadHooks.open(navigator: navigator) }
+                SidebarItem("New thread", leading: .symbol("square.and.pencil")) { NewThreadHooks.open(navigator: navigator) }
                     .disabled(model.hosts.isEmpty)
                 // The Design tool's destination, only while a host offers it (iPadSidebar).
                 if designs.available {
-                    SidebarItem("Designs", leading: .symbol("pencil.tip"), selected: pushed?.isPadDesign == true) {
+                    SidebarItem("Designs", leading: .symbol("pencil.tip"), selected: pushed?.isPadDesign == true,
+                                trailing: designs.rows.isEmpty ? .none : .value(String(designs.rows.count))) {
                         PadDesignHooks.openList(navigator: navigator)
                     }
                 }
@@ -46,30 +46,6 @@ struct PadSidebar: View {
                 SidebarItem("Automations", leading: .symbol("bolt"), selected: pushed == .home(.automations),
                             trailing: model.automations.isEmpty ? .none : .value(String(model.automations.count))) {
                     navigator.open(.home(.automations))
-                }
-                // More expands in place; folded, it carries the offline summary.
-                SidebarItem("More", leading: .symbol(moreExpanded ? "chevron.down" : "chevron.right"),
-                            trailing: moreExpanded ? .none : model.offlineSummary.map { .alert($0) } ?? .none) {
-                    withNWAnimation(.disclosure) { moreExpanded.toggle() }
-                }
-                .accessibilityValue(moreExpanded ? "Expanded" : "Collapsed")
-                if moreExpanded {
-                    // The sub-rows' content sits further in; their selection keeps the full width.
-                    Group {
-                        SidebarItem("Hosts", leading: .symbol("desktopcomputer"), selected: pushed == .home(.more),
-                                    trailing: model.offlineCount > 0 ? .alert("\(model.offlineCount) offline") : .none,
-                                    indent: MobileLayout.sidebarSubrowIndent) {
-                            navigator.open(.home(.more))
-                        }
-                        if !model.hosts.isEmpty {
-                            SidebarItem(SettingsPage.pi.title, leading: .symbol(SettingsPage.pi.symbol),
-                                        selected: pushed == .settings(SettingsPage.pi.route),
-                                        indent: MobileLayout.sidebarSubrowIndent) {
-                                navigator.open(.settings(SettingsPage.pi.route))
-                            }
-                        }
-                    }
-                    .nwTransition(.content)
                 }
                 if !groups.needsYou.isEmpty {
                     SidebarHeader(title: "Needs you", attention: true, count: groups.needsYou.count) {
@@ -92,9 +68,9 @@ struct PadSidebar: View {
                             Button { navigator.open(.thread(run.agentRef)) } label: {
                                 AutomationRow(row: row, selected: run.agentRef == selected)
                                     .equatable()
-                                    .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+                                    .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
                             }
-                            .buttonStyle(.nwRow(radius: NW.Radius.m))
+                            .buttonStyle(.shRow(radius: SH.Radius.m))
                             .contextMenu { AutomationRunMenu(row: row) }
                         }
                     }
@@ -134,27 +110,23 @@ struct PadSidebar: View {
                                 Button { PadDesignHooks.open(row.ref, navigator: navigator) } label: {
                                     PadDesignRecentRow(row: row, selected: pushed == .padDesign(.design(row.ref)))
                                         .equatable()
-                                        .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+                                        .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
                                 }
-                                .buttonStyle(.nwRow(radius: NW.Radius.m))
+                                .buttonStyle(.shRow(radius: SH.Radius.m))
                                 .contextMenu { PadDesignWindowButton(design: row.ref) }
                             }
                         }
                     }
                 }
             }
-            .padding(.horizontal, NW.Space.m)
-            .padding(.bottom, NW.Space.l)
+            .padding(.horizontal, SH.Space.m)
+            .padding(.bottom, SH.Space.l)
         }
-        .background(Color.nw.bgBase)
+        .background(Color.sh.bgBase)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             SidebarFooter(count: model.hosts.count, offline: model.offlineCount, names: model.hostNames)
         }
         .task { await feed.watch() }
-        // A page under More, opened from elsewhere, shows its row.
-        .onChange(of: pushed, initial: true) { _, pushed in
-            if pushed == .home(.more) || pushed == .settings(SettingsPage.pi.route), !moreExpanded { moreExpanded = true }
-        }
         // The board's bar has no title: Search and the split view's Hide sidebar.
         .navigationTitle("Shepherd")
         .toolbarTitleDisplayMode(.inline)
@@ -170,9 +142,9 @@ struct PadSidebar: View {
         Button { navigator.open(.thread(row.ref.agentRef)) } label: {
             ThreadRow(row: row, selected: row.ref.agentRef == selected, compact: true)
                 .equatable()
-                .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+                .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
         }
-        .buttonStyle(.nwRow(radius: NW.Radius.m))
+        .buttonStyle(.shRow(radius: SH.Radius.m))
         .contextMenu { ThreadRowMenu(thread: row.ref.agentRef) }
     }
 
@@ -180,9 +152,9 @@ struct PadSidebar: View {
         Button { navigator.open(projects.route(item)) } label: {
             AttentionRow(item: item, selected: pushed == item.route || item.ref.agentRef == selected, compact: true)
                 .equatable()
-                .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+                .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
         }
-        .buttonStyle(.nwRow(radius: NW.Radius.m))
+        .buttonStyle(.shRow(radius: SH.Radius.m))
         .contextMenu { ThreadRowMenu(thread: item.ref.agentRef) }
     }
 }
@@ -190,28 +162,26 @@ struct PadSidebar: View {
 /// A destination at the sidebar's top: a 44pt row.
 private struct SidebarItem: View {
     let title: String
-    let leading: NWListRow.Leading
+    let leading: SHListRow.Leading
     let selected: Bool
-    let trailing: NWListRow.Trailing
-    let indent: CGFloat
+    let trailing: SHListRow.Trailing
     let action: () -> Void
 
-    init(_ title: String, leading: NWListRow.Leading, selected: Bool = false, trailing: NWListRow.Trailing = .none,
-         indent: CGFloat = 0, action: @escaping () -> Void) {
+    init(_ title: String, leading: SHListRow.Leading, selected: Bool = false, trailing: SHListRow.Trailing = .none,
+         action: @escaping () -> Void) {
         self.title = title
         self.leading = leading
         self.selected = selected
         self.trailing = trailing
-        self.indent = indent
         self.action = action
     }
 
     var body: some View {
         Button(action: action) {
-            NWListRow(title, leading: leading, trailing: trailing, chevron: false, selected: selected, compact: true, indent: indent)
-                .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+            SHListRow(title, leading: leading, trailing: trailing, chevron: false, selected: selected, compact: true)
+                .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
         }
-        .buttonStyle(.nwRow(radius: NW.Radius.m))
+        .buttonStyle(.shRow(radius: SH.Radius.m))
     }
 }
 
@@ -225,10 +195,10 @@ private struct SidebarHeader: View {
 
     var body: some View {
         // A touch tall, so Needs you's header is a full target; the text sits on its bottom.
-        let header = NWListHeader(title, attention: attention, count: count, style: .sidebar)
-            .padding(.horizontal, NW.Space.m)
-            .padding(.bottom, NW.Space.xs)
-            .frame(minHeight: NW.Height.touch, alignment: .bottom)
+        let header = SHListHeader(title, attention: attention, count: count, style: .sidebar)
+            .padding(.horizontal, SH.Space.m)
+            .padding(.bottom, SH.Space.xs)
+            .frame(minHeight: SH.Height.touch, alignment: .bottom)
         if let action {
             Button(action: action) { header.contentShape(Rectangle()) }
                 .buttonStyle(.plain)
@@ -241,7 +211,8 @@ private struct SidebarHeader: View {
     }
 }
 
-/// The sidebar's foot: the hosts (opening Settings ▸ Hosts) and Settings.
+/// The sidebar's foot (DuoOpenThread): Settings, as on the Mac; while a host is offline, "1 of 2 offline" beside it opens Settings ▸
+/// Hosts.
 private struct SidebarFooter: View, Equatable {
     let count: Int
     let offline: Int
@@ -253,39 +224,41 @@ private struct SidebarFooter: View, Equatable {
     }
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         VStack(spacing: 0) {
-            NWHairline()
-            HStack(spacing: NW.Space.m) {
-                Button { navigator.open(.settings(.hosts)) } label: {
-                    HStack(spacing: NW.Space.m) {
-                        Image(systemName: "desktopcomputer")
-                            .font(.nw(.ui, weight: .medium))
-                            .foregroundStyle(offline > 0 ? nw.failed : nw.textSecondary)
-                            .frame(width: NWListMetrics.leadingWidth)
-                        VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                            Text(count == 0 ? "No hosts" : offline > 0 ? "\(offline) of \(count) offline" : "\(count) connected")
-                                .font(.nw(.ui, weight: .medium))
-                                .foregroundStyle(offline > 0 ? nw.failed : nw.textPrimary)
-                            if !names.isEmpty {
-                                Text(names).font(.nw(.mono)).foregroundStyle(nw.textTertiary).lineLimit(1)
-                            }
-                        }
+            SHHairline()
+            HStack(spacing: SH.Space.m) {
+                Button { navigator.open(.settings(.root)) } label: {
+                    HStack(spacing: SH.Space.m) {
+                        Image(systemName: "gearshape")
+                            .font(.sh(.ui, weight: .medium))
+                            .foregroundStyle(sh.textSecondary)
+                            .frame(width: SHListMetrics.leadingWidth)
+                        Text("Settings").font(.sh(.ui, weight: .medium)).foregroundStyle(sh.textPrimary)
                         Spacer(minLength: 0)
                     }
-                    .frame(minHeight: NW.Height.touch)
+                    .frame(minHeight: SH.Height.touch)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Hosts")
-                .accessibilityValue(offline > 0 ? "\(offline) offline" : "\(count) connected")
-                Button { navigator.open(.settings(.root)) } label: { Image(systemName: "gearshape") }
-                    .buttonStyle(.nw(.ghost))
-                    .accessibilityLabel("Settings")
+                if offline > 0 {
+                    Button { navigator.open(.settings(.hosts)) } label: {
+                        Label("\(offline) of \(count) offline", systemImage: "desktopcomputer")
+                            .font(.sh(.caption, weight: .medium))
+                            .foregroundStyle(sh.failed)
+                            .lineLimit(1)
+                            .frame(minHeight: SH.Height.touch)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Hosts")
+                    .accessibilityValue("\(offline) offline")
+                    .accessibilityHint(names)
+                }
             }
-            .padding(.horizontal, NW.Space.l)
-            .padding(.vertical, NW.Space.xs)
+            .padding(.horizontal, SH.Space.l)
+            .padding(.vertical, SH.Space.xs)
         }
-        .background(nw.bgBase)
+        .background(sh.bgBase)
     }
 }

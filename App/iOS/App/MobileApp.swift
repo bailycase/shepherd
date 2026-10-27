@@ -14,18 +14,35 @@ final class MobileApp {
     let threads: ThreadStores
     let appearance: MobileAppearance
     let windows = MobileWindows()
+    let push: PushManager
+    let pushRouter = PushRouter()
+    /// The Live Activities, widgets and their buttons.
+    let glance: GlanceBridge
 
-    init(hosts: MobileHosts, appearance: MobileAppearance) {
-        NWFonts.register()
+    init(hosts: MobileHosts, appearance: MobileAppearance, push: PushManager? = nil) {
+        SHFonts.register()
         self.hosts = hosts
+        self.push = push ?? PushManager()
         projects = MobileProjects(hosts: hosts)
         navigator = MobileNavigator()
         threads = ThreadStores()
         threads.hostName = { [weak hosts] ref in hosts?.host(ref.host)?.record.name }
         self.appearance = appearance
+        self.push.onEnabledHostsChanged = { GoalNotifications.shared.pushEnabledHosts = $0 }
+        GoalNotifications.shared.pushEnabledHosts = self.push.enabledHosts
+        self.push.onTokenChanged = { [weak hosts, weak push = self.push] in
+            guard let hosts, let push else { return }
+            Task { for host in hosts.hosts { await push.renew(host: host) } }
+        }
+        hosts.onHostConnected = { [weak push = self.push] host in
+            MobileBrowsers.shared.connected(host)
+            Task { await push?.renewOnReconnect(host: host) }
+        }
+        hosts.onHostDisconnected = { MobileBrowsers.shared.disconnected($0) }
         HomeFeed.of(hosts).projectNative = { [projects] ref, request in
             try await projects.native(agent: ref, request: request)
         }
+        glance = GlanceBridge(hosts: hosts, windows: windows)
     }
 
     /// The shipped app: preferences and the Keychain.
@@ -34,8 +51,9 @@ final class MobileApp {
     }
 
     /// Forgets a host everywhere: its token and record, its open screens, its threads.
-    func forget(host: UUID) throws {
-        try hosts.forget(host)
+    func forget(host: UUID) async throws {
+        // Revoke push before removing host connectivity.
+        try await push.forget(host: host) { try hosts.forget(host) }
         navigator.forget(host: host)
         windows.forget(host: host)
         threads.forget(host: host)
@@ -43,8 +61,10 @@ final class MobileApp {
         SettingsStore.forget(host: host, in: hosts)
         AutomationsStore.forget(host: host, in: hosts)
         MobileTerminals.shared.forget(host: host)
+        MobileBrowsers.shared.forget(host: host)
         ComposerStates.shared.forget(host: host)
         ReviewStores.shared.forget(host: host)
+        ThreadFilesStores.shared.forget(host: host)
         CommitStores.shared.forget(host: host)
         WorktreeOperations.shared.forget(host: host)
         TurnUndoStore.shared.forget(host: host)
@@ -64,6 +84,8 @@ extension View {
             .environment(app.projects)
             .environment(app.appearance)
             .environment(app.windows)
+            .environment(app.push)
+            .environment(app.pushRouter)
             .environment(\.mobileWindow, window)
             .environment(\.mobileApp, app)
     }

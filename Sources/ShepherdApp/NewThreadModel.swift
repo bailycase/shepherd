@@ -6,14 +6,14 @@ import ShepherdRemote
 import ShepherdSessions
 import ShepherdUI
 
-/// Where a new thread runs: a project (a space) on This Mac (`host` nil) or on a host.
+/// Where a new thread runs. Nil space is a standalone thread on This Mac.
 struct NewThreadPlace: Hashable {
     var host: UUID?
-    var space: SpaceID
+    var space: SpaceID?
 }
 
 /// The New thread page's workplace chip and its menu, as plain values (NavNewThread): every
-/// host's projects (its spaces, nested ones flattened), "Add folder…" on each, and the chip's
+/// host's projects (its spaces as a tree, each nested one after its parent), "Add folder…" on each, and the chip's
 /// "project · host". Pure.
 enum NewThreadPlaces {
     struct Host: Equatable {
@@ -26,18 +26,34 @@ enum NewThreadPlaces {
     static let thisMac = "This Mac"
 
     /// This Mac's projects, then each connected host's, the chosen one checked.
-    static func sections(_ hosts: [Host], chosen: NewThreadPlace?) -> [NWPlaceSection] {
+    static func sections(_ hosts: [Host], chosen: NewThreadPlace?) -> [SHPlaceSection] {
         hosts.map { host in
-            NWPlaceSection(id: sectionID(host.id), title: host.name, options: host.spaces.map { space in
-                NWPlaceOption(id: optionID(NewThreadPlace(host: host.id, space: space.id)), section: sectionID(host.id),
+            SHPlaceSection(id: sectionID(host.id), title: host.name, options: (host.id == nil ? [
+                SHPlaceOption(id: "local/no-space", section: sectionID(nil), title: "No space",
+                              detail: "Own scratch folder", isCurrent: chosen == NewThreadPlace(host: nil, space: nil))
+            ] : []) + tree(host.spaces).map { space, ancestors in
+                SHPlaceOption(id: optionID(NewThreadPlace(host: host.id, space: space.id)), section: sectionID(host.id),
                               title: space.name, detail: NewThreadRules.abbreviatedPath(space.path),
-                              isCurrent: chosen == NewThreadPlace(host: host.id, space: space.id))
+                              isCurrent: chosen == NewThreadPlace(host: host.id, space: space.id),
+                              ancestors: ancestors.map { optionID(NewThreadPlace(host: host.id, space: $0)) })
             })
         }
     }
 
+    /// Spaces depth first, in their given order, each with its ancestors (outermost first), as the
+    /// sidebar nests them (`ProjectNesting`).
+    static func tree(_ spaces: [Space]) -> [(Space, [SpaceID])] {
+        let parents = ProjectNesting.parents(in: spaces)
+        let children = Dictionary(grouping: spaces.filter { parents[$0.id] != nil }, by: { parents[$0.id]! })
+        func walk(_ space: Space, _ ancestors: [SpaceID]) -> [(Space, [SpaceID])] {
+            [(space, ancestors)] + (children[space.id] ?? []).flatMap { walk($0, ancestors + [space.id]) }
+        }
+        return spaces.filter { parents[$0.id] == nil }.flatMap { walk($0, []) }
+    }
+
     /// The chip's words: the project and its host ("shepherd", "This Mac").
     static func chip(_ hosts: [Host], chosen: NewThreadPlace?) -> (project: String, host: String) {
+        if chosen == NewThreadPlace(host: nil, space: nil) { return ("No space", thisMac) }
         guard let chosen, let host = hosts.first(where: { $0.id == chosen.host }),
               let space = host.spaces.first(where: { $0.id == chosen.space }) else {
             return ("Choose a space", hosts.first?.name ?? thisMac)
@@ -46,10 +62,12 @@ enum NewThreadPlaces {
     }
 
     /// The project a page opens on: the one chosen while it still exists, else the space of the
-    /// thread last on screen, else This Mac's first, else the first host's first.
+    /// thread last on screen, else This Mac's first, else the first host's first, else No space.
     static func fallback(_ hosts: [Host], chosen: NewThreadPlace?, recent: NewThreadPlace?) -> NewThreadPlace? {
         func exists(_ place: NewThreadPlace?) -> NewThreadPlace? {
-            guard let place, hosts.contains(where: { $0.id == place.host && $0.spaces.contains { $0.id == place.space } }) else { return nil }
+            guard let place else { return nil }
+            if place == NewThreadPlace(host: nil, space: nil) { return place }
+            guard hosts.contains(where: { $0.id == place.host && $0.spaces.contains { $0.id == place.space } }) else { return nil }
             return place
         }
         if let chosen = exists(chosen) { return chosen }
@@ -57,24 +75,25 @@ enum NewThreadPlaces {
         for host in hosts {
             if let space = host.spaces.first { return NewThreadPlace(host: host.id, space: space.id) }
         }
-        return nil
+        return NewThreadPlace(host: nil, space: nil)
     }
 
     static func sectionID(_ host: UUID?) -> String { host?.uuidString ?? "local" }
 
-    static func optionID(_ place: NewThreadPlace) -> String { "\(sectionID(place.host))/\(place.space.rawValue)" }
+    static func optionID(_ place: NewThreadPlace) -> String { "\(sectionID(place.host))/\(place.space?.rawValue ?? "no-space")" }
 
     /// The place an option stands for.
-    static func place(_ option: NWPlaceOption) -> NewThreadPlace? {
+    static func place(_ option: SHPlaceOption) -> NewThreadPlace? {
         let parts = option.id.split(separator: "/", maxSplits: 1).map(String.init)
         guard parts.count == 2 else { return nil }
         let host = parts[0] == "local" ? nil : UUID(uuidString: parts[0])
         if parts[0] != "local", host == nil { return nil }
+        if parts[1] == "no-space" { return host == nil ? NewThreadPlace(host: nil, space: nil) : nil }
         return NewThreadPlace(host: host, space: SpaceID(rawValue: parts[1]))
     }
 
     /// The host an "Add folder…" row adds to.
-    static func host(of section: NWPlaceSection) -> UUID? {
+    static func host(of section: SHPlaceSection) -> UUID? {
         section.id == "local" ? nil : UUID(uuidString: section.id)
     }
 
@@ -156,7 +175,9 @@ final class NewThreadState {
         let recent: NewThreadPlace? = if let remote = vm.selectedRemoteAgent, let agent = vm.remoteAgent(remote) {
             NewThreadPlace(host: remote.hostID, space: agent.spaceID)
         } else {
-            vm.selectedSpaceID.map { NewThreadPlace(host: nil, space: $0) }
+            vm.selectedSpaceID.map { id in
+                NewThreadPlace(host: nil, space: vm.state.spaces.first { $0.id == id }?.holdsThreads == true ? nil : id)
+            }
         }
         let next = NewThreadPlaces.fallback(Self.hosts(vm), chosen: place, recent: recent)
         if next != place { place = next }
@@ -206,12 +227,12 @@ final class NewThreadState {
     }
 
     /// A project from the chip's menu.
-    func choose(host: UUID?, space: SpaceID, vm: ShepherdViewModel) {
+    func choose(host: UUID?, space: SpaceID?, vm: ShepherdViewModel) {
         let next = NewThreadPlace(host: host, space: space)
         guard next != place else { return }
         place = next
         error = nil
-        if host != nil, vm.remoteHosts.connections.first(where: { $0.id == host })?.supportsWorktreeCreation != true { worktree = false }
+        if space == nil || (host != nil && vm.remoteHosts.connections.first(where: { $0.id == host })?.supportsWorktreeCreation != true) { worktree = false }
         loadDefaults(vm)
     }
 
@@ -366,13 +387,13 @@ final class NewThreadState {
     /// Why Send is unavailable; nil when it can send.
     func blocker(_ vm: ShepherdViewModel) -> String? {
         if starting { return "Starting…" }
-        guard let place else { return "Add a space to start a thread." }
+        guard let place else { return "Choose where to start the thread." }
         if let host = place.host {
             guard let connection = vm.remoteHosts.connections.first(where: { $0.id == host }), connection.phase == .connected else {
                 return "That host is offline."
             }
             if loadingDefaults { return "Loading \(connection.config.name)'s defaults…" }
-        } else if vm.missingSpaces.contains(place.space) {
+        } else if let space = place.space, vm.missingSpaces.contains(space) {
             return "This space's folder is missing. Locate it or remove the space from the sidebar."
         } else if loadingDefaults { return "Loading models…" }
         // A design piece alone starts a thread, as it sends from a thread's composer.
@@ -415,15 +436,25 @@ final class NewThreadState {
                         worktreeBranch: useWorktree ? NewThreadRules.generatedBranch() : nil,
                         worktreeBase: base?.base, worktreeFetchFirst: base?.fetchFirst, initialImages: images, serviceTier: tier)
                 } else {
-                    guard let space = vm.state.spaces.first(where: { $0.id == place.space }) else {
+                    let standaloneID = place.space == nil ? AgentID() : nil
+                    let spaceID: SpaceID
+                    let directory: String
+                    if let standaloneID {
+                        (spaceID, directory) = try await vm.server.standaloneThreadFolder(for: standaloneID)
+                        vm.adopt(vm.server.state)
+                    } else if let space = vm.state.spaces.first(where: { $0.id == place.space }) {
+                        spaceID = space.id
+                        directory = space.path
+                    } else {
                         throw AgentStartFailure(message: "That space is gone.")
                     }
                     // Design pieces go in the message the thread starts with, which the host sends once
                     // pi serves (`deliverOpeningDesignReferences`); the prompt waits for it, with the images.
                     let withPieces = !submittedReferences.isEmpty
-                    var config = NewAgentConfig(spaceID: space.id, workingDirectory: space.path,
+                    var config = NewAgentConfig(spaceID: spaceID, workingDirectory: directory,
                                                 model: chosenModel.isEmpty ? nil : chosenModel, thinking: level,
                                                 initialPrompt: withPieces ? nil : text)
+                    config.reservedAgentID = standaloneID
                     if withPieces {
                         config.openingReferencesPending = true
                         config.initialName = ShepherdViewModel.provisionalName(for: text.isEmpty ? Self.pieceName(submittedReferences) : text)
@@ -432,7 +463,7 @@ final class NewThreadState {
                     }
                     config.serviceTier = tier
                     if useWorktree {
-                        let repo = space.path
+                        let repo = directory
                         let branch = GitWorktree.generatedBranch()
                         let mode = vm.settings.worktreeBaseMode
                         let fetch = vm.settings.worktreeFetchBeforeCreate

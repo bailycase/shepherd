@@ -545,7 +545,7 @@ at all, but (a)'s result is only established on 27.
   server as the host's), when: another program on this Mac already listens on it (found by
   connecting to both loopback addresses first, so an IPv6-only Vite and a wildcard listener count);
   another thread's page holds it ("already forwarded from build-02"); or it is below 1024. The pane
-  says so under the toolbar (`NWBrowserNotice`, until dismissed or the next load).
+  says so under the toolbar (`SHBrowserNotice`, until dismissed or the next load).
   Conversely, while a page holds 5173, a server the user starts on this Mac's 5173 cannot bind it.
 - **The listener is this Mac's loopback port**, so any program or page on this Mac reaches the
   host's port through it while it is held, as with `ssh -L`. It reaches only that host, only for that
@@ -612,10 +612,39 @@ is answered by id, so a slow connect never times out the connection.
 
 `BrowserTunnelFrame` and the flow arithmetic (`BrowserTunnelCredit`, `BrowserTunnelReceipt`,
 `BrowserTunnelChunks`, `BrowserTunnelTarget`) are in ShepherdProtocol; `TunnelEndpoint`,
-`BrowserTunnelHub` (`RemoteHostClient.tunnels`), `BrowserPortForwarder` and its `BrowserTunnelHubSlot`
-are in ShepherdRemote, which iOS builds. Only the page (`BrowserSession`, `BrowserRemote`, the pane)
-is Mac. The iPad needs a web view, a `BrowserPortForwarder` claim per page URL as
-`BrowserRemote.forward` does, and a slot filled from `MobileHost.connectedClient?.tunnels`.
+`BrowserTunnelHub` (`RemoteHostClient.tunnels`), `BrowserPortForwarder` and its `BrowserTunnelHubSlot`,
+`BrowserPagePorts` and `BrowserAddress` are in ShepherdRemote, which iOS builds. Only the page
+(`BrowserSession`, `BrowserRemote`, the pane) is Mac.
+
+**The iPhone and iPad page** (`App/iOS/Browser`: `ThreadBrowserPane(thread:)` for a side pane,
+`ThreadBrowserScreen(thread:)` pushed at compact width, `BrowserRoute.page`) is built on those: a
+`WKWebView` per thread (`BrowserPage`, the one iOS file that imports WebKit, in a non-persistent
+website data store), kept by `MobileBrowsers` (at most three pages; the least recently shown closes),
+with its ports in a `BrowserPagePorts` over the app's one `BrowserPortForwarder` and the host's
+`MobileHost.tunnelSlot`. It differs from the Mac's in what the device allows:
+
+- **Ports are held only while the host is connected.** Every connection drops when the app leaves
+  the foreground (`MobileHosts.setForeground`), and a dropped one lets every port of its host's pages
+  go (`onHostDisconnected`: the listening sockets are closed when it returns); the next connection
+  takes them again (`onHostConnected`), and a port something else took meanwhile is dropped with a
+  notice. While suspended a page loads no loopback URL at all, so a program on the device that
+  listens on that port never answers in the host's place.
+- **Eight ports a page** (`BrowserPagePorts.limit`), the user's as much as a link's: a page that
+  links to many loopback ports can't make the device hold a listener for each. A link or iframe to
+  another loopback port is forwarded before it goes, or cancelled with the reason.
+- **The page is the user's.** `browser.drive.v1` is not built on iOS: the client never claims the
+  agent's browser, ignores the host's `opened` pushes, and a host can't make the device open
+  anything. The page goes only where the user, its links and its scripts take it: `http`, `https`,
+  `about` and `blob` main frames, a new window opened in the same view, no downloads.
+- **Nothing open** reads the host's dev servers (`devServers`), opens the first whose port answers
+  through the tunnel, and otherwise offers **Start on <host>** per script (`openTerminal`), then waits
+  for the port (90 seconds, every half second, as on the Mac). The address bar takes a port (`5173`),
+  `:5173`, a URL or words (`BrowserAddress`); "from <host>" opens the dev-server menu.
+- The app's Info.plist adds only `NSAllowsLocalNetworking` (`App/iOS/Info.plist`), so WebKit loads
+  `http://localhost`. The loopback needs no local-network permission.
+
+Not built on iOS yet: the agent driving the page (`browser.drive.v1`: the claim, the requests, the
+ring and Take over), tabs, the console, the element picker and the viewport menu.
 
 For the agent driving its page (`browser.drive.v1`) the wire and every rule except the web view are
 shared too: `BrowserDrivePush`, `BrowserOutcome`'s coding and `BrowserDriveOwners` (the host's claim
@@ -667,6 +696,13 @@ mark the tab for `opened`. Nothing else needs a change; the host cannot tell the
   cookie within a space, a port in use is refused and nothing loads, Start waits for the port,
   the tab appears only on a host that lists the capability, and the page and its ports go with the
   thread while saved data stays until the space or host is removed). Previews: `browserRemoteEmpty`, `browserRemotePage`, `browserRemoteWaitingAndRefused`.
+  The iOS page: `BrowserPagePortsTests` (ShepherdRemoteUnitTests: what binds nothing: a page on the
+  web, a suspended page, a refused port, the device's name in a refusal), `BrowserTunnelHubTests`'
+  cap, `BrowserPortForwarderTests.aPagesPortsAreLetGoWhileSuspendedAndTakenAgainOnResume` (a real host:
+  suspend frees the port, resume serves it again, a port taken meanwhile, eight a page), and the
+  fixture screens `browser`, `browser-page` (a page loaded through the real forwarder, hub and
+  connection from the fixture host's canned dev server), `browser-waiting`, `browser-offline` and
+  `browser-legacy` (docs/ios/VALIDATION.md).
 - The agent driving a remote thread's page: `BrowserDriveTests` (ShepherdProtocolUnitTests: every push
   and outcome round-trips, what a viewer's answer may carry, which address a host offers, and the
   ownership rules: claim, supersede, release, disconnect, the cap), `RemoteMessageTests` (every new

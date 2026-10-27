@@ -40,11 +40,11 @@ final class FakeThread {
                 ThreadView(store: store, active: visibility.active, isFocused: visibility.focused, request: request, commandKey: "fake",
                            listModels: { .empty }, designChat: designCards != nil)
                     .environment(\.designCommentCards, designCards)
-                    .nwComposerSize(designCards == nil ? .regular : .compact)
+                    .shComposerSize(designCards == nil ? .regular : .compact)
             }
             // As the workspace hides a layout it keeps mounted.
             .opacity(visibility.active ? 1 : 0)
-            .environment(\.nwMotionPaused, visibility.motionPaused)
+            .environment(\.shMotionPaused, visibility.motionPaused)
             .environment(\.threadCommands, commands)
             .transformEnvironment(\._accessibilityReduceMotion) { if let reduceMotion { $0 = reduceMotion } }
         }

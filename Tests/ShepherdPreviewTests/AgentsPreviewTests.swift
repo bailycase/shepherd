@@ -9,7 +9,7 @@ import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
 
-/// Subagent surfaces (SubagentTray, Subagents, SubagentsDone, SubagentsQueue, NWAgents boards)
+/// Subagent surfaces (SubagentTray, Subagents, SubagentsDone, SubagentsQueue, SHAgents boards)
 /// in light and dark: the tray's states, rows, record and touch sizes; a live thread with the
 /// tray, a finished one, one with Up next in the same card; and the inspector on a live and a
 /// finished run. See `PreviewTests` for how previews run.
@@ -61,51 +61,51 @@ struct AgentsPreviewTests {
         @ViewBuilder let content: () -> Content
 
         var body: some View {
-            VStack(alignment: .leading, spacing: NW.Space.m) {
+            VStack(alignment: .leading, spacing: SH.Space.m) {
                 content()
-                    .padding(NW.Space.xl)
+                    .padding(SH.Space.xl)
                     .frame(maxWidth: .infinity)
-                    .background(Color.nw.bgWindow, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-                    .nwBorder(Color.nw.lineSubtle, radius: NW.Radius.m)
-                Text(title).font(.nwMono(11)).foregroundStyle(Color.nw.textSecondary)
-                Text(note).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                    .background(Color.sh.bgWindow, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+                    .shBorder(Color.sh.lineSubtle, radius: SH.Radius.m)
+                Text(title).font(.shMono(11)).foregroundStyle(Color.sh.textSecondary)
+                Text(note).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
             }
             .frame(width: width, alignment: .topLeading)
             .frame(maxWidth: width == nil ? .infinity : nil, alignment: .topLeading)
         }
     }
 
-    private static let noActions = NWSubagentTrayActions(open: {}, steer: {}, stop: {})
+    private static let noActions = SHSubagentTrayActions(open: {}, steer: {}, stop: {})
 
-    private static func tray(_ tray: NativeSubagentTray, size: NWSubagentTraySize = .pointer, collapsed: Bool = false,
+    private static func tray(_ tray: NativeSubagentTray, size: SHSubagentTraySize = .pointer, collapsed: Bool = false,
                              hovered: String? = nil, selected: String? = nil, shown: Int? = nil) -> some View {
         let values = SubagentPresentation.tray(tray)
         let rows = shown.map { Array(values.rows.prefix($0)) } ?? values.rows
-        return NWSubagentTray(values.summary, size: size, collapsed: collapsed, onToggle: {}) {
+        return SHSubagentTray(values.summary, size: size, collapsed: collapsed, onToggle: {}) {
             VStack(spacing: 0) {
                 ForEach(rows) { row in
-                    NWSubagentTrayRow(row, size: size, selected: row.id == selected, hovering: row.id == hovered, actions: noActions)
+                    SHSubagentTrayRow(row, size: size, selected: row.id == selected, hovering: row.id == hovered, actions: noActions)
                 }
                 if let shown, values.rows.count > shown {
-                    NWSubagentTrayMoreRow(hidden: values.rows.count - shown, expanded: false) {}
+                    SHSubagentTrayMoreRow(hidden: values.rows.count - shown, expanded: false) {}
                 }
             }
         }
     }
 
-    private static func dock(_ content: some View, queue: Bool = false, size: NWSubagentTraySize = .pointer) -> some View {
-        VStack(spacing: NW.Space.m) {
-            NWDockStack(size: size, showsTray: true, showsQueue: queue) {
+    private static func dock(_ content: some View, queue: Bool = false, size: SHSubagentTraySize = .pointer) -> some View {
+        VStack(spacing: SH.Space.m) {
+            SHDockStack(size: size, showsTray: true, showsQueue: queue) {
                 content
             } queue: {
-                NWQueueStack(count: 1, collapsed: false, framed: false, onToggle: {}) {
-                    NWQueueRow("Then open a draft PR.", kind: .queued(number: 1))
+                SHQueueStack(count: 1, collapsed: false, framed: false, onToggle: {}) {
+                    SHQueueRow("Then open a draft PR.", kind: .queued(number: 1))
                 } options: {
                     EmptyView()
                 }
             }
-            NWComposer(isFocused: false) {} field: {
-                Text("Follow up, or / for commands…").font(.nw(.body)).foregroundStyle(Color.nw.textTertiary)
+            SHComposer(isFocused: false) {} field: {
+                Text("Follow up, or / for commands…").font(.sh(.body)).foregroundStyle(Color.sh.textTertiary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } controls: {
                 Spacer()
@@ -120,8 +120,8 @@ struct AgentsPreviewTests {
                       (rows[2], "done", false, false), (SubagentPresentation.tray(eight).rows[4], "failed", false, false)]
         try await Preview.render("subagent-tray", size: CGSize(width: 1600, height: 1400)) {
             VStack(alignment: .leading, spacing: 36) {
-                Text("Tray").nwSectionLabel()
-                HStack(alignment: .top, spacing: NW.Space.xl) {
+                Text("Tray").shSectionLabel()
+                HStack(alignment: .top, spacing: SH.Space.xl) {
                     Sheet(title: "SubagentTray · running", note: "Hover a row to steer, stop or open it. Rows open the inspector in the side pane.", width: nil) {
                         Self.dock(Self.tray(live, hovered: rows[0].id))
                     }
@@ -132,7 +132,7 @@ struct AgentsPreviewTests {
                         Self.dock(Self.tray(live, collapsed: true))
                     }
                 }
-                HStack(alignment: .top, spacing: NW.Space.xl) {
+                HStack(alignment: .top, spacing: SH.Space.xl) {
                     Sheet(title: "DockStack · subagents + Up next", note: "One card, two sections. Each collapses on its own.", width: nil) {
                         Self.dock(Self.tray(live), queue: true)
                     }
@@ -143,34 +143,34 @@ struct AgentsPreviewTests {
                         Self.dock(Self.tray(live, hovered: rows[1].id))
                     }
                 }
-                Text("Rows and the thread record").nwSectionLabel()
-                HStack(alignment: .top, spacing: NW.Space.xl) {
+                Text("Rows and the thread record").shSectionLabel()
+                HStack(alignment: .top, spacing: SH.Space.xl) {
                     Sheet(title: "SubagentRow · states", note: "", width: 760) {
-                        VStack(spacing: NW.Space.m) {
+                        VStack(spacing: SH.Space.m) {
                             ForEach(Array(states.enumerated()), id: \.offset) { _, state in
-                                HStack(spacing: NW.Space.xl) {
-                                    Text(state.1).font(.nwMono(10.5)).foregroundStyle(Color.nw.textTertiary).frame(width: 150, alignment: .leading)
-                                    NWSubagentTrayRow(state.0, selected: state.3, hovering: state.2, actions: Self.noActions)
-                                        .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
-                                        .nwBorder(Color.nw.lineSubtle, radius: NW.Radius.m)
+                                HStack(spacing: SH.Space.xl) {
+                                    Text(state.1).font(.shMono(10.5)).foregroundStyle(Color.sh.textTertiary).frame(width: 150, alignment: .leading)
+                                    SHSubagentTrayRow(state.0, selected: state.3, hovering: state.2, actions: Self.noActions)
+                                        .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
+                                        .shBorder(Color.sh.lineSubtle, radius: SH.Radius.m)
                                 }
                             }
                         }
                     }
                     Sheet(title: "SubagentRecord (in the thread)", note: "The thread keeps a line when they start and one when they finish. Both open the inspector.", width: nil) {
-                        VStack(alignment: .leading, spacing: NW.Space.xs) {
-                            NWSubagentRecordLine(title: "Started 3 subagents", meta: "worker · reviewer · tests", action: {})
-                            NWSubagentRecordLine(title: "3 subagents finished", meta: "45m · 7 files · +318 −64", action: {})
+                        VStack(alignment: .leading, spacing: SH.Space.xs) {
+                            SHSubagentRecordLine(title: "Started 3 subagents", meta: "worker · reviewer · tests", action: {})
+                            SHSubagentRecordLine(title: "3 subagents finished", meta: "45m · 7 files · +318 −64", action: {})
                         }
                     }
                 }
-                Text("iPad and iPhone").nwSectionLabel()
-                HStack(alignment: .top, spacing: NW.Space.xl) {
+                Text("iPad and iPhone").shSectionLabel()
+                HStack(alignment: .top, spacing: SH.Space.xl) {
                     Sheet(title: "iPad · 44pt rows", note: "Same card, touch sizes.", width: 620) {
-                        NWDockStack(size: .pad, showsTray: true, showsQueue: false) { Self.tray(live, size: .pad) } queue: { EmptyView() }
+                        SHDockStack(size: .pad, showsTray: true, showsQueue: false) { Self.tray(live, size: .pad) } queue: { EmptyView() }
                     }
                     Sheet(title: "iPhone · short text", note: "Diffs drop; the question shortens. Tap a row for the subagent screen.", width: 400) {
-                        NWDockStack(size: .phone, showsTray: true, showsQueue: false) { Self.tray(live, size: .phone) } queue: { EmptyView() }
+                        SHDockStack(size: .phone, showsTray: true, showsQueue: false) { Self.tray(live, size: .phone) } queue: { EmptyView() }
                             .frame(width: 362)
                     }
                 }
@@ -178,7 +178,7 @@ struct AgentsPreviewTests {
             }
             .padding(EdgeInsets(top: 36, leading: 56, bottom: 56, trailing: 56))
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
     }
 
@@ -195,19 +195,19 @@ struct AgentsPreviewTests {
         ]
         let tray = NativeSubagentTray(runs)
         try await Preview.render("subagent-task-labels", size: CGSize(width: 1200, height: 620)) {
-            HStack(alignment: .top, spacing: NW.Space.xxl) {
+            HStack(alignment: .top, spacing: SH.Space.xxl) {
                 Sheet(title: "Task names · Mac", note: "Two workers stay distinguishable; roles remain secondary.", width: nil) {
                     Self.dock(Self.tray(tray))
                 }
                 Sheet(title: "Task names · iPhone", note: "Long tasks truncate, workflow lane names stay intact.", width: 400) {
-                    NWDockStack(size: .phone, showsTray: true, showsQueue: false) {
+                    SHDockStack(size: .phone, showsTray: true, showsQueue: false) {
                         Self.tray(tray, size: .phone)
                     } queue: { EmptyView() }
                 }
             }
-            .padding(NW.Space.xxl)
+            .padding(SH.Space.xxl)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
     }
 
@@ -288,17 +288,17 @@ struct AgentsPreviewTests {
         long.label = "planner: rename"
         long.role = "planner"
         long.task = "Plan the rename of every token across the Mac app, the iPhone and iPad client and the design tool."
-        long.question = ChildQuestion(text: "Two token names collide with existing `Tokens.textSecondary`, `Tokens.textTertiary` and the new `nw` ones in three modules. Rename the new ones, or replace the old ones everywhere, including the iPad client and the design tool?")
+        long.question = ChildQuestion(text: "Two token names collide with existing `Tokens.textSecondary`, `Tokens.textTertiary` and the new `sh` ones in three modules. Rename the new ones, or replace the old ones everywhere, including the iPad client and the design tool?")
         let runs = live + [long]
         let tray = NativeSubagentTray(runs)
         let rows = SubagentPresentation.tray(tray).rows
         let actions = SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }, steer: { _ in })
         let size = CGSize(width: 980, height: 520)
         try await Preview.renderMatrix("subagent-reply", size: size) {
-            VStack(alignment: .leading, spacing: NW.Space.xl) {
-                Text("Tray, hovered: Steer on the running run, Reply on the two that asked").nwSectionLabel()
-                NWDockStack(showsTray: true, showsQueue: false) {
-                    NWSubagentTray(SubagentPresentation.tray(tray).summary, collapsed: false, onToggle: {}) {
+            VStack(alignment: .leading, spacing: SH.Space.xl) {
+                Text("Tray, hovered: Steer on the running run, Reply on the two that asked").shSectionLabel()
+                SHDockStack(showsTray: true, showsQueue: false) {
+                    SHSubagentTray(SubagentPresentation.tray(tray).summary, collapsed: false, onToggle: {}) {
                         VStack(spacing: 0) {
                             ForEach(rows) { row in
                                 SubagentTrayRow(value: row, run: runs.first { $0.id == row.id }!, selected: false, actions: actions,
@@ -307,21 +307,21 @@ struct AgentsPreviewTests {
                         }
                     }
                 } queue: { EmptyView() }
-                Text("Touch: the run's Steer field").nwSectionLabel()
-                HStack(alignment: .top, spacing: NW.Space.xl) {
+                Text("Touch: the run's Steer field").shSectionLabel()
+                HStack(alignment: .top, spacing: SH.Space.xl) {
                     ForEach(Array(live.enumerated()), id: \.offset) { _, run in
                         let words = nativeRunSteerWords(run)
                         let name = SubagentPresentation.names(run).name
-                        NWSteerField(text: .constant(""), prompt: "\(words.label(name))…", caption: words.caption(name),
+                        SHSteerField(text: .constant(""), prompt: "\(words.label(name))…", caption: words.caption(name),
                                      accessibilityLabel: words.label(name), sendLabel: words.verb) {}
                             .frame(width: 420)
                     }
                 }
                 Spacer(minLength: 0)
             }
-            .padding(NW.Space.xxl)
+            .padding(SH.Space.xxl)
             .frame(width: size.width, height: size.height, alignment: .topLeading)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
     }
 

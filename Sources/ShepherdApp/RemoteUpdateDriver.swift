@@ -198,8 +198,9 @@ final class RemoteUpdateDriver: SPUStandardUserDriver {
 
     static func supportsNoninteractiveInstallation(_ bundle: URL) -> Bool {
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: bundle.path),
-              (attributes[.ownerAccountID] as? NSNumber)?.uint32Value == getuid(),
-              (attributes[.groupOwnerAccountID] as? NSNumber)?.uint32Value == getgid() else { return false }
+              (attributes[.ownerAccountID] as? NSNumber)?.uint32Value == getuid() else { return false }
+        // Sparkle can preserve the owner without preserving the group; a primary-group
+        // mismatch does not mean installation needs authorization.
         return FileManager.default.isWritableFile(atPath: bundle.path)
     }
 

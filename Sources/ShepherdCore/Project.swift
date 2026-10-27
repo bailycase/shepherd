@@ -278,7 +278,9 @@ public struct Project: Codable, Hashable, Sendable, Identifiable {
         try require((1...6).contains(settings.maxConcurrentWorkers), "Threads at once must be 1...6.")
         try require(settings.instructions.count <= Self.maximumInstructionsLength, "Instructions exceed 16000 characters.")
         try require(settings.allowedHosts.count <= 32 && Set(settings.allowedHosts).count == settings.allowedHosts.count, "Invalid allowed hosts.")
-        try require(spaceProposals.count <= 32 && Set(spaceProposals.map(\.id)).count == spaceProposals.count
+        // Pending approvals cannot crowd out accepted coordinator links; history trims terminal receipts separately.
+        try require(spaceProposals.count <= 64 && spaceProposals.filter { $0.phase == .pending }.count <= 32
+                    && Set(spaceProposals.map(\.id)).count == spaceProposals.count
                     && Set(spaceProposals.map(\.operationID)).count == spaceProposals.count, "Invalid or excessive Space proposals.")
         for proposal in spaceProposals {
             try require((proposal.path != nil) != (proposal.spaceID != nil), "Choose an existing Space or an absolute path.")

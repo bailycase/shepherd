@@ -106,25 +106,25 @@ struct AddMCPServerSheet: View {
     }
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         VStack(alignment: .leading, spacing: 0) {
             header
             if !isEditing {
-                NWSegmentedPicker("Kind", selection: $kind, options: [(.remote, "Remote"), (.local, "Local"), (.json, "Paste JSON")])
+                SHSegmentedPicker("Kind", selection: $kind, options: [(.remote, "Remote"), (.local, "Local"), (.json, "Paste JSON")])
                     .padding(.horizontal, AppLayout.mcpSheetSides)
                     .fixedSize()
                     .disabled(!stagedNames.isEmpty)
             }
             ScrollView(.vertical) {
-                VStack(alignment: .leading, spacing: NW.Space.xl) {
+                VStack(alignment: .leading, spacing: SH.Space.xl) {
                     switch kind {
                     case .remote: remote
                     case .local: local
                     case .json: pasteJSON
                     }
-                    if let problem { NWInlineProblem(problem) }
+                    if let problem { SHInlineProblem(problem) }
                 }
-                .padding(.vertical, NW.Space.xl + NW.Space.xxs)
+                .padding(.vertical, SH.Space.xl + SH.Space.xxs)
                 .padding(.horizontal, AppLayout.mcpSheetSides)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -132,69 +132,69 @@ struct AddMCPServerSheet: View {
         }
         .frame(width: kind == .local ? AppLayout.mcpSheetLocalWidth : AppLayout.mcpSheetWidth)
         .frame(minHeight: AppLayout.mcpSheetMinHeight)
-        .background(nw.bgWindow)
+        .background(sh.bgWindow)
         .disabled(submitting)
         .interactiveDismissDisabled(submitting)
         .onAppear(perform: load)
         .task(id: url) { await checkURL() }
         .task(id: command) { await resolveCommand() }
-        .nwAnimation(.disclosure, value: check)
-        .nwAnimation(.disclosure, value: advanced)
+        .shAnimation(.disclosure, value: check)
+        .shAnimation(.disclosure, value: advanced)
     }
 
     // MARK: Chrome
 
     private var header: some View {
-        let nw = Color.nw
-        return HStack(alignment: .top, spacing: NW.Space.l) {
-            VStack(alignment: .leading, spacing: NW.Space.xxs + 1) {
+        let sh = Color.sh
+        return HStack(alignment: .top, spacing: SH.Space.l) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs + 1) {
                 Text(isEditing ? "Edit \(editing?.name ?? "")" : "Add an MCP server")
-                    .font(.nwSans(AppLayout.mcpSheetTitleSize, .semibold))
-                    .foregroundStyle(nw.textPrimary)
+                    .font(.shSans(AppLayout.mcpSheetTitleSize, .semibold))
+                    .foregroundStyle(sh.textPrimary)
                     .accessibilityAddTraits(.isHeader)
                 Text(project == nil ? "Remote servers need a URL. Local servers run a command on this Mac."
                      : "Remote servers need a URL. Local commands run on \(hostName).")
-                    .font(.nwSans(AppLayout.mcpSheetTextSize))
-                    .foregroundStyle(nw.textSecondary)
+                    .font(.shSans(AppLayout.mcpSheetTextSize))
+                    .foregroundStyle(sh.textSecondary)
             }
-            Spacer(minLength: NW.Space.l)
+            Spacer(minLength: SH.Space.l)
             Button(action: close) {
                 Image(systemName: "xmark")
-                    .font(.nwSans(AppLayout.mcpNoteSize, .semibold))
-                    .foregroundStyle(nw.textSecondary)
+                    .font(.shSans(AppLayout.mcpNoteSize, .semibold))
+                    .foregroundStyle(sh.textSecondary)
                     .frame(width: AppLayout.mcpSheetCloseSize, height: AppLayout.mcpSheetCloseSize)
-                    .overlay { Circle().strokeBorder(nw.lineStrong) }
+                    .overlay { Circle().strokeBorder(sh.lineStrong) }
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
             .keyboardShortcut(.cancelAction)
             .accessibilityLabel("Close")
         }
-        .padding(.top, NW.Space.xl + NW.Space.xxs)
-        .padding(.bottom, NW.Space.l + NW.Space.xxs)
+        .padding(.top, SH.Space.xl + SH.Space.xxs)
+        .padding(.bottom, SH.Space.l + SH.Space.xxs)
         .padding(.leading, AppLayout.mcpSheetSides)
-        .padding(.trailing, NW.Space.xl + NW.Space.xxs)
+        .padding(.trailing, SH.Space.xl + SH.Space.xxs)
     }
 
     private var footer: some View {
-        let nw = Color.nw
-        return HStack(spacing: NW.Space.m + NW.Space.xxs) {
+        let sh = Color.sh
+        return HStack(spacing: SH.Space.m + SH.Space.xxs) {
             Text(footnote)
-                .font(.nwSans(AppLayout.mcpNoteSize))
-                .foregroundStyle(nw.textTertiary)
+                .font(.shSans(AppLayout.mcpNoteSize))
+                .foregroundStyle(sh.textTertiary)
                 .lineLimit(1)
-            Spacer(minLength: NW.Space.m)
-            Button("Cancel", action: close).buttonStyle(.nw(.ghost))
+            Spacer(minLength: SH.Space.m)
+            Button("Cancel", action: close).buttonStyle(.sh(.ghost))
             Button(primaryTitle, action: submit)
-                .buttonStyle(.nw(.primary))
+                .buttonStyle(.sh(.primary))
                 .keyboardShortcut(.defaultAction)
                 .disabled(!canSubmit)
         }
         .padding(.leading, AppLayout.mcpSheetSides)
-        .padding(.trailing, NW.Space.xl + NW.Space.xxs)
+        .padding(.trailing, SH.Space.xl + SH.Space.xxs)
         .frame(height: AppLayout.mcpSheetFooterHeight)
-        .background(nw.bgSunken)
-        .overlay(alignment: .top) { NWHairline() }
+        .background(sh.bgSunken)
+        .overlay(alignment: .top) { SHHairline() }
     }
 
     private var footnote: String {
@@ -221,21 +221,21 @@ struct AddMCPServerSheet: View {
 
     @ViewBuilder private var remote: some View {
         field("URL") {
-            HStack(spacing: NW.Space.m) {
-                Image(systemName: "globe").foregroundStyle(Color.nw.textTertiary).accessibilityHidden(true)
+            HStack(spacing: SH.Space.m) {
+                Image(systemName: "globe").foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
                 TextField("URL", text: $url, prompt: Text("https://mcp.example.com/mcp"))
                     .accessibilityLabel("URL")
                     .textFieldStyle(.plain)
-                    .font(.nwMono(AppLayout.mcpSheetTextSize))
+                    .font(.shMono(AppLayout.mcpSheetTextSize))
             }
             .modifier(MCPFieldChrome())
         }
         checkCard
-        HStack(alignment: .top, spacing: NW.Space.xl) {
+        HStack(alignment: .top, spacing: SH.Space.xl) {
             field("Name", note: nameNote) { nameField }
                 .frame(maxWidth: .infinity, alignment: .leading)
             field("Sign-in") {
-                NWSegmentedPicker("Sign-in", selection: $signIn, options: nativeOptions ? [
+                SHSegmentedPicker("Sign-in", selection: $signIn, options: nativeOptions ? [
                     (.oauth, oauthFound ? "OAuth · found" : "OAuth"), (.header, "Header"), (.none, "None"),
                 ] : [(.header, "Header"), (.none, "None")])
                 .fixedSize()
@@ -243,9 +243,9 @@ struct AddMCPServerSheet: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         if signIn == .header {
-            HStack(alignment: .top, spacing: NW.Space.m) {
+            HStack(alignment: .top, spacing: SH.Space.m) {
                 field("Header") {
-                    TextField("Header", text: $headerName).accessibilityLabel("Header").textFieldStyle(.plain).font(.nwMono(AppLayout.mcpSheetTextSize))
+                    TextField("Header", text: $headerName).accessibilityLabel("Header").textFieldStyle(.plain).font(.shMono(AppLayout.mcpSheetTextSize))
                         .modifier(MCPFieldChrome())
                 }
                 .frame(width: AppLayout.mcpSheetNameWidth)
@@ -256,9 +256,9 @@ struct AddMCPServerSheet: View {
             }
         }
         DisclosureGroup(isExpanded: $advanced) {
-            VStack(alignment: .leading, spacing: NW.Space.l) {
+            VStack(alignment: .leading, spacing: SH.Space.l) {
                 if nativeOptions {
-                    HStack(alignment: .top, spacing: NW.Space.m) {
+                    HStack(alignment: .top, spacing: SH.Space.m) {
                         field("Client ID") { plain($clientID, prompt: "Registered with the provider") }
                         field("Client secret", note: project == nil ? nil : credentialNote) {
                             SecureOrPlainField(value: $clientSecret, prompt: "Optional").accessibilityLabel("Client secret")
@@ -269,16 +269,16 @@ struct AddMCPServerSheet: View {
                 field("Extra headers", note: project == nil ? nil : credentialNote) { variables($extraHeaders, addTitle: "Add header") }
                 if nativeOptions {
                     field("Timeout") {
-                        NWStepper("Timeout", value: $timeout, in: project == nil ? 5...300 : (timeoutFraction > 0 ? 0 : 1)...Int.max,
+                        SHStepper("Timeout", value: $timeout, in: project == nil ? 5...300 : (timeoutFraction > 0 ? 0 : 1)...Int.max,
                                   format: { timeoutFraction == 0 ? "\($0) s" : "\(Double($0) + timeoutFraction) s" })
                     }
                 }
             }
-            .padding(.top, NW.Space.m)
+            .padding(.top, SH.Space.m)
         } label: {
             Text(nativeOptions ? "Advanced: client ID, scopes, extra headers, timeout" : "Advanced: extra headers")
-                .font(.nwSans(AppLayout.mcpSheetTextSize))
-                .foregroundStyle(Color.nw.textSecondary)
+                .font(.shSans(AppLayout.mcpSheetTextSize))
+                .foregroundStyle(Color.sh.textSecondary)
         }
     }
 
@@ -288,25 +288,25 @@ struct AddMCPServerSheet: View {
     }
 
     @ViewBuilder private var checkCard: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         switch check {
         case .idle:
             EmptyView()
         case .checking:
-            HStack(spacing: NW.Space.m) {
-                ProgressView().progressViewStyle(.nwSpinner)
-                Text("Checking \(URL(string: url)?.host ?? "the server")…").font(.nwSans(AppLayout.mcpSheetTextSize))
-                    .foregroundStyle(nw.textSecondary)
+            HStack(spacing: SH.Space.m) {
+                ProgressView().progressViewStyle(.shSpinner)
+                Text("Checking \(URL(string: url)?.host ?? "the server")…").font(.shSans(AppLayout.mcpSheetTextSize))
+                    .foregroundStyle(sh.textSecondary)
             }
             .modifier(MCPCheckCard())
         case .answered(let serverName, let transport):
-            VStack(alignment: .leading, spacing: NW.Space.m) {
+            VStack(alignment: .leading, spacing: SH.Space.m) {
                 answered(serverName, transport: transport)
                 line("lock.open", "It needs no sign-in. Add a header if it wants a token.")
             }
             .modifier(MCPCheckCard())
         case .oauth(let serverName, let provider, let registers):
-            VStack(alignment: .leading, spacing: NW.Space.m) {
+            VStack(alignment: .leading, spacing: SH.Space.m) {
                 answered(serverName, transport: .streamableHTTP)
                 line("lock", registers
                      ? "It uses sign-in with \(provider) (OAuth). pi registers itself as Shepherd with \(provider), then opens the sign-in page."
@@ -314,9 +314,9 @@ struct AddMCPServerSheet: View {
             }
             .modifier(MCPCheckCard())
         case .failed(let message):
-            HStack(spacing: NW.Space.m) {
-                Image(systemName: "exclamationmark.triangle").foregroundStyle(nw.lanternText).accessibilityHidden(true)
-                Text(message).font(.nwSans(AppLayout.mcpSheetTextSize)).foregroundStyle(nw.textSecondary)
+            HStack(spacing: SH.Space.m) {
+                Image(systemName: "exclamationmark.triangle").foregroundStyle(sh.lanternText).accessibilityHidden(true)
+                Text(message).font(.shSans(AppLayout.mcpSheetTextSize)).foregroundStyle(sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .modifier(MCPCheckCard())
@@ -324,20 +324,20 @@ struct AddMCPServerSheet: View {
     }
 
     private func answered(_ serverName: String?, transport: MCPTransportKind) -> some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let who = serverName ?? URL(string: url)?.host ?? "The server"
-        return HStack(spacing: NW.Space.m) {
-            Image(systemName: "checkmark").font(.nwSans(AppLayout.mcpNoteSize, .bold)).foregroundStyle(nw.done).accessibilityHidden(true)
+        return HStack(spacing: SH.Space.m) {
+            Image(systemName: "checkmark").font(.shSans(AppLayout.mcpNoteSize, .bold)).foregroundStyle(sh.done).accessibilityHidden(true)
             Text("\(Text(who).fontWeight(.semibold)) answered · \(MCPStore.transportName(transport))")
-                .font(.nwSans(AppLayout.mcpSheetTextSize + 0.5))
-                .foregroundStyle(nw.textPrimary)
+                .font(.shSans(AppLayout.mcpSheetTextSize + 0.5))
+                .foregroundStyle(sh.textPrimary)
         }
     }
 
     private func line(_ symbol: String, _ text: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
-            Image(systemName: symbol).font(.nwSans(AppLayout.mcpNoteSize)).foregroundStyle(Color.nw.textSecondary).accessibilityHidden(true)
-            Text(text).font(.nwSans(AppLayout.mcpSheetTextSize + 0.5)).foregroundStyle(Color.nw.textPrimary)
+        HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+            Image(systemName: symbol).font(.shSans(AppLayout.mcpNoteSize)).foregroundStyle(Color.sh.textSecondary).accessibilityHidden(true)
+            Text(text).font(.shSans(AppLayout.mcpSheetTextSize + 0.5)).foregroundStyle(Color.sh.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -345,49 +345,49 @@ struct AddMCPServerSheet: View {
     // MARK: Local
 
     @ViewBuilder private var local: some View {
-        HStack(alignment: .top, spacing: NW.Space.xl) {
+        HStack(alignment: .top, spacing: SH.Space.xl) {
             field("Name") { nameField }.frame(width: AppLayout.mcpSheetNameWidth)
             field("Command", note: project == nil ? "Runs on this Mac, in your login shell’s PATH." : "Runs on \(hostName), in the host's PATH.") {
-                HStack(spacing: NW.Space.m) {
-                    Image(systemName: "terminal").foregroundStyle(Color.nw.textTertiary).accessibilityHidden(true)
+                HStack(spacing: SH.Space.m) {
+                    Image(systemName: "terminal").foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
                     TextField("Command", text: $command, prompt: Text("npx @playwright/mcp@latest"))
                         .accessibilityLabel("Command")
                         .textFieldStyle(.plain)
-                        .font(.nwMono(AppLayout.mcpSheetTextSize))
+                        .font(.shMono(AppLayout.mcpSheetTextSize))
                 }
                 .modifier(MCPFieldChrome())
             }
         }
         field("Environment", note: credentialNote) { variables($env, addTitle: "Add variable") }
         field("Runs on") {
-            HStack(spacing: NW.Space.m + NW.Space.xxs) {
-                Toggle(hostName, isOn: .constant(true)).toggleStyle(.nwCheckbox).labelsHidden()
+            HStack(spacing: SH.Space.m + SH.Space.xxs) {
+                Toggle(hostName, isOn: .constant(true)).toggleStyle(.shCheckbox).labelsHidden()
                     .allowsHitTesting(false).accessibilityHidden(true)
-                Text(hostName).font(.nwMono(AppLayout.mcpSheetTextSize)).frame(width: AppLayout.mcpSheetHostNameWidth, alignment: .leading)
+                Text(hostName).font(.shMono(AppLayout.mcpSheetTextSize)).frame(width: AppLayout.mcpSheetHostNameWidth, alignment: .leading)
                 pathNote
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, NW.Space.m + NW.Space.xxs)
+            .padding(.horizontal, SH.Space.m + SH.Space.xxs)
             .frame(height: AppLayout.mcpSheetFieldHeight)
-            .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: AppLayout.mcpSheetFieldRadius))
-            .nwBorder(Color.nw.lineStrong, radius: AppLayout.mcpSheetFieldRadius)
+            .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: AppLayout.mcpSheetFieldRadius))
+            .shBorder(Color.sh.lineStrong, radius: AppLayout.mcpSheetFieldRadius)
         }
     }
 
     @ViewBuilder private var pathNote: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let program = MCPCommandLine.split(command).first ?? ""
         if project != nil {
-            Text("Starts with a thread; not checked here.").font(.nwSans(AppLayout.mcpNoteSize)).foregroundStyle(nw.textTertiary)
+            Text("Starts with a thread; not checked here.").font(.shSans(AppLayout.mcpNoteSize)).foregroundStyle(sh.textTertiary)
         } else if program.isEmpty {
-            Text("Type a command").font(.nwSans(AppLayout.mcpNoteSize)).foregroundStyle(nw.textTertiary)
+            Text("Type a command").font(.shSans(AppLayout.mcpNoteSize)).foregroundStyle(sh.textTertiary)
         } else if let resolvedPath {
-            Text(resolvedPath).font(.nwMono(AppLayout.mcpPathSize)).foregroundStyle(nw.textTertiary).lineLimit(1).truncationMode(.middle)
+            Text(resolvedPath).font(.shMono(AppLayout.mcpPathSize)).foregroundStyle(sh.textTertiary).lineLimit(1).truncationMode(.middle)
         } else if let pathChecked {
             Text("\(program) isn’t installed · last checked \(pathChecked.formatted(date: .omitted, time: .shortened))")
-                .font(.nwSans(AppLayout.mcpNoteSize)).foregroundStyle(nw.lanternText).lineLimit(1)
+                .font(.shSans(AppLayout.mcpNoteSize)).foregroundStyle(sh.lanternText).lineLimit(1)
         } else {
-            Text("Looking for \(program)…").font(.nwSans(AppLayout.mcpNoteSize)).foregroundStyle(nw.textTertiary)
+            Text("Looking for \(program)…").font(.shSans(AppLayout.mcpNoteSize)).foregroundStyle(sh.textTertiary)
         }
     }
 
@@ -396,12 +396,12 @@ struct AddMCPServerSheet: View {
     @ViewBuilder private var pasteJSON: some View {
         field("JSON", note: pasteNote) {
             TextEditor(text: $json)
-                .font(.nwMono(AppLayout.mcpSheetTextSize))
+                .font(.shMono(AppLayout.mcpSheetTextSize))
                 .scrollContentBackground(.hidden)
-                .padding(NW.Space.m)
+                .padding(SH.Space.m)
                 .frame(height: AppLayout.mcpSheetJSONHeight)
-                .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: AppLayout.mcpSheetFieldRadius))
-                .nwBorder(Color.nw.lineStrong, radius: AppLayout.mcpSheetFieldRadius)
+                .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: AppLayout.mcpSheetFieldRadius))
+                .shBorder(Color.sh.lineStrong, radius: AppLayout.mcpSheetFieldRadius)
                 .accessibilityLabel("JSON")
         }
     }
@@ -423,7 +423,7 @@ struct AddMCPServerSheet: View {
         TextField("Name", text: Binding(get: { name }, set: { name = $0; nameEdited = true }), prompt: Text("notion"))
             .accessibilityLabel("Name")
             .textFieldStyle(.plain)
-            .font(.nwMono(AppLayout.mcpSheetTextSize))
+            .font(.shMono(AppLayout.mcpSheetTextSize))
             .modifier(MCPFieldChrome())
             .disabled(isEditing || !stagedNames.isEmpty)
     }
@@ -448,83 +448,83 @@ struct AddMCPServerSheet: View {
     private func plain(_ text: Binding<String>, prompt: String) -> some View {
         TextField("", text: text, prompt: Text(prompt))
             .textFieldStyle(.plain)
-            .font(.nwMono(AppLayout.mcpSheetTextSize))
+            .font(.shMono(AppLayout.mcpSheetTextSize))
             .modifier(MCPFieldChrome())
     }
 
     private func variables(_ rows: Binding<[Variable]>, addTitle: String) -> some View {
-        let nw = Color.nw
+        let sh = Color.sh
         return VStack(spacing: 0) {
             ForEach(rows) { $row in
-                HStack(spacing: NW.Space.l) {
+                HStack(spacing: SH.Space.l) {
                     TextField("Name", text: $row.key, prompt: Text("NAME"))
                         .accessibilityLabel("Name")
                         .textFieldStyle(.plain)
-                        .font(.nwMono(AppLayout.mcpNoteSize))
-                        .foregroundStyle(nw.textSecondary)
+                        .font(.shMono(AppLayout.mcpNoteSize))
+                        .foregroundStyle(sh.textSecondary)
                         .frame(width: AppLayout.mcpSheetEnvKeyWidth, alignment: .leading)
                         .onChange(of: row.key) { _, key in
                             if MCPSecretReference.looksSecret(key: key), row.value.isEmpty { row.secret = true }
                         }
                     if row.stored {
-                        HStack(spacing: NW.Space.s) {
+                        HStack(spacing: SH.Space.s) {
                             Image(systemName: "lock").accessibilityHidden(true)
-                            Text("••••••••••••").font(.nwMono(AppLayout.mcpNoteSize))
-                            Text("in Keychain").font(.nwSans(AppLayout.mcpPathSize)).foregroundStyle(nw.textTertiary)
-                            Button("Replace") { row.stored = false; row.value = "" }.buttonStyle(.nwLink)
+                            Text("••••••••••••").font(.shMono(AppLayout.mcpNoteSize))
+                            Text("in Keychain").font(.shSans(AppLayout.mcpPathSize)).foregroundStyle(sh.textTertiary)
+                            Button("Replace") { row.stored = false; row.value = "" }.buttonStyle(.shLink)
                         }
-                        .foregroundStyle(nw.textSecondary)
+                        .foregroundStyle(sh.textSecondary)
                     } else if row.secret {
                         SecureField("Value", text: $row.value, prompt: Text(project == nil ? "Stored in Keychain" : "Saved in space file"))
                             .accessibilityLabel("Value")
                             .textFieldStyle(.plain)
-                            .font(.nwMono(AppLayout.mcpNoteSize))
+                            .font(.shMono(AppLayout.mcpNoteSize))
                     } else {
                         TextField("Value", text: $row.value, prompt: Text("value or ${VAR}"))
                             .accessibilityLabel("Value")
                             .textFieldStyle(.plain)
-                            .font(.nwMono(AppLayout.mcpNoteSize))
+                            .font(.shMono(AppLayout.mcpNoteSize))
                     }
                     Spacer(minLength: 0)
                     Button { row.secret.toggle(); row.stored = false } label: {
                         Image(systemName: row.secret ? "lock.fill" : "lock.open")
-                            .frame(width: NW.Height.controlS, height: NW.Height.controlS)
+                            .frame(width: SH.Height.controlS, height: SH.Height.controlS)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(row.secret ? nw.textSecondary : nw.textTertiary)
+                    .foregroundStyle(row.secret ? sh.textSecondary : sh.textTertiary)
                     .help(project == nil ? (row.secret ? "Stored in Keychain" : "Store in Keychain") : (row.secret ? "Show value" : "Hide value"))
                     .accessibilityLabel(project == nil ? (row.secret ? "Stored in Keychain" : "Store in Keychain") : (row.secret ? "Show value" : "Hide value"))
                     Button { rows.wrappedValue.removeAll { $0.id == row.id } } label: {
-                        Image(systemName: "xmark").frame(width: NW.Height.controlS, height: NW.Height.controlS)
+                        Image(systemName: "xmark").frame(width: SH.Height.controlS, height: SH.Height.controlS)
                             .contentShape(Rectangle())
                     }
                         .buttonStyle(.plain)
-                        .foregroundStyle(nw.textTertiary)
+                        .foregroundStyle(sh.textTertiary)
                         .accessibilityLabel("Remove \(row.key)")
                 }
-                .padding(.horizontal, NW.Space.m + NW.Space.xxs)
+                .padding(.horizontal, SH.Space.m + SH.Space.xxs)
                 .frame(height: AppLayout.mcpSheetFieldHeight)
-                .overlay(alignment: .bottom) { NWHairline() }
+                .overlay(alignment: .bottom) { SHHairline() }
             }
             Button { rows.wrappedValue.append(Variable(key: "", value: "", secret: false)) } label: {
-                Label(addTitle, systemImage: "plus").font(.nwSans(AppLayout.mcpSheetTextSize))
-                    .frame(minHeight: NW.Height.controlS).contentShape(Rectangle())
+                Label(addTitle, systemImage: "plus").font(.shSans(AppLayout.mcpSheetTextSize))
+                    .frame(minHeight: SH.Height.controlS).contentShape(Rectangle())
             }
-            .buttonStyle(.nwLink)
-            .padding(.horizontal, NW.Space.m + NW.Space.xxs)
+            .buttonStyle(.shLink)
+            .padding(.horizontal, SH.Space.m + SH.Space.xxs)
             .frame(maxWidth: .infinity, minHeight: AppLayout.mcpSheetFieldHeight - 2, alignment: .leading)
         }
-        .background(nw.bgRaised, in: RoundedRectangle(cornerRadius: AppLayout.mcpSheetFieldRadius))
-        .nwBorder(nw.lineStrong, radius: AppLayout.mcpSheetFieldRadius)
+        .background(sh.bgRaised, in: RoundedRectangle(cornerRadius: AppLayout.mcpSheetFieldRadius))
+        .shBorder(sh.lineStrong, radius: AppLayout.mcpSheetFieldRadius)
     }
 
     private func field<Content: View>(_ label: String, note: String? = nil, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: NW.Space.s) {
-            Text(label).font(.nwSans(AppLayout.mcpSheetTextSize, .medium)).foregroundStyle(Color.nw.textSecondary)
+        VStack(alignment: .leading, spacing: SH.Space.s) {
+            Text(label).font(.shSans(AppLayout.mcpSheetTextSize, .medium)).foregroundStyle(Color.sh.textSecondary)
             content()
             if let note {
-                Text(note).font(.nwSans(AppLayout.mcpNoteSize)).foregroundStyle(Color.nw.textTertiary)
+                Text(note).font(.shSans(AppLayout.mcpNoteSize)).foregroundStyle(Color.sh.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -761,10 +761,10 @@ struct AddMCPServerSheet: View {
 private struct MCPFieldChrome: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .padding(.horizontal, NW.Space.m + NW.Space.xxs)
+            .padding(.horizontal, SH.Space.m + SH.Space.xxs)
             .frame(height: AppLayout.mcpSheetFieldHeight)
-            .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: AppLayout.mcpSheetFieldRadius))
-            .nwBorder(Color.nw.lineStrong, radius: AppLayout.mcpSheetFieldRadius)
+            .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: AppLayout.mcpSheetFieldRadius))
+            .shBorder(Color.sh.lineStrong, radius: AppLayout.mcpSheetFieldRadius)
     }
 }
 
@@ -772,11 +772,11 @@ private struct MCPFieldChrome: ViewModifier {
 private struct MCPCheckCard: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .padding(.vertical, NW.Space.l)
-            .padding(.horizontal, NW.Space.l + NW.Space.xxs)
+            .padding(.vertical, SH.Space.l)
+            .padding(.horizontal, SH.Space.l + SH.Space.xxs)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.nw.bgSunken, in: RoundedRectangle(cornerRadius: AppLayout.mcpCardRadius))
-            .nwBorder(Color.nw.lineSubtle, radius: AppLayout.mcpCardRadius)
+            .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: AppLayout.mcpCardRadius))
+            .shBorder(Color.sh.lineSubtle, radius: AppLayout.mcpCardRadius)
     }
 }
 
@@ -794,7 +794,7 @@ private struct SecureOrPlainField: View {
             }
         }
         .textFieldStyle(.plain)
-        .font(.nwMono(AppLayout.mcpSheetTextSize))
+        .font(.shMono(AppLayout.mcpSheetTextSize))
         .modifier(MCPFieldChrome())
     }
 }
@@ -822,12 +822,12 @@ struct MCPPasteImportSheet: View {
                         },
                     ]) {
             TextEditor(text: $json)
-                .font(.nwMono(AppLayout.mcpSheetTextSize))
+                .font(.shMono(AppLayout.mcpSheetTextSize))
                 .scrollContentBackground(.hidden)
-                .padding(NW.Space.m)
+                .padding(SH.Space.m)
                 .frame(height: AppLayout.mcpSheetJSONHeight)
-                .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: AppLayout.mcpSheetFieldRadius))
-                .nwBorder(Color.nw.lineStrong, radius: AppLayout.mcpSheetFieldRadius)
+                .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: AppLayout.mcpSheetFieldRadius))
+                .shBorder(Color.sh.lineStrong, radius: AppLayout.mcpSheetFieldRadius)
                 .accessibilityLabel("JSON")
         }
     }

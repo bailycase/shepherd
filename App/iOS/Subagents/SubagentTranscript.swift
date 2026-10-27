@@ -157,7 +157,7 @@ struct SubagentTranscriptList: View {
         let turns = model.turns
         LazyVStack(alignment: .leading, spacing: MobileLayout.turnItemSpacing) {
             if turns.isEmpty, model.loaded {
-                Text(emptyText).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                Text(emptyText).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
             }
             ForEach(!showsTask && turns.first?.presentation == nil ? Array(turns.dropFirst()) : turns) { turn in
                 VStack(alignment: .leading, spacing: 0) {
@@ -170,7 +170,7 @@ struct SubagentTranscriptList: View {
                     .padding(.top, Self.endsInLines(turns.last) ? MobileLayout.activitySpacing - MobileLayout.turnItemSpacing : 0)
             }
         }
-        .environment(\.nwProseSize, .small)
+        .environment(\.shProseSize, .small)
     }
 
     private static func endsInLines(_ turn: SubagentTranscriptModel.Turn?) -> Bool {
@@ -194,7 +194,7 @@ struct SubagentTurnView: View, Equatable {
         } else {
             VStack(alignment: .trailing, spacing: MobileLayout.activitySpacing) {
                 ForEach(Array(turn.user.enumerated()), id: \.offset) { _, text in
-                    NWUserBubble(text, timestamp: turn.userTime.map { nativeClockText($0, meridiem: false) }, note: turn.fromParent ? "from parent" : nil)
+                    SHUserBubble(text, timestamp: turn.userTime.map { nativeClockText($0, meridiem: false) }, note: turn.fromParent ? "from parent" : nil)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
@@ -214,7 +214,7 @@ private struct SubagentTurnItem: View {
             ThinkingRow(seconds: seconds, blocks: blocks, live: live, since: since, isExpanded: openThinking) { openThinking.toggle() }
                 .equatable()
         case .prose(_, _, let blocks, let openFence):
-            NWAgentProse(ProseView.proseBlocks(blocks), writingFence: live && openFence)
+            SHAgentProse(ProseView.proseBlocks(blocks), writingFence: live && openFence)
         case .activity(_, let bursts):
             VStack(alignment: .leading, spacing: MobileLayout.activitySpacing) {
                 ForEach(bursts) { burst in
@@ -230,16 +230,16 @@ private struct SubagentTurnItem: View {
             ArtifactCardItem(artifact: artifact)
         case .images(_, let images):
             // The phone and the iPad do not draw a thread's images yet: how many, as the note it replaced said.
-            Text(images.count == 1 ? "Image attached" : "\(images.count) images attached").font(.nw(.caption))
-                .foregroundStyle(Color.nw.textTertiary)
+            Text(images.count == 1 ? "Image attached" : "\(images.count) images attached").font(.sh(.caption))
+                .foregroundStyle(Color.sh.textTertiary)
         case .note(_, let text):
-            Text(text).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary).lineLimit(3)
+            Text(text).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary).lineLimit(3)
         case .error(_, let error, _, let folded):
             TurnErrorItem(error: error, folded: folded)
         case .retrying(_, let line):
             RetryLineItem(line: line)
         case .steer(_, let text, let sentAt, _):
-            NWUserBubble(text, timestamp: sentAt.map { nativeClockText($0, meridiem: false) }, note: "from parent", origin: .steered)
+            SHUserBubble(text, timestamp: sentAt.map { nativeClockText($0, meridiem: false) }, note: "from parent", origin: .steered)
                 .frame(maxWidth: .infinity, alignment: .trailing)
         case .compaction(let row):
             CompactionItem(row: row)
@@ -257,22 +257,22 @@ struct SubagentActivityLine: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            NWActivityLine(kind: kind, label: burst.label, meta: burst.meta, status: status, isExpanded: expanded,
+            SHActivityLine(kind: kind, label: burst.label, meta: burst.meta, status: status, isExpanded: expanded,
                            accessibilityLabel: burst.accessibilityLabel,
-                           action: burst.expandable ? { withAnimation(NW.Motion.disclosure.animation(reduceMotion: reduceMotion)) { expanded.toggle() } } : nil,
+                           action: burst.expandable ? { withAnimation(SH.Motion.disclosure.animation(reduceMotion: reduceMotion)) { expanded.toggle() } } : nil,
                            received: burst.received)
             if expanded {
-                NWActivityCalls(burst.calls.map { call in
-                    NWActivityCallRow(id: call.id, label: call.label, detail: call.detail, isPath: call.isPath, stat: call.stat,
+                SHActivityCalls(burst.calls.map { call in
+                    SHActivityCallRow(id: call.id, label: call.label, detail: call.detail, isPath: call.isPath, stat: call.stat,
                                       failed: call.failed, output: [], moreLines: 0, truncated: call.truncated, isExpanded: false,
                                       accessibilityLabel: [call.label, call.detail, call.stat].compactMap { $0 }.joined(separator: ", "))
                 }, onSelect: { _ in }, onShowAll: { _ in })
-                .padding(.vertical, NW.Space.xxs)
+                .padding(.vertical, SH.Space.xxs)
             }
         }
     }
 
-    private var kind: NWActivityLine.Kind {
+    private var kind: SHActivityLine.Kind {
         switch burst.kind {
         case .explore: .explore
         case .edit where burst.artifact != nil: .artifact
@@ -287,7 +287,7 @@ struct SubagentActivityLine: View {
         }
     }
 
-    private var status: NWActivityLine.Status {
+    private var status: SHActivityLine.Status {
         switch burst.state {
         case .done: .done
         case .failed: .failed

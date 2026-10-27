@@ -12,8 +12,8 @@ extension EnvironmentValues {
     @Entry var composerModelDefaults: UserDefaults = .standard
 }
 
-/// The composer (NWComposer board): pinned under the thread in the same 820pt column, a fade
-/// above it, the `NWComposer` card with the field (or a pending question) and one row of
+/// The composer (SHComposer board): pinned under the thread in the same 820pt column, a fade
+/// above it, the `SHComposer` card with the field (or a pending question) and one row of
 /// controls: attach · model settings · worktree · Send or Stop. Menus float over the thread
 /// above the card, so opening one never moves the thread or changes the composer's height.
 /// Messages sent while pi works wait in "Up next" above the card (`QueueStackView`) and go when the
@@ -64,7 +64,7 @@ struct Composer: View {
     /// The run open in the inspector: its tray row wears the selection.
     var inspectedRunID: String? = nil
     /// A design's chat (DZCanvas): the standard composer with the design's placeholder. Its pane
-    /// draws it compact (`nwComposerSize(.compact)`).
+    /// draws it compact (`shComposerSize(.compact)`).
     var designChat = false
     /// Retry in the Can't start banner (true: start a new conversation); nil for a remote agent,
     /// whose banner says to retry on its host.
@@ -174,7 +174,7 @@ struct Composer: View {
     private var canSend: Bool {
         active && store.acceptsSend && (store.hasDraft || !input.attachments.isEmpty) && input.attachments.oversize == nil
     }
-    private var fadeHeight: CGFloat { projectSend != nil || workerStyle != nil ? NWLeadMetrics.turnGap : AppLayout.composerFade }
+    private var fadeHeight: CGFloat { projectSend != nil || workerStyle != nil ? SHLeadMetrics.turnGap : AppLayout.composerFade }
     /// A Project conversation whose coordinator's pi is not serving (none yet, held off, paused, starting): the chip names and sets the
     /// Project's saved model and reasoning level, which the owner applies at launch and before each message it delivers.
     private var projectSettingsOnly: Bool {
@@ -315,72 +315,72 @@ struct Composer: View {
     /// dock); banners, widgets, and attachments nudge in. Each is keyed on its own state, so
     /// typing and filtering stay instant.
     var body: some View {
-        let _ = NWRenderProbe.tick("composer.body")
+        let _ = SHRenderProbe.tick("composer.body")
         let catchingUp = catchUp.catchingUp(caughtUpAt: store.catchUp?.chrome, version: store.chromeVersion)
         let widgets = store.widgets
         let query = commandQuery
         let _ = slash.update(query: query, commands: commands)
         VStack(alignment: .leading, spacing: AppLayout.menuGap) {
             if !widgets.isEmpty {
-                VStack(alignment: .leading, spacing: NW.Space.xs) {
-                    ForEach(widgets) { WidgetRow(widget: $0).nwTransition(.list, edge: .bottom) }
+                VStack(alignment: .leading, spacing: SH.Space.xs) {
+                    ForEach(widgets) { WidgetRow(widget: $0).shTransition(.list, edge: .bottom) }
                 }
-                .padding(.horizontal, NW.Space.xs)
-                .nwTransition(.list, edge: .bottom)
+                .padding(.horizontal, SH.Space.xs)
+                .shTransition(.list, edge: .bottom)
             }
             if let problem = store.startProblem, !(hidesNotSignedIn && problem.kind == .notSignedIn) {
-                NWBanner(.failed, title: problem.title, message: problem.message(host: restartPi == nil ? store.hostName ?? "the host" : nil)) {
+                SHBanner(.failed, title: problem.title, message: problem.message(host: restartPi == nil ? store.hostName ?? "the host" : nil)) {
                     if let restartPi {
                         if problem.kind == .resumedAsNew {
                             Button("Start new conversation") {
                                 store.restarting()
                                 restartPi(true)
                             }
-                            .buttonStyle(.nw(.ghost, size: .s))
+                            .buttonStyle(.sh(.ghost, size: .s))
                         }
                         if problem.kind == .folderMissing {
                             // Retry opens Locate Folder… while the folder is still gone (`retryAgentStart`).
                             Button("Locate Folder…") { restartPi(false) }
-                                .buttonStyle(.nw(.secondary, size: .s))
+                                .buttonStyle(.sh(.secondary, size: .s))
                         } else {
                             Button("Retry") {
                                 store.restarting()
                                 restartPi(false)
                             }
-                            .buttonStyle(.nw(.secondary, size: .s))
+                            .buttonStyle(.sh(.secondary, size: .s))
                         }
                     }
                 }
-                .nwTransition(.list, edge: .bottom)
+                .shTransition(.list, edge: .bottom)
             } else if let error = store.loadError {
-                NWBanner(.failed, title: "Lost connection to the agent process.", message: error) {
+                SHBanner(.failed, title: "Lost connection to the agent process.", message: error) {
                     Button("Reconnect") { Task { await store.refresh(fresh: true) } }
-                        .buttonStyle(.nw(.secondary, size: .s))
+                        .buttonStyle(.sh(.secondary, size: .s))
                 }
-                .nwTransition(.list, edge: .bottom)
+                .shTransition(.list, edge: .bottom)
             } else if let referenceError {
-                NWBanner(.failed, title: referenceError) {
-                    Button("Dismiss") { self.referenceError = nil }.buttonStyle(.nw(.ghost, size: .s))
+                SHBanner(.failed, title: referenceError) {
+                    Button("Dismiss") { self.referenceError = nil }.buttonStyle(.sh(.ghost, size: .s))
                 }
-                .nwTransition(.list, edge: .bottom)
+                .shTransition(.list, edge: .bottom)
             } else if let notice = store.notice {
                 if store.modelUnavailable {
-                    NWBanner(.failed, title: "Message wasn't sent.", message: notice) {
+                    SHBanner(.failed, title: "Message wasn't sent.", message: notice) {
                         Button("Choose model", action: openModels)
-                            .buttonStyle(.nw(.secondary, size: .s))
+                            .buttonStyle(.sh(.secondary, size: .s))
                             .disabled(!store.supports("setModel"))
                     }
-                    .nwTransition(.list, edge: .bottom)
+                    .shTransition(.list, edge: .bottom)
                 } else {
-                    Text(notice).font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary).textSelection(.enabled)
-                        .padding(.horizontal, NW.Space.xs)
-                        .nwTransition(.list, edge: .bottom)
+                    Text(notice).font(Font.sh(.caption)).foregroundStyle(Color.sh.textTertiary).textSelection(.enabled)
+                        .padding(.horizontal, SH.Space.xs)
+                        .shTransition(.list, edge: .bottom)
                 }
             }
             // The images waiting to send, with what keeps Send held (ThreadImagesComposer).
             ComposerImageStrip(attachments: input.attachments, open: openAttachment, remove: { input.attachments.remove($0) })
             // A Project's strip ("2 of 3 done · 1 needs you") sits over the card, as the board draws it.
-            if let dock = projectSend?.dock { dock().nwTransition(.list, edge: .bottom) }
+            if let dock = projectSend?.dock { dock().shTransition(.list, edge: .bottom) }
             // The subagents and "Up next" grow upward from the card, which never moves.
             if store.hasGoal || showsTray || queueStack.isVisible {
                 ComposerDock(tray: store.tray, trayState: trayState, runs: store.subagents, actions: subagents,
@@ -393,7 +393,7 @@ struct Composer: View {
                 }
                 // A lifted row floats over the card too.
                 .zIndex(queueStack.dragging == nil ? 0 : 1)
-                .nwTransition(.list, edge: .bottom)
+                .shTransition(.list, edge: .bottom)
             }
             // pi's own question takes the card's place (the question dock) while pi waits on it. A
             // subagent's never does: it asks its parent, which asks here only when it must.
@@ -411,7 +411,7 @@ struct Composer: View {
                         if hidden { questionHiding.hide(questionKey) } else { questionHiding.show() }
                     }
                     .id(questionKey)
-                    .nwTransition(.content)
+                    .shTransition(.content)
                 } else {
                     card
                 }
@@ -428,12 +428,12 @@ struct Composer: View {
                     sendMenu(beside: sendMenuFitsBeside)
                 }
         }
-        .nwAnimation(.list, value: accessories)
-        .nwAnimation(.list, value: input.attachments.ids)
-        .nwAnimation(.list, value: store.attachedFiles.map(\.id))
-        .nwAnimation(.list, value: store.attachedReferences.map(\.id))
-        .nwAnimation(.disclosure, value: questionKey)
-        .nwAnimation(.disclosure, value: questionHiding)
+        .shAnimation(.list, value: accessories)
+        .shAnimation(.list, value: input.attachments.ids)
+        .shAnimation(.list, value: store.attachedFiles.map(\.id))
+        .shAnimation(.list, value: store.attachedReferences.map(\.id))
+        .shAnimation(.disclosure, value: questionKey)
+        .shAnimation(.disclosure, value: questionHiding)
         // What a catch-up brings lands at once, however it changes the composer; keyed on what
         // the render drew, so a menu or a chip's own later motion still runs.
         .transaction(value: CatchUpGate.Key(version: store.chromeVersion, active: active)) {
@@ -511,14 +511,14 @@ struct Composer: View {
             ZStack(alignment: .top) {
                 // The thread fades under the composer. A Project's column rests its last turn one 16pt turn gap above the
                 // composer (the boards), so its fade is no taller than that gap: a resting last line is never under it.
-                LinearGradient(colors: [Color.nw.bgWindow.opacity(0), Color.nw.bgWindow], startPoint: .top, endPoint: .bottom)
+                LinearGradient(colors: [Color.sh.bgWindow.opacity(0), Color.sh.bgWindow], startPoint: .top, endPoint: .bottom)
                     .frame(height: fadeHeight).offset(y: -fadeHeight).allowsHitTesting(false)
                 // Over the fade, under the card and its menus.
-                NWJumpToLatest(action: jumpToLatest)
-                    .offset(y: -(NW.Height.controlM + NW.Space.m))
+                SHJumpToLatest(action: jumpToLatest)
+                    .offset(y: -(SH.Height.controlM + SH.Space.m))
             }
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .onChange(of: query) { _, query in
             commandIndex = 0
             // One menu at a time: typing a command takes over from a chip's menu.
@@ -566,13 +566,13 @@ struct Composer: View {
     }
 
     /// The levels pi offers the thread's model, with the board's notes.
-    private var thinkingOptions: [NWThinkingOption] {
-        shownThinkingLevels.map { NWThinkingOption(id: $0.id, title: $0.title, note: $0.note) }
+    private var thinkingOptions: [SHThinkingOption] {
+        shownThinkingLevels.map { SHThinkingOption(id: $0.id, title: $0.title, note: $0.note) }
     }
 
     /// The tiers the model offers, with the board's words.
-    private var speedOptions: [NWSpeedOption] {
-        store.serviceTiers.map { NWSpeedOption(id: $0.rawValue, title: $0.title, detail: $0.summary, boosted: $0 != .standard) }
+    private var speedOptions: [SHSpeedOption] {
+        store.serviceTiers.map { SHSpeedOption(id: $0.rawValue, title: $0.title, detail: $0.summary, boosted: $0 != .standard) }
     }
 
     // MARK: Menus
@@ -587,23 +587,23 @@ struct Composer: View {
         return ZStack(alignment: .bottomLeading) {
             if let query {
                 let slash = slash
-                NWSlashMenu(commands: slash.rows, total: commands.count, query: query, selection: $commandIndex, maxHeight: room) { command in
+                SHSlashMenu(commands: slash.rows, total: commands.count, query: query, selection: $commandIndex, maxHeight: room) { command in
                     if let match = slash.matches.first(where: { $0.name == command.name }) { choose(match) }
                 }
-                .nwTransition(.overlay, anchor: .bottomLeading)
+                .shTransition(.overlay, anchor: .bottomLeading)
             } else if let login = loginQuery, let slashLogin {
                 // SlashLoginArgs: the providers, with their states, before anything reaches pi.
                 let all = slashLogin.choices()
                 let rows = SlashLogin.matches(login.partial, in: all)
-                NWSlashMenu(commands: rows.map { SlashLogin.row($0, verb: login.verb) }, total: all.count, query: login.partial,
+                SHSlashMenu(commands: rows.map { SlashLogin.row($0, verb: login.verb) }, total: all.count, query: login.partial,
                             title: SlashLogin.title(login.verb), selection: $commandIndex, maxHeight: room) { row in
                     openLogin(SlashLogin.Command(verb: login.verb, provider: row.name))
                 }
-                .nwTransition(.overlay, anchor: .bottomLeading)
+                .shTransition(.overlay, anchor: .bottomLeading)
             } else if mentionShown {
                 // MentionPicker: designs, then a design's boards and a board's elements.
                 let content = mentions.content
-                NWMentionPicker(sections: content.sections, crumbs: content.crumbs, empty: content.empty, highlighted: mentions.highlighted,
+                SHMentionPicker(sections: content.sections, crumbs: content.crumbs, empty: content.empty, highlighted: mentions.highlighted,
                                 maxHeight: room, choose: { chooseMention($0) }, drill: { chooseMention($0) },
                                 back: { mentionBack() }, hover: { mentions.highlighted = $0 }, startDesign: references?.io.startDesign,
                                 retry: { references?.startCatalogRead() },
@@ -611,7 +611,7 @@ struct Composer: View {
                                     // An element's row on screen: its picture is cut now, not before.
                                     if let item = mentions.content.items[id] { references?.rowAppeared(item) }
                                 })
-                    .nwTransition(.overlay, anchor: .bottomLeading)
+                    .shTransition(.overlay, anchor: .bottomLeading)
             }
             // The picker and the thinking menu compare what they draw, so a composer redraw for
             // something else (the field losing focus to them, a keystroke) leaves their rows alone.
@@ -623,10 +623,10 @@ struct Composer: View {
                     pickModel(model)
                 } close: { menu = nil; composing = true }
                 .equatable()
-                .nwTransition(.overlay, anchor: .bottomLeading)
+                .shTransition(.overlay, anchor: .bottomLeading)
             }
             if menu == .settings {
-                NWModelSettings(models: settingsModels, thinking: thinkingAvailable ? thinkingOptions : [],
+                SHModelSettings(models: settingsModels, thinking: thinkingAvailable ? thinkingOptions : [],
                                 currentThinking: shownThinking, speeds: store.offersServiceTier ? speedOptions : [],
                                 currentSpeed: store.serviceTier.rawValue, modelEnabled: modelSettable,
                                 thinkingEnabled: thinkingSettable, speedEnabled: store.supports("setServiceTier"), maxHeight: room,
@@ -639,14 +639,14 @@ struct Composer: View {
                                 chooseSpeed: { id in
                                     if let tier = ServiceTier(rawValue: id) { Task { await store.setServiceTier(tier) } }
                                 }, allModels: { openModels() }, close: { menu = nil; composing = true })
-                    .nwTransition(.overlay, anchor: .bottomLeading)
+                    .shTransition(.overlay, anchor: .bottomLeading)
             }
         }
         // Its own height, not the card's, which the overlay proposes.
         .fixedSize(horizontal: false, vertical: true)
         .background { ComposerMenuRegion(dismissal: dismissal) }
         .alignmentGuide(.top) { $0[.bottom] + AppLayout.menuGap }
-        .nwAnimation(.overlay, value: openMenu)
+        .shAnimation(.overlay, value: openMenu)
     }
 
     /// What a click outside the open menu and the card does: it closes the menu, as Esc does
@@ -676,13 +676,13 @@ struct Composer: View {
                     finder?.find(id)
                 }, close: { menu = nil; composing = true })
                 .background { ComposerMenuRegion(dismissal: dismissal) }
-                .nwTransition(.overlay, anchor: .bottomTrailing)
+                .shTransition(.overlay, anchor: .bottomTrailing)
             }
         }
         .fixedSize()
         .padding(.trailing, meterInset)
         .alignmentGuide(.top) { $0[.bottom] + AppLayout.menuGap }
-        .nwAnimation(.overlay, value: menu == .context)
+        .shAnimation(.overlay, value: menu == .context)
     }
 
     /// A chip's thumbnail: the images waiting, full size, with the one pressed showing.
@@ -695,25 +695,25 @@ struct Composer: View {
     private var card: some View {
         // The context details float over the thread without the card taking focus's look.
         let focused = composing || (active && input.dropTargeted) || (menuOpen && menu != .context)
-        return NWComposer(isFocused: focused) {
+        return SHComposer(isFocused: focused) {
             // Design references sit first, above the words (DesignReferenceChip(ref)).
             ForEach(store.attachedReferences) { attached in
                 ComposerReferenceChip(attached: attached, references: references) { store.detachReference(attached.id) }
-                    .nwTransition(.list, edge: .leading)
+                    .shTransition(.list, edge: .leading)
             }
             // Elements picked in the Browser (PaneBrowser's composer).
             ForEach(store.attachedElements) { attached in
-                NWElementChip(attached.element.label, source: attached.element.sourceShort) { store.detachElement(attached.id) }
+                SHElementChip(attached.element.label, source: attached.element.sourceShort) { store.detachElement(attached.id) }
                     .help(attached.element.selector)
-                    .nwTransition(.list, edge: .leading)
+                    .shTransition(.list, edge: .leading)
             }
             ForEach(store.attachedFiles) { file in
-                NWAttachmentChip(file.name, thumbnail: nil) { store.detachFile(file.id) }
+                SHAttachmentChip(file.name, thumbnail: nil) { store.detachFile(file.id) }
                     .help(file.path)
-                    .nwTransition(.list, edge: .leading)
+                    .shTransition(.list, edge: .leading)
             }
         } field: {
-            field.nwEntrance(.content)
+            field.shEntrance(.content)
         } controls: {
             ComposerControls(model: controlsModel, actions: controlsActions, store: store, directory: directory, showChanges: showChanges,
                              dismissal: dismissal).equatable()
@@ -738,7 +738,7 @@ struct Composer: View {
     private var field: some View {
         ComposerTextField(text: $store.draft, selection: caretBinding, placeholder: placeholder,
                           label: "Message the agent", focus: $composing, attach: attach,
-                          lineSpacing: max(0, NWTextStyle.body.lineSpacing - 1))
+                          lineSpacing: max(0, SHTextStyle.body.lineSpacing - 1))
             .onComposerKey(.return) { press in
                 // ⌘↩ reaches here when a key press brings it; the key monitor usually takes it first.
                 switch ComposerReturnKey.action(modifiers: press.modifiers, alternate: KeybindingsStore.shared.chord(for: .alternateSend),
@@ -747,7 +747,7 @@ struct Composer: View {
                 case .system:
                     return .ignored
                 case .lineBreak:
-                    return NWReturnKey.insertLineBreak(in: press.editor) ? .handled : .ignored
+                    return SHReturnKey.insertLineBreak(in: press.editor) ? .handled : .ignored
                 case .choose:
                     if let login = loginQuery {
                         let matches = loginMatches
@@ -956,7 +956,7 @@ struct Composer: View {
     }
 
     /// Current model first, then one recent model. Never offer a stale unavailable model.
-    private var settingsModels: [NWModelOption] {
+    private var settingsModels: [SHModelOption] {
         ModelCatalog.settingsModels(catalog: catalog, current: modelID, recent: RecentModels.load(modelDefaults).map(\.id),
                                     currentOffersFast: store.offersServiceTier)
     }
@@ -1090,7 +1090,7 @@ struct Composer: View {
 
     /// A row chosen: a design or board drills in; anything else joins the message as a chip, its
     /// mention taken out of the words.
-    private func chooseMention(_ row: NWMentionRow) {
+    private func chooseMention(_ row: SHMentionRow) {
         switch mentions.choose(row) {
         case .drill(let draft):
             store.draft = draft
@@ -1133,7 +1133,7 @@ struct Composer: View {
     /// (Queue & steer boards), so it covers none of Up next; else above the card at its
     /// trailing corner.
     static func sendMenuBeside(room: CGFloat) -> Bool {
-        room >= AppLayout.menuGap + NWQueueMetrics.sendMenuWidth + AppLayout.menuMargin
+        room >= AppLayout.menuGap + SHQueueMetrics.sendMenuWidth + AppLayout.menuMargin
     }
 
     /// The two ways to send, beside the card or above it (`sendMenuBeside`), growing from the
@@ -1142,7 +1142,7 @@ struct Composer: View {
         ZStack(alignment: beside ? .bottomLeading : .bottomTrailing) {
             if menu == .send {
                 let keys = KeybindingsStore.shared
-                NWSendMenu(options: Self.sendOptions(send: keys.sendDisplay, alternate: keys.display(.alternateSend))) { option in
+                SHSendMenu(options: Self.sendOptions(send: keys.sendDisplay, alternate: keys.display(.alternateSend))) { option in
                     menu = nil
                     composing = true
                     sendDraft(delivery: (NativeSendChoice(rawValue: option.id) ?? .wait).delivery)
@@ -1150,7 +1150,7 @@ struct Composer: View {
                     menu = nil
                     composing = true
                 }
-                .nwTransition(.overlay, anchor: beside ? .bottomLeading : .bottomTrailing)
+                .shTransition(.overlay, anchor: beside ? .bottomLeading : .bottomTrailing)
             }
         }
         .fixedSize()
@@ -1159,18 +1159,18 @@ struct Composer: View {
         // card's trailing one, bottoms aligned.
         .alignmentGuide(.top) { $0[.bottom] + AppLayout.menuGap }
         .alignmentGuide(.trailing) { beside ? $0[.leading] - AppLayout.menuGap : $0[.trailing] }
-        .nwAnimation(.overlay, value: menu == .send)
+        .shAnimation(.overlay, value: menu == .send)
     }
 
     /// Wait for the turn to end, then Steer now: ↩ on the first row, the alternate chord on the second.
-    static func sendOptions(send: String, alternate: String) -> [NWSendOption] {
+    static func sendOptions(send: String, alternate: String) -> [SHSendOption] {
         NativeSendChoice.allCases.map { choice in
-            NWSendOption(id: choice.id, title: choice.title, detail: choice.detail, glyph: glyph(choice),
+            SHSendOption(id: choice.id, title: choice.title, detail: choice.detail, glyph: glyph(choice),
                          shortcut: choice == .now ? alternate : send)
         }
     }
 
-    private static func glyph(_ choice: NativeSendChoice) -> NWSendOption.Glyph {
+    private static func glyph(_ choice: NativeSendChoice) -> SHSendOption.Glyph {
         switch choice {
         case .wait: .queue
         case .now: .symbol("arrow.turn.down.right")
@@ -1231,7 +1231,7 @@ struct ComposerControlsActions {
 /// The composer's control row: attach · model settings · worktree, then the context ring and
 /// Send or Stop, with full chip labels when they fit; in a narrow thread (a docked right pane) the chips drop their words
 /// (the thinking level drops) instead of truncating mid-word, after "Starting…" drops
-/// its own. At the compact size (`NWComposerSize`: a design's chat) they never show their words. `ViewThatFits` builds and measures every alternative, each with its tooltips and
+/// its own. At the compact size (`SHComposerSize`: a design's chat) they never show their words. `ViewThatFits` builds and measures every alternative, each with its tooltips and
 /// accessibility, whenever the row is rebuilt, so the row compares what it draws first: a
 /// keystroke past the first character and the field losing focus to a menu rebuild the field,
 /// never the chips.
@@ -1246,13 +1246,13 @@ struct ComposerControls: View, Equatable {
     /// A constant of the composer, outside `==`.
     var dismissal: ComposerMenuDismissal? = nil
 
-    @Environment(\.nwComposerSize) private var size
+    @Environment(\.shComposerSize) private var size
 
     static func == (a: Self, b: Self) -> Bool { a.model == b.model && a.store === b.store && a.directory == b.directory }
 
     var body: some View {
         ComposerControlsMinimum {
-            HStack(spacing: NW.Space.xxs) {
+            HStack(spacing: SH.Space.xxs) {
                 ViewThatFits(in: .horizontal) {
                     // At the compact size the chips never show their words: only "Starting…" can drop its own.
                     chips(compact: size == .compact, startingLabel: true)
@@ -1261,9 +1261,9 @@ struct ComposerControls: View, Equatable {
                     if size == .regular { chips(compact: true, startingLabel: false) }
                 }
                 // A new model or level cross-fades. Only these: typing and width changes stay instant.
-                .nwAnimation(.content, value: [model.model, model.thinking, model.speedShown ? model.speed.rawValue : nil])
+                .shAnimation(.content, value: [model.model, model.thinking, model.speedShown ? model.speed.rawValue : nil])
                 // The ring and Send keep their place outside the fitting candidates.
-                HStack(spacing: NW.Space.s) {
+                HStack(spacing: SH.Space.s) {
                     ContextMeterButton(store: store, expanded: model.contextOpen, toggle: actions.context)
                         .equatable()
                         .background { if let dismissal { ComposerMenuRegion(dismissal: dismissal) } }
@@ -1278,23 +1278,23 @@ struct ComposerControls: View, Equatable {
     }
 
     private func chips(compact: Bool, startingLabel: Bool) -> some View {
-        let _ = NWRenderProbe.tick("composer.chips")
-        return HStack(spacing: NW.Space.xxs) {
+        let _ = SHRenderProbe.tick("composer.chips")
+        return HStack(spacing: SH.Space.xxs) {
             if model.canAttach {
                 Button(action: actions.attach) { Image(systemName: "paperclip") }
-                    .buttonStyle(.nwIcon(size: NWComposerMetrics.chipHeight))
+                    .buttonStyle(.shIcon(size: SHComposerMetrics.chipHeight))
                     .disabled(model.attachFull)
                     .help("Attach images (drop or paste also works), up to \(NativeImage.maxPerSend)")
                     .accessibilityLabel("Attach file")
             }
             modelChip(compact: compact)
-            Spacer(minLength: NW.Space.m)
-            if model.startingShown { startingIndicator(label: startingLabel).nwTransition(.content) }
+            Spacer(minLength: SH.Space.m)
+            if model.startingShown { startingIndicator(label: startingLabel).shTransition(.content) }
             if let branch = model.branch {
                 BranchChipMenu(branch: branch, directory: directory, showChanges: showChanges)
             }
         }
-        .nwAnimation(.content, value: model.startingShown)
+        .shAnimation(.content, value: model.startingShown)
     }
 
     @ViewBuilder private func modelChip(compact: Bool) -> some View {
@@ -1302,10 +1302,10 @@ struct ComposerControls: View, Equatable {
             let summary = ModelSettingsSummary(model: name, thinking: model.thinking, thinkingOffered: model.thinkingShown, speed: model.speed,
                                                speedOffered: model.speedShown, shortenedName: compact, dropsThinking: compact)
             Button(action: actions.models) {
-                NWModelSettingsLabel(model: summary.name, thinking: summary.thinking, fast: summary.fast,
+                SHModelSettingsLabel(model: summary.name, thinking: summary.thinking, fast: summary.fast,
                                      changeable: model.modelChangeable || model.thinkingShown || model.speedShown)
             }
-            .buttonStyle(.nwComposerChip(active: model.modelsOpen))
+            .buttonStyle(.shComposerChip(active: model.modelsOpen))
             .background { if let dismissal { ComposerMenuRegion(dismissal: dismissal) } }
             .disabled(!model.modelEnabled && !(model.thinkingShown && model.thinkingEnabled) && !(model.speedShown && model.speedEnabled))
             .help("Model settings: \(name)")
@@ -1319,11 +1319,11 @@ struct ComposerControls: View, Equatable {
     private func startingIndicator(label: Bool) -> some View {
         HStack(spacing: AppLayout.startingSpacing) {
             if !model.busy {
-                ProgressView().progressViewStyle(.nwSpinner(size: AppLayout.startingSpinner, color: Color.nw.textTertiary))
+                ProgressView().progressViewStyle(.shSpinner(size: AppLayout.startingSpinner, color: Color.sh.textTertiary))
             }
-            if label { Text("Starting…").font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary) }
+            if label { Text("Starting…").font(Font.sh(.caption)).foregroundStyle(Color.sh.textTertiary) }
         }
-        .padding(.trailing, NW.Space.s)
+        .padding(.trailing, SH.Space.s)
         .help("The agent is starting. A message sent now goes once it is ready.")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Starting the agent")
@@ -1335,15 +1335,15 @@ struct ComposerControls: View, Equatable {
     /// the Send menu. There is no second Stop.
     private var primary: some View {
         let sendMenu = model.sendMenu
-        return HStack(spacing: NW.Space.s) {
+        return HStack(spacing: SH.Space.s) {
             ZStack {
                 if model.busy {
-                    ProgressView().progressViewStyle(.nwSpinner(color: Color.nw.textTertiary))
-                        .frame(width: NWComposerMetrics.actionSize, height: NWComposerMetrics.actionSize)
+                    ProgressView().progressViewStyle(.shSpinner(color: Color.sh.textTertiary))
+                        .frame(width: SHComposerMetrics.actionSize, height: SHComposerMetrics.actionSize)
                         .accessibilityLabel("Waiting for the agent")
-                        .nwTransition(.content)
+                        .shTransition(.content)
                 } else {
-                    NWComposerActionButton(model.stops ? .stop : .send, ringed: model.sendRinged, enabled: model.actionEnabled,
+                    SHComposerActionButton(model.stops ? .stop : .send, ringed: model.sendRinged, enabled: model.actionEnabled,
                                            action: model.stops ? actions.stop : actions.send)
                     .help(model.actionHelp)
                     .background { if let dismissal, model.sendRinged { ComposerMenuRegion(dismissal: dismissal) } }
@@ -1352,11 +1352,11 @@ struct ComposerControls: View, Equatable {
                         guard sendMenu else { return }
                         actions.holdSend()
                     }, isEnabled: sendMenu)
-                    .nwTransition(.content)
+                    .shTransition(.content)
                 }
             }
         }
-        .nwAnimation(.content, value: model.busy)
+        .shAnimation(.content, value: model.busy)
     }
 }
 
@@ -1379,10 +1379,10 @@ struct ComposerControlsMinimum: Layout {
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         guard let row = subviews.first else { return .zero }
         if let width = proposal.width, width < AppLayout.composerControlsNarrowest {
-            MainActor.assumeIsolated { NWRenderProbe.tick("layout.composerControlsMinimum") }
-            return CGSize(width: max(0, width), height: NWComposerMetrics.actionSize)
+            SHRenderProbe.tick("layout.composerControlsMinimum")
+            return CGSize(width: max(0, width), height: SHComposerMetrics.actionSize)
         }
-        MainActor.assumeIsolated { NWRenderProbe.tick("layout.composerControlsMeasured") }
+        SHRenderProbe.tick("layout.composerControlsMeasured")
         return row.sizeThatFits(proposal)
     }
 
@@ -1403,7 +1403,7 @@ struct ComposerControlsMinimum: Layout {
 
 /// The slash menu's rows for the draft, derived once per draft and command list (a keystroke,
 /// pi's registry changing), never while drawing or on a key press. A reference read in `body`,
-/// so keeping it current re-renders nothing. `NWRenderProbe` counts each derivation
+/// so keeping it current re-renders nothing. `SHRenderProbe` counts each derivation
 /// ("composer.slashMatches").
 @MainActor
 final class SlashMatchCache {
@@ -1412,7 +1412,7 @@ final class SlashMatchCache {
     /// The commands matching the query, in the menu's order.
     private(set) var matches: [NativeCommand] = []
     /// The same as the menu draws them.
-    private(set) var rows: [NWSlashCommand] = []
+    private(set) var rows: [SHSlashCommand] = []
 
     /// `query` is the draft after "/" (nil while the menu is closed).
     func update(query: String?, commands: [NativeCommand]) {
@@ -1421,7 +1421,7 @@ final class SlashMatchCache {
         self.commands = commands
         matches = Self.matches(query: query, in: commands)
         rows = matches.map(Self.row)
-        NWRenderProbe.tick("composer.slashMatches")
+        SHRenderProbe.tick("composer.slashMatches")
     }
 
     /// Commands whose name starts with `query` first, then those whose name or description
@@ -1442,8 +1442,8 @@ final class SlashMatchCache {
         return prefixed + containing
     }
 
-    static func row(_ command: NativeCommand) -> NWSlashCommand {
-        NWSlashCommand(name: command.name, description: command.description, arguments: command.arguments,
+    static func row(_ command: NativeCommand) -> SHSlashCommand {
+        SHSlashCommand(name: command.name, description: command.description, arguments: command.arguments,
                        tag: command.source.flatMap { $0 == "extension" ? nil : $0 == SlashLogin.source ? SlashLogin.tag : $0 })
     }
 }
@@ -1722,9 +1722,9 @@ struct WidgetRow: View {
     let widget: NativeThreadWidget
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
-            Text(widget.title ?? "\(widget.namespace) · \(widget.key)").nwSectionLabel()
-            Text(widget.text).font(Font.nw(.micro)).foregroundStyle(Color.nw.textSecondary)
+        HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+            Text(widget.title ?? "\(widget.namespace) · \(widget.key)").shSectionLabel()
+            Text(widget.text).font(Font.sh(.micro)).foregroundStyle(Color.sh.textSecondary)
                 .lineLimit(widget.kind == .status ? 1 : 4)
         }
         .textSelection(.enabled)

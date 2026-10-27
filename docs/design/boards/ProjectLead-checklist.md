@@ -5,7 +5,7 @@ retained privately outside this repository. Public screenshots use fictional exa
 The layout and interaction requirements still apply. Every
 number below is measured from that markup in headless Chromium at 1x (CSS pixels = points: each element's rect, computed type, color, border,
 radius, padding and gap) and checked against the PNGs (3200x1800 for the 1600x900pt window boards, 2880x1800 for the Settings boards; 2 px per
-pt). A value is a named token, or a named `NWLeadMetrics` / `NWProjectMetrics` constant holding the measured number; none is rounded to a
+pt). A value is a named token, or a named `SHLeadMetrics` / `SHProjectMetrics` constant holding the measured number; none is rounded to a
 neighbour. **The user's approved departures:** macOS-only hosts (no Linux daemon); the Activity **Designs group first**; and **no subagents in
 Projects** (the boards' subagent-count pill and child controls are not drawn; ordinary threads are unchanged).
 Early-lane rows below that say "measured from the PNGs" or "nearest token" are the first pass, kept for history; "Measurement method" and the
@@ -23,11 +23,11 @@ Status key: **P** = built in this change, **B** = blocked on a runtime seam (nam
 | Selected sidebar row | x 10..221 (211 wide), y 176..204 (28 tall), fill (29,30,31) | density `rowHeight` 28, `bgSelected` |
 | Project row glyph | 10 x 12.5, x 15.5, outline, 1pt stroke; lantern when selected, `textTertiary` otherwise | see Glyph |
 | Project row name | starts x 36.5, 13.5pt, selected = semibold white | row font |
-| Folder (Space) row | chevron x 19..23.5, folder x 36..~46 | existing `NWProjectRow` |
-| Count | mono 10.5, `textTertiary`, trailing 8 | `NWProjectMetrics` |
+| Folder (Space) row | chevron x 19..23.5, folder x 36..~46 | existing `SHProjectRow` |
+| Count | mono 10.5, `textTertiary`, trailing 8 | `SHProjectMetrics` |
 | Project settings column | 1440pt-wide board: card left 456, right 1215 (**759pt wide**), centered in the 1208pt main area (232..1440). Title top 52, tab row text baseline ~93, tab rule y 114, first card top 131 | settings page column (`AppLayout+Settings`), measured per render |
-| Card border (44,48,53), fill (21,23,26), radius ~10 | 1pt `lineStrong`, `bgRaised`. `.nwCard()` is `lineSubtle`/radius 8: **difference to resolve** (the existing Settings cards use radius 10 per DESIGN.md) | `NWCardRow` settings card |
-| Settings row dividers | 1pt (31,34,38) = `lineSubtle` | `NWCardRow` |
+| Card border (44,48,53), fill (21,23,26), radius ~10 | 1pt `lineStrong`, `bgRaised`. `.shCard()` is `lineSubtle`/radius 8: **difference to resolve** (the existing Settings cards use radius 10 per DESIGN.md) | `SHCardRow` settings card |
+| Settings row dividers | 1pt (31,34,38) = `lineSubtle` | `SHCardRow` |
 | Tab underline | 2pt `lantern` (242,169,59) at y 112..114, from x 456 to 516 under "General" (60pt = label + 11pt side pads); a 1pt `lineSubtle` rule at y 114 spans the card width | `lantern`, `lineSubtle` |
 | Page title "Project settings" | Geist 22/600 | `AppLayout.settingsTitleSize` |
 | Breadcrumb "Sample App" over it | 13.5 `textSecondary` | |
@@ -40,7 +40,7 @@ The Settings boards are 2880x1800 = 1440x900pt (px/2 = pt). The window boards ar
   caps above it (like a jar or a stack of cards). The nearest SF Symbols are `tray.2` (two stacked trays,
   too wide), `square.stack` (offset squares, wrong shape), `cylinder` (curved, wrong), and
   `archivebox` (a lid over a box, closest overall). **Chosen: a native `Shape` drawn from the board
-  (NWGlyph-style, outline, 1pt stroke, template-tinted)**, because no SF Symbol matches the double cap.
+  (SHGlyph-style, outline, 1pt stroke, template-tinted)**, because no SF Symbol matches the double cap.
   **Ambiguous: please confirm** that a drawn shape is acceptable instead of `archivebox`. Never `folder`.
 - **Space**: `folder`, outline (as drawn, and as the existing Spaces tree uses).
 - **Overview toolbar**: `list.bullet` (outline) beside "Overview"; settings `gearshape`. To confirm on zoom.
@@ -124,7 +124,7 @@ refusal re-reads the project and shows the host message; the draft is kept, noth
 
 ## Open questions (current)
 
-Settled by the exported HTML, not open: the Project glyph is the supplied 40-unit contour (`NWProjectGlyph`), and every size is measured, so
+Settled by the exported HTML, not open: the Project glyph is the supplied 40-unit contour (`SHProjectGlyph`), and every size is measured, so
 there is no "nearest token" or "No token, ask" row. Still awaiting the user: RunElsewhere (board 10) and the structured Automation trigger
 choices. Owned by the Settings author, not this lane: the `Hosts` row on Spaces settings and the project <-> automation link.
 
@@ -133,11 +133,11 @@ choices. Owned by the Settings author, not this lane: the `Hosts` row on Spaces 
 The parent saved the boards' exported HTML (`01-ProjectActivity.html` ... `14-ProjectSettingsSpacesV2.html`) read-only. Each was
 opened in headless Chromium on a scratch copy and every element's rect, computed type, color, border, radius, padding and gap was
 read at 1x (CSS pixels = points). The Chromium run rasterises a board to within a few pixels of the supplied PNG, so the markup is
-the same design. Values that no token holds are named in `NWLeadMetrics` (ShepherdUI) or `NWProjectMetrics`/`AppLayout+LogicalProjects`,
+the same design. Values that no token holds are named in `SHLeadMetrics` (ShepherdUI) or `SHProjectMetrics`/`AppLayout+LogicalProjects`,
 not rounded to a neighbour. The two measured facts that overturned my first pass:
 
 - The Project icon is the supplied 40-unit contour (4 sub-paths, bbox 13.5..26.62 x 11.5..27.88, aspect 0.801). `square.stack` is 0.756,
-  `archivebox` another shape. It is drawn as `NWProjectGlyph`, the contour point for point, in a 14pt slot at 0.857pt a unit.
+  `archivebox` another shape. It is drawn as `SHProjectGlyph`, the contour point for point, in a 14pt slot at 0.857pt a unit.
 - The sidebar rows are 28pt in a 215pt column with 8pt side padding and 9pt gaps (Activity) or 6pt left, 8 right and 8 gaps
   (Spaces mode); headers are 34pt with the title at the bottom. Section headers are `12.5/500 textTertiary`, 24pt `+` buttons.
 
@@ -157,7 +157,7 @@ used in this review is in `/tmp/ui-final` (70 PNGs): `lead-started`, `lead-quest
 | New project sheet | Real create with chosen Spaces | First-pass sizes; re-measured against `03-ProjectNew.html` in a later pass (see the latest pass below) |
 | Overview (Empty) | Name, goal, Spaces row, Instructions row, Suggestions (fill the composer; send nothing) in the shared thread's empty state | Spacing measured; the 12pt radius and 34/29pt rows match |
 | Conversation (Started, Question, Paused) | The coordinator's own native thread (`ThreadView` over `conversationStore`); composer send through `sendProjectMessage` with one operation identity per text; Paused banner, placeholder and Resume; the summary strip counted from tasks; each waiting task's own native question as a lettered-option card answered through `answerProjectQuestion` | The board shows task **cards** inside the conversation ("Reading list research  reading-list-notes.md", "View thread"): the runtime has no such message in the native transcript, so they are not drawn (blocked, below) |
-| Threads pane | Welcome back, status sentence, Waiting on you / Working / Resolved groups, rows with the worker's own latest activity, age, Blocked + the worker's question; Close; Paused footer with Resume (PausedV2: a 46pt card 8pt from the pane's sides and bottom, `NWLeadMetrics.pausedFooterHeight` / `pausedFooterMargin`; the resolved footer keeps its 50pt card and 16pt inset) | The header's Files, New thread, Search, Filter, Expand have no behaviour yet and are **not drawn** (no dead controls); the "Y 2" branch pill needs a per-task host or worktree count |
+| Threads pane | Welcome back, status sentence, Waiting on you / Working / Resolved groups, rows with the worker's own latest activity, age, Blocked + the worker's question; Close; Paused footer with Resume (PausedV2: a 46pt card 8pt from the pane's sides and bottom, `SHLeadMetrics.pausedFooterHeight` / `pausedFooterMargin`; the resolved footer keeps its 50pt card and 16pt inset) | The header's Files, New thread, Search, Filter, Expand have no behaviour yet and are **not drawn** (no dead controls); the "Y 2" branch pill needs a per-task host or worktree count |
 | Thread detail (ThreadRunning, Resolved) | Breadcrumb Threads > title, the worker's ordinary native thread with its own composer, Resolve / Reopen / Open as a thread / Close, the Resolved footer card with Reopen | Not rendered against the board yet |
 | Settings General, Spaces, Memory, Automations | Real CRUD (earlier slice) | Hosts row, Added by the project, the project's automations: waiting on the backend; see below |
 | AddsSpace offer card, RunElsewhere | **Not built** | Waiting on `Project.spaceProposals` and the owner-adapter host list |
@@ -202,7 +202,7 @@ Written before the code. Source of every number: the boards' own exported markup
 copied), loaded in headless Chromium with the bundled Geist at 1x and 2x, then each computed box and style read, and the 2x screenshot
 diffed against the four PNGs (`/tmp/psf/measure.js`; the boards and the markup agree to the pixel). The reviewer's finding V2 said
 tab weight 500; the markup and the PNG both say **400** (selected differs by color only), so 400 is built. Tokens: new values live
-in `NWProjectSettingsMetrics` (ShepherdUI, new file). No global token changes; every value that equals an existing token uses it.
+in `SHProjectSettingsMetrics` (ShepherdUI, new file). No global token changes; every value that equals an existing token uses it.
 
 Approved departures: macOS-only hosts, Designs above Activity groups. **No others are taken here.**
 
@@ -210,20 +210,20 @@ Approved departures: macOS-only hosts, Designs above Activity groups. **No other
 
 | Element | Value | Token |
 | --- | --- | --- |
-| Column | 760 wide (card outer 456..1216), centered, 24 above, 32 each side, 24 below | `columnWidth` 760, `NW.Space.xxl/xxxl` |
-| Breadcrumb (project name) | Geist 11.5/400, **`textTertiary`** (#5f656e dark, #9a9ea5 light). Not on the boards, by the user's request: a `Settings.back` chevron before it, and pressing it opens the Project's page ("Back to <name>", 24pt hit area) | `.nw(.caption)`, `.nwLink` |
-| Title "Project settings" | Geist 15/600 `textPrimary`; 6 under the crumb | `.nw(.title)`, `NW.Space.s` |
-| Header to tabs, tabs to content, block to block | 16 | `NW.Space.xl` |
-| Tab | label Geist 12.5/**400** (not 500, not bold), `textPrimary` selected, `textSecondary` otherwise; 8 each side; label box 32 tall, **2pt `lantern` rule under the selected one** (the tab is 34), 6 between tabs, so General is 60.11 wide | `.nw(.ui, weight: .regular)`, `tabHeight` 32, `tabRule` 2 |
+| Column | 760 wide (card outer 456..1216), centered, 24 above, 32 each side, 24 below | `columnWidth` 760, `SH.Space.xxl/xxxl` |
+| Breadcrumb (project name) | Geist 11.5/400, **`textTertiary`** (#5f656e dark, #9a9ea5 light). Not on the boards, by the user's request: a `Settings.back` chevron before it, and pressing it opens the Project's page ("Back to <name>", 24pt hit area) | `.sh(.caption)`, `.shLink` |
+| Title "Project settings" | Geist 15/600 `textPrimary`; 6 under the crumb | `.sh(.title)`, `SH.Space.s` |
+| Header to tabs, tabs to content, block to block | 16 | `SH.Space.xl` |
+| Tab | label Geist 12.5/**400** (not 500, not bold), `textPrimary` selected, `textSecondary` otherwise; 8 each side; label box 32 tall, **2pt `lantern` rule under the selected one** (the tab is 34), 6 between tabs, so General is 60.11 wide | `.sh(.ui, weight: .regular)`, `tabHeight` 32, `tabRule` 2 |
 | Tab rail | 1pt `lineSubtle` under all tabs, below the 2pt rule (rule y 112..114, rail 114..115) | `line` 1 |
-| Card | 1pt `lineStrong` border, **radius 12**, fill `bgRaised`; rows sit inside the border | `NW.Radius.l` |
+| Card | 1pt `lineStrong` border, **radius 12**, fill `bgRaised`; rows sit inside the border | `SH.Radius.l` |
 | Row | 12 each side, 8 above and below, 12 between text and control; least 52 tall counting its 1pt top divider; divider `lineSubtle` 1pt | `rowMinHeight` 52 |
-| Row title | Geist 12.5/500 `textPrimary`; 2 above its help | `.nw(.ui)`, `NW.Space.xxs` |
-| Row help | Geist 11.5/400 on 1.45, **`textTertiary`** | `NWCardRowMetrics.settingsDescriptionLineHeight` |
-| Buttons (Pause, Delete, Remove, Forget) | the Controls board size, **not** the Settings 32: 28 tall, radius 6, 10 padding inside a 1pt line (so text + 22 wide), 12.5/500 | `NWButtonStyle` `.m` + 1pt label pad (`buttonBorder`) |
-| Popup | 32 tall in a 40 slot, 1pt `lineStrong`, radius 7, `bgRaised`, Geist 13/400, 12 before the value, **36 after** (chevrons live there), width follows the value | `NWSettingsControlMetrics` `controlHeight`, `radius`, `textSize`, `popupLeading`; `popupTrailing` 36, `popupSlot` 40 |
-| Popup glyph | `chevron.up.chevron.down` (outline pair), `textTertiary`, ink 7 x 9, 16 from the right edge, **vertically centered** on the control (the boards' CSS: `top: 50%; translateY(-50%)`; an earlier lift read the line box and drew them high) | `NWProjectSettingsMetrics.chevron*` |
-| Switch | the `nwSwitch` (30 x 18, 14 knob) in a 24pt slot | existing |
+| Row title | Geist 12.5/500 `textPrimary`; 2 above its help | `.sh(.ui)`, `SH.Space.xxs` |
+| Row help | Geist 11.5/400 on 1.45, **`textTertiary`** | `SHCardRowMetrics.settingsDescriptionLineHeight` |
+| Buttons (Pause, Delete, Remove, Forget) | the Controls board size, **not** the Settings 32: 28 tall, radius 6, 10 padding inside a 1pt line (so text + 22 wide), 12.5/500 | `SHButtonStyle` `.m` + 1pt label pad (`buttonBorder`) |
+| Popup | 32 tall in a 40 slot, 1pt `lineStrong`, radius 7, `bgRaised`, Geist 13/400, 12 before the value, **36 after** (chevrons live there), width follows the value | `SHSettingsControlMetrics` `controlHeight`, `radius`, `textSize`, `popupLeading`; `popupTrailing` 36, `popupSlot` 40 |
+| Popup glyph | `chevron.up.chevron.down` (outline pair), `textTertiary`, ink 7 x 9, 16 from the right edge, **vertically centered** on the control (the boards' CSS: `top: 50%; translateY(-50%)`; an earlier lift read the line box and drew them high) | `SHProjectSettingsMetrics.chevron*` |
+| Switch | the `shSwitch` (30 x 18, 14 knob) in a 24pt slot | existing |
 
 ### General (ProjectLead-SettingsGeneral)
 
@@ -261,7 +261,7 @@ Approved departures: macOS-only hosts, Designs above Activity groups. **No other
 
 1. `PROJECT INSTRUCTIONS` label; editor 760 x 149.25 (7 lines on the 18.75 line), 1pt `lineStrong`, radius 8, fill `bgSunken`, 12.5/400, text 12 in and 8 down. 11 below it
    (5 the editor's baseline gap + 6), footnote 11.5/1.45 `textTertiary`, flush with the card: "Sent to the conversation and to every new thread, after each space’s AGENTS.md. {n} of
-   16,000 characters." (over the limit: `failed`). Save / Revert (`.nw(.primary)`, `.nw(.ghost)`) appear only while the text differs (not drawn by the board).
+   16,000 characters." (over the limit: `failed`). Save / Revert (`.sh(.primary)`, `.sh(.ghost)`) appear only while the text differs (not drawn by the board).
 2. `WHAT THE PROJECT REMEMBERS` label; card of memory rows (52): text 12.5/**400** on 1.45 `textPrimary`, ghost `Forget`. Empty: "Nothing yet. What you decide and what the project learns is kept here, and you can
    make it forget any of it."
 3. Presses: Save writes `instructions`; Forget removes the entry (`forgetMemory`).
@@ -273,7 +273,7 @@ existing `.projectAutomations.v1` record (name, prompt, cwd, enabled) with its r
 "When a PR opens in …" and "passed" are not drawn and no fake rows stand in. Enabling a record starts nothing.
 
 1. One card, one row per **real** project-owned Automation record (53 pitch): leading glyph in a 14 box (12pt, `textSecondary`), name 12.5/500, caption 11.5 `textTertiary`
-   (Geist, not mono), trailing 18pt switch. The glyph is `bolt` (`NWGlyph.automation`, outline): the records carry no schedule or trigger, so the board's `clock` row is not drawn.
+   (Geist, not mono), trailing 18pt switch. The glyph is `bolt` (`SHGlyph.automation`, outline): the records carry no schedule or trigger, so the board's `clock` row is not drawn.
 2. Caption from the record and run log only: `{where it works} · {owner} · {run word} · {age} ago`, or `never run` with no run. Run words are the existing producer's
    (`finished`, `asked you`, `stopped`, `interrupted`, `running`), not the board's `passed`. The board's leading "Mondays 09:00" / "When a PR opens in ..." has no field; it is not drawn and
    nothing here says a trigger works. Execution stays pending: the switch is `setEnabled` through the owner, never a run.
@@ -288,7 +288,7 @@ existing `.projectAutomations.v1` record (name, prompt, cwd, enabled) with its r
 
 ### Settings fidelity pass: later changes
 
-- Popup chevrons are `NWGlyph.popupChevrons` (`chevron.up.chevron.down`), the pressed offset is `NWProjectSettingsMetrics.pressOffset` (0.5, as `NWButtonStyle`). The four older files that draw the same pair as a raw string are in `DesignRuleAllowlist`.
+- Popup chevrons are `SHGlyph.popupChevrons` (`chevron.up.chevron.down`), the pressed offset is `SHProjectSettingsMetrics.pressOffset` (0.5, as `SHButtonStyle`). The four older files that draw the same pair as a raw string are in `DesignRuleAllowlist`.
 - Tab widths use the line's exact typographic width at the current text scale, so the rule under each tab lands on the board's pixel (the 2pt drift under Automations is gone).
 - Hosts: the designed normal state is the owner's real two-host `ProjectHostOption` list ("This Mac and demo-mac"); "This Mac only" (owner reports one host) is its own preview, `settings-spaces-single-host`.
 
@@ -306,7 +306,7 @@ Measured from the boards' markup in headless Chromium at 1x and from the saved P
   titles: each opens its own task ID in the Threads pane. Stale, foreign and half-written links have no control. SwiftUI's own text-link
   node (`AXLink`) is disabled and takes no press (pressing it aborts the off-screen process), so it is not used.
 - **Rhythm**: Started cards at y 336, 392 and 424 equal the PNG board's. The paragraph's half-leading is now CSS's fractional value
-  (`NWLineSpacing.halfLeading`). The coordinator's replies draw no turn footer (it reserved ~40pt the boards do not draw); worker threads
+  (`SHLineSpacing.halfLeading`). The coordinator's replies draw no turn footer (it reserved ~40pt the boards do not draw); worker threads
   and ordinary threads keep theirs.
 - **Overview (09, Empty)**: window render from a real created Project at 1x/1.3, light/dark, with a linked Space, with none, and with a long name
   and Space name. Control test: every row and suggestion is a 24pt button at 1x and 1.3, a suggestion fills the composer and sends nothing,
@@ -357,7 +357,7 @@ board PNGs and from the original markup in headless Chromium at 1x (CSS px = pt)
   `aWorkerTurnHolding...` through the real worker store and AX tree. Render: `board-worker-mixed-*`.
 - **Worker paragraph wrap: fixed.** Cause: SwiftUI's `Text` avoids a one-word last line (private, always on). Geist 13.5 measures the line "...a partner would" at
   405.92pt in Chromium and in Core Text, and 447pt fits it; `Text` breaks after "partner" (368.3pt) at every width 380...447. A plain Project paragraph is now an
-  `NSTextField` with `lineBreakStrategy = []` (`NWPlainParagraph`, only where Project prose has no link, chip, code or emphasis), which breaks where the board does
+  `NSTextField` with `lineBreakStrategy = []` (`SHPlainParagraph`, only where Project prose has no link, chip, code or emphasis), which breaks where the board does
   (render line 1 ends x 1541.5, board 1541.5; line 2 "embed." ends 1181.5, board 1181.5). Selectable; one AXStaticText; ink colour equals `textPrimary` in both
   appearances. Ordinary threads and paragraphs with task chips keep `Text`. Test: `ProjectProseWrapTests`.
 - **Steps card.** Card 447 x 66 at y 184 (was 64, y 188): its 12pt padding sits inside the 1pt line. The pane's first line sits 12pt under the header, not 16
@@ -383,8 +383,8 @@ user's workflow decisions; neither is built.
   right pane's field editor is the first responder (`board-thread-running-worker-focus-*`). The card's 3pt ring (y 787, 887) and line (790, 883) equal the board's in
   all four modes; the unfocused render keeps the plain line.
 - **Pane box (the layout miss behind the 1pt divider).** In the original 08 markup the pane is `<div style="width:480px; border-left:1px solid var(--line-subtle);
-  box-sizing:border-box"><aside style="width:479px">`. `NWLeadMetrics.paneWidth` is now 480 with `paneBorder` 1: the pane's content takes `paneBorder` of
-  leading padding and the named hairline draws exactly that 1pt (`NWHairline(.vertical, width:)`; its default is one device pixel). The separator is at x 1120 and the
+  box-sizing:border-box"><aside style="width:479px">`. `SHLeadMetrics.paneWidth` is now 480 with `paneBorder` 1: the pane's content takes `paneBorder` of
+  leading padding and the named hairline draws exactly that 1pt (`SHHairline(.vertical, width:)`; its default is one device pixel). The separator is at x 1120 and the
   content starts at 1121, as the board; the conversation is 888 wide, so its 680 column and the composer card start at 336 (they started at 336.5 beside 479).
   Measured in 07, 08, the focus render and 04 (Paused), light and dark, 1 and 1.3: separator 1120/1121 and the composer card 336..1015 equal the boards'. Pinned by
   `aWorkersPlanFromTheEngines...` (the pane box begins where the page minus 480 ends, four modes) and by the conversation test (column starts at 336 in four modes;
@@ -400,7 +400,7 @@ user's workflow decisions; neither is built.
 - **Project composer while the coordinator runs.** Departure (owner's call, 2026-10-20): the board drew a disabled arrow. It is now the ordinary composer's Stop,
   which ends the coordinator's turn only and never pauses; Send replaces it with a draft. Checked through AX with the engine's `project-action` script held by its
   own `continue-1` file (no focus, no sleep).
-- **Plain paragraph measurement.** `NWPlainParagraph` no longer uses a numeric size ceiling: the label measures itself with `greatestFiniteMagnitude`; a 300-character
+- **Plain paragraph measurement.** `SHPlainParagraph` no longer uses a numeric size ceiling: the label measures itself with `greatestFiniteMagnitude`; a 300-character
   unbroken token wraps inside a 200pt column (test). Its comment says what was observed, not what SwiftUI does inside.
 - **Remaining ink differences (recorded, not approved by this lane):** the live line's ink is about 1.5pt lower than the board's in the dark render (its box is
   pinned); the New project title ink is 1pt low; Create 437 against 438 and Add to project 1248 against 1247 (above); the close mark within 0.5 to 1pt. These are

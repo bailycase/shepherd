@@ -18,7 +18,7 @@ them (the user's decision, 2026-09-30; see the departures).
 
 - **Surface:** the theme's terminal colors (`TerminalColors`), on `bgWindow` (the boards draw
   `bgBase`; see the departures). The grid sits 14pt from the sides and 10pt from the top and bottom
-  (TerminalSplit; `NWTerminalMetrics.contentPadding`), 16pt and 10pt on iPad (iPadTerminal).
+  (TerminalSplit; `SHTerminalMetrics.contentPadding`), 16pt and 10pt on iPad (iPadTerminal).
 - **Type:** the boards set the terminal in Geist Mono with a 1.6 line height: 12pt on the Mac
   (TerminalSplit; TerminalPane's 11.5pt for its narrower split terminals is not built, as nothing
   splits) and 13pt on iPad (the `code` size there). On the Mac the family and size are Settings ▸
@@ -33,14 +33,14 @@ them (the user's decision, 2026-09-30; see the departures).
   output in the chrome.
 - **States** are quiet placeholders at the top leading corner in mono `micro` regular (10.5pt),
   `textTertiary`: 10pt in on the Mac (`PanePlaceholder`, `AppLayout.panePlaceholderPadding`), at the
-  terminal's own padding on iOS (`NWTerminalNotice`). They cross-fade (`.content`) and the surface
+  terminal's own padding on iOS (`SHTerminalNotice`). They cross-fade (`.content`) and the surface
   under them never moves: "starting session…" over the surface until it is live, "session exited
   (n)" (or "session exited"), "session unavailable · <reason>", "remote host removed", and "review
   unavailable". A remote agent's terminal on the Mac reads "attaching…", "remote session
   unavailable · <reason>" and "remote session exited (n)". iOS adds "attaching…", "host offline ·
   reattaches when it is back", "open in another window" (a screen shows in one iPad window at a
   time), "review open on <host>", and " · retrying" after a refused attach.
-- **Size never animates:** a terminal takes its new size once (`.nwInstant()`; see Motion), and a
+- **Size never animates:** a terminal takes its new size once (`.shInstant()`; see Motion), and a
   hidden one keeps its grid (Terminal panel › Nothing remounts).
 
 ## Terminal panel
@@ -59,15 +59,15 @@ several terminals (made by builds that could split them) is flattened into one t
 when the host starts (`SessionServer.flattenSplitTerminals`), keeping each one's session, folder and
 title; a client of an older host that has not done so draws such a tab as one tab per terminal.
 
-- **Strip** (`NWTerminalTabBar`; TerminalSplit): 38pt (`NWTerminalMetrics.tabBarHeight`) on
+- **Strip** (`SHTerminalTabBar`; TerminalSplit): 38pt (`SHTerminalMetrics.tabBarHeight`) on
   `bgWindow`, with a 1px `lineStrong` hairline on top and a `lineSubtle` one under it, 8pt side
   padding and 2pt gaps. From the leading edge: the tabs, then + ("New terminal"), a spacer, then
   Maximize or Restore (`arrow.up.left.and.arrow.down.right`, `arrow.down.right.and.arrow.up.left`)
-  and Hide terminal (`xmark`). They are 24pt circular `.nwIcon` buttons with 14pt glyphs in
-  `textSecondary`, with tooltips (`.nwHelp`); Maximize or Restore and Hide terminal carry their
+  and Hide terminal (`xmark`). They are 24pt circular `.shIcon` buttons with 14pt glyphs in
+  `textSecondary`, with tooltips (`.shHelp`); Maximize or Restore and Hide terminal carry their
   chords. The tabs and + scroll sideways when they outgrow the strip; the trailing controls never
   scroll. The board's Split right button is not built.
-- **A tab** (`NWTerminalTabView`): 26pt tall, radius 6 (`NW.Radius.s`), 8pt side padding, 7pt
+- **A tab** (`SHTerminalTabView`): 26pt tall, radius 6 (`SH.Radius.s`), 8pt side padding, 7pt
   between its parts: the terminal glyph (`terminal`, 12pt), the title in Geist Mono 11.5 (semibold
   and `textPrimary` when selected, medium and `textSecondary` otherwise), then the selected tab's
   host and close. The selected tab sits on `bgSelected` with a `textPrimary` glyph; the others are
@@ -75,12 +75,12 @@ title; a client of an older host that has not done so draws such a tab as one ta
   its close (`xmark`, 9pt, `textTertiary`; tooltip "Close terminal"). A remote tab names its host
   while selected, after its title: `desktopcomputer` at 10pt and the host's name at 10.5pt, both
   `textTertiary`, 3pt apart ("zsh  build-01").
-- **Tab states** (`NWTerminalTab.Activity`; TerminalTab · states: "Remote tabs name their host.
+- **Tab states** (`SHTerminalTab.Activity`; TerminalTab · states: "Remote tabs name their host.
   Running and exited tabs say so without opening them"):
   - **Idle:** the program at its prompt names the tab ("zsh"), else the folder the terminal
     started in, else "Terminal".
   - **Running:** the running command names the tab ("make dev", at most 40 characters), and an 11pt
-    `running` spinner (`NWSpinnerStyle`) takes the glyph's place.
+    `running` spinner (`SHSpinnerStyle`) takes the glyph's place.
   - **New output while you were away:** a 6pt `running` dot after the title, for output printed
     while the tab or the panel was off screen. It can sit beside the spinner (TerminalSplit's "make
     dev").
@@ -123,7 +123,7 @@ title; a client of an older host that has not done so draws such a tab as one ta
   layout seen for the first time with terminals shows its panel. The panel closes with its last
   terminal, however it goes (its tab closed, the agent's `terminal_close`, its shell exiting), and
   the thread takes the layout again.
-- **Height:** 330pt by default (`NWTerminalMetrics.panelHeight`), persisted app-wide
+- **Height:** 330pt by default (`SHTerminalMetrics.panelHeight`), persisted app-wide
   (`shepherd.terminalPanelHeight`). The panel's top edge is the divider (Divider: "Drag the top
   edge. It snaps at a third, half and two-thirds; double-click resets to 330pt"): a 9pt hit area
   centered on the edge with the row-resize pointer. It snaps within 12pt of a third, half and
@@ -135,11 +135,11 @@ title; a client of an older host that has not done so draws such a tab as one ta
   at its size, still mounted (its draft, scroll and stream stay). With no terminal there is nothing
   to maximize, and the shortcut only beeps. Restore (the same button, or ⇧⌘↩)
   brings it and its composer back, and so does hiding the panel. The divider doesn't drag while
-  maximized. The folded thread keeps one line above the strip (`NWTerminalFoldedThread`;
+  maximized. The folded thread keeps one line above the strip (`SHTerminalFoldedThread`;
   TerminalPanel · maximized: "The thread folds to one line. Its composer comes back when you
   restore"): 40pt on `bgWindow` with a `lineSubtle` hairline under it, 14pt leading and 10pt
   trailing padding and 10pt gaps, holding the thread's title in Geist 12.5 semibold, its
-  `NWStatusPill` ("Idle"), and at the trailing end a 24pt "Show the thread" icon button
+  `SHStatusPill` ("Idle"), and at the trailing end a 24pt "Show the thread" icon button
   (`chevron.down`, `textSecondary`, its tooltip with ⇧⌘↩) that restores. Only a maximized layout
   reads its agent's state, so a status report reruns no other layout.
 - **Nothing remounts:** every terminal is placed whether it shows or not (a hidden tab or panel keeps
@@ -151,7 +151,7 @@ title; a client of an older host that has not done so draws such a tab as one ta
 - **Send output to the agent** (TerminalPane, drawn there on a split terminal and here on the
   tab's one terminal; TerminalStates: "anything you select can go to the
   agent"). Selecting text in a terminal of a thread's layout shows a floating bar beside the
-  selection (`NWTerminalSelectionBar`, `TerminalSelectionOverlay`): `bgRaised` with a 1px
+  selection (`SHTerminalSelectionBar`, `TerminalSelectionOverlay`): `bgRaised` with a 1px
   `lineStrong` border, radius 9, 4pt padding and 4pt gaps, and the popover's shadow, hanging 4pt
   under the selection's last line at the terminal's trailing edge, 8pt in (over its first line where
   there is no room below). It holds **Add to message** (primary, 24pt: a `lantern` fill, a 13pt
@@ -161,12 +161,12 @@ title; a client of an older host that has not done so draws such a tab as one ta
   buttons are radius 6 with 8pt side padding and 6pt between glyph and label. The bar goes when
   the selection does (the next click, key or drag) and after either button. The selection itself
   reads as selected lines on `running` at 13%. A host's utility terminal (no thread) has no bar.
-- **New terminal menu** (`NWTerminalMenu`, `TerminalMenuLayer`; NewTerminalMenu: "+ or
+- **New terminal menu** (`SHTerminalMenu`, `TerminalMenuLayer`; NewTerminalMenu: "+ or
   right-click"). + and a right-click (or ⌃-click) on a tab open a 290pt menu hanging 4pt under the
   strip from + or that tab: `bgRaised`, a 1px `lineStrong` border, radius 10, 6pt padding and the
-  popover's shadow. Its rows are the Changes menus' (`NWChangesMenuRow`): radius 6 with 8pt side
+  popover's shadow. Its rows are the Changes menus' (`SHChangesMenuRow`): radius 6 with 8pt side
   padding and 9pt gaps, a 13pt `textSecondary` glyph, the title in `ui` (12.5pt), and the chord as
-  keycaps (`NWKeycap`) at the trailing end; hovering fills `bgHover`. Two-line rows are at least
+  keycaps (`SHKeycap`) at the trailing end; hovering fills `bgHover`. Two-line rows are at least
   36pt, with a detail in 11pt `textTertiary` under the title; one-line rows are 30pt. A click
   anywhere else or esc closes it. In order:
   - "New terminal in the worktree", detail "<space> on <host>" ("payments on This Mac"; `terminal`),

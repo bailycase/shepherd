@@ -20,14 +20,14 @@ struct ExtensionMessageTests {
              .sendPaneInput, .readPane, .requestReview, .listAgents, .sendToAgent, .spawnAgent, .moveAgent, .peerMessageReceived,
              .coordinateAgent, .agentResponse, .cancelAgentRequest, .createAutomation, .listAutomations,
              .updateAutomation, .deleteAutomation, .startAutomation, .stopAutomation, .suggestInstruction,
-             .designRead, .designWriteBoard, .designEditBoard, .designUpdateIndex, .designComments, .designCommentReply,
+             .designList, .designRead, .designWriteBoard, .designEditBoard, .designUpdateIndex, .designComments, .designCommentReply,
              .designEditBoards, .designSearch, .designCheckpoint, .designRender, .designExport, .designExtract,
              .designSystemRead, .designSystemWrite, .designProposeComments, .designGet, .designNote,
              .projectPublish, .projectRuntime, .helloBrowser, .browser, .registerProject, .refreshProjects, .addChildProject, .editProject, .deleteProject:
             return Wire.caseName(message)
         }
     }
-    static let caseCount = 59
+    static let caseCount = 60
     static let design = DesignID(rawValue: "d1")
 
     static let samples: [ExtensionMessage] = [
@@ -85,6 +85,7 @@ struct ExtensionMessageTests {
         .stopAutomation(id: 15, automationID: automation),
         .suggestInstruction(id: 20, agentID: agent, line: "- Run `go mod tidy` with any dependency bump.",
                             reason: "CI failed twice on a stale go.sum.", file: .appendSystem),
+        .designList(id: 80, agentID: agent),
         .designRead(id: 21, agentID: agent, designID: design, path: "flows/A-phone.dc.html"),
         .designWriteBoard(id: 22, agentID: agent, designID: design, path: "A.dc.html",
                           source: "<!doctype html>\n<x-dc><div style=\"width: 390px\">“Hi” · 👋</div></x-dc>\n", baseRevision: 7),
@@ -264,6 +265,8 @@ struct ExtensionMessageTests {
          .suggestInstruction(id: 2, agentID: agent, line: "- Ask for join keys first.", reason: "Two services re-ran.", file: nil)),
         (#"{"type":"suggestInstruction","id":3,"agentID":"a1","line":"- Never force-push.","file":"APPEND_SYSTEM.md"}"#,
          .suggestInstruction(id: 3, agentID: agent, line: "- Never force-push.", reason: "", file: .appendSystem)),
+        (#"{"type":"designList","id":80,"agentID":"a1"}"#,
+         .designList(id: 80, agentID: agent)),
         // The design extension spreads its payload first, then id, agentID and designID.
         (#"{"type":"designRead","id":1,"agentID":"a1","designID":"d1"}"#,
          .designRead(id: 1, agentID: agent, designID: design, path: nil)),
@@ -332,8 +335,8 @@ struct ExtensionMessageTests {
         // A namespace outside the grammar still decodes, so the server can answer it.
         (#"{"type":"designSystemRead","namespace":"Acme Web","id":9,"agentID":"a1","designID":"d1"}"#,
          .designSystemRead(id: 9, agentID: agent, designID: design, namespace: "Acme Web")),
-        (#"{"type":"designSystemWrite","system":{"namespace":"night-watch","install":true},"id":10,"agentID":"a1","designID":"d1"}"#,
-         .designSystemWrite(id: 10, agentID: agent, designID: design, system: DesignSystemWrite(namespace: "night-watch", install: true))),
+        (#"{"type":"designSystemWrite","system":{"namespace":"shepherd-design","install":true},"id":10,"agentID":"a1","designID":"d1"}"#,
+         .designSystemWrite(id: 10, agentID: agent, designID: design, system: DesignSystemWrite(namespace: "shepherd-design", install: true))),
         // markup_propose's frame; an element that isn't an id still decodes, so the server can answer it.
         (#"{"type":"designProposeComments","call":"call-7","proposals":[{"element":"A.dc.html#18:1/1/1","text":"Counts too"},{"element":"?","text":"x"}],"id":11,"agentID":"a1","designID":"d1"}"#,
          .designProposeComments(id: 11, agentID: agent, designID: design, call: "call-7",
@@ -399,14 +402,14 @@ struct ExtensionReplyTests {
     static func caseName(_ reply: ExtensionReply) -> String {
         switch reply {
         case .parentInput, .childCommand, .childStart, .childScope, .projectChildren, .ok, .error, .panes, .paneOpened, .paneContent, .reviewResult, .automations,
-             .agents, .message, .agentRequest, .agentResult, .suggestion, .design, .designBoard, .designWritten, .designEdited,
+             .agents, .message, .agentRequest, .agentResult, .suggestion, .designList, .design, .designBoard, .designWritten, .designEdited,
              .designComments, .designComment, .designSystems, .designSystem, .designSystemWritten, .designProposals,
              .designBatchEdited, .designSearchResult, .designCheckpoints, .designRendered, .designExported, .designExtracted,
              .projectPublish, .projectRuntime, .designReference, .designNote, .browserResult, .projectResult:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 39
+    static let caseCount = 40
     static let system = DesignSystemSummary(
         info: DesignSystemInfo(namespace: "acme-web", title: "acme-web", revision: 3, createdAt: 1_000, updatedAt: 2_000,
                                syncedAt: 2_000, ownerDesignID: DesignID(rawValue: "d1"), spaceID: SpaceID(rawValue: "s1"),
@@ -465,6 +468,7 @@ struct ExtensionReplyTests {
                       request: AgentCoordinationRequest(operation: .steer, text: "[from: worker] change course")),
         .agentResult(id: 19, result: AgentCoordinationResult(text: "request cancelled", code: "cancelled")),
         .suggestion(id: 20, outcome: .dismissed),
+        .designList(id: 80, designs: [Design(id: DesignID(rawValue: "d1"), name: "Checkout", createdAt: 1)]),
         .design(id: 21, snapshot: snapshot),
         .designBoard(id: 22, board: DesignBoardSource(path: board, source: "<!doctype html>\n<x-dc>Hi</x-dc>\n", sha256: "5e1f", revision: 4)),
         .designWritten(id: 23, result: DesignWriteResult(revision: 5, changed: true, sha256: "9c0d", created: true,
@@ -479,7 +483,7 @@ struct ExtensionReplyTests {
                 roots: 2, root: DesignBoardCheck.Size(width: 1280, height: 800), preview: DesignBoardCheck.Size(width: 1280, height: 800),
                 frame: DesignBoardCheck.Size(width: 1280, height: 810),
                 diff: DesignTextDiff(added: 1, removed: 1, lines: ["-14 <p>old</p>", "+14 <p>new</p>"], more: 0), missingImports: ["Card"],
-                tokenSource: "night-watch", offSystem: [DesignTokenFinding(value: "#3a56d4", count: 2, lines: [14, 30], nearest: "--accent #3056d3")],
+                tokenSource: "shepherd-design", offSystem: [DesignTokenFinding(value: "#3a56d4", count: 2, lines: [14, 30], nearest: "--accent #3056d3")],
                 snapped: [DesignTokenReplacement(from: "13px", to: "var(--space-3)", line: 20, token: "12px")]))),
         .designBatchEdited(id: 38, result: DesignBatchResult(
             result: DesignWriteResult(revision: 9, changed: true, title: "Checkout funnel", boardCount: 3),
@@ -523,7 +527,7 @@ struct ExtensionReplyTests {
         ])),
         .designComment(id: 25, comment: comment),
         .designSystems(id: 26, listing: DesignSystemListing(
-            systems: [DesignSystemSummary(info: DesignSystemInfo(namespace: "night-watch", title: "Night Watch", revision: 1, createdAt: 0),
+            systems: [DesignSystemSummary(info: DesignSystemInfo(namespace: "shepherd-design", title: "Shepherd Design", revision: 1, createdAt: 0),
                                           builtIn: true, counts: DesignSystemCounts(colors: 31, type: 9, lengths: 12)), system],
             installed: [DesignSystemInstalled(namespace: "acme-web", title: "acme-web", shepherd: true, version: "3", tokens: tokens,
                                               tokensFile: "ds/acme-web/tokens.json"),

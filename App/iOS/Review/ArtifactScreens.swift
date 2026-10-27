@@ -12,26 +12,24 @@ extension EnvironmentValues {
     @Entry var openArtifact: ((String) -> Void)? = nil
 }
 
-/// How the thread opens an artifact: beside it on iPad (the docked pane's Artifacts tab), over it on iPhone.
+/// How the thread opens an artifact: beside it on iPad (the side pane's Artifacts tab), over it on iPhone.
 @MainActor
 enum ArtifactHooks {
     static func open(thread: AgentRef, path: String, navigator: MobileNavigator) {
         switch navigator.layout {
         case .pad:
             let store = ReviewStores.shared.store(for: thread)
-            store.padTab = .artifacts
             store.artifact = path
             store.padLayout = .docked
-            // The pane is already beside this thread when its review is the screen on top.
-            if case .review(.changes(thread, _))? = navigator.padPath.last { return }
-            navigator.open(.review(.changes(thread, file: nil)))
+            if navigator.padSelection != thread { navigator.open(.thread(thread)) }
+            navigator.sidePane.show(.artifacts)
         case .phone:
             navigator.present(.review(.artifact(thread, path: path)))
         }
     }
 
-    static func rows(_ artifacts: [NativeArtifact], now: Date = Date()) -> [NWArtifactRow] {
-        artifacts.map { NWArtifactRow(id: $0.path, name: $0.name, detail: $0.detail(now: now), symbol: $0.kind.symbol) }
+    static func rows(_ artifacts: [NativeArtifact], now: Date = Date()) -> [SHArtifactRow] {
+        artifacts.map { SHArtifactRow(id: $0.path, name: $0.name, detail: $0.detail(now: now), symbol: $0.kind.symbol) }
     }
 }
 
@@ -52,7 +50,7 @@ struct PadArtifactsPane: View {
         } else {
             // Ages are coarse ("6m ago"): the list redraws once a minute, and whenever the thread changes.
             TimelineView(.periodic(from: .now, by: 60)) { context in
-                NWArtifactList(ArtifactHooks.rows(artifacts, now: context.date), open: { store.artifact = $0 })
+                SHArtifactList(ArtifactHooks.rows(artifacts, now: context.date), open: { store.artifact = $0 })
             }
         }
     }
@@ -72,10 +70,10 @@ struct PhoneArtifactScreen: View {
                 ArtifactScreenBody(artifact: artifact, files: store.artifactFiles, served: store.supportedActions.contains("artifacts"),
                                    pad: false) { dismiss() }
             } else {
-                NWArtifactNotice(.unavailable)
+                SHArtifactNotice(.unavailable)
             }
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
     }
 }
 
@@ -88,7 +86,7 @@ struct ArtifactScreenBody: View {
     let served: Bool
     let pad: Bool
     let back: () -> Void
-    @State private var mode: NWArtifactMode = .preview
+    @State private var mode: SHArtifactMode = .preview
     @State private var state = Loaded.loading
     @State private var attempt = 0
     @State private var exporting = false
@@ -103,16 +101,16 @@ struct ArtifactScreenBody: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            NWArtifactBar(name: artifact.name, symbol: artifact.kind.symbol, hasPreview: artifact.kind.hasPreview, mode: $mode, pad: pad,
+            SHArtifactBar(name: artifact.name, symbol: artifact.kind.symbol, hasPreview: artifact.kind.hasPreview, mode: $mode, pad: pad,
                           back: back) {
                 Button { exporting = true } label: { Image(systemName: "square.and.arrow.down") }
-                    .buttonStyle(.nwIcon(size: NW.Height.touch - NW.Space.xs))
+                    .buttonStyle(.shIcon(size: SH.Height.touch - SH.Space.xs))
                     .disabled(data == nil)
                     .accessibilityLabel("Save a copy")
             }
             content
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .task(id: attempt) { await load() }
         // A rewrite of the file while it is open reads it again.
         .task(id: artifact.createdAt) { if case .ready = state { await load() } }
@@ -131,10 +129,10 @@ struct ArtifactScreenBody: View {
 
     @ViewBuilder private var content: some View {
         switch state {
-        case .loading: NWArtifactNotice(.loading)
-        case .unavailable: NWArtifactNotice(.unavailable)
-        case .failed(let message): NWArtifactNotice(.failed(message)) { attempt += 1 }
-        case .outdated: NWArtifactNotice(.failed("Update Shepherd on the host to open this thread's files."))
+        case .loading: SHArtifactNotice(.loading)
+        case .unavailable: SHArtifactNotice(.unavailable)
+        case .failed(let message): SHArtifactNotice(.failed(message)) { attempt += 1 }
+        case .outdated: SHArtifactNotice(.failed("Update Shepherd on the host to open this thread's files."))
         case .ready(let document, _): ArtifactContent(document: document, mode: mode)
         }
     }
@@ -157,25 +155,25 @@ struct ArtifactScreenBody: View {
 /// An artifact's content by kind and mode: Markdown through the thread's prose, HTML and SVG in the locked-down web view, the rest as source.
 struct ArtifactContent: View {
     let document: NativeArtifactDocument
-    let mode: NWArtifactMode
+    let mode: SHArtifactMode
 
     var body: some View {
         switch (document, mode) {
         case (.markdown(let blocks, _), .preview):
             ScrollView {
-                NWAgentProse(ProseView.proseBlocks(blocks), maxWidth: .infinity)
-                    .padding(NWArtifactMetrics.documentInset)
+                SHAgentProse(ProseView.proseBlocks(blocks), maxWidth: .infinity)
+                    .padding(SHArtifactMetrics.documentInset)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         case (.html(let html), .preview):
-            NWArtifactWebView(html: html)
+            SHArtifactWebView(html: html)
         case (.svg(let svg), .preview):
-            NWArtifactWebView(svg: svg)
+            SHArtifactWebView(svg: svg)
         case (.text(let text), _):
-            NWArtifactSource(text)
+            SHArtifactSource(text)
         default:
-            NWArtifactSource(document.source)
+            SHArtifactSource(document.source)
         }
     }
 }

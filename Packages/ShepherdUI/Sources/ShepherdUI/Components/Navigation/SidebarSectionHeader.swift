@@ -1,6 +1,6 @@
 import SwiftUI
 
-extension NWSidebarMetrics {
+extension SHSidebarMetrics {
     public static let sectionChevron: CGFloat = 9
     public static let sectionChevronStroke: CGFloat = sectionChevron / 8
     public static let sectionTop: CGFloat = 6
@@ -15,7 +15,7 @@ extension NWSidebarMetrics {
 }
 
 /// Ten measured rates, padded with inactivity before the first sample.
-struct NWSidebarActivityLine: Shape {
+struct SHSidebarActivityLine: Shape {
     var samples: [Double]
 
     func path(in rect: CGRect) -> Path {
@@ -32,9 +32,9 @@ struct NWSidebarActivityLine: Shape {
     }
 }
 
-/// SidebarSectionHeader, NWNavigation: the disclosure, title and adjacent count are one
+/// SidebarSectionHeader, SHNavigation: the disclosure, title and adjacent count are one
 /// button. Done's action is a separate button, so it never toggles the disclosure.
-public struct NWSidebarSectionHeader: View {
+public struct SHSidebarSectionHeader: View {
     let title: String
     let count: Int
     let isExpanded: Bool
@@ -44,7 +44,7 @@ public struct NWSidebarSectionHeader: View {
     let markAllSeen: (() -> Void)?
     /// A text chip trailing the title ("New project"), in the same pill as Mark all seen.
     let chip: (title: String, action: () -> Void)?
-    @Environment(\.nwDensity) private var density
+    @Environment(\.shDensity) private var density
 
     public init(_ title: String, count: Int, isExpanded: Bool, attention: Bool = false, pulse: Bool = false,
                 toggle: @escaping () -> Void, markAllSeen: (() -> Void)? = nil, chip: (title: String, action: () -> Void)? = nil) {
@@ -59,66 +59,66 @@ public struct NWSidebarSectionHeader: View {
     }
 
     public var body: some View {
-        let _ = NWRenderProbe.tick("sidebar.header")
-        HStack(spacing: NW.Space.s) {
+        let _ = SHRenderProbe.tick("sidebar.header")
+        HStack(spacing: SH.Space.s) {
             Button(action: toggle) {
-                HStack(spacing: NW.Space.s) {
+                HStack(spacing: SH.Space.s) {
                     Path { path in
-                        let unit = NWSidebarMetrics.sectionChevron / 16
+                        let unit = SHSidebarMetrics.sectionChevron / 16
                         path.move(to: CGPoint(x: 6 * unit, y: 3 * unit))
                         path.addLine(to: CGPoint(x: 11 * unit, y: 8 * unit))
                         path.addLine(to: CGPoint(x: 6 * unit, y: 13 * unit))
                     }
-                        .stroke(Color.nw.textTertiary, style: StrokeStyle(lineWidth: NWSidebarMetrics.sectionChevronStroke,
+                        .stroke(Color.sh.textTertiary, style: StrokeStyle(lineWidth: SHSidebarMetrics.sectionChevronStroke,
                                                                         lineCap: .round, lineJoin: .round))
-                        .frame(width: NWSidebarMetrics.sectionChevron, height: NWSidebarMetrics.sectionChevron)
+                        .frame(width: SHSidebarMetrics.sectionChevron, height: SHSidebarMetrics.sectionChevron)
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                        .nwAnimation(.disclosure, value: isExpanded)
+                        .shAnimation(.disclosure, value: isExpanded)
                         .accessibilityHidden(true)
                     Text(title)
-                        .font(.nwSans(NWSidebarMetrics.sectionTitleFont, .medium))
-                        .foregroundStyle(attention ? Color.nw.lanternText : Color.nw.textSecondary)
+                        .font(.shSans(SHSidebarMetrics.sectionTitleFont, .medium))
+                        .foregroundStyle(attention ? Color.sh.lanternText : Color.sh.textSecondary)
                         .lineLimit(1)
                         .fixedSize()
                     Text("\(count)")
-                        .font(.nwMono(NWSidebarMetrics.sectionCountFont))
-                        .foregroundStyle(attention ? Color.nw.lanternText : Color.nw.textTertiary)
+                        .font(.shMono(SHSidebarMetrics.sectionCountFont))
+                        .foregroundStyle(attention ? Color.sh.lanternText : Color.sh.textTertiary)
                         .monospacedDigit()
-                        .nwContentTransition(.numeric())
-                        .nwAnimation(.content, value: count)
+                        .shContentTransition(.numeric())
+                        .shAnimation(.content, value: count)
                         .fixedSize()
                     if pulse && !isExpanded {
-                        NWLayerGlowDot(color: .nw.running)
-                            .frame(width: NWSidebarMetrics.sectionPulse, height: NWSidebarMetrics.sectionPulse)
+                        SHLayerGlowDot(color: .sh.running)
+                            .frame(width: SHSidebarMetrics.sectionPulse, height: SHSidebarMetrics.sectionPulse)
                             .accessibilityHidden(true)
                     }
                     Spacer(minLength: 0)
                 }
-                .frame(maxWidth: .infinity, minHeight: max(density.rowHeight, NW.Height.controlS))
+                .frame(maxWidth: .infinity, minHeight: max(density.rowHeight, SH.Height.controlS))
                 .contentShape(Rectangle())
             }
-            .buttonStyle(NWPlainPressStyle())
+            .buttonStyle(SHPlainPressStyle())
             .accessibilityLabel("\(title), \(count), \(isExpanded ? "expanded" : "collapsed")\(pulse && !isExpanded ? ", running" : "")")
             .accessibilityAddTraits(.isHeader)
-            if let chip { NWSidebarHeaderChip(chip.title, action: chip.action) }
+            if let chip { SHSidebarHeaderChip(chip.title, action: chip.action) }
             if let markAllSeen {
                 Button(action: markAllSeen) {
                     Text("Mark all seen")
-                        .font(.nwSans(NWSidebarMetrics.sectionActionFont))
-                        .foregroundStyle(.nw.textSecondary)
+                        .font(.shSans(SHSidebarMetrics.sectionActionFont))
+                        .foregroundStyle(.sh.textSecondary)
                         .fixedSize()
-                        .padding(.horizontal, NW.Space.s)
-                        .frame(height: NWSidebarMetrics.markSeenHeight)
-                        .background(Color.nw.bgHover, in: RoundedRectangle(cornerRadius: NW.Radius.xs))
-                        .frame(minHeight: NW.Height.controlS)
+                        .padding(.horizontal, SH.Space.s)
+                        .frame(height: SHSidebarMetrics.markSeenHeight)
+                        .background(Color.sh.bgHover, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
+                        .frame(minHeight: SH.Height.controlS)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(NWPlainPressStyle())
+                .buttonStyle(SHPlainPressStyle())
                 .accessibilityLabel("Mark all seen")
                 .help("Move finished threads to Recents")
             }
         }
         .padding(.horizontal, density.sidebarRowPadding)
-        .padding(.top, NWSidebarMetrics.sectionTop)
+        .padding(.top, SHSidebarMetrics.sectionTop)
     }
 }

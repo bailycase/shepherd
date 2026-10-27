@@ -13,7 +13,7 @@ request squash auto-merge once ready for review; required CI and branch protecti
 The auto-merge workflow requires the `AUTO_MERGE_TOKEN` Actions secret with repository Contents
 and Pull requests read/write permissions so merges still trigger release workflows.
 Every push to `nightly` ships a Shepherd Nightly build. Nightly pushes build and publish without running tests, including the release
-test preflight. Signing, notarization and artifact verification still run. CI tests pull requests
+test preflight. Signing, notarization and artifact verification still run. CI tests pull requests targeting `master`
 and pushes to `master`; its daily run also tests `master` (docs/testing.md). A separate hosted
 `Build cache` workflow compiles reusable test products on relevant Nightly pushes without
 running tests. Release jobs do not depend on it. It maintains bounded retention of recognized
@@ -67,8 +67,11 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   manual run on `nightly` with the `testflight` input
   (`gh workflow run release.yml --ref nightly -f testflight=true`) uploads it to TestFlight
   internal testing and builds no Mac app. A plain manual run plans like a push. The `testflight`
-  job runs on the `xcode-27` runner, archives unsigned, and cloud-signs at export with the
-  `APP_STORE_CONNECT_*` key. The plan refuses it on any other ref, without the key, or on a
+  job runs on the `xcode-27` runner. It archives unsigned, seals the archive with its push
+  entitlements using an ad-hoc signature, and cloud-signs a local IPA with the
+  `APP_STORE_CONNECT_*` key. It enables Push Notifications on the existing App ID if needed,
+  verifies production APNs entitlements in both the distribution signature and provisioning
+  profile, then uploads the verified IPA. The plan refuses it on any other ref, without the key, or on a
   re-run (which keeps the build number; start a new run). Its version is the project's
   `MARKETING_VERSION`, and its build number is the run number. Beta tags (external testing) and
   stable tags (the App Store) upload nothing yet ([docs/ios](ios/README.md#distribution)).

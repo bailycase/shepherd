@@ -90,6 +90,7 @@ cat > "$app/Info.plist" <<'PLIST'
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>MinimumOSVersion</key><string>27.0</string>
 <key>UILaunchScreen</key><dict/>
+<key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
 <key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>
 <key>UIRequiresFullScreen</key><FULL_SCREEN/>
 <key>UIApplicationSceneManifest</key><dict><key>UIApplicationSupportsMultipleScenes</key><MULTIPLE_WINDOWS/></dict>
@@ -100,7 +101,7 @@ PLIST
 full_screen=true; if [[ "$windows" == true ]]; then full_screen=false; fi
 sed -i '' -e "s|<MULTIPLE_WINDOWS/>|<$windows/>|" -e "s|<FULL_SCREEN/>|<$full_screen/>|" "$app/Info.plist"
 sources=()
-while IFS= read -r file; do sources+=("$file"); done < <(find App/iOS -name '*.swift' ! -path 'App/iOS/App/ShepherdIOSApp.swift' | sort)
+while IFS= read -r file; do sources+=("$file"); done < <(find App/iOS App/Glance -name '*.swift' ! -path 'App/iOS/App/ShepherdIOSApp.swift' | sort)
 xcrun --sdk iphonesimulator swiftc -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" -target arm64-apple-ios27.0-simulator -swift-version 5 \
     -Onone -I "$products" \
     "$products/ShepherdCore.o" "$products/ShepherdProtocol.o" "$products/ShepherdRemote.o" "$products/ShepherdUI.o" \

@@ -40,6 +40,15 @@ struct NativeProjectToolActivityTests {
         #expect(nativeActivityBursts([call("project_read", output: project), call("project_read", output: project)]).count == 1, "consecutive calls of one tool still merge")
     }
 
+    @Test func directSpaceLinksAreNotPresentedAsApprovalRequests() {
+        let linked = nativeActivityBurst([call("project_propose_space", output: #"{"spaceProposals":[{"phase":"accepted"}]}"#)])
+        #expect(linked.label == "Added a space")
+        let pending = nativeActivityBurst([call("project_propose_space", output: #"{"spaceProposals":[{"phase":"pending"}]}"#)])
+        #expect(pending.label == "Asked to add a space")
+        let listed = nativeActivityBurst([call("project_list_spaces", output: #"{"spaces":[]}"#)])
+        #expect(listed.label == "Listed spaces")
+    }
+
     @Test func aRefusalShowsTheToolsOwnMessageAndAnUnparseableResultInventsNothing() {
         let failed = nativeActivityBurst([call("project_publish", arguments: "{}", output: #"{"error":"publication_scope","message":"Only an active native-scoped Project worker may publish."}"#, error: true)])
         #expect(failed.state == .failed && failed.label == "Couldn’t publish")

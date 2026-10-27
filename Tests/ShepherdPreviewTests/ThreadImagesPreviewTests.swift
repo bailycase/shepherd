@@ -12,7 +12,7 @@ import Testing
 
 /// Thread images (ThreadImagesComposer, ThreadImageOpen) drawn from the real producers: the
 /// composer's `ComposerAttachments` through `ComposerImageStrip`, and `ImageViewerState` through
-/// `NWImageViewer`, in both appearances at text scale 1 and 1.3. The pictures are real PNGs the
+/// `SHImageViewer`, in both appearances at text scale 1 and 1.3. The pictures are real PNGs the
 /// test draws, so the thumbnails and the size labels come from bytes, not from board strings.
 @Suite("Thread images previews", .mainActorExclusive,
        .enabled(if: Preview.enabled && !Preview.liveModel, "set SHEPHERD_PREVIEW_DIR (without SHEPHERD_LIVE_MODEL) to render previews"))
@@ -77,11 +77,11 @@ struct ThreadImagesPreviewTests {
         try await Preview.renderMatrix("thread-images-composer-\(state)", size: CGSize(width: 760, height: 160)) {
             VStack(alignment: .leading, spacing: 0) {
                 ComposerImageStrip(attachments: attachments, open: { _ in }, remove: { _ in })
-                    .padding(NW.Space.l)
+                    .padding(SH.Space.l)
                 Spacer(minLength: 0)
             }
             .frame(width: 760, height: 160, alignment: .topLeading)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
     }
 
@@ -93,13 +93,13 @@ struct ThreadImagesPreviewTests {
                                       addToMessage: { _ in })
         if state == "second" { viewer.next() }
         let image = try #require(viewer.current)
-        let content: NWImageViewer.Content = switch state {
+        let content: SHImageViewer.Content = switch state {
         case "failed": .failed("This image can't be shown.")
         case "loading": .loading
         default: image.picture.map { .picture(Image(nsImage: $0)) } ?? .failed("This image can't be shown.")
         }
         try await Preview.renderMatrix("thread-images-viewer-\(state)", size: CGSize(width: 1000, height: 700)) {
-            NWImageViewer(name: image.name, facts: image.facts, position: viewer.position, content: content,
+            SHImageViewer(name: image.name, facts: image.facts, position: viewer.position, content: content,
                           caption: "\(viewer.origin) · Esc to close",
                           previous: viewer.hasPrevious ? {} : nil, next: viewer.hasNext ? {} : nil,
                           copy: {}, addToMessage: {}, showInFinder: {}, close: {})
@@ -148,10 +148,10 @@ struct ThreadImagesPreviewTests {
                 UserTurn(bubbles: [UserTurn.Bubble(text: "The pay button jumps when the keyboard opens, and the totals card overlaps on small phones.",
                                                    images: sent.count, caption: "3:02 PM", pending: false, imageRefs: sent)], hover: MessageHover(hovering: true))
                 if !made.isEmpty {
-                    Text("Refunds doubled on Tuesday because the retry job re-sent 412 webhooks after a deploy.").font(.nw(.body))
+                    Text("Refunds doubled on Tuesday because the retry job re-sent 412 webhooks after a deploy.").font(.sh(.body))
                     // What the agent turn draws for an `images` item: the neutral count, then the pictures (ThreadImagesReceived).
-                    VStack(alignment: .leading, spacing: NW.Space.m) {
-                        NWActivityLine(kind: .images, label: nativeCount(made.count, "image"), meta: "")
+                    VStack(alignment: .leading, spacing: SH.Space.m) {
+                        SHActivityLine(kind: .images, label: nativeCount(made.count, "image"), meta: "")
                         ReceivedImages(refs: made)
                     }
                 }
@@ -159,7 +159,7 @@ struct ThreadImagesPreviewTests {
             .environment(\.threadImages, images)
             .frame(width: 820, alignment: .leading)
             .padding(24)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
     }
 

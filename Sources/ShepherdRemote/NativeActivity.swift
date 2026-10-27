@@ -1,7 +1,7 @@
 import Foundation
 import ShepherdProtocol
 
-// Activity lines (NWThread, ToolRows): a turn's tool calls as one quiet line per burst of work,
+// Activity lines (SHThread, ToolRows): a turn's tool calls as one quiet line per burst of work,
 // consecutive calls of one kind merged, with the calls behind it. Pure derivations: every string
 // a line, its calls, or the turn's changes card shows is built here once per turn, never in a
 // view body.
@@ -769,7 +769,7 @@ public func nativeActivityBurst(_ calls: [NativeActivityCall]) -> NativeActivity
     var meta: [String] = []
     switch state {
     case .running:
-        label = progressiveLabel(first)
+        label = nativeRunningLabel(first)
         meta = [first.detail]
     case .failed:
         label = failedLabel(first)
@@ -798,7 +798,7 @@ public func nativeActivityBurst(_ calls: [NativeActivityCall]) -> NativeActivity
                                accessibilityLabel: ([label] + meta + [word]).joined(separator: ", "))
 }
 
-private func progressiveLabel(_ call: NativeActivityCall) -> String {
+func nativeRunningLabel(_ call: NativeActivityCall) -> String {
     switch call.kind {
     case .explore:
         switch call.explore {

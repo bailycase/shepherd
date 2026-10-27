@@ -9,8 +9,7 @@ import ImageIO
 
 /// The side pane's Files tab (FileOpenSplit board): the space's file tree on the right,
 /// a code/image viewer on the left. Read-only browser of the local workspace.
-/// Remote threads show an unavailable message — the transport for arbitrary file reads
-/// is not wired (gap: remote file browsing).
+/// A remote thread's tree reads its host over `files.v1`; a host without it shows an unavailable message.
 struct FilesTab: View {
     let model: FileTreeModel
     @State private var showTree = true
@@ -43,13 +42,13 @@ struct FilesTab: View {
             }
             .coordinateSpace(name: coordSpace)
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .overlay(alignment: .topTrailing) {
             if !showTree && model.selectedPath == nil {
                 Button { showTree = true } label: {
                     Image(systemName: "sidebar.right")
                         .font(.system(size: AppLayout.Files.showTreeIconSize))
-                        .foregroundStyle(Color.nw.textTertiary)
+                        .foregroundStyle(Color.sh.textTertiary)
                 }
                 .buttonStyle(.plain)
                 .frame(width: AppLayout.Files.toggleTreeSize, height: AppLayout.Files.toggleTreeSize)
@@ -62,7 +61,7 @@ struct FilesTab: View {
     }
 
     private func treeResizeHandle(panelWidth: CGFloat, maxTree: CGFloat) -> some View {
-        Color.nw.lineSubtle
+        Color.sh.lineSubtle
             .frame(width: AppLayout.dividerWidth)
             .overlay {
                 Color.clear
@@ -122,20 +121,20 @@ struct FilesTab: View {
             }
         }
         .frame(height: AppLayout.Files.tabHeight)
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .overlay(alignment: .bottom) {
-            Color.nw.lineSubtle.frame(height: 1)
+            Color.sh.lineSubtle.frame(height: 1)
         }
     }
 
     private var emptyState: some View {
-        VStack(spacing: NW.Space.m) {
-            Image(systemName: NWGlyph.document.symbolName)
+        VStack(spacing: SH.Space.m) {
+            Image(systemName: SHGlyph.document.symbolName)
                 .font(.system(size: AppLayout.Files.emptyIconSize, weight: .light))
-                .foregroundStyle(Color.nw.textTertiary)
+                .foregroundStyle(Color.sh.textTertiary)
             Text("Select a file to view")
-                .font(.nw(.caption))
-                .foregroundStyle(Color.nw.textTertiary)
+                .font(.sh(.caption))
+                .foregroundStyle(Color.sh.textTertiary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -150,11 +149,11 @@ private struct FileTabView: View {
     let close: () -> Void
 
     var body: some View {
-        HStack(spacing: NW.Space.s) {
+        HStack(spacing: SH.Space.s) {
             Button(action: select) {
                 Text(tab.name)
-                    .font(.nw(.code))
-                    .foregroundStyle(isActive ? Color.nw.textPrimary : Color.nw.textSecondary)
+                    .font(.sh(.code))
+                    .foregroundStyle(isActive ? Color.sh.textPrimary : Color.sh.textSecondary)
                     .lineLimit(1)
             }
             .buttonStyle(.plain)
@@ -162,22 +161,22 @@ private struct FileTabView: View {
             Button(action: close) {
                 Image(systemName: "xmark")
                     .font(.system(size: AppLayout.Files.tabCloseFontSize, weight: .semibold))
-                    .foregroundStyle(Color.nw.textTertiary)
+                    .foregroundStyle(Color.sh.textTertiary)
                     .frame(width: AppLayout.Files.tabCloseSize, height: AppLayout.Files.tabCloseSize)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Close \(tab.name)")
         }
-        .padding(.horizontal, NW.Space.m)
+        .padding(.horizontal, SH.Space.m)
         .frame(height: AppLayout.Files.tabHeight)
-        .background(isActive ? Color.nw.bgBase : Color.clear)
+        .background(isActive ? Color.sh.bgBase : Color.clear)
         .overlay(alignment: .bottom) {
             if isActive {
-                Color.nw.running.frame(height: 2)
+                Color.sh.running.frame(height: 2)
             }
         }
         .overlay(alignment: .trailing) {
-            Color.nw.lineSubtle.frame(width: 1)
+            Color.sh.lineSubtle.frame(width: 1)
         }
     }
 }
@@ -205,7 +204,7 @@ private struct FileViewerContent: View {
     }
 
     private var fileHeader: some View {
-        HStack(spacing: NW.Space.m) {
+        HStack(spacing: SH.Space.m) {
             filePathLabel
             Spacer()
             viewerToolbar
@@ -213,44 +212,44 @@ private struct FileViewerContent: View {
             Button(action: toggleTree) {
                 Image(systemName: "sidebar.right")
                     .font(.system(size: AppLayout.Files.showTreeIconSize))
-                    .foregroundStyle(showTree ? Color.nw.textPrimary : Color.nw.textSecondary)
+                    .foregroundStyle(showTree ? Color.sh.textPrimary : Color.sh.textSecondary)
             }
             .buttonStyle(.plain)
             .frame(width: AppLayout.Files.toggleTreeSize, height: AppLayout.Files.toggleTreeSize)
-            .background(showTree ? Color.nw.bgHover : Color.clear, in: RoundedRectangle(cornerRadius: NW.Radius.xs))
+            .background(showTree ? Color.sh.bgHover : Color.clear, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
             .help(showTree ? "Hide file tree" : "Show file tree")
             .accessibilityLabel(showTree ? "Hide file tree" : "Show file tree")
             .focusable()
             .focusEffectDisabled()
         }
         .frame(height: AppLayout.Files.headerHeight)
-        .padding(.horizontal, NW.Space.l)
-        .background(Color.nw.bgWindow)
+        .padding(.horizontal, SH.Space.l)
+        .background(Color.sh.bgWindow)
         .overlay(alignment: .bottom) {
-            Color.nw.lineSubtle.frame(height: 1)
+            Color.sh.lineSubtle.frame(height: 1)
         }
     }
 
     @ViewBuilder
     private var viewerToolbar: some View {
-        HStack(spacing: NW.Space.xs) {
+        HStack(spacing: SH.Space.xs) {
             // Source wrapping is independent of Markdown's rendered layout.
             if case .text = model.selectedContent, !(isMarkdown && settings.filesMarkdownPreview) {
                 Button { settings.filesWordWrap.toggle() } label: {
                     Image(systemName: "arrow.turn.down.left")
                         .font(.system(size: AppLayout.Files.toolbarIconSize))
-                        .foregroundStyle(settings.filesWordWrap ? Color.nw.textPrimary : Color.nw.textTertiary)
+                        .foregroundStyle(settings.filesWordWrap ? Color.sh.textPrimary : Color.sh.textTertiary)
                 }
                 .buttonStyle(.plain)
                 .frame(width: AppLayout.Files.toolbarButtonSize, height: AppLayout.Files.toolbarButtonSize)
-                .background(settings.filesWordWrap ? Color.nw.bgHover : Color.clear,
-                            in: RoundedRectangle(cornerRadius: NW.Radius.xs))
+                .background(settings.filesWordWrap ? Color.sh.bgHover : Color.clear,
+                            in: RoundedRectangle(cornerRadius: SH.Radius.xs))
                 .help(settings.filesWordWrap ? "Disable word wrap" : "Enable word wrap")
                 .accessibilityLabel("Word wrap")
                 .accessibilityValue(settings.filesWordWrap ? "On" : "Off")
                 .accessibilityAddTraits(.isToggle)
                 .focusable()
-                .nwFocusRing(radius: NW.Radius.xs)
+                .shFocusRing(radius: SH.Radius.xs)
             }
 
             // Markdown preview toggle (only .md / .markdown files)
@@ -258,18 +257,18 @@ private struct FileViewerContent: View {
                 Button { settings.filesMarkdownPreview.toggle() } label: {
                     Image(systemName: "doc.richtext")
                         .font(.system(size: AppLayout.Files.toolbarIconSize))
-                        .foregroundStyle(settings.filesMarkdownPreview ? Color.nw.textPrimary : Color.nw.textTertiary)
+                        .foregroundStyle(settings.filesMarkdownPreview ? Color.sh.textPrimary : Color.sh.textTertiary)
                 }
                 .buttonStyle(.plain)
                 .frame(width: AppLayout.Files.toolbarButtonSize, height: AppLayout.Files.toolbarButtonSize)
-                .background(settings.filesMarkdownPreview ? Color.nw.bgHover : Color.clear,
-                            in: RoundedRectangle(cornerRadius: NW.Radius.xs))
+                .background(settings.filesMarkdownPreview ? Color.sh.bgHover : Color.clear,
+                            in: RoundedRectangle(cornerRadius: SH.Radius.xs))
                 .help(settings.filesMarkdownPreview ? "Show source" : "Preview Markdown")
                 .accessibilityLabel("Markdown preview")
                 .accessibilityValue(settings.filesMarkdownPreview ? "On" : "Off")
                 .accessibilityAddTraits(.isToggle)
                 .focusable()
-                .nwFocusRing(radius: NW.Radius.xs)
+                .shFocusRing(radius: SH.Radius.xs)
             }
         }
     }
@@ -282,13 +281,13 @@ private struct FileViewerContent: View {
         HStack(spacing: 0) {
             if !dir.isEmpty && dir != "." {
                 Text(dir + "/")
-                    .font(.nw(.code))
-                    .foregroundStyle(Color.nw.textSecondary)
+                    .font(.sh(.code))
+                    .foregroundStyle(Color.sh.textSecondary)
             }
             Text(name)
-                .font(.nw(.code))
+                .font(.sh(.code))
                 .fontWeight(.medium)
-                .foregroundStyle(Color.nw.textPrimary)
+                .foregroundStyle(Color.sh.textPrimary)
                 .layoutPriority(1)
         }
         .lineLimit(1)
@@ -297,7 +296,7 @@ private struct FileViewerContent: View {
 
     @ViewBuilder
     private var metadataBar: some View {
-        HStack(spacing: NW.Space.m) {
+        HStack(spacing: SH.Space.m) {
                 if case .text(let lines, _) = model.selectedContent {
                     Text("\(lines.count) lines")
                 }
@@ -308,28 +307,28 @@ private struct FileViewerContent: View {
                     Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
                 }
             }
-            .font(.nw(.caption))
-            .foregroundStyle(Color.nw.textTertiary)
+            .font(.sh(.caption))
+            .foregroundStyle(Color.sh.textTertiary)
             .frame(height: AppLayout.Files.metadataHeight)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, NW.Space.l)
+            .padding(.horizontal, SH.Space.l)
             .overlay(alignment: .bottom) {
-                Color.nw.lineSubtle.frame(height: 1)
+                Color.sh.lineSubtle.frame(height: 1)
             }
     }
 
     @ViewBuilder
     private var contentArea: some View {
         if let error = model.selectedError {
-            VStack(spacing: NW.Space.m) {
+            VStack(spacing: SH.Space.m) {
                 Image(systemName: "exclamationmark.triangle")
                     .font(.system(size: AppLayout.Files.errorIconSize, weight: .light))
-                    .foregroundStyle(Color.nw.textTertiary)
+                    .foregroundStyle(Color.sh.textTertiary)
                 Text(error)
-                    .font(.nw(.caption))
-                    .foregroundStyle(Color.nw.textSecondary)
+                    .font(.sh(.caption))
+                    .foregroundStyle(Color.sh.textSecondary)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal, NW.Space.xxl)
+                    .padding(.horizontal, SH.Space.xxl)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let content = model.selectedContent {
@@ -399,7 +398,7 @@ private struct CodeTextView: NSViewRepresentable {
         text.drawsBackground = false
         text.wantsLayer = true
         text.clipsToBounds = true
-        text.textContainerInset = NSSize(width: NW.Space.m, height: NW.Space.m)
+        text.textContainerInset = NSSize(width: SH.Space.m, height: SH.Space.m)
         text.isHorizontallyResizable = true
         text.isVerticallyResizable = true
         text.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
@@ -431,9 +430,9 @@ private struct CodeTextView: NSViewRepresentable {
         coordinator.currentKey = key
         coordinator.highlightTask?.cancel()
 
-        NWFonts.register()
+        SHFonts.register()
         let size = AppLayout.Files.codeFontSize * scale
-        let font = NSFont(name: NWFonts.monoFamily, size: size)
+        let font = NSFont(name: SHFonts.monoFamily, size: size)
             ?? NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
         let style = NSMutableParagraphStyle()
         style.minimumLineHeight = AppLayout.Files.lineHeight * scale
@@ -457,7 +456,7 @@ private struct CodeTextView: NSViewRepresentable {
         text.isHorizontallyResizable = !wrap
         text.textStorage?.setAttributedString(NSAttributedString(
             string: lines.joined(separator: "\n"),
-            attributes: [.font: font, .foregroundColor: NSColor(Color.nw.textPrimary), .paragraphStyle: style]
+            attributes: [.font: font, .foregroundColor: NSColor(Color.sh.textPrimary), .paragraphStyle: style]
         ))
         text.sizeToFit()
         if wrap {
@@ -579,8 +578,8 @@ private final class FilesTextView: NSTextView {
             return offset
         }
         let digits = max(2, String(lines.count).count)
-        gutterWidth = CGFloat(digits) * ("0" as NSString).size(withAttributes: [.font: font]).width + NW.Space.m * 2
-        textContainerInset = NSSize(width: gutterWidth + NW.Space.m, height: NW.Space.m)
+        gutterWidth = CGFloat(digits) * ("0" as NSString).size(withAttributes: [.font: font]).width + SH.Space.m * 2
+        textContainerInset = NSSize(width: gutterWidth + SH.Space.m, height: SH.Space.m)
         needsDisplay = true
     }
 
@@ -607,7 +606,7 @@ private final class FilesTextView: NSTextView {
             if lineStarts[mid] <= characters.location { low = mid + 1 } else { high = mid }
         }
         var index = max(0, low - 1)
-        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor(Color.nw.textTertiary)]
+        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor(Color.sh.textTertiary)]
         while index < lineStarts.count, lineStarts[index] <= NSMaxRange(characters) {
             let position = lineStarts[index]
             let lineRect: NSRect
@@ -618,7 +617,7 @@ private final class FilesTextView: NSTextView {
             }
             let number = "\(index + 1)" as NSString
             let size = number.size(withAttributes: attributes)
-            number.draw(at: NSPoint(x: gutter.maxX - size.width - NW.Space.s,
+            number.draw(at: NSPoint(x: gutter.maxX - size.width - SH.Space.s,
                                    y: lineRect.minY + origin.y), withAttributes: attributes)
             index += 1
         }
@@ -649,7 +648,7 @@ private struct FilesMarkdownPreview: View {
             if let blocks {
                 ScrollView {
                     Prose(blocks: blocks, maxWidth: .infinity)
-                        .padding(NW.Space.l)
+                        .padding(SH.Space.l)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             } else {
@@ -658,10 +657,10 @@ private struct FilesMarkdownPreview: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         // Explicit nil file root: no local image resolution from prose,
         // preventing path-traversal outside the space root.
-        .environment(\.nwProseFileRoot, nil)
+        .environment(\.shProseFileRoot, nil)
         .task(id: lines) {
             let source = lines
             let work = Task.detached(priority: .userInitiated) {
@@ -697,15 +696,15 @@ private struct ImagePreview: View {
                 }
             } else if loaded {
                 Text("Cannot decode image")
-                    .font(.nw(.caption))
-                    .foregroundStyle(Color.nw.textTertiary)
+                    .font(.sh(.caption))
+                    .foregroundStyle(Color.sh.textTertiary)
             } else {
                 ProgressView().controlSize(.small)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(NW.Space.l)
-        .background(Color.nw.bgSunken)
+        .padding(SH.Space.l)
+        .background(Color.sh.bgSunken)
         .task(id: data) {
             loaded = false
             image = nil
@@ -747,19 +746,19 @@ private struct FileTreeContent: View {
             treeBody
             treeFooter
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
     }
 
     private var treeHeader: some View {
-        HStack(spacing: NW.Space.s) {
+        HStack(spacing: SH.Space.s) {
             Text(model.root.name)
-                .font(.nwSans(AppLayout.Files.spaceNameFontSize, .semibold))
-                .foregroundStyle(Color.nw.textPrimary)
+                .font(.shSans(AppLayout.Files.spaceNameFontSize, .semibold))
+                .foregroundStyle(Color.sh.textPrimary)
                 .lineLimit(1)
             Spacer()
             Text(abbreviatedPath(model.rootPath))
-                .font(.nw(.micro))
-                .foregroundStyle(Color.nw.textTertiary)
+                .font(.sh(.micro))
+                .foregroundStyle(Color.sh.textTertiary)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .frame(maxWidth: AppLayout.Files.pathMaxWidth, alignment: .trailing)
@@ -775,30 +774,30 @@ private struct FileTreeContent: View {
             }
         }
         .frame(height: AppLayout.Files.spaceHeaderHeight)
-        .padding(.horizontal, NW.Space.m)
-        .padding(.leading, NW.Space.xs)
+        .padding(.horizontal, SH.Space.m)
+        .padding(.leading, SH.Space.xs)
     }
 
     private var filterField: some View {
-        HStack(spacing: NW.Space.s) {
+        HStack(spacing: SH.Space.s) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: AppLayout.Files.filterIconSize))
-                .foregroundStyle(Color.nw.textTertiary)
+                .foregroundStyle(Color.sh.textTertiary)
             TextField("Filter files", text: Bindable(model).filter)
                 .help("Filters files in expanded folders")
                 .textFieldStyle(.plain)
-                .font(.nwSans(AppLayout.Files.filterFontSize))
-                .foregroundStyle(Color.nw.textPrimary)
+                .font(.shSans(AppLayout.Files.filterFontSize))
+                .foregroundStyle(Color.sh.textPrimary)
         }
         .frame(height: AppLayout.Files.filterHeight)
-        .padding(.horizontal, NW.Space.m)
+        .padding(.horizontal, SH.Space.m)
         .background(Color.clear)
         .overlay(
-            RoundedRectangle(cornerRadius: NW.Radius.m)
-                .stroke(Color.nw.lineSubtle, lineWidth: 1)
+            RoundedRectangle(cornerRadius: SH.Radius.m)
+                .stroke(Color.sh.lineSubtle, lineWidth: 1)
         )
-        .padding(.horizontal, NW.Space.m)
-        .padding(.bottom, NW.Space.xs)
+        .padding(.horizontal, SH.Space.m)
+        .padding(.bottom, SH.Space.xs)
     }
 
     private var treeBody: some View {
@@ -806,25 +805,25 @@ private struct FileTreeContent: View {
             LazyVStack(spacing: 0) {
                 let visible = model.visibleNodes()
                 if model.root.error != nil {
-                    HStack(spacing: NW.Space.s) {
+                    HStack(spacing: SH.Space.s) {
                         Image(systemName: "exclamationmark.triangle")
                             .font(.system(size: AppLayout.Files.filterIconSize))
-                            .foregroundStyle(Color.nw.textTertiary)
+                            .foregroundStyle(Color.sh.textTertiary)
                         Text(model.root.error ?? "Failed to load")
-                            .font(.nw(.caption))
-                            .foregroundStyle(Color.nw.textSecondary)
+                            .font(.sh(.caption))
+                            .foregroundStyle(Color.sh.textSecondary)
                     }
-                    .padding(NW.Space.m)
+                    .padding(SH.Space.m)
                 } else if visible.isEmpty && !model.filter.isEmpty {
                     Text("No files match \u{201C}\(model.filter)\u{201D}")
-                        .font(.nw(.caption))
-                        .foregroundStyle(Color.nw.textTertiary)
-                        .padding(NW.Space.m)
+                        .font(.sh(.caption))
+                        .foregroundStyle(Color.sh.textTertiary)
+                        .padding(SH.Space.m)
                 } else if visible.isEmpty && model.root.isExpanded {
                     Text("Empty directory")
-                        .font(.nw(.caption))
-                        .foregroundStyle(Color.nw.textTertiary)
-                        .padding(NW.Space.m)
+                        .font(.sh(.caption))
+                        .foregroundStyle(Color.sh.textTertiary)
+                        .padding(SH.Space.m)
                 } else {
                     ForEach(visible, id: \.node.id) { item in
                         FileTreeRow(
@@ -842,16 +841,16 @@ private struct FileTreeContent: View {
                     }
                 }
             }
-            .padding(.horizontal, NW.Space.m)
-            .padding(.bottom, NW.Space.m)
+            .padding(.horizontal, SH.Space.m)
+            .padding(.bottom, SH.Space.m)
         }
     }
 
     private var treeFooter: some View {
-        HStack(spacing: NW.Space.s) {
+        HStack(spacing: SH.Space.s) {
             Text(footerText)
-                .font(.nw(.caption))
-                .foregroundStyle(Color.nw.textTertiary)
+                .font(.sh(.caption))
+                .foregroundStyle(Color.sh.textTertiary)
                 .lineLimit(1)
             Spacer()
             Button {
@@ -859,7 +858,7 @@ private struct FileTreeContent: View {
             } label: {
                 Image(systemName: showHidden ? "eye" : "eye.slash")
                     .font(.system(size: AppLayout.Files.refreshIconSize))
-                    .foregroundStyle(showHidden ? Color.nw.textPrimary : Color.nw.textTertiary)
+                    .foregroundStyle(showHidden ? Color.sh.textPrimary : Color.sh.textTertiary)
             }
             .buttonStyle(.plain)
             .help(showHidden ? "Hide hidden files" : "Show hidden files")
@@ -872,16 +871,16 @@ private struct FileTreeContent: View {
             } label: {
                 Image(systemName: "arrow.clockwise")
                     .font(.system(size: AppLayout.Files.refreshIconSize))
-                    .foregroundStyle(Color.nw.textTertiary)
+                    .foregroundStyle(Color.sh.textTertiary)
             }
             .buttonStyle(.plain)
             .help("Refresh")
             .accessibilityLabel("Refresh file tree")
         }
         .frame(height: AppLayout.Files.footerHeight)
-        .padding(.horizontal, NW.Space.xl)
+        .padding(.horizontal, SH.Space.xl)
         .overlay(alignment: .top) {
-            Color.nw.lineSubtle.frame(height: 1)
+            Color.sh.lineSubtle.frame(height: 1)
         }
     }
 
@@ -904,7 +903,7 @@ private struct FileTreeRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: NW.Space.s) {
+            HStack(spacing: SH.Space.s) {
                 if depth > 0 {
                     Spacer()
                         .frame(width: CGFloat(depth) * AppLayout.Files.treeIndent)
@@ -913,18 +912,18 @@ private struct FileTreeRow: View {
                 if node.isDirectory {
                     Image(systemName: node.isExpanded ? "chevron.down" : "chevron.right")
                         .font(.system(size: AppLayout.Files.treeChevronSize, weight: .semibold))
-                        .foregroundStyle(Color.nw.textTertiary)
+                        .foregroundStyle(Color.sh.textTertiary)
                         .frame(width: AppLayout.Files.treeIconSize, height: AppLayout.Files.treeIconSize)
                 } else {
                     Image(systemName: fileIcon(for: node.name))
                         .font(.system(size: AppLayout.Files.treeFileIconSize))
-                        .foregroundStyle(Color.nw.textTertiary)
+                        .foregroundStyle(Color.sh.textTertiary)
                         .frame(width: AppLayout.Files.treeIconSize, height: AppLayout.Files.treeIconSize)
                 }
 
                 Text(node.name)
-                    .font(.nwSans(AppLayout.Files.treeRowFontSize))
-                    .foregroundStyle(isSelected ? Color.nw.textPrimary : Color.nw.textSecondary)
+                    .font(.shSans(AppLayout.Files.treeRowFontSize))
+                    .foregroundStyle(isSelected ? Color.sh.textPrimary : Color.sh.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
 
@@ -933,12 +932,12 @@ private struct FileTreeRow: View {
                 if node.isSymlink {
                     Image(systemName: "link")
                         .font(.system(size: AppLayout.Files.symlinkIconSize))
-                        .foregroundStyle(Color.nw.textTertiary)
+                        .foregroundStyle(Color.sh.textTertiary)
                 }
 
                 if node.error != nil {
                     Image(systemName: "exclamationmark.triangle")
-                        .foregroundStyle(Color.nw.textSecondary)
+                        .foregroundStyle(Color.sh.textSecondary)
                 }
                 if node.isLoading {
                     ProgressView()
@@ -946,13 +945,13 @@ private struct FileTreeRow: View {
                 }
             }
             .frame(height: AppLayout.Files.treeRowHeight)
-            .padding(.horizontal, NW.Space.m)
+            .padding(.horizontal, SH.Space.m)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .background(
-            RoundedRectangle(cornerRadius: NW.Radius.s)
-                .fill(isSelected ? Color.nw.bgSelected : Color.clear)
+            RoundedRectangle(cornerRadius: SH.Radius.s)
+                .fill(isSelected ? Color.sh.bgSelected : Color.clear)
         )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(node.name)
@@ -964,23 +963,26 @@ private struct FileTreeRow: View {
 
 // MARK: - Unavailable remote files
 
+/// A remote thread whose host has no `files.v1` (an older Shepherd), or one this Mac isn't connected to.
 struct FilesUnavailableView: View {
+    let host: String?
+
     var body: some View {
-        VStack(spacing: NW.Space.m) {
-            Image(systemName: NWGlyph.document.symbolName)
+        VStack(spacing: SH.Space.m) {
+            Image(systemName: SHGlyph.document.symbolName)
                 .font(.system(size: AppLayout.Files.emptyIconSize, weight: .light))
-                .foregroundStyle(Color.nw.textTertiary)
+                .foregroundStyle(Color.sh.textTertiary)
             Text("Files unavailable")
-                .font(.nw(.headline))
-                .foregroundStyle(Color.nw.textPrimary)
-            Text("File browsing is available for local threads only. Remote file transport is not yet supported.")
-                .font(.nw(.caption))
-                .foregroundStyle(Color.nw.textSecondary)
+                .font(.sh(.headline))
+                .foregroundStyle(Color.sh.textPrimary)
+            Text("Files needs a newer Shepherd on \(host ?? "this thread's host").")
+                .font(.sh(.caption))
+                .foregroundStyle(Color.sh.textSecondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: AppLayout.Files.messageMaxWidth)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
     }
 }
 
@@ -1010,7 +1012,7 @@ private func fileExtension(_ path: String) -> String? {
 private func fileIcon(for name: String) -> String {
     let ext = (name as NSString).pathExtension.lowercased()
     if FileTreeModel.imageExtensions.contains(ext) { return "photo" }
-    if CodeHighlight.supports(path: name) { return NWGlyph.document.symbolName }
+    if CodeHighlight.supports(path: name) { return SHGlyph.document.symbolName }
     return "doc"
 }
 

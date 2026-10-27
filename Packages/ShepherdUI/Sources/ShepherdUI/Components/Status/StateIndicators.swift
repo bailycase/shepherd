@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The state pill for headers and cards (Status board): a 6pt dot and the state's word on its
 /// tint, radius 4. Queued and idle are outlined. Only attention glows.
-public struct NWStatusPill: View {
+public struct SHStatusPill: View {
     /// A glyph in place of the dot.
     static let symbolSize: CGFloat = 11
     /// The pill's padding after its label, and before a glyph.
@@ -21,31 +21,31 @@ public struct NWStatusPill: View {
     }
 
     public var body: some View {
-        HStack(spacing: NW.Space.s) {
+        HStack(spacing: SH.Space.s) {
             if let symbol {
                 Image(systemName: symbol)
                     .font(.system(size: Self.symbolSize, weight: .medium))
                     .foregroundStyle(state.textColor)
                     .accessibilityHidden(true)
             } else {
-                NWStatusDot(state)
+                SHStatusDot(state)
             }
             Text(label)
-                .font(.nwSans(11.5, .medium))
+                .font(.shSans(11.5, .medium))
                 .foregroundStyle(state.textColor)
                 .lineLimit(1)
                 .monospacedDigit()
-                .nwContentTransition(.crossFade)
+                .shContentTransition(.crossFade)
         }
-        .padding(.leading, symbol == nil ? NW.Space.s : Self.edgePadding)
+        .padding(.leading, symbol == nil ? SH.Space.s : Self.edgePadding)
         .padding(.trailing, Self.edgePadding)
         .frame(height: 20)
-        .background(state.tint ?? .clear, in: RoundedRectangle(cornerRadius: NW.Radius.xs))
-        .nwBorder(state.tint == nil ? Color.nw.lineStrong : .clear, radius: NW.Radius.xs)
+        .background(state.tint ?? .clear, in: RoundedRectangle(cornerRadius: SH.Radius.xs))
+        .shBorder(state.tint == nil ? Color.sh.lineStrong : .clear, radius: SH.Radius.xs)
         .fixedSize()
         // Keyed on the state: a new word and tint fade in, while a label that ticks (an elapsed
         // time) changes at once.
-        .nwComponentAnimation(.content, value: state)
+        .shComponentAnimation(.content, value: state)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
     }
@@ -53,7 +53,7 @@ public struct NWStatusPill: View {
 
 /// The state dot for rows (6pt). Attention glows (1.6s), and stops glowing under Reduce Motion,
 /// including when Reduce Motion changes while the dot is on screen.
-public struct NWStatusDot: View {
+public struct SHStatusDot: View {
     let state: AgentState
     let size: CGFloat
     let color: Color?
@@ -71,21 +71,21 @@ public struct NWStatusDot: View {
             if state.isHollow {
                 Circle().strokeBorder(fill, lineWidth: 1)
             } else if state.glows {
-                NWLayerGlowDot(color: fill)
+                SHLayerGlowDot(color: fill)
             } else {
                 Circle().fill(fill)
             }
         }
         .frame(width: size, height: size)
-        .nwComponentAnimation(.content, value: state)
+        .shComponentAnimation(.content, value: state)
         .accessibilityHidden(true)
     }
 }
 
-/// The running spinner: a 3/4 arc turning once a second (by Core Animation: `NWLayerSpinner`).
+/// The running spinner: a 3/4 arc turning once a second (by Core Animation: `SHLayerSpinner`).
 /// Static under Reduce Motion. As a style on a native `ProgressView`:
-/// `.progressViewStyle(.nwSpinner)`.
-public struct NWSpinnerStyle: ProgressViewStyle {
+/// `.progressViewStyle(.shSpinner)`.
+public struct SHSpinnerStyle: ProgressViewStyle {
     let size: CGFloat
     let color: Color?
 
@@ -95,55 +95,55 @@ public struct NWSpinnerStyle: ProgressViewStyle {
     }
 
     public func makeBody(configuration: Configuration) -> some View {
-        NWSpinnerArc(size: size, color: color)
+        SHSpinnerArc(size: size, color: color)
     }
 }
 
-extension ProgressViewStyle where Self == NWSpinnerStyle {
-    public static var nwSpinner: NWSpinnerStyle { NWSpinnerStyle() }
-    public static func nwSpinner(size: CGFloat = 13, color: Color? = nil) -> NWSpinnerStyle { NWSpinnerStyle(size: size, color: color) }
+extension ProgressViewStyle where Self == SHSpinnerStyle {
+    public static var shSpinner: SHSpinnerStyle { SHSpinnerStyle() }
+    public static func shSpinner(size: CGFloat = 13, color: Color? = nil) -> SHSpinnerStyle { SHSpinnerStyle(size: size, color: color) }
 }
 
-struct NWSpinnerArc: View {
+struct SHSpinnerArc: View {
     let size: CGFloat
     let color: Color?
 
     var body: some View {
-        NWLayerSpinner(size: size, color: color ?? .nw.running)
+        SHLayerSpinner(size: size, color: color ?? .sh.running)
     }
 }
 
-/// The 4pt progress bar (steps, budget): `.progressViewStyle(.nwBar)`, running blue unless
+/// The 4pt progress bar (steps, budget): `.progressViewStyle(.shBar)`, running blue unless
 /// tinted.
-public struct NWBarProgressStyle: ProgressViewStyle {
+public struct SHBarProgressStyle: ProgressViewStyle {
     let tint: Color?
 
     public init(tint: Color? = nil) { self.tint = tint }
 
     public func makeBody(configuration: Configuration) -> some View {
         let fraction = min(1, max(0, configuration.fractionCompleted ?? 0))
-        let nw = Color.nw
-        return Capsule().fill(nw.lineSubtle)
+        let sh = Color.sh
+        return Capsule().fill(sh.lineSubtle)
             .overlay(alignment: .leading) {
                 GeometryReader { geo in
-                    Capsule().fill(tint ?? nw.running).frame(width: geo.size.width * fraction)
+                    Capsule().fill(tint ?? sh.running).frame(width: geo.size.width * fraction)
                 }
             }
             .frame(height: 4)
-            .nwComponentAnimation(.content, value: fraction)
+            .shComponentAnimation(.content, value: fraction)
             .accessibilityElement()
             .accessibilityValue("\(Int((fraction * 100).rounded())) percent")
     }
 }
 
-extension ProgressViewStyle where Self == NWBarProgressStyle {
-    public static var nwBar: NWBarProgressStyle { NWBarProgressStyle() }
-    public static func nwBar(tint: Color?) -> NWBarProgressStyle { NWBarProgressStyle(tint: tint) }
+extension ProgressViewStyle where Self == SHBarProgressStyle {
+    public static var shBar: SHBarProgressStyle { SHBarProgressStyle() }
+    public static func shBar(tint: Color?) -> SHBarProgressStyle { SHBarProgressStyle(tint: tint) }
 }
 
 /// A state glyph at 14pt (tool rows, runs): a spinner while running, otherwise the state's
 /// symbol in its color; queued is a hollow ring.
-public struct NWStateGlyph: View {
+public struct SHStateGlyph: View {
     let state: AgentState
     let size: CGFloat
 
@@ -156,7 +156,7 @@ public struct NWStateGlyph: View {
         Group {
             switch state {
             case .running:
-                NWSpinnerArc(size: size - 2, color: state.color)
+                SHSpinnerArc(size: size - 2, color: state.color)
             case .queued, .idle:
                 Circle().strokeBorder(state.color, lineWidth: 1.5).frame(width: size - 5, height: size - 5)
             default:
@@ -165,7 +165,7 @@ public struct NWStateGlyph: View {
         }
         .frame(width: size, height: size)
         // The spinner gives way to its outcome, and one outcome's symbol to another's.
-        .nwComponentAnimation(.content, value: state)
+        .shComponentAnimation(.content, value: state)
         .accessibilityHidden(true)
     }
 
@@ -173,13 +173,13 @@ public struct NWStateGlyph: View {
         Image(systemName: state.symbolName)
             .font(.system(size: size - 3, weight: .semibold))
             .foregroundStyle(state.color)
-            .nwContentTransition(.symbol)
+            .shContentTransition(.symbol)
     }
 }
 
 /// Mission and run steps, one segment per step in its state's color; pending steps are
 /// `lineStrong` (Status board).
-public struct NWStepStrip: View {
+public struct SHStepStrip: View {
     let steps: [AgentState?]
     let segmentWidth: CGFloat?
 
@@ -204,14 +204,14 @@ public struct NWStepStrip: View {
                     .frame(height: Self.segmentHeight)
             }
         }
-        .nwComponentAnimation(.content, value: steps)
+        .shComponentAnimation(.content, value: steps)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Self.summary(steps))
     }
 
     /// A segment's color: its state's, with pending and waiting steps in `lineStrong`.
     @MainActor static func fill(_ step: AgentState?) -> Color {
-        step.map { $0 == .idle || $0 == .queued ? Color.nw.lineStrong : $0.color } ?? Color.nw.lineStrong
+        step.map { $0 == .idle || $0 == .queued ? Color.sh.lineStrong : $0.color } ?? Color.sh.lineStrong
     }
 
     static func summary(_ steps: [AgentState?]) -> String {
@@ -221,7 +221,7 @@ public struct NWStepStrip: View {
 }
 
 /// Activity over time (tool calls per minute, last 10 minutes) as a small line.
-public struct NWSparkline: View {
+public struct SHSparkline: View {
     let values: [Double]
     let color: Color?
 
@@ -231,14 +231,14 @@ public struct NWSparkline: View {
     }
 
     public var body: some View {
-        NWSparklineShape(values: values)
-            .stroke(color ?? .nw.running, style: StrokeStyle(lineWidth: 1.2, lineCap: .round, lineJoin: .round))
+        SHSparklineShape(values: values)
+            .stroke(color ?? .sh.running, style: StrokeStyle(lineWidth: 1.2, lineCap: .round, lineJoin: .round))
             .frame(width: 36, height: 12)
             .accessibilityHidden(true)
     }
 }
 
-struct NWSparklineShape: Shape {
+struct SHSparklineShape: Shape {
     let values: [Double]
 
     func path(in rect: CGRect) -> Path {

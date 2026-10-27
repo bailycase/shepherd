@@ -3,7 +3,7 @@ import Testing
 
 /// WCAG contrast for every built-in variant: 4.5:1 for text, 3:1 for dots, glyphs, and bars.
 ///
-/// Night Watch's colors are the design's. Where a pair the board uses as text (or a state mark)
+/// Shepherd Design's colors are the design's. Where a pair the board uses as text (or a state mark)
 /// falls short, it is listed in `exceptions` with its measured ratio rather than recolored. The
 /// test keeps that list honest: an exception must still be measured at its ratio and still fall
 /// short, so a color change forces the list to be revisited.
@@ -59,24 +59,24 @@ struct ThemeContrastTests {
     /// Pairs the board uses that fall short, with their measured ratios (the report).
     static let exceptions: [String: Double] = [
         // Meta text ("Meta, timestamps") is deliberately faint in both appearances.
-        "night-watch-dark: textTertiary on bgBase": 3.35,
-        "night-watch-dark: textTertiary on bgWindow": 3.29,
-        "night-watch-dark: textTertiary on bgRaised": 3.06,
-        "night-watch-light: textTertiary on bgBase": 2.40,
-        "night-watch-light: textTertiary on bgWindow": 2.60,
-        "night-watch-light: textTertiary on bgRaised": 2.69,
+        "shepherd-design-dark: textTertiary on bgBase": 3.35,
+        "shepherd-design-dark: textTertiary on bgWindow": 3.29,
+        "shepherd-design-dark: textTertiary on bgRaised": 3.06,
+        "shepherd-design-light: textTertiary on bgBase": 2.40,
+        "shepherd-design-light: textTertiary on bgWindow": 2.60,
+        "shepherd-design-light: textTertiary on bgRaised": 2.69,
         // Light state pills: the state color on its own tint.
-        "night-watch-light: running on runningTint over bgWindow": 3.98,
-        "night-watch-light: running on runningTint over bgRaised": 4.11,
-        "night-watch-light: done on doneTint over bgWindow": 3.01,
-        "night-watch-light: done on doneTint over bgRaised": 3.11,
-        "night-watch-light: failed on failedTint over bgWindow": 3.71,
-        "night-watch-light: failed on failedTint over bgRaised": 3.84,
+        "shepherd-design-light: running on runningTint over bgWindow": 3.98,
+        "shepherd-design-light: running on runningTint over bgRaised": 4.11,
+        "shepherd-design-light: done on doneTint over bgWindow": 3.01,
+        "shepherd-design-light: done on doneTint over bgRaised": 3.11,
+        "shepherd-design-light: failed on failedTint over bgWindow": 3.71,
+        "shepherd-design-light: failed on failedTint over bgRaised": 3.84,
         // Light lantern as a dot or glyph on the window.
-        "night-watch-light: lantern mark on bgWindow": 2.27,
+        "shepherd-design-light: lantern mark on bgWindow": 2.27,
         // The Browser's element tag and the design canvas's selection tag put white on `running`
         // in mono 10.5, as the board draws it; dark falls short, the board's choice.
-        "night-watch-dark: textOnRunning on running": 2.39,
+        "shepherd-design-dark: textOnRunning on running": 2.39,
     ]
 
     @Test(arguments: Variant.all)
@@ -102,7 +102,7 @@ struct ThemeContrastTests {
     /// draws them; neither variant reaches 4.5:1 (dark 3.18, light 4.33).
     @Test(arguments: [(false, 4.33), (true, 3.18)])
     func whiteOnFailedIsADocumentedException(isDark: Bool, measured: Double) {
-        let variant = Variant(theme: .nightWatch, isDark: isDark)
+        let variant = Variant(theme: .shepherdDesign, isDark: isDark)
         let ratio = HexColor("#ffffff")!.contrast(with: variant.color(\.failed))
         #expect(abs(ratio - measured) < 0.01)
         #expect(ratio < Self.text)
@@ -113,7 +113,7 @@ struct ThemeContrastTests {
     /// board's choice (also covered as a `pairs` exception above).
     @Test(arguments: [(false, 4.70), (true, 2.39)])
     func textOnRunningIsADocumentedExceptionInDark(isDark: Bool, measured: Double) {
-        let variant = Variant(theme: .nightWatch, isDark: isDark)
+        let variant = Variant(theme: .shepherdDesign, isDark: isDark)
         let ratio = variant.color(\.textOnRunning).contrast(with: variant.color(\.running))
         #expect(abs(ratio - measured) < 0.01, "textOnRunning on running is now \(ratio)")
         #expect((ratio >= Self.text) == !isDark)
@@ -123,8 +123,8 @@ struct ThemeContrastTests {
     /// at 4.5:1 in both variants.
     @Test(arguments: [false, true])
     func primaryHoverAndPressedFillsKeepTheLabelReadable(isDark: Bool) throws {
-        let variant = Variant(theme: .nightWatch, isDark: isDark)
-        for fill in [NWButtonFills.lanternHover, NWButtonFills.lanternPressed] {
+        let variant = Variant(theme: .shepherdDesign, isDark: isDark)
+        for fill in [SHButtonFills.lanternHover, SHButtonFills.lanternPressed] {
             let hex = try #require(HexColor(isDark ? fill.dark : fill.light))
             #expect(variant.color(\.textOnLantern).contrast(with: hex) >= Self.text)
         }
@@ -134,7 +134,7 @@ struct ThemeContrastTests {
     /// than `failed` but still short (4.23), as the board draws it.
     @Test(arguments: [(false, 5.42), (true, 4.23)])
     func whiteOnPressedDangerFill(isDark: Bool, measured: Double) throws {
-        let fill = try #require(HexColor(isDark ? NWButtonFills.failedPressed.dark : NWButtonFills.failedPressed.light))
+        let fill = try #require(HexColor(isDark ? SHButtonFills.failedPressed.dark : SHButtonFills.failedPressed.light))
         let ratio = HexColor("#ffffff")!.contrast(with: fill)
         #expect(abs(ratio - measured) < 0.01)
         #expect((ratio >= Self.text) == !isDark)

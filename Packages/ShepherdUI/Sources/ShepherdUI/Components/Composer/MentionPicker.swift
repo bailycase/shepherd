@@ -6,7 +6,7 @@ import SwiftUI
 // does; the field keeps the keyboard and drives the highlight.
 
 /// The picker's own measures.
-public enum NWMentionMetrics {
+public enum SHMentionMetrics {
     public static let rowHeight: CGFloat = 48
     public static let rowPaddingHorizontal: CGFloat = 10
     public static let rowSpacing: CGFloat = 10
@@ -29,7 +29,7 @@ public enum NWMentionMetrics {
 
 /// One row the picker offers: a design, a board ("Whole board" inside one), an element, or a
 /// file. Compared by what it draws, so a highlight moving redraws the two rows it moves between.
-public struct NWMentionRow: Identifiable, Equatable, Sendable {
+public struct SHMentionRow: Identifiable, Equatable, Sendable {
     public enum Kind: Sendable {
         case design, page, board, element, file
     }
@@ -53,12 +53,12 @@ public struct NWMentionRow: Identifiable, Equatable, Sendable {
     public var host: String?
     public var hostOffline: Bool
     public var trailing: Trailing
-    public var thumbnail: NWReferenceImage?
+    public var thumbnail: SHReferenceImage?
     /// Words of the search, underlined where the title holds them.
     public var matched: [String]
 
     public init(id: String, kind: Kind, title: String, crumbs: [String] = [], subtitle: String? = nil, lead: String? = nil,
-                host: String? = nil, hostOffline: Bool = false, trailing: Trailing, thumbnail: NWReferenceImage? = nil,
+                host: String? = nil, hostOffline: Bool = false, trailing: Trailing, thumbnail: SHReferenceImage? = nil,
                 matched: [String] = []) {
         self.id = id
         self.kind = kind
@@ -76,13 +76,13 @@ public struct NWMentionRow: Identifiable, Equatable, Sendable {
 
 /// A labelled run of rows: "Designs · 4 on this Mac", "Elements · 14", "Designs, boards and
 /// elements · 6 matches", "Files".
-public struct NWMentionSection: Identifiable, Equatable, Sendable {
+public struct SHMentionSection: Identifiable, Equatable, Sendable {
     public var id: String
     public var title: String
     public var trailing: String?
-    public var rows: [NWMentionRow]
+    public var rows: [SHMentionRow]
 
-    public init(id: String, title: String, trailing: String? = nil, rows: [NWMentionRow]) {
+    public init(id: String, title: String, trailing: String? = nil, rows: [SHMentionRow]) {
         self.id = id
         self.title = title
         self.trailing = trailing
@@ -91,7 +91,7 @@ public struct NWMentionSection: Identifiable, Equatable, Sendable {
 }
 
 /// What the picker says with nothing to list.
-public enum NWMentionEmpty: Equatable, Sendable {
+public enum SHMentionEmpty: Equatable, Sendable {
     /// A search that found nothing: "Nothing matches “pricng”" and what it searched.
     case nothingMatches(query: String, searched: String)
     /// No designs yet: "No designs yet. Start a design and its boards show up here."
@@ -112,14 +112,14 @@ public enum NWMentionEmpty: Equatable, Sendable {
 /// semibold, a line under it in 11.5 `textTertiary`, a host's tag, and a chevron (drills in) or ⏎
 /// (picks). Inside a design or a board, a breadcrumb with Back heads it. At most eight rows show,
 /// fewer when `maxHeight` leaves less room.
-public struct NWMentionPicker: View {
-    let sections: [NWMentionSection]
+public struct SHMentionPicker: View {
+    let sections: [SHMentionSection]
     let crumbs: [String]?
-    let empty: NWMentionEmpty?
+    let empty: SHMentionEmpty?
     let highlighted: String?
     let maxHeight: CGFloat?
-    let choose: (NWMentionRow) -> Void
-    let drill: (NWMentionRow) -> Void
+    let choose: (SHMentionRow) -> Void
+    let drill: (SHMentionRow) -> Void
     let back: () -> Void
     let hover: (String) -> Void
     let startDesign: (() -> Void)?
@@ -130,8 +130,8 @@ public struct NWMentionPicker: View {
     /// The row the pointer just highlighted, until the highlight's change is seen.
     @State private var pointed: String?
 
-    public init(sections: [NWMentionSection], crumbs: [String]? = nil, empty: NWMentionEmpty? = nil, highlighted: String?,
-                maxHeight: CGFloat? = nil, choose: @escaping (NWMentionRow) -> Void, drill: @escaping (NWMentionRow) -> Void,
+    public init(sections: [SHMentionSection], crumbs: [String]? = nil, empty: SHMentionEmpty? = nil, highlighted: String?,
+                maxHeight: CGFloat? = nil, choose: @escaping (SHMentionRow) -> Void, drill: @escaping (SHMentionRow) -> Void,
                 back: @escaping () -> Void = {}, hover: @escaping (String) -> Void = { _ in }, startDesign: (() -> Void)? = nil,
                 retry: (() -> Void)? = nil, appear: @escaping (String) -> Void = { _ in }) {
         self.sections = sections
@@ -150,8 +150,8 @@ public struct NWMentionPicker: View {
 
     /// The list's height for `sections`: every header and row, at most `maxRows` rows' worth, and
     /// no more than `room` leaves.
-    public static func listHeight(_ sections: [NWMentionSection], room: CGFloat?) -> CGFloat {
-        let M = NWMentionMetrics.self
+    public static func listHeight(_ sections: [SHMentionSection], room: CGFloat?) -> CGFloat {
+        let M = SHMentionMetrics.self
         let rows = sections.reduce(0) { $0 + $1.rows.count }
         let headers = CGFloat(sections.filter { !$0.title.isEmpty }.count) * M.headerHeight
         let full = headers + CGFloat(rows) * M.rowHeight
@@ -162,64 +162,64 @@ public struct NWMentionPicker: View {
     }
 
     public var body: some View {
-        let M = NWMentionMetrics.self
+        let M = SHMentionMetrics.self
         VStack(alignment: .leading, spacing: 0) {
             if let crumbs {
-                HStack(spacing: NW.Space.m) {
+                HStack(spacing: SH.Space.m) {
                     Button(action: back) {
                         Image(systemName: "chevron.left").font(.system(size: M.pickSize, weight: .semibold))
                             .frame(width: M.backSize, height: M.backSize)
                             .contentShape(Circle())
                     }
-                    .buttonStyle(.nwIcon(size: M.backSize))
+                    .buttonStyle(.shIcon(size: M.backSize))
                     .help("Back")
                     .accessibilityLabel("Back")
-                    NWReferenceCrumbs(crumbs: crumbs)
+                    SHReferenceCrumbs(crumbs: crumbs)
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, M.rowPaddingHorizontal)
                 .frame(height: M.backHeaderHeight)
-                .overlay(alignment: .bottom) { NWHairline() }
-                .padding(.horizontal, -NW.Space.s)
-                .padding(.top, -NW.Space.s)
-                .padding(.bottom, NW.Space.xs)
+                .overlay(alignment: .bottom) { SHHairline() }
+                .padding(.horizontal, -SH.Space.s)
+                .padding(.top, -SH.Space.s)
+                .padding(.bottom, SH.Space.xs)
             }
             switch empty {
             case .nothingMatches(let query, let searched):
-                VStack(spacing: NW.Space.s) {
-                    Image(systemName: "magnifyingglass").font(.system(size: M.emptyTitleSize)).foregroundStyle(Color.nw.textTertiary)
-                    Text("Nothing matches “\(query)”").font(.nwSans(M.emptyTitleSize, .medium)).foregroundStyle(Color.nw.textPrimary)
-                    Text(searched).font(.nwSans(M.emptyLineSize)).foregroundStyle(Color.nw.textTertiary)
+                VStack(spacing: SH.Space.s) {
+                    Image(systemName: "magnifyingglass").font(.system(size: M.emptyTitleSize)).foregroundStyle(Color.sh.textTertiary)
+                    Text("Nothing matches “\(query)”").font(.shSans(M.emptyTitleSize, .medium)).foregroundStyle(Color.sh.textPrimary)
+                    Text(searched).font(.shSans(M.emptyLineSize)).foregroundStyle(Color.sh.textTertiary)
                 }
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, M.emptyPadding)
-                .padding(.horizontal, NW.Space.xl)
+                .padding(.horizontal, SH.Space.xl)
             case .noDesigns:
-                NWMenuHeader("Designs", inset: M.rowPaddingHorizontal)
+                SHMenuHeader("Designs", inset: M.rowPaddingHorizontal)
                 statusLine {
-                    Image(systemName: "pencil.tip").font(.system(size: M.pickSize)).foregroundStyle(Color.nw.textTertiary)
+                    Image(systemName: "pencil.tip").font(.system(size: M.pickSize)).foregroundStyle(Color.sh.textTertiary)
                     noDesignsLine
                 }
             case .loading:
                 // One quiet line that chooses nothing: ↩ over it leaves the message alone.
-                NWMenuHeader("Designs", inset: M.rowPaddingHorizontal)
+                SHMenuHeader("Designs", inset: M.rowPaddingHorizontal)
                 statusLine {
-                    ProgressView().progressViewStyle(.nwSpinner(size: M.statusSpinner, color: Color.nw.textTertiary))
-                    Text("Loading designs…").font(.nwSans(M.noDesignsSize)).foregroundStyle(Color.nw.textSecondary)
+                    ProgressView().progressViewStyle(.shSpinner(size: M.statusSpinner, color: Color.sh.textTertiary))
+                    Text("Loading designs…").font(.shSans(M.noDesignsSize)).foregroundStyle(Color.sh.textSecondary)
                 }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Loading designs")
             case .failed(let reason):
-                NWMenuHeader("Designs", inset: M.rowPaddingHorizontal)
+                SHMenuHeader("Designs", inset: M.rowPaddingHorizontal)
                 statusLine {
                     Image(systemName: "exclamationmark.triangle").font(.system(size: M.pickSize)).foregroundStyle(AgentState.failed.color)
                         .accessibilityHidden(true)
-                    Text("Couldn’t load designs.").font(.nwSans(M.noDesignsSize)).foregroundStyle(Color.nw.textSecondary)
+                    Text("Couldn’t load designs.").font(.shSans(M.noDesignsSize)).foregroundStyle(Color.sh.textSecondary)
                     Spacer(minLength: 0)
                     if let retry {
                         Button("Retry", action: retry)
-                            .buttonStyle(.nw(.ghost, size: .s))
+                            .buttonStyle(.sh(.ghost, size: .s))
                             .help("Read this Mac’s designs again")
                     }
                 }
@@ -229,9 +229,9 @@ public struct NWMentionPicker: View {
                 .accessibilityHint(reason)
             case .unavailable(let note):
                 statusLine {
-                    Image(systemName: "info.circle").font(.system(size: M.pickSize)).foregroundStyle(Color.nw.textTertiary)
+                    Image(systemName: "info.circle").font(.system(size: M.pickSize)).foregroundStyle(Color.sh.textTertiary)
                         .accessibilityHidden(true)
-                    Text(note).font(.nwSans(M.noDesignsSize)).foregroundStyle(Color.nw.textSecondary).lineLimit(1)
+                    Text(note).font(.shSans(M.noDesignsSize)).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
                 }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(note)
@@ -240,30 +240,30 @@ public struct NWMentionPicker: View {
             }
             if !sections.isEmpty { list }
         }
-        .modifier(NWMenuSurface(width: nil))
+        .modifier(SHMenuSurface(width: nil))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Mention")
     }
 
     /// One line under a header, with its glyph (or spinner) first: the stages that list no rows.
     private func statusLine<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        HStack(spacing: NWMentionMetrics.rowSpacing) { content() }
-            .padding(.horizontal, NWMentionMetrics.rowPaddingHorizontal)
-            .padding(.top, NW.Space.m)
-            .padding(.bottom, NW.Space.l)
+        HStack(spacing: SHMentionMetrics.rowSpacing) { content() }
+            .padding(.horizontal, SHMentionMetrics.rowPaddingHorizontal)
+            .padding(.top, SH.Space.m)
+            .padding(.bottom, SH.Space.l)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder private var noDesignsLine: some View {
-        let nw = Color.nw
-        HStack(spacing: NW.Space.xs) {
-            Text("No designs yet.").foregroundStyle(nw.textSecondary)
+        let sh = Color.sh
+        HStack(spacing: SH.Space.xs) {
+            Text("No designs yet.").foregroundStyle(sh.textSecondary)
             if let startDesign {
-                Button("Start a design", action: startDesign).buttonStyle(.nwLink(color: nw.running, font: .nwSans(NWMentionMetrics.noDesignsSize)))
+                Button("Start a design", action: startDesign).buttonStyle(.shLink(color: sh.running, font: .shSans(SHMentionMetrics.noDesignsSize)))
             }
-            Text(startDesign == nil ? "Its boards show up here." : "and its boards show up here.").foregroundStyle(nw.textSecondary)
+            Text(startDesign == nil ? "Its boards show up here." : "and its boards show up here.").foregroundStyle(sh.textSecondary)
         }
-        .font(.nwSans(NWMentionMetrics.noDesignsSize))
+        .font(.shSans(SHMentionMetrics.noDesignsSize))
         .lineLimit(1)
     }
 
@@ -277,11 +277,11 @@ public struct NWMentionPicker: View {
                         VStack(alignment: .leading, spacing: 0) {
                             switch entry {
                             case .header(let section):
-                                NWMenuHeader(section.title, trailing: section.trailing, inset: NWMentionMetrics.rowPaddingHorizontal)
-                                    .padding(.top, NW.Space.xs)
-                                    .frame(height: NWMentionMetrics.headerHeight)
+                                SHMenuHeader(section.title, trailing: section.trailing, inset: SHMentionMetrics.rowPaddingHorizontal)
+                                    .padding(.top, SH.Space.xs)
+                                    .frame(height: SHMentionMetrics.headerHeight)
                             case .row(let row):
-                                NWMentionRowView(row: row, highlighted: row.id == highlighted, choose: choose, drill: drill) {
+                                SHMentionRowView(row: row, highlighted: row.id == highlighted, choose: choose, drill: drill) {
                                     guard row.id != highlighted else { return }
                                     pointed = row.id
                                     hover(row.id)
@@ -294,7 +294,7 @@ public struct NWMentionPicker: View {
                     }
                 }
             }
-            .frame(height: Self.listHeight(sections, room: maxHeight.map { $0 - 2 * NW.Space.s - (crumbs == nil ? 0 : NWMentionMetrics.backHeaderHeight) }))
+            .frame(height: Self.listHeight(sections, room: maxHeight.map { $0 - 2 * SH.Space.s - (crumbs == nil ? 0 : SHMentionMetrics.backHeaderHeight) }))
             .onChange(of: highlighted) { _, id in
                 defer { pointed = nil }
                 guard let id, id != pointed else { return }
@@ -305,9 +305,9 @@ public struct NWMentionPicker: View {
 }
 
 /// A place in the picker's list: a section's label, or a row.
-enum NWMentionEntry: Identifiable, Equatable {
-    case header(NWMentionSection)
-    case row(NWMentionRow)
+enum SHMentionEntry: Identifiable, Equatable {
+    case header(SHMentionSection)
+    case row(SHMentionRow)
 
     var id: String {
         switch self {
@@ -317,65 +317,65 @@ enum NWMentionEntry: Identifiable, Equatable {
     }
 }
 
-extension NWMentionPicker {
+extension SHMentionPicker {
     /// The sections as the list lays them out: each labelled section's header, then its rows.
-    static func entries(_ sections: [NWMentionSection]) -> [NWMentionEntry] {
+    static func entries(_ sections: [SHMentionSection]) -> [SHMentionEntry] {
         sections.flatMap { section in
-            (section.title.isEmpty ? [] : [NWMentionEntry.header(section)]) + section.rows.map(NWMentionEntry.row)
+            (section.title.isEmpty ? [] : [SHMentionEntry.header(section)]) + section.rows.map(SHMentionEntry.row)
         }
     }
 }
 
 /// One row of the picker. Equatable on what it draws, closures aside.
-struct NWMentionRowView: View, Equatable {
-    let row: NWMentionRow
+struct SHMentionRowView: View, Equatable {
+    let row: SHMentionRow
     let highlighted: Bool
-    let choose: (NWMentionRow) -> Void
-    let drill: (NWMentionRow) -> Void
+    let choose: (SHMentionRow) -> Void
+    let drill: (SHMentionRow) -> Void
     let hover: () -> Void
 
     static func == (a: Self, b: Self) -> Bool { a.row == b.row && a.highlighted == b.highlighted }
 
     var body: some View {
-        let _ = NWRenderProbe.tick("mention.row")
-        let nw = Color.nw
-        let M = NWMentionMetrics.self
-        NWMenuRow(highlighted: highlighted, spacing: M.rowSpacing,
+        let _ = SHRenderProbe.tick("mention.row")
+        let sh = Color.sh
+        let M = SHMentionMetrics.self
+        SHMenuRow(highlighted: highlighted, spacing: M.rowSpacing,
                   padding: EdgeInsets(top: 0, leading: M.rowPaddingHorizontal, bottom: 0, trailing: M.rowPaddingHorizontal),
                   height: M.rowHeight, action: { row.trailing == .drill ? drill(row) : choose(row) }, onHover: hover) {
             if row.kind == .page {
                 Image(systemName: "rectangle.stack")
                     .font(.system(size: M.titleSize))
-                    .foregroundStyle(nw.textSecondary)
-                    .frame(width: NWReferenceMetrics.thumbnail.width, height: NWReferenceMetrics.thumbnail.height)
+                    .foregroundStyle(sh.textSecondary)
+                    .frame(width: SHReferenceMetrics.thumbnail.width, height: SHReferenceMetrics.thumbnail.height)
                     .accessibilityHidden(true)
             } else if row.kind == .file {
                 Image(systemName: "doc")
                     .font(.system(size: M.pickSize))
-                    .foregroundStyle(nw.textTertiary)
-                    .frame(width: NWReferenceMetrics.thumbnail.width, height: NWReferenceMetrics.thumbnail.height)
+                    .foregroundStyle(sh.textTertiary)
+                    .frame(width: SHReferenceMetrics.thumbnail.width, height: SHReferenceMetrics.thumbnail.height)
             } else {
-                NWReferenceThumbnail(row.thumbnail)
+                SHReferenceThumbnail(row.thumbnail)
             }
             VStack(alignment: .leading, spacing: 1) {
                 title
                 if row.subtitle != nil || row.lead != nil {
-                    HStack(spacing: NW.Space.xs) {
-                        if let lead = row.lead { Text(lead).font(.nwMono(M.subtitleSize - 0.5)) }
+                    HStack(spacing: SH.Space.xs) {
+                        if let lead = row.lead { Text(lead).font(.shMono(M.subtitleSize - 0.5)) }
                         if let subtitle = row.subtitle { Text((row.lead == nil ? "" : "· ") + subtitle) }
                     }
-                    .font(.nwSans(M.subtitleSize))
-                    .foregroundStyle(nw.textTertiary)
+                    .font(.shSans(M.subtitleSize))
+                    .foregroundStyle(sh.textTertiary)
                     .lineLimit(1)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            if let host = row.host { NWReferenceHostTag(host, offline: row.hostOffline) }
+            if let host = row.host { SHReferenceHostTag(host, offline: row.hostOffline) }
             switch row.trailing {
             case .drill:
-                Image(systemName: "chevron.right").font(.system(size: M.pickSize - 2, weight: .semibold)).foregroundStyle(nw.textTertiary)
+                Image(systemName: "chevron.right").font(.system(size: M.pickSize - 2, weight: .semibold)).foregroundStyle(sh.textTertiary)
             case .pick:
-                Text("⏎").font(.nwMono(M.pickSize)).foregroundStyle(nw.running).accessibilityHidden(true)
+                Text("⏎").font(.shMono(M.pickSize)).foregroundStyle(sh.running).accessibilityHidden(true)
             }
         }
         .opacity(row.hostOffline ? 0.5 : 1)
@@ -384,15 +384,15 @@ struct NWMentionRowView: View, Equatable {
     }
 
     @ViewBuilder private var title: some View {
-        let M = NWMentionMetrics.self
+        let M = SHMentionMetrics.self
         if row.crumbs.isEmpty {
             Text(Self.highlighted(row.title, words: row.matched))
-                .font(.nwSans(M.titleSize, .medium))
-                .foregroundStyle(Color.nw.textPrimary)
+                .font(.shSans(M.titleSize, .medium))
+                .foregroundStyle(Color.sh.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.middle)
         } else {
-            NWMentionCrumbs(crumbs: row.crumbs, title: Self.highlighted(row.title, words: row.matched))
+            SHMentionCrumbs(crumbs: row.crumbs, title: Self.highlighted(row.title, words: row.matched))
         }
     }
 
@@ -418,19 +418,19 @@ struct NWMentionRowView: View, Equatable {
 }
 
 /// A search result's path, the piece last and semibold with its matched words underlined.
-private struct NWMentionCrumbs: View {
+private struct SHMentionCrumbs: View {
     let crumbs: [String]
     let title: AttributedString
 
     var body: some View {
-        let nw = Color.nw
-        HStack(spacing: NWReferenceMetrics.crumbSpacing) {
+        let sh = Color.sh
+        HStack(spacing: SHReferenceMetrics.crumbSpacing) {
             ForEach(Array(crumbs.enumerated()), id: \.offset) { index, crumb in
-                Text(crumb).foregroundStyle(nw.textSecondary).lineLimit(1).layoutPriority(Double(index))
-                Text("›").foregroundStyle(nw.textTertiary)
+                Text(crumb).foregroundStyle(sh.textSecondary).lineLimit(1).layoutPriority(Double(index))
+                Text("›").foregroundStyle(sh.textTertiary)
             }
-            Text(title).fontWeight(.semibold).foregroundStyle(nw.textPrimary).lineLimit(1).layoutPriority(Double(crumbs.count + 1))
+            Text(title).fontWeight(.semibold).foregroundStyle(sh.textPrimary).lineLimit(1).layoutPriority(Double(crumbs.count + 1))
         }
-        .font(.nwSans(NWReferenceMetrics.crumbSize))
+        .font(.shSans(SHReferenceMetrics.crumbSize))
     }
 }

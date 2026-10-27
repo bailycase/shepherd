@@ -21,7 +21,7 @@ final class DesignGitDesignState {
     var message = ""
     /// The changed file whose preview shows, by its repository path.
     var selected: String?
-    var preview: NWGitPanelState.Preview?
+    var preview: SHGitPanelState.Preview?
     /// The last time the remote was reached, kept across a failed fetch (Offline · last checked).
     var lastChecked: Double?
     /// "Opened from Git" on the canvas, until dismissed.
@@ -48,7 +48,7 @@ final class DesignGitShareModel {
     let boards: Int
     var repository = ""
     var message: String
-    var error: NWGitSheetError?
+    var error: SHGitSheetError?
     var working = false
 
     init(designID: DesignID, designName: String, boards: Int) {
@@ -62,7 +62,7 @@ final class DesignGitShareModel {
 @MainActor @Observable
 final class DesignGitOpenModel {
     var repository = ""
-    var error: NWGitSheetError?
+    var error: SHGitSheetError?
     var working = false
 }
 
@@ -145,7 +145,7 @@ extension ShepherdViewModel {
     }
 
     /// The panel's state, from the design's.
-    func designGitPanel(_ id: DesignID) -> NWGitPanelState? {
+    func designGitPanel(_ id: DesignID) -> SHGitPanelState? {
         guard let git = designGitStates[id], let state = git.state else { return nil }
         return DesignGitPresentation.panel(.init(state: state, drawing: designAgentDrawing(id), working: git.working,
                                                  selected: git.selected, preview: git.preview,
@@ -338,9 +338,9 @@ extension ShepherdViewModel {
         (error as? DesignGitError)?.message ?? String(describing: error)
     }
 
-    static func sheetError(_ error: Error) -> NWGitSheetError {
-        if let git = error as? DesignGitError { return NWGitSheetError(title: git.title, detail: git.message) }
-        return NWGitSheetError(title: "Git couldn't finish", detail: String(describing: error))
+    static func sheetError(_ error: Error) -> SHGitSheetError {
+        if let git = error as? DesignGitError { return SHGitSheetError(title: git.title, detail: git.message) }
+        return SHGitSheetError(title: "Git couldn't finish", detail: String(describing: error))
     }
 }
 
@@ -354,45 +354,45 @@ struct DesignGitSheetsOverlay: View {
     var body: some View {
         ZStack {
             if vm.designGitShare != nil || vm.designGitOpen != nil {
-                Color.nw.sheetScrim
+                Color.sh.sheetScrim
                     .contentShape(Rectangle())
                     .onTapGesture {}
                     .accessibilityHidden(true)
-                    .nwTransition(.content)
+                    .shTransition(.content)
             }
             if let model = vm.designGitShare {
                 DesignGitShareSheetHost(model: model, close: { if !model.working { vm.designGitShare = nil } },
                                         share: { vm.runDesignGitShare(model) })
                     // Never taller than the window: its middle scrolls instead.
-                    .padding(.vertical, NW.Space.xl)
+                    .padding(.vertical, SH.Space.xl)
                     .accessibilityAddTraits(.isModal)
-                    .nwTransition(.overlay, anchor: .center)
+                    .shTransition(.overlay, anchor: .center)
             } else if let model = vm.designGitOpen {
                 DesignGitOpenSheetHost(model: model, close: { if !model.working { vm.designGitOpen = nil } },
                                        clone: { vm.runDesignGitOpen(model) })
                     .accessibilityAddTraits(.isModal)
-                    .nwTransition(.overlay, anchor: .center)
+                    .shTransition(.overlay, anchor: .center)
             } else if let id = vm.designGitMergeDialog, let merge = vm.designGitStates[id]?.state?.merge,
                       let status = vm.designGitStates[id]?.state?.status {
-                Color.nw.sheetScrim
+                Color.sh.sheetScrim
                     .contentShape(Rectangle())
                     .onTapGesture {}
                     .accessibilityHidden(true)
-                    .nwTransition(.content)
-                NWGitMergeDialog(branch: status.branch, upstream: status.upstream,
+                    .shTransition(.content)
+                SHGitMergeDialog(branch: status.branch, upstream: status.upstream,
                                  local: DesignGitPresentation.commit(merge.ours, local: true), incoming: DesignGitPresentation.commit(merge.theirs),
                                  failure: vm.designGitStates[id]?.failure ?? merge.reason,
                                  keepLocal: { vm.keepDesignGitLocal(id) }, resolve: { vm.resolveDesignGitMerge(id) },
                                  drop: { vm.dropDesignGitMerge(id) })
                     .accessibilityAddTraits(.isModal)
-                    .nwTransition(.overlay, anchor: .center)
+                    .shTransition(.overlay, anchor: .center)
                     .onExitCommand { vm.designGitMergeDialog = nil }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
         .allowsHitTesting(vm.designGitShare != nil || vm.designGitOpen != nil || vm.designGitMergeDialog != nil)
-        .nwAnimation(.overlay, value: vm.designGitShare != nil || vm.designGitOpen != nil || vm.designGitMergeDialog != nil)
+        .shAnimation(.overlay, value: vm.designGitShare != nil || vm.designGitOpen != nil || vm.designGitMergeDialog != nil)
     }
 }
 
@@ -402,7 +402,7 @@ private struct DesignGitShareSheetHost: View {
     let share: () -> Void
 
     var body: some View {
-        NWGitShareSheet(repository: $model.repository, message: $model.message, boards: model.boards, error: model.error,
+        SHGitShareSheet(repository: $model.repository, message: $model.message, boards: model.boards, error: model.error,
                         working: model.working, close: close, share: share)
     }
 }
@@ -413,7 +413,7 @@ private struct DesignGitOpenSheetHost: View {
     let clone: () -> Void
 
     var body: some View {
-        NWGitOpenSheet(repository: $model.repository, error: model.error, working: model.working, close: close, clone: clone)
+        SHGitOpenSheet(repository: $model.repository, error: model.error, working: model.working, close: close, clone: clone)
     }
 }
 
@@ -435,52 +435,52 @@ struct DesignGitCanvasLayer: View {
                     if git.panelOpen, let panel = vm.designGitPanel(designID) {
                         // Under the chip (GitDesignChanges): its trailing edge lines up with the
                         // chip's, 4pt below the toolbar, never past the window's edges.
-                        let trailing = min(max(NW.Space.l, git.chipTrailing), max(NW.Space.l, geo.size.width - NWGitMetrics.panelWidth - NW.Space.l))
+                        let trailing = min(max(SH.Space.l, git.chipTrailing), max(SH.Space.l, geo.size.width - SHGitMetrics.panelWidth - SH.Space.l))
                         DesignGitPanelHost(git: git, panel: panel,
-                                           maxHeight: max(NWGitMetrics.panelMinHeight, geo.size.height - NW.Space.xs - NW.Space.l),
+                                           maxHeight: max(SHGitMetrics.panelMinHeight, geo.size.height - SH.Space.xs - SH.Space.l),
                                            vm: vm, designID: designID)
-                            .padding(.top, NW.Space.xs)
+                            .padding(.top, SH.Space.xs)
                             .padding(.trailing, trailing)
-                            .nwTransition(.overlay, anchor: .topTrailing)
+                            .shTransition(.overlay, anchor: .topTrailing)
                     }
                 }
                 .frame(width: geo.size.width, height: geo.size.height, alignment: .topTrailing)
             }
             .allowsHitTesting(git.panelOpen)
-            .nwAnimation(.overlay, value: git.panelOpen)
+            .shAnimation(.overlay, value: git.panelOpen)
         case .notices:
             // As the boards place them: Pull paused at the canvas's bottom leading corner (16pt
             // in, 80pt up, over the canvas toolbar); the Opened from Git toast at its bottom
             // center, 24pt up. Pull paused stays while the merge waits; the toast until dismissed.
             ZStack {
                 if [.conflict, .stopped, .failed].contains(git.state?.merge?.phase) {
-                    NWGitCanvasNotice(.paused, title: "Pull paused",
+                    SHGitCanvasNotice(.paused, title: "Pull paused",
                                       detail: "Your work is safe. Resolve overlapping changes before updating the canvas.")
-                        .padding(.leading, NW.Space.xl)
-                        .padding(.bottom, NWGitMetrics.pausedBottom)
+                        .padding(.leading, SH.Space.xl)
+                        .padding(.bottom, SHGitMetrics.pausedBottom)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
                 }
                 if let detail = git.openedNotice {
-                    NWGitCanvasNotice(.opened, title: "Opened from Git", detail: detail, dismiss: { git.openedNotice = nil })
-                        .padding(.bottom, NWGitMetrics.toastBottom)
+                    SHGitCanvasNotice(.opened, title: "Opened from Git", detail: detail, dismiss: { git.openedNotice = nil })
+                        .padding(.bottom, SHGitMetrics.toastBottom)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                        .nwTransition(.sheet, edge: .bottom)
+                        .shTransition(.sheet, edge: .bottom)
                 }
             }
-            .nwAnimation(.sheet, value: git.openedNotice)
+            .shAnimation(.sheet, value: git.openedNotice)
         }
     }
 }
 
 private struct DesignGitPanelHost: View {
     @Bindable var git: DesignGitDesignState
-    let panel: NWGitPanelState
+    let panel: SHGitPanelState
     let maxHeight: CGFloat
     var vm: ShepherdViewModel
     let designID: DesignID
 
     var body: some View {
-        NWGitPanel(state: panel, message: $git.message, maxHeight: maxHeight,
+        SHGitPanel(state: panel, message: $git.message, maxHeight: maxHeight,
                    close: { git.panelOpen = false }, pull: { vm.pullDesignGit(designID) },
                    select: { vm.selectDesignGitFile(designID, path: $0) },
                    commit: { vm.commitDesignGit(designID, push: $0) }, push: { vm.pushDesignGit(designID) },

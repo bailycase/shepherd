@@ -23,29 +23,29 @@ struct ChangesMenus: View {
                 switch menu {
                 case .scope, .commits:
                     ChangesScopeMenu(model: model, session: session)
-                        .offset(x: NW.Space.l, y: NWChangesMetrics.toolbarHeight - NW.Space.xs)
-                        .nwTransition(.overlay, edge: .top)
+                        .offset(x: SH.Space.l, y: SHChangesMetrics.toolbarHeight - SH.Space.xs)
+                        .shTransition(.overlay, edge: .top)
                     if menu == .commits {
                         ChangesCommitsMenu(model: model, session: session)
-                            .offset(x: NW.Space.l + NWChangesMenuMetrics.scopeWidth + NW.Space.xs,
-                                    y: NWChangesMetrics.toolbarHeight + ChangesMenuLayout.commitsTop)
-                            .nwTransition(.overlay, edge: .leading)
+                            .offset(x: SH.Space.l + SHChangesMenuMetrics.scopeWidth + SH.Space.xs,
+                                    y: SHChangesMetrics.toolbarHeight + ChangesMenuLayout.commitsTop)
+                            .shTransition(.overlay, edge: .leading)
                     }
                 case .base:
                     ChangesBasePicker(model: model, session: session)
-                        .offset(x: max(NW.Space.s, baseAnchor - NW.Space.s),
-                                y: NWChangesMetrics.toolbarHeight + NWChangesMetrics.compareHeight - NW.Space.xs)
-                        .nwTransition(.overlay, edge: .top)
+                        .offset(x: max(SH.Space.s, baseAnchor - SH.Space.s),
+                                y: SHChangesMetrics.toolbarHeight + SHChangesMetrics.compareHeight - SH.Space.xs)
+                        .shTransition(.overlay, edge: .top)
                 case .options:
                     ChangesOptionsMenu(model: model, session: session)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                         .padding(.trailing, 10)
-                        .offset(y: NWChangesMetrics.toolbarHeight - NW.Space.xs)
-                        .nwTransition(.overlay, edge: .top)
+                        .offset(y: SHChangesMetrics.toolbarHeight - SH.Space.xs)
+                        .shTransition(.overlay, edge: .top)
                 }
             }
         }
-        .nwAnimation(.overlay, value: model.menu)
+        .shAnimation(.overlay, value: model.menu)
     }
 }
 
@@ -62,26 +62,26 @@ private struct ChangesScopeMenu: View {
     let session: ReviewSession
 
     var body: some View {
-        NWChangesMenu(width: NWChangesMenuMetrics.scopeWidth) {
+        SHChangesMenu(width: SHChangesMenuMetrics.scopeWidth) {
             if session.engine == nil {
-                NWChangesMenuRow("Uncommitted", subtitle: session.reference.map { "vs \($0)" }, systemImage: NWChangesScopeGlyph.uncommitted.systemImage,
+                SHChangesMenuRow("Uncommitted", subtitle: session.reference.map { "vs \($0)" }, systemImage: SHChangesScopeGlyph.uncommitted.systemImage,
                                  checked: !session.isPRMode) { choose { model.actions.setPullRequest(false) } }
-                NWChangesMenuRow("Pull request", systemImage: NWChangesScopeGlyph.pullRequest.systemImage,
+                SHChangesMenuRow("Pull request", systemImage: SHChangesScopeGlyph.pullRequest.systemImage,
                                  checked: session.isPRMode) { choose { model.actions.setPullRequest(true) } }
             } else if let overview = session.overview {
                 ForEach(changesScopeOptions(overview, selected: session.scope, base: currentBase)) { option in
                     VStack(spacing: 0) {
-                        if option.startsGroup { NWChangesMenuDivider() }
+                        if option.startsGroup { SHChangesMenuDivider() }
                         row(option)
                     }
                 }
             } else {
-                HStack(spacing: NW.Space.m) {
-                    ProgressView().progressViewStyle(.nwSpinner(size: 10))
-                    Text("Counting each scope…").font(.nwSans(11)).foregroundStyle(Color.nw.textTertiary)
+                HStack(spacing: SH.Space.m) {
+                    ProgressView().progressViewStyle(.shSpinner(size: 10))
+                    Text("Counting each scope…").font(.shSans(11)).foregroundStyle(Color.sh.textTertiary)
                 }
-                .padding(.horizontal, NW.Space.m)
-                .padding(.vertical, NW.Space.s)
+                .padding(.horizontal, SH.Space.m)
+                .padding(.vertical, SH.Space.s)
             }
         }
     }
@@ -90,13 +90,13 @@ private struct ChangesScopeMenu: View {
     private func row(_ option: ChangesScopeOption) -> some View {
         let subtitle = option.unavailable ?? option.detail
         if option.kind == .commits {
-            NWChangesMenuRow(option.title, subtitle: subtitle, systemImage: glyph(option.kind)?.systemImage,
+            SHChangesMenuRow(option.title, subtitle: subtitle, systemImage: glyph(option.kind)?.systemImage,
                              trailing: option.trailing.map { .text($0) } ?? .none, checked: option.selected,
                              hasSubmenu: true, highlighted: model.menu == .commits, enabled: option.available) {
                 model.menu = model.menu == .commits ? .scope : .commits
             }
         } else {
-            NWChangesMenuRow(option.title, subtitle: subtitle, systemImage: glyph(option.kind)?.systemImage, trailing: trailing(option),
+            SHChangesMenuRow(option.title, subtitle: subtitle, systemImage: glyph(option.kind)?.systemImage, trailing: trailing(option),
                              checked: option.selected, enabled: option.available) {
                 choose { model.actions.setScope(option.scope) }
             }
@@ -109,7 +109,7 @@ private struct ChangesScopeMenu: View {
     }
 
     /// Unstaged and Staged sit under Uncommitted without a glyph of their own.
-    private func glyph(_ kind: ChangesScope.Kind) -> NWChangesScopeGlyph? {
+    private func glyph(_ kind: ChangesScope.Kind) -> SHChangesScopeGlyph? {
         switch kind {
         case .lastTurn: .lastTurn
         case .uncommitted: .uncommitted
@@ -120,7 +120,7 @@ private struct ChangesScopeMenu: View {
         }
     }
 
-    private func trailing(_ option: ChangesScopeOption) -> NWChangesMenuTrailing {
+    private func trailing(_ option: ChangesScopeOption) -> SHChangesMenuTrailing {
         if let added = option.added, let removed = option.removed { return .stat(added: added, removed: removed) }
         return option.trailing.map { .text($0) } ?? .none
     }
@@ -141,15 +141,15 @@ private struct ChangesCommitsMenu: View {
     var body: some View {
         let overview = session.overview
         let options = overview.map { changesCommitOptions($0, selected: session.scope) } ?? []
-        NWChangesMenu(width: NWChangesMenuMetrics.commitsWidth) {
-            NWChangesMenuTitle("On \(overview?.branch ?? overview?.head ?? "HEAD")")
+        SHChangesMenu(width: SHChangesMenuMetrics.commitsWidth) {
+            SHChangesMenuTitle("On \(overview?.branch ?? overview?.head ?? "HEAD")")
             if let all = options.first {
-                NWChangesMenuRow(all.title, systemImage: "square.on.square", checked: all.selected) { choose(all.scope) }
+                SHChangesMenuRow(all.title, systemImage: "square.on.square", checked: all.selected) { choose(all.scope) }
             }
             ScrollView {
                 VStack(spacing: 0) {
                     ForEach(options.dropFirst()) { option in
-                        NWChangesMenuRow(option.title, systemImage: NWChangesScopeGlyph.commits.systemImage,
+                        SHChangesMenuRow(option.title, systemImage: SHChangesScopeGlyph.commits.systemImage,
                                          trailing: option.detail.map { .text($0) } ?? .none,
                                          checked: option.selected, highlighted: anchor == option.id) {
                             pick(option.id, in: overview?.commits ?? [])
@@ -159,8 +159,8 @@ private struct ChangesCommitsMenu: View {
             }
             .frame(maxHeight: ChangesMenuLayout.listMaxHeight)
             .fixedSize(horizontal: false, vertical: true)
-            NWChangesMenuDivider()
-            NWChangesMenuNote("Pick two with ⇧ to see the range between them.")
+            SHChangesMenuDivider()
+            SHChangesMenuNote("Pick two with ⇧ to see the range between them.")
         }
     }
 
@@ -202,43 +202,43 @@ private struct ChangesBasePicker: View {
 
     var body: some View {
         let options = pickingCommit ? [] : session.branches.map { changesBaseOptions($0, selected: currentBase, query: query) } ?? []
-        NWChangesMenu(width: NWChangesMenuMetrics.baseWidth) {
-            NWChangesMenuSearch(text: $query, prompt: pickingCommit ? "Search commits" : "Search branches", isFocused: $searching,
+        SHChangesMenu(width: SHChangesMenuMetrics.baseWidth) {
+            SHChangesMenuSearch(text: $query, prompt: pickingCommit ? "Search commits" : "Search branches", isFocused: $searching,
                                 onSubmit: {
                                     if pickingCommit { if let first = commits.first { choose(first.id) } }
                                     else if let first = options.first { choose(first.name) }
                                 }, onEscape: { model.closeMenu() })
             if pickingCommit {
-                NWChangesMenuTitle("Compare against a commit")
+                SHChangesMenuTitle("Compare against a commit")
                 list {
                     ForEach(commits) { commit in
-                        NWChangesMenuRow(commit.subject, systemImage: NWChangesScopeGlyph.commits.systemImage,
+                        SHChangesMenuRow(commit.subject, systemImage: SHChangesScopeGlyph.commits.systemImage,
                                          trailing: .text(commit.shortID)) { choose(commit.id) }
                     }
                 }
             } else {
-                NWChangesMenuTitle("Compare against")
+                SHChangesMenuTitle("Compare against")
                 if let branches = session.branches {
                     list {
                         ForEach(options) { option in
-                            NWChangesMenuRow(option.name, systemImage: NWGlyph.gitBranch.symbolName, titleIsMono: true,
+                            SHChangesMenuRow(option.name, systemImage: SHGlyph.gitBranch.symbolName, titleIsMono: true,
                                              trailing: option.tag.map { .text($0) } ?? .none, checked: option.selected) { choose(option.name) }
                         }
                     }
-                    NWChangesMenuDivider()
-                    NWChangesMenuRow("A commit…", systemImage: NWChangesScopeGlyph.commits.systemImage,
+                    SHChangesMenuDivider()
+                    SHChangesMenuRow("A commit…", systemImage: SHChangesScopeGlyph.commits.systemImage,
                                      enabled: !(session.overview?.commits.isEmpty ?? true)) { pickingCommit = true }
                     if let pullBase = branches.pullRequestBase {
-                        NWChangesMenuRow("The PR’s base", systemImage: NWChangesScopeGlyph.pullRequest.systemImage,
+                        SHChangesMenuRow("The PR’s base", systemImage: SHChangesScopeGlyph.pullRequest.systemImage,
                                          trailing: .text(pullBase)) { choose(pullBase) }
                     }
                 } else {
-                    HStack(spacing: NW.Space.m) {
-                        ProgressView().progressViewStyle(.nwSpinner(size: 10))
-                        Text("Reading branches…").font(.nwSans(11)).foregroundStyle(Color.nw.textTertiary)
+                    HStack(spacing: SH.Space.m) {
+                        ProgressView().progressViewStyle(.shSpinner(size: 10))
+                        Text("Reading branches…").font(.shSans(11)).foregroundStyle(Color.sh.textTertiary)
                     }
-                    .padding(.horizontal, NW.Space.m)
-                    .frame(height: NWChangesMenuMetrics.rowHeight)
+                    .padding(.horizontal, SH.Space.m)
+                    .frame(height: SHChangesMenuMetrics.rowHeight)
                 }
             }
         }
@@ -271,25 +271,26 @@ private struct ChangesOptionsMenu: View {
     @Bindable var session: ReviewSession
 
     var body: some View {
-        NWChangesMenu(width: NWChangesMenuMetrics.optionsWidth) {
-            NWChangesMenuTitle("Diff")
-            NWChangesMenuToggle("Word diffs", systemImage: "text.word.spacing", isOn: $session.wordDiffs)
+        SHChangesMenu(width: SHChangesMenuMetrics.optionsWidth) {
+            SHChangesMenuTitle("Diff")
+            SHChangesMenuToggle("Word diffs", systemImage: "text.word.spacing", isOn: $session.wordDiffs)
+            SHChangesMenuToggle("Wrap lines", systemImage: "arrow.turn.down.left", isOn: $session.wrapLines)
             if session.engine != nil {
-                NWChangesMenuToggle("Hide whitespace changes", systemImage: "space", isOn: option(\.ignoreWhitespace))
-                NWChangesMenuToggle("Load full files", subtitle: "Expand past folds without a round trip", systemImage: "folder",
+                SHChangesMenuToggle("Hide whitespace changes", systemImage: "space", isOn: option(\.ignoreWhitespace))
+                SHChangesMenuToggle("Load full files", subtitle: "Expand past folds without a round trip", systemImage: "folder",
                                     isOn: option(\.fullFiles))
-                NWChangesMenuDivider()
-                NWChangesMenuRow("Copy git apply command", systemImage: "terminal", enabled: session.list != nil && !session.files.isEmpty) {
+                SHChangesMenuDivider()
+                SHChangesMenuRow("Copy git apply command", systemImage: "terminal", enabled: session.list != nil && !session.files.isEmpty) {
                     model.closeMenu()
                     model.actions.copyPatch(true)
                 }
-                NWChangesMenuRow("Copy as patch", systemImage: "doc.on.doc", enabled: session.list != nil && !session.files.isEmpty) {
+                SHChangesMenuRow("Copy as patch", systemImage: "doc.on.doc", enabled: session.list != nil && !session.files.isEmpty) {
                     model.closeMenu()
                     model.actions.copyPatch(false)
                 }
             }
             if let open = model.actions.open {
-                NWChangesMenuRow("Open in your editor", systemImage: "arrow.up.forward.square", trailing: .text("⇧⌘O"),
+                SHChangesMenuRow("Open in your editor", systemImage: "arrow.up.forward.square", trailing: .text("⇧⌘O"),
                                  enabled: !session.files.isEmpty) {
                     model.closeMenu()
                     if let file = session.files.first(where: { $0.id == model.currentFile }) ?? session.files.first { open(file) }

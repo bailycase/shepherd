@@ -3,7 +3,10 @@
 // Inert unless SHEPHERD_AGENT_ID and SHEPHERD_SOCKET are set. Status reporting
 // is best-effort; native codemode failures remain visible as normal tool errors.
 import * as net from "node:net";
-import { createCodemodeExtension, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import * as os from "node:os";
+import { createCodemodeExtension, getAgentDir, ProjectTrustStore, SettingsManager, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 type Status = "working" | "blocked" | "idle" | "done";
 
@@ -46,6 +49,24 @@ export default function shepherdStatus(pi: ExtensionAPI) {
   const agentID = process.env.SHEPHERD_AGENT_ID ?? "";
   const socketPath = process.env.SHEPHERD_SOCKET ?? "";
   if (!agentID || !socketPath) return;
+  // Read only approved Space resources, never the unapproved branch's extensions or settings.
+  pi.on("resources_discover", (_event, ctx) => {
+    const owner = process.env.SHEPHERD_RESOURCE_OWNING_SPACE;
+    const checkout = process.env.SHEPHERD_RESOURCE_WORKTREE_CWD;
+    if (!owner || !checkout || !path.isAbsolute(owner) || !path.isAbsolute(checkout)
+        || process.env.SHEPHERD_CHILD === "1" || process.env.SHEPHERD_PROJECT_COORDINATOR === "1") return;
+    try {
+      const root = fs.realpathSync(owner), here = fs.realpathSync(ctx.cwd), home = fs.realpathSync(os.homedir());
+      if (here !== fs.realpathSync(checkout) || here === root || here === home || root === home || root === path.parse(root).root) return;
+      const decision = new ProjectTrustStore(getAgentDir()).get(root);
+      if (!(decision ?? (SettingsManager.create(root, getAgentDir(), { projectTrusted: false }).getDefaultProjectTrust() === "always"))) return;
+      const directories = [".shepherd", ".pi"].map(base => path.join(root, base));
+      return { skillPaths: directories.map(base => path.join(base, "skills")),
+        promptPaths: directories.map(base => path.join(base, "prompts")) };
+    } catch {
+      // A missing/revoked Space contributes no resources and never prevents a thread starting.
+    }
+  });
   const deferTools = process.env.SHEPHERD_DEFER_TOOLS === "1";
   let codemodeEnabled = false;
 

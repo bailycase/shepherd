@@ -31,17 +31,17 @@ struct ComposerMenuTests {
 
         /// `thinkingRows` counts segment tracks; `modelRows` includes the quick choices and All models.
         func height(thinkingRows: Int, modelRows: Int) -> CGFloat {
-            let padding = 2 * NW.Space.s
+            let padding = 2 * SH.Space.s
             switch self {
-            case .slash: return NWComposerMetrics.menuHeaderHeight + CGFloat(NWComposerMetrics.menuMaxRows) * NWComposerMetrics.slashRowHeight + padding
-            case .models: return NWComposerMetrics.modelSearchHeight + 2 * NW.Space.xs + NWComposerMetrics.modelPickerMaxHeight
+            case .slash: return SHComposerMetrics.menuHeaderHeight + CGFloat(SHComposerMetrics.menuMaxRows) * SHComposerMetrics.slashRowHeight + padding
+            case .models: return SHComposerMetrics.modelSearchHeight + 2 * SH.Space.xs + SHComposerMetrics.modelPickerMaxHeight
             case .thinking, .speed:
                 // A hairline between sections, a header, a track of 24pt segments in 2pt padding, and 6pt under it.
                 func section(rows: Int) -> CGFloat {
-                    NW.Space.xs * 2 + 1 + NWComposerMetrics.menuHeaderHeight
-                        + CGFloat(rows) * NW.Height.controlS + CGFloat(rows - 1) * NW.Space.xxs + NW.Space.xxs * 2 + NW.Space.s
+                    SH.Space.xs * 2 + 1 + SHComposerMetrics.menuHeaderHeight
+                        + CGFloat(rows) * SH.Height.controlS + CGFloat(rows - 1) * SH.Space.xxs + SH.Space.xxs * 2 + SH.Space.s
                 }
-                let models = NWComposerMetrics.menuHeaderHeight + CGFloat(modelRows) * NWComposerMetrics.menuRowHeight + padding
+                let models = SHComposerMetrics.menuHeaderHeight + CGFloat(modelRows) * SHComposerMetrics.menuRowHeight + padding
                 return models + section(rows: thinkingRows) + (self == .speed ? section(rows: 1) : 0)
             }
         }
@@ -49,8 +49,8 @@ struct ComposerMenuTests {
         var width: CGFloat {
             switch self {
             case .slash: .infinity
-            case .models: NWComposerMetrics.modelPickerWidth
-            case .thinking, .speed: NWComposerMetrics.modelSettingsWidth
+            case .models: SHComposerMetrics.modelPickerWidth
+            case .thinking, .speed: SHComposerMetrics.modelSettingsWidth
             }
         }
 
@@ -89,7 +89,7 @@ struct ComposerMenuTests {
         #expect(thread.threadOffset == offset, "the thread stays where it was scrolled")
         let after = FrameTimer.capture(thread.window, whole)
         // The card's focus ring (3pt outside it) lights with an open menu: compare the thread above it.
-        let band = Int(thread.cardTop - NWComposerMetrics.focusRing - 1)
+        let band = Int(thread.cardTop - SHComposerMetrics.focusRing - 1)
         let changed = try #require(Pixels.bounds(differing: before, after, rows: 0..<band), "the menu opened")
         let width = min(menu.width, size.width - 2 * thread.columnLeading)
         let height = menu.height(thinkingRows: 1, modelRows: thread.settingsModelRows)
@@ -118,10 +118,10 @@ struct ComposerMenuTests {
         Menu.thinking.open(in: thread)
         try await thread.settle()
         let after = FrameTimer.capture(thread.window, whole)
-        let band = Int(thread.cardTop - NWComposerMetrics.focusRing - 1)
+        let band = Int(thread.cardTop - SHComposerMetrics.focusRing - 1)
         let solid = try #require(Pixels.bounds(differing: before, after, rows: 0..<band, by: Self.edge))
         #expect(abs(solid.height - Menu.thinking.height(thinkingRows: rows, modelRows: thread.settingsModelRows)) <= 2, "\(rows) row(s) of segments: \(solid)")
-        #expect(abs(solid.width - NWComposerMetrics.modelSettingsWidth) <= 2, "all segments stay inside the popover")
+        #expect(abs(solid.width - SHComposerMetrics.modelSettingsWidth) <= 2, "all segments stay inside the popover")
     }
 
     /// Standard adds nothing to the unified button; Fast adds a bolt without changing height.
@@ -296,7 +296,7 @@ struct ComposerMenuTests {
         defer { thread.close() }
         try await thread.waitUntilReady()
         let threadScroll = try #require(thread.threadScroll)
-        let inPicker = CGPoint(x: thread.columnLeading + NWComposerMetrics.modelPickerWidth / 2, y: thread.cardTop - AppLayout.menuGap - 60)
+        let inPicker = CGPoint(x: thread.columnLeading + SHComposerMetrics.modelPickerWidth / 2, y: thread.cardTop - AppLayout.menuGap - 60)
         let underneath = try #require(thread.hit(inPicker))
         #expect(underneath.isDescendant(of: threadScroll), "the thread is under the pointer before the menu opens")
 
@@ -327,11 +327,11 @@ struct ComposerMenuTests {
         try await thread.settle()
 
         let after = FrameTimer.capture(thread.window, whole)
-        let band = Int(thread.cardTop - NWComposerMetrics.focusRing - 1)
+        let band = Int(thread.cardTop - SHComposerMetrics.focusRing - 1)
         let solid = try #require(Pixels.bounds(differing: before, after, rows: 0..<band, by: Self.edge))
         #expect(abs(solid.width - Menu.models.width) <= 2, "the changed pixels belong to the picker: \(solid)")
         #expect(solid.minY >= AppLayout.menuMargin - 1, "the picker stays inside the thread: \(solid)")
-        #expect(solid.minY <= AppLayout.menuMargin + NWComposerMetrics.modelRowHeight, "and takes the room it has: \(solid)")
+        #expect(solid.minY <= AppLayout.menuMargin + SHComposerMetrics.modelRowHeight, "and takes the room it has: \(solid)")
         let list = try #require(thread.menuScroll?.documentView)
         #expect(list.bounds.height > thread.menuScroll!.contentView.bounds.height, "the list scrolls inside the picker")
     }
@@ -347,7 +347,7 @@ struct ComposerMenuTests {
         try await thread.settle()
 
         let list = try #require(thread.menuScroll)
-        // `NWMenuListStartsAtTop` holds the list at its top for a fixed time after it appears. On a
+        // `SHMenuListStartsAtTop` holds the list at its top for a fixed time after it appears. On a
         // loaded machine the growth's last frames arrive after that and leave the list 0.6 to 3.9pt
         // down (a Mac's efficiency cores under load); where CI=true that is a known issue.
         withKnownIssue("a busy main thread drifts the list after the menu stops holding it", isIntermittent: true) {
@@ -362,7 +362,7 @@ struct ComposerMenuTests {
         let thread = ComposerThread(animated: false)
         defer { thread.close() }
         try await thread.waitUntilReady()
-        let above = CGRect(x: 0, y: 0, width: thread.size.width, height: thread.cardTop - NWComposerMetrics.focusRing - 1)
+        let above = CGRect(x: 0, y: 0, width: thread.size.width, height: thread.cardTop - SHComposerMetrics.focusRing - 1)
         // ⇧⌘M takes a few updates to reach the composer: wait for the window to change, then for
         // it to come to rest.
         func after(_ change: () -> Void) async throws -> FrameTimer.Capture {
@@ -379,7 +379,7 @@ struct ComposerMenuTests {
         // its field editor takes over, so the picker's comparison leaves that one row out.
         let pickerTop = thread.cardTop - AppLayout.menuGap - Menu.models.height
         let searchField = CGRect(x: thread.columnLeading, y: pickerTop, width: Menu.models.width,
-                                 height: NWComposerMetrics.modelSearchHeight)
+                                 height: SHComposerMetrics.modelSearchHeight)
         let models = try await after { Menu.models.open(in: thread) }
         _ = try await after { Menu.models.open(in: thread) }
         let thinking = try await after { Menu.thinking.open(in: thread) }
@@ -425,7 +425,7 @@ struct ComposerMenuTests {
         defer { thread.close() }
         try await thread.waitUntilReady()
         // The thread above the card: typing "/" changes the field too.
-        let whole = CGRect(x: 0, y: 0, width: thread.size.width, height: thread.cardTop - NWComposerMetrics.focusRing - 1)
+        let whole = CGRect(x: 0, y: 0, width: thread.size.width, height: thread.cardTop - SHComposerMetrics.focusRing - 1)
         let closed = FrameTimer.capture(thread.window, whole)
         menu.open(in: thread)
         try await thread.settle()

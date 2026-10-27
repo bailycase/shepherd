@@ -15,14 +15,14 @@ extension AppLayout {
     static let settingsBackGlyphWidth: CGFloat = 10
     /// Back to Shepherd to the search field: 10pt.
     static let settingsSearchTop: CGFloat = 10
-    static let settingsNavRowSpacing: CGFloat = NW.Space.xxs
+    static let settingsNavRowSpacing: CGFloat = SH.Space.xxs
     static let settingsTop: CGFloat = 44
     static let settingsBottom: CGFloat = 48
     /// 48pt either side of the page's column.
     /// The page title: Geist 22/600, tracked −1%.
     static let settingsTitleSize: CGFloat = 22
     /// A second heading inside a page (Pi's From pi): Geist 17/600, the title ramp + 2.
-    static let settingsSectionTitleSize: CGFloat = NWTextStyle.title.size + NW.Space.xxs
+    static let settingsSectionTitleSize: CGFloat = SHTextStyle.title.size + SH.Space.xxs
     static let settingsTitleTracking: CGFloat = -0.01
     /// A group's footnote: Geist 12/1.5.
     static let settingsFootnoteSize: CGFloat = 12
@@ -30,24 +30,24 @@ extension AppLayout {
     /// A remote host's address in its row ("horizon.starlight.internal:7433"): mono 12.
     static let settingsAddressSize: CGFloat = 12
     /// Between the page header and each group.
-    static let settingsGroupSpacing: CGFloat = NW.Space.xxl + NW.Space.xs
-    /// A row's content, density-scaled; the row adds 10pt above and below (`NWCardRowFrame`).
-    @MainActor static var settingsRowMinHeight: CGFloat { NW.Height.scaled(NWCardRowMetrics.minHeight) }
+    static let settingsGroupSpacing: CGFloat = SH.Space.xxl + SH.Space.xs
+    /// A row's content, density-scaled; the row adds 10pt above and below (`SHCardRowFrame`).
+    @MainActor static var settingsRowMinHeight: CGFloat { SH.Height.scaled(SHCardRowMetrics.minHeight) }
     /// Settings ▸ Keyboard: a changed shortcut's Reset, in Geist 12.
     static let shortcutResetSize: CGFloat = 12
     /// The page's explanation: 13.5/1.5.
     static let settingsExplanationLineHeight: CGFloat = 1.5
     /// Text fields in a row (the Settings boards' 240pt, a port 100).
-    static let settingsFieldWidth: CGFloat = NWSettingsControlMetrics.fieldWidth
+    static let settingsFieldWidth: CGFloat = SHSettingsControlMetrics.fieldWidth
     /// A popup's least width in a sheet (the Controls board's); on a Settings page a popup fits
     /// its value.
     static let settingsPopupWidth: CGFloat = 200
-    static let settingsPortFieldWidth: CGFloat = NWSettingsControlMetrics.portFieldWidth
+    static let settingsPortFieldWidth: CGFloat = SHSettingsControlMetrics.portFieldWidth
     static let settingsFontPreviewWidth: CGFloat = 320
     /// A row whose control sits under its title (Appearance ▸ Organize by): 12pt above, 16 at
     /// the sides and below, the control 12pt under the words.
-    static let settingsStackedRowInsets = EdgeInsets(top: NW.Space.l, leading: NW.Space.xl, bottom: NW.Space.xl, trailing: NW.Space.xl)
-    static let settingsStackedRowSpacing: CGFloat = NW.Space.l
+    static let settingsStackedRowInsets = EdgeInsets(top: SH.Space.l, leading: SH.Space.xl, bottom: SH.Space.xl, trailing: SH.Space.xl)
+    static let settingsStackedRowSpacing: CGFloat = SH.Space.l
 
     // Wide pages (Instructions, Experiments): the page fills the detail area instead of the 720pt
     // column.
@@ -92,7 +92,7 @@ extension AppLayout {
     static let instructionsEditorInset: CGFloat = 10
     static let instructionsGutterWidth: CGFloat = 34
     static let instructionsNumberSize: CGFloat = 10.5
-    static let instructionsGutterGap: CGFloat = NW.Space.l
+    static let instructionsGutterGap: CGFloat = SH.Space.l
     /// The comparison's diff: mono 12 on 22pt lines, the 34pt gutter 8pt before a 14pt sign.
     static let instructionsDiffTextSize: CGFloat = 12
     static let instructionsDiffLineHeight: CGFloat = 22

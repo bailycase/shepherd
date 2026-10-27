@@ -59,10 +59,10 @@ struct HostUpdatePreviewTests {
         ]
         let size = CGSize(width: 1440, height: CGFloat(phases.count) * 100 + 40)
         try await Preview.renderMatrix("settings-remote-host-update-phases", size: size) {
-            VStack(alignment: .leading, spacing: NW.Space.l) {
+            VStack(alignment: .leading, spacing: SH.Space.l) {
                 ForEach(phases, id: \.0) { label, status, polling, error in
-                    VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                        Text(label).font(.nw(.caption, weight: .semibold)).foregroundStyle(Color.nw.textTertiary)
+                    VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                        Text(label).font(.sh(.caption, weight: .semibold)).foregroundStyle(Color.sh.textTertiary)
                         HostUpdateContent(
                             hostName: "horizon",
                             status: status,
@@ -70,12 +70,12 @@ struct HostUpdatePreviewTests {
                             error: error
                         )
                     }
-                    .padding(.horizontal, NW.Space.xl)
+                    .padding(.horizontal, SH.Space.xl)
                 }
             }
             .padding(AppLayout.settingsWideSides)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
     }
 }

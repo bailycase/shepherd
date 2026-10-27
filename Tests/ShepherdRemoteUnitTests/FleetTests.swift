@@ -52,6 +52,50 @@ struct FleetTests {
         }
     }
 
+    @Test(arguments: [
+        (#"{"command":"python3 scripts/render.py --all"}"#, "bash", "Running python3"),
+        (#"{"command":"cd tools && python fetch.py"}"#, "bash", "Running python"),
+        (#"{"command":"swift test --filter Fleet"}"#, "bash", "Running tests"),
+        (#"{"command":"swift build"}"#, "bash", "Building"),
+        (#"{"path":"App/iOS/ThreadView.swift","oldText":"a","newText":"b"}"#, "edit", "Editing ThreadView.swift"),
+        (#"{"path":"Sources/Fleet.swift"}"#, "read", "Reading Fleet.swift"),
+    ] as [(String, String, String)])
+    func homeSaysARunningCallAsAVerb(args: String, tool: String, doing: String) {
+        let digest = Self.digest(Self.snapshot([
+            Fixture.message("user", "go"),
+            Fixture.tool(tool, args: args, status: "running", startedAt: 1_000, timestamp: 1_500),
+        ], running: true))
+        #expect(digest.doing == doing)
+    }
+
+    @Test func aRunningThreadBetweenCallsIsThinkingAndASettledOneDoesNothing() throws {
+        #expect(Self.digest(Self.snapshot([Fixture.message("user", "go")], running: true)).doing == "Thinking")
+        #expect(Self.digest(Self.snapshot([Fixture.message("user", "go")])).doing == nil)
+        let thinking = Self.digest(Self.snapshot([Fixture.message("user", "go")], running: true))
+        let model = FleetModel(hosts: [Self.host(Self.studio, "Studio", agents: [Self.agent("plan", .working), Self.agent("done", .done)])],
+                               digests: [Self.ref("plan"): thinking])
+        let working = try #require(model.recents.first { $0.ref == Self.ref("plan") })
+        let done = try #require(model.recents.first { $0.ref == Self.ref("done") })
+        #expect(working.doing == "Thinking")
+        #expect(done.doing == nil && done.place == "Shepherd")
+    }
+
+    /// The glance cards' extras: a settled turn's first line, what it changed, what waits.
+    @Test func aSettledThreadSaysHowItEndedAndWhatItChanged() {
+        var snapshot = Self.snapshot([
+            Fixture.message("user", "go"),
+            Fixture.message("assistant", "Done. 3 files changed, tests pass.\nDetails follow."),
+        ])
+        snapshot.turnChanges = [ChangesTurn(startedAt: 1, state: .ready, fileCount: 3, added: 67, removed: 48)]
+        snapshot.queue = NativeQueue(items: [NativeQueuedMessage(id: UUID(), text: "then push", sentAt: 2)], paused: false)
+        let digest = Self.digest(snapshot)
+        #expect(digest.result == "Done. 3 files changed, tests pass.")
+        #expect(digest.changes == FleetChanges(files: 3, added: 67, removed: 48))
+        #expect(digest.queued == 1)
+        snapshot.running = true
+        #expect(Self.digest(snapshot).result == nil)
+    }
+
     @Test func aSettledThreadHasNoActivityButKnowsWhenItLastMoved() {
         let digest = Self.digest(Self.snapshot([
             Fixture.tool("bash", args: #"{"command":"ls"}"#, status: "running", timestamp: 2_000),
@@ -190,6 +234,20 @@ struct FleetTests {
         #expect(row.now == "2 subagents · 1 waiting on parent")
     }
 
+    /// The Mac's sidebar shows a thread whose turn ended as Working while its subagents run; the phone agrees, so its
+    /// Home and glance cards never call it done.
+    @Test(arguments: [AgentStatus.done, .idle])
+    func aThreadWhoseSubagentsStillRunIsWorking(status: AgentStatus) {
+        var paused = Fixture.run("paused")
+        paused.paused = true
+        let model = FleetModel(hosts: [Self.host(Self.studio, "Studio", agents: [Self.agent("parent", status), Self.agent("waits", status)])],
+                               digests: [Self.ref("parent"): Self.digest(Self.snapshot(subagents: [Fixture.run("worker")])),
+                                         Self.ref("waits"): Self.digest(Self.snapshot(subagents: [paused]))])
+        #expect(model.running.map(\.ref) == [Self.ref("parent")])
+        #expect(model.recents.first?.status == .working)
+        #expect(!model.finished.contains { $0.ref == Self.ref("parent") })
+    }
+
     @Test func onlyConnectedHostsAskAndOfflineRowsAreTheirLastKnownState() {
         let model = FleetModel(hosts: [
             Self.host(Self.studio, "Studio", .failed(RemoteHostFailure(kind: .unreachable, detail: "refused")), agents: [Self.agent("dock", .blocked), Self.agent("run", .working)]),
@@ -232,6 +290,17 @@ struct FleetTests {
         #expect(row.worktree)
         #expect(row.hostTag == nil)
         #expect(!model.tagsHosts)
+    }
+
+    @Test func standaloneThreadsRemainVisibleOnRemoteClients() {
+        let storage = Space(name: "No space", path: "/tmp/threads", hidden: true, holdsThreads: true)
+        let agent = Self.agent("research", .working, space: storage)
+        let host = FleetHost(id: Self.studio, name: "Studio", address: "studio.local", port: 7433, phase: .connected,
+                             state: ShepherdState(spaces: [storage], agents: [agent]))
+        let model = FleetModel(hosts: [host], digests: [:])
+        #expect(model.running.map(\.ref) == [Self.ref("research")])
+        #expect(model.recents.map(\.ref) == [Self.ref("research")])
+        #expect(model.hosts.first?.summary == "1 thread running · No space")
     }
 
     @Test func automationRunsAndHiddenSpacesStayOutOfTheThreads() {

@@ -20,31 +20,31 @@ struct PadDesignTweakPane: View {
         let shown = model.presentation
         VStack(spacing: 0) {
             if shown.isEmpty {
-                NWTweakHeader(board: "Nothing selected", element: nil, note: "Select an element on the canvas to tweak it.")
+                SHTweakHeader(board: "Nothing selected", element: nil, note: "Select an element on the canvas to tweak it.")
                 Spacer(minLength: 0)
             } else {
-                NWTweakHeader(board: shown.board, element: shown.element,
+                SHTweakHeader(board: shown.board, element: shown.element,
                               note: shown.problem ?? "Changes show on the canvas as you drag.")
                 ScrollView {
                     VStack(spacing: 0) {
                         ForEach(Array(shown.groups.enumerated()), id: \.element.id) { index, group in
-                            NWTweakGroup(group.title, divided: index < shown.groups.count - 1 || shown.scopeName != nil) {
+                            SHTweakGroup(group.title, divided: index < shown.groups.count - 1 || shown.scopeName != nil) {
                                 ForEach(group.rows) { row in PadDesignTweakRow(row: row, model: model) }
                             }
                         }
                         if let name = shown.scopeName {
-                            NWTweakGroup("Apply to", divided: false) {
-                                NWTweakRow("Scope") {
-                                    NWTweakScope(selection: Binding(get: { model.scope == .every ? .every : .board },
+                            SHTweakGroup("Apply to", divided: false) {
+                                SHTweakRow("Scope") {
+                                    SHTweakScope(selection: Binding(get: { model.scope == .every ? .every : .board },
                                                                     set: { model.scope = $0 == .every ? .every : .board }),
                                                  every: "Every \(name)")
                                 }
-                                if let note = shown.scopeNote { NWTweakNote(note) }
+                                if let note = shown.scopeNote { SHTweakNote(note) }
                             }
                         }
                     }
                 }
-                NWTweakFooter(canReset: shown.canReset, reset: { model.reset() }, ask: ask)
+                SHTweakFooter(canReset: shown.canReset, reset: { model.reset() }, ask: ask)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -64,25 +64,25 @@ private struct PadDesignTweakRow: View {
     var body: some View {
         switch row.control {
         case .steps(let values, let index):
-            NWTweakRow(row.label, layout: .slider) {
-                NWValueSlider(row.label, value: Binding(get: { Double(index) }, set: { step(Int($0), .changed) }),
+            SHTweakRow(row.label, layout: .slider) {
+                SHValueSlider(row.label, value: Binding(get: { Double(index) }, set: { step(Int($0), .changed) }),
                               in: 0...Double(max(1, values.count - 1)), step: 1,
                               format: { DesignTweakControls.format(values[min(max(0, Int($0)), values.count - 1)]) },
                               onEditingChanged: { editing in if !editing { step(nil, .ended) } })
             }
         case .slider(let value, let min, let max, let step):
-            NWTweakRow(row.label, layout: .slider) {
-                NWValueSlider(row.label, value: Binding(get: { value }, set: { set(.number($0), .changed) }),
+            SHTweakRow(row.label, layout: .slider) {
+                SHValueSlider(row.label, value: Binding(get: { value }, set: { set(.number($0), .changed) }),
                               in: min...max, step: step, format: { DesignTweakControls.format($0) },
                               onEditingChanged: { editing in if !editing { set(.number(latest ?? value), .ended) } })
             }
         case .choice(let options, let selected):
-            NWTweakRow(row.label) {
-                NWSegmentedPicker(row.label, selection: Binding(get: { selected ?? "" }, set: choose),
+            SHTweakRow(row.label) {
+                SHSegmentedPicker(row.label, selection: Binding(get: { selected ?? "" }, set: choose),
                                   options: options.map { ($0.value, $0.title) }, size: .s)
             }
         case .menu(let options, let selected):
-            NWTweakRow(row.label) {
+            SHTweakRow(row.label) {
                 Picker(row.label, selection: Binding(get: { selected ?? "" }, set: choose)) {
                     ForEach(options, id: \.value) { Text($0.title).tag($0.value) }
                 }
@@ -90,10 +90,10 @@ private struct PadDesignTweakRow: View {
                 .fixedSize()
             }
         case .colors(let colors, let selected):
-            NWTweakRow(row.label) {
-                NWTokenChipFlow {
+            SHTweakRow(row.label) {
+                SHTokenChipFlow {
                     ForEach(colors) { color in
-                        NWTokenChip(color.title, swatch: Color(light: color.hex, dark: color.hex), isSelected: color.id == selected) {
+                        SHTokenChip(color.title, swatch: Color(light: color.hex, dark: color.hex), isSelected: color.id == selected) {
                             pick(color)
                         }
                     }
@@ -102,17 +102,17 @@ private struct PadDesignTweakRow: View {
                 .frame(maxWidth: .infinity, alignment: .trailing)
             }
         case .toggle(let on):
-            NWTweakRow(row.label) {
+            SHTweakRow(row.label) {
                 Toggle(row.label, isOn: Binding(get: { on }, set: { set(.bool($0), .ended) }))
-                    .toggleStyle(.nwSwitch)
+                    .toggleStyle(.shSwitch)
                     .labelsHidden()
             }
         case .stepper(let value):
-            NWTweakRow(row.label) {
-                NWStepper(row.label, value: Binding(get: { value }, set: { set(.number(Double($0)), .ended) }), in: -9999...9999)
+            SHTweakRow(row.label) {
+                SHStepper(row.label, value: Binding(get: { value }, set: { set(.number(Double($0)), .ended) }), in: -9999...9999)
             }
         case .text(let text):
-            NWTweakRow(row.label) {
+            SHTweakRow(row.label) {
                 PadDesignTweakTextField(label: row.label, text: text) { typed in
                     if case .prop(let name) = row.id { model.setPropText(name, typed) }
                 }
@@ -165,7 +165,7 @@ private struct PadDesignTweakTextField: View {
 
     var body: some View {
         TextField(label, text: $draft)
-            .nwField(focused: focused)
+            .shField(focused: focused)
             .focused($focused)
             .frame(maxWidth: MobileLayout.padDesignTweakFieldWidth)
             .onAppear { draft = text }

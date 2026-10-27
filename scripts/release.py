@@ -37,6 +37,10 @@ usage:
                                         is arm64 only, and carries the pinned pi engine
                                         (scripts/pi_engine.py)
   release.py verify-ios <app> <build>   check an archived iOS app before it is uploaded
+  release.py prepare-ios-signing <app> ad-hoc seal push and app group entitlements for cloud export
+  release.py ensure-ios-push --key-id <id> --issuer-id <id> --key <p8>
+                                       enable push on the existing iOS App ID before export
+  release.py verify-ios-ipa <ipa> <build> verify the signed export before uploading
   release.py retire-testflight --key-file <p8> [--wait-for-build <n>] [--timeout <s>]
                              [--interval <s>] [--dry-run]
                                         keep the newest processed TestFlight build and expire
@@ -55,10 +59,13 @@ import re
 import subprocess
 import sys
 import time
+import tempfile
+from pathlib import Path
 import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ElementTree
+from xml.parsers.expat import ExpatError
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -643,6 +650,104 @@ def verify_ios(path: str, build: str) -> list[str]:
         problems.append(f"CFBundleExecutable {executable!r} is not in the bundle")
     return problems
 
+def _ios_command(*args: str) -> bytes:
+    # Capture even failures: decoded profiles contain certificates, not release log material.
+    try:
+        return subprocess.run(args, check=True, capture_output=True, timeout=120).stdout
+    except (OSError, subprocess.SubprocessError):
+        raise ValueError(f"iOS signing command failed: {args[0]}") from None
+
+
+def _ios_plist(data: bytes) -> dict:
+    try:
+        value = plistlib.loads(data)
+        if not isinstance(value, dict) or b"$(" in plistlib.dumps(value) or b"${" in plistlib.dumps(value):
+            raise ValueError()
+        return value
+    except (ValueError, TypeError, OverflowError, ExpatError, plistlib.InvalidFileException):
+        raise ValueError("missing, malformed or unresolved iOS signing plist") from None
+
+
+IOS_GROUP = "group.com.bailycase.shepherd.ios"
+# The widget extension inside the app, its App ID, and the entitlements it requests: it reads the
+# app's glance snapshot through IOS_GROUP, so a seal without the group ships empty widgets.
+IOS_WIDGETS = ("PlugIns/Shepherd Widgets.appex", IOS.bundle_id + ".widgets", "App/Widgets/ShepherdWidgets.entitlements")
+
+
+def _ios_grouped(entitlements: dict) -> bool:
+    groups = entitlements.get("com.apple.security.application-groups")
+    return isinstance(groups, list) and IOS_GROUP in groups
+
+
+def prepare_ios_signing(path: str) -> None:
+    """Supply the entitlement requests lost by CODE_SIGNING_ALLOWED=NO; no private identity.
+    The widget extension is sealed first: sealing the app covers what is inside it."""
+    repository = Path(__file__).resolve().parent.parent
+    widgets = os.path.join(path, IOS_WIDGETS[0])
+    app = _ios_plist((repository / "App/iOS/ShepherdIOS.entitlements").read_bytes().replace(b"$(APS_ENVIRONMENT)", b"production"))
+    if app.get("aps-environment") != "production":
+        raise ValueError("archive must request production push entitlements")
+    for bundle, entitlements in ((widgets, _ios_plist((repository / IOS_WIDGETS[2]).read_bytes())), (path, app)):
+        if not _ios_grouped(entitlements):
+            raise ValueError("archive must request the glance app group")
+        with tempfile.TemporaryDirectory(prefix="shepherd-ios-signing-") as root:
+            requested = Path(root) / "entitlements.plist"
+            requested.write_bytes(plistlib.dumps(entitlements))
+            _ios_command("codesign", "--force", "--sign", "-", "--entitlements", str(requested),
+                         "--generate-entitlement-der", bundle)
+        actual = _ios_plist(_ios_command("codesign", "-d", "--entitlements", ":-", bundle))
+        if not _ios_grouped(actual):
+            raise ValueError("sealed archive lacks the glance app group")
+    if actual.get("aps-environment") != "production":
+        raise ValueError("sealed archive lacks production push entitlements")
+
+
+def verify_ios_ipa(path: str, build: str) -> None:
+    """Verify this build's trusted, locally exported IPA before any upload."""
+    repository = Path(__file__).resolve().parent.parent
+    team = _ios_plist((repository / IOS.export_options).read_bytes()).get("teamID")
+    if not isinstance(team, str) or not re.fullmatch(r"[A-Z0-9]{10}", team):
+        raise ValueError("export options lack a valid teamID")
+    with tempfile.TemporaryDirectory(prefix="shepherd-ios-verify-") as root:
+        _ios_command("ditto", "-x", "-k", os.path.abspath(path), root)
+        apps = list((Path(root) / "Payload").glob("*.app"))
+        if len(apps) != 1 or apps[0].name != IOS.product or not apps[0].is_dir():
+            raise ValueError("IPA must contain exactly Payload/Shepherd iOS.app")
+        app = str(apps[0])
+        problems = verify_ios(app, build)
+        if problems:
+            raise ValueError("; ".join(problems))
+        _ios_command("codesign", "--verify", "--deep", "--strict", app)
+        signed = _ios_plist(_ios_command("codesign", "-d", "--entitlements", ":-", app))
+        profile = _ios_plist(_ios_command("security", "cms", "-D", "-i",
+                                         str(apps[0] / "embedded.mobileprovision")))
+        if profile.get("TeamIdentifier") != [team]:
+            raise ValueError("provisioning profile team does not match export team")
+        for label, entitlements in (("signature", signed), ("profile", profile.get("Entitlements"))):
+            if not isinstance(entitlements, dict):
+                raise ValueError(f"{label} entitlements are missing or malformed")
+            expected = {"aps-environment": "production",
+                        "application-identifier": f"{team}.{IOS.bundle_id}",
+                        "com.apple.developer.team-identifier": team}
+            for key, value in expected.items():
+                if entitlements.get(key) != value:
+                    raise ValueError(f"{label} has missing or incorrect {key}")
+            if entitlements.get("get-task-allow", False) is not False:
+                raise ValueError(f"{label} permits debugging or has malformed get-task-allow")
+            if not _ios_grouped(entitlements):
+                raise ValueError(f"{label} lacks the glance app group")
+        widgets = apps[0] / IOS_WIDGETS[0]
+        signed = _ios_plist(_ios_command("codesign", "-d", "--entitlements", ":-", str(widgets)))
+        profile = _ios_plist(_ios_command("security", "cms", "-D", "-i", str(widgets / "embedded.mobileprovision")))
+        for label, entitlements in (("widgets signature", signed), ("widgets profile", profile.get("Entitlements"))):
+            if not isinstance(entitlements, dict):
+                raise ValueError(f"{label} entitlements are missing or malformed")
+            if entitlements.get("application-identifier") != f"{team}.{IOS_WIDGETS[1]}":
+                raise ValueError(f"{label} has missing or incorrect application-identifier")
+            if not _ios_grouped(entitlements):
+                raise ValueError(f"{label} lacks the glance app group")
+
+
 # TestFlight retirement. Every TestFlight run uploads a build and nothing else expires the old ones, so
 # testers could install any build from the last 90 days. release.yml's retire-testflight job
 # runs this after each upload: it keeps the newest processed build and expires the
@@ -778,8 +883,11 @@ def app_store_connect_token(key_id: str, issuer_id: str, now: int, sign, lifetim
 def openssl_signer(key_path: str):
     """Signs with the .p8 through the openssl CLI: Python's stdlib has no ECDSA."""
     def sign(data: bytes) -> bytes:
-        result = subprocess.run(["openssl", "dgst", "-sha256", "-sign", key_path],
-                                input=data, capture_output=True)
+        try:
+            result = subprocess.run(["openssl", "dgst", "-sha256", "-sign", key_path],
+                                    input=data, capture_output=True, timeout=60)
+        except (OSError, subprocess.SubprocessError):
+            raise AppStoreConnectError("openssl could not sign with the App Store Connect key") from None
         if result.returncode != 0 or not result.stdout:
             raise AppStoreConnectError("openssl could not sign with the App Store Connect key: "
                                        + result.stderr.decode(errors="replace").strip())
@@ -953,6 +1061,56 @@ def retire_testflight(client: AppStoreConnect, bundle_id: str, waiting_for: str 
     return 1 if failures else 0
 
 
+def ensure_ios_push(client: AppStoreConnect) -> None:
+    """Enable only push on the existing App ID; at most four API calls, no retries."""
+    def rows(url):
+        page = client.request("GET", url)
+        if not isinstance(page, dict) or (page.get("links") or {}).get("next"):
+            raise AppStoreConnectError("unexpected App ID capability pagination or response")
+        data = page.get("data")
+        if not isinstance(data, list) or any(not isinstance(row, dict) for row in data):
+            raise AppStoreConnectError("malformed App ID capability response")
+        return data
+
+    query = urllib.parse.urlencode({"filter[identifier]": IOS.bundle_id, "limit": "200"})
+    matches = [row for row in rows(f"{client.api}/v1/bundleIds?{query}")
+               if row.get("attributes", {}).get("identifier") == IOS.bundle_id]
+    if len(matches) != 1 or not isinstance(matches[0].get("id"), str) or not matches[0]["id"]:
+        raise AppStoreConnectError("expected exactly one existing iOS App ID")
+    identifier = matches[0]["id"]
+    url = f"{client.api}/v1/bundleIds/{urllib.parse.quote(identifier, safe='')}/bundleIdCapabilities"
+    def enabled():
+        return any(row.get("attributes", {}).get("capabilityType") == "PUSH_NOTIFICATIONS"
+                   for row in rows(url))
+    if enabled():
+        return
+    client.request("POST", f"{client.api}/v1/bundleIdCapabilities", {"data": {
+        "type": "bundleIdCapabilities",
+        "attributes": {"capabilityType": "PUSH_NOTIFICATIONS"},
+        "relationships": {"bundleId": {"data": {"type": "bundleIds", "id": identifier}}},
+    }})
+    if not enabled():
+        raise AppStoreConnectError("iOS App ID push capability is still missing after enabling it")
+
+
+def _ensure_ios_push_command(args: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="release.py ensure-ios-push")
+    parser.add_argument("--key-id", required=True)
+    parser.add_argument("--issuer-id", required=True)
+    parser.add_argument("--key", required=True, help="the App Store Connect .p8")
+    options = parser.parse_args(args)
+    if not options.key_id or not options.issuer_id or not os.path.isfile(options.key):
+        parser.error("App Store Connect identifiers and an existing key file are required")
+    client = AppStoreConnect(token_source(options.key_id, options.issuer_id, openssl_signer(options.key)))
+    try:
+        ensure_ios_push(client)
+    except (AppStoreConnectError, ValueError, TypeError, AttributeError) as error:
+        print(f"::error::iOS push capability check failed: {error}", file=sys.stderr)
+        return 1
+    print("iOS App ID push capability verified")
+    return 0
+
+
 def _retire_command(args: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="release.py retire-testflight")
     parser.add_argument("--key-file", required=True, help="the App Store Connect .p8")
@@ -1059,6 +1217,19 @@ def main(argv: list[str]) -> int:
         if problems:
             return 1
         print(f"{args[0]} is {IOS.name} ({IOS.bundle_id}) build {args[1]}")
+    elif (command == "prepare-ios-signing" and len(args) == 1
+          or command == "verify-ios-ipa" and len(args) == 2):
+        try:
+            if command == "prepare-ios-signing":
+                prepare_ios_signing(*args)
+            else:
+                verify_ios_ipa(*args)
+        except (OSError, ValueError) as error:
+            print(f"::error::{error}", file=sys.stderr)
+            return 1
+        print(f"{command}: verified")
+    elif command == "ensure-ios-push":
+        return _ensure_ios_push_command(args)
     elif command == "retire-testflight":
         return _retire_command(args)
     else:

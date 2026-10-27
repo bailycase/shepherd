@@ -67,71 +67,71 @@ public struct MCPSignInSheet: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        let M = NWMCPMetrics.self
-        VStack(alignment: .leading, spacing: NW.Space.xl) {
-            HStack(alignment: .center, spacing: NW.Space.l) {
+        let sh = Color.sh
+        let M = SHMCPMetrics.self
+        VStack(alignment: .leading, spacing: SH.Space.xl) {
+            HStack(alignment: .center, spacing: SH.Space.l) {
                 Image(systemName: "powerplug")
-                    .font(.nwSans(M.sheetTitleSize))
-                    .foregroundStyle(nw.textPrimary)
+                    .font(.shSans(M.sheetTitleSize))
+                    .foregroundStyle(sh.textPrimary)
                     .frame(width: M.sheetIconTile, height: M.sheetIconTile)
-                    .background(nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.m))
+                    .background(sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.m))
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: NW.Space.xxs) {
+                VStack(alignment: .leading, spacing: SH.Space.xxs) {
                     Text(model.title)
-                        .font(.nwSans(M.sheetTitleSize, .semibold))
-                        .foregroundStyle(nw.textPrimary)
+                        .font(.shSans(M.sheetTitleSize, .semibold))
+                        .foregroundStyle(sh.textPrimary)
                         .accessibilityAddTraits(.isHeader)
                     Text(model.subtitle)
-                        .font(.nwSans(M.sheetSubtitleSize))
-                        .foregroundStyle(nw.textSecondary)
+                        .font(.shSans(M.sheetSubtitleSize))
+                        .foregroundStyle(sh.textSecondary)
                 }
             }
-            VStack(alignment: .leading, spacing: NW.Space.l + NW.Space.xxs) {
+            VStack(alignment: .leading, spacing: SH.Space.l + SH.Space.xxs) {
                 ForEach(model.steps) { step in
                     MCPSignInStepRow(step)
                 }
             }
-            .padding(NW.Space.l + NW.Space.xs)
+            .padding(SH.Space.l + SH.Space.xs)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(nw.bgSunken, in: RoundedRectangle(cornerRadius: M.cardRadius))
-            .nwBorder(nw.lineSubtle, radius: M.cardRadius)
+            .background(sh.bgSunken, in: RoundedRectangle(cornerRadius: M.cardRadius))
+            .shBorder(sh.lineSubtle, radius: M.cardRadius)
             if showsDetails, let details = model.details {
                 Text(details)
-                    .font(.nwMono(M.detailNoteSize))
-                    .foregroundStyle(nw.textSecondary)
+                    .font(.shMono(M.detailNoteSize))
+                    .foregroundStyle(sh.textSecondary)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
             footer
         }
-        .padding(NW.Space.xl + NW.Space.s)
+        .padding(SH.Space.xl + SH.Space.s)
         .frame(width: M.sheetWidth, alignment: .leading)
-        .background(nw.bgWindow)
-        .nwAnimation(.disclosure, value: model)
+        .background(sh.bgWindow)
+        .shAnimation(.disclosure, value: model)
     }
 
     @ViewBuilder private var footer: some View {
-        HStack(spacing: NW.Space.m) {
+        HStack(spacing: SH.Space.m) {
             switch model.phase {
             case .waiting:
                 Button(action: actions.copyLink) { Label("Copy link", systemImage: "doc.on.doc") }
-                    .buttonStyle(.nw(.ghost))
-                Spacer(minLength: NW.Space.m)
-                Button("Cancel", action: actions.cancel).buttonStyle(.nw(.ghost)).keyboardShortcut(.cancelAction)
+                    .buttonStyle(.sh(.ghost))
+                Spacer(minLength: SH.Space.m)
+                Button("Cancel", action: actions.cancel).buttonStyle(.sh(.ghost)).keyboardShortcut(.cancelAction)
                 Button(action: actions.openBrowser) { Label("Open browser again", systemImage: "arrow.up.forward.square") }
-                    .buttonStyle(.nw(.secondary))
+                    .buttonStyle(.sh(.secondary))
             case .done:
-                Spacer(minLength: NW.Space.m)
-                Button("Done", action: actions.done).buttonStyle(.nw(.primary)).keyboardShortcut(.defaultAction)
+                Spacer(minLength: SH.Space.m)
+                Button("Done", action: actions.done).buttonStyle(.sh(.primary)).keyboardShortcut(.defaultAction)
             case .failed:
                 if model.details != nil {
-                    Button(showsDetails ? "Hide details" : "Details") { showsDetails.toggle() }.buttonStyle(.nw(.ghost))
+                    Button(showsDetails ? "Hide details" : "Details") { showsDetails.toggle() }.buttonStyle(.sh(.ghost))
                 }
-                Spacer(minLength: NW.Space.m)
-                Button("Close", action: actions.cancel).buttonStyle(.nw(.ghost)).keyboardShortcut(.cancelAction)
+                Spacer(minLength: SH.Space.m)
+                Button("Close", action: actions.cancel).buttonStyle(.sh(.ghost)).keyboardShortcut(.cancelAction)
                 Button(action: actions.tryAgain) { Label("Try again", systemImage: "arrow.clockwise") }
-                    .buttonStyle(.nw(.primary))
+                    .buttonStyle(.sh(.primary))
                     .keyboardShortcut(.defaultAction)
             }
         }
@@ -148,19 +148,19 @@ public struct MCPSignInStepRow: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        let M = NWMCPMetrics.self
+        let sh = Color.sh
+        let M = SHMCPMetrics.self
         HStack(alignment: .top, spacing: M.sheetStepGap) {
             mark.frame(width: M.sheetStepIcon, height: M.sheetStepIcon).padding(.top, 1)
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 Text(step.title)
-                    .font(.nwSans(M.sheetStepTitleSize))
-                    .foregroundStyle(step.state == .pending ? nw.textTertiary : nw.textPrimary)
-                    .nwShimmer(active: step.state == .live)
+                    .font(.shSans(M.sheetStepTitleSize))
+                    .foregroundStyle(step.state == .pending ? sh.textTertiary : sh.textPrimary)
+                    .shShimmer(active: step.state == .live)
                 if let note = step.note {
                     Text(note)
-                        .nwText(size: M.sheetStepNoteSize, lineHeight: 1.4)
-                        .foregroundStyle(nw.textTertiary)
+                        .shText(size: M.sheetStepNoteSize, lineHeight: 1.4)
+                        .foregroundStyle(sh.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -169,27 +169,27 @@ public struct MCPSignInStepRow: View {
     }
 
     @ViewBuilder private var mark: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         switch step.state {
         case .done:
             Image(systemName: "checkmark")
-                .font(.nwSans(9, .bold))
-                .foregroundStyle(nw.done)
+                .font(.shSans(9, .bold))
+                .foregroundStyle(sh.done)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(nw.doneTint, in: Circle())
+                .background(sh.doneTint, in: Circle())
         case .failed:
             Image(systemName: "xmark")
-                .font(.nwSans(9, .bold))
-                .foregroundStyle(nw.failed)
+                .font(.shSans(9, .bold))
+                .foregroundStyle(sh.failed)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(nw.failedTint, in: Circle())
+                .background(sh.failedTint, in: Circle())
         case .live:
             ZStack {
-                Circle().strokeBorder(nw.running, lineWidth: 1.5)
-                Circle().fill(nw.running).padding(4)
+                Circle().strokeBorder(sh.running, lineWidth: 1.5)
+                Circle().fill(sh.running).padding(4)
             }
         case .pending:
-            Circle().strokeBorder(nw.lineStrong, lineWidth: 1.5)
+            Circle().strokeBorder(sh.lineStrong, lineWidth: 1.5)
         }
     }
 }

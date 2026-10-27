@@ -16,49 +16,49 @@ struct ReviewSummaryCard: View {
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         // At accessibility sizes the branch and Finalize's note get lines of their own.
         let large = typeSize.isAccessibilitySize
-        VStack(alignment: .leading, spacing: NW.Space.m) {
+        VStack(alignment: .leading, spacing: SH.Space.m) {
             // MobileChanges: the count and stat, the branch under them, then how much is viewed.
-            HStack(spacing: NW.Space.m) {
-                Text(totals.filesText).font(.nw(.headline)).foregroundStyle(nw.textPrimary)
-                NWDiffStat(added: totals.added, removed: totals.removed, font: .nw(.micro, weight: .regular))
+            HStack(spacing: SH.Space.m) {
+                Text(totals.filesText).font(.sh(.headline)).foregroundStyle(sh.textPrimary)
+                SHDiffStat(added: totals.added, removed: totals.removed, font: .sh(.micro, weight: .regular))
             }
             if let branch {
                 Text(branch)
-                    .font(.nw(.mono))
-                    .foregroundStyle(nw.textSecondary)
+                    .font(.sh(.mono))
+                    .foregroundStyle(sh.textSecondary)
                     .lineLimit(large ? 2 : 1)
                     .truncationMode(.middle)
                     .accessibilityLabel("Branch \(branch)")
             }
-            Text(totals.viewedText).font(.nw(.caption)).foregroundStyle(nw.textTertiary)
+            Text(totals.viewedText).font(.sh(.caption)).foregroundStyle(sh.textTertiary)
                 .accessibilityLabel("Viewed")
                 .accessibilityValue(totals.viewedText)
             if let onFinalize {
-                NWHairline()
+                SHHairline()
                 Button(action: onFinalize) {
-                    HStack(spacing: NW.Space.m) {
+                    HStack(spacing: SH.Space.m) {
                         Label("Finalize worktree", systemImage: "checkmark.seal")
-                            .font(.nw(.ui))
-                            .foregroundStyle(nw.textPrimary)
-                        Spacer(minLength: NW.Space.s)
+                            .font(.sh(.ui))
+                            .foregroundStyle(sh.textPrimary)
+                        Spacer(minLength: SH.Space.s)
                         if !large {
-                            Text("commit · push · PR").font(.nw(.caption)).foregroundStyle(nw.textTertiary)
+                            Text("commit · push · PR").font(.sh(.caption)).foregroundStyle(sh.textTertiary)
                         }
-                        Image(systemName: "chevron.right").font(.nw(.caption, weight: .semibold)).foregroundStyle(nw.textTertiary)
+                        Image(systemName: "chevron.right").font(.sh(.caption, weight: .semibold)).foregroundStyle(sh.textTertiary)
                     }
-                    .frame(minHeight: NW.Height.touch)
+                    .frame(minHeight: SH.Height.touch)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityHint("Commits, pushes and opens a pull request on the host, then removes the worktree")
             }
         }
-        .padding(NW.Space.l + NW.Space.xxs)
+        .padding(SH.Space.l + SH.Space.xxs)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .nwCard(radius: MobileLayout.cardRadius)
+        .shCard(radius: MobileLayout.cardRadius)
     }
 }
 
@@ -69,12 +69,12 @@ struct ReviewSectionHead: View {
 
     var body: some View {
         HStack {
-            Text(title).font(.nw(.ui, weight: .semibold)).foregroundStyle(Color.nw.textSecondary)
-            Spacer(minLength: NW.Space.s)
-            if let note { Text(note).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary) }
+            Text(title).font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.textSecondary)
+            Spacer(minLength: SH.Space.s)
+            if let note { Text(note).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary) }
         }
-        .padding(.horizontal, NW.Space.xs)
-        .padding(.top, NW.Space.xs)
+        .padding(.horizontal, SH.Space.xs)
+        .padding(.top, SH.Space.xs)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
     }
@@ -107,26 +107,26 @@ struct ReviewCommentCard: View {
             : "line \(comment.lineNumber) · \(reviewCommentAge(comment.createdAt))"
         if showsFile {
             // MobileChanges: the file and line, the text, then Edit and Delete under it.
-            let nw = Color.nw
-            VStack(alignment: .leading, spacing: NW.Space.s) {
-                Text(meta).font(.nw(.mono)).foregroundStyle(nw.textTertiary).lineLimit(1)
-                Text(comment.text).font(.nw(.body)).foregroundStyle(nw.textPrimary).fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: NW.Space.m) {
-                    if let onEdit { Button("Edit", action: onEdit).buttonStyle(.nwLink(color: nw.textSecondary, font: .nw(.body))) }
-                    if let onDelete { Button("Delete", action: onDelete).buttonStyle(.nwLink(color: nw.failed, font: .nw(.body))) }
+            let sh = Color.sh
+            VStack(alignment: .leading, spacing: SH.Space.s) {
+                Text(meta).font(.sh(.mono)).foregroundStyle(sh.textTertiary).lineLimit(1)
+                Text(comment.text).font(.sh(.body)).foregroundStyle(sh.textPrimary).fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: SH.Space.m) {
+                    if let onEdit { Button("Edit", action: onEdit).buttonStyle(.shLink(color: sh.textSecondary, font: .sh(.body))) }
+                    if let onDelete { Button("Delete", action: onDelete).buttonStyle(.shLink(color: sh.failed, font: .sh(.body))) }
                 }
             }
-            .padding(.horizontal, NW.Space.l + NW.Space.xxs)
-            .padding(.vertical, NW.Space.m)
+            .padding(.horizontal, SH.Space.l + SH.Space.xxs)
+            .padding(.vertical, SH.Space.m)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .nwCard(radius: MobileLayout.cardRadius)
+            .shCard(radius: MobileLayout.cardRadius)
             .accessibilityElement(children: .combine)
             .accessibilityActions {
                 if let onEdit { Button("Edit", action: onEdit) }
                 if let onDelete { Button("Delete", action: onDelete) }
             }
         } else {
-        NWInlineComment(initial: ReviewAuthor.initial, author: ReviewAuthor.name, meta: meta, text: comment.text,
+        SHInlineComment(initial: ReviewAuthor.initial, author: ReviewAuthor.name, meta: meta, text: comment.text,
                         onEdit: onEdit, onDelete: onDelete)
         }
     }
@@ -139,15 +139,15 @@ struct ReviewLoadState: View {
 
     var body: some View {
         if let error = store.loadError, !store.loaded {
-            NWEmptyState(Text("Couldn't load the changes"), message: error) {
-                Button("Try again", action: retry).buttonStyle(.nw(.secondary))
+            SHEmptyState(Text("Couldn't load the changes"), message: error) {
+                Button("Try again", action: retry).buttonStyle(.sh(.secondary))
             }
         } else if !store.loaded {
-            ProgressView().progressViewStyle(NWSpinnerStyle())
-                .frame(maxWidth: .infinity, minHeight: NW.Height.touch * 2)
+            ProgressView().progressViewStyle(SHSpinnerStyle())
+                .frame(maxWidth: .infinity, minHeight: SH.Height.touch * 2)
                 .accessibilityLabel("Loading the changes")
         } else if store.entries.isEmpty {
-            NWEmptyState(Text("No changes"), message: reviewEmptyText(store))
+            SHEmptyState(Text("No changes"), message: reviewEmptyText(store))
         }
     }
 }
@@ -177,17 +177,17 @@ struct ReviewFileNotice: View {
     var body: some View {
         switch state {
         case .loading:
-            ProgressView().progressViewStyle(NWSpinnerStyle())
-                .frame(maxWidth: .infinity, minHeight: NW.Height.touch * 2)
+            ProgressView().progressViewStyle(SHSpinnerStyle())
+                .frame(maxWidth: .infinity, minHeight: SH.Height.touch * 2)
                 .accessibilityLabel("Loading the file's changes")
         case .failed(let message):
-            NWEmptyState(Text("Couldn't load this file"), message: message) {
-                Button("Try again", action: retry).buttonStyle(.nw(.secondary))
+            SHEmptyState(Text("Couldn't load this file"), message: message) {
+                Button("Try again", action: retry).buttonStyle(.sh(.secondary))
             }
         case .binary:
-            NWEmptyState(Text("Binary file"), message: "Its changes can't be shown as lines.")
+            SHEmptyState(Text("Binary file"), message: "Its changes can't be shown as lines.")
         case .noLines(let renamed):
-            NWEmptyState(Text("No line changes"), message: "The file was \(renamed ? "renamed" : "changed") without changing its lines.")
+            SHEmptyState(Text("No line changes"), message: "The file was \(renamed ? "renamed" : "changed") without changing its lines.")
         case .lines:
             EmptyView()
         }
@@ -200,14 +200,14 @@ struct ReviewGapRow: View {
     let action: (() -> Void)?
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let label = Text(action == nil ? nativeCount(count, "unchanged line") : "Show \(nativeCount(count, "unchanged line"))")
-            .font(.nw(.caption))
-            .foregroundStyle(nw.textTertiary)
+            .font(.sh(.caption))
+            .foregroundStyle(sh.textTertiary)
             .lineLimit(1)
-            .frame(maxWidth: .infinity, minHeight: NW.Height.touch)
-            .background(nw.bgSunken)
-            .overlay(alignment: .top) { NWHairline() }
+            .frame(maxWidth: .infinity, minHeight: SH.Height.touch)
+            .background(sh.bgSunken)
+            .overlay(alignment: .top) { SHHairline() }
             .contentShape(Rectangle())
         if let action {
             Button(action: action) { label }
@@ -223,10 +223,10 @@ struct ReviewGapRow: View {
 struct ReviewTruncatedNote: View {
     var body: some View {
         Text("This file is cut short: it has more changed lines than a review shows.")
-            .font(.nw(.caption))
-            .foregroundStyle(Color.nw.textTertiary)
+            .font(.sh(.caption))
+            .foregroundStyle(Color.sh.textTertiary)
             .padding(.horizontal, MobileLayout.gutter)
-            .padding(.vertical, NW.Space.m)
+            .padding(.vertical, SH.Space.m)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -245,40 +245,40 @@ struct ReviewUnifiedRowView: View {
     var editorFocused: FocusState<Bool>.Binding
 
     var body: some View {
-        let leading = NWTouchDiffMetrics.annotationLeading(gutters: gutters)
+        let leading = SHTouchDiffMetrics.annotationLeading(gutters: gutters)
         VStack(alignment: .leading, spacing: 0) {
             switch row {
             case .hunk(_, let header, let gap):
                 // iPadReview: the unchanged lines before a hunk, then its head.
                 if let gap, gap > 0 { ReviewGapRow(count: gap, action: store.opensGaps ? { store.loadWhole(fileID) } : nil) }
-                NWTouchHunkHeader(header, leading: tintedHunks ? MobileLayout.gutter : leading, tinted: tintedHunks)
+                SHTouchHunkHeader(header, leading: tintedHunks ? MobileLayout.gutter : leading, tinted: tintedHunks)
             case .line(let line):
                 let selected = store.selection == ReviewStore.LineKey(fileID: fileID, lineID: line.key)
                 let comment = store.commentsByFile[fileID]?[line.key]
-                NWTouchDiffLine(line, gutters: gutters, selected: selected, commented: comment != nil, changeBar: changeBars) {
+                SHTouchDiffLine(line, gutters: gutters, selected: selected, commented: comment != nil, changeBar: changeBars) {
                     store.select(fileID: fileID, lineID: line.key)
                 }
                 .equatable()
                 annotation(line, comment: comment, selected: selected, leading: leading)
             case .fold(let id, let count, let kind, let range):
-                NWTouchFoldRow(count: count, kind: kind, range: range, leading: leading) {
-                    withNWAnimation(.disclosure) { store.expand(id, in: fileID) }
+                SHTouchFoldRow(count: count, kind: kind, range: range, leading: leading) {
+                    withSHAnimation(.disclosure) { store.expand(id, in: fileID) }
                 }
             }
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
     }
 
     @ViewBuilder
-    private func annotation(_ line: NWDiffLineContent, comment: ReviewComment?, selected: Bool, leading: CGFloat) -> some View {
+    private func annotation(_ line: SHDiffLineContent, comment: ReviewComment?, selected: Bool, leading: CGFloat) -> some View {
         if inlineEditor && selected {
-            NWCommentEditor(text: store.draftBinding, isFocused: editorFocused, onSave: { store.saveDraft() }, onCancel: { store.clearSelection() })
-                .padding(EdgeInsets(top: NW.Space.s, leading: leading, bottom: NW.Space.m, trailing: NW.Space.l))
+            SHCommentEditor(text: store.draftBinding, isFocused: editorFocused, onSave: { store.saveDraft() }, onCancel: { store.clearSelection() })
+                .padding(EdgeInsets(top: SH.Space.s, leading: leading, bottom: SH.Space.m, trailing: SH.Space.l))
         } else if let comment {
             ReviewCommentCard(comment: comment, showsFile: false,
                               onEdit: { store.select(fileID: fileID, lineID: line.key) },
                               onDelete: { store.deleteComment(fileID: fileID, lineID: line.key) })
-                .padding(EdgeInsets(top: NW.Space.s, leading: leading, bottom: NW.Space.m, trailing: NW.Space.l))
+                .padding(EdgeInsets(top: SH.Space.s, leading: leading, bottom: SH.Space.m, trailing: SH.Space.l))
         }
     }
 }
@@ -321,7 +321,7 @@ struct ReviewSplitRowView: View {
                 let sides = old?.key == new?.key ? [new] : [old, new]
                 let selectedID = sides.compactMap { $0 }.first { $0.key == selected }?.id
                 let comments = store.commentsByFile[fileID] ?? [:]
-                NWSplitDiffRow(old: old, new: new, selected: selectedID, hatched: true) { line in
+                SHSplitDiffRow(old: old, new: new, selected: selectedID, hatched: true) { line in
                     store.select(fileID: fileID, lineID: line.key)
                 }
                 .equatable()
@@ -329,30 +329,30 @@ struct ReviewSplitRowView: View {
                     splitAnnotation(line, comment: comments[line.key], selected: line.key == selected, onOld: line.id == old?.id && old?.key != new?.key)
                 }
             case .fold(_, let key, let count, let kind, let range, let side):
-                NWSplitFoldRow(count: count, kind: kind, range: range, side: side) {
-                    withNWAnimation(.disclosure) { store.expand(key, in: fileID) }
+                SHSplitFoldRow(count: count, kind: kind, range: range, side: side) {
+                    withSHAnimation(.disclosure) { store.expand(key, in: fileID) }
                 }
             }
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
     }
 
     /// Under its side: the left half for the old file, the right for the new.
     @ViewBuilder
-    private func splitAnnotation(_ line: NWDiffLineContent, comment: ReviewComment?, selected: Bool, onOld: Bool) -> some View {
-        let leading = NWTouchDiffMetrics.annotationLeading(gutters: 1)
+    private func splitAnnotation(_ line: SHDiffLineContent, comment: ReviewComment?, selected: Bool, onOld: Bool) -> some View {
+        let leading = SHTouchDiffMetrics.annotationLeading(gutters: 1)
         HStack(spacing: 0) {
             if !onOld { Color.clear.frame(maxWidth: .infinity) }
             Group {
                 if selected {
-                    NWCommentEditor(text: store.draftBinding, isFocused: editorFocused, onSave: { store.saveDraft() }, onCancel: { store.clearSelection() })
+                    SHCommentEditor(text: store.draftBinding, isFocused: editorFocused, onSave: { store.saveDraft() }, onCancel: { store.clearSelection() })
                 } else if let comment {
                     ReviewCommentCard(comment: comment, showsFile: false,
                                       onEdit: { store.select(fileID: fileID, lineID: line.key) },
                                       onDelete: { store.deleteComment(fileID: fileID, lineID: line.key) })
                 }
             }
-            .padding(EdgeInsets(top: NW.Space.s, leading: leading, bottom: NW.Space.m, trailing: NW.Space.l))
+            .padding(EdgeInsets(top: SH.Space.s, leading: leading, bottom: SH.Space.m, trailing: SH.Space.l))
             .frame(maxWidth: .infinity)
             if onOld { Color.clear.frame(maxWidth: .infinity) }
         }

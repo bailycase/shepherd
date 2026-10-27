@@ -84,7 +84,7 @@ struct GoalControlsTests {
         let window = OffscreenWindow(dark: true)
         defer { window.close() }
         window.show(GoalRecordLine(text: "Goal needs you · choose a deployment target\n\nDetails:\nChoose staging or production. Diagnostic entry-7f9a4d.")
-            .padding(NW.Space.l).frame(width: 640, height: 240, alignment: .top))
+            .padding(SH.Space.l).frame(width: 640, height: 240, alignment: .top))
         try await eventuallyOnMain("the Details disclosure to attach") { window.element("Details") != nil }
         #expect(!window.elements().contains { (($0.label ?? "") + ($0.value ?? "")).contains("entry-7f9a4d") })
         try window.press("Details", role: #require(window.element("Details")?.role))
@@ -188,7 +188,7 @@ struct GoalControlsTests {
             window.show(ThreadView(store: store, active: true, isFocused: false, request: request,
                                    commandKey: "goal-controls", listModels: { .empty })
                 .environment(\.threadCommands, commands)
-                .environment(\.nwMotionPaused, true)
+                .environment(\.shMotionPaused, true)
                 .environment(\._accessibilityReduceMotion, true)
                 .transaction { $0.disablesAnimations = true })
         }
@@ -374,7 +374,7 @@ struct GoalControlsTests {
                 var presses = 0
                 let touch = OffscreenWindow(size: CGSize(width: 366, height: 360), dark: true)
                 defer { touch.close() }
-                touch.show(NWGoalCard(state: .needsYou, time: "6m 40s", meta: "confirm", text: candidate.text, size: .touch,
+                touch.show(SHGoalCard(state: .needsYou, time: "6m 40s", meta: "confirm", text: candidate.text, size: .touch,
                                      resumeEnabled: !pending, confirmationRequired: confirming, checkedBy: candidate.checkedBy,
                                      pause: {}, resume: { presses += 1 }, edit: {}, clear: {})
                     .accessibilityLabel("Goal section")
@@ -409,12 +409,12 @@ struct GoalControlsTests {
     @MainActor
     private static func attributionGeometry() async throws {
         AccessibilityNode.enable()
-        for size in [NWGoalSize.desktop, .touch] {
+        for size in [SHGoalSize.desktop, .touch] {
             var heights: [CGFloat] = []
             for attribution in 0...2 {
                 let window = OffscreenWindow(size: CGSize(width: size == .touch ? 366 : 620, height: 360), dark: true)
                 defer { window.close() }
-                window.show(NWGoalCard(state: .met, time: "6m 40s", meta: "71k tokens", text: "Tests pass.", size: size,
+                window.show(SHGoalCard(state: .met, time: "6m 40s", meta: "71k tokens", text: "Tests pass.", size: size,
                                        checkedBy: attribution > 0 ? "anthropic/claude-haiku" : nil, confirmedByUser: attribution > 1,
                                        pause: {}, resume: {}, edit: {}, clear: {})
                     .accessibilityLabel("Goal section")
@@ -562,29 +562,29 @@ struct GoalControlsTests {
         try changedState.expectRequest(.resume, fencedBy: paused, index: 1)
     }
 
-    // The same clipping boundary as the app: an unframed goal is the first section of NWDockStack.
+    // The same clipping boundary as the app: an unframed goal is the first section of SHDockStack.
     @MainActor
-    private static func dock(_ state: NWGoalState, size: NWGoalSize, pressed: @escaping (String) -> Void) -> OffscreenWindow {
+    private static func dock(_ state: SHGoalState, size: SHGoalSize, pressed: @escaping (String) -> Void) -> OffscreenWindow {
         OffscreenWindow(size: CGSize(width: size == .touch ? 366 : 620, height: 360), dark: true,
-            NWDockStack(size: size == .touch ? .phone : .pointer, showsTray: true, showsQueue: true) {
+            SHDockStack(size: size == .touch ? .phone : .pointer, showsTray: true, showsQueue: true) {
                 VStack(spacing: 0) {
-                    NWGoalCard(state: state, time: "6m 40s", meta: "71k tokens", text: "Tests and race checks pass.", size: size, framed: false,
+                    SHGoalCard(state: state, time: "6m 40s", meta: "71k tokens", text: "Tests and race checks pass.", size: size, framed: false,
                                pause: { pressed("Pause goal") }, resume: { pressed("Resume goal") },
                                edit: { pressed("Edit goal") }, clear: { pressed("Clear goal") })
                         .accessibilityLabel("Goal section")
-                    Text("Subagent section").font(.nw(.body)).frame(maxWidth: .infinity).frame(height: NW.Height.touch)
+                    Text("Subagent section").font(.sh(.body)).frame(maxWidth: .infinity).frame(height: SH.Height.touch)
                 }
             } queue: {
-                Text("Queue section").font(.nw(.body)).frame(maxWidth: .infinity).frame(height: NW.Height.touch)
+                Text("Queue section").font(.sh(.body)).frame(maxWidth: .infinity).frame(height: SH.Height.touch)
             }
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxHeight: .infinity, alignment: .top)
-            .environment(\.nwMotionPaused, true)
+            .environment(\.shMotionPaused, true)
             .environment(\._accessibilityReduceMotion, true))
     }
 
     @MainActor
-    private static func measure(_ window: OffscreenWindow, state: NWGoalState, size: NWGoalSize) async throws -> (card: CGRect, status: CGRect, actions: [String: CGRect]) {
+    private static func measure(_ window: OffscreenWindow, state: SHGoalState, size: SHGoalSize) async throws -> (card: CGRect, status: CGRect, actions: [String: CGRect]) {
         try await eventuallyOnMain("the shared dock's goal accessibility tree") {
             window.element("Goal section") != nil && window.element("Clear goal") != nil
         }
@@ -606,7 +606,7 @@ struct GoalControlsTests {
             #expect(frame.width >= size.hitTarget - 0.5 && frame.height >= size.hitTarget - 0.5, "\(label) has its whole hit target")
             #expect(card.insetBy(dx: -0.5, dy: -0.5).contains(frame), "\(label) stays inside the shared dock's goal section")
             if size == .touch && ThemeStore.shared.textScale == 1 {
-                #expect(frame.minY >= card.maxY - NW.Height.touch - 0.5, "the target uses only the header and its four-point body inset")
+                #expect(frame.minY >= card.maxY - SH.Height.touch - 0.5, "the target uses only the header and its four-point body inset")
             }
             for point in [CGPoint(x: frame.minX + 1, y: frame.minY + 1), CGPoint(x: frame.maxX - 1, y: frame.minY + 1),
                           CGPoint(x: frame.minX + 1, y: frame.maxY - 1), CGPoint(x: frame.maxX - 1, y: frame.maxY - 1),
@@ -627,9 +627,9 @@ struct GoalControlsTests {
     @MainActor
     private static func dockTargets() async throws {
         AccessibilityNode.enable()
-        for size in [NWGoalSize.desktop, .touch] {
-            var measurements: [NWGoalState: (card: CGRect, status: CGRect, actions: [String: CGRect])] = [:]
-            for state in NWGoalState.allCases {
+        for size in [SHGoalSize.desktop, .touch] {
+            var measurements: [SHGoalState: (card: CGRect, status: CGRect, actions: [String: CGRect])] = [:]
+            for state in SHGoalState.allCases {
                 var pressed: [String] = []
                 let window = dock(state, size: size) { pressed.append($0) }
                 defer { window.close() }
@@ -647,7 +647,7 @@ struct GoalControlsTests {
                 for label in expected { try window.press(label) }
                 #expect(pressed == expected, "every drawn header action calls its handler")
             }
-            let pairs: [(NWGoalState, NWGoalState)] = [(.working, .checking), (.paused, .needsYou)]
+            let pairs: [(SHGoalState, SHGoalState)] = [(.working, .checking), (.paused, .needsYou)]
             for (first, second) in pairs {
                 let a = try #require(measurements[first]), b = try #require(measurements[second])
                 #expect(abs(a.status.minX - b.status.minX) <= 0.5, "the status pill's leading edge stays put")
@@ -667,7 +667,7 @@ struct GoalControlsTests {
     @MainActor
     private static func scaling() async throws {
         AccessibilityNode.enable()
-        for size in [NWGoalSize.desktop, .touch] {
+        for size in [SHGoalSize.desktop, .touch] {
             ThemeStore.shared.textScale = 1
             let normal = dock(.paused, size: size) { _ in }
             defer { normal.close() }

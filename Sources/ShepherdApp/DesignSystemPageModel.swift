@@ -84,7 +84,7 @@ struct DesignSystemPageModel: Equatable {
     /// The system's folder name; nil while a build has written none.
     var namespace: String?
     var title = ""
-    var status: NWDesignHeaderStatus?
+    var status: SHDesignHeaderStatus?
     var source: [Segment] = []
     var builtIn = false
     var canResync = false
@@ -95,7 +95,7 @@ struct DesignSystemPageModel: Equatable {
     var chip: [DesignSystemPresentation.Swatch] = []
     /// What its specimens draw on.
     var background: String?
-    var sections: [NWSectionRail.Section] = []
+    var sections: [SHSectionRail.Section] = []
     var colors: [Swatch] = []
     var type: [TypeRow] = []
     var steps: [Step] = []

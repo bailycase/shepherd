@@ -14,7 +14,7 @@ struct NeedsYouScreen: View {
         let items = feed.model.needsYou
         Group {
             if items.isEmpty {
-                NWEmptyState(Text("Nothing needs you"), message: "Questions and blocked threads from every host show here.") {
+                SHEmptyState(Text("Nothing needs you"), message: "Questions and blocked threads from every host show here.") {
                     EmptyView()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -24,7 +24,7 @@ struct NeedsYouScreen: View {
                 NeedsYouCards(items: items, answering: feed.answering, failures: feed.failures)
             }
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .task { await feed.watch() }
         .navigationTitle("Needs you")
         .navigationBarTitleDisplayMode(sizeClass == .regular ? .inline : .large)
@@ -32,10 +32,10 @@ struct NeedsYouScreen: View {
             // iPadInbox: "Needs you" with "5 waiting" beside it, leading the bar.
             if sizeClass == .regular {
                 ToolbarItem(placement: .topBarLeading) {
-                    HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
-                        Text("Needs you").font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary)
+                    HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+                        Text("Needs you").font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary)
                         if !items.isEmpty {
-                            Text("\(items.count) waiting").font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                            Text("\(items.count) waiting").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                         }
                     }
                     .fixedSize()
@@ -65,8 +65,8 @@ private struct NeedsYouCards: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
                 Text(NeedsYouScreen.waiting(items.count))
-                    .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
-                    .padding(.horizontal, NW.Space.xs)
+                    .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                    .padding(.horizontal, SH.Space.xs)
                 ForEach(items) { item in
                     AttentionCard(item: item, busy: answering.contains(item.id), failure: failures[item.id])
                 }
@@ -92,7 +92,7 @@ private struct NeedsYouSplit: View {
         PadListDetail(listWidth: MobileLayout.inboxListWidth) {
             ScrollView {
                 // Flat items, 2pt apart, the chosen one filled (iPadInbox).
-                LazyVStack(alignment: .leading, spacing: NW.Space.xxs) {
+                LazyVStack(alignment: .leading, spacing: SH.Space.xxs) {
                     ForEach(items) { item in
                         Button { chosen = item.id } label: {
                             AttentionCard(item: item, busy: answering.contains(item.id), failure: nil,
@@ -102,7 +102,7 @@ private struct NeedsYouSplit: View {
                         .accessibilityAddTraits(item.id == current.id ? .isSelected : [])
                     }
                 }
-                .padding(NW.Space.m)
+                .padding(SH.Space.m)
             }
         } detail: {
             NeedsYouDetail(item: current, busy: answering.contains(current.id), failure: failures[current.id])
@@ -123,66 +123,66 @@ private struct NeedsYouDetail: View {
     @Environment(MobileProjects.self) private var projects
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
-                    HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
-                        Text(item.title).font(.nw(.headline)).foregroundStyle(nw.textPrimary)
+                    HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+                        Text(item.title).font(.sh(.headline)).foregroundStyle(sh.textPrimary)
                         // "Needs you · 2m": how long it has waited.
                         if let since = item.since.map(Date.init(milliseconds:)) {
-                            TimelineView(NWElapsedSchedule(start: since)) { context in
-                                NWStatusPill(.attention, label: "\(AgentState.attention.label) · \(NWDuration.text(context.date.timeIntervalSince(since)))")
+                            TimelineView(SHElapsedSchedule(start: since)) { context in
+                                SHStatusPill(.attention, label: "\(AgentState.attention.label) · \(SHDuration.text(context.date.timeIntervalSince(since)))")
                             }
                         } else {
-                            NWStatusPill(.attention)
+                            SHStatusPill(.attention)
                         }
                     }
-                    Text(item.question).nwText(.body).foregroundStyle(nw.textPrimary)
+                    Text(item.question).shText(.body).foregroundStyle(sh.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                     if let message = item.message {
-                        Text(message).nwText(.code).foregroundStyle(nw.textSecondary)
+                        Text(message).shText(.code).foregroundStyle(sh.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
-                            .padding(NW.Space.l)
+                            .padding(SH.Space.l)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .nwCard(radius: NWListMetrics.cardRadius, fill: nw.bgSunken)
+                            .shCard(radius: SHListMetrics.cardRadius, fill: sh.bgSunken)
                     }
                     if item.reply == .open {
                         Text(item.dialogID == nil
                              ? "Open the thread to see what it is waiting for."
                              : "Answer this one in the thread.")
-                            .nwText(.caption).foregroundStyle(nw.textTertiary)
+                            .shText(.caption).foregroundStyle(sh.textTertiary)
                     }
                     VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-                        NWSectionHeader("Where it came from")
-                        NWListCard {
-                            NWListRow(item.thread, subtitle: item.kind, subtitleMono: false,
+                        SHSectionHeader("Where it came from")
+                        SHListCard {
+                            SHListRow(item.thread, subtitle: item.kind, subtitleMono: false,
                                       clock: item.since.map { .ago(Date(milliseconds: $0)) }, leading: item.leading,
                                       trailing: .host(item.hostName), chevron: false)
                         }
                     }
-                    .padding(.top, NW.Space.m)
+                    .padding(.top, SH.Space.m)
                 }
                 .padding(MobileLayout.gutter)
                 .frame(maxWidth: MobileLayout.threadMaxWidth, alignment: .leading)
             }
-            NWHairline()
-            HStack(spacing: NW.Space.m) {
+            SHHairline()
+            HStack(spacing: SH.Space.m) {
                 Button("Open thread") { navigator.open(projects.route(item)) }
-                    .buttonStyle(.nw(item.reply == .open ? .primary : .ghost, size: .l))
-                Spacer(minLength: NW.Space.m)
+                    .buttonStyle(.sh(item.reply == .open ? .primary : .ghost, size: .l))
+                Spacer(minLength: SH.Space.m)
                 if let failure {
-                    Text(failure).font(.nw(.caption)).foregroundStyle(nw.failed).lineLimit(2)
+                    Text(failure).font(.sh(.caption)).foregroundStyle(sh.failed).lineLimit(2)
                 }
-                NWWrapStack(spacing: NW.Space.m) {
+                SHWrapStack(spacing: SH.Space.m) {
                     AttentionReplies(item: item, busy: busy, size: .l, pickLast: true)
                 }
                 .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.horizontal, MobileLayout.gutter)
-            .padding(.vertical, NW.Space.m)
+            .padding(.vertical, SH.Space.m)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }

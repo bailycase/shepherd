@@ -66,7 +66,7 @@ struct RemoteDesignPresentationTests {
     @Test func aSystemNamesWhereItWasReadFrom() {
         #expect(RemoteDesignPresentation.systemSource(Self.system("acme-web", title: "acme-web", sources: ["web/static/tokens.css"]),
                                                       project: "dashboard-web") == "dashboard-web · tokens.css")
-        #expect(RemoteDesignPresentation.systemSource(Self.system("night-watch", title: "Night Watch", builtIn: true), project: nil)
+        #expect(RemoteDesignPresentation.systemSource(Self.system("shepherd-design", title: "Shepherd Design", builtIn: true), project: nil)
             == "shepherd · ShepherdUI Tokens")
     }
 
@@ -77,11 +77,11 @@ struct RemoteDesignPresentationTests {
             Self.summary(Self.design("d1", "Checkout funnel dashboard", edited: Self.ms(120))),
             Self.summary(Self.design("d2", "Events explorer", edited: Self.ms(86_400)), boards: 3),
         ], systems: [
-            Self.system("night-watch", title: "Night Watch", builtIn: true),
+            Self.system("shepherd-design", title: "Shepherd Design", builtIn: true),
             Self.system("acme-web", title: "acme-web", sources: ["tokens.css"]),
         ]), state: ShepherdState(spaces: [Self.space]))
         let build = RemoteDesignsModel.Host(id: Self.build, name: "build-01", listing: RemoteDesignListing(designs: [
-            Self.summary(Self.design("d3", "Settings redesign", system: "night-watch", edited: Self.ms(3_600)), boards: 6),
+            Self.summary(Self.design("d3", "Settings redesign", system: "shepherd-design", edited: Self.ms(3_600)), boards: 6),
         ], systems: []), state: ShepherdState())
         let model = RemoteDesignsModel(hosts: [studio, build], now: Self.now)
         #expect(model.available)
@@ -89,9 +89,9 @@ struct RemoteDesignPresentationTests {
         #expect(model.tiles.map(\.hostTag) == ["Studio", "build-01", "Studio"])
         #expect(model.tiles[1].ref == HostDesignRef(host: Self.build, design: DesignID(rawValue: "d3")))
         #expect(model.count == "3")
-        // The host's own systems first, then Night Watch.
-        #expect(model.systems.map(\.name) == ["acme-web", "Night Watch"])
-        #expect(model.systemsSummary == "2 · acme-web, Night Watch")
+        // The host's own systems first, then Shepherd Design.
+        #expect(model.systems.map(\.name) == ["acme-web", "Shepherd Design"])
+        #expect(model.systemsSummary == "2 · acme-web, Shepherd Design")
     }
 
     @Test func aDesignWhoseAgentWorksIsDrawingAndASystemBuildIsNoTile() {

@@ -28,11 +28,11 @@ struct QueueSection: View {
             let queued = state.queuedIDs
             // Paused (pi was stopped, or a turn failed), the header shows Send now: the Mac shows
             // it on each row's hover and its reason in a tooltip, neither of which touch has.
-            NWTouchQueueCard(count: store.queue.count,
+            SHTouchQueueCard(count: store.queue.count,
                              paused: NativeQueueStack.pausedReason(paused: store.queuePaused, notice: store.queueNotice),
                              resume: !running && enabled && !queued.isEmpty ? { Task { await store.sendQueuedNow(queued) } } : nil,
                              framed: framed, afterGoalCheck: store.hasGoal, collapsed: collapsed,
-                             onToggle: store.hasGoal ? { withNWAnimation(.disclosure) { collapsed.toggle() } } : nil) {
+                             onToggle: store.hasGoal ? { withSHAnimation(.disclosure) { collapsed.toggle() } } : nil) {
                 VStack(spacing: 0) {
                     ForEach(rows) { row in
                         QueueRowView(row: row, first: row.id == rows.first?.id, steerLabel: NativeQueueStack.steerLabel(running: running),
@@ -43,7 +43,7 @@ struct QueueSection: View {
             } options: {
                 options(running: running)
             }
-            .nwTransition(.list)
+            .shTransition(.list)
             // A goal folds Up next to its header on iPhone; the iPad draws it in full (GoalStates, iPadGoal).
             .onChange(of: store.goalID, initial: true) { _, id in collapsed = id != nil && sizeClass != .regular }
             .onDisappear { closeEditor(save: false) }
@@ -149,7 +149,7 @@ private struct QueueRowView: View, Equatable {
     }
 
     var body: some View {
-        let kind: NWTouchQueueRow.Kind = switch row.kind {
+        let kind: SHTouchQueueRow.Kind = switch row.kind {
         case .steering: .steering
         case .queued(let number): .queued(number: number)
         case .deleted: .deleted
@@ -158,11 +158,11 @@ private struct QueueRowView: View, Equatable {
         let id = row.message
         // Touch has no hover, so the next message to go wears Steer now as a button while pi works.
         let steersNow = running && enabled && kind == .queued(number: 1)
-        NWTouchQueueRow(row.text, images: row.images.count, kind: kind, held: row.held, wide: wide,
+        SHTouchQueueRow(row.text, images: row.images.count, kind: kind, held: row.held, wide: wide,
                         steer: id.flatMap { id in steersNow ? { actions.steer(id) } : nil }, steerLabel: steerLabel,
                         back: id.flatMap { id in enabled ? { actions.back(id) } : nil },
                         undo: row.message == nil && enabled ? { actions.undo(row.id) } : nil)
-            .overlay(alignment: .top) { if !first { NWHairline() } }
+            .overlay(alignment: .top) { if !first { SHHairline() } }
             .modifier(QueuedRowActions(row: row, steerLabel: steerLabel, enabled: enabled, actions: actions))
     }
 }
@@ -179,12 +179,12 @@ private struct QueuedRowActions: ViewModifier {
                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                     Button("Delete", systemImage: "trash", role: .destructive) { actions.delete(id) }
                     Button("Edit", systemImage: "pencil") { actions.edit(id) }
-                        .tint(Color.nw.textTertiary)
+                        .tint(Color.sh.textTertiary)
                 }
                 .contextMenu {
                     Button(steerLabel, systemImage: "arrow.turn.down.right") { actions.steer(id) }
                     if let subagent = actions.subagent {
-                        Button("Run in subagent", systemImage: NWGlyph.gitBranch.symbolName) { subagent(id) }
+                        Button("Run in subagent", systemImage: SHGlyph.gitBranch.symbolName) { subagent(id) }
                     }
                     Button("Edit", systemImage: "pencil") { actions.edit(id) }
                     if row.canMoveToTop {
@@ -217,12 +217,12 @@ private struct QueueEditorSheet: View {
     var body: some View {
         NavigationStack {
             TextField("Message", text: $text, axis: .vertical)
-                .font(.nw(.body))
+                .font(.sh(.body))
                 .lineLimit(MobileLayout.queueEditorLines...)
                 .focused($focused)
                 .padding(MobileLayout.gutter)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .background(Color.nw.bgWindow)
+                .background(Color.sh.bgWindow)
                 .navigationTitle("Queued \(number)")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {

@@ -33,7 +33,7 @@ private let signInSteps: [MCPSignInSheetModel.Step] = [
 ]
 
 #Preview("MCP server rows") {
-    NWPreviewBoth {
+    SHPreviewBoth {
         VStack(spacing: 0) {
             MCPServerListHeader()
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
@@ -45,7 +45,7 @@ private let signInSteps: [MCPSignInSheetModel.Step] = [
 }
 
 #Preview("MCP server detail") {
-    NWPreviewBoth {
+    SHPreviewBoth {
         VStack(spacing: 0) {
             MCPServerRow(rows[5], open: true, first: true, actions: noActions)
             MCPServerDetail(linearDetail, actions: .none)
@@ -55,12 +55,12 @@ private let signInSteps: [MCPSignInSheetModel.Step] = [
 }
 
 #Preview("MCP budget and status dots") {
-    NWPreviewBoth {
-        VStack(alignment: .leading, spacing: NW.Space.l) {
+    SHPreviewBoth {
+        VStack(alignment: .leading, spacing: SH.Space.l) {
             MCPBudget(tokens: "~200 tokens", fraction: 0.03,
                       note: "Tools stay out of the prompt until the agent searches for one; a search then adds the best eight for the rest of the thread.")
                 .frame(width: 280)
-            HStack(spacing: NW.Space.l) {
+            HStack(spacing: SH.Space.l) {
                 ForEach(MCPDotState.allCases, id: \.self) { MCPStatusDot($0) }
             }
         }
@@ -68,8 +68,8 @@ private let signInSteps: [MCPSignInSheetModel.Step] = [
 }
 
 #Preview("MCP sign-in sheet") {
-    NWPreviewBoth {
-        VStack(spacing: NW.Space.l) {
+    SHPreviewBoth {
+        VStack(spacing: SH.Space.l) {
             MCPSignInSheet(.init(title: "Sign in to Notion", subtitle: "Finish signing in on notion.com.", steps: signInSteps,
                                  phase: .waiting), actions: .none)
             MCPSignInSheet(.init(title: "Sign in to Notion", subtitle: "notion is connected: 14 tools.",

@@ -4,7 +4,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-/// Every Project on every paired host, grouped by its owner. Always reachable from Home: when no
+/// Every Project on every paired host, grouped by its owner. Always a tab on iPhone: when no
 /// host serves Projects, the empty state says why instead of the entry disappearing.
 struct ProjectsScreen: View {
     @Environment(MobileProjects.self) private var projects
@@ -17,10 +17,10 @@ struct ProjectsScreen: View {
         let rows = projects.rows
         Group {
             if rows.isEmpty {
-                NWEmptyState(Text("No projects"), message: Self.emptyMessage(projects.owners)) {
+                SHEmptyState(Text("No projects"), message: Self.emptyMessage(projects.owners)) {
                     if creatable {
                         Button("New project", systemImage: "plus") { navigator.present(.projects(.create(host: nil))) }
-                            .buttonStyle(.nw(.primary))
+                            .buttonStyle(.sh(.primary))
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -29,23 +29,23 @@ struct ProjectsScreen: View {
                     VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
                         ForEach(Self.groups(rows), id: \.home) { group in
                             VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-                                NWListHeader(group.owner, count: group.rows.count)
-                                NWListCard {
+                                SHListHeader(group.owner, count: group.rows.count)
+                                SHListCard {
                                     ForEach(group.rows) { row in
                                         Button { navigator.open(.projects(.project(row.ref))) } label: {
-                                            NWListRow(row.name, subtitle: row.summary.nilIfEmpty, subtitleMono: false,
+                                            SHListRow(row.name, subtitle: row.summary.nilIfEmpty, subtitleMono: false,
                                                       leading: .symbol("square.stack.3d.up", row.needsYou > 0 ? .attention : nil),
                                                       trailing: row.needsYou > 0 ? .alert("\(row.needsYou) needs you")
                                                           : row.connected ? .none : .meta("Offline"),
                                                       dimmed: !row.connected)
                                         }
-                                        .buttonStyle(.nwRow(radius: 0))
+                                        .buttonStyle(.shRow(radius: 0))
                                     }
                                 }
                             }
                         }
                         if let note = Self.unsupportedNote(projects.owners) {
-                            Text(note).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                            Text(note).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
@@ -56,7 +56,7 @@ struct ProjectsScreen: View {
         }
         .refreshable { await projects.refresh() }
         .task { await projects.refresh() }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .navigationTitle("Projects")
         .navigationBarTitleDisplayMode(sizeClass == .regular ? .inline : .large)
         .toolbar {
@@ -64,7 +64,7 @@ struct ProjectsScreen: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("New project", systemImage: "plus") { navigator.present(.projects(.create(host: nil))) }
                         .buttonStyle(.glassProminent)
-                        .tint(Color.nw.lantern)
+                        .tint(Color.sh.lantern)
                 }
             }
         }
@@ -84,7 +84,7 @@ struct ProjectsScreen: View {
 
     /// Why nothing is listed, in the order a person would fix it.
     static func emptyMessage(_ owners: [MobileProjectOwner]) -> String {
-        if owners.isEmpty { return "Projects live on a Mac. Pair one in More ▸ Hosts to see its projects here." }
+        if owners.isEmpty { return "Projects live on a Mac. Pair one in Settings ▸ Hosts to see its projects here." }
         if !owners.contains(where: \.connected) { return "No host is connected. Projects show here once their Mac is back online." }
         if !owners.contains(where: { $0.connected && $0.supported }) {
             return "No connected host serves Projects. Turn on Projects in Settings ▸ Experiments on the Mac, or update Shepherd there."
@@ -124,13 +124,13 @@ struct NewProjectScreen: View {
         Form {
             Section("Name") {
                 TextField("Name", text: $name)
-                    .font(.nw(.ui))
+                    .font(.sh(.ui))
                     .focused($nameFocused)
                     .accessibilityLabel("Project name")
             }
             Section {
                 TextField("Goal", text: $goal, axis: .vertical)
-                    .font(.nw(.ui))
+                    .font(.sh(.ui))
                     .accessibilityLabel("Goal")
             } header: { Text("Goal") } footer: { Text("One line the project works toward. Optional.") }
             if owners.count > 1 || !usable {
@@ -152,29 +152,29 @@ struct NewProjectScreen: View {
                     ForEach(owner.spaces) { space in
                         Toggle(isOn: Binding(get: { spaces.contains(space.id) },
                                              set: { if $0 { spaces.insert(space.id) } else { spaces.remove(space.id) } })) {
-                            VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                                Text(space.name).font(.nw(.ui))
-                                Text(space.path).font(.nw(.mono)).foregroundStyle(Color.nw.textTertiary).lineLimit(1).truncationMode(.middle)
+                            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                                Text(space.name).font(.sh(.ui))
+                                Text(space.path).font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary).lineLimit(1).truncationMode(.middle)
                             }
                         }
                     }
                 } else {
                     Text("\(owner?.name ?? "The host") has no spaces yet. The project can still plan, and ask for a folder when work needs one.")
-                        .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                        .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                 }
             } header: { Text("Spaces") } footer: { Text("Optional. Threads the project starts work in these folders.") }
             if let error {
-                Section { Text(error).font(.nw(.caption)).foregroundStyle(Color.nw.failed) }
+                Section { Text(error).font(.sh(.caption)).foregroundStyle(Color.sh.failed) }
             }
         }
         .scrollContentBackground(.hidden)
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .navigationTitle("New project")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Cancel") { navigator.dismissPresented() } }
             ToolbarItem(placement: .confirmationAction) {
-                if saving { ProgressView().progressViewStyle(NWSpinnerStyle()) } else {
+                if saving { ProgressView().progressViewStyle(SHSpinnerStyle()) } else {
                     Button("Create project") { create(owner) }.disabled(!ready)
                 }
             }

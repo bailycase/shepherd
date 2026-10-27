@@ -452,10 +452,11 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CURRENT_PROJECT_VERSION="$BUILD"
 
-      - name: Verify the archived app
+      - name: Verify and preserve archive entitlements
         run: |
-          python3 scripts/release.py verify-ios \
-            "$RUNNER_TEMP/Shepherd-iOS.xcarchive/Products/Applications/$PRODUCT" "$BUILD"
+          app="$RUNNER_TEMP/Shepherd-iOS.xcarchive/Products/Applications/$PRODUCT"
+          python3 scripts/release.py verify-ios "$app" "$BUILD"
+          python3 scripts/release.py prepare-ios-signing "$app"
 
       - name: Write the App Store Connect key
         env:
@@ -468,15 +469,15 @@ jobs:
             echo "::error::APP_STORE_CONNECT_KEY_P8 must be the .p8 file's text as-is, not base64." && exit 1
           fi
 
-      # -allowProvisioningUpdates with the key registers the profile and uses
-      # the cloud-managed distribution certificate; destination=upload in the
-      # export options sends the signed build to App Store Connect. The build
-      # reaches testers once Apple has processed it.
-      - name: Sign and upload to TestFlight
+      # Export locally so the actual distribution signature and provisioning profile
+      # can be checked before anything is uploaded or older builds are retired.
+      - name: Cloud-sign and verify the TestFlight package
         env:
           KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: |
+          python3 scripts/release.py ensure-ios-push \
+            --key-id "$KEY_ID" --issuer-id "$ISSUER_ID" --key "$RUNNER_TEMP/asc/AuthKey.p8"
           xcodebuild -exportArchive \
             -archivePath "$RUNNER_TEMP/Shepherd-iOS.xcarchive" \
             -exportOptionsPlist "$EXPORT_OPTIONS" \
@@ -485,7 +486,27 @@ jobs:
             -authenticationKeyPath "$RUNNER_TEMP/asc/AuthKey.p8" \
             -authenticationKeyID "$KEY_ID" \
             -authenticationKeyIssuerID "$ISSUER_ID"
-          plutil -p "$RUNNER_TEMP/export/DistributionSummary.plist" 2>/dev/null || true
+          shopt -s nullglob
+          ipas=("$RUNNER_TEMP/export/"*.ipa)
+          if [[ ${#ipas[@]} != 1 ]]; then
+            echo "::error::Expected exactly one exported iOS package." && exit 1
+          fi
+          python3 scripts/release.py verify-ios-ipa "${ipas[0]}" "$BUILD"
+          echo "::notice title=Push signing::Distribution signature and profile contain production APNs entitlements."
+
+      - name: Upload the verified package to TestFlight
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          shopt -s nullglob
+          ipas=("$RUNNER_TEMP/export/"*.ipa)
+          if [[ ${#ipas[@]} != 1 ]]; then
+            echo "::error::Expected exactly one verified iOS package." && exit 1
+          fi
+          xcrun altool --upload-app -f "${ipas[0]}" \
+            --api-key "$KEY_ID" --api-issuer "$ISSUER_ID" \
+            --p8-file-path "$RUNNER_TEMP/asc/AuthKey.p8"
           echo "::notice title=TestFlight::Uploaded $SCHEME build $BUILD for internal testing."
 
       - name: Remove the App Store Connect key

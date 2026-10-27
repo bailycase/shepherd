@@ -72,7 +72,7 @@ Integration and preview targets use `Tests/ShepherdTestSupport`, which re-export
 - `OffscreenWindow`, `ControlPress`: an off-screen window and a press through the accessibility
   tree (below).
 - `ScrollTrace`: a thread's scroll view recorded as it changes, for scroll-rule tests.
-- `NWRenderProbe.tick("sidebar.row")` at the top of a row's `body` counts row bodies; the
+- `SHRenderProbe.tick("sidebar.row")` at the top of a row's `body` counts row bodies; the
   `ListPerformanceTests` budgets read it. Counts hold on a busy runner; timings don't, so budgets
   are counts.
 
@@ -146,6 +146,9 @@ small. A combined row's hover buttons are its accessibility actions:
 early with status 0 also passes. `ModelSettingsPopoverTests` is the worked example.
 
 ## CI
+
+PR CI runs only for pull requests targeting `master`, not `nightly`. Pushes to `master`,
+the daily schedule and manual dispatch keep their existing triggers.
 
 The hosted `other` lane also runs `Tests/ShepherdIOSChecks/run.sh --sidebar-only`: readiness, host-client and
 sidebar/Finalize loopback checks, with exact completion sentinels. This is not the full iOS checker or rendered UI

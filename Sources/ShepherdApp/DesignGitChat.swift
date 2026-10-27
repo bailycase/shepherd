@@ -8,7 +8,7 @@ import ShepherdUI
 struct DesignGitChat {
     static let rowID = "design-git-merge"
 
-    var phase: NWGitMergePhase?
+    var phase: SHGitMergePhase?
     /// The design came from Git and its chat has said nothing yet: "No agent has started".
     var opened: Bool
     var review: (() -> Void)?

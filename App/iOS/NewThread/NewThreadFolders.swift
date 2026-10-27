@@ -96,8 +96,8 @@ struct NewThreadFolderScreen: View {
                 if browser.parent != nil {
                     Button { browser.up() } label: {
                         Label("Parent folder", systemImage: "arrow.turn.left.up")
-                            .font(.nw(.ui))
-                            .foregroundStyle(Color.nw.textSecondary)
+                            .font(.sh(.ui))
+                            .foregroundStyle(Color.sh.textSecondary)
                             .frame(maxWidth: .infinity, minHeight: MobileLayout.rowHeight, alignment: .leading)
                             .contentShape(Rectangle())
                     }
@@ -105,17 +105,17 @@ struct NewThreadFolderScreen: View {
                 }
                 ForEach(browser.visible, id: \.self) { name in
                     Button { browser.open(name) } label: {
-                        HStack(spacing: NW.Space.l) {
+                        HStack(spacing: SH.Space.l) {
                             Image(systemName: "folder")
-                                .font(.nw(.ui))
-                                .foregroundStyle(Color.nw.textSecondary)
+                                .font(.sh(.ui))
+                                .foregroundStyle(Color.sh.textSecondary)
                                 .accessibilityHidden(true)
-                            Text(name).font(.nwMono(NWChoiceRowMetrics.titleSize)).foregroundStyle(Color.nw.textPrimary)
+                            Text(name).font(.shMono(SHChoiceRowMetrics.titleSize)).foregroundStyle(Color.sh.textPrimary)
                                 .lineLimit(1).truncationMode(.middle)
                             Spacer(minLength: 0)
                             Image(systemName: "chevron.right")
-                                .font(.nw(.caption))
-                                .foregroundStyle(Color.nw.textTertiary)
+                                .font(.sh(.caption))
+                                .foregroundStyle(Color.sh.textTertiary)
                                 .accessibilityHidden(true)
                         }
                         .frame(maxWidth: .infinity, minHeight: MobileLayout.rowHeight, alignment: .leading)
@@ -127,34 +127,34 @@ struct NewThreadFolderScreen: View {
                 }
                 if !browser.loading, browser.visible.isEmpty {
                     Text(browser.filter.isEmpty ? "No folders here" : "No matching folders")
-                        .font(.nw(.caption))
-                        .foregroundStyle(Color.nw.textTertiary)
+                        .font(.sh(.caption))
+                        .foregroundStyle(Color.sh.textTertiary)
                         .frame(minHeight: MobileLayout.rowHeight)
                 }
             } header: {
                 Text(NewThreadRules.abbreviatedPath(browser.path))
-                    .font(.nw(.mono))
-                    .foregroundStyle(Color.nw.textSecondary)
+                    .font(.sh(.mono))
+                    .foregroundStyle(Color.sh.textSecondary)
                     .textCase(nil)
                     .lineLimit(2)
                     .truncationMode(.head)
             } footer: {
-                VStack(alignment: .leading, spacing: NW.Space.m) {
+                VStack(alignment: .leading, spacing: SH.Space.m) {
                     if let error = browser.errorText {
-                        Text(error).nwText(.caption).foregroundStyle(Color.nw.failed)
+                        Text(error).shText(.caption).foregroundStyle(Color.sh.failed)
                     }
                     Toggle("Show hidden folders", isOn: Binding(get: { browser.showHidden }, set: { browser.setShowHidden($0) }))
-                        .font(.nw(.caption))
-                        .foregroundStyle(Color.nw.textSecondary)
-                        .tint(Color.nw.lantern)
+                        .font(.sh(.caption))
+                        .foregroundStyle(Color.sh.textSecondary)
+                        .tint(Color.sh.lantern)
                 }
             }
-            .listRowBackground(Color.nw.bgRaised)
+            .listRowBackground(Color.sh.bgRaised)
         }
         .scrollContentBackground(.hidden)
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .overlay {
-            if browser.loading && browser.dirs.isEmpty { ProgressView().progressViewStyle(.nwSpinner) }
+            if browser.loading && browser.dirs.isEmpty { ProgressView().progressViewStyle(.shSpinner) }
         }
         .searchable(text: Binding(get: { browser.filter }, set: { browser.setFilter($0) }), prompt: "Filter folders")
         .navigationTitle("Add repo on \(browser.hostName)")

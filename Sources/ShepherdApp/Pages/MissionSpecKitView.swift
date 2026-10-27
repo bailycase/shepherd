@@ -165,43 +165,43 @@ struct MissionTrustCard: View {
     let action: (MissionUIAction) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NW.Space.l) {
-            HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
-                Image(systemName: "lock.shield").foregroundStyle(Color.nw.lanternText).accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: NW.Space.xs) {
-                    heading.nwText(.headline).fixedSize(horizontal: false, vertical: true)
-                    Text(summary).nwText(.caption).foregroundStyle(Color.nw.textSecondary).fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: SH.Space.l) {
+            HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+                Image(systemName: "lock.shield").foregroundStyle(Color.sh.lanternText).accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: SH.Space.xs) {
+                    heading.shText(.headline).fixedSize(horizontal: false, vertical: true)
+                    Text(summary).shText(.caption).foregroundStyle(Color.sh.textSecondary).fixedSize(horizontal: false, vertical: true)
                 }
             }
             switch trust {
             case .needs(let report), .changed(let report):
                 Text("Loads \(name)'s own Spec Kit prompts with `--prompt-template`, which skips pi's project-trust prompt. Allowing binds to these files as they are now; if any change, I'll ask again.")
-                    .nwText(.caption).foregroundStyle(Color.nw.textSecondary).fixedSize(horizontal: false, vertical: true)
+                    .shText(.caption).foregroundStyle(Color.sh.textSecondary).fixedSize(horizontal: false, vertical: true)
                 details(report)
-                NWFlowLayout(spacing: NW.Space.m) {
+                SHFlowLayout(spacing: SH.Space.m) {
                     Button(last ? "Allow \(name)'s project files and continue planning" : "Allow \(name)'s project files") {
                         action(.specKitConsent(space, report.consentFingerprint, continuePlanning: last))
                     }
-                    .buttonStyle(.nw(.raised, tint: Color.nw.lanternText)).disabled(!enabled)
-                    Button("Not now") { action(.pause) }.buttonStyle(.nw(.ghost)).disabled(!enabled)
-                        .nwHelp("Pauses the mission. Planning stays paused until you allow \(name).")
+                    .buttonStyle(.sh(.raised, tint: Color.sh.lanternText)).disabled(!enabled)
+                    Button("Not now") { action(.pause) }.buttonStyle(.sh(.ghost)).disabled(!enabled)
+                        .shHelp("Pauses the mission. Planning stays paused until you allow \(name).")
                 }
             case .unready(let report):
                 Text((try? AttributedString(markdown: MissionController.describe(report))) ?? AttributedString(MissionController.describe(report)))
-                    .nwText(.caption).foregroundStyle(Color.nw.textSecondary).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                    .shText(.caption).foregroundStyle(Color.sh.textSecondary).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                 if report.status == .notInitialized || report.status == .piIntegrationMissing {
                     Button("Set up Spec Kit in \(name)") { action(.specKitSetUp(space)) }
-                        .buttonStyle(.nw(.raised, tint: Color.nw.lanternText)).disabled(!enabled)
-                        .nwHelp("Runs the stock specify CLI in this mission's worktree. Your repository's own checkout is untouched.")
+                        .buttonStyle(.sh(.raised, tint: Color.sh.lanternText)).disabled(!enabled)
+                        .shHelp("Runs the stock specify CLI in this mission's worktree. Your repository's own checkout is untouched.")
                 }
                 details(report)
             case .allowed, .unread: EmptyView()
             }
         }
-        .padding(NW.Space.xl)
+        .padding(SH.Space.xl)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-        .nwBorder(Color.nw.lineStrong, radius: NW.Radius.m)
+        .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+        .shBorder(Color.sh.lineStrong, radius: SH.Radius.m)
         .accessibilityElement(children: .contain)
     }
 
@@ -236,7 +236,7 @@ struct MissionTrustCard: View {
 
     private func details(_ report: SpecKitPreflight) -> some View {
         DisclosureGroup {
-            VStack(alignment: .leading, spacing: NW.Space.xs) {
+            VStack(alignment: .leading, spacing: SH.Space.xs) {
                 fact("Version", (report.recordedVersion ?? "not recorded")
                      + (report.matchesTestedRelease ? " · matches the tested release" : " · differs from the tested release \(report.testedVersion)"))
                 if !report.integrations.isEmpty { fact("Integrations", report.integrations.joined(separator: ", ") + (report.scriptType.map { " · \($0) scripts" } ?? "")) }
@@ -246,16 +246,16 @@ struct MissionTrustCard: View {
                     fact("Hooks", report.hooks.map { "\($0.event) → \($0.command)\($0.optional ? " (optional)" : "")\($0.enabled ? "" : " (off)")" }.joined(separator: "\n"))
                 }
                 if !report.warnings.isEmpty { fact("Warnings", report.warnings.joined(separator: "\n")) }
-            }.padding(.top, NW.Space.s)
+            }.padding(.top, SH.Space.s)
         } label: {
-            Text("Details").nwText(.caption).foregroundStyle(Color.nw.textSecondary)
+            Text("Details").shText(.caption).foregroundStyle(Color.sh.textSecondary)
         }
     }
 
     private func fact(_ label: String, _ value: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
-            Text(label).nwText(.caption).foregroundStyle(Color.nw.textTertiary).frame(width: AppLayout.missionBriefLaneName, alignment: .leading)
-            Text(value).nwText(.mono).foregroundStyle(Color.nw.textSecondary).textSelection(.enabled)
+        HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+            Text(label).shText(.caption).foregroundStyle(Color.sh.textTertiary).frame(width: AppLayout.missionBriefLaneName, alignment: .leading)
+            Text(value).shText(.mono).foregroundStyle(Color.sh.textSecondary).textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -267,18 +267,18 @@ struct MissionPlannerActivity: View {
     let openThread: (AgentID) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NW.Space.s) {
+        VStack(alignment: .leading, spacing: SH.Space.s) {
             ForEach(rows, id: \.attempt.id) { row in
                 let words = row.command.plannerWords
                 let running = row.attempt.status == .running
                 Button { if let agent = row.attempt.agentID { openThread(agent) } } label: {
-                    HStack(spacing: NW.Space.m) {
-                        if running { ProgressView().progressViewStyle(.nwSpinner()) }
-                        else { NWStateGlyph(row.attempt.status.missionState) }
-                        Text("\(running ? words.working : words.done) for \(row.lane)\(running ? "…" : "")").nwText(.ui)
-                        if let file = words.file, !running { Text(file).nwText(.mono).foregroundStyle(Color.nw.textTertiary) }
+                    HStack(spacing: SH.Space.m) {
+                        if running { ProgressView().progressViewStyle(.shSpinner()) }
+                        else { SHStateGlyph(row.attempt.status.missionState) }
+                        Text("\(running ? words.working : words.done) for \(row.lane)\(running ? "…" : "")").shText(.ui)
+                        if let file = words.file, !running { Text(file).shText(.mono).foregroundStyle(Color.sh.textTertiary) }
                         if row.attempt.agentID != nil {
-                            Image(systemName: "chevron.right").font(.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
+                            Image(systemName: "chevron.right").font(.sh(.micro)).foregroundStyle(Color.sh.textTertiary)
                         }
                     }
                     .contentShape(Rectangle())

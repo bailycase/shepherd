@@ -116,7 +116,7 @@ public enum NewThreadRows {
         case .connecting: return "connecting…"
         case .offline: return host.phase.failure?.headline.lowercased() ?? "unreachable"
         case .connected:
-            let hidden = Set(host.state.spaces.filter(\.hidden).map(\.id))
+            let hidden = Set(host.state.spaces.filter { !$0.showsThreads }.map(\.id))
             let visible = host.state.agents.filter { !hidden.contains($0.spaceID) && !host.state.isDesignAgent($0) }
             let running = visible.filter { $0.status == .working }.count
             if running > 0 { return "connected · \(running) \(running == 1 ? "thread" : "threads") running" }
@@ -392,6 +392,15 @@ public enum NewThreadRules {
         let trimmed = base.trimmingCharacters(in: .whitespaces)
         let branch = trimmed.hasPrefix("origin/") ? String(trimmed.dropFirst("origin/".count)) : trimmed
         return branch.isEmpty ? "Keeps the checkout clean. Merge it from Review." : "Keeps \(branch) clean. Merge it from Review."
+    }
+
+    /// The repo the host's most recently active thread works in, so a new thread starts where the
+    /// last one did; nil when no thread of the host says when it last moved.
+    public static func lastUsedSpace(_ host: NewThreadHostInput) -> SpaceID? {
+        let offered = Set(host.spaces.map(\.id))
+        return host.state.agents
+            .filter { $0.lastActiveAt != nil && offered.contains($0.spaceID) && host.state.isSidebarThread($0) }
+            .max { ($0.lastActiveAt ?? 0) < ($1.lastActiveAt ?? 0) }?.spaceID
     }
 
     /// A model id as a chip shows it: without its provider ("anthropic/claude-opus" →

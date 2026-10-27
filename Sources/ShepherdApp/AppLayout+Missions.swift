@@ -5,9 +5,9 @@ import ShepherdUI
 /// (the boards are 2× captures).
 extension AppLayout {
     // List (NavMissions)
-    static let missionColumns: [NWTableColumns.Column] = [.flex(1.7), .flex(1.2), .fixed(160), .fixed(150), .fixed(110)]
+    static let missionColumns: [SHTableColumns.Column] = [.flex(1.7), .flex(1.2), .fixed(160), .fixed(150), .fixed(110)]
     /// Below `missionNarrowWidth`: Mission, Route and Spend only.
-    static let missionNarrowColumns: [NWTableColumns.Column] = [.flex(1), missionColumns[2], missionColumns[3]]
+    static let missionNarrowColumns: [SHTableColumns.Column] = [.flex(1), missionColumns[2], missionColumns[3]]
     static let missionRouteWidth: CGFloat = 150
     static let missionRouteSegment: CGFloat = 4
     static let missionTabHeight: CGFloat = 28

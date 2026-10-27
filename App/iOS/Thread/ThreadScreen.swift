@@ -12,8 +12,10 @@ import ShepherdRemote
 /// `SubagentHooks.list` for the footer's "N subagents" and a turn's subagent lines, `ReviewHooks.open` for the changes card
 /// and edit lines, `AgentActionsMenu` (Search/) in the options menu, the windows' hooks
 /// (Windows/): Open in new window, a turn's Send to… and drag, and text dropped on the composer,
-/// and the terminal (Terminal/): `threadTerminal` under the thread and `TerminalMenuItems` in the
-/// options menu (no header button: the terminal is only a toggle, docs/design/terminal.md › Terminal panel).
+/// and the terminal (Terminal/): `watchesTerminals` for what its terminals run. The thread's
+/// menu (`ThreadOptionsItems`) lists the side pane's tabs: on regular width they open in the
+/// pane beside the thread (`ThreadWithSidePane`), on a phone each is pushed. In iPhone Duo's
+/// laptop pose the thread is an arrangement, the composer under the fold (`ThreadArrangement`).
 struct ThreadScreen: View {
     let ref: AgentRef
     @Environment(MobileHosts.self) private var hosts
@@ -21,8 +23,7 @@ struct ThreadScreen: View {
     @Environment(MobileNavigator.self) private var navigator
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var sizeClass
-    @Environment(\.threadSidePaneOpen) private var sidePaneOpen
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.threadTitleMaxWidth) private var titleMaxWidth
     @State private var visible = false
     /// The thread's height: the composer may take a share of it (`composerMaxHeight`).
     @State private var height: CGFloat = 0
@@ -36,6 +37,10 @@ struct ThreadScreen: View {
     }
 
     var body: some View {
+        VerticalBars { verticalBars in content(verticalBars: verticalBars) }
+    }
+
+    @ViewBuilder private func content(verticalBars: Bool) -> some View {
         let host = hosts.host(ref.host)
         let agent = host?.agent(ref.agent)
         let store = threads.store(for: ref)
@@ -44,66 +49,132 @@ struct ThreadScreen: View {
         let status = ThreadTitle.Status(store: store, agent: agent)
         // Where the agent works (the branch chip); the host is named once there is more than one.
         let branch = agent.flatMap { AgentBranchLabel(agent: $0, host: hosts.hosts.count > 1 ? host?.name : nil) }
-        ThreadTranscript(ref: ref, store: store, banner: banner(host: host, agent: agent, store: store, supported: supported))
+        let transcript = ThreadTranscript(ref: ref, store: store, banner: banner(host: host, agent: agent, store: store, supported: supported))
             .environment(\.openArtifact, store.supports("artifacts") || !store.artifacts.isEmpty ? { [navigator, ref] path in
                 ArtifactHooks.open(thread: ref, path: path, navigator: navigator)
             } : nil)
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                if agent != nil {
-                    ThreadComposer(ref: ref)
-                        .composerTextDrop(ref)
-                        .environment(\.composerMaxHeight, height > 0 ? height * MobileLayout.composerShare : .infinity)
-                        // iPad: as wide as the thread's column, a question's card too (iPadQuestion).
-                        .frame(maxWidth: sizeClass == .regular ? MobileLayout.threadMaxWidth + 2 * MobileLayout.padThreadGutter : .infinity)
-                        .frame(maxWidth: .infinity)
-                        .background(Color.nw.bgWindow)
-                }
-            }
-            .background(Color.nw.bgWindow)
-            // Measured around the composer's inset, which would otherwise shrink what it measures.
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
-            // iPad: the terminal panel under the thread and its composer (Terminal/).
-            .threadTerminal(ref)
-            .turnUndoAlert()
-            // A thread takes the whole screen on iPhone (MobileThread board): no tab bar under the composer.
-            .toolbar(.hidden, for: .tabBar)
-            .navigationTitle(agent?.name ?? "Thread")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    ThreadTitle(name: agent?.name ?? "Thread", status: status, branch: branch, wide: sizeClass == .regular,
-                                goalStore: store)
-                }
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    if agent != nil {
-                        // iPad: the one side-pane button (the Changes pane, or the subagent
-                        // inspector while it shows), lit while the pane is open.
-                        if sizeClass == .regular {
-                            ThreadSidePaneButton(isOn: sidePaneOpen, enabled: sidePaneOpen || key.session != nil) {
-                                if sidePaneOpen { dismiss() } else { ReviewHooks.open(thread: ref, file: nil, navigator: navigator) }
-                            }
-                        }
-                        ThreadStopButton(store: store, enabled: key.session != nil)
+        let arranged = navigator.sidePane.arranged == ref
+        // The laptop arrangement's bar names the thread alone, beside its capsule (DuoLaptop).
+        let title = ThreadTitle(name: agent?.name ?? "Thread", status: status, branch: arranged ? nil : branch,
+                                wide: sizeClass == .regular && !arranged, goalStore: store)
+        // Where the bars run down the side on regular width (iPhone Duo open), the title heads the
+        // thread's column, level with the side pane's tabs (DuoOpenThread, DuoOpenSidePane); else
+        // it is the bar's.
+        let inlineTitle = verticalBars && sizeClass == .regular
+        // The pane open beside the thread has sent the sidebar away (iPhone Duo; `PadShell`), and
+        // the system's toggle with it: the thread offers it back.
+        let sidebarHidden = navigator.layout == .pad && navigator.sidePane.isOpen && navigator.padSidebarOverlays
+            && navigator.padColumns == .detailOnly && navigator.sidePane.arranged != ref
+        Group {
+            if arranged {
+                // The laptop pose (DuoLaptop): the transcript, or the terminal, above the fold; the composer under it.
+                ThreadArrangement {
+                    if navigator.sidePane.arrangedTerminal {
+                        TerminalScreen(ref: ref, embedded: true)
+                    } else {
+                        transcript
                     }
+                } composer: {
+                    if agent != nil { composer }
                 }
-                // The system's ••• menu, so it overflows with the bar's items where the bar runs
-                // down the side (iPhone Duo).
+            } else {
+                transcript
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
+                        if agent != nil {
+                            composer
+                                // iPad: as wide as the thread's column, a question's card too (iPadQuestion).
+                                .frame(maxWidth: sizeClass == .regular ? MobileLayout.threadMaxWidth + 2 * MobileLayout.padThreadGutter : .infinity)
+                                .frame(maxWidth: .infinity)
+                                .background(Color.sh.bgWindow)
+                        }
+                    }
+            }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if inlineTitle {
+                HStack(spacing: SH.Space.m) {
+                    if sidebarHidden { ThreadSidebarButton() }
+                    title
+                }
+                .padding(.horizontal, MobileLayout.padThreadGutter)
+                .frame(maxWidth: .infinity, minHeight: SHPadPaneMetrics.headHeight, alignment: .leading)
+                .background(Color.sh.bgWindow)
+                .accessibilityAddTraits(.isHeader)
+            }
+        }
+        .background(Color.sh.bgWindow)
+        // Measured around the composer's inset, which would otherwise shrink what it measures.
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
+        // The side pane's Terminal tab dot and the menu's "1 running".
+        .watchesTerminals(ref)
+        .turnUndoAlert()
+        // A thread takes the whole screen on iPhone (MobileThread board): no tab bar under the composer;
+        // where the bars run down the side (iPhone Duo closed) the tab bar stays (DuoClosedThreadMenu).
+        .toolbar(verticalBars ? .automatic : .hidden, for: .tabBar)
+        .navigationTitle(agent?.name ?? "Thread")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(removing: inlineTitle ? .title : nil)
+        .toolbar {
+            if sidebarHidden, !inlineTitle {
+                ToolbarItem(placement: .topBarLeading) { ThreadSidebarButton(inBar: true) }
+            }
+            if !inlineTitle {
+                ToolbarItem(placement: .principal) {
+                    // Beside the side pane, the title keeps to the thread's column (`ThreadWithSidePane`).
+                    title.frame(maxWidth: titleMaxWidth, alignment: .leading)
+                }
+            }
+            ToolbarItemGroup(placement: .topBarTrailing) {
                 if agent != nil {
-                    ToolbarOverflowMenu { ThreadOptionsItems(ref: ref, store: store, enabled: key.session != nil) }
+                    if arranged {
+                        // What sits above the composer in the laptop pose (DuoLaptop's capsule).
+                        ThreadArrangedPicker(showsTerminal: navigator.sidePane.arrangedTerminal) {
+                            navigator.sidePane.arrangedTerminal = $0
+                        }
+                    } else if sizeClass == .regular {
+                        // The side pane's one button, lit while it is open (DuoOpenSidePane).
+                        ThreadSidePaneButton(isOn: navigator.sidePane.isOpen) {
+                            withSHAnimation(.pane) { navigator.sidePane.isOpen.toggle() }
+                        }
+                    }
+                    ThreadStopButton(store: store, enabled: key.session != nil)
                 }
             }
-            .onAppear { visible = true }
-            .onDisappear { visible = false }
-            .task(id: key) {
-                // Through the thread's viewers: the same thread may be on screen in another window.
-                let viewers = threads.viewers(for: ref)
-                guard key.active, let session = key.session, let client = host?.connectedClient else {
-                    viewers.rest(detached: key.session == nil)
-                    return
-                }
-                let agentID = ref.agent
-                await viewers.run(connection: session) { request in try await client.nativeThread(agentID: agentID, request: request) }
+            // The system's ••• menu, so it overflows with the bar's items where the bar runs
+            // down the side (iPhone Duo).
+            if agent != nil {
+                ToolbarOverflowMenu { ThreadOptionsItems(ref: ref, store: store, branch: branch, enabled: key.session != nil) }
             }
+            // New thread sits lowest in the side column and stays longest (DuoOpenThread); a
+            // horizontal bar leaves it to the sidebar's row.
+            if sizeClass == .regular, verticalBars {
+                ToolbarItem(placement: .bottomBar) {
+                    Button("New thread", systemImage: "square.and.pencil") { NewThreadHooks.open(navigator: navigator) }
+                        .buttonStyle(.glassProminent)
+                        .disabled(hosts.hosts.isEmpty)
+                }
+                .visibilityPriority(.high)
+            }
+        }
+        .onAppear { visible = true }
+        .onDisappear { visible = false }
+        .task(id: key) {
+            // Through the thread's viewers: the same thread may be on screen in another window.
+            let viewers = threads.viewers(for: ref)
+            guard key.active, let session = key.session, let client = host?.connectedClient else {
+                viewers.rest(detached: key.session == nil)
+                return
+            }
+            let agentID = ref.agent
+            await viewers.run(connection: session) { request in try await client.nativeThread(agentID: agentID, request: request) }
+        }
+    }
+
+    /// The thread's composer, its height capped at a share of the thread.
+    private var composer: some View {
+        ThreadComposer(ref: ref)
+            .composerTextDrop(ref)
+            .environment(\.composerMaxHeight, height > 0 ? height * MobileLayout.composerShare : .infinity)
     }
 
     /// One short line for the states that matter; the store keeps the full reason.
@@ -157,11 +228,11 @@ struct ThreadTranscript: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: MobileLayout.turnSpacing) {
                     if let banner {
-                        Text(banner).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                        Text(banner).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     if store.snapshot == nil && store.loadError == nil && store.startProblem == nil && store.isLive {
-                        ProgressView().progressViewStyle(NWSpinnerStyle()).frame(maxWidth: .infinity)
+                        ProgressView().progressViewStyle(SHSpinnerStyle()).frame(maxWidth: .infinity)
                     }
                     ForEach(rows) { row in
                         // One view per row whatever it holds, so the lazy stack builds only the
@@ -191,7 +262,7 @@ struct ThreadTranscript: View {
                 .padding(.horizontal, sizeClass == .regular && !designChat ? MobileLayout.padThreadGutter : MobileLayout.gutter)
                 .padding(.vertical, sizeClass == .regular && !designChat ? MobileLayout.padThreadGutter : MobileLayout.gutter)
                 // iPad bubbles (iPadThread): at most 520pt, 12×16 inside.
-                .environment(\.nwUserBubbleMetrics, sizeClass == .regular ? .pad : .standard)
+                .environment(\.shUserBubbleMetrics, sizeClass == .regular ? .pad : .standard)
                 .frame(maxWidth: .infinity)
                 // Which compactions show what the agent kept: its own object, so a toggle
                 // redraws only the compaction lines.
@@ -252,7 +323,7 @@ struct ThreadTranscript: View {
             // Laid out in the thread's safe area, so it sits on the composer; the margin of its
             // 44pt hit area draws the capsule 8pt above it.
             .overlay(alignment: .bottom) {
-                NWJumpToLatest(action: follower.showsJump(running: running) ? {
+                SHJumpToLatest(action: follower.showsJump(running: running) ? {
                     follow { $0.jumpToLatest(); return false }
                     proxy.scrollTo(Self.bottomID, anchor: .bottom)
                 } : nil)
@@ -281,7 +352,7 @@ struct ThreadTranscript: View {
         }
         guard let row = holder() else { return }
         follow { $0.beginJump(); return false }
-        withNWAnimation(.scroll) { proxy.scrollTo(row.id, anchor: .top) }
+        withSHAnimation(.scroll) { proxy.scrollTo(row.id, anchor: .top) }
     }
 
     /// Applies a change to the follower, writing it back only when it changed, so a scroll frame
@@ -354,7 +425,7 @@ struct ThreadTranscript: View {
 /// The title and status line (MobileThread, MobileQueue, MobileQuestion, iPadThread boards). On a
 /// phone, the name over "● Idle · ⧉ pi/swiftui-previews": the status word and the worktree's
 /// branch, or "⌂ your checkout" in lantern when pi works in the space's own checkout.
-/// On iPad, the name, the branch chip (`NWBranchChip`: the files changed, and the host when there
+/// On iPad, the name, the branch chip (`SHBranchChip`: the files changed, and the host when there
 /// are several), and a status pill with the running turn's time, on one line.
 struct ThreadTitle: View {
     struct Status: Equatable {
@@ -402,17 +473,17 @@ struct ThreadTitle: View {
     }
 
     private var compact: some View {
-        VStack(spacing: NW.Space.xxs) {
-            Text(name).font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
+        VStack(spacing: SH.Space.xxs) {
+            Text(name).font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
             // The branch truncates in the middle; the status word stays whole.
-            HStack(spacing: NW.Space.s) {
-                NWStatusDot(status.state)
+            HStack(spacing: SH.Space.s) {
+                SHStatusDot(status.state)
                 Text(status.label).fontWeight(.medium).foregroundStyle(status.state.textColor).fixedSize()
                 ThreadGoalHeader(store: goalStore, time: goalTime)
                 // A worktree names its branch; your own checkout says so in lantern (MobileQuestion).
                 if let branch {
                     let checkout = branch.kind == .checkout
-                    let tint = checkout ? Color.nw.lanternText : Color.nw.textTertiary
+                    let tint = checkout ? Color.sh.lanternText : Color.sh.textTertiary
                     Text("·").foregroundStyle(tint)
                     Image(systemName: checkout ? "house" : "square.on.square")
                         .imageScale(.small)
@@ -421,26 +492,32 @@ struct ThreadTitle: View {
                         Text("your checkout").fontWeight(.medium).foregroundStyle(tint)
                     } else {
                         Text(branch.branch)
-                            .font(.nw(.mono))
+                            .font(.sh(.mono))
                             .foregroundStyle(tint)
                             .truncationMode(.middle)
                     }
                 }
             }
-            .font(.nw(.caption))
+            .font(.sh(.caption))
             .lineLimit(1)
         }
     }
 
     private func pill(_ meta: NativeThreadMeta) -> some View {
-        HStack(spacing: NW.Space.m) {
-            Text(name).font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
+        HStack(spacing: SH.Space.m) {
+            Text(name).font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
             if let branch {
-                NWBranchChip(kind: branch.kind == .worktree ? .worktree : .checkout, branch: branch.branch,
-                             changedFiles: branch.changedFiles, host: branch.host, showsChevron: false)
-                    .layoutPriority(-1)
+                // Narrow (a half-open thread beside its pane), the host goes first, then the whole chip,
+                // rather than the branch shrinking to a letter.
+                let kind: SHBranchChip.Kind = branch.kind == .worktree ? .worktree : .checkout
+                ViewThatFits(in: .horizontal) {
+                    SHBranchChip(kind: kind, branch: branch.branch, changedFiles: branch.changedFiles, host: branch.host, showsChevron: false)
+                    SHBranchChip(kind: kind, branch: branch.branch, changedFiles: branch.changedFiles, showsChevron: false)
+                    Color.clear.frame(width: 0, height: 0)
+                }
+                .layoutPriority(-1)
             }
-            NWStatusPill(status.state, label: meta.elapsed.map { "\(status.label) · \($0)" } ?? status.label)
+            SHStatusPill(status.state, label: meta.elapsed.map { "\(status.label) · \($0)" } ?? status.label)
                 .fixedSize()
             ThreadGoalHeader(store: goalStore, time: goalTime)
         }
@@ -455,77 +532,130 @@ private struct ThreadGoalHeader: View {
     var body: some View {
         if let store {
             if let goal = store.goal, goal.isActive {
-                NWGoalHeaderPill(time: goal.timeLabel, clockStart: goal.clockStart)
+                SHGoalHeaderPill(time: goal.timeLabel, clockStart: goal.clockStart)
             }
         } else if let time {
-            NWGoalHeaderPill(time: time)
+            SHGoalHeaderPill(time: time)
         }
     }
 }
 
 extension EnvironmentValues {
-    /// A side pane shows beside this thread (iPad: the docked Changes pane, or the subagent
-    /// inspector), so the header's side-pane button is lit and closes it.
-    @Entry var threadSidePaneOpen = false
+    /// The thread's column beside an open side pane, which its title keeps to; nil is the bar's width.
+    @Entry var threadTitleMaxWidth: CGFloat? = nil
 }
 
-/// The header's one side-pane button (iPad; docs/design/ios-ipad.md › iOS: iPad › Thread): Show side pane opens
-/// the Changes pane; while a pane shows it is lit (`runningTint`, the glyph in `running`) and
-/// hides it.
+/// Show sidebar, while the open side pane has sent the sidebar away (DuoOpenSidePane): it slides back over the thread.
+private struct ThreadSidebarButton: View {
+    /// A bar's item, which the bar styles; else a glass circle by the title.
+    var inBar = false
+    @Environment(MobileNavigator.self) private var navigator
+
+    var body: some View {
+        let button = Button("Show sidebar", systemImage: "sidebar.left") { withSHAnimation(.pane) { navigator.padColumns = .all } }
+            .tint(Color.sh.textPrimary)
+        if inBar {
+            button
+        } else {
+            button.labelStyle(.iconOnly).buttonStyle(.glass).buttonBorderShape(.circle).controlSize(.large)
+        }
+    }
+}
+
+/// The header's one side-pane button (DuoOpenThread, DuoOpenSidePane; the Mac's `SHSidePaneButton`): Show side pane opens it on the
+/// tab it last showed; while it is open its glyph is lit in `lantern` and it hides it.
 private struct ThreadSidePaneButton: View {
     let isOn: Bool
-    let enabled: Bool
     let action: () -> Void
 
     var body: some View {
         let label = isOn ? "Hide side pane" : "Show side pane"
-        if isOn {
-            Button(action: action) {
-                Image(systemName: "sidebar.right").foregroundStyle(Color.nw.running)
-            }
-            .buttonStyle(.glassProminent)
-            .tint(Color.nw.runningTint)
-            .accessibilityLabel(label)
-            .accessibilityAddTraits(.isSelected)
-        } else {
-            Button(label, systemImage: "sidebar.right", action: action)
-                .disabled(!enabled)
-        }
+        Button(label, systemImage: "sidebar.right", action: action)
+            .tint(isOn ? Color.sh.lantern : Color.sh.textPrimary)
+            .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 }
 
-/// Stop while pi waits on a question. The composer's corner is Stop while the agent runs, but a
-/// question takes the composer's place, so this is then the one way to refuse it.
+/// Stop while the agent waits on a question, and on regular width while it runs too (DuoOpenThread's ◎; a phone keeps it in the
+/// ••• menu and the composer's corner). A question takes the composer's place, and with it the composer's Stop, so this is then
+/// the one way to refuse it.
 private struct ThreadStopButton: View {
     let store: NativeThreadStore
     let enabled: Bool
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
-        if !store.dialogs.isEmpty {
-            Button("Stop", systemImage: "stop.fill") { Task { await store.abort() } }
-                .tint(Color.nw.failed)
+        if !store.dialogs.isEmpty || store.running && sizeClass == .regular {
+            Button("Stop agent", systemImage: "stop.circle") { Task { await store.abort() } }
+                .tint(Color.sh.failed)
                 .disabled(!enabled || !store.supports("abort"))
-                .accessibilityLabel("Stop agent")
         }
     }
 }
 
-/// The thread's options, in the bar's ••• menu: refresh, subagents, the terminal (Terminal/),
-/// Open in new window (Windows/), and the agent actions (Search/).
+/// The laptop pose's capsule (DuoLaptop): the transcript or the terminal above the composer.
+private struct ThreadArrangedPicker: View {
+    let showsTerminal: Bool
+    let choose: (Bool) -> Void
+
+    var body: some View {
+        Button("Transcript", systemImage: "text.alignleft") { choose(false) }
+            .tint(showsTerminal ? nil : Color.sh.lantern)
+            .accessibilityAddTraits(showsTerminal ? [] : .isSelected)
+        Button("Terminal", systemImage: "apple.terminal") { choose(true) }
+            .tint(showsTerminal ? Color.sh.lantern : nil)
+            .accessibilityAddTraits(showsTerminal ? .isSelected : [])
+    }
+}
+
+/// The thread's menu, in the bar's ••• (DuoClosedThreadMenu): the side pane's five tabs with what each says of its work (the
+/// totals, "1 running"), then Stop agent and More… (Refresh, Open in new window, the agent actions). On a phone each tab is pushed
+/// over the thread; on regular width it opens in the side pane.
 private struct ThreadOptionsItems: View {
     let ref: AgentRef
     let store: NativeThreadStore
+    let branch: AgentBranchLabel?
     let enabled: Bool
     @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
-        Button("Refresh", systemImage: "arrow.clockwise") { Task { await store.refresh(fresh: true) } }
-            .disabled(!enabled)
-        if store.hasSubagents {
-            Button("Subagents", systemImage: "person.2") { navigator.open(SubagentHooks.list(thread: ref)) }
+        Section {
+            ForEach(PadSidePaneTab.shown(artifacts: false), id: \.self) { tab in
+                Button { navigator.open(.paneScreen(tab, thread: ref)) } label: {
+                    Label(tab.title, systemImage: SidePaneTabs.systemImage(tab))
+                    if let detail = detail(tab) { Text(detail) }
+                }
+            }
         }
-        TerminalMenuItems(thread: ref)
-        OpenInNewWindowButton(thread: ref)
-        AgentActionsMenu(thread: ref)
+        Section {
+            Button("Stop agent", systemImage: "stop.circle", role: .destructive) { Task { await store.abort() } }
+                .disabled(!enabled || !store.running || !store.supports("abort"))
+            Menu {
+                Button("Refresh", systemImage: "arrow.clockwise") { Task { await store.refresh(fresh: true) } }
+                    .disabled(!enabled)
+                OpenInNewWindowButton(thread: ref)
+                AgentActionsMenu(thread: ref)
+            } label: {
+                Label("More\u{2026}", systemImage: "ellipsis")
+            }
+        }
+    }
+
+    /// "+137 −16", "1 running"; nil when there is nothing to say.
+    private func detail(_ tab: PadSidePaneTab) -> String? {
+        switch tab {
+        case .changes:
+            let review = ReviewStores.shared.store(for: ref)
+            if review.loaded { return "+\(review.totals.added) \u{2212}\(review.totals.removed)" }
+            return branch.flatMap { $0.changedFiles > 0 ? nativeCount($0.changedFiles, "file") + " changed" : nil }
+        case .terminal:
+            let running = runningTerminals(ref)
+            return running > 0 ? "\(running) running" : nil
+        case .subagents:
+            let running = store.subagents.count { nativeRunPhase($0) == .running }
+            return running > 0 ? "\(running) running" : nil
+        case .files, .browser, .artifacts:
+            return nil
+        }
     }
 }

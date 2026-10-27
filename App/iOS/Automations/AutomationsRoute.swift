@@ -57,7 +57,7 @@ extension MobileNavigator {
     func close(_ route: MobileRoute) {
         switch layout {
         case .phone:
-            if tab == .home, homePath.last == route { homePath.removeLast() }
+            if self[path: tab].last == route { self[path: tab].removeLast() }
         case .pad:
             if padPath.last == route { padPath.removeLast() }
         }

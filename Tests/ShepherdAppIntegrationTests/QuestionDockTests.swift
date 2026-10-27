@@ -86,7 +86,7 @@ struct QuestionDockIntegrationTests {
         #expect(keys.handle(thread.key("\u{1b}", keyCode: 53)))
         let hidden = try await thread.settledInset()
         #expect(hidden < open, "the dock folded: \(hidden) from \(open)")
-        #expect(abs(hidden - (NWQuestionDockMetrics.hiddenHeight + AppLayout.composerBottom)) <= 1, "one 46pt line: \(hidden)")
+        #expect(abs(hidden - (SHQuestionDockMetrics.hiddenHeight + AppLayout.composerBottom)) <= 1, "one 46pt line: \(hidden)")
         #expect(keys.handle(thread.key("2", keyCode: 19)) == false)
         #expect(keys.handle(thread.key("↩", keyCode: 36)) == false)
         #expect(thread.keyMonitor === keys && keys.watching && keys.window === thread.window.window, "hidden, it still takes Esc")

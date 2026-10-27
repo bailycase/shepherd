@@ -5,21 +5,21 @@ import ShepherdRemote
 import ShepherdSessions
 
 /// A local file link in prose opens in the editor chosen in Settings ▸ Advanced; its menu offers the others.
-extension NWProseFileLinks {
-    @MainActor static let app = NWProseFileLinks(
+extension SHProseFileLinks {
+    @MainActor static let app = SHProseFileLinks(
         editorName: { url in EditorOpener.application(for: url, editor: AppSettings.shared.editor).map(EditorOpener.name(of:)) ?? "Editor" },
         editors: {
             EditorOpener.installedEditors().compactMap { app in
-                Bundle(url: app)?.bundleIdentifier.map { NWFileEditor(id: $0, name: EditorOpener.name(of: app)) }
+                Bundle(url: app)?.bundleIdentifier.map { SHFileEditor(id: $0, name: EditorOpener.name(of: app)) }
             }
         },
         open: { url, editor in ShepherdViewModel.openInEditor(url, editor: editor ?? AppSettings.shared.editor) },
         reveal: { NSWorkspace.shared.activateFileViewerSelecting([$0]) })
 }
 
-/// Agent prose: the turn's parsed Markdown drawn by `NWAgentProse`, with fenced code
+/// Agent prose: the turn's parsed Markdown drawn by `SHAgentProse`, with fenced code
 /// highlighted. Blocks are parsed once per turn (`NativeTurnPresentation`); inline runs are
-/// styled once per text (`NWProseInline`).
+/// styled once per text (`SHProseInline`).
 struct Prose: View, Equatable {
     let blocks: [NativeMarkdownBlock]
     var maxWidth: CGFloat = AppLayout.proseMaxWidth
@@ -39,7 +39,7 @@ struct Prose: View, Equatable {
 
     var body: some View {
         let writing = writingFence ? Self.lastCode(blocks) : nil
-        NWAgentProse(Self.proseBlocks(blocks), maxWidth: maxWidth, writingFence: writingFence) { code, language in
+        SHAgentProse(Self.proseBlocks(blocks), maxWidth: maxWidth, writingFence: writingFence) { code, language in
             HighlightedCodeBlock(code: code, language: language, writing: code == writing)
         }
     }
@@ -59,32 +59,32 @@ struct Prose: View, Equatable {
         return nil
     }
 
-    /// The parsed blocks for `NWAgentProse`, their inline runs styled once per text
-    /// (`NWProseInline`).
-    static func proseBlocks(_ blocks: [NativeMarkdownBlock]) -> [NWProseBlock] {
+    /// The parsed blocks for `SHAgentProse`, their inline runs styled once per text
+    /// (`SHProseInline`).
+    static func proseBlocks(_ blocks: [NativeMarkdownBlock]) -> [SHProseBlock] {
         blocks.map { block in
             switch block {
-            case .heading(let level, let text): .heading(level: level, text: NWProseInline.attributed(text))
-            case .paragraph(let text): .paragraph(NWProseInline.attributed(text))
+            case .heading(let level, let text): .heading(level: level, text: SHProseInline.attributed(text))
+            case .paragraph(let text): .paragraph(SHProseInline.attributed(text))
             case .quote(let inner): .quote(proseBlocks(inner))
             case .code(let text, let language): .code(text, language: language)
             case .rule: .rule
             case .list(let ordered, let start, let items):
                 .list(ordered: ordered, start: start, items: items.map {
-                    NWProseListItem(text: NWProseInline.attributed($0.text), task: $0.task.map { $0 == .done ? .done : .open },
+                    SHProseListItem(text: SHProseInline.attributed($0.text), task: $0.task.map { $0 == .done ? .done : .open },
                                     children: proseBlocks($0.children))
                 })
             case .table(let table): .table(proseTable(table))
-            case .image(let alt, let source): .image(NWProseImage(alt: alt, source: source))
-            case .details(let summary, let inner): .details(summary: NWProseInline.attributed(summary), blocks: proseBlocks(inner))
+            case .image(let alt, let source): .image(SHProseImage(alt: alt, source: source))
+            case .details(let summary, let inner): .details(summary: SHProseInline.attributed(summary), blocks: proseBlocks(inner))
             case .footnotes(let notes):
-                .footnotes(notes.map { NWProseFootnote(number: $0.number, text: NWProseInline.attributed($0.text)) })
+                .footnotes(notes.map { SHProseFootnote(number: $0.number, text: SHProseInline.attributed($0.text)) })
             }
         }
     }
 
-    static func proseTable(_ table: NativeMarkdownTable) -> NWProseTable {
-        NWProseTable(
+    static func proseTable(_ table: NativeMarkdownTable) -> SHProseTable {
+        SHProseTable(
             alignments: table.alignments.map {
                 switch $0 {
                 case .none, .leading: .leading
@@ -92,13 +92,13 @@ struct Prose: View, Equatable {
                 case .trailing: .trailing
                 }
             },
-            header: table.header.map(NWProseInline.attributed),
-            rows: table.rows.map { $0.map(NWProseInline.attributed) },
+            header: table.header.map(SHProseInline.attributed),
+            rows: table.rows.map { $0.map(SHProseInline.attributed) },
             markdown: table.source)
     }
 }
 
-/// A turn's thinking (`NWThinking`): live, or finished with its Markdown, parsed once per
+/// A turn's thinking (`SHThinking`): live, or finished with its Markdown, parsed once per
 /// change (`NativeTurnPresentation`), styled here only when this row's own inputs change, so a
 /// reply streaming under it leaves it alone. One view for both, so "Thinking…" settles into
 /// "Thought for Ns" in place.
@@ -121,9 +121,9 @@ struct ThinkingRow: View, Equatable {
         // Live: the shared summary so far opens under "Thinking… · 30s" (ResponseVisibility › B);
         // with none, the live line and its clock.
         live
-            ? NWThinking.live(since: since.map { Date(timeIntervalSince1970: $0 / 1000) }, blocks: Prose.proseBlocks(blocks),
+            ? SHThinking.live(since: since.map { Date(timeIntervalSince1970: $0 / 1000) }, blocks: Prose.proseBlocks(blocks),
                               isExpanded: expanded)
-            : NWThinking(nativeThoughtText(seconds), blocks: Prose.proseBlocks(blocks), isExpanded: expanded,
+            : SHThinking(nativeThoughtText(seconds), blocks: Prose.proseBlocks(blocks), isExpanded: expanded,
                          spokenTitle: nativeThoughtSpokenText(seconds))
     }
 }
@@ -154,7 +154,7 @@ struct HighlightedCodeBlock: View {
 
     var body: some View {
         let key = key
-        NWCodeBlock(key.code, language: language,
+        SHCodeBlock(key.code, language: language,
                     highlighted: CodeHighlightCache.colors(for: key, last: rendered, cached: CodeHighlightCache.cached(key)))
             .task(id: TaskKey(key: key, writing: writing)) {
                 guard CodeHighlightCache.cached(key) == nil, CodeHighlight.path(forFenceLanguage: key.language) != nil else { return }
@@ -175,7 +175,7 @@ struct HighlightedCodeBlock: View {
                 // A newer chunk leaves this render running (the lines it colors are still the
                 // block's first lines); only a newer render supersedes it, and it is dropped.
                 lastRender.inFlight?.cancel()
-                NWRenderProbe.tick("highlight.render")
+                SHRenderProbe.tick("highlight.render")
                 let style = CodeHighlight.Style.theme
                 let work = Task.detached(priority: .userInitiated) { CodeHighlightCache.render(target, style: style) }
                 lastRender.inFlight = work

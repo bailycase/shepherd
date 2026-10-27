@@ -4,11 +4,9 @@ import ShepherdUI
 /// Home's own measures (home track).
 extension MobileLayout {
     /// Between a section's header and its card.
-    static let headerSpacing: CGFloat = NW.Space.s
+    static let headerSpacing: CGFloat = SH.Space.s
     /// Between Home's sections.
-    static let sectionSpacing: CGFloat = NW.Space.xxl
-    /// An iPad overview column at its narrowest; narrower windows stack the columns.
-    static let overviewColumnMinWidth: CGFloat = 256
+    static let sectionSpacing: CGFloat = SH.Space.xxl
     /// The iPad inbox's list beside the chosen item.
     static let inboxListWidth: CGFloat = 360
     /// Host cards on a wide screen, each at least this wide.

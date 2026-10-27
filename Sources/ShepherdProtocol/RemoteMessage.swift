@@ -6,6 +6,7 @@ import ShepherdCore
 /// the extension socket. The transport security is the user's own VPN; the
 /// token only keeps other devices on that network honest.
 public enum RemoteProtocol {
+    public static let pushNotificationsCapability = "push.notifications.v1"
     public static let hostUpdateCapability = "host.update.v1"
     public static let uploadChunkBytes = 256 * 1024
     public static let uploadMaxBytes = 32 * 1024 * 1024
@@ -34,7 +35,8 @@ public enum RemoteProtocol {
     /// And it runs an agent's browser tools on its own page when the host asks
     /// (`browserDriveCapability`), which a host asks only of a client that lists it.
     /// Space editing understands both legacy .pi and current .shepherd inventories (`projectsV2Capability`).
-    public static let clientCapabilities = [checkpointRecoveryCapability, projectResultCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectPlacementCapability, logicalProjectRuntimeCapability, projectExecutionCapability, nativeQueueCapability, nativeStartupDialogsCapability, thinkingLevelsCapability, designsCapability, browserTunnelCapability, browserDriveCapability, projectsV2Capability]
+    /// And it browses a thread's folder (`filesCapability`), which a host offers only to a client that lists it.
+    public static let clientCapabilities = [filesCapability, pushNotificationsCapability, checkpointRecoveryCapability, projectResultCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectPlacementCapability, logicalProjectRuntimeCapability, projectExecutionCapability, nativeQueueCapability, nativeStartupDialogsCapability, thinkingLevelsCapability, designsCapability, browserTunnelCapability, browserDriveCapability, projectsV2Capability]
     public static let version = 1
     /// A host's final reply to a `hello` whose token it refused; it closes the connection after.
     public static let unauthorizedCode = "unauthorized"
@@ -103,6 +105,7 @@ public enum RemoteProtocol {
     /// process. Older hosts leave them off. A host answers an older client's `typeInTerminal`
     /// (Run in terminal, since removed) with `unsupported`.
     public static let terminalControlCapability = "terminal.control.v1"
+    public static let terminalStartCapability = "terminal.start.v1"
     /// The host takes a send's `designContext` (what the sender's design screen showed) and hands
     /// it to pi fenced as data. An older host would drop it, so a client leaves it out there.
     public static let designContextCapability = "design.context.v1"
@@ -141,7 +144,10 @@ public enum RemoteProtocol {
     public static let browserTabsCapability = "browser.tabs.v1"
 
     public static let moveThreadCapability = "agent.move.v1"
-    public static let capabilities = [hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectTrustCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, designContextCapability, designsCapability, designMarkupCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, nativeArtifactsCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability]
+    /// The host lists and reads a thread's folder, read-only (`RemoteAgentQuery.files`, `.fileRead`; `ThreadFilesLimits`).
+    /// Offered only to a client that lists it in `hello`; a client and an older host show Files as needing a newer host.
+    public static let filesCapability = "files.v1"
+    public static let capabilities = [filesCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectTrustCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, nativeArtifactsCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -259,6 +265,8 @@ public enum RemoteAgentAction: Codable, Hashable, Sendable {
     /// Kills the command running in a terminal pane (its foreground process group), never the
     /// shell at its prompt.
     case killTerminalProcess(paneID: PaneID)
+    /// Explicit demand for one restored auxiliary terminal, including a stale persisted binding.
+    case startTerminal(paneID: PaneID)
     /// Runs `command` in a new terminal pane of the agent's layout, in `cwd` (the thread's folder or
     /// one inside it): the Browser's "Start on demo-mac" (`browserTunnelCapability`). A host that
     /// does not know the action refuses the request, and one that lacks the capability would not
@@ -271,6 +279,7 @@ public enum RemoteAgentAction: Codable, Hashable, Sendable {
         case .move: RemoteProtocol.moveThreadCapability
         case .rename, .deleteKeepingWorktree, .reorder: RemoteProtocol.agentActionsCapability
         case .renameTerminal, .killTerminalProcess: RemoteProtocol.terminalControlCapability
+        case .startTerminal: RemoteProtocol.terminalStartCapability
         case .openTerminal: RemoteProtocol.browserTunnelCapability
         }
     }
@@ -427,6 +436,19 @@ public enum RemoteAgentQuery: Codable, Hashable, Sendable {
     /// The dev servers the agent's folder on the host offers (`DevServerDiscovery`): the Browser's
     /// Nothing open (`browserTunnelCapability`). Answered by the host's server itself.
     case devServers
+    /// A folder of the thread's own folder on the host, `path` relative to it ("" for the folder itself),
+    /// hidden entries only when asked (`filesCapability`, like `fileRead`). Answered by the host's server itself.
+    case files(path: String, showHidden: Bool)
+    /// A UTF-8 text file in the thread's folder, at most `ThreadFilesLimits.readBytes`.
+    case fileRead(path: String)
+
+    /// `files` or `fileRead`: answered by the host's server itself.
+    public var isFiles: Bool {
+        switch self {
+        case .files, .fileRead: true
+        default: false
+        }
+    }
 
     /// Answered by the host's server itself, without the GUI.
     public var isChanges: Bool {
@@ -463,11 +485,17 @@ public enum RemoteAgentResult: Codable, Hashable, Sendable {
     case changesTurn(ChangesTurn)
     /// The dev servers the agent's folder on the host offers (`RemoteAgentQuery.devServers`).
     case devServers([DevServer])
+    /// A folder's entries (`RemoteAgentQuery.files`).
+    case files(ThreadFileListing)
+    /// A file's bytes, UTF-8 text (`RemoteAgentQuery.fileRead`).
+    case fileData(Data)
 }
 
 /// Client → host. The first message on a connection must be a successful
 /// `hello`; anything else closes the connection.
 public enum RemoteRequest: Codable, Hashable, Sendable {
+    case pushRegistration(id: Int, registration: RemotePushRegistration)
+    case pushUnregister(id: Int, registrationID: String)
     case nativeThread(id: Int, agentID: AgentID, request: NativeThreadRequest)
     /// Authenticate with the host's shared token (`remote-token` in its
     /// support directory). `capabilities` says what the client understands
@@ -560,6 +588,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     case browserAnswer(requestToken: Int, outcome: BrowserOutcome)
 
     private enum CodingKeys: String, CodingKey {
+        case registration, registrationID
         case request, frame
         case type, id, token, clientName, protocolVersion, capabilities
         case sessionID, cols, rows, data, viewportGeneration
@@ -570,6 +599,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     }
 
     private enum Kind: String, Codable {
+        case pushRegistration, pushUnregister
         case nativeThread, projectExecution
         case hello, stateFetch, attach, detach, input, resize, paste
         case openPane, closePane, resizePaneSplit
@@ -585,6 +615,10 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         switch try c.decode(Kind.self, forKey: .type) {
+        case .pushRegistration:
+            self = .pushRegistration(id: try c.decode(Int.self, forKey: .id), registration: try c.decode(RemotePushRegistration.self, forKey: .registration))
+        case .pushUnregister:
+            self = .pushUnregister(id: try c.decode(Int.self, forKey: .id), registrationID: try c.decode(String.self, forKey: .registrationID))
         case .nativeThread:
             self = .nativeThread(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID), request: try c.decode(NativeThreadRequest.self, forKey: .request))
         case .tunnel:
@@ -774,6 +808,14 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(Kind.suggestions, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(request, forKey: .request)
+        case .pushRegistration(let id, let registration):
+            try c.encode(Kind.pushRegistration, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(registration, forKey: .registration)
+        case .pushUnregister(let id, let registrationID):
+            try c.encode(Kind.pushUnregister, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(registrationID, forKey: .registrationID)
         case .hostUpdate(let id, let request):
             try c.encode(Kind.hostUpdate, forKey: .type)
             try c.encode(id, forKey: .id)

@@ -5,7 +5,7 @@ import ShepherdUI
 // MARK: Page chrome
 
 /// A settings page: the title in Geist 22/600, a one-line explanation in `body` (it may carry
-/// inline markup, `NWMarkupText`), then its groups 28pt apart.
+/// inline markup, `SHMarkupText`), then its groups 28pt apart.
 struct SettingsPage<Content: View, Accessory: View>: View {
     let title: String
     let explanation: String
@@ -22,7 +22,7 @@ struct SettingsPage<Content: View, Accessory: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
-            HStack(alignment: .bottom, spacing: NW.Space.xl) {
+            HStack(alignment: .bottom, spacing: SH.Space.xl) {
                 SettingsHeader(title: title, explanation: explanation)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 accessory.fixedSize()
@@ -30,7 +30,7 @@ struct SettingsPage<Content: View, Accessory: View>: View {
             content
         }
         // The Settings boards draw their pages' controls larger than the Controls board's.
-        .nwControlScale(.settings)
+        .shControlScale(.settings)
     }
 }
 
@@ -45,18 +45,18 @@ struct SettingsHeader: View {
     let title: String
     let explanation: String
     var titleSize = AppLayout.settingsTitleSize
-    var explanationSize = NWTextStyle.body.size
+    var explanationSize = SHTextStyle.body.size
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NW.Space.xs) {
+        VStack(alignment: .leading, spacing: SH.Space.xs) {
             Text(title)
-                .font(.nwSans(titleSize, .semibold))
+                .font(.shSans(titleSize, .semibold))
                 .tracking(titleSize * AppLayout.settingsTitleTracking)
-                .foregroundStyle(Color.nw.textPrimary)
+                .foregroundStyle(Color.sh.textPrimary)
                 .accessibilityAddTraits(.isHeader)
-            NWMarkupText(explanation, size: explanationSize, codeSize: NWTextStyle.code.size,
+            SHMarkupText(explanation, size: explanationSize, codeSize: SHTextStyle.code.size,
                            lineHeight: AppLayout.settingsExplanationLineHeight)
-                .foregroundStyle(Color.nw.textSecondary)
+                .foregroundStyle(Color.sh.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -72,22 +72,22 @@ struct SettingsGroup<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NW.Space.m) {
+        VStack(alignment: .leading, spacing: SH.Space.m) {
             HStack(alignment: .firstTextBaseline) {
-                NWSectionHeader(title, style: .settings)
+                SHSectionHeader(title, style: .settings)
                 if let trailing {
-                    Spacer(minLength: NW.Space.l)
-                    Text(trailing).font(.nwMono(11)).foregroundStyle(Color.nw.textTertiary).lineLimit(1).truncationMode(.middle)
+                    Spacer(minLength: SH.Space.l)
+                    Text(trailing).font(.shMono(11)).foregroundStyle(Color.sh.textTertiary).lineLimit(1).truncationMode(.middle)
                         .help(trailing)
                 }
             }
-            .padding(.horizontal, NW.Space.xs)
-            NWGroupCard(fill: Color.nw.bgWindow, radius: NWCardRowMetrics.settingsCardRadius) { content }
+            .padding(.horizontal, SH.Space.xs)
+            SHGroupCard(fill: Color.sh.bgWindow, radius: SHCardRowMetrics.settingsCardRadius) { content }
             if let footnote {
-                SettingsNote(text: footnote).padding(.horizontal, NW.Space.xs)
+                SettingsNote(text: footnote).padding(.horizontal, SH.Space.xs)
             }
         }
-        .nwControlScale(.settings)
+        .shControlScale(.settings)
     }
 }
 
@@ -102,7 +102,7 @@ struct SettingsRow<Control: View>: View {
     @ViewBuilder var control: Control
 
     var body: some View {
-        NWCardRow(title, description: subtitle, problem: problem, problemHelp: problemHelp, style: .settings) { control }
+        SHCardRow(title, description: subtitle, problem: problem, problemHelp: problemHelp, style: .settings) { control }
             .accessibilityElement(children: .contain)
     }
 }
@@ -114,12 +114,12 @@ struct SettingsActionRow<Leading: View, Actions: View>: View {
     @ViewBuilder var actions: Actions
 
     var body: some View {
-        HStack(alignment: .center, spacing: NW.Space.xxl) {
+        HStack(alignment: .center, spacing: SH.Space.xxl) {
             leading
             Spacer(minLength: 0)
-            HStack(spacing: NW.Space.s) { actions }
+            HStack(spacing: SH.Space.s) { actions }
         }
-        .modifier(NWCardRowFrame(settings: true))
+        .modifier(SHCardRowFrame(settings: true))
     }
 }
 
@@ -136,8 +136,8 @@ struct SettingsNote: View {
 
     var body: some View {
         Text(text)
-            .nwText(size: AppLayout.settingsFootnoteSize, lineHeight: AppLayout.settingsFootnoteLineHeight)
-            .foregroundStyle(Color.nw.textTertiary)
+            .shText(size: AppLayout.settingsFootnoteSize, lineHeight: AppLayout.settingsFootnoteLineHeight)
+            .foregroundStyle(Color.sh.textTertiary)
             .fixedSize(horizontal: false, vertical: true)
     }
 }
@@ -148,7 +148,7 @@ struct SettingsSwitch: View {
     @Binding var isOn: Bool
 
     var body: some View {
-        Toggle(label, isOn: $isOn).labelsHidden().toggleStyle(.nwSwitch)
+        Toggle(label, isOn: $isOn).labelsHidden().toggleStyle(.shSwitch)
     }
 }
 
@@ -167,14 +167,14 @@ struct SettingsTextField: View {
     var body: some View {
         Group {
             if secure {
-                SecureField(label, text: $text, prompt: Text(prompt).foregroundStyle(Color.nw.textTertiary))
+                SecureField(label, text: $text, prompt: Text(prompt).foregroundStyle(Color.sh.textTertiary))
             } else {
-                TextField(label, text: $text, prompt: Text(prompt).foregroundStyle(Color.nw.textTertiary))
+                TextField(label, text: $text, prompt: Text(prompt).foregroundStyle(Color.sh.textTertiary))
             }
         }
-        .textFieldStyle(.nw(mono: mono, error: error != nil))
+        .textFieldStyle(.sh(mono: mono, error: error != nil))
         .frame(width: width)
-        .nwFieldMessage(error, alignment: .trailing)
+        .shFieldMessage(error, alignment: .trailing)
     }
 }
 
@@ -186,13 +186,13 @@ struct PathRow: View {
 
     var body: some View {
         SettingsRow(title: title, subtitle: subtitle) {
-            HStack(spacing: NW.Space.m) {
+            HStack(spacing: SH.Space.m) {
                 Text(url.lastPathComponent)
-                    .font(.nw(.mono))
-                    .foregroundStyle(Color.nw.textSecondary)
+                    .font(.sh(.mono))
+                    .foregroundStyle(Color.sh.textSecondary)
                     .help(url.path)
                 Button("Reveal") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-                    .buttonStyle(.nw(.secondary, size: .s))
+                    .buttonStyle(.sh(.secondary, size: .s))
                     .accessibilityLabel("Reveal \(url.lastPathComponent) in Finder")
             }
         }

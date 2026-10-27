@@ -94,10 +94,10 @@ final class DesignScreenModel {
     typealias Source = (DesignID, DesignPath) async throws -> String
 
     let designID: DesignID
-    var viewport = NWCanvasViewport() {
+    var viewport = SHCanvasViewport() {
         didSet { if viewport != oldValue { viewportMoved() } }
     }
-    var tool: NWCanvasTool = .select {
+    var tool: SHCanvasTool = .select {
         didSet { if tool == .pan { pointer(nil) } }
     }
     /// What is selected, most recent last: boards picked whole, and elements.
@@ -149,7 +149,7 @@ final class DesignScreenModel {
     /// The page the canvas shows (canvas.json's page id); nil on a canvas without pages.
     private(set) var page: String?
     /// A board being dragged, and how far it has come (canvas points).
-    private(set) var moving: NWBoardMove?
+    private(set) var moving: SHBoardMove?
     /// Boards moved and written, where they now stand, until the snapshot says so.
     private(set) var movedTo: [DesignPath: CGPoint] = [:]
     /// The board shown focused (Present, Play); nil on the canvas.
@@ -170,7 +170,7 @@ final class DesignScreenModel {
     @ObservationIgnored private var rest: Task<Void, Never>?
     @ObservationIgnored private(set) var isActive = false
     /// Each board's room for its label among the others, worked out once per index.
-    @ObservationIgnored private var labelRooms: [String: NWLabelRoom] = [:]
+    @ObservationIgnored private var labelRooms: [String: SHLabelRoom] = [:]
     /// The pointer's latest place while a hit test for an earlier one runs.
     @ObservationIgnored private var pendingHover: (board: DesignPath, point: CGPoint)?
     @ObservationIgnored private var hovering: Task<Void, Never>?
@@ -207,7 +207,7 @@ final class DesignScreenModel {
 
     /// Every board of the page as the canvas draws it, back to front, a board being dragged where
     /// it has come to.
-    var boards: [NWCanvasBoard] {
+    var boards: [SHCanvasBoard] {
         guard let snapshot else { return [] }
         let tokens = host?.tokens ?? [:]
         var boards = Self.boards(snapshot.index, page: page, selected: selectedWhole, tokens: tokens, rooms: labelRooms, usage: usage)
@@ -225,35 +225,35 @@ final class DesignScreenModel {
     }
 
     static func boards(_ index: DesignIndex, page: String? = nil, selected: Set<DesignPath>, tokens: [DesignPath: Int],
-                       rooms: [String: NWLabelRoom] = [:], usage: DesignUsageIndex = DesignUsageIndex()) -> [NWCanvasBoard] {
+                       rooms: [String: SHLabelRoom] = [:], usage: DesignUsageIndex = DesignUsageIndex()) -> [SHCanvasBoard] {
         canvasOrder(index).compactMap { path in
             guard let board = index.boards[path], index.isOnPage(path, page) else { return nil }
             let title = board.title?.trimmingCharacters(in: .whitespacesAndNewlines)
-            return NWCanvasBoard(id: path.rawValue, frame: CGRect(x: board.x, y: board.y, width: board.w, height: board.h),
+            return SHCanvasBoard(id: path.rawValue, frame: CGRect(x: board.x, y: board.y, width: board.w, height: board.h),
                                  title: title?.isEmpty == false ? title! : path.stem,
-                                 size: NWCanvasBoard.sizeLabel(CGSize(width: board.w, height: board.h)),
+                                 size: SHCanvasBoard.sizeLabel(CGSize(width: board.w, height: board.h)),
                                  isSelected: selected.contains(path), content: tokens[path] ?? 0,
                                  labelRoom: rooms[path.rawValue] ?? .open, usage: usage.label(for: path))
         }
     }
 
     /// The page's title and sticky notes (drawings aren't drawn yet).
-    var notes: [NWCanvasNote] {
+    var notes: [SHCanvasNote] {
         guard let snapshot else { return [] }
         return Self.notes(snapshot.index, page: page)
     }
 
-    static func notes(_ index: DesignIndex, page: String?) -> [NWCanvasNote] {
+    static func notes(_ index: DesignIndex, page: String?) -> [SHCanvasNote] {
         (index.notes ?? [:]).sorted { $0.key < $1.key }.compactMap { id, note in
             guard index.page(of: note) == page, let x = note.x, let y = note.y,
                   let text = note.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
-            let kind: NWCanvasNote.Kind
+            let kind: SHCanvasNote.Kind
             switch note.shown {
             case .title: kind = .title
             case .sticky: kind = .sticky
             case .drawing: return nil
             }
-            return NWCanvasNote(id: id, kind: kind, origin: CGPoint(x: x, y: y), width: note.width.map { CGFloat($0) }, text: text)
+            return SHCanvasNote(id: id, kind: kind, origin: CGPoint(x: x, y: y), width: note.width.map { CGFloat($0) }, text: text)
         }
     }
 
@@ -267,14 +267,14 @@ final class DesignScreenModel {
     }
 
     /// Each board's room for its label among the other boards of its page.
-    static func labelRooms(_ index: DesignIndex, page: String? = nil) -> [String: NWLabelRoom] {
+    static func labelRooms(_ index: DesignIndex, page: String? = nil) -> [String: SHLabelRoom] {
         let shown = index.boards.filter { index.isOnPage($0.key, page) }
-        return NWLabelRoom.rooms(Dictionary(shown.map { ($0.key.rawValue, CGRect(x: $0.value.x, y: $0.value.y, width: $0.value.w, height: $0.value.h)) },
+        return SHLabelRoom.rooms(Dictionary(shown.map { ($0.key.rawValue, CGRect(x: $0.value.x, y: $0.value.y, width: $0.value.w, height: $0.value.h)) },
                                             uniquingKeysWith: { a, _ in a }))
     }
 
     /// The boards on screen, nearest the middle of the view first.
-    static func visible(_ boards: [NWCanvasBoard], viewport: NWCanvasViewport, size: CGSize) -> [DesignPath] {
+    static func visible(_ boards: [SHCanvasBoard], viewport: SHCanvasViewport, size: CGSize) -> [DesignPath] {
         let middle = viewport.canvas(CGPoint(x: size.width / 2, y: size.height / 2))
         return boards.visible(in: viewport, size: size)
             .sorted { distance($0.frame, middle) < distance($1.frame, middle) }
@@ -398,10 +398,10 @@ final class DesignScreenModel {
         take(Pick(board: path), extending: false)
     }
 
-    /// A click (`NWDesignCanvas`). With Select: an element when the board names one under it,
+    /// A click (`SHDesignCanvas`). With Select: an element when the board names one under it,
     /// the board whole on its label or where nothing is named, nothing on the empty canvas. With
     /// Comment: a new comment on the element under it. Either closes the thread that was open.
-    func pick(_ pick: NWCanvasPick) {
+    func pick(_ pick: SHCanvasPick) {
         let board = pick.board.flatMap(DesignPath.init)
         let asks = board != nil && pick.point != nil && host != nil
         let commenting = tool == .comment
@@ -425,7 +425,7 @@ final class DesignScreenModel {
         }
     }
 
-    private func resolve(_ pick: NWCanvasPick, on board: DesignPath?, element: DesignElementPick?, commenting: Bool = false) {
+    private func resolve(_ pick: SHCanvasPick, on board: DesignPath?, element: DesignElementPick?, commenting: Bool = false) {
         if commenting {
             // A comment goes on an element; a board's label or nothing named takes none.
             if let element { beginComment(on: element) }
@@ -470,7 +470,7 @@ final class DesignScreenModel {
 
     /// Where the pointer is with Select or Comment: the element under it is ringed once its board
     /// names it.
-    func pointer(_ pick: NWCanvasPick?) {
+    func pointer(_ pick: SHCanvasPick?) {
         guard tool != .pan, let pick, let id = pick.board, let board = DesignPath(id), let point = pick.point, let host else {
             hoverGeneration += 1
             pendingHover = nil
@@ -514,10 +514,10 @@ final class DesignScreenModel {
     }
 
     /// The canvas's rings: every selected element, the latest wearing its tag.
-    var selectionRings: [NWCanvasElement] {
+    var selectionRings: [SHCanvasElement] {
         let elements = selectedElements
         return elements.enumerated().map { index, element in
-            NWCanvasElement(id: element.id.description, board: element.board.rawValue, rect: element.rect,
+            SHCanvasElement(id: element.id.description, board: element.board.rawValue, rect: element.rect,
                             tag: index == elements.count - 1 ? element.tag : nil)
         }
     }
@@ -550,8 +550,8 @@ final class DesignScreenModel {
         }
     }
 
-    var hoverRing: NWCanvasElement? {
-        hover.map { NWCanvasElement(id: $0.id.description, board: $0.board.rawValue, rect: $0.rect) }
+    var hoverRing: SHCanvasElement? {
+        hover.map { SHCanvasElement(id: $0.id.description, board: $0.board.rawValue, rect: $0.rect) }
     }
 
     // MARK: Comments
@@ -566,14 +566,14 @@ final class DesignScreenModel {
     /// The canvas's pins: each open comment on a board the canvas holds, where a live view last
     /// found its element, else where it was when the comment was made; and the pin of the comment
     /// being written.
-    var pins: [NWCanvasPin] {
+    var pins: [SHCanvasPin] {
         guard let snapshot else { return [] }
-        var pins = openComments.compactMap { comment -> NWCanvasPin? in
+        var pins = openComments.compactMap { comment -> SHCanvasPin? in
             guard snapshot.index.boards[comment.board] != nil else { return nil }
-            return NWCanvasPin(id: comment.id.uuidString, board: comment.board.rawValue, rect: pinRect(comment), number: comment.number)
+            return SHCanvasPin(id: comment.id.uuidString, board: comment.board.rawValue, rect: pinRect(comment), number: comment.number)
         }
         if let draft = draftElement {
-            pins.append(NWCanvasPin(id: Self.draftPin, board: draft.board.rawValue, rect: draft.rect, number: nextNumber))
+            pins.append(SHCanvasPin(id: Self.draftPin, board: draft.board.rawValue, rect: draft.rect, number: nextNumber))
         }
         return pins + notePins(snapshot.index)
     }
@@ -590,15 +590,15 @@ final class DesignScreenModel {
 
     /// What the canvas's popover opens under: the element a comment is being written on, else the
     /// open comment's.
-    var popoverAnchor: NWCanvasElement? {
+    var popoverAnchor: SHCanvasElement? {
         if let draft = draftElement {
-            return NWCanvasElement(id: Self.draftPin, board: draft.board.rawValue, rect: draft.rect)
+            return SHCanvasElement(id: Self.draftPin, board: draft.board.rawValue, rect: draft.rect)
         }
         if let note = openThreadNote, let index = snapshot?.index {
-            return NWCanvasElement(id: Self.notePinID(note.id), board: note.board.rawValue, rect: noteRect(note, index))
+            return SHCanvasElement(id: Self.notePinID(note.id), board: note.board.rawValue, rect: noteRect(note, index))
         }
         guard let id = openComment, let comment = comments.first(where: { $0.id == id }) else { return nil }
-        return NWCanvasElement(id: id.uuidString, board: comment.board.rawValue, rect: pinRect(comment))
+        return SHCanvasElement(id: id.uuidString, board: comment.board.rawValue, rect: pinRect(comment))
     }
 
     /// The comment whose thread is open.
@@ -799,7 +799,7 @@ final class DesignScreenModel {
         let board = nativeBoardName(comment.board.rawValue)
         let target = comment.target.map { "\(board) · \($0)" } ?? board
         let who = authorName(comment.author, name: comment.authorName, me: gitUserName)
-        let meta = ["\(who) · \(nwCommentAge(since: comment.createdAt, now: now))", comment.detached ? "element changed" : nil]
+        let meta = ["\(who) · \(shCommentAge(since: comment.createdAt, now: now))", comment.detached ? "element changed" : nil]
             .compactMap { $0 }.joined(separator: " · ")
         return DesignCommentCardValue(id: comment.id, number: comment.number, target: target, meta: meta, text: comment.text)
     }
@@ -844,7 +844,7 @@ final class DesignScreenModel {
     /// it lands is written once, as its `x` and `y` in canvas.json, when the drag ends.
     /// Answers the write when the drag ends somewhere new.
     @discardableResult
-    func move(_ move: NWBoardMove) -> Task<Void, Never>? {
+    func move(_ move: SHBoardMove) -> Task<Void, Never>? {
         guard let path = DesignPath(move.board), let board = snapshot?.index.boards[path] else { moving = nil; return nil }
         guard move.ended else {
             if moving != move { moving = move }
@@ -1016,7 +1016,7 @@ final class DesignScreenModel {
     }
 
     /// The boards whose frames a view of `size` shows.
-    static func onScreen(_ boards: [NWCanvasBoard], viewport: NWCanvasViewport, size: CGSize) -> [DesignPath] {
+    static func onScreen(_ boards: [SHCanvasBoard], viewport: SHCanvasViewport, size: CGSize) -> [DesignPath] {
         guard size.width > 0, size.height > 0 else { return [] }
         let shown = viewport.visibleRect(in: size)
         return boards.filter { $0.frame.intersects(shown) }.compactMap { DesignPath($0.id) }

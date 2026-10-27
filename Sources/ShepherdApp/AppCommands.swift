@@ -17,7 +17,7 @@ final class MenuState {
         var hasSelection = false
         var canActOnSelection = false
         var sidebarVisible = true
-        var sidebarStyle = NWSidebarStyle.activity
+        var sidebarStyle = SHSidebarStyle.activity
         var rightPaneOpen = false
         var hasMachineAgents = false
         /// The first nine Recents rows, for ⌘1–9.
@@ -29,7 +29,7 @@ final class MenuState {
     private(set) var hasSelection = false
     private(set) var canActOnSelection = false
     private(set) var sidebarVisible = true
-    private(set) var sidebarStyle = NWSidebarStyle.activity
+    private(set) var sidebarStyle = SHSidebarStyle.activity
     private(set) var rightPaneOpen = false
     private(set) var hasMachineAgents = false
     private(set) var agents: [Item] = []
@@ -151,7 +151,7 @@ struct ViewCommands: Commands {
                 .keyboardShortcut(keys.shortcut(.toggleSidebar))
             // Settings ▸ Appearance ▸ Sidebar ▸ Organize by, here too (Sidebar — Projects).
             Menu("Organize Sidebar By") {
-                ForEach(NWSidebarStyle.allCases) { style in
+                ForEach(SHSidebarStyle.allCases) { style in
                     Button {
                         later { vm.setSidebarStyle(style) }
                     } label: {

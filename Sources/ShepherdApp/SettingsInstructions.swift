@@ -19,7 +19,7 @@ struct InstructionsSettings: View {
         VStack(alignment: .leading, spacing: AppLayout.settingsWideBlockSpacing) {
             SettingsHeader(title: "Instructions", explanation: model.sameEverywhere ? Self.explanation : Self.perHostExplanation)
                 .frame(maxWidth: AppLayout.settingsWideHeaderWidth, alignment: .leading)
-            NWGroupCard(fill: Color.nw.bgWindow) {
+            SHGroupCard(fill: Color.sh.bgWindow) {
                 SettingsRow(title: "Same on every host",
                             subtitle: model.sameEverywhere
                                 ? "Save once; Shepherd writes both files to every host. Offline hosts catch up when they're back."
@@ -40,7 +40,7 @@ struct InstructionsSettings: View {
                 }
             }
         }
-        .nwAnimation(.content, value: model.sameEverywhere)
+        .shAnimation(.content, value: model.sameEverywhere)
         .task { await model.refresh() }
     }
 }
@@ -55,8 +55,8 @@ private struct InstructionsHostChips: View {
     let now: Date
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NW.Space.m) {
-            NWFlowLayout(spacing: NW.Space.m) {
+        VStack(alignment: .leading, spacing: SH.Space.m) {
+            SHFlowLayout(spacing: SH.Space.m) {
                 chip(.local)
                 ForEach(model.hosts, id: \.id) { host in
                     chip(.remote(host.id))
@@ -64,14 +64,14 @@ private struct InstructionsHostChips: View {
             }
             let drifted = model.sameEverywhere ? model.differingHosts : []
             if !drifted.isEmpty {
-                HStack(spacing: NW.Space.m) {
+                HStack(spacing: SH.Space.m) {
                     SettingsNote(text: InstructionsPresentation.drifted(drifted.map { model.name(of: .remote($0)) }))
                     Button("Sync now") { Task { await model.syncDiffering() } }
-                        .buttonStyle(.nw(.secondary, size: .s))
+                        .buttonStyle(.sh(.secondary, size: .s))
                         .disabled(model.busy)
                         .help("Write This Mac's files there")
                 }
-                .nwTransition(.disclosure)
+                .shTransition(.disclosure)
             }
         }
     }
@@ -101,7 +101,7 @@ struct InstructionsHostChip: View {
             Button(action: select) { label }
                 .buttonStyle(.plain)
                 .onHover { hovering = $0 }
-                .nwFocusRing(radius: NW.Radius.m)
+                .shFocusRing(radius: SH.Radius.m)
                 .accessibilityAddTraits(selected ? .isSelected : [])
                 .accessibilityHint("Edits \(name)'s files")
         } else {
@@ -110,17 +110,17 @@ struct InstructionsHostChip: View {
     }
 
     private var label: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let tone = Self.color(chip.tone)
-        let shape = RoundedRectangle(cornerRadius: NW.Radius.m)
-        return HStack(spacing: NW.Space.m) {
+        let shape = RoundedRectangle(cornerRadius: SH.Radius.m)
+        return HStack(spacing: SH.Space.m) {
             Image(systemName: "desktopcomputer")
-                .font(.nwSans(AppLayout.instructionsChipGlyphSize))
-                .foregroundStyle(nw.textSecondary)
+                .font(.shSans(AppLayout.instructionsChipGlyphSize))
+                .foregroundStyle(sh.textSecondary)
                 .accessibilityHidden(true)
             Text(name)
-                .font(.nwMono(AppLayout.instructionsChipNameSize, selected ? .semibold : .medium))
-                .foregroundStyle(nw.textPrimary)
+                .font(.shMono(AppLayout.instructionsChipNameSize, selected ? .semibold : .medium))
+                .foregroundStyle(sh.textPrimary)
                 .lineLimit(1)
             Circle()
                 .fill(tone)
@@ -128,26 +128,26 @@ struct InstructionsHostChip: View {
                 .accessibilityHidden(true)
             if let word = chip.word {
                 Text(word)
-                    .font(.nwSans(AppLayout.instructionsChipWordSize))
+                    .font(.shSans(AppLayout.instructionsChipWordSize))
                     .foregroundStyle(tone)
                     .lineLimit(1)
             }
         }
-        .padding(.horizontal, NW.Space.l)
+        .padding(.horizontal, SH.Space.l)
         .frame(minHeight: AppLayout.instructionsChipHeight)
-        .background(selected ? nw.bgSelected : hovering && select != nil ? nw.bgHover : .clear, in: shape)
-        .nwBorder(selected ? nw.textPrimary : nw.lineStrong, radius: NW.Radius.m)
+        .background(selected ? sh.bgSelected : hovering && select != nil ? sh.bgHover : .clear, in: shape)
+        .shBorder(selected ? sh.textPrimary : sh.lineStrong, radius: SH.Radius.m)
         .contentShape(shape)
-        .nwAnimation(.hover, value: hovering)
+        .shAnimation(.hover, value: hovering)
     }
 
     @MainActor static func color(_ tone: InstructionsChip.Tone) -> Color {
         switch tone {
-        case .done: .nw.done
-        case .attention: .nw.lanternText
-        case .quiet: .nw.textTertiary
-        case .working: .nw.running
-        case .failed: .nw.failed
+        case .done: .sh.done
+        case .attention: .sh.lanternText
+        case .quiet: .sh.textTertiary
+        case .working: .sh.running
+        case .failed: .sh.failed
         }
     }
 }
@@ -160,14 +160,14 @@ private struct InstructionsMainColumn: View {
     @Bindable var model: InstructionsModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NW.Space.l) {
+        VStack(alignment: .leading, spacing: SH.Space.l) {
             InstructionsFileTabs(model: model)
             InstructionsEditorCard(model: model)
             if let problem = model.problem {
-                NWInlineProblem(problem).nwTransition(.disclosure)
+                SHInlineProblem(problem).shTransition(.disclosure)
             }
             if let hostID = model.comparing {
-                InstructionsResolve(model: model, hostID: hostID).nwTransition(.disclosure)
+                InstructionsResolve(model: model, hostID: hostID).shTransition(.disclosure)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -186,34 +186,34 @@ private struct InstructionsFileTabs: View {
             }
             Spacer(minLength: 0)
         }
-        .background(alignment: .bottom) { NWHairline() }
+        .background(alignment: .bottom) { SHHairline() }
     }
 
     private func tab(_ file: InstructionFile) -> some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let chosen = model.file == file
         let note = InstructionsPresentation.fileNote(file, text: model.text(file, on: model.machine))
         return Button { model.file = file } label: {
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 Text(file.fileName)
-                    .font(.nwMono(AppLayout.instructionsTabNameSize, chosen ? .semibold : .medium))
-                    .foregroundStyle(chosen ? nw.textPrimary : nw.textSecondary)
+                    .font(.shMono(AppLayout.instructionsTabNameSize, chosen ? .semibold : .medium))
+                    .foregroundStyle(chosen ? sh.textPrimary : sh.textSecondary)
                 Text(note)
-                    .font(.nwSans(AppLayout.instructionsTabNoteSize))
-                    .foregroundStyle(nw.textTertiary)
+                    .font(.shSans(AppLayout.instructionsTabNoteSize))
+                    .foregroundStyle(sh.textTertiary)
             }
-            .padding(.horizontal, NW.Space.xxs)
-            .padding(.top, NW.Space.m)
-            .padding(.bottom, NW.Space.m + NW.Space.xxs)
+            .padding(.horizontal, SH.Space.xxs)
+            .padding(.top, SH.Space.m)
+            .padding(.bottom, SH.Space.m + SH.Space.xxs)
             .overlay(alignment: .bottom) {
                 if chosen {
-                    Rectangle().fill(nw.textPrimary).frame(height: AppLayout.instructionsTabUnderline)
+                    Rectangle().fill(sh.textPrimary).frame(height: AppLayout.instructionsTabUnderline)
                 }
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .nwFocusRing(radius: NW.Radius.xs)
+        .shFocusRing(radius: SH.Radius.xs)
         .accessibilityAddTraits(chosen ? .isSelected : [])
     }
 }
@@ -232,94 +232,94 @@ private struct InstructionsEditorCard: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            NWHairline()
+            SHHairline()
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, minHeight: AppLayout.instructionsEditorMinHeight, maxHeight: .infinity)
-        .nwCard(fill: Color.nw.bgWindow, line: Color.nw.lineStrong)
-        .nwAnimation(.hover, value: edited)
+        .shCard(fill: Color.sh.bgWindow, line: Color.sh.lineStrong)
+        .shAnimation(.hover, value: edited)
     }
 
     private var header: some View {
-        let nw = Color.nw
-        return HStack(spacing: NW.Space.m + NW.Space.xxs) {
+        let sh = Color.sh
+        return HStack(spacing: SH.Space.m + SH.Space.xxs) {
             if let hostID = model.comparing {
                 let name = model.name(of: .remote(hostID))
                 let size = AppLayout.instructionsCompareSize
-                let host = Text(verbatim: name).font(.nwMono(size))
-                let between = Text("compared with").foregroundStyle(nw.textTertiary)
-                let mac = Text("This Mac").font(.nwMono(size))
+                let host = Text(verbatim: name).font(.shMono(size))
+                let between = Text("compared with").foregroundStyle(sh.textTertiary)
+                let mac = Text("This Mac").font(.shMono(size))
                 Text("\(host) \(between) \(mac)")
-                    .font(.nwSans(size))
-                    .foregroundStyle(nw.textPrimary)
+                    .font(.shSans(size))
+                    .foregroundStyle(sh.textPrimary)
                     .lineLimit(1)
                 if !model.showsDiff, edited { editedMark }
-                Spacer(minLength: NW.Space.m)
-                NWSegmentedPicker("Compare", selection: $model.showsDiff, options: [(true, "Diff"), (false, "\(name)'s file")], size: .s)
+                Spacer(minLength: SH.Space.m)
+                SHSegmentedPicker("Compare", selection: $model.showsDiff, options: [(true, "Diff"), (false, "\(name)'s file")], size: .s)
                 if !model.showsDiff { revertAndSave }
             } else {
                 let path = model.path(of: file, on: machine) ?? model.name(of: machine)
                 Text(path)
-                    .font(.nwMono(AppLayout.instructionsPathSize))
-                    .foregroundStyle(nw.textSecondary)
+                    .font(.shMono(AppLayout.instructionsPathSize))
+                    .foregroundStyle(sh.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .help(path)
                 if edited { editedMark }
-                Spacer(minLength: NW.Space.m)
+                Spacer(minLength: SH.Space.m)
                 if model.sameEverywhere { history }
                 revertAndSave
             }
         }
-        .padding(.vertical, NW.Space.m)
-        .padding(.horizontal, NW.Space.l)
-        .frame(minHeight: NW.Height.controlS + 2 * NW.Space.m)
-        .background(nw.bgSunken)
+        .padding(.vertical, SH.Space.m)
+        .padding(.horizontal, SH.Space.l)
+        .frame(minHeight: SH.Height.controlS + 2 * SH.Space.m)
+        .background(sh.bgSunken)
     }
 
     private var editedMark: some View {
         Text("● edited")
-            .font(.nwSans(AppLayout.instructionsEditedSize))
-            .foregroundStyle(Color.nw.lanternText)
+            .font(.shSans(AppLayout.instructionsEditedSize))
+            .foregroundStyle(Color.sh.lanternText)
             .lineLimit(1)
             .fixedSize()
-            .nwTransition(.disclosure)
+            .shTransition(.disclosure)
     }
 
     /// This Mac's saves of the open file, each one restorable.
     private var history: some View {
         Button("History") { showsHistory.toggle() }
-            .buttonStyle(.nw(.ghost, size: .s))
+            .buttonStyle(.sh(.ghost, size: .s))
             .popover(isPresented: $showsHistory, arrowEdge: .bottom) {
                 ScrollView(.vertical) {
                     InstructionsHistoryList(model: model, machine: .local, now: Date())
-                        .padding(.horizontal, NW.Space.l)
-                        .padding(.vertical, NW.Space.m)
+                        .padding(.horizontal, SH.Space.l)
+                        .padding(.vertical, SH.Space.m)
                 }
                 .scrollIndicators(.hidden)
                 .frame(width: AppLayout.instructionsHistoryPopoverWidth)
                 .frame(maxHeight: AppLayout.instructionsHistoryPopoverMaxHeight)
                 .fixedSize(horizontal: false, vertical: true)
-                .background(Color.nw.bgRaised)
+                .background(Color.sh.bgRaised)
             }
     }
 
     /// Revert and the primary Save, which names where it writes; both wait for an edit.
     @ViewBuilder private var revertAndSave: some View {
         Button("Revert") { model.revert() }
-            .buttonStyle(.nw(.ghost, size: .s))
+            .buttonStyle(.sh(.ghost, size: .s))
             .disabled(!edited || model.busy)
         Button { Task { await model.save() } } label: {
-            HStack(spacing: NW.Space.s) {
+            HStack(spacing: SH.Space.s) {
                 Text(model.saveTitle)
                 Text("⌘S")
-                    .font(.nwMono(AppLayout.instructionsShortcutSize))
+                    .font(.shMono(AppLayout.instructionsShortcutSize))
                     .opacity(AppLayout.instructionsShortcutOpacity)
                     .accessibilityHidden(true)
             }
         }
-        .buttonStyle(.nw(.primary, size: .s))
+        .buttonStyle(.sh(.primary, size: .s))
         .keyboardShortcut("s", modifiers: .command)
         .disabled(!model.canSave)
     }
@@ -348,22 +348,22 @@ private struct InstructionsUnavailable: View {
     var model: InstructionsModel
 
     var body: some View {
-        let nw = Color.nw
-        VStack(spacing: NW.Space.m) {
+        let sh = Color.sh
+        VStack(spacing: SH.Space.m) {
             if reading {
-                ProgressView().progressViewStyle(.nwSpinner).accessibilityHidden(true)
+                ProgressView().progressViewStyle(.shSpinner).accessibilityHidden(true)
             }
             Text(message)
-                .font(.nw(.caption))
-                .foregroundStyle(nw.textTertiary)
+                .font(.sh(.caption))
+                .foregroundStyle(sh.textTertiary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
             if case .remote(let hostID) = model.machine, case .failed = model.files(of: hostID) {
                 Button("Try again") { Task { await model.reload(hostID) } }
-                    .buttonStyle(.nw(.secondary, size: .s))
+                    .buttonStyle(.sh(.secondary, size: .s))
             }
         }
-        .padding(NW.Space.xxl)
+        .padding(SH.Space.xxl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -397,7 +397,7 @@ private struct InstructionsDiffView: View {
                         InstructionsDiffRow(line: line).id(index)
                     }
                 }
-                .padding(.vertical, NW.Space.m)
+                .padding(.vertical, SH.Space.m)
             }
             // The first difference in view, with a line of context above it.
             .onAppear {
@@ -411,24 +411,24 @@ private struct InstructionsDiffRow: View {
     let line: InstructionsDiffLine
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         HStack(spacing: 0) {
             Text("\(line.number)")
-                .font(.nwMono(AppLayout.instructionsNumberSize))
-                .foregroundStyle(nw.textTertiary)
+                .font(.shMono(AppLayout.instructionsNumberSize))
+                .foregroundStyle(sh.textTertiary)
                 .frame(width: AppLayout.instructionsGutterWidth, alignment: .trailing)
-                .padding(.trailing, NW.Space.m)
+                .padding(.trailing, SH.Space.m)
             Text(sign)
-                .font(.nwMono(AppLayout.instructionsDiffTextSize))
-                .foregroundStyle(line.kind == .added ? nw.done : nw.failed)
+                .font(.shMono(AppLayout.instructionsDiffTextSize))
+                .foregroundStyle(line.kind == .added ? sh.done : sh.failed)
                 .frame(width: AppLayout.instructionsDiffSignWidth, alignment: .leading)
             Text(line.text)
-                .font(.nwMono(AppLayout.instructionsDiffTextSize))
-                .foregroundStyle(nw.textSecondary)
+                .font(.shMono(AppLayout.instructionsDiffTextSize))
+                .foregroundStyle(sh.textSecondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .help(line.text)
-            Spacer(minLength: NW.Space.l)
+            Spacer(minLength: SH.Space.l)
         }
         .frame(minHeight: AppLayout.instructionsDiffLineHeight)
         .background(background)
@@ -447,8 +447,8 @@ private struct InstructionsDiffRow: View {
     private var background: Color {
         switch line.kind {
         case .context: .clear
-        case .added: .nw.doneTint
-        case .removed: .nw.failedTint
+        case .added: .sh.doneTint
+        case .removed: .sh.failedTint
         }
     }
 
@@ -471,20 +471,20 @@ private struct InstructionsResolve: View {
 
     var body: some View {
         let name = model.name(of: .remote(hostID))
-        VStack(alignment: .leading, spacing: NW.Space.m) {
-            NWSectionHeader("Resolve", style: .settings).padding(.horizontal, NW.Space.xxs)
-            NWFlowLayout(spacing: NW.Space.m) {
+        VStack(alignment: .leading, spacing: SH.Space.m) {
+            SHSectionHeader("Resolve", style: .settings).padding(.horizontal, SH.Space.xxs)
+            SHFlowLayout(spacing: SH.Space.m) {
                 Button("Copy This Mac's to \(name)") { Task { await model.copyThisMacs(to: hostID) } }
-                    .buttonStyle(.nw(.secondary))
+                    .buttonStyle(.sh(.secondary))
                 Button("Copy \(name)'s to all hosts") { Task { await model.copyToAllHosts(from: hostID) } }
-                    .buttonStyle(.nw(.secondary))
+                    .buttonStyle(.sh(.secondary))
                 Button("Keep \(name) different") { model.keepDifferent(hostID) }
-                    .buttonStyle(.nw(.ghost))
+                    .buttonStyle(.sh(.ghost))
             }
             .disabled(model.busy)
             SettingsNote(text: "A copy replaces \(model.file.fileName) there; the version it replaces stays in that host's history. "
                 + "Keep a host different when a line only makes sense on it: Shepherd shows the difference once, then stops asking.")
-                .padding(.horizontal, NW.Space.xxs)
+                .padding(.horizontal, SH.Space.xxs)
         }
     }
 }
@@ -507,7 +507,7 @@ private struct InstructionsSideColumn: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .nwTransition(.content)
+            .shTransition(.content)
         }
         .scrollIndicators(.hidden)
     }
@@ -529,14 +529,14 @@ private struct InstructionsReadingOrder: View {
     }
 
     var body: some View {
-        let nw = Color.nw
-        VStack(alignment: .leading, spacing: NW.Space.m) {
-            NWSectionHeader("How the agent reads them", style: .settings).padding(.horizontal, NW.Space.xxs)
+        let sh = Color.sh
+        VStack(alignment: .leading, spacing: SH.Space.m) {
+            SHSectionHeader("How the agent reads them", style: .settings).padding(.horizontal, SH.Space.xxs)
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
                     if index > 0 {
                         Rectangle()
-                            .fill(nw.lineStrong)
+                            .fill(sh.lineStrong)
                             .frame(width: AppLayout.instructionsStepConnectorWidth, height: AppLayout.instructionsStepConnectorHeight)
                             .padding(.leading, AppLayout.instructionsStepConnectorInset)
                             .accessibilityHidden(true)
@@ -547,32 +547,32 @@ private struct InstructionsReadingOrder: View {
             SettingsNote(text: "Later files win. pi's own files in Shepherd's pi home still load, each just before Shepherd's. "
                 + "A session reads them when it starts: running agents keep the version they started with, "
                 + "new agents and automations get this one.")
-                .padding(.horizontal, NW.Space.xxs)
+                .padding(.horizontal, SH.Space.xxs)
         }
     }
 
     private func stepCard(_ number: Int, title: String, note: String, marked: Bool) -> some View {
-        let nw = Color.nw
-        return HStack(spacing: NW.Space.m + NW.Space.xxs) {
+        let sh = Color.sh
+        return HStack(spacing: SH.Space.m + SH.Space.xxs) {
             Text("\(number)")
-                .font(.nwMono(AppLayout.instructionsNumberSize))
-                .foregroundStyle(nw.textTertiary)
+                .font(.shMono(AppLayout.instructionsNumberSize))
+                .foregroundStyle(sh.textTertiary)
                 .frame(width: AppLayout.instructionsStepNumberWidth, alignment: .leading)
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 Text(title)
-                    .font(.nwMono(AppLayout.instructionsStepTitleSize, .semibold))
-                    .foregroundStyle(nw.textPrimary)
+                    .font(.shMono(AppLayout.instructionsStepTitleSize, .semibold))
+                    .foregroundStyle(sh.textPrimary)
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Text(note)
-                    .font(.nwSans(AppLayout.instructionsStepNoteSize))
-                    .foregroundStyle(nw.textTertiary)
+                    .font(.shSans(AppLayout.instructionsStepNoteSize))
+                    .foregroundStyle(sh.textTertiary)
             }
             Spacer(minLength: 0)
         }
-        .padding(.vertical, NW.Space.m)
-        .padding(.horizontal, NW.Space.m + NW.Space.xxs)
-        .nwCard(fill: marked ? nw.lanternTint : nw.bgRaised, line: marked ? nw.lanternText : nw.lineSubtle)
+        .padding(.vertical, SH.Space.m)
+        .padding(.horizontal, SH.Space.m + SH.Space.xxs)
+        .shCard(fill: marked ? sh.lanternTint : sh.bgRaised, line: marked ? sh.lanternText : sh.lineSubtle)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Step \(number): \(title), \(note)")
     }
@@ -587,8 +587,8 @@ private struct InstructionsHostsOverview: View {
     var body: some View {
         let other = InstructionFile.allCases.first { $0 != model.file } ?? .appendSystem
         VStack(alignment: .leading, spacing: AppLayout.instructionsSideSpacing) {
-            VStack(alignment: .leading, spacing: NW.Space.m) {
-                NWSectionHeader("Files on each host", style: .settings).padding(.horizontal, NW.Space.xxs)
+            VStack(alignment: .leading, spacing: SH.Space.m) {
+                SHSectionHeader("Files on each host", style: .settings).padding(.horizontal, SH.Space.xxs)
                 VStack(spacing: 0) {
                     hostRow(.local)
                     ForEach(model.hosts, id: \.id) { host in
@@ -597,65 +597,65 @@ private struct InstructionsHostsOverview: View {
                 }
             }
             if !model.hosts.isEmpty, let line = model.otherFileLine {
-                VStack(alignment: .leading, spacing: NW.Space.m) {
-                    NWSectionHeader(other.fileName, style: .settings).padding(.horizontal, NW.Space.xxs)
+                VStack(alignment: .leading, spacing: SH.Space.m) {
+                    SHSectionHeader(other.fileName, style: .settings).padding(.horizontal, SH.Space.xxs)
                     Text(line)
-                        .nwText(size: AppLayout.instructionsOtherFileSize, lineHeight: AppLayout.settingsFootnoteLineHeight)
-                        .foregroundStyle(Color.nw.textSecondary)
+                        .shText(size: AppLayout.instructionsOtherFileSize, lineHeight: AppLayout.settingsFootnoteLineHeight)
+                        .foregroundStyle(Color.sh.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, NW.Space.xxs)
+                        .padding(.horizontal, SH.Space.xxs)
                 }
             }
-            VStack(alignment: .leading, spacing: NW.Space.m) {
-                NWSectionHeader("History · \(model.name(of: model.machine))", style: .settings).padding(.horizontal, NW.Space.xxs)
+            VStack(alignment: .leading, spacing: SH.Space.m) {
+                SHSectionHeader("History · \(model.name(of: model.machine))", style: .settings).padding(.horizontal, SH.Space.xxs)
                 InstructionsHistoryList(model: model, machine: model.machine, now: now)
             }
         }
     }
 
     private func hostRow(_ machine: InstructionsModel.Machine) -> some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let row = model.row(for: machine, now: now)
         let name = model.name(of: machine)
         let directory = model.directory(of: machine)
-        return HStack(spacing: NW.Space.m + NW.Space.xxs) {
+        return HStack(spacing: SH.Space.m + SH.Space.xxs) {
             Image(systemName: "desktopcomputer")
-                .font(.nwSans(AppLayout.instructionsHostGlyphSize))
-                .foregroundStyle(nw.textSecondary)
+                .font(.shSans(AppLayout.instructionsHostGlyphSize))
+                .foregroundStyle(sh.textSecondary)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
                 Text(name)
-                    .font(.nwMono(AppLayout.instructionsHostNameSize, .semibold))
-                    .foregroundStyle(nw.textPrimary)
+                    .font(.shMono(AppLayout.instructionsHostNameSize, .semibold))
+                    .foregroundStyle(sh.textPrimary)
                     .lineLimit(1)
                 if let directory {
                     Text(directory)
-                        .font(.nwMono(AppLayout.instructionsHostDirectorySize))
-                        .foregroundStyle(nw.textTertiary)
+                        .font(.shMono(AppLayout.instructionsHostDirectorySize))
+                        .foregroundStyle(sh.textTertiary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .help(directory)
                 }
             }
             .layoutPriority(1)
-            Spacer(minLength: NW.Space.m)
-            VStack(alignment: .trailing, spacing: NW.Space.xxs) {
+            Spacer(minLength: SH.Space.m)
+            VStack(alignment: .trailing, spacing: SH.Space.xxs) {
                 Text(row.detail)
-                    .font(.nwSans(AppLayout.instructionsHostDetailSize))
-                    .foregroundStyle(nw.textPrimary)
+                    .font(.shSans(AppLayout.instructionsHostDetailSize))
+                    .foregroundStyle(sh.textPrimary)
                     .lineLimit(1)
                 if let note = row.note {
                     Text(note)
-                        .font(.nwSans(AppLayout.instructionsHostNoteSize))
+                        .font(.shSans(AppLayout.instructionsHostNoteSize))
                         .foregroundStyle(InstructionsHostChip.color(row.noteTone))
                         .lineLimit(1)
                 }
             }
             .fixedSize()
         }
-        .padding(.vertical, NW.Space.s)
+        .padding(.vertical, SH.Space.s)
         .frame(minHeight: AppLayout.instructionsHostRowMinHeight)
-        .overlay(alignment: .top) { NWHairline() }
+        .overlay(alignment: .top) { SHHairline() }
         .accessibilityElement(children: .combine)
     }
 }
@@ -668,42 +668,42 @@ private struct InstructionsHistoryList: View {
     let now: Date
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let entries = model.history(on: machine)
         VStack(spacing: 0) {
             if entries.isEmpty {
                 Text(model.saved(model.file, on: machine) == nil ? "Not read yet." : "No saves yet.")
-                    .font(.nwSans(AppLayout.instructionsHistoryTextSize))
-                    .foregroundStyle(nw.textTertiary)
+                    .font(.shSans(AppLayout.instructionsHistoryTextSize))
+                    .foregroundStyle(sh.textTertiary)
                     .frame(maxWidth: .infinity, minHeight: AppLayout.instructionsHistoryRowMinHeight, alignment: .leading)
-                    .overlay(alignment: .top) { NWHairline() }
+                    .overlay(alignment: .top) { SHHairline() }
             }
             ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
-                HStack(spacing: NW.Space.m + NW.Space.xxs) {
+                HStack(spacing: SH.Space.m + SH.Space.xxs) {
                     Text(InstructionsPresentation.historyDate(entry.savedAt, now: now))
-                        .font(.nwMono(AppLayout.instructionsHistoryTextSize))
-                        .foregroundStyle(nw.textTertiary)
+                        .font(.shMono(AppLayout.instructionsHistoryTextSize))
+                        .foregroundStyle(sh.textTertiary)
                         .frame(width: AppLayout.instructionsHistoryDateWidth, alignment: .leading)
                     Text(model.summary(of: entry))
-                        .font(.nwSans(AppLayout.instructionsHistoryTextSize))
-                        .foregroundStyle(nw.textSecondary)
+                        .font(.shSans(AppLayout.instructionsHistoryTextSize))
+                        .foregroundStyle(sh.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .help(model.summary(of: entry))
-                    Spacer(minLength: NW.Space.m)
+                    Spacer(minLength: SH.Space.m)
                     if index == 0 {
                         Text("current")
-                            .font(.nwSans(AppLayout.instructionsHistoryTextSize))
-                            .foregroundStyle(nw.textTertiary)
+                            .font(.shSans(AppLayout.instructionsHistoryTextSize))
+                            .foregroundStyle(sh.textTertiary)
                     } else {
                         Button("Restore") { Task { await model.restore(entry, on: machine) } }
-                            .buttonStyle(.nwLink(font: .nwSans(AppLayout.instructionsHistoryTextSize)))
+                            .buttonStyle(.shLink(font: .shSans(AppLayout.instructionsHistoryTextSize)))
                             .disabled(model.busy)
                             .accessibilityLabel("Restore the version saved \(InstructionsPresentation.historyDate(entry.savedAt, now: now))")
                     }
                 }
                 .frame(minHeight: AppLayout.instructionsHistoryRowMinHeight)
-                .overlay(alignment: .top) { NWHairline() }
+                .overlay(alignment: .top) { SHHairline() }
             }
         }
     }

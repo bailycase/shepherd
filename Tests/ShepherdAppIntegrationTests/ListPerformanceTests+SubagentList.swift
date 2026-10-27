@@ -31,11 +31,11 @@ extension ListPerformanceTests {
             window.close()
         }
         // Counted from the empty list through the load: the rows exist only once the runs have arrived.
-        NWRenderProbe.start()
+        SHRenderProbe.start()
         try await eventuallyOnMain("the thread to load") { store.ready && store.subagents.count == 300 }
         ListPerf.settle(window)
-        let loaded = NWRenderProbe.stop()
-        let onScreen = Int(size.height / NWSubagentListMetrics.rowHeight) + 1
+        let loaded = SHRenderProbe.stop()
+        let onScreen = Int(size.height / SHSubagentListMetrics.rowHeight) + 1
         #expect(loaded["subagents.listRow", default: 0] > 0, "the rows drew: \(loaded)")
         #expect(loaded["subagents.listRow", default: 0] <= 2 * onScreen, "300 runs build only the rows on screen: \(loaded)")
     }

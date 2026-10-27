@@ -50,8 +50,8 @@ struct OpenInNewWindowButton: View {
             if prominent {
                 button
                     .labelStyle(.titleOnly)
-                    .buttonStyle(.nw(.secondary, size: .l))
-                    .nwTouchTarget(height: NW.Height.controlL)
+                    .buttonStyle(.sh(.secondary, size: .l))
+                    .shTouchTarget(height: SH.Height.controlL)
             } else {
                 button
             }
@@ -130,7 +130,7 @@ private struct ComposerTextDrop: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .nwFocusRing(targeted, radius: NW.Radius.l)
+            .shFocusRing(targeted, radius: SH.Radius.l)
             .dropDestination(for: String.self) { items, _ in
                 let store = threads.store(for: thread)
                 let draft = items.reduce(store.draft) { ComposerInsertion.inserting($1, into: $0) }

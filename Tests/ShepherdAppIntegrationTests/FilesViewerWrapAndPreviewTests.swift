@@ -156,7 +156,7 @@ struct FilesViewerWrapAndPreviewTests {
         text.setSelectedRange(NSRange(location: 0, length: source.utf16.count))
         #expect(text.selectedRange().length == source.utf16.count, "full-text selection works")
         #expect(text.usesFindBar, "find bar available in wrap mode")
-        #expect(text.textContainerInset.width > NW.Space.m, "gutter inset present")
+        #expect(text.textContainerInset.width > SH.Space.m, "gutter inset present")
     }
 
     @Test func wordWrapResizeReflowsMeasurably() async throws {

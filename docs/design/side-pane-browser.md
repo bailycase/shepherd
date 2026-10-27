@@ -24,13 +24,13 @@ Changes alone.
   separate from every local project and other host. A disconnect keeps its data; removing its
   project or configured host removes it. Automation runs use the project holding their folder;
   threads outside a project retain isolated data. Every agent in a project can use its logins.
-- **Toolbar** (`NWBrowserToolbar`), 44pt, 8pt side padding, a hairline beneath: Back, Forward and
-  Reload (28pt `nwIcon`; one that can't act is at 40%; Reload is Stop loading, an ×, while the page
+- **Toolbar** (`SHBrowserToolbar`), 44pt, 8pt side padding, a hairline beneath: Back, Forward and
+  Reload (28pt `shIcon`; one that can't act is at 40%; Reload is Stop loading, an ×, while the page
   loads), 6pt, the address field, 6pt, then Select an element, Viewport size and Open in your
-  browser (28pt `nwIcon`). Select an element, while on, is `lanternTint` with a `lanternText`
+  browser (28pt `shIcon`). Select an element, while on, is `lanternTint` with a `lanternText`
   glyph; the Viewport button is `bgSelected` while its menu is open. Open in your browser hands
   the URL to the default browser.
-- **Address field** (`NWBrowserAddressField`): a 30pt capsule on `bgSunken` with a `lineSubtle`
+- **Address field** (`SHBrowserAddressField`): a 30pt capsule on `bgSunken` with a `lineSubtle`
   line: a 12pt `textTertiary` globe, the URL in Geist Mono 12 (the host with its port in
   `textPrimary`, the path, query and fragment in `textSecondary`; the scheme left out for http and
   https, a lone "/" left out), truncating, and a 20pt capsule host chip on `bgRaised` with a
@@ -40,12 +40,12 @@ Changes alone.
   gives up. It takes a URL with a scheme; a host with a port or a path (loopback, a private IPv4
   address, `.local`, `.test` and `.localhost` names go over http, others over https); ":5173" for a
   port on this Mac; anything else is a search (Google).
-- **Nothing open** (`NWBrowserEmpty`): centered, 14pt apart: a 44pt `bgSelected` circle with a
+- **Nothing open** (`SHBrowserEmpty`): centered, 14pt apart: a 44pt `bgSelected` circle with a
   20pt `textSecondary` globe, "No page open" (Geist 14 semibold), and a line (`ui` `textSecondary`,
   at most 330pt, centered), the board's words exactly: "The agent opens pages here when it starts
   a dev server. Ports on remote hosts are forwarded for you." ("Waiting for localhost:5173 to
   answer. Its page opens here when it does." after Start). Then, at most 400pt wide and 8pt apart,
-  a card per dev server (`NWDevServerCard`: `bgRaised`, `lineSubtle`, radius 8, padding 10×12; a
+  a card per dev server (`SHDevServerCard`: `bgRaised`, `lineSubtle`, radius 8, padding 10×12; a
   12pt terminal glyph, "pnpm dev" in Geist Mono 12 over "from package.json · acme-web" in Geist 11
   `textTertiary`, and "Start on This Mac", secondary `s` with a play glyph ("Start on build-01"
   on a remote thread), and an "Open a URL" row the same way with the ⌘L keycaps.
@@ -62,7 +62,7 @@ Changes alone.
     half second for 90 seconds. On a remote thread the command runs in a new terminal on the
     host (`RemoteAgentAction.openTerminal`), in the folder the script was found in, and the port is
     forwarded here and tried through the tunnel.
-- **Viewport** (`NWViewportMenu`, a 220pt popover 4pt under the toolbar, its trailing edge under
+- **Viewport** (`SHViewportMenu`, a 220pt popover 4pt under the toolbar, its trailing edge under
   the button): Fit the pane (the default), iPhone 16 · 393, iPad mini · 744, Laptop · 1280 (the
   check leading, widths trailing in Geist Mono 11 `textTertiary`), a divider, and Dark appearance
   (the page's `prefers-color-scheme`; off is light, whatever Shepherd's appearance). A chosen width
@@ -76,7 +76,7 @@ Changes alone.
   10.5, the size at 75%, the text in `textOnRunning`). Shepherd's script draws them inside the page,
   in a closed shadow root, in the theme's colors. While selecting, the page's clicks and presses go
   to the picker, and Esc stops. A click picks: selecting ends, the outline stays, and a popover
-  (`NWElementPopover`: 188pt, padding 8, radius 12, the popover's fill and shadow) sits beside the
+  (`SHElementPopover`: 188pt, padding 8, radius 12, the popover's fill and shadow) sits beside the
   element (to its right, else its left, else under it, inside the page), following it as the page
   scrolls: the source location ("Checkout.tsx:88", Geist Mono 10.5 `textTertiary`, the file and
   line only) when the page provides one, Add to message (primary `s`) and Copy selector (ghost
@@ -101,7 +101,7 @@ Changes alone.
   queue. No board draws a sent message's elements as a chip, so the sent bubble shows only its
   words (the user's decision, 2026-09-29): elements sent alone send "1 page element attached.",
   which the bubble still shows as its text, with nothing standing in for the element.
-- **Console drawer** (`NWConsoleBar`, `NWConsoleRow`), under the page while one is open: a 32pt bar
+- **Console drawer** (`SHConsoleBar`, `SHConsoleRow`), under the page while one is open: a 32pt bar
   on `bgBase` under a `lineStrong` line: "Console" (Geist 12 semibold), "Network" with its count
   (the document and each resource it loaded; Geist Mono 10.5 `textTertiary`), and "1 warning" in
   `lanternText` (Geist 11.5, a 12pt glyph, only when there is one). No board draws a separate
@@ -122,7 +122,7 @@ Changes alone.
   dot and, with the pane closed or on another tab, the header's side-pane button takes its 8pt
   one, each with a brief tip under it for four seconds (and again while hovered). The button's is
   the sentence, "Agent opened a page in Browser", with the pane's chord. The tab's
-  (`NWPaneTabTip`, PaneStates › SidePaneTabs · the agent opened a tab) hangs under the tab, 300pt
+  (`SHPaneTabTip`, PaneStates › SidePaneTabs · the agent opened a tab) hangs under the tab, 300pt
   wide, a popover with padding 4: a row of 4×6 with a 12pt `textSecondary` globe, "Agent opened"
   and the page in Geist Mono 12 (`localhost:5173/checkout`, the host, port, path and query as the
   address field shows them), and its age in `textTertiary` ("10s", "2m", "1h", counting up). It
@@ -137,7 +137,7 @@ Changes alone.
   the local tab works as it does there: the picker, the console drawer, the viewport, Add to message
   and the composer's chip, ⌃2, ⌘L and ⇧⌘C. A port on this Mac has one owner: a port another program
   listens on, one below 1024 or one another thread's page holds is refused, nothing loads, and a
-  notice card (`NWBrowserNotice`: a 12pt `lanternText` glyph, the reason in `ui`, a close button;
+  notice card (`SHBrowserNotice`: a 12pt `lanternText` glyph, the reason in `ui`, a close button;
   `bgRaised`, radius 12, a `lantern` line, 12pt from the pane's sides) says why. A port a page names is
   held until the thread or its host goes away. **The agent drives this page**, on a host that offers
   `browser.drive.v1` (the agent is using it, below): the tab on screen claims the agent's browser on the
@@ -151,7 +151,7 @@ Changes alone.
   › Remote). On an older host the agent drives the host's own page, which this tab does not show, and
   the dot and the tip stay off (a review pi opens on a host is likewise the host's view state).
 - **Tabs** (BrowserTabsAgent, -Elsewhere, -Full, -Opened, -Popup, -Two, saved in `docs/design/boards/`;
-  `NWBrowserTabStrip`, `NWBrowserTabMenu`, `NWBrowserTabsNote`, `NWAgentBar`, `NWAgentElsewhere` in ShepherdUI
+  `SHBrowserTabStrip`, `SHBrowserTabMenu`, `SHBrowserTabsNote`, `SHAgentBar`, `SHAgentElsewhere` in ShepherdUI
   `Components/Browser/BrowserTabs.swift`; checklist in `docs/design/boards/BrowserTabs-checklist.md`; the pane
   is `BrowserPane.swift` over `BrowserTabs`: the strip, the list, the toolbar, the page and the console are
   `tabs.selectedPage`; the remote claim is the root's). ⌘T (`browserNewTab`, scoped to the Browser, in
@@ -166,7 +166,7 @@ Changes alone.
     from the host, not the site's brand color), the title in `ui` (selected: `textPrimary`, medium, `bgSelected`;
     others `textSecondary`; hover `bgHover`), and a close `xmark` (10pt, 24pt hit) on the selected tab, on hover,
     and on every tab while there are four or fewer. Then New tab (`plus`) and All tabs (`chevron.down`), 24pt
-    `nwIcon`. New tab is disabled at the cap, with the tooltip "This thread has the most tabs it keeps". The tab
+    `shIcon`. New tab is disabled at the cap, with the tooltip "This thread has the most tabs it keeps". The tab
     the agent is using swaps its tile for a 12pt spinner; a page the agent opened and nobody has looked at has a
     6pt `running` dot after its title (VoiceOver: "Refund overview, new"). The tooltip is the address, then
     "opened by the agent" or "opened by a link".
@@ -186,8 +186,8 @@ Changes alone.
     in view on whichever tab is shown.
 - **Not built yet:** Throttle to 3G (see the departures), and Split below and the pane's own window
   (below).
-- **The agent is using it** (`NWAgentRing`, `NWAgentPointer`, `NWBrowserAgentOverlay` in ShepherdUI
-  `Components/Browser/BrowserAgent.swift`, and `NWAgentBar` in `BrowserTabs.swift`; BrowserTabsAgent, the
+- **The agent is using it** (`SHAgentRing`, `SHAgentPointer`, `SHBrowserAgentOverlay` in ShepherdUI
+  `Components/Browser/BrowserAgent.swift`, and `SHAgentBar` in `BrowserTabs.swift`; BrowserTabsAgent, the
   board that replaced PaneStates › BrowserPane · the agent is
   using it; docs/browser.md): the agent drives the same page you see, through its `browser_*` tools
   (on its own thread's page; on a remote thread, the page this Mac shows, through a claim). While a tool runs, and for four seconds after the
@@ -195,11 +195,11 @@ Changes alone.
   - a 2pt `running` ring inset the page area (above the console drawer, below the toolbar), and
     an 18pt `running` pointer glyph (the board's arrow, a white edge) at the last click's or
     typing's target, following the page's zoom;
-  - a full-width bar under the page and above the console drawer, 32pt (`NWAgentBar`: `runningTint`, a
+  - a full-width bar under the page and above the console drawer, 32pt (`SHAgentBar`: `runningTint`, a
     hairline above, 12pt leading and 6pt trailing padding, 8pt between): an 11pt `running` spinner, "Agent
     is filling the checkout form" (`caption`, one line, truncating) and **Take over** (secondary `s`, with
     a hand glyph). It is the page's own: it shows only while the tab on screen is the one the agent is using;
-    while the agent works in another tab, "Agent is in Checkout" (`NWAgentElsewhere`) sits over the page's
+    while the agent works in another tab, "Agent is in Checkout" (`SHAgentElsewhere`) sits over the page's
     lower trailing corner and shows that tab when pressed. The ring and pointer take no clicks.
   - The words are the tool's optional `note` ("clicking through checkout"), else derived from the
     action and its target: `clicking “Pay $148.00”`, `double-clicking …`, `typing in “Email”`,
@@ -215,7 +215,7 @@ Changes alone.
     show no bar. Only the bar's button takes clicks: the ring and pointer let the page have them.
   - The page keeps running when nothing shows it (a hidden pane, another tab or thread): it moves
     into an off-screen window and never reloads.
-- **In the thread**, pi's browser work reads as activity lines with the globe (NWActivityLine
+- **In the thread**, pi's browser work reads as activity lines with the globe (SHActivityLine
   `.browser`): "Opened localhost:5173/checkout in Browser", "Read the page", "Clicked “Pay
   $148.00”", "Typed in “Email”" (never what was typed), "Pressed Enter", "Scrolled down",
   "Waited for “Order placed”", "Took a screenshot", "Read the console", "Ran a script in the page",

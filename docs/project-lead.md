@@ -81,7 +81,8 @@ concurrency limits still bound coordination; this feature makes no strict dollar
 
 - Creation requires a name. The goal and linked Spaces are optional. A project with no Spaces
   can discuss and plan work without silently attaching a repository.
-- Adding a Space proposed by the project requires the inline confirmation shown in AddsSpace.
+- The primary project agent can discover and link owner-local Spaces directly when "The project can add spaces" is enabled.
+  Existing pending proposals retain their inline controls. Space decisions never enqueue chat messages.
   Existing Space configuration and filesystem ancestry rules remain unchanged.
 - Settings separates the conversation model from the default task-thread model. New task
   threads receive project instructions in addition to the selected Space's instructions.
@@ -202,7 +203,7 @@ Core types live in `Sources/ShepherdCore/Project.swift`:
   `ThinkingLevel` raw value); an edit that omits it keeps the saved one. Model preferences are the existing
   provider/model strings used by `Agent.model`. Save does not require a currently available
   model; a future launch must validate against the owning host's catalog. The Space setting
-  allows **requesting user approval**, never automatically adding a Space.
+  allows the active coordinator to link existing owner-local Spaces or readable directories without per-Space approval.
 - `ProjectMemory`: generated `ProjectMemoryID`, text, source label and host-assigned epoch
   milliseconds. Source/text are inspectable data, not instructions or authenticated model proof.
 - `ProjectSpaceLink`: executor-relative `spaceID`, optional owner-relative `host` (old records
@@ -368,7 +369,7 @@ through `SessionServer.onProjectRuntimeRequest` to the OWNER VM/controller. Lega
 still omit coordinators. Project-capable viewers read the native conversation explicitly.
 `SessionServer.answerProjectQuestion(_:expectedRevision:taskID:request:)` accepts only a bounded
 native `.answer`. The coordinator-only `project_answer` relays a verified human chat reply through
-this same owner path; it cannot originate an approval or approve a Space link.
+this same owner path; it cannot originate a human approval. Space linking uses the separate coordinator-only tool.
 
 First send reserves the coordinator identity before launching. `Agent.coordinatorFor` is set
 before its first publication; `Space.holdsProjects` is hidden and not an automation Space.
@@ -526,7 +527,7 @@ including the existing genuine persistence-failure regression.
 
 `shepherd-project-context.ts` registers only
 `project_read`, `project_inspect`, `project_history`, `project_result`, `project_answer`, `project_assign`, `project_follow_up`, `project_resolve`,
-`project_propose_space` and `project_remember` for coordinators. Ordinary workers get no coordinator
+`project_list_spaces`, `project_propose_space` and `project_remember` for coordinators. Ordinary workers get no coordinator
 tools. Kernel extension-peer identity, reciprocal coordinator ownership, revision, operation,
 linked Space and host permission checks run independently on the host. These primary tools are
 not available in unrelated threads. Launch still disables generic tools/discovery/skills/context
@@ -599,11 +600,12 @@ post-admission dispatch boundary, then fresh calls in the same or a later human 
 local/two-host native select closure exactly once, both running and after Pause/Resume.
 
 `Project.spaceProposals` retains UUID id/operation, path OR existing Space ID, displayPath,
-phase pending/accepted/denied, optional originTaskID and revision. Only a human `decideSpace`
-acceptance validates through the existing directory/Space service and links with provenance
-`.project`. Denial is consumed, not Not now. Disabling `canRequestSpaceLinks` consumes pending
-proposals as denied; a later model request stores no actionable approval. Acceptance/denial can
-notify the coordinator within the same run bounds.
+phase pending/accepted/denied, optional originTaskID and revision. `project_list_spaces` lists visible owner-local Spaces, including unlinked ones.
+The active coordinator's legacy-named `project_propose_space` validates through the existing directory/Space service,
+links directly with provenance `.project`, and records an accepted operation for replay. It does not request human approval.
+Human `decideSpace` controls still consume older pending proposals. Denial is consumed, not Not now.
+Disabling `canRequestSpaceLinks` consumes pending proposals as denied and blocks new coordinator links.
+Neither direct links nor human Space decisions append coordinator messages or enqueue another turn.
 
 `settings.hostPolicy` is selected/anyConnected; `allowedHosts` contains owner-relative `.local`
 or `.remote(hostID:bindingID:)` references. New bindings must be currently connected and known to
@@ -758,7 +760,7 @@ Wired over the owner's Phase 3 contracts (nothing here is typed in or invented):
   host the owner knows, "This Mac only", "Any connected host". "This Mac" is the owner's machine, so a remote owner's own name replaces
   it. A binding the owner no longer knows reads "an unknown host". Choosing saves `hostPolicy`/`allowedHosts` against the revision shown.
   It does not claim cross-host placement; that is the execution adapter's.
-- **Space offer card** (`NWLeadSpaceOffer`): drawn only for a proposal still `pending`. "Add to project" is `decideSpace(accept: true)`,
+- **Space offer card** (`SHLeadSpaceOffer`): drawn only for a proposal still `pending`. "Add to project" is `decideSpace(accept: true)`,
   "Not now" is `accept: false` (consumed as denied), both against the proposal's own revision.
 - **pendingAnswer**: a held answer is said in words ("Answer queued · Sends when the project resumes.", "Answering", "Answer failed",
   "Answer unconfirmed"), its task is not asked again, and the envelope is never read, shown or logged.
@@ -798,8 +800,8 @@ Wired over the merged producers (nothing typed in, nothing from a title or prose
 - **Images**: the paperclip, paste and drop ask the Project's owner (`projectCarriesImages`), not the coordinator's thread, so they exist
   before the first message; an image alone is a first message; `sendMessage` carries images and clears only what it submitted.
 - **Held messages**: a message the owner accepted but the transcript has not taken in is drawn in exactly one place, chosen by its phase
-  (`ProjectHeldMessages`). `queued` and `delivering` wait in the composer's own Up next: the same `QueueStackView`, `NWQueueStack` and
-  `NWQueueRow` an ordinary thread draws, fed by the owner's queue instead of the native one, numbered in the owner's order, with the header's
+  (`ProjectHeldMessages`). `queued` and `delivering` wait in the composer's own Up next: the same `QueueStackView`, `SHQueueStack` and
+  `SHQueueRow` an ordinary thread draws, fed by the owner's queue instead of the native one, numbered in the owner's order, with the header's
   Paused ("Sends when the project resumes") while the Project is paused. That holds while the coordinator is busy, idle, starting or offline:
   only the owner sends, so nothing there looks sent. The rows are read-only (`QueueStackView(readOnly:)`): no Steer or Send now, Edit, Delete,
   reorder, row keys or options menu, because the owner offers no queue mutation. An image shows by the name the owner holds, with no

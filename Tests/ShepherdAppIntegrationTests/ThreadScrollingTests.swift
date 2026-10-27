@@ -19,7 +19,7 @@ private final class ThreadHarness {
     let input = ThreadInput()
     var snapshot: NativeThreadSnapshot
     let window: OffscreenWindow
-    private let pillSize = NSHostingView(rootView: NWJumpToLatest(action: {})).fittingSize
+    private let pillSize = NSHostingView(rootView: SHJumpToLatest(action: {})).fittingSize
     var olderRequests = 0
     var olderRequestPhases: [ScrollPhase] = []
     private var scrollPhase = ScrollPhase.idle
@@ -112,7 +112,7 @@ private final class ThreadHarness {
         // The composer height is the scroll's bottom inset, less its transcript gap. The
         // native pill sits one control height and one spacing above that measured edge.
         let top = host.bounds.height - scrollView.contentInsets.bottom + AppLayout.composerTranscriptGap
-            - pillSize.height - NW.Space.m
+            - pillSize.height - SH.Space.m
         let region = NSRect(x: host.bounds.midX - ceil(pillSize.width) / 2,
                             y: host.isFlipped ? top : host.bounds.height - top - pillSize.height,
                             width: ceil(pillSize.width), height: ceil(pillSize.height))
@@ -972,7 +972,7 @@ struct ThreadScrollingTests {
     @Test(arguments: [false, true]) func aCodeBlockScrollsSidewaysOnlyWhenItsLinesDoNotFit(wide: Bool) {
         let line = wide ? String(repeating: "let value = compute(value) ", count: 20) : "let value = compute(value)"
         let window = OffscreenWindow(size: CGSize(width: 500, height: 200), dark: false,
-                                     NWCodeBlock(line, language: "swift").frame(width: 460).padding(20))
+                                     SHCodeBlock(line, language: "swift").frame(width: 460).padding(20))
         defer { window.close() }
         ListPerf.settle(window)
         func scrollViews(_ view: NSView) -> Int { (view is NSScrollView ? 1 : 0) + view.subviews.map(scrollViews).reduce(0, +) }

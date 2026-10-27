@@ -96,7 +96,7 @@ struct ListPerformanceReport {
         let items = ListFixtures.paletteItems(count)
         let highlight = PaletteHighlight()
         let window = open(name, size: CGSize(width: 900, height: 700)) {
-            Color.clear.nwCommandPalette(isPresented: .constant(true)) {
+            Color.clear.shCommandPalette(isPresented: .constant(true)) {
                 PaletteCard(items: items, run: { _ in }, close: {}, initialQuery: "fix", highlight: highlight)
             }
         }
@@ -435,9 +435,9 @@ struct ListPerformanceReport {
         var body: some View {
             SubagentTrayView(tray: NativeSubagentTray(runs), state: state, runs: runs,
                              actions: SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }))
-                .padding(NW.Space.l)
+                .padding(SH.Space.l)
                 .frame(width: 800, height: 800, alignment: .top)
-                .background(Color.nw.bgWindow)
+                .background(Color.sh.bgWindow)
         }
     }
 
@@ -499,9 +499,9 @@ struct ListPerformanceReport {
     }
 
     private func countingAsync(_ work: () async throws -> Void) async throws -> [String: Int] {
-        NWRenderProbe.start()
-        defer { NWRenderProbe.stop() }
+        SHRenderProbe.start()
+        defer { SHRenderProbe.stop() }
         try await work()
-        return NWRenderProbe.counts
+        return SHRenderProbe.counts
     }
 }

@@ -98,7 +98,7 @@ enum Preview {
     }
 
     /// `render` across text sizes as well as appearances: light and dark at each of `scales`
-    /// (`ThemeStore.shared.textScale`, which multiplies every Night Watch font), so clipping,
+    /// (`ThemeStore.shared.textScale`, which multiplies every Shepherd Design font), so clipping,
     /// truncation and wrapping that only show at a larger text size are in the images. Scale 1 writes
     /// `<surface>-<light|dark>.png` as `render` does; another scale writes
     /// `<surface>-x<scale>-<light|dark>.png`. The Mac's largest Text size setting is 1.3, the scale a design review

@@ -263,7 +263,7 @@ public struct NativeThinkingLevel: Equatable, Identifiable, Sendable {
     public var title: String
     public var note: String?
 
-    /// Every level pi has, in pi's order, with the menu's notes (NWComposer: Low "quick",
+    /// Every level pi has, in pi's order, with the menu's notes (SHComposer: Low "quick",
     /// Medium "default", High "slower, deeper").
     public static let all = [
         NativeThinkingLevel(id: "off", title: "Off"),

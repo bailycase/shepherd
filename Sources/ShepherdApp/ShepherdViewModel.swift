@@ -70,7 +70,16 @@ final class ShepherdViewModel {
     /// This Mac's spaces whose folder is gone (`checkMissingSpaces`): the sidebar marks them and
     /// no thread starts in them. Live state, never persisted.
     var missingSpaces: Set<SpaceID> = []
-    var selectedAgentID: AgentID?
+    var selectedAgentID: AgentID? {
+        didSet {
+            // Fallback selections after removal also wake their terminals. Initial restoration
+            // must classify dormant panes before starting the selected agent.
+            if didStartRestoredAgents, selectedAgentID != oldValue,
+               selectedRemoteAgent == nil, destination == nil, let selectedAgentID {
+                sessions.startAhead(selectedAgentID)
+            }
+        }
+    }
     /// The page the main column shows in place of a thread (New thread, Automations, Hosts);
     /// nil while a thread shows. Picking a row clears it. Ephemeral, like all selection state.
     var destination: MainDestination?
@@ -205,6 +214,8 @@ final class ShepherdViewModel {
     /// Per-agent file tree models for the Files tab, keyed by agent ID. Created on first
     /// Files tab open; removed when the thread is gone.
     var fileTrees: [AgentID: FileTreeModel] = [:]
+    /// A remote thread's tree, read from its host over `files.v1`; replaced when its folder there changes.
+    var remoteFileTrees: [RemoteAgentRef: FileTreeModel] = [:]
     /// When each agent entered its current status this run: the sidebar's running elapsed
     /// time. Ephemeral; an agent restored at launch counts from its first report.
     var statusSince: [AgentID: Date] = [:]
@@ -497,7 +508,7 @@ final class ShepherdViewModel {
     /// An image open full size (ThreadImageOpen); nil when none is.
     var imageViewer: ImageViewerState?
     /// Stable identity in the window environment, independent of shell geometry.
-    let diagramPresentation = NWDiagramPresentation()
+    let diagramPresentation = SHDiagramPresentation()
     /// A Mermaid diagram open full screen (its source); nil when none is.
     var diagramViewer: String? {
         get { diagramPresentation.source }
@@ -567,7 +578,7 @@ final class ShepherdViewModel {
     @ObservationIgnored var parkSweepTimer: Timer?
     /// One-shot launch guard for autoStartAutomations.
     var didAutoStartAutomations = false
-    /// The first adoption starts every restored agent's pi (`TerminalSessionStore.startRestoredAgents`).
+    /// The first adoption starts selected/restorable work, leaving settled agents dormant.
     /// Off in harnesses that seed agents only to draw them: their pi then starts when a layout
     /// mounts or a test asks, as before.
     @ObservationIgnored let restoresAgentsAtLaunch: Bool
@@ -610,7 +621,7 @@ final class ShepherdViewModel {
         self.settings = settings ?? .shared
         self.sidebarDefaults = sidebarDefaults
         logicalProjectPane = RightPaneState(widthKey: Self.logicalProjectPaneWidthKey,
-                                            defaultWidth: NWLeadMetrics.paneWidth - AppLayout.dividerWidth, defaults: sidebarDefaults)
+                                            defaultWidth: SHLeadMetrics.paneWidth - AppLayout.dividerWidth, defaults: sidebarDefaults)
         LegacyTerminalAgents.forgetPresentationPreferences(in: sidebarDefaults)
         self.keybindings = keybindings ?? .shared
         self.themeManager = themeManager ?? .shared
@@ -789,6 +800,16 @@ final class ShepherdViewModel {
             recordSidebarActivity(agentID)
             if CheckoutMonitor.touchesFiles(tool: tool) { checkouts?.refresh(agentID, after: .seconds(1)) }
         }
+        // A limit on a provider with saved accounts and rotation on: the next account takes over,
+        // and pi's own retry (or the next turn) uses it. The thread says so.
+        server.onAgentProviderError = { [weak self] agentID, provider, message in
+            guard let self, PiAuthText.isLimit(message) else { return }
+            Task {
+                guard let switched = await self.piAuth.limitHit(provider) else { return }
+                self.threadStores.store(for: agentID).reportActionNotice(
+                    "Switched \(PiSignInCatalog.name(provider)) to \(switched.to): \(switched.from) hit its limit.")
+            }
+        }
         // Agents drive their own panes through the server's extension socket.
         installPaneControl()
         installProjectControl()
@@ -845,6 +866,7 @@ final class ShepherdViewModel {
                     case .deleteKeepingWorktree: try await self.deleteAgentPersisted(agentID)
                     case .renameTerminal(let paneID, let title): try self.renameTerminalPane(paneID, of: agentID, to: title)
                     case .killTerminalProcess(let paneID): try await self.killTerminalProcess(paneID, of: agentID)
+                    case .startTerminal(let paneID): try self.startTerminalPane(paneID, of: agentID)
                     case .openTerminal(let cwd, let command): try await self.startCommandForRemote(agentID, cwd: cwd, command: command)
                     }
                     completion(.success(()))
@@ -1217,11 +1239,11 @@ final class ShepherdViewModel {
                 selectedSpaceID = agent.spaceID
             }
         }
-        // First adoption of the restored workspace: every agent's pi starts now, not when its
-        // layout mounts, the one on screen first and the rest a few at a time, in Recents order.
+        // Classify restored panes before hidden layouts mount. Selected and unfinished ordinary
+        // work start now; settled threads wait for selection or explicit native/remote demand.
         if restoresAgentsAtLaunch, !didStartRestoredAgents {
             didStartRestoredAgents = true
-            sessions.startRestoredAgents(localRecentsOrder + state.agents.map(\.id),
+            sessions.restoreAgents(localRecentsOrder + state.agents.map(\.id),
                                          first: selectedAgentID.map { [$0] } ?? [], in: state)
         }
         focusMemory.prune(liveTabs: Set(state.tabs.map(\.id)))

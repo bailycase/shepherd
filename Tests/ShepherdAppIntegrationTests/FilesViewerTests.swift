@@ -47,7 +47,7 @@ struct FilesViewerTests {
         #expect(!text.isEditable && text.isSelectable)
         text.setSelectedRange(NSRange(location: 0, length: first.utf16.count))
         #expect(text.selectedRange().length == first.utf16.count, "selection spans multiple lines")
-        #expect(text.textContainerInset.width > NW.Space.m, "the source reserves a line-number gutter")
+        #expect(text.textContainerInset.width > SH.Space.m, "the source reserves a line-number gutter")
         #expect(text.frame.width >= text.enclosingScrollView!.contentSize.width)
         #expect(text.frame.height >= text.enclosingScrollView!.contentSize.height)
         window.window.makeFirstResponder(text)

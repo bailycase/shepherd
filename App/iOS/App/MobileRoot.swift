@@ -36,19 +36,29 @@ struct MobileRoot: View {
         .mobileEnvironment(app, navigator: navigator, window: window)
         .background(DesignRenderAnchor().allowsHitTesting(false).accessibilityHidden(true))
         .focusedSceneValue(\.mobileNavigator, navigator)
-        .tint(Color.nw.lantern)
+        .tint(Color.sh.lantern)
         .preferredColorScheme(app.appearance.mode.colorScheme)
         .onChange(of: layout, initial: true) { _, layout in navigator.adopt(layout) }
         // The hinge reports every degree as it moves; the navigator changes only as it shuts or opens.
         .onHingeClosedChange { closed in if navigator.hingeClosed != closed { navigator.hingeClosed = closed } }
         // Done's reading: opening another thread marks the one read before seen, as the Mac's sidebar does.
-        .onChange(of: navigator.selectedThread, initial: true) { _, thread in SidebarThreads.of(app.hosts).select(thread) }
-        .onAppear { app.windows.register(window, navigator: navigator) }
+        .onChange(of: navigator.selectedThread, initial: true) { _, thread in
+            SidebarThreads.of(app.hosts).select(thread)
+            // The laptop arrangement belongs to its thread: another one, or none, ends it.
+            if let arranged = navigator.sidePane.arranged, arranged != thread { navigator.sidePane.arranged = nil }
+        }
+        .onAppear {
+            app.windows.register(window, navigator: navigator)
+            app.pushRouter.drainPending(hosts: app.hosts, windows: app.windows)
+        }
         .onDisappear { app.windows.unregister(window.id, hosts: app.hosts) }
+        // A widget's or a Live Activity's link (`shepherd://`), in the window it opened.
+        .onOpenURL { url in GlanceBridge.open(url, navigator: navigator) }
         .onChange(of: scenePhase, initial: true) { _, phase in
             // The first phase can arrive before onAppear: the window counts only once registered.
             app.windows.register(window, navigator: navigator)
             app.windows.setPhase(window.id, phase, hosts: app.hosts)
+            app.pushRouter.drainPending(hosts: app.hosts, windows: app.windows)
         }
     }
 }

@@ -77,6 +77,9 @@ public struct FleetDigest: Equatable, Sendable {
     /// A subagent is still running: background children outlive their parent's turn, and the
     /// thread's own question may follow from the parent that answers them.
     public var liveSubagents: Bool
+    /// A subagent is running and not paused: the thread works though its own turn ended, as the
+    /// Mac's sidebar shows it (`SidebarModel.presentationState`).
+    public var subagentsWorking: Bool
     /// Subagents still going (running, or finished their turn to wait on their parent's answer),
     /// and how many of them wait on their parent (the overview's "3 subagents · 1 waiting on
     /// parent").
@@ -89,8 +92,21 @@ public struct FleetDigest: Equatable, Sendable {
     public var activity: String?
     /// When that call started (ms since epoch).
     public var activitySince: Double?
+    /// What a running thread does now, as a verb ("Running python", "Editing Fleet.swift"),
+    /// "Thinking" between calls; nil when it isn't running.
+    public var doing: String?
     /// The newest moment in the thread (ms since epoch).
     public var lastActivity: Double?
+    /// Subagents that finished and do not wait on their parent.
+    public var subagentsDone = 0
+    /// Messages waiting in its queue.
+    public var queued = 0
+    /// What its latest turn changed.
+    public var changes: FleetChanges?
+    /// Its goal and where it stands ("Ship the glance surfaces · checking").
+    public var goal: String?
+    /// Its last reply's first line, once the turn is over.
+    public var result: String?
 
     public init(_ snapshot: NativeThreadSnapshot) {
         session = NativeThreadSession(piSessionID: snapshot.piSessionID, generation: snapshot.generation)
@@ -104,6 +120,7 @@ public struct FleetDigest: Equatable, Sendable {
                      options: dialog.options ?? [], answerable: answers && dialog.unavailable == nil)
         }
         liveSubagents = (snapshot.subagents ?? []).contains { !$0.isTerminal }
+        subagentsWorking = (snapshot.subagents ?? []).contains { !$0.isTerminal && $0.paused != true }
         // One that asked its parent counts as live though its process finished its turn to wait.
         subagentsLive = (snapshot.subagents ?? []).filter { !$0.isTerminal || $0.needsAttention }.count
         subagentsAsking = (snapshot.subagents ?? []).filter(\.needsAttention).count
@@ -111,13 +128,39 @@ public struct FleetDigest: Equatable, Sendable {
         let last = snapshot.messages.last
         lastTurnFailed = !snapshot.running && last?.role == "assistant" && last?.status == "error"
         if snapshot.running, let call = entries.last(where: { $0.toolName != nil && ($0.status == "running" || $0.status == "streaming") }) {
-            activity = Self.activity(NativeActivityCall(call))
+            let activityCall = NativeActivityCall(call)
+            activity = Self.activity(activityCall)
             activitySince = call.startedAt ?? call.timestamp
+            doing = Self.doing(activityCall)
         } else {
             activity = nil
             activitySince = nil
+            doing = snapshot.running ? "Thinking" : nil
         }
         lastActivity = entries.compactMap(\.timestamp).max()
+        subagentsDone = (snapshot.subagents ?? []).filter { $0.isTerminal && !$0.needsAttention }.count
+        queued = snapshot.queue?.items.count ?? 0
+        changes = snapshot.turnChanges?.last.map { FleetChanges(files: $0.fileCount, added: $0.added, removed: $0.removed) }
+        goal = snapshot.goal.map { "\($0.text) · \(Self.goalWord($0.state))" }
+        result = snapshot.running ? nil : snapshot.messages.last(where: { $0.role == "assistant" }).flatMap(Self.firstLine)
+    }
+
+    static func goalWord(_ state: NativeGoalState) -> String {
+        switch state {
+        case .working: "working"
+        case .checking: "checking"
+        case .met: "met"
+        case .paused: "paused"
+        case .needsYou: "needs you"
+        }
+    }
+
+    /// A reply's first line of text, cut to a card's two lines.
+    static func firstLine(_ message: NativeThreadMessage) -> String? {
+        let text = message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n")
+        let line = text.split(whereSeparator: \.isNewline).first.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+        guard !line.isEmpty else { return nil }
+        return line.count > 140 ? String(line.prefix(139)) + "…" : line
     }
 
     /// A call as one short line: a command as typed, a file by its name after the tool's verb.
@@ -128,6 +171,22 @@ public struct FleetDigest: Equatable, Sendable {
             return "\(call.label) \(name)"
         }
         return call.detail.isEmpty ? call.label : "\(call.label) \(call.detail)"
+    }
+
+    /// A running call as Home's verb: the present tense the thread's own line uses, with the
+    /// program for a plain command ("Running python") and the file for a read or an edit.
+    static func doing(_ call: NativeActivityCall) -> String {
+        let verb = nativeRunningLabel(call)
+        switch call.kind {
+        case .run:
+            guard verb == "Running", let program = call.commandHead?.split(separator: " ").first else { return verb }
+            return "Running \((program as Substring).split(separator: "/").last.map(String.init) ?? String(program))"
+        case .explore, .edit:
+            guard call.isPath, !call.detail.isEmpty else { return verb }
+            return "\(verb) \(call.detail.split(separator: "/").last.map(String.init) ?? call.detail)"
+        default:
+            return verb
+        }
     }
 
     /// Whether Home reads this thread on every poll rather than once per connection: it runs,
@@ -147,6 +206,19 @@ public struct FleetDigest: Equatable, Sendable {
 // MARK: Rows
 
 /// A time a row shows beside its status: live while it runs, or how long ago it moved.
+/// The files a turn changed.
+public struct FleetChanges: Equatable, Sendable {
+    public var files: Int
+    public var added: Int
+    public var removed: Int
+
+    public init(files: Int, added: Int, removed: Int) {
+        self.files = files
+        self.added = added
+        self.removed = removed
+    }
+}
+
 public enum FleetClock: Equatable, Sendable {
     /// Counting up from a moment (a running call), in ms since epoch.
     case elapsed(since: Double)
@@ -163,6 +235,11 @@ public struct FleetThreadRow: Identifiable, Equatable, Sendable {
     public var detail: String
     /// The call running now, alone ("swift build").
     public var activity: String?
+    /// What it does now as a verb ("Running python", "Thinking"), while it runs and its host is
+    /// connected (`FleetDigest.doing`).
+    public var doing: String?
+    /// The repo it works in ("Shepherd"); nil for one no space names.
+    public var place: String?
     public var clock: FleetClock?
     public var hostName: String
     /// The host's name when rows from several hosts mix; nil with one host.
@@ -175,6 +252,15 @@ public struct FleetThreadRow: Identifiable, Equatable, Sendable {
     /// Its subagents still going, and those waiting on their parent's answer.
     public var subagents = 0
     public var subagentsAsking = 0
+    public var subagentsDone = 0
+    /// What the glance surfaces add: its queue, its latest turn's changes, its goal, its last
+    /// reply's first line (`FleetDigest`).
+    public var queued = 0
+    public var changes: FleetChanges?
+    public var goal: String?
+    public var result: String?
+    /// The pi session a stop must still be talking to, while it is known.
+    public var session: NativeThreadSession?
     /// The design this agent draws, where its host serves designs: the row is the design's
     /// (MobileAgents: the nib and "design · 4 boards"), and it opens the design.
     public var design: FleetDesign?
@@ -426,9 +512,11 @@ public struct FleetModel: Equatable, Sendable {
                 automation.agentID.map { ($0, automation) }
             }, uniquingKeysWith: { first, _ in first })
             var running = 0, needs = 0
-            for agent in host.state.agents {
+            for var agent in host.state.agents {
                 let ref = FleetRef(host: host.id, agent: agent.id)
                 let digest = digests[ref]
+                // Its own turn ended while its subagents still run: Working, as on the Mac.
+                if agent.status == .idle || agent.status == .done, digest?.subagentsWorking == true { agent.status = .working }
                 // A design's agent is no thread (docs/designs.md › Design agents and ordinary
                 // threads): never running, needing you, finished or counted. Its design is its
                 // Recents row where the host serves designs; a system build's has none. It lives in
@@ -453,7 +541,7 @@ public struct FleetModel: Equatable, Sendable {
                 needs += attention.count
                 needsYou.append(contentsOf: attention)
                 // Automation runs live under Automations, not among the threads.
-                guard ordinary, automation == nil, space?.hidden != true else { continue }
+                guard ordinary, automation == nil, space?.showsThreads != false else { continue }
                 if agent.status == .working { running += 1 }
                 let row = Self.row(agent, ref: ref, digest: digest, space: space, hostName: host.name, hostTag: tag,
                                    offline: !connected)
@@ -547,11 +635,18 @@ public struct FleetModel: Equatable, Sendable {
             digest?.lastActivity.map { FleetClock.ago($0) }
         }
         let detail = [word, activity ?? space?.name].compactMap { $0 }.joined(separator: " · ")
-        return FleetThreadRow(ref: ref, title: agent.name, status: agent.status, detail: detail, activity: activity,
-                              clock: clock, hostName: hostName, hostTag: hostTag, worktree: agent.worktreeBranch != nil,
-                              offline: offline, failed: agent.status != .working && digest?.lastTurnFailed == true,
-                              subagents: live ? digest?.subagentsLive ?? 0 : 0,
-                              subagentsAsking: live ? digest?.subagentsAsking ?? 0 : 0)
+        var row = FleetThreadRow(ref: ref, title: agent.name, status: agent.status, detail: detail, activity: activity,
+                                 doing: live ? digest?.doing : nil, place: space?.name, clock: clock, hostName: hostName, hostTag: hostTag, worktree: agent.worktreeBranch != nil,
+                                 offline: offline, failed: agent.status != .working && digest?.lastTurnFailed == true,
+                                 subagents: live ? digest?.subagentsLive ?? 0 : 0,
+                                 subagentsAsking: live ? digest?.subagentsAsking ?? 0 : 0)
+        row.subagentsDone = live ? digest?.subagentsDone ?? 0 : 0
+        row.queued = digest?.queued ?? 0
+        row.changes = digest?.changes
+        row.goal = digest?.goal
+        row.result = digest?.result
+        row.session = digest?.session
+        return row
     }
 
     /// The row's status word, as the Mac's sidebar says it.
@@ -581,7 +676,7 @@ public struct FleetModel: Equatable, Sendable {
         case .connected: break
         }
         let agents = host.state.agents.filter { agent in
-            !(host.state.spaces.first { $0.id == agent.spaceID }?.hidden ?? false) && !host.state.isDesignAgent(agent)
+            host.state.spaces.first { $0.id == agent.spaceID }?.showsThreads != false && !host.state.isDesignAgent(agent)
         }
         guard !agents.isEmpty else { return "No threads yet" }
         let busy = Set(agents.filter { $0.status == .working }.map(\.spaceID))
@@ -600,7 +695,7 @@ public struct FleetModel: Equatable, Sendable {
 
 /// The text of a Needs you row's reason chip, shared by the Mac's sidebar and the iPad's.
 public enum NeedsYouReason {
-    /// The longest chip ("approve plan"); the Mac reads it as `NWSidebarMetrics.reasonLength`.
+    /// The longest chip ("approve plan"); the Mac reads it as `SHSidebarMetrics.reasonLength`.
     public static let length = 14
 
     /// One line, at most `limit` characters: cut at a word where one ends past the middle, with

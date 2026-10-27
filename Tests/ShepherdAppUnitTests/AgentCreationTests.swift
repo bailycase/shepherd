@@ -189,6 +189,7 @@ struct AgentLaunchCommandTests {
         isAutomation: Bool = false,
         goalCrossProviderEvaluation: Bool = false,
         goalsEnabled: Bool = false,
+        worktreeOwningSpace: String? = nil,
         model: String? = nil,
         thinking: ThinkingLevel? = nil
     ) -> SessionCommand {
@@ -201,8 +202,19 @@ struct AgentLaunchCommandTests {
             childrenExtensionPath: path(4), childEnvironment: ["SHEPHERD_CHILD_CONCURRENCY": "7"],
             goalCrossProviderEvaluation: goalCrossProviderEvaluation, goalsEnabled: goalsEnabled,
             namerExtensionPath: path(3), needsName: needsName, isAutomation: isAutomation,
+            worktreeOwningSpace: worktreeOwningSpace,
             model: model, thinking: thinking
         )
+    }
+
+    @Test func worktreeResourcesHaveAnExactCheckoutGrantIndependentOfMCP() {
+        let launch = command(worktreeOwningSpace: "/tmp/owner")
+        #expect(launch.env["SHEPHERD_RESOURCE_OWNING_SPACE"] == "/tmp/owner")
+        #expect(launch.env["SHEPHERD_RESOURCE_WORKTREE_CWD"] == PiHome.canonical("/tmp/project"))
+        #expect(launch.env["SHEPHERD_MCP_OWNING_SPACE"] == nil)
+        #expect(!launch.argv.contains("--approve"))
+        #expect(command().env["SHEPHERD_RESOURCE_OWNING_SPACE"] == nil)
+        #expect(command(isAutomation: true, worktreeOwningSpace: "/tmp/owner").env["SHEPHERD_RESOURCE_OWNING_SPACE"] == nil)
     }
 
     @Test(arguments: [ProjectExecutionReceipt.Phase.reserved, .sendReserved, .sent, .waiting, .interruptPending, .settled, .cancelled, .failed, .unknown])
@@ -514,6 +526,26 @@ struct AgentLaunchCommandTests {
         #expect(drawing.argv[3].components(separatedBy: " -e 'builtin:tool-search'").count - 1 == (mcp ? 1 : 0))
         #expect(ShellIntegration.command(shell: ["/bin/zsh"]).env["SHEPHERD_DEFER_TOOLS"] == "")
         #expect(command().env["SHEPHERD_DEFER_TOOLS"] == nil, "no variable unless the setting asked")
+    }
+
+    @Test func ordinaryDesignToolsDoNotTurnAThreadIntoADesignAgent() throws {
+        let launch = try StatusExtension.command(
+            home: Self.home, cwd: "/tmp/project", agentID: AgentID(rawValue: "agent-id"),
+            piSessionID: "current-session", socketPath: "/tmp/shepherd.sock", extensionPath: "/tmp/status.ts",
+            panesExtensionPath: "/tmp/panes.ts", reviewExtensionPath: nil, subagentsExtensionPath: nil,
+            designTools: ("/tmp/design.ts", "/tmp/design-skill"),
+            designReferences: ("/tmp/refs.ts", false), browserExtensionPath: "/tmp/browser.ts",
+            deferTools: true, model: nil, thinking: nil)
+        #expect(launch.env["SHEPHERD_DESIGN_TOOLS"] == "1")
+        #expect(launch.env["SHEPHERD_DESIGN_ID"] == nil)
+        #expect(launch.env["SHEPHERD_DESIGN_SKILL_DIR"] == "/tmp/design-skill")
+        #expect(launch.env["SHEPHERD_DESIGN_REFS"] == "on")
+        #expect(launch.env["SHEPHERD_DEFER_TOOLS"] == "1")
+        for extensionName in ["design", "panes", "browser", "refs"] {
+            #expect(launch.argv[3].contains("-e '/tmp/\(extensionName).ts'"))
+        }
+        #expect(ShellIntegration.command(shell: ["/bin/zsh"]).env["SHEPHERD_DESIGN_TOOLS"] == "")
+        #expect(command().env["SHEPHERD_DESIGN_TOOLS"] == nil)
     }
 
     /// One setting decides a repo's .mcp.json (Settings ▸ MCP servers), and Settings ▸ Pi ▸ MCP

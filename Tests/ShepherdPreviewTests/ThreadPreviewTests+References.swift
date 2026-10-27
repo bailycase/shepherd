@@ -106,7 +106,7 @@ extension ThreadPreviewTests {
             rowPicture: { item in item.kind == .page ? nil : item.kind == .element ? elementPicture(item.detail ?? "") : picture }))
         chips.seed(sent: [referencePayload: DesignReferenceChips.Sent(
             crumbs: ["Checkout funnel dashboard", "A · Funnel first", "card “Checkout funnel”"],
-            picture: NWReferenceImage(id: "sent", image: Image(decorative: picture, scale: 2)), freshness: freshness,
+            picture: SHReferenceImage(id: "sent", image: Image(decorative: picture, scale: 2)), freshness: freshness,
             pinned: "pinned Sep 27, 10:42", system: "acme-web", gets: ["picture", "html", "11 styles", "8 tokens"])],
                    catalog: mentions)
         return chips

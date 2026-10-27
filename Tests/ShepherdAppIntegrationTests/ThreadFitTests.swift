@@ -137,7 +137,7 @@ struct InspectorFitTests {
                 UserTurn(messages: Array(row.messages.prefix(1)))
                 AgentTurn(messages: Array(row.messages.dropFirst()), live: false)
             }
-            .environment(\.nwProseSize, .small)
+            .environment(\.shProseSize, .small)
         }
         #expect(marks == 0, "\(row): \(marks) pixels past the inspector's \(Self.column)pt column")
     }
@@ -155,7 +155,7 @@ enum ColumnFit {
             content()
                 .frame(width: column)
                 .frame(width: column + margin, height: 900, alignment: .topLeading)
-                .background(Color.nw.bgWindow))
+                .background(Color.sh.bgWindow))
         ListPerf.settle(window)
         let host = window.host
         let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))

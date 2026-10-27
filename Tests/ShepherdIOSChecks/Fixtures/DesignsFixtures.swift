@@ -58,10 +58,10 @@ extension FixtureCatalog {
             FixtureScreen(name: "search-designs", hosts: quiet, routes: [.search(.search(query: "funnel"))], prepare: { app in
                 await DesignsFixtures.listed(app)
             }),
-            FixtureScreen(name: "more-designs", hosts: quiet, routes: [.home(.more)], prepare: { app in
+            FixtureScreen(name: "more-designs", hosts: quiet, routes: [.settings(.root)], prepare: { app in
                 await DesignsFixtures.listed(app)
             }),
-            FixtureScreen(name: "design-systems", hosts: quiet, routes: [.home(.more), .designs(.systems)], prepare: { app in
+            FixtureScreen(name: "design-systems", hosts: quiet, routes: [.settings(.root), .designs(.systems)], prepare: { app in
                 await DesignsFixtures.listed(app)
             }),
             FixtureScreen(name: "design-system", hosts: quiet, routes: [.designs(.system(host: FixtureData.studio, namespace: "acme-web"))]),
@@ -108,7 +108,7 @@ enum DesignsFixtures {
                    createdAt: now - 3 * 86_400_000, lastActiveAt: now - 26 * 3_600_000, boardCount: 3),
             Design(id: onboarding, name: "Onboarding flow", agentID: onboarder,
                    createdAt: now - 600_000, lastActiveAt: now - 60_000, boardCount: 2),
-            Design(id: settings, name: "Settings redesign", systemNamespace: "night-watch",
+            Design(id: settings, name: "Settings redesign", systemNamespace: "shepherd-design",
                    createdAt: now - 5 * 86_400_000, lastActiveAt: now - 4 * 86_400_000, boardCount: 2),
         ]
         hosts[0].state.spaces += [dashboardSpace, designsSpace]
@@ -152,7 +152,7 @@ enum DesignsFixtures {
                                  comments: DesignComments()),
         ], systems: [
             DesignSystemRead(summary: DesignSystemSummary(
-                info: DesignSystemInfo(namespace: "night-watch", title: "Night Watch", createdAt: now), builtIn: true,
+                info: DesignSystemInfo(namespace: "shepherd-design", title: "Shepherd Design", createdAt: now), builtIn: true,
                 counts: DesignSystemCounts(colors: 3, type: 2, lengths: 2)),
                 tokens: DesignSystemTokens(colors: [
                     .init(name: "--lantern", value: "#f2a93b"), .init(name: "--bg-base", value: "#0d0e10"),
@@ -244,7 +244,7 @@ enum DesignsFixtures {
 }
 
 /// Boards for the fixtures, written for them: a checkout funnel dashboard in a made-up product's
-/// own light system (acme), and a settings page in Night Watch.
+/// own light system (acme), and a settings page in Shepherd Design.
 private enum Boards {
     static func board(_ title: String, width: Int, height: Int, style: String, body: String) -> Data {
         Data("""
@@ -389,16 +389,16 @@ private enum Boards {
     """)
 
     static let settings = board("Settings · general", width: 1280, height: 800, style: """
-    .nw{background:#0d0e10;color:#e8e9ec;display:flex}
+    .sh{background:#0d0e10;color:#e8e9ec;display:flex}
     .row{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-top:1px solid #1f2226;font-size:13px}
     """, body: """
-    <div class="nw" style="width: 1280px; height: 800px;">
+    <div class="sh" style="width: 1280px; height: 800px;">
     <div style="width: 260px; background: #15171a; border-right: 1px solid #1f2226; padding: 20px 12px; display: flex; flex-direction: column; gap: 6px; font-size: 13px;">
     <span style="padding: 8px 10px; border-radius: 6px; background: #22252a;">General</span><span style="padding: 8px 10px; color: #9aa0a9;">Appearance</span><span style="padding: 8px 10px; color: #9aa0a9;">Agents</span><span style="padding: 8px 10px; color: #9aa0a9;">Remote</span>
     </div>
     <div style="flex-grow: 1; padding: 32px 40px; display: flex; flex-direction: column; gap: 18px;">
     <span style="font-size: 22px; font-weight: 600;">General</span>
-    <div style="border: 1px solid #1f2226; border-radius: 10px; background: #15171a;"><div class="row" style="border-top: none;">Open at login<span style="width: 32px; height: 18px; border-radius: 9px; background: #f2a93b;"></span></div><div class="row">Default model<span style="color: #9aa0a9;">claude-opus</span></div><div class="row">Theme<span style="color: #9aa0a9;">Night Watch</span></div></div>
+    <div style="border: 1px solid #1f2226; border-radius: 10px; background: #15171a;"><div class="row" style="border-top: none;">Open at login<span style="width: 32px; height: 18px; border-radius: 9px; background: #f2a93b;"></span></div><div class="row">Default model<span style="color: #9aa0a9;">claude-opus</span></div><div class="row">Theme<span style="color: #9aa0a9;">Shepherd Design</span></div></div>
     </div>
     </div>
     """)

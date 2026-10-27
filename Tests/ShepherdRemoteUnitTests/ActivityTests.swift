@@ -576,7 +576,7 @@ struct TurnPresentationTests {
         #expect(!presentation.betweenTools, "the running call is what moves")
     }
 
-    /// NWThread, ToolRows: one quiet line per burst, in the order the work took, with no line
+    /// SHThread, ToolRows: one quiet line per burst, in the order the work took, with no line
     /// that folds them. A failure stays its own red line; the running call is live in place.
     @Test func aStretchIsItsBurstLinesInOrder() {
         let messages = [tool("read", "a"), tool("read", "b"), tool("edit", "c"),
@@ -790,7 +790,7 @@ struct TurnPresentationTests {
 
     // MARK: Design references
 
-    /// A thread reading a piece it was sent (NWActivityLine(.lookedAtDesign)): consecutive reads of
+    /// A thread reading a piece it was sent (SHActivityLine(.lookedAtDesign)): consecutive reads of
     /// one reference make one "Looked at…" line whose meta says what it got; another reference
     /// starts its own.
     @Test func readsOfOneDesignPieceJoinIntoOneLookedAtLine() {

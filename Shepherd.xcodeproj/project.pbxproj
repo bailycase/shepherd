@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		16000000000000000000B001 /* Shepherd Widgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 16000000000000000000A201 /* Shepherd Widgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		16000000000000000000B201 /* ShepherdUI in Frameworks */ = {isa = PBXBuildFile; productRef = 16000000000000000000C001 /* ShepherdUI */; };
+		16000000000000000000B202 /* ShepherdCore in Frameworks */ = {isa = PBXBuildFile; productRef = 16000000000000000000C002 /* ShepherdCore */; };
 		5E000000000000000000B004 /* pi-engine in Resources */ = {isa = PBXBuildFile; fileRef = 5E000000000000000000A007 /* pi-engine */; };
 		15000000000000000000B101 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 5E000000000000000000A003 /* AppIcon.icon */; };
 		15000000000000000000B201 /* ShepherdCore in Frameworks */ = {isa = PBXBuildFile; productRef = 15000000000000000000C001 /* ShepherdCore */; };
@@ -26,7 +29,28 @@
 		B56B8EF13053321600FBF905 /* shepherd-cli in Frameworks */ = {isa = PBXBuildFile; productRef = 5E000000000000000000C005 /* shepherd-cli */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		16000000000000000000E901 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 5E000000000000000000F000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 16000000000000000000F001;
+			remoteInfo = "Shepherd Widgets";
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXCopyFilesBuildPhase section */
+		16000000000000000000E004 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				16000000000000000000B001 /* Shepherd Widgets.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		5E000000000000000000E004 /* Embed CLI */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -41,6 +65,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		16000000000000000000A201 /* Shepherd Widgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "Shepherd Widgets.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		5E000000000000000000A007 /* pi-engine */ = {isa = PBXFileReference; lastKnownFileType = folder; path = ".build/pi-engine/Resources/pi-engine"; sourceTree = SOURCE_ROOT; };
 		15000000000000000000A201 /* Shepherd iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Shepherd iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		5E000000000000000000A001 /* ShepherdLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShepherdLauncher.swift; sourceTree = "<group>"; };
@@ -53,16 +78,37 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		16000000000000000000D1E0 /* Exceptions for "Widgets" folder in "Shepherd Widgets" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 16000000000000000000F001 /* Shepherd Widgets */;
+		};
 		15000000000000000000D1E0 /* Exceptions for "iOS" folder in "Shepherd iOS" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				ExportOptions.plist,
+				Info.plist,
 			);
 			target = 15000000000000000000F001 /* Shepherd iOS */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		16000000000000000000D100 /* Widgets */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				16000000000000000000D1E0 /* Exceptions for "Widgets" folder in "Shepherd Widgets" target */,
+			);
+			path = Widgets;
+			sourceTree = "<group>";
+		};
+		16000000000000000000D200 /* Glance */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Glance;
+			sourceTree = "<group>";
+		};
 		15000000000000000000D100 /* iOS */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -74,6 +120,15 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		16000000000000000000E002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				16000000000000000000B201 /* ShepherdUI in Frameworks */,
+				16000000000000000000B202 /* ShepherdCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		15000000000000000000E002 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -115,6 +170,8 @@
 			isa = PBXGroup;
 			children = (
 				15000000000000000000D100 /* iOS */,
+				16000000000000000000D100 /* Widgets */,
+				16000000000000000000D200 /* Glance */,
 				5E000000000000000000A001 /* ShepherdLauncher.swift */,
 				5E000000000000000000A002 /* Info.plist */,
 				5E000000000000000000A003 /* AppIcon.icon */,
@@ -130,6 +187,7 @@
 			children = (
 				5E000000000000000000A201 /* Shepherd.app */,
 				15000000000000000000A201 /* Shepherd iOS.app */,
+				16000000000000000000A201 /* Shepherd Widgets.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -137,6 +195,31 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		16000000000000000000F001 /* Shepherd Widgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 16000000000000000000F101 /* Build configuration list for PBXNativeTarget "Shepherd Widgets" */;
+			buildPhases = (
+				16000000000000000000E001 /* Sources */,
+				16000000000000000000E002 /* Frameworks */,
+				16000000000000000000E003 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				16000000000000000000D100 /* Widgets */,
+				16000000000000000000D200 /* Glance */,
+			);
+			name = "Shepherd Widgets";
+			packageProductDependencies = (
+				16000000000000000000C001 /* ShepherdUI */,
+				16000000000000000000C002 /* ShepherdCore */,
+			);
+			productName = "Shepherd Widgets";
+			productReference = 16000000000000000000A201 /* Shepherd Widgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		15000000000000000000F001 /* Shepherd iOS */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 15000000000000000000F101 /* Build configuration list for PBXNativeTarget "Shepherd iOS" */;
@@ -144,13 +227,16 @@
 				15000000000000000000E001 /* Sources */,
 				15000000000000000000E002 /* Frameworks */,
 				15000000000000000000E003 /* Resources */,
+				16000000000000000000E004 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				16000000000000000000E902 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				15000000000000000000D100 /* iOS */,
+				16000000000000000000D200 /* Glance */,
 			);
 			name = "Shepherd iOS";
 			packageProductDependencies = (
@@ -201,6 +287,11 @@
 				LastSwiftUpdateCheck = 1500;
 				LastUpgradeCheck = 1500;
 				TargetAttributes = {
+					15000000000000000000F001 = {
+						SystemCapabilities = {
+							com.apple.Push = { enabled = 1; };
+						};
+					};
 					5E000000000000000000F001 = {
 						CreatedOnToolsVersion = 15.0;
 					};
@@ -225,11 +316,19 @@
 			targets = (
 				5E000000000000000000F001 /* Shepherd */,
 				15000000000000000000F001 /* Shepherd iOS */,
+				16000000000000000000F001 /* Shepherd Widgets */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		16000000000000000000E003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		15000000000000000000E003 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -278,6 +377,13 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		16000000000000000000E001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		15000000000000000000E001 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -295,17 +401,113 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		16000000000000000000E902 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 16000000000000000000F001 /* Shepherd Widgets */;
+			targetProxy = 16000000000000000000E901 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
-		15000000000000000000F311 /* Debug */ = {
+		16000000000000000000F311 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/Widgets/ShepherdWidgets.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 4J6D7M7D79;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = App/Widgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Shepherd;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.bailycase.shepherd.ios.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		16000000000000000000F312 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = App/Widgets/ShepherdWidgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 4J6D7M7D79;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = App/Widgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Shepherd;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.bailycase.shepherd.ios.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		16000000000000000000F313 /* Nightly */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = App/Widgets/ShepherdWidgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 4J6D7M7D79;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = App/Widgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Shepherd;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.bailycase.shepherd.ios.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Nightly;
+		};
+		15000000000000000000F311 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APS_ENVIRONMENT = development;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "App/iOS/ShepherdIOS.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 4J6D7M7D79;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = App/iOS/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Shepherd;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connect to your Shepherd Mac on a trusted LAN or VPN to browse and supervise its agents.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -331,13 +533,17 @@
 		15000000000000000000F312 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				APS_ENVIRONMENT = production;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "App/iOS/ShepherdIOS.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 4J6D7M7D79;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = App/iOS/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Shepherd;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connect to your Shepherd Mac on a trusted LAN or VPN to browse and supervise its agents.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -363,13 +569,17 @@
 		15000000000000000000F313 /* Nightly */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				APS_ENVIRONMENT = production;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "App/iOS/ShepherdIOS.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 4J6D7M7D79;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = App/iOS/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Shepherd;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connect to your Shepherd Mac on a trusted LAN or VPN to browse and supervise its agents.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -600,6 +810,16 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		16000000000000000000F101 /* Build configuration list for PBXNativeTarget "Shepherd Widgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				16000000000000000000F311 /* Debug */,
+				16000000000000000000F312 /* Release */,
+				16000000000000000000F313 /* Nightly */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		15000000000000000000F101 /* Build configuration list for PBXNativeTarget "Shepherd iOS" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -651,6 +871,14 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		16000000000000000000C001 /* ShepherdUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = ShepherdUI;
+		};
+		16000000000000000000C002 /* ShepherdCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = ShepherdCore;
+		};
 		15000000000000000000C001 /* ShepherdCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = ShepherdCore;

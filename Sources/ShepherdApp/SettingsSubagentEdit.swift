@@ -50,11 +50,11 @@ struct SubagentEditForm: View {
     private var header: some View {
         HStack(spacing: AppLayout.subagentToolbarGap) {
             Button { model.back() } label: {
-                Text("Subagents").font(.nwSans(AppLayout.subagentActionSize)).foregroundStyle(Color.nw.settingsMuted)
-                    .frame(minHeight: NW.Height.controlS).contentShape(Rectangle())
-            }.buttonStyle(.plain).nwFocusRing(radius: NW.Radius.xs, color: .nw.running).accessibilityLabel("Back to Subagents")
-            Text("/").font(.nwSans(AppLayout.subagentEditSlashSize)).foregroundStyle(Color.nw.settingsMuted).accessibilityHidden(true)
-            Text(title).font(.nw(.title)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
+                Text("Subagents").font(.shSans(AppLayout.subagentActionSize)).foregroundStyle(Color.sh.settingsMuted)
+                    .frame(minHeight: SH.Height.controlS).contentShape(Rectangle())
+            }.buttonStyle(.plain).shFocusRing(radius: SH.Radius.xs, color: .sh.running).accessibilityLabel("Back to Subagents")
+            Text("/").font(.shSans(AppLayout.subagentEditSlashSize)).foregroundStyle(Color.sh.settingsMuted).accessibilityHidden(true)
+            Text(title).font(.sh(.title)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
             path
             Spacer(minLength: 0)
             if model.original != nil {
@@ -71,15 +71,15 @@ struct SubagentEditForm: View {
             Text("pi/agents/")
             if model.original == nil {
                 TextField("Subagent filename", text: $model.filename).textFieldStyle(.plain)
-                    .font(.nwMono(AppLayout.subagentMetaSize)).foregroundStyle(Color.nw.textPrimary).tint(Color.nw.lantern)
+                    .font(.shMono(AppLayout.subagentMetaSize)).foregroundStyle(Color.sh.textPrimary).tint(Color.sh.lantern)
                     .fixedSize().accessibilityLabel("Subagent filename")
             } else {
                 Text(model.filename)
             }
         }
-        .font(.nwMono(AppLayout.subagentMetaSize)).foregroundStyle(Color.nw.settingsMuted).lineLimit(1)
-        .padding(.horizontal, AppLayout.subagentEditPathPadding).padding(.vertical, NW.Space.xxs)
-        .nwBorder(Color.nw.lineStrong, radius: AppLayout.subagentEditPathRadius)
+        .font(.shMono(AppLayout.subagentMetaSize)).foregroundStyle(Color.sh.settingsMuted).lineLimit(1)
+        .padding(.horizontal, AppLayout.subagentEditPathPadding).padding(.vertical, SH.Space.xxs)
+        .shBorder(Color.sh.lineStrong, radius: AppLayout.subagentEditPathRadius)
     }
 
     // MARK: Form
@@ -87,8 +87,8 @@ struct SubagentEditForm: View {
     private var fields: some View {
         VStack(alignment: .leading, spacing: AppLayout.subagentEditFieldGap) {
             if let problem = model.problem ?? model.loadProblem {
-                VStack(alignment: .leading, spacing: NW.Space.m) {
-                    NWInlineProblem(problem)
+                VStack(alignment: .leading, spacing: SH.Space.m) {
+                    SHInlineProblem(problem)
                     // The form draws only the fields Shepherd knows, so a file that does not load
                     // (an unsupported field, say) is repaired in a text editor.
                     if model.original != nil, model.loadProblem != nil {
@@ -103,18 +103,18 @@ struct SubagentEditForm: View {
                 SubagentTextField(label: "Subagent description", text: stringBinding("description"), multiline: true)
             }
             field("Tools", hint: "never more than the parent has", gap: AppLayout.subagentEditToolsGap) {
-                NWFlowLayout(spacing: AppLayout.subagentEditChipGap) {
+                SHFlowLayout(spacing: AppLayout.subagentEditChipGap) {
                     ForEach(Self.tools, id: \.self) { tool in
                         let on = enabledTools.contains(tool)
                         Button { toggle(tool) } label: {
-                            Text(tool).font(.nwMono(AppLayout.subagentEditChipSize))
-                                .foregroundStyle(on ? Color.nw.textPrimary : Color.nw.settingsMuted)
+                            Text(tool).font(.shMono(AppLayout.subagentEditChipSize))
+                                .foregroundStyle(on ? Color.sh.textPrimary : Color.sh.settingsMuted)
                                 .padding(.horizontal, AppLayout.subagentEditChipPadding)
                                 .frame(height: AppLayout.subagentEditChipHeight)
-                                .background(on ? Color.nw.subagentChipOn : .clear, in: RoundedRectangle(cornerRadius: AppLayout.subagentEditChipRadius))
-                                .nwBorder(on ? Color.nw.subagentChipOnBorder : Color.nw.lineStrong, radius: AppLayout.subagentEditChipRadius)
+                                .background(on ? Color.sh.subagentChipOn : .clear, in: RoundedRectangle(cornerRadius: AppLayout.subagentEditChipRadius))
+                                .shBorder(on ? Color.sh.subagentChipOnBorder : Color.sh.lineStrong, radius: AppLayout.subagentEditChipRadius)
                                 .contentShape(RoundedRectangle(cornerRadius: AppLayout.subagentEditChipRadius))
-                        }.buttonStyle(.plain).nwFocusRing(radius: AppLayout.subagentEditChipRadius, color: .nw.running)
+                        }.buttonStyle(.plain).shFocusRing(radius: AppLayout.subagentEditChipRadius, color: .sh.running)
                             .accessibilityLabel(tool).accessibilityValue(on ? "on" : "off").accessibilityAddTraits(on ? .isSelected : [])
                     }
                 }
@@ -131,13 +131,13 @@ struct SubagentEditForm: View {
                 SubagentSegments(label: "Instructions are", selection: stringBinding("systemPromptMode", fallback: isDelegate ? "append" : "replace"),
                                  options: [("replace", "Its whole system prompt"), ("append", "Added to the default")])
             }
-            VStack(alignment: .leading, spacing: AppLayout.subagentEditSwitchGap - NW.Space.s) {
+            VStack(alignment: .leading, spacing: AppLayout.subagentEditSwitchGap - SH.Space.s) {
                 SubagentSwitch(label: "Read the space's AGENTS.md", note: model.form.bool("inheritProjectContext") ?? isDelegate ? "on" : "off by default",
                                isOn: flag("inheritProjectContext", default: isDelegate))
                 SubagentSwitch(label: "Use the thread's skills", note: flag("inheritSkills", default: false).wrappedValue ? "on" : "off by default",
                                isOn: flag("inheritSkills", default: false))
                 SubagentSwitch(label: "Disabled", note: "it will refuse to launch", isOn: flag("disabled", default: false))
-            }.padding(.top, AppLayout.subagentEditSwitchesTop - NW.Space.s)
+            }.padding(.top, AppLayout.subagentEditSwitchesTop - SH.Space.s)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -145,9 +145,9 @@ struct SubagentEditForm: View {
     private func field<Content: View>(_ title: String, hint: String? = nil, gap: CGFloat = AppLayout.subagentEditLabelGap,
                                       @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: gap) {
-            HStack(alignment: .firstTextBaseline, spacing: NW.Space.xs) {
-                Text(title).font(.nwSans(AppLayout.subagentEditLabelSize, .medium)).foregroundStyle(Color.nw.textSecondary)
-                if let hint { Text(hint).font(.nwSans(AppLayout.subagentEditLabelSize)).foregroundStyle(Color.nw.settingsMuted) }
+            HStack(alignment: .firstTextBaseline, spacing: SH.Space.xs) {
+                Text(title).font(.shSans(AppLayout.subagentEditLabelSize, .medium)).foregroundStyle(Color.sh.textSecondary)
+                if let hint { Text(hint).font(.shSans(AppLayout.subagentEditLabelSize)).foregroundStyle(Color.sh.settingsMuted) }
             }.accessibilityElement(children: .combine)
             content()
         }
@@ -189,21 +189,21 @@ struct SubagentEditForm: View {
     private var instructions: some View {
         let used = model.form.body.trimmingCharacters(in: .whitespacesAndNewlines).utf16.count
         return VStack(alignment: .leading, spacing: AppLayout.subagentEditLabelGap) {
-            HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
-                Text("Instructions").font(.nwSans(AppLayout.subagentEditLabelSize, .medium)).foregroundStyle(Color.nw.textSecondary)
-                Text("Markdown").font(.nwSans(AppLayout.subagentEditHintSize)).foregroundStyle(Color.nw.settingsMuted)
+            HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+                Text("Instructions").font(.shSans(AppLayout.subagentEditLabelSize, .medium)).foregroundStyle(Color.sh.textSecondary)
+                Text("Markdown").font(.shSans(AppLayout.subagentEditHintSize)).foregroundStyle(Color.sh.settingsMuted)
                 Spacer(minLength: 0)
-                Text("\(used.formatted()) / \(Self.promptLimit.formatted())").font(.nwMono(AppLayout.subagentEditCountSize))
-                    .foregroundStyle(used > Self.promptLimit ? Color.nw.failed : Color.nw.settingsMuted)
+                Text("\(used.formatted()) / \(Self.promptLimit.formatted())").font(.shMono(AppLayout.subagentEditCountSize))
+                    .foregroundStyle(used > Self.promptLimit ? Color.sh.failed : Color.sh.settingsMuted)
             }
             InstructionsEditor(text: Binding(get: { model.form.body }, set: { model.form.body = $0 }), saved: "",
                                accessibilityLabel: "Subagent instructions", project: true, plain: true)
-                .background(Color.nw.projectEditorBackground)
+                .background(Color.sh.projectEditorBackground)
                 .clipShape(RoundedRectangle(cornerRadius: AppLayout.subagentEditFieldRadius))
-                .nwBorder(Color.nw.lineStrong, radius: AppLayout.subagentEditFieldRadius)
+                .shBorder(Color.sh.lineStrong, radius: AppLayout.subagentEditFieldRadius)
                 .frame(maxHeight: .infinity)
             Text("Saved as a plain .md file with the fields above as YAML at the top. A field Shepherd doesn't know stops the profile from loading, and the list says which one.")
-                .font(.nwSans(AppLayout.subagentEditNoteSize)).foregroundStyle(Color.nw.settingsMuted)
+                .font(.shSans(AppLayout.subagentEditNoteSize)).foregroundStyle(Color.sh.settingsMuted)
                 .lineSpacing(AppLayout.subagentEditNoteLineExtra).fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -245,16 +245,16 @@ private struct SubagentTextField: View {
             if multiline { TextField("", text: $text, axis: .vertical) } else { TextField("", text: $text) }
         }
             .textFieldStyle(.plain).focused($focused)
-            .font(mono ? .nwMono(AppLayout.subagentEditFieldSize) : .nwSans(AppLayout.subagentEditFieldSize))
-            .foregroundStyle(Color.nw.textPrimary).tint(Color.nw.lantern)
+            .font(mono ? .shMono(AppLayout.subagentEditFieldSize) : .shSans(AppLayout.subagentEditFieldSize))
+            .foregroundStyle(Color.sh.textPrimary).tint(Color.sh.lantern)
             .lineSpacing(multiline ? AppLayout.subagentEditDescriptionLineExtra : 0)
             .padding(.horizontal, AppLayout.subagentEditFieldPadding)
             .padding(.top, multiline ? AppLayout.subagentEditDescriptionTop : 0)
             .frame(maxWidth: .infinity, minHeight: multiline ? AppLayout.subagentEditDescriptionHeight : AppLayout.subagentEditFieldHeight,
                    alignment: multiline ? .topLeading : .leading)
-            .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: AppLayout.subagentEditFieldRadius))
-            .nwBorder(Color.nw.lineStrong, radius: AppLayout.subagentEditFieldRadius)
-            .nwFocusRing(focused, radius: AppLayout.subagentEditFieldRadius)
+            .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: AppLayout.subagentEditFieldRadius))
+            .shBorder(Color.sh.lineStrong, radius: AppLayout.subagentEditFieldRadius)
+            .shFocusRing(focused, radius: AppLayout.subagentEditFieldRadius)
             .contentShape(Rectangle()).onTapGesture { focused = true }
             .accessibilityLabel(label)
     }
@@ -270,7 +270,7 @@ private struct SubagentPopup<Items: View>: View {
     var body: some View {
         Menu(content: items) { SubagentPopupLabel(title: title, mono: mono) }
             .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
-            .nwFocusRing(radius: AppLayout.subagentEditFieldRadius, color: .nw.running)
+            .shFocusRing(radius: AppLayout.subagentEditFieldRadius, color: .sh.running)
             .accessibilityLabel(label).accessibilityValue(title)
     }
 }
@@ -280,18 +280,18 @@ private struct SubagentPopupLabel: View {
     let mono: Bool
 
     var body: some View {
-        HStack(spacing: NW.Space.m) {
-            Text(title).font(mono ? .nwMono(AppLayout.subagentEditChipSize) : .nwSans(AppLayout.subagentEditFieldSize))
-                .foregroundStyle(Color.nw.textPrimary).lineLimit(mono ? 1 : 2).truncationMode(.middle)
+        HStack(spacing: SH.Space.m) {
+            Text(title).font(mono ? .shMono(AppLayout.subagentEditChipSize) : .shSans(AppLayout.subagentEditFieldSize))
+                .foregroundStyle(Color.sh.textPrimary).lineLimit(mono ? 1 : 2).truncationMode(.middle)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
             Image(systemName: "chevron.down").font(.system(size: AppLayout.subagentEditPopupChevron, weight: .semibold))
-                .foregroundStyle(Color.nw.settingsMuted)
+                .foregroundStyle(Color.sh.settingsMuted)
         }
-        .padding(.horizontal, AppLayout.subagentEditFieldPadding).padding(.vertical, NW.Space.xs)
+        .padding(.horizontal, AppLayout.subagentEditFieldPadding).padding(.vertical, SH.Space.xs)
         .frame(maxWidth: .infinity, minHeight: AppLayout.subagentEditFieldHeight)
-        .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: AppLayout.subagentEditFieldRadius))
-        .nwBorder(Color.nw.lineStrong, radius: AppLayout.subagentEditFieldRadius)
+        .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: AppLayout.subagentEditFieldRadius))
+        .shBorder(Color.sh.lineStrong, radius: AppLayout.subagentEditFieldRadius)
         .contentShape(Rectangle())
     }
 }
@@ -311,10 +311,10 @@ struct SubagentModelField: View {
     var body: some View {
         Button { open = true } label: { SubagentPopupLabel(title: current ?? Self.inherit, mono: current != nil) }
             .buttonStyle(.plain)
-            .nwFocusRing(radius: AppLayout.subagentEditFieldRadius, color: .nw.running)
+            .shFocusRing(radius: AppLayout.subagentEditFieldRadius, color: .sh.running)
             .accessibilityLabel("Model").accessibilityValue(current ?? Self.inherit)
             .popover(isPresented: $open, arrowEdge: .bottom) {
-                NWModelPicker(query: $query, sections: Self.sections(choices: choices, query: query, current: current), selection: $selection, onChoose: {
+                SHModelPicker(query: $query, sections: Self.sections(choices: choices, query: query, current: current), selection: $selection, onChoose: {
                     choose($0.id.isEmpty ? nil : $0.id)
                     open = false
                 }, onClose: { open = false })
@@ -322,12 +322,12 @@ struct SubagentModelField: View {
             }
     }
 
-    static func sections(choices: [String], query: String, current: String?) -> [NWModelSection] {
+    static func sections(choices: [String], query: String, current: String?) -> [SHModelSection] {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
         let matches = q.isEmpty ? choices : choices.filter { $0.lowercased().contains(q) }
-        let options = matches.map { NWModelOption(id: $0, title: $0, isCurrent: $0 == current) }
-        let inherit = NWModelOption(id: "", title: Self.inherit, isCurrent: current == nil)
-        return [NWModelSection(title: "Models", options: (q.isEmpty ? [inherit] : []) + options)]
+        let options = matches.map { SHModelOption(id: $0, title: $0, isCurrent: $0 == current) }
+        let inherit = SHModelOption(id: "", title: Self.inherit, isCurrent: current == nil)
+        return [SHModelSection(title: "Models", options: (q.isEmpty ? [inherit] : []) + options)]
     }
 }
 
@@ -340,28 +340,28 @@ private struct SubagentSegments: View {
     @Namespace private var pill
 
     var body: some View {
-        let M = NWSettingsControlMetrics.self
-        HStack(spacing: NW.Space.xxs) {
+        let M = SHSettingsControlMetrics.self
+        HStack(spacing: SH.Space.xxs) {
             ForEach(options, id: \.0) { value, title in
                 let on = value == selection
                 Button { selection = value } label: {
-                    Text(title).font(.nwSans(AppLayout.subagentEditChipSize, on ? .semibold : .regular))
-                        .foregroundStyle(on ? Color.nw.textPrimary : Color.nw.subagentControlText)
+                    Text(title).font(.shSans(AppLayout.subagentEditChipSize, on ? .semibold : .regular))
+                        .foregroundStyle(on ? Color.sh.textPrimary : Color.sh.subagentControlText)
                         .lineLimit(1).padding(.horizontal, M.segmentPadding).frame(height: M.segmentHeight)
                         .background {
                             if on {
-                                RoundedRectangle(cornerRadius: M.segmentRadius).fill(Color.nw.bgWindow)
-                                    .shadow(color: Color.nw.knobShadow, radius: 1, y: 1)
+                                RoundedRectangle(cornerRadius: M.segmentRadius).fill(Color.sh.bgWindow)
+                                    .shadow(color: Color.sh.knobShadow, radius: 1, y: 1)
                                     .matchedGeometryEffect(id: "pill", in: pill)
                             }
                         }
                         .contentShape(Rectangle())
-                }.buttonStyle(.plain).nwFocusRing(radius: M.segmentRadius, color: .nw.running)
+                }.buttonStyle(.plain).shFocusRing(radius: M.segmentRadius, color: .sh.running)
             }
         }
         .padding(M.segmentTrackPadding)
-        .background(Color.nw.lineSubtle, in: RoundedRectangle(cornerRadius: M.segmentTrackRadius))
-        .nwComponentAnimation(.content, value: selection)
+        .background(Color.sh.lineSubtle, in: RoundedRectangle(cornerRadius: M.segmentTrackRadius))
+        .shComponentAnimation(.content, value: selection)
         .fixedSize()
         .accessibilityRepresentation {
             Picker(label, selection: $selection) { ForEach(options, id: \.0) { Text($0.1).tag($0.0) } }.pickerStyle(.segmented)
@@ -378,21 +378,21 @@ private struct SubagentSwitch: View {
     var body: some View {
         Button { isOn.toggle() } label: {
             HStack(spacing: AppLayout.subagentEditSwitchGap) {
-                Capsule().fill(isOn ? Color.nw.lantern : Color.nw.lineStrong)
+                Capsule().fill(isOn ? Color.sh.lantern : Color.sh.lineStrong)
                     .frame(width: AppLayout.subagentEditSwitchWidth, height: AppLayout.subagentEditSwitchHeight)
                     .overlay(alignment: isOn ? .trailing : .leading) {
-                        Circle().fill(isOn ? Color.nw.textOnLantern : Color.nw.textSecondary)
+                        Circle().fill(isOn ? Color.sh.textOnLantern : Color.sh.textSecondary)
                             .frame(width: AppLayout.subagentEditKnob, height: AppLayout.subagentEditKnob)
                             .padding(AppLayout.subagentEditKnobInset)
                     }
-                    .nwComponentAnimation(.content, value: isOn)
-                Text(label).font(.nwSans(AppLayout.subagentEditSwitchLabelSize)).foregroundStyle(Color.nw.textPrimary)
-                Text(note).font(.nwSans(AppLayout.subagentEditNoteSize)).foregroundStyle(Color.nw.settingsMuted)
+                    .shComponentAnimation(.content, value: isOn)
+                Text(label).font(.shSans(AppLayout.subagentEditSwitchLabelSize)).foregroundStyle(Color.sh.textPrimary)
+                Text(note).font(.shSans(AppLayout.subagentEditNoteSize)).foregroundStyle(Color.sh.settingsMuted)
                 Spacer(minLength: 0)
             }
-            .frame(minHeight: NW.Height.controlS).contentShape(Rectangle())
+            .frame(minHeight: SH.Height.controlS).contentShape(Rectangle())
         }
-        .buttonStyle(.plain).nwFocusRing(radius: NW.Radius.xs, color: .nw.running)
+        .buttonStyle(.plain).shFocusRing(radius: SH.Radius.xs, color: .sh.running)
         .accessibilityRepresentation { Toggle(label, isOn: $isOn) }
     }
 }
@@ -415,23 +415,23 @@ private struct SubagentEditButton: ButtonStyle {
             let active = enabled && (hovering || configuration.isPressed)
             let radius = AppLayout.subagentEditButtonRadius
             configuration.label
-                .font(.nwSans(AppLayout.subagentEditButtonSize, kind == .save ? .semibold : .regular))
-                .foregroundStyle(kind == .delete ? Color.nw.failed : kind == .save ? Color.nw.textOnLantern : Color.nw.subagentControlText)
+                .font(.shSans(AppLayout.subagentEditButtonSize, kind == .save ? .semibold : .regular))
+                .foregroundStyle(kind == .delete ? Color.sh.failed : kind == .save ? Color.sh.textOnLantern : Color.sh.subagentControlText)
                 .padding(.horizontal, kind == .save ? AppLayout.subagentEditSavePadding : AppLayout.subagentEditButtonPadding)
                 .frame(height: AppLayout.subagentEditButtonHeight)
                 .background(fill(active: active, pressed: configuration.isPressed), in: RoundedRectangle(cornerRadius: radius))
-                .nwBorder(kind == .delete ? Color.nw.subagentFailureBorder : kind == .revert ? Color.nw.lineStrong : .clear, radius: radius)
+                .shBorder(kind == .delete ? Color.sh.subagentFailureBorder : kind == .revert ? Color.sh.lineStrong : .clear, radius: radius)
                 .contentShape(RoundedRectangle(cornerRadius: radius))
-                .nwFocusRing(radius: radius, color: .nw.running)
-                .nwEnabledOpacity(enabled)
+                .shFocusRing(radius: radius, color: .sh.running)
+                .shEnabledOpacity(enabled)
                 .onHover { hovering = $0 }
         }
 
         private func fill(active: Bool, pressed: Bool) -> Color {
             switch kind {
-            case .save: pressed ? Color.nw.lanternPressed : active ? Color.nw.lanternHover : Color.nw.lantern
-            case .revert: active ? Color.nw.bgHover : Color.nw.bgRaised
-            case .delete: active ? Color.nw.subagentFailureTile : .clear
+            case .save: pressed ? Color.sh.lanternPressed : active ? Color.sh.lanternHover : Color.sh.lantern
+            case .revert: active ? Color.sh.bgHover : Color.sh.bgRaised
+            case .delete: active ? Color.sh.subagentFailureTile : .clear
             }
         }
     }

@@ -88,6 +88,9 @@ enum RemoteSamples {
         .changesUndoTurn(turnID: op),
         .changesRedoTurn(turnID: op),
         .devServers,
+        .files(path: "", showHidden: false),
+        .files(path: "Sources/App Intents", showHidden: true),
+        .fileRead(path: "Widgets/NeedsYouWidget.swift"),
     ]
 
     static let revision = ChangesRevision(old: "3f2a91c0", new: "4b825dc6")
@@ -161,6 +164,12 @@ enum RemoteSamples {
                      DevServer(script: "start", command: "npm start", packageName: nil, directory: "/host/repo/apps/api",
                                manifest: "apps/api/package.json", port: nil)]),
         .devServers([]),
+        .files(ThreadFileListing(entries: [ThreadFileEntry(name: "Widgets", kind: .directory),
+                                           ThreadFileEntry(name: "render \"v2\".py", kind: .file, size: 2_048, symlink: true),
+                                           ThreadFileEntry(name: "locked", kind: .file, size: 0, error: "Permission denied")],
+                                 truncated: true)),
+        .files(ThreadFileListing(entries: [])),
+        .fileData(Data("let x = 1\n".utf8)),
     ]
 
     static let automation = AutomationID(rawValue: "automation")
@@ -287,16 +296,18 @@ struct RemoteRequestTests {
     /// `samplesCoverEveryCase` fails until it has a sample.
     static func caseName(_ request: RemoteRequest) -> String {
         switch request {
-        case .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
+        case .pushRegistration, .pushUnregister, .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
              .closePane, .resizePaneSplit, .listDir, .listModels, .addSpace, .createAgent, .upload,
              .creationOptions, .agentQuery, .agentAction, .automation, .instructions, .suggestions, .hostSettings, .hostUpdate, .skills, .projects, .logicalProjects, .projectExecution, .design,
              .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 34
+    static let caseCount = 36
 
     static let samples: [RemoteRequest] = [
+        .pushRegistration(id: 93, registration: RemotePushRegistration(id: "11111111-2222-3333-4444-555555555555", sendToken: String(repeating: "a", count: 64))),
+        .pushUnregister(id: 94, registrationID: "11111111-2222-3333-4444-555555555555"),
         .hostUpdate(id: 90, request: .status),
         .hostUpdate(id: 91, request: .check),
         .hostUpdate(id: 92, request: .install(offerID: S.op, authorized: true)),
@@ -373,7 +384,7 @@ struct RemoteRequestTests {
 
     @Test(arguments: [RemoteAgentAction.rename(name: "x"), .move(spaceID: SpaceID(rawValue: "destination")), .deleteKeepingWorktree, .reorder(target: AgentID(rawValue: "b")),
                       .renameTerminal(paneID: PaneID(rawValue: "p"), title: "logs"), .renameTerminal(paneID: PaneID(rawValue: "p"), title: nil),
-                      .killTerminalProcess(paneID: PaneID(rawValue: "p")),
+                      .killTerminalProcess(paneID: PaneID(rawValue: "p")), .startTerminal(paneID: PaneID(rawValue: "p")),
                       .openTerminal(cwd: "/host/repo/apps/web", command: "pnpm dev")])
     func everyAgentActionRoundTrips(_ action: RemoteAgentAction) throws {
         #expect(try Wire.roundTrip(RemoteRequest.agentAction(id: 1, agentID: S.agent, action: action))
@@ -797,7 +808,7 @@ struct RemoteProtocolConstantTests {
     }
 
     @Test func hostAdvertisesEveryNamedCapabilityOnce() {
-        let named = [RemoteProtocol.projectResultCapability, RemoteProtocol.moveThreadCapability, RemoteProtocol.projectConversationThinkingCapability,
+        let named = [RemoteProtocol.pushNotificationsCapability, RemoteProtocol.projectResultCapability, RemoteProtocol.moveThreadCapability, RemoteProtocol.projectConversationThinkingCapability,
             RemoteProtocol.logicalProjectsCapability, RemoteProtocol.logicalProjectAutomationsCapability,
             RemoteProtocol.logicalProjectRuntimeCapability, RemoteProtocol.projectExecutionCapability,
             RemoteProtocol.projectPlacementCapability, RemoteProtocol.logicalProjectFilesCapability, RemoteProtocol.projectWorkerCapability, RemoteProtocol.projectMessageImagesCapability, RemoteProtocol.projectPublicationsCapability,
@@ -817,7 +828,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.instructionsCapability, RemoteProtocol.suggestionsCapability,
             RemoteProtocol.hostUpdateCapability, RemoteProtocol.hostSettingsCapability, RemoteProtocol.skillsCapability, RemoteProtocol.projectsV2Capability, RemoteProtocol.projectDetailsCapability,
             RemoteProtocol.projectMCPCapability, RemoteProtocol.projectTrustCapability, RemoteProtocol.piSkillsCapability,
-            RemoteProtocol.terminalControlCapability,
+            RemoteProtocol.terminalControlCapability, RemoteProtocol.terminalStartCapability,
             RemoteProtocol.designContextCapability,
             RemoteProtocol.nativeRetryCapability,
             RemoteProtocol.checkpointRecoveryCapability,
@@ -828,6 +839,8 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.nativeGoalCapability, RemoteProtocol.goalExperimentCapability, RemoteProtocol.projectsExperimentCapability,
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).
             RemoteProtocol.designsCapability, RemoteProtocol.designMarkupCapability, RemoteProtocol.designDeleteCapability,
+            // Offered only to a client that lists it in hello.
+            RemoteProtocol.filesCapability,
         ]
         #expect(Set(RemoteProtocol.capabilities) == Set(named))
         #expect(RemoteProtocol.capabilities.count == named.count)
@@ -846,6 +859,8 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.nativeThreadCapability == "native.thread.v1")
         #expect(RemoteProtocol.nativeThreadV2Capability == "native.thread.v2")
         #expect(RemoteProtocol.changesCapability == "changes.v1")
+        #expect(RemoteProtocol.filesCapability == "files.v1")
+        #expect(RemoteProtocol.clientCapabilities.contains(RemoteProtocol.filesCapability))
         #expect(RemoteProtocol.nativeThreadStartingCapability == "native.thread.starting.v1")
         #expect(RemoteProtocol.nativeQueueCapability == "native.queue.v1")
         #expect(RemoteProtocol.nativeStartupDialogsCapability == "native.startup-dialogs.v1")
@@ -854,6 +869,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.paneControlCapability == "pane.control.v1")
         #expect(RemoteProtocol.uploadCapability == "session.upload.v1")
         #expect(RemoteProtocol.terminalActivityCapability == "terminal.activity.v1")
+        #expect(RemoteProtocol.terminalStartCapability == "terminal.start.v1")
         #expect(RemoteProtocol.reviewCommitCapability == "review.commit.v1")
         #expect(RemoteProtocol.automationsCapability == "automations.v1")
         #expect(RemoteProtocol.thinkingLevelsCapability == "thinking.levels.v1")

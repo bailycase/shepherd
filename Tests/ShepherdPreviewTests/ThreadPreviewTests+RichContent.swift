@@ -43,7 +43,7 @@ extension ThreadPreviewTests {
         let fixture = ThreadFixture(Self.reply(MarkdownFixtures.structureReply(image: "thread-table.png")))
         defer { fixture.store.stop() }
         try await Preview.render("thread-rich-structure", size: CGSize(width: 1180, height: 1180),
-                                 ready: { fixture.store.ready && !fixture.store.rows.isEmpty && NWProseThumbnails.cached(image) != nil }) {
+                                 ready: { fixture.store.ready && !fixture.store.rows.isEmpty && SHProseThumbnails.cached(image) != nil }) {
             fixture.thread(workingDirectory: folder.path)
         }
     }
@@ -84,16 +84,16 @@ extension ThreadPreviewTests {
         let details = Prose.proseBlocks(nativeMarkdownBlocks("- Opened by default here\n- Its blocks sit on the rule\n\n```swift\nlet open = true\n```"))
         let size = CGSize(width: 720, height: 1100)
         try await Preview.render("prose-rich-parts", size: size) {
-            VStack(alignment: .leading, spacing: NW.Space.l) {
-                NWAgentProse(blocks)
-                NWProseDetails(summary: "An open disclosure", blocks: details, depth: 0, open: true) { NWCodeBlock($0, language: $1) }
-                NWCodeBlock("graph TD\n  A --> B", language: "mermaid")
-                NWCodeBlock("E = mc^2", language: "math")
+            VStack(alignment: .leading, spacing: SH.Space.l) {
+                SHAgentProse(blocks)
+                SHProseDetails(summary: "An open disclosure", blocks: details, depth: 0, open: true) { SHCodeBlock($0, language: $1) }
+                SHCodeBlock("graph TD\n  A --> B", language: "mermaid")
+                SHCodeBlock("E = mc^2", language: "math")
                 Spacer(minLength: 0)
             }
-            .padding(NW.Space.xxxl)
+            .padding(SH.Space.xxxl)
             .frame(width: size.width, height: size.height, alignment: .topLeading)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         }
     }
 

@@ -1,8 +1,8 @@
 import SwiftUI
 import ShepherdUI
 
-/// The designs track's own measures (MobileDesigns, MobileDesignBoard). Night Watch's phone
-/// parts carry their own (`NWPhoneDesignMetrics`).
+/// The designs track's own measures (MobileDesigns, MobileDesignBoard). Shepherd Design's phone
+/// parts carry their own (`SHPhoneDesignMetrics`).
 enum MobileDesignLayout {
     /// The Designs screen's sides (the board's 14pt) and its sections 20pt apart.
     static let gutter: CGFloat = 14
@@ -10,7 +10,7 @@ enum MobileDesignLayout {
     /// A board on its screen sits this far under the navigation, and keeps as much above the toolbar.
     static let boardTop: CGFloat = 18
     /// The comment card's sides and the room it keeps above the toolbar.
-    static let cardInset: CGFloat = NW.Space.l
+    static let cardInset: CGFloat = SH.Space.l
     /// The Boards sheet's tiles: a board's label and size under its image.
     static let boardsTileHeight: CGFloat = 140
     /// A drag this far sideways on an unzoomed board moves to the next board.

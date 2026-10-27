@@ -134,12 +134,20 @@ that the field keeps the focus above the keyboard and, on an iPad in portrait, t
 stays a hidden overlay; `composer-focus-rotate` focuses in landscape, turns the iPad to portrait,
 and checks the same with no second tap (the field keeps the focus through the turn) (run both in portrait; `-r landscape` shots draw the keyboard
 sideways). Attaching changes a host's PTY size, so the terminal screens
-(`terminal`, `terminal-keys`, `terminal-maximized`, `terminal-phone`, `terminal-phone-keys`, and
-the ones below) never attach: their sessions draw canned screens (`MobileTerminals.cannedScreens`), and the host answers only the read `terminals`
-query. `terminal-close` and `terminal-phone-close` open a one-shell tab's close confirmation
-(`MobileTerminals.cannedClose`). `terminal-relaunched` and `terminal-phone-relaunched` have the
-host push the layout it has after a relaunch (the shell's terminal under a new session) and
-check that the terminal draws the new session's own screen.
+(`terminal`, `terminal-keys`, and the ones below; pushed on iPhone, the side pane's Terminal tab
+on iPad) never attach: their sessions draw canned screens (`MobileTerminals.cannedScreens`), set
+before the terminals open, and the host answers only the read `terminals` query and offers no
+`terminal.start.v1`. `terminal-close` opens a one-shell tab's close confirmation
+(`MobileTerminals.cannedClose`). `terminal-relaunched` has the host push the layout it has after
+a relaunch (the shell's terminal under a new session) and checks that the terminal draws the new
+session's own screen.
+
+**iPhone Duo** (`Fixtures/DuoFixtures.swift`): `duo-subagents`, `duo-subagent-run`, `duo-terminal`
+and `duo-files` draw the side pane's tabs (`-f open`); `duo-unfold` starts closed on Subagents,
+unfolds itself and checks the pane opened on that tab (`-f closed`); `duo-laptop` and
+`duo-laptop-open` check the laptop arrangement and that it and its draft stay laid flat (`-f book
+-r landscape`, the inner display upright with the fold across). The navigator's unfold and
+restore rules are in `client-state-regressions`.
 
 **Windows.** Without `-w` the fixture app is single-window, as the screens of the other tracks
 expect. With it, the app permits multiple scenes and resizing, matching production (CONTRACTS.md ›
@@ -183,6 +191,10 @@ iPadReviewSplit, iPadCommit, on an iPad in landscape) run against a host with `c
 `thread` (Undo), `thread-undone` (Redo), `thread-card-legacy` (an older host: no Undo), and
 `changes-card` (the iPad's "Edited 5 files").
 
+**The Files screens.** `files-tree`, `files-file` and `files-old-host` (`Fixtures/FilesFixtures.swift`)
+present `ThreadFilesScreen` over the thread (the side pane has no route yet): Studio answers
+`files.v1` listings and one read; `files-old-host` is a host without it.
+
 **The designs screens.** Studio serves designs.v1 from `Fixtures/DesignsFixtures.swift` (boards
 written for the fixtures, two comments, two systems) and refuses every design write; hosts without
 fixture designs don't offer the capability. `home-designs`, `designs`, `design`, `design-board`
@@ -218,6 +230,16 @@ its words, and the two proposals with Apply both and Keep as comments, already c
 have found their elements. Run both with
 `-r landscape`. A real Pencil (drawing while a finger pans, the palette, Done against a host)
 is checked on a device.
+
+**The Browser.** `browser`, `browser-page`, `browser-waiting`, `browser-offline` and
+`browser-legacy` push a thread's page (`ThreadBrowserScreen`). Studio offers `browser.tunnel.v1`,
+answers `devServers` with two scripts and serves a canned dev server through the tunnel on port
+41731 (`Fixtures/BrowserFixtures.swift`; tunnel frames are reads there, a mutation everywhere else).
+`browser-page` loads it through the real forwarder, hub and connection and prints `FIXTURE CHECK ok
+browser-page` once the page's title reads back; the forwarder listens on the simulator's loopback,
+which is the Mac's, so the port must be free there. `browser` is nothing running (Start on the host),
+`browser-waiting` a port being tried, `browser-offline` an offline host, `browser-legacy` a host
+without tunnels.
 
 **Projects.** `projects`, `project`, `project-task`, `project-files`, `project-settings`,
 `project-new`, `project-assign` and `projects-unsupported` use an in-memory fixture host. Run

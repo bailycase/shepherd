@@ -9,18 +9,18 @@ extension View {
     /// (the next card, "Working…") moves at once, and a card shrinking under an animation would
     /// be drawn over by it. Created with `isNew` false (a first load, a row scrolled back into a
     /// lazy stack) the view is simply there. It leaves at once. Under Reduce Motion it only fades.
-    public func nwRunArrival(_ isNew: Bool, _ motion: NW.Motion = .content, edge: Edge? = nil) -> some View {
-        modifier(NWRunArrivalModifier(isNew: isNew, motion: motion, edge: edge))
+    public func shRunArrival(_ isNew: Bool, _ motion: SH.Motion = .content, edge: Edge? = nil) -> some View {
+        modifier(SHRunArrivalModifier(isNew: isNew, motion: motion, edge: edge))
     }
 }
 
-private struct NWRunArrivalModifier: ViewModifier {
-    let motion: NW.Motion
+private struct SHRunArrivalModifier: ViewModifier {
+    let motion: SH.Motion
     let edge: Edge?
     @State private var shown: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    init(isNew: Bool, motion: NW.Motion, edge: Edge?) {
+    init(isNew: Bool, motion: SH.Motion, edge: Edge?) {
         self.motion = motion
         self.edge = edge
         _shown = State(initialValue: !isNew)
@@ -32,26 +32,26 @@ private struct NWRunArrivalModifier: ViewModifier {
             .offset(shown ? .zero : offset)
             // Attached here and started from a task, after the view is placed: an animation
             // begun while it is laid out would carry that whole layout pass with it.
-            .nwAnimation(motion, value: shown)
+            .shAnimation(motion, value: shown)
             .task {
                 guard !shown else { return }
-                NWRenderProbe.tick("arrival.animates")
+                SHRenderProbe.tick("arrival.animates")
                 shown = true
             }
     }
 
     private var offset: CGSize {
         if case .nudge(let edge) = motion.transitionStyle(reduceMotion: reduceMotion, edge: edge) {
-            return NW.Motion.nudgeOffset(edge)
+            return SH.Motion.nudgeOffset(edge)
         }
         return .zero
     }
 }
 
-/// Whether a view has been on screen, for the parts it creates later (`nwRunArrival`). A
+/// Whether a view has been on screen, for the parts it creates later (`shRunArrival`). A
 /// reference, so noting the first appearance never renders.
 @MainActor
-public final class NWShownFlag {
+public final class SHShownFlag {
     public var appeared = false
 
     public init() {}

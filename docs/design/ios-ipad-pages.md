@@ -4,51 +4,10 @@
 
 ## Overview (iPadOverview)
 
-With no thread selected the detail is the Overview (`PadOverview`).
-
-- **Header:** "Overview" (the board's 17/600) with the summary beside it at 12.5
-  `textTertiary` ("4 need you · 6 running · 3 hosts"), leading the bar; Search and New thread
-  trailing (40pt circles, 18pt `textSecondary` glyphs).
-- **Columns:** Needs you, Running now and Finished side by side (16pt inset, 16pt apart; the app
-  12pt), each headed by its name and count (mono 11/500, uppercase, tracked 5%; Needs you in
-  `lanternText`, the others `textTertiary`). They stack when three 256pt columns don't fit, and
-  at accessibility sizes. Pull to refresh retries the hosts. An empty column shows a quiet card
-  ("Nothing is waiting on you.", "Nothing is running.", "Nothing has finished yet."); with no
-  hosts the detail is the no-hosts state.
-- **Needs you cards** (`NWAttentionCard`): `bgRaised`, a 1px `lineSubtle` line, radius 12, 10×12
-  inset, 8pt apart. The origin line: a 14pt `lanternText` glyph (a glowing 8pt `lantern` dot for
-  a blocked thread), its kind at 12 `textTertiary` ("Thread", "Automation"), its age
-  trailing; the title at 14.5/600 (the thread's name); the question
-  at 13/1.4 `textSecondary`; then the answers as 28pt buttons at radius 6, 12.5: the first
-  primary, the rest secondary. The asker's short options (up to three, each up to 32
-  characters), or Yes and No, answer in place; anything else shows Open.
-  - The board answers a subagent here ("Replace all", "Rename new"); the app draws no subagent
-    card: a subagent asks its parent, never you.
-  - **Not built yet:** a mission's card ("Mission · now", "Retry with hint", Open).
-  - The board's "Approve plan" and "Read" are the answers a plan-approval question would offer.
-    Shepherd shows them only when the asker offers them (Principles: no permission model); a
-    blocked thread with no question shows "Waiting on you" and Open.
-- **Running now:** one card per kind (`bgRaised`, a 1px `lineSubtle` line, radius 12), each
-  opening with a caption band on `bgSunken` (mono 10.5, tracked 5%, `textTertiary`, 8×12 inset):
-  "THREADS · 3", "AUTOMATIONS · 1". Rows (10×12 inset, hairlines between): the state glyph in a
-  16pt column, the title at 14/500, its clock in mono 11 `textTertiary` ("4:12", "37m"), and
-  under it, in mono 11.5 `textTertiary`, what it does now: the running command ("swift test
-  --filter toolPreview"), its subagents ("3 subagents · 1 waiting on parent"), or its command and host
-  ("swift build · This Mac"): `NWCaptionBand`, `NWOverviewRow` and `FleetThreadRow.now`; the
-  subagents are the ones still going, an asking one included. The glyph is the running spinner
-  (`NWListRow.Leading.glyph`), the branch in `running` while its subagents work, or the state's
-  dot while it waits on you (`RunningGlyph`). A running automation's row is `AutomationRow` ("Running · 4m"; the board's
-  "waiting for CI · 3 of 5 checks" needs triggers the host doesn't have). **Not built yet:**
-  "MISSIONS · 2", with each mission's lanes as a 150×14 strip.
-- **Finished:** one card under a "TODAY" caption band. Rows at least 52pt (6×12 inset): the outcome
-  glyph (14; `done` check, `failed` cross), the title at 14/500 over its outcome at 12
-  `textTertiary` ("PR #34 merged · 2h41", "3 migrations, all reversible", "1 PR failed CI"), and the
-  time of day in mono 11 `textTertiary` ("11:02"; the weekday, "Mon", for an older one). The app
-  lists finished threads newest first in that one card, under a band per day ("Today",
-  "Yesterday", a weekday, a date; `FleetFinishedDay`), each with the check, or the `failed` cross and "failed · host" for a
-  last turn that failed, "done · <folder>" otherwise, and its time; the host sends no outcome
-  ("PR #34 merged"), and finished automation runs stay under Automations. **Not built yet:** a
-  design's row ("4 boards · 1 comment resolved").
+With no thread selected the detail is `PadOverview`: an empty state ("No thread selected",
+"Pick a thread in the sidebar, or start a new one.") with a primary New thread button, or the
+no-hosts state when no host is set up. The sidebar lists every thread, so the detail repeats
+none of them. This departs from the iPadOverview board on purpose.
 
 ## Needs you (iPadInbox)
 
@@ -56,7 +15,7 @@ The sidebar's Needs you head opens the list beside the chosen item's detail, one
 its full context.
 
 - **List:** 380pt wide on the board (the app 360), a 1px `lineSubtle` trailing edge. Its header:
-  "Needs you" (17/600) with "5 waiting" at 12.5 `textTertiary`, leading the bar. Items (10pt inset, 2pt apart; `NWAttentionCard(style:
+  "Needs you" (17/600) with "5 waiting" at 12.5 `textTertiary`, leading the bar. Items (10pt inset, 2pt apart; `SHAttentionCard(style:
   .item)`: no line, the app's radius 8): 12pt inset at radius 10, the chosen one on `bgSelected`: the origin line (a 14pt `lanternText` glyph or a glowing 8pt dot,
   "Thread" or "Automation" at 12 `textTertiary`, the age trailing; the iPhone's cards say "A
   thread" and "A run of the automation …"), the title at 15/600
@@ -87,7 +46,7 @@ its full context.
 
 ## Hosts and More (iPadHosts)
 
-Settings ▸ Hosts shows host cards (`NWHostCard`, in columns at least 320pt wide): the name, the
+Settings ▸ Hosts shows host cards (`SHHostCard`, in columns at least 320pt wide): the name, the
 address and port, the connection word, what runs there ("2 threads running · Shepherd"), Retry
 while it is offline, and a refusal's reason, with Add host (secondary) under them and "Trusted
 LAN or VPN only: the connection has no TLS." A card opens the host's form (Name, Address, Port,
@@ -97,7 +56,7 @@ cards.
 **The Hosts destination** (iPadHosts, `PadHostsScreen`), from More's Hosts sub-row:
 
 - **List** (320pt, `MobileLayout.hostsListWidth`, a 1px `lineSubtle` trailing edge): "Hosts" in
-  the bar with Add host (+); rows at least 64pt (`NWHostRow`), 8×12 inset, radius 10 (the app's
+  the bar with Add host (+); rows at least 64pt (`SHHostRow`), 8×12 inset, radius 10 (the app's
   8), the chosen one on `bgSelected`: a 16pt `textSecondary` glyph, the name in mono semibold,
   what it carries at 12 `textTertiary` ("3 threads · 2 running"; "Offline · last seen 7:12 AM"
   once it drops, as this device last saw it), and an 8pt status dot trailing (`done`, `failed`).
@@ -107,7 +66,7 @@ cards.
   8pt dot, and the address at 12.5 `textTertiary`; a ••• menu trailing (Retry while offline,
   Edit Host…). **Not built yet:** the host's kind ("app", needs the remote protocol to say it).
 - **Detail as built:** "RUNNING HERE · 3" with "threads and automations" at 12 `textTertiary`,
-  then a card of the threads and automation runs going on the host now (`NWOverviewRow`s: the
+  then a card of the threads and automation runs going on the host now (`SHOverviewRow`s: the
   state, the title, what it does now and its clock), each opening its thread; or "Nothing is
   running here." While the host is offline, why (its failure, in `failed`), "Last seen …" and
   Retry.
@@ -207,7 +166,7 @@ Instructions, SettingsInstructions; `Settings/InstructionsScreens.swift`):
   folders → repo AGENTS.md → APPEND_SYSTEM.md (the last on `lanternTint` with a `lanternText`
   line, in `textPrimary`). Under it at 12.5/1.5 `textTertiary`: "APPEND_SYSTEM.md is added to the
   end of the agent’s system prompt, so these rules beat anything in an AGENTS.md. Keep it short."
-- **In the app** the bar holds the title, and History and Save (NW buttons at `l`) end the page's
+- **In the app** the bar holds the title, and History and Save (SH buttons at `l`) end the page's
   first row, beside the scope control and its state. The state names every host ("Studio, build-01 synced · horizon when it's back", "…
   build-02 differs"), with Sync now as a link while one differs; Per host swaps it for a menu of
   the host being edited. The path is the host's own instructions folder, the editor is the
@@ -222,12 +181,12 @@ Instructions, SettingsInstructions; `Settings/InstructionsScreens.swift`):
 
 ## Side pane (iPadPaneBrowser, iPadPaneArtifacts, iPadPaneFiles)
 
-Built: the side pane beside a thread (`PadReviewScreen`), its head the segmented control of the tabs
-Shepherd has, Changes (the docked review) and Artifacts (iPadPaneArtifacts, once the thread has made a file); the header's
-side-pane button shows and hides it (Thread › Header buttons). Artifacts: the list ("This thread · N"), and the open
-artifact under a 52pt bar (All artifacts, the kind tile, the name, Preview | Source, Save a copy), Markdown in Night Watch colors,
+Built: the side pane beside a thread (`ThreadWithSidePane`; DuoOpenSidePane, DuoSidePaneTabs), its head the tabs Changes,
+Files, Terminal, Subagents, Browser, and Artifacts (iPadPaneArtifacts, once the thread has made a file), the open one labelled;
+the header's side-pane button shows and hides it (Thread › Side pane). Artifacts: the list ("This thread · N"), and the open
+artifact under a 52pt bar (All artifacts, the kind tile, the name, Preview | Source, Save a copy), Markdown in Shepherd Design colors,
 HTML and SVG in a locked-down web view on their own background, 18pt in; "Made an artifact" opens it here (on iPhone, in a
-sheet over the thread). **Not built: Browser, Files**, the board's version chip, Edit and Open in a window (departures.md).
+sheet over the thread). **Not built: Browser, Files** (placeholder tabs), the board's version chip, Edit and Open in a window (departures.md).
 
 **Not built yet: the rest of the side pane.** Show side pane (a 40pt circle in the thread's header; Hide side
 pane, on `bgSelected`, while it shows) opens a pane on the thread's trailing side, with a 1px
@@ -303,9 +262,9 @@ or the iPad sidebar's.
     ring, 12×14 padding: a 13pt `running` spinner, the name (15/600), and the host (mono 11
     `textTertiary`) trailing, then how the run is going (13 `textSecondary`: "Running · 4m"; "Asked
     you" in `lanternText`, with a bolt in place of the spinner and a `lanternText` line with no
-    ring; `NWAutomationRunCard`). A tap opens the automation. The iPad's column is one flat list
+    ring; `SHAutomationRunCard`). A tap opens the automation. The iPad's column is one flat list
     instead, the live runs first, with no section heads.
-  - **All** with the count, one card of 64pt rows (`NWAutomationRow`, 10×14 padding, 3pt between
+  - **All** with the count, one card of 64pt rows (`SHAutomationRow`, 10×14 padding, 3pt between
     lines): the name (15/500), "When Shepherd starts · folder" or "By hand" (12.5 `textTertiary`;
     the host's name in mono instead of the folder when there are several hosts), how the last run
     went with its time in its tone (12: "Finished · 12h ago" in `done`, "Asked you" in
@@ -332,7 +291,7 @@ or the iPad sidebar's.
   The detail's header is the name, an On or Off pill (On in `done` on `doneTint`) and the ••• menu.
 - **Detail:** the On switch with what it means, Status, Runs on ("build-01 · a new thread each
   run"), Folder, the prompt, the latest fourteen runs as bars (bar height = duration), the last run,
-  and every run the host kept (`NWRunRow`), each opening its thread while it exists. The footer is
+  and every run the host kept (`SHRunRow`), each opening its thread while it exists. The footer is
   Edit and Run now (with Open run while the finished run's thread is there; running again replaces
   it), or, while a run works or asks you, Stop (confirmed: it deletes the run's thread) and Open
   run. The ••• menu has Open Run, Edit and Delete Automation (confirmed). Each confirmation rises
@@ -351,7 +310,7 @@ or the iPad sidebar's.
   Folder from the host's spaces), and Starts with Shepherd. Save waits for the host. A new
   automation keeps one id for the life of the form, so saving again after an answer that never
   came back can never save it twice.
-- **Switches** (`NWAutomationSwitch`) flip from their whole 44pt target, caption included, and
+- **Switches** (`SHAutomationSwitch`) flip from their whole 44pt target, caption included, and
   read as toggles to VoiceOver.
 - **When a change does not come back ok:** a refusal shows a banner with the host's reason
   ("Couldn't start the run: …"). A timeout or a dropped connection says the change may have

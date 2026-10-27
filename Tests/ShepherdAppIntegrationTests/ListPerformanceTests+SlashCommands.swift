@@ -22,7 +22,7 @@ extension ListPerformanceTests {
         let opened = ListPerf.counting {
             window = OffscreenWindow(size: CGSize(width: 1200, height: 800), dark: true,
                                      ScrollView { SlashCommandsSettings(model: model, settings: settings).padding(32) }
-                                         .background(Color.nw.bgWindow))
+                                         .background(Color.sh.bgWindow))
             ListPerf.settle(window)
         }
         defer { window.close() }

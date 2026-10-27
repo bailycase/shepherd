@@ -25,6 +25,25 @@ private func recoveryRequest(_ s: NativeThreadSnapshot, operation: UUID = UUID()
 
 @Suite("Message-free checkpoint recovery", .integrationTimeLimit)
 struct RetryTests {
+    @Test func aStandaloneThreadCanContinueWithoutAuthorizingProjectExecution() async throws {
+        let host = try ScratchServer()
+        defer { host.stop() }
+        let cwd = host.dir.appendingPathComponent("thread", isDirectory: true)
+        try FileManager.default.createDirectory(at: cwd, withIntermediateDirectories: true)
+        let h = try await PiAgent.launch(on: host, cwd: cwd)
+        var storage = try #require(host.server.state.spaces.first { $0.id == h.agent.spaceID })
+        storage.path = host.dir.path
+        storage.hidden = true
+        storage.holdsThreads = true
+        try await host.server.updateSpace(storage)
+        let failed = try await failedCheckpoint(h)
+        let continued = try await h.request(recoveryRequest(failed))
+        try #require(continued.wasAccepted, "standalone Continue must be accepted: \(continued)")
+        _ = try await h.snapshot { !$0.running && $0.messages.last?.blocks.first?.text == "Recovered: flaky" }
+        #expect(h.stdin("recover_checkpoint").count == 1 && h.stdin("prompt").count == 1)
+        #expect(try await host.server.enqueue { host.server.executionSpaceGrants()[h.agent.spaceID] == nil })
+    }
+
     @Test func aSettledTurnCanRecoverBeforeItsStubWorkerExits() async throws {
         let host = try ScratchServer()
         defer { host.stop() }

@@ -22,7 +22,7 @@ const design = await jiti.import(path.join(root, "Extensions/shepherd-design.ts"
 const { default: install, checkBoard, systemTokens } = design;
 const { loadSkillsFromDir } = await import(path.join(pkg, "dist/core/skills.js"));
 
-const KEYS = ["SHEPHERD_AGENT_ID", "SHEPHERD_SOCKET", "SHEPHERD_DESIGN_ID", "SHEPHERD_DESIGN_SKILL_DIR"];
+const KEYS = ["SHEPHERD_AGENT_ID", "SHEPHERD_SOCKET", "SHEPHERD_DESIGN_ID", "SHEPHERD_DESIGN_SKILL_DIR", "SHEPHERD_DESIGN_TOOLS", "SHEPHERD_DEFER_TOOLS"];
 
 function withEnv(values, body) {
   const saved = KEYS.map((key) => process.env[key]);
@@ -74,7 +74,7 @@ function boardSource(body) {
  * Runs `body` with the extension installed against a stand-in Shepherd socket that answers each
  * frame with `answer(frame)` (null: no answer).
  */
-async function withDesign(answer, body, { skillDirectory } = {}) {
+async function withDesign(answer, body, { skillDirectory, ordinary = false, deferred = false } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sh-design-"));
   const socketPath = path.join(dir, "s");
   const frames = [];
@@ -98,7 +98,9 @@ async function withDesign(answer, body, { skillDirectory } = {}) {
   const pi = fakePi();
   try {
     await withEnv({
-      SHEPHERD_AGENT_ID: "a1", SHEPHERD_SOCKET: socketPath, SHEPHERD_DESIGN_ID: "d1",
+      SHEPHERD_AGENT_ID: "a1", SHEPHERD_SOCKET: socketPath, SHEPHERD_DESIGN_ID: ordinary ? undefined : "d1",
+      SHEPHERD_DESIGN_TOOLS: ordinary ? "1" : undefined,
+      SHEPHERD_DEFER_TOOLS: deferred ? "1" : undefined,
       SHEPHERD_DESIGN_SKILL_DIR: skillDirectory,
     }, async () => {
       install(pi.api);
@@ -123,7 +125,7 @@ function designAnswer(boards) {
 
 const firstLine = (result) => result.content[0].text.split("\n")[0];
 
-test("without its design, socket or agent the extension registers nothing", () => {
+test("without design access, socket or agent the extension registers nothing", () => {
   for (const env of [
     { SHEPHERD_AGENT_ID: "a1", SHEPHERD_SOCKET: "/tmp/s" },
     { SHEPHERD_AGENT_ID: "a1", SHEPHERD_DESIGN_ID: "d1" },
@@ -136,6 +138,55 @@ test("without its design, socket or agent the extension registers nothing", () =
       assert.equal(pi.tools.size, 0);
     });
   }
+});
+
+test("ordinary threads list designs and explicitly target concurrent calls without design-agent voice", async () => {
+  await withDesign((frame) => frame.type === "designList"
+    ? { type: "designList", designs: [{ id: "d1", name: "Checkout", boardCount: 1 }] }
+    : { type: "design", snapshot: { ...SNAPSHOT, designID: frame.designID } }, async (pi, frames) => {
+    assert.equal(pi.tools.has("comment_reply"), false);
+    assert.equal(pi.tools.has("markup_propose"), false);
+    assert.equal(pi.tools.get("board_edit").exposure, "deferred");
+    assert.ok(pi.tools.get("board_edit").parameters.required.includes("designID"));
+    assert.ok(!pi.tools.get("design_list").parameters.required?.includes("designID"));
+    const options = {};
+    await pi.handlers.before_agent_start[0]({ systemPromptOptions: options });
+    assert.equal(options.appendSystemPrompt, undefined);
+    assert.equal(frames.length, 0, "ordinary prompts fetch no design content");
+    const listed = await pi.tools.get("design_list").execute("list", {});
+    assert.deepEqual(JSON.parse(listed.content[0].text), [{ id: "d1", name: "Checkout", boardCount: 1 }]);
+    assert.equal(frames[0].designID, undefined);
+    assert.throws(() => pi.tools.get("design_read").execute("missing", {}), /designID is required/);
+    await Promise.all(["d1", "d2"].map((designID) => pi.tools.get("design_read").execute(designID, { designID })));
+    assert.deepEqual(frames.slice(1).map((frame) => frame.designID).sort(), ["d1", "d2"]);
+  }, { ordinary: true, deferred: true });
+});
+
+test("concurrent multi-request tools keep their explicit design targets", async () => {
+  await withDesign((frame) => frame.type === "designSystemRead"
+    ? { type: "designSystems", listing: { systems: [], installed: [] } }
+    : { type: "design", snapshot: { ...SNAPSHOT, designID: frame.designID, boards: {}, index: { v: 3, boards: {}, order: [] } } },
+  async (pi, frames, dir) => {
+    await Promise.all(["d1", "d2"].map((designID) => pi.tools.get("design_check").execute(
+      designID, { designID }, undefined, undefined, { cwd: dir })));
+    for (const designID of ["d1", "d2"]) {
+      assert.deepEqual(frames.filter((frame) => frame.designID === designID).map((frame) => frame.type),
+        ["designRead", "designSystemRead", "designRead", "designRead"]);
+    }
+  }, { ordinary: true });
+});
+
+test("design_check baselines never cross designs with the same revision", async () => {
+  await withDesign((frame) => frame.type === "designSystemRead"
+    ? { type: "designSystems", listing: { systems: [], installed: [] } }
+    : { type: "design", snapshot: { ...SNAPSHOT, designID: frame.designID, boards: {}, index: { v: 3, boards: {}, order: [] } } },
+  async (pi, frames, dir) => {
+    const check = pi.tools.get("design_check");
+    await check.execute("baseline", { designID: "d1" }, undefined, undefined, { cwd: dir });
+    await assert.rejects(check.execute("other", { designID: "d2", baseline_revision: 4 }, undefined, undefined, { cwd: dir }),
+      /baseline_unavailable/);
+    await check.execute("same", { designID: "d1", baseline_revision: 4 }, undefined, undefined, { cwd: dir });
+  }, { ordinary: true });
 });
 
 test("a design's agent gets the design and comment tools", async () => {
@@ -572,8 +623,8 @@ const SUMMARY = {
           ownerDesignID: "d1", spaceID: "s1", sources: ["web/static/tokens.css"] },
   builtIn: false, counts: { colors: 11, type: 4, lengths: 7, components: 9 }, unreadable: false,
 };
-const NIGHT_WATCH = {
-  info: { namespace: "night-watch", title: "Night Watch", revision: 1, createdAt: 0, updatedAt: 0, sources: [] },
+const SHEPHERD_DESIGN = {
+  info: { namespace: "shepherd-design", title: "Shepherd Design", revision: 1, createdAt: 0, updatedAt: 0, sources: [] },
   builtIn: true, counts: { colors: 31, type: 9, lengths: 12, components: 0 }, unreadable: false,
 };
 const ACME_TOKENS = {
@@ -589,7 +640,7 @@ const ACME_TOKENS = {
   fonts: [], components: [{ name: "Button", source: { file: "templates/partials/button.html" }, specimen: "components/Button.html", export: "Acme.Button" }],
 };
 const LISTING = {
-  systems: [NIGHT_WATCH, SUMMARY],
+  systems: [SHEPHERD_DESIGN, SUMMARY],
   installed: [{ namespace: "acme-web", title: "acme-web", shepherd: true, version: "3", tokens: ACME_TOKENS, tokensFile: "ds/acme-web/tokens.json" }],
   primary: "acme-web",
 };
@@ -603,7 +654,7 @@ test("system_read lists the systems and the design's installed ones, fenced as d
     assert.deepEqual(frames[0], { type: "designSystemRead", id: frames[0].id, agentID: "a1", designID: "d1" });
     const text = all.content[0].text;
     assert.match(text, /^2 design systems on this host:\n/);
-    assert.match(text, /- night-watch "Night Watch" · built into Shepherd · 31 colors, 9 type styles, 12 spacing and radius steps, 0 components/);
+    assert.match(text, /- shepherd-design "Shepherd Design" · built into Shepherd · 31 colors, 9 type styles, 12 spacing and radius steps, 0 components/);
     assert.match(text, /- acme-web "acme-web" · built by this design · synced 4m ago · 11 colors/);
     assert.match(text, /Installed in this design:\n[^\n]*\n<design-data nonce="[0-9a-f]+">\n- acme-web at ds\/acme-web\/, the design's own\n/);
     assert.deepEqual(all.details, { systems: 2, installed: ["acme-web"] });
@@ -627,7 +678,7 @@ test("system_write sends the system, and says what Shepherd wrote and installed"
   const results = {
     write: { summary: SUMMARY, changed: true, installed: { revision: 12, changed: true, warnings: [], boardCount: 4 },
              notes: ["tokens.css is the one you wrote, so it was left as it is"] },
-    install: { summary: NIGHT_WATCH, changed: false, installed: { revision: 13, changed: true, warnings: [], boardCount: 4 }, notes: [] },
+    install: { summary: SHEPHERD_DESIGN, changed: false, installed: { revision: 13, changed: true, warnings: [], boardCount: 4 }, notes: [] },
   };
   const answer = (frame) => frame.system.namespace === "theirs"
     ? { type: "error", code: "not_your_system", message: "theirs was built by another design's agent" }
@@ -649,9 +700,9 @@ test("system_write sends the system, and says what Shepherd wrote and installed"
     assert.match(lines[2], /^Note: tokens\.css is the one you wrote/);
     assert.deepEqual(done.details, { namespace: "acme-web", revision: 3, installed: true });
 
-    const installed = await tool.execute("t2", { namespace: "night-watch", install: true });
-    assert.deepEqual(frames[1].system, { namespace: "night-watch", install: true }, "an install sends no tokens");
-    assert.match(installed.content[0].text, /^Installed night-watch in this design at ds\/night-watch\//);
+    const installed = await tool.execute("t2", { namespace: "shepherd-design", install: true });
+    assert.deepEqual(frames[1].system, { namespace: "shepherd-design", install: true }, "an install sends no tokens");
+    assert.match(installed.content[0].text, /^Installed shepherd-design in this design at ds\/shepherd-design\//);
 
     await assert.rejects(tool.execute("t3", { namespace: "theirs", tokens: {} }), /another design's agent \(not_your_system\)/);
     await assert.rejects(tool.execute("t4", { namespace: "acme-web", tokens: [] }), /tokens is a JSON object/);

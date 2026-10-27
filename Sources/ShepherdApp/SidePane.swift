@@ -34,32 +34,32 @@ struct SidePaneView: View {
                         ReviewPaneHost(session: review, actions: vm.reviewActions(for: review, remote: isRemote), store: store,
                                        maximized: maximized)
                             .id(review.id)
-                            .nwTransition(.content)
+                            .shTransition(.content)
                     }
                 case .browser:
                     switch owner {
                     case .local(let agentID):
                         BrowserPane(vm: vm, session: vm.browsers.session(for: agentID), store: store, active: active)
-                            .nwTransition(.content)
+                            .shTransition(.content)
                     case .remote(let ref):
                         // A remote thread's page renders here and reaches its host through the tunnel.
                         BrowserPane(vm: vm, session: vm.browsers.session(for: ref, hosts: vm.remoteHosts), store: store, active: active)
-                            .nwTransition(.content)
+                            .shTransition(.content)
                     }
                 case .artifacts:
                     ArtifactsTab(store: store, actions: vm.artifactsActions(for: owner))
-                        .nwTransition(.content)
+                        .shTransition(.content)
                 case .subagents:
                     SubagentListTab(store: store, inspect: inspect)
-                        .nwTransition(.content)
+                        .shTransition(.content)
                 case .files:
                     filesContent
-                        .nwTransition(.content)
+                        .shTransition(.content)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
     }
 
     @ViewBuilder
@@ -71,13 +71,20 @@ struct SidePaneView: View {
                     .id(model.rootPath)
             } else {
                 Text("Loading files…")
-                    .font(.nw(.caption))
-                    .foregroundStyle(Color.nw.textTertiary)
+                    .font(.sh(.caption))
+                    .foregroundStyle(Color.sh.textTertiary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .task { vm.ensureFileTree(owner) }
             }
-        case .remote:
-            FilesUnavailableView()
+        case .remote(let ref):
+            if let model = vm.fileTree(for: ref) {
+                FilesTab(model: model)
+                    .id(model.rootPath)
+                    .task { vm.ensureFileTree(owner) }
+            } else {
+                FilesUnavailableView(host: vm.remoteHosts.connections.first { $0.id == ref.hostID }?.config.name)
+                    .task { vm.ensureFileTree(owner) }
+            }
         }
     }
 
@@ -95,7 +102,7 @@ private struct SidePaneTabBar: View {
     let maximized: Bool
 
     /// What pi last opened in this thread's Browser, for the tab's brief tip.
-    private var browserTip: NWSidePaneTabTip? {
+    private var browserTip: SHSidePaneTabTip? {
         switch owner {
         case .local(let agentID): SidePaneTabs.tip(opened: vm.browsers.existing(agentID)?.openedByAgent)
         case .remote(let ref): SidePaneTabs.tip(opened: vm.browsers.existing(ref)?.openedByAgent)
@@ -103,7 +110,7 @@ private struct SidePaneTabBar: View {
     }
 
     var body: some View {
-        NWSidePaneTabs(SidePaneTabs.items(news: news, changedFiles: review.flatMap { $0.isLoading ? nil : $0.files.count },
+        SHSidePaneTabs(SidePaneTabs.items(news: news, changedFiles: review.flatMap { $0.isLoading ? nil : $0.files.count },
                                           browser: vm.sidePaneTabs(for: owner).contains(.browser), browserTip: browserTip,
                                           artifacts: store.artifacts.isEmpty ? nil : store.artifacts.count,
                                           subagents: SidePaneTabs.subagents(store.subagents)),
@@ -129,8 +136,8 @@ enum SidePaneTabs {
     /// `browserTip` is what pi last opened in the Browser: the brief line under its tab while it is news.
     /// `artifacts` is the thread's file count; nil while it has none (no tab).
     /// `subagents` is the thread's run count and status; nil while it has none (no tab).
-    static func items(news: Set<SidePaneTab>, changedFiles: Int?, browser: Bool = true, browserTip: NWSidePaneTabTip? = nil,
-                      artifacts: Int? = nil, subagents: (count: Int, status: AgentState)? = nil) -> [NWSidePaneTab] {
+    static func items(news: Set<SidePaneTab>, changedFiles: Int?, browser: Bool = true, browserTip: SHSidePaneTabTip? = nil,
+                      artifacts: Int? = nil, subagents: (count: Int, status: AgentState)? = nil) -> [SHSidePaneTab] {
         SidePaneTab.tabs(browser: browser).compactMap { tab in
             let count: Int? = switch tab {
             case .changes: changedFiles
@@ -141,14 +148,14 @@ enum SidePaneTabs {
             }
             if tab == .subagents, subagents == nil { return nil }
             if tab == .artifacts, artifacts == nil { return nil }
-            return NWSidePaneTab(id: tab.rawValue, title: tab.title, systemImage: tab.systemImage, count: count,
+            return SHSidePaneTab(id: tab.rawValue, title: tab.title, systemImage: tab.systemImage, count: count,
                                  news: news.contains(tab), status: tab == .subagents ? subagents?.status : nil, shortcut: tab.shortcutDisplay, tip: tab == .browser ? browserTip : nil)
         }
     }
 
     /// "localhost:5173/checkout": the page pi opened, as the address field shows it.
-    static func tip(opened: (url: URL, at: Date)?) -> NWSidePaneTabTip? {
+    static func tip(opened: (url: URL, at: Date)?) -> SHSidePaneTabTip? {
         guard let opened, let shown = BrowserAddress.display(opened.url) else { return nil }
-        return NWSidePaneTabTip(text: shown.host + shown.path, openedAt: opened.at)
+        return SHSidePaneTabTip(text: shown.host + shown.path, openedAt: opened.at)
     }
 }

@@ -80,53 +80,53 @@ struct MissionReviewView: View {
     var body: some View {
         VStack(spacing: 0) {
             if approvalState.stale {
-                HStack(spacing: NW.Space.l) {
-                    NWStatusDot(.attention)
+                HStack(spacing: SH.Space.l) {
+                    SHStatusDot(.attention)
                     Text(repositories.isEmpty ? "Collecting the repository diffs…" : approvalState.publicationAuthorized
                          ? "Repository contents no longer match the approved receipts. Publication can't continue until they match again."
                          : "These changes moved after validation. Refresh, then re-run validation before publishing.")
-                        .nwText(.ui).fontWeight(.regular)
+                        .shText(.ui).fontWeight(.regular)
                     Spacer()
                     Button(busy ? "Refreshing…" : "Refresh diffs") { action(.refresh) }
-                        .buttonStyle(.nw(.secondary, size: .s)).disabled(busy)
+                        .buttonStyle(.sh(.secondary, size: .s)).disabled(busy)
                 }
-                .padding(.horizontal, NW.Space.xl).padding(.vertical, NW.Space.m).background(Color.nw.lanternTint)
+                .padding(.horizontal, SH.Space.xl).padding(.vertical, SH.Space.m).background(Color.sh.lanternTint)
             }
             GeometryReader { geometry in
                 let narrow = geometry.size.width < AppLayout.missionNarrowWidth
                 HStack(spacing: 0) {
                     fileList.frame(width: AppLayout.missionSide(AppLayout.missionFilesWidth, in: geometry.size.width, share: AppLayout.missionFilesShare))
-                    Rectangle().fill(Color.nw.lineSubtle).frame(width: 1)
+                    Rectangle().fill(Color.sh.lineSubtle).frame(width: 1)
                     if narrow {
                         // A narrow window shows the diff or the contract in the main column.
                         VStack(spacing: 0) {
-                            NWSegmentedPicker("Show", selection: $showsContract, options: [(false, "Changes"), (true, "Contract")])
-                                .fixedSize().padding(NW.Space.m)
-                            NWHairline()
+                            SHSegmentedPicker("Show", selection: $showsContract, options: [(false, "Changes"), (true, "Contract")])
+                                .fixedSize().padding(SH.Space.m)
+                            SHHairline()
                             if showsContract { contract } else { center }
                         }.frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         center.frame(maxWidth: .infinity, maxHeight: .infinity)
-                        Rectangle().fill(Color.nw.lineSubtle).frame(width: 1)
+                        Rectangle().fill(Color.sh.lineSubtle).frame(width: 1)
                         contract.frame(width: AppLayout.missionSide(AppLayout.missionContractWidth, in: geometry.size.width, share: AppLayout.missionContractShare))
                     }
                 }
             }
-            NWHairline()
-            HStack(spacing: NW.Space.l) {
+            SHHairline()
+            HStack(spacing: SH.Space.l) {
                 Text(approvalState.publicationAuthorized
                      ? "Publication uses the approved receipts. Shepherd opens pull requests only; it never merges or deploys."
                      : queued.isEmpty ? "Comment on a line to request a change. It goes back to the planner, and validation runs again before you're asked back."
                      : "Changes you send go back to the planner with the file and line. Workers revise, and validation runs again before you're asked back.")
-                    .nwText(.caption).foregroundStyle(Color.nw.textTertiary).fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: NW.Space.l)
+                    .shText(.caption).foregroundStyle(Color.sh.textTertiary).fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: SH.Space.l)
                 if canRequest && !queued.isEmpty {
                     Button("Request changes · \(queued.count)") {
                         action(.changes(queued.map(\.request).joined(separator: "\n")))
                         comments.removeAll()
                     }
-                    .buttonStyle(.nw(.secondary)).disabled(busy || queued.isEmpty)
-                    .nwHelp(queued.isEmpty ? "Comment on a line to request a change" : "Send \(queued.count) change\(queued.count == 1 ? "" : "s") to the planner")
+                    .buttonStyle(.sh(.secondary)).disabled(busy || queued.isEmpty)
+                    .shHelp(queued.isEmpty ? "Comment on a line to request a change" : "Send \(queued.count) change\(queued.count == 1 ? "" : "s") to the planner")
                 }
                 Button {
                     if let approval = approvalState.approval { action(.publish(approval)) }
@@ -134,12 +134,12 @@ struct MissionReviewView: View {
                     Text(mission.phase == .publishing ? "Publishing PRs…" : approvalState.publicationAuthorized ? approvalState.publishLabel
                          : "Approve \(repositories.count) PR\(repositories.count == 1 ? "" : "s") · publish")
                 }
-                .buttonStyle(.nw(.primary)).keyboardShortcut(.return, modifiers: .command)
+                .buttonStyle(.sh(.primary)).keyboardShortcut(.return, modifiers: .command)
                 .disabled(busy || approvalState.approval == nil || !queued.isEmpty)
-                .nwHelp(!queued.isEmpty ? "Send or discard your requested changes first" : approvalState.stale ? "Refresh the diffs first" : "Open one pull request per repository", shortcut: "⌘↩")
+                .shHelp(!queued.isEmpty ? "Send or discard your requested changes first" : approvalState.stale ? "Refresh the diffs first" : "Open one pull request per repository", shortcut: "⌘↩")
             }
-            .padding(.horizontal, NW.Space.xl).padding(.vertical, NW.Space.m)
-            .frame(minHeight: NWPageMetrics.headerHeight + NW.Space.m)
+            .padding(.horizontal, SH.Space.xl).padding(.vertical, SH.Space.m)
+            .frame(minHeight: SHPageMetrics.headerHeight + SH.Space.m)
         }
         .onAppear {
             if seed.side { showsContract = true }
@@ -157,22 +157,22 @@ struct MissionReviewView: View {
         let added = files.reduce(0) { $0 + $1.1.addedCount }, removed = files.reduce(0) { $0 + $1.1.removedCount }
         let seen = files.filter { viewed.contains(key($0.0, $0.1)) }.count
         return VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: NW.Space.m) {
+            VStack(alignment: .leading, spacing: SH.Space.m) {
                 HStack {
-                    NWPageSectionLabel("PR set")
+                    SHPageSectionLabel("PR set")
                     Spacer()
-                    Text("publishes in this order").nwText(.caption).foregroundStyle(Color.nw.textTertiary)
+                    Text("publishes in this order").shText(.caption).foregroundStyle(Color.sh.textTertiary)
                 }
-                HStack(spacing: NW.Space.m) {
-                    Text("\(repositories.count) PRs · \(files.count) files").nwText(.headline)
-                    NWDiffStat(added: added, removed: removed)
+                HStack(spacing: SH.Space.m) {
+                    Text("\(repositories.count) PRs · \(files.count) files").shText(.headline)
+                    SHDiffStat(added: added, removed: removed)
                 }
-                HStack(spacing: NW.Space.l) {
-                    ProgressView(value: Double(seen), total: Double(max(1, files.count))).progressViewStyle(.nwBar(tint: Color.nw.done))
-                    Text("viewed \(seen) of \(files.count)").nwText(.caption).foregroundStyle(Color.nw.textTertiary).fixedSize()
+                HStack(spacing: SH.Space.l) {
+                    ProgressView(value: Double(seen), total: Double(max(1, files.count))).progressViewStyle(.shBar(tint: Color.sh.done))
+                    Text("viewed \(seen) of \(files.count)").shText(.caption).foregroundStyle(Color.sh.textTertiary).fixedSize()
                 }
-            }.padding(NW.Space.xl)
-            NWHairline()
+            }.padding(SH.Space.xl)
+            SHHairline()
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(repositories.enumerated()), id: \.element.id) { index, repo in
@@ -182,41 +182,41 @@ struct MissionReviewView: View {
                         Button {
                             if open { collapsed.insert(repo.spaceID) } else { collapsed.remove(repo.spaceID) }
                         } label: {
-                            HStack(spacing: NW.Space.m) {
-                                Image(systemName: open ? "chevron.down" : "chevron.right").font(.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
-                                Text("\(index + 1)").nwText(.micro).foregroundStyle(Color.nw.textTertiary)
-                                Text(mission.lane(repo.spaceID)?.name ?? repo.name).nwText(.mono).fontWeight(.semibold).lineLimit(1)
+                            HStack(spacing: SH.Space.m) {
+                                Image(systemName: open ? "chevron.down" : "chevron.right").font(.sh(.micro)).foregroundStyle(Color.sh.textTertiary)
+                                Text("\(index + 1)").shText(.micro).foregroundStyle(Color.sh.textTertiary)
+                                Text(mission.lane(repo.spaceID)?.name ?? repo.name).shText(.mono).fontWeight(.semibold).lineLimit(1)
                                 // The branch the PR opens from: a Spec Kit feature branch once its git extension made one.
-                                Text(repo.branch).nwText(.mono).foregroundStyle(Color.nw.textTertiary).lineLimit(1).truncationMode(.middle)
-                                    .nwHelp("Opens its PR from \(repo.branch)")
-                                if let number = MissionFormat.pullNumber(checkout?.prURL) { Text(number).nwText(.mono).foregroundStyle(Color.nw.running) }
-                                Spacer(minLength: NW.Space.s)
+                                Text(repo.branch).shText(.mono).foregroundStyle(Color.sh.textTertiary).lineLimit(1).truncationMode(.middle)
+                                    .shHelp("Opens its PR from \(repo.branch)")
+                                if let number = MissionFormat.pullNumber(checkout?.prURL) { Text(number).shText(.mono).foregroundStyle(Color.sh.running) }
+                                Spacer(minLength: SH.Space.s)
                                 let done = repo.files.filter { viewed.contains(key(repo, $0)) }.count
-                                Text("\(done) / \(repo.files.count)").nwText(.micro).foregroundStyle(Color.nw.textTertiary)
-                                Image(systemName: "checkmark").font(.nw(.micro, weight: .bold))
-                                    .foregroundStyle(done == repo.files.count ? Color.nw.done : Color.clear)
+                                Text("\(done) / \(repo.files.count)").shText(.micro).foregroundStyle(Color.sh.textTertiary)
+                                Image(systemName: "checkmark").font(.sh(.micro, weight: .bold))
+                                    .foregroundStyle(done == repo.files.count ? Color.sh.done : Color.clear)
                             }
-                            .padding(.horizontal, NW.Space.l).frame(height: NW.Height.controlL).contentShape(Rectangle())
+                            .padding(.horizontal, SH.Space.l).frame(height: SH.Height.controlL).contentShape(Rectangle())
                         }
-                        .buttonStyle(.nwRow())
+                        .buttonStyle(.shRow())
                         .accessibilityLabel("\(repo.name), branch \(repo.branch), \(repo.files.count) files")
                         .accessibilityValue(open ? "expanded" : "collapsed")
                         if open {
                             ForEach(repo.files) { file in fileRow(repo, file) }
                             if repo.files.isEmpty {
-                                Text("No changed files").nwText(.caption).foregroundStyle(Color.nw.textTertiary).padding(.leading, NW.Space.xxxl).padding(.vertical, NW.Space.s)
+                                Text("No changed files").shText(.caption).foregroundStyle(Color.sh.textTertiary).padding(.leading, SH.Space.xxxl).padding(.vertical, SH.Space.s)
                             }
                         }
                       }
                     }
-                }.padding(NW.Space.s)
+                }.padding(SH.Space.s)
             }
             if let summary = mission.workSummary {
-                NWHairline()
-                VStack(alignment: .leading, spacing: NW.Space.m) {
-                    NWPageSectionLabel(summary.title)
+                SHHairline()
+                VStack(alignment: .leading, spacing: SH.Space.m) {
+                    SHPageSectionLabel(summary.title)
                     MissionProse(summary.text).lineLimit(8)
-                }.padding(NW.Space.xl)
+                }.padding(SH.Space.xl)
             }
         }
     }
@@ -226,24 +226,24 @@ struct MissionReviewView: View {
         let selected = selectedRepository?.spaceID == repo.spaceID && selectedFile?.id == file.id
         let parts = file.displayPath.split(separator: "/", omittingEmptySubsequences: false)
         let directory = parts.dropLast().joined(separator: "/")
-        return HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
+        return HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
             Button { toggle(repo, file) } label: {
                 Image(systemName: isViewed ? "checkmark.square.fill" : "square")
-                    .foregroundStyle(isViewed ? Color.nw.lanternText : Color.nw.textTertiary)
+                    .foregroundStyle(isViewed ? Color.sh.lanternText : Color.sh.textTertiary)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Viewed \(file.displayPath)")
             .accessibilityValue(isViewed ? "on" : "off")
             Button { selection = FileSelection(space: repo.spaceID, path: file.displayPath) } label: {
                 // The whole path, wrapping in a narrow column rather than hiding its folders.
-                let name = Text(parts.last.map(String.init) ?? file.displayPath).foregroundStyle(isViewed ? Color.nw.textTertiary : Color.nw.textPrimary)
-                HStack(alignment: .firstTextBaseline, spacing: NW.Space.s) {
-                    Text(directory.isEmpty ? "\(name)" : "\(Text(directory + "/").foregroundStyle(Color.nw.textTertiary))\(name)")
+                let name = Text(parts.last.map(String.init) ?? file.displayPath).foregroundStyle(isViewed ? Color.sh.textTertiary : Color.sh.textPrimary)
+                HStack(alignment: .firstTextBaseline, spacing: SH.Space.s) {
+                    Text(directory.isEmpty ? "\(name)" : "\(Text(directory + "/").foregroundStyle(Color.sh.textTertiary))\(name)")
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    NWDiffStat(added: file.addedCount, removed: file.removedCount).fixedSize()
+                    SHDiffStat(added: file.addedCount, removed: file.removedCount).fixedSize()
                 }
-                .nwText(.mono)
+                .shText(.mono)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -251,9 +251,9 @@ struct MissionReviewView: View {
             .accessibilityLabel(file.displayPath)
             .accessibilityValue("\(mission.lane(repo.spaceID)?.name ?? repo.name), +\(file.addedCount) −\(file.removedCount)")
         }
-        .padding(.leading, NW.Space.xxl).padding(.trailing, NW.Space.l).padding(.vertical, NW.Space.s)
-        .frame(minHeight: NW.Height.controlL)
-        .background(selected ? Color.nw.bgSelected : Color.clear, in: RoundedRectangle(cornerRadius: NW.Radius.s))
+        .padding(.leading, SH.Space.xxl).padding(.trailing, SH.Space.l).padding(.vertical, SH.Space.s)
+        .frame(minHeight: SH.Height.controlL)
+        .background(selected ? Color.sh.bgSelected : Color.clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
         .accessibilityElement(children: .contain)
     }
 
@@ -267,51 +267,51 @@ struct MissionReviewView: View {
     @ViewBuilder private var center: some View {
         if let repo = selectedRepository, let file = selectedFile {
             VStack(spacing: 0) {
-                HStack(spacing: NW.Space.m) {
-                    NWGlyph.document.image.foregroundStyle(Color.nw.textTertiary)
+                HStack(spacing: SH.Space.m) {
+                    SHGlyph.document.image.foregroundStyle(Color.sh.textTertiary)
                     // The whole path first: the repository steps aside (the PR set names it), then
                     // the leading directories truncate.
-                    let path = Text(file.displayPath).font(.nw(.mono, weight: .semibold))
+                    let path = Text(file.displayPath).font(.sh(.mono, weight: .semibold))
                     ViewThatFits(in: .horizontal) {
-                        HStack(spacing: NW.Space.m) {
-                            Text("\(mission.lane(repo.spaceID)?.name ?? repo.name) /").nwText(.mono).foregroundStyle(Color.nw.textTertiary)
+                        HStack(spacing: SH.Space.m) {
+                            Text("\(mission.lane(repo.spaceID)?.name ?? repo.name) /").shText(.mono).foregroundStyle(Color.sh.textTertiary)
                             path
                         }.fixedSize()
                         // Narrow: the whole path wraps; no folder is hidden.
                         path.fixedSize(horizontal: false, vertical: true)
                     }.layoutPriority(1)
-                    NWDiffStat(added: file.addedCount, removed: file.removedCount).fixedSize()
-                    Spacer(minLength: NW.Space.m)
-                    NWViewedCheckbox(isViewed: viewed.contains(key(repo, file)), name: file.displayPath) { toggle(repo, file) }.fixedSize()
-                    NWSegmentedPicker("Diff layout", selection: $split, options: [(false, "Unified"), (true, "Split")]).fixedSize()
+                    SHDiffStat(added: file.addedCount, removed: file.removedCount).fixedSize()
+                    Spacer(minLength: SH.Space.m)
+                    SHViewedCheckbox(isViewed: viewed.contains(key(repo, file)), name: file.displayPath) { toggle(repo, file) }.fixedSize()
+                    SHSegmentedPicker("Diff layout", selection: $split, options: [(false, "Unified"), (true, "Split")]).fixedSize()
                 }
-                .padding(.horizontal, NW.Space.xl).padding(.vertical, NW.Space.s)
-                .frame(minHeight: NWPageMetrics.headerHeight)
-                .overlay(alignment: .bottom) { NWHairline() }
+                .padding(.horizontal, SH.Space.xl).padding(.vertical, SH.Space.s)
+                .frame(minHeight: SHPageMetrics.headerHeight)
+                .overlay(alignment: .bottom) { SHHairline() }
                 MissionFileDiff(repository: mission.lane(repo.spaceID)?.name ?? repo.name, file: file, split: split,
                                 comments: $comments, commentable: canRequest)
                     .id("\(repo.spaceID.rawValue)|\(file.id)")
                 if let next = nextFile(after: repo, file) {
                     Button { selection = FileSelection(space: next.0.spaceID, path: next.1.displayPath) } label: {
-                        HStack(spacing: NW.Space.m) {
-                            Image(systemName: "chevron.right").font(.nw(.micro))
-                            Text("\(mission.lane(next.0.spaceID)?.name ?? next.0.name) / \(next.1.displayPath)").nwText(.mono).lineLimit(1)
-                            NWDiffStat(added: next.1.addedCount, removed: next.1.removedCount)
+                        HStack(spacing: SH.Space.m) {
+                            Image(systemName: "chevron.right").font(.sh(.micro))
+                            Text("\(mission.lane(next.0.spaceID)?.name ?? next.0.name) / \(next.1.displayPath)").shText(.mono).lineLimit(1)
+                            SHDiffStat(added: next.1.addedCount, removed: next.1.removedCount)
                             Spacer()
                         }
-                        .foregroundStyle(Color.nw.textTertiary)
-                        .padding(.horizontal, NW.Space.xl).frame(height: NW.Height.controlL).contentShape(Rectangle())
+                        .foregroundStyle(Color.sh.textTertiary)
+                        .padding(.horizontal, SH.Space.xl).frame(height: SH.Height.controlL).contentShape(Rectangle())
                     }
-                    .buttonStyle(.nwRow(radius: 0))
-                    .overlay(alignment: .top) { NWHairline() }
+                    .buttonStyle(.shRow(radius: 0))
+                    .overlay(alignment: .top) { SHHairline() }
                     .accessibilityLabel("Next file, \(next.1.displayPath)")
                 }
             }
         } else {
-            VStack(spacing: NW.Space.m) {
-                Text(repositories.isEmpty ? "Collecting changes" : "No changed files").nwText(.headline)
+            VStack(spacing: SH.Space.m) {
+                Text(repositories.isEmpty ? "Collecting changes" : "No changed files").shText(.headline)
                 Text(repositories.isEmpty ? "The diffs for each repository appear here." : "The workers left these repositories unchanged.")
-                    .nwText(.body).foregroundStyle(Color.nw.textTertiary)
+                    .shText(.body).foregroundStyle(Color.sh.textTertiary)
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -355,96 +355,96 @@ private struct MissionContract: View {
     var body: some View {
         let passed = items.filter { $0.state == .done && $0.station != nil }.count
         VStack(spacing: 0) {
-            HStack(alignment: .top, spacing: NW.Space.l) {
-                Image(systemName: "checkmark.shield").font(.nw(.headline)).foregroundStyle(Color.nw.done)
-                    .frame(width: NW.Height.controlL, height: NW.Height.controlL)
-                    .background(Color.nw.bgSunken, in: RoundedRectangle(cornerRadius: NW.Radius.s))
-                    .nwBorder(Color.nw.lineSubtle, radius: NW.Radius.s)
-                VStack(alignment: .leading, spacing: NW.Space.xs) {
-                    HStack(spacing: NW.Space.m) {
-                        Text("Contract").nwText(.title).accessibilityAddTraits(.isHeader)
-                        NWStatusPill(passed == items.count - 1 ? .done : .attention,
+            HStack(alignment: .top, spacing: SH.Space.l) {
+                Image(systemName: "checkmark.shield").font(.sh(.headline)).foregroundStyle(Color.sh.done)
+                    .frame(width: SH.Height.controlL, height: SH.Height.controlL)
+                    .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+                    .shBorder(Color.sh.lineSubtle, radius: SH.Radius.s)
+                VStack(alignment: .leading, spacing: SH.Space.xs) {
+                    HStack(spacing: SH.Space.m) {
+                        Text("Contract").shText(.title).accessibilityAddTraits(.isHeader)
+                        SHStatusPill(passed == items.count - 1 ? .done : .attention,
                                      label: "\(passed) passed · \(mission.run?.publicationApproval == nil ? "1 is you" : "approved")")
                     }
-                    Text("visible to workers and to you · checked independently").nwText(.caption).foregroundStyle(Color.nw.textTertiary)
+                    Text("visible to workers and to you · checked independently").shText(.caption).foregroundStyle(Color.sh.textTertiary)
                 }
                 Spacer()
             }
-            .padding(NW.Space.xl)
-            .overlay(alignment: .bottom) { NWHairline() }
+            .padding(SH.Space.xl)
+            .overlay(alignment: .bottom) { SHHairline() }
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: NW.Space.xxs) {
+                LazyVStack(alignment: .leading, spacing: SH.Space.xxs) {
                     ForEach(Array(items.enumerated()), id: \.offset) { index, item in
                         Button { open = open == index ? nil : index } label: {
-                            HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
-                                Text("\(index + 1)").nwText(.micro).foregroundStyle(Color.nw.textTertiary).frame(minWidth: NW.Space.l, alignment: .trailing)
+                            HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+                                Text("\(index + 1)").shText(.micro).foregroundStyle(Color.sh.textTertiary).frame(minWidth: SH.Space.l, alignment: .trailing)
                                 mark(item.state)
-                                Text(item.text).font(item.tag == "cmd" ? .nw(.mono) : .nw(.ui, weight: .regular)).multilineTextAlignment(.leading)
-                                Spacer(minLength: NW.Space.m)
-                                Text(item.tag).nwText(.micro).foregroundStyle(item.tag == "you" ? Color.nw.lanternText : Color.nw.textTertiary)
+                                Text(item.text).font(item.tag == "cmd" ? .sh(.mono) : .sh(.ui, weight: .regular)).multilineTextAlignment(.leading)
+                                Spacer(minLength: SH.Space.m)
+                                Text(item.tag).shText(.micro).foregroundStyle(item.tag == "you" ? Color.sh.lanternText : Color.sh.textTertiary)
                             }
-                            .padding(.horizontal, NW.Space.m).padding(.vertical, NW.Space.m).contentShape(Rectangle())
+                            .padding(.horizontal, SH.Space.m).padding(.vertical, SH.Space.m).contentShape(Rectangle())
                         }
-                        .buttonStyle(.nwRow(selected: open == index))
+                        .buttonStyle(.shRow(selected: open == index))
                         .disabled(item.station == nil)
                         .accessibilityLabel("\(index + 1). \(item.text)")
                         .accessibilityValue("\(item.state?.label ?? "not run")\(open == index ? ", expanded" : "")")
                         if open == index, let station = item.station { evidence(station) }
                     }
-                }.padding(NW.Space.m)
+                }.padding(SH.Space.m)
             }
             let ran = validator.flatMap { mission.latest($0.id)?.endedAt }
             if ran != nil || canRerun {
-                NWHairline()
-                VStack(alignment: .leading, spacing: NW.Space.m) {
+                SHHairline()
+                VStack(alignment: .leading, spacing: SH.Space.m) {
                     if let ran {
                         Text("Validator ran at \(Date(timeIntervalSince1970: ran).formatted(date: .omitted, time: .shortened)) on This Mac, reading every mission worktree without changing them.")
-                            .nwText(.caption).foregroundStyle(Color.nw.textTertiary)
+                            .shText(.caption).foregroundStyle(Color.sh.textTertiary)
                     }
                     // One action for the whole contract: the controller re-runs every check and the
                     // validator together; there is no single-check re-run.
                     if canRerun {
                         Button { action(.revalidate) } label: { Label("Re-run all checks", systemImage: "arrow.clockwise") }
-                            .buttonStyle(.nw(.secondary, size: .s)).disabled(busy)
-                            .nwHelp("Runs every check and the validator again on the current worktrees")
+                            .buttonStyle(.sh(.secondary, size: .s)).disabled(busy)
+                            .shHelp("Runs every check and the validator again on the current worktrees")
                     }
                 }
-                .padding(NW.Space.xl)
+                .padding(SH.Space.xl)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
     }
 
     @ViewBuilder private func mark(_ state: AgentState?) -> some View {
         switch state {
-        case .done?: Image(systemName: "checkmark").font(.nw(.caption, weight: .semibold)).foregroundStyle(Color.nw.done)
-        case .failed?: Image(systemName: "xmark").font(.nw(.caption, weight: .semibold)).foregroundStyle(Color.nw.failed)
-        case .attention?: NWStatusDot(.attention)
-        case .running?: ProgressView().progressViewStyle(.nwSpinner(size: 10))
-        default: Image(systemName: "circle").font(.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
+        case .done?: Image(systemName: "checkmark").font(.sh(.caption, weight: .semibold)).foregroundStyle(Color.sh.done)
+        case .failed?: Image(systemName: "xmark").font(.sh(.caption, weight: .semibold)).foregroundStyle(Color.sh.failed)
+        case .attention?: SHStatusDot(.attention)
+        case .running?: ProgressView().progressViewStyle(.shSpinner(size: 10))
+        default: Image(systemName: "circle").font(.sh(.micro)).foregroundStyle(Color.sh.textTertiary)
         }
     }
 
     private func evidence(_ station: MissionStation) -> some View {
         let attempt = mission.latest(station.id)
-        return VStack(alignment: .leading, spacing: NW.Space.m) {
+        return VStack(alignment: .leading, spacing: SH.Space.m) {
             if let output = attempt?.output, !output.isEmpty {
-                Text(output).font(station.kind == .check ? .nw(.code) : .nw(.caption)).foregroundStyle(Color.nw.textSecondary)
+                Text(output).font(station.kind == .check ? .sh(.code) : .sh(.caption)).foregroundStyle(Color.sh.textSecondary)
                     .lineLimit(14).textSelection(.enabled)
-                    .padding(NW.Space.l).frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.nw.bgSunken, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-                    .nwBorder(Color.nw.lineSubtle, radius: NW.Radius.m)
+                    .padding(SH.Space.l).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+                    .shBorder(Color.sh.lineSubtle, radius: SH.Radius.m)
             } else {
-                Text("No evidence recorded yet.").nwText(.caption).foregroundStyle(Color.nw.textTertiary)
+                Text("No evidence recorded yet.").shText(.caption).foregroundStyle(Color.sh.textTertiary)
             }
-            HStack(spacing: NW.Space.m) {
+            HStack(spacing: SH.Space.m) {
                 if let agent = attempt?.agentID {
-                    Button("Open evidence") { openThread(agent) }.buttonStyle(.nw(.secondary, size: .s))
+                    Button("Open evidence") { openThread(agent) }.buttonStyle(.sh(.secondary, size: .s))
                 }
             }
         }
-        .padding(.leading, NW.Space.xxxl).padding(.trailing, NW.Space.m).padding(.bottom, NW.Space.m)
+        .padding(.leading, SH.Space.xxxl).padding(.trailing, SH.Space.m).padding(.bottom, SH.Space.m)
     }
 }
 
@@ -461,12 +461,12 @@ private struct MissionFileDiff: View {
 
     /// Diff rows fill their frame, so the scroll content takes the longest line's width.
     private var contentWidth: CGFloat {
-        let font = NSFont(name: "GeistMono-Regular", size: NWTextStyle.code.size * ThemeStore.shared.textScale)
-            ?? .monospacedSystemFont(ofSize: NWTextStyle.code.size * ThemeStore.shared.textScale, weight: .regular)
+        let font = NSFont(name: "GeistMono-Regular", size: SHTextStyle.code.size * ThemeStore.shared.textScale)
+            ?? .monospacedSystemFont(ofSize: SHTextStyle.code.size * ThemeStore.shared.textScale, weight: .regular)
         let widest = file.hunks.flatMap(\.lines).reduce(CGFloat.zero) {
             max($0, NSAttributedString(string: $1.text, attributes: [.font: font]).size().width)
         }
-        return (widest + NWDiffMetrics.codeLeading) * (split ? 2 : 1) + NW.Space.xl
+        return (widest + SHDiffMetrics.codeLeading) * (split ? 2 : 1) + SH.Space.xl
     }
 
     var body: some View {
@@ -474,22 +474,22 @@ private struct MissionFileDiff: View {
         ScrollView([.vertical, .horizontal]) {
             LazyVStack(alignment: .leading, spacing: 0) {
                 if file.isBinary {
-                    Text("Binary file · open the repository to inspect it.").nwText(.body).padding(NW.Space.xl)
+                    Text("Binary file · open the repository to inspect it.").shText(.body).padding(SH.Space.xl)
                 } else if file.hunks.isEmpty {
-                    Text(file.isRenamed ? "Renamed, no textual changes." : "No textual changes.").nwText(.body).padding(NW.Space.xl)
+                    Text(file.isRenamed ? "Renamed, no textual changes." : "No textual changes.").shText(.body).padding(SH.Space.xl)
                 }
                 ForEach(file.hunks) { hunk in
-                    Text(hunk.header).nwText(.mono).foregroundStyle(Color.nw.textTertiary).lineLimit(1)
-                        .padding(.horizontal, NW.Space.l).frame(height: NW.Height.controlM).frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.nw.runningTint)
+                    Text(hunk.header).shText(.mono).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
+                        .padding(.horizontal, SH.Space.l).frame(height: SH.Height.controlM).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.sh.runningTint)
                     if split {
                         ForEach(pairs(hunk.lines)) { row in
-                            NWSplitDiffLine(old: row.old.map(content), new: row.new.map(content), onComment: commentable ? { comment($0.newNumber ?? $0.oldNumber, old: $0.newNumber == nil) } : nil)
+                            SHSplitDiffLine(old: row.old.map(content), new: row.new.map(content), onComment: commentable ? { comment($0.newNumber ?? $0.oldNumber, old: $0.newNumber == nil) } : nil)
                             drafts(after: row.new?.newLine ?? row.old?.oldLine, old: row.new?.newLine == nil, width: geometry.size.width)
                         }
                     } else {
                         ForEach(hunk.lines) { line in
-                            NWDiffLine(content(line), onComment: commentable ? { comment(line.newLine ?? line.oldLine, old: line.newLine == nil) } : nil)
+                            SHDiffLine(content(line), onComment: commentable ? { comment(line.newLine ?? line.oldLine, old: line.newLine == nil) } : nil)
                             drafts(after: line.newLine ?? line.oldLine, old: line.newLine == nil, width: geometry.size.width)
                         }
                     }
@@ -501,8 +501,8 @@ private struct MissionFileDiff: View {
         .task(id: file.id) { colors = reviewHighlight(file, style: .theme) }
     }
 
-    private func content(_ line: DiffLine) -> NWDiffLineContent {
-        NWDiffLineContent(id: "\(file.id)\u{0}\(line.id)", key: line.id, kind: line.kind.diffKind,
+    private func content(_ line: DiffLine) -> SHDiffLineContent {
+        SHDiffLineContent(id: "\(file.id)\u{0}\(line.id)", key: line.id, kind: line.kind.diffKind,
                           oldNumber: line.oldLine, newNumber: line.newLine, text: colors[line.id] ?? AttributedString(line.text), source: line.text)
     }
 
@@ -539,8 +539,8 @@ private struct MissionFileDiff: View {
                 MissionCommentCard(comment: $comment, lane: repository) {
                     comments.removeAll { $0.id == comment.id }
                 }
-                .frame(width: max(0, width - NW.Space.xxxl * 2))
-                .padding(.horizontal, NW.Space.xxxl).padding(.vertical, NW.Space.m)
+                .frame(width: max(0, width - SH.Space.xxxl * 2))
+                .padding(.horizontal, SH.Space.xxxl).padding(.vertical, SH.Space.m)
             }
         }
     }
@@ -552,37 +552,37 @@ private struct MissionCommentCard: View {
     let discard: () -> Void
     @FocusState private var focused: Bool
     var body: some View {
-        VStack(alignment: .leading, spacing: NW.Space.m) {
-            HStack(spacing: NW.Space.s) {
-                Image(systemName: "person.crop.circle").foregroundStyle(Color.nw.textTertiary)
-                Text(comment.queued ? "You · queued" : "You · draft").nwText(.headline)
+        VStack(alignment: .leading, spacing: SH.Space.m) {
+            HStack(spacing: SH.Space.s) {
+                Image(systemName: "person.crop.circle").foregroundStyle(Color.sh.textTertiary)
+                Text(comment.queued ? "You · queued" : "You · draft").shText(.headline)
                 Spacer()
-                if let line = comment.line { Text("line \(line)").nwText(.micro).foregroundStyle(Color.nw.textTertiary) }
+                if let line = comment.line { Text("line \(line)").shText(.micro).foregroundStyle(Color.sh.textTertiary) }
             }
             if comment.queued {
-                Text(comment.text).nwText(.body).textSelection(.enabled)
+                Text(comment.text).shText(.body).textSelection(.enabled)
             } else {
-                TextEditor(text: $comment.text).focused($focused).nwText(.body).scrollContentBackground(.hidden)
-                    .frame(minHeight: NW.Height.controlL * 2).accessibilityLabel("Requested change")
+                TextEditor(text: $comment.text).focused($focused).shText(.body).scrollContentBackground(.hidden)
+                    .frame(minHeight: SH.Height.controlL * 2).accessibilityLabel("Requested change")
             }
             // The buttons keep their whole labels; the note moves under them when the card is narrow.
-            let actions = HStack(spacing: NW.Space.m) {
+            let actions = HStack(spacing: SH.Space.m) {
                 if !comment.queued {
                     Button("Send to the \(lane) lane") { comment.queued = true }
-                        .buttonStyle(.nw(.secondary, size: .s))
+                        .buttonStyle(.sh(.secondary, size: .s))
                         .disabled(comment.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
-                Button(comment.queued ? "Remove" : "Discard", action: discard).buttonStyle(.nw(.ghost, size: .s))
+                Button(comment.queued ? "Remove" : "Discard", action: discard).buttonStyle(.sh(.ghost, size: .s))
             }.fixedSize()
-            let note = Text("Request changes sends it; validation runs again.").nwText(.caption).foregroundStyle(Color.nw.textTertiary)
+            let note = Text("Request changes sends it; validation runs again.").shText(.caption).foregroundStyle(Color.sh.textTertiary)
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: NW.Space.m) { actions; Spacer(minLength: NW.Space.m); note.fixedSize() }
-                VStack(alignment: .leading, spacing: NW.Space.s) { actions; note.fixedSize(horizontal: false, vertical: true) }
+                HStack(spacing: SH.Space.m) { actions; Spacer(minLength: SH.Space.m); note.fixedSize() }
+                VStack(alignment: .leading, spacing: SH.Space.s) { actions; note.fixedSize(horizontal: false, vertical: true) }
             }
         }
-        .padding(NW.Space.l)
-        .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-        .nwBorder(Color.nw.lineStrong, radius: NW.Radius.m)
+        .padding(SH.Space.l)
+        .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+        .shBorder(Color.sh.lineStrong, radius: SH.Radius.m)
         .onAppear { if !comment.queued { focused = true } }
     }
 }

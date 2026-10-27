@@ -40,9 +40,9 @@ struct MissionRunPage: View {
             if geometry.size.width < AppLayout.missionNarrowWidth {
                 // A narrow window shows the route or the station, as Review shows diff or contract.
                 VStack(spacing: 0) {
-                    NWSegmentedPicker("Show", selection: $inspecting, options: [(false, "Route"), (true, "Station")])
-                        .fixedSize().padding(NW.Space.m)
-                    NWHairline()
+                    SHSegmentedPicker("Show", selection: $inspecting, options: [(false, "Route"), (true, "Station")])
+                        .fixedSize().padding(SH.Space.m)
+                    SHHairline()
                     GeometryReader { inner in
                         if inspecting { station } else { route(CGSize(width: inner.size.width, height: inner.size.height)) }
                     }
@@ -51,7 +51,7 @@ struct MissionRunPage: View {
                 HStack(spacing: 0) {
                     let width = geometry.size.width * AppLayout.missionRunGraphShare
                     route(CGSize(width: width, height: geometry.size.height)).frame(width: width)
-                    Rectangle().fill(Color.nw.lineSubtle).frame(width: 1)
+                    Rectangle().fill(Color.sh.lineSubtle).frame(width: 1)
                     station
                 }
             }
@@ -64,17 +64,17 @@ struct MissionRunPage: View {
         VStack(spacing: 0) {
             // The whole route in the top half, scaled down while it stays readable; past that it scrolls.
             let graph = layout.size(.compact)
-            let fit = CGSize(width: room.width - NW.Space.l * 2, height: room.height / 2 - NW.Space.l * 2)
+            let fit = CGSize(width: room.width - SH.Space.l * 2, height: room.height / 2 - SH.Space.l * 2)
             let scale = min(1, max(AppLayout.missionReadableZoom, min(fit.width / graph.width, fit.height / graph.height)))
             ScrollView([.horizontal, .vertical]) {
                 MissionGraph(mission: mission, layout: layout, metrics: .compact, filter: .both,
                              selection: shown?.id.rawValue) { selection = $0; inspecting = true }
                     .scaleEffect(scale, anchor: .topLeading)
                     .frame(width: graph.width * scale, height: graph.height * scale, alignment: .topLeading)
-                    .padding(NW.Space.l)
+                    .padding(SH.Space.l)
             }
             .frame(maxHeight: room.height / 2)
-            NWHairline()
+            SHHairline()
             ScrollView {
                 VStack(spacing: 0) {
                     frontier
@@ -93,7 +93,7 @@ struct MissionRunPage: View {
                                 close: { selection = nil; inspecting = false })
                 .id(station.id)
         } else {
-            Text("Select a station to follow its work.").nwText(.body).foregroundStyle(Color.nw.textTertiary)
+            Text("Select a station to follow its work.").shText(.body).foregroundStyle(Color.sh.textTertiary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -104,21 +104,21 @@ struct MissionRunPage: View {
         MissionInspectorSection(title: "Frontier", meta: running.isEmpty ? nil : "\(running.count) moving") {
             if running.isEmpty {
                 Text(mission.phase == .running ? "Starting the next stations…" : "Nothing is moving while the mission is \(mission.phase.missionLabel.lowercased()).")
-                    .nwText(.ui).fontWeight(.regular).foregroundStyle(Color.nw.textTertiary)
+                    .shText(.ui).fontWeight(.regular).foregroundStyle(Color.sh.textTertiary)
             }
             ForEach(running) { attempt in
                 let station = plan.stations.first { $0.id == attempt.stationID }
                 Button { selection = attempt.stationID?.rawValue; inspecting = true } label: {
-                    HStack(spacing: NW.Space.m) {
-                        ProgressView().progressViewStyle(.nwSpinner())
-                        Text(station?.title ?? "station").nwText(.mono).fontWeight(.semibold).lineLimit(1)
-                        Text(mission.lane(station?.laneID)?.name ?? "mission").nwText(.micro).foregroundStyle(Color.nw.textTertiary).lineLimit(1)
+                    HStack(spacing: SH.Space.m) {
+                        ProgressView().progressViewStyle(.shSpinner())
+                        Text(station?.title ?? "station").shText(.mono).fontWeight(.semibold).lineLimit(1)
+                        Text(mission.lane(station?.laneID)?.name ?? "mission").shText(.micro).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
                         Spacer()
                         MissionAttemptClock(attempt: attempt)
                     }
-                    .padding(.horizontal, NW.Space.m).frame(height: NW.Height.controlL).contentShape(Rectangle())
+                    .padding(.horizontal, SH.Space.m).frame(height: SH.Height.controlL).contentShape(Rectangle())
                 }
-                .buttonStyle(.nwRow(selected: shown?.id == attempt.stationID))
+                .buttonStyle(.shRow(selected: shown?.id == attempt.stationID))
                 .accessibilityLabel("Follow \(station?.title ?? "station")")
             }
             let moving = Set(running.compactMap(\.stationID))
@@ -127,12 +127,12 @@ struct MissionRunPage: View {
                     && plan.dependencies.contains { $0.target == station.id && moving.contains($0.source) }
             }
             if !next.isEmpty {
-                HStack(spacing: NW.Space.s) {
-                    Image(systemName: "chevron.down").font(.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
-                    Text("then").nwText(.caption).foregroundStyle(Color.nw.textTertiary)
-                    Text(next.map(\.title).joined(separator: ", ")).nwText(.mono).lineLimit(1)
-                    Text("once \(running.count == 1 ? "it passes" : "these pass")").nwText(.caption).foregroundStyle(Color.nw.textTertiary)
-                }.padding(.horizontal, NW.Space.m)
+                HStack(spacing: SH.Space.s) {
+                    Image(systemName: "chevron.down").font(.sh(.micro)).foregroundStyle(Color.sh.textTertiary)
+                    Text("then").shText(.caption).foregroundStyle(Color.sh.textTertiary)
+                    Text(next.map(\.title).joined(separator: ", ")).shText(.mono).lineLimit(1)
+                    Text("once \(running.count == 1 ? "it passes" : "these pass")").shText(.caption).foregroundStyle(Color.sh.textTertiary)
+                }.padding(.horizontal, SH.Space.m)
             }
         }
     }
@@ -140,15 +140,15 @@ struct MissionRunPage: View {
     private var waiting: some View {
         MissionInspectorSection(title: "Waiting on you") {
             if let question = mission.run?.pendingQuestion {
-                Text(question).nwText(.body).foregroundStyle(Color.nw.lanternText)
+                Text(question).shText(.body).foregroundStyle(Color.sh.lanternText)
             } else if mission.phase == .paused || mission.phase == .stopped {
-                Text(mission.run?.notice ?? "Resume or stop the mission from the header.").nwText(.body)
+                Text(mission.run?.notice ?? "Resume or stop the mission from the header.").shText(.body)
             } else {
                 let count = plan.lanes.count
-                Text("Nothing. Next check-in is ") + Text("review").font(.nw(.mono)) + Text(", approving \(count) pull request\(count == 1 ? "" : "s").")
+                Text("Nothing. Next check-in is ") + Text("review").font(.sh(.mono)) + Text(", approving \(count) pull request\(count == 1 ? "" : "s").")
             }
         }
-        .nwText(.body)
+        .shText(.body)
     }
 
     /// The step's own reply after its evidence lines ("Changed: …", stock-contract notes), first line only.
@@ -180,15 +180,15 @@ struct MissionRunPage: View {
             }
         }
         return MissionInspectorSection(title: "Decisions so far") {
-            if entries.isEmpty { Text("None yet.").nwText(.ui).fontWeight(.regular).foregroundStyle(Color.nw.textTertiary) }
+            if entries.isEmpty { Text("None yet.").shText(.ui).fontWeight(.regular).foregroundStyle(Color.sh.textTertiary) }
             ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
-                HStack(spacing: NW.Space.l) {
-                    Text(entry.0).nwText(.micro).foregroundStyle(Color.nw.textTertiary).fixedSize()
-                    Text(entry.1).nwText(.mono).fontWeight(.semibold).lineLimit(1)
-                    Image(systemName: "arrow.right").font(.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
-                    Text(entry.2).nwText(.ui).fontWeight(.regular).lineLimit(1)
-                    Spacer(minLength: NW.Space.m)
-                    Text(entry.3).nwText(.caption).foregroundStyle(Color.nw.textTertiary).fixedSize()
+                HStack(spacing: SH.Space.l) {
+                    Text(entry.0).shText(.micro).foregroundStyle(Color.sh.textTertiary).fixedSize()
+                    Text(entry.1).shText(.mono).fontWeight(.semibold).lineLimit(1)
+                    Image(systemName: "arrow.right").font(.sh(.micro)).foregroundStyle(Color.sh.textTertiary)
+                    Text(entry.2).shText(.ui).fontWeight(.regular).lineLimit(1)
+                    Spacer(minLength: SH.Space.m)
+                    Text(entry.3).shText(.caption).foregroundStyle(Color.sh.textTertiary).fixedSize()
                 }.accessibilityElement(children: .combine)
             }
         }
@@ -202,7 +202,7 @@ struct MissionAttemptClock: View {
         TimelineView(.periodic(from: .now, by: AppLayout.missionBudgetRefresh)) { clock in
             if let start = attempt.startedAt {
                 Text(MissionFormat.duration((attempt.endedAt ?? clock.date.timeIntervalSince1970) - start))
-                    .nwText(.micro).foregroundStyle(Color.nw.textTertiary).monospacedDigit()
+                    .shText(.micro).foregroundStyle(Color.sh.textTertiary).monospacedDigit()
             }
         }
     }
@@ -247,27 +247,27 @@ private struct MissionRunInspector: View {
                                  lane: mission.lane(station.laneID)?.name, close: close) {
                 if let agent = latest?.agentID {
                     Button { openThread(agent) } label: { Image(systemName: "arrow.up.right.square") }
-                        .buttonStyle(.nwIcon).nwHelp("Open its thread").accessibilityLabel("Open its thread")
+                        .buttonStyle(.shIcon).shHelp("Open its thread").accessibilityLabel("Open its thread")
                 }
             }
-            HStack(spacing: NW.Space.xl) {
+            HStack(spacing: SH.Space.xl) {
                 tabButton(.transcript, "Transcript")
                 tabButton(.evidence, "Evidence")
                 tabButton(.inputs, "Inputs · \(inputs.count)")
                 tabButton(.diff, "Diff", stat: review.map { ($0.files.reduce(0) { $0 + $1.addedCount }, $0.files.reduce(0) { $0 + $1.removedCount }) })
                 Spacer()
                 Text("\(station.model ?? mission.run?.model ?? "") · \(MissionFormat.tokens(attempts.reduce(0) { $0 + $1.tokens })) tok")
-                    .nwText(.micro).foregroundStyle(Color.nw.textTertiary).lineLimit(1)
+                    .shText(.micro).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
             }
-            .padding(.horizontal, NW.Space.xl)
-            .frame(height: NWPageMetrics.headerHeight)
-            .overlay(alignment: .bottom) { NWHairline() }
+            .padding(.horizontal, SH.Space.xl)
+            .frame(height: SHPageMetrics.headerHeight)
+            .overlay(alignment: .bottom) { SHHairline() }
             if tab == .transcript, let source {
                 // The station's real thread (tool rows, edits, commands), steered only through the mission.
                 MissionStationThread(source: source, title: station.title, report: threads.report)
             } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: NW.Space.l) {
+                    VStack(alignment: .leading, spacing: SH.Space.l) {
                         switch tab {
                         case .transcript: transcript
                         case .evidence: evidence
@@ -275,12 +275,12 @@ private struct MissionRunInspector: View {
                         case .diff: diff
                         }
                     }
-                    .padding(NW.Space.xxl)
+                    .padding(SH.Space.xxl)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .task(id: sourceKey) {
             // Only an agent the app holds has a store that lives; before that, the receipts' text shows.
             guard let latest, let agent = latest.agentID, threads.isLive(agent) else { source = nil; return }
@@ -290,14 +290,14 @@ private struct MissionRunInspector: View {
 
     private func tabButton(_ value: MissionRunTab, _ label: String, stat: (Int, Int)? = nil) -> some View {
         Button { tab = value } label: {
-            HStack(spacing: NW.Space.s) {
-                Text(label).font(.nw(.ui, weight: tab == value ? .semibold : .regular))
-                if let stat { NWDiffStat(added: stat.0, removed: stat.1) }
+            HStack(spacing: SH.Space.s) {
+                Text(label).font(.sh(.ui, weight: tab == value ? .semibold : .regular))
+                if let stat { SHDiffStat(added: stat.0, removed: stat.1) }
             }
-            .foregroundStyle(tab == value ? Color.nw.textPrimary : Color.nw.textSecondary)
+            .foregroundStyle(tab == value ? Color.sh.textPrimary : Color.sh.textSecondary)
             .frame(maxHeight: .infinity)
             .overlay(alignment: .bottom) {
-                if tab == value { Rectangle().fill(Color.nw.textPrimary).frame(height: AppLayout.missionSelectedBorder) }
+                if tab == value { Rectangle().fill(Color.sh.textPrimary).frame(height: AppLayout.missionSelectedBorder) }
             }
             .contentShape(Rectangle())
         }
@@ -307,38 +307,38 @@ private struct MissionRunInspector: View {
 
     @ViewBuilder private var transcript: some View {
         if !inputs.isEmpty {
-            HStack(spacing: NW.Space.s) {
-                NWGlyph.gitBranch.image.foregroundStyle(Color.nw.textTertiary)
-                Text("Started from").nwText(.ui).fontWeight(.regular).foregroundStyle(Color.nw.textTertiary)
+            HStack(spacing: SH.Space.s) {
+                SHGlyph.gitBranch.image.foregroundStyle(Color.sh.textTertiary)
+                Text("Started from").shText(.ui).fontWeight(.regular).foregroundStyle(Color.sh.textTertiary)
                 ForEach(inputs, id: \.self) { wire in
-                    Text(wire.artifact ?? "output").nwText(.mono).foregroundStyle(Color.nw.synKeyword)
+                    Text(wire.artifact ?? "output").shText(.mono).foregroundStyle(Color.sh.synKeyword)
                 }
                 if let start = latest?.startedAt {
-                    Text("at \(Date(timeIntervalSince1970: start).formatted(date: .omitted, time: .shortened))").nwText(.ui).fontWeight(.regular).foregroundStyle(Color.nw.textTertiary)
+                    Text("at \(Date(timeIntervalSince1970: start).formatted(date: .omitted, time: .shortened))").shText(.ui).fontWeight(.regular).foregroundStyle(Color.sh.textTertiary)
                 }
             }
         }
         if attempts.isEmpty {
-            Text("This station has not started.").nwText(.body).foregroundStyle(Color.nw.textTertiary)
+            Text("This station has not started.").shText(.body).foregroundStyle(Color.sh.textTertiary)
         }
         ForEach(Array(attempts.enumerated()), id: \.element.id) { index, attempt in
             if attempts.count > 1 {
-                HStack(spacing: NW.Space.s) {
-                    NWStatusDot(attempt.status.missionState)
-                    Text("Attempt \(index + 1) · \(attempt.status.rawValue)").nwText(.caption).foregroundStyle(Color.nw.textTertiary)
+                HStack(spacing: SH.Space.s) {
+                    SHStatusDot(attempt.status.missionState)
+                    Text("Attempt \(index + 1) · \(attempt.status.rawValue)").shText(.caption).foregroundStyle(Color.sh.textTertiary)
                 }
             }
             let live = attempt.status == .running ? (attemptOutput[attempt.id] ?? output) : ""
             let text = live.isEmpty ? attempt.output : live
             if text.isEmpty && attempt.status == .running {
-                HStack(spacing: NW.Space.m) {
-                    ProgressView().progressViewStyle(.nwSpinner())
-                    Text("Working…").nwText(.ui).fontWeight(.regular).foregroundStyle(Color.nw.textSecondary)
+                HStack(spacing: SH.Space.m) {
+                    ProgressView().progressViewStyle(.shSpinner())
+                    Text("Working…").shText(.ui).fontWeight(.regular).foregroundStyle(Color.sh.textSecondary)
                 }
             } else if station.kind == .check {
-                Text(text).nwText(.code).textSelection(.enabled)
-                    .padding(NW.Space.l).frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.nw.bgSunken, in: RoundedRectangle(cornerRadius: NW.Radius.m))
+                Text(text).shText(.code).textSelection(.enabled)
+                    .padding(SH.Space.l).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.sh.bgSunken, in: RoundedRectangle(cornerRadius: SH.Radius.m))
             } else {
                 MissionProse(text, live: attempt.status == .running)
             }
@@ -347,38 +347,38 @@ private struct MissionRunInspector: View {
 
     @ViewBuilder private var evidence: some View {
         if let exit = latest?.exitCode {
-            MissionFactRow(label: "Exit status") { Text("\(exit)").nwText(.mono).foregroundStyle(exit == 0 ? Color.nw.done : Color.nw.failed) }
+            MissionFactRow(label: "Exit status") { Text("\(exit)").shText(.mono).foregroundStyle(exit == 0 ? Color.sh.done : Color.sh.failed) }
         }
         let gates = plan.stations.filter { gate in
             (gate.kind == .check || gate.kind == .validator) && ((try? plan.dataConsumers(of: [station.id]))?.contains(gate.id) == true || gate.id == station.id)
         }
-        if gates.isEmpty { Text("No check or validator reads this station's output.").nwText(.body).foregroundStyle(Color.nw.textTertiary) }
+        if gates.isEmpty { Text("No check or validator reads this station's output.").shText(.body).foregroundStyle(Color.sh.textTertiary) }
         ForEach(gates) { gate in
             let attempt = mission.latest(gate.id)
-            VStack(alignment: .leading, spacing: NW.Space.s) {
-                HStack(spacing: NW.Space.m) {
-                    NWStateGlyph(attempt?.status.missionState ?? .queued)
-                    Text(gate.kind == .check ? (gate.command ?? gate.title) : gate.title).nwText(.mono).fontWeight(.semibold)
+            VStack(alignment: .leading, spacing: SH.Space.s) {
+                HStack(spacing: SH.Space.m) {
+                    SHStateGlyph(attempt?.status.missionState ?? .queued)
+                    Text(gate.kind == .check ? (gate.command ?? gate.title) : gate.title).shText(.mono).fontWeight(.semibold)
                     Spacer()
-                    Text(attempt?.status.rawValue ?? "not run").nwText(.micro).foregroundStyle(Color.nw.textTertiary)
+                    Text(attempt?.status.rawValue ?? "not run").shText(.micro).foregroundStyle(Color.sh.textTertiary)
                 }
                 if let output = attempt?.output, !output.isEmpty {
-                    Text(output).nwText(.caption).foregroundStyle(Color.nw.textSecondary).lineLimit(6).textSelection(.enabled)
+                    Text(output).shText(.caption).foregroundStyle(Color.sh.textSecondary).lineLimit(6).textSelection(.enabled)
                 }
             }
-            .padding(NW.Space.l)
-            .nwCard()
+            .padding(SH.Space.l)
+            .shCard()
         }
     }
 
     @ViewBuilder private var inputList: some View {
-        if inputs.isEmpty { Text("This station has no data inputs.").nwText(.body).foregroundStyle(Color.nw.textTertiary) }
+        if inputs.isEmpty { Text("This station has no data inputs.").shText(.body).foregroundStyle(Color.sh.textTertiary) }
         ForEach(inputs, id: \.self) { wire in
-            VStack(alignment: .leading, spacing: NW.Space.s) {
+            VStack(alignment: .leading, spacing: SH.Space.s) {
                 MissionWireRow(artifact: wire.artifact ?? "output", other: title(wire.source), incoming: true,
                                state: mission.latest(wire.source)?.status.missionState)
                 if let output = mission.latest(wire.source)?.output, !output.isEmpty {
-                    Text(output).nwText(.caption).foregroundStyle(Color.nw.textSecondary).lineLimit(4).textSelection(.enabled)
+                    Text(output).shText(.caption).foregroundStyle(Color.sh.textSecondary).lineLimit(4).textSelection(.enabled)
                 }
             }
         }
@@ -386,18 +386,18 @@ private struct MissionRunInspector: View {
 
     @ViewBuilder private var diff: some View {
         if let review, !review.files.isEmpty {
-            Text("\(review.name) · \(review.branch)").nwText(.mono).foregroundStyle(Color.nw.textTertiary)
+            Text("\(review.name) · \(review.branch)").shText(.mono).foregroundStyle(Color.sh.textTertiary)
             ForEach(review.files) { file in
-                HStack(spacing: NW.Space.m) {
-                    Text(file.isNew ? "add" : file.isDeleted ? "delete" : file.isRenamed ? "rename" : "edit").nwText(.micro).foregroundStyle(Color.nw.textTertiary)
-                    Text(file.displayPath).nwText(.mono).lineLimit(1).truncationMode(.middle)
+                HStack(spacing: SH.Space.m) {
+                    Text(file.isNew ? "add" : file.isDeleted ? "delete" : file.isRenamed ? "rename" : "edit").shText(.micro).foregroundStyle(Color.sh.textTertiary)
+                    Text(file.displayPath).shText(.mono).lineLimit(1).truncationMode(.middle)
                     Spacer()
-                    NWDiffStat(added: file.addedCount, removed: file.removedCount)
+                    SHDiffStat(added: file.addedCount, removed: file.removedCount)
                 }
             }
         } else {
             Text(station.laneID == nil ? "Orchestration stations read every worktree and change none." : "No changes collected in this lane yet.")
-                .nwText(.body).foregroundStyle(Color.nw.textTertiary)
+                .shText(.body).foregroundStyle(Color.sh.textTertiary)
         }
     }
 }

@@ -33,7 +33,7 @@ struct SidebarListTests {
             window.layout()
             let document = scroll.documentView?.bounds.height ?? 0
             // The lazy stack's estimate of the rows under the last one it built leaves some slack.
-            return scroll.contentView.bounds.maxY > document - 8 * NWDensity.standard.rowHeight
+            return scroll.contentView.bounds.maxY > document - 8 * SHDensity.standard.rowHeight
         }
     }
 

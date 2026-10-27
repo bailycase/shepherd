@@ -47,11 +47,11 @@ struct MissionsDestination: View {
         .overlay(alignment: .bottom) {
             if let error = controller.error {
                 MissionErrorBanner(message: error) { controller.error = nil }
-                    .padding(NW.Space.xl)
+                    .padding(SH.Space.xl)
             }
         }
-        .background(Color.nw.bgWindow)
-        .foregroundStyle(Color.nw.textPrimary)
+        .background(Color.sh.bgWindow)
+        .foregroundStyle(Color.sh.textPrimary)
         .task { await controller.refreshModels() }
         .onAppear { if seed.creating { creating = true }; takeStartRequest() }
         // The sidebar's New mission.
@@ -185,16 +185,16 @@ private struct MissionErrorBanner: View {
     let message: String
     let dismiss: () -> Void
     var body: some View {
-        HStack(alignment: .top, spacing: NW.Space.l) {
-            NWStateGlyph(.failed)
-            Text(message).nwText(.body).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-            Button("Dismiss", action: dismiss).buttonStyle(.nw(.ghost, size: .s))
+        HStack(alignment: .top, spacing: SH.Space.l) {
+            SHStateGlyph(.failed)
+            Text(message).shText(.body).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+            Button("Dismiss", action: dismiss).buttonStyle(.sh(.ghost, size: .s))
         }
-        .padding(NW.Space.l)
+        .padding(SH.Space.l)
         .frame(maxWidth: AppLayout.missionStartWidth)
-        .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-        .nwBorder(Color.nw.failed, radius: NW.Radius.m)
-        .nwPopover()
+        .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+        .shBorder(Color.sh.failed, radius: SH.Radius.m)
+        .shPopover()
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isStaticText)
     }
@@ -297,14 +297,14 @@ enum MissionFormat {
 /// The host chip every mission header ends with. Missions run only on This Mac.
 struct MissionHostChip: View {
     var body: some View {
-        HStack(spacing: NW.Space.s) {
-            Image(systemName: "desktopcomputer").font(.nw(.caption)).foregroundStyle(Color.nw.textSecondary)
-            Text("This Mac").nwText(.mono)
-            NWStatusDot(.done)
+        HStack(spacing: SH.Space.s) {
+            Image(systemName: "desktopcomputer").font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+            Text("This Mac").shText(.mono)
+            SHStatusDot(.done)
         }
-        .padding(.horizontal, NW.Space.m)
-        .frame(height: NW.Height.controlM)
-        .nwBorder(Color.nw.lineStrong, radius: NW.Radius.s)
+        .padding(.horizontal, SH.Space.m)
+        .frame(height: SH.Height.controlM)
+        .shBorder(Color.sh.lineStrong, radius: SH.Radius.s)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Runs on This Mac")
     }
@@ -314,13 +314,13 @@ struct MissionHostChip: View {
 struct MissionLaneChip: View {
     let name: String
     var body: some View {
-        HStack(spacing: NW.Space.xs) {
-            NWGlyph.repository.image.font(.nwSans(AppLayout.missionChipGlyph)).foregroundStyle(Color.nw.textTertiary)
-            Text(name).nwText(.micro).foregroundStyle(Color.nw.textSecondary).lineLimit(1)
+        HStack(spacing: SH.Space.xs) {
+            SHGlyph.repository.image.font(.shSans(AppLayout.missionChipGlyph)).foregroundStyle(Color.sh.textTertiary)
+            Text(name).shText(.micro).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
         }
-        .padding(.horizontal, NW.Space.s)
+        .padding(.horizontal, SH.Space.s)
         .frame(height: AppLayout.missionChipHeight)
-        .nwBorder(Color.nw.lineSubtle, radius: NW.Radius.xs)
+        .shBorder(Color.sh.lineSubtle, radius: SH.Radius.xs)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Repository \(name)")
     }
@@ -351,7 +351,7 @@ struct MissionsPage: View {
     @State private var category = MissionListFilter.all
     /// A narrow window drops the secondary Lanes and Host columns so names keep their room.
     @State private var narrow = false
-    private var columns: [NWTableColumns.Column] { narrow ? AppLayout.missionNarrowColumns : AppLayout.missionColumns }
+    private var columns: [SHTableColumns.Column] { narrow ? AppLayout.missionNarrowColumns : AppLayout.missionColumns }
 
     private var rows: [Mission] {
         records.filter { category.includes($0) && (filter.isEmpty || $0.draft.title.localizedStandardContains(filter) || $0.draft.goal.localizedStandardContains(filter)) }
@@ -362,36 +362,36 @@ struct MissionsPage: View {
             DestinationPageHeader(title: "Missions", chrome: chrome) {
                 // With no missions the empty state carries the one New mission.
                 if !records.isEmpty {
-                    NWPageFilterField("Filter missions", text: $filter)
+                    SHPageFilterField("Filter missions", text: $filter)
                     Button(action: create) { Label("New mission", systemImage: "plus") }
-                        .buttonStyle(.nw(.primary))
+                        .buttonStyle(.sh(.primary))
                 }
             }
             if records.isEmpty {
-                NWEmptyState(Text("Give your agents a destination"),
+                SHEmptyState(Text("Give your agents a destination"),
                              message: "Describe an end state across your repositories. The planner drafts a map you approve, independent validation checks the work, and you publish the pull requests.") {
-                    Button(action: create) { Label("New mission", systemImage: "plus") }.buttonStyle(.nw(.primary))
+                    Button(action: create) { Label("New mission", systemImage: "plus") }.buttonStyle(.sh(.primary))
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 MissionStateTabs(records: records, selection: $category)
-                NWTableHead(narrow ? ["Mission", "Route", "Spend"] : ["Mission", "Lanes", "Route", "Spend", "Host"], columns: columns)
+                SHTableHead(narrow ? ["Mission", "Route", "Spend"] : ["Mission", "Lanes", "Route", "Spend", "Host"], columns: columns)
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(rows) { mission in
                             MissionListRow(mission: mission, narrow: narrow) { select(mission.id) }
                         }
                         if rows.isEmpty {
-                            VStack(spacing: NW.Space.m) {
-                                Text("No \(category.rawValue.lowercased()) missions\(filter.isEmpty ? "" : " match “\(filter)”")").nwText(.headline)
-                                Button("Show all missions") { category = .all; filter = "" }.buttonStyle(.nw(.secondary))
-                            }.padding(NW.Space.xxxl)
+                            VStack(spacing: SH.Space.m) {
+                                Text("No \(category.rawValue.lowercased()) missions\(filter.isEmpty ? "" : " match “\(filter)”")").shText(.headline)
+                                Button("Show all missions") { category = .all; filter = "" }.buttonStyle(.sh(.secondary))
+                            }.padding(SH.Space.xxxl)
                         }
                     }
                 }
             }
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .onGeometryChange(for: Bool.self) { $0.size.width < AppLayout.missionNarrowWidth } action: { narrow = $0 }
     }
 }
@@ -401,26 +401,26 @@ private struct MissionStateTabs: View {
     let records: [Mission]
     @Binding var selection: MissionListFilter
     var body: some View {
-        HStack(spacing: NW.Space.xxs) {
+        HStack(spacing: SH.Space.xxs) {
             ForEach(MissionListFilter.allCases, id: \.self) { tab in
                 let selected = tab == selection
                 Button { selection = tab } label: {
-                    HStack(spacing: NW.Space.s) {
-                        Text(tab.rawValue).font(.nw(.ui, weight: selected ? .semibold : .regular))
-                            .foregroundStyle(selected ? Color.nw.textPrimary : Color.nw.textSecondary)
-                        Text("\(records.filter(tab.includes).count)").nwText(.micro).foregroundStyle(Color.nw.textTertiary)
+                    HStack(spacing: SH.Space.s) {
+                        Text(tab.rawValue).font(.sh(.ui, weight: selected ? .semibold : .regular))
+                            .foregroundStyle(selected ? Color.sh.textPrimary : Color.sh.textSecondary)
+                        Text("\(records.filter(tab.includes).count)").shText(.micro).foregroundStyle(Color.sh.textTertiary)
                     }
                     .padding(.horizontal, AppLayout.missionTabPadding)
                     .frame(height: AppLayout.missionTabHeight)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.nwRow(selected: selected))
+                .buttonStyle(.shRow(selected: selected))
                 .accessibilityAddTraits(selected ? .isSelected : [])
             }
             Spacer()
         }
-        .padding(.horizontal, NWPageMetrics.sideInset)
-        .padding(.top, NW.Space.xl).padding(.bottom, NW.Space.l)
+        .padding(.horizontal, SHPageMetrics.sideInset)
+        .padding(.top, SH.Space.xl).padding(.bottom, SH.Space.l)
     }
 }
 
@@ -459,53 +459,53 @@ private struct MissionListRow: View {
 
     var body: some View {
         Button(action: select) {
-            NWTableColumns(narrow ? AppLayout.missionNarrowColumns : AppLayout.missionColumns) {
-                HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
-                    NWGlyph.mission.image.font(.nwSans(AppLayout.missionGlyph))
-                        .foregroundStyle(needsYou ? Color.nw.lanternText : Color.nw.textSecondary)
-                    VStack(alignment: .leading, spacing: NW.Space.s) {
+            SHTableColumns(narrow ? AppLayout.missionNarrowColumns : AppLayout.missionColumns) {
+                HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+                    SHGlyph.mission.image.font(.shSans(AppLayout.missionGlyph))
+                        .foregroundStyle(needsYou ? Color.sh.lanternText : Color.sh.textSecondary)
+                    VStack(alignment: .leading, spacing: SH.Space.s) {
                         // The pill drops under the name before the name gives up its room.
                         ViewThatFits(in: .horizontal) {
-                            HStack(spacing: NW.Space.m) {
-                                Text(mission.draft.title).nwText(.headline).lineLimit(1).fixedSize()
-                                NWStatusPill(mission.pill.state, label: mission.pill.label).fixedSize()
+                            HStack(spacing: SH.Space.m) {
+                                Text(mission.draft.title).shText(.headline).lineLimit(1).fixedSize()
+                                SHStatusPill(mission.pill.state, label: mission.pill.label).fixedSize()
                             }
-                            VStack(alignment: .leading, spacing: NW.Space.xs) {
-                                Text(mission.draft.title).nwText(.headline).lineLimit(1)
-                                NWStatusPill(mission.pill.state, label: mission.pill.label).fixedSize()
+                            VStack(alignment: .leading, spacing: SH.Space.xs) {
+                                Text(mission.draft.title).shText(.headline).lineLimit(1)
+                                SHStatusPill(mission.pill.state, label: mission.pill.label).fixedSize()
                             }
                         }
-                        Text(detail).nwText(.ui).fontWeight(.regular).lineLimit(1)
-                            .foregroundStyle(mission.run?.pendingQuestion != nil ? Color.nw.lanternText : Color.nw.textTertiary)
+                        Text(detail).shText(.ui).fontWeight(.regular).lineLimit(1)
+                            .foregroundStyle(mission.run?.pendingQuestion != nil ? Color.sh.lanternText : Color.sh.textTertiary)
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
                 if !narrow {
-                    NWFlowLayout(spacing: NW.Space.xs) {
+                    SHFlowLayout(spacing: SH.Space.xs) {
                         ForEach(plan?.lanes ?? []) { MissionLaneChip(name: $0.name) }
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }
-                VStack(alignment: .leading, spacing: NW.Space.s) {
-                    NWStepStrip(route.isEmpty ? [nil] : route)
+                VStack(alignment: .leading, spacing: SH.Space.s) {
+                    SHStepStrip(route.isEmpty ? [nil] : route)
                         .frame(width: AppLayout.missionRouteWidth)
-                    Text("\(completed) of \(route.count) stations").nwText(.micro).foregroundStyle(Color.nw.textTertiary)
+                    Text("\(completed) of \(route.count) stations").shText(.micro).foregroundStyle(Color.sh.textTertiary)
                 }
-                VStack(alignment: .leading, spacing: NW.Space.xxs) {
+                VStack(alignment: .leading, spacing: SH.Space.xxs) {
                     let limits = mission.draft.limits
                     Text("\(MissionFormat.tokens(mission.run?.tokens ?? 0, dash: true)) / \(MissionFormat.tokens(limits.tokens)) tok")
-                        .nwText(.mono).foregroundStyle(Color.nw.textSecondary)
+                        .shText(.mono).foregroundStyle(Color.sh.textSecondary)
                     Text("\(MissionFormat.duration(mission.run?.elapsedSeconds ?? 0, dash: true)) / \(MissionFormat.duration(limits.seconds))")
-                        .nwText(.mono).foregroundStyle(Color.nw.textTertiary)
+                        .shText(.mono).foregroundStyle(Color.sh.textTertiary)
                 }
-                if !narrow { Text("This Mac").nwText(.mono).foregroundStyle(Color.nw.textSecondary) }
+                if !narrow { Text("This Mac").shText(.mono).foregroundStyle(Color.sh.textSecondary) }
             }
-            .padding(.horizontal, NWPageMetrics.sideInset).padding(.vertical, NW.Space.l + NW.Space.xxs)
+            .padding(.horizontal, SHPageMetrics.sideInset).padding(.vertical, SH.Space.l + SH.Space.xxs)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.nwRow(radius: 0))
+        .buttonStyle(.shRow(radius: 0))
         // NavMissions lifts the rows that wait on you.
-        .background(needsYou ? Color.nw.bgRaised : Color.clear)
-        .overlay(alignment: .top) { NWHairline() }
+        .background(needsYou ? Color.sh.bgRaised : Color.clear)
+        .overlay(alignment: .top) { SHHairline() }
         .accessibilityElement(children: .combine)
         .accessibilityHint("Opens the mission")
     }
@@ -556,54 +556,54 @@ struct MissionStartView: View {
                 if !compact { MissionHostChip() }
             }
             ScrollView {
-                VStack(spacing: NW.Space.xxl) {
-                    VStack(spacing: NW.Space.l) {
-                        Text("Where do you want to end up?").nwText(.display).accessibilityAddTraits(.isHeader)
+                VStack(spacing: SH.Space.xxl) {
+                    VStack(spacing: SH.Space.l) {
+                        Text("Where do you want to end up?").shText(.display).accessibilityAddTraits(.isHeader)
                         Text("Describe the end state, like you would to any agent. The planner reads the repositories you pick, finds the context and the checks, and only asks what it can't work out.")
-                            .nwText(.body).foregroundStyle(Color.nw.textSecondary).multilineTextAlignment(.center)
+                            .shText(.body).foregroundStyle(Color.sh.textSecondary).multilineTextAlignment(.center)
                     }
                     VStack(alignment: .leading, spacing: 0) {
                         ZStack(alignment: .topLeading) {
                             if goal.isEmpty {
                                 Text("Add checkout funnel analytics so product can see drop-off at every step…")
-                                    .nwText(.body).foregroundStyle(Color.nw.textTertiary)
-                                    .padding(.horizontal, NW.Space.xs).accessibilityHidden(true)
+                                    .shText(.body).foregroundStyle(Color.sh.textTertiary)
+                                    .padding(.horizontal, SH.Space.xs).accessibilityHidden(true)
                             }
                             TextEditor(text: $goal)
-                                .focused($focused).nwText(.body)
+                                .focused($focused).shText(.body)
                                 .scrollContentBackground(.hidden)
                                 .accessibilityLabel("Mission goal")
                         }
-                        .padding(.horizontal, NW.Space.l).padding(.top, NW.Space.l)
-                        HStack(spacing: NW.Space.s) {
+                        .padding(.horizontal, SH.Space.l).padding(.top, SH.Space.l)
+                        HStack(spacing: SH.Space.s) {
                             MissionRepositoryPicker(spaces: spaces, selected: $selectedSpaces, branchChoices: branchChoices, branches: $selectedBranches)
                             MissionModelChip(models: models, model: $model)
-                            Spacer(minLength: NW.Space.m)
+                            Spacer(minLength: SH.Space.m)
                             Button { submit() } label: { Image(systemName: busy ? "ellipsis" : "arrow.up") }
-                                .buttonStyle(.nwIcon(bordered: true, tint: blocker == nil ? Color.nw.lanternText : nil))
+                                .buttonStyle(.shIcon(bordered: true, tint: blocker == nil ? Color.sh.lanternText : nil))
                                 .disabled(busy || blocker != nil)
                                 .keyboardShortcut(.return, modifiers: .command)
-                                .nwHelp(blocker ?? "Plan the mission", shortcut: "⌘↩")
+                                .shHelp(blocker ?? "Plan the mission", shortcut: "⌘↩")
                                 .accessibilityLabel(busy ? "Starting planner" : "Plan the mission")
-                        }.padding(NW.Space.m)
+                        }.padding(SH.Space.m)
                     }
                     .frame(height: AppLayout.missionComposerHeight)
-                    .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-                    .nwBorder(Color.nw.lineStrong, radius: NW.Radius.m)
+                    .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+                    .shBorder(Color.sh.lineStrong, radius: SH.Radius.m)
                     // MXStart's neutral ring; textSecondary keeps it above 3:1 in both appearances.
-                    .nwFocusRing(focused, radius: NW.Radius.m, color: Color.nw.textSecondary)
+                    .shFocusRing(focused, radius: SH.Radius.m, color: Color.sh.textSecondary)
                     MissionRepositoryToggles(spaces: spaces, selected: $selectedSpaces)
-                    (Text(blocker.map { $0 + " " } ?? "").foregroundStyle(Color.nw.textSecondary)
+                    (Text(blocker.map { $0 + " " } ?? "").foregroundStyle(Color.sh.textSecondary)
                         + Text("Each repository gets a fresh worktree from the branch you pick; your checkouts are not edited. Context and code go to \(model.isEmpty ? "the selected model's provider" : model). Runs belong to this app: quitting stops active work."))
-                        .nwText(.caption).foregroundStyle(Color.nw.textTertiary)
+                        .shText(.caption).foregroundStyle(Color.sh.textTertiary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .frame(maxWidth: AppLayout.missionStartWidth)
-                .padding(NW.Space.xxxl)
+                .padding(SH.Space.xxxl)
                 .frame(maxWidth: .infinity, minHeight: AppLayout.missionStartWidth)
             }
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .onAppear { chooseDefaultModel(); chooseDefaultBranches(); focused = true }
         .onChange(of: spaces.map(\.id)) { _, ids in
             if selectedSpaces.isEmpty, ids.count == 1 { selectedSpaces = ids }
@@ -636,16 +636,16 @@ struct MissionChipLabel: View {
     var attention = false
     var accessibility: String? = nil
     var body: some View {
-        HStack(spacing: NW.Space.xs) {
-            Image(systemName: symbol).font(.nw(.caption)).foregroundStyle(attention ? Color.nw.lanternText : Color.nw.textTertiary)
+        HStack(spacing: SH.Space.xs) {
+            Image(systemName: symbol).font(.sh(.caption)).foregroundStyle(attention ? Color.sh.lanternText : Color.sh.textTertiary)
                 .accessibilityHidden(true)
-            Text(text).nwText(.mono).foregroundStyle(attention ? Color.nw.lanternText : Color.nw.textSecondary).lineLimit(1)
-            NWChipChevron()
+            Text(text).shText(.mono).foregroundStyle(attention ? Color.sh.lanternText : Color.sh.textSecondary).lineLimit(1)
+            SHChipChevron()
         }
-        .padding(.horizontal, NW.Space.m)
-        .frame(height: NW.Height.controlS)
-        .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.s))
-        .nwBorder(attention ? Color.nw.lantern : Color.nw.lineStrong, radius: NW.Radius.s)
+        .padding(.horizontal, SH.Space.m)
+        .frame(height: SH.Height.controlS)
+        .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+        .shBorder(attention ? Color.sh.lantern : Color.sh.lineStrong, radius: SH.Radius.s)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibility ?? text)
@@ -674,7 +674,7 @@ private struct MissionRepositoryPicker: View {
                     Divider()
                     Button("Remove \(space.name)") { selected.removeAll { $0 == id } }
                 } label: {
-                    MissionChipLabel(symbol: NWGlyph.repository.symbolName,
+                    MissionChipLabel(symbol: SHGlyph.repository.symbolName,
                                      text: unavailable ? "\(space.name) @ choose branch" : "\(space.name) @ \(MissionBranchSelection.label(branch))",
                                      attention: unavailable,
                                      accessibility: "\(space.name), starting branch \(unavailable ? "not chosen" : MissionBranchSelection.label(branch))")
@@ -694,22 +694,22 @@ private struct MissionRepositoryToggles: View {
     @Binding var selected: [SpaceID]
     var body: some View {
         if !spaces.isEmpty {
-            VStack(alignment: .leading, spacing: NW.Space.m) {
-                NWPageSectionLabel("Repositories the planner may read")
-                NWFlowLayout(spacing: NW.Space.s) {
+            VStack(alignment: .leading, spacing: SH.Space.m) {
+                SHPageSectionLabel("Repositories the planner may read")
+                SHFlowLayout(spacing: SH.Space.s) {
                     ForEach(spaces) { space in
                         let on = selected.contains(space.id)
                         Button {
                             if on { selected.removeAll { $0 == space.id } } else { selected.append(space.id) }
                         } label: {
-                            HStack(spacing: NW.Space.xs) {
-                                Image(systemName: on ? "checkmark" : "plus").font(.nw(.micro, weight: .bold))
-                                    .foregroundStyle(on ? Color.nw.done : Color.nw.textTertiary)
-                                Text(space.name).nwText(.mono).foregroundStyle(on ? Color.nw.textPrimary : Color.nw.textSecondary)
+                            HStack(spacing: SH.Space.xs) {
+                                Image(systemName: on ? "checkmark" : "plus").font(.sh(.micro, weight: .bold))
+                                    .foregroundStyle(on ? Color.sh.done : Color.sh.textTertiary)
+                                Text(space.name).shText(.mono).foregroundStyle(on ? Color.sh.textPrimary : Color.sh.textSecondary)
                             }
-                            .padding(.horizontal, NW.Space.m).frame(height: NW.Height.controlS)
-                            .background(on ? Color.nw.bgSelected : Color.clear, in: RoundedRectangle(cornerRadius: NW.Radius.s))
-                            .nwBorder(on ? Color.nw.lineStrong : Color.nw.lineSubtle, radius: NW.Radius.s)
+                            .padding(.horizontal, SH.Space.m).frame(height: SH.Height.controlS)
+                            .background(on ? Color.sh.bgSelected : Color.clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+                            .shBorder(on ? Color.sh.lineStrong : Color.sh.lineSubtle, radius: SH.Radius.s)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
@@ -777,16 +777,16 @@ struct MissionTextEditor: View {
     @Binding var text: String
     @FocusState private var focused: Bool
     var body: some View {
-        VStack(alignment: .leading, spacing: NW.Space.m) {
-            Text(title).nwText(.ui)
+        VStack(alignment: .leading, spacing: SH.Space.m) {
+            Text(title).shText(.ui)
             TextEditor(text: $text)
-                .focused($focused).nwText(.body)
+                .focused($focused).shText(.body)
                 .scrollContentBackground(.hidden)
                 .frame(height: AppLayout.missionEditorHeight)
-                .padding(NW.Space.m)
-                .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-                .nwBorder(Color.nw.lineStrong, radius: NW.Radius.m)
-                .nwFocusRing(focused, radius: NW.Radius.m)
+                .padding(SH.Space.m)
+                .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+                .shBorder(Color.sh.lineStrong, radius: SH.Radius.m)
+                .shFocusRing(focused, radius: SH.Radius.m)
                 .accessibilityLabel(title)
         }
     }

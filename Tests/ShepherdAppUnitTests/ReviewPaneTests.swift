@@ -45,16 +45,16 @@ private enum ReviewSample {
 @Suite("Review diff rows")
 struct ReviewDiffRowTests {
     @Test(arguments: [
-        (false, false, false, NWFileStatus.modified), (true, false, false, .added), (false, true, false, .deleted), (false, false, true, .renamed),
+        (false, false, false, SHFileStatus.modified), (true, false, false, .added), (false, true, false, .deleted), (false, false, true, .renamed),
     ])
-    func filesMapToTheirStatusLetter(isNew: Bool, isDeleted: Bool, isRenamed: Bool, status: NWFileStatus) {
+    func filesMapToTheirStatusLetter(isNew: Bool, isDeleted: Bool, isRenamed: Bool, status: SHFileStatus) {
         let file = DiffFile(oldPath: "a", newPath: "a", displayPath: "a", isNew: isNew, isDeleted: isDeleted, isRenamed: isRenamed,
                             isBinary: false, hunks: [])
         #expect(file.reviewStatus == status)
     }
 
-    @Test(arguments: [(DiffLine.Kind.context, NWDiffLineKind.context), (.added, .added), (.removed, .removed)])
-    func lineKindsMapToTheirDiffKind(kind: DiffLine.Kind, diffKind: NWDiffLineKind) {
+    @Test(arguments: [(DiffLine.Kind.context, SHDiffLineKind.context), (.added, .added), (.removed, .removed)])
+    func lineKindsMapToTheirDiffKind(kind: DiffLine.Kind, diffKind: SHDiffLineKind) {
         #expect(kind.diffKind == diffKind)
     }
 

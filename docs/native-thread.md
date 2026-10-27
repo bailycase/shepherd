@@ -691,8 +691,8 @@ new tool, no versioning and no editing. The host stores nothing and trusts no cl
   either way, and opens "isn't available" on a host that cannot serve them.
 - **The client** (`NativeThreadArtifacts`) checks each piece (same path, in order, a size that does not change,
   within the limits), holds up to 24 MiB, keyed by path and latest write, and drops everything on a new session.
-- **Drawn** by `NWArtifactCard`, `NWArtifactList`, `NWArtifactBar` (ShepherdUI). Markdown through the thread's prose
-  renderer; HTML and SVG in `NWArtifactWebView`: JavaScript off, no base URL (so no file access), a content rule list
+- **Drawn** by `SHArtifactCard`, `SHArtifactList`, `SHArtifactBar` (ShepherdUI). Markdown through the thread's prose
+  renderer; HTML and SVG in `SHArtifactWebView`: JavaScript off, no base URL (so no file access), a content rule list
   that blocks every request but `data:`, every navigation cancelled. Save a copy writes the fetched bytes.
 
 ## Goals
@@ -757,8 +757,8 @@ draw no context meter.
   entry (`t:<call id>`) so a client can find it. System messages never become thread rows.
 - **What the model is sent is shorter than what the thread holds** while Settings ▸ Agents ▸
   Context ▸ "Trim old tool output from the model’s context" is on: the bundled context extension
-  (`shepherd-context.ts`) edits the request pi sends in its `context` event and nothing else. The
-  session file, `get_messages`, the thread and the Changes pane keep everything. It clips one
+  (`shepherd-context.ts`) edits ordinary requests in `context` and compaction summary inputs in
+  `session_before_compact`, using the same recorded clearing boundary. The session file, `get_messages`, the thread and the Changes pane keep everything. It clips one
   result to about 6k tokens; and, in batches, once the context passes 55% of the window, clears
   the oldest tool results, images, written-file arguments, hidden notices and reasoning payloads
   (OpenAI Responses APIs only) down to about 33%, never touching the last eight calls and at most
@@ -1051,7 +1051,7 @@ components ([docs/design/thread.md](design/thread.md) specifies their look):
 - **`ThreadMarkdown`:** prose and code blocks. The reply's blocks come parsed from the store
   (`nativeMarkdownParse`, ShepherdRemote: tables, task and nested lists, images, `<details>`,
   footnotes; see docs/design/thread.md › Rich content in prose); inline Markdown is styled once per text
-  (`NWProseInline`), and code blocks are colored by tree-sitter off the main actor and cached.
+  (`SHProseInline`), and code blocks are colored by tree-sitter off the main actor and cached.
 - **`Composer`:**
   - the field, attachments (resized to a 2000 px longest edge; at most 4 images of 2 MiB each)
   - chips: model with its picker on ⇧⌘M, and thinking

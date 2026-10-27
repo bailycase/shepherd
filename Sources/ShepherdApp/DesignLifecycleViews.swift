@@ -48,32 +48,32 @@ struct DeleteDesignDialog: View {
     let cancel: () -> Void
 
     var body: some View {
-        NWDesignAlert(symbol: "trash", title: words.title) {
-            NWDesignAlertList {
+        SHDesignAlert(symbol: "trash", title: words.title) {
+            SHDesignAlertList {
                 ForEach(Array(words.lines.enumerated()), id: \.offset) { _, line in
-                    NWDesignAlertLine(symbol: line.symbol, role: line.role == .goes ? .goes : .stays, Self.text(line))
+                    SHDesignAlertLine(symbol: line.symbol, role: line.role == .goes ? .goes : .stays, Self.text(line))
                 }
             }
             Text(words.note)
-                .font(.nwSans(NWDesignMetrics.alertMessageSize))
-                .foregroundStyle(Color.nw.textTertiary)
+                .font(.shSans(SHDesignMetrics.alertMessageSize))
+                .foregroundStyle(Color.sh.textTertiary)
             if let warning = words.warning {
-                NWDesignAlertWarning(warning)
+                SHDesignAlertWarning(warning)
             }
         } actions: {
             Button("Cancel", action: cancel)
-                .buttonStyle(.nw(.secondary))
+                .buttonStyle(.sh(.secondary))
                 .keyboardShortcut(.cancelAction)
             Button(words.confirm, action: delete)
-                .buttonStyle(.nw(.dangerFill))
+                .buttonStyle(.sh(.dangerFill))
         }
     }
 
     static func text(_ line: DeleteDesignWords.Line) -> Text {
         var text = Text("")
-        if let lead = line.lead { text = Text("\(text)\(NWDesignAlertMessage.strong(lead))") }
+        if let lead = line.lead { text = Text("\(text)\(SHDesignAlertMessage.strong(lead))") }
         text = Text("\(text)\(line.text)")
-        if let mono = line.mono { text = Text("\(text)\(NWDesignAlertMessage.mono(mono))") }
+        if let mono = line.mono { text = Text("\(text)\(SHDesignAlertMessage.mono(mono))") }
         if let tail = line.tail { text = Text("\(text)\(tail)") }
         return text
     }
@@ -87,34 +87,34 @@ struct DeleteSystemDialog: View {
     let cancel: () -> Void
 
     var body: some View {
-        NWDesignAlert(symbol: "trash", title: words.title,
-                      width: words.confirm == "Delete" ? NWDesignMetrics.alertWideWidth : NWDesignMetrics.alertWidth) {
-            NWDesignAlertMessage(message)
-            NWDesignAlertList {
+        SHDesignAlert(symbol: "trash", title: words.title,
+                      width: words.confirm == "Delete" ? SHDesignMetrics.alertWideWidth : SHDesignMetrics.alertWidth) {
+            SHDesignAlertMessage(message)
+            SHDesignAlertList {
                 ForEach(Array(words.lines.enumerated()), id: \.offset) { _, line in
-                    NWDesignAlertLine(symbol: line.role == .note ? "info.circle" : "checkmark", role: line.role == .note ? .note : .stays,
+                    SHDesignAlertLine(symbol: line.role == .note ? "info.circle" : "checkmark", role: line.role == .note ? .note : .stays,
                                       Self.text(line))
                 }
             }
         } actions: {
             Button("Cancel", action: cancel)
-                .buttonStyle(.nw(.secondary))
+                .buttonStyle(.sh(.secondary))
                 .keyboardShortcut(.cancelAction)
             Button(words.confirm, action: delete)
-                .buttonStyle(.nw(.dangerFill))
+                .buttonStyle(.sh(.dangerFill))
         }
     }
 
     private var message: Text {
         guard let mono = words.messageMono else { return Text(words.message) }
-        return Text("\(words.message)\(NWDesignAlertMessage.mono(mono, size: NWDesignMetrics.alertLineSize))\(words.messageTail ?? "")")
+        return Text("\(words.message)\(SHDesignAlertMessage.mono(mono, size: SHDesignMetrics.alertLineSize))\(words.messageTail ?? "")")
     }
 
     static func text(_ line: DeleteSystemWords.Line) -> Text {
         var text = Text("")
-        if let lead = line.lead { text = Text("\(text)\(NWDesignAlertMessage.strong(lead))") }
+        if let lead = line.lead { text = Text("\(text)\(SHDesignAlertMessage.strong(lead))") }
         text = Text("\(text)\(line.text)")
-        if let mono = line.mono { text = Text("\(text)\(NWDesignAlertMessage.mono(mono))") }
+        if let mono = line.mono { text = Text("\(text)\(SHDesignAlertMessage.mono(mono))") }
         if let tail = line.tail { text = Text("\(text)\(tail)") }
         return text
     }
@@ -141,28 +141,28 @@ struct DesignImportDialog: View {
     }
 
     private func failed(file: String, failure: DesignImportFailure) -> some View {
-        NWDesignAlert(symbol: "exclamationmark.triangle", title: DesignImportFailure.title(file: file),
-                      width: NWDesignMetrics.alertWideWidth) {
-            NWDesignAlertMessage(Self.message(failure))
+        SHDesignAlert(symbol: "exclamationmark.triangle", title: DesignImportFailure.title(file: file),
+                      width: SHDesignMetrics.alertWideWidth) {
+            SHDesignAlertMessage(Self.message(failure))
             if !failure.listedLinks.isEmpty {
-                NWDesignAlertLinks(failure.listedLinks.map { NWDesignAlertLinks.Link(from: $0.board, to: $0.target) })
+                SHDesignAlertLinks(failure.listedLinks.map { SHDesignAlertLinks.Link(from: $0.board, to: $0.target) })
             }
-            NWDesignAlertReassurance(failure.footer)
+            SHDesignAlertReassurance(failure.footer)
         } actions: {
             if case .unreadableBoards(_, let readable) = failure {
                 Button("Cancel import", action: dismiss)
-                    .buttonStyle(.nw(.secondary))
+                    .buttonStyle(.sh(.secondary))
                     .keyboardShortcut(.cancelAction)
                 Button(readable == 1 ? "Import the other board" : "Import the other \(readable)", action: resolve)
-                    .buttonStyle(.nw(.primary))
+                    .buttonStyle(.sh(.primary))
                     .keyboardShortcut(.defaultAction)
             } else {
                 if failure.offersAnother {
                     Button("Choose another…", action: resolve)
-                        .buttonStyle(.nw(.secondary))
+                        .buttonStyle(.sh(.secondary))
                 }
                 Button("OK", action: dismiss)
-                    .buttonStyle(.nw(.primary))
+                    .buttonStyle(.sh(.primary))
                     .keyboardShortcut(.defaultAction)
             }
         }
@@ -172,35 +172,35 @@ struct DesignImportDialog: View {
     static func message(_ failure: DesignImportFailure) -> Text {
         switch failure {
         case .notAProject:
-            return Text("There’s no \(NWDesignAlertMessage.mono("canvas.json", size: NWDesignMetrics.alertLineSize)) inside, so it isn’t a Claude Design project. Export the project from Claude Design as a ZIP or folder, then try again.")
+            return Text("There’s no \(SHDesignAlertMessage.mono("canvas.json", size: SHDesignMetrics.alertLineSize)) inside, so it isn’t a Claude Design project. Export the project from Claude Design as a ZIP or folder, then try again.")
         case .unreadableBoards(let boards, let readable) where boards.count == 1:
             let board = boards[0]
             let rest = readable == 1 ? "The other board is fine." : "The other \(readable) boards are fine."
-            return Text("The board \(NWDesignAlertMessage.strong(board.title)) couldn’t be read: \(NWDesignAlertMessage.mono(board.path, size: NWDesignMetrics.alertLineSize)) \(board.reason). \(rest)")
+            return Text("The board \(SHDesignAlertMessage.strong(board.title)) couldn’t be read: \(SHDesignAlertMessage.mono(board.path, size: SHDesignMetrics.alertLineSize)) \(board.reason). \(rest)")
         default:
             return Text(failure.message)
         }
     }
 
     private func again(_ words: ImportAgainWords) -> some View {
-        NWDesignAlert(symbol: "square.and.arrow.down", tone: .attention, title: words.title, width: NWDesignMetrics.alertWidestWidth) {
-            NWDesignAlertMessage(Text("You imported \(NWDesignAlertMessage.strong(words.name))\(words.messageAfter)"))
-            NWDesignAlertList {
-                NWDesignAlertLine(symbol: "pencil.tip", role: .neutral,
-                                  Text("New copy: \(NWDesignAlertMessage.strong(words.copyName))\(words.copyRest)"))
+        SHDesignAlert(symbol: "square.and.arrow.down", tone: .attention, title: words.title, width: SHDesignMetrics.alertWidestWidth) {
+            SHDesignAlertMessage(Text("You imported \(SHDesignAlertMessage.strong(words.name))\(words.messageAfter)"))
+            SHDesignAlertList {
+                SHDesignAlertLine(symbol: "pencil.tip", role: .neutral,
+                                  Text("New copy: \(SHDesignAlertMessage.strong(words.copyName))\(words.copyRest)"))
                 if let before = words.systemBefore, let system = words.system {
-                    NWDesignAlertLine(symbol: "paintpalette", role: .neutral,
-                                      Text("\(before)\(NWDesignAlertMessage.mono(system))\(words.systemAfter ?? "")"))
+                    SHDesignAlertLine(symbol: "paintpalette", role: .neutral,
+                                      Text("\(before)\(SHDesignAlertMessage.mono(system))\(words.systemAfter ?? "")"))
                 }
             }
         } actions: {
             Button("Cancel", action: dismiss)
-                .buttonStyle(.nw(.ghost))
+                .buttonStyle(.sh(.ghost))
                 .keyboardShortcut(.cancelAction)
             Button("Open the one I have", action: openExisting)
-                .buttonStyle(.nw(.secondary))
+                .buttonStyle(.sh(.secondary))
             Button("Import as a copy", action: resolve)
-                .buttonStyle(.nw(.primary))
+                .buttonStyle(.sh(.primary))
                 .keyboardShortcut(.defaultAction)
         }
     }
@@ -217,18 +217,18 @@ struct DesignToastLayer: View {
         ZStack {
             if let toast = vm.designToast {
                 let words = toast.words
-                NWUndoToast(tone: toast.isFailure ? .failed : .done,
+                SHUndoToast(tone: toast.isFailure ? .failed : .done,
                             message: Text("\(words.before)\(Text(toast.name).fontWeight(.semibold))\(words.after)"),
                             actionTitle: toast.actionTitle, actionSymbol: toast.actionSymbol,
                             action: { vm.performDesignToast(toast) }, dismiss: { vm.designToast = nil })
-                    .padding(.horizontal, NW.Space.xl)
-                    .padding(.bottom, NWDesignMetrics.toastBottom)
+                    .padding(.horizontal, SH.Space.xl)
+                    .padding(.bottom, SHDesignMetrics.toastBottom)
                     .id(toast.id)
-                    .nwTransition(.sheet, edge: .bottom)
+                    .shTransition(.sheet, edge: .bottom)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        .nwAnimation(.sheet, value: vm.designToast?.id)
+        .shAnimation(.sheet, value: vm.designToast?.id)
     }
 }
 

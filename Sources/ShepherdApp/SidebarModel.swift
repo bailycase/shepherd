@@ -5,7 +5,7 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
 
-// The sidebar as plain values (NWNavigation): destinations, status groups, Designs and footer. Derived once per change from
+// The sidebar as plain values (SHNavigation): destinations, status groups, Designs and footer. Derived once per change from
 // This Mac's state and every connected host's, never in a view's body.
 
 /// A page the main column shows in place of a thread.
@@ -53,8 +53,8 @@ enum SidebarRowID: Hashable {
 struct SidebarListRow: Identifiable, Equatable {
     let id: SidebarRowID
     let title: String
-    let leading: NWSidebarRow.Leading
-    var accessory: NWSidebarRow.Accessory
+    let leading: SHSidebarRow.Leading
+    var accessory: SHSidebarRow.Accessory
     var hasGoal = false
     var selected = false
     /// One extra project level in the project sidebar, never in Activity.
@@ -195,7 +195,7 @@ enum SidebarDerivation {
     /// Exclusive activity groups. The same source, pins and seen generations give the same lists.
     @MainActor static func lists(_ source: SidebarSource, pins: SidebarPins = SidebarPins(),
                                 seen: [SidebarRowID: Int] = [:]) -> SidebarLists {
-        NWRenderProbe.tick("sidebar.lists")
+        SHRenderProbe.tick("sidebar.lists")
         let pinned = Set(pins.threads)
         var entries: [Entry] = []
         /// A thread's entry, marked for pinning; `pin` is nil for what is never pinned (an
@@ -311,9 +311,9 @@ enum SidebarDerivation {
         return "ASK"
     }
 
-    /// One line, at most `NWSidebarMetrics.reasonLength` characters (`NeedsYouReason`).
+    /// One line, at most `SHSidebarMetrics.reasonLength` characters (`NeedsYouReason`).
     static func shortened(_ text: String) -> String {
-        NeedsYouReason.shortened(text, limit: NWSidebarMetrics.reasonLength)
+        NeedsYouReason.shortened(text, limit: SHSidebarMetrics.reasonLength)
     }
 
     private static func nonEmpty(_ text: String) -> String? {
@@ -328,8 +328,8 @@ enum SidebarDerivation {
         if opening, agent.status == .idle { agent.status = .working }
         let failed = failed && agent.status == .done
         let live = automation != nil && AutomationRow.isLive(agent, run: run)
-        let leading: NWSidebarRow.Leading
-        let accessory: NWSidebarRow.Accessory
+        let leading: SHSidebarRow.Leading
+        let accessory: SHSidebarRow.Accessory
         let word: String
         if notSignedIn {
             // PiAuthStates' `.notSignedIn`: it waits for a sign-in, in Needs you.
@@ -387,8 +387,8 @@ enum SidebarDerivation {
 
     static func remoteRow(_ agent: Agent, host: SidebarSource.Host, automation: Bool,
                           needsYou: Bool) -> SidebarListRow {
-        let leading: NWSidebarRow.Leading
-        let accessory: NWSidebarRow.Accessory
+        let leading: SHSidebarRow.Leading
+        let accessory: SHSidebarRow.Accessory
         let word: String
         if needsYou {
             leading = automation ? .glyph("bolt", attention: true) : .dot(.attention)
@@ -431,10 +431,10 @@ enum SidebarDerivation {
 
         let target: Target
         let title: String
-        let icon: NWSidebarDestination.Icon
+        let icon: SHSidebarDestination.Icon
         let selected: Bool
         let child: Bool
-        let trailing: NWSidebarDestination.Trailing
+        let trailing: SHSidebarDestination.Trailing
 
         var id: Target { target }
     }
@@ -450,7 +450,7 @@ enum SidebarDerivation {
         ]
         // Settings ▸ Experiments ▸ Missions.
         if missions {
-            rows.append(Destination(target: .page(.missions), title: "Missions", icon: .symbol(NWGlyph.mission.symbolName),
+            rows.append(Destination(target: .page(.missions), title: "Missions", icon: .symbol(SHGlyph.mission.symbolName),
                                     selected: shown == .missions, child: false, trailing: .none))
         }
         if designs {

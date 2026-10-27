@@ -3,8 +3,8 @@ import SwiftUI
 /// The Export sheet (DZExport) as the board draws it: a 560pt card at radius 14 on the popover's
 /// fill, line and shadow, with a header ("Export" and a close button), sections under their
 /// labels with a hairline between them, and a footer holding Cancel and the primary action.
-/// Center it over `Color.nw.sheetScrim`.
-public struct NWExportSheet<Content: View>: View {
+/// Center it over `Color.sh.sheetScrim`.
+public struct SHExportSheet<Content: View>: View {
     let exportTitle: String
     let canExport: Bool
     let close: () -> Void
@@ -24,34 +24,34 @@ public struct NWExportSheet<Content: View>: View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
                 Text("Export")
-                    .font(.nw(.title))
-                    .foregroundStyle(Color.nw.textPrimary)
-                Spacer(minLength: NW.Space.m)
+                    .font(.sh(.title))
+                    .foregroundStyle(Color.sh.textPrimary)
+                Spacer(minLength: SH.Space.m)
                 Button(action: close) { Image(systemName: "xmark") }
-                    .buttonStyle(.nwIcon())
+                    .buttonStyle(.shIcon())
                     .help("Close")
                     .accessibilityLabel("Close")
             }
-            .padding(.vertical, NWDesignMetrics.exportHeaderPaddingVertical)
-            .padding(.horizontal, NWDesignMetrics.exportPaddingHorizontal)
-            .overlay(alignment: .bottom) { NWHairline() }
+            .padding(.vertical, SHDesignMetrics.exportHeaderPaddingVertical)
+            .padding(.horizontal, SHDesignMetrics.exportPaddingHorizontal)
+            .overlay(alignment: .bottom) { SHHairline() }
             content()
-            HStack(spacing: NWDesignMetrics.exportFooterSpacing) {
+            HStack(spacing: SHDesignMetrics.exportFooterSpacing) {
                 Spacer(minLength: 0)
                 Button("Cancel", action: close)
-                    .buttonStyle(.nw(.ghost))
+                    .buttonStyle(.sh(.ghost))
                     .keyboardShortcut(.cancelAction)
                 Button(exportTitle, systemImage: "square.and.arrow.up", action: export)
-                    .buttonStyle(.nw(.primary))
+                    .buttonStyle(.sh(.primary))
                     .keyboardShortcut(.defaultAction)
                     .disabled(!canExport)
             }
-            .padding(.vertical, NWDesignMetrics.exportFooterPaddingVertical)
-            .padding(.horizontal, NWDesignMetrics.exportPaddingHorizontal)
-            .overlay(alignment: .top) { NWHairline() }
+            .padding(.vertical, SHDesignMetrics.exportFooterPaddingVertical)
+            .padding(.horizontal, SHDesignMetrics.exportPaddingHorizontal)
+            .overlay(alignment: .top) { SHHairline() }
         }
-        .frame(width: NWDesignMetrics.exportWidth)
-        .nwPopover(radius: NWDesignMetrics.exportRadius)
+        .frame(width: SHDesignMetrics.exportWidth)
+        .shPopover(radius: SHDesignMetrics.exportRadius)
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isModal)
     }
@@ -59,7 +59,7 @@ public struct NWExportSheet<Content: View>: View {
 
 /// One section of the Export sheet: its label, then what it holds, with a hairline under it
 /// unless it is the last.
-public struct NWExportSection<Content: View>: View {
+public struct SHExportSection<Content: View>: View {
     let title: String
     let divided: Bool
     @ViewBuilder let content: () -> Content
@@ -71,20 +71,20 @@ public struct NWExportSection<Content: View>: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: NWDesignMetrics.exportLabelGap) {
-            Text(title).nwSectionLabel()
+        VStack(alignment: .leading, spacing: SHDesignMetrics.exportLabelGap) {
+            Text(title).shSectionLabel()
                 .accessibilityAddTraits(.isHeader)
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, NWDesignMetrics.exportSectionPaddingVertical)
-        .padding(.horizontal, NWDesignMetrics.exportPaddingHorizontal)
-        .overlay(alignment: .bottom) { if divided { NWHairline() } }
+        .padding(.vertical, SHDesignMetrics.exportSectionPaddingVertical)
+        .padding(.horizontal, SHDesignMetrics.exportPaddingHorizontal)
+        .overlay(alignment: .bottom) { if divided { SHHairline() } }
     }
 }
 
 /// A board's row on the Export sheet: its checkbox, its name, and its size trailing in mono.
-public struct NWExportBoardRow: View, Equatable {
+public struct SHExportBoardRow: View, Equatable {
     let title: String
     let size: String
     let isTicked: Bool
@@ -102,29 +102,29 @@ public struct NWExportBoardRow: View, Equatable {
     }
 
     public var body: some View {
-        let _ = NWRenderProbe.tick("design.exportRow")
-        HStack(spacing: NWDesignMetrics.exportRowSpacing) {
+        let _ = SHRenderProbe.tick("design.exportRow")
+        HStack(spacing: SHDesignMetrics.exportRowSpacing) {
             Toggle(isOn: Binding(get: { isTicked }, set: { _ in toggle() })) {
                 Text(title)
-                    .font(.nwSans(NWDesignMetrics.exportRowTextSize))
-                    .foregroundStyle(Color.nw.textPrimary)
+                    .font(.shSans(SHDesignMetrics.exportRowTextSize))
+                    .foregroundStyle(Color.sh.textPrimary)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
-            .toggleStyle(.nwCheckbox)
-            Spacer(minLength: NW.Space.m)
+            .toggleStyle(.shCheckbox)
+            Spacer(minLength: SH.Space.m)
             Text(size)
-                .font(.nwMono(NWDesignMetrics.exportRowSizeTextSize))
-                .foregroundStyle(Color.nw.textTertiary)
+                .font(.shMono(SHDesignMetrics.exportRowSizeTextSize))
+                .foregroundStyle(Color.sh.textTertiary)
                 .lineLimit(1)
         }
-        .frame(height: NWDesignMetrics.exportRowHeight)
+        .frame(height: SHDesignMetrics.exportRowHeight)
     }
 }
 
 /// A format on the Export sheet: a radio, the format, and what it writes; chosen, a `running`
 /// line on `runningTint`.
-public struct NWExportFormatCard: View {
+public struct SHExportFormatCard: View {
     let title: String
     let line: String
     let isChosen: Bool
@@ -138,28 +138,28 @@ public struct NWExportFormatCard: View {
     }
 
     public var body: some View {
-        let shape = RoundedRectangle(cornerRadius: NWDesignMetrics.exportFormatRadius)
+        let shape = RoundedRectangle(cornerRadius: SHDesignMetrics.exportFormatRadius)
         Button(action: choose) {
-            VStack(alignment: .leading, spacing: NWDesignMetrics.exportFormatGap) {
-                HStack(spacing: NWDesignMetrics.exportFormatRadioGap) {
-                    NWRadioMark(selected: isChosen)
+            VStack(alignment: .leading, spacing: SHDesignMetrics.exportFormatGap) {
+                HStack(spacing: SHDesignMetrics.exportFormatRadioGap) {
+                    SHRadioMark(selected: isChosen)
                     Text(title)
-                        .font(.nwSans(NWDesignMetrics.exportFormatTitleSize, .semibold))
-                        .foregroundStyle(Color.nw.textPrimary)
+                        .font(.shSans(SHDesignMetrics.exportFormatTitleSize, .semibold))
+                        .foregroundStyle(Color.sh.textPrimary)
                 }
                 Text(line)
-                    .nwText(size: NWDesignMetrics.exportFormatLineSize, lineHeight: NWDesignMetrics.exportFormatLineHeight)
-                    .foregroundStyle(Color.nw.textSecondary)
+                    .shText(size: SHDesignMetrics.exportFormatLineSize, lineHeight: SHDesignMetrics.exportFormatLineHeight)
+                    .foregroundStyle(Color.sh.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.leading, NWDesignMetrics.exportFormatIndent)
+                    .padding(.leading, SHDesignMetrics.exportFormatIndent)
             }
-            .padding(.vertical, NWDesignMetrics.exportFormatPaddingVertical)
-            .padding(.horizontal, NWDesignMetrics.exportFormatPaddingHorizontal)
+            .padding(.vertical, SHDesignMetrics.exportFormatPaddingVertical)
+            .padding(.horizontal, SHDesignMetrics.exportFormatPaddingHorizontal)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(isChosen ? Color.nw.runningTint : Color.clear, in: shape)
-            .overlay(shape.strokeBorder(isChosen ? Color.nw.running : Color.nw.lineSubtle, lineWidth: 1))
+            .background(isChosen ? Color.sh.runningTint : Color.clear, in: shape)
+            .overlay(shape.strokeBorder(isChosen ? Color.sh.running : Color.sh.lineSubtle, lineWidth: 1))
             .contentShape(shape)
-            .nwComponentAnimation(.content, value: isChosen)
+            .shComponentAnimation(.content, value: isChosen)
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)

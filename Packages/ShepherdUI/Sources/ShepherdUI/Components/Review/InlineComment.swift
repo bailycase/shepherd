@@ -4,7 +4,7 @@ import SwiftUI
 /// 8. A 16pt lantern avatar with the author's initial, the author in semibold, "line 103 · just
 /// now" in mono 10.5, and Edit trailing (Delete joins it on hover, and both are VoiceOver
 /// actions); then the comment at 12.5.
-public struct NWInlineComment: View {
+public struct SHInlineComment: View {
     let initial: String
     let author: String
     let meta: String
@@ -24,37 +24,37 @@ public struct NWInlineComment: View {
     }
 
     public var body: some View {
-        let _ = NWRenderProbe.tick("review.comment")
-        let nw = Color.nw
-        VStack(alignment: .leading, spacing: NW.Space.s) {
-            HStack(spacing: NW.Space.s) {
-                NWCommentAvatar(initial: initial)
-                Text(author).font(.nw(.caption, weight: .semibold)).foregroundStyle(nw.textPrimary)
-                Text(meta).font(.nwMono(10.5)).foregroundStyle(nw.textSecondary).lineLimit(1)
-                Spacer(minLength: NW.Space.m)
-                HStack(spacing: NW.Space.m) {
+        let _ = SHRenderProbe.tick("review.comment")
+        let sh = Color.sh
+        VStack(alignment: .leading, spacing: SH.Space.s) {
+            HStack(spacing: SH.Space.s) {
+                SHCommentAvatar(initial: initial)
+                Text(author).font(.sh(.caption, weight: .semibold)).foregroundStyle(sh.textPrimary)
+                Text(meta).font(.shMono(10.5)).foregroundStyle(sh.textSecondary).lineLimit(1)
+                Spacer(minLength: SH.Space.m)
+                HStack(spacing: SH.Space.m) {
                     if let onDelete {
                         Button("Delete", action: onDelete)
-                            .opacity(NWPlatform.showsHoverDetails || hovering ? 1 : 0)
+                            .opacity(SHPlatform.showsHoverDetails || hovering ? 1 : 0)
                     }
                     if let onEdit { Button("Edit", action: onEdit) }
                 }
-                .buttonStyle(.nwLink(color: nw.textSecondary, font: .nw(.caption)))
+                .buttonStyle(.shLink(color: sh.textSecondary, font: .sh(.caption)))
                 .accessibilityHidden(true)
             }
             Text(text)
-                .font(.nw(.ui, weight: .regular))
-                .lineSpacing(NWTextStyle.ui.lineSpacing + NW.Space.xxs)
-                .foregroundStyle(nw.textPrimary)
+                .font(.sh(.ui, weight: .regular))
+                .lineSpacing(SHTextStyle.ui.lineSpacing + SH.Space.xxs)
+                .foregroundStyle(sh.textPrimary)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.vertical, NW.Space.m)
-        .padding(.horizontal, NWInlineComment.horizontalInset)
+        .padding(.vertical, SH.Space.m)
+        .padding(.horizontal, SHInlineComment.horizontalInset)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .nwCard(radius: NW.Radius.m, line: nw.lineStrong)
+        .shCard(radius: SH.Radius.m, line: sh.lineStrong)
         .onHover { hovering = $0 }
-        .nwAnimation(.hover, value: hovering)
+        .shAnimation(.hover, value: hovering)
         .accessibilityElement(children: .combine)
         // Selectable Text is not consistently included in the combined label.
         .accessibilityLabel("\(author), \(meta), \(text)")
@@ -68,15 +68,15 @@ public struct NWInlineComment: View {
 }
 
 /// The 16pt lantern circle with the author's initial.
-private struct NWCommentAvatar: View {
+private struct SHCommentAvatar: View {
     let initial: String
 
     var body: some View {
         Text(initial)
-            .font(.nwSans(9, .bold))
-            .foregroundStyle(.nw.textOnLantern)
+            .font(.shSans(9, .bold))
+            .foregroundStyle(.sh.textOnLantern)
             .frame(width: 16, height: 16)
-            .background(Color.nw.lantern, in: Circle())
+            .background(Color.sh.lantern, in: Circle())
             .accessibilityHidden(true)
     }
 }
@@ -84,7 +84,7 @@ private struct NWCommentAvatar: View {
 /// Writing or editing a comment (ChangesLastTurn): the comment's card with a lantern line and a
 /// 3pt lantern-tint ring while it is open. The field, then "on line 103" in mono 10.5 and Cancel
 /// and Add comment. ⏎ saves, ⇧⏎ adds a line, esc cancels. Saving an empty comment removes it.
-public struct NWCommentEditor: View {
+public struct SHCommentEditor: View {
     @Binding var text: String
     var isFocused: FocusState<Bool>.Binding
     let placeholder: String
@@ -104,36 +104,36 @@ public struct NWCommentEditor: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        VStack(alignment: .leading, spacing: NW.Space.m) {
-            TextField(placeholder, text: $text, prompt: Text(placeholder).foregroundStyle(nw.textTertiary), axis: .vertical)
+        let sh = Color.sh
+        VStack(alignment: .leading, spacing: SH.Space.m) {
+            TextField(placeholder, text: $text, prompt: Text(placeholder).foregroundStyle(sh.textTertiary), axis: .vertical)
                 .lineLimit(1...8)
                 .textFieldStyle(.plain)
-                .font(.nw(.ui, weight: .regular))
-                .foregroundStyle(nw.textPrimary)
-                .tint(nw.lantern)
+                .font(.sh(.ui, weight: .regular))
+                .foregroundStyle(sh.textPrimary)
+                .tint(sh.lantern)
                 .focused(isFocused)
                 .onKeyPress(.return, phases: .down) { press in
-                    if let result = NWReturnKey.lineBreak(for: press) { return result }
+                    if let result = SHReturnKey.lineBreak(for: press) { return result }
                     onSave()
                     return .handled
                 }
                 .onKeyPress(.escape) { onCancel(); return .handled }
-            HStack(spacing: NW.Space.s) {
+            HStack(spacing: SH.Space.s) {
                 if let context {
-                    Text(context).font(.nwMono(10.5)).foregroundStyle(nw.textTertiary).lineLimit(1)
+                    Text(context).font(.shMono(10.5)).foregroundStyle(sh.textTertiary).lineLimit(1)
                 }
                 Spacer(minLength: 0)
-                Button("Cancel", action: onCancel).buttonStyle(.nw(.ghost, size: .s))
-                Button("Add comment", action: onSave).buttonStyle(.nw(.secondary, size: .s))
+                Button("Cancel", action: onCancel).buttonStyle(.sh(.ghost, size: .s))
+                Button("Add comment", action: onSave).buttonStyle(.sh(.secondary, size: .s))
             }
         }
-        .padding(.vertical, NW.Space.m)
-        .padding(.horizontal, NWInlineComment.horizontalInset)
-        .nwCard(radius: NW.Radius.m, line: nw.lantern)
+        .padding(.vertical, SH.Space.m)
+        .padding(.horizontal, SHInlineComment.horizontalInset)
+        .shCard(radius: SH.Radius.m, line: sh.lantern)
         .background {
-            RoundedRectangle(cornerRadius: NW.Radius.m).inset(by: -NWCommentEditor.ringWidth / 2)
-                .stroke(nw.lanternTint, lineWidth: NWCommentEditor.ringWidth)
+            RoundedRectangle(cornerRadius: SH.Radius.m).inset(by: -SHCommentEditor.ringWidth / 2)
+                .stroke(sh.lanternTint, lineWidth: SHCommentEditor.ringWidth)
         }
         .onAppear { isFocused.wrappedValue = true }
     }

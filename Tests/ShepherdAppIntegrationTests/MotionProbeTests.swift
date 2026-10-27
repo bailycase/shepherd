@@ -5,8 +5,8 @@ import SwiftUI
 import Testing
 
 /// The motion probe on a stand-in pane: a 100pt dark pane opening at the trailing edge of a
-/// light 300pt container, wired the way a right pane should be (`nwAnimation` on the container,
-/// `nwTransition` on the pane). Pixels are read from an off-screen window. Only the instant rules
+/// light 300pt container, wired the way a right pane should be (`shAnimation` on the container,
+/// `shTransition` on the pane). Pixels are read from an off-screen window. Only the instant rules
 /// run on CI: catching a motion mid-way depends on the machine (`.timingSensitive`).
 @Suite("Motion probe", .mainActorExclusive)
 @MainActor
@@ -26,12 +26,12 @@ struct MotionProbeTests {
                 if model.open {
                     Color.black
                         .frame(width: SamplePane.paneWidth)
-                        .nwTransition(.pane)
+                        .shTransition(.pane)
                 }
             }
             .frame(width: SamplePane.width, height: SamplePane.height)
             .modifier(Instant(on: instant))
-            .nwAnimation(.pane, value: model.open)
+            .shAnimation(.pane, value: model.open)
         }
 
         static let width: CGFloat = 300
@@ -45,7 +45,7 @@ struct MotionProbeTests {
         let on: Bool
 
         func body(content: Content) -> some View {
-            if on { content.nwInstant() } else { content }
+            if on { content.shInstant() } else { content }
         }
     }
 
@@ -90,7 +90,7 @@ struct MotionProbeTests {
                 "the pane fades in")
     }
 
-    /// `nwInstant()` is how terminal surfaces and streaming text opt out of any motion.
+    /// `shInstant()` is how terminal surfaces and streaming text opt out of any motion.
     @Test func anInstantSubtreeNeverAnimates() async {
         let model = PaneModel()
         let window = window(model, instant: true)
@@ -101,12 +101,12 @@ struct MotionProbeTests {
         #expect(recording.inBetween.isEmpty)
     }
 
-    /// `nwInstant()` drops the animation a change arrives with, not motion attached inside it:
-    /// a pane with its own `nwAnimation` still slides under an instant ancestor.
+    /// `shInstant()` drops the animation a change arrives with, not motion attached inside it:
+    /// a pane with its own `shAnimation` still slides under an instant ancestor.
     @Test(.timingSensitive) func anInstantAncestorKeepsTheMotionAttachedInsideIt() async {
         let model = PaneModel()
         let window = OffscreenWindow(size: CGSize(width: SamplePane.width, height: SamplePane.height), dark: false,
-                                     SamplePane(model: model).nwInstant())
+                                     SamplePane(model: model).shInstant())
         defer { window.close() }
         let recording = await MotionProbe.record(window, region: strip) { model.open = true }
 
@@ -115,7 +115,7 @@ struct MotionProbeTests {
     }
 
     /// SwiftUI resizes a hosted NSView on every frame of an animated layout change; for a
-    /// Ghostty surface each is a PTY resize. Under `nwInstant()` the view takes its final size
+    /// Ghostty surface each is a PTY resize. Under `shInstant()` the view takes its final size
     /// once while the pane beside it still slides.
     @Test func anInstantHostedViewResizesOnceWhileItsNeighborSlides() async {
         let (widths, slid) = await hostedViewWidthsWhileAPaneSlidesIn(instant: true)
@@ -125,7 +125,7 @@ struct MotionProbeTests {
         #expect(!widths.isEmpty && widths.allSatisfy { $0 == resting }, "\(widths)")
     }
 
-    /// The control: without `nwInstant()` the same view is resized frame by frame, so the check
+    /// The control: without `shInstant()` the same view is resized frame by frame, so the check
     /// above is not vacuous.
     @Test(.timingSensitive) func withoutInstantAHostedViewIsResizedFrameByFrame() async {
         let (widths, slid) = await hostedViewWidthsWhileAPaneSlidesIn(instant: false)
@@ -177,7 +177,7 @@ struct MotionProbeTests {
         var body: some View {
             ZStack {
                 Color.white
-                Color.black.frame(width: Self.barWidth, height: SamplePane.height / 2).nwPop(trigger: model.open)
+                Color.black.frame(width: Self.barWidth, height: SamplePane.height / 2).shPop(trigger: model.open)
             }
             .frame(width: SamplePane.width, height: SamplePane.height)
         }
@@ -196,12 +196,12 @@ struct MotionProbeTests {
         var body: some View {
             HStack(spacing: 0) {
                 if model.open {
-                    Color.black.frame(width: SamplePane.paneWidth).nwTransition(.pane, edge: .leading)
+                    Color.black.frame(width: SamplePane.paneWidth).shTransition(.pane, edge: .leading)
                 }
                 HostedView(view: surface).modifier(Instant(on: instant))
             }
             .frame(width: SamplePane.width, height: SamplePane.height)
-            .nwAnimation(.pane, value: model.open)
+            .shAnimation(.pane, value: model.open)
         }
     }
 

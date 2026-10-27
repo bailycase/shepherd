@@ -22,7 +22,8 @@ struct SettingsScreen: View {
     }
 }
 
-/// The phone's list: Appearance, then Agents, Machines, Experiments and About.
+/// The phone's list: Appearance, then Agents (with Design systems while a host serves designs),
+/// Machines, Experiments and About. It holds what More did before the phone had five tabs.
 private struct SettingsList: View {
     let store: SettingsStore
     @Environment(MobileHosts.self) private var hosts
@@ -31,31 +32,40 @@ private struct SettingsList: View {
 
     var body: some View {
         let model = HomeFeed.of(hosts).model
+        let designs = MobileDesigns.of(hosts).model
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
-                NWListCard {
+                SHListCard {
                     row(.appearance, trailing: .value(appearance.mode.title))
                 }
                 SettingsSection("Agents") {
-                    NWListCard {
+                    SHListCard {
                         row(.defaults, trailing: value(store.defaultsValue(chosenHost: navigator.settingsSelection.chosenHost)))
                         row(.instructions, trailing: value(store.instructionsValue))
                         row(.skills, trailing: value(store.skillsValue))
                         row(.pi, trailing: value(store.extensionsValue(chosenHost: navigator.settingsSelection.chosenHost)))
+                        // While a host serves designs (More's row, before the phone had five tabs).
+                        if designs.available {
+                            Button { navigator.open(.designs(.systems)) } label: {
+                                SHListRow("Design systems", leading: .symbol("paintpalette"), trailing: designs.systems.isEmpty ? .none : .value(String(designs.systems.count)))
+                            }
+                            .buttonStyle(.shRow(radius: 0))
+                        }
                     }
                 }
                 SettingsSection("Machines") {
-                    NWListCard {
+                    SHListCard {
                         row(.hosts, trailing: model.offlineCount > 0 ? .alert("\(model.offlineCount) offline")
                             : .value(model.hosts.isEmpty ? "None" : String(model.hosts.count)))
-                        row(.worktrees, trailing: NWListRow.Trailing.none)
+                        row(.worktrees, trailing: SHListRow.Trailing.none)
                     }
                 }
-                NWListCard {
+                SHListCard {
+                    row(.notifications, trailing: SHListRow.Trailing.none)
                     row(.experiments, trailing: value(store.experimentsValue))
                 }
                 SettingsSection("About") {
-                    NWListCard { AboutRow(agent: store.agentVersion(chosenHost: navigator.settingsSelection.chosenHost)) }
+                    SHListCard { AboutRow(agent: store.agentVersion(chosenHost: navigator.settingsSelection.chosenHost)) }
                 }
             }
             .padding(.horizontal, MobileLayout.gutter)
@@ -64,19 +74,19 @@ private struct SettingsList: View {
             .frame(maxWidth: .infinity)
         }
         .refreshable { await store.refresh() }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .navigationTitle("Settings")
     }
 
-    private func row(_ page: SettingsPage, trailing: NWListRow.Trailing) -> some View {
+    private func row(_ page: SettingsPage, trailing: SHListRow.Trailing) -> some View {
         Button { navigator.open(.settings(page.route)) } label: {
-            NWListRow(page.title, leading: .symbol(page.symbol), trailing: trailing)
+            SHListRow(page.title, leading: .symbol(page.symbol), trailing: trailing)
         }
-        .buttonStyle(.nwRow(radius: 0))
+        .buttonStyle(.shRow(radius: 0))
     }
 
-    private func value(_ text: String?) -> NWListRow.Trailing {
-        text.map(NWListRow.Trailing.value) ?? NWListRow.Trailing.none
+    private func value(_ text: String?) -> SHListRow.Trailing {
+        text.map(SHListRow.Trailing.value) ?? SHListRow.Trailing.none
     }
 }
 
@@ -98,11 +108,11 @@ private struct SettingsSplit: View {
                 }
                 .padding(MobileLayout.settingsListInset)
                 AboutLine(agent: store.listFootVersion(page: selection.page, chosenHost: selection.chosenHost))
-                    .padding(.horizontal, MobileLayout.settingsListInset + NW.Space.l)
-                    .padding(.vertical, NW.Space.l)
+                    .padding(.horizontal, MobileLayout.settingsListInset + SH.Space.l)
+                    .padding(.vertical, SH.Space.l)
             }
             .refreshable { await store.refresh() }
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
         } detail: {
             SettingsPageView(page: selection.page)
                 .environment(\.settingsColumn, true)
@@ -110,7 +120,7 @@ private struct SettingsSplit: View {
         } single: {
             SettingsList(store: store)
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
     }
 }
 
@@ -122,23 +132,23 @@ private struct SettingsListItem: View {
     let open: () -> Void
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         Button(action: open) {
-            HStack(spacing: NW.Space.l) {
+            HStack(spacing: SH.Space.l) {
                 Image(systemName: page.symbol)
-                    .font(.nw(.ui, weight: .medium))
-                    .foregroundStyle(selected ? nw.textPrimary : nw.textSecondary)
-                    .frame(width: NWListMetrics.leadingWidth)
+                    .font(.sh(.ui, weight: .medium))
+                    .foregroundStyle(selected ? sh.textPrimary : sh.textSecondary)
+                    .frame(width: SHListMetrics.leadingWidth)
                     .accessibilityHidden(true)
                 Text(page.listTitle)
-                    .font(.nw(.ui, weight: selected ? .semibold : .medium))
-                    .foregroundStyle(nw.textPrimary)
+                    .font(.sh(.ui, weight: selected ? .semibold : .medium))
+                    .foregroundStyle(sh.textPrimary)
                     .lineLimit(1)
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, NW.Space.l)
+            .padding(.horizontal, SH.Space.l)
             .frame(minHeight: MobileLayout.rowHeight)
-            .background(selected ? nw.bgSelected : .clear, in: RoundedRectangle(cornerRadius: MobileLayout.settingsListRowRadius))
+            .background(selected ? sh.bgSelected : .clear, in: RoundedRectangle(cornerRadius: MobileLayout.settingsListRowRadius))
             .contentShape(RoundedRectangle(cornerRadius: MobileLayout.settingsListRowRadius))
         }
         .buttonStyle(.plain)
@@ -159,6 +169,7 @@ struct SettingsPageView: View {
         case .instructions: InstructionsScreen()
         case .skills: SkillsScreen()
         case .hosts: HostsScreen()
+        case .notifications: NotificationsScreen()
         case .experiments: ExperimentsScreen()
         }
     }
@@ -183,7 +194,7 @@ struct SettingsSection<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-            NWListHeader(title)
+            SHListHeader(title)
             content()
         }
     }
@@ -195,15 +206,15 @@ private struct AboutRow: View {
     let agent: String?
 
     var body: some View {
-        HStack(spacing: NW.Space.l) {
+        HStack(spacing: SH.Space.l) {
             ShepherdTile()
-                .frame(width: NWListMetrics.leadingWidth)
-            Text("Shepherd \(AboutLine.version)").font(.nw(.ui, weight: .medium)).foregroundStyle(Color.nw.textPrimary)
-            Spacer(minLength: NW.Space.m)
-            Text(agent ?? "build \(AboutLine.build)").font(.nw(.mono)).foregroundStyle(Color.nw.textTertiary)
+                .frame(width: SHListMetrics.leadingWidth)
+            Text("Shepherd \(AboutLine.version)").font(.sh(.ui, weight: .medium)).foregroundStyle(Color.sh.textPrimary)
+            Spacer(minLength: SH.Space.m)
+            Text(agent ?? "build \(AboutLine.build)").font(.sh(.mono)).foregroundStyle(Color.sh.textTertiary)
         }
-        .padding(.horizontal, NW.Space.l)
-        .frame(minHeight: NWListMetrics.rowHeight)
+        .padding(.horizontal, SH.Space.l)
+        .frame(minHeight: SHListMetrics.rowHeight)
         .accessibilityElement(children: .combine)
     }
 }
@@ -217,18 +228,18 @@ private struct AboutLine: View {
 
     var body: some View {
         Text(["Shepherd \(Self.version)", agent ?? "build \(Self.build)"].joined(separator: " · "))
-            .nwText(.caption)
-            .foregroundStyle(Color.nw.textTertiary)
+            .shText(.caption)
+            .foregroundStyle(Color.sh.textTertiary)
     }
 }
 
 /// Shepherd's icon at list size: the crook in `lantern` on its dark tile.
 private struct ShepherdTile: View {
     var body: some View {
-        NWCrook()
+        SHCrook()
             .frame(width: MobileLayout.settingsAboutCrook, height: MobileLayout.settingsAboutCrook)
             .frame(width: MobileLayout.settingsAboutTile, height: MobileLayout.settingsAboutTile)
-            .background(Color.nw.textOnLantern, in: RoundedRectangle(cornerRadius: NW.Radius.s))
+            .background(Color.sh.textOnLantern, in: RoundedRectangle(cornerRadius: SH.Radius.s))
             .accessibilityHidden(true)
     }
 }
@@ -241,36 +252,36 @@ struct AppearanceScreen: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-                NWListCard {
+                SHListCard {
                     ForEach(MobileAppearance.Mode.allCases) { mode in
                         Button { appearance.mode = mode } label: {
-                            HStack(spacing: NW.Space.l) {
-                                Text(mode.title).font(.nw(.ui, weight: .medium)).foregroundStyle(Color.nw.textPrimary)
-                                Spacer(minLength: NW.Space.m)
+                            HStack(spacing: SH.Space.l) {
+                                Text(mode.title).font(.sh(.ui, weight: .medium)).foregroundStyle(Color.sh.textPrimary)
+                                Spacer(minLength: SH.Space.m)
                                 if appearance.mode == mode {
                                     Image(systemName: "checkmark")
-                                        .font(.nw(.ui, weight: .semibold))
-                                        .foregroundStyle(Color.nw.lantern)
+                                        .font(.sh(.ui, weight: .semibold))
+                                        .foregroundStyle(Color.sh.lantern)
                                 }
                             }
-                            .padding(.horizontal, NW.Space.l)
-                            .frame(minHeight: NWListMetrics.rowHeight)
+                            .padding(.horizontal, SH.Space.l)
+                            .frame(minHeight: SHListMetrics.rowHeight)
                             .contentShape(Rectangle())
                         }
-                        .buttonStyle(.nwRow(radius: 0))
+                        .buttonStyle(.shRow(radius: 0))
                         .accessibilityAddTraits(appearance.mode == mode ? .isSelected : [])
                     }
                 }
                 Text("System follows this device's appearance. Shepherd on a Mac keeps its own.")
-                    .nwText(.caption).foregroundStyle(Color.nw.textTertiary)
-                    .padding(.horizontal, NW.Space.xs)
+                    .shText(.caption).foregroundStyle(Color.sh.textTertiary)
+                    .padding(.horizontal, SH.Space.xs)
             }
             .padding(.horizontal, MobileLayout.gutter)
             .padding(.top, inColumn ? MobileLayout.settingsColumnTop : 0)
             .frame(maxWidth: MobileLayout.homeMaxWidth)
             .frame(maxWidth: .infinity)
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .navigationTitle("Appearance")
         .navigationBarTitleDisplayMode(.inline)
     }

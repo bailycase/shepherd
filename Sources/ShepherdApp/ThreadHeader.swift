@@ -4,7 +4,7 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
-/// The thread toolbar (`NWThreadToolbar`; Main, Review, QuestionAsk boards) for the agent on
+/// The thread toolbar (`SHThreadToolbar`; Main, Review, QuestionAsk boards) for the agent on
 /// screen: "space / title", the branch chip only while a question replaces the composer,
 /// then the one side-pane button and the options menu (Refresh Thread, Rename…, Pin). Everything comes in as values, compared by
 /// value (closures by presence), so the workspace header rerunning for a status report or a
@@ -42,8 +42,8 @@ struct ThreadHeader: View, Equatable {
     var togglePin: (() -> Void)?
 
     var body: some View {
-        let _ = NWRenderProbe.tick("thread.header")
-        NWThreadToolbar(title, project: project, titleHelp: "\(project) / \(title)", leadingInset: leadingInset, sidebar: showSidebar) {
+        let _ = SHRenderProbe.tick("thread.header")
+        SHThreadToolbar(title, project: project, titleHelp: "\(project) / \(title)", leadingInset: leadingInset, sidebar: showSidebar) {
             // A question takes the composer's place, so its checkout menu moves back here.
             if let branch {
                 QuestionBranchMenu(store: store, branch: branch, directory: directory, showChanges: showChanges)
@@ -51,9 +51,9 @@ struct ThreadHeader: View, Equatable {
         } trailing: {
             ThreadGoalHeader(store: store)
             if let togglePane {
-                NWSidePaneButton(isOn: paneOpen, news: paneNews, shortcut: paneShortcut, action: togglePane)
+                SHSidePaneButton(isOn: paneOpen, news: paneNews, shortcut: paneShortcut, action: togglePane)
             }
-            NWOptionsMenu("Thread options") {
+            SHOptionsMenu("Thread options") {
                 Button("Refresh Thread") { Task { await store.refresh(fresh: true) } }
                 if rename != nil || togglePin != nil { Divider() }
                 if let rename {
@@ -103,18 +103,18 @@ struct BranchChipMenu: View {
                 }
             }
         } label: {
-            NWComposerBranchLabel(branch: branch.branch, changes: branch.changedFiles,
+            SHComposerBranchLabel(branch: branch.branch, changes: branch.changedFiles,
                                   checkout: branch.kind == .checkout, host: branch.host)
         }
         .menuStyle(.button)
         .menuIndicator(.hidden)
-        .buttonStyle(.nwComposerChip())
+        .buttonStyle(.shComposerChip())
         .fixedSize(horizontal: false, vertical: true)
         .help(branch.help(directory: directory.map { ($0 as NSString).abbreviatingWithTildeInPath }))
-        .accessibilityLabel(NWBranchChip.accessibilityLabel(kind: branch.kind == .worktree ? .worktree : .checkout, branch: branch.branch,
+        .accessibilityLabel(SHBranchChip.accessibilityLabel(kind: branch.kind == .worktree ? .worktree : .checkout, branch: branch.branch,
                                                             changedFiles: branch.changedFiles, host: branch.host))
         // A count that moves rolls; switching agents replaces the header at once.
-        .nwAnimation(.content, value: branch)
+        .shAnimation(.content, value: branch)
     }
 
     private func copy(_ text: String) {
@@ -131,6 +131,6 @@ struct PlainHeader: View {
     var showSidebar: (() -> Void)?
 
     var body: some View {
-        NWThreadToolbar(title, leadingInset: leadingInset, sidebar: showSidebar)
+        SHThreadToolbar(title, leadingInset: leadingInset, sidebar: showSidebar)
     }
 }

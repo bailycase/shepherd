@@ -79,12 +79,12 @@ struct DesignToolTests {
     }
 
     @Test func cardsAreMostRecentlyEditedFirstWithTheirSystemAndCounts() {
-        let old = design("Onboarding", edited: 3 * 3600, boards: 1, system: "night-watch")
+        let old = design("Onboarding", edited: 3 * 3600, boards: 1, system: "shepherd-design")
         let new = design("Checkout funnel dashboard", edited: 7200, system: "acme-web")
         let model = DesignsPageModel.make(designs: [old, new], spaces: [Self.web, Self.app], firstBoards: [:], filter: "",
                                           selection: new.id, now: Self.now)
         #expect(model.cards.map(\.name) == ["Checkout funnel dashboard", "Onboarding"])
-        #expect(model.cards.map(\.system) == ["acme-web", "night-watch"])
+        #expect(model.cards.map(\.system) == ["acme-web", "shepherd-design"])
         #expect(model.cards.map(\.detail) == ["4 boards", "1 board"])
         #expect(model.cards.map(\.edited) == ["edited 2h ago", "edited 3h ago"])
         #expect(model.cards.map(\.selected) == [true, false])
@@ -94,10 +94,10 @@ struct DesignToolTests {
     /// Designs stand alone: a card names its system or nothing, never a project, and the page
     /// never offers the reserved designs space as a project.
     @Test func aDesignWithoutASystemNamesNoProject() {
-        let model = DesignsPageModel.make(designs: [design("A", edited: 60, system: "night-watch"), design("B", edited: 120)],
+        let model = DesignsPageModel.make(designs: [design("A", edited: 60, system: "shepherd-design"), design("B", edited: 120)],
                                           spaces: [Self.web, Space.designs()], firstBoards: [:], filter: "", selection: nil,
                                           now: Self.now)
-        #expect(model.cards.map(\.system) == ["night-watch", nil])
+        #expect(model.cards.map(\.system) == ["shepherd-design", nil])
         #expect(model.projects.map(\.name) == ["acme-web"], "the designs space is never a project")
     }
 
@@ -164,14 +164,14 @@ struct DesignToolTests {
         #expect(DesignScreenModel.canvasOrder(index).map(\.rawValue) == ["B.dc.html", "A.dc.html", "C.dc.html"])
         let boards = DesignScreenModel.boards(index, selected: [], tokens: [:])
         #expect(boards.map(\.id) == ["B.dc.html", "A.dc.html", "C.dc.html"])
-        let visible = DesignScreenModel.visible(boards, viewport: NWCanvasViewport(offset: .zero, zoom: 0.25),
+        let visible = DesignScreenModel.visible(boards, viewport: SHCanvasViewport(offset: .zero, zoom: 0.25),
                                                 size: CGSize(width: 1600, height: 800))
         #expect(visible.count == Set(visible).count)
     }
 
     @Test func theBoardsOnScreenAreNearestTheMiddleFirst() throws {
         let boards = DesignScreenModel.boards(try Self.index(), selected: [], tokens: [:])
-        let viewport = NWCanvasViewport(offset: .zero, zoom: 0.5)
+        let viewport = SHCanvasViewport(offset: .zero, zoom: 0.5)
         // The view's middle is canvas (1600, 400): inside B.
         let visible = DesignScreenModel.visible(boards, viewport: viewport, size: CGSize(width: 1600, height: 800))
         #expect(visible.map(\.rawValue) == ["B.dc.html", "A.dc.html", "A-phone.dc.html"])
@@ -220,16 +220,16 @@ struct DesignToolTests {
     @Test func aClickPicksABoardShiftExtendsAndTheEmptyCanvasClears() throws {
         let screen = DesignScreenModel(designID: DesignID(), host: nil, snapshot: { _ in throw CancellationError() },
                                        source: { _, _ in "" })
-        screen.pick(NWCanvasPick(board: "A.dc.html", point: CGPoint(x: 10, y: 10)))
+        screen.pick(SHCanvasPick(board: "A.dc.html", point: CGPoint(x: 10, y: 10)))
         #expect(screen.picks == [.init(board: Self.path("A.dc.html"))], "without a board to ask, a click picks the board")
-        screen.pick(NWCanvasPick(board: "B.dc.html", extending: true))
+        screen.pick(SHCanvasPick(board: "B.dc.html", extending: true))
         #expect(screen.selectedWhole == [Self.path("A.dc.html"), Self.path("B.dc.html")])
         #expect(screen.focusBoard == Self.path("B.dc.html"))
-        screen.pick(NWCanvasPick(board: "A.dc.html", extending: true))
+        screen.pick(SHCanvasPick(board: "A.dc.html", extending: true))
         #expect(screen.picks == [.init(board: Self.path("B.dc.html"))], "shift takes a selected board back out")
-        screen.pick(NWCanvasPick(extending: true))
+        screen.pick(SHCanvasPick(extending: true))
         #expect(!screen.picks.isEmpty, "shift on the empty canvas keeps the selection")
-        screen.pick(NWCanvasPick())
+        screen.pick(SHCanvasPick())
         #expect(screen.picks.isEmpty)
     }
 
@@ -340,7 +340,7 @@ struct DesignToolTests {
         screen.openThread(id.uuidString)
         #expect(screen.openComment == id && screen.popoverAnchor?.id == id.uuidString)
         screen.tool = .comment
-        screen.pick(NWCanvasPick(board: "A.dc.html", point: CGPoint(x: 10, y: 10)))
+        screen.pick(SHCanvasPick(board: "A.dc.html", point: CGPoint(x: 10, y: 10)))
         #expect(screen.openComment == nil && screen.draftElement == nil, "without a board to ask, nothing is named")
         screen.openThread("draft")
         #expect(screen.openComment == nil)

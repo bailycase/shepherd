@@ -6,6 +6,6 @@ import Testing
 @Suite("Question head")
 struct QuestionHeadTests {
     @Test func everyQuestionHeadSaysTheAgentIsAsking() {
-        #expect(NWQuestionHead.title == "Agent is asking")
+        #expect(SHQuestionHead.title == "Agent is asking")
     }
 }

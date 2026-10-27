@@ -24,7 +24,7 @@ struct RootView: View {
     }
 
     var body: some View {
-        let _ = NWRenderProbe.tick("shell.root")
+        let _ = SHRenderProbe.tick("shell.root")
         let sidebar = sidebar
         // The side pane maximized over the window (ChangesWide): its rail takes the sidebar's
         // place and the toolbar's, and draws the window controls.
@@ -32,7 +32,7 @@ struct RootView: View {
         let docked = sidebar.mode == .docked && !wide
         HStack(spacing: 0) {
             if wide {
-                NWSidePaneRail(windowControls: isFullScreen ? nil : NWWindowControls(
+                SHSidePaneRail(windowControls: isFullScreen ? nil : SHWindowControls(
                     close: { MainWindow.window?.performClose(nil) },
                     minimize: { MainWindow.window?.performMiniaturize(nil) },
                     zoom: { MainWindow.window?.toggleFullScreen(nil) }
@@ -48,12 +48,12 @@ struct RootView: View {
                 HStack(spacing: 0) {
                     SidebarView(vm: vm)
                         .frame(width: sidebar.width)
-                        .background(Color.nw.bgBase.ignoresSafeArea())
+                        .background(Color.sh.bgBase.ignoresSafeArea())
                     sidebarResizeHandle(width: sidebar.width)
                 }
                 // Over the main column, which takes its new frame at once as it slides.
                 .zIndex(1)
-                .nwTransition(.pane, edge: .leading)
+                .shTransition(.pane, edge: .leading)
             }
 
             VStack(spacing: 0) {
@@ -85,16 +85,16 @@ struct RootView: View {
             // A deletion's toast, over the bottom of the column (DesignDeleted).
             .overlay { DesignToastLayer(vm: vm) }
             .frame(maxWidth: .infinity)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
             // Every mounted layout reflows when the column's width changes; relaid out on each
             // frame of the slide they drop frames, so the column snaps as the sidebar moves.
             .animation(nil, value: docked)
         }
         // What the sliding sidebar uncovers reads as its own base.
-        .background(Color.nw.bgBase.ignoresSafeArea())
+        .background(Color.sh.bgBase.ignoresSafeArea())
         // ⇧⌘S, the toolbar's button, the palette: the docked sidebar slides from the leading
         // edge. Keyed on the preference alone: a window resize that docks or undocks it is instant.
-        .nwAnimation(.pane, value: vm.sidebarHidden)
+        .shAnimation(.pane, value: vm.sidebarHidden)
         // The rail draws the window controls; the window's own hide while it shows.
         .background { SystemWindowControls(hidden: wide && !isFullScreen) }
         .coordinateSpace(.named("root-layout"))
@@ -102,14 +102,14 @@ struct RootView: View {
             sidebarOverlay(width: sidebar.width, shown: sidebar.mode == .overlay && !wide)
                 // A resize that crosses the fit point closes the overlay at once.
                 .animation(nil, value: vm.sidebarAutoHidden)
-                .nwAnimation(.pane, value: vm.sidebarOverlayShown)
+                .shAnimation(.pane, value: vm.sidebarOverlayShown)
         }
         .overlay {
             if vm.showComponentGallery {
                 ComponentGallery()
                     .overlay(alignment: .topTrailing) {
                         Button("Close") { vm.showComponentGallery = false }
-                            .buttonStyle(NWButtonStyle(.secondary)).padding(NW.Space.xl)
+                            .buttonStyle(SHButtonStyle(.secondary)).padding(SH.Space.xl)
                     }
             } else if vm.showSettings {
                 SettingsView(vm: vm)
@@ -125,7 +125,7 @@ struct RootView: View {
         .overlay { ImageViewerOverlay(vm: vm) }
         .overlay { DiagramViewerOverlay(vm: vm) }
         // ⌘K floats over everything, 18% down and capped to the window; the scrim dismisses.
-        .nwCommandPalette(isPresented: Binding(
+        .shCommandPalette(isPresented: Binding(
             get: { vm.showCommandPalette && !vm.showSettings && !vm.showComponentGallery },
             set: { vm.showCommandPalette = $0 }
         )) {
@@ -133,10 +133,10 @@ struct RootView: View {
         }
         .background { MenuStateSync(vm: vm) }
         .background { MainWindowReader() }
-        .nwDensity(appearance.sidebarRowDensity)
+        .shDensity(appearance.sidebarRowDensity)
         .environment(\.threadCommands, vm.threadCommands)
         .environment(\.presentImages, ImageViewerPresenter(model: vm))
-        .environment(\.nwDiagramPresentation, vm.diagramPresentation)
+        .environment(\.shDiagramPresentation, vm.diagramPresentation)
         .frame(minWidth: AppLayout.windowMinWidth, minHeight: AppLayout.windowMinHeight)
         // Only the width the shell's layout can tell apart: past the widest window that still
         // narrows the sidebar, a resize changes nothing here, so it reruns none of this.
@@ -171,9 +171,9 @@ struct RootView: View {
                 SidebarView(vm: vm)
                     .frame(width: width)
                     // The shadow from the fill, never from the scrolling list over it.
-                    .nwFloatBackground(Color.nw.bgBase.ignoresSafeArea())
-                    .overlay(alignment: .trailing) { NWHairline(.vertical) }
-                    .nwTransition(.pane, edge: .leading)
+                    .shFloatBackground(Color.sh.bgBase.ignoresSafeArea())
+                    .overlay(alignment: .trailing) { SHHairline(.vertical) }
+                    .shTransition(.pane, edge: .leading)
             }
         }
     }
@@ -181,7 +181,7 @@ struct RootView: View {
     /// The sidebar's trailing edge, and its drag handle (adjustable with VoiceOver). Resizing
     /// never narrows the main column below its minimum.
     private func sidebarResizeHandle(width: CGFloat) -> some View {
-        Color.nw.lineSubtle
+        Color.sh.lineSubtle
             .frame(width: AppLayout.dividerWidth)
             .overlay {
                 Color.clear

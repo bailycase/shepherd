@@ -29,18 +29,26 @@ struct ThreadRowMenuItems: View {
     let hostName: String
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
+    @Environment(\.mobileApp) private var app
 
     var body: some View {
         let sidebar = SidebarThreads.of(hosts)
         if abilities.pin {
             let pinned = sidebar.isPinned(thread)
-            Button(pinned ? "Unpin" : "Pin", systemImage: pinned ? "pin.slash" : NWGlyph.pin.symbolName) {
+            Button(pinned ? "Unpin" : "Pin", systemImage: pinned ? "pin.slash" : SHGlyph.pin.symbolName) {
                 sidebar.togglePin(thread)
             }
         }
         if !abilities.connected {
             Button("\(hostName) is offline", systemImage: "wifi.slash") {}.disabled(true)
         } else {
+            if let glance = app?.glance {
+                if glance.isFollowing(thread) {
+                    Button("Stop Following", systemImage: "rectangle.on.rectangle.slash") { glance.unfollow(thread) }
+                } else {
+                    Button("Follow on Lock Screen", systemImage: "rectangle.on.rectangle") { glance.follow(thread) }
+                }
+            }
             Section {
                 if abilities.rename {
                     Button("Rename…", systemImage: "pencil") { navigator.present(.search(.rename(thread))) }
@@ -91,7 +99,7 @@ struct MarkAllSeenChip: View {
     @Environment(MobileHosts.self) private var hosts
 
     var body: some View {
-        NWSidebarHeaderChip("Mark all seen") { SidebarThreads.of(hosts).markSeen(rows) }
+        SHSidebarHeaderChip("Mark all seen") { SidebarThreads.of(hosts).markSeen(rows) }
     }
 }
 
@@ -108,7 +116,7 @@ struct AutomationRunMenu: View {
         let key = AutomationKey(host: row.host, automation: row.automationID)
         let store = AutomationsStore.of(hosts)
         let listed = store.model.row(key)
-        Button("Open Automation", systemImage: NWGlyph.automation.symbolName) { AutomationsHooks.open(key, navigator: navigator) }
+        Button("Open Automation", systemImage: SHGlyph.automation.symbolName) { AutomationsHooks.open(key, navigator: navigator) }
         if let listed {
             if listed.live {
                 Button("Stop…", systemImage: "stop") { AutomationsHooks.open(key, navigator: navigator) }

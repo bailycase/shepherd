@@ -117,8 +117,10 @@ Screens reach each other only through `MobileNavigator` (in the environment):
   terminal route), for highlighting rows.
 - A `NavigationLink(value: MobileRoute…)` works too; every stack applies `.mobileDestinations()`.
 
-The shell: iPhone (compact width) is `PhoneShell`, a `TabView` with Home (`HomeScreen`) and
-Settings (`SettingsScreen`), each a `NavigationStack`. iPad (regular width) is `PadShell`, a
+The shell: iPhone (compact width) is `PhoneShell`, a `TabView` with Home (`HomeScreen`), Designs
+(`DesignsScreen`), Projects (`ProjectsScreen`), Automations (`AutomationsScreen`) and Settings
+(`SettingsScreen`), each a `NavigationStack`; `navigator.open` selects a route's tab
+(`MobileNavigator.Tab.landing`) before it pushes. iPad (regular width) is `PadShell`, a
 `NavigationSplitView` with `PadSidebar` beside the detail: the selected thread, or `PadOverview`
 when none is. Landscape shows both columns; in portrait the thread keeps the width and the
 sidebar slides over it, and choosing a row hides it again. With no thread chosen, the sidebar
@@ -182,6 +184,11 @@ them except the navigator, which is each window's own ([Windows](#windows-ipad))
   before setting `authorized: true`; use the current offer ID and never replay installation on
   reconnect. Busy hosts must stop work, pause Projects and close terminals. Sparkle may still
   require attention on the host if installation permissions change; do not promise no OS dialog.
+- **Thread files** (`files.v1`; docs/design/side-pane-files.md): mount `ThreadFilesPane(thread:)` in the
+  side pane, or push `ThreadFilesScreen(thread:)` on compact width (`App/iOS/Files`). Both read
+  `RemoteHostClient.listFiles(agentID:path:showHidden:)` and `.readFile(agentID:path:)` through one
+  `ThreadFilesModel` per thread (`ThreadFilesStores`, forgotten with its host) and say "Files needs a
+  newer Shepherd on <host>" on a host without the capability.
 - **Browser tunnels** (`browser.tunnel.v1`; the Mac's remote Browser tab, docs/browser.md › Remote).
   The iPad's Browser tab reuses the whole protocol layer and none of the Mac's page:
   `host.connectedClient?.tunnels` is the connection's `BrowserTunnelHub` (`bridge(fd:agentID:port:)`
@@ -192,9 +199,13 @@ them except the navigator, which is each window's own ([Windows](#windows-ipad))
   `Refusal` when another program or another page holds the port), with a `BrowserTunnelHubSlot` filled
   from `host.connectedClient?.tunnels` while the host is connected and emptied when it drops.
   `BrowserTunnelTarget.port(of:)` says which URLs a tunnel serves. The forwarder is a listener on the
-  device's loopback, which iOS suspends with the app (not measured here: nothing runs it on iOS yet).
+  device's loopback. Built (`App/iOS/Browser`, docs/browser.md › What the iPad reuses): a page's ports
+  are a `BrowserPagePorts` over `MobileBrowsers.shared.forwarder` and `MobileHost.tunnelSlot`, held only
+  while the host is connected (`MobileHosts.onHostConnected`/`onHostDisconnected`; backgrounding drops
+  every connection), at most eight a page. Mount `ThreadBrowserPane(thread:)` in a pane, or push
+  `.browser(.page(ref))` (`ThreadBrowserScreen`).
 - **The agent driving the page** (`browser.drive.v1`, offered with the tunnel; docs/browser.md ›
-  Remote). The iPad's Browser tab reuses the wire and every rule but the web view:
+  Remote; not built on iOS yet: the page never claims). The iPad's Browser tab reuses the wire and every rule but the web view:
   `host.connectedClient?.drivesBrowser` says the host offers it (both capabilities),
   `browserClaim(agentID:)` claims the agent's browser (answering the address the host's own page holds,
   to open through the tunnel only when `BrowserViewerPolicy.verdict(for:)` allows it, and only with
@@ -253,7 +264,7 @@ controller before the host interrupts work.
 | Hook | Lives in (filled by) | Called by | Signature |
 | --- | --- | --- | --- |
 | Composer slot | `Composer/ThreadComposer.swift` (B) | `ThreadScreen`, at the bottom | `ThreadComposer(ref: AgentRef)` |
-| Subagent tray | `Subagents/SubagentTray.swift` (D) | `ThreadComposer`, above the composer in one card with Up next | `SubagentTraySection(ref: AgentRef, tray: NativeSubagentTray, store: NativeThreadStore, state: ComposerState, size: NWSubagentTraySize, enabled: Bool)` |
+| Subagent tray | `Subagents/SubagentTray.swift` (D) | `ThreadComposer`, above the composer in one card with Up next | `SubagentTraySection(ref: AgentRef, tray: NativeSubagentTray, store: NativeThreadStore, state: ComposerState, size: SHSubagentTraySize, enabled: Bool)` |
 | Subagent routes | `Subagents/SubagentsRoute.swift` (D) | the turn footer's "N subagents", a turn's subagent record lines, the thread's options menu | `SubagentHooks.list(thread:) -> MobileRoute`, `SubagentHooks.run(thread:runID:) -> MobileRoute` |
 | Open review | `Review/ReviewRoute.swift` (E) | the changes card's Review and files, an edit line | `ReviewHooks.open(thread: AgentRef, file: String?, navigator: MobileNavigator)`; a recorded turn's card: `ReviewHooks.open(thread:turn:file:navigator:)`, the review scoped to that turn |
 | Open an artifact | `Review/ArtifactScreens.swift` (E) | the thread's "Made an artifact" line and its card | `ArtifactHooks.open(thread: AgentRef, path: String, navigator: MobileNavigator)`: iPad shows the docked pane's Artifacts tab, iPhone presents `ReviewRoute.artifact`; the thread reads `\.openArtifact`, nil where nothing can show it (a subagent's transcript). The files come from `NativeThreadStore.artifactFiles` (`native.artifacts.v1`) |
@@ -274,13 +285,13 @@ controller before the host interrupts work.
 | Open in new window | `Windows/WindowHooks.swift` (I) | the thread's options menu, the iPad sidebar's rows, the palette's rows and preview | `OpenInNewWindowButton(thread: AgentRef, prominent: Bool = false, before: (() -> Void)? = nil)` |
 | Send to… and drag | `Windows/WindowHooks.swift` (I) | each turn in `ThreadScreen` | `.turnTransfer(_ row: NativeThreadRow, thread: AgentRef)`, `SendToMenu(text:source:)` |
 | Text dropped on a composer | `Windows/WindowHooks.swift` (I) | `ThreadScreen`, on `ThreadComposer` | `.composerTextDrop(_ thread: AgentRef)` |
-| Terminal panel | `Terminal/TerminalPanelView.swift` (J) | `ThreadScreen`, on its content (the transcript with the composer) | `.threadTerminal(_ ref: AgentRef)`; adds nothing in compact width |
-| Terminal menu item | `Terminal/TerminalRoute.swift` (J) | the thread's options menu (menu items only; the terminal has no header button) | `TerminalMenuItems(thread: AgentRef)` |
+| Terminal activity | `Terminal/TerminalActivityWatch.swift` (J) | `ThreadScreen`, on its content | `.watchesTerminals(_ ref: AgentRef)`, `runningTerminals(_ ref:) -> Int` (the pane's dot, the menu's "1 running") |
+| Side pane tabs | `SidePane/ThreadSidePane.swift` | `PadDetailRoot`, a pushed thread on regular width (`ThreadDestination`) | `ThreadWithSidePane(ref:)`; Files and Browser are `SidePaneComingSoon(tab:)` until `ThreadFilesPane(thread:)` and `ThreadBrowserPane(thread:)` replace them; their phone screens are `MobileRoute.sidePane(.files/.browser)` |
 | Open or start a design | `Designs/DesignsRoute.swift` (K) | Recents' design rows, search, the Designs screen | `DesignsHooks.open(_ ref: HostDesignRef, navigator:)` (the design's canvas in the iPad's split view), `DesignsHooks.create(brief: String = "", host: UUID? = nil, navigator:)` |
 
 Each hook ships with the foundation's minimal version so the app builds and navigates end to end;
 the owning track replaces the body. Keep the signature. What a turn draws of its
-subagents (`NWSubagentRecordLine`) compares equal on its plain inputs, so a streamed chunk never
+subagents (`SHSubagentRecordLine`) compares equal on its plain inputs, so a streamed chunk never
 redraws it unless its values changed; keep it that way.
 
 ## Windows (iPad)
@@ -347,11 +358,11 @@ WindowGroup(for: MobileWindowSeed.self) { $seed in MobileWindowRoot(app: app, se
 
 - **Design:** the user's design in the thread comes first, then the boards, the specs in
   [docs/design/](../design/README.md) and the rules in [DESIGN.md](../../DESIGN.md). Tokens only:
-  `Color.nw`, `Font.nw`/`.nwText`, `NW.Space`/`Radius`/`Height`, and `MobileLayout` for the
+  `Color.sh`, `Font.sh`/`.shText`, `SH.Space`/`Radius`/`Height`, and `MobileLayout` for the
   app's own measures (add yours as an extension in your folder). No hardcoded colors, font
   sizes or dimensions in views. Reuse ShepherdUI components before hand-rolling one.
-- **Touch:** 44pt targets (`NW.Height.touch`, `.nwTouchTarget(height:)`), nothing only on hover
-  (`NWPlatform.showsHoverDetails` is true on iOS), VoiceOver labels, Dynamic Type, light and
+- **Touch:** 44pt targets (`SH.Height.touch`, `.shTouchTarget(height:)`), nothing only on hover
+  (`SHPlatform.showsHoverDetails` is true on iOS), VoiceOver labels, Dynamic Type, light and
   dark, iPhone and iPad.
 - **State:** `@MainActor @Observable` stores; views take plain `Equatable` values and do no
   parsing or filtering in `body`; stores derive rows once per change. No `ObservableObject`.

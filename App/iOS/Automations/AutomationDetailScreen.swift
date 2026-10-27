@@ -12,7 +12,7 @@ struct AutomationDetailScreen: View {
     var body: some View {
         let store = AutomationsStore.of(hosts)
         AutomationDetailContent(key: key, pad: false)
-            .background(Color.nw.bgWindow)
+            .background(Color.sh.bgWindow)
             .task { await store.watch() }
             .navigationTitle(store.details[key]?.row.name ?? "Automation")
             .navigationBarTitleDisplayMode(.inline)
@@ -34,7 +34,7 @@ struct AutomationDetailContent: View {
         if let detail = store.details[key] {
             content(detail, store: store)
         } else {
-            NWEmptyState(Text("Automation gone"), message: "This automation is no longer on its host.") { EmptyView() }
+            SHEmptyState(Text("Automation gone"), message: "This automation is no longer on its host.") { EmptyView() }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -46,28 +46,28 @@ struct AutomationDetailContent: View {
             VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
                 if pad { header(row, on: store.isOn(row), store: store) }
                 if let failure = store.failure, !pad {
-                    NWBanner(.failed, title: failure.message) {
-                        Button("OK") { store.failure = nil }.buttonStyle(.nw(.secondary))
+                    SHBanner(.failed, title: failure.message) {
+                        Button("OK") { store.failure = nil }.buttonStyle(.sh(.secondary))
                     }
                 }
                 VStack(spacing: 0) {
-                    NWFactRow("On") {
+                    SHFactRow("On") {
                         let on = store.isOn(row)
-                        NWAutomationSwitch("Starts with Shepherd", isOn: on,
+                        SHAutomationSwitch("Starts with Shepherd", isOn: on,
                                            caption: on ? "Runs when Shepherd starts on \(row.hostName)" : "Runs only when you run it",
                                            toggle: row.abilities.toggle && !busy ? { store.setEnabled(key, $0) } : nil)
                     }
-                    NWFactRow("Status") {
-                        NWFactText(row.status)
-                            .foregroundStyle(row.tone == .stopped || row.tone == .off ? Color.nw.textPrimary : AgentState(row.tone).textColor)
+                    SHFactRow("Status") {
+                        SHFactText(row.status)
+                            .foregroundStyle(row.tone == .stopped || row.tone == .off ? Color.sh.textPrimary : AgentState(row.tone).textColor)
                     }
-                    NWFactRow("Runs on", value: "\(row.hostName) · a new thread each run", mono: true)
-                    NWFactRow("Folder", value: row.cwd, mono: true)
+                    SHFactRow("Runs on", value: "\(row.hostName) · a new thread each run", mono: true)
+                    SHFactRow("Folder", value: row.cwd, mono: true)
                 }
-                NWAutomationPrompt(row.prompt)
+                SHAutomationPrompt(row.prompt)
                 runs(detail)
                 if let reason = row.abilities.readOnlyReason {
-                    Text(reason).nwText(.caption).foregroundStyle(Color.nw.textTertiary)
+                    Text(reason).shText(.caption).foregroundStyle(Color.sh.textTertiary)
                 }
             }
             .padding(MobileLayout.gutter)
@@ -93,11 +93,11 @@ struct AutomationDetailContent: View {
 
     /// iPad: the name, its On or Off, and the ••• menu (iPadAutomations' detail header).
     private func header(_ row: AutomationListRow, on: Bool, store: AutomationsStore) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
-            Text(row.name).nwText(.title).foregroundStyle(Color.nw.textPrimary)
+        HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+            Text(row.name).shText(.title).foregroundStyle(Color.sh.textPrimary)
                 .accessibilityAddTraits(.isHeader)
-            NWStatusPill(on ? .done : .idle, label: on ? "On" : "Off")
-            Spacer(minLength: NW.Space.s)
+            SHStatusPill(on ? .done : .idle, label: on ? "On" : "Off")
+            Spacer(minLength: SH.Space.s)
             menu(row, store: store)
         }
     }
@@ -112,7 +112,7 @@ struct AutomationDetailContent: View {
                 .disabled(!row.abilities.edit)
         } label: {
             Image(systemName: "ellipsis")
-                .nwTouchTarget(height: NW.Height.controlS, width: NW.Height.controlS)
+                .shTouchTarget(height: SH.Height.controlS, width: SH.Height.controlS)
         }
         .accessibilityLabel("More for \(row.name)")
         .confirmationDialog("Delete \(row.name)?", isPresented: confirming(.delete, store: store), titleVisibility: .visible) {
@@ -130,15 +130,15 @@ struct AutomationDetailContent: View {
     private func runs(_ detail: AutomationDetail) -> some View {
         if !detail.runsKnown {
             if detail.row.abilities.readOnlyReason == nil {
-                HStack(spacing: NW.Space.s) {
-                    ProgressView().progressViewStyle(.nwSpinner)
-                    Text("Reading runs…").nwText(.caption).foregroundStyle(Color.nw.textTertiary)
+                HStack(spacing: SH.Space.s) {
+                    ProgressView().progressViewStyle(.shSpinner)
+                    Text("Reading runs…").shText(.caption).foregroundStyle(Color.sh.textTertiary)
                 }
             }
         } else if detail.runs.isEmpty {
-            Text("No runs yet. Run now starts one.").nwText(.caption).foregroundStyle(Color.nw.textTertiary)
+            Text("No runs yet. Run now starts one.").shText(.caption).foregroundStyle(Color.sh.textTertiary)
         } else {
-            let bars = NWRunBars(detail.bars.map { NWRunBars.Bar(id: $0.id.uuidString, height: $0.height, state: AgentState($0.tone), label: $0.label) },
+            let bars = SHRunBars(detail.bars.map { SHRunBars.Bar(id: $0.id.uuidString, height: $0.height, state: AgentState($0.tone), label: $0.label) },
                                  first: detail.chartStart, summary: detail.chartSummary, last: detail.chartEnd)
             if pad {
                 // iPadAutomations: the bars on the page, then the last run as a card.
@@ -146,21 +146,21 @@ struct AutomationDetailContent: View {
                 if let last = detail.lastRun { lastRunCard(last) }
             } else {
                 bars
-                    .padding(NW.Space.l)
-                    .nwCard(radius: MobileLayout.cardRadius)
+                    .padding(SH.Space.l)
+                    .shCard(radius: MobileLayout.cardRadius)
             }
             if !pad, let last = detail.lastRun {
                 VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-                    NWListHeader("Last run")
+                    SHListHeader("Last run")
                     runRow(last)
-                        .padding(NW.Space.xs)
-                        .nwCard(radius: MobileLayout.cardRadius)
+                        .padding(SH.Space.xs)
+                        .shCard(radius: MobileLayout.cardRadius)
                 }
             }
             VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
-                NWListHeader("Runs", count: detail.runs.count)
-                NWListCard {
-                    ForEach(detail.runs) { run in runRow(run).padding(.horizontal, NW.Space.xs) }
+                SHListHeader("Runs", count: detail.runs.count)
+                SHListCard {
+                    ForEach(detail.runs) { run in runRow(run).padding(.horizontal, SH.Space.xs) }
                 }
             }
         }
@@ -168,44 +168,44 @@ struct AutomationDetailContent: View {
 
     /// iPadAutomations' last-run card: its glyph, "Today 02:00 · finished in 43s", and Open thread.
     private func lastRunCard(_ run: AutomationRunRow) -> some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let state = AgentState(run.tone)
-        return HStack(spacing: NW.Space.m) {
-            NWStateGlyph(state)
+        return HStack(spacing: SH.Space.m) {
+            SHStateGlyph(state)
             Text([run.started, run.duration.map { "\(run.word) in \($0)" } ?? run.word].joined(separator: " · "))
-                .font(.nw(.ui, weight: .semibold))
-                .foregroundStyle(nw.textPrimary)
+                .font(.sh(.ui, weight: .semibold))
+                .foregroundStyle(sh.textPrimary)
                 .lineLimit(1)
-            Spacer(minLength: NW.Space.s)
+            Spacer(minLength: SH.Space.s)
             if let agent = run.agent {
                 Button("Open thread") { navigator.open(.thread(AgentRef(host: agent.host, agent: agent.agent))) }
-                    .buttonStyle(.nwLink(color: nw.running, font: .nw(.ui)))
-                    .nwTouchTarget(height: NW.Height.controlL)
+                    .buttonStyle(.shLink(color: sh.running, font: .sh(.ui)))
+                    .shTouchTarget(height: SH.Height.controlL)
             }
         }
-        .padding(.horizontal, NW.Space.l + NW.Space.xxs)
-        .padding(.vertical, NW.Space.l)
-        .nwCard(radius: MobileLayout.cardRadius)
+        .padding(.horizontal, SH.Space.l + SH.Space.xxs)
+        .padding(.vertical, SH.Space.l)
+        .shCard(radius: MobileLayout.cardRadius)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Last run, \(run.started), \(run.word)\(run.duration.map { " in \($0)" } ?? "")")
     }
 
     private func runRow(_ run: AutomationRunRow) -> some View {
-        NWRunRow(started: run.started, word: run.word, state: AgentState(run.tone), duration: run.duration,
+        SHRunRow(started: run.started, word: run.word, state: AgentState(run.tone), duration: run.duration,
                  open: run.agent.map { agent in { navigator.open(.thread(AgentRef(host: agent.host, agent: agent.agent))) } })
     }
 
     /// Edit and Run now (with Open run while the last run's thread is there; running again
     /// replaces it), or Stop and Open run while a run is live (the boards' footer).
     private func actions(_ row: AutomationListRow, busy: Bool, store: AutomationsStore) -> some View {
-        HStack(spacing: NW.Space.m) {
+        HStack(spacing: SH.Space.m) {
             Button("Edit") { edit() }
-                .buttonStyle(.nw(.secondary, size: .l))
+                .buttonStyle(.sh(.secondary, size: .l))
                 .disabled(!row.abilities.edit)
-            Spacer(minLength: NW.Space.s)
+            Spacer(minLength: SH.Space.s)
             if row.live, let run = row.run {
                 Button("Stop") { store.confirming = .init(key: key, kind: .stop) }
-                    .buttonStyle(.nw(.secondary, size: .l))
+                    .buttonStyle(.sh(.secondary, size: .l))
                     .disabled(!row.abilities.stop || busy)
                     .confirmationDialog("Stop the run?", isPresented: confirming(.stop, store: store), titleVisibility: .visible) {
                         Button("Stop Run", role: .destructive) { store.stop(key) }
@@ -213,24 +213,24 @@ struct AutomationDetailContent: View {
                         Text("Its thread on \(row.hostName) is deleted. The automation stays.")
                     }
                 Button("Open run") { navigator.open(.thread(AgentRef(host: run.host, agent: run.agent))) }
-                    .buttonStyle(.nw(.primary, size: .l))
+                    .buttonStyle(.sh(.primary, size: .l))
             } else {
                 if let run = row.run {
                     Button("Open run") { navigator.open(.thread(AgentRef(host: run.host, agent: run.agent))) }
-                        .buttonStyle(.nw(.secondary, size: .l))
+                        .buttonStyle(.sh(.secondary, size: .l))
                 }
                 Button("Run now", systemImage: "play.fill") { store.run(key) }
-                    .buttonStyle(.nw(.primary, size: .l))
+                    .buttonStyle(.sh(.primary, size: .l))
                     .disabled(!row.abilities.run || busy)
             }
         }
-        .nwTouchTarget(height: NW.Height.controlL)
+        .shTouchTarget(height: SH.Height.controlL)
         .frame(maxWidth: pad ? MobileLayout.automationDetailMaxWidth - 2 * MobileLayout.gutter : .infinity)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, MobileLayout.gutter)
-        .padding(.vertical, NW.Space.m)
-        .background(Color.nw.bgWindow)
-        .overlay(alignment: .top) { NWHairline() }
+        .padding(.vertical, SH.Space.m)
+        .background(Color.sh.bgWindow)
+        .overlay(alignment: .top) { SHHairline() }
     }
 
     private func edit() {

@@ -4,127 +4,215 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-/// The Changes pane on iPad. Docked (iPadReview): the thread keeps the left and the pane takes
-/// the right: its tab, the toolbar (scope, stat, viewed, Commit…, refresh, collapse all, split or
-/// unified, diff options), the compare row, the file strip, then every file stacked with a
-/// sticky head, unified while the pane is narrow. Full screen (iPadReviewSplit): the file list on
-/// the left and the files side by side. Tapping a line opens a comment editor under it; comments
-/// not yet sent wait in the send bar.
-struct PadReviewScreen: View {
+/// The side pane's Changes tab on iPad and iPhone Duo's inner display (DuoOpenSidePane, DuoBookSidePane): under the pane's tabs, the
+/// compare row ("agent/widgets vs main ⌄ +137 −16 Commit…"), the file switcher ("‹ NeedsYouWidget.swift ⌄ 1 of 3 +84 −12 ›") in place
+/// of a strip of chips and a head per file, then that file's diff, unified, its lines taking comments; comments not yet sent wait in the
+/// send bar. The scope, the base and the diff options are in the pane's ⋯ (`SidePaneChangesOptions`). Full screen
+/// (iPadReviewSplit, `PadChangesFull`) lists the files beside every file's diff.
+struct SidePaneChanges: View {
     let ref: AgentRef
-    let file: String?
-    /// An artifact to show on the Artifacts tab (a "Made an artifact" line opened on an iPad whose pane was not showing).
-    var artifact: String? = nil
     @Environment(MobileHosts.self) private var hosts
-    @Environment(MobileNavigator.self) private var navigator
-    @Environment(\.dismiss) private var dismiss
+    @FocusState private var editorFocused: Bool
 
     var body: some View {
         let store = ReviewStores.shared.store(for: ref)
-        Group {
-            switch store.padLayout {
-            case .docked:
-                GeometryReader { proxy in
-                    // Half open (iPhone Duo), the thread ends at the fold and the pane starts after it.
-                    let fold = proxy.verticalFold
-                    HStack(spacing: 0) {
-                        ThreadScreen(ref: ref)
-                            .environment(\.threadSidePaneOpen, true)
-                            .paneWidth(fold?.lowerBound)
-                            .padding(.trailing, fold.map { $0.upperBound - $0.lowerBound } ?? 0)
-                        NWHairline(.vertical, color: Color.nw.lineStrong)
-                        PadChangesPane(ref: ref, store: store, finalize: finalize, close: { dismiss() })
-                            .paneWidth(fold == nil ? min(MobileLayout.reviewDockWidth, proxy.size.width * MobileLayout.reviewDockShare) : nil)
+        VStack(spacing: 0) {
+            PaneCompareRow(store: store)
+            if !store.entries.isEmpty { PaneFileSwitcher(store: store) }
+            ScrollView {
+                if let fileID = store.currentFile, store.entry(fileID) != nil {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        PadFileRows(store: store, fileID: fileID, style: padDiffStyle(store, compact: true), editorFocused: $editorFocused)
                     }
-                    // Half open, the thread's title leads instead of centering on the fold.
-                    .toolbarRole(fold == nil ? .automatic : .editor)
+                    .id(fileID)
+                } else {
+                    ReviewLoadState(store: store) { store.refresh() }.padding(MobileLayout.gutter)
                 }
-            case .full:
-                PadFullReview(store: store, finalize: finalize, close: { dismiss() })
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .frame(maxHeight: .infinity)
+            PadSendBar(store: store, close: {})
+        }
+        .background(Color.sh.bgWindow)
+        .task(id: hosts.host(ref.host)?.session) { await store.loadIfNeeded(hosts: hosts) }
+        // The file's hunks come when it is shown, and the next file's meanwhile.
+        .task(id: store.currentFile) {
+            guard let id = store.currentFile else { return }
+            store.ensure(id)
+            if let next = store.entry(after: id) { store.ensure(next.id) }
+        }
+        .onChange(of: store.pullRequest) { _, _ in store.refresh() }
+        // A pane opened at no file shows the first.
+        .onChange(of: store.entries.first?.id, initial: true) { _, first in
+            if store.entry(store.currentFile) == nil, let first { store.currentFile = first }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Changes")
+    }
+}
+
+/// The Changes tab's ⋯ items: what to compare, the diff's options, the file on screen as viewed, and Full screen.
+struct SidePaneChangesOptions: View {
+    let ref: AgentRef
+    @Environment(MobileHosts.self) private var hosts
+    @Environment(MobileNavigator.self) private var navigator
+
+    var body: some View {
+        let store = ReviewStores.shared.store(for: ref)
+        ChangesScopeMenu(store: store, pickBase: { store.pickingBase = true }) {
+            Label("Compare: \(store.scopeTitle)", systemImage: SHGlyph.gitBranch.symbolName)
+        }
+        if let id = store.currentFile {
+            let viewed = store.viewed.contains(id)
+            Button(viewed ? "Mark unviewed" : "Mark viewed", systemImage: viewed ? "checkmark.circle.fill" : SHGlyph.resolved.symbolName) {
+                store.toggleViewed(id)
             }
         }
-        .onAppear {
-            store.focus(file)
-            if let artifact { store.padTab = .artifacts; store.artifact = artifact }
+        Button("Full screen", systemImage: "arrow.up.left.and.arrow.down.right") {
+            withSHAnimation(.disclosure) { store.padLayout = .full }
+        }
+        PadDiffOptionItems(store: store, compact: true, finalize: padFinalize(ref, hosts: hosts, navigator: navigator))
+    }
+}
+
+/// Finalize for a worktree agent, presented over the review; nil where it isn't offered.
+@MainActor func padFinalize(_ ref: AgentRef, hosts: MobileHosts, navigator: MobileNavigator) -> (() -> Void)? {
+    let host = hosts.host(ref.host)
+    guard ReviewFinalizeGate.available(host: host, agent: host?.agent(ref.agent)) else { return nil }
+    return { navigator.present(.review(.finalize(ref))) }
+}
+
+/// The full-screen review (iPadReviewSplit), from the Changes tab's Full screen: it takes the thread's column until "‹ Thread".
+struct PadChangesFull: View {
+    let ref: AgentRef
+    @Environment(MobileHosts.self) private var hosts
+    @Environment(MobileNavigator.self) private var navigator
+
+    var body: some View {
+        let store = ReviewStores.shared.store(for: ref)
+        PadFullReview(store: store, finalize: padFinalize(ref, hosts: hosts, navigator: navigator)) {
+            store.padLayout = .docked
+            navigator.sidePane.isOpen = false
         }
         .task(id: hosts.host(ref.host)?.session) { await store.loadIfNeeded(hosts: hosts) }
         .onChange(of: store.pullRequest) { _, _ in store.refresh() }
     }
-
-    /// Finalize for a worktree agent, presented over the review.
-    private var finalize: (() -> Void)? {
-        let host = hosts.host(ref.host)
-        guard ReviewFinalizeGate.available(host: host, agent: host?.agent(ref.agent)) else { return nil }
-        let ref = ref
-        let navigator = navigator
-        return { navigator.present(.review(.finalize(ref))) }
-    }
 }
 
-// MARK: Docked
-
-/// The docked pane (iPadReview, iPadPaneArtifacts): the head's tabs, then the open tab. Changes is the review; Artifacts is the files
-/// the agent made in this thread, once it has made one.
-private struct PadChangesPane: View {
-    let ref: AgentRef
+/// The compare row (DuoOpenSidePane): head vs base, the base opening the base picker where it can change, the scope's totals, and
+/// Commit… trailing. A host without the Changes engine names its two sides instead.
+private struct PaneCompareRow: View {
     let store: ReviewStore
-    let finalize: (() -> Void)?
-    let close: () -> Void
-    @Environment(ThreadStores.self) private var threads
-    @State private var scrollTarget: String?
 
     var body: some View {
-        let artifacts = threads.store(for: ref).artifacts
-        // A pane left on Artifacts over a thread that has none shows Changes.
-        let tab: ReviewStore.PadTab = artifacts.isEmpty ? .changes : store.padTab
-        VStack(spacing: 0) {
-            PadPaneHeader(store: store, tab: tab, artifacts: artifacts.count, close: close)
-            switch tab {
-            case .changes:
-                PadChangesToolbar(store: store, compact: true, finalize: finalize)
-                PadCompareRow(store: store)
-                if !store.entries.isEmpty {
-                    NWTouchFileStrip(store.chips, selection: store.currentFile) { id in
-                        store.clearSelection()
-                        store.currentFile = id
-                        scrollTarget = id
+        let sh = Color.sh
+        HStack(spacing: SH.Space.m) {
+            if let compare = store.compare {
+                HStack(spacing: SH.Space.s) {
+                    Text(compare.head).foregroundStyle(sh.textPrimary).lineLimit(1).truncationMode(.middle)
+                    Text("vs").foregroundStyle(sh.textTertiary).fixedSize()
+                    if compare.basePicks {
+                        Button { store.pickingBase = true } label: {
+                            HStack(spacing: SH.Space.xs) {
+                                Text(compare.base).lineLimit(1)
+                                Image(systemName: "chevron.down").imageScale(.small)
+                            }
+                            .foregroundStyle(sh.textPrimary)
+                            .shTouchTarget(height: SH.Height.touch)
+                        }
+                        .buttonStyle(.plain)
+                        .fixedSize()
+                        .accessibilityLabel("Base \(compare.base)")
+                        .accessibilityHint("Compares against another branch")
+                    } else {
+                        Text(compare.base).foregroundStyle(sh.textPrimary).lineLimit(1).fixedSize()
                     }
                 }
-                PadChangesStack(store: store, scrollTarget: $scrollTarget)
-                PadSendBar(store: store, close: close)
-            case .artifacts:
-                PadArtifactsPane(ref: ref, store: store, artifacts: artifacts)
+                .layoutPriority(-1)
+            } else {
+                Text(store.filesArePR ? "Pull request" : "Working tree").foregroundStyle(sh.textPrimary).lineLimit(1)
             }
+            if store.loaded {
+                SHDiffStat(added: store.totals.added, removed: store.totals.removed, font: .sh(.mono)).fixedSize()
+            }
+            Spacer(minLength: SH.Space.s)
+            PadCommitButton(store: store)
         }
-        .background(Color.nw.bgWindow)
-        .clipped()
+        .font(.sh(.mono))
+        .padding(.horizontal, SH.Space.l)
+        .frame(minHeight: MobileLayout.reviewToolbarHeight)
+        .overlay(alignment: .bottom) { SHHairline() }
+        // The base picker opens here, from the base and from the ⋯'s Compare against….
+        .popover(isPresented: Binding(get: { store.pickingBase }, set: { store.pickingBase = $0 })) {
+            ChangesBasePicker(store: store) { store.pickingBase = false }
+                .frame(width: MobileLayout.reviewBasePickerSize.width, height: MobileLayout.reviewBasePickerSize.height)
+        }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(tab == .changes ? "Changes" : "Artifacts")
     }
 }
 
-/// The pane's head (iPadReview, iPadPaneArtifacts): the tabs Shepherd has as a segmented control, then the open tab's options
-/// (Changes: Full screen) and Close pane. Finalize worktree is in the toolbar's Diff options. Browser and Files are not built, so
-/// they have no tab.
-private struct PadPaneHeader: View {
+/// The file switcher (DuoOpenSidePane): ‹ and › step through the files, the name opens a menu of them all, then where it sits ("1 of 3")
+/// and its stat.
+private struct PaneFileSwitcher: View {
     let store: ReviewStore
-    let tab: ReviewStore.PadTab
-    let artifacts: Int
-    let close: () -> Void
 
     var body: some View {
-        var tabs = [NWPadPaneTab(id: "changes", title: "Changes", systemImage: "plus.forwardslash.minus", count: store.loaded ? store.entries.count : nil)]
-        if artifacts > 0 { tabs.append(NWPadPaneTab(id: "artifacts", title: "Artifacts", systemImage: NWGlyph.artifact.symbolName, count: artifacts)) }
-        return NWPadPaneHead(tabs, selection: tab == .changes ? "changes" : "artifacts",
-                             select: { store.padTab = $0 == "artifacts" ? .artifacts : .changes }, close: close) {
-            if tab == .changes {
-                Button("Full screen", systemImage: "arrow.up.left.and.arrow.down.right") {
-                    withNWAnimation(.disclosure) { store.padLayout = .full }
+        let sh = Color.sh
+        let current = store.currentFile.flatMap { id in store.summaries.first { $0.id == id } }
+        let index = current.flatMap { store.index(of: $0.id) }
+        let count = store.entries.count
+        HStack(spacing: SH.Space.s) {
+            Button { step(-1, from: index) } label: { Image(systemName: "chevron.left") }
+                .buttonStyle(.shIcon(size: SH.Height.touch))
+                .disabled((index ?? 0) == 0)
+                .accessibilityLabel("Previous file")
+            Menu {
+                ForEach(store.summaries) { summary in
+                    Button { show(summary.id) } label: {
+                        Text(summary.name)
+                        Text("+\(summary.added) \u{2212}\(summary.removed)\(summary.viewed ? " · viewed" : "")")
+                        if summary.id == current?.id { Image(systemName: "checkmark") }
+                    }
                 }
-                .labelStyle(.iconOnly)
-                .buttonStyle(.nwIcon(size: NW.Height.touch - NW.Space.xs))
+            } label: {
+                HStack(spacing: SH.Space.xs) {
+                    Text(current?.name ?? "Files").foregroundStyle(sh.textPrimary).lineLimit(1).truncationMode(.middle)
+                    Image(systemName: "chevron.down").imageScale(.small).foregroundStyle(sh.textSecondary)
+                }
+                .shTouchTarget(height: SH.Height.touch)
             }
+            .menuOrder(.fixed)
+            .accessibilityLabel("File: \(current?.name ?? "none")")
+            .accessibilityHint("Shows another changed file")
+            .layoutPriority(-1)
+            if let index {
+                Text("\(index + 1) of \(count)").foregroundStyle(sh.textTertiary).lineLimit(1).fixedSize()
+            }
+            Spacer(minLength: SH.Space.s)
+            if let current {
+                SHDiffStat(added: current.added, removed: current.removed, font: .sh(.mono)).fixedSize()
+            }
+            Button { step(1, from: index) } label: { Image(systemName: "chevron.right") }
+                .buttonStyle(.shIcon(size: SH.Height.touch))
+                .disabled((index ?? count) >= count - 1)
+                .accessibilityLabel("Next file")
         }
+        .font(.sh(.mono))
+        .padding(.horizontal, SH.Space.s)
+        .frame(minHeight: SH.Height.touch)
+        .overlay(alignment: .bottom) { SHHairline() }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func step(_ by: Int, from index: Int?) {
+        let next = (index ?? 0) + by
+        guard store.entries.indices.contains(next) else { return }
+        show(store.entries[next].id)
+    }
+
+    private func show(_ id: String) {
+        store.clearSelection()
+        store.currentFile = id
     }
 }
 
@@ -136,20 +224,20 @@ private struct PadChangesToolbar: View {
     let finalize: (() -> Void)?
 
     var body: some View {
-        HStack(spacing: NW.Space.m) {
+        HStack(spacing: SH.Space.m) {
             PadScopePill(store: store)
             if store.loaded {
-                NWDiffStat(added: store.totals.added, removed: store.totals.removed, font: .nw(.mono)).fixedSize()
+                SHDiffStat(added: store.totals.added, removed: store.totals.removed, font: .sh(.mono)).fixedSize()
             }
-            Spacer(minLength: NW.Space.s)
+            Spacer(minLength: SH.Space.s)
             PadCommitButton(store: store)
             PadDiffOptions(store: store, compact: compact, finalize: finalize)
                 .labelStyle(.iconOnly)
-                .buttonStyle(.nwIcon(size: NW.Height.touch))
+                .buttonStyle(.shIcon(size: SH.Height.touch))
         }
-        .padding(.horizontal, NW.Space.l)
+        .padding(.horizontal, SH.Space.l)
         .frame(height: MobileLayout.reviewToolbarHeight)
-        .overlay(alignment: .bottom) { NWHairline() }
+        .overlay(alignment: .bottom) { SHHairline() }
     }
 }
 
@@ -158,16 +246,16 @@ private struct PadScopePill: View {
     let store: ReviewStore
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         ChangesScopeMenu(store: store, pickBase: { store.pickingBase = true }) {
-            HStack(spacing: NW.Space.s) {
-                Text(label).font(.nw(.ui)).foregroundStyle(nw.textPrimary).lineLimit(1)
-                Image(systemName: "chevron.down").imageScale(.small).foregroundStyle(nw.textSecondary)
+            HStack(spacing: SH.Space.s) {
+                Text(label).font(.sh(.ui)).foregroundStyle(sh.textPrimary).lineLimit(1)
+                Image(systemName: "chevron.down").imageScale(.small).foregroundStyle(sh.textSecondary)
             }
-            .padding(.horizontal, NW.Space.l)
-            .frame(minHeight: NW.Height.touch)
-            .background(nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.s))
-            .nwBorder(nw.lineStrong, radius: NW.Radius.s)
+            .padding(.horizontal, SH.Space.l)
+            .frame(minHeight: SH.Height.touch)
+            .background(sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+            .shBorder(sh.lineStrong, radius: SH.Radius.s)
             .fixedSize()
             .accessibilityLabel("Compare: \(store.scopeTitle)")
         }
@@ -196,7 +284,7 @@ private struct PadCommitButton: View {
             Button { CommitHooks.open(thread: store.ref, navigator: navigator, sizeClass: .regular) } label: {
                 Text("Commit\u{2026}")
             }
-            .buttonStyle(.nw(.secondary, size: .l))
+            .buttonStyle(.sh(.secondary, size: .l))
             .fixedSize()
             .disabled(!store.canCommit)
             .accessibilityHint("Choose the message and push options, then commit on the host")
@@ -205,7 +293,7 @@ private struct PadCommitButton: View {
             Button { Task { _ = await store.commit(hosts: hosts) } } label: {
                 Text("Commit\u{2026}")
             }
-            .buttonStyle(.nw(.secondary, size: .l))
+            .buttonStyle(.sh(.secondary, size: .l))
             .fixedSize()
             .disabled(!store.canCommit)
             .accessibilityHint("Asks the agent to commit these changes")
@@ -228,44 +316,57 @@ private struct PadDiffOptions: View {
     let finalize: (() -> Void)?
 
     var body: some View {
-        let split = padDiffStyle(store, compact: compact) == .split
         Menu {
-            Section {
-                Button("Refresh", systemImage: "arrow.clockwise") { store.refresh() }
-                    .disabled(store.loading)
+            PadDiffOptionItems(store: store, compact: compact, finalize: finalize)
+        } label: {
+            Label("Diff options", systemImage: "ellipsis")
+        }
+    }
+}
+
+/// Diff options' items, in the full-screen review's ••• and the Changes tab's ⋯.
+struct PadDiffOptionItems: View {
+    let store: ReviewStore
+    let compact: Bool
+    let finalize: (() -> Void)?
+
+    var body: some View {
+        let split = padDiffStyle(store, compact: compact) == .split
+        Section {
+            Button("Refresh", systemImage: "arrow.clockwise") { store.refresh() }
+                .disabled(store.loading)
+            if !compact {
                 Button(store.allCollapsed ? "Expand all files" : "Collapse all files",
                        systemImage: store.allCollapsed ? "rectangle.expand.vertical" : "rectangle.compress.vertical") {
                     store.toggleCollapseAll()
                 }
-                Button(split ? "Unified diff" : "Split diff", systemImage: split ? "doc.plaintext" : "rectangle.split.2x1") {
-                    store.diffStyle = split ? .unified : .split
-                }
             }
-            Section("Diff") {
-                Toggle(isOn: Binding(get: { store.wordDiffs }, set: { store.setWordDiffs($0) })) {
-                    Label("Word diffs", systemImage: "text.word.spacing")
-                }
-                if store.usesChanges {
-                    Toggle(isOn: Binding(get: { store.options.ignoreWhitespace }, set: { store.setIgnoreWhitespace($0) })) {
-                        Label("Hide whitespace changes", systemImage: "space")
-                    }
-                    Toggle(isOn: Binding(get: { store.options.fullFiles }, set: { store.setFullFiles($0) })) {
-                        Label("Load full files", systemImage: "folder")
-                        Text("Expand past folds without a round trip")
-                    }
-                }
+            Button(split ? "Unified diff" : "Split diff", systemImage: split ? "doc.plaintext" : "rectangle.split.2x1") {
+                store.diffStyle = split ? .unified : .split
+            }
+        }
+        Section("Diff") {
+            Toggle(isOn: Binding(get: { store.wordDiffs }, set: { store.setWordDiffs($0) })) {
+                Label("Word diffs", systemImage: "text.word.spacing")
             }
             if store.usesChanges {
-                Section {
-                    Button("Copy git apply command", systemImage: "doc.on.clipboard") { copy(command: true) }
-                    Button("Copy as patch", systemImage: "doc.on.doc") { copy(command: false) }
+                Toggle(isOn: Binding(get: { store.options.ignoreWhitespace }, set: { store.setIgnoreWhitespace($0) })) {
+                    Label("Hide whitespace changes", systemImage: "space")
+                }
+                Toggle(isOn: Binding(get: { store.options.fullFiles }, set: { store.setFullFiles($0) })) {
+                    Label("Load full files", systemImage: "folder")
+                    Text("Expand past folds without a round trip")
                 }
             }
-            if let finalize {
-                Button("Finalize worktree\u{2026}", systemImage: "checkmark.seal", action: finalize)
+        }
+        if store.usesChanges {
+            Section {
+                Button("Copy git apply command", systemImage: "doc.on.clipboard") { copy(command: true) }
+                Button("Copy as patch", systemImage: "doc.on.doc") { copy(command: false) }
             }
-        } label: {
-            Label("Diff options", systemImage: "ellipsis")
+        }
+        if let finalize {
+            Button("Finalize worktree\u{2026}", systemImage: "checkmark.seal", action: finalize)
         }
     }
 
@@ -284,34 +385,34 @@ private struct PadCompareRow: View {
 
     var body: some View {
         if let compare = store.compare {
-            let nw = Color.nw
-            HStack(spacing: NW.Space.m) {
-                Text(compare.head).foregroundStyle(nw.textSecondary).lineLimit(1).truncationMode(.middle)
-                Text("vs").foregroundStyle(nw.textTertiary)
+            let sh = Color.sh
+            HStack(spacing: SH.Space.m) {
+                Text(compare.head).foregroundStyle(sh.textSecondary).lineLimit(1).truncationMode(.middle)
+                Text("vs").foregroundStyle(sh.textTertiary)
                 if compare.basePicks {
                     Button { store.pickingBase = true } label: {
-                        HStack(spacing: NW.Space.xs) {
+                        HStack(spacing: SH.Space.xs) {
                             Text(compare.base).lineLimit(1)
                             Image(systemName: "chevron.down").imageScale(.small)
                         }
-                        .foregroundStyle(nw.textPrimary)
-                        .nwTouchTarget(height: MobileLayout.reviewCompareHeight)
+                        .foregroundStyle(sh.textPrimary)
+                        .shTouchTarget(height: MobileLayout.reviewCompareHeight)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Base \(compare.base)")
                     .accessibilityHint("Compares against another branch")
                 } else {
-                    Text(compare.base).foregroundStyle(nw.textPrimary).lineLimit(1)
+                    Text(compare.base).foregroundStyle(sh.textPrimary).lineLimit(1)
                 }
-                Spacer(minLength: NW.Space.s)
+                Spacer(minLength: SH.Space.s)
                 if store.loaded {
-                    Text(store.totals.viewedText).foregroundStyle(nw.textSecondary).lineLimit(1).fixedSize()
+                    Text(store.totals.viewedText).foregroundStyle(sh.textSecondary).lineLimit(1).fixedSize()
                 }
             }
-            .font(.nw(.mono))
-            .padding(.horizontal, NW.Space.l)
+            .font(.sh(.mono))
+            .padding(.horizontal, SH.Space.l)
             .frame(height: MobileLayout.reviewCompareHeight)
-            .overlay(alignment: .bottom) { NWHairline() }
+            .overlay(alignment: .bottom) { SHHairline() }
             .accessibilityElement(children: .contain)
         }
     }
@@ -352,7 +453,7 @@ private struct PadChangesStack: View {
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: scrollTarget) { _, id in
                 guard let id else { return }
-                withNWAnimation(.disclosure) { proxy.scrollTo(id, anchor: .top) }
+                withSHAnimation(.disclosure) { proxy.scrollTo(id, anchor: .top) }
                 scrollTarget = nil
             }
         }
@@ -394,16 +495,16 @@ private struct PadFileHead: View {
     let entry: ChangesFile
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         let collapsed = store.collapsed.contains(entry.id)
         let viewed = store.viewed.contains(entry.id)
         let (directory, name) = reviewPathParts(entry.path)
-        let status = NWFileStatus(ReviewFileStatus(entry.status))
-        HStack(spacing: NW.Space.m) {
-            Button { withNWAnimation(.disclosure) { store.toggleCollapsed(entry.id) } } label: {
+        let status = SHFileStatus(ReviewFileStatus(entry.status))
+        HStack(spacing: SH.Space.m) {
+            Button { withSHAnimation(.disclosure) { store.toggleCollapsed(entry.id) } } label: {
                 Text("\(name) · +\(entry.added) \u{2212}\(entry.removed)")
-                    .font(.nw(.mono))
-                    .foregroundStyle(nw.textPrimary)
+                    .font(.sh(.mono))
+                    .foregroundStyle(sh.textPrimary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -414,16 +515,16 @@ private struct PadFileHead: View {
             .accessibilityValue(collapsed ? "collapsed" : "expanded")
             .accessibilityHint(collapsed ? "Shows the file's changes" : "Hides the file's changes")
             Toggle("Viewed", isOn: Binding(get: { viewed }, set: { _ in store.toggleViewed(entry.id) }))
-                .toggleStyle(.nwCheckbox)
-                .font(.nw(.caption))
-                .foregroundStyle(nw.textSecondary)
+                .toggleStyle(.shCheckbox)
+                .font(.sh(.caption))
+                .foregroundStyle(sh.textSecondary)
                 .fixedSize()
-                .nwTouchTarget(height: NW.Height.touch)
+                .shTouchTarget(height: SH.Height.touch)
         }
-        .padding(.horizontal, NW.Space.m + NW.Space.xxs)
-        .frame(height: NW.Height.touch)
-        .background(nw.bgRaised)
-        .overlay(alignment: .bottom) { NWHairline() }
+        .padding(.horizontal, SH.Space.m + SH.Space.xxs)
+        .frame(height: SH.Height.touch)
+        .background(sh.bgRaised)
+        .overlay(alignment: .bottom) { SHHairline() }
     }
 }
 
@@ -437,39 +538,39 @@ private struct PadSendBar: View {
     var body: some View {
         VStack(spacing: 0) {
             if let error = store.actionError {
-                NWBanner(.failed, title: "Couldn't send the comments", message: error) {
-                    Button("Dismiss") { store.actionError = nil }.buttonStyle(.nw(.ghost, size: .s))
+                SHBanner(.failed, title: "Couldn't send the comments", message: error) {
+                    Button("Dismiss") { store.actionError = nil }.buttonStyle(.sh(.ghost, size: .s))
                 }
-                .padding(NW.Space.l)
+                .padding(SH.Space.l)
             }
             if !store.comments.isEmpty {
-                let nw = Color.nw
-                HStack(spacing: NW.Space.m) {
+                let sh = Color.sh
+                HStack(spacing: SH.Space.m) {
                     Text(padPendingText(store.comments))
-                        .font(.nw(.caption)).foregroundStyle(nw.textTertiary)
+                        .font(.sh(.caption)).foregroundStyle(sh.textTertiary)
                         .lineLimit(1).truncationMode(.middle)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Button("Discard") { store.discardComments() }
-                        .buttonStyle(.nw(.ghost, size: .l))
+                        .buttonStyle(.sh(.ghost, size: .l))
                         .disabled(store.submitting)
                         .accessibilityHint("Deletes the comments you haven't sent")
                     Button {
                         Task { if await store.sendComments(hosts: hosts) { close() } }
                     } label: {
-                        HStack(spacing: NW.Space.s) {
-                            if store.submitting { ProgressView().progressViewStyle(NWSpinnerStyle()) }
+                        HStack(spacing: SH.Space.s) {
+                            if store.submitting { ProgressView().progressViewStyle(SHSpinnerStyle()) }
                             Text(store.sendTitle)
                         }
                     }
-                    .buttonStyle(.nw(.primary, size: .l))
+                    .buttonStyle(.sh(.primary, size: .l))
                     .disabled(!store.canSend)
                     .accessibilityHint("Sends your comments as the agent's next message")
                 }
-                .padding(.horizontal, NW.Space.l)
-                .padding(.vertical, NW.Space.m)
+                .padding(.horizontal, SH.Space.l)
+                .padding(.vertical, SH.Space.m)
                 .frame(minHeight: MobileLayout.reviewSendBarHeight)
-                .background(nw.bgWindow)
-                .overlay(alignment: .top) { NWHairline() }
+                .background(sh.bgWindow)
+                .overlay(alignment: .top) { SHHairline() }
             }
         }
     }
@@ -507,14 +608,14 @@ private struct PadFullReview: View {
                     }
                     .paneWidth(fold?.lowerBound ?? MobileLayout.reviewFileListWidth)
                     .padding(.trailing, fold.map { $0.upperBound - $0.lowerBound } ?? 0)
-                    NWHairline(.vertical)
+                    SHHairline(.vertical)
                     PadChangesStack(store: store, scrollTarget: $scrollTarget, compact: fold != nil)
                         .frame(maxWidth: .infinity)
                 }
             }
             PadSendBar(store: store, close: close)
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .toolbar(.hidden, for: .tabBar)
         .navigationTitle("Review")
         .navigationBarTitleDisplayMode(.inline)
@@ -522,15 +623,15 @@ private struct PadFullReview: View {
         .toolbar(removing: .title)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                HStack(spacing: NW.Space.m) {
-                    Button { withNWAnimation(.disclosure) { store.padLayout = .docked } } label: {
-                        HStack(spacing: NW.Space.xs) {
-                            Image(systemName: "chevron.left").font(.nw(.ui, weight: .semibold))
+                HStack(spacing: SH.Space.m) {
+                    Button { withSHAnimation(.disclosure) { store.padLayout = .docked } } label: {
+                        HStack(spacing: SH.Space.xs) {
+                            Image(systemName: "chevron.left").font(.sh(.ui, weight: .semibold))
                             Text("Thread")
                         }
                     }
                     .accessibilityLabel("Back to the thread")
-                    Text("Review").font(.nw(.ui, weight: .semibold)).foregroundStyle(Color.nw.textPrimary)
+                    Text("Review").font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.textPrimary)
                         .accessibilityAddTraits(.isHeader)
                 }
                 .fixedSize()
@@ -549,23 +650,23 @@ private struct PadFileList: View {
     let select: (String) -> Void
 
     var body: some View {
-        let nw = Color.nw
+        let sh = Color.sh
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(store.summaries) { summary in
                     let selected = summary.id == store.currentFile
                     Button { select(summary.id) } label: {
-                        VStack(alignment: .leading, spacing: NW.Space.xs) {
-                            Text(summary.name).font(.nw(.code)).foregroundStyle(nw.textPrimary)
+                        VStack(alignment: .leading, spacing: SH.Space.xs) {
+                            Text(summary.name).font(.sh(.code)).foregroundStyle(sh.textPrimary)
                                 .lineLimit(1).truncationMode(.middle)
-                            Text("+\(summary.added) \u{2212}\(summary.removed)").font(.nw(.micro, weight: .regular))
-                                .foregroundStyle(nw.textTertiary)
+                            Text("+\(summary.added) \u{2212}\(summary.removed)").font(.sh(.micro, weight: .regular))
+                                .foregroundStyle(sh.textTertiary)
                         }
-                        .padding(NW.Space.l)
+                        .padding(SH.Space.l)
                         .frame(maxWidth: .infinity, minHeight: MobileLayout.reviewFileRowHeight, alignment: .leading)
                         .opacity(summary.viewed && !selected ? MobileLayout.reviewViewedOpacity : 1)
-                        .background(selected ? nw.bgSelected : .clear)
-                        .overlay(alignment: .bottom) { NWHairline() }
+                        .background(selected ? sh.bgSelected : .clear)
+                        .overlay(alignment: .bottom) { SHHairline() }
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)

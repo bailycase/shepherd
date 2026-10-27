@@ -3,11 +3,11 @@ import SwiftUI
 import Testing
 @testable import ShepherdUI
 
-/// Night Watch motion: the board's durations as anchors, the springs behind them, and what
+/// Shepherd Design motion: the board's durations as anchors, the springs behind them, and what
 /// Reduce Motion leaves.
-@Suite("Night Watch motion")
+@Suite("Shepherd Design motion")
 struct MotionTests {
-    typealias Motion = NW.Motion
+    typealias Motion = SH.Motion
 
     @Test(arguments: [
         (Motion.hover, 0.12), (.content, 0.12),
@@ -109,27 +109,27 @@ struct MotionTests {
     }
 
     @Test(arguments: [
-        (NW.ContentMotion.numeric(), ContentTransition.numericText(countsDown: false), ContentTransition.opacity),
+        (SH.ContentMotion.numeric(), ContentTransition.numericText(countsDown: false), ContentTransition.opacity),
         (.numeric(countsDown: true), .numericText(countsDown: true), .opacity),
         (.interpolate, .interpolate, .interpolate),
         (.symbol, .symbolEffect(.replace), .opacity),
         (.crossFade, .opacity, .opacity),
     ])
-    func contentChangesStopMovingUnderReduceMotion(_ motion: NW.ContentMotion, normal: ContentTransition, reduced: ContentTransition) {
+    func contentChangesStopMovingUnderReduceMotion(_ motion: SH.ContentMotion, normal: ContentTransition, reduced: ContentTransition) {
         #expect(motion.contentTransition(reduceMotion: false) == normal)
         #expect(motion.contentTransition(reduceMotion: true) == reduced)
     }
 
     @Test func theGlowPulsesBetweenFullAndDim() {
         let start = Date(timeIntervalSinceReferenceDate: 0)
-        #expect(abs(NWPhase.glowOpacity(start) - 1) < 1e-9)
-        #expect(abs(NWPhase.glowOpacity(start.addingTimeInterval(0.8)) - 0.35) < 1e-9)
+        #expect(abs(SHPhase.glowOpacity(start) - 1) < 1e-9)
+        #expect(abs(SHPhase.glowOpacity(start.addingTimeInterval(0.8)) - 0.35) < 1e-9)
     }
 
     /// The render server plays the glow from keyframes: the clock's curve, sampled evenly over
     /// one period and closed where it began, so the pulse is the cosine it was.
     @Test func theGlowsKeyframesFollowItsCurve() {
-        let frames = NWPhase.glowKeyframes(count: 64)
+        let frames = SHPhase.glowKeyframes(count: 64)
         #expect(frames.values.count == 65 && frames.keyTimes.count == 65)
         #expect(frames.keyTimes.first == 0 && frames.keyTimes.last == 1)
         #expect(abs(frames.values[0] - 1) < 1e-9 && abs(frames.values[64] - 1) < 1e-9)
@@ -142,37 +142,37 @@ struct MotionTests {
             let index = Int(fraction * 64)
             let local = fraction * 64 - Double(index)
             let interpolated = frames.values[index] + (frames.values[index + 1] - frames.values[index]) * local
-            let exact = NWPhase.glowOpacity(Date(timeIntervalSinceReferenceDate: fraction * Motion.glow.duration))
+            let exact = SHPhase.glowOpacity(Date(timeIntervalSinceReferenceDate: fraction * Motion.glow.duration))
             #expect(abs(interpolated - exact) < 0.01)
         }
     }
 
     @Test(arguments: [(CGFloat(8), CGFloat(1.5)), (13, 1.885), (48, 6.96)])
     func theSpinnersStrokeScalesWithItsSize(size: CGFloat, width: CGFloat) {
-        #expect(abs(NWPhase.spinnerLineWidth(size: size) - width) < 1e-6)
+        #expect(abs(SHPhase.spinnerLineWidth(size: size) - width) < 1e-6)
     }
 
     @Test func thePulseRisesFromDimToFullAndBack() {
         let start = Date(timeIntervalSinceReferenceDate: 0)
-        #expect(abs(NWPhase.pulseOpacity(start) - 0.55) < 1e-9)
-        #expect(abs(NWPhase.pulseOpacity(start.addingTimeInterval(0.7)) - 1) < 1e-9)
+        #expect(abs(SHPhase.pulseOpacity(start) - 0.55) < 1e-9)
+        #expect(abs(SHPhase.pulseOpacity(start.addingTimeInterval(0.7)) - 1) < 1e-9)
     }
 
-    /// NWFoundations: the shimmer is 1.8s linear, live text only. The highlight moves from
+    /// SHFoundations: the shimmer is 1.8s linear, live text only. The highlight moves from
     /// before the text to past it at a constant pace, so each pass starts and ends on plain
     /// tertiary text and the loop has no seam.
     @Test func theShimmersHighlightCrossesItsTextAtAConstantPace() {
         let start = Date(timeIntervalSinceReferenceDate: 0)
         #expect(Motion.shimmer.animation(reduceMotion: false) == .linear(duration: 1.8).repeatForever(autoreverses: false))
-        #expect(NWPhase.shimmerCenter(start) == NWPhase.shimmerStart)
-        #expect(abs(NWPhase.shimmerCenter(start.addingTimeInterval(0.9)) - 0.5) < 1e-9)
-        let first = NWPhase.shimmerPoints(center: NWPhase.shimmerStart), last = NWPhase.shimmerPoints(center: NWPhase.shimmerEnd)
+        #expect(SHPhase.shimmerCenter(start) == SHPhase.shimmerStart)
+        #expect(abs(SHPhase.shimmerCenter(start.addingTimeInterval(0.9)) - 0.5) < 1e-9)
+        let first = SHPhase.shimmerPoints(center: SHPhase.shimmerStart), last = SHPhase.shimmerPoints(center: SHPhase.shimmerEnd)
         #expect(first.end.x <= 0 && last.start.x >= 1, "the text is outside the band at both ends of a pass")
     }
 
     @Test func theShimmersBandSlidesOnTheRenderServerInStepWithTheClock() throws {
         let now = Date(timeIntervalSinceReferenceDate: 0.45)
-        let group = NWLayerMotion.shimmer(now: now)
+        let group = SHLayerMotion.shimmer(now: now)
         #expect(group.duration == Motion.shimmer.duration && group.repeatCount == .infinity)
         #expect(abs(group.timeOffset - 0.45) < 1e-9)
         let keyPaths = (group.animations ?? []).compactMap { ($0 as? CABasicAnimation)?.keyPath }

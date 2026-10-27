@@ -12,7 +12,7 @@ struct MissionPresentationTests {
         for designs in [false, true] {
             let rows = SidebarDerivation.destinations(shown: .missions, newThreadChord: "test", designs: designs, missions: true)
             #expect(rows[1].target == .page(.missions))
-            #expect(rows[1].icon == .symbol(NWGlyph.mission.symbolName))
+            #expect(rows[1].icon == .symbol(SHGlyph.mission.symbolName))
             #expect(rows.filter(\.selected).map(\.title) == ["Missions"])
         }
     }

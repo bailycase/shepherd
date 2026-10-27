@@ -2,7 +2,7 @@
 
 `App/iOS` is a remote-only iPhone and iPad client for Macs running Shepherd. It is being built
 for its first release: a foundation (this page) and six feature tracks, each with its own folder
-([CONTRACTS.md](CONTRACTS.md) is the map). It is built on Night Watch (ShepherdUI) and
+([CONTRACTS.md](CONTRACTS.md) is the map). It is built on Shepherd Design (ShepherdUI) and
 `@Observable` stores, like the Mac.
 
 The client connects to a Mac host over the same bearer-token TCP protocol another Mac uses (see
@@ -58,10 +58,14 @@ The iOS client ships through TestFlight, following the Mac's channels:
 - **Build:** the job runs on the `xcode-27` runner with Xcode 27.1 for iPhone Duo's SwiftUI hinge
   and reserved-region APIs. Earlier SDK builds compile without that fold-aware spacing. It
   archives `Shepherd iOS` unsigned, and `release.py verify-ios` checks the app.
-- **Signing and upload:** `xcodebuild -exportArchive` with `App/iOS/ExportOptions.plist`,
-  `-allowProvisioningUpdates`, and the App Store Connect key. It signs with the team's
-  cloud-managed Apple Distribution certificate and uploads the build. No certificate is
-  exported and no keychain is involved.
+- **Signing and upload:** `release.py prepare-ios-signing` seals the archive with an ad-hoc
+  signature carrying its production push entitlement and the glance app group, sealing the
+  widget extension (`com.bailycase.shepherd.ios.widgets`) with the group first. `ensure-ios-push` enables Push Notifications
+  on the existing App ID if needed. `xcodebuild -exportArchive` with `App/iOS/ExportOptions.plist`,
+  `-allowProvisioningUpdates`, and the App Store Connect key cloud-signs a local IPA.
+  `verify-ios-ipa` checks the signed app, the widget extension and their provisioning profiles
+  for production APNs and the app group before
+  `altool` uploads it. No signing certificate is exported or installed in the runner's keychain.
 - **Versions:** the build number is the workflow's run number, a numbering the Shepherd Nightly
   builds share, so it only grows. The version is the project's `MARKETING_VERSION`. The Mac
   nightly's `0.0.0-nightly.<stamp>` is not a valid iOS version.
@@ -163,8 +167,9 @@ keep the version for real breaks.
   disconnects every host; the agents keep running on the Macs. When a host's connection ends is
   kept apart from its record (`shepherd.ios.hosts.lastSeen`), so a host the phone cannot reach
   says when it was last seen.
-- **iPhone:** two tabs, Home and Settings, each a navigation stack. Home merges every host:
-  Projects, Automations and More (host cards), offline hosts with Retry, Needs you (questions
+- **iPhone:** five tabs, Home, Designs, Projects, Automations and Settings (which holds More's
+  hosts, design systems and extensions), each a navigation stack. Home is the inbox and merges
+  every host: offline hosts with Retry, Needs you (questions
   and blocked threads, answered in place when short; a subagent's question is its parent's, so
   it is never here), Working, Done (with Mark all seen), Pinned, and Recents with host tags. `HomeFeed`
   derives it once per change from each host's state and, while Home is on screen, the threads'
@@ -196,8 +201,8 @@ keep the version for real breaks.
   Done, Pinned, Recents, and a footer with
   the hosts and Settings) beside the selected thread; in portrait the thread takes the width and
   the sidebar slides over it. Portrait is the window's shape, never what the
-  keyboard leaves of it (CONTRACTS.md › Navigation). With no thread selected the detail is the
-  overview: Needs you, Running now and Finished.
+  keyboard leaves of it (CONTRACTS.md › Navigation). With no thread selected the detail is an
+  empty state with a New thread button.
 - **Thread (`ThreadScreen`):** the title with its status line ("Idle · ⧉ agent/swiftui-previews", or
   "Needs you · ⌂ your checkout" when the agent works in the space's own checkout; on iPad the branch chip
   with its changed files, and the host when there are several, then a status pill with the running
@@ -212,7 +217,7 @@ keep the version for real breaks.
   agent runs). It follows its tail as the Mac's thread does (`NativeScrollFollower`): only a
   finger dragging it up detaches, while replies, the composer or keyboard resizing, and rows
   re-wrapping beside a docked review keep the last turn above the composer. Detached while the
-  agent runs or new output arrived, "↓ Jump to latest" (`NWJumpToLatest`) sits above the
+  agent runs or new output arrived, "↓ Jump to latest" (`SHJumpToLatest`) sits above the
   composer.
 - **Composer (`ThreadComposer`, `Composer/`):** on iPhone a paperclip beside a capsule field,
   with the commands, model and thinking chips above it while it is in use; on iPad the Mac's
@@ -315,13 +320,11 @@ keep the version for real breaks.
   ⌘K opens a palette over search and actions, with a live preview of the selected thread.
 
 - **Terminal (`Terminal/`):** the terminals of an agent's layout on its host, one tab each. On
-  iPad a panel under the thread (Show Terminal in the thread's options menu, which opens a
-  terminal when the thread has none; no header button) with the layout's tabs, + (a new
-  terminal), Maximize, Hide, and a divider that snaps at a third, half and two-thirds; on iPhone
-  the thread's options (Terminal) open them full screen, and the screen opens a terminal as it
-  appears when there is none and goes back with its last terminal. There is no empty panel and
-  no Split: a terminal that fails to open with no panel up gives a haptic. Each terminal is
-  SwiftTerm's view on Night Watch's terminal palette, attached (`attach`) while it is on
+  iPad and iPhone Duo open the side pane's Terminal tab beside the thread (`SidePane/`); on
+  iPhone the thread's ••• menu (Terminal) opens them full screen. Either opens a terminal as it
+  appears when there is none; the phone's screen goes back with its last terminal, the tab stays.
+  There is no Split. Each terminal is
+  SwiftTerm's view on Shepherd Design's terminal palette, attached (`attach`) while it is on
   screen, the app is active and the host connected, and detached a second after it leaves; the
   host replays its screen on every attach and sizes the PTY to its smallest viewer. A refused
   attach is retried with backoff (1 s doubling to 30 s) while the terminal stays on screen, and a
@@ -364,8 +367,20 @@ keep the version for real breaks.
   back in the chat with Apply both and Keep as comments (hosts that offer `design.markup.v1`).
   Details: docs/designs.md › On iPad, › Pencil markup.
 
+Push notifications use the Cloudflare relay and APNs; enable them per host in
+Settings ▸ Notifications. They cover completed runs, terminal errors, and explicit requests
+for an answer, including when that thread is open and being viewed. Titles and short final reply,
+error, or question previews are included by default and pass through Apple and Cloudflare.
+Known credentials are redacted, but sensitive prose may remain; lock-screen previews follow iOS
+settings. Thinking and tool logs are excluded; missing previews use generic text.
+The Mac must be awake and running Shepherd.
+
+The Live Activities (Watch, and Follow from a row's long press), the Dynamic Island, and the
+Home Screen, Lock Screen and Control Center widgets live in the `Shepherd Widgets` extension
+(`App/Widgets`, with what it shares with the app in `App/Glance`). The app updates them while it
+is in front; they go stale five minutes after it leaves (docs/design/notifications.md › Glance).
+
 ## Not in the first release
 
-Push notifications and Live Activities (they need a relay: the phone's socket drops in the
-background), QR pairing and TLS, and everything waiting on the Mac (Missions,
-daemon hosts).
+Live Activity updates while the app is in the background (they need Live Activity pushes from
+the relay), QR pairing and TLS, and everything waiting on the Mac (Missions, daemon hosts).

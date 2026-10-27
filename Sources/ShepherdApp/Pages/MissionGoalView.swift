@@ -39,14 +39,14 @@ struct MissionWorkspace: View {
                 trailing(compact: compact)
             }
             if [.paused, .stopped].contains(phase), let notice = mission.run?.notice {
-                HStack(spacing: NW.Space.m) {
-                    NWStatusDot(phase.missionState)
-                    Text(notice).nwText(.ui).fontWeight(.regular).textSelection(.enabled)
+                HStack(spacing: SH.Space.m) {
+                    SHStatusDot(phase.missionState)
+                    Text(notice).shText(.ui).fontWeight(.regular).textSelection(.enabled)
                     Spacer()
                 }
-                .padding(.horizontal, NW.Space.xxl).padding(.vertical, NW.Space.m)
-                .background(Color.nw.lanternTint)
-                .overlay(alignment: .bottom) { NWHairline() }
+                .padding(.horizontal, SH.Space.xxl).padding(.vertical, SH.Space.m)
+                .background(Color.sh.lanternTint)
+                .overlay(alignment: .bottom) { SHHairline() }
             }
             Group {
                 switch displayed {
@@ -64,7 +64,7 @@ struct MissionWorkspace: View {
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .onChange(of: phase) { _, _ in page = nil }
         .task(id: phase) {
             if phase == .review || ([.paused, .stopped, .done].contains(phase) && mission.run?.reviewFingerprint != nil) { action(.refresh) }
@@ -77,7 +77,7 @@ struct MissionWorkspace: View {
         if !compact {
             if phase == .map || (phase == .planning && mission.stationAttempts.isEmpty) {
                 Text("budget \(MissionFormat.tokens(limits.tokens)) tok · \(MissionFormat.duration(limits.seconds))")
-                    .nwText(.mono).foregroundStyle(Color.nw.textTertiary).lineLimit(1)
+                    .shText(.mono).foregroundStyle(Color.sh.textTertiary).lineLimit(1)
             } else {
                 MissionMeters(mission: mission)
             }
@@ -88,13 +88,13 @@ struct MissionWorkspace: View {
                 Button(stop, role: .destructive) { action(.stop) }
                 if let planner = mission.run?.plannerID { Button("Open planner thread") { openThread(planner) } }
             } label: { Image(systemName: "ellipsis") }
-                .menuStyle(.button).buttonStyle(.nwIcon).menuIndicator(.hidden).fixedSize()
+                .menuStyle(.button).buttonStyle(.shIcon).menuIndicator(.hidden).fixedSize()
                 .accessibilityLabel("More mission actions").help("More mission actions")
         }
         switch phase {
         case .planning, .running:
             Button { action(.pause) } label: { Label("Pause", systemImage: "pause.fill") }
-                .buttonStyle(.nw(.secondary)).disabled(busy || mission.run?.publicationApproval != nil)
+                .buttonStyle(.sh(.secondary)).disabled(busy || mission.run?.publicationApproval != nil)
         case .map, .paused, .stopped:
             let needsPlan = mission.draft.plan?.stations.isEmpty != false || (phase != .map && mission.approvedPlanRevision == nil && mission.stationAttempts.isEmpty)
             let blocked = mission.run?.pendingQuestion != nil
@@ -106,16 +106,16 @@ struct MissionWorkspace: View {
                 Button { action(.acceptConvergence(pending.attempt)) } label: {
                     Label("Accept \(pending.lane)'s completion report", systemImage: "checkmark")
                 }
-                .buttonStyle(.nw(.primary)).disabled(busy)
-                .nwHelp("You read the /speckit.converge report and accept it. An acknowledgement, not test evidence; work continues with the next repository.")
+                .buttonStyle(.sh(.primary)).disabled(busy)
+                .shHelp("You read the /speckit.converge report and accept it. An acknowledgement, not test evidence; work continues with the next repository.")
             } else if mission.run?.publicationApproval == nil && !blocked && !specKitBlocked && !(phase == .map && needsPlan) {
                 Button { action(needsPlan ? .plan("") : .launch) } label: {
-                    Label(needsPlan ? "Resume planning" : phase == .map ? "Launch" : "Resume", systemImage: needsPlan ? NWGlyph.mission.symbolName : "play.fill")
+                    Label(needsPlan ? "Resume planning" : phase == .map ? "Launch" : "Resume", systemImage: needsPlan ? SHGlyph.mission.symbolName : "play.fill")
                 }
-                .buttonStyle(.nw(.primary))
+                .buttonStyle(.sh(.primary))
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(busy)
-                .nwHelp(needsPlan ? "Continue planning" : mission.specKit != nil
+                .shHelp(needsPlan ? "Continue planning" : mission.specKit != nil
                         ? "Approve each repository's spec, plan and tasks as they are now, then run /speckit.implement and /speckit.converge"
                         : "Approve this map and start work", shortcut: "⌘↩")
             }
@@ -142,7 +142,7 @@ struct MissionMeters: View {
             let tokens = mission.run?.tokens ?? 0
             let elapsed = mission.run?.elapsed(at: clock.date.timeIntervalSince1970) ?? 0
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: NW.Space.xl) {
+                HStack(spacing: SH.Space.xl) {
                     meter("tokens", "\(MissionFormat.tokens(tokens)) / \(MissionFormat.tokens(limits.tokens))", Double(tokens) / Double(limits.tokens))
                     meter("time", "\(MissionFormat.duration(elapsed)) / \(MissionFormat.duration(limits.seconds))", elapsed / limits.seconds)
                 }
@@ -154,15 +154,15 @@ struct MissionMeters: View {
     }
 
     private func meter(_ label: String, _ value: String, _ fraction: Double) -> some View {
-        VStack(alignment: .leading, spacing: NW.Space.xxs) {
-            HStack(spacing: NW.Space.s) {
-                Text(label).nwText(.micro).foregroundStyle(Color.nw.textTertiary)
-                Text(value).nwText(.micro).foregroundStyle(Color.nw.textSecondary)
+        VStack(alignment: .leading, spacing: SH.Space.xxs) {
+            HStack(spacing: SH.Space.s) {
+                Text(label).shText(.micro).foregroundStyle(Color.sh.textTertiary)
+                Text(value).shText(.micro).foregroundStyle(Color.sh.textSecondary)
             }.lineLimit(1).fixedSize()
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Color.nw.lineSubtle)
-                    Capsule().fill(mission.phase == .done ? Color.nw.done : fraction >= 1 ? Color.nw.failed : Color.nw.running)
+                    Capsule().fill(Color.sh.lineSubtle)
+                    Capsule().fill(mission.phase == .done ? Color.sh.done : fraction >= 1 ? Color.sh.failed : Color.sh.running)
                         .frame(width: geometry.size.width * min(1, max(0, fraction)))
                 }
             }.frame(width: AppLayout.missionMeterWidth, height: AppLayout.missionMeterBar)
@@ -196,43 +196,43 @@ struct MissionHeader<Trailing: View>: View {
             row(compact: false)
             row(compact: true)
         }
-        .padding(.leading, NW.Space.xl + chrome.leadingInset)
-        .padding(.trailing, NWPageMetrics.headerTrailing)
-        .frame(height: NWPageMetrics.headerHeight)
+        .padding(.leading, SH.Space.xl + chrome.leadingInset)
+        .padding(.trailing, SHPageMetrics.headerTrailing)
+        .frame(height: SHPageMetrics.headerHeight)
         .frame(maxWidth: .infinity)
-        .background(Color.nw.bgWindow)
-        .overlay(alignment: .bottom) { NWHairline() }
+        .background(Color.sh.bgWindow)
+        .overlay(alignment: .bottom) { SHHairline() }
         .contentShape(Rectangle())
         .gesture(WindowDragGesture())
     }
 
     private func row(compact: Bool) -> some View {
-        HStack(spacing: NWPageMetrics.headerSpacing) {
-            HStack(spacing: NW.Space.m) {
+        HStack(spacing: SHPageMetrics.headerSpacing) {
+            HStack(spacing: SH.Space.m) {
                 if let sidebar = chrome.showSidebar {
                     Button(action: sidebar) { Image(systemName: "sidebar.left") }
-                        .buttonStyle(.nwIcon)
-                        .nwHelp("Show sidebar", shortcut: KeybindingsStore.shared.display(.toggleSidebar))
+                        .buttonStyle(.shIcon)
+                        .shHelp("Show sidebar", shortcut: KeybindingsStore.shared.display(.toggleSidebar))
                         .accessibilityLabel("Show sidebar")
                 }
                 Button(action: back) {
-                    HStack(spacing: NW.Space.s) {
-                        NWGlyph.mission.image
+                    HStack(spacing: SH.Space.s) {
+                        SHGlyph.mission.image
                         if !compact { Text("Missions") }
                     }
                 }
-                .buttonStyle(.nwLink(color: Color.nw.textTertiary, font: .nw(.ui, weight: .regular)))
+                .buttonStyle(.shLink(color: Color.sh.textTertiary, font: .sh(.ui, weight: .regular)))
                 .accessibilityLabel("All missions")
-                Text("/").nwText(.ui).foregroundStyle(Color.nw.textTertiary).accessibilityHidden(true)
-                Text(title).nwText(.headline).lineLimit(1).truncationMode(.tail)
+                Text("/").shText(.ui).foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
+                Text(title).shText(.headline).lineLimit(1).truncationMode(.tail)
                     .fixedSize(horizontal: !compact, vertical: false)
                     .accessibilityAddTraits(.isHeader)
-                NWStatusPill(pill.state, label: pill.label)
+                SHStatusPill(pill.state, label: pill.label)
             }
-            Spacer(minLength: NW.Space.m)
+            Spacer(minLength: SH.Space.m)
             MissionStepBar(steps: steps, compact: compact, select: select)
-            Spacer(minLength: NW.Space.m)
-            HStack(spacing: NW.Space.m) { trailing(compact) }.fixedSize()
+            Spacer(minLength: SH.Space.m)
+            HStack(spacing: SH.Space.m) { trailing(compact) }.fixedSize()
         }
     }
 }
@@ -244,32 +244,32 @@ private struct MissionStepBar: View {
     private let items: [(MissionWorkspacePage, String)] = [(.goal, "Goal"), (.map, "Map"), (.run, "Run"), (.done, "Done")]
 
     var body: some View {
-        HStack(spacing: NW.Space.xs) {
+        HStack(spacing: SH.Space.xs) {
             ForEach(Array(items.enumerated()), id: \.offset) { index, item in
                 if index > 0 {
-                    Image(systemName: "chevron.right").font(.nw(.micro)).foregroundStyle(Color.nw.textTertiary).accessibilityHidden(true)
+                    Image(systemName: "chevron.right").font(.sh(.micro)).foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
                 }
                 let page = item.0
                 let current = steps.current == page || (page == .run && steps.current == .review)
                 let complete = index < steps.reached && !current
                 let enabled = steps.available.contains(page) || (page == .run && steps.available.contains(.review))
                 Button { select(page) } label: {
-                    HStack(spacing: NW.Space.s) {
+                    HStack(spacing: SH.Space.s) {
                         if complete {
-                            Image(systemName: "checkmark").font(.nw(.micro, weight: .bold)).foregroundStyle(Color.nw.done)
+                            Image(systemName: "checkmark").font(.sh(.micro, weight: .bold)).foregroundStyle(Color.sh.done)
                         } else {
-                            Text("\(index + 1)").nwText(.micro).foregroundStyle(current ? Color.nw.lanternText : Color.nw.textTertiary)
+                            Text("\(index + 1)").shText(.micro).foregroundStyle(current ? Color.sh.lanternText : Color.sh.textTertiary)
                         }
                         if current || !compact {
-                            Text(item.1).font(.nw(.ui, weight: current ? .semibold : .regular))
-                                .foregroundStyle(current ? Color.nw.textPrimary : complete ? Color.nw.textSecondary : Color.nw.textTertiary)
+                            Text(item.1).font(.sh(.ui, weight: current ? .semibold : .regular))
+                                .foregroundStyle(current ? Color.sh.textPrimary : complete ? Color.sh.textSecondary : Color.sh.textTertiary)
                         }
                     }
-                    .padding(.horizontal, NW.Space.m)
-                    .frame(height: NW.Height.controlM)
+                    .padding(.horizontal, SH.Space.m)
+                    .frame(height: SH.Height.controlM)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.nwRow(selected: current))
+                .buttonStyle(.shRow(selected: current))
                 .disabled(!enabled)
                 .accessibilityLabel("Step \(index + 1), \(item.1)\(complete ? ", complete" : "")")
                 .accessibilityAddTraits(current ? .isSelected : [])
@@ -376,15 +376,15 @@ struct MissionGoalView: View {
             if geometry.size.width < AppLayout.missionNarrowWidth {
                 // A narrow window shows the conversation or the brief, as Review shows diff or contract.
                 VStack(spacing: 0) {
-                    NWSegmentedPicker("Show", selection: $showsBrief, options: [(false, "Conversation"), (true, "Brief")])
-                        .fixedSize().padding(NW.Space.m)
-                    NWHairline()
+                    SHSegmentedPicker("Show", selection: $showsBrief, options: [(false, "Conversation"), (true, "Brief")])
+                        .fixedSize().padding(SH.Space.m)
+                    SHHairline()
                     if showsBrief { brief } else { conversation(narrow: true) }
                 }
             } else {
                 HStack(spacing: 0) {
                     conversation(narrow: false).frame(maxWidth: .infinity)
-                    Rectangle().fill(Color.nw.lineSubtle).frame(width: 1)
+                    Rectangle().fill(Color.sh.lineSubtle).frame(width: 1)
                     brief.frame(width: AppLayout.missionSide(AppLayout.missionBriefWidth, in: geometry.size.width))
                 }
             }
@@ -400,18 +400,18 @@ struct MissionGoalView: View {
             VStack(spacing: 0) {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: NW.Space.xl) {
+                        LazyVStack(alignment: .leading, spacing: SH.Space.xl) {
                             ForEach(Array(messages.enumerated()), id: \.element.id) { index, message in
                                 if message.role == .user, message.choice != nil, message.replyTo != nil {
                                     // A picked suggestion shows as the checked choice on its question.
                                     EmptyView()
                                 } else if message.role == .user {
-                                    Text(message.text).nwText(.body).textSelection(.enabled)
-                                        .padding(.horizontal, NW.Space.xl).padding(.vertical, NW.Space.l)
-                                        .background(Color.nw.bgBubble, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-                                        .nwBorder(Color.nw.lineSubtle, radius: NW.Radius.m)
+                                    Text(message.text).shText(.body).textSelection(.enabled)
+                                        .padding(.horizontal, SH.Space.xl).padding(.vertical, SH.Space.l)
+                                        .background(Color.sh.bgBubble, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+                                        .shBorder(Color.sh.lineSubtle, radius: SH.Radius.m)
                                         .frame(maxWidth: .infinity, alignment: .trailing)
-                                        .padding(.leading, NW.Space.xxxl * 2)
+                                        .padding(.leading, SH.Space.xxxl * 2)
                                 } else {
                                     if index == messages.firstIndex(where: { $0.role == .assistant }) {
                                         plannerActivity
@@ -447,19 +447,19 @@ struct MissionGoalView: View {
                             if narrow, mission.specKit != nil, mission.phase != .planning, mission.run?.pendingQuestion == nil,
                                mission.specKitNext != nil || !mission.specKitConsented, !mission.specKitAwaitingTrust(specKitReports) {
                                 // The brief's footer is off screen in a narrow window: its one action, here.
-                                HStack(spacing: NW.Space.m) {
+                                HStack(spacing: SH.Space.m) {
                                     Text(mission.specKitStartNote(specKitReports) ?? "The planner stopped. Continue when you're ready.")
-                                        .nwText(.caption).foregroundStyle(Color.nw.textTertiary).fixedSize(horizontal: false, vertical: true)
-                                    Spacer(minLength: NW.Space.m)
-                                    Button { action(.plan("")) } label: { Label("Continue planning", systemImage: NWGlyph.mission.symbolName) }
-                                        .buttonStyle(.nw(.secondary)).disabled(busy || !canReply || sending)
+                                        .shText(.caption).foregroundStyle(Color.sh.textTertiary).fixedSize(horizontal: false, vertical: true)
+                                    Spacer(minLength: SH.Space.m)
+                                    Button { action(.plan("")) } label: { Label("Continue planning", systemImage: SHGlyph.mission.symbolName) }
+                                        .buttonStyle(.sh(.secondary)).disabled(busy || !canReply || sending)
                                 }
                             }
                             if mission.phase == .planning {
-                                HStack(alignment: .top, spacing: NW.Space.m) {
-                                    ProgressView().progressViewStyle(.nwSpinner())
+                                HStack(alignment: .top, spacing: SH.Space.m) {
+                                    ProgressView().progressViewStyle(.shSpinner())
                                     Text(output.isEmpty ? "Reading \(mission.draft.plan?.lanes.count ?? 0) repositories…" : String(output.suffix(600)))
-                                        .nwText(.ui).fontWeight(.regular).foregroundStyle(Color.nw.textSecondary).lineLimit(4)
+                                        .shText(.ui).fontWeight(.regular).foregroundStyle(Color.sh.textSecondary).lineLimit(4)
                                 }
                             }
                             if let question = mission.run?.pendingQuestion {
@@ -470,7 +470,7 @@ struct MissionGoalView: View {
                             Color.clear.frame(height: 1).id("end")
                         }
                         .frame(maxWidth: AppLayout.missionTranscriptWidth, alignment: .leading)
-                        .padding(NW.Space.xxl)
+                        .padding(SH.Space.xxl)
                         .frame(maxWidth: .infinity)
                     }
                     .onAppear { proxy.scrollTo("end", anchor: .bottom) }
@@ -486,7 +486,7 @@ struct MissionGoalView: View {
                     }
                 }
                 .frame(maxWidth: AppLayout.missionTranscriptWidth)
-                .padding(.horizontal, NW.Space.xxl).padding(.bottom, NW.Space.xl)
+                .padding(.horizontal, SH.Space.xxl).padding(.bottom, SH.Space.xl)
             }
     }
 
@@ -494,11 +494,11 @@ struct MissionGoalView: View {
     @ViewBuilder private var plannerActivity: some View {
         if let planner = mission.run?.plannerID {
             Button { openThread(planner) } label: {
-                HStack(spacing: NW.Space.m) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(Color.nw.textTertiary)
-                    Text("Explored \(mission.draft.plan?.lanes.count ?? 0) repositories").nwText(.ui).fontWeight(.regular)
-                    Text("planner thread").nwText(.mono).foregroundStyle(Color.nw.textTertiary)
-                    Image(systemName: "chevron.right").font(.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
+                HStack(spacing: SH.Space.m) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(Color.sh.textTertiary)
+                    Text("Explored \(mission.draft.plan?.lanes.count ?? 0) repositories").shText(.ui).fontWeight(.regular)
+                    Text("planner thread").shText(.mono).foregroundStyle(Color.sh.textTertiary)
+                    Image(systemName: "chevron.right").font(.sh(.micro)).foregroundStyle(Color.sh.textTertiary)
                 }.contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -516,10 +516,10 @@ struct MissionProse: View {
     var body: some View {
         Group {
             if live {
-                Text(NWInlineMarkup.attributed(text, codeSize: NWTextStyle.code.size)).nwText(.body)
+                Text(SHInlineMarkup.attributed(text, codeSize: SHTextStyle.code.size)).shText(.body)
             } else {
                 // Settled words (messages, the brief, summaries): code as the boards' rounded chips.
-                NWMarkupText(text, size: NWTextStyle.body.size, codeSize: NWTextStyle.code.size, lineHeight: NWTextStyle.body.lineHeight)
+                SHMarkupText(text, size: SHTextStyle.body.size, codeSize: SHTextStyle.code.size, lineHeight: SHTextStyle.body.lineHeight)
             }
         }
         .textSelection(.enabled)
@@ -544,37 +544,37 @@ private struct MissionAnsweredQuestion: View {
     let choices: [String]
     let picked: String?
     var body: some View {
-        VStack(alignment: .leading, spacing: NW.Space.l) {
-            HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
-                Image(systemName: "questionmark.circle").foregroundStyle(Color.nw.lanternText)
-                VStack(alignment: .leading, spacing: NW.Space.xs) {
-                    Text(question).nwText(.headline).textSelection(.enabled)
-                    Text(picked == nil ? "You answered in your own words." : "You answered.").nwText(.caption).foregroundStyle(Color.nw.textTertiary)
+        VStack(alignment: .leading, spacing: SH.Space.l) {
+            HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+                Image(systemName: "questionmark.circle").foregroundStyle(Color.sh.lanternText)
+                VStack(alignment: .leading, spacing: SH.Space.xs) {
+                    Text(question).shText(.headline).textSelection(.enabled)
+                    Text(picked == nil ? "You answered in your own words." : "You answered.").shText(.caption).foregroundStyle(Color.sh.textTertiary)
                 }
             }
             if !choices.isEmpty {
-                NWFlowLayout(spacing: NW.Space.m) {
+                SHFlowLayout(spacing: SH.Space.m) {
                     ForEach(Array(choices.enumerated()), id: \.offset) { _, choice in
                         let chosen = choice == picked
-                        HStack(spacing: NW.Space.s) {
-                            if chosen { Image(systemName: "checkmark").font(.nw(.caption, weight: .semibold)) }
-                            Text(choice).nwText(.ui)
+                        HStack(spacing: SH.Space.s) {
+                            if chosen { Image(systemName: "checkmark").font(.sh(.caption, weight: .semibold)) }
+                            Text(choice).shText(.ui)
                         }
-                        .foregroundStyle(chosen ? Color.nw.lanternText : Color.nw.textTertiary)
-                        .padding(.horizontal, NW.Space.l).frame(height: NW.Height.controlM)
-                        .background(chosen ? Color.nw.lanternTint : Color.clear, in: RoundedRectangle(cornerRadius: NW.Radius.s))
-                        .nwBorder(chosen ? Color.nw.lantern : Color.nw.lineSubtle, radius: NW.Radius.s)
+                        .foregroundStyle(chosen ? Color.sh.lanternText : Color.sh.textTertiary)
+                        .padding(.horizontal, SH.Space.l).frame(height: SH.Height.controlM)
+                        .background(chosen ? Color.sh.lanternTint : Color.clear, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+                        .shBorder(chosen ? Color.sh.lantern : Color.sh.lineSubtle, radius: SH.Radius.s)
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel(choice)
                         .accessibilityValue(chosen ? "your answer" : "not chosen")
                     }
-                }.padding(.leading, NW.Space.xl + NW.Space.xs)
+                }.padding(.leading, SH.Space.xl + SH.Space.xs)
             }
         }
-        .padding(NW.Space.xl)
+        .padding(SH.Space.xl)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-        .nwBorder(Color.nw.lineStrong, radius: NW.Radius.m)
+        .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+        .shBorder(Color.sh.lineStrong, radius: SH.Radius.m)
         .accessibilityElement(children: .contain)
     }
 }
@@ -586,27 +586,27 @@ private struct MissionQuestionCard: View {
     let answer: (String) -> Void
     let other: () -> Void
     var body: some View {
-        VStack(alignment: .leading, spacing: NW.Space.l) {
-            HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
-                Image(systemName: "questionmark.circle").foregroundStyle(Color.nw.lanternText)
-                VStack(alignment: .leading, spacing: NW.Space.xs) {
-                    Text(question).nwText(.headline).textSelection(.enabled)
-                    Text("The map waits for this answer.").nwText(.caption).foregroundStyle(Color.nw.textTertiary)
+        VStack(alignment: .leading, spacing: SH.Space.l) {
+            HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+                Image(systemName: "questionmark.circle").foregroundStyle(Color.sh.lanternText)
+                VStack(alignment: .leading, spacing: SH.Space.xs) {
+                    Text(question).shText(.headline).textSelection(.enabled)
+                    Text("The map waits for this answer.").shText(.caption).foregroundStyle(Color.sh.textTertiary)
                 }
             }
-            NWFlowLayout(spacing: NW.Space.m) {
+            SHFlowLayout(spacing: SH.Space.m) {
                 ForEach(Array(choices.enumerated()), id: \.offset) { index, choice in
                     Button(choice) { answer(choice) }
-                        .buttonStyle(.nw(index == 0 ? .raised : .secondary, tint: index == 0 ? Color.nw.lanternText : nil))
+                        .buttonStyle(.sh(index == 0 ? .raised : .secondary, tint: index == 0 ? Color.sh.lanternText : nil))
                         .disabled(!enabled)
                 }
-                Button(choices.isEmpty ? "Answer below" : "Something else", action: other).buttonStyle(.nw(.ghost)).disabled(!enabled)
-            }.padding(.leading, NW.Space.xl + NW.Space.xs)
+                Button(choices.isEmpty ? "Answer below" : "Something else", action: other).buttonStyle(.sh(.ghost)).disabled(!enabled)
+            }.padding(.leading, SH.Space.xl + SH.Space.xs)
         }
-        .padding(NW.Space.xl)
+        .padding(SH.Space.xl)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-        .nwBorder(Color.nw.lineStrong, radius: NW.Radius.m)
+        .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+        .shBorder(Color.sh.lineStrong, radius: SH.Radius.m)
         .accessibilityElement(children: .contain)
     }
 }
@@ -623,25 +623,25 @@ struct MissionReplyComposer: View {
         VStack(alignment: .leading, spacing: 0) {
             ZStack(alignment: .topLeading) {
                 if text.isEmpty {
-                    Text(prompt).nwText(.body).foregroundStyle(Color.nw.textTertiary).padding(.horizontal, NW.Space.xs).accessibilityHidden(true)
+                    Text(prompt).shText(.body).foregroundStyle(Color.sh.textTertiary).padding(.horizontal, SH.Space.xs).accessibilityHidden(true)
                 }
-                TextEditor(text: $text).focused(focused).nwText(.body).scrollContentBackground(.hidden)
+                TextEditor(text: $text).focused(focused).shText(.body).scrollContentBackground(.hidden)
                     .disabled(!enabled).accessibilityLabel(prompt)
-            }.padding([.horizontal, .top], NW.Space.l)
+            }.padding([.horizontal, .top], SH.Space.l)
             HStack {
                 Spacer()
                 Button(action: send) { Image(systemName: "arrow.up") }
-                    .buttonStyle(.nwIcon(tint: ready ? Color.nw.lanternText : nil))
+                    .buttonStyle(.shIcon(tint: ready ? Color.sh.lanternText : nil))
                     .disabled(!ready)
                     .keyboardShortcut(.return, modifiers: .command)
-                    .nwHelp("Send to the planner", shortcut: "⌘↩")
+                    .shHelp("Send to the planner", shortcut: "⌘↩")
                     .accessibilityLabel("Send to the planner")
-            }.padding(NW.Space.s)
+            }.padding(SH.Space.s)
         }
         .frame(height: AppLayout.missionReplyHeight)
-        .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-        .nwBorder(Color.nw.lineStrong, radius: NW.Radius.m)
-        .nwFocusRing(focused.wrappedValue, radius: NW.Radius.m)
+        .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+        .shBorder(Color.sh.lineStrong, radius: SH.Radius.m)
+        .shFocusRing(focused.wrappedValue, radius: SH.Radius.m)
     }
 }
 
@@ -670,31 +670,31 @@ struct MissionBrief: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    VStack(alignment: .leading, spacing: NW.Space.xs) {
-                        Text("Mission brief").nwText(.title).accessibilityAddTraits(.isHeader)
-                        HStack(spacing: NW.Space.s) {
-                            if mission.phase == .planning { ProgressView().progressViewStyle(.nwSpinner(size: 10)) }
+                    VStack(alignment: .leading, spacing: SH.Space.xs) {
+                        Text("Mission brief").shText(.title).accessibilityAddTraits(.isHeader)
+                        HStack(spacing: SH.Space.s) {
+                            if mission.phase == .planning { ProgressView().progressViewStyle(.shSpinner(size: 10)) }
                             Text(editable ? "built by the planner as you talk · click a section to change it" : "built by the planner as you talk")
-                                .nwText(.caption).foregroundStyle(Color.nw.textTertiary)
+                                .shText(.caption).foregroundStyle(Color.sh.textTertiary)
                         }
-                    }.padding(NW.Space.xl)
-                    NWHairline()
+                    }.padding(SH.Space.xl)
+                    SHHairline()
                     section(.destination, "Destination", meta: "from your message") {
                         MissionProse(mission.draft.goal)
                     }
                     lanes
                     section(.context, "Context", meta: mission.draft.context.isEmpty ? nil : "\(mission.draft.context.count) found") {
                         if mission.draft.context.isEmpty {
-                            Text("The planner lists the docs and files it relies on here.").nwText(.caption).foregroundStyle(Color.nw.textTertiary)
+                            Text("The planner lists the docs and files it relies on here.").shText(.caption).foregroundStyle(Color.sh.textTertiary)
                         } else {
-                            NWFlowLayout(spacing: NW.Space.s) {
+                            SHFlowLayout(spacing: SH.Space.s) {
                                 ForEach(Array(mission.draft.context.enumerated()), id: \.offset) { _, entry in
-                                    HStack(spacing: NW.Space.xs) {
-                                        NWGlyph.document.image.font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
-                                        Text(entry).nwText(.mono).lineLimit(1).truncationMode(.middle)
+                                    HStack(spacing: SH.Space.xs) {
+                                        SHGlyph.document.image.font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+                                        Text(entry).shText(.mono).lineLimit(1).truncationMode(.middle)
                                     }
-                                    .padding(.horizontal, NW.Space.m).frame(height: NW.Height.controlS)
-                                    .nwBorder(Color.nw.lineSubtle, radius: NW.Radius.xs)
+                                    .padding(.horizontal, SH.Space.m).frame(height: SH.Height.controlS)
+                                    .shBorder(Color.sh.lineSubtle, radius: SH.Radius.xs)
                                     .help(entry)
                                 }
                             }
@@ -703,45 +703,45 @@ struct MissionBrief: View {
                     section(.contract, "Validation contract", meta: "independent validator") { contract }
                     section(.size, "Size", meta: nil) { size }
                     if let question = mission.run?.pendingQuestion {
-                        VStack(alignment: .leading, spacing: NW.Space.m) {
-                            NWPageSectionLabel("Still open")
-                            HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
-                                Image(systemName: "cloud").foregroundStyle(Color.nw.textTertiary)
-                                Text(question).nwText(.ui).fontWeight(.regular).lineLimit(3)
-                                Spacer(minLength: NW.Space.m)
-                                Text("answer in the conversation").nwText(.micro).foregroundStyle(Color.nw.textTertiary)
+                        VStack(alignment: .leading, spacing: SH.Space.m) {
+                            SHPageSectionLabel("Still open")
+                            HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+                                Image(systemName: "cloud").foregroundStyle(Color.sh.textTertiary)
+                                Text(question).shText(.ui).fontWeight(.regular).lineLimit(3)
+                                Spacer(minLength: SH.Space.m)
+                                Text("answer in the conversation").shText(.micro).foregroundStyle(Color.sh.textTertiary)
                             }
-                        }.padding(NW.Space.xl)
+                        }.padding(SH.Space.xl)
                     }
                 }
             }
-            NWHairline()
-            HStack(spacing: NW.Space.m) {
-                Text(mission.specKitStartNote(specKitReports) ?? "Nothing writes code until you launch.").nwText(.caption).foregroundStyle(Color.nw.textTertiary)
+            SHHairline()
+            HStack(spacing: SH.Space.m) {
+                Text(mission.specKitStartNote(specKitReports) ?? "Nothing writes code until you launch.").shText(.caption).foregroundStyle(Color.sh.textTertiary)
                 Spacer()
                 if mission.specKit != nil, mission.specKitNext != nil || !hasMap {
                     // The planner runs the steps; this only resumes it (re-reading each repository's files first).
                     Button { action(.plan("")) } label: {
-                        Label(mission.phase == .planning ? "Planning…" : "Continue planning", systemImage: NWGlyph.mission.symbolName)
+                        Label(mission.phase == .planning ? "Planning…" : "Continue planning", systemImage: SHGlyph.mission.symbolName)
                     }
-                    .buttonStyle(.nw(.primary))
+                    .buttonStyle(.sh(.primary))
                     .disabled(busy || !editable || mission.run?.pendingQuestion != nil || awaitingTrust)
-                    .nwHelp(mission.run?.pendingQuestion != nil ? "Answer the open question first"
+                    .shHelp(mission.run?.pendingQuestion != nil ? "Answer the open question first"
                             : awaitingTrust ? "Allow each repository's project files first"
                             : "Re-reads each repository's project files and continues where the planner stopped. Nothing runs until every repository is allowed.")
                 } else {
                     Button {
                         if hasMap { showMap() } else { action(.plan("")) }
                     } label: {
-                        Label(mission.phase == .planning ? "Drafting the map…" : hasMap ? "Review the map" : "Draft the map", systemImage: NWGlyph.mission.symbolName)
+                        Label(mission.phase == .planning ? "Drafting the map…" : hasMap ? "Review the map" : "Draft the map", systemImage: SHGlyph.mission.symbolName)
                     }
-                    .buttonStyle(.nw(.primary))
+                    .buttonStyle(.sh(.primary))
                     .disabled(mission.run?.pendingQuestion != nil || (!hasMap && (busy || !editable)))
-                    .nwHelp(mission.run?.pendingQuestion != nil ? "Answer the open question first" : hasMap ? "Open the map" : "Ask the planner for the map")
+                    .shHelp(mission.run?.pendingQuestion != nil ? "Answer the open question first" : hasMap ? "Open the map" : "Ask the planner for the map")
                 }
-            }.padding(.horizontal, NW.Space.xl).frame(height: NWPageMetrics.headerHeight)
+            }.padding(.horizontal, SH.Space.xl).frame(height: SHPageMetrics.headerHeight)
         }
-        .background(Color.nw.bgWindow)
+        .background(Color.sh.bgWindow)
         .onChange(of: mission.revision) { _, revision in
             if editing != nil && revision != editedRevision { editing = nil }
         }
@@ -752,30 +752,30 @@ struct MissionBrief: View {
     private var awaitingTrust: Bool { mission.specKitAwaitingTrust(specKitReports) }
 
     private var lanes: some View {
-        VStack(alignment: .leading, spacing: NW.Space.l) {
+        VStack(alignment: .leading, spacing: SH.Space.l) {
             sectionHead("Lanes · \(plan?.lanes.count ?? 0) repos", meta: "chosen by you")
             ForEach(plan?.lanes ?? []) { lane in
                 let work = plan?.stations.filter { $0.laneID == lane.id && $0.kind == .worker }.map(\.title) ?? []
                 // A Spec Kit lane says where its trust stands until the planner maps work there.
                 let trust = mission.specKit.map { _ in MissionTrust(lane: mission.specKit?[lane.spaceID], report: specKitReports[lane.spaceID]) }
-                HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
-                    NWGlyph.repository.image.foregroundStyle(Color.nw.textTertiary)
-                    Text(lane.name).nwText(.mono).fontWeight(.semibold).lineLimit(1).frame(width: AppLayout.missionBriefLaneName, alignment: .leading)
-                    Text(!work.isEmpty ? work.joined(separator: ", ") : trust?.word ?? "no work mapped yet").nwText(.ui).fontWeight(.regular)
-                        .foregroundStyle(trust?.asksYou == true && work.isEmpty ? Color.nw.lanternText : work.isEmpty ? Color.nw.textTertiary : Color.nw.textSecondary)
+                HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+                    SHGlyph.repository.image.foregroundStyle(Color.sh.textTertiary)
+                    Text(lane.name).shText(.mono).fontWeight(.semibold).lineLimit(1).frame(width: AppLayout.missionBriefLaneName, alignment: .leading)
+                    Text(!work.isEmpty ? work.joined(separator: ", ") : trust?.word ?? "no work mapped yet").shText(.ui).fontWeight(.regular)
+                        .foregroundStyle(trust?.asksYou == true && work.isEmpty ? Color.sh.lanternText : work.isEmpty ? Color.sh.textTertiary : Color.sh.textSecondary)
                         .lineLimit(1)
-                    Spacer(minLength: NW.Space.m)
-                    Text(lane.baseBranch.map(MissionBranchSelection.label) ?? "—").nwText(.micro).foregroundStyle(Color.nw.textTertiary)
+                    Spacer(minLength: SH.Space.m)
+                    Text(lane.baseBranch.map(MissionBranchSelection.label) ?? "—").shText(.micro).foregroundStyle(Color.sh.textTertiary)
                 }
             }
-        }.padding(NW.Space.xl).overlay(alignment: .bottom) { NWHairline() }
+        }.padding(SH.Space.xl).overlay(alignment: .bottom) { SHHairline() }
     }
 
     @ViewBuilder private var contract: some View {
         let checks = plan?.stations.filter { $0.kind == .check } ?? []
-        VStack(alignment: .leading, spacing: NW.Space.m) {
+        VStack(alignment: .leading, spacing: SH.Space.m) {
             if mission.draft.requirements.isEmpty && checks.isEmpty {
-                Text("The validator's checks appear as the planner drafts them.").nwText(.caption).foregroundStyle(Color.nw.textTertiary)
+                Text("The validator's checks appear as the planner drafts them.").shText(.caption).foregroundStyle(Color.sh.textTertiary)
             }
             ForEach(Array(mission.draft.requirements.enumerated()), id: \.offset) { _, requirement in
                 contractRow("checkmark.shield", requirement, tag: "validator")
@@ -785,17 +785,17 @@ struct MissionBrief: View {
     }
 
     private func contractRow(_ symbol: String, _ text: String, tag: String, mono: Bool = false) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
-            Image(systemName: symbol).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
-            Text(text).font(mono ? .nw(.mono) : .nw(.ui, weight: .regular)).textSelection(.enabled)
-            Spacer(minLength: NW.Space.m)
-            Text(tag).nwText(.micro).foregroundStyle(Color.nw.textTertiary)
+        HStack(alignment: .firstTextBaseline, spacing: SH.Space.m) {
+            Image(systemName: symbol).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+            Text(text).font(mono ? .sh(.mono) : .sh(.ui, weight: .regular)).textSelection(.enabled)
+            Spacer(minLength: SH.Space.m)
+            Text(tag).shText(.micro).foregroundStyle(Color.sh.textTertiary)
         }
     }
 
     private var size: some View {
         let limits = mission.draft.limits
-        return VStack(spacing: NW.Space.m) {
+        return VStack(spacing: SH.Space.m) {
             fact("Limits", "\(MissionFormat.tokens(limits.tokens)) · \(MissionFormat.duration(limits.seconds)) · \(limits.dollars.formatted(.currency(code: "USD").precision(.fractionLength(0))))",
                  note: "\(limits.concurrentStations) at once · \(limits.retries) retries")
             fact("Model", mission.run?.model ?? "—", note: nil)
@@ -805,24 +805,24 @@ struct MissionBrief: View {
 
     private func fact(_ label: String, _ value: String, note: String?) -> some View {
         HStack(alignment: .firstTextBaseline) {
-            Text(label).nwText(.ui).fontWeight(.regular).foregroundStyle(Color.nw.textSecondary)
-            Spacer(minLength: NW.Space.m)
-            Text(value).nwText(.mono)
-            if let note { Text(note).nwText(.micro).foregroundStyle(Color.nw.textTertiary) }
+            Text(label).shText(.ui).fontWeight(.regular).foregroundStyle(Color.sh.textSecondary)
+            Spacer(minLength: SH.Space.m)
+            Text(value).shText(.mono)
+            if let note { Text(note).shText(.micro).foregroundStyle(Color.sh.textTertiary) }
         }
     }
 
     private func sectionHead(_ title: String, meta: String?) -> some View {
         HStack(alignment: .firstTextBaseline) {
-            NWPageSectionLabel(title)
+            SHPageSectionLabel(title)
             Spacer()
-            if let meta { Text(meta).nwText(.micro).foregroundStyle(Color.nw.textTertiary) }
+            if let meta { Text(meta).shText(.micro).foregroundStyle(Color.sh.textTertiary) }
         }
     }
 
     /// A section that becomes its editor when clicked.
     @ViewBuilder private func section<Content: View>(_ field: BriefField, _ title: String, meta: String?, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: NW.Space.l) {
+        VStack(alignment: .leading, spacing: SH.Space.l) {
             sectionHead(title, meta: meta)
             if editing == field { editor(field) } else {
                 Button { begin(field) } label: { content().frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle()) }
@@ -831,39 +831,39 @@ struct MissionBrief: View {
                     .accessibilityHint(editable ? "Edit \(title.lowercased())" : "")
             }
         }
-        .padding(NW.Space.xl)
-        .overlay(alignment: .bottom) { NWHairline() }
+        .padding(SH.Space.xl)
+        .overlay(alignment: .bottom) { SHHairline() }
     }
 
     @ViewBuilder private func editor(_ field: BriefField) -> some View {
-        VStack(alignment: .leading, spacing: NW.Space.m) {
+        VStack(alignment: .leading, spacing: SH.Space.m) {
             switch field {
             case .destination:
-                TextField("Title", text: $title).textFieldStyle(.nw).accessibilityLabel("Mission title")
+                TextField("Title", text: $title).textFieldStyle(.sh).accessibilityLabel("Mission title")
                 editorText("Destination")
             case .context: editorText("Context · one reference per line")
             case .contract: editorText("Validation requirements · one per line")
             case .size:
-                NWStepper("Tokens (millions)", value: Binding(get: { max(1, limits.tokens / 1_000_000) }, set: { limits.tokens = $0 * 1_000_000 }), in: 1...100) { "\($0)M" }
-                NWStepper("Time (hours)", value: Binding(get: { max(1, Int(limits.seconds / 3600)) }, set: { limits.seconds = Double($0) * 3600 }), in: 1...48) { "\($0)h" }
-                NWStepper("Spend (USD)", value: Binding(get: { Int(limits.dollars) }, set: { limits.dollars = Double($0) }), in: 1...1000) { "$\($0)" }
-                NWStepper("At once", value: $limits.concurrentStations, in: 1...16)
-                NWStepper("Retries", value: $limits.retries, in: 0...10)
+                SHStepper("Tokens (millions)", value: Binding(get: { max(1, limits.tokens / 1_000_000) }, set: { limits.tokens = $0 * 1_000_000 }), in: 1...100) { "\($0)M" }
+                SHStepper("Time (hours)", value: Binding(get: { max(1, Int(limits.seconds / 3600)) }, set: { limits.seconds = Double($0) * 3600 }), in: 1...48) { "\($0)h" }
+                SHStepper("Spend (USD)", value: Binding(get: { Int(limits.dollars) }, set: { limits.dollars = Double($0) }), in: 1...1000) { "$\($0)" }
+                SHStepper("At once", value: $limits.concurrentStations, in: 1...16)
+                SHStepper("Retries", value: $limits.retries, in: 0...10)
             }
             HStack {
-                Text("Changes need a fresh map approval.").nwText(.caption).foregroundStyle(Color.nw.textTertiary)
+                Text("Changes need a fresh map approval.").shText(.caption).foregroundStyle(Color.sh.textTertiary)
                 Spacer()
-                Button("Cancel") { editing = nil }.buttonStyle(.nw(.ghost, size: .s)).keyboardShortcut(.cancelAction)
-                Button("Save") { save(field) }.buttonStyle(.nw(.secondary, size: .s)).disabled(busy || mission.revision != editedRevision)
+                Button("Cancel") { editing = nil }.buttonStyle(.sh(.ghost, size: .s)).keyboardShortcut(.cancelAction)
+                Button("Save") { save(field) }.buttonStyle(.sh(.secondary, size: .s)).disabled(busy || mission.revision != editedRevision)
             }
         }
     }
 
     private func editorText(_ label: String) -> some View {
-        TextEditor(text: $text).nwText(.body).scrollContentBackground(.hidden)
-            .frame(height: AppLayout.missionEditorHeight).padding(NW.Space.s)
-            .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.s))
-            .nwBorder(Color.nw.lineStrong, radius: NW.Radius.s)
+        TextEditor(text: $text).shText(.body).scrollContentBackground(.hidden)
+            .frame(height: AppLayout.missionEditorHeight).padding(SH.Space.s)
+            .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.s))
+            .shBorder(Color.sh.lineStrong, radius: SH.Radius.s)
             .accessibilityLabel(label)
     }
 

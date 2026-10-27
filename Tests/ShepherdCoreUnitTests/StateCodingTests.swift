@@ -285,6 +285,17 @@ struct DesignModelTests {
         #expect(written["spaceID"] as? String == "s1" && written["sourceSpaceID"] as? String == "s1")
     }
 
+    @Test func standaloneStorageRoundTripsWithoutBecomingDisposableOnOlderReaders() throws {
+        let space = Space(name: "No space", path: "/tmp/threads", hidden: true, holdsThreads: true)
+        #expect(space.hidden && space.showsThreads && !space.holdsAutomations)
+        #expect(try Fixture.roundTrip(space) == space)
+        var written = try Fixture.encodeObject(space)
+        #expect(written["hidden"] as? Bool == false, "older readers must not purge this as an automation space")
+        written.removeValue(forKey: "holdsThreads")
+        let legacy = try JSONDecoder().decode(Space.self, from: JSONSerialization.data(withJSONObject: written))
+        #expect(!legacy.hidden && !legacy.holdsThreads && !legacy.holdsAutomations)
+    }
+
     /// The reserved designs space says so; every other space decodes and writes as it did.
     @Test func theDesignsSpaceIsHiddenAndSaysSo() throws {
         let designs = Space.designs()

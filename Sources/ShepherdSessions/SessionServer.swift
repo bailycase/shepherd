@@ -94,6 +94,7 @@ public final class SessionServer: @unchecked Sendable {
     /// Design extension requests in flight, by token: their connection waits here (server queue)
     /// while the design store reads or writes.
     private var designRequestClients: [Int: ExtensionConnection] = [:]
+    var activeDesignRequests: [Int: DesignID] = [:]
     private var nextDesignRequest = 0
 
     private final class ExtensionConnection {
@@ -240,6 +241,8 @@ public final class SessionServer: @unchecked Sendable {
     public var onDiagnosticDuration: ((String, Double) -> Void)?
     /// Fixed outcome names only; delivered on main, never errors, tool names or session contents.
     public var onDiagnosticActivity: ((String) -> Void)?
+    /// Fixed, privacy-safe outcome labels; the string-only callback remains source-compatible.
+    public var onDiagnosticActivityDetails: ((String, DiagnosticFailureDetails) -> Void)?
     /// State was persisted. Every mutation broadcasts, including mutations
     /// initiated by the GUI. Delivered on the main actor.
     public var onStateChanged: ((ShepherdState) -> Void)?
@@ -258,6 +261,9 @@ public final class SessionServer: @unchecked Sendable {
     /// to it (whichever comes last), after the state broadcast of that binding. Delivered on
     /// the main actor, so a local thread need not wait for its next poll.
     public var onNativeThreadServable: ((AgentID) -> Void)?
+    /// A native client requested a restored thread whose process has not started yet.
+    /// Delivered on main; hidden layout mounting is not demand.
+    public var onNativeThreadDemand: ((AgentID) -> Void)?
     /// A watched agent's native thread (`watchThreadRevisions`) moved to a new revision, or its
     /// pane was bound to a pi. Delivered on the main actor, at most once per display frame
     /// (`revisionPushSpacing`): every agent revised while one delivery waits rides it, so a
@@ -274,6 +280,9 @@ public final class SessionServer: @unchecked Sendable {
     /// An agent's pi finished a tool call (its name). The app reads the agent's checkout again
     /// after calls that may have changed files. Delivered on the main actor.
     public var onAgentToolFinished: ((AgentID, String) -> Void)?
+    /// A model request failed: the agent, pi's provider id and its error message (each failed
+    /// attempt, retries included), for account rotation. Delivered on the main actor.
+    public var onAgentProviderError: ((AgentID, String, String) -> Void)?
     /// The shortest time between two `onThreadRevision` deliveries: one display frame.
     public static let revisionPushSpacing: DispatchTimeInterval = .microseconds(16_667)
     /// A Shepherd agent asked to see, message, or spawn peer threads.
@@ -504,6 +513,8 @@ public final class SessionServer: @unchecked Sendable {
     private let skillsQueue = DispatchQueue(label: "shepherd.skills", qos: .userInitiated)
 
     let queue = DispatchQueue(label: "shepherd.sessions")
+    lazy var pushNotifications = PushNotifications(
+        file: store.url.deletingLastPathComponent().appendingPathComponent("push-registrations.json"), queue: queue)
     let logicalProjectFiles = DispatchQueue(label: "shepherd.logical-project-files", qos: .utility)
     let projectHistoryReads = DispatchQueue(label: "shepherd.project-history-reads", qos: .utility)
     var logicalProjectCreates: Set<ProjectID> = []
@@ -833,6 +844,11 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// What the host offers `client`: `files.v1` only to a client that listed it in `hello`. Server queue.
+    private func offeredCapabilities(to client: ExtensionConnection) -> [String] {
+        offeredCapabilities.filter { $0 != RemoteProtocol.filesCapability || client.clientCapabilities.contains($0) }
+    }
+
     /// Carries Browser tunnels for remote clients (`browser.tunnel.v1`) while `served`. Connected
     /// clients that read it are told what the host offers now, and every tunnel is closed when it
     /// goes off. On unless something turns it off (nothing does yet: docs/browser.md › Remote).
@@ -845,8 +861,10 @@ public final class SessionServer: @unchecked Sendable {
                 for client in self.clients.values { client.tunnels?.endAll(code: BrowserTunnelCode.unsupported) }
                 self.endAllBrowserOwnerships(reason: BrowserDriveEnd.unsupported)
             }
-            guard let payload = try? NDJSON.encode(RemoteReply.capabilitiesChanged(capabilities: self.offeredCapabilities)) else { return }
-            for client in readers { self.enqueuePayload(payload, to: client) }
+            for client in readers {
+                guard let payload = try? NDJSON.encode(RemoteReply.capabilitiesChanged(capabilities: self.offeredCapabilities(to: client))) else { continue }
+                self.enqueuePayload(payload, to: client)
+            }
         }
     }
     /// Which agent's own pane runs each session, for the store version it was built from.
@@ -928,11 +946,10 @@ public final class SessionServer: @unchecked Sendable {
         queue.async {
             guard self.designsServed != served else { return }
             self.designsServed = served
-            let capabilities = self.offeredCapabilities
-            guard let payload = try? NDJSON.encode(RemoteReply.capabilitiesChanged(capabilities: capabilities)) else { return }
             let readers = self.clients.values.filter { $0.isRemote && $0.authenticated && $0.knowsDesigns }
             for client in readers {
                 if !served { client.watchedDesigns.removeAll() }
+                guard let payload = try? NDJSON.encode(RemoteReply.capabilitiesChanged(capabilities: self.offeredCapabilities(to: client))) else { continue }
                 self.enqueuePayload(payload, to: client)
             }
             // What they are sent of the workspace changed with it: its designs and their agents.
@@ -1424,6 +1441,7 @@ public final class SessionServer: @unchecked Sendable {
             }
         }
         isStarted = false
+        pushNotifications.stop()
         logicalProjectEpoch &+= 1
         automationStarts.removeAll()
         executionPending.removeAll()
@@ -1658,6 +1676,7 @@ public final class SessionServer: @unchecked Sendable {
             if let sessionID = leaf.sessionID, let code = retiredRPCSessions[sessionID] {
                 unavailable(Self.exitMessage(code))
             } else {
+                hopToMain { [weak self] in self?.onNativeThreadDemand?(agentID) }
                 completion(.failure(code: NativeThreadCode.starting, message: "The agent is starting."))
             }
             return
@@ -1677,22 +1696,23 @@ public final class SessionServer: @unchecked Sendable {
             completion(.failure(code: "native_limit", message: "Native request limit exceeded."))
             return
         }
-        switch request {
-        case .send: noteAgentSend(agentID)
-        default: break
-        }
         // The user's send hands a browser they took over back once the thread accepts it (a stale
         // or refused send changes nothing).
         let isSend: Bool = { if case .send = request { return true } else { return false } }()
         refreshExecutionSpaceAuthority(before: store.state.spaces)
         let spaceAuthority = executionSpaceAuthority[agent.spaceID]
-        let recoveryCwd = agent.worktreePath ?? store.state.spaces.first(where: { $0.id == agent.spaceID })?.path
+        // Standalone storage is not a Project execution destination. Bind its recovery to the
+        // exact backing space instead, while using the thread's own folder, not the storage root.
+        let recoverySpace = store.state.spaces.first { $0.id == agent.spaceID }
+        let standalone = recoverySpace?.holdsThreads == true
+        let recoveryCwd = agent.worktreePath ?? recoverySpace.map { standalone ? leaf.cwd : $0.path }
         let recoveryAuthority = nativeRecoveryAuthority[agentID] ?? UUID()
         if case .retry = request { nativeRecoveryAuthority[agentID] = recoveryAuthority }
         let recoveryAuthorization = { [weak self, weak thread] in
-            guard let self, let thread, transportAuthorization(), let spaceAuthority,
+            guard let self, let thread, transportAuthorization(), spaceAuthority != nil || standalone,
                   self.nativeRecoveryAuthority[agentID] == recoveryAuthority,
                   self.executionSpaceAuthority[agent.spaceID] == spaceAuthority,
+                  !standalone || self.store.state.spaces.first(where: { $0.id == agent.spaceID }) == recoverySpace,
                   let current = self.store.state.agents.first(where: { $0.id == agentID }),
                   self.store.state.isOrdinaryThread(current),
                   (!self.isProjectWorker(agentID) || self.projectChildTakenOver.contains { scope in
@@ -1721,10 +1741,21 @@ public final class SessionServer: @unchecked Sendable {
         if case .retry = request, !recoveryAuthorization() {
             completion(.failure(code: "recovery_scope", message: "Continue is available only on this authorized ordinary thread and its current Space binding.")); return
         }
+        // Arm before dispatch: pi can exit before acknowledging a prompt.
+        let previousPush = (thread.pushRunArmed, thread.pushAwaitingStart)
+        if isSend {
+            thread.pushRunArmed = true
+            thread.pushAwaitingStart = !thread.running
+        }
         thread.handle(request, olderClient: olderClient, startupDialogs: startupDialogs,
                       recoveryBinding: CheckpointRecoveryBinding(agentID: agentID, spaceID: agent.spaceID, tabID: agent.tabID, paneID: paneID),
                       recoveryAuthorization: recoveryAuthorization) { [weak self] result in
+            if isSend, case .failure = result, self?.sessions[sessionID]?.isAlive == true {
+                thread.pushRunArmed = previousPush.0
+                thread.pushAwaitingStart = previousPush.1
+            }
             if isSend, case .accepted = result {
+                self?.noteAgentSend(agentID)
                 self?.hopToMain { [weak self] in self?.onUserMessage?(agentID) }
                 self?.pushToBrowserOwner(agentID, .handBack(agentID: agentID))
             }
@@ -1980,7 +2011,8 @@ public final class SessionServer: @unchecked Sendable {
         do {
             request = try NDJSON.decode(RemoteRequest.self, from: line)
         } catch {
-            ShepherdLog.warning("undecodable remote request on fd \(client.fd): \(error)")
+            // Decode errors can contain credential values; never log remote payloads.
+            ShepherdLog.warning("undecodable remote request on fd \(client.fd)")
             // A request this host does not know (a kind or an action a client from another
             // version sends) is refused like any unsupported one once the client has said hello.
             // A frame without an id has no reply to take, so it still closes the connection.
@@ -2016,13 +2048,35 @@ public final class SessionServer: @unchecked Sendable {
             send(.helloOk(
                 id: id,
                 protocolVersion: RemoteProtocol.version,
-                capabilities: offeredCapabilities
+                capabilities: offeredCapabilities(to: client)
             ), to: client)
             ShepherdLog.info("remote client '\(clientName)' authenticated (fd \(client.fd))")
             return
         }
 
         switch request {
+        case .pushRegistration(let id, let registration):
+            guard offeredCapabilities.contains(RemoteProtocol.pushNotificationsCapability),
+                  client.clientCapabilities.contains(RemoteProtocol.pushNotificationsCapability) else {
+                send(.error(id: id, code: "unsupported", message: "Push notifications are unavailable."), to: client); return
+            }
+            do {
+                try pushNotifications.register(registration)
+                send(.ok(id: id), to: client)
+            } catch {
+                send(.error(id: id, code: "push_registration", message: "Could not save push registration."), to: client)
+            }
+        case .pushUnregister(let id, let registrationID):
+            guard offeredCapabilities.contains(RemoteProtocol.pushNotificationsCapability),
+                  client.clientCapabilities.contains(RemoteProtocol.pushNotificationsCapability) else {
+                send(.error(id: id, code: "unsupported", message: "Push notifications are unavailable."), to: client); return
+            }
+            do {
+                try pushNotifications.unregister(registrationID)
+                send(.ok(id: id), to: client)
+            } catch {
+                send(.error(id: id, code: "push_registration", message: "Could not remove push registration."), to: client)
+            }
         case .nativeThread(let id, let agentID, let request):
             if store.state.isProjectCoordinator(agentID), !client.clientCapabilities.contains(RemoteProtocol.logicalProjectRuntimeCapability) {
                 send(.error(id: id, code: "project_scope", message: "Use a Project-capable client."), to: client); return
@@ -2123,6 +2177,8 @@ public final class SessionServer: @unchecked Sendable {
             remoteBrowserAnswer(token: token, outcome: outcome, client: client)
         case .agentQuery(let id, let agentID, .devServers):
             remoteDevServers(id: id, agentID: agentID, client: client)
+        case .agentQuery(let id, let agentID, let query) where query.isFiles:
+            remoteFiles(id: id, agentID: agentID, query: query, client: client)
         case .agentQuery(let id, let agentID, let query) where query.isChanges:
             // The server owns the engine: answered here, without the GUI, off the queue.
             guard store.state.agents.contains(where: { $0.id == agentID }) else {
@@ -2175,7 +2231,7 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
             // An action of a capability this host does not offer (an older host would not know it).
-            if action.capability == RemoteProtocol.browserTunnelCapability, !offeredCapabilities.contains(action.capability) {
+            if [RemoteProtocol.browserTunnelCapability, RemoteProtocol.terminalStartCapability].contains(action.capability), !offeredCapabilities.contains(action.capability) {
                 send(.error(id: id, code: "unsupported", message: "This host does not take this action."), to: client)
                 return
             }
@@ -2547,6 +2603,44 @@ public final class SessionServer: @unchecked Sendable {
             self?.queue.async {
                 guard let self, self.clients[client.fd] === client else { return }
                 self.send(.agentResult(id: id, result: .devServers(servers)), to: client)
+            }
+        }
+    }
+
+    /// A thread's folder, read-only (`RemoteAgentQuery.files`, `.fileRead`; `files.v1`): only for a client that
+    /// listed the capability and is sent the agent (`remoteState`), inside the folder the thread runs in, read off
+    /// the server's queue.
+    private func remoteFiles(id: Int, agentID: AgentID, query: RemoteAgentQuery, client: ExtensionConnection) {
+        guard offeredCapabilities(to: client).contains(RemoteProtocol.filesCapability) else {
+            send(.error(id: id, code: "unsupported", message: "Files needs a newer Shepherd on this device."), to: client)
+            return
+        }
+        let shown = remoteState(store.state, for: client)
+        guard let agent = shown.agents.first(where: { $0.id == agentID }),
+              let folder = shown.tabs.first(where: { $0.id == agent.tabID })?.layout.firstLeaf.cwd
+                ?? shown.spaces.first(where: { $0.id == agent.spaceID })?.path else {
+            send(.error(id: id, code: "no_such_agent", message: "Agent no longer exists on the host."), to: client)
+            return
+        }
+        let root = (folder as NSString).expandingTildeInPath
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let reply: RemoteReply
+            switch query {
+            case .files(let path, let showHidden):
+                switch ThreadFileSystem.listing(path, in: root, showHidden: showHidden) {
+                case .success(let listing): reply = .agentResult(id: id, result: .files(listing))
+                case .failure(let error): reply = .error(id: id, code: error.code, message: error.localizedDescription)
+                }
+            case .fileRead(let path):
+                switch ThreadFileSystem.text(path, in: root) {
+                case .success(let data): reply = .agentResult(id: id, result: .fileData(data))
+                case .failure(let error): reply = .error(id: id, code: error.code, message: error.localizedDescription)
+                }
+            default: return
+            }
+            self?.queue.async {
+                guard let self, self.clients[client.fd] === client else { return }
+                self.send(reply, to: client)
             }
         }
     }
@@ -3372,7 +3466,9 @@ public final class SessionServer: @unchecked Sendable {
                             self.reply(.error(id: id, code: (error as? LogicalProjectsError)?.code ?? "project_failed", message: String(describing: error)), to: client)
                             return
                         }
-                        let spaces = self.store.state.spaces.filter { space in !space.hidden && project.linkedSpaces.contains { $0.spaceID == space.id && $0.destination == .local } }
+                        // Coordinators can discover owner-local Spaces before linking them. Workers only see linked Spaces.
+                        let discovery = project.coordinatorAgentID == agentID && request == .read
+                        let spaces = self.store.state.spaces.filter { space in !space.hidden && (discovery || project.linkedSpaces.contains { $0.spaceID == space.id && $0.destination == .local }) }
                         // Only the coordinator chooses a task's model, so only its replies carry the owner's model list.
                         let models = project.coordinatorAgentID == agentID ? self.modelListing().models : []
                         self.reply(.projectRuntime(id: id, project: project, spaces: spaces, models: models), to: client, revocation: { [weak self] in
@@ -3576,6 +3672,22 @@ public final class SessionServer: @unchecked Sendable {
             routeReviewRequest(.start(agentID: agentID, cwd: cwd, reference: reference), requestID: id, client: client)
         case .suggestInstruction(let id, let agentID, let line, let reason, let file):
             suggestInstruction(id: id, agentID: agentID, line: line, reason: reason, file: file, client: client)
+        case .designList(let id, let agentID):
+            guard designsServed else {
+                reply(.error(id: id, code: "design_disabled", message: "The Design tool experiment is off."), to: client)
+                return
+            }
+            guard let agent = store.state.agents.first(where: { $0.id == agentID }) else {
+                reply(.error(id: id, code: "no_such_agent", message: "no such agent"), to: client)
+                return
+            }
+            guard agent.designID != nil || isOrdinaryDesignToolUser(agent) else {
+                reply(.error(id: id, code: "not_a_thread", message: "Design tools require an interactive thread."), to: client)
+                return
+            }
+            reply(.designList(id: id, designs: store.state.designs.filter {
+                !$0.buildsSystem && (agent.designID == $0.id || (agent.designID == nil && !store.state.isDesignAgent(agent)))
+            }), to: client)
         case .designRead(let id, let agentID, let designID, let path):
             designRequest(id: id, agentID: agentID, designID: designID, path: path, client: client) { server, path in
                 if let path { return .designBoard(id: id, board: try await server.designBoard(designID, path: path)) }
@@ -3628,7 +3740,7 @@ public final class SessionServer: @unchecked Sendable {
                 .designComments(id: id, comments: try await server.designComments(designID))
             }
         case .designCommentReply(let id, let agentID, let designID, let commentID, let text):
-            designRequest(id: id, agentID: agentID, designID: designID, path: nil, client: client) { server, _ in
+            designRequest(id: id, agentID: agentID, designID: designID, path: nil, client: client, ownerOnly: true) { server, _ in
                 guard let comment = UUID(uuidString: commentID) else { throw DesignStoreError.noSuchComment(commentID) }
                 let outcome = try await server.replyToDesignComment(designID, commentID: comment, text: text, author: .agent)
                 return .designComment(id: id, comment: outcome.comment)
@@ -3643,7 +3755,7 @@ public final class SessionServer: @unchecked Sendable {
                 .designSystemWritten(id: id, result: try await server.writeDesignSystem(system, for: designID))
             }
         case .designProposeComments(let id, let agentID, let designID, let call, let proposals):
-            designRequest(id: id, agentID: agentID, designID: designID, path: nil, client: client) { server, _ in
+            designRequest(id: id, agentID: agentID, designID: designID, path: nil, client: client, ownerOnly: true) { server, _ in
                 .designProposals(id: id, proposals: try await server.proposeDesignComments(designID, call: call, proposals: proposals))
             }
         case .designGet(let id, let agentID, let reference, let what):
@@ -3896,17 +4008,28 @@ public final class SessionServer: @unchecked Sendable {
         hopToMain { [weak self] in self?.onDesignThreadNotesChanged?(designID) }
     }
 
-    /// Server queue: one design extension request. Only the agent drawing the design may read or
-    /// write it, and a board path is checked against the grammar before anything is read. The
+    private func isOrdinaryDesignToolUser(_ agent: Agent) -> Bool {
+        agent.designID == nil && agent.coordinatorFor == nil && !store.state.isDesignAgent(agent)
+            && !Self.automationRunAgentIDs(in: store.state).contains(agent.id)
+    }
+
+    /// Server queue: one explicitly targeted design request. Design agents stay scoped to their
+    /// own design; ordinary threads may work on existing canvases. Paths are checked before reads. The
     /// files are read and written on the design store's queue; the reply comes back here.
-    private func designRequest(id: Int, agentID: AgentID, designID: DesignID, path: String?, client: ExtensionConnection,
+    private func designRequest(id: Int, agentID: AgentID, designID: DesignID, path: String?, client: ExtensionConnection, ownerOnly: Bool = false,
                                _ body: @escaping @Sendable (SessionServer, DesignPath?) async throws -> ExtensionReply) {
         guard let agent = store.state.agents.first(where: { $0.id == agentID }) else {
             reply(.error(id: id, code: "no_such_agent", message: "no such agent"), to: client)
             return
         }
-        guard agent.designID == designID, store.state.designs.contains(where: { $0.id == designID }) else {
-            reply(.error(id: id, code: "not_your_design", message: "this agent does not draw design \(designID)"), to: client)
+        let ownDesign = agent.designID == designID
+        guard store.state.designs.contains(where: { $0.id == designID && (ownDesign || !$0.buildsSystem) }),
+              ownDesign || (!ownerOnly && isOrdinaryDesignToolUser(agent)) else {
+            reply(.error(id: id, code: "not_your_design", message: "this agent cannot access design \(designID)"), to: client)
+            return
+        }
+        guard ownDesign || designsServed else {
+            reply(.error(id: id, code: "design_disabled", message: "The Design tool experiment is off."), to: client)
             return
         }
         var boardPath: DesignPath?
@@ -3921,6 +4044,7 @@ public final class SessionServer: @unchecked Sendable {
         nextDesignRequest += 1
         let token = nextDesignRequest
         designRequestClients[token] = client
+        activeDesignRequests[token] = designID
         Task { [weak self] in
             guard let self else { return }
             let answer: ExtensionReply
@@ -3938,6 +4062,7 @@ public final class SessionServer: @unchecked Sendable {
                 answer = .error(id: id, code: "design_failed", message: String(describing: error))
             }
             self.queue.async {
+                self.activeDesignRequests.removeValue(forKey: token)
                 guard let client = self.designRequestClients.removeValue(forKey: token) else { return }
                 self.reply(answer, to: client)
             }
@@ -4549,6 +4674,7 @@ public final class SessionServer: @unchecked Sendable {
              .agentRequest(let id, _, _, _),
              .agentResult(let id, _),
              .suggestion(let id, _),
+             .designList(let id, _),
              .design(let id, _),
              .designBoard(let id, _),
              .designWritten(let id, _),
@@ -4709,7 +4835,16 @@ public final class SessionServer: @unchecked Sendable {
     /// written on its own (nor ever to state.json).
     func applyAgentQuestion(agentID: AgentID, question: String?, reason: String? = nil) {
         guard let index = store.state.agents.firstIndex(where: { $0.id == agentID }) else { return }
-        let goal = rpcThread(forAgent: agentID)?.goal
+        let thread = rpcThread(forAgent: agentID)
+        if let question, let thread, thread.pushRunArmed, !thread.stopRequested,
+           thread.pushQuestion != question {
+            thread.pushQuestion = question
+            pushNotifications.send(agentID: agentID, kind: .needsAnswer,
+                title: store.state.agents[index].name, preview: question)
+        } else if question == nil {
+            thread?.pushQuestion = nil
+        }
+        let goal = thread?.goal
         let question = question ?? (goal?.state == .needsYou ? goal?.metaLabel : nil)
         let reason = question == nil ? nil : reason
         let agent = store.state.agents[index]
@@ -4729,6 +4864,10 @@ public final class SessionServer: @unchecked Sendable {
     /// Server queue: a message was sent to the agent, which moves it up Recents.
     private func noteAgentSend(_ agentID: AgentID) {
         guard let index = store.state.agents.firstIndex(where: { $0.id == agentID }) else { return }
+        if let thread = rpcThread(forAgent: agentID) {
+            thread.pushRunArmed = true
+            thread.pushAwaitingStart = !thread.running
+        }
         let now = Self.nowMilliseconds()
         store.updateLive { $0.agents[index].lastActiveAt = now }
         let committedState = store.state
@@ -4817,7 +4956,8 @@ public final class SessionServer: @unchecked Sendable {
             let oldCaller = before.agents.first { $0.id == old.coordinatorAgentID }
             let newCaller = state.agents.first { $0.id == next?.coordinatorAgentID }
             if next?.ownerID != old.ownerID || next?.coordinatorAgentID != old.coordinatorAgentID
-                || next?.linkedSpaces != old.linkedSpaces || next?.settings.hostPolicy != old.settings.hostPolicy
+                || old.linkedSpaces.contains(where: { next?.linkedSpaces.contains($0) != true })
+                || next?.settings.hostPolicy != old.settings.hostPolicy
                 || next?.settings.allowedHosts != old.settings.allowedHosts
                 || oldCaller?.coordinatorFor != newCaller?.coordinatorFor || oldCaller?.id != newCaller?.id {
                 projectReadAuthority[old.id] = UUID()
@@ -5810,6 +5950,23 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Internal storage and a private working folder for a thread with no user space.
+    /// Keeping a backing space preserves existing state and remote-client layout contracts.
+    public func standaloneThreadFolder(for agentID: AgentID) async throws -> (spaceID: SpaceID, directory: String) {
+        try await enqueue {
+            guard UUID(uuidString: agentID.rawValue) != nil else { throw CocoaError(.fileWriteInvalidFileName) }
+            let root = self.store.url.deletingLastPathComponent().appendingPathComponent("threads", isDirectory: true)
+            let folder = root.appendingPathComponent(agentID.rawValue, isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            if let space = self.store.state.spaces.first(where: \.holdsThreads) {
+                return (space.id, folder.path)
+            }
+            let space = Space(name: "No space", path: root.path, hidden: true, holdsThreads: true)
+            try self.mutateState { $0.spaces.append(space) }
+            return (space.id, folder.path)
+        }
+    }
+
     /// The reserved hidden space design agents live in (`Space.designs()`), made on first use.
     /// Never listed as a project, and never touched by deleting or reordering a space.
     public func designsSpaceID() async throws -> SpaceID {
@@ -6756,6 +6913,7 @@ public final class SessionServer: @unchecked Sendable {
             self.clearAgentRecovery(sessionID: sessionID)
             self.startRecords[sessionID]?.requestStop()
             ShepherdLog.info("rpc session \(sessionID) stop requested; its agent stays")
+            self.sessions[sessionID]?.thread?.pushRunArmed = false
             session.kill()
         }
     }
@@ -6903,6 +7061,11 @@ public final class SessionServer: @unchecked Sendable {
             }
             session.onEvent = { [weak thread, weak serverWeak] event in
                 thread?.handle(event)
+                if case .messageEnd(let message) = event, message.role == "assistant", message.stopReason == "error",
+                   let provider = message.provider, let error = message.errorMessage, let server = serverWeak,
+                   let agentID = server.agentID(forSession: sid) {
+                    server.hopToMain { [weak server] in server?.onAgentProviderError?(agentID, provider, error) }
+                }
                 // pi emits custom message_end only after appending it to session history. A
                 // report receipt on the extension socket alone would not prove that append.
                 if case .messageEnd(let message) = event, message.role == "custom", message.customType == "shepherd-peer-report",
@@ -6924,6 +7087,12 @@ public final class SessionServer: @unchecked Sendable {
                 thread.onDiagnosticActivity = { [weak serverWeak] activity in
                     guard let server = serverWeak else { return }
                     server.hopToMain { [weak server] in server?.onDiagnosticActivity?(activity) }
+                }
+            }
+            if onDiagnosticActivityDetails != nil {
+                thread.onDiagnosticActivityDetails = { [weak serverWeak] activity, details in
+                    guard let server = serverWeak else { return }
+                    server.hopToMain { [weak server] in server?.onDiagnosticActivityDetails?(activity, details) }
                 }
             }
             thread.onServable = { [weak serverWeak] in
@@ -6984,11 +7153,13 @@ public final class SessionServer: @unchecked Sendable {
                 server.projectWorkerSettled(agentID: agentID)
                 server.executionSettled(agentID: agentID, thread: thread)
                 server.scheduleAutomationCleanup(agentID: agentID)
+                server.pushIfSettled(agentID: agentID, thread: thread)
             }
             thread.onTurnEvent = { [weak serverWeak] event in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
                 switch event {
                 case .started:
+                    server.rpcThread(forAgent: agentID)?.pushAwaitingStart = false
                     server.changes.turnStarted(agentID: agentID)
                 case .message(let timestamp, let text): server.changes.turnMessage(agentID: agentID, timestamp: timestamp, text: text)
                 case .settled:
@@ -7205,6 +7376,7 @@ public final class SessionServer: @unchecked Sendable {
         clearAgentRecovery(sessionID: sessionID)
         guard let session = sessions[sessionID] else { return }
         if session.isAlive {
+            session.thread?.pushRunArmed = false
             if onDiagnosticDuration != nil, session.thread != nil, diagnosticStops[sessionID] == nil {
                 diagnosticStops[sessionID] = .now
             }
@@ -7333,6 +7505,12 @@ public final class SessionServer: @unchecked Sendable {
         }
         peerDeliveries = peerDeliveries.filter { $0.value.sessionID != sessionID }
         if let agent = agentID(forSession: sessionID) {
+            if let thread = sessions[sessionID]?.thread, thread.pushRunArmed, !thread.stopRequested, isStarted {
+                thread.pushRunArmed = false
+                pushNotifications.send(agentID: agent, kind: .error,
+                    title: store.state.agents.first(where: { $0.id == agent })?.name,
+                    preview: thread.pushAwaitingStart ? nil : thread.turnFailure?.message)
+            }
             projectRuntimeExited(agentID: agent)
             executionExited(agentID: agent)
             designMergeAgentExited(agentID: agent)
@@ -7472,9 +7650,30 @@ public final class SessionServer: @unchecked Sendable {
         return nil
     }
 
+    /// Read durable recovery admission without spawning pi or consuming an attempt. Actual
+    /// restoration still checks live history and commits its attempt before any continuation.
+    public func agentsNeedingStartupRecovery() async -> Set<AgentID> {
+        (try? await enqueue {
+            Set(self.store.state.agents.compactMap { agent -> AgentID? in
+                guard self.allowsAgentRecovery(agent.id),
+                      let saved = try? self.agentRecovery.checkpoint(for: agent.id),
+                      saved.sessionID == agent.effectivePiSessionID,
+                      saved.attempts < AgentRecoveryStore.attemptLimit,
+                      saved.active || saved.operationID != nil
+                        || (!saved.paused && (!saved.items.isEmpty || !saved.pending.isEmpty))
+                else { return nil }
+                return agent.id
+            })
+        }) ?? []
+    }
+
     private func allowsAgentRecovery(_ id: AgentID, thread: RPCThreadState) -> Bool {
+        thread.goal == nil && allowsAgentRecovery(id)
+    }
+
+    private func allowsAgentRecovery(_ id: AgentID) -> Bool {
         guard let agent = store.state.agents.first(where: { $0.id == id }),
-              agent.coordinatorFor == nil, agent.designID == nil, thread.goal == nil,
+              agent.coordinatorFor == nil, agent.designID == nil,
               !store.state.isProjectWorker(id), !store.state.isMissionAgent(id),
               !store.state.projectExecutions.contains(where: { $0.assignment?.reservedWorkerID == id }),
               !Self.automationRunAgentIDs(in: store.state).contains(id) else { return false }
@@ -7560,11 +7759,28 @@ public final class SessionServer: @unchecked Sendable {
         checkpointAgentRecovery(sessionID: sessionID, thread: thread)
     }
 
+    private func pushIfSettled(agentID: AgentID, thread: RPCThreadState) {
+        guard thread.pushRunArmed else { return }
+        if thread.stopRequested { thread.pushRunArmed = false; return }
+        guard !thread.pushAwaitingStart, thread.actualTurnSettled, !thread.piBusy else { return }
+        guard !thread.continuesAfterSettle, thread.items.isEmpty, thread.dialogs.isEmpty,
+              store.state.agents.first(where: { $0.id == agentID })?.waitingOn == nil,
+              thread.goal?.isActive != true, thread.goal?.state != .needsYou,
+              thread.subagents.allSatisfy({ $0.isTerminal && $0.state != "paused" && !$0.needsAttention }) else { return }
+        thread.pushRunArmed = false
+        thread.pushQuestion = nil
+        pushNotifications.send(agentID: agentID, kind: thread.turnFailure == nil ? .done : .error,
+            title: store.state.agents.first(where: { $0.id == agentID })?.name,
+            preview: thread.turnFailure == nil ? thread.pushFinalText : thread.turnFailure?.message)
+    }
+
     /// Server queue: tell the app a watched agent's thread revised, coalescing everything up to a
     /// frame after the last delivery into one hop. The delivery is a hint to pull, so unlike
     /// `hopToMain` it need not keep its place among the other callbacks.
     private func threadRevised(sessionID: SessionID) {
-        guard let agentID = agentID(forSession: sessionID), let deadline = revisedThreads.insert(agentID) else { return }
+        guard let agentID = agentID(forSession: sessionID) else { return }
+        if let thread = rpcThread(forAgent: agentID) { pushIfSettled(agentID: agentID, thread: thread) }
+        guard let deadline = revisedThreads.insert(agentID) else { return }
         DispatchQueue.main.asyncAfter(deadline: deadline) { [weak self] in
             guard let self else { return }
             for agentID in self.revisedThreads.drain() {

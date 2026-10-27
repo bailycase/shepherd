@@ -62,7 +62,7 @@ public struct RemoteDesignsModel: Equatable, Sendable {
     /// Home's Designs row count ("4"), nil at none.
     public var count: String? { tiles.isEmpty ? nil : String(tiles.count) }
 
-    /// More's Design systems row: "2 · acme-web, Night Watch".
+    /// More's Design systems row: "2 · acme-web, Shepherd Design".
     public var systemsSummary: String? {
         guard !systems.isEmpty else { return nil }
         let names = systems.map(\.name)
@@ -109,7 +109,7 @@ public struct RemoteDesignsModel: Equatable, Sendable {
                                                drawing: working, revision: summary.revision),
                               design.lastActiveAt, tiles.count))
             }
-            // The host's own systems by name, then the built-in (Night Watch), as the Mac lists them.
+            // The host's own systems by name, then the built-in (Shepherd Design), as the Mac lists them.
             let own = listing.systems.filter { !$0.builtIn }.sorted { $0.info.title.localizedStandardCompare($1.info.title) == .orderedAscending }
             for system in own + listing.systems.filter(\.builtIn) {
                 systems.append(RemoteDesignSystemRow(
@@ -163,7 +163,7 @@ public enum RemoteDesignPresentation {
     }
 
     /// A system's source line: its project and first stylesheet ("dashboard-web · tokens.css");
-    /// Night Watch, built in, names Shepherd's own tokens.
+    /// Shepherd Design, built in, names Shepherd's own tokens.
     public static func systemSource(_ system: DesignSystemSummary, project: String?) -> String? {
         if system.builtIn { return "shepherd · ShepherdUI Tokens" }
         return DesignSystemPresentation.source(project: project, sources: system.info.sources)

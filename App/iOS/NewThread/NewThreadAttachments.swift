@@ -58,20 +58,26 @@ enum NewThreadImages {
 /// take images, saying why.
 struct NewThreadAttachButton: View {
     let model: NewThreadModel
+    /// The phone's toolbar item: a symbol with a title, which the bar draws itself.
+    var inToolbar = false
     @State private var picked: [PhotosPickerItem] = []
 
     var body: some View {
         let supported = model.host?.supportsImages ?? true
         let room = NativeImage.maxPerSend - model.attachments.count
         // The picker's label builds outside the main actor: resolve the tokens here.
-        let font = Font.nw(.ui)
-        let color = Color.nw.textSecondary
+        let font = Font.sh(.ui)
+        let color = Color.sh.textSecondary
         PhotosPicker(selection: $picked, maxSelectionCount: max(room, 1), matching: .images) {
-            Image(systemName: "paperclip")
-                .font(font)
-                .foregroundStyle(color)
-                .frame(width: NW.Height.touch, height: NW.Height.touch)
-                .contentShape(Rectangle())
+            if inToolbar {
+                Label("Attach", systemImage: "paperclip")
+            } else {
+                Image(systemName: "paperclip")
+                    .font(font)
+                    .foregroundStyle(color)
+                    .frame(width: SH.Height.touch, height: SH.Height.touch)
+                    .contentShape(Rectangle())
+            }
         }
         .disabled(!supported || room <= 0)
         .accessibilityLabel("Attach images")
@@ -104,25 +110,25 @@ struct NewThreadAttachmentStrip: View {
 
     var body: some View {
         ScrollView(.horizontal) {
-            HStack(spacing: NW.Space.m) {
+            HStack(spacing: SH.Space.m) {
                 ForEach(model.attachments) { attachment in
                     Image(uiImage: attachment.thumbnail)
                         .resizable()
                         .scaledToFill()
                         .frame(width: MobileLayout.newThreadThumbnail, height: MobileLayout.newThreadThumbnail)
-                        .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
-                        .nwBorder(Color.nw.lineSubtle, radius: NW.Radius.m)
+                        .clipShape(RoundedRectangle(cornerRadius: SH.Radius.m))
+                        .shBorder(Color.sh.lineSubtle, radius: SH.Radius.m)
                         .overlay(alignment: .topTrailing) {
                             Button { model.remove(attachment: attachment.id) } label: {
                                 Image(systemName: "xmark.circle.fill")
-                                    .font(.nw(.ui))
+                                    .font(.sh(.ui))
                                     .symbolRenderingMode(.palette)
-                                    .foregroundStyle(Color.nw.textPrimary, Color.nw.bgRaised)
-                                    .frame(width: NW.Height.touch, height: NW.Height.touch, alignment: .topTrailing)
+                                    .foregroundStyle(Color.sh.textPrimary, Color.sh.bgRaised)
+                                    .frame(width: SH.Height.touch, height: SH.Height.touch, alignment: .topTrailing)
                                     .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
-                            .offset(x: NW.Space.xs, y: -NW.Space.xs)
+                            .offset(x: SH.Space.xs, y: -SH.Space.xs)
                             .accessibilityLabel("Remove \(attachment.name)")
                         }
                         .accessibilityElement(children: .contain)
@@ -130,8 +136,8 @@ struct NewThreadAttachmentStrip: View {
                 }
             }
             // Room for each remove button, which sits over its thumbnail's corner.
-            .padding(.top, NW.Space.m)
-            .padding(.trailing, NW.Space.m)
+            .padding(.top, SH.Space.m)
+            .padding(.trailing, SH.Space.m)
         }
         .scrollIndicators(.hidden)
     }

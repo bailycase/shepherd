@@ -47,7 +47,7 @@ struct DesignPathTests {
         #expect(path.viewName == viewName)
     }
 
-    @Test(arguments: [("acme-web", true), ("a", true), ("night_watch2", true), ("Acme", false), ("-acme", false),
+    @Test(arguments: [("acme-web", true), ("a", true), ("shepherd_design2", true), ("Acme", false), ("-acme", false),
                       ("_acme", false), ("", false), ("a.b", false), (String(repeating: "a", count: 65), false)])
     func aSystemFolderNameIsLowerCaseWords(_ name: String, _ valid: Bool) {
         #expect(DesignPath.isSystemNamespace(name) == valid)
