@@ -129,6 +129,9 @@ UIKit) lays out two views around the fold:
   thread lowest) in the column. Closed, the ••• menu lists the same tabs and pushes each; unfolding
   with one pushed opens it in the pane. The laptop pose arranges the thread (`ArrangementView`,
   overlay).
+- The Browser (`ThreadBrowserScreen`) keeps the system bar (Back and the title join the column);
+  its address bar, Reload and dev-server menu are content in the page, as DuoSidePaneTabs draws
+  them, not toolbar items.
 
 ## Checking it
 

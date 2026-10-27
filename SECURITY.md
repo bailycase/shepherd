@@ -94,7 +94,10 @@ above) and neither has a switch yet.
   client type into the host's terminals, so this adds no privilege. On the viewing Mac the page's
   traffic to `localhost:<port>` goes through a listener on that Mac's own loopback at the same
   port: any program or page on the viewing Mac can reach the host's port through it while it is
-  held, as with `ssh -L`.
+  held, as with `ssh -L`. The iPhone and iPad client does the same on the device's loopback, only
+  while the host is connected (so never in the background), at most eight ports a page; the host's
+  agent cannot drive that page, and the app's only App Transport Security exception is
+  `NSAllowsLocalNetworking`.
 - **A host's agent acting on the client's web view.** A client that shows a remote thread's Browser
   tab can own that thread's agent's browser, and then the host's agent drives a web view **on the
   client's Mac** (`browser.drive.v1`): it opens pages, reads them, clicks, types and runs script in
