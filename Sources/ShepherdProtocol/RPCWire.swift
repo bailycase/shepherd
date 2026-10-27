@@ -133,7 +133,10 @@ public enum RPCCommand: Encodable, Hashable, Sendable {
     /// Empties pi's steering and follow-up queues and answers with their text.
     case clearQueue
     case getState
+    /// The saved history, with each image named by `RPCImageRef` instead of carrying its bytes (Shepherd's pinned engine).
     case getMessages
+    /// One saved image's bytes, by the SHA-256 `getMessages` named it with (Shepherd's pinned engine).
+    case getImage(sha256: String)
     case recoverCheckpoint(token: String, operationID: UUID)
     case getRestartRecovery
     case resumeSession(token: String, operationID: UUID)
@@ -161,6 +164,7 @@ public enum RPCCommand: Encodable, Hashable, Sendable {
         case .clearQueue: return "clear_queue"
         case .getState: return "get_state"
         case .getMessages: return "get_messages"
+        case .getImage: return "get_image"
         case .getRestartRecovery: return "get_restart_recovery"
         case .resumeSession: return "resume_session"
         case .recoverCheckpoint: return "recover_checkpoint"
@@ -178,7 +182,7 @@ public enum RPCCommand: Encodable, Hashable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case type, message, images, streamingBehavior, provider, modelId, level, id, value, confirmed, cancelled, customInstructions, history, token, operationID
+        case type, message, images, streamingBehavior, provider, modelId, level, id, value, confirmed, cancelled, customInstructions, history, token, operationID, sha256
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -203,6 +207,9 @@ public enum RPCCommand: Encodable, Hashable, Sendable {
             try c.encodeIfPresent(customInstructions, forKey: .customInstructions)
         case .getMessages:
             try c.encode(true, forKey: .history)
+            try c.encode("refs", forKey: .images)
+        case .getImage(let sha256):
+            try c.encode(sha256, forKey: .sha256)
         case .recoverCheckpoint(let token, let operationID), .resumeSession(let token, let operationID):
             try c.encode(token, forKey: .token)
             try c.encode(operationID.uuidString, forKey: .operationID)
@@ -310,10 +317,13 @@ public enum RPCContentBlock: Codable, Hashable, Sendable {
     /// `readableThinking`).
     case thinking(String)
     case toolCall(id: String, name: String, arguments: JSONValue?)
-    case image(mimeType: String, data: String)
+    /// `ref` in place of `data` when pi named a saved image instead of sending it (`get_messages`' `images: "refs"`).
+    case image(mimeType: String, data: String, ref: RPCImageRef? = nil)
     case unknown(type: String)
 
-    enum CodingKeys: String, CodingKey { case type, text, thinking, thinkingSignature, redacted, id, name, arguments, mimeType, data }
+    enum CodingKeys: String, CodingKey {
+        case type, text, thinking, thinkingSignature, redacted, id, name, arguments, mimeType, data, sha256, byteCount, width, height
+    }
 
     /// What pi-ai writes as the text of Anthropic's `redacted_thinking` (flagged `redacted`);
     /// a streamed `thinking_end` carries it without the flag.
@@ -337,9 +347,15 @@ public enum RPCContentBlock: Codable, Hashable, Sendable {
                 arguments: try c.decodeIfPresent(JSONValue.self, forKey: .arguments)
             )
         case "image":
+            let sha256 = try c.decodeIfPresent(String.self, forKey: .sha256)
             self = .image(
                 mimeType: try c.decodeIfPresent(String.self, forKey: .mimeType) ?? "",
-                data: try c.decodeIfPresent(String.self, forKey: .data) ?? ""
+                data: try c.decodeIfPresent(String.self, forKey: .data) ?? "",
+                ref: try sha256.map {
+                    RPCImageRef(sha256: $0, byteCount: try c.decodeIfPresent(Int.self, forKey: .byteCount) ?? 0,
+                                width: try c.decodeIfPresent(Int.self, forKey: .width) ?? 0,
+                                height: try c.decodeIfPresent(Int.self, forKey: .height) ?? 0)
+                }
             )
         default:
             self = .unknown(type: type)
@@ -417,13 +433,36 @@ public enum RPCContentBlock: Codable, Hashable, Sendable {
             try c.encode(id, forKey: .id)
             try c.encode(name, forKey: .name)
             try c.encodeIfPresent(arguments, forKey: .arguments)
-        case .image(let mimeType, let data):
+        case .image(let mimeType, let data, let ref):
             try c.encode("image", forKey: .type)
             try c.encode(mimeType, forKey: .mimeType)
-            try c.encode(data, forKey: .data)
+            if let ref {
+                try c.encode(ref.sha256, forKey: .sha256)
+                try c.encode(ref.byteCount, forKey: .byteCount)
+                try c.encode(ref.width, forKey: .width)
+                try c.encode(ref.height, forKey: .height)
+            } else {
+                try c.encode(data, forKey: .data)
+            }
         case .unknown(let type):
             try c.encode(type, forKey: .type)
         }
+    }
+}
+
+/// A saved image as pi names it in history: the SHA-256 (hex) of its bytes, their count, and the pixel size its header
+/// gives (0 when the header is not the block's type). Metadata only: the bytes behind it are checked when served.
+public struct RPCImageRef: Hashable, Sendable {
+    public var sha256: String
+    public var byteCount: Int
+    public var width: Int
+    public var height: Int
+
+    public init(sha256: String, byteCount: Int, width: Int, height: Int) {
+        self.sha256 = sha256
+        self.byteCount = byteCount
+        self.width = width
+        self.height = height
     }
 }
 

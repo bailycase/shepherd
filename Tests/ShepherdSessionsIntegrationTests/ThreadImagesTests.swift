@@ -189,15 +189,13 @@ struct ThreadImagesTests {
         let pi = try await PiAgent.launch(on: h, env: ["STUB_PI_MESSAGES_FILE": history.path])
         let s = try await pi.snapshot("the cold history") { $0.messages.contains { $0.blocks.contains { $0.imageID != nil } } }
         let id = try #require(s.messages.flatMap(\.blocks).compactMap(\.imageID).first)
-        #expect(!seen.all.isEmpty, "the header was read")
+        #expect(seen.all.isEmpty, "pi named the image by hash: naming it read no bytes: \(seen.all)")
         // The queues that own the thread: the RPC session's (`shepherd.rpc`, which targets the server's `shepherd.sessions`).
         let owners: Set<String> = ["shepherd.rpc", "shepherd.sessions"]
-        #expect(seen.all.allSatisfy { !owners.contains($0) && $0.contains("utility") },
-                "a cold history's images were read on a utility queue, never on the thread's: \(seen.all)")
-        // Serving a piece reads nothing on the owner either (the cache is warm, so nothing is read at all, or it is read off it).
-        let before = seen.all.count
+        // Serving a piece checks the bytes pi returns, on a utility queue, never on the thread's.
         _ = try await Self.fetch(id, from: pi, session: s.piSessionID)
-        #expect(seen.all.dropFirst(before).allSatisfy { !owners.contains($0) }, "serving a piece did not read headers on the owner's queue: \(seen.all)")
+        #expect(!seen.all.isEmpty && seen.all.allSatisfy { !owners.contains($0) && $0.contains("utility") },
+                "serving read the image off the owner's queue: \(seen.all)")
     }
 
     // MARK: Identity is the whole content
@@ -233,17 +231,11 @@ struct ThreadImagesTests {
         ]
         let ids = RPCThreadState.projectHistory(history, images: ThreadImages.table(for: history)).flatMap(\.blocks).compactMap(\.imageID)
         #expect(ids.count == 2 && ids[0] != ids[1])
-        #expect(ThreadImages.find(ids[0], in: history)?.data == one, "the first id serves the first image's bytes")
-        #expect(ThreadImages.find(ids[1], in: history)?.data == two, "the second id serves the second, not the first")
-        // Swap the two images' contents between the entries: an id names its content, so each id now finds nothing where its image no longer is.
-        let swapped: [RPCMessage] = [
-            RPCMessage(role: "user", content: [.text("a"), .image(mimeType: "image/png", data: b)], timestamp: 1),
-            RPCMessage(role: "user", content: [.text("b"), .image(mimeType: "image/png", data: a)], timestamp: 2),
-        ]
-        #expect(ThreadImages.find(ids[0], in: swapped) == nil && ThreadImages.find(ids[1], in: swapped) == nil)
-        // The same entry and position holding different bytes than the id named: refused, not served.
-        let replaced = [RPCMessage(role: "user", content: [.text("a"), .image(mimeType: "image/png", data: b)], timestamp: 1), history[1]]
-        #expect(ThreadImages.find(ids[0], in: replaced) == nil, "an id never serves bytes whose hash is not its own")
+        #expect(ThreadImages.verified(ids[0], mimeType: "image/png", base64: a)?.data == one, "the first id serves the first image's bytes")
+        #expect(ThreadImages.verified(ids[1], mimeType: "image/png", base64: b)?.data == two, "the second id serves the second, not the first")
+        // Bytes other than the ones the id named (pi answering with the lookalike): refused, not served.
+        #expect(ThreadImages.verified(ids[0], mimeType: "image/png", base64: b) == nil, "an id never serves bytes whose hash is not its own")
+        #expect(ThreadImages.verified(ids[1], mimeType: "image/png", base64: a) == nil)
     }
 
     /// Nothing carries over between histories: the same image in a second history is inspected again, and a changed one is never answered
@@ -268,9 +260,9 @@ struct ThreadImagesTests {
 
     // MARK: Many images, and the live path
 
-    /// A history of more than 512 images (the old cache's size) names every one of them, correctly, and the snapshot path reads none of
-    /// them on the thread's queue: the table is built off it, and the projection is a lookup.
-    @Test func aHistoryOfMoreThanFiveHundredImagesIsNamedWholeAndNeverReadOnTheOwnersQueue() async throws {
+    /// A history of more than 512 images (the old cache's size) names every one of them, correctly, without reading any of them: pi names
+    /// each by hash, so a design thread's hundreds of renders cost the history nothing. An image is read only when it is served.
+    @Test func aHistoryOfMoreThanFiveHundredImagesIsNamedWholeWithoutReadingOne() async throws {
         final class Seen: @unchecked Sendable {
             private let lock = NSLock()
             private var queues: [String] = []
@@ -298,17 +290,15 @@ struct ThreadImagesTests {
         _ = first
         // Page back to the beginning so every image has been named at least once.
         let owners: Set<String> = ["shepherd.rpc", "shepherd.sessions"]
-        #expect(!seen.all.isEmpty && seen.all.allSatisfy { !owners.contains($0) }, "all \(seen.all.count) reads were off the owner's queue: \(Set(seen.all))")
-        #expect(seen.all.count >= count, "every image was read once for this history, not just the last 512: \(seen.all.count)")
+        #expect(seen.all.isEmpty, "naming the history read no image: \(seen.all.count) reads")
         // A page of the history names its images, each fetchable and each the right one.
         let named = first.messages.flatMap { m in m.blocks.compactMap(\.image).map { (m.entryID, $0) } }
         #expect(!named.isEmpty && named.allSatisfy { $0.1.width != nil && $0.1.id.split(separator: "|").last?.count == 64 })
-        for (entryID, ref) in named.suffix(3) {
-            let index = try #require(Int(entryID.split(separator: ":").last.map(String.init)?.suffix(3).description ?? "") ?? nil)
-            _ = index
+        for (_, ref) in named.suffix(3) {
             let fetched = try await Self.fetch(ref.id, from: pi, session: first.piSessionID)
-            #expect(fetched.data.count == ref.byteCount)
+            #expect(fetched.data.count == ref.byteCount && images.contains(fetched.data))
         }
+        #expect(!seen.all.isEmpty && seen.all.allSatisfy { !owners.contains($0) }, "serving read off the owner's queue: \(Set(seen.all))")
     }
 
     /// A live tool result's image: pi streams it in a tool event before it is in history, and the live row is projected on the thread's queue.
@@ -350,14 +340,15 @@ struct ThreadImagesTests {
         let ref = try #require(settled.messages.filter { $0.role == "toolResult" }.flatMap(\.blocks).compactMap(\.image).first)
         #expect(ref.byteCount == data.count && ref.width == 29)
         let owners: Set<String> = ["shepherd.rpc", "shepherd.sessions"]
-        #expect(!seen.all.isEmpty && seen.all.allSatisfy { !owners.contains($0) }, "history's read of it was off the owner's queue: \(seen.all)")
+        #expect(seen.all.isEmpty, "history named it without reading it: \(seen.all)")
         #expect(try await Self.fetch(ref.id, from: pi, session: settled.piSessionID).data == data)
+        #expect(!seen.all.isEmpty && seen.all.allSatisfy { !owners.contains($0) }, "serving read it off the owner's queue: \(seen.all)")
     }
 
     // MARK: Ids and hidden messages
 
     /// The reviewer's case: a visible custom message (an extension's, with an image) after hidden custom messages that share its timestamp.
-    /// History skips the hidden ones before it counts repeats ("custom:7", "custom:7#1"), so `find` must skip them too; counting them made the
+    /// History skips the hidden ones before it counts repeats ("custom:7", "custom:7#1"), so the ids must skip them too; counting them made the
     /// offered id "custom:7" resolve to nothing, or "custom:7#1" to the wrong message.
     @Test func anIdStillFindsItsImageAfterHiddenMessagesWithTheSameTimestamp() async throws {
         let a = Self.png(side: 12), b = Self.png(side: 20)
@@ -378,11 +369,11 @@ struct ThreadImagesTests {
         #expect(shown.map(\.entryID) == ["custom:7", "custom:7#1"], "history counts only what it shows: \(shown.map(\.entryID))")
         let ids = RPCThreadState.projectHistory(history, images: ThreadImages.table(for: history)).flatMap(\.blocks).compactMap(\.imageID)
         #expect(ids.count == 2 && ids[0].hasPrefix("custom:7|0|") && ids[1].hasPrefix("custom:7#1|0|"), "\(ids)")
-        #expect(ThreadImages.find(ids[0], in: history)?.data == a, "the first shown message, not nothing")
-        #expect(ThreadImages.find(ids[1], in: history)?.data == b, "the second, not the first and not nothing")
+        #expect(ThreadImages.verified(ids[0], mimeType: "image/png", base64: a.base64EncodedString())?.data == a, "the first shown message, not nothing")
+        #expect(ThreadImages.verified(ids[1], mimeType: "image/png", base64: b.base64EncodedString())?.data == b, "the second, not the first")
     }
 
-    /// Ids and rows come from the same list, whatever is hidden between: for every image the snapshot names, `find` returns that image.
+    /// Ids and rows come from the same list, whatever is hidden between: every image the snapshot names is named by its own bytes' hash.
     @Test func everyOfferedIdResolvesToItsOwnBytes() {
         let png = Self.png(side: 9), other = Self.png(side: 31)
         var history: [RPCMessage] = []
@@ -397,9 +388,9 @@ struct ThreadImagesTests {
         let rows = RPCThreadState.projectHistory(history, images: ThreadImages.table(for: history))
         let named = rows.flatMap(\.blocks).compactMap(\.image)
         #expect(named.count == 6)
-        for ref in named {
-            let found = ThreadImages.find(ref.id, in: history)
-            #expect(found != nil && found.map { Data($0.data.count == ref.byteCount ? $0.data : Data()) }?.isEmpty == false, "\(ref.id)")
+        for (index, ref) in named.enumerated() {
+            let bytes = (index.isMultiple(of: 2) ? png : other)
+            #expect(ThreadImages.verified(ref.id, mimeType: "image/png", base64: bytes.base64EncodedString())?.data == bytes, "\(ref.id)")
         }
     }
 
@@ -434,6 +425,28 @@ struct ThreadImagesTests {
         // Over the pixel bound: a header that says so, small on disk.
         let wide = Self.png(side: 4200)
         #expect(wide.count < NativeImage.maxBytes && meta(wide) == nil, "4200 × 4200 is over \(NativeImage.maxPixels) pixels")
+    }
+
+    /// pi names a saved image by hash (`get_messages`' refs) instead of sending it: the table names it exactly as it names the same
+    /// image sent inline, and what pi says of an image the thread would not serve names nothing.
+    @Test func anImagePiNamesIsNamedAsItsBytesWouldBe() throws {
+        let png = Self.png(side: 13, bytes: 900)
+        let inline = try #require(ThreadImages.inspect(mimeType: "image/png", base64: png.base64EncodedString())?.meta)
+        let ref = RPCImageRef(sha256: inline.hash, byteCount: inline.byteCount, width: inline.width, height: inline.height)
+        let history = [RPCMessage(role: "toolResult", content: [.image(mimeType: "image/png", data: "", ref: ref)], toolCallId: "c", timestamp: 1)]
+        #expect(ThreadImages.table(for: history) == ThreadImages.table(for: [RPCMessage(role: "toolResult",
+            content: [.image(mimeType: "image/png", data: png.base64EncodedString())], toolCallId: "c", timestamp: 1)]))
+        func named(_ mime: String = "image/png", _ change: (inout RPCImageRef) -> Void) -> Bool {
+            var r = ref
+            change(&r)
+            return ThreadImages.named(mimeType: mime, ref: r) != nil
+        }
+        #expect(named { _ in })
+        #expect(!named("image/svg+xml") { _ in }, "not a raster type")
+        #expect(!named { $0.byteCount = NativeImage.maxBytes + 1 } && !named { $0.byteCount = 0 }, "outside the byte bound")
+        #expect(!named { $0.width = 0 } && !named { $0.width = 4200; $0.height = 4200 }, "no size, or over the pixel bound")
+        #expect(!named { $0.sha256 = String($0.sha256.dropLast()) } && !named { $0.sha256 = $0.sha256.uppercased() }
+                && !named { $0.sha256 = String(repeating: "g", count: 64) }, "not a whole lowercase hex SHA-256")
     }
 
     @Test func aPieceIsAtMostTheChunkSizeAndTheLastOneIsTheRemainder() {

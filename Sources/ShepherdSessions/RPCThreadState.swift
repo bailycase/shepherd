@@ -1264,33 +1264,36 @@ final class RPCThreadState {
 
     // MARK: - Images
 
-    /// One piece of an image pi saved in this thread, read from pi's own history for this agent. Nothing a client sends names a
-    /// file: the id must match an image in the history as it is now. Server queue in, server queue out: the scan, the hash, the
-    /// base64 and the header read of a megabytes-long history run on a utility queue, and the answer is given only if the session
+    /// One piece of an image pi saved in this thread. Nothing a client sends names a file: the id must be one the thread's
+    /// history named, and pi returns the bytes for its hash from its own saved history (`get_image`). Server queue in, server
+    /// queue out: the decode, the hash and the header read run on a utility queue, and the answer is given only if the session
     /// is still the one asked about.
     private func serveImage(_ imageID: String, offset: Int, completion: @escaping (NativeThreadResult) -> Void) {
-        guard ThreadImages.parse(imageID) != nil, offset >= 0 else {
-            completion(.failure(code: NativeImageCode.unknown, message: "That image is not in this thread."))
+        let notHere = NativeThreadResult.failure(code: NativeImageCode.unknown, message: "That image is not in this thread.")
+        guard let want = ThreadImages.parse(imageID), offset >= 0,
+              history.contains(where: { $0.blocks.contains { $0.imageID == imageID } }) else {
+            completion(notHere)
             return
         }
         let generation = generation
         let sessionID = piSessionID
         let stale = NativeThreadResult.failure(code: "stale_session", message: "Refresh the thread before acting.")
-        session.request(.getMessages, timeout: 30) { [weak self] result in
+        session.request(.getImage(sha256: want.hash), timeout: 30) { [weak self] result in
             guard let self, generation == self.generation else { completion(stale); return }
-            guard case .success(let response) = result, response.success, let messages = response.messages else {
-                completion(.failure(code: NativeImageCode.unknown, message: "The thread's history could not be read."))
+            guard case .success(let response) = result, response.success,
+                  let mime = response.data?["mimeType"]?.stringValue, let base64 = response.data?["data"]?.stringValue else {
+                completion(notHere)
                 return
             }
             DispatchQueue.global(qos: .utility).async { [weak self] in
-                let found = ThreadImages.find(imageID, in: messages)
+                let found = ThreadImages.verified(imageID, mimeType: mime, base64: base64)
                 let chunk = found.flatMap { ThreadImages.chunk(imageID, mimeType: $0.mimeType, data: $0.data, offset: offset) }
                 guard let self else { completion(stale); return }
                 self.queue.async { [weak self] in
                     guard let self, generation == self.generation, sessionID == self.piSessionID else { completion(stale); return }
                     if let chunk { completion(.imageChunk(value: chunk)); return }
-                    completion(.failure(code: NativeImageCode.unknown,
-                                        message: found == nil ? "That image is not in this thread." : "That part of the image is past its end."))
+                    completion(found == nil ? notHere
+                                            : .failure(code: NativeImageCode.unknown, message: "That part of the image is past its end."))
                 }
             }
         }
@@ -2739,8 +2742,8 @@ final class RPCThreadState {
     }
 
     /// The messages history shows, in order, each with the entry id history gives it. The one place that decides which messages
-    /// are hidden and how the rest are numbered: `projectHistory` and `ThreadImages.find` both read it, so an image id the
-    /// snapshot offered always finds its message again (a hidden message with a repeated timestamp cannot shift the numbers).
+    /// are hidden and how the rest are numbered: `projectHistory` and `ThreadImages.table` both read it, so an image id the
+    /// snapshot offered always names its own message's image (a hidden message with a repeated timestamp cannot shift the numbers).
     static func shownHistory(_ messages: [RPCMessage]) -> [(entryID: String, message: RPCMessage)] {
         var seen: [String: Int] = [:]
         return chronological(messages).enumerated().compactMap { index, message in

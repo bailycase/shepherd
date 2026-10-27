@@ -6,9 +6,9 @@ import UniformTypeIdentifiers
 
 /// The images in a thread (docs/native-thread.md › Images). pi saves every image it was sent or a tool made in
 /// its own session (verified: user and tool-result image blocks are written to the session file whole), and
-/// `get_messages` returns them, so the host stores nothing: a snapshot names each image
-/// (`NativeThreadBlock.imageID`, bounded metadata, no bytes) and `NativeThreadRequest.image` asks pi for the
-/// history again and reads the bytes back, a piece at a time. An id is `entry|index|sha256`: the history entry, which image in it, and
+/// `get_messages` names each one by hash (`RPCImageRef`), so the host stores nothing: a snapshot names each image
+/// (`NativeThreadBlock.imageID`, bounded metadata, no bytes) and `NativeThreadRequest.image` asks pi for that one
+/// image (`get_image`) and checks the bytes before serving a piece. An id is `entry|index|sha256`: the history entry, which image in it, and
 /// the image's whole SHA-256 (hex), so an id from another thread, an older history or a made-up one finds nothing, and the bytes served
 /// are always the bytes the id names.
 enum ThreadImages {
@@ -29,8 +29,10 @@ enum ThreadImages {
         var table: [String: Meta] = [:]
         for (entryID, message) in RPCThreadState.shownHistory(messages) {
             var index = 0
-            for case .image(let mime, let base64) in message.content {
-                if let meta = inspect(mimeType: mime, base64: base64)?.meta { table[key(entryID: entryID, index: index)] = meta }
+            for case .image(let mime, let base64, let ref) in message.content {
+                if let meta = ref.map({ named(mimeType: mime, ref: $0) }) ?? inspect(mimeType: mime, base64: base64)?.meta {
+                    table[key(entryID: entryID, index: index)] = meta
+                }
                 index += 1
             }
         }
@@ -57,22 +59,20 @@ enum ThreadImages {
         return entry.isEmpty ? nil : (entry, index, String(hash))
     }
 
-    /// The bytes of the image `id` names in pi's saved history `messages`, or nil when no image there matches: the entry (numbered
-    /// by `RPCThreadState.shownHistory`, the same list the snapshot is built from) and the position must agree, and the SHA-256 of the
-    /// bytes actually served must be the id's. Nothing is trusted from an earlier call. Heavy: never on the server queue.
-    static func find(_ id: String, in messages: [RPCMessage]) -> (mimeType: String, data: Data)? {
-        guard let want = parse(id) else { return nil }
-        for (entryID, message) in RPCThreadState.shownHistory(messages) where entryID == want.entryID {
-            var ordinal = 0
-            for case .image(let mime, let base64) in message.content {
-                defer { ordinal += 1 }
-                guard ordinal == want.index else { continue }
-                guard let checked = inspect(mimeType: mime, base64: base64), checked.meta.hash == want.hash else { return nil }
-                return (mime, checked.data)
-            }
-            return nil
-        }
-        return nil
+    /// The image `id` names, from the bytes pi returned for its hash: nil unless they are an image the thread offers whose
+    /// whole SHA-256 is the id's. Heavy: never on the server queue.
+    static func verified(_ id: String, mimeType: String, base64: String) -> (mimeType: String, data: Data)? {
+        guard let want = parse(id), let checked = inspect(mimeType: mimeType, base64: base64), checked.meta.hash == want.hash else { return nil }
+        return (mimeType, checked.data)
+    }
+
+    /// What pi said of an image it named without its bytes, when the thread would offer it: an offered type, a size within the
+    /// bounds and a whole hash. Draws the block; `verified` checks the bytes themselves when they are served.
+    static func named(mimeType: String, ref: RPCImageRef) -> Meta? {
+        guard NativeImage.threadMimeTypes.contains(mimeType), (1...NativeImage.maxBytes).contains(ref.byteCount),
+              NativeImage.fitsPixelBound(width: ref.width, height: ref.height),
+              ref.sha256.count == hashLength, ref.sha256.allSatisfy({ $0.isHexDigit && !$0.isUppercase }) else { return nil }
+        return Meta(mimeType: mimeType, width: ref.width, height: ref.height, byteCount: ref.byteCount, hash: ref.sha256)
     }
 
     // MARK: Limits

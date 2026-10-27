@@ -175,9 +175,12 @@ $STUB_PI_HISTORY_FAILURE_GATE fails history reads until that file exists, then e
 Every stdin line is appended to $STUB_PI_LOG when set, so tests can assert
 on what the client actually wrote.
 """
+import base64
+import hashlib
 import json
 import os
 import re
+import struct
 import sys
 import threading
 import time
@@ -223,6 +226,45 @@ def emit(obj, terminator=b"\n"):
             turn_thread = None
         out.write(json.dumps(obj, ensure_ascii=False).encode("utf-8") + terminator)
         out.flush()
+
+
+def image_size(mime, b):
+    """The pixel size a png, gif or jpeg header gives, as the pinned engine reads it; (0, 0) otherwise."""
+    if mime == "image/png" and b[:4] == b"\x89PNG" and b[12:16] == b"IHDR":
+        return struct.unpack(">II", b[16:24])
+    if mime == "image/gif" and b[:4] == b"GIF8":
+        return struct.unpack("<HH", b[6:10])
+    if mime == "image/jpeg" and b[:2] == b"\xff\xd8":
+        i = 2
+        while i + 9 < len(b) and b[i] == 0xFF:
+            marker = b[i + 1]
+            if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+                h, w = struct.unpack(">HH", b[i + 5:i + 9])
+                return w, h
+            i += 2 + struct.unpack(">H", b[i + 2:i + 4])[0]
+    return 0, 0
+
+
+def image_refs(messages):
+    """`get_messages` with `images: "refs"`, as the pinned engine answers it: each image named, not sent."""
+    def ref(block):
+        if not isinstance(block, dict) or block.get("type") != "image" or not isinstance(block.get("data"), str):
+            return block
+        b = base64.b64decode(block["data"])
+        w, h = image_size(block.get("mimeType"), b)
+        named = {k: v for k, v in block.items() if k != "data"}
+        named.update(sha256=hashlib.sha256(b).hexdigest(), byteCount=len(b), width=w, height=h)
+        return named
+    return [dict(m, content=[ref(b) for b in m["content"]]) if isinstance(m.get("content"), list) else m for m in messages]
+
+
+def saved_image(messages, sha256):
+    for m in messages:
+        for block in m.get("content") if isinstance(m.get("content"), list) else []:
+            if isinstance(block, dict) and block.get("type") == "image" and isinstance(block.get("data"), str) \
+                    and hashlib.sha256(base64.b64decode(block["data"])).hexdigest() == sha256:
+                return {"mimeType": block.get("mimeType"), "data": block["data"]}
+    return None
 
 
 def respond(cmd, command, success=True, data=None, error=None):
@@ -1350,7 +1392,13 @@ for raw in sys.stdin.buffer:
             fail_switched_history = False
             respond(cmd, t, success=False, error="Switched history unavailable")
         else:
-            respond(cmd, t, data={"messages": MESSAGES})
+            respond(cmd, t, data={"messages": image_refs(MESSAGES) if cmd.get("images") == "refs" else MESSAGES})
+    elif t == "get_image":
+        image = saved_image(MESSAGES, cmd.get("sha256"))
+        if image:
+            respond(cmd, t, data=image)
+        else:
+            respond(cmd, t, success=False, error="image_not_found")
     elif t == "get_restart_recovery":
         state = {"version": 1, "checkpoint": {"token": os.environ.get("STUB_PI_RESTART_TOKEN", "a" * 64),
                  "fence": os.environ.get("STUB_PI_RESTART_FENCE", "b" * 64), "leafID": "stub-leaf"}}
