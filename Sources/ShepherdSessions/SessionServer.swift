@@ -1595,6 +1595,7 @@ public final class SessionServer: @unchecked Sendable {
         requestBytes: Int,
         olderClient: Bool = false,
         startupDialogs: Bool = true,
+        previews: Bool = false,
         transportAuthorization: @escaping () -> Bool = { true },
         completion: @escaping (NativeOutcome) -> Void
     ) {
@@ -1645,6 +1646,10 @@ public final class SessionServer: @unchecked Sendable {
         guard let sessionID = leaf.sessionID, let session = sessions[sessionID] else {
             if let sessionID = leaf.sessionID, let code = retiredRPCSessions[sessionID] {
                 unavailable(Self.exitMessage(code))
+            } else if previews, case .snapshot = request {
+                // A client reading many threads at once (a Home screen) must not start a pi per
+                // idle agent: it gets what the session file holds, and starts pi by acting.
+                servePreviewSnapshot(agent: agent, cwd: leaf.cwd, completion: completion)
             } else {
                 hopToMain { [weak self] in self?.onNativeThreadDemand?(agentID) }
                 completion(.failure(code: NativeThreadCode.starting, message: "The agent is starting."))
@@ -1737,6 +1742,24 @@ public final class SessionServer: @unchecked Sendable {
 
     /// What a kept start answers a snapshot with: the problem alone, with no history and no
     /// actions, so an older client (which ignores the problem) shows a thread it cannot send to.
+    /// Server queue: answers a snapshot for an agent whose pi is not running from pi's session file
+    /// (`PiSessionPreview`), read off the queue; an agent with no file yet gets an empty thread.
+    /// Marked `preview` with no actions: nothing a client can do with it reaches pi (`RemoteProtocol.nativeThreadPreviewCapability`).
+    private func servePreviewSnapshot(agent: Agent, cwd: String, completion: @escaping (NativeOutcome) -> Void) {
+        let sessionID = agent.effectivePiSessionID
+        let root = pi.sessionsRoot
+        let origins = originStore.directory
+        let model = agent.model, thinking = agent.thinkingLevel?.rawValue
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            var snapshot = PiSessionPreview.file(sessionID: sessionID, cwd: cwd, sessionsRoot: root)
+                .flatMap { PiSessionPreview.snapshot(file: $0, sessionID: sessionID, origins: origins) }
+                ?? PiSessionPreview.empty(sessionID: sessionID, model: model, thinking: thinking)
+            snapshot.preview = true
+            snapshot.supportedActions = []
+            self?.queue.async { completion(.result(.snapshot(value: snapshot))) }
+        }
+    }
+
     static func startProblemSnapshot(_ problem: NativeStartProblem, piSessionID: String) -> NativeThreadSnapshot {
         NativeThreadSnapshot(piSessionID: piSessionID, generation: startProblemGeneration, revision: 0, running: false,
                              supportedActions: [], dialogsSupported: false, dialogs: [], messages: [], provisional: [],
@@ -2062,6 +2085,7 @@ public final class SessionServer: @unchecked Sendable {
             let olderClient = !client.clientCapabilities.contains(RemoteProtocol.nativeQueueCapability)
             dispatchNativeThread(agentID: agentID, request: request, requestBytes: line.count, olderClient: olderClient,
                                  startupDialogs: client.clientCapabilities.contains(RemoteProtocol.nativeStartupDialogsCapability),
+                                 previews: client.clientCapabilities.contains(RemoteProtocol.nativeThreadPreviewCapability),
                                  transportAuthorization: { [weak self, weak client] in
                                      guard let self, let client else { return false }
                                      return client.authenticated && self.clients[client.fd] === client
