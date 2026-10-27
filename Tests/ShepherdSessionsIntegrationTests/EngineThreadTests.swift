@@ -241,6 +241,27 @@ struct EngineThreadTests {
         try await eventually("the context figures to land") { try await pi.request(.snapshot()).snapshotValue?.stats?.contextTokens != nil }
     }
 
+    /// A resumed thread's saved images come from the real engine as references, not bytes: the snapshot names each with its
+    /// size, and a client fetches the same bytes pi saved (`get_messages` with `images: "refs"`, then `get_image`).
+    @Test func savedImagesAreNamedByReferenceAndFetchedFromTheRealEngine() async throws {
+        let engine = try #require(EngineSmoke.engine)
+        let png = ThreadImagesTests.png(side: 24, bytes: 300_000)
+        let time = "2026-10-01T00:00:01.000Z"
+        let pi = try await RealPi.launch(engine: engine, history: [
+            ["type": "message", "id": "u1", "parentId": NSNull(), "timestamp": time,
+             "message": ["role": "user", "content": [["type": "text", "text": "look"]], "timestamp": 1_790_000_000_000]],
+            ["type": "message", "id": "t1", "parentId": "u1", "timestamp": time,
+             "message": ["role": "toolResult", "toolCallId": "c1", "toolName": "render", "isError": false, "timestamp": 1_790_000_000_001,
+                         "content": [["type": "text", "text": "rendered"], ["type": "image", "mimeType": "image/png", "data": png.base64EncodedString()]]]],
+        ])
+        defer { pi.stop() }
+        let ready = try await pi.ready()
+        let s = try await pi.snapshot("the saved image named") { $0.messages.contains { $0.blocks.contains { $0.imageID != nil } } }
+        let ref = try #require(s.messages.flatMap(\.blocks).compactMap(\.image).first)
+        #expect(ref.width == 24 && ref.height == 24 && ref.byteCount == png.count, "\(ref)")
+        #expect(try await ThreadImagesTests.fetch(ref.id, from: pi.agent, session: ready.piSessionID).data == png)
+    }
+
     /// Stop on a streaming turn and a message queued behind it: the partial reply is kept as
     /// stopped, the host keeps the queue, and the thread takes the next turn.
     @Test func stoppingAStreamingTurnKeepsItsPartialReplyAndTheQueue() async throws {
@@ -400,7 +421,8 @@ final class RealPi: @unchecked Sendable {
 
         """
 
-    static func launch(engine: BundledPiEngine, extensions: [String] = []) async throws -> RealPi {
+    /// `history`: session entries (`{"type":"message",...}`) saved after the header, as a resumed thread's.
+    static func launch(engine: BundledPiEngine, extensions: [String] = [], history: [[String: Any]] = []) async throws -> RealPi {
         let directory = try makeScratchDirectory("real-pi")
         let setup = PiSetup(engine: .bundled(engine), home: directory.appendingPathComponent("support/pi"),
                             userHome: directory.appendingPathComponent("home").path)
@@ -451,7 +473,8 @@ final class RealPi: @unchecked Sendable {
             let header: [String: Any] = ["type": "session", "version": 3, "id": sessionID, "timestamp": "2026-10-01T00:00:00.000Z",
                                          "cwd": PiHome.canonical(project.path)]
             let sessionFile = folder.appendingPathComponent("2026-10-01T00-00-00-000Z_\(sessionID).jsonl")
-            try (JSONSerialization.data(withJSONObject: header, options: [.sortedKeys]) + Data("\n".utf8)).write(to: sessionFile)
+            try ([header] + history).map { try JSONSerialization.data(withJSONObject: $0, options: [.sortedKeys]) + Data("\n".utf8) }
+                .reduce(Data(), +).write(to: sessionFile)
             let line = try PiLaunch.agent(home: home, cwd: project.path, sessionID: sessionID, model: "fixture/fixture", thinking: nil,
                                           extensions: [fixture.path] + extensions)
             let session = try await host.server.createSession(params: CreateSessionParams(

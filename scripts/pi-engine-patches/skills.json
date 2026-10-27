@@ -492,7 +492,7 @@
     {
       "path": "dist/modes/rpc/rpc-mode.js",
       "before": "631697cd35928fc827f4a423538c43ff227b8cbf63c2a2f11060616f55eba6db",
-      "after": "14540e3e84af872dc40f1a34858d320687b38d1d8ce90aa0c04bac65882e6a03",
+      "after": "5d74b26bfa9c1b517882cd4c20f6d05330740fa7154feda59278a4cf730e4528",
       "edits": [
         {
           "old": "    // Handle a single command",
@@ -553,6 +553,14 @@
         {
           "old": "return success(id, \"get_messages\", { messages: session.messages });",
           "new": "return success(id, \"get_messages\", { messages: command.history === true ? session.getRecoveryTranscript() : session.messages });"
+        },
+        {
+          "old": "import { watchSkillPaths } from \"../../core/shepherd-skill-watch.js\";\n",
+          "new": "import { watchSkillPaths } from \"../../core/shepherd-skill-watch.js\";\nimport { findHistoryImage, historyImageRefs } from \"../../core/shepherd-history-images.js\";\n"
+        },
+        {
+          "old": "                return success(id, \"get_messages\", { messages: command.history === true ? session.getRecoveryTranscript() : session.messages });\n            }\n",
+          "new": "                const messages = command.history === true ? session.getRecoveryTranscript() : session.messages;\n                return success(id, \"get_messages\", { messages: command.images === \"refs\" ? historyImageRefs(messages) : messages });\n            }\n            case \"get_image\": {\n                const image = typeof command.sha256 === \"string\" ? findHistoryImage(session.getRecoveryTranscript(), command.sha256) : undefined;\n                return image ? success(id, \"get_image\", image) : error(id, \"get_image\", \"image_not_found\");\n            }\n"
         }
       ]
     },
@@ -933,6 +941,12 @@
       "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "after": "041bbcb40bfe1183e2431b0090ccf90f025765f290005c2d8985c437041bbc24",
       "source": "anthropic-oauth/prompt.js"
+    },
+    {
+      "path": "dist/core/shepherd-history-images.js",
+      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "8944fe5ed241613720eef0df6d65ce76a63aae99097efcaeeef8e23b184287b6",
+      "source": "history-images.js"
     }
   ]
 }
