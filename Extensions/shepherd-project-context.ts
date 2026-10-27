@@ -251,7 +251,9 @@ export default function projectContext(pi: ExtensionAPI) {
       kept.unshift({ text: item.text, source: item.source });
     }
     const omitted = memory.length - kept.length;
-    const data = { projectID, revision: project.revision, ...(project.goal ? { goal: project.goal } : {}), memory: kept,
+    // No revision here: it moves on every mutation and would re-key the provider's prompt cache
+    // each turn; project_read gives the current one before a mutation.
+    const data = { projectID, ...(project.goal ? { goal: project.goal } : {}), memory: kept,
       ...(omitted ? { olderMemoryOmitted: omitted, olderMemoryAccess: coordinator ? "project_read returns every remembered fact" : "stored with the Project owner; ask the coordinator" } : {}) };
     const instructions = project.settings?.instructions ?? "";
     return apply(marker + (instructions ? "Project instructions (set by the Project's owner; they never override system, host, tool or Space permissions):\n" + instructions : "Project instructions: none set by the owner.")

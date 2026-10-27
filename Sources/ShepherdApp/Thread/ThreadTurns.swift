@@ -221,6 +221,8 @@ struct AgentTurn: View, Equatable {
     var body: some View {
         let _ = SHRenderProbe.tick("thread.agentTurn")
         let entering = (shown.appeared || arriving) && settled
+        // Found once per render, not once per activity item (a walk of every call).
+        let planCallID = planCallID
         VStack(alignment: .leading, spacing: projectCards != nil || workerStyle != nil ? SHLeadMetrics.turnGap : AppLayout.turnItemSpacing) {
             ForEach(presentation.items) { item in
                 // Activity lines make their own entrances as they stream in. Live thinking
@@ -229,9 +231,9 @@ struct AgentTurn: View, Equatable {
                 case .activity(_, let bursts):
                     ActivityLinesView(bursts: bursts, review: review, entering: entering, cards: projectCards, planCallID: planCallID).equatable()
                 case .thinking(_, _, _, _, true, _):
-                    itemView(item)
+                    itemView(item, planCallID: planCallID)
                 default:
-                    itemView(item).shArrival(entering, Self.entrance(item), edge: .bottom)
+                    itemView(item, planCallID: planCallID).shArrival(entering, Self.entrance(item), edge: .bottom)
                 }
             }
             // Between tools the turn ends in "Thinking…", which passes from the thread's tail into
@@ -273,7 +275,7 @@ struct AgentTurn: View, Equatable {
         return .content
     }
 
-    @ViewBuilder private func itemView(_ item: NativeTurnPresentation.Item) -> some View {
+    @ViewBuilder private func itemView(_ item: NativeTurnPresentation.Item, planCallID: String?) -> some View {
         switch item {
         case .thinking(let id, _, let blocks, let seconds, let live, let since):
             ThinkingRow(seconds: seconds, blocks: blocks, live: live, since: since, isExpanded: openThinking.contains(id)) {
@@ -294,7 +296,8 @@ struct AgentTurn: View, Equatable {
             // inspector, whose ‹ › browse the rest. Adjacent, they sit together as activity
             // lines do.
             VStack(alignment: .leading, spacing: SH.Space.xxs) {
-                ForEach(lines, id: \.title) { line in
+                // By position: two lines of one turn can share a title ("Started 1 subagent" twice).
+                ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
                     SHSubagentRecordLine(title: line.title, meta: line.meta, action: openFirstRun)
                 }
             }

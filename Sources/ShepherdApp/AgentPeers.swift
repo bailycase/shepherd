@@ -52,12 +52,13 @@ extension ShepherdViewModel {
             }
             // The target's panes extension adds report-only context or sends a user task.
             let framed = AgentMessageFraming.framed(from: sender.name, text)
-            if server.pushMessage(toAgent: target.id, text: framed, delivery: delivery) {
-                respond(.ok)
-            } else {
-                respond(.failed(code: "not_running", message: "\(target.name) has no live Shepherd connection, or message dispatch failed"))
+            Task { @MainActor in
+                if await server.pushMessage(toAgent: target.id, text: framed, delivery: delivery) {
+                    respond(.ok)
+                } else {
+                    respond(.failed(code: "not_running", message: "\(target.name) has no live Shepherd connection, or message dispatch failed"))
+                }
             }
-            return
 
         case .delete(_, let targetAgentID, let requestID):
             guard targetAgentID != sender.id else {
@@ -108,7 +109,7 @@ extension ShepherdViewModel {
             let config = NewAgentConfig(
                 spaceID: spaceID,
                 workingDirectory: expanded,
-                model: settings.agentDefaults.model,
+                model: settings.defaultModel(piHome: server.pi.home),
                 thinking: settings.defaultThinking,
                 initialPrompt: prompt
             )

@@ -101,7 +101,7 @@ extension ShepherdViewModel {
         guard let project = model.chosenProject, let space = state.spaces.first(where: { $0.id == project.id }) else {
             throw DesignReferenceFailure("That space is gone.")
         }
-        var config = NewAgentConfig(spaceID: space.id, workingDirectory: space.path, model: settings.agentDefaults.model,
+        var config = NewAgentConfig(spaceID: space.id, workingDirectory: space.path, model: settings.defaultModel(piHome: server.pi.home),
                                     thinking: settings.defaultThinking, initialPrompt: nil)
         config.initialName = "Implement " + piece
         if project.isRepo {

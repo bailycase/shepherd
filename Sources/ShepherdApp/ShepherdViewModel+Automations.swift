@@ -136,7 +136,7 @@ extension ShepherdViewModel {
         let config = NewAgentConfig(
             spaceID: spaceID,
             workingDirectory: cwd,
-            model: settings.agentDefaults.model,
+            model: settings.defaultModel(piHome: server.pi.home),
             thinking: settings.defaultThinking,
             initialPrompt: automation.prompt,
             isAutomation: true
@@ -204,7 +204,7 @@ extension ShepherdViewModel {
         }
         stopAutomation(id)
         Task { @MainActor in
-            try? await server.removeAutomation(id)
+            do { try await server.removeAutomation(id) } catch { remoteActionError = "Couldn’t delete the automation: \(error)" }
             adoptCanonical()
         }
     }

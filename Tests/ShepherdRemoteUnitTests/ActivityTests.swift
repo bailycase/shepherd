@@ -56,6 +56,7 @@ struct ActivityTests {
         ("npm run build -- --prod", "npm run build"),
         ("python -m pytest tests/", "python -m pytest"),
         ("ls -la", "ls"),
+        ("paste -sd , files.txt", "paste"),
     ])
     func aCommandsHeadNamesTheToolThatDecidedIt(command: String, head: String) {
         #expect(nativeCommandHead(command) == head)

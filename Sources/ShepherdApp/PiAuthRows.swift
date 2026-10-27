@@ -138,6 +138,23 @@ struct PiSignInPage: Equatable {
 /// What pi's words say about sign-ins: the provider a refresh failed for, and the provider a pi
 /// that can't start needs.
 enum PiAuthText {
+    /// The model a start refused as unknown (`Error: Model "cpa/gpt-6-astra" not found. Use --list-models`).
+    static func modelNotFound(in lines: [String]) -> String? {
+        for line in lines {
+            guard let match = line.range(of: #"Model "([^"]+)" not found"#, options: .regularExpression) else { continue }
+            let quoted = line[match].split(separator: "\"")
+            if quoted.count >= 2 { return String(quoted[1]) }
+        }
+        return nil
+    }
+
+    /// A turn's failure that means the provider's login no longer works: a refresh token that
+    /// rotated elsewhere (`invalid_grant`), a revoked or expired token.
+    static func isSignInFailure(_ message: String) -> Bool {
+        expiredProvider(in: message) != nil
+            || message.range(of: #"invalid_grant|token (?:has been )?(?:revoked|expired)|refresh token"#, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
     /// The provider's limit, not a fault: a rate limit (as the thread classifies it), or a
     /// subscription's usage limit or quota, which pi doesn't retry.
     static func isLimit(_ message: String) -> Bool {
@@ -153,15 +170,15 @@ enum PiAuthText {
         return text.split(separator: " ").last.map(String.init)
     }
 
-    /// The provider a not-signed-in start names ("No API key found for anthropic."), else the
-    /// agent's model's provider, else the default model's; nil when none says.
+    /// The provider a not-signed-in start names ("No API key found for anthropic.", `Model "cpa/x"
+    /// not found`), else the agent's model's provider, else the default model's; nil when none says.
     static func missingProvider(lines: [String], model: String?, defaultModel: String?) -> String? {
         for line in lines {
             guard let range = line.range(of: "No API key found for ") else { continue }
             let rest = line[range.upperBound...].prefix { !$0.isWhitespace && $0 != "." }
             if !rest.isEmpty, rest != "the" { return String(rest) }
         }
-        for model in [model, defaultModel].compactMap({ $0 }) {
+        for model in [modelNotFound(in: lines), model, defaultModel].compactMap({ $0 }) {
             if let slash = model.firstIndex(of: "/"), slash != model.startIndex { return String(model[..<slash]) }
         }
         return nil

@@ -71,4 +71,15 @@ struct ChangesPresentationTests {
         #expect(changesTurn(forMessageAt: 42, in: [turn])?.id == turn.id)
         #expect(changesTurn(forMessageAt: 41, in: [turn]) == nil)
     }
+
+    /// The thread's row loop reads one lookup instead of scanning the record per reply, and the
+    /// last recorded turn for a message still wins, as `changesTurn(forMessageAt:in:)` has it.
+    @Test func recordedTurnsByMessageKeepTheLastRecordedForAStamp() {
+        let first = ChangesTurn(messageTimestamp: 42, startedAt: 1, state: .ready)
+        let again = ChangesTurn(messageTimestamp: 42, startedAt: 2, state: .ready)
+        let unstamped = ChangesTurn(startedAt: 3, state: .ready)
+        let byMessage = changesTurnsByMessage([first, again, unstamped])
+        #expect(byMessage[42]?.id == again.id && byMessage[42]?.id == changesTurn(forMessageAt: 42, in: [first, again])?.id)
+        #expect(byMessage.count == 1 && changesTurnsByMessage(nil).isEmpty)
+    }
 }

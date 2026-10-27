@@ -160,6 +160,25 @@ struct BrowserTests {
         #expect(log.lines.isEmpty && log.warnings == 0 && log.network == 0)
     }
 
+    /// The shim posts lines in batches; one batch is one mutation, trimmed once, and a batch past
+    /// the cap keeps its newest lines.
+    @MainActor @Test func aBatchOfConsoleLinesLandsAsOneAppend() {
+        let at = Date(timeIntervalSince1970: 0)
+        let batch = (0..<(BrowserConsoleLog.maxLines + 10)).map {
+            BrowserConsoleInput(level: $0 % 100 == 0 ? .error : .log, text: "\($0)")
+        }
+        #expect(BrowserScriptMessage(console: ["lines": [["level": "error", "text": "boom"], ["text": "hi"], ["level": "log"]]])
+                == .consoleLines([BrowserConsoleInput(level: .error, text: "boom"), BrowserConsoleInput(level: .log, text: "hi")]))
+        #expect(BrowserScriptMessage(console: ["lines": [["level": "log"]]]) == nil)
+        let log = BrowserConsoleLog()
+        log.append(.log, "old", at: at)
+        log.append(contentsOf: batch, at: at)
+        #expect(log.lines.count == BrowserConsoleLog.maxLines)
+        #expect(log.lines.first?.text == "10" && log.lines.last?.text == "\(BrowserConsoleLog.maxLines + 9)")
+        #expect(log.errorTotal == 6 && log.warnings == 6, "the dropped head still counts")
+        #expect(Set(log.lines.map(\.id)).count == log.lines.count)
+    }
+
     @MainActor @Test func anErrorLineDrawsAsAWarningRow() {
         let log = BrowserConsoleLog()
         log.append(.error, "boom", at: Date(timeIntervalSince1970: 0))

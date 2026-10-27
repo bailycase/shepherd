@@ -412,10 +412,12 @@ struct SidebarWordTests {
         #expect(AgentRow.statusWord(status) == word)
     }
 
-    /// A failed turn qualifies only a finished agent: the sidebar row, the palette's subtitle,
-    /// and an automation's row all read failed until the next turn starts.
+    /// A failed turn qualifies a finished agent, or one restored idle with the failure
+    /// remembered: the sidebar row, the palette's subtitle, and an automation's row all read
+    /// failed until the next turn starts.
     @Test(arguments: [
         (AgentStatus.done, "failed", AgentState.failed),
+        (.idle, "failed", .failed),
         (.working, "running", .running),
         (.blocked, "needs you", .attention),
     ])

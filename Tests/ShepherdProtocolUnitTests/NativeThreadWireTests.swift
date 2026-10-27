@@ -255,6 +255,17 @@ struct NativeThreadWireTests {
         #expect(try Self.snapshot(adding: ["initializing": true]).initializing == true)
     }
 
+    /// A snapshot from pi's saved session file says so; pi's own, and an older host's, do not.
+    @Test func previewIsExplicitAndAbsentFromOlderHosts() throws {
+        let older = try Wire.decode(NativeThreadSnapshot.self, Self.v1Snapshot)
+        #expect(older.preview == nil && !older.isPreview)
+        #expect(try Wire.object(older)["preview"] == nil)
+        let preview = try Self.snapshot(adding: ["preview": true])
+        #expect(preview.isPreview)
+        #expect(try Wire.object(preview)["preview"] as? Bool == true)
+        #expect(try Wire.roundTrip(preview) == preview)
+    }
+
     @Test func anOlderSnapshotHasNoServiceTierAndAnEmptyOfferStaysOnTheWire() throws {
         let older = try Wire.decode(NativeThreadSnapshot.self, Self.v1Snapshot)
         #expect(older.serviceTier == nil && older.serviceTiers == nil)

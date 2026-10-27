@@ -56,14 +56,17 @@ extension DesignBoardView {
         #endif
         let image = try await snapshot(width: boardSize.width * scale / max(backing, 1))
         guard image.width != width || image.height != height else { return image }
-        guard width > 0, height > 0,
-              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
-                                      space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw DesignBoardError.snapshotFailed }
-        context.interpolationQuality = .high
-        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-        guard let scaled = context.makeImage() else { throw DesignBoardError.snapshotFailed }
-        return scaled
+        guard width > 0, height > 0 else { throw DesignBoardError.snapshotFailed }
+        // Up to 64 MP of resampling: off the main actor (CGImage is immutable).
+        return try await Task.detached(priority: .userInitiated) {
+            guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                          space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw DesignBoardError.snapshotFailed }
+            context.interpolationQuality = .high
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            guard let scaled = context.makeImage() else { throw DesignBoardError.snapshotFailed }
+            return scaled
+        }.value
     }
 
     /// The board as PDF pages at 96 CSS px to the inch (print.md): a fixed board is one page at
@@ -84,7 +87,8 @@ extension DesignBoardView {
 
     private func fixedPDF() async throws -> Data {
         let page = try await webView.pdf(configuration: Self.pdfConfiguration(CGRect(origin: .zero, size: boardSize)))
-        return try DesignPDF.compose([DesignPDF.Page(source: page, size: boardSize, top: 0, background: nil)])
+        let size = boardSize
+        return try await Task.detached { try DesignPDF.compose([DesignPDF.Page(source: page, size: size, top: 0, background: nil)]) }.value
     }
 
     /// The whole document, laid out at its width, then cut into pages.
@@ -107,7 +111,8 @@ extension DesignBoardView {
             let data = try await webView.pdf(configuration: Self.pdfConfiguration(rect))
             pages.append(DesignPDF.Page(source: data, size: paper.size, top: slice.top, background: layout.background))
         }
-        return try DesignPDF.compose(pages)
+        let composed = pages
+        return try await Task.detached { try DesignPDF.compose(composed) }.value
     }
 
     /// Waits (a second at most) for the page to take the view's new height.
@@ -195,6 +200,11 @@ public enum DesignPDF {
         return data as Data
     }
 
+    /// `merge`, off the main actor.
+    public static func mergeDetached(_ documents: [Data]) async throws -> Data {
+        try await Task.detached { try merge(documents) }.value
+    }
+
     /// Several PDFs as one, page after page, each page as it was.
     public static func merge(_ documents: [Data]) throws -> Data {
         let data = NSMutableData()
@@ -236,6 +246,11 @@ public enum DesignPDF {
 
 /// Images as files.
 public enum DesignImageFile {
+    /// `png`, off the main actor: a full-size board PNG encode takes seconds.
+    public static func pngDetached(_ image: CGImage) async throws -> Data {
+        try await Task.detached(priority: .userInitiated) { try png(image) }.value
+    }
+
     /// `image` encoded as PNG.
     public static func png(_ image: CGImage) throws -> Data {
         let data = NSMutableData()

@@ -33,6 +33,15 @@ struct PiImportSheetState: Identifiable, Equatable {
     var missing: [Missing] = []
     /// Retry is copying the sign-ins again.
     var retrying = false
+    /// The default model that came over, which Shepherd's pi has no model for (its provider is one
+    /// an extension registers, switched off): a thread on it fails at start, so the sheet asks for
+    /// another, from `catalog`. Nil once one is chosen.
+    var unresolvedDefault: String?
+    /// What Shepherd's pi can start now (`PiModelCatalog`), for the default's menu.
+    var catalog: [String] = []
+    /// Copied logins the first launch found no longer work (a refresh token that rotated in the
+    /// terminal's pi), by provider, with the provider's reason: each needs signing in again.
+    var brokenLogins: [String: String] = [:]
 
     init(from: String?) {
         self.from = from
@@ -40,35 +49,78 @@ struct PiImportSheetState: Identifiable, Equatable {
 
     static func == (a: Self, b: Self) -> Bool {
         a.id == b.id && a.stage == b.stage && a.from == b.from && a.steps == b.steps && a.report == b.report && a.survey == b.survey
-            && a.missing == b.missing && a.retrying == b.retrying
+            && a.missing == b.missing && a.retrying == b.retrying && a.unresolvedDefault == b.unresolvedDefault && a.catalog == b.catalog
+            && a.brokenLogins == b.brokenLogins
     }
 
     // MARK: How it ends
 
     /// The stage a finished first copy shows; nil for no sheet at all (a new user already
-    /// signed in with nothing missing).
-    static func stage(report: YourPiImportReport, survey: YourPiSurvey, missing: [Missing]) -> Stage? {
+    /// signed in with nothing missing). `unresolvedDefault` (a default model Shepherd's pi can't
+    /// start) is something missing too.
+    static func stage(report: YourPiImportReport, survey: YourPiSurvey, missing: [Missing], unresolvedDefault: String? = nil) -> Stage? {
         if report.from == nil {
             return survey.canStartAgents && missing.isEmpty ? nil : .newUser
         }
         if report.signInsUnreadable != nil { return .failed }
-        return missing.isEmpty ? .done : .missing
+        return missing.isEmpty && unresolvedDefault == nil ? .done : .missing
     }
 
-    /// Providers the restored agents' and default `models` use that nothing in Shepherd's pi covers.
-    static func missing(survey: YourPiSurvey, models: [String]) -> [Missing] {
-        survey.missingSignIns(for: models).map { provider in
+    /// Providers the restored agents' and default `models` use that nothing in Shepherd's pi
+    /// covers, then the copied logins that no longer work (`broken`, by provider with its reason).
+    static func missing(survey: YourPiSurvey, models: [String], broken: [String: String] = [:]) -> [Missing] {
+        var rows = survey.missingSignIns(for: models).map { provider in
             let theirs = survey.logins.first { $0.provider == provider }?.yours
             return Missing(id: provider, detail: theirs == nil ? "Your pi isn’t signed in to it" : "Your pi’s sign-in couldn’t be copied")
         }
+        for provider in broken.keys.sorted() where !rows.contains(where: { $0.id == provider }) {
+            rows.append(Missing(id: provider, detail: "Your pi’s sign-in no longer works: \(broken[provider] ?? "")"))
+        }
+        return rows
     }
 
-    /// Whether `provider` is covered now (a sign-in landed, or a key in the environment).
+    /// The default `model` Shepherd's pi can't start: one not in its `catalog`. A catalog pi
+    /// couldn't give (empty) proves nothing, and neither does a model with no provider part.
+    static func unresolvedDefault(_ model: String?, catalog: [String]) -> String? {
+        guard let model, !catalog.isEmpty, model.contains("/"), !catalog.contains(model) else { return nil }
+        return model
+    }
+
+    /// Whether `provider` is covered now (a sign-in landed, or a key in the environment), and
+    /// not one whose copied login was found broken.
     func signedIn(_ provider: String) -> Bool {
-        !survey.missingSignIns(for: ["\(provider)/any"]).contains(provider)
+        brokenLogins[provider] == nil && !survey.missingSignIns(for: ["\(provider)/any"]).contains(provider)
     }
 
-    var allSignedIn: Bool { missing.allSatisfy { signedIn($0.id) } }
+    /// Done enables once every sign-in landed and the default model is one Shepherd's pi can start.
+    var allSignedIn: Bool { missing.allSatisfy { signedIn($0.id) } && unresolvedDefault == nil }
+
+    /// What the Something missing stage asks for, as its title and subtitle.
+    var missingTitle: String {
+        unresolvedDefault == nil ? Self.missingTitle(missing.count) : missing.isEmpty ? "Your default model needs you" : "Something’s missing"
+    }
+
+    var missingSubtitle: String {
+        unresolvedDefault == nil ? Self.missingSubtitle(missing.count)
+            : "Everything else came over. Shepherd’s copy of pi can’t start a thread on what’s listed here, so set it right before the first one."
+    }
+
+    /// "Shepherd’s pi has no provider cpa. Your extensions came over switched off; one of them may add it."
+    static func unresolvedDetail(_ model: String) -> String {
+        let provider = model.split(separator: "/", maxSplits: 1).first.map(String.init) ?? model
+        return "Shepherd’s pi has no provider \(provider). Your extensions came over switched off; one of them may add it."
+    }
+
+    /// What the copy passed over or couldn't read, one sentence each (the log has the same).
+    var problems: [String] { report.problems + report.skipped }
+
+    /// "10 things were passed over", "1 problem".
+    static func problemsTitle(problems: Int, skipped: Int) -> String {
+        var parts: [String] = []
+        if problems > 0 { parts.append(problems == 1 ? "1 file couldn’t be read" : "\(problems) files couldn’t be read") }
+        if skipped > 0 { parts.append(skipped == 1 ? "1 thing was passed over" : "\(skipped) things were passed over") }
+        return parts.joined(separator: " · ")
+    }
 
     // MARK: Rows
 
@@ -206,6 +258,9 @@ struct PiImportSheet: View {
     let retry: () -> Void
     let reviewExtensions: () -> Void
     let close: () -> Void
+    /// Another default model, picked from what Shepherd's pi can start (Something missing).
+    var chooseDefault: (String) -> Void = { _ in }
+    @State private var showsProblems = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -269,6 +324,7 @@ struct PiImportSheet: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            problems
         }
         .padding(.top, SH.Space.xl)
         .padding(.leading, SHPiSignInMetrics.sheetInset + SHPiSignInMetrics.sheetTile + SHPiSignInMetrics.bodyGap)
@@ -279,11 +335,71 @@ struct PiImportSheet: View {
         }
     }
 
+    /// What the copy passed over or couldn't read (skills of one name, a package never installed,
+    /// an unreadable file): a count that opens the sentences, so a green check never hides them.
+    @ViewBuilder private var problems: some View {
+        let problems = state.problems
+        if !problems.isEmpty {
+            VStack(alignment: .leading, spacing: SH.Space.s) {
+                Button {
+                    showsProblems.toggle()
+                } label: {
+                    HStack(spacing: SH.Space.s) {
+                        Image(systemName: "exclamationmark.circle").font(.shSans(SHPiSignInMetrics.smallPrintSize))
+                            .foregroundStyle(Color.sh.lanternText).accessibilityHidden(true)
+                        Text(PiImportSheetState.problemsTitle(problems: state.report.problems.count, skipped: state.report.skipped.count))
+                            .font(.shSans(SHPiSignInMetrics.smallPrintSize)).foregroundStyle(Color.sh.textSecondary)
+                        Image(systemName: showsProblems ? "chevron.down" : "chevron.right")
+                            .font(.shSans(SHPiSignInMetrics.smallPrintSize, .semibold)).foregroundStyle(Color.sh.textTertiary).accessibilityHidden(true)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(showsProblems ? "Hide what was passed over" : "Show what was passed over")
+                if showsProblems {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: SH.Space.xs) {
+                            ForEach(Array(problems.enumerated()), id: \.offset) { _, sentence in
+                                Text(sentence).font(.shSans(SHPiSignInMetrics.smallPrintSize)).foregroundStyle(Color.sh.textTertiary)
+                                    .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: AppLayout.importProblemsMaxHeight)
+                    .shTransition(.disclosure)
+                }
+            }
+            .padding(.horizontal, SH.Space.xxs)
+            .shAnimation(.disclosure, value: showsProblems)
+        }
+    }
+
     @ViewBuilder private var missing: some View {
-        SHSheetHeader(PiImportSheetState.missingTitle(state.missing.count),
-                      subtitle: PiImportSheetState.missingSubtitle(state.missing.count), leading: .glyph("key", .attention))
+        SHSheetHeader(state.missingTitle, subtitle: state.missingSubtitle, leading: .glyph("key", .attention))
         VStack(alignment: .leading, spacing: SH.Space.l) {
             SHSheetCard {
+                if let model = state.unresolvedDefault {
+                    // The default model nothing can start, and the models that can take its place.
+                    HStack(spacing: SHPiSignInMetrics.rowGap) {
+                        VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                            Text("Default model · \(NativeModelChoices.shortName(model))")
+                                .font(.shSans(SHPiSignInMetrics.nameSize, .medium)).foregroundStyle(Color.sh.textPrimary)
+                            Text(PiImportSheetState.unresolvedDetail(model))
+                                .font(.shSans(SHPiSignInMetrics.stepDetailSize)).foregroundStyle(Color.sh.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        SHPopupMenu("Choose model", minWidth: AppLayout.importModelMenuWidth) {
+                            ForEach(state.catalog, id: \.self) { id in
+                                Button(id) { chooseDefault(id) }
+                            }
+                        }
+                        .accessibilityLabel("Choose another default model")
+                    }
+                    .padding(.vertical, SHPiSignInMetrics.rowVertical)
+                    .padding(.horizontal, SHPiSignInMetrics.rowSides)
+                }
                 ForEach(state.missing) { item in
                     SHImportSignInRow(PiSignInCatalog.name(item.id), badge: PiSignInCatalog.badge(item.id), detail: item.detail,
                                       signedIn: state.signedIn(item.id)) { signIn(item.id, false) }
@@ -294,6 +410,7 @@ struct PiImportSheet: View {
                 SHImportSummary(state.summary, size: SHPiSignInMetrics.smallPrintSize, quiet: true)
             }
             .padding(.horizontal, SH.Space.xxs)
+            problems
         }
         .padding(.top, SH.Space.xl)
         .padding(.horizontal, SHPiSignInMetrics.sheetInset)

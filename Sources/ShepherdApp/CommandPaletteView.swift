@@ -48,6 +48,8 @@ struct PaletteCard: View {
     @State private var highlight: PaletteHighlight
     @State private var contentRows: [PaletteItem] = []
     @State private var contentSearchTask: Task<Void, Never>?
+    /// A transcript search is pending or running: the empty list says so instead of "No matches".
+    @State private var searching = false
     /// Filtered once per query, scope, items or transcript matches; hover and the arrow keys
     /// only move the highlight.
     @State private var results = PaletteResults()
@@ -134,7 +136,7 @@ struct PaletteCard: View {
                             .shTransition(.list)
                     }
                     if results.rows.isEmpty {
-                        Text(query.isEmpty ? "Nothing here yet" : "No matches")
+                        Text(Self.emptyText(query: query, searching: searching))
                             .font(Font.sh(.caption))
                             .foregroundStyle(Color.sh.textTertiary)
                             .frame(maxWidth: .infinity, minHeight: SHPaletteMetrics.sectionHeight * 2)
@@ -165,16 +167,26 @@ struct PaletteCard: View {
     private func scheduleContentSearch() {
         contentSearchTask?.cancel()
         contentRows = []
+        searching = false
         let trimmed = query.trimmingCharacters(in: .whitespaces)
         guard let contentSearch, trimmed.count >= PaletteContentSearch.minQueryLength else { return }
         let existing = Set(PaletteSearch.filter(items, query: trimmed).filter { $0.section == .agents }.map(\.id))
+        searching = true
         contentSearchTask = Task {
+            defer { if !Task.isCancelled { searching = false } }
             try? await Task.sleep(for: .milliseconds(250))
             guard !Task.isCancelled else { return }
             let rows = await contentSearch(trimmed, existing)
             guard !Task.isCancelled else { return }
             contentRows = rows
         }
+    }
+
+    /// "Nothing here yet" with no query, "Searching conversations…" while transcripts are still
+    /// being read, "No matches" once everything has answered.
+    static func emptyText(query: String, searching: Bool) -> String {
+        if query.isEmpty { return "Nothing here yet" }
+        return searching ? "Searching conversations…" : "No matches"
     }
 }
 

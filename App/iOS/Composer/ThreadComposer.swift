@@ -9,7 +9,7 @@ import ShepherdRemote
 /// slash-command list while the draft is "/…", and the field.
 ///
 /// - **iPhone** (MobileThread, MobileQueue boards): the paperclip beside a capsule field with
-///   Send inside it. While the field is in use, the commands, model and thinking chips sit above.
+///   Send inside it. The commands, model, thinking and speed chips remain visible above.
 /// - **iPad** (iPadThread, iPadQueue, iPadPortrait boards): the Mac's card, the field over one
 ///   row of the paperclip, "/ commands", the model and thinking chips, and Send.
 /// - **A design's chat on iPad** (iPadDesign): the same card at the compact size, with no "/"
@@ -24,6 +24,7 @@ struct ThreadComposer: View {
     @Environment(ThreadStores.self) private var threads
     @Environment(MobileHosts.self) private var hosts
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(MobileNavigator.self) private var navigator
     /// A design's chat (iPadDesign): the card without "/", the model's short name (DesignPad/).
     @Environment(\.composerDesignChat) private var designChat
@@ -41,6 +42,10 @@ struct ThreadComposer: View {
         VStack(alignment: .leading, spacing: MobileLayout.composerSpacing) {
             if let notice = store.notice {
                 banner(notice)
+            }
+            if state.pendingImports > 0 { banner("Adding images…") }
+            if store.running, store.hasDraft || !state.attachments.isEmpty {
+                banner("Hold Send to steer now · ⌘↩ Steer now")
             }
             if let error = state.attachmentError {
                 banner(error, failed: true)
@@ -120,7 +125,19 @@ struct ThreadComposer: View {
         .shAnimation(.content, value: store.dialogs.isEmpty)
         .shAnimation(.list, value: store.tray == nil)
         .shAnimation(.list, value: store.goalID)
-        .onChange(of: store.sentCount) { _, _ in focused = false }
+        .onAppear { state.restoreDraft(in: store) }
+        .task(id: store.draft) {
+            do { try await Task.sleep(for: ComposerState.draftSaveDelay) } catch { return }
+            state.saveDraft(store.draft)
+        }
+        .onDisappear { state.saveDraft(store.draft) }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { state.saveDraft(store.draft) }
+        }
+        .onChange(of: store.sentCount) { _, _ in
+            focused = false
+            state.saveDraft(store.draft)
+        }
         .onChange(of: focused) { _, focused in
             if focused { navigator.focusedComposer = ref } else if navigator.focusedComposer == ref { navigator.focusedComposer = nil }
         }
@@ -156,8 +173,7 @@ struct ThreadComposer: View {
     // MARK: Phone
 
     @ViewBuilder private func phone(store: NativeThreadStore, state: ComposerState, host: MobileHost?, live: Bool) -> some View {
-        let inUse = focused || !store.draft.isEmpty || !state.attachments.isEmpty
-        if inUse, hasChips(store, state: state) {
+        if hasChips(store, state: state) {
             ScrollView(.horizontal) {
                 HStack(spacing: SH.Space.xxs) { chips(store: store, state: state, live: live) }
                     .buttonStyle(.sh(.ghost, size: .m))
@@ -267,17 +283,23 @@ struct ThreadComposer: View {
 
     /// Send: queues the message while pi works, sends at once while it is idle. Held while pi
     /// works, it offers both ways to send (Steer now stops pi, where the host can). ⌘↩ on a
-    /// hardware keyboard presses Send, so it queues. While pi works with nothing to send (no
+    /// hardware keyboard steers now, as on the Mac. While pi works with nothing to send (no
     /// words, no attachments) the same corner is Stop.
     @ViewBuilder private func sendButton(store: NativeThreadStore, state: ComposerState, live: Bool) -> some View {
         let running = store.running
-        if NativeSendChoice.stopsInPlaceOfSend(running: running, hasInput: store.hasDraft || !state.attachments.isEmpty) {
+        if NativeSendChoice.stopsInPlaceOfSend(running: running, hasInput: store.hasDraft || !state.attachments.isEmpty || state.pendingImports > 0) {
             SHComposerActionButton(.stop, enabled: live && store.supports("abort")) { Task { await store.abort() } }
                 .accessibilityLabel("Stop agent")
         } else {
-            let enabled = live && store.acceptsSend && (store.hasDraft || !state.attachments.isEmpty) && !store.busy
+            let enabled = live && store.acceptsSend && (store.hasDraft || !state.attachments.isEmpty) && !store.busy && state.pendingImports == 0
             SHComposerActionButton(.send, enabled: enabled) { Self.send(NativeSendChoice.wait.delivery, store: store, state: state) }
-                .keyboardShortcut(.return, modifiers: .command)
+                .background {
+                    Button("Steer now · ⌘↩") { Self.send(NativeSendChoice.now.delivery, store: store, state: state) }
+                        .keyboardShortcut(.return, modifiers: .command)
+                        .disabled(!enabled)
+                        .hidden()
+                        .accessibilityHidden(true)
+                }
                 .contextMenu {
                     if running, enabled {
                         ForEach(NativeSendChoice.allCases) { choice in
@@ -306,11 +328,14 @@ struct ThreadComposer: View {
 
     @MainActor @discardableResult
     static func send(_ delivery: NativeThreadDelivery, store: NativeThreadStore, state: ComposerState) -> Task<Void, Never> {
+        guard state.pendingImports == 0 else { return Task {} }
         let images = state.attachments.map(\.image)
         let submitted = state.attachments.map(\.id)
         return Task {
             if await store.send(images: images, delivery: delivery) {
+                state.saveDraft(store.draft)
                 for id in submitted { state.remove(id) }
+                if state.attachments.isEmpty { state.clearAttachments() }
             }
         }
     }

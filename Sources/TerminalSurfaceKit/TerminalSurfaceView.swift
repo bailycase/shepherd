@@ -4,7 +4,8 @@ import GhosttyTerminal
 import SwiftUI
 
 public struct TerminalSurfaceView: View {
-    @ObservedObject private var model: TerminalSurfaceModel
+    // A plain reference: the model publishes nothing SwiftUI reads; focus and rendering go through the bridges.
+    private let model: TerminalSurfaceModel
     private let isFocused: Bool
     private let isRendering: Bool
     @State private var attachmentID = UUID()

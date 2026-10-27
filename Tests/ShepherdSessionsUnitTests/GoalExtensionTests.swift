@@ -22,3 +22,22 @@ struct GoalExtensionTests {
         #expect(try String(contentsOf: installed, encoding: .utf8) == canonical)
     }
 }
+
+@Suite("Ask extension")
+struct AskExtensionTests {
+    @Test func theInstalledExtensionIsPrivateAndByteIdenticalToItsCanonicalSource() throws {
+        let directory = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let engine = PiEngine(command: ["/tmp/pi-engine"], packageDirectory: nil, version: nil, node: .onPath("node"))
+        let home = PiHome(directory: directory.appendingPathComponent("pi"), engine: engine)
+        try FileManager.default.createDirectory(at: home.directory, withIntermediateDirectories: true)
+        let installed = try AskExtension.install(in: home)
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let canonical = try String(contentsOf: root.appendingPathComponent("Extensions/shepherd-ask.ts"), encoding: .utf8)
+        #expect(AskExtension.environmentKey == "SHEPHERD_EXT_ASK")
+        #expect(AskExtension.path(in: home) == installed.path)
+        #expect(installed.lastPathComponent == "shepherd-ask.ts")
+        #expect(try posixPermissions(installed) == 0o600)
+        #expect(try String(contentsOf: installed, encoding: .utf8) == canonical)
+    }
+}

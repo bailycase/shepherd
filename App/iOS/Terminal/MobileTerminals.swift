@@ -45,6 +45,11 @@ final class MobileTerminals {
 
     @ObservationIgnored private var sessions: [SessionKey: MobileTerminalSession] = [:]
     @ObservationIgnored private var wired: [UUID: ObjectIdentifier] = [:]
+    private struct ActivityKey: Hashable {
+        let ref: AgentRef
+        let client: ObjectIdentifier
+    }
+    @ObservationIgnored private var activityTasks: [ActivityKey: (task: Task<Void, Never>, holders: Int)] = [:]
 
     func panel(_ ref: AgentRef) -> Panel { panels[ref] ?? Panel() }
 
@@ -64,6 +69,22 @@ final class MobileTerminals {
     /// (the thread or its terminal on screen). Hosts without `terminal.activity.v1` are not asked.
     func watchActivity(_ ref: AgentRef, client: RemoteHostClient) async {
         guard client.capabilities.contains(RemoteProtocol.terminalActivityCapability) else { return }
+        let key = ActivityKey(ref: ref, client: ObjectIdentifier(client))
+        if activityTasks[key] != nil {
+            activityTasks[key]?.holders += 1
+        } else {
+            activityTasks[key] = (Task { await self.pollActivity(ref, client: client) }, 1)
+        }
+        defer {
+            activityTasks[key]?.holders -= 1
+            if activityTasks[key]?.holders == 0 {
+                activityTasks.removeValue(forKey: key)?.task.cancel()
+            }
+        }
+        while !Task.isCancelled { try? await Task.sleep(for: .seconds(3600)) }
+    }
+
+    private func pollActivity(_ ref: AgentRef, client: RemoteHostClient) async {
         while !Task.isCancelled {
             if case .terminals(let rows)? = try? await client.agentQuery(agentID: ref.agent, query: .terminals), !Task.isCancelled {
                 let byPane = Dictionary(rows.map { ($0.paneID, $0) }, uniquingKeysWith: { first, _ in first })
@@ -142,6 +163,9 @@ final class MobileTerminals {
 
     func forget(host: UUID) {
         prune(host: host, live: [])
+        for key in activityTasks.keys where key.ref.host == host {
+            activityTasks.removeValue(forKey: key)?.task.cancel()
+        }
         wired[host] = nil
         for ref in panels.keys where ref.host == host { panels[ref] = nil }
         for ref in activity.keys where ref.host == host { activity[ref] = nil }
@@ -156,6 +180,7 @@ final class MobileTerminals {
     /// has: a current host opens a tab whatever it is told, an older one splits it to make one.
     /// The terminals show the new one once the host has made it; a failure shows their banner.
     func newTab(_ ref: AgentRef, layout: PaneNode, thread: PaneID?, client: RemoteHostClient) async {
+        problems[ref] = nil
         let anchor = TerminalPanel.newTabAnchor(in: layout, thread: thread)
         do {
             let opened = try await client.openPane(agentID: ref.agent, relativeTo: anchor.pane, axis: anchor.axis)
@@ -252,6 +277,8 @@ final class MobileTerminalSession {
             try? await Task.sleep(for: Self.detachGrace)
             guard !Task.isCancelled, let self, self.holds == 0 else { return }
             self.perform(self.link.want(false))
+            // Revisit uses the host's replay; never retain detached terminal buffers indefinitely.
+            if self.viewer == nil { self.surface = nil }
         }
     }
 

@@ -60,7 +60,11 @@ extension BrowserSession {
     private func run(_ request: BrowserRequest, origin: BrowserOrigin) async -> BrowserOutcome {
         guard !tabClosed else { return .failure(code: "cancelled", message: "The tab was closed.") }
         activeOperationEpoch = operationEpoch
-        defer { activeOperationEpoch = nil }
+        wakeParked()
+        defer {
+            activeOperationEpoch = nil
+            scheduleParkSleep()
+        }
         guard presence.permits(request) else {
             return .failure(code: "taken_over", message: BrowserAgentPresence.takenOverMessage)
         }
@@ -334,10 +338,17 @@ extension BrowserSession {
             }
         }
         await pause(100)
-        guard let image = await snapshotImage(rect: rect), let encoded = BrowserImageClamp.encode(image) else {
+        guard let image = await snapshotImage(rect: rect) else {
             return .fail(code: "unavailable", message: "The page could not be captured.")
         }
-        let picture = BrowserImage(data: encoded.data.base64EncodedString(), mimeType: "image/jpeg")
+        // Resizes and JPEG passes off the main actor; CGImage is immutable.
+        guard let (encoded, base64) = await Task.detached(priority: .userInitiated) { () -> (BrowserImageClamp.Encoded, String)? in
+            guard let encoded = BrowserImageClamp.encode(image) else { return nil }
+            return (encoded, encoded.data.base64EncodedString())
+        }.value else {
+            return .fail(code: "unavailable", message: "The page could not be captured.")
+        }
+        let picture = BrowserImage(data: base64, mimeType: "image/jpeg")
         return .ok("Screenshot of \(subject), \(encoded.width)×\(encoded.height).", image: picture)
     }
 

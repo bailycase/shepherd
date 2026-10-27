@@ -41,7 +41,7 @@ extension ShepherdViewModel {
                 } catch let error as RemoteHostClientError {
                     if case .rejected(_, let message) = error { self?.remoteActionError = message } else { self?.remoteActionError = error.description }
                 } catch {
-                    self?.remoteActionError = String(describing: error)
+                    self?.fail("Couldn’t start the browser", error)
                 }
             }
             return

@@ -24,6 +24,9 @@ final class StateStore: @unchecked Sendable {
     /// Moves with every committed state, so derived lookups know when to rebuild.
     private(set) var version: UInt64 = 0
     private var historyPrepared = false
+    /// The project-history connection `update` uses, opened once (schema and indexes included)
+    /// rather than per mutation. Confined, like the rest of the store, to the server queue.
+    private var history: ProjectHistoryStore?
     private var recoveryError: StateStoreError?
     private let committedLock = NSLock()
     private var committedState = ShepherdState()
@@ -50,9 +53,11 @@ final class StateStore: @unchecked Sendable {
         mutate(&candidate)
         let logicalChange = candidate.projects != state.projects || candidate.projectExecutions != state.projectExecutions
         if (!candidate.projects.isEmpty || !candidate.projectExecutions.isEmpty || !state.projects.isEmpty || !state.projectExecutions.isEmpty) && (!historyPrepared || logicalChange) {
-            candidate = try ProjectHistoryStore(beside: url).prepare(before: state, candidate: candidate)
+            let history = try self.history ?? ProjectHistoryStore(beside: url)
+            self.history = history
+            candidate = try history.prepare(before: state, candidate: candidate)
         }
-        try candidate.validate()
+        try candidate.validate(sizingProjects: !historyPrepared || logicalChange)
         try persist(candidate)
         commit(candidate)
         historyPrepared = true

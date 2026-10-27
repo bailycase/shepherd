@@ -40,6 +40,14 @@ AGENTS.md." (file names in mono; see the departures).
   `textTertiary` note of what it is for and its size, live as you type: "how you work · ~640
   tokens", "rules that win · ~90 tokens", "… · empty" (`InstructionsText.sizeNote`: about four
   characters a token, tens past a hundred).
+- **What came over from your pi** (an addition): while This Mac's open file is empty and unedited
+  and Shepherd's pi home holds the copy the first launch brought over (`AGENTS.md` or `CLAUDE.md`
+  for the first tab, `APPEND_SYSTEM.md` for the second), a note card between the tabs and the
+  editor (`SHNoteCard`, `square.and.arrow.down`): "**Your pi's AGENTS.md** came over into
+  Shepherd's pi (~/Library/…/pi/AGENTS.md), where every agent reads it. Shepherd's own AGENTS.md is
+  empty; use the copy here to edit it as Shepherd's, without doubling it." and **Use it here**, which
+  makes the copy the editor's draft (the instructions extension omits an identical copy, so saving
+  it never sends it twice). The page never says "0 characters" of a file the import filled.
 - **The editor**, 12pt under the tabs, filling the column and never under 180pt: a card with a 1px
   `lineStrong` line, radius `m`, on `bgWindow`.
   - Its header (`bgSunken`, a `lineSubtle` rule under it, 8pt × 12pt padding): the file's path in

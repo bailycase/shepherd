@@ -5,6 +5,9 @@ import ShepherdRemote
 extension EnvironmentValues {
     /// The thread's record of which errors show Details and which folded ones were opened.
     @Entry var turnErrorExpansion: NativeTurnErrorExpansion? = nil
+    /// Opens Settings ▸ Pi ▸ Sign-in for the thread's provider: what a card for a login that no
+    /// longer works offers (a local thread; a remote one has no sign-in here).
+    @Entry var turnErrorSignIn: (() -> Void)? = nil
 }
 
 /// A failed request in the thread (TurnErrors): the card, or the line it folds to. Details and
@@ -15,13 +18,19 @@ struct TurnErrorItem: View {
     var folded = false
     var retry: (() -> Void)? = nil
     @Environment(\.turnErrorExpansion) private var expansion
+    @Environment(\.turnErrorSignIn) private var signIn
 
     var body: some View {
         let id = error.id
         SHTurnError(SHTurnError.Content(error), folded: folded,
                     details: expansion.map { store in Binding { store.detailsOpen.contains(id) } set: { store.setDetails(id, open: $0) } },
                     unfolded: expansion.map { store in Binding { store.unfolded.contains(id) } set: { if $0 { store.unfold(id) } } },
-                    retry: retry)
+                    retry: retry, signIn: Self.offersSignIn(error) ? signIn : nil)
+    }
+
+    /// Whether the card offers Sign in again: the provider rejected the credential, or its refresh failed.
+    static func offersSignIn(_ error: NativeTurnError) -> Bool {
+        error.kind == .auth || PiAuthText.isSignInFailure(error.copyText)
     }
 }
 

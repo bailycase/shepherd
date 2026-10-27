@@ -46,6 +46,8 @@ final class ThreadTailGuard {
     private(set) var repairing = false
     /// Off, the thread is left as the stack leaves it (a test showing what it is for).
     var enabled = true
+    /// The `ThreadRowIndex` stamp `rowIDs` came from: the thread assigns the set only when it was rebuilt.
+    var rowIDsStamp = 0
     /// What the thread's last render knew, read when a check comes due.
     var rowIDs: Set<String> = [] {
         didSet {

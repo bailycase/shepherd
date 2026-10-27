@@ -169,8 +169,8 @@ title; a client of an older host that has not done so draws such a tab as one ta
   keycaps (`SHKeycap`) at the trailing end; hovering fills `bgHover`. Two-line rows are at least
   36pt, with a detail in 11pt `textTertiary` under the title; one-line rows are 30pt. A click
   anywhere else or esc closes it. In order:
-  - "New terminal in the worktree", detail "<space> on <host>" ("payments on This Mac"; `terminal`),
-    with the new-terminal chord (⌘D): "New tabs start in the thread's worktree on its host, so the
+  - "New terminal in the worktree" (a thread on its own checkout says "New terminal"), detail
+    "<space> on <host>" ("payments on This Mac"; `terminal`), with the new-terminal chord (⌘D): "New tabs start in the thread's worktree on its host, so the
     terminal sees what the agent sees."
   - For the tab (right-clicked, else the selected one): "Rename tab" (`pencil`), which asks for the
     name in a rename sheet (a blank name goes back to naming the tab after what it runs; the name

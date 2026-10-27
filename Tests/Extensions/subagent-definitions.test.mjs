@@ -52,8 +52,22 @@ test('the shared parser reports invalid fields, empty instructions and inherited
   const parsed = config.parseChildAgent(profile('review','defaultContext: fork\nthinking: high\n'),'/scratch/review.md');
   assert.equal(parsed.context,'fork'); assert.equal(parsed.thinking,'high'); assert.deepEqual(parsed.tools,['read']);
   assert.equal(parsed.prompt,'Instructions from disk.');
-
 });
+
+test('a child may have pi\'s search built-ins whenever its parent reads, and a profile names tools pi cannot provide', () => fixture((dir, owned) => {
+  // Shepherd threads run with pi's default four tools; grep/find/ls are pi's own and read no more than read does.
+  const parent = ['read', 'bash', 'edit', 'write'];
+  assert.deepEqual(config.bundledAgents.scout.tools.filter((t) => config.parentAllows(t, parent)), ['read', 'grep', 'find', 'ls']);
+  assert(!config.parentAllows('grep', ['bash', 'edit']), 'no read, no search');
+  assert(!config.parentAllows('bash', ['read']), 'the rest still intersects the parent');
+  assert.deepEqual(config.unavailableTools({ tools: ['read', 'grep', 'board_write', 'shepherd_parent_message', 'rg', 'tree'] }), ['rg', 'tree']);
+  assert.deepEqual(config.unavailableTools({ tools: ['rg'], extensions: ['/x/ext.ts'] }), [], 'an explicit extension may supply it');
+  assert.deepEqual(config.unavailableTools({}), []);
+  put(path.join(owned, 'odd.md'), profile('odd').replace('tools: [read]', 'tools: [read, rg]'));
+  const catalog = config.discoverChildAgents({ cwd: dir }, 'shepherd');
+  assert.deepEqual(catalog.agents.find((a) => a.name === 'odd').unavailableTools, ['rg']);
+  assert.equal(catalog.agents.find((a) => a.name === 'scout').unavailableTools, undefined);
+}));
 
 test('supported resource paths resolve tilde inside the isolated home',()=>fixture((dir,owned)=>{
   const oldHome=process.env.HOME; process.env.HOME=dir;

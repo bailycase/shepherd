@@ -1898,19 +1898,20 @@ search opens on its canvas (On iPad, below).
   (MobileDesignBoard): pinch zooms (the board lays out at its own size, scaled to fit, as on the
   Mac; above its own size it is its 100% drawing scaled up), a drag pans a zoomed
   board, a sideways swipe moves between boards, and pins sit on their elements' top-trailing
-  corners, found again by tid in the live board. A tapped pin raises its card, with "Design agent
-  is updating <board>" while the design agent works and hasn't answered it, else its answer.
+  corners, found again by tid in the live board. A tapped pin raises its conversation with
+  replies, Resolve, and a note when the element changed. Writes use the comments' revision.
   - **Comment** on, a tap names the element under it (the bridge's hit test) and the review's
     comment editor pins a comment there through `addComment`, as the Mac's canvas does.
   - **Ask the agent** opens the design agent's thread, and the board's view record (the board on
     screen, and the element being commented on) rides the next send (`design.context.v1`).
   - **Boards** is a sheet of every board; **Export** and Share render the board at zoom 1 as a
-    PNG (twice its size) or a PDF (print.md) and hand it to the share sheet.
+    PNG (twice its size) or a PDF (print.md) and hand it to the share sheet. The board actions
+    menu also offers a confirmed Duplicate, using the host's revision checks.
 - **New design** (not drawn) is a form: the brief, the host to make it on (only when several
   serve designs), and a design system; no project, since a design stands alone. The host makes
   it (`create`) and it opens.
-- **Not yet:** replies, Resolve and a detached pin's note on the phone; a board's interactive
-  Play and links; Tweak, moves and Duplicate; a design without an agent in Recents; Pencil
+- **Not yet:** a board's interactive Play and links; Tweak and moves;
+  a design without an agent in Recents; Pencil
   markup (iPad only, below); push notifications and Live Activities (they need the push relay).
 
 ### On iPad
@@ -1945,7 +1946,8 @@ through `capabilitiesChanged`.
   the composer of the thread another window shows, with "Use the attached boards as the spec.",
   and brings that window forward; the viewer sends it. Nothing the design's files say (its
   title, a board's name) goes into that message: the thread it goes to reads no fence.
-- **Export** shares the page's boards as PNGs through the share sheet, drawing any not drawn yet.
+- **Export** offers PNG or PDF through the share sheet, one file per board on the current page,
+  drawing any not drawn yet. PDF reuses the phone's exporter.
 
 ### Pencil markup
 

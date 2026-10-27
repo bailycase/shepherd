@@ -143,7 +143,7 @@ struct ExtensionIdentityTests {
 
         // The refused hellos displaced nothing: a push still reaches pi's own panes connection, and
         // its children connection is still open.
-        #expect(h.server.pushMessage(toAgent: a.agent.id, text: "ping"))
+        #expect(await h.server.pushMessage(toAgent: a.agent.id, text: "ping"))
         touch("speak-run-go", in: dirA)
         let after: After = try await file("speak-run-after.json", in: dirA)
         #expect(after.children == "open")
@@ -243,7 +243,7 @@ struct ExtensionIdentityTests {
         #expect(seen.panes.current.isEmpty && seen.peers.current.isEmpty && seen.notifies.current.isEmpty)
         #expect(seen.others.current.isEmpty && seen.automations.current == 0)
         #expect(seen.approvals.current == 0, "no dialog opened for a call another process made as the agent")
-        #expect(!h.server.pushMessage(toAgent: victim, text: "anyone?"), "no panes connection registered for the agent")
+        #expect(!(await h.server.pushMessage(toAgent: victim, text: "anyone?")), "no panes connection registered for the agent")
         #expect((try await b.request(.snapshot()).snapshotValue?.subagents ?? []).isEmpty, "the children it published were dropped")
 
         // A children connection is told when the user sends the thread a message while it works.

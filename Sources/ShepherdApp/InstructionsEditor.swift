@@ -22,11 +22,29 @@ struct InstructionsEditor: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let textView = InstructionsTextView(usingTextLayoutManager: false)
+        let textView = Self.makeTextView(project: project, plain: plain)
         textView.delegate = context.coordinator
+        textView.isEditable = context.environment.isEnabled
+        textView.setAccessibilityLabel(accessibilityLabel)
+        textView.string = text
+
+        let scroll = NSScrollView()
+        scroll.documentView = textView
+        scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
+        scroll.drawsBackground = false
+        scroll.borderType = .noBorder
+        context.coordinator.restyle(textView, saved: saved)
+        return scroll
+    }
+
+    /// The configured text view. Writing Tools is off: its "compose" affordance for an empty
+    /// view is a child window that outlived the editor and floated over later Settings pages.
+    static func makeTextView(project: Bool, plain: Bool) -> InstructionsTextView {
+        let textView = InstructionsTextView(usingTextLayoutManager: false)
+        textView.writingToolsBehavior = .none
         textView.isRichText = false
         textView.importsGraphics = false
-        textView.isEditable = context.environment.isEnabled
         textView.allowsUndo = true
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
@@ -47,17 +65,7 @@ struct InstructionsEditor: NSViewRepresentable {
         textView.autoresizingMask = [.width]
         textView.minSize = .zero
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        textView.setAccessibilityLabel(accessibilityLabel)
-        textView.string = text
-
-        let scroll = NSScrollView()
-        scroll.documentView = textView
-        scroll.hasVerticalScroller = true
-        scroll.autohidesScrollers = true
-        scroll.drawsBackground = false
-        scroll.borderType = .noBorder
-        context.coordinator.restyle(textView, saved: saved)
-        return scroll
+        return textView
     }
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
@@ -79,6 +87,9 @@ struct InstructionsEditor: NSViewRepresentable {
         /// What the text view was last styled for: a render that changes none of it leaves the
         /// text alone (and an input method's marked text with it).
         private var styled: (text: String, saved: String, scale: CGFloat)?
+
+        /// `**bold**` in a project file: compiled once, not per line per keystroke.
+        private static let bold = try! NSRegularExpression(pattern: "\\*\\*[^*]+\\*\\*")
 
         init(_ parent: InstructionsEditor) {
             self.parent = parent
@@ -107,9 +118,8 @@ struct InstructionsEditor: NSViewRepresentable {
                     guard NSMaxRange(range) <= storage.length else { continue }
                     storage.addAttributes(styles.attributes(for: span.role), range: range)
                 }
-                if parent.project, parent.markdown,
-                   let pattern = try? NSRegularExpression(pattern: "\\*\\*[^*]+\\*\\*") {
-                    for match in pattern.matches(in: line, range: NSRange(location: 0, length: (line as NSString).length)) {
+                if parent.project, parent.markdown, line.contains("**") {
+                    for match in Self.bold.matches(in: line, range: NSRange(location: 0, length: (line as NSString).length)) {
                         storage.addAttributes(styles.heading, range: NSRange(location: location + match.range.location, length: match.range.length))
                     }
                 }

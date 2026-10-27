@@ -374,7 +374,7 @@ extension ChangesService {
 
     /// Writes `paths` from `tree` into the working tree (`git restore --worktree`, through a
     /// throwaway index so the user's is never read for writing), with git's own filters and modes.
-    private func restoreFiles(_ repository: Repository, from tree: String, paths: [String]) throws {
+    func restoreFiles(_ repository: Repository, from tree: String, paths: [String]) throws {
         try FileManager.default.createDirectory(at: indexDirectory, withIntermediateDirectories: true)
         let scratch = indexDirectory.appendingPathComponent(repository.key + ".restore-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: scratch) }

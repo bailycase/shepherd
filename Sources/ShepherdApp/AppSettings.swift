@@ -62,6 +62,7 @@ final class AppSettings {
         static let mcpSameEverywhere = "shepherd.mcp.sameEverywhere"
         static let queueDelivery = "shepherd.agent.queueDelivery"
         static let trimToolOutput = "shepherd.agent.trimToolOutput"
+        static let notifyOnTurnFinished = "shepherd.agent.notifyOnTurnFinished"
         static let deferTools = "shepherd.agent.deferTools"
         static let codemode = "shepherd.agent.codemode"
         static let compactAtPercent = "shepherd.agent.compactAtPercent"
@@ -104,7 +105,7 @@ final class AppSettings {
 
         static let all = [
             terminalFontFamily, terminalFontSize, defaultModel,
-            defaultThinking, defaultServiceTier, goalCrossProviderEvaluation, namingModel, queueDelivery, trimToolOutput, deferTools, codemode, compactAtPercent, shellPath, editor,
+            defaultThinking, defaultServiceTier, goalCrossProviderEvaluation, namingModel, queueDelivery, trimToolOutput, notifyOnTurnFinished, deferTools, codemode, compactAtPercent, shellPath, editor,
             piPanesExtension, piReviewExtension, subagentDisplay, piNativeSubagents,
             piMCPExtension, piBrowserExtension, piDesignReferences,
             childConcurrency, childModel, childThinking, childContext,
@@ -245,6 +246,12 @@ final class AppSettings {
     /// Agents launched after a change follow it.
     var trimToolOutput: Bool {
         didSet { store.set(trimToolOutput, forKey: Key.trimToolOutput) }
+    }
+
+    /// Settings ▸ Agents ▸ Notify when a turn finishes: the one notification that can be muted.
+    /// Questions, failures and waiting stay on.
+    var notifyOnTurnFinished: Bool {
+        didSet { store.set(notifyOnTurnFinished, forKey: Key.notifyOnTurnFinished) }
     }
 
     /// Settings ▸ Agents ▸ Defer rarely used tools: agents get `SHEPHERD_DEFER_TOOLS=1` and pi's
@@ -531,6 +538,7 @@ final class AppSettings {
         queueDelivery = store.string(forKey: Key.queueDelivery)
             .flatMap(NativeQueueMode.init(rawValue:)) ?? Defaults.queueDelivery
         trimToolOutput = store.object(forKey: Key.trimToolOutput) as? Bool ?? true
+        notifyOnTurnFinished = store.object(forKey: Key.notifyOnTurnFinished) as? Bool ?? true
         deferTools = store.object(forKey: Key.deferTools) as? Bool ?? true
         codemode = store.object(forKey: Key.codemode) as? Bool ?? true
         compactAtPercent = (store.object(forKey: Key.compactAtPercent) as? Int).flatMap { PiCompactionThreshold.choices.contains($0) ? $0 : nil }
@@ -603,6 +611,14 @@ final class AppSettings {
         return AgentDefaults(model: trimmed.isEmpty ? nil : trimmed, thinking: defaultThinking)
     }
 
+    /// The one concrete model a thread, automation or Project conversation starts on when nothing
+    /// picked one: Settings ▸ Agents' own, else the default in Shepherd's pi home (`settings.json`).
+    /// Every launch path resolves "the agent's default" here, so pi never picks a provider on its
+    /// own; nil only when neither names one.
+    func defaultModel(piHome: URL) -> String? {
+        agentDefaults.model ?? PiConfig.defaultModel(in: piHome)
+    }
+
     /// argv for a plain (non-agent) pane. Login shell so the user's PATH and
     /// rc files apply, exactly as before this was configurable.
     var shellCommand: [String] {
@@ -632,6 +648,7 @@ final class AppSettings {
         mcpSameEverywhere = true
         queueDelivery = Defaults.queueDelivery
         trimToolOutput = true
+        notifyOnTurnFinished = true
         deferTools = true
         codemode = true
         compactAtPercent = nil
@@ -688,16 +705,22 @@ final class AppSettings {
     /// always present so a missing font is still shown (ghostty falls back
     /// silently, so the name must remain visible and correctable).
     static func monospacedFamilies(including current: String) -> [String] {
-        var families = NSFontManager.shared.availableFontFamilies.filter { family in
-            guard let font = NSFont(name: family, size: 12) else { return false }
+        // A descriptor query answers from the font registry. Making an `NSFont` for every
+        // installed family instead loaded each one into CoreText's cache for the rest of the
+        // launch: ~45 MB and half a second, the bulk of what Settings ▸ Terminal cost.
+        let traits: [CFString: Any] = [kCTFontSymbolicTrait: CTFontSymbolicTraits.traitMonoSpace.rawValue]
+        let query = CTFontDescriptorCreateWithAttributes([kCTFontTraitsAttribute: traits] as CFDictionary)
+        var families = Set<String>()
+        for descriptor in (CTFontDescriptorCreateMatchingFontDescriptors(query, nil) as? [CTFontDescriptor]) ?? [] {
+            guard let family = CTFontDescriptorCopyAttribute(descriptor, kCTFontFamilyNameAttribute) as? String,
+                  !families.contains(family) else { continue }
             // Symbols-only families (Nerd Font glyph packs) are fixed-pitch
             // but carry no Latin letters; a terminal set to one renders
             // fallback glyphs on a broken double-wide grid.
-            return font.isFixedPitch && font.coveredCharacterSet.contains("a")
+            if let covered = CTFontDescriptorCopyAttribute(descriptor, kCTFontCharacterSetAttribute) as? CharacterSet, !covered.contains("a") { continue }
+            families.insert(family)
         }
-        if !families.contains(current), current != systemFontFamily {
-            families.append(current)
-        }
+        if current != systemFontFamily { families.insert(current) }
         return families.sorted()
     }
 

@@ -12,6 +12,9 @@ enum HomeRoute: Hashable, Codable {
     case more
     /// Every recent thread, past Home's first few.
     case recents
+    /// Every thread in Working or Done, past Home's first few of each.
+    case working
+    case done
 }
 
 struct HomeDestination: View {
@@ -24,7 +27,9 @@ struct HomeDestination: View {
         case .automations: AutomationsScreen()
         // iPad's Hosts; the phone opens its Settings tab instead (`MobileNavigator.open`).
         case .more: if navigator.layout == .pad { PadHostsScreen() } else { HostsScreen() }
-        case .recents: RecentsScreen()
+        case .recents: RecentsScreen(group: .recents)
+        case .working: RecentsScreen(group: .working)
+        case .done: RecentsScreen(group: .done)
         }
     }
 }

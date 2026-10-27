@@ -723,6 +723,25 @@ final class PadDesignCanvas {
 
     // MARK: Export
 
+    /// PDF shares one file per board on the current page, matching PNG export's scope.
+    func exportPDFs(name: String) async -> [URL]? {
+        guard let index = snapshot?.index else { return nil }
+        do {
+            var urls: [URL] = []
+            for item in boards {
+                guard let path = DesignPath(item.id), let board = index.boards[path] else { continue }
+                let url = try await DesignRendering.shared.export(
+                    HostDesignRef(host: ref.host, design: ref.design), source: source, path: path, board: board,
+                    name: name + " - " + path.stem, format: .pdf)
+                urls.append(url)
+            }
+            return urls.isEmpty ? nil : urls
+        } catch {
+            problem = "Couldn't export the boards: \(Self.message(error))"
+            return nil
+        }
+    }
+
     /// The page's boards as this iPad draws them, as PNG files in a temporary folder of their
     /// own: what Export shares. A board off screen is drawn for it first.
     func exportPNGs(name: String) async -> [URL]? {

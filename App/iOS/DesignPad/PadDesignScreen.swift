@@ -24,6 +24,8 @@ struct PadDesignScreen: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showingChat = false
     @State private var exporting: [URL]?
+    @State private var choosingExport = false
+    @State private var exportBusy = false
 
     var body: some View {
         let designs = PadDesigns.of(hosts)
@@ -41,7 +43,7 @@ struct PadDesignScreen: View {
                                     swatches: canvas.systemSwatches,
                                     back: back,
                                     chat: wide ? nil : { showingChat = true },
-                                    export: canvas.canPresent ? { Task { exporting = await canvas.exportPNGs(name: name) } } : nil)
+                                    export: canvas.canPresent && !exportBusy ? { choosingExport = true } : nil)
                     PadDesignCanvasView(canvas: canvas, reply: wide ? nil : agent,
                                         markupAvailable: hosts.host(ref.host)?.supports(RemoteProtocol.designMarkupCapability) == true)
                         .onChange(of: wide, initial: true) { _, wide in canvas.column = !wide }
@@ -60,6 +62,17 @@ struct PadDesignScreen: View {
         .sheet(isPresented: $showingChat) {
             PadDesignChatPane(canvas: canvas, agent: agent, hostName: hosts.host(ref.host)?.name)
                 .presentationDetents([.large])
+        }
+        .confirmationDialog("Export all boards on this page", isPresented: $choosingExport, titleVisibility: .visible) {
+            ForEach(DesignExportFormat.allCases) { format in
+                Button(format.title) {
+                    exportBusy = true
+                    Task {
+                        defer { exportBusy = false }
+                        exporting = format == .png ? await canvas.exportPNGs(name: name) : await canvas.exportPDFs(name: name)
+                    }
+                }
+            }
         }
         .sheet(item: Binding(get: { exporting.map(PadDesignExport.init) }, set: { if $0 == nil { exporting = nil } })) { export in
             PadDesignShareSheet(items: export.urls)

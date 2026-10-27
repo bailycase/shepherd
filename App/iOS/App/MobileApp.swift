@@ -27,6 +27,7 @@ final class MobileApp {
         navigator = MobileNavigator()
         threads = ThreadStores()
         threads.hostName = { [weak hosts] ref in hosts?.host(ref.host)?.record.name }
+        threads.track(hosts)
         self.appearance = appearance
         self.push.onEnabledHostsChanged = { GoalNotifications.shared.pushEnabledHosts = $0 }
         GoalNotifications.shared.pushEnabledHosts = self.push.enabledHosts
@@ -42,6 +43,7 @@ final class MobileApp {
         HomeFeed.of(hosts).projectNative = { [projects] ref, request in
             try await projects.native(agent: ref, request: request)
         }
+        HomeFeed.of(hosts).openSnapshot = { [threads] ref in threads.liveSnapshot(for: ref) }
         glance = GlanceBridge(hosts: hosts, windows: windows)
     }
 
@@ -68,6 +70,7 @@ final class MobileApp {
         CommitStores.shared.forget(host: host)
         WorktreeOperations.shared.forget(host: host)
         TurnUndoStore.shared.forget(host: host)
+        ReviewRevertStore.shared.forget(host: host)
         HostDesignLibraries.of(hosts).forget(host)
         PadDesigns.forget(host: host, in: hosts)
         MobileDesigns.forget(host: host, in: hosts)

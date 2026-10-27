@@ -159,6 +159,53 @@ struct RemoteListenerTests {
         #expect(try await client.next() == .stateChanged(state: ShepherdState(spaces: [space])))
     }
 
+    /// A client reading many threads at once must not start a pi per idle agent: one that lists
+    /// `native.preview.v1` gets what pi's session file holds, marked as a preview with no actions,
+    /// and pi stays down; any other request, and any older client, starts pi as before.
+    @Test func aPreviewCapableClientReadsAnIdleThreadWithoutStartingPi() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        let demanded = Locked<[AgentID]>([])
+        r.server.onNativeThreadDemand = { id in demanded.withValue { $0.append(id) } }
+        let space = Fixture.space(path: r.host.dir.appendingPathComponent("work").path)
+        try FileManager.default.createDirectory(atPath: space.path, withIntermediateDirectories: true)
+        let idle = Fixture.agent(in: space, name: "idle", sessionID: SessionID())
+        try await r.host.seed(Fixture.workspace([idle], space: space))
+        // pi's file for the agent's session, as a previous run left it.
+        let folder = r.server.pi.sessionsRoot.appendingPathComponent(PiSessionFolder.name(forCwd: space.path), isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let sessionID = idle.agent.effectivePiSessionID
+        let lines = [
+            #"{"type":"session","version":3,"id":"\#(sessionID)","timestamp":"2026-09-24T00:00:00.000Z","cwd":"\#(space.path)"}"#,
+            #"{"type":"message","id":"e0","parentId":null,"timestamp":"2026-09-24T00:00:00.000Z","message":{"role":"user","content":"hello there","timestamp":1000}}"#,
+            #"{"type":"message","id":"e1","parentId":"e0","timestamp":"2026-09-24T00:00:01.000Z","message":{"role":"assistant","content":[{"type":"text","text":"hi"}],"provider":"anthropic","model":"claude-x","stopReason":"stop","timestamp":2000}}"#,
+        ]
+        try Data((lines.joined(separator: "\n") + "\n").utf8).write(to: folder.appendingPathComponent("2026-09-24T00-00-00-000Z_\(sessionID).jsonl"))
+
+        let previewing = try RawRemote(port: r.port)
+        try await previewing.hello(token: r.token, capabilities: RemoteProtocol.clientCapabilities + [RemoteProtocol.nativeThreadPreviewCapability])
+        try previewing.send(.nativeThread(id: 2, agentID: idle.agent.id, request: .snapshot()))
+        guard case .nativeThread(2, .snapshot(let preview)) = try await previewing.next() else { Issue.record("expected a preview snapshot"); return }
+        #expect(preview.isPreview && !preview.running && preview.supportedActions.isEmpty)
+        #expect(preview.piSessionID == sessionID)
+        #expect(preview.messages.map { $0.blocks.first?.text } == ["hello there", "hi"])
+        #expect(demanded.current.isEmpty, "a snapshot from a preview-capable client starts no pi")
+
+        // Acting on the thread starts pi, as before.
+        try previewing.send(.nativeThread(id: 3, agentID: idle.agent.id, request: .send(expectedSessionID: sessionID, generation: preview.generation,
+                                                                                         operationID: UUID(), text: "go", delivery: .followUp)))
+        guard case .error(3, let code, _) = try await previewing.next() else { Issue.record("expected starting"); return }
+        #expect(code == NativeThreadCode.starting)
+        #expect(demanded.current == [idle.agent.id])
+
+        // A client that does not list the capability is served as before: pi is demanded.
+        let older = try await r.raw()
+        try older.send(.nativeThread(id: 4, agentID: idle.agent.id, request: .snapshot()))
+        guard case .error(4, let olderCode, _) = try await older.next() else { Issue.record("expected starting"); return }
+        #expect(olderCode == NativeThreadCode.starting)
+        #expect(demanded.current == [idle.agent.id, idle.agent.id])
+    }
+
     /// A client from before minimal, xhigh and max decodes only Off to High, so its fetched and
     /// pushed state carries each agent's level clamped to those; a current client's keeps them.
     @Test func anOlderClientGetsTheWorkspaceWithLevelsItCanDecode() async throws {

@@ -19,6 +19,7 @@ struct ComposerAttachment: Identifiable {
 @Observable
 final class ComposerState {
     private(set) var attachments: [ComposerAttachment] = []
+    var pendingImports = 0
     /// Why an image was refused, above the composer until the next attach or send.
     var attachmentError: String?
     private(set) var rows: [NativeQueueStackRow] = []
@@ -39,8 +40,39 @@ final class ComposerState {
 
     /// How long a deleted message's Undo row stays.
     static let undoWindow: Duration = .seconds(5)
+    static let draftSaveDelay: Duration = .milliseconds(300)
 
     @ObservationIgnored private var forgotten = false
+    @ObservationIgnored private var restoredDraft = false
+    @ObservationIgnored private let ref: AgentRef?
+
+    init(ref: AgentRef? = nil) { self.ref = ref }
+
+    func restoreDraft(in store: NativeThreadStore) {
+        guard !forgotten, !restoredDraft, let ref else { return }
+        restoredDraft = true
+        let defaults = UserDefaults.standard
+        if store.draft.isEmpty {
+            store.draft = defaults.string(forKey: NativeDraftKey.text(host: ref.host, agent: ref.agent)) ?? ""
+        }
+        if attachments.isEmpty, defaults.bool(forKey: NativeDraftKey.images(host: ref.host, agent: ref.agent)) {
+            attachmentError = "Draft images weren't saved across app restarts. Attach them again before sending."
+        }
+    }
+
+    func saveDraft(_ text: String) {
+        guard !forgotten, restoredDraft, let ref else { return }
+        let key = NativeDraftKey.text(host: ref.host, agent: ref.agent)
+        if text.isEmpty { UserDefaults.standard.removeObject(forKey: key) }
+        else { UserDefaults.standard.set(text, forKey: key) }
+    }
+
+    private func saveImagePresence() {
+        guard !forgotten, let ref else { return }
+        let key = NativeDraftKey.images(host: ref.host, agent: ref.agent)
+        if attachments.isEmpty { UserDefaults.standard.removeObject(forKey: key) }
+        else { UserDefaults.standard.set(true, forKey: key) }
+    }
 
     func forget() {
         forgotten = true
@@ -63,6 +95,9 @@ final class ComposerState {
     /// Adds images the picker loaded, resized for the send off the main thread (a camera photo
     /// takes a moment to decode and re-encode); refused ones say why.
     func attach(_ loaded: [(data: Data, name: String)]) async {
+        guard !loaded.isEmpty else { return }
+        pendingImports += 1
+        defer { pendingImports -= 1 }
         attachmentError = nil
         for item in loaded {
             guard room > 0 else {
@@ -86,6 +121,7 @@ final class ComposerState {
                     return
                 }
                 attachments.append(ComposerAttachment(image: image, thumbnail: thumbnail.map { Image(uiImage: $0) }))
+                saveImagePresence()
             case .failure(let error):
                 attachmentError = String(describing: error)
             }
@@ -94,10 +130,12 @@ final class ComposerState {
 
     func remove(_ id: UUID) {
         attachments.removeAll { $0.id == id }
+        saveImagePresence()
     }
 
     func clearAttachments() {
         if !attachments.isEmpty { attachments = [] }
+        saveImagePresence()
         attachmentError = nil
     }
 
@@ -210,13 +248,17 @@ final class ComposerStates {
     func state(for ref: AgentRef) -> ComposerState {
         if forgottenHosts.contains(ref.host) { return ComposerState() }
         if let state = states[ref] { return state }
-        let state = ComposerState()
+        let state = ComposerState(ref: ref)
         states[ref] = state
         return state
     }
 
     func forget(host: UUID) {
         forgottenHosts.insert(host)
+        let prefix = NativeDraftKey.prefix(host: host)
+        for key in UserDefaults.standard.dictionaryRepresentation().keys where key.hasPrefix(prefix) {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
         for (ref, state) in states where ref.host == host { state.forget() }
         states = states.filter { $0.key.host != host }
         models[host] = nil

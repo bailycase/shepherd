@@ -1,6 +1,7 @@
 import SwiftUI
 import ShepherdUI
 import ShepherdCore
+import ShepherdProtocol
 import ShepherdRemote
 
 /// A thread's terminals: full screen on iPhone, from the thread's menu; the side pane's Terminal
@@ -12,6 +13,8 @@ struct TerminalScreen: View {
     var embedded = false
     @Environment(MobileHosts.self) private var hosts
     @State private var closing: TerminalPanelTab?
+    @State private var renaming: TerminalPanelTab?
+    @State private var terminalTitle = ""
     /// The first terminal was asked for, once: closing it later never opens another by itself.
     @State private var askedForFirst = false
     @Environment(\.scenePhase) private var scenePhase
@@ -26,6 +29,7 @@ struct TerminalScreen: View {
     private struct FirstTerminalKey: Equatable {
         var connected: Bool
         var canChange: Bool
+        var hasLayout: Bool
     }
 
     var body: some View {
@@ -38,10 +42,30 @@ struct TerminalScreen: View {
                 if let tab = model.tab(for: id) { terminals.choose(tab, in: ref) }
             }, close: model.canChangeTerminals && model.connected ? { id in closing = model.tab(for: id) } : nil,
                newTab: model.canChangeTerminals && model.connected ? { newTab(model) } : nil) {
-                EmptyView()
+                if let selected, model.connected,
+                   hosts.host(ref.host)?.supports(RemoteProtocol.terminalControlCapability) == true {
+                    Menu {
+                        Button("Rename Tab…") {
+                            terminalTitle = selected.leaf.title ?? ""
+                            renaming = selected
+                        }
+                        Button("Kill Process", role: .destructive) {
+                            terminalAction(.killTerminalProcess(paneID: selected.id))
+                        }
+                    } label: {
+                        Label("Terminal actions", systemImage: "ellipsis")
+                            .labelStyle(.iconOnly)
+                    }
+                    .buttonStyle(.sh(.ghost))
+                    .accessibilityLabel("Actions for selected terminal")
+                }
             }
             if let problem = terminals.problems[ref] {
                 SHBanner(.failed, title: problem) {
+                    if model.tabs.isEmpty {
+                        Button("Retry") { newTab(model) }.buttonStyle(.sh(.ghost, size: .s))
+                            .disabled(!model.connected || !model.canChangeTerminals)
+                    }
                     Button("Dismiss") { terminals.problems[ref] = nil }.buttonStyle(.sh(.ghost, size: .s))
                 }
                 .padding(SH.Space.m)
@@ -87,8 +111,8 @@ struct TerminalScreen: View {
             guard scenePhase == .active, let client = hosts.host(ref.host)?.connectedClient else { return }
             await terminals.watchActivity(ref, client: client)
         }
-        .task(id: FirstTerminalKey(connected: model.connected, canChange: model.canChangeTerminals)) {
-            guard model.connected, model.canChangeTerminals, model.tabs.isEmpty, !askedForFirst else { return }
+        .task(id: FirstTerminalKey(connected: model.connected, canChange: model.canChangeTerminals, hasLayout: model.layout != nil)) {
+            guard model.connected, model.canChangeTerminals, model.layout != nil, model.tabs.isEmpty, !askedForFirst else { return }
             askedForFirst = true
             newTab(model)
         }
@@ -110,8 +134,31 @@ struct TerminalScreen: View {
         } message: {
             Text(closing.map { model.closeConfirmation($0).message } ?? "")
         }
+        .alert("Rename terminal", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+            TextField("Tab name", text: $terminalTitle)
+            Button("Rename") {
+                guard let tab = renaming else { return }
+                let title = terminalTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                terminalAction(.renameTerminal(paneID: tab.id, title: title.isEmpty ? nil : title))
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Leave blank to use the running command's name.")
+        }
         .onChange(of: terminals.cannedClose, initial: true) { _, pane in
             if let pane, let tab = model.tab(for: pane.rawValue) { closing = tab }
+        }
+    }
+
+    private func terminalAction(_ action: RemoteAgentAction) {
+        guard let host = hosts.host(ref.host), host.supports(RemoteProtocol.terminalControlCapability),
+              let client = host.connectedClient else { return }
+        Task {
+            do {
+                try await client.agentAction(agentID: ref.agent, action: action)
+            } catch {
+                MobileTerminals.shared.problems[ref] = MobileTerminals.message(error, doing: "change the terminal")
+            }
         }
     }
 

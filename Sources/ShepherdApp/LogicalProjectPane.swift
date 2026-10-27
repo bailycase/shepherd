@@ -151,8 +151,9 @@ struct LogicalProjectPane: View {
                     Text("No thread matches.").font(.sh(.ui, weight: .regular)).foregroundStyle(Color.sh.textTertiary)
                         .padding(.horizontal, SHLeadMetrics.paneHeaderInset)
                 } else {
+                    let grouped = Dictionary(grouping: shown, by: \.group)
                     VStack(alignment: .leading, spacing: SH.Space.xs) {
-                        ForEach(ProjectTaskGroup.allCases, id: \.self) { group in groupView(group, rows: shown.filter { $0.group == group }) }
+                        ForEach(ProjectTaskGroup.allCases, id: \.self) { group in groupView(group, rows: grouped[group] ?? []) }
                     }
                 }
             }
@@ -176,6 +177,7 @@ struct LogicalProjectPane: View {
                                         age: row.settledAt.map(Self.age) ?? vm.workerStarted(row.workerAgentID, home: ref.home).map(Self.age)) {
                             vm.logicalProjectPaneTask = row.id
                         }
+                        .equatable()
                     }
                 }
             }

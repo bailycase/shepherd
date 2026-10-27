@@ -371,6 +371,23 @@ struct SettingsPreviewTests {
         }
     }
 
+    /// Instructions right after the first launch: Shepherd's files are empty and the AGENTS.md
+    /// that came over from your pi is named, with Use it here.
+    @Test func settingsInstructionsImported() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let home = workspace.server.pi.home
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        try Self.instructionsSample.write(to: home.appendingPathComponent("AGENTS.md"), atomically: true, encoding: .utf8)
+        let model = workspace.vm.instructions
+        model.piHome = workspace.server.pi.home
+        await model.refresh()
+        workspace.vm.settingsSection = .instructions
+        try await Preview.render("settings-instructions-imported", size: CGSize(width: 1440, height: 900)) {
+            SettingsView(vm: workspace.vm)
+        }
+    }
+
     @Test(arguments: [false, true])
     func settingsGoalsExperiment(_ enabled: Bool) async throws {
         let workspace = try PreviewWorkspace()
@@ -627,7 +644,7 @@ struct SettingsPreviewTests {
         let cases: [(String, PiImportSheetState, CGFloat)] = [
             ("sheet-pi-import-progress", PreviewYourPi.importProgress, 520),
             ("sheet-pi-import-done", PreviewYourPi.importDone, 380),
-            ("sheet-pi-import-missing", PreviewYourPi.importMissing, 400),
+            ("sheet-pi-import-missing", PreviewYourPi.importMissing, 520),
             ("sheet-pi-import-new", PreviewYourPi.importNew, 480),
             ("sheet-pi-import-failed", PreviewYourPi.importFailed, 700),
         ]
@@ -814,7 +831,7 @@ struct SettingsPreviewTests {
 
     @Test func actionErrorDialog() async throws {
         try await Preview.render("sheet-action-error", size: CGSize(width: SHDialogMetrics.width, height: 200)) {
-            ActionErrorDialog(message: "horizon rejected the rename: agent_busy — the agent is mid-turn. Try again once it settles.") {}
+            ActionErrorDialog(error: ActionError(title: "Couldn’t rename", message: "horizon rejected the rename: agent_busy — the agent is mid-turn. Try again once it settles.")) {}
         }
     }
 

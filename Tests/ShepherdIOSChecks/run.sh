@@ -52,3 +52,6 @@ DYLD_LIBRARY_PATH="$build" "$build/thread-check"
 xcrun swiftc "${flags[@]}" -lShepherdCore -lShepherdProtocol -lShepherdRemote \
     -parse-as-library Tests/ShepherdIOSChecks/RemoteConnectCheck.swift -o "$build/connect-check"
 DYLD_LIBRARY_PATH="$build" "$build/connect-check"
+xcrun swiftc "${flags[@]}" -lShepherdCore -lShepherdProtocol -lShepherdRemote \
+    -parse-as-library Tests/ShepherdIOSChecks/RemoteClientBackpressureCheck.swift -o "$build/backpressure-check"
+DYLD_LIBRARY_PATH="$build" "$build/backpressure-check"

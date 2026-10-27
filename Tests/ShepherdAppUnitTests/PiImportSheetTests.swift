@@ -111,6 +111,59 @@ struct PiImportSheetTests {
         #expect(sheet.allSignedIn, "Done enables once they're all signed in")
     }
 
+    /// L1: a default model Shepherd's pi can't start (its provider is one a switched-off extension
+    /// registers) is Something missing, not a green check; Done waits for another, and agents on
+    /// its provider wait too. A catalog pi couldn't give proves nothing.
+    @Test func aDefaultModelTheCatalogLacksIsSomethingMissingUntilAnotherIsChosen() {
+        let catalog = ["openai-codex/gpt-6-astra", "anthropic/claude-opus-4-5"]
+        #expect(PiImportSheetState.unresolvedDefault("cpa/gpt-6-astra", catalog: catalog) == "cpa/gpt-6-astra")
+        #expect(PiImportSheetState.unresolvedDefault("openai-codex/gpt-6-astra", catalog: catalog) == nil)
+        #expect(PiImportSheetState.unresolvedDefault("cpa/gpt-6-astra", catalog: []) == nil, "no catalog, no verdict")
+        #expect(PiImportSheetState.unresolvedDefault(nil, catalog: catalog) == nil)
+        var report = YourPiImportReport()
+        report.from = "/u/.pi/agent"
+        var survey = YourPiSurvey()
+        survey.logins = [Login(provider: "openai-codex", shepherd: .subscription)]
+        #expect(PiImportSheetState.stage(report: report, survey: survey, missing: [], unresolvedDefault: "cpa/gpt-6-astra") == .missing)
+        #expect(YourPiModel.hold(stage: .missing, survey: survey, missing: [], unresolvedDefault: "cpa/gpt-6-astra") == .agents(using: ["cpa"]))
+        var sheet = PiImportSheetState(from: report.from)
+        sheet.survey = survey
+        sheet.unresolvedDefault = "cpa/gpt-6-astra"
+        sheet.catalog = catalog
+        #expect(!sheet.allSignedIn && sheet.missingTitle == "Your default model needs you")
+        #expect(PiImportSheetState.unresolvedDetail("cpa/gpt-6-astra").hasPrefix("Shepherd’s pi has no provider cpa."))
+        sheet.unresolvedDefault = nil
+        #expect(sheet.allSignedIn, "Done enables once another model is chosen")
+    }
+
+    /// L13: a copied login the first launch found no longer works is a row that needs signing in
+    /// again, whatever the survey says, until that sign-in lands.
+    @Test func aCopiedLoginThatNoLongerWorksNeedsSigningInAgain() {
+        var survey = YourPiSurvey()
+        survey.logins = [Login(provider: "anthropic", shepherd: .subscription, yours: .subscription)]
+        let broken = ["anthropic": "invalid_grant"]
+        let missing = PiImportSheetState.missing(survey: survey, models: ["anthropic/claude"], broken: broken)
+        #expect(missing == [.init(id: "anthropic", detail: "Your pi’s sign-in no longer works: invalid_grant")])
+        var sheet = PiImportSheetState(from: "/u")
+        sheet.survey = survey
+        sheet.missing = missing
+        sheet.brokenLogins = broken
+        #expect(!sheet.signedIn("anthropic") && !sheet.allSignedIn)
+        sheet.brokenLogins = [:]
+        #expect(sheet.allSignedIn)
+    }
+
+    /// L1: what the copy passed over is counted on the sheet, never hidden behind the check.
+    @Test func whatWasPassedOverIsCountedOnTheSheet() {
+        var sheet = Self.sheet([:])
+        #expect(sheet.problems.isEmpty)
+        sheet.report.skipped = ["The skill pdf from /a wasn't copied: /b has the same name."]
+        sheet.report.problems = ["/u/.pi/agent/skills/big couldn't be read."]
+        #expect(sheet.problems.count == 2 && sheet.problems.first == sheet.report.problems.first)
+        #expect(PiImportSheetState.problemsTitle(problems: 1, skipped: 9) == "1 file couldn’t be read · 9 things were passed over")
+        #expect(PiImportSheetState.problemsTitle(problems: 0, skipped: 1) == "1 thing was passed over")
+    }
+
     @Test func theSummarySaysWhatCameOverWithCountsFirst() {
         var sheet = Self.sheet([:])
         sheet.stage = .done

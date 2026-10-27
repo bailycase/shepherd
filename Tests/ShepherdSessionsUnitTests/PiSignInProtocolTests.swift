@@ -25,6 +25,8 @@ struct PiSignInProtocolTests {
                 json: #"{"id":"c1","key":"sk-1","provider":"deepseek","type":"check"}"#),
         Command(command: .check(id: "c2", provider: "deepseek", key: .variable("DEEPSEEK_API_KEY")),
                 json: #"{"id":"c2","provider":"deepseek","type":"check","variable":"DEEPSEEK_API_KEY"}"#),
+        Command(command: .check(id: "anthropic", provider: "anthropic", key: nil),
+                json: #"{"id":"anthropic","provider":"anthropic","type":"check"}"#),
     ]
 
     @Test(arguments: commands)

@@ -12,6 +12,8 @@ final class PushManager {
     struct HostPushState: Equatable {
         var enabled = false
         var registering = false
+        var registered = false
+        var permissionDenied = false
         var error: String?
         var revokeFailed = false
     }
@@ -82,7 +84,11 @@ final class PushManager {
         defer { hostStates[host.id]?.registering = false }
         do {
             guard hostSupportsPush(host) else { throw PushError.network("Update Shepherd on this Mac to enable push notifications.") }
-            guard try await authorize() else { throw PushError.permissionDenied }
+            guard try await authorize() else {
+                hostStates[host.id]?.permissionDenied = true
+                throw PushError.permissionDenied
+            }
+            hostStates[host.id]?.permissionDenied = false
             let token = try await obtainDeviceToken()
             let credential = try await resolveCredential(hostID: host.id, tokenHex: token)
             // Persist opt-in once the relay is active, even if the Mac is temporarily unreachable.
@@ -196,8 +202,24 @@ final class PushManager {
         } catch { hostStates[host.id]?.error = error.localizedDescription }
     }
     private func registerWithHost(_ host: MobileHost, _ credential: PushKeychain.Credential) async throws {
+        hostStates[host.id]?.registered = false
         if let client = host.connectedClient, hostSupportsPush(host) {
             try await client.registerPush(RemotePushRegistration(id: credential.registrationID, sendToken: credential.sendToken))
+            hostStates[host.id]?.registered = true
+        }
+    }
+
+    func refreshPermission() async {
+        guard !isFixture else { return }
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        for id in hostStates.keys {
+            if settings.authorizationStatus == .denied, hostStates[id]?.enabled == true {
+                hostStates[id]?.permissionDenied = true
+                hostStates[id]?.error = PushError.permissionDenied.localizedDescription
+            } else if settings.authorizationStatus != .denied, hostStates[id]?.permissionDenied == true {
+                hostStates[id]?.permissionDenied = false
+                hostStates[id]?.error = nil
+            }
         }
     }
     @ObservationIgnored var onTokenChanged: (() -> Void)?

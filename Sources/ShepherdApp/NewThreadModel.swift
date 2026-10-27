@@ -324,7 +324,7 @@ final class NewThreadState {
         catalog = nil
         loadingDefaults = true
         guard let host else {
-            if !edited.model { model = vm.settings.agentDefaults.model ?? PiConfig.defaultModel(in: vm.server.pi.home) ?? "" }
+            if !edited.model { model = vm.settings.defaultModel(piHome: vm.server.pi.home) ?? "" }
             if !edited.thinking { thinking = vm.settings.defaultThinking }
             if !edited.speed { serviceTier = vm.settings.defaultServiceTier }
             let server = vm.server
@@ -334,6 +334,8 @@ final class NewThreadState {
                 guard defaultsRequest == request else { return }
                 self.listing = listing
                 self.catalog = catalog
+                // No default anywhere: the chip names the model pi would start on, never "Default".
+                if !edited.model, model.isEmpty, let own = listing.defaultModel { model = own }
                 loadingDefaults = false
             }
             return
@@ -396,6 +398,10 @@ final class NewThreadState {
         } else if let space = place.space, vm.missingSpaces.contains(space) {
             return "This space's folder is missing. Locate it or remove the space from the sidebar."
         } else if loadingDefaults { return "Loading models…" }
+        // A default model this pi has no provider for (one an extension registers, switched off) fails at start: say so here.
+        if let listing, !listing.models.isEmpty, !model.isEmpty, !listing.models.contains(model) {
+            return "Shepherd’s pi has no model \(model). Choose another."
+        }
         // A design piece alone starts a thread, as it sends from a thread's composer.
         if prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, references.isEmpty { return "Describe the task first." }
         if let big = attachments.oversize { return ComposerAttachments.oversizeMessage(big.name) }

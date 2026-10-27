@@ -1,11 +1,28 @@
 import Foundation
 import ShepherdCore
+import ShepherdProtocol
 import ShepherdSessions
 
 /// A sheet item for a value that is not itself `Identifiable` (a remote agent, an error).
 struct SheetItem<Value: Hashable>: Identifiable {
     let value: Value
     var id: Value { value }
+}
+
+/// A failed action for the error sheet: its title says what was attempted, the message why it failed.
+struct ActionError: Hashable {
+    static let genericTitle = "Something went wrong"
+    var title: String
+    var message: String
+
+    /// The error as a sentence: a `LocalizedError`'s description, a `ChangesError`'s message, a
+    /// `CustomStringConvertible`'s text, else Foundation's wording. Never a Swift value dump.
+    static func describe(_ error: Error) -> String {
+        if let changes = error as? ChangesError { return changes.message }
+        if let described = (error as? LocalizedError)?.errorDescription { return described }
+        if let text = error as? CustomStringConvertible { return text.description }
+        return error.localizedDescription
+    }
 }
 
 /// The remote worktree sheet: which remote agent, and whether it finalizes or deletes.
@@ -44,6 +61,23 @@ extension ShepherdViewModel {
         set { worktreeDeleteTarget = newValue?.id }
     }
 
+    var automationDeleteAutomation: Automation? {
+        get { automationDeleteTarget.flatMap { id in state.automations.first { $0.id == id } } }
+        set { automationDeleteTarget = newValue?.id }
+    }
+
+    var agentDeleteAgent: Agent? {
+        get { agent(id: agentDeleteTarget) }
+        set { agentDeleteTarget = newValue?.id }
+    }
+
+    /// Runs the action a confirmed dialog left for after its dismissal, once.
+    func runAfterDialogDismiss() {
+        let action = afterDialogDismiss
+        afterDialogDismiss = nil
+        action?()
+    }
+
     var remoteRenameItem: SheetItem<RemoteAgentRef>? {
         get { remoteRenameTarget.map(SheetItem.init) }
         set { remoteRenameTarget = newValue?.value }
@@ -54,8 +88,8 @@ extension ShepherdViewModel {
         set { remoteWorktreeSheet = newValue?.target }
     }
 
-    var actionErrorItem: SheetItem<String>? {
-        get { remoteActionError.map(SheetItem.init) }
-        set { remoteActionError = newValue?.value }
+    var actionErrorItem: SheetItem<ActionError>? {
+        get { actionError.map(SheetItem.init) }
+        set { actionError = newValue?.value }
     }
 }

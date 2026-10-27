@@ -17,6 +17,16 @@ enum SettingsRoute: Hashable, Codable {
     case worktrees
     /// The pi extensions a host loads, and its daily updates.
     case piExtensions
+    /// A host's MCP servers and their last known status, read-only.
+    case mcp
+    /// A host's subagent profiles, read-only; one profile's Markdown.
+    case subagents
+    case subagent(String)
+    /// A host's providers and whether each is signed in, read-only.
+    case signIn
+    /// A host's spaces by folder, read-only; one space's configuration files and approval.
+    case spaces
+    case space(String)
     /// The root instructions every session Shepherd starts reads.
     case instructions
     /// One root instruction file in the editor.
@@ -49,6 +59,12 @@ struct SettingsDestination: View {
         case .defaults: DefaultsScreen()
         case .worktrees: WorktreesScreen()
         case .piExtensions: PiExtensionsScreen()
+        case .mcp: MCPServersScreen()
+        case .subagents: SubagentProfilesScreen()
+        case .subagent(let file): SubagentProfileScreen(file: file)
+        case .signIn: ProvidersScreen()
+        case .spaces: SpacesScreen()
+        case .space(let directory): SpaceScreen(directory: directory)
         case .instructions: InstructionsScreen()
         case .instructionsFile(let file): InstructionsEditorScreen(file: file)
         case .skills: SkillsScreen()
@@ -67,7 +83,7 @@ struct SettingsDestination: View {
 /// (iPadSettingsInstructions). The iPad's list names two of them as the Mac does ("Agents",
 /// "Pi"); the phone's rows say what they hold ("Defaults", "Extensions").
 enum SettingsPage: String, CaseIterable, Hashable, Codable {
-    case appearance, defaults, worktrees, pi, instructions, skills, hosts, notifications, experiments, diagnostics
+    case appearance, defaults, worktrees, pi, mcp, subagents, signIn, instructions, skills, hosts, spaces, notifications, experiments, diagnostics
 
     var title: String {
         switch self {
@@ -75,9 +91,13 @@ enum SettingsPage: String, CaseIterable, Hashable, Codable {
         case .defaults: "Defaults"
         case .worktrees: "Worktrees"
         case .pi: "Extensions"
+        case .mcp: "MCP"
+        case .subagents: "Subagents"
+        case .signIn: "Sign-in"
         case .instructions: "Instructions"
         case .skills: "Skills"
         case .hosts: "Hosts"
+        case .spaces: "Spaces"
         case .notifications: "Notifications"
         case .experiments: "Experiments"
         case .diagnostics: "Diagnostics"
@@ -99,6 +119,10 @@ enum SettingsPage: String, CaseIterable, Hashable, Codable {
         case .defaults: "sparkles"
         case .worktrees: "arrow.branch"
         case .pi: "puzzlepiece.extension"
+        case .mcp: "server.rack"
+        case .subagents: "person.2"
+        case .signIn: "person.badge.key"
+        case .spaces: "folder"
         case .instructions: "doc.text"
         case .skills: "graduationcap"
         case .hosts: "desktopcomputer"
@@ -115,6 +139,10 @@ enum SettingsPage: String, CaseIterable, Hashable, Codable {
         case .defaults: .defaults
         case .worktrees: .worktrees
         case .pi: .piExtensions
+        case .mcp: .mcp
+        case .subagents: .subagents
+        case .signIn: .signIn
+        case .spaces: .spaces
         case .instructions: .instructions
         case .skills: .skills
         case .hosts: .hosts

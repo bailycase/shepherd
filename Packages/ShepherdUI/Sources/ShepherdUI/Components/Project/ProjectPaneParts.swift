@@ -68,7 +68,7 @@ public struct SHLeadGroupHeader: View {
 /// A thread row in the pane: a 6pt state dot, the title (12.5/500) over a 11.5 detail (a lantern lead word, then the
 /// question) and the age. 42pt, 38 resolved. A Project's agents delegate through ordinary Project threads only (never subagents),
 /// so the board's subagent-count pill is deliberately not drawn.
-public struct SHLeadThreadRow: View {
+public struct SHLeadThreadRow: View, Equatable {
     public typealias Tone = SHLeadTaskCard.Tone
 
     let title: String
@@ -86,6 +86,11 @@ public struct SHLeadThreadRow: View {
         self.tone = tone
         self.age = age
         self.action = action
+    }
+
+    /// By its words: a worker's streamed chunk redraws its own row, never the whole list.
+    public nonisolated static func == (a: SHLeadThreadRow, b: SHLeadThreadRow) -> Bool {
+        a.title == b.title && a.lead == b.lead && a.detail == b.detail && a.tone == b.tone && a.age == b.age
     }
 
     public var body: some View {

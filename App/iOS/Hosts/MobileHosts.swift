@@ -83,6 +83,10 @@ final class MobileHosts {
 
     private(set) var hosts: [MobileHost] = []
 
+    /// What the phone tells a host it reads: the client's list, and previews of idle threads
+    /// (`nativeThreadPreviewCapability`), so Home reads a thread without starting its pi.
+    static let clientCapabilities = RemoteProtocol.clientCapabilities + [RemoteProtocol.nativeThreadPreviewCapability]
+
     /// Where the phone keeps its preferences: the hosts' records here, and Settings' own
     /// (`SettingsStore`).
     @ObservationIgnored let defaults: UserDefaults
@@ -308,7 +312,8 @@ final class MobileHosts {
         }
         host.connectTask = Task { [weak self, weak host] in
             do {
-                let state = try await client.connect(host: record.address, port: record.port, token: token, clientName: self?.clientName ?? "Shepherd iOS")
+                let state = try await client.connect(host: record.address, port: record.port, token: token, clientName: self?.clientName ?? "Shepherd iOS",
+                                                     capabilities: Self.clientCapabilities)
                 guard let host, !Task.isCancelled, host.attempt == attempt else {
                     client.disconnect()
                     return

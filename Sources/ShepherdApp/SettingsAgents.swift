@@ -27,7 +27,7 @@ struct AgentSettings: View {
         SettingsPage(title: "Agents", explanation: Self.explanation) {
             SettingsGroup(title: "New agents") {
                 SettingsRow(title: "Default model",
-                            subtitle: "Preselected in the New Agent sheet. \"Use the agent's default\" passes no `--model` at all.") {
+                            subtitle: "Preselected in the New Agent sheet. \"Use the agent's default\" starts every thread, automation and Project on the model Shepherd’s pi names as its own.") {
                     SHPopupMenu(settings.defaultModel.isEmpty ? agentDefault : settings.defaultModel,
                                 mono: !settings.defaultModel.isEmpty, minWidth: AppLayout.settingsPopupWidth) {
                         Button(agentDefault) { settings.defaultModel = "" }
@@ -66,6 +66,10 @@ struct AgentSettings: View {
                 SettingsRow(title: "When a turn ends, send the queue", subtitle: "All at once arrives as one turn, in the order you queued it.") {
                     SHSegmentedPicker("When a turn ends, send the queue", selection: $settings.queueDelivery,
                                       options: [(NativeQueueMode.oneAtATime, "One per turn"), (.all, "All at once")])
+                }
+                SettingsRow(title: "Notify when a turn finishes",
+                            subtitle: "A banner for each thread you are not looking at. Questions, failures and threads waiting on you always notify.") {
+                    SettingsSwitch(label: "Notify when a turn finishes", isOn: $settings.notifyOnTurnFinished)
                 }
             }
             SettingsGroup(title: "Context") {

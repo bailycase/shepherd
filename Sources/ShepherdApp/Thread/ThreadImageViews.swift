@@ -16,13 +16,19 @@ extension EnvironmentValues {
     @Entry var viewImages: ThreadImageOpener = ThreadImageOpener { _, _ in }
 }
 
-/// A closure the environment can compare: one per window, so a redraw does not rebuild every thumbnail.
+/// A closure the environment can compare by what it captured (the thread's store, and whether the
+/// host serves images), so a thread redraw per streamed chunk does not rebuild every thumbnail.
 struct ThreadImageOpener: Equatable {
-    let id = UUID()
+    private let store: ObjectIdentifier?
+    private let hasImages: Bool
     let run: (ThreadImageSet, Int) -> Void
-    init(_ run: @escaping (ThreadImageSet, Int) -> Void) { self.run = run }
+    init(store: AnyObject? = nil, hasImages: Bool = false, _ run: @escaping (ThreadImageSet, Int) -> Void) {
+        self.store = store.map(ObjectIdentifier.init)
+        self.hasImages = hasImages
+        self.run = run
+    }
     func callAsFunction(_ set: ThreadImageSet, _ index: Int) { run(set, index) }
-    static func == (a: ThreadImageOpener, b: ThreadImageOpener) -> Bool { a.id == b.id }
+    static func == (a: ThreadImageOpener, b: ThreadImageOpener) -> Bool { a.store == b.store && a.hasImages == b.hasImages }
 }
 
 /// The images of one message, in the order they are shown.

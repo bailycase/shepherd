@@ -191,7 +191,7 @@ struct ThreadStoreCheck {
         store.stop()
         await reconnect.value
         try await contextCheck()
-        print("PASS: thread revisions, history/live merge, stale responses/session, exact acceptance, edited/unknown drafts, no replay, typed dialogs, external editor, abort, stop/reconnect, context ring and compact")
+        print("PASS: thread revisions, history/live merge, stale responses/session, exact acceptance, edited/unknown drafts, no replay, typed dialogs, external editor, abort, stop/reconnect, context ring and compact, host previews")
     }
 
     /// The context ring the iPad and iPhone composer draws: none from a host that reports no
@@ -249,17 +249,52 @@ struct ThreadStoreCheck {
         run.cancel()
         store.stop()
         await run.value
+
+        // A preview on the wire (an idle thread served from pi's session file, `preview: true`,
+        // no actions): shown read-only, pi woken once, pi's own snapshot replacing it.
+        let previewed = NativeThreadStore()
+        var served = try snapshot(ids: ["p1"], preview: true)
+        var woke = 0
+        var starting = false
+        let previewRun = Task {
+            await previewed.run { request in
+                switch request {
+                case .snapshot:
+                    return starting ? .failure(code: NativeThreadCode.starting, message: "starting") : .snapshot(value: served)
+                case .subagentTranscript(_, NativeThreadStore.wakeRunID, nil):
+                    woke += 1
+                    starting = true
+                    return .failure(code: NativeThreadCode.starting, message: "starting")
+                default:
+                    return .failure(code: "x", message: "unexpected \(request)")
+                }
+            }
+        }
+        try await wait { previewed.previewing && previewed.starting }
+        precondition(!previewed.ready && previewed.loadError == nil && previewed.messages.map(\.entryID) == ["p1"], "the preview shows")
+        precondition(!previewed.supports("send") && previewed.acceptsSend, "a send waits for pi")
+        precondition(woke == 1 && previewed.pollInterval == .milliseconds(200), "woken once, polling fast")
+        starting = false
+        served = try snapshot(ids: ["p1", "p2"], revision: 2)
+        await previewed.refresh()
+        precondition(previewed.ready && !previewed.previewing && previewed.supports("send") && previewed.messages.map(\.entryID) == ["p1", "p2"], "pi's own snapshot replaced the preview")
+        precondition(woke == 1, "never woken again while it serves")
+        previewRun.cancel()
+        previewed.stop()
+        await previewRun.value
     }
 
-    static func snapshot(ids: [String], cursor: String? = nil, revision: UInt64 = 1, running: Bool = false, dialogs: Bool = false) throws -> NativeThreadSnapshot {
+    static func snapshot(ids: [String], cursor: String? = nil, revision: UInt64 = 1, running: Bool = false, dialogs: Bool = false,
+                         preview: Bool = false) throws -> NativeThreadSnapshot {
         var json: [String: Any] = [
-            "piSessionID": "session", "generation": "generation", "revision": revision, "running": running,
-            "supportedActions": ["send", "abort", "answer"], "dialogsSupported": dialogs,
+            "piSessionID": "session", "generation": preview ? "preview" : "generation", "revision": revision, "running": running,
+            "supportedActions": preview ? [] : ["send", "abort", "answer"], "dialogsSupported": dialogs,
             "dialogs": dialogs ? [["id": "question", "kind": "confirm", "title": "Proceed?"]] : [],
             "messages": ids.map { ["entryID": $0, "role": "assistant", "blocks": [["kind": "text", "text": $0]], "truncated": false] as [String: Any] },
             "provisional": [], "clipped": false,
         ]
         json["olderCursor"] = cursor
+        if preview { json["preview"] = true }
         return try JSONDecoder().decode(NativeThreadSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
     }
 

@@ -23,6 +23,11 @@ public enum RemoteProtocol {
     public static let nativeQueueCapability = "native.queue.v1"
     /// Partial startup snapshots expose questions without replacing history or releasing sends.
     public static let nativeStartupDialogsCapability = "native.startup-dialogs.v1"
+    /// A client that lists it is answered a `NativeThreadRequest.snapshot` for an agent whose pi is
+    /// not running from pi's saved session file (`NativeThreadSnapshot.preview`), without starting
+    /// pi; any other request starts it as before. A client that does not list it has every
+    /// request start pi, as older hosts did.
+    public static let nativeThreadPreviewCapability = "native.preview.v1"
     /// What this client tells a host in `hello`: it reads the host's queue and where each
     /// delivered message came from (`nativeQueueCapability`). An older client, which lists
     /// nothing, finds its own sends in the thread by their text, so a host delivers its queued
@@ -85,6 +90,16 @@ public enum RemoteProtocol {
     /// The host serves `RemoteRequest.hostSettings`: what its Settings ▸ Agents, Worktrees and Pi
     /// set, its Shepherd and pi versions, and one change at a time. Older hosts show none.
     public static let hostSettingsCapability = "hostSettings.v1"
+    /// The host's settings carry Settings ▸ Agents' speed for new threads, session naming model and
+    /// Compact at (`HostSettings.defaultServiceTier`, `namingModel`, `compactAtPercent`), and it
+    /// takes their changes. An older host omits the fields and refuses the changes as unknown.
+    public static let hostSettingsAgentDefaultsCapability = "hostSettings.agentDefaults.v1"
+    /// The host answers `RemoteRequest.hostInventory`: its MCP servers and their status, its
+    /// subagent profiles, and its providers' sign-in state, read-only (`RemoteHostInventoryRequest`).
+    public static let hostInventoryCapability = "hostInventory.v1"
+    /// The host reverts one file of a working-tree review (`RemoteAgentQuery.changesRevertFile`),
+    /// fenced to the version the client displayed (`ChangesRevision`).
+    public static let changesRevertCapability = "changes.revert.v1"
     /// Older hosts' project inventory uses native .pi configuration paths.
     public static let projectsCapability = "projects.v1"
     /// Host-owned project files use .shepherd; clients must acknowledge this format before access.
@@ -147,7 +162,7 @@ public enum RemoteProtocol {
     /// The host lists and reads a thread's folder, read-only (`RemoteAgentQuery.files`, `.fileRead`; `ThreadFilesLimits`).
     /// Offered only to a client that lists it in `hello`; a client and an older host show Files as needing a newer host.
     public static let filesCapability = "files.v1"
-    public static let capabilities = [filesCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectTrustCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, nativeArtifactsCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability]
+    public static let capabilities = [filesCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostInventoryCapability, changesRevertCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectTrustCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, nativeArtifactsCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -433,6 +448,12 @@ public enum RemoteAgentQuery: Codable, Hashable, Sendable {
     /// Undo a turn's edits in the agent's working tree; Redo puts them back.
     case changesUndoTurn(turnID: UUID)
     case changesRedoTurn(turnID: UUID)
+    /// Revert one file of a working-tree review to HEAD (`changesRevertCapability`): `revision` is
+    /// the uncommitted list's (`old` HEAD's tree, `new` the working tree as shown), and the host
+    /// refuses when the file changed since, so only the version the client displayed is undone. A
+    /// modified or deleted file comes back from HEAD; a new one goes to the Trash; a rename
+    /// restores `oldPath` and trashes `path`. The index is never touched, as with Undo.
+    case changesRevertFile(revision: ChangesRevision, path: String, oldPath: String?)
     /// The dev servers the agent's folder on the host offers (`DevServerDiscovery`): the Browser's
     /// Nothing open (`browserTunnelCapability`). Answered by the host's server itself.
     case devServers
@@ -453,7 +474,7 @@ public enum RemoteAgentQuery: Codable, Hashable, Sendable {
     /// Answered by the host's server itself, without the GUI.
     public var isChanges: Bool {
         switch self {
-        case .changesOverview, .changesList, .changesFile, .changesBranches, .changesPatch, .changesUndoTurn, .changesRedoTurn: true
+        case .changesOverview, .changesList, .changesFile, .changesBranches, .changesPatch, .changesUndoTurn, .changesRedoTurn, .changesRevertFile: true
         default: false
         }
     }
@@ -562,6 +583,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     case suggestions(id: Int, request: RemoteSuggestionsRequest)
     /// Read or change the host's settings (`RemoteProtocol.hostSettingsCapability`).
     case hostSettings(id: Int, request: RemoteHostSettingsRequest)
+    /// Read the host's MCP servers, subagent profiles or providers (`RemoteProtocol.hostInventoryCapability`).
+    case hostInventory(id: Int, request: RemoteHostInventoryRequest)
     case hostUpdate(id: Int, request: RemoteHostUpdateRequest)
     /// Read or change the host's agent skills (`RemoteProtocol.skillsCapability`).
     case skills(id: Int, request: RemoteSkillsRequest)
@@ -606,7 +629,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case listDir, listModels, addSpace, createAgent, agentAction, agentQuery, upload, creationOptions
         case automation
         case logicalProjectRuntime
-        case instructions, suggestions, hostSettings, hostUpdate, skills, projects, logicalProjects
+        case instructions, suggestions, hostSettings, hostInventory, hostUpdate, skills, projects, logicalProjects
         case design
         case tunnel
         case browserClaim, browserRelease, browserAnswer
@@ -646,6 +669,9 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case .hostSettings:
             self = .hostSettings(id: try c.decode(Int.self, forKey: .id),
                                  request: try c.decode(RemoteHostSettingsRequest.self, forKey: .request))
+        case .hostInventory:
+            self = .hostInventory(id: try c.decode(Int.self, forKey: .id),
+                                  request: try c.decode(RemoteHostInventoryRequest.self, forKey: .request))
         case .logicalProjectRuntime:
             self = .logicalProjectRuntime(id: try c.decode(Int.self, forKey: .id), request: try c.decode(ProjectRuntimeTransport.self, forKey: .request))
         case .projectExecution:
@@ -824,6 +850,10 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(Kind.hostSettings, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(request, forKey: .request)
+        case .hostInventory(let id, let request):
+            try c.encode(Kind.hostInventory, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(request, forKey: .request)
         case .logicalProjectRuntime(let id, let request):
             try c.encode(Kind.logicalProjectRuntime, forKey: .type)
             try c.encode(id, forKey: .id); try c.encode(request, forKey: .request)
@@ -977,6 +1007,8 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     case suggestions(id: Int, snapshot: SuggestionsSnapshot)
     /// The host's settings after a settings request (`RemoteRequest.hostSettings`).
     case hostSettings(id: Int, settings: HostSettings)
+    /// An inventory request's answer (`RemoteRequest.hostInventory`).
+    case hostInventory(id: Int, result: RemoteHostInventoryResult)
     case hostUpdate(id: Int, status: HostUpdateStatus)
     /// A skills request's answer (`RemoteRequest.skills`).
     case skills(id: Int, result: RemoteSkillsResult)
@@ -1019,7 +1051,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case agentResult, helloOk, ok, paneOpened, error, state, stateChanged, attached, output, sessionExited
         case dirListing, models, spaceAdded, agentCreated, uploadResult, creationOptions
         case automationResult
-        case instructions, suggestions, hostSettings, hostUpdate, skills, projects, logicalProjects
+        case instructions, suggestions, hostSettings, hostInventory, hostUpdate, skills, projects, logicalProjects
         case design, designChanged, capabilitiesChanged
         case tunnel
         case browserClaimed, browserDrive, logicalProjectRuntime
@@ -1071,6 +1103,9 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case .hostSettings:
             self = .hostSettings(id: try c.decode(Int.self, forKey: .id),
                                  settings: try c.decode(HostSettings.self, forKey: .settings))
+        case .hostInventory:
+            self = .hostInventory(id: try c.decode(Int.self, forKey: .id),
+                                  result: try c.decode(RemoteHostInventoryResult.self, forKey: .result))
         case .logicalProjectRuntime:
             self = .logicalProjectRuntime(id: try c.decode(Int.self, forKey: .id), result: try c.decode(ProjectRuntimeResult.self, forKey: .result))
         case .projectExecution:
@@ -1202,6 +1237,10 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             try c.encode(Kind.hostSettings, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(settings, forKey: .settings)
+        case .hostInventory(let id, let result):
+            try c.encode(Kind.hostInventory, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(result, forKey: .result)
         case .logicalProjectRuntime(let id, let result):
             try c.encode(Kind.logicalProjectRuntime, forKey: .type)
             try c.encode(id, forKey: .id); try c.encode(result, forKey: .result)

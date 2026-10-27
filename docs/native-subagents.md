@@ -108,7 +108,7 @@ Edits apply to new children. Existing runs and their continuations keep their ca
 | `package` | Namespaces the name as `package.name`. |
 | `aliases` / `alias` | Comma-separated or a YAML list. Exact names win; an ambiguous alias fails. |
 | `model`, `thinking` | Pi model resolution and thinking levels. `thinking: false` means off. |
-| `tools` | Intersected with the parent's active allowlist. Omitted means pi's normal built-in tools, not the parent's terminal or automation tools. Empty or `false` means no ordinary tools. |
+| `tools` | Intersected with the parent's active allowlist, except pi's `grep`, `find` and `ls`, which a child may have whenever its parent has `read` (threads leave them off for the context budget). A tool pi cannot provide and no `extensions` entry supplies is reported by `shepherd_child_agents` and Settings > Subagents (`unavailableTools`), and the child runs without it. Omitted means pi's normal built-in tools, not the parent's terminal or automation tools. Empty or `false` means no ordinary tools. |
 | `systemPromptMode` | `append` or `replace`. Custom profiles default to replace. |
 | `inheritProjectContext` | Controls normal AGENTS.md/CLAUDE.md discovery. Custom profiles default to false. |
 | `defaultContext` / `context` | `fresh` or `fork`. |
@@ -141,6 +141,10 @@ in Settings instead. Third-party settings do not affect native definitions.
 | `shepherd_child_agents` | Lists profiles, where they came from, and diagnostics. |
 | `shepherd_workflow` | Runs a script (below). |
 | `shepherd_mission` | Manages mission records (below). Not registered unless `SHEPHERD_MISSIONS=1`. |
+
+With Settings ▸ Agents ▸ Context ▸ Defer rarely used tools on, `shepherd_child_agents`, `shepherd_child_cancel`
+and `shepherd_workflow` are deferred (the `shepherd_children` family; the model loads them with `tool_search`);
+start, message, result and resume stay direct ([docs/context-budget.md](context-budget.md)).
 
 Children report asynchronously. There is no standalone `shepherd_child_wait` tool. Start the
 children, do independent work, then end your turn when only dependent work remains. The default

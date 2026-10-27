@@ -109,6 +109,8 @@ struct AutomationTableRowView: View, Equatable {
                 Button("Edit…") { actions.edit(key) }.disabled(!row.canEdit)
                 Divider()
                 Button("Delete Automation", role: .destructive) { actions.delete(key) }.disabled(!row.canEdit)
+                // Greyed-out items say why, as the design menus do.
+                if !row.canEdit, let reason = row.disabledReason { Text(reason) }
             }
     }
 }

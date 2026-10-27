@@ -12,6 +12,7 @@
 //   {"type":"cancel"}                            ends the login under way
 //   {"type":"logout","provider":"anthropic"}     removes Shepherd's credential for it
 //   {"type":"check","id":"c1","provider":"deepseek","key":"…"} or {…,"variable":"DEEPSEEK_API_KEY"}
+//   ({"type":"check","id":"c2","provider":"anthropic"} alone checks the home's stored login for it)
 // stdout:
 //   {"type":"ready"}
 //   {"type":"event","event":{"type":"auth_url"|"device_code"|"info"|"progress",…}}
@@ -179,7 +180,11 @@ async function logout(message) {
   }
 }
 
-/** Whether a key works: the smallest request pi can make with it, on the provider's first model. */
+/**
+ * Whether a key works: the smallest request pi can make with it, on the provider's first model.
+ * With neither key nor variable, the home's stored login is used (and a stale OAuth token refreshed
+ * on the way; one whose refresh token rotated elsewhere comes back `invalid_grant`, a rejection).
+ */
 async function check(message) {
   const { id, provider } = message;
   let key = message.key;
@@ -201,7 +206,7 @@ async function check(message) {
     send({ type: "checked", id, result: "works", models: list.slice(0, 3).map((m) => m.id) });
   } catch (error) {
     const reason = clean(error, [key]);
-    const rejected = /\b(401|403)\b|unauthori[sz]ed|invalid.{0,20}(api.?key|key|token)|incorrect api key|authentication|permission/i.test(reason);
+    const rejected = /\b(401|403)\b|unauthori[sz]ed|invalid.{0,20}(api.?key|key|token|grant)|incorrect api key|authentication|permission/i.test(reason);
     send({ type: "checked", id, result: rejected ? "rejected" : "unreachable", reason });
   }
 }

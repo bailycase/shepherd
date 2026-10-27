@@ -46,8 +46,21 @@ struct ThreadRowMenuItems: View {
                 if glance.isFollowing(thread) {
                     Button("Stop Following", systemImage: "rectangle.on.rectangle.slash") { glance.unfollow(thread) }
                 } else {
-                    Button("Follow on Lock Screen", systemImage: "rectangle.on.rectangle") { glance.follow(thread) }
+                    Button {
+                        do {
+                            try glance.follow(thread)
+                            navigator.present(.search(.problem(title: "Following on Lock Screen",
+                                message: "Updates while Shepherd is open. Enable Notifications for background alerts.")))
+                        } catch {
+                            let message = (error as? GlanceFailure)?.message ?? error.localizedDescription
+                            navigator.present(.search(.problem(title: "Couldn't follow this thread", message: message)))
+                        }
+                    } label: {
+                        Label("Follow on Lock Screen", systemImage: "rectangle.on.rectangle")
+                        Text("Updates while Shepherd is open")
+                    }
                 }
+                Button("Notifications for background alerts") { navigator.open(.settings(.notifications)) }
             }
             Section {
                 if abilities.rename {

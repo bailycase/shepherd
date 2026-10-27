@@ -20,6 +20,12 @@ struct SubagentDefinitionsTests {
         try files.save("custom.md", text: custom, expected: nil)
         let parsed = try #require(files.snapshot().first { $0.name == "custom" })
         #expect(parsed.capability == "read-only · fork")
+        #expect(initial.allSatisfy { $0.unavailableTools == nil }, "the defaults list only tools pi has")
+        let odd = "---\nname: odd\ndescription: Lists a tool pi does not have\ntools: [read, rg]\n---\nSearch.\n"
+        try files.save("odd.md", text: odd, expected: nil)
+        let oddParsed = try #require(files.snapshot().first { $0.name == "odd" })
+        #expect(oddParsed.unavailableTools == ["rg"] && oddParsed.capability == "can edit · pi has no rg")
+        try files.delete("odd.md", expected: try #require(oddParsed.fingerprint))
         let scout = try files.open("scout.md")
         try files.delete("scout.md", expected: scout.fingerprint)
         #expect(try files.snapshot().count == 4)

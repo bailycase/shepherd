@@ -72,13 +72,13 @@ extension ShepherdViewModel {
         if let remote = rename.remote {
             Task {
                 do { try await remoteHosts.agentAction(remote, action: .renameTerminal(paneID: rename.paneID, title: title)) }
-                catch { remoteActionError = String(describing: error) }
+                catch { fail("Couldn’t rename the terminal", error) }
             }
             return
         }
         guard let agentID = rename.agentID else { return }
         do { try renameTerminalPane(rename.paneID, of: agentID, to: title) }
-        catch { remoteActionError = String(describing: error) }
+        catch { fail("Couldn’t rename the terminal", error) }
     }
 
     /// Kill process: the command running in the tab's terminal.
@@ -111,6 +111,20 @@ extension ShepherdViewModel {
         let agent = state.agents.first { $0.tabID == target.key.tab }
         let space = agent.flatMap { agent in state.spaces.first { $0.id == agent.spaceID }?.name }
         return "\(space ?? "The thread's folder") on This Mac"
+    }
+
+    /// The new-tab row's title: only a worktree thread's terminal opens "in the worktree".
+    func newTerminalTitle(_ target: TerminalTarget) -> String {
+        let agent = if let remote = target.remote {
+            remoteHosts.connections.first { $0.id == remote.hostID }?.state.agents.first { $0.id == remote.agentID }
+        } else {
+            state.agents.first { $0.tabID == target.key.tab }
+        }
+        return Self.newTerminalTitle(worktree: agent?.worktreeBranch != nil)
+    }
+
+    nonisolated static func newTerminalTitle(worktree: Bool) -> String {
+        worktree ? "New terminal in the worktree" : "New terminal"
     }
 
     /// Add to message (TerminalPane): the selection goes into the thread's composer as a code

@@ -350,6 +350,7 @@ struct NewAgentSheet: View {
                     .foregroundStyle(Color.sh.textSecondary)
                     .accessibilityHidden(true)
                 TextEditor(text: $initialPrompt)
+                    .writingToolsBehavior(.disabled)
                     .focused($promptFocused)
                     .shText(.body)
                     .foregroundStyle(Color.sh.textPrimary)
@@ -488,7 +489,7 @@ struct NewAgentSheet: View {
     private func loadModels() {
         let hostID = targetHostID
         let requestID = defaults.begin(hostID: hostID,
-                                       model: hostID == nil ? vm.settings.agentDefaults.model ?? PiConfig.defaultModel(in: vm.server.pi.home) ?? "" : "",
+                                       model: hostID == nil ? vm.settings.defaultModel(piHome: vm.server.pi.home) ?? "" : "",
                                        thinking: hostID == nil ? vm.settings.defaultThinking : .medium)
         models = nil
         errorText = nil

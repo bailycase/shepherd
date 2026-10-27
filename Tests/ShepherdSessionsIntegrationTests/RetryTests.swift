@@ -25,6 +25,21 @@ private func recoveryRequest(_ s: NativeThreadSnapshot, operation: UUID = UUID()
 
 @Suite("Message-free checkpoint recovery", .integrationTimeLimit)
 struct RetryTests {
+    /// pi retries a reply with nothing in it as if it were a transient fault; the host lets it
+    /// retry once, then cancels so the turn fails visibly instead of spending the whole budget.
+    @Test func anEmptyReplyIsRetriedOnceThenFailsVisibly() async throws {
+        let host = try ScratchServer()
+        defer { host.stop() }
+        let h = try await PiAgent.launch(on: host)
+        let ready = try await h.ready()
+        #expect(try await h.send("empty-reply", from: ready).wasAccepted)
+        let failed = try await h.snapshot("the turn to fail") { !$0.running && $0.messages.last?.status == "error" }
+        #expect(h.stdin("abort_retry").count == 1, "the second automatic retry is cancelled")
+        #expect(failed.retry == nil)
+        #expect(failed.messages.filter { $0.status == "error" }.count == 2, "one attempt and one retry, not pi's three")
+        #expect(h.stdin("prompt").count == 1, "nothing is resent")
+    }
+
     @Test func aStandaloneThreadCanContinueWithoutAuthorizingProjectExecution() async throws {
         let host = try ScratchServer()
         defer { host.stop() }

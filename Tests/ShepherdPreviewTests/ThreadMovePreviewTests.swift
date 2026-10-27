@@ -24,10 +24,10 @@ import ShepherdTestSupport
         if state == "after" || state == "long" { try await world.vm.moveThread(agent.id, to: child.id) }
         if state == "refused" {
             do { try await world.vm.moveThread(agent.id, to: child.id) }
-            catch { world.vm.remoteActionError = String(describing: error) }
-            let message = try #require(world.vm.remoteActionError)
+            catch { world.vm.fail("Couldn’t move the thread", error) }
+            let message = try #require(world.vm.actionError)
             try await Preview.renderMatrix("thread-move-refused", size: CGSize(width: 540, height: 280)) {
-                ActionErrorDialog(message: message) {}
+                ActionErrorDialog(error: message) {}
             }
         } else {
             try await Preview.renderMatrix("thread-move-\(state)", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 550)) {

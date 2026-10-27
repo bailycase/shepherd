@@ -208,9 +208,20 @@ final class BrowserSessions {
 
     func existing(_ agent: AgentID) -> BrowserSession? { sessions[agent] }
 
+    private var lastPruneFingerprint: Int?
+
     /// Projects keep saved logins even with no threads. A thread that changes projects loses
     /// its old page before it can use the new project's store.
     func prune(state: ShepherdState) {
+        // Called on every state broadcast: nothing to do unless an agent, its space, a space or an
+        // automation's folder changed (what the identifiers derive from).
+        var key = Hasher()
+        for agent in state.agents { key.combine(agent.id); key.combine(agent.spaceID) }
+        for space in state.spaces { key.combine(space.id); key.combine(space.hidden); key.combine(space.path) }
+        for automation in state.automations { key.combine(automation.agentID); key.combine(automation.cwd) }
+        let fingerprint = key.finalize()
+        guard fingerprint != lastPruneFingerprint else { return }
+        lastPruneFingerprint = fingerprint
         let identifiers = Dictionary(uniqueKeysWithValues: state.agents.map {
             ($0.id, BrowserDataStores.identifier(for: $0, in: state))
         })
@@ -434,6 +445,10 @@ final class BrowserSession {
     // Off-screen hosting: a page nobody looks at still lays out and runs.
     @ObservationIgnored private var parkWindow: BrowserParkWindow?
     @ObservationIgnored private(set) var paneSize = CGSize(width: 1024, height: 768)
+    /// How long a parked page keeps its window on screen after the agent's last request; then it is
+    /// ordered out so WebKit throttles its timers and frames, until the next request orders it back.
+    @ObservationIgnored var parkIdleGrace: TimeInterval = 15
+    @ObservationIgnored private var parkSleep: Task<Void, Never>?
 
     init(agentID: AgentID, dataStores: BrowserDataStores, remote: BrowserRemote? = nil,
          websiteDataStore: WKWebsiteDataStore? = nil) {
@@ -568,6 +583,7 @@ final class BrowserSession {
         webView?.configuration.userContentController.removeAllScriptMessageHandlers()
         webView?.removeFromSuperview()
         webView = nil
+        parkSleep?.cancel()
         parkWindow?.orderOut(nil)
         parkWindow?.contentView = nil
         parkWindow = nil
@@ -612,6 +628,8 @@ final class BrowserSession {
         switch message {
         case .console(let level, let text):
             console.append(level, text)
+        case .consoleLines(let lines):
+            console.append(contentsOf: lines)
         case .network(let count):
             console.setNetwork(count)
         case .pick(let element, let rect):
@@ -632,6 +650,7 @@ final class BrowserSession {
 
     /// An agent action begins: the ring and card show, with `note` ("clicking “Pay $148.00”").
     func agentBegan(note: String) {
+        wakeParked()
         presence.begin(note: note)
         syncOverlay()
     }
@@ -679,7 +698,11 @@ final class BrowserSession {
     private func syncOverlay() {
         let shown = presence.isShown(now: Date())
         let next = shown ? BrowserAgentOverlay(note: presence.note, pointer: presence.pointer) : nil
-        if next != agentOverlay { agentOverlay = next }
+        if next != agentOverlay {
+            agentOverlay = next
+            // The card lingered past the last request: the parked window's grace starts now.
+            if next == nil { scheduleParkSleep() }
+        }
         expiry?.cancel()
         if let until = presence.expiry {
             expiry = Task { [weak self] in
@@ -727,6 +750,28 @@ final class BrowserSession {
         content.addSubview(webView)
         apply(zoom: 1)
         if !window.isVisible { window.orderBack(nil) }
+        scheduleParkSleep()
+    }
+
+    /// Nobody is driving the page: a parked window goes off screen after `parkIdleGrace`.
+    func scheduleParkSleep() {
+        parkSleep?.cancel()
+        parkSleep = Task { [weak self] in
+            guard let grace = self?.parkIdleGrace else { return }
+            try? await Task.sleep(for: .seconds(grace))
+            guard !Task.isCancelled, let self, let window = parkWindow, webView?.window === window,
+                  activeOperationEpoch == nil, hostRequestsInFlight == 0, agentOverlay == nil else { return }
+            window.orderOut(nil)
+        }
+    }
+
+    /// A request is about to use the page: a sleeping parked window comes back so the page lays out
+    /// and can be snapshotted.
+    func wakeParked() {
+        parkSleep?.cancel()
+        parkSleep = nil
+        guard let window = parkWindow, webView?.window === window, !window.isVisible else { return }
+        window.orderBack(nil)
     }
 
     /// The parked window's size: the viewport's width (else the pane's) by the pane's height.

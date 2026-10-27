@@ -1,4 +1,5 @@
 import Foundation
+import ShepherdRemote
 import ShepherdSessions
 import Testing
 @testable import ShepherdApp
@@ -167,5 +168,21 @@ struct PiSignInSessionTests {
         #expect(store.expired == ["openai-codex"])
         _ = store.landed("openai-codex")
         #expect(store.expired.isEmpty, "signing in again clears it")
+    }
+
+    /// L13: pi passes the token endpoint's words through without the provider's name; the agent's
+    /// model says which provider, and its row reads Expired at the first failure, not the second.
+    @Test func aRefreshFailureWithoutAProviderNameExpiresTheAgentsProvider() {
+        let (_, store, _) = Self.session("anthropic")
+        let message = "Token refresh failed: Token refresh failed (HTTP 400): {\"error\":\"invalid_grant\"}"
+        store.noteTurnError(message, provider: nil)
+        #expect(store.expired.isEmpty, "no provider to name")
+        store.noteTurnError(message, provider: "anthropic")
+        #expect(store.expired == ["anthropic"])
+        store.noteTurnError("429 too many requests", provider: "openai-codex")
+        #expect(store.expired == ["anthropic"], "a limit is not a sign-in failure")
+        let card = NativeTurnError(text: message, provider: "anthropic", model: "claude-opus-4-5")
+        #expect(TurnErrorItem.offersSignIn(card))
+        #expect(!TurnErrorItem.offersSignIn(NativeTurnError(text: "529 overloaded", provider: "anthropic")))
     }
 }

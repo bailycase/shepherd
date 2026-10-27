@@ -221,6 +221,27 @@ struct PiSignInBridgeTests {
         #expect(try setup.auth()["anthropic"] == nil)
     }
 
+    /// L13: a check with no key asks whether the stored login works; one whose refresh token
+    /// rotated in the terminal's pi comes back rejected in the provider's words (`invalid_grant`).
+    @Test func aStoredLoginIsCheckedAndAStaleOneIsRejected() async throws {
+        let setup = try Setup()
+        defer { setup.remove() }
+        try Data(#"{"anthropic":{"type":"oauth","access":"a","refresh":"rotated-elsewhere","expires":1}}"#.utf8)
+            .write(to: setup.home.appendingPathComponent("auth.json"))
+        let replies = try setup.bridge()
+        defer { replies.close() }
+        replies.bridge.send(.check(id: "anthropic", provider: "anthropic", key: nil))
+        let stale = try await replies.first("the stale login's check") { if case .checked("anthropic", let r) = $0 { r } else { nil } }
+        guard case .rejected(let reason) = stale else { Issue.record("expected rejected, got \(stale)"); return }
+        #expect(reason.contains("invalid_grant"))
+
+        try Data(#"{"anthropic":{"type":"oauth","access":"a","refresh":"fake-refresh-token-0001","expires":1}}"#.utf8)
+            .write(to: setup.home.appendingPathComponent("auth.json"))
+        replies.bridge.send(.check(id: "again", provider: "anthropic", key: nil))
+        let works = try await replies.first("the working login's check") { if case .checked("again", let r) = $0 { r } else { nil } }
+        #expect(works == .works(models: ["claude-fake"]))
+    }
+
     @Test func signOutRemovesOnlyShepherdsCredential() async throws {
         let setup = try Setup()
         defer { setup.remove() }

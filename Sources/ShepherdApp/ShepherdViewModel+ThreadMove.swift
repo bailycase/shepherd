@@ -71,7 +71,7 @@ struct ThreadMoveDrag: Codable, Equatable {
                 case .remote(let ref): try await remoteHosts.agentAction(ref, action: .move(spaceID: space))
                 case .design: return
                 }
-            } catch { remoteActionError = String(describing: error) }
+            } catch { fail("Couldn’t move the thread", error) }
         }
     }
 

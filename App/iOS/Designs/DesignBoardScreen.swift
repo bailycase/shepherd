@@ -71,7 +71,10 @@ final class DesignBoardModel {
     /// Comment is on: a tap names an element to comment on.
     var commenting = false
     /// The comment whose card is up.
-    var selected: UUID?
+    var selected: UUID? {
+        didSet { if selected != oldValue { replyText = "" } }
+    }
+    var replyText = ""
     /// The element a comment is being written on, and its words.
     private(set) var draft: DesignPick?
     var draftText = ""
@@ -219,6 +222,27 @@ final class DesignBoardModel {
         await measurePins()
     }
 
+    func updateComment(resolve: Bool) async {
+        guard let id = selected, !sending else { return }
+        let text = DesignComment.text(replyText)
+        guard resolve || text != nil else { return }
+        sending = true
+        defer { sending = false }
+        do {
+            _ = try await designs.writeComment(ref) { revision in
+                resolve ? .resolveComment(designID: ref.design, commentID: id, resolved: true, baseRevision: revision)
+                    : .replyToComment(designID: ref.design, commentID: id, text: text ?? "", baseRevision: revision)
+            }
+            if selected == id {
+                replyText = ""
+                if resolve { selected = nil }
+            }
+            problem = nil
+        } catch {
+            problem = MobileDesignsError.words(error)
+        }
+    }
+
     /// Picks an element as the tap would, for a screen that shows one being commented on.
     func pickForComment(at point: CGPoint) async {
         commenting = true
@@ -230,6 +254,28 @@ final class DesignBoardModel {
         guard let current else { return nil }
         let element = draft.flatMap { DesignElementID(board: current.viewName, tid: $0.tid, path: $0.path) }
         return RemoteDesignPresentation.viewRecord(board: current, picked: element, kind: draft?.kind, label: draft?.label)
+    }
+
+    func duplicate() async {
+        guard let current, !sending, let library = designs.library(ref.host) else { return }
+        sending = true
+        defer { sending = false }
+        do {
+            let result: RemoteDesignResult
+            do {
+                result = try await library.request(.duplicateBoard(designID: ref.design, path: current.rawValue,
+                                                                    baseRevision: designs.indexes[ref]?.snapshot.revision))
+            } catch RemoteHostClientError.rejected(let code, _) where code == "stale_revision" {
+                guard let fresh = await designs.sync(ref) else { throw MobileDesignsError.unexpected }
+                result = try await library.request(.duplicateBoard(designID: ref.design, path: current.rawValue,
+                                                                    baseRevision: fresh.snapshot.revision))
+            }
+            guard case .duplicated(let copy, _) = result else { throw MobileDesignsError.unexpected }
+            await designs.sync(ref)
+            show(copy)
+        } catch {
+            problem = MobileDesignsError.words(error)
+        }
     }
 
     // MARK: Export
@@ -260,6 +306,7 @@ private struct DesignBoardContent: View {
     let ask: () -> Void
     @Environment(MobileNavigator.self) private var navigator
     @State private var exporting = false
+    @State private var confirmingDuplicate = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -297,9 +344,17 @@ private struct DesignBoardContent: View {
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button("Share", systemImage: "square.and.arrow.up") { Task { await model.export(.png) } }
-                    .disabled(model.current == nil)
+                Menu {
+                    Button("Share", systemImage: "square.and.arrow.up") { Task { await model.export(.png) } }
+                    Button("Duplicate Board…") { confirmingDuplicate = true }
+                } label: {
+                    Label("Board actions", systemImage: "ellipsis")
+                }
+                .disabled(model.current == nil || model.sending)
             }
+        }
+        .confirmationDialog("Duplicate \(model.label)?", isPresented: $confirmingDuplicate, titleVisibility: .visible) {
+            Button("Duplicate Board") { Task { await model.duplicate() } }
         }
         .confirmationDialog("Export \(model.label)", isPresented: $exporting, titleVisibility: .visible) {
             ForEach(DesignExportFormat.allCases) { format in
@@ -326,15 +381,18 @@ private struct DesignBoardContent: View {
             if let draft = model.draft {
                 DesignCommentDraftCard(model: model, target: draft.name ?? draft.label ?? draft.noun)
             } else if let id = model.selected, let comment = model.pins.first(where: { $0.id == id }) {
-                let working = model.designs.agentWorking(model.ref)
-                let answer = RemoteDesignPresentation.answer(comment)
-                SHPhoneCommentCard(number: comment.number, target: RemoteDesignPresentation.target(comment),
-                                   meta: RemoteDesignPresentation.meta(comment.author, at: comment.createdAt, now: .now),
-                                   text: comment.text,
-                                   status: RemoteDesignPresentation.updating(comment, agentWorking: working, board: model.label),
-                                   answer: answer.map { SHCommentEntry(id: $0.id.uuidString, author: "Design agent",
-                                                                       age: RemoteDesignPresentation.age($0.createdAt, now: .now), text: $0.text) })
-                .equatable()
+                SHCommentThread(
+                    author: comment.author == .agent ? "Design agent" : "You",
+                    age: shCommentAge(since: comment.createdAt, now: .now),
+                    note: comment.detached ? "element changed" : nil, text: comment.text,
+                    entries: comment.replies.map { reply in
+                        SHCommentEntry(id: reply.id.uuidString, author: reply.author == .agent ? "Design agent" : "You",
+                                       age: shCommentAge(since: reply.createdAt, now: .now), text: reply.text)
+                    }, reply: $model.replyText,
+                    onResolve: { Task { await model.updateComment(resolve: true) } },
+                    onReply: { Task { await model.updateComment(resolve: false) } },
+                    onClose: { model.selected = nil })
+                    .disabled(model.sending)
             }
         }
         .padding(.horizontal, MobileDesignLayout.cardInset)

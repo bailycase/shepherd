@@ -292,6 +292,11 @@ extension AppLayout {
     static let signInAutoCloseDelay: Duration = .milliseconds(1200)
     /// How long a first launch's sheet shows its last step before it turns to what came over.
     static let importDoneBeat: Duration = .milliseconds(350)
+    /// The first launch's sheet: how tall its passed-over list grows before it scrolls, and its default model's menu.
+    static let importProblemsMaxHeight: CGFloat = 120
+    static let importModelMenuWidth: CGFloat = 180
+    /// How long the first launch waits for Shepherd's pi to list its models, and to check copied logins.
+    static let importCatalogDeadline: Duration = .seconds(20)
     /// The review's Commit… sheet, and the most its file list grows before it scrolls.
     static let commitSheetWidth: CGFloat = 520
     static let commitFileListMaxHeight: CGFloat = 232

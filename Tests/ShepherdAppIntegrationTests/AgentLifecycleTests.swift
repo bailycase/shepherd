@@ -122,7 +122,12 @@ struct AgentLifecycleTests {
         vm.selectAgent(agents[0].agent.id)
         vm.selectAgent(agents[1].agent.id)
 
+        // ⇧⌘W asks first; confirming runs the deletion once the sheet is down.
         vm.deleteSelectedAgent()
+        #expect(vm.agentDeleteTarget == agents[1].agent.id)
+        vm.afterDialogDismiss = { vm.deleteAgent(agents[1].agent.id) }
+        vm.agentDeleteTarget = nil
+        vm.runAfterDialogDismiss()
         await app.settle()
 
         #expect(vm.selectedAgentID == agents[0].agent.id)

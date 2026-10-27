@@ -16,6 +16,12 @@
   - `native.startup-dialogs.v1` is advertised by both peers. Opted-in clients can answer
     startup questions without replacing history or releasing sends; older clients get an
     update-required error rather than a partial snapshot they would mistake for empty history.
+  - `native.preview.v1`, listed by a client: a `snapshot` for an agent whose pi is not running
+    is answered from pi's saved session file (`NativeThreadSnapshot.preview == true`, no
+    `supportedActions`, a `generation` no request can name) without starting pi; a client that
+    reads many threads at once (a Home screen) then starts no pi per idle agent. Any other
+    request (send, abort, images…) starts pi as before, whose own snapshot replaces the preview.
+    A client that does not list it has every request start pi.
   - native thread requests, with the context and Compact now behind `native.context.v1`, Retry
     in place behind `native.retry.v1`, and Steer now (a message that stops pi and goes at once,
     `interrupt` in `supportedActions`, sent as a steer to a host without it) behind
@@ -82,7 +88,9 @@
     `commitMessage`, `commit` behind `review.commit.v1`; the commit is an operation polled with
     `worktreeStatus`), and the Changes pane (`changesOverview`, `changesList`, `changesFile`,
     `changesBranches`, `changesPatch`, `changesUndoTurn`, `changesRedoTurn` behind `changes.v1`,
-    answered by the server itself; thread snapshots carry `turnChanges`). Older hosts review the
+    answered by the server itself; thread snapshots carry `turnChanges`; `changesRevertFile`
+    behind `changes.revert.v1` reverts one file of an uncommitted list to HEAD, refused when the
+    file changed since the list's revision, the working tree only, as Undo). Older hosts review the
     working tree only (`review`). The terminal panel's own actions on an agent's terminals
     ride `agentAction` behind `terminal.control.v1`: `renameTerminal` (Rename tab) and
     `killTerminalProcess` (Kill process), each refused on the agent's thread. An older
@@ -124,7 +132,14 @@
     secret. Thinking and tool logs are not preview sources. Hosts without this capability cannot register destinations.
   - `hostSettings` (`hostSettings.v1`): what the host's Settings ▸ Agents, Worktrees and Pi set,
     the pi packages its pi loads, and its Shepherd and pi versions; one change per request
-    (`HostSettingChange`), applied as the Mac's own Settings would. The additive
+    (`HostSettingChange`), applied as the Mac's own Settings would. `hostSettings.agentDefaults.v1`
+    adds the speed for new threads, the session naming model and Compact at (missing from an
+    older host: Standard, Automatic, pi's default); `HostSettingChange.capability` names what a
+    change needs, and an older host refuses the change as unknown.
+  - `hostInventory` (`hostInventory.v1`): read-only, what the host's Settings ▸ MCP, Subagents and
+    Sign-in show (`RemoteHostInventoryRequest`: `mcp`, `subagents`, `subagent(file:)`,
+    `providers`), answered by the GUI. A sign-in column in words, a key's variable name but never
+    its mask, account counts but no identifiers; nothing here changes the host. The additive
     `goalCrossProviderEvaluation` consent is false when missing/null; its change applies to
     newly started or restarted agents, not a live process. Both clients disclose that scope
   - `projects.mcp.v1`: adds credential status, login/logout, poll, callback completion and

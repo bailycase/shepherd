@@ -13,6 +13,10 @@ extension ShepherdViewModel {
     var paletteItems: [PaletteItem] {
         var items: [PaletteItem] = []
         let keys = KeybindingsStore.shared
+        // One index for every per-id lookup below: the list is rebuilt on each view-model change
+        // while the palette is open, and a fleet's agents × recents walk was the cost.
+        let agentsByID = Dictionary(state.agents.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let hostsByID = Dictionary(remoteHosts.connections.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
         // Commands.
         items.append(PaletteItem(id: "action.newAgent", kind: .action("newAgent"), section: .commands,
@@ -51,11 +55,22 @@ extension ShepherdViewModel {
         }
         items.append(PaletteItem(id: "action.openExtensions", kind: .action("openExtensions"), section: .commands,
                                  title: "Open Extensions", icon: "puzzlepiece.extension"))
+        items.append(PaletteItem(id: "action.openAutomations", kind: .action("openAutomations"), section: .commands,
+                                 title: "Open Automations", icon: "clock.arrow.2.circlepath"))
+        if designToolEnabled {
+            items.append(PaletteItem(id: "action.openDesigns", kind: .action("openDesigns"), section: .commands,
+                                     title: "Open Designs", icon: "rectangle.on.rectangle"))
+        }
+        // View ▸ Appearance, as the menu bar has it.
+        for option in AppearanceMode.allCases where option != themeManager.mode {
+            items.append(PaletteItem(id: "action.appearance.\(option.rawValue)", kind: .action("appearance.\(option.rawValue)"),
+                                     section: .commands, title: "Appearance: \(option.title)", icon: "circle.lefthalf.filled"))
+        }
         for target in remoteWorktreeOperationIDs.keys {
             items.append(PaletteItem(id: "operation.\(target.hostID).\(target.agentID)",
                                      kind: .remoteOperation(hostID: target.hostID, agentID: target.agentID),
                                      section: .commands, title: "Check remote worktree operation",
-                                     subtitle: remoteHosts.connections.first { $0.id == target.hostID }?.config.name,
+                                     subtitle: hostsByID[target.hostID]?.config.name,
                                      icon: SHGlyph.gitBranch.symbolName))
         }
 
@@ -75,12 +90,37 @@ extension ShepherdViewModel {
             if let store = visibleThread?.store, let speed = Self.fastModePaletteItem(offered: store.offersServiceTier) {
                 items.append(speed)
             }
+            // The row opens the Changes tab (⌃1); ⇧⌘B toggles the pane and can close it.
             items.append(PaletteItem(id: "action.reviewDiff", kind: .action("reviewDiff"), section: .thisThread,
                                      title: "Review diff", subtitle: Self.reviewDiffContext(changedFiles: agent.checkout?.changedFiles),
-                                     shortcut: keys.display(.toggleRightPane), icon: "plus.forwardslash.minus"))
+                                     shortcut: Self.sidePaneChord(.changes), icon: "plus.forwardslash.minus"))
             items.append(PaletteItem(id: "action.reviewPR", kind: .action("reviewPR"), section: .thisThread,
                                      title: "Review PR changes", subtitle: selectedPullRequest.map(Self.pullRequestContext),
                                      icon: "arrow.triangle.pull"))
+            if visibleThread != nil {
+                items.append(PaletteItem(id: "action.stop", kind: .action("stop"), section: .thisThread,
+                                         title: "Stop", subtitle: agent.name, shortcut: keys.display(.stopAgent), icon: "stop.circle"))
+                for tab in SidePaneTab.allCases {
+                    items.append(PaletteItem(id: "action.sidePane.\(tab.rawValue)", kind: .action("sidePane.\(tab.rawValue)"),
+                                             section: .thisThread, title: "Show \(tab.title) pane", shortcut: Self.sidePaneChord(tab),
+                                             icon: "sidebar.right"))
+                }
+            }
+            // This Mac's thread: the sidebar row's commands (ThreadCommand), and Move to space.
+            if selectedRemoteAgent == nil {
+                for command in ThreadCommand.commands(for: agent) where command != .reviewChanges {
+                    items.append(PaletteItem(id: "action.thread.\(command.rawValue)", kind: .action("thread.\(command.rawValue)"),
+                                             section: .thisThread, title: command.paletteTitle, subtitle: agent.name,
+                                             shortcut: command.shortcut.map(keys.display), icon: command.symbol))
+                }
+                if agent.worktreeBranch == nil {
+                    for space in threadMoveSpaces(.local(agent.id)) where space.id != agent.spaceID {
+                        items.append(PaletteItem(id: "action.move.\(space.id.rawValue)", kind: .action("move.\(space.id.rawValue)"),
+                                                 section: .thisThread, title: "Move to \(space.name)", subtitle: agent.name,
+                                                 icon: "folder"))
+                    }
+                }
+            }
         }
         if let target = unreconciledTerminalTarget {
             let panel = terminalPanels.panel(target.key)
@@ -90,7 +130,7 @@ extension ShepherdViewModel {
 
         // Subagents, live and recent: a thread's, never a design's agent's.
         for (agentID, children) in childRuns.rows {
-            guard let agent = state.agents.first(where: { $0.id == agentID }), state.isOrdinaryThread(agent) else { continue }
+            guard let agent = agentsByID[agentID], state.isOrdinaryThread(agent) else { continue }
             for child in children {
                 items.append(PaletteItem(id: "child.\(child.id)", kind: .child(agentID: agentID, child: child),
                                          section: .subagents, title: child.label,
@@ -99,7 +139,7 @@ extension ShepherdViewModel {
             }
         }
         for (target, children) in remoteChildren {
-            guard let connection = remoteHosts.connections.first(where: { $0.id == target.hostID }), connection.phase == .connected,
+            guard let connection = hostsByID[target.hostID], connection.phase == .connected,
                   let agent = remoteAgent(target) else { continue }
             for child in children {
                 items.append(PaletteItem(id: "remoteChild.\(target.hostID).\(target.agentID).\(child.id)",
@@ -115,7 +155,7 @@ extension ShepherdViewModel {
         let spaceNames = Dictionary(state.spaces.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
         let now = Date()
         for id in localRecentsOrder {
-            guard let agent = state.agents.first(where: { $0.id == id }) else { continue }
+            guard let agent = agentsByID[id] else { continue }
             let context = spaceNames[agent.spaceID].map {
                 Self.agentContext(space: $0, status: agent.status, turnFailed: failedTurns.contains(agent.id),
                                   since: statusSince[agent.id], now: now)
@@ -137,6 +177,9 @@ extension ShepherdViewModel {
         }
         return items
     }
+
+    /// "⌃1": the side pane tab's fixed chord (View menu).
+    static func sidePaneChord(_ tab: SidePaneTab) -> String { "⌃\(tab.digit)" }
 
     /// Pin thread or Unpin thread, named for what it does now, for the thread on screen when it
     /// can be pinned (`pinTarget`). It has no chord.
@@ -264,6 +307,25 @@ extension ShepherdViewModel {
         }
     }
 
+    /// "thread.<command>", "move.<space>", "sidePane.<tab>" and "appearance.<mode>".
+    private func runPrefixedPaletteAction(_ action: String) {
+        guard let dot = action.firstIndex(of: ".") else { return }
+        let (prefix, value) = (String(action[..<dot]), String(action[action.index(after: dot)...]))
+        switch prefix {
+        case "thread":
+            guard let command = ThreadCommand(rawValue: value), let id = selectedAgentID, selectedRemoteAgent == nil else { return }
+            perform(command, on: id)
+        case "move":
+            guard let id = selectedAgentID, selectedRemoteAgent == nil else { return }
+            requestThreadMove(.local(id), to: SpaceID(rawValue: value))
+        case "sidePane":
+            if let tab = SidePaneTab(rawValue: value) { selectSidePaneTab(tab) }
+        case "appearance":
+            if let mode = AppearanceMode(rawValue: value) { selectAppearance(mode, systemColorScheme: ThemeManager.effectiveSystemColorScheme) }
+        default: break
+        }
+    }
+
     func runPaletteItem(_ item: PaletteItem) {
         showCommandPalette = false
         switch item.kind {
@@ -304,7 +366,10 @@ extension ShepherdViewModel {
             case "toggleTerminal": toggleTerminalPanel()
             case "newTerminal": newTerminalTab()
             case "maximizeTerminal": toggleTerminalMaximized()
-            default: break
+            case "stop": stopVisibleAgent()
+            case "openAutomations": openDestination(.automations)
+            case "openDesigns": openDestination(.designs)
+            default: runPrefixedPaletteAction(action)
             }
         }
     }

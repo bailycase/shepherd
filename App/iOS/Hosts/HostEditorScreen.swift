@@ -19,6 +19,9 @@ struct HostEditorScreen: View {
     @State private var hasToken = false
     @State private var error: String?
     @State private var confirmingForget = false
+    private enum Field: Hashable { case address, port, token }
+    @FocusState private var focusedField: Field?
+    @State private var validation: RemoteHostEntry.Problem?
 
     var body: some View {
         Form {
@@ -55,15 +58,21 @@ struct HostEditorScreen: View {
                 LabeledContent("Address") {
                     TextField("hostname or IP", text: $address)
                         .keyboardType(.URL).font(.sh(.mono)).multilineTextAlignment(.trailing)
+                        .focused($focusedField, equals: .address)
                 }
+                fieldError(.address)
                 LabeledContent("Port") {
                     TextField(String(RemoteHostRecord.defaultPort), text: $port)
                         .keyboardType(.numberPad).font(.sh(.mono)).multilineTextAlignment(.trailing)
+                        .focused($focusedField, equals: .port)
                 }
+                fieldError(.port)
                 LabeledContent("Token") {
                     SecureField(hasToken ? "Saved" : "Required", text: $token)
                         .privacySensitive().font(.sh(.mono)).multilineTextAlignment(.trailing)
+                        .focused($focusedField, equals: .token)
                 }
+                fieldError(.token)
             } footer: {
                 Text("Turn on Settings ▸ Remote ▸ Serve this Mac in Shepherd on the host and copy its token. Use a trusted LAN or VPN: there is no TLS.")
                     .font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
@@ -111,14 +120,26 @@ struct HostEditorScreen: View {
         hasToken = (try? hosts.token(for: id))??.isEmpty == false
     }
 
+    @ViewBuilder private func fieldError(_ problem: RemoteHostEntry.Problem) -> some View {
+        if validation == problem {
+            Text(problem.description).font(.sh(.caption)).foregroundStyle(Color.sh.failed)
+        }
+    }
+
     private func save() {
+        validation = nil
         do {
             let entry = try RemoteHostEntry(name: name, address: address, port: port, token: token, requireToken: hostID == nil || !hasToken)
             if let id = hostID { try hosts.edit(id, entry) } else { try hosts.add(entry) }
             token = ""
             dismiss()
         } catch let problem as RemoteHostEntry.Problem {
-            error = problem.description
+            validation = problem
+            focusedField = switch problem {
+            case .address: .address
+            case .port: .port
+            case .token: .token
+            }
         } catch {
             self.error = error.localizedDescription
         }
@@ -149,6 +170,7 @@ private struct MobileHostUpdateSection: View {
     @State private var error: String?
     @State private var confirmingInstall = false
     @State private var pollTask: Task<Void, Never>?
+    @State private var pollID = UUID()
 
     private static let terminalPhases: Set<HostUpdateStatus.Phase> =
         [.idle, .upToDate, .available, .failed, .unsupported]
@@ -196,6 +218,7 @@ private struct MobileHostUpdateSection: View {
             }
             if let error {
                 Text(error).font(.sh(.caption)).foregroundStyle(Color.sh.failed)
+                Button("Check status") { Task { await fetchStatus() } }.disabled(polling)
             }
         } header: {
             Text("Software Update")
@@ -215,7 +238,7 @@ private struct MobileHostUpdateSection: View {
             Text(HostSettingsPresentation.installConfirmation(host: host.name))
         }
         .task { await fetchStatus() }
-        .onDisappear { pollTask?.cancel(); pollTask = nil }
+        .onDisappear { pollID = UUID(); pollTask?.cancel(); pollTask = nil; polling = false }
     }
 
     @MainActor private static func toneColor(_ status: HostUpdateStatus) -> Color {
@@ -232,7 +255,7 @@ private struct MobileHostUpdateSection: View {
     private func fetchStatus() async {
         guard let client = host.connectedClient else { return }
         polling = true
-        defer { polling = false }
+        defer { if pollTask == nil { polling = false } }
         do {
             let s = try await client.hostUpdate(.status)
             status = s
@@ -286,21 +309,34 @@ private struct MobileHostUpdateSection: View {
 
     private func startPolling() {
         pollTask?.cancel()
+        pollID = UUID()
+        let id = pollID
         let host = host
+        polling = true
         pollTask = Task {
+            defer {
+                if pollID == id { polling = false; pollTask = nil }
+            }
             for _ in 0..<Self.maxPolls {
                 try? await Task.sleep(for: Self.pollInterval)
-                guard !Task.isCancelled, let client = host.connectedClient else { return }
+                guard !Task.isCancelled else { return }
+                guard let client = host.connectedClient else {
+                    error = "Mac disconnected. Reconnect, then check status."
+                    return
+                }
                 do {
                     let s = try await client.hostUpdate(.status)
+                    guard !Task.isCancelled else { return }
                     status = s
                     error = nil
-                    if Self.terminalPhases.contains(s.phase) { break }
+                    if Self.terminalPhases.contains(s.phase) { return }
                 } catch {
-                    break
+                    guard !Task.isCancelled else { return }
+                    self.error = "Couldn't read update status. Check status to try again."
+                    return
                 }
             }
-            polling = false
+            error = "Still updating — check status to verify progress."
         }
     }
 }

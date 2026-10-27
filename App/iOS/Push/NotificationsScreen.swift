@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
@@ -11,6 +12,7 @@ struct NotificationsScreen: View {
     @Environment(MobileHosts.self) private var hosts
     @Environment(PushManager.self) private var push
     @Environment(\.settingsColumn) private var inColumn
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ScrollView {
@@ -37,6 +39,9 @@ struct NotificationsScreen: View {
             .frame(maxWidth: .infinity)
         }
         .background(Color.sh.bgWindow)
+        .task(id: scenePhase) {
+            if scenePhase == .active { await push.refreshPermission() }
+        }
         .navigationTitle("Notifications")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -46,6 +51,7 @@ struct NotificationsScreen: View {
 private struct PushHostRow: View {
     let host: MobileHost
     @Environment(PushManager.self) private var push
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         let state = push.hostStates[host.id] ?? PushManager.HostPushState()
@@ -89,6 +95,20 @@ private struct PushHostRow: View {
                     .labelsHidden()
                     .disabled(!supported && !state.enabled)
                 }
+            }
+            if state.enabled, !state.registered, !state.revokeFailed {
+                Text(host.phase.isConnected ? "Waiting for Mac to confirm registration" : "Waiting for Mac to connect")
+                    .font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+                if host.phase.isConnected, !state.registering {
+                    Button("Retry registration") { Task { await push.renew(host: host, reconnect: true) } }
+                        .buttonStyle(.sh(.secondary))
+                }
+            }
+            if state.permissionDenied {
+                Button("Open Settings") {
+                    if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                }
+                .buttonStyle(.sh(.secondary))
             }
             if let error = state.error {
                 Text(error)

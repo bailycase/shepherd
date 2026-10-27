@@ -838,6 +838,7 @@ private struct FileTreeContent: View {
                                 }
                             }
                         )
+                        .equatable()
                     }
                 }
             }
@@ -895,11 +896,14 @@ private struct FileTreeContent: View {
 
 // MARK: - Tree row
 
-private struct FileTreeRow: View {
+private struct FileTreeRow: View, Equatable {
     let node: FileNode
     let depth: Int
     let isSelected: Bool
     let action: () -> Void
+
+    /// A selection change redraws the two rows it touches, not every realized row.
+    static func == (a: FileTreeRow, b: FileTreeRow) -> Bool { a.node == b.node && a.depth == b.depth && a.isSelected == b.isSelected }
 
     var body: some View {
         Button(action: action) {

@@ -8,6 +8,33 @@ import Testing
 @Suite("App settings")
 @MainActor
 struct AppSettingsTests {
+    /// L12: every launch path resolves "the agent's default" the same way: Settings ▸ Agents'
+    /// model, else the one in Shepherd's pi home, else nothing (pi's own pick, named as such).
+    @Test func theDefaultModelResolvesOneWayForEveryLaunch() throws {
+        let settings = AppSettings(store: Fixture.defaults())
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("pi-home-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        #expect(settings.defaultModel(piHome: home) == nil)
+        #expect(AutomationEditorSheet.modelLine(nil).hasPrefix("Runs on whatever model Shepherd’s pi picks"))
+        try Data(#"{"defaultProvider":"openai-codex","defaultModel":"gpt-6-astra"}"#.utf8).write(to: home.appendingPathComponent("settings.json"))
+        #expect(settings.defaultModel(piHome: home) == "openai-codex/gpt-6-astra", "pi's own default when Settings names none")
+        settings.defaultModel = "anthropic/claude-opus-4-5"
+        #expect(settings.defaultModel(piHome: home) == "anthropic/claude-opus-4-5", "Settings ▸ Agents outranks pi's")
+        #expect(AutomationEditorSheet.modelLine("anthropic/claude-opus-4-5") == "Runs on anthropic/claude-opus-4-5 (the default in Settings ▸ Agents)")
+    }
+
+    /// The terminal font list comes from the font registry (no font is loaded for it): every Mac has Menlo, a
+    /// symbols-only Nerd Font pack is left out, and the configured family stays listed even when missing.
+    @Test func monospacedFamiliesComeFromTheRegistry() {
+        let families = AppSettings.monospacedFamilies(including: "Not Installed Mono")
+        #expect(families.contains("Menlo"))
+        #expect(families.contains("Not Installed Mono"))
+        #expect(families == families.sorted() && Set(families).count == families.count)
+        #expect(!families.contains { $0.hasSuffix("Symbols Only") })
+        #expect(!AppSettings.monospacedFamilies(including: AppSettings.systemFontFamily).contains(AppSettings.systemFontFamily))
+    }
+
     @Test func freshSettingsUseThePublishedDefaults() {
         let settings = AppSettings(store: Fixture.defaults())
 
@@ -34,6 +61,7 @@ struct AppSettingsTests {
         #expect(settings.childModel.isEmpty && settings.childThinking.isEmpty)
         #expect(settings.queueDelivery == .all, "the queue arrives as one turn")
         #expect(settings.trimToolOutput, "old tool output is trimmed from the model's context until switched off")
+        #expect(settings.notifyOnTurnFinished, "finished turns notify until switched off")
         #expect(settings.deferTools, "rarely used tools are deferred behind tool search until switched off")
         #expect(settings.codemode, "native tool scripting is enabled until switched off")
         #expect(settings.compactAtPercent == nil, "compaction is pi's own until a share is chosen")
@@ -51,11 +79,13 @@ struct AppSettingsTests {
         settings.compactAtPercent = 80
         settings.compactAtPercent = 80
         settings.trimToolOutput = false
+        settings.notifyOnTurnFinished = false
         settings.deferTools = false
         settings.codemode = false
 
         let reloaded = AppSettings(store: store)
         #expect(reloaded.compactAtPercent == 80 && !reloaded.trimToolOutput && !reloaded.deferTools && !reloaded.codemode)
+        #expect(!reloaded.notifyOnTurnFinished)
         #expect(written == [80], "only a change is handed on")
 
         store.set(75, forKey: AppSettings.Key.compactAtPercent)
@@ -63,6 +93,7 @@ struct AppSettingsTests {
 
         settings.resetToDefaults()
         #expect(settings.compactAtPercent == nil && settings.trimToolOutput && settings.deferTools && settings.codemode)
+        #expect(settings.notifyOnTurnFinished)
         #expect(written == [80, nil])
         #expect(store.object(forKey: AppSettings.Key.compactAtPercent) == nil && store.object(forKey: AppSettings.Key.trimToolOutput) == nil)
         #expect(store.object(forKey: AppSettings.Key.deferTools) == nil && store.object(forKey: AppSettings.Key.codemode) == nil)

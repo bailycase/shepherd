@@ -478,7 +478,7 @@ struct BrowserDriveHostTests {
         try panes.send(.helloAgent(agentID: pi.agent.id))
         try panes.send(.listPanes(id: 1, agentID: pi.agent.id))
         _ = try await panes.reply()
-        #expect(h.server.pushMessage(toAgent: pi.agent.id, text: "[from: worker] CI is green", delivery: .report))
+        #expect(await h.server.pushMessage(toAgent: pi.agent.id, text: "[from: worker] CI is green", delivery: .report))
         #expect(try await viewer.nextDriveOrNil(timeout: .milliseconds(500)) == nil)
     }
 

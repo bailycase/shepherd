@@ -80,11 +80,13 @@ struct AutomationEditorSheet: View {
                 SheetRow("Name") {
                     TextField("Name", text: $name, prompt: Text("Nightly migrations dry run").foregroundStyle(Color.sh.textTertiary))
                         .textFieldStyle(.sh)
+                        .accessibilityLabel("Name")
                 }
                 SheetRow("Folder") {
                     HStack(spacing: SH.Space.m) {
                         TextField("Folder", text: $folder, prompt: Text("~/code/project").foregroundStyle(Color.sh.textTertiary))
                             .textFieldStyle(.sh(mono: true))
+                            .accessibilityLabel("Folder")
                         Button("Choose…") { picking = true }
                             .buttonStyle(.sh(.ghost, size: .s))
                             .accessibilityLabel("Choose folder")
@@ -92,6 +94,7 @@ struct AutomationEditorSheet: View {
                 }
                 SheetRow("Prompt", alignment: .firstTextBaseline) {
                     TextEditor(text: $prompt)
+                        .writingToolsBehavior(.disabled)
                         .focused($promptFocused)
                         .shText(.body)
                         .foregroundStyle(Color.sh.textPrimary)
@@ -106,6 +109,15 @@ struct AutomationEditorSheet: View {
                                 .allowsHitTesting(false)
                         }
                         .accessibilityLabel("Prompt")
+                }
+                if host == PageHost.localID {
+                    // A run starts on the same default every thread does (Settings ▸ Agents, else Shepherd's pi's own).
+                    SheetRow("Model") {
+                        Text(AutomationEditorSheet.modelLine(vm.settings.defaultModel(piHome: vm.server.pi.home)))
+                            .font(.sh(.caption))
+                            .foregroundStyle(Color.sh.textSecondary)
+                            .accessibilityLabel("Model")
+                    }
                 }
                 SheetRow("On") {
                     HStack(spacing: SH.Space.m) {
@@ -139,6 +151,12 @@ struct AutomationEditorSheet: View {
             },
             cancel: { picking = false }
         )
+    }
+
+    /// "Runs on gpt-5 (the default in Settings ▸ Agents)"; with no default anywhere, pi's own pick, named as such.
+    static func modelLine(_ model: String?) -> String {
+        guard let model else { return "Runs on whatever model Shepherd’s pi picks. Set a default in Settings ▸ Agents." }
+        return "Runs on \(model) (the default in Settings ▸ Agents)"
     }
 
     private func load() {

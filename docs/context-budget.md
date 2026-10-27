@@ -3,7 +3,7 @@
 > Read when you add or change a tool, a prompt line or an instruction file, or when a thread compacts too often.
 
 Every request an agent sends carries pi's system prompt, the instruction files, the skills list and
-the definition of every tool the agent has, before the user says anything. That start is about 8k
+the definition of every tool the agent has, before the user says anything. That start is about 6.5k
 tokens for an ordinary thread. What fills a window is the run: each tool result, each file written
 and each screenshot rides in every later request until a compaction.
 
@@ -33,7 +33,11 @@ tells what pi owns from what Shepherd adds).
 ## Deferred tools
 
 A tool the model rarely needs is registered `deferred`: pi's `tool_search` finds it by name or
-description and loads it for the rest of the thread, so its definition is not sent until then.
+description and loads it for the rest of the thread, so its definition is not sent until then. The
+browser, other-thread, automation, review and project tools, the rarer native-helper tools
+(`shepherd_child_agents`, `shepherd_child_cancel`, `shepherd_workflow`) and `codemode` with its
+script-writing guidelines are deferred this way; `ask_user` stays direct, since a model that has to
+search for it asks in prose instead.
 Settings ▸ Agents ▸ Context ▸ Defer rarely used tools turns this off (every tool direct). The
 registry and each tool's verdict are in `Tests/Extensions/context-tools.json`; the test fails a
 deferred tool that is sent anyway, and a kept one that is not.

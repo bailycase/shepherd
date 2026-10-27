@@ -94,7 +94,7 @@ struct ThreadMoveTests {
         let receiver = try ExtensionClient(path: h.socketPath)
         defer { receiver.closeConnection() }
         try receiver.send(.helloAgent(agentID: agent.id))
-        try await eventually("peer connection registration") { h.server.pushMessage(toAgent: agent.id, text: "slow") }
+        try await eventually("peer connection registration") { await h.server.pushMessage(toAgent: agent.id, text: "slow") }
         // Leave delivery unread on the separate socket. RPC reports idle but the message is not lost.
         #expect(try await pi.snapshot().running == false)
         do {
@@ -132,7 +132,7 @@ struct ThreadMoveTests {
         let space = try await destination(h)
         let receiver = try ExtensionClient(path: h.socketPath)
         try receiver.send(.helloAgent(agentID: pi.agent.id))
-        try await eventually("peer report connection") { h.server.pushMessage(toAgent: pi.agent.id, text: "report", delivery: .report) }
+        try await eventually("peer report connection") { await h.server.pushMessage(toAgent: pi.agent.id, text: "report", delivery: .report) }
         guard case .message(let deliveryID, _, .report) = try receiver.readReply() else { Issue.record("Report lost"); return }
         receiver.closeConnection()
         let replacement = try ExtensionClient(path: h.socketPath)
@@ -154,9 +154,9 @@ struct ThreadMoveTests {
         let receiver = try ExtensionClient(path: h.socketPath)
         defer { receiver.closeConnection() }
         try receiver.send(.helloAgent(agentID: pi.agent.id))
-        try await eventually("peer registration") { h.server.pushMessage(toAgent: pi.agent.id, text: "report", delivery: .report) }
-        for _ in 1..<64 { #expect(h.server.pushMessage(toAgent: pi.agent.id, text: "report", delivery: .report)) }
-        #expect(!h.server.pushMessage(toAgent: pi.agent.id, text: "overflow", delivery: .report))
+        try await eventually("peer registration") { await h.server.pushMessage(toAgent: pi.agent.id, text: "report", delivery: .report) }
+        for _ in 1..<64 { #expect(await h.server.pushMessage(toAgent: pi.agent.id, text: "report", delivery: .report)) }
+        #expect(!(await h.server.pushMessage(toAgent: pi.agent.id, text: "overflow", delivery: .report)))
         await #expect(throws: ProjectFileError.self) { try await h.server.moveThread(pi.agent.id, to: destination.id) }
         #expect(await h.server.sessionInfo(sessionID: pi.sessionID)?.isAlive == true)
     }

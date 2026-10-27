@@ -23,8 +23,9 @@ agents.
   recently active first). The New thread page's workplace
   chip lists each host's spaces, flat. With no agent on screen, the main column shows New thread.
 - **Lifetime:** there is no daemon. Sessions live and die with the app. On relaunch the workspace
-  (spaces, agents, terminal layouts) restores from `state.json`, every agent resumes its pi session
-  over RPC, and every terminal respawns a fresh shell.
+  (spaces, agents, terminal layouts) restores from `state.json`; an agent resumes its pi session
+  over RPC and a terminal respawns a fresh shell when its thread or tab is first shown (or a
+  remote viewer asks), the rest staying dormant until then.
 - **Remote:** Shepherd can serve its agents to other devices over an authenticated TCP listener
   (off by default). The main use is running spaces on one Mac and driving them from another
   Mac running Shepherd. The iPhone and iPad client (`App/iOS`) drives them the same way.

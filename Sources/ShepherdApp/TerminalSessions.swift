@@ -417,10 +417,11 @@ final class TerminalSessionStore {
     /// `session(for:in:)` → `start` → `adopt`, which reattaches with the
     /// server's screen snapshot at the surface's real grid.
     func parkPane(_ paneID: PaneID) {
-        // Nothing to release for an RPC pane; the native view stops polling on its own.
-        guard sessions[paneID]?.isRPC != true,
-              let session = sessions.removeValue(forKey: paneID),
-              let sessionID = session.sessionID else { return }
+        // Nothing to release for an RPC pane; the native view stops polling on its own. A pane
+        // without a session yet (dormant, or its start in flight) keeps its entry: dropping it
+        // would strand that start against a stale object.
+        guard let session = sessions[paneID], !session.isRPC, let sessionID = session.sessionID else { return }
+        sessions.removeValue(forKey: paneID)
         session.stopOutput()
         server.detach(sessionID: sessionID)
     }
@@ -594,7 +595,8 @@ final class TerminalSessionStore {
         }
     }
 
-    /// Remote demand starts only this validated auxiliary pane, without selecting its agent.
+    /// Demand for one auxiliary pane (a remote viewer's, or its tab shown on this Mac) starts
+    /// only it, without selecting its agent; a pane already started is left as it is.
     func activateTerminal(_ pane: LeafPane, in tab: Tab) {
         activatePane(pane, in: tab)
     }

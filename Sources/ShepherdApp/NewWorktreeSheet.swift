@@ -148,7 +148,7 @@ struct NewWorktreeSheet: View {
             let config = NewAgentConfig(
                 spaceID: space.id,
                 workingDirectory: path,
-                model: vm.settings.agentDefaults.model,
+                model: vm.settings.defaultModel(piHome: vm.server.pi.home),
                 thinking: vm.settings.agentDefaults.thinking,
                 initialPrompt: nil,
                 initialName: (branch as NSString).lastPathComponent,

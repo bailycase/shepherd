@@ -43,3 +43,11 @@ struct ProjectThinkingClampTests {
         #expect(Composer.clampedThinking(level, to: levels) == expected)
     }
 }
+
+extension CycleThinkingShortcutTests {
+    /// The chord changes a setting with cost behind it: VoiceOver hears the level it landed on.
+    @Test func theChosenLevelIsAnnouncedByItsTitle() {
+        #expect(CycleThinkingShortcut.announcement("xhigh") == "Thinking: Extra high")
+        #expect(CycleThinkingShortcut.announcement("future") == "Thinking: Future")
+    }
+}

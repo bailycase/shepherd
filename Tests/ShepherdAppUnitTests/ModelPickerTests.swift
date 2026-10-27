@@ -22,6 +22,28 @@ struct ModelPickerTests {
         #expect(ModelCatalog.settingsModels(catalog: nil, current: "", recent: ["gone/model"]).isEmpty)
     }
 
+    /// L3: two providers offering one model name are told apart wherever no provider header says
+    /// which is which: Recent, the settings popover's two quick choices, and the composer's chip.
+    @Test func aNameTwoProvidersOfferKeepsItsProviderWhereNoHeaderSaysIt() {
+        let catalog = ModelCatalog([
+            PiModelCatalog.Entry(id: "cpa/gpt-6-astra"), PiModelCatalog.Entry(id: "openai-codex/gpt-6-astra"),
+            PiModelCatalog.Entry(id: "anthropic/claude-opus-4-5"),
+        ])
+        #expect(catalog.isAmbiguous("cpa/gpt-6-astra") && catalog.isAmbiguous("openai-codex/gpt-6-astra") && !catalog.isAmbiguous("anthropic/claude-opus-4-5"))
+        #expect(catalog.title("openai-codex/gpt-6-astra") == "openai-codex/gpt-6-astra" && catalog.title("anthropic/claude-opus-4-5") == "claude-opus-4-5")
+        let list = catalog.list(query: "", recent: ["cpa/gpt-6-astra", "anthropic/claude-opus-4-5"], current: nil)
+        #expect(list.options.prefix(2).map(\.title) == ["cpa/gpt-6-astra", "claude-opus-4-5"], "Recent spells the ambiguous one out")
+        #expect(list.options.dropFirst(2).map(\.title) == ["gpt-6-astra"], "under its provider's header the short name is enough")
+        let quick = ModelCatalog.settingsModels(catalog: catalog, current: "openai-codex/gpt-6-astra", recent: ["cpa/gpt-6-astra"])
+        #expect(quick.map(\.title) == ["openai-codex/gpt-6-astra", "cpa/gpt-6-astra"])
+        let chip = ModelSettingsSummary(model: "openai-codex/gpt-6-astra", thinking: "medium", thinkingOffered: true, speed: .standard,
+                                        speedOffered: false, qualified: true)
+        #expect(chip.name == "openai-codex/gpt-6-astra")
+        let compact = ModelSettingsSummary(model: "openai-codex/gpt-6-astra-20261001", thinking: nil, thinkingOffered: false, speed: .standard,
+                                           speedOffered: false, shortenedName: true, qualified: true)
+        #expect(compact.name == "openai-codex/gpt-6-astra", "the narrow chip drops the date, not the provider")
+    }
+
     private func sections(_ list: SHModelList) -> [String] {
         list.rows.compactMap { if case .header(let title) = $0.kind { title } else { nil } }
     }

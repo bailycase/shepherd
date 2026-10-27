@@ -59,6 +59,35 @@ struct TurnOutcomeTests {
         #expect(agent.current == .done)
     }
 
+    /// The failure outlives the status: a relaunch resets every row to idle, and the persisted
+    /// failure is how it can still say the thread failed. The next good turn clears it.
+    @Test func aFailedTurnIsRememberedAcrossARelaunchUntilATurnEndsWell() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let agent = try await launch(h)
+        defer { agent.status.closeConnection() }
+        let pi = agent.pi
+        _ = try await pi.send("provider-error", from: try await pi.snapshot())
+        _ = try await pi.snapshot("the failing turn to start") { $0.running }
+        FileManager.default.createFile(atPath: h.dir.appendingPathComponent("fail-turn").path, contents: nil)
+        try agent.report(.done)
+        try await eventually("the failure to be recorded") { h.server.state.agents.first { $0.id == agent.id }?.lastFailure == "529 overloaded" }
+        try await eventually("the failure to reach state.json") {
+            let data = try Data(contentsOf: h.dir.appendingPathComponent("state.json"))
+            return try JSONDecoder().decode(ShepherdState.self, from: data).agents.first { $0.id == agent.id }?.lastFailure == "529 overloaded"
+        }
+        h.stop(keepFiles: true)
+        let restarted = try ScratchServer(dir: h.dir)
+        defer { restarted.stop() }
+        let restored = restarted.server.state.agents.first { $0.id == agent.id }
+        #expect(restored?.status == .idle && restored?.lastFailure == "529 overloaded")
+
+        let status = try ExtensionClient(path: restarted.socketPath)
+        defer { status.closeConnection() }
+        try status.send(.setAgentStatus(agentID: agent.id, status: .working))
+        try await eventually("a new turn to clear it") { restarted.server.state.agents.first { $0.id == agent.id }?.lastFailure == nil }
+    }
+
     @Test func aTurnThatFinishesIsReportedDoneWithoutAFailure() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }

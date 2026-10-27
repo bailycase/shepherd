@@ -662,8 +662,14 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
     /// Startup has asked a question before history is ready. Only answering is available;
     /// messages are not an authoritative history page yet. Absent from older hosts.
     public var initializing: Bool?
+    /// True when this is what pi's saved session file holds for an agent whose pi is not running
+    /// (`RemoteProtocol.nativeThreadPreviewCapability`): read-only, with no actions and a
+    /// `generation` no request can name. Any request but a snapshot starts pi, whose own snapshot
+    /// then replaces it. Absent (false) on pi's own snapshots and from older hosts.
+    public var preview: Bool?
 
     public var isRPC: Bool { runtime == "rpc" }
+    public var isPreview: Bool { preview == true }
 
     public init(
         piSessionID: String, generation: String, revision: UInt64, running: Bool, model: String? = nil,
@@ -674,7 +680,7 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
         context: NativeThreadContext? = nil, turnChanges: [ChangesTurn]? = nil, retry: NativeThreadRetry? = nil,
         startProblem: NativeStartProblem? = nil, serviceTier: String? = nil, serviceTiers: [String]? = nil, goal: NativeGoal? = nil,
         clips: NativeThreadClips? = nil, liveRequest: NativeResponseTiming? = nil,
-        initializing: Bool? = nil, checkpointRecovery: NativeCheckpointRecovery? = nil
+        initializing: Bool? = nil, checkpointRecovery: NativeCheckpointRecovery? = nil, preview: Bool? = nil
     ) {
         self.piSessionID = piSessionID
         self.generation = generation
@@ -707,6 +713,7 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
         self.clips = clips
         self.liveRequest = liveRequest
         self.initializing = initializing
+        self.preview = preview
     }
 }
 

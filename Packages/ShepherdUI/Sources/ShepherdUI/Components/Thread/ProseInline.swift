@@ -12,20 +12,25 @@ import SwiftUI
 ///   HTML tags are dropped, and anything that only looks like a tag (`Array<Int>`) stays text
 @MainActor
 public enum SHProseInline {
-    private struct Key: Hashable {
-        var text: String
-        var scale: CGFloat
+    private final class Entry {
+        let value: AttributedString
+        init(_ value: AttributedString) { self.value = value }
     }
 
-    private static var cache: [Key: AttributedString] = [:]
+    /// Keyed by text scale and text. A streaming paragraph adds a key per chunk, so the cache
+    /// evicts its oldest entries rather than everything at once (finished turns keep their style).
+    private static let cache: NSCache<NSString, Entry> = {
+        let cache = NSCache<NSString, Entry>()
+        cache.countLimit = 4096
+        return cache
+    }()
 
     /// `text` styled, from the cache when it was styled before at this text scale.
     public static func attributed(_ text: String) -> AttributedString {
-        let key = Key(text: text, scale: ThemeStore.shared.textScale)
-        if let cached = cache[key] { return cached }
+        let key = "\(ThemeStore.shared.textScale)\n\(text)" as NSString
+        if let cached = cache.object(forKey: key) { return cached.value }
         let value = styled(text)
-        if cache.count > 4096 { cache.removeAll(keepingCapacity: true) }
-        cache[key] = value
+        cache.setObject(Entry(value), forKey: key)
         return value
     }
 

@@ -58,6 +58,20 @@ final class InstructionsModel {
 
     /// This Mac's files, nil until they are read.
     private(set) var local: InstructionsSnapshot?
+    /// The instructions that came over from the user's pi into Shepherd's pi home (`AGENTS.md`,
+    /// `APPEND_SYSTEM.md`), which every agent already reads from there: offered to adopt as
+    /// Shepherd's own while Shepherd's file is empty (the extension omits an identical copy, so
+    /// adopting never doubles it).
+    private(set) var imported: [InstructionFile: ImportedInstructions] = [:]
+    /// Shepherd's pi home, read for `imported`; nil reads none (hosts, previews).
+    @ObservationIgnored var piHome: URL?
+
+    struct ImportedInstructions: Equatable {
+        /// The file's name as pi calls it ("AGENTS.md", "CLAUDE.md").
+        var name: String
+        var path: String
+        var text: String
+    }
     private(set) var remote: [UUID: InstructionsHostFiles] = [:]
     /// When each host last took This Mac's files, this launch.
     private(set) var syncedAt: [UUID: Date] = [:]
@@ -431,6 +445,33 @@ final class InstructionsModel {
 
     private func reloadLocal() async {
         local = try? await request(.local, .fetch)
+        if let piHome {
+            imported = await Task.detached(priority: .userInitiated) { Self.imported(in: piHome) }.value
+        }
+    }
+
+    /// What pi reads from its own agent folder, when the copy there is a file with something in it.
+    nonisolated static func imported(in piHome: URL) -> [InstructionFile: ImportedInstructions] {
+        var found: [InstructionFile: ImportedInstructions] = [:]
+        let files: [(InstructionFile, URL?)] = [(.agents, YourPiFiles.contextFile(in: piHome)), (.appendSystem, piHome.appendingPathComponent("APPEND_SYSTEM.md"))]
+        for (file, url) in files {
+            guard let url, let text = try? String(contentsOf: url, encoding: .utf8), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+            found[file] = ImportedInstructions(name: url.lastPathComponent, path: url.path, text: text)
+        }
+        return found
+    }
+
+    /// The imported copy of `file` to offer while Shepherd's own is empty on This Mac.
+    func adoptable(_ file: InstructionFile) -> ImportedInstructions? {
+        guard machine == .local, let saved = saved(file, on: .local), saved.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !isEdited(file, on: .local) else { return nil }
+        return imported[file]
+    }
+
+    /// Adopt: the imported copy becomes the editor's draft, to save as Shepherd's own.
+    func adoptImported(_ file: InstructionFile) {
+        guard let copy = imported[file] else { return }
+        setText(copy.text, file: file, on: .local)
     }
 
     private func saveLocal(_ file: InstructionFile, content: String, origin: String?, sync: Bool) async throws {

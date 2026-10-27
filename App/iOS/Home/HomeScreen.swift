@@ -82,14 +82,22 @@ private struct HomeSections: View {
             }
         }
         // The Mac's Working, Done and Pinned, in its order (docs/design/sidebar.md).
+        // A card draws every row it holds, so each group shows its first few and lists the rest on
+        // its own screen.
         if !groups.working.isEmpty {
             section("Working", count: groups.working.count) {
-                SHListCard { ForEach(groups.working) { row in threadRow(row) } }
+                SHListCard {
+                    ForEach(groups.working.prefix(HomeLimits.group)) { row in threadRow(row) }
+                    showAll(groups.working.count, route: .working)
+                }
             }
         }
         if !groups.done.isEmpty {
             section("Done", count: groups.done.count, trailing: MarkAllSeenChip(rows: groups.done)) {
-                SHListCard { ForEach(groups.done) { row in threadRow(row) } }
+                SHListCard {
+                    ForEach(groups.done.prefix(HomeLimits.group)) { row in threadRow(row) }
+                    showAll(groups.done.count, route: .done)
+                }
             }
         }
         if !groups.pinned.isEmpty {
@@ -136,6 +144,19 @@ private struct HomeSections: View {
                 trailing
             }
             content()
+        }
+    }
+
+    /// The row past a group's first few: the rest, on the group's own screen.
+    @ViewBuilder private func showAll(_ count: Int, route: HomeRoute) -> some View {
+        if count > HomeLimits.group {
+            Button { navigator.open(.home(route)) } label: {
+                Text("Show all \(count)")
+                    .font(.sh(.caption, weight: .medium))
+                    .foregroundStyle(Color.sh.textSecondary)
+                    .frame(maxWidth: .infinity, minHeight: SH.Height.touch)
+            }
+            .buttonStyle(.shRow(radius: 0))
         }
     }
 

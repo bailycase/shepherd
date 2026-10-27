@@ -149,7 +149,7 @@ struct TerminalMenuLayer: View {
         let control = vm.terminalControlAvailable(target)
         let close = { vm.terminalPanels.menu = nil }
         return SHTerminalMenu {
-            SHChangesMenuRow("New terminal in the worktree", subtitle: vm.terminalPlace(target), systemImage: "terminal",
+            SHChangesMenuRow(vm.newTerminalTitle(target), subtitle: vm.terminalPlace(target), systemImage: "terminal",
                              trailing: .chord(keys.display(.newTerminal)), tallHeight: SHTerminalMetrics.menuTallRowHeight) {
                 close()
                 vm.newTerminalTab(target)

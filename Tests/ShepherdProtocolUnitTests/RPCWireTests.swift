@@ -32,6 +32,7 @@ struct RPCWireTests {
         (.prompt(message: "Later", streamingBehavior: .followUp), nil,
          #"{"type":"prompt","message":"Later","streamingBehavior":"followUp"}"#),
         (.abort, nil, #"{"type":"abort"}"#),
+        (.abortRetry, nil, #"{"type":"abort_retry"}"#),
         (.getState, nil, #"{"type":"get_state"}"#),
         (.getMessages, nil, #"{"type":"get_messages","history":true,"images":"refs"}"#),
         (.getImage(sha256: "ab12"), nil, #"{"type":"get_image","sha256":"ab12"}"#),

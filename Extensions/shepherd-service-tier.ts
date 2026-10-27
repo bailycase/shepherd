@@ -50,11 +50,18 @@ export function wireValue(tier: Tier, model: Model): string | undefined {
   return ruleFor(model)?.wire[tier];
 }
 
+// The file is read again only when its mtime moved; a missing file is standard.
+let cached: { mtimeMs: number; tier: Tier } | undefined;
 function readTier(path: string): Tier {
   try {
+    const mtimeMs = fs.statSync(path).mtimeMs;
+    if (cached?.mtimeMs === mtimeMs) return cached.tier;
     const value = JSON.parse(fs.readFileSync(path, "utf8"));
-    return value?.tier === "fast" ? "fast" : "standard";
+    const tier: Tier = value?.tier === "fast" ? "fast" : "standard";
+    cached = { mtimeMs, tier };
+    return tier;
   } catch {
+    cached = undefined;
     return "standard";
   }
 }

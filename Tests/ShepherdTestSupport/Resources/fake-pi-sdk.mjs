@@ -36,6 +36,7 @@ const models = {
     { id: "deepseek-chat", provider: "deepseek", reasoning: false },
     { id: "deepseek-reasoner", provider: "deepseek", reasoning: true },
   ],
+  anthropic: [{ id: "claude-fake", provider: "anthropic", reasoning: true }],
 };
 
 function oauthCredential() {
@@ -151,6 +152,12 @@ export class ModelRuntime {
 
   async completeSimple(model, _context, options) {
     if (options.apiKey === "sk-fake-good-key-0001") return { role: "assistant", stopReason: "stop", content: [] };
+    if (options.apiKey === undefined) {
+      // The stored login, as pi resolves it: an OAuth credential whose refresh token rotated elsewhere fails to refresh.
+      const stored = readAuth(this.authPath)[model.provider];
+      if (stored?.type === "oauth" && stored.refresh === "fake-refresh-token-0001") return { role: "assistant", stopReason: "stop", content: [] };
+      if (stored?.type === "oauth") throw new Error('Token refresh failed: Token refresh failed (HTTP 400): {"error":"invalid_grant"}');
+    }
     return { role: "assistant", stopReason: "error", errorMessage: `401 {"error":{"message":"invalid api key ${options.apiKey}"}}` };
   }
 }

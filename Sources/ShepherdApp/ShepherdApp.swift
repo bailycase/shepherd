@@ -93,12 +93,11 @@ public struct ShepherdMacApp: App {
         .windowResizability(.contentMinSize)
         .commands {
             AppSettingsCommands(vm: vm)
-            FileCommands(vm: vm, keys: keys, bindings: keys.overrides)
-            ViewCommands(vm: vm, menu: vm.menuState, keys: keys, bindings: keys.overrides)
+            FileCommands(vm: vm, menu: vm.menuState, keys: keys, bindings: keys.overrides)
+            ViewCommands(vm: vm, menu: vm.menuState, keys: keys, bindings: keys.overrides, themes: themes)
             PaneCommands(vm: vm, keys: keys, bindings: keys.overrides)
-            SpaceCommands(vm: vm, menu: vm.menuState)
+            SpaceCommands(vm: vm, menu: vm.menuState, keys: keys)
             AgentCommands(vm: vm, menu: vm.menuState, keys: keys, bindings: keys.overrides)
-            AppearanceCommands(vm: vm, themes: themes)
         }
     }
 }

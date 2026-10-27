@@ -46,6 +46,8 @@ public final class ChangesService: @unchecked Sendable {
     private let repositories = ChangesLocked<[String: Repository]>([:])
     private let indexLocks = ChangesLocked<[String: NSLock]>([:])
     private let indexSources = ChangesLocked<[String: Data]>([:])
+    /// `stat` of the user's index when it was last fingerprinted: unchanged means unread.
+    private let indexStats = ChangesLocked<[String: (mtime: timespec, size: off_t, inode: ino_t)]>([:])
     private let restoreLocks = ChangesLocked<[String: NSLock]>([:])
     private let emptyTrees = ChangesLocked<[String: String]>([:])
     private let lists = ChangesCache<[ChangesFile]>(capacity: 64)
@@ -155,8 +157,18 @@ public final class ChangesService: @unchecked Sendable {
     private func snapshotIndex(_ repository: Repository) throws -> String {
         let url = indexDirectory.appendingPathComponent(repository.key)
         let fm = FileManager.default
+        // Reading and hashing a large index on every snapshot is paid before each prompt; an index
+        // whose mtime, size and inode have not moved is the one already fingerprinted.
+        var info = stat()
+        let current = stat(repository.index, &info) == 0 ? (info.st_mtimespec, info.st_size, info.st_ino) : nil
+        if let current, fm.fileExists(atPath: url.path),
+           let last = indexStats.withValue({ $0[repository.key] }),
+           last.mtime.tv_sec == current.0.tv_sec, last.mtime.tv_nsec == current.0.tv_nsec, last.size == current.1, last.inode == current.2 {
+            return url.path
+        }
         let source = fm.fileExists(atPath: repository.index) ? try Data(contentsOf: URL(fileURLWithPath: repository.index)) : Data()
         let fingerprint = Data(SHA256.hash(data: source))
+        if let current { indexStats.withValue { $0[repository.key] = current } } else { indexStats.withValue { $0[repository.key] = nil } }
         if indexSources.withValue({ $0[repository.key] }) != fingerprint || !fm.fileExists(atPath: url.path) {
             try fm.createDirectory(at: indexDirectory, withIntermediateDirectories: true)
             if source.isEmpty {
@@ -437,7 +449,8 @@ public final class ChangesService: @unchecked Sendable {
             let headRefName: String
             let url: String
         }
-        guard let output = runLoginShell("gh pr view --json number,title,isDraft,state,baseRefName,headRefName,url", in: root, timeout: 10),
+        guard let gh = ghPath(),
+              let output = run(gh, ["pr", "view", "--json", "number,title,isDraft,state,baseRefName,headRefName,url"], in: root, timeout: 10),
               let view = try? JSONDecoder().decode(View.self, from: output) else { return nil }
         return ChangesPullRequest(number: view.number, title: view.title, isDraft: view.isDraft, state: view.state,
                                   base: view.baseRefName, head: view.headRefName, url: view.url)
@@ -449,11 +462,28 @@ public final class ChangesService: @unchecked Sendable {
         return candidates.first { commit($0, in: repository) != nil }
     }
 
+    /// Where gh is on the user's PATH, from one login shell (the user's rc files commonly take
+    /// hundreds of ms) and then remembered for the app's lifetime, absence included.
+    private static let resolvedGH = ChangesLocked<String??>(nil)
+    static func ghPath() -> String? {
+        if let cached = resolvedGH.withValue({ $0 }) { return cached }
+        let found = runLoginShell("command -v gh", in: "/", timeout: 10)
+            .flatMap { String(data: $0, encoding: .utf8) }?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let path = found.flatMap { $0.hasPrefix("/") ? $0 : nil }
+        resolvedGH.withValue { $0 = .some(path) }
+        return path
+    }
+
     /// stdout of `command` in a login shell, or nil when it fails or outlasts `timeout`.
     static func runLoginShell(_ command: String, in directory: String, timeout: TimeInterval) -> Data? {
+        run("/bin/zsh", ["-l", "-c", command], in: directory, timeout: timeout)
+    }
+
+    /// stdout of `executable` run with `arguments`, or nil when it fails or outlasts `timeout`.
+    static func run(_ executable: String, _ arguments: [String], in directory: String, timeout: TimeInterval) -> Data? {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        process.arguments = ["-l", "-c", command]
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = arguments
         process.currentDirectoryURL = URL(fileURLWithPath: directory, isDirectory: true)
         let stdout = Pipe()
         process.standardOutput = stdout

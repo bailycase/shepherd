@@ -12,10 +12,16 @@ extension ShepherdViewModel {
     func isWatching(_ target: BannerTarget) -> Bool {
         guard NSApp.isActive else { return false }
         switch target {
-        case .agent(let id): return selectedAgentID == id && selectedRemoteAgent == nil
-        case .remote(let ref): return selectedRemoteAgent == ref
+        case .agent(let id): return threadIsOnScreen && selectedAgentID == id && selectedRemoteAgent == nil
+        case .remote(let ref): return threadIsOnScreen && selectedRemoteAgent == ref
         case .host(let id): return selectedRemoteAgent?.hostID == id
         }
+    }
+
+    /// A page, Settings or the gallery covers the selected thread without clearing the selection:
+    /// the person is not looking at it, so its turns and questions post.
+    var threadIsOnScreen: Bool {
+        destination == nil && !showSettings && !showComponentGallery
     }
 
     // MARK: Posting
@@ -59,6 +65,8 @@ extension ShepherdViewModel {
             let reply = await self.snapshot(target).flatMap { AgentBanners.closingReply(in: $0.messages) }
             let current = self.state.agents.first { $0.id == agent.id } ?? agent
             let result = AgentBanners.result(reply)
+            // Settings ▸ Agents ▸ Notify when a turn finishes: the one banner that can be muted.
+            guard self.settings.notifyOnTurnFinished else { return }
             if let finished = AgentBanners.status(of: current, from: old, failure: nil, result: result, watching: false) {
                 self.notifications.post(finished)
             }

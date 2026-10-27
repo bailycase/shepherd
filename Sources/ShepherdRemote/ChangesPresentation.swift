@@ -45,3 +45,11 @@ public func changesTurn(forMessageAt userTimestamp: Double?, in turns: [ChangesT
     guard let userTimestamp, let turns else { return nil }
     return turns.last { $0.messageTimestamp == userTimestamp }
 }
+
+/// The recorded turns by the user message that opened each, the last recorded for a stamp
+/// winning as `changesTurn(forMessageAt:in:)` has it: one pass over the record instead of one
+/// per reply drawn.
+public func changesTurnsByMessage(_ turns: [ChangesTurn]?) -> [Double: ChangesTurn] {
+    guard let turns else { return [:] }
+    return Dictionary(turns.compactMap { turn in turn.messageTimestamp.map { ($0, turn) } }, uniquingKeysWith: { _, last in last })
+}

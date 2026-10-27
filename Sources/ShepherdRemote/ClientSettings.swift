@@ -42,7 +42,7 @@ public struct SettingsHost: Identifiable, Sendable {
 }
 
 /// A host's answer as words for the screen: its own reason, else that it didn't answer.
-func settingsProblem(_ error: Error) -> String {
+public func settingsProblem(_ error: Error) -> String {
     if case RemoteHostClientError.rejected(_, let message) = error { return message }
     return "The host didn't answer. Try again once it's connected."
 }

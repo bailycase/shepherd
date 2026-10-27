@@ -112,7 +112,7 @@ struct SurfaceAttachmentTracker {
 }
 
 @MainActor
-public final class TerminalSurfaceModel: ObservableObject {
+public final class TerminalSurfaceModel {
     /// What is selected in the terminal: its text, where it starts in the surface view (points,
     /// top-left origin) and a line's height, for a bar that hangs beside it.
     public struct Selection: Equatable, Sendable {
@@ -179,7 +179,9 @@ public final class TerminalSurfaceModel: ObservableObject {
             },
             resize: { viewport in
                 bridge.deliverResize(cols: Int(viewport.columns), rows: Int(viewport.rows))
-            }
+            },
+            // Only columns and rows are read: a divider drag's pixel-only updates (most of them) need no hop.
+            suppressesPixelOnlyResizes: true
         )
 
         viewState = TerminalViewState(
@@ -292,7 +294,7 @@ public final class TerminalSurfaceModel: ObservableObject {
     /// never a single fire-and-forget attempt.
     private func applyRenderingActive(remainingAttempts: Int = 0) {
         for window in NSApp.windows {
-            guard let view = TerminalFirstResponder.view(ownedBy: viewState, in: window) else { continue }
+            guard let view = surfaceView(in: window) else { continue }
             (view as? AppTerminalView)?.setSurfaceVisible(renderingActive)
             if renderingActive {
                 // Reveal: rerun the view's layout on the next AppKit pass so
@@ -333,7 +335,7 @@ public final class TerminalSurfaceModel: ObservableObject {
         }
         let windows = [NSApp.keyWindow, NSApp.mainWindow] + NSApp.windows
         for window in windows.compactMap({ $0 }) {
-            guard let view = TerminalFirstResponder.view(ownedBy: viewState, in: window) else { continue }
+            guard let view = surfaceView(in: window) else { continue }
             if window.firstResponder === view {
                 return // Already ours; nothing to do and nothing to retry.
             }
@@ -420,6 +422,7 @@ public final class TerminalSurfaceModel: ObservableObject {
     func surfaceViewDisappeared(_ id: UUID) {
         guard attachment.isActive(id) else { return }
         attachment.disappeared(id)
+        cachedSurfaceView = nil
         onSurfaceAttachmentChanged?(nil)
     }
 
@@ -438,10 +441,24 @@ public final class TerminalSurfaceModel: ObservableObject {
         }
     }
 
+    /// The surface view found last, so readiness polls, focus retries and selection reads don't
+    /// walk every window's view tree again (14+ mounted layouts make that walk long). Trusted
+    /// while it is still in a window and still ours; cleared when the view goes.
+    private weak var cachedSurfaceView: AppTerminalView?
+
+    /// The surface view of this model in `window`, from the cache when it is still there.
+    private func surfaceView(in window: NSWindow) -> NSView? {
+        if let cached = cachedSurfaceView, cached.window === window, TerminalFirstResponder.delegate(of: cached) === viewState { return cached }
+        guard let view = TerminalFirstResponder.view(ownedBy: viewState, in: window) else { return nil }
+        cachedSurfaceView = view as? AppTerminalView
+        return view
+    }
+
     /// The surface view of this model in any window, once it is in one.
     private var surfaceView: AppTerminalView? {
+        if let cached = cachedSurfaceView, cached.window != nil, TerminalFirstResponder.delegate(of: cached) === viewState { return cached }
         for window in NSApp.windows {
-            if let view = TerminalFirstResponder.view(ownedBy: viewState, in: window) as? AppTerminalView { return view }
+            if let view = surfaceView(in: window) as? AppTerminalView { return view }
         }
         return nil
     }

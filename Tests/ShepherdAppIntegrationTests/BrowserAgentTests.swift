@@ -552,6 +552,27 @@ struct BrowserAgentTests {
         #expect(server.requested.current.filter { $0 == "/checkout" }.count == 1)
     }
 
+    /// A parked page nobody is driving goes off screen after a grace (WebKit then throttles its
+    /// timers and frames); the next request orders its window back and the page still answers.
+    @Test func aParkedPageSleepsAfterTheAgentsLastRequestAndWakesForTheNext() async throws {
+        let (session, server) = try await start()
+        defer { server.stop(); session.close() }
+        session.parkIdleGrace = 0.05
+        try await opened(session, server, "/checkout")
+        let parked = try #require(session.webView?.window)
+        // The agent's card lingers a few seconds after its last request; the grace starts when it goes.
+        try await eventuallyOnMain("the parked window to be ordered out", timeout: .seconds(BrowserAgentPresence.linger + 5)) { !parked.isVisible }
+        #expect(session.webView?.window === parked, "the page stays in its window")
+        let answer = try text(await session.perform(.eval(expression: "window.__marker = 'slept'; document.visibilityState", note: nil)))
+        #expect(answer.contains("Result:"), "\(answer)")
+        #expect(session.webView?.window === parked)
+        try await eventuallyOnMain("the parked window to be ordered out again", timeout: .seconds(BrowserAgentPresence.linger + 5)) { !parked.isVisible }
+        session.parkIdleGrace = 60
+        let back = try text(await session.perform(.eval(expression: "window.__marker", note: nil)))
+        #expect(back.contains("Result: \"slept\""), "the page never reloaded")
+        #expect(parked.isVisible, "the request ordered the window back, and the grace has not passed")
+    }
+
     /// The parked window is never seen or offered: it cannot become key or main, whatever a page
     /// or an agent's action does; it is not in the Window menu, Mission Control or the ⌘` cycle;
     /// and accessibility clients see neither it nor the page inside it. (The AX tree itself was
