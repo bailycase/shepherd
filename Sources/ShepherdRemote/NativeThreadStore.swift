@@ -346,6 +346,14 @@ public final class NativeThreadStore {
     /// Only the latest text and mode per prose item: streaming prefixes never accumulate.
     @ObservationIgnored private var proseCache: [ProseKey: (text: String, streaming: Bool, blocks: [NativeMarkdownBlock], endsInOpenFence: Bool)] = [:]
     @ObservationIgnored private(set) var proseParses = 0
+    /// Prose and thinking still being written, parsed off main once this long: the row keeps
+    /// its last parse (a prefix of the text) until the new one lands, so a long flowing answer
+    /// never parses from its start on the main actor per poll.
+    nonisolated public static let offMainProseBytes = 8 * 1024
+    /// The text each off-main parse was started for, by item; a newer text supersedes it.
+    @ObservationIgnored private var proseParsing: [ProseKey: String] = [:]
+    /// Parses handed off main (tests).
+    @ObservationIgnored private(set) var offMainParses = 0
 
     private struct ProseKey: Hashable {
         var turn: String
@@ -734,6 +742,13 @@ public final class NativeThreadStore {
     private func thinkingBlocks(turn: String, index: Int, text: String) -> [NativeMarkdownBlock] {
         let key = ProseKey(turn: turn, item: String(index))
         if let cached = thinkingCache[key], cached.text == text { return cached.blocks }
+        // Still being written, and long: the last parse stands until the new one lands.
+        if let cached = thinkingCache[key], text.utf8.count >= Self.offMainProseBytes, text.hasPrefix(cached.text) {
+            parseOffMain(key, text: text, parse: nativeThinkingBlocks) { [weak self] value in
+                self?.thinkingCache[key] = (text, value)
+            }
+            return cached.blocks
+        }
         thinkingParses += 1
         let value = nativeThinkingBlocks(text)
         if thinkingCache[key] == nil, thinkingCache.count >= 1024 { thinkingCache.removeAll(keepingCapacity: true) }
@@ -747,11 +762,37 @@ public final class NativeThreadStore {
         if let cached = proseCache[key], cached.text == text, cached.streaming == streaming {
             return (cached.blocks, cached.endsInOpenFence)
         }
+        if streaming, let cached = proseCache[key], cached.streaming, text.utf8.count >= Self.offMainProseBytes, text.hasPrefix(cached.text) {
+            parseOffMain(key, text: text, parse: { nativeMarkdownParse($0, streaming: true) }) { [weak self] value in
+                self?.proseCache[key] = (text, true, value.blocks, value.endsInOpenFence)
+            }
+            return (cached.blocks, cached.endsInOpenFence)
+        }
         proseParses += 1
         let value = nativeMarkdownParse(text, streaming: streaming)
         if proseCache[key] == nil, proseCache.count >= 1024 { proseCache.removeAll(keepingCapacity: true) }
         proseCache[key] = (text, streaming, value.blocks, value.endsInOpenFence)
         return value
+    }
+
+    /// Parses `text` for `key` off main, unless a parse of that very text is on its way; `land`
+    /// keeps the result, and the turn is derived again with it. A text that moved on meanwhile
+    /// drops the result (its own parse is on its way).
+    private func parseOffMain<Value: Sendable>(_ key: ProseKey, text: String, parse: @escaping @Sendable (String) -> Value,
+                                               land: @escaping @MainActor (Value) -> Void) {
+        guard proseParsing[key] != text else { return }
+        proseParsing[key] = text
+        offMainParses += 1
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let value = parse(text)
+            await MainActor.run {
+                guard let self, self.proseParsing[key] == text else { return }
+                self.proseParsing[key] = nil
+                land(value)
+                self.presentationCache[key.turn] = nil
+                self.derive()
+            }
+        }
     }
 
     // MARK: Polling
@@ -922,6 +963,7 @@ public final class NativeThreadStore {
         callCache = [:]
         thinkingCache = [:]
         proseCache = [:]
+        proseParsing = [:]
         contextInputs = (nil, nil, false, true)
         deriveQueue()
         derive()
