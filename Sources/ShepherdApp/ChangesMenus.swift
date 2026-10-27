@@ -274,6 +274,7 @@ private struct ChangesOptionsMenu: View {
         SHChangesMenu(width: SHChangesMenuMetrics.optionsWidth) {
             SHChangesMenuTitle("Diff")
             SHChangesMenuToggle("Word diffs", systemImage: "text.word.spacing", isOn: $session.wordDiffs)
+            SHChangesMenuToggle("Wrap lines", systemImage: "arrow.turn.down.left", isOn: $session.wrapLines)
             if session.engine != nil {
                 SHChangesMenuToggle("Hide whitespace changes", systemImage: "space", isOn: option(\.ignoreWhitespace))
                 SHChangesMenuToggle("Load full files", subtitle: "Expand past folds without a round trip", systemImage: "folder",
