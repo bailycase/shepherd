@@ -168,6 +168,26 @@ struct ImageViewerStateTests {
         #expect(ViewerImage.acceptedSize(Data("<html></html>".utf8)) == nil)
     }
 
+    /// A dropped file is read once, off the main actor: the header gives its pixels, ImageIO a thumbnail no larger than the
+    /// thread's, and a file that is not a raster image reads as none.
+    @Test func aFileIsReadOnceWithItsPixelsAndAScaledThumbnail() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("image-file-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let png = folder.appendingPathComponent("wide.png")
+        try Self.flat(1600).write(to: png)
+        let file = try #require(ImageFile(url: png))
+        #expect(file.pixels == CGSize(width: 1600, height: 1600))
+        #expect(file.mimeType == "image/png")
+        #expect(file.thumbnail.map { CGFloat($0.width) } == ThreadImageLoad.thumbnailPixels)
+        let attachment = ImageAttachment(file)
+        #expect(attachment.pixels == file.pixels && attachment.thumbnail != nil && attachment.source == png)
+        let text = folder.appendingPathComponent("notes.png")
+        try Data("not a picture".utf8).write(to: text)
+        #expect(ImageFile(url: text) == nil)
+        #expect(ImageAttachment(url: text) == nil)
+    }
+
     /// A flat image of `side` × `side` pixels, small on disk (a flat colour compresses to almost nothing).
     static func flat(_ side: Int, type: NSBitmapImageRep.FileType = .png) throws -> Data {
         try #require(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: side, pixelsHigh: side, bitsPerSample: 8, samplesPerPixel: 4,
