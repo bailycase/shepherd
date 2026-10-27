@@ -52,6 +52,22 @@ struct FleetTests {
         }
     }
 
+    /// The glance cards' extras: a settled turn's first line, what it changed, what waits.
+    @Test func aSettledThreadSaysHowItEndedAndWhatItChanged() {
+        var snapshot = Self.snapshot([
+            Fixture.message("user", "go"),
+            Fixture.message("assistant", "Done. 3 files changed, tests pass.\nDetails follow."),
+        ])
+        snapshot.turnChanges = [ChangesTurn(startedAt: 1, state: .ready, fileCount: 3, added: 67, removed: 48)]
+        snapshot.queue = NativeQueue(items: [NativeQueuedMessage(id: UUID(), text: "then push", sentAt: 2)], paused: false)
+        let digest = Self.digest(snapshot)
+        #expect(digest.result == "Done. 3 files changed, tests pass.")
+        #expect(digest.changes == FleetChanges(files: 3, added: 67, removed: 48))
+        #expect(digest.queued == 1)
+        snapshot.running = true
+        #expect(Self.digest(snapshot).result == nil)
+    }
+
     @Test func aSettledThreadHasNoActivityButKnowsWhenItLastMoved() {
         let digest = Self.digest(Self.snapshot([
             Fixture.tool("bash", args: #"{"command":"ls"}"#, status: "running", timestamp: 2_000),

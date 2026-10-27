@@ -48,6 +48,8 @@ struct MobileRoot: View {
             app.pushRouter.drainPending(hosts: app.hosts, windows: app.windows)
         }
         .onDisappear { app.windows.unregister(window.id, hosts: app.hosts) }
+        // A widget's or a Live Activity's link (`shepherd://`), in the window it opened.
+        .onOpenURL { url in GlanceBridge.open(url, navigator: navigator) }
         .onChange(of: scenePhase, initial: true) { _, phase in
             // The first phase can arrive before onAppear: the window counts only once registered.
             app.windows.register(window, navigator: navigator)

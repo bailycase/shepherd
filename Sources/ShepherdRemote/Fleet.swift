@@ -91,6 +91,16 @@ public struct FleetDigest: Equatable, Sendable {
     public var activitySince: Double?
     /// The newest moment in the thread (ms since epoch).
     public var lastActivity: Double?
+    /// Subagents that finished and do not wait on their parent.
+    public var subagentsDone = 0
+    /// Messages waiting in its queue.
+    public var queued = 0
+    /// What its latest turn changed.
+    public var changes: FleetChanges?
+    /// Its goal and where it stands ("Ship the glance surfaces · checking").
+    public var goal: String?
+    /// Its last reply's first line, once the turn is over.
+    public var result: String?
 
     public init(_ snapshot: NativeThreadSnapshot) {
         session = NativeThreadSession(piSessionID: snapshot.piSessionID, generation: snapshot.generation)
@@ -118,6 +128,29 @@ public struct FleetDigest: Equatable, Sendable {
             activitySince = nil
         }
         lastActivity = entries.compactMap(\.timestamp).max()
+        subagentsDone = (snapshot.subagents ?? []).filter { $0.isTerminal && !$0.needsAttention }.count
+        queued = snapshot.queue?.items.count ?? 0
+        changes = snapshot.turnChanges?.last.map { FleetChanges(files: $0.fileCount, added: $0.added, removed: $0.removed) }
+        goal = snapshot.goal.map { "\($0.text) · \(Self.goalWord($0.state))" }
+        result = snapshot.running ? nil : snapshot.messages.last(where: { $0.role == "assistant" }).flatMap(Self.firstLine)
+    }
+
+    static func goalWord(_ state: NativeGoalState) -> String {
+        switch state {
+        case .working: "working"
+        case .checking: "checking"
+        case .met: "met"
+        case .paused: "paused"
+        case .needsYou: "needs you"
+        }
+    }
+
+    /// A reply's first line of text, cut to a card's two lines.
+    static func firstLine(_ message: NativeThreadMessage) -> String? {
+        let text = message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n")
+        let line = text.split(whereSeparator: \.isNewline).first.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+        guard !line.isEmpty else { return nil }
+        return line.count > 140 ? String(line.prefix(139)) + "…" : line
     }
 
     /// A call as one short line: a command as typed, a file by its name after the tool's verb.
@@ -147,6 +180,19 @@ public struct FleetDigest: Equatable, Sendable {
 // MARK: Rows
 
 /// A time a row shows beside its status: live while it runs, or how long ago it moved.
+/// The files a turn changed.
+public struct FleetChanges: Equatable, Sendable {
+    public var files: Int
+    public var added: Int
+    public var removed: Int
+
+    public init(files: Int, added: Int, removed: Int) {
+        self.files = files
+        self.added = added
+        self.removed = removed
+    }
+}
+
 public enum FleetClock: Equatable, Sendable {
     /// Counting up from a moment (a running call), in ms since epoch.
     case elapsed(since: Double)
@@ -175,6 +221,15 @@ public struct FleetThreadRow: Identifiable, Equatable, Sendable {
     /// Its subagents still going, and those waiting on their parent's answer.
     public var subagents = 0
     public var subagentsAsking = 0
+    public var subagentsDone = 0
+    /// What the glance surfaces add: its queue, its latest turn's changes, its goal, its last
+    /// reply's first line (`FleetDigest`).
+    public var queued = 0
+    public var changes: FleetChanges?
+    public var goal: String?
+    public var result: String?
+    /// The pi session a stop must still be talking to, while it is known.
+    public var session: NativeThreadSession?
     /// The design this agent draws, where its host serves designs: the row is the design's
     /// (MobileAgents: the nib and "design · 4 boards"), and it opens the design.
     public var design: FleetDesign?
@@ -547,11 +602,18 @@ public struct FleetModel: Equatable, Sendable {
             digest?.lastActivity.map { FleetClock.ago($0) }
         }
         let detail = [word, activity ?? space?.name].compactMap { $0 }.joined(separator: " · ")
-        return FleetThreadRow(ref: ref, title: agent.name, status: agent.status, detail: detail, activity: activity,
-                              clock: clock, hostName: hostName, hostTag: hostTag, worktree: agent.worktreeBranch != nil,
-                              offline: offline, failed: agent.status != .working && digest?.lastTurnFailed == true,
-                              subagents: live ? digest?.subagentsLive ?? 0 : 0,
-                              subagentsAsking: live ? digest?.subagentsAsking ?? 0 : 0)
+        var row = FleetThreadRow(ref: ref, title: agent.name, status: agent.status, detail: detail, activity: activity,
+                                 clock: clock, hostName: hostName, hostTag: hostTag, worktree: agent.worktreeBranch != nil,
+                                 offline: offline, failed: agent.status != .working && digest?.lastTurnFailed == true,
+                                 subagents: live ? digest?.subagentsLive ?? 0 : 0,
+                                 subagentsAsking: live ? digest?.subagentsAsking ?? 0 : 0)
+        row.subagentsDone = live ? digest?.subagentsDone ?? 0 : 0
+        row.queued = digest?.queued ?? 0
+        row.changes = digest?.changes
+        row.goal = digest?.goal
+        row.result = digest?.result
+        row.session = digest?.session
+        return row
     }
 
     /// The row's status word, as the Mac's sidebar says it.

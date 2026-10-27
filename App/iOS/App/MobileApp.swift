@@ -16,6 +16,8 @@ final class MobileApp {
     let windows = MobileWindows()
     let push: PushManager
     let pushRouter = PushRouter()
+    /// The Live Activities, widgets and their buttons.
+    let glance: GlanceBridge
 
     init(hosts: MobileHosts, appearance: MobileAppearance, push: PushManager? = nil) {
         SHFonts.register()
@@ -38,6 +40,7 @@ final class MobileApp {
         HomeFeed.of(hosts).projectNative = { [projects] ref, request in
             try await projects.native(agent: ref, request: request)
         }
+        glance = GlanceBridge(hosts: hosts, windows: windows)
     }
 
     /// The shipped app: preferences and the Keychain.
