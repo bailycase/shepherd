@@ -93,7 +93,8 @@ final class GlanceBridge {
         Task { await syncActivities(next) }
     }
 
-    private func syncActivities(_ glance: SHGlance) async {
+    private func syncActivities(_ everything: SHGlance) async {
+        let glance = everything.finished(after: Date().addingTimeInterval(-Self.quietLinger))
         let stale = glance.updated.addingTimeInterval(SHGlance.staleAfter)
         let content = ActivityContent(state: glance.forActivity(), staleDate: stale,
                                       relevanceScore: glance.count(.needsYou) > 0 ? 100 : 50)
