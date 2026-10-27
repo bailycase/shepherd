@@ -1750,7 +1750,7 @@ public final class SessionServer: @unchecked Sendable {
         let root = pi.sessionsRoot
         let origins = originStore.directory
         let model = agent.model, thinking = agent.thinkingLevel?.rawValue
-        DispatchQueue.global(qos: .utility).async { [weak self] in
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             var snapshot = PiSessionPreview.file(sessionID: sessionID, cwd: cwd, sessionsRoot: root)
                 .flatMap { PiSessionPreview.snapshot(file: $0, sessionID: sessionID, origins: origins) }
                 ?? PiSessionPreview.empty(sessionID: sessionID, model: model, thinking: thinking)
