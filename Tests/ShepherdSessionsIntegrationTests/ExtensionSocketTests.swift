@@ -257,18 +257,18 @@ struct ExtensionSocketTests {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
         let target = AgentID()
-        #expect(!h.server.pushMessage(toAgent: target, text: "nobody home", delivery: delivery))
+        #expect(!(await h.server.pushMessage(toAgent: target, text: "nobody home", delivery: delivery)))
 
         let client = try ExtensionClient(path: h.socketPath)
         try client.send(.helloAgent(agentID: target))
-        try await eventually("the registration") { h.server.pushMessage(toAgent: target, text: "[from: tester] ping", delivery: delivery) }
+        try await eventually("the registration") { await h.server.pushMessage(toAgent: target, text: "[from: tester] ping", delivery: delivery) }
         #expect(try await client.reply() == .message(id: 1, text: "[from: tester] ping", delivery: delivery))
-        #expect(!h.server.pushMessage(toAgent: target, text: String(repeating: "x", count: NDJSON.maxPayloadBytes), delivery: delivery))
-        #expect(h.server.pushMessage(toAgent: target, text: "still connected", delivery: delivery))
+        #expect(!(await h.server.pushMessage(toAgent: target, text: String(repeating: "x", count: NDJSON.maxPayloadBytes), delivery: delivery)))
+        #expect(await h.server.pushMessage(toAgent: target, text: "still connected", delivery: delivery))
         #expect(try await client.reply() == .message(id: 3, text: "still connected", delivery: delivery))
 
         client.closeConnection()
-        try await eventually("the registration to lapse") { !h.server.pushMessage(toAgent: target, text: "gone?", delivery: delivery) }
+        try await eventually("the registration to lapse") { !(await h.server.pushMessage(toAgent: target, text: "gone?", delivery: delivery)) }
     }
 
     /// One children control channel per agent: a newer helloChildren replaces the old connection.

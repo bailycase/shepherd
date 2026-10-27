@@ -4218,8 +4218,8 @@ public final class SessionServer: @unchecked Sendable {
     /// connection. Returns false when the agent has no live registered
     /// connection (extension not loaded or not yet connected), or dispatch fails.
     /// Success means queued on the socket, not accepted or consumed by pi.
-    public func pushMessage(toAgent agentID: AgentID, text: String, delivery: AgentMessageDelivery = .task) -> Bool {
-        queue.sync {
+    public func pushMessage(toAgent agentID: AgentID, text: String, delivery: AgentMessageDelivery = .task) async -> Bool {
+        await enqueueValue { [self] in
             guard !movingThreads.contains(agentID), peerDeliveries.count < 4096,
                   peerDeliveries.values.filter({ $0.agentID == agentID }).count < 64,
                   let client = clients.values.first(where: { $0.agentID == agentID }) else { return false }
