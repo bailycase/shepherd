@@ -33,6 +33,9 @@ public enum LineBufferError: Error, Equatable, CustomStringConvertible, Sendable
 /// Accumulates a byte stream and yields complete lines as they arrive.
 public struct LineBuffer: Sendable {
     private var buffer = Data()
+    /// How much of the partial frame at the front of `buffer` was already searched for a
+    /// newline, so a large frame arriving in many fragments is scanned once, not per fragment.
+    private var scanned = 0
 
     public init() {}
 
@@ -43,18 +46,22 @@ public struct LineBuffer: Sendable {
         guard !chunk.isEmpty else { return [] }
         buffer.append(chunk)
         var lines: [Data] = []
-        while let newlineIndex = buffer.firstIndex(of: 0x0A) {
+        while let newlineIndex = buffer[(buffer.startIndex + scanned)...].firstIndex(of: 0x0A) {
             let payloadBytes = buffer.distance(from: buffer.startIndex, to: newlineIndex)
             guard payloadBytes <= NDJSON.maxPayloadBytes else {
                 buffer.removeAll(keepingCapacity: false)
+                scanned = 0
                 throw LineBufferError.payloadTooLarge(bytes: payloadBytes, terminated: true)
             }
             lines.append(buffer.subdata(in: buffer.startIndex..<newlineIndex))
             buffer.removeSubrange(buffer.startIndex...newlineIndex)
+            scanned = 0
         }
+        scanned = buffer.count
         guard buffer.count <= NDJSON.maxPayloadBytes else {
             let payloadBytes = buffer.count
             buffer.removeAll(keepingCapacity: false)
+            scanned = 0
             throw LineBufferError.payloadTooLarge(bytes: payloadBytes, terminated: false)
         }
         return lines
