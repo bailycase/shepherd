@@ -868,6 +868,10 @@ public final class SessionServer: @unchecked Sendable {
     }
     /// Which agent's own pane runs each session, for the store version it was built from.
     private var sessionAgents: (version: UInt64, agents: [SessionID: AgentID])?
+    /// `allowsAgentRecovery` per agent, valid for one committed state: `commit()` asks on every
+    /// streamed delta, and the answer scans projects, executions and automations.
+    private var recoveryAllowance: (version: UInt64, allowed: [AgentID: Bool])?
+    private var projectDeliveries: (version: UInt64, byAgent: [AgentID: UUID?])?
 
     private var sessions: [SessionID: ServerSession] = [:]
     private var attachedSessions: Set<SessionID> = []
@@ -7607,12 +7611,18 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     private func allowsAgentRecovery(_ id: AgentID) -> Bool {
-        guard let agent = store.state.agents.first(where: { $0.id == id }),
-              agent.coordinatorFor == nil, agent.designID == nil,
-              !store.state.isProjectWorker(id),
-              !store.state.projectExecutions.contains(where: { $0.assignment?.reservedWorkerID == id }),
-              !Self.automationRunAgentIDs(in: store.state).contains(id) else { return false }
-        return true
+        if recoveryAllowance?.version != store.version { recoveryAllowance = (store.version, [:]) }
+        if let cached = recoveryAllowance?.allowed[id] { return cached }
+        var allowed = false
+        if let agent = store.state.agents.first(where: { $0.id == id }),
+           agent.coordinatorFor == nil, agent.designID == nil,
+           !store.state.isProjectWorker(id),
+           !store.state.projectExecutions.contains(where: { $0.assignment?.reservedWorkerID == id }),
+           !Self.automationRunAgentIDs(in: store.state).contains(id) {
+            allowed = true
+        }
+        recoveryAllowance?.allowed[id] = allowed
+        return allowed
     }
 
     @discardableResult
@@ -7714,7 +7724,10 @@ public final class SessionServer: @unchecked Sendable {
     /// `hopToMain` it need not keep its place among the other callbacks.
     private func threadRevised(sessionID: SessionID) {
         guard let agentID = agentID(forSession: sessionID) else { return }
-        if let thread = rpcThread(forAgent: agentID) { pushIfSettled(agentID: agentID, thread: thread) }
+        if let thread = sessions[sessionID]?.thread {
+            thread.projectResultDeliveryID = projectResultDeliveryID(forAgent: agentID)
+            if thread.pushRunArmed { pushIfSettled(agentID: agentID, thread: thread) }
+        }
         guard let deadline = revisedThreads.insert(agentID) else { return }
         DispatchQueue.main.asyncAfter(deadline: deadline) { [weak self] in
             guard let self else { return }
@@ -7801,12 +7814,23 @@ public final class SessionServer: @unchecked Sendable {
               let tab = store.state.tabs.first(where: { $0.id == agent.tabID }),
               let paneID = agent.paneID, let sessionID = tab.layout.leaf(withID: paneID)?.sessionID else { return nil }
         let thread = sessions[sessionID]?.thread
-        if let task = store.state.projects.lazy.flatMap(\.tasks).first(where: { $0.workerAgentID == agentID && $0.phase.occupiesSlot }) {
-            thread?.projectResultDeliveryID = task.nativeDeliveryID ?? task.operationID
-        } else if let receipt = store.state.projectExecutions.first(where: { $0.assignment?.reservedWorkerID == agentID && ($0.phase.active || $0.phase == .unknown) }) {
-            thread?.projectResultDeliveryID = receipt.key.operationID
-        } else { thread?.projectResultDeliveryID = nil }
+        thread?.projectResultDeliveryID = projectResultDeliveryID(forAgent: agentID)
         return thread
+    }
+
+    /// The delivery whose result a project worker's next reply answers, cached per committed state:
+    /// every revision asks, and the answer scans projects and executions.
+    private func projectResultDeliveryID(forAgent agentID: AgentID) -> UUID? {
+        if projectDeliveries?.version != store.version { projectDeliveries = (store.version, [:]) }
+        if let cached = projectDeliveries?.byAgent[agentID] { return cached }
+        let delivery: UUID?
+        if let task = store.state.projects.lazy.flatMap(\.tasks).first(where: { $0.workerAgentID == agentID && $0.phase.occupiesSlot }) {
+            delivery = task.nativeDeliveryID ?? task.operationID
+        } else if let receipt = store.state.projectExecutions.first(where: { $0.assignment?.reservedWorkerID == agentID && ($0.phase.active || $0.phase == .unknown) }) {
+            delivery = receipt.key.operationID
+        } else { delivery = nil }
+        projectDeliveries?.byAgent[agentID] = delivery
+        return delivery
     }
 
     // MARK: - Socket helpers
