@@ -297,6 +297,13 @@ public final class NativeThreadStore {
     public var isLive: Bool { request != nil }
     /// When the current stretch of `native_starting` answers began.
     @ObservationIgnored private var startingSince: ContinuousClock.Instant?
+    /// The run (`epoch`) in which pi was woken for a preview snapshot: once per time on screen.
+    @ObservationIgnored private var wokenIn: UUID?
+    /// Wakes issued (tests).
+    @ObservationIgnored private(set) var wakes = 0
+    /// The run a wake names: the host starts pi for any request but a snapshot, and a transcript
+    /// of no run is the one that does nothing once pi is up.
+    public static let wakeRunID = "wake"
     /// Sends waiting for pi to start: resumed with true once the thread is ready, false when it
     /// stops or fails first. Nothing has been dispatched for them yet.
     @ObservationIgnored private var startWaiters: [CheckedContinuation<Bool, Never>] = []
@@ -346,6 +353,14 @@ public final class NativeThreadStore {
     /// Only the latest text and mode per prose item: streaming prefixes never accumulate.
     @ObservationIgnored private var proseCache: [ProseKey: (text: String, streaming: Bool, blocks: [NativeMarkdownBlock], endsInOpenFence: Bool)] = [:]
     @ObservationIgnored private(set) var proseParses = 0
+    /// Prose and thinking still being written, parsed off main once this long: the row keeps
+    /// its last parse (a prefix of the text) until the new one lands, so a long flowing answer
+    /// never parses from its start on the main actor per poll.
+    nonisolated public static let offMainProseBytes = 8 * 1024
+    /// The text each off-main parse was started for, by item; a newer text supersedes it.
+    @ObservationIgnored private var proseParsing: [ProseKey: String] = [:]
+    /// Parses handed off main (tests).
+    @ObservationIgnored private(set) var offMainParses = 0
 
     private struct ProseKey: Hashable {
         var turn: String
@@ -520,6 +535,7 @@ public final class NativeThreadStore {
         var rows: [NativeThreadRow] = []
         rows.reserveCapacity(turns.count)
         var kept: Set<String> = []
+        let recorded = changesTurnsByMessage(snapshot?.turnChanges)
         for (index, turn) in turns.enumerated() {
             if turn.isUser {
                 var row = NativeThreadRow(turn: turn, presentation: nil, live: false, promptText: nil, startedAt: nil)
@@ -551,7 +567,7 @@ public final class NativeThreadStore {
             kept.insert(turn.id)
             let prompt = opener.map { $0.messages.flatMap(\.blocks).filter { $0.kind == .text }.map(\.text).joined(separator: "\n") }
             let startedAt = opener?.messages.first?.timestamp
-            let recordedTurn = changesTurn(forMessageAt: startedAt, in: snapshot?.turnChanges)
+            let recordedTurn = startedAt.flatMap { recorded[$0] }
             let card = isLive ? nil : nativeChangesCard(turn: recordedTurn, changes: presentation.changes)
             var row = NativeThreadRow(turn: turn, presentation: presentation, live: isLive, promptText: prompt,
                                       startedAt: startedAt, recordedTurn: recordedTurn, changes: card)
@@ -733,6 +749,13 @@ public final class NativeThreadStore {
     private func thinkingBlocks(turn: String, index: Int, text: String) -> [NativeMarkdownBlock] {
         let key = ProseKey(turn: turn, item: String(index))
         if let cached = thinkingCache[key], cached.text == text { return cached.blocks }
+        // Still being written, and long: the last parse stands until the new one lands.
+        if let cached = thinkingCache[key], text.utf8.count >= Self.offMainProseBytes, text.hasPrefix(cached.text) {
+            parseOffMain(key, text: text, parse: nativeThinkingBlocks) { [weak self] value in
+                self?.thinkingCache[key] = (text, value)
+            }
+            return cached.blocks
+        }
         thinkingParses += 1
         let value = nativeThinkingBlocks(text)
         if thinkingCache[key] == nil, thinkingCache.count >= 1024 { thinkingCache.removeAll(keepingCapacity: true) }
@@ -746,11 +769,37 @@ public final class NativeThreadStore {
         if let cached = proseCache[key], cached.text == text, cached.streaming == streaming {
             return (cached.blocks, cached.endsInOpenFence)
         }
+        if streaming, let cached = proseCache[key], cached.streaming, text.utf8.count >= Self.offMainProseBytes, text.hasPrefix(cached.text) {
+            parseOffMain(key, text: text, parse: { nativeMarkdownParse($0, streaming: true) }) { [weak self] value in
+                self?.proseCache[key] = (text, true, value.blocks, value.endsInOpenFence)
+            }
+            return (cached.blocks, cached.endsInOpenFence)
+        }
         proseParses += 1
         let value = nativeMarkdownParse(text, streaming: streaming)
         if proseCache[key] == nil, proseCache.count >= 1024 { proseCache.removeAll(keepingCapacity: true) }
         proseCache[key] = (text, streaming, value.blocks, value.endsInOpenFence)
         return value
+    }
+
+    /// Parses `text` for `key` off main, unless a parse of that very text is on its way; `land`
+    /// keeps the result, and the turn is derived again with it. A text that moved on meanwhile
+    /// drops the result (its own parse is on its way).
+    private func parseOffMain<Value: Sendable>(_ key: ProseKey, text: String, parse: @escaping @Sendable (String) -> Value,
+                                               land: @escaping @MainActor (Value) -> Void) {
+        guard proseParsing[key] != text else { return }
+        proseParsing[key] = text
+        offMainParses += 1
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let value = parse(text)
+            await MainActor.run {
+                guard let self, self.proseParsing[key] == text else { return }
+                self.proseParsing[key] = nil
+                land(value)
+                self.presentationCache[key.turn] = nil
+                self.derive()
+            }
+        }
     }
 
     // MARK: Polling
@@ -899,6 +948,37 @@ public final class NativeThreadStore {
         }
     }
 
+    /// The thread is far from the screen (many others were shown since): lets its history, what
+    /// was derived from it and the images held go, so visited threads do not add up in memory,
+    /// and keeps what is the user's (the draft, attached files, images queued with a message).
+    /// As `stop`, and the first pull when it is shown again reloads it whole. Nothing happens
+    /// while it is on screen.
+    public func release() {
+        guard !isLive else { return }
+        stop()
+        images.releaseHeld()
+        if snapshot != nil { snapshot = nil }
+        if !messages.isEmpty { messages = [] }
+        if olderCursor != nil { olderCursor = nil }
+        if previewing { previewing = false }
+        if !pending.isEmpty { pending = [] }
+        aliases = [:]
+        lastPromptAt = nil
+        echoAccepted = [:]
+        overlays = []
+        presentationCache = [:]
+        callCache = [:]
+        thinkingCache = [:]
+        proseCache = [:]
+        proseParsing = [:]
+        contextInputs = (nil, nil, false, true)
+        deriveQueue()
+        derive()
+    }
+
+    /// Whether `release` has anything to let go.
+    public var holdsHistory: Bool { snapshot != nil || !messages.isEmpty || images.heldBytes > 0 }
+
     /// `catchingUp`: the first pull since the thread came on screen, which lands what happened
     /// while it was away all at once, a finished turn included.
     private func settleRunning(_ running: Bool, catchingUp: Bool) {
@@ -936,6 +1016,15 @@ public final class NativeThreadStore {
             switch result {
             case .snapshot(let value) where value.startProblem != nil:
                 noteStartProblem(value.startProblem!)
+            case .snapshot(let value) where value.isPreview:
+                // pi's session file, served without starting pi (`nativeThreadPreviewCapability`):
+                // read-only, shown as a preview from disk is, never ready (its generation names no
+                // session a send could use) and never an error. The thread is on screen, so pi is
+                // woken once; its own snapshot then replaces this in place.
+                preview(value)
+                if loadError != nil { loadError = nil; derive() }
+                wakePi(value, run: run)
+                caughtUp()
             case .snapshot(var value) where value.initializing == true:
                 // Startup questions are live, but this is not a replacement history page.
                 value.messages = messages
@@ -1023,6 +1112,30 @@ public final class NativeThreadStore {
             guard !Task.isCancelled, epoch == run, recentRequest == ticket else { return }
             ready = false
             setLoadError(String(describing: error))
+        }
+    }
+
+    /// Asks the host to start pi for a thread it served as a preview, once per run. The host
+    /// answers that pi is starting (the thread polls fast until pi's snapshot lands); anything
+    /// else it says is of no account.
+    private func wakePi(_ value: NativeThreadSnapshot, run: UUID) {
+        guard wokenIn != run, let request else { return }
+        wokenIn = run
+        wakes += 1
+        Task { [weak self] in
+            var starting = false
+            do {
+                if case .failure(let code, _) = try await request(.subagentTranscript(expectedSessionID: value.piSessionID, runID: Self.wakeRunID)) {
+                    starting = code == NativeThreadCode.starting
+                }
+            } catch RemoteHostClientError.rejected(let code, _) {
+                starting = code == NativeThreadCode.starting
+            } catch {
+                return
+            }
+            guard starting, let self, self.epoch == run else { return }
+            self.noteStarting()
+            self.revisionAvailable()
         }
     }
 

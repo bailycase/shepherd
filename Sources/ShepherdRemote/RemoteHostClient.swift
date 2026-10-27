@@ -85,6 +85,9 @@ public final class RemoteHostClient: @unchecked Sendable {
     private var pendingWriteBytes = 0
     private var nextRequestID = 1
     private var pendingReplies: [Int: CheckedContinuation<RemoteReply, Error>] = [:]
+    /// Read requests whose task was cancelled before the host answered: a late reply is dropped
+    /// without a word, and the timeout no longer ends the connection for them.
+    private var cancelledReplies: Set<Int> = []
     private var disconnectNotified = false
     /// `connect` returned this connection; until then its failures are thrown, not notified.
     private var established = false
@@ -95,7 +98,11 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// so a flooding host cannot queue a closure per frame behind UI work
     /// (the host side has the same one-delivery rule). Kept as one FIFO for
     /// every event kind so `sessionExited` still follows that session's
-    /// last bytes. Client queue only.
+    /// last bytes. A newer whole state replaces one still waiting (only the
+    /// last is adopted), each hop carries at most `deliveryBudgetBytes` of
+    /// output, and the socket is not read while more than `pauseReadsAtBytes`
+    /// wait, so a fast terminal behind a slow main thread backs up the host,
+    /// not the phone's memory. Client queue only.
     private enum PushedEvent {
         case state(ShepherdState)
         case output(SessionID, Data)
@@ -106,7 +113,17 @@ public final class RemoteHostClient: @unchecked Sendable {
         case browserDrive(BrowserDrivePush)
     }
     private var pendingEvents: [PushedEvent] = []
+    /// Output bytes among `pendingEvents`.
+    private var pendingEventBytes = 0
     private var deliveryInFlight = false
+    /// The read source is suspended until a delivery drains the backlog.
+    private var readsPaused = false
+    static let pauseReadsAtBytes = 4 * 1024 * 1024
+    static let resumeReadsAtBytes = 1 * 1024 * 1024
+    static let deliveryBudgetBytes = 256 * 1024
+    /// One turn of the read handler reads at most this much before giving the queue back, so a
+    /// teardown or a timer never waits behind a stream that stays readable.
+    static let readTurnBytes = 1024 * 1024
 
     static let requestTimeout: TimeInterval = 10
     private static let maxQueuedWriteBytes = 8 * 1024 * 1024
@@ -133,6 +150,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         // The read source's cancel handler owns closing the fd. Cancel is
         // thread-safe; a source must never be released while still active.
         if let readSource {
+            if readsPaused { readSource.resume() }
             readSource.cancel()
         } else if fd >= 0 {
             close(fd)
@@ -143,12 +161,15 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
     }
 
-    /// Resolve, connect, authenticate, and fetch the host's current state.
+    /// Resolve, connect, authenticate, and fetch the host's current state. `capabilities` is
+    /// what this client tells the host it reads (`RemoteProtocol.clientCapabilities`); a client
+    /// that reads many idle threads at once adds `nativeThreadPreviewCapability`.
     public func connect(
         host: String,
         port: UInt16,
         token: String,
-        clientName: String
+        clientName: String,
+        capabilities: [String] = RemoteProtocol.clientCapabilities
     ) async throws -> ShepherdState {
         let opening = RemoteSocketOpen()
         let attempt = try queue.sync {
@@ -189,7 +210,7 @@ public final class RemoteHostClient: @unchecked Sendable {
             do {
                 let helloReply = try await request(connectionGeneration: attempt) { id in
                     .hello(id: id, token: token, clientName: clientName, protocolVersion: RemoteProtocol.version,
-                           capabilities: RemoteProtocol.clientCapabilities)
+                           capabilities: capabilities)
                 }
                 guard case .helloOk(_, _, let capabilities) = helloReply else {
                     if case .error(_, let code, let message) = helloReply {
@@ -501,7 +522,9 @@ public final class RemoteHostClient: @unchecked Sendable {
         let reply: RemoteReply
         do {
             let timeout: TimeInterval = if case .queue(_, _, _, .subagent) = command { 65 } else { 15 }
-            reply = try await request(timeout: timeout) { .nativeThread(id: $0, agentID: agentID, request: command) }
+            reply = try await request(timeout: timeout, cancellable: Self.isRead(command)) {
+                .nativeThread(id: $0, agentID: agentID, request: command)
+            }
         } catch RemoteHostClientError.timeout {
             throw RemoteHostClientError.outcomeUnknown(message: "Native request timed out. Refresh before acting; do not automatically retry.")
         } catch RemoteHostClientError.disconnected {
@@ -562,6 +585,15 @@ public final class RemoteHostClient: @unchecked Sendable {
             throw RemoteHostClientError.rejected(code: code, message: message)
         }
         throw RemoteHostClientError.outcomeUnknown(message: "Unexpected agent inspection reply. Check operation status before retrying.")
+    }
+
+    /// A request that changes nothing on the host: leaving its screen may drop it (`request`'s
+    /// `cancellable`). Everything with an operation id is a mutation whose outcome must be heard.
+    static func isRead(_ request: NativeThreadRequest) -> Bool {
+        switch request {
+        case .snapshot, .subagentTranscript, .image, .artifact: true
+        default: false
+        }
     }
 
     /// The dev servers the agent's folder on the host offers (`browserTunnelCapability`).
@@ -1046,33 +1078,65 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
     }
 
+    /// Ends the connection. The teardown runs on the client's queue; the caller (the main
+    /// actor) never waits behind frames still being decoded, and every callback of the old
+    /// connection is told apart by its attempt.
     public func disconnect() {
-        queue.sync { teardown(reason: "closed") }
+        queue.async { self.teardown(reason: "closed") }
     }
 
     // MARK: - Connection plumbing (client queue)
 
-    /// Issue an id-correlated request and await its reply.
+    /// A request's id once sent, and whether its task was cancelled first. Client queue only.
+    private final class RequestTicket: @unchecked Sendable {
+        var id: Int?
+        var cancelled = false
+    }
+
+    /// Issue an id-correlated request and await its reply. A `cancellable` request (a read: a
+    /// snapshot, a page, an image) throws `CancellationError` as soon as its task is cancelled,
+    /// and its late reply is dropped without ending the connection. A mutation is never
+    /// cancellable: its outcome is known only from its reply or a timeout.
     func request(
         timeout: TimeInterval = RemoteHostClient.requestTimeout,
         connectionGeneration: UUID? = nil,
+        cancellable: Bool = false,
         _ make: @escaping (Int) -> RemoteRequest
     ) async throws -> RemoteReply {
-        try await withCheckedThrowingContinuation { continuation in
+        let ticket = RequestTicket()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                queue.async {
+                    guard !ticket.cancelled else {
+                        continuation.resume(throwing: CancellationError())
+                        return
+                    }
+                    guard self.fd >= 0, connectionGeneration == nil || self.connectionGeneration == connectionGeneration else {
+                        continuation.resume(throwing: RemoteHostClientError.rejected(code: "not_sent", message: "Connection closed before the request was sent"))
+                        return
+                    }
+                    let id = self.nextRequestID
+                    self.nextRequestID += 1
+                    ticket.id = id
+                    self.pendingReplies[id] = continuation
+                    self.sendRequest(make(id))
+                    self.queue.asyncAfter(deadline: .now() + timeout) { [weak self] in
+                        guard let self else { return }
+                        // Cancelled before it answered: nothing waits, and nothing is torn down.
+                        if self.cancelledReplies.remove(id) != nil { return }
+                        guard let pending = self.pendingReplies.removeValue(forKey: id) else { return }
+                        pending.resume(throwing: RemoteHostClientError.timeout)
+                        self.teardown(reason: "request timed out")
+                    }
+                }
+            }
+        } onCancel: {
+            guard cancellable else { return }
             queue.async {
-                guard self.fd >= 0, connectionGeneration == nil || self.connectionGeneration == connectionGeneration else {
-                    continuation.resume(throwing: RemoteHostClientError.rejected(code: "not_sent", message: "Connection closed before the request was sent"))
-                    return
-                }
-                let id = self.nextRequestID
-                self.nextRequestID += 1
-                self.pendingReplies[id] = continuation
-                self.sendRequest(make(id))
-                self.queue.asyncAfter(deadline: .now() + timeout) { [weak self] in
-                    guard let self, let pending = self.pendingReplies.removeValue(forKey: id) else { return }
-                    pending.resume(throwing: RemoteHostClientError.timeout)
-                    self.teardown(reason: "request timed out")
-                }
+                ticket.cancelled = true
+                guard let id = ticket.id, let pending = self.pendingReplies.removeValue(forKey: id) else { return }
+                self.cancelledReplies.insert(id)
+                pending.resume(throwing: CancellationError())
             }
         }
     }
@@ -1145,9 +1209,12 @@ public final class RemoteHostClient: @unchecked Sendable {
     private func handleReadable() {
         guard fd >= 0 else { return }
         var buf = [UInt8](repeating: 0, count: 64 * 1024)
-        while true {
+        var turnBytes = 0
+        // The source is level-triggered: what is left to read fires it again.
+        while turnBytes < Self.readTurnBytes, !readsPaused {
             let n = read(fd, &buf, buf.count)
             if n > 0 {
+                turnBytes += n
                 let lines: [Data]
                 do {
                     lines = try lineBuffer.append(Data(bytes: buf, count: n))
@@ -1202,12 +1269,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         case .stateChanged(let state):
             push(.state(Self.shown(state, capabilities: capabilities)))
         case .output(let sessionID, let data):
-            if case .output(let last, var merged)? = pendingEvents.last, last == sessionID {
-                merged.append(data)
-                pendingEvents[pendingEvents.count - 1] = .output(sessionID, merged)
-            } else {
-                push(.output(sessionID, data))
-            }
+            push(.output(sessionID, data))
         case .sessionExited(let sessionID, let code):
             push(.exited(sessionID, code))
         case .projectExecutionChanged(let key, let revision):
@@ -1225,17 +1287,47 @@ public final class RemoteHostClient: @unchecked Sendable {
     }
 
     private func push(_ event: PushedEvent) {
-        pendingEvents.append(event)
+        switch event {
+        case .output(let sessionID, let data):
+            pendingEventBytes += data.count
+            // Merged up to the budget of one hop, so the feed into the terminal stays bounded too.
+            if case .output(let last, var merged)? = pendingEvents.last, last == sessionID, merged.count < Self.deliveryBudgetBytes {
+                merged.append(data)
+                pendingEvents[pendingEvents.count - 1] = .output(sessionID, merged)
+            } else {
+                pendingEvents.append(event)
+            }
+        case .state:
+            // A whole state supersedes the one before it; nothing else reads it in between.
+            if let index = pendingEvents.lastIndex(where: { if case .state = $0 { return true } else { return false } }) {
+                pendingEvents[index] = event
+            } else {
+                pendingEvents.append(event)
+            }
+        default:
+            pendingEvents.append(event)
+        }
+        if !readsPaused, pendingEventBytes >= Self.pauseReadsAtBytes, let readSource {
+            readsPaused = true
+            readSource.suspend()
+        }
         scheduleDelivery()
     }
 
-    /// Client queue. Hands the whole backlog to the main queue in one hop;
-    /// events that arrive meanwhile wait for the next hop.
+    /// Client queue. Hands the backlog to the main queue a bounded hop at a time (at least one
+    /// event, at most `deliveryBudgetBytes` of output); the rest waits for the next hop.
     private func scheduleDelivery() {
         guard !deliveryInFlight, !pendingEvents.isEmpty else { return }
         deliveryInFlight = true
-        let batch = pendingEvents
-        pendingEvents.removeAll(keepingCapacity: true)
+        var count = 0
+        var bytes = 0
+        while count < pendingEvents.count, count == 0 || bytes < Self.deliveryBudgetBytes {
+            if case .output(_, let data) = pendingEvents[count] { bytes += data.count }
+            count += 1
+        }
+        let batch = Array(pendingEvents[..<count])
+        pendingEvents.removeFirst(count)
+        pendingEventBytes -= bytes
         hopToMain { [weak self] in
             guard let self else { return }
             for event in batch {
@@ -1250,15 +1342,20 @@ public final class RemoteHostClient: @unchecked Sendable {
                 }
             }
             self.queue.async { [weak self] in
-                self?.deliveryInFlight = false
-                self?.scheduleDelivery()
+                guard let self else { return }
+                self.deliveryInFlight = false
+                if self.readsPaused, self.pendingEventBytes <= Self.resumeReadsAtBytes {
+                    self.readsPaused = false
+                    self.readSource?.resume()
+                }
+                self.scheduleDelivery()
             }
         }
     }
 
     private func resumePending(id: Int, with reply: RemoteReply) {
         guard let continuation = pendingReplies.removeValue(forKey: id) else {
-            ShepherdLog.warning("remote reply for unknown request \(id); dropped")
+            if cancelledReplies.remove(id) == nil { ShepherdLog.warning("remote reply for unknown request \(id); dropped") }
             return
         }
         continuation.resume(returning: reply)
@@ -1269,6 +1366,9 @@ public final class RemoteHostClient: @unchecked Sendable {
         pendingOpen?.cancel()
         pendingOpen = nil
         guard fd >= 0 else { return }
+        // A suspended source must be resumed before it is cancelled and released.
+        if readsPaused { readSource?.resume() }
+        readsPaused = false
         readSource?.cancel()
         readSource = nil
         writeSource?.cancel()
@@ -1284,10 +1384,12 @@ public final class RemoteHostClient: @unchecked Sendable {
         // Undelivered pushes die with the connection; the owner drops its
         // view state on disconnect and re-snapshots on reconnect.
         pendingEvents.removeAll()
+        pendingEventBytes = 0
         for continuation in pendingReplies.values {
             continuation.resume(throwing: RemoteHostClientError.disconnected)
         }
         pendingReplies.removeAll()
+        cancelledReplies.removeAll()
         if established, !disconnectNotified {
             disconnectNotified = true
             hopToMain { [weak self] in self?.onDisconnected?(reason) }

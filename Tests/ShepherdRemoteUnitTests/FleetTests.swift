@@ -197,6 +197,27 @@ struct FleetTests {
         #expect(item.question == "Q")
     }
 
+    /// Home never reads an idle thread's snapshot (that would start its pi on the host, L23): its
+    /// row moves and sorts by the host's own `lastActiveAt`, and a blocked one asks what the host's
+    /// live state says it is waiting on.
+    @Test func aThreadNeverReadMovesByTheHostsStateAndAsksWhatItSays() throws {
+        var idle = Self.agent("idle", .idle)
+        idle.lastActiveAt = 7_000
+        var older = Self.agent("older", .done)
+        older.lastActiveAt = 3_000
+        var asking = Self.agent("asking", .blocked)
+        asking.lastActiveAt = 5_000
+        asking.waitingOn = "Keep the old branch?"
+        asking.waitingReason = "branch?"
+        let model = FleetModel(hosts: [Self.host(Self.studio, "Studio", agents: [older, idle, asking])], digests: [:])
+        #expect(model.recents.map(\.ref) == [Self.ref("idle"), Self.ref("older")])
+        #expect(model.recents.map(\.clock) == [.ago(7_000), .ago(3_000)])
+        let item = try #require(model.needsYou.first)
+        #expect(item.question == "Keep the old branch?")
+        #expect(item.reason == "branch?")
+        #expect(item.since == 5_000)
+    }
+
     @Test func aBlockedAgentWithoutItsSnapshotYetStillNeedsYou() throws {
         let model = FleetModel(hosts: [Self.host(Self.studio, "Studio", agents: [Self.agent("dock", .blocked)])], digests: [:])
         let item = try #require(model.needsYou.first)

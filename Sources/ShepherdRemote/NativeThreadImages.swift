@@ -79,6 +79,15 @@ public final class NativeThreadImages {
     public var heldBytes: Int { bytes }
     public var inFlight: Int { running.count }
 
+    /// Lets go of every piece held (the thread is far from the screen); fetches under way stop
+    /// too. The session stays, so the next viewer fetches again.
+    public func releaseHeld() {
+        cancelAll()
+        cache.removeAll()
+        order.removeAll()
+        bytes = 0
+    }
+
     /// The bytes of image `ref`: held, or on their way, or fetched now. Cancelling the caller returns it at once; the fetch goes on
     /// for any other caller, and stops when none is left.
     public func image(_ ref: NativeImageRef) async -> Outcome {

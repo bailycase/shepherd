@@ -157,7 +157,7 @@ them except the navigator, which is each window's own ([Windows](#windows-ipad))
 | --- | --- | --- |
 | `MobileHosts` | `@Environment(MobileHosts.self)` | every host (`MobileHost`: `record`, `phase`, `state`, `session`, `capabilities`, `connectedClient`, `agent(_:)`), `add`, `edit`, `forget`, `retry`, `retryAll`, `disconnect`, `token(for:)` |
 | `MobileNavigator` | `@Environment(MobileNavigator.self)` | this window's routes and selection (above) |
-| `ThreadStores` | `@Environment(ThreadStores.self)` | one `NativeThreadStore` per `AgentRef`: `store(for:)`, and `viewers(for:)`, which runs its poll loop |
+| `ThreadStores` | `@Environment(ThreadStores.self)` | one `NativeThreadStore` per `AgentRef`: `store(for:)`, and `viewers(for:)`, which runs its poll loop; the six most recently shown off-screen threads keep their history, older ones release it (the draft stays) and reload when shown |
 | `MobileAppearance` | `@Environment(MobileAppearance.self)` | System, Light or Dark |
 | `MobileWindows` | `@Environment(MobileWindows.self)` | the open windows: `open` (each seed and navigator), `window(showing:except:)`, `targets(from:excluding:)` |
 | `MobileApp` | `@Environment(\.mobileApp)` | `forget(host:)`, which clears a host from every store and every window |

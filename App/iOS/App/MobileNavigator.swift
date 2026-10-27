@@ -258,7 +258,7 @@ extension MobileNavigator.Tab {
         switch route {
         case .settings, .home(.more): .settings
         case .home(.automations), .automations: .automations
-        case .home(.needsYou), .home(.recents): .home
+        case .home(.needsYou), .home(.recents), .home(.working), .home(.done): .home
         case .designs(.systems), .designs(.system): nil
         case .designs, .padDesign: .designs
         case .projects: .projects

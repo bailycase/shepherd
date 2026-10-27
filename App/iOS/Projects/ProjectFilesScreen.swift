@@ -18,7 +18,8 @@ struct ProjectFilesScreen: View {
 
     enum Preview: Equatable {
         case text(name: String, String)
-        case image(name: String, Data)
+        /// Decoded once, off main, to the preview's size; nil when the bytes are no image.
+        case image(name: String, UIImage?)
         case problem(name: String, String)
     }
 
@@ -79,7 +80,12 @@ struct ProjectFilesScreen: View {
             do {
                 let file = try await projects.model.read(ref, path: entry.relativePath)
                 if file.mimeType.hasPrefix("image/") {
-                    preview = .image(name: entry.name, file.data)
+                    let data = file.data
+                    let pixels = MobileLayout.projectFilePreviewPixels
+                    let image = await Task.detached(priority: .userInitiated) {
+                        UIImage(data: data).flatMap { $0.preparingThumbnail(of: Self.fit($0.size, in: pixels)) ?? $0.preparingForDisplay() }
+                    }.value
+                    preview = .image(name: entry.name, image)
                 } else if let text = String(data: file.data, encoding: .utf8) {
                     preview = .text(name: entry.name, text)
                 } else {
@@ -91,6 +97,12 @@ struct ProjectFilesScreen: View {
         }
     }
 
+    /// `size` scaled down to fit `bounds`, never up.
+    private static func fit(_ size: CGSize, in bounds: CGSize) -> CGSize {
+        let scale = min(1, bounds.width / max(size.width, 1), bounds.height / max(size.height, 1))
+        return CGSize(width: size.width * scale, height: size.height * scale)
+    }
+
     @ViewBuilder private func previewView(_ preview: Preview) -> some View {
         switch preview {
         case .text(let name, let text):
@@ -98,10 +110,10 @@ struct ProjectFilesScreen: View {
                 Text(name).font(.sh(.ui, weight: .semibold))
                 Text(text).font(.sh(.mono)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
             }
-        case .image(let name, let data):
+        case .image(let name, let image):
             VStack(alignment: .leading, spacing: SH.Space.s) {
                 Text(name).font(.sh(.ui, weight: .semibold))
-                if let image = UIImage(data: data) {
+                if let image {
                     Image(uiImage: image).resizable().scaledToFit().accessibilityLabel(name)
                 } else {
                     Text("This image can't be read.").font(.sh(.caption)).foregroundStyle(Color.sh.failed)

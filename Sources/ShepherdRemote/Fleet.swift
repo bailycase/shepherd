@@ -549,7 +549,7 @@ public struct FleetModel: Equatable, Sendable {
                 if connected, agent.status == .working { self.running.append(row) }
                 if agent.status == .done { finished.append(row) }
                 if attention.isEmpty {
-                    let key = agent.status == .working && connected ? .infinity : digest?.lastActivity ?? -1
+                    let key = agent.status == .working && connected ? .infinity : digest?.lastActivity ?? agent.lastActiveAt ?? -1
                     recents.append((row, order, key))
                 }
                 order += 1
@@ -583,7 +583,7 @@ public struct FleetModel: Equatable, Sendable {
                           hostName: String, hostTag: String?) -> [FleetAttention] {
         var items: [FleetAttention] = []
         let origin: FleetAttention.Origin = project ? .project : automation.map { .automation($0.name) } ?? .thread
-        let since = digest?.lastActivity
+        let since = digest?.lastActivity ?? agent.lastActiveAt
         if let question = digest?.question {
             let reply: FleetAttention.Reply
             if !question.answerable {
@@ -600,8 +600,9 @@ public struct FleetModel: Equatable, Sendable {
                                         dialogID: question.dialogID, session: digest?.session, hostName: hostName,
                                         hostTag: hostTag, since: since))
         } else if agent.status == .blocked {
-            items.append(FleetAttention(ref: ref, origin: origin, thread: agent.name, question: "Waiting on you",
-                                        reason: "needs you", reply: .open, session: digest?.session,
+            // The host's live state names the question before (or without) the thread's snapshot.
+            items.append(FleetAttention(ref: ref, origin: origin, thread: agent.name, question: agent.waitingOn ?? "Waiting on you",
+                                        reason: shortReason(agent.waitingReason) ?? "needs you", reply: .open, session: digest?.session,
                                         hostName: hostName, hostTag: hostTag, since: since))
         }
         return items
@@ -630,10 +631,12 @@ public struct FleetModel: Equatable, Sendable {
         let word = statusWord(agent.status)
         let live = agent.status == .working && !offline
         let activity = live ? digest?.activity : nil
+        // A thread Home never read (an idle one: reading it would start its pi) moves when the
+        // host's state says it did.
         let clock: FleetClock? = if live {
             digest?.activitySince.map { FleetClock.elapsed(since: $0) }
         } else {
-            digest?.lastActivity.map { FleetClock.ago($0) }
+            (digest?.lastActivity ?? agent.lastActiveAt).map { FleetClock.ago($0) }
         }
         let detail = [word, activity ?? space?.name].compactMap { $0 }.joined(separator: " · ")
         var row = FleetThreadRow(ref: ref, title: agent.name, status: agent.status, detail: detail, activity: activity,
