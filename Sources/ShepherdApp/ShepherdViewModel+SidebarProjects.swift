@@ -52,7 +52,7 @@ extension ShepherdViewModel {
         // The Project on screen lists its task threads under it, as the boards draw them.
         let lead: [SidebarTreeItem] = !projectsEnabled ? [] : [.leadHeader(count: projects.count)] + projects.flatMap { project -> [SidebarTreeItem] in
             guard project.selected, let record = logicalProjects.project(project.ref) else { return [.leadProject(project)] }
-            let tasks = ProjectPagePresentation(record).rows.filter { $0.group != .resolved }
+            let tasks = ProjectPagePresentation.memoized(record).rows.filter { $0.group != .resolved }
             return [.leadProject(project)] + tasks.map { .leadTask(project.ref, $0) }
         }
         return lead + sidebarTree.items(collapsed: collapsedProjects, selected: selectedSidebarRow, shortcuts: showAgentShortcutBadges,

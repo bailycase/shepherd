@@ -94,7 +94,7 @@ extension ShepherdViewModel {
                     return try PiSessionFile.fork(sessionFile: file.path, cwd: cwd, sessionsRoot: root)
                 }.value
                 var config = NewAgentConfig(spaceID: source.agent.spaceID, workingDirectory: cwd, model: source.agent.model,
-                                            thinking: source.agent.thinkingLevel ?? .medium, initialPrompt: nil)
+                                            thinking: source.agent.thinkingLevel ?? settings.defaultThinking, initialPrompt: nil)
                 config.initialName = Self.forkName(source.agent.name)
                 config.piSessionID = forked
                 try await startAgent(config)

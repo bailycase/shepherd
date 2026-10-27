@@ -336,7 +336,9 @@ public struct SHSubagentTrayRow: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(run.accessibilityLabel)
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
-        .accessibilityAction(named: "Open") { actions.open() }
+        // A tap gesture has no AXPress: the default action is the open, as a Button's would be.
+        .accessibilityAction { actions.open() }
+        .accessibilityHint("Opens the run")
     }
 
     @ViewBuilder private func stateMark(_ m: SHSubagentTrayMetrics) -> some View {

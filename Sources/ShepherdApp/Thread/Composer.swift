@@ -1584,6 +1584,11 @@ struct CycleThinkingShortcut: ViewModifier {
     let choose: (String) -> Void
     @State private var monitor = ComposerKeyMonitor(action: .cycleThinkingLevel)
 
+    /// "Thinking: Medium", from the level's id ("medium", "xhigh").
+    nonisolated static func announcement(_ level: String) -> String {
+        "Thinking: " + (NativeThinkingLevel.all.first { $0.id == level }?.title ?? level.capitalized)
+    }
+
     nonisolated static func next(current: String?, levels: [String], steps: Int = 1) -> String? {
         guard let current, levels.count > 1, steps > 0 else { return nil }
         let index = levels.firstIndex(of: current) ?? (levels.count - 1)
@@ -1601,6 +1606,8 @@ struct CycleThinkingShortcut: ViewModifier {
                 // SwiftUI can combine several key presses into one view update.
                 guard focused, let next = Self.next(current: current, levels: levels, steps: presses - previous) else { return }
                 choose(next)
+                // The chord changes a setting with cost and latency behind it; a chip's label is not enough feedback.
+                AccessibilityNotification.Announcement(Self.announcement(next)).post()
             }
             .onDisappear { monitor.watch(false) }
     }

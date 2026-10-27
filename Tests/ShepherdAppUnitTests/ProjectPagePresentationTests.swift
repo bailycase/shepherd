@@ -22,6 +22,17 @@ struct ProjectPagePresentationTests {
         return ProjectPagePresentation(project)
     }
 
+    /// The page, the pane and the sidebar read one presentation per project change, not one per render.
+    @Test @MainActor func thePresentationIsDerivedOncePerProjectChange() {
+        var project = Project(name: "Sample App", paused: false)
+        project.tasks = [task("Running", .running)]
+        let first = ProjectPagePresentation.memoized(project)
+        #expect(ProjectPagePresentation.memoized(project) == first && first.working == 1)
+        project.tasks.append(task("Done", .resolved))
+        let second = ProjectPagePresentation.memoized(project)
+        #expect(second.resolved == 1 && second != first)
+    }
+
     @Test func groupsFollowTheBoardsAndEachTaskLandsInExactlyOne() {
         let p = page([task("Asking", .waiting, question: "Who pays?"), task("Running", .running), task("Queued", .queued),
                       task("Done", .resolved), task("Failed", .failed, error: "pi exited"), task("Lost", .unknown)])

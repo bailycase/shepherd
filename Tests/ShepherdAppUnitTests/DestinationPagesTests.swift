@@ -99,6 +99,7 @@ struct AutomationsPageTests {
         let row = offline.rows.first
         #expect(row?.lastRun == SHRunOutcome("host offline"))
         #expect(row?.canToggle == false && row?.canRun == false && row?.canEdit == false)
+        #expect(row?.disabledReason == "Host offline", "the row's menu says why Edit and Delete are off")
         #expect(offline.detail?.readOnlyReason == "Host offline")
         #expect(offline.detail?.runsNote == "Runs aren't available from this host.")
 

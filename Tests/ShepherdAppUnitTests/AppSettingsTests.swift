@@ -24,6 +24,17 @@ struct AppSettingsTests {
         #expect(AutomationEditorSheet.modelLine("anthropic/claude-opus-4-5") == "Runs on anthropic/claude-opus-4-5 (the default in Settings ▸ Agents)")
     }
 
+    /// The terminal font list comes from the font registry (no font is loaded for it): every Mac has Menlo, a
+    /// symbols-only Nerd Font pack is left out, and the configured family stays listed even when missing.
+    @Test func monospacedFamiliesComeFromTheRegistry() {
+        let families = AppSettings.monospacedFamilies(including: "Not Installed Mono")
+        #expect(families.contains("Menlo"))
+        #expect(families.contains("Not Installed Mono"))
+        #expect(families == families.sorted() && Set(families).count == families.count)
+        #expect(!families.contains { $0.hasSuffix("Symbols Only") })
+        #expect(!AppSettings.monospacedFamilies(including: AppSettings.systemFontFamily).contains(AppSettings.systemFontFamily))
+    }
+
     @Test func freshSettingsUseThePublishedDefaults() {
         let settings = AppSettings(store: Fixture.defaults())
 

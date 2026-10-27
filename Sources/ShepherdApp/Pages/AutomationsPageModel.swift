@@ -35,6 +35,8 @@ struct AutomationsPageRow: Identifiable, Equatable {
     var canStop: Bool
     /// Edit and Delete: the host is connected and serves automations.
     var canEdit: Bool
+    /// Why Edit and Delete are off, when they are ("Host offline", a Project's automation).
+    var disabledReason: String?
 
     var id: AutomationKey { key }
 }
@@ -114,7 +116,7 @@ struct AutomationsPageModel: Equatable {
                 key: row.key, name: row.name, enabled: row.enabled, canToggle: row.abilities.toggle && !busy,
                 host: row.hostName, lastRun: lastRun(row, runsKnown: runs[row.key] != nil), selected: row.key == selected,
                 live: row.live, run: row.run, canRun: row.abilities.run && !busy, canStop: row.abilities.stop && !busy,
-                canEdit: row.abilities.edit && !busy)
+                canEdit: row.abilities.edit && !busy, disabledReason: row.abilities.edit ? (busy ? "Working…" : nil) : row.abilities.readOnlyReason)
         }
         if shared.rows.isEmpty {
             model.emptyText = "No automations yet. An automation saves a prompt that starts a thread on a host, by hand or whenever Shepherd starts."

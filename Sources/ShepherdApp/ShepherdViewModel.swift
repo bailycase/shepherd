@@ -742,6 +742,7 @@ final class ShepherdViewModel {
         // screen (those whose poll loop runs), and the store pulls at most every
         // `NativeThreadStore.pushedPullSpacing`. The polls stay as the fallback.
         threadStores.configure = { [weak self] agent, store in store.offline = self?.coordinatorHeldOff(agent) ?? false }
+        threadStores.drafts = ComposerDrafts(defaults: sidebarDefaults)
         threadStores.onLiveChange = { [weak self] live in
             guard let self else { return }
             sessions.watchThreadRevisions(of: live.union(sidebarOpeningTurns))

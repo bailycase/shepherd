@@ -113,6 +113,20 @@ extension ShepherdViewModel {
         return "\(space ?? "The thread's folder") on This Mac"
     }
 
+    /// The new-tab row's title: only a worktree thread's terminal opens "in the worktree".
+    func newTerminalTitle(_ target: TerminalTarget) -> String {
+        let agent = if let remote = target.remote {
+            remoteHosts.connections.first { $0.id == remote.hostID }?.state.agents.first { $0.id == remote.agentID }
+        } else {
+            state.agents.first { $0.tabID == target.key.tab }
+        }
+        return Self.newTerminalTitle(worktree: agent?.worktreeBranch != nil)
+    }
+
+    nonisolated static func newTerminalTitle(worktree: Bool) -> String {
+        worktree ? "New terminal in the worktree" : "New terminal"
+    }
+
     /// Add to message (TerminalPane): the selection goes into the thread's composer as a code
     /// block after what is typed there, and the thread takes the keyboard.
     func addTerminalSelection(_ text: String, to owner: SidePaneOwner) {

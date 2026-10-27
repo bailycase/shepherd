@@ -80,11 +80,13 @@ struct AutomationEditorSheet: View {
                 SheetRow("Name") {
                     TextField("Name", text: $name, prompt: Text("Nightly migrations dry run").foregroundStyle(Color.sh.textTertiary))
                         .textFieldStyle(.sh)
+                        .accessibilityLabel("Name")
                 }
                 SheetRow("Folder") {
                     HStack(spacing: SH.Space.m) {
                         TextField("Folder", text: $folder, prompt: Text("~/code/project").foregroundStyle(Color.sh.textTertiary))
                             .textFieldStyle(.sh(mono: true))
+                            .accessibilityLabel("Folder")
                         Button("Choose…") { picking = true }
                             .buttonStyle(.sh(.ghost, size: .s))
                             .accessibilityLabel("Choose folder")
@@ -92,6 +94,7 @@ struct AutomationEditorSheet: View {
                 }
                 SheetRow("Prompt", alignment: .firstTextBaseline) {
                     TextEditor(text: $prompt)
+                        .writingToolsBehavior(.disabled)
                         .focused($promptFocused)
                         .shText(.body)
                         .foregroundStyle(Color.sh.textPrimary)

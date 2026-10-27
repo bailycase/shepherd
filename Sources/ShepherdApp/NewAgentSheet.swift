@@ -350,6 +350,7 @@ struct NewAgentSheet: View {
                     .foregroundStyle(Color.sh.textSecondary)
                     .accessibilityHidden(true)
                 TextEditor(text: $initialPrompt)
+                    .writingToolsBehavior(.disabled)
                     .focused($promptFocused)
                     .shText(.body)
                     .foregroundStyle(Color.sh.textPrimary)

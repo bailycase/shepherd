@@ -17,7 +17,7 @@ struct LogicalProjectDestination: View {
         let _ = SHRenderProbe.tick("page.project")
         VStack(spacing: 0) {
             if let ref = vm.selectedLogicalProject, let project = vm.logicalProjects.project(ref) {
-                let presentation = ProjectPagePresentation(project)
+                let presentation = ProjectPagePresentation.memoized(project)
                 // The toolbar and conversation are one column; the Threads pane runs the window's full height beside it, with
                 // its own header (ProjectLead-Started). It is a thread's side pane: the same divider to drag (or adjust with
                 // VoiceOver, or double-click for half the page), the same bounds, and in a page too narrow to keep the
@@ -160,5 +160,19 @@ struct LogicalProjectOverview: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: SH.Radius.l))
         .shBorder(Color.sh.lineStrong, radius: SH.Radius.l)
+    }
+}
+
+extension ProjectPagePresentation {
+    @MainActor private static var memo: [ProjectID: (project: Project, value: ProjectPagePresentation)] = [:]
+
+    /// The page's presentation of `project`, derived once per change of the project rather than on every page, pane
+    /// or sidebar render (each toggle of the pane's filters re-rendered the page and rebuilt its task groups).
+    @MainActor static func memoized(_ project: Project) -> ProjectPagePresentation {
+        if let cached = memo[project.id], cached.project == project { return cached.value }
+        let value = ProjectPagePresentation(project)
+        if memo.count > 64 { memo.removeAll(keepingCapacity: true) }
+        memo[project.id] = (project, value)
+        return value
     }
 }

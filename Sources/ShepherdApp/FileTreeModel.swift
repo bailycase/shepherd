@@ -92,8 +92,11 @@ final class FileTreeModel {
     /// Canonical (C realpath) root for containment checks. Matches F_GETPATH.
     let resolvedRoot: String
 
-    private(set) var root: FileNode
-    var filter: String = ""
+    private(set) var root: FileNode { didSet { visible = nil } }
+    var filter: String = "" { didSet { visible = nil } }
+    /// `visibleNodes()` for the current root and filter; the tab's body and footer read it, so the
+    /// walk happens once per change, not twice per render.
+    @ObservationIgnored private var visible: [(node: FileNode, depth: Int)]?
     var showHidden: Bool = false
 
     /// Bumped on every manual refresh so the file viewer re-reads.
@@ -358,10 +361,10 @@ final class FileTreeModel {
 
     /// Flat list of visible nodes for rendering, with depth info.
     func visibleNodes() -> [(node: FileNode, depth: Int)] {
-        guard root.isExpanded else { return [] }
+        if let visible { return visible }
         var result: [(FileNode, Int)] = []
-        let lowFilter = filter.lowercased()
-        collectVisible(node: root, depth: -1, filter: lowFilter, result: &result)
+        if root.isExpanded { collectVisible(node: root, depth: -1, filter: filter.lowercased(), result: &result) }
+        visible = result
         return result
     }
 
