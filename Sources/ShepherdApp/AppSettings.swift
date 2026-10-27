@@ -688,16 +688,22 @@ final class AppSettings {
     /// always present so a missing font is still shown (ghostty falls back
     /// silently, so the name must remain visible and correctable).
     static func monospacedFamilies(including current: String) -> [String] {
-        var families = NSFontManager.shared.availableFontFamilies.filter { family in
-            guard let font = NSFont(name: family, size: 12) else { return false }
+        // A descriptor query answers from the font registry. Making an `NSFont` for every
+        // installed family instead loaded each one into CoreText's cache for the rest of the
+        // launch: ~45 MB and half a second, the bulk of what Settings ▸ Terminal cost.
+        let traits: [CFString: Any] = [kCTFontSymbolicTrait: CTFontSymbolicTraits.traitMonoSpace.rawValue]
+        let query = CTFontDescriptorCreateWithAttributes([kCTFontTraitsAttribute: traits] as CFDictionary)
+        var families = Set<String>()
+        for descriptor in (CTFontDescriptorCreateMatchingFontDescriptors(query, nil) as? [CTFontDescriptor]) ?? [] {
+            guard let family = CTFontDescriptorCopyAttribute(descriptor, kCTFontFamilyNameAttribute) as? String,
+                  !families.contains(family) else { continue }
             // Symbols-only families (Nerd Font glyph packs) are fixed-pitch
             // but carry no Latin letters; a terminal set to one renders
             // fallback glyphs on a broken double-wide grid.
-            return font.isFixedPitch && font.coveredCharacterSet.contains("a")
+            if let covered = CTFontDescriptorCopyAttribute(descriptor, kCTFontCharacterSetAttribute) as? CharacterSet, !covered.contains("a") { continue }
+            families.insert(family)
         }
-        if !families.contains(current), current != systemFontFamily {
-            families.append(current)
-        }
+        if current != systemFontFamily { families.insert(current) }
         return families.sorted()
     }
 
