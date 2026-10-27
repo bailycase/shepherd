@@ -28,6 +28,8 @@ final class SubagentTranscriptModel {
     private(set) var turns: [Turn] = []
     private(set) var earlierCount = 0
     private(set) var loaded = false
+    private(set) var loadError: String?
+    private(set) var loading = false
     private(set) var loadingOlder = false
     @ObservationIgnored private var olderCursor: String?
     @ObservationIgnored private var runID: String?
@@ -62,12 +64,16 @@ final class SubagentTranscriptModel {
 
     func reload(store: NativeThreadStore) async {
         guard let runID else { return }
+        guard !loading else { return }
         let epoch = generation
+        loading = true
+        defer { if generation == epoch { loading = false } }
         guard let page = await store.subagentTranscript(runID: runID) else {
-            if generation == epoch, store.ready, !loaded { loaded = true }
+            if generation == epoch { loadError = "Couldn't load this transcript. Try again." }
             return
         }
         guard generation == epoch, self.runID == runID else { return }
+        loadError = nil
         let spliced = nativeTranscriptSplice(messages, newest: page)
         if spliced.replaced {
             olderCursor = page.olderCursor
@@ -109,7 +115,7 @@ final class SubagentTranscriptModel {
     /// The whole transcript as text, once every page is in; nil when a page failed to load.
     func copyText(store: NativeThreadStore) async -> String? {
         await loadAll(store: store)
-        guard olderCursor == nil else { return nil }
+        guard loaded, loadError == nil, olderCursor == nil else { return nil }
         return nativeTranscriptText(messages)
     }
 
@@ -156,6 +162,8 @@ final class SubagentTranscriptModel {
         presentations = [:]
         earlierCount = 0
         loaded = false
+        loadError = nil
+        loading = false
         loadingOlder = false
     }
 }
@@ -174,7 +182,10 @@ struct SubagentTranscriptList: View {
     var body: some View {
         let turns = model.turns
         LazyVStack(alignment: .leading, spacing: MobileLayout.turnItemSpacing) {
-            if turns.isEmpty, model.loaded {
+            if !model.loaded, model.loadError == nil {
+                Text("Loading transcript…").font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
+            }
+            if turns.isEmpty, model.loaded, model.loadError == nil {
                 Text(emptyText).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
             }
             ForEach(!showsTask && turns.first?.presentation == nil ? Array(turns.dropFirst()) : turns) { turn in

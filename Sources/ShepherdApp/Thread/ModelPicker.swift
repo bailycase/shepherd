@@ -34,6 +34,9 @@ struct ModelCatalog: Sendable {
     /// Catalog order.
     let models: [Model]
     private let index: [String: Int]
+    /// Short names two or more providers offer ("gpt-6-astra" from cpa and openai-codex): a row
+    /// or chip for one of these names the provider too, or nothing tells them apart.
+    private let ambiguous: Set<String>
 
     /// `levels` are the levels models.json configures, per model (`ModelListing.thinkingLevels`);
     /// a host without `thinking.levels.v1` (`hostTakesAllLevels` false) takes only Off to High.
@@ -49,11 +52,21 @@ struct ModelCatalog: Sendable {
                   fast: (serviceTiers?[$0.id] ?? []).contains { $0 != ServiceTier.standard.rawValue })
         }
         index = Dictionary(models.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var providers: [String: Set<String>] = [:]
+        for model in models { providers[model.title, default: []].insert(model.provider) }
+        ambiguous = Set(providers.filter { $0.value.count > 1 }.keys)
     }
 
     var isEmpty: Bool { models.isEmpty }
 
     func model(_ id: String) -> Model? { index[id].map { models[$0] } }
+
+    /// Whether another provider offers a model of the same short name.
+    func isAmbiguous(_ id: String) -> Bool { ambiguous.contains(nativeModelShortName(id)) }
+
+    /// The row's title where no provider header says which it is: the short name, or the whole id
+    /// when another provider offers the same name.
+    func title(_ id: String) -> String { isAmbiguous(id) ? id : nativeModelShortName(id) }
 
     /// The picker's list for `query`: Recent (the `recent` ids that match, or all of them for no
     /// query, even ones the catalog lacks), then one section per provider in catalog order,
@@ -71,8 +84,14 @@ struct ModelCatalog: Sendable {
                           isCurrent: model.id == current, fast: model.fast)
         }
         var sections: [SHModelSection] = []
+        // Recent has no provider header: a name two providers offer is spelled out.
         let recentOptions = recent.compactMap { id -> SHModelOption? in
-            if let model = model(id) { return q.isEmpty || model.key.contains(q) ? option(model) : nil }
+            if let model = model(id) {
+                guard q.isEmpty || model.key.contains(q) else { return nil }
+                var row = option(model)
+                row.title = title(id)
+                return row
+            }
             return q.isEmpty
                 ? SHModelOption(id: id, title: nativeModelShortName(id), subtitle: subtitle(id, catalog: nil), isCurrent: id == current)
                 : nil
@@ -101,7 +120,7 @@ struct ModelCatalog: Sendable {
         }
         return ids.map {
             let isCurrent = $0 == current
-            return SHModelOption(id: $0, title: nativeModelShortName($0), isCurrent: isCurrent,
+            return SHModelOption(id: $0, title: catalog?.title($0) ?? nativeModelShortName($0), isCurrent: isCurrent,
                                  fast: isCurrent ? currentOffersFast : catalog?.model($0)?.fast ?? false)
         }
     }

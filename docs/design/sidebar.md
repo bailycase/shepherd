@@ -211,9 +211,11 @@ yet, so they are hidden until built. There is no More row: the command palette o
 - **Context menus** keep every action an agent had:
   - This Mac's threads (SHComposer's agent menu, with today's items between its separators):
     Rename… with its keys (⌘R), Pin or Unpin (`pin`, `pin.slash`, named for what it does now),
-    Fork from Here (`arrow.branch`) and Copy Transcript
+    Fork Thread (`arrow.branch`) and Copy Transcript
     (`doc.on.doc`); Review Changes and Open in Finder; then Finalize Worktree… and Delete
-    Worktree Agent… for a worktree agent, or Delete Agent. Fork from Here copies the agent's pi
+    Worktree Agent… for a worktree agent, or Delete Agent… (both confirm). The list is one
+    (`ThreadCommand`): the Agent menu and ⌘K's This thread section offer the same items for the
+    selected thread. Fork Thread copies the agent's pi
     session, as it stands, into a new session and starts "<name> (fork)" beside it in the same
     space and folder (the namer retitles it on its first turn); Copy Transcript puts what was
     said on the pasteboard, the user's and the assistant's text along pi's current branch as
@@ -222,7 +224,7 @@ yet, so they are hidden until built. There is no More row: the command palette o
     (`ActionErrorDialog`). Remote threads have no Fork, Copy Transcript or Open in Finder: they
     read a file on another Mac.
   - This Mac's automation runs: Stop while the run is live (a run whose pi is still starting
-    included; `AutomationRun.isLive`), else Run Now, then Delete Automation. Run Now replaces a done
+    included; `AutomationRun.isLive`), else Run Now, then Delete Automation… (confirmed). Run Now replaces a done
     run once the new run exists; a refused Run Now shows `ActionErrorDialog`.
   - Remote threads: Rename…, Pin or Unpin, Finalize Worktree… (worktree agents), Review
     Uncommitted Changes, Review PR Changes, and Delete Agent or Delete Worktree Agent…, while the

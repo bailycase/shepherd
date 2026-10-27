@@ -123,7 +123,8 @@ private func classify(_ segment: String) -> CommandSegment? {
     if noisePrograms.contains(program) { return nil }
     let arguments = Array(words.dropFirst())
     let operands = arguments.filter { !$0.hasPrefix("-") }
-    let sub = operands.first
+    // A subcommand is a word (`test`, `run-script`), never an option's bare value (`paste -sd , …`).
+    let sub = operands.first.flatMap { $0.first?.isLetter == true ? $0 : nil }
     var head = [program] + (sub.map { [$0] } ?? [])
     var result: NativeCommandClass = .other
 
@@ -391,7 +392,10 @@ extension NativeActivityCall {
         let running = !failed && (message.status == "running" || message.status == "streaming")
         let lines = output.isEmpty ? [] : output.split(separator: "\n", omittingEmptySubsequences: false)
         let lineCount = lines.count
-        let firstLine = lines.first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.map { String($0.prefix(120)) } ?? ""
+        // A browser result opens with its untrusted-content notice: the line's words are what follows it.
+        let firstLine = lines.first {
+            !$0.trimmingCharacters(in: .whitespaces).isEmpty && !$0.hasPrefix(NativeBrowserActivity.untrustedNotice)
+        }.map { String($0.prefix(120)) } ?? ""
 
         self.id = message.toolCallID ?? message.entryID
         self.entryID = message.entryID

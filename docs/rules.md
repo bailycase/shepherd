@@ -100,7 +100,8 @@ escalates to SIGKILL.
 ## Status and startup
 
 - The server applies extension status reports unconditionally (`canTransition` allows `done → working`)
-  and logs table violations. `SessionServer.start()` resets every persisted status to `idle`.
+  and logs table violations. `SessionServer.start()` resets every persisted status to `idle`;
+  `Agent.lastFailure` (a failed turn's error, or why pi couldn't start) is what survives it.
 - Startup reconciliation drops shell tabs, `inspectorFor` tabs, review leaves and automation runs,
   and settles design agents into the designs space. Never keep a run agent across launches.
 - Agent names settle once: `setAgentName` never overwrites a final name, naming never blocks pi,

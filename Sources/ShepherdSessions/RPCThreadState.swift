@@ -777,7 +777,7 @@ final class RPCThreadState {
             requestStarted(key: sequence, timestamp: message.timestamp)
             upsertAssistant(message, ended: false)
         case .messageUpdate(let delta):
-            guard let key = currentAssistant, let index = live.firstIndex(where: { $0.kind == .assistant(key) }), let current = live[index].raw else {
+            guard let key = currentAssistant, let index = live.firstIndex(where: { $0.kind == .assistant(key) }), live[index].raw != nil else {
                 // message_start was missed (spawned mid-turn); start accumulating now.
                 sequence += 1
                 currentAssistant = sequence
@@ -792,10 +792,13 @@ final class RPCThreadState {
             observeStream(delta)
             // A call's argument fragments change nothing the reply shows, only the call's row.
             if delta.type == "toolcall_delta" {
-                streamToolCall(delta, in: current)
+                streamToolCall(delta, in: live[index].raw!)
                 break
             }
-            var raw = current
+            // The row's copy is dropped before the delta is applied, so the text buffer is uniquely
+            // owned and the append grows it in place.
+            var raw = live[index].raw!
+            live[index].raw = nil
             Self.apply(delta, to: &raw)
             upsertAssistant(raw, ended: false)
             streamToolCall(delta, in: raw)
@@ -854,7 +857,10 @@ final class RPCThreadState {
                 diagnosticActivity("tool.failed", details: .init(category: .other, toolKind: .init(name: name)))
             }
             askingCalls.removeAll { $0.id == id }
-            if stopped { stoppedCalls.insert(id) }
+            if stopped {
+                if stoppedCalls.count >= Self.timingLimit, let any = stoppedCalls.first { stoppedCalls.remove(any) }
+                stoppedCalls.insert(id)
+            }
             upsertTool(id: id, name: name, args: nil, content: result?.content ?? [], isError: isError, status: stopped ? "aborted" : "complete", projectAction: result?.projectAction)
             onToolFinished?(name)
         case .queueUpdate(let steering, let followUp):
@@ -873,10 +879,18 @@ final class RPCThreadState {
             endDiagnostic("context.compact")
             if error != nil, !aborted { diagnosticActivity("context.compact_failed", details: failureDetails(error)) }
             compactionEnded(reason: NativeCompactionReason(pi: reason), result: result, aborted: aborted, willRetry: willRetry, error: error)
-        case .autoRetryStart(let attempt, let maxAttempts, let delayMs, _):
+        case .autoRetryStart(let attempt, let maxAttempts, let delayMs, let errorMessage):
             diagnosticActivity("model.retry")
             retry = NativeThreadRetry(attempt: attempt, maxAttempts: maxAttempts,
                                       retryAt: (Date().timeIntervalSince1970 * 1000 + max(0, delayMs)).rounded())
+            // A reply with nothing in it is the model's answer to this context far more often than a
+            // transient fault: the same request gives the same empty reply. One automatic retry;
+            // a second one is cancelled so the turn fails visibly instead of spending pi's whole
+            // retry budget (and a failed-checkpoint record per attempt) on identical requests.
+            if attempt > 1, errorMessage == Self.emptyCompletionError {
+                ShepherdLog.info("rpc session \(session.id) cancels retry \(attempt)/\(maxAttempts): the provider returned an empty reply again")
+                session.request(.abortRetry) { _ in }
+            }
         case .autoRetryEnd:
             retry = nil
         case .turnStart:
@@ -1559,23 +1573,27 @@ final class RPCThreadState {
             // The live rows that had ended when pi answered are the ones this history holds. One that ends while the images
             // below are read (the next message pi starts, a Steer now's above all) is not in it, and stays live.
             let persisted = Set(self.live.filter(Self.persisted).map(\.value.entryID))
-            // A history with images costs a header read and a SHA-256 each. That work is done here, off the thread's queue, into a
-            // table built from exactly these messages; the projection on the thread's queue only looks entries up. A history with
-            // no images goes straight on.
-            if case .success(let response) = result, response.success, let messages = response.messages,
-               ThreadImages.hasImages(messages) {
-                let hook = self.beforeHistoryImages
-                DispatchQueue.global(qos: .utility).async { [weak self] in
-                    hook?()
-                    let table = ThreadImages.table(for: messages)
-                    self?.queue.async { [weak self] in
-                        self?.finishRefresh(result, generation: generation, sequence: sequence, bootstrap: bootstrap, images: table, persisted: persisted,
-                                            done: measured)
-                    }
-                }
+            guard case .success(let response) = result, response.success, let messages = response.messages else {
+                self.finishRefresh(result, generation: generation, sequence: sequence, bootstrap: bootstrap, projected: nil, persisted: persisted, done: measured)
                 return
             }
-            self.finishRefresh(result, generation: generation, sequence: sequence, bootstrap: bootstrap, images: [:], persisted: persisted, done: measured)
+            // Projecting the whole history (and reading + hashing its images) is O(messages); it runs here, off the thread's
+            // queue, from a snapshot of the small tables the projection consults. The queue only swaps in the result.
+            let hook = self.beforeHistoryImages
+            let marked = self.markingStopped(messages)
+            let sentReferences = self.origins.compactMapValues(\.references)
+            let adjust = self.historyAdjuster()
+            // The thread on screen waits for this page: not utility, which a busy machine starves.
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                hook?()
+                let images = ThreadImages.hasImages(messages) ? ThreadImages.table(for: messages) : [:]
+                let history = Self.projectHistory(marked, sentReferences: sentReferences, images: images, adjust: adjust)
+                let estimate = Self.estimate(messages)
+                self?.queue.async { [weak self] in
+                    self?.finishRefresh(result, generation: generation, sequence: sequence, bootstrap: bootstrap,
+                                        projected: (history, estimate), persisted: persisted, done: measured)
+                }
+            }
         }
         session.request(.getMessages, timeout: timeout,
                         onLateResponse: bootstrap ? { receive(.success($0)) } : nil, completion: receive)
@@ -1590,8 +1608,44 @@ final class RPCThreadState {
         }
     }
 
+    /// The per-message touch-ups `projectHistory` applies, closed over a copy of the tables they read so the projection
+    /// can run off the thread's queue.
+    private func historyAdjuster() -> (inout NativeThreadMessage, RPCMessage) -> Void {
+        let compactionNotes = compactionNotes, toolStarts = toolStarts, stoppedCalls = stoppedCalls
+        let thinkingByTimestamp = thinkingByTimestamp, timingByTimestamp = timingByTimestamp
+        let origins = origins, operationsByEntry = operationsByEntry
+        return { value, message in
+            if message.role == "compactionSummary", let summary = message.summary,
+               let note = compactionNotes.last(where: { $0.summary == summary }) {
+                value.compaction?.reason = note.reason
+                value.compaction?.tokensAfter = note.after
+            }
+            if let id = message.toolCallId, message.role == "toolResult", let started = toolStarts[id] {
+                value.startedAt = started
+            }
+            if let id = message.toolCallId, message.role == "toolResult", stoppedCalls.contains(id) {
+                value.status = "aborted"
+            }
+            if message.role == "assistant", let time = message.timestamp {
+                value.thinkingSeconds = thinkingByTimestamp[time]
+                value.timing = timingByTimestamp[time]
+            }
+            if message.role == "user" {
+                let text = message.content.compactMap { block -> String? in
+                    if case .text(let text) = block { return text }
+                    return nil
+                }.joined()
+                // A design comment's origin is its fence (`project`), which pi keeps.
+                if value.origin == nil {
+                    value.origin = origins[value.entryID]?.origin(text: DesignViewRecord.strippingFence(from: text))
+                }
+                value.operationID = operationsByEntry[value.entryID]
+            }
+        }
+    }
+
     private func finishRefresh(_ result: Result<RPCResponse, RPCError>, generation: String, sequence: UInt64, bootstrap: Bool,
-                               images: [String: ThreadImages.Meta], persisted: Set<String>,
+                               projected: (history: [NativeThreadMessage], estimate: ContextEstimate)?, persisted: Set<String>,
                                done: ((Result<RPCResponse, RPCError>) -> Void)?) {
         do {
             defer { done?(result) }
@@ -1606,8 +1660,7 @@ final class RPCThreadState {
                 self.announceIfServable()
                 self.drainIfReady()
             }
-            guard case .success(let response) = result, response.success,
-                  let messages = response.messages else {
+            guard let (history, estimate) = projected else {
                 self.historyUnread = true
                 return
             }
@@ -1616,41 +1669,11 @@ final class RPCThreadState {
             self.appliedHistorySequence = sequence
             self.historyUnread = false
             self.liveLeftOut = 0
-            let history = Self.projectHistory(self.markingStopped(messages),
-                                              sentReferences: self.origins.compactMapValues(\.references), images: images) { value, message in
-                if message.role == "compactionSummary", let summary = message.summary,
-                   let note = self.compactionNotes.last(where: { $0.summary == summary }) {
-                    value.compaction?.reason = note.reason
-                    value.compaction?.tokensAfter = note.after
-                }
-                if let id = message.toolCallId, message.role == "toolResult", let started = self.toolStarts[id] {
-                    value.startedAt = started
-                }
-                if let id = message.toolCallId, message.role == "toolResult", self.stoppedCalls.contains(id) {
-                    value.status = "aborted"
-                }
-                if message.role == "assistant", let time = message.timestamp {
-                    value.thinkingSeconds = self.thinkingByTimestamp[time]
-                    value.timing = self.timingByTimestamp[time]
-                }
-                if message.role == "user" {
-                    let text = message.content.compactMap { block -> String? in
-                        if case .text(let text) = block { return text }
-                        return nil
-                    }.joined()
-                    // A design comment's origin is its fence (`project`), which pi keeps.
-                    if value.origin == nil {
-                        value.origin = self.origins[value.entryID]?.origin(text: DesignViewRecord.strippingFence(from: text))
-                    }
-                    value.operationID = self.operationsByEntry[value.entryID]
-                }
-            }
             let kept = Self.keepingSummarized(previous: self.history, next: Self.interleave(self.placedRecords, into: history))
             if kept != self.history {
                 self.history = kept
                 self.historyVersion += 1
             }
-            let estimate = Self.estimate(messages)
             if estimate != self.estimate { self.estimate = estimate }
             // message_end precedes persistence: what had ended when pi answered is now history.
             self.live.removeAll { item in
@@ -1980,7 +2003,10 @@ final class RPCThreadState {
             default: break
             }
         }
-        if hasThinking, thinkingSpans[key] == nil { thinkingSpans[key] = (now, nil) }
+        if hasThinking, thinkingSpans[key] == nil {
+            if thinkingSpans.count >= Self.timingLimit, let oldest = thinkingSpans.keys.min() { thinkingSpans[oldest] = nil }
+            thinkingSpans[key] = (now, nil)
+        }
         if var span = thinkingSpans[key], span.end == nil, answered || ended {
             span.end = now
             thinkingSpans[key] = span
@@ -1988,7 +2014,11 @@ final class RPCThreadState {
         if let span = thinkingSpans[key] {
             let seconds = ((span.end ?? now) - span.start) / 1000
             value.thinkingSeconds = seconds
-            if ended, let time = raw.timestamp { thinkingByTimestamp[time] = seconds }
+            if ended, let time = raw.timestamp {
+                if thinkingByTimestamp[time] == nil, thinkingByTimestamp.count >= Self.timingLimit,
+                   let oldest = thinkingByTimestamp.keys.min() { thinkingByTimestamp[oldest] = nil }
+                thinkingByTimestamp[time] = seconds
+            }
         }
         let existing = live.firstIndex(where: { $0.kind == .assistant(key) })
         value.timing = existing.flatMap { live[$0].value.timing } ?? raw.timestamp.flatMap { timingByTimestamp[$0] } ?? (key == requestKey ? request : nil)
@@ -2016,7 +2046,10 @@ final class RPCThreadState {
         value.argumentBytes = status == "streaming" ? argumentBytes ?? previous?.argumentBytes : nil
         // One clock for the call: from when the host first saw it, which is when the model named
         // it, through its run into history.
-        if toolStarts[id] == nil { toolStarts[id] = Date().timeIntervalSince1970 * 1000 }
+        if toolStarts[id] == nil {
+            if toolStarts.count >= Self.timingLimit, let oldest = toolStarts.min(by: { $0.value < $1.value })?.key { toolStarts[oldest] = nil }
+            toolStarts[id] = Date().timeIntervalSince1970 * 1000
+        }
         value.startedAt = toolStarts[id]
         if status == "complete", value.timestamp == nil { value.timestamp = Date().timeIntervalSince1970 * 1000 }
         if let index {
@@ -2234,8 +2267,11 @@ final class RPCThreadState {
         case "text_start":
             message.content[index] = .text("")
         case "text_delta":
-            if case .text(let text) = message.content[index] {
-                message.content[index] = .text(text + (delta.delta ?? ""))
+            if case .text(var text) = message.content[index] {
+                // Take the buffer out first so the append grows it in place instead of copying the block.
+                message.content[index] = .text("")
+                text.append(delta.delta ?? "")
+                message.content[index] = .text(text)
             } else {
                 message.content[index] = .text(delta.delta ?? "")
             }
@@ -2244,8 +2280,10 @@ final class RPCThreadState {
         case "thinking_start":
             message.content[index] = .thinking("")
         case "thinking_delta":
-            if case .thinking(let text) = message.content[index] {
-                message.content[index] = .thinking(text + (delta.delta ?? ""))
+            if case .thinking(var text) = message.content[index] {
+                message.content[index] = .thinking("")
+                text.append(delta.delta ?? "")
+                message.content[index] = .thinking(text)
             } else {
                 message.content[index] = .thinking(delta.delta ?? "")
             }

@@ -79,8 +79,12 @@ final class RPCSession: @unchecked Sendable {
     /// maximum) and one 64 KiB read. A lone partial record must reach its LF to make progress.
     static let decodeHighWaterBytes = 8 * 1024 * 1024
     static let decodeLowWaterBytes = 4 * 1024 * 1024
-    /// Concurrent, so the histories of agents resuming together decode side by side.
+    /// Concurrent, so the histories of agents resuming together decode side by side; `decodeSlots`
+    /// bounds how many at once, since each holds its raw record and the decoded messages (images
+    /// included) and a workspace of 30 long threads restoring together could decode all 30.
     private static let decodeQueue = DispatchQueue(label: "shepherd.rpc.decode", qos: .utility, attributes: .concurrent)
+    static let decodeConcurrency = max(4, ProcessInfo.processInfo.activeProcessorCount / 2)
+    private static let decodeSlots = DispatchSemaphore(value: decodeConcurrency)
 
     /// Tests only: runs on the decode queue before each off-queue decode.
     var beforeOffQueueDecode: (() -> Void)?
@@ -328,7 +332,7 @@ final class RPCSession: @unchecked Sendable {
     /// Hard shutdown for server stop, mirroring `PTYSession.shutdown()`:
     /// signal the group, force it down, fail outstanding requests, release
     /// the pipes. onExit is not invoked. Must run under the queue hierarchy.
-    func shutdown() {
+    func shutdown(reapDeadline: DispatchTime = .now() + .seconds(2)) {
         guard !exitDelivered else { return }
         if !reaped {
             signalProcessGroup(SIGHUP)
@@ -361,7 +365,7 @@ final class RPCSession: @unchecked Sendable {
         cancelProcessSources()
         if !reaped {
             // Bounded reap, same reasoning as PTYSession: never hang the quit path.
-            let deadline = DispatchTime.now() + .seconds(2)
+            let deadline = reapDeadline
             var status: Int32 = 0
             while true {
                 let r = waitpid(childPID, &status, WNOHANG)
@@ -520,7 +524,9 @@ final class RPCSession: @unchecked Sendable {
         let hook = beforeOffQueueDecode
         Self.decodeQueue.async { [weak self] in
             hook?()
+            Self.decodeSlots.wait()
             let decoded = Result { try NDJSON.decode(RPCIncoming.self, from: line) }
+            Self.decodeSlots.signal()
             guard let self else { return }
             self.queue.async { self.finishOffQueueDecode(decoded) }
         }

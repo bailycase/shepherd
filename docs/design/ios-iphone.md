@@ -335,7 +335,7 @@ follows the Mac's rules (Thread) with the phone's measures below.
   "Queue a follow-up…" while pi works, since Send queues then. Holding Send while pi works offers
   Queue and Steer now. The ring's tap opens its details as a sheet (Composer › Context meter ›
   iPad and iPhone). The app adds,
-  while the field is in use, a row of "/ commands", model and thinking chips above it (ghost,
+  a persistent row of "/ commands", model and thinking chips above it (ghost,
   28pt), and the speed chip after them where the host offers one (a menu of Standard and Fast,
   each with its line; no phone board draws any of it).
 - **Following:** as in the iOS list above: only a finger's drag detaches; "↓ Jump to latest" sits

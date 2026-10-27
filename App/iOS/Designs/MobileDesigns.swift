@@ -233,15 +233,19 @@ final class MobileDesigns {
 
     /// Pins a comment on the host, as its own canvas does; answers it as kept.
     func addComment(_ ref: HostDesignRef, draft: DesignCommentDraft) async throws -> DesignComment {
+        try await writeComment(ref) { .addComment(designID: ref.design, draft: draft, baseRevision: $0) }
+    }
+
+    func writeComment(_ ref: HostDesignRef, request: (UInt64?) -> RemoteDesignRequest) async throws -> DesignComment {
         guard let library = library(ref.host) else { throw MobileDesignsError.offline }
         let base = comments[ref]?.revision
         let result: RemoteDesignResult
         do {
-            result = try await library.request(.addComment(designID: ref.design, draft: draft, baseRevision: base))
+            result = try await library.request(request(base))
         } catch RemoteHostClientError.rejected(let code, _) where code == "stale_revision" {
             // The comments moved on: read them again and pin it once more.
             await loadComments(ref)
-            result = try await library.request(.addComment(designID: ref.design, draft: draft, baseRevision: comments[ref]?.revision))
+            result = try await library.request(request(comments[ref]?.revision))
         }
         guard case .comment(let comment, let undelivered) = result else { throw MobileDesignsError.unexpected }
         await loadComments(ref)

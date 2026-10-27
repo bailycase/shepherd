@@ -62,7 +62,7 @@ extension ShepherdViewModel {
         let config = NewAgentConfig(
             spaceID: space.id,
             workingDirectory: identity.path,
-            model: settings.agentDefaults.model,
+            model: settings.defaultModel(piHome: server.pi.home),
             thinking: settings.agentDefaults.thinking,
             initialPrompt: nil,
             initialName: (identity.branch as NSString).lastPathComponent,
@@ -86,7 +86,7 @@ extension ShepherdViewModel {
     func addSpace(at url: URL, select: Bool = true) async -> SpaceID? {
         let path = url.path
         do { try verifyCheckoutAvailable(path) }
-        catch { remoteActionError = String(describing: error); return nil }
+        catch { fail("Couldn’t add the space", error); return nil }
         let reservation = UUID()
         startingCheckoutUsers[reservation] = path
         defer { startingCheckoutUsers.removeValue(forKey: reservation) }

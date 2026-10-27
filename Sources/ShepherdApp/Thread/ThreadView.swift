@@ -100,6 +100,7 @@ struct ThreadView: View {
     /// The user turn the last ⌥⌘↑/↓ landed on.
     @State private var jumpedTurn: String?
     @State private var arrivals = ThreadArrivals()
+    @State private var rowIndex = ThreadRowIndex()
     @Environment(\.designCommentCards) private var commentCards
     @Environment(\.shUserBubbleMetrics) private var bubbleMetrics
 
@@ -113,7 +114,9 @@ struct ThreadView: View {
         // A row's background needs only the boundary ID, not a captured copy of the transcript.
         let historyRowID = historyAnchor.rowID ?? rows.first?.id
         let running = store.running
-        let liveRow = rows.last(where: \.live)
+        // The IDs and the live row, derived once per thread change rather than per render (every streamed chunk).
+        let _ = rowIndex.update(rows, version: store.threadVersion)
+        let liveRow = rowIndex.liveRow
         // Only one thing moves (LiveText): a running call's own line, thinking, or the reply as it
         // is written. Between tools the thread ends in "Thinking…", the live turn's last part (or
         // on its own before the reply has a row). A question waits in the composer instead, and a
@@ -123,7 +126,7 @@ struct ThreadView: View {
         // after switching back to the agent), whatever changes lands at once.
         let catchingUp = arrivals.catchUp.catchingUp(caughtUpAt: store.catchUp?.thread, version: store.threadVersion)
         let settled = active && !catchingUp
-        let arrived = arrivals.update(rows.map(\.id), session: store.sessionKey, active: active, catchingUp: catchingUp)
+        let arrived = arrivals.update(rowIndex.ids, session: store.sessionKey, active: active, catchingUp: catchingUp)
         ScrollViewReader { proxy in
             let _ = keepTail(proxy)
             ZStack(alignment: .bottom) {
@@ -137,7 +140,7 @@ struct ThreadView: View {
                             else if designGitChat?.opened == true { SHGitDesignIntro() }
                             else { emptyState }
                         }
-                        if projectSend != nil || workerStyle != nil, let at = rows.first?.turn.messages.first?.timestamp ?? rows.first?.startedAt { SHLeadDaySeparator(word: FleetFinishedDay.dayTitle(Date(timeIntervalSince1970: at / 1000), now: Date())) }
+                        if let day = leadDayTitle(rows) { SHLeadDaySeparator(word: day) }
                         ForEach(rows) { row in
                             let _ = SHRenderProbe.tick("thread.rowBuilder")
                             // One view per row whatever it holds, so the lazy stack builds only the
@@ -277,7 +280,8 @@ struct ThreadView: View {
                     }
                 }
                 // New output at the tail is what "unseen" means, never the content height.
-                .onChange(of: rows.last) { _, _ in
+                // The version, not the last row's value: comparing a live turn's messages per chunk is a deep string compare.
+                .onChange(of: store.threadVersion) { _, _ in
                     follower.contentArrived()
                     tailGuard.suspect()
                 }
@@ -332,7 +336,7 @@ struct ThreadView: View {
             let add: ((ViewerImage) -> Void)? = { [input] image in
                 input.add(images: [image], store: store)
             }
-            opener = ThreadImageOpener { set, index in
+            opener = ThreadImageOpener(store: store, hasImages: images != nil) { set, index in
                 present(ImageViewerState(set: set, index: index, images: images, addToMessage: add))
             }
         }
@@ -396,6 +400,12 @@ struct ThreadView: View {
         return row.turn.messages.compactMap(\.projectAction).map(cards.resolved)
     }
 
+    /// A Project thread opens under the day of its first message.
+    private func leadDayTitle(_ rows: [NativeThreadRow]) -> String? {
+        guard projectSend != nil || workerStyle != nil, let at = rows.first?.turn.messages.first?.timestamp ?? rows.first?.startedAt else { return nil }
+        return FleetFinishedDay.dayTitle(Date(timeIntervalSince1970: at / 1000), now: Date())
+    }
+
     /// The scroll target at the end of the thread: scrolled to when following, and in view
     /// whenever the tail is (`ThreadTailGuard`).
     static let bottomID = "thread-bottom"
@@ -416,7 +426,10 @@ struct ThreadView: View {
             transaction.disablesAnimations = true
             withTransaction(transaction) { revision.wrappedValue &+= 1 }
         }
-        tailGuard.rowIDs = Set(store.rows.map(\.id))
+        if tailGuard.rowIDsStamp != rowIndex.stamp {
+            tailGuard.rowIDsStamp = rowIndex.stamp
+            tailGuard.rowIDs = rowIndex.set
+        }
     }
 
     // Starting history during an animated jump can discard its restoration scroll request.
@@ -578,6 +591,35 @@ final class CatchUpGate {
         defer { drawn = version }
         guard let caughtUpAt else { return true }
         return caughtUpAt > drawn
+    }
+}
+
+/// A thread's row IDs and its live row, derived once per change of the rows (their version, count
+/// and ends), never per render: the thread renders on every streamed chunk.
+@MainActor
+final class ThreadRowIndex {
+    private(set) var ids: [String] = []
+    private(set) var set: Set<String> = []
+    private(set) var liveRow: NativeThreadRow?
+    /// Bumped when the index was rebuilt, so a reader can skip an equal set.
+    private(set) var stamp = 0
+    private var key: Key?
+
+    private struct Key: Equatable {
+        var version: Int
+        var count: Int
+        var first: String?
+        var last: String?
+    }
+
+    func update(_ rows: [NativeThreadRow], version: Int) {
+        let key = Key(version: version, count: rows.count, first: rows.first?.id, last: rows.last?.id)
+        guard key != self.key else { return }
+        self.key = key
+        ids = rows.map(\.id)
+        set = Set(ids)
+        liveRow = rows.last(where: \.live)
+        stamp &+= 1
     }
 }
 

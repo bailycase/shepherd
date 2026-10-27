@@ -862,7 +862,8 @@ struct Composer: View {
         let stops = NativeSendChoice.stopsInPlaceOfSend(running: working, hasInput: !draftEmpty)
         return ComposerControlsModel(
             active: active, canAttach: canAttach, attachFull: input.attachments.isFull,
-            model: modelName, modelChangeable: store.supportedActions.contains("setModel") || projectSend?.model != nil,
+            model: modelName, modelQualified: modelID.map { catalog?.isAmbiguous($0) ?? false } ?? false,
+            modelChangeable: store.supportedActions.contains("setModel") || projectSend?.model != nil,
             modelEnabled: modelSettable, modelsOpen: menu == .models || menu == .settings,
             thinking: shownThinking, thinkingShown: thinkingAvailable, thinkingEnabled: thinkingSettable,
             speed: store.serviceTier, speedShown: store.offersServiceTier, speedEnabled: store.supports("setServiceTier"),
@@ -1192,6 +1193,8 @@ struct ComposerControlsModel: Equatable {
     var canAttach: Bool
     var attachFull: Bool
     var model: String?
+    /// Another provider offers a model of the same name: the chip keeps the provider.
+    var modelQualified = false
     /// The host lets the model change (the chevron); `modelEnabled` is whether it can right now.
     var modelChangeable: Bool
     var modelEnabled: Bool
@@ -1300,7 +1303,8 @@ struct ComposerControls: View, Equatable {
     @ViewBuilder private func modelChip(compact: Bool) -> some View {
         if let name = model.model {
             let summary = ModelSettingsSummary(model: name, thinking: model.thinking, thinkingOffered: model.thinkingShown, speed: model.speed,
-                                               speedOffered: model.speedShown, shortenedName: compact, dropsThinking: compact)
+                                               speedOffered: model.speedShown, shortenedName: compact, dropsThinking: compact,
+                                               qualified: model.modelQualified)
             Button(action: actions.models) {
                 SHModelSettingsLabel(model: summary.name, thinking: summary.thinking, fast: summary.fast,
                                      changeable: model.modelChangeable || model.thinkingShown || model.speedShown)
@@ -1580,6 +1584,11 @@ struct CycleThinkingShortcut: ViewModifier {
     let choose: (String) -> Void
     @State private var monitor = ComposerKeyMonitor(action: .cycleThinkingLevel)
 
+    /// "Thinking: Medium", from the level's id ("medium", "xhigh").
+    nonisolated static func announcement(_ level: String) -> String {
+        "Thinking: " + (NativeThinkingLevel.all.first { $0.id == level }?.title ?? level.capitalized)
+    }
+
     nonisolated static func next(current: String?, levels: [String], steps: Int = 1) -> String? {
         guard let current, levels.count > 1, steps > 0 else { return nil }
         let index = levels.firstIndex(of: current) ?? (levels.count - 1)
@@ -1597,6 +1606,8 @@ struct CycleThinkingShortcut: ViewModifier {
                 // SwiftUI can combine several key presses into one view update.
                 guard focused, let next = Self.next(current: current, levels: levels, steps: presses - previous) else { return }
                 choose(next)
+                // The chord changes a setting with cost and latency behind it; a chip's label is not enough feedback.
+                AccessibilityNotification.Announcement(Self.announcement(next)).post()
             }
             .onDisappear { monitor.watch(false) }
     }

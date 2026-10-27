@@ -31,6 +31,24 @@ struct InstructionsModelTests {
         return (hosts, hosts.connections[0].id)
     }
 
+    /// L9: the AGENTS.md and APPEND_SYSTEM.md that came over into Shepherd's pi home are named on
+    /// the page while Shepherd's own file is empty, and Use it here makes the copy the draft.
+    @Test func importedInstructionsAreOfferedWhileShepherdsFileIsEmpty() async throws {
+        let piHome = try makeScratchDirectory("pi-home")
+        try "# Your rules\n".write(to: piHome.appendingPathComponent("AGENTS.md"), atomically: true, encoding: .utf8)
+        try "".write(to: piHome.appendingPathComponent("APPEND_SYSTEM.md"), atomically: true, encoding: .utf8)
+        let model = InstructionsModel(store: store, remoteHosts: RemoteHostStore(defaults: defaults, connects: false), defaults: defaults)
+        model.piHome = piHome
+        await model.refresh()
+        #expect(model.imported.keys.sorted { $0.rawValue < $1.rawValue } == [.agents], "an empty APPEND_SYSTEM.md offers nothing")
+        #expect(model.adoptable(.agents)?.name == "AGENTS.md" && model.adoptable(.appendSystem) == nil)
+        model.adoptImported(.agents)
+        #expect(model.text(.agents, on: .local) == "# Your rules\n" && model.isEdited(.agents, on: .local))
+        #expect(model.adoptable(.agents) == nil, "once adopted (or edited) the offer is gone")
+        await model.save()
+        #expect(store.snapshot().agents == "# Your rules\n" && model.adoptable(.agents) == nil)
+    }
+
     @Test func anEditIsADraftUntilItMatchesTheSavedFileAgain() async throws {
         try store.save(.agents, content: "- a\n")
         let model = await makeModel()

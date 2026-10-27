@@ -65,6 +65,7 @@ struct TerminalModel: Equatable {
     /// The running command ("make dev"), else the program at the prompt ("zsh"), else the
     /// shell's own title, else the folder it started in.
     @MainActor private static func title(activity: RemoteTerminalActivity?, session: MobileTerminalSession?, pane: LeafPane?) -> String {
+        if let title = pane?.title, !title.isEmpty { return title }
         if let command = activity?.command, !command.isEmpty { return String(command.prefix(40)) }
         if let process = activity?.process, !process.isEmpty { return process }
         if let title = session?.title { return String(title.prefix(40)) }
@@ -95,6 +96,8 @@ struct TerminalPaneView: View {
     @State private var visible = false
     /// This view, as the one window a session's screen may be in (`MobileTerminalSession.viewer`).
     @State private var viewer = UUID()
+    @State private var startError: String?
+    @State private var retryStart = 0
 
     private struct HoldKey: Equatable {
         var connection: UUID?
@@ -102,6 +105,7 @@ struct TerminalPaneView: View {
     }
 
     private struct DemandKey: Equatable {
+        var retry: Int
         var paneID: PaneID
         var connection: UUID?
         var active: Bool
@@ -149,8 +153,15 @@ struct TerminalPaneView: View {
                 // (every terminal respawns its shell): the new one must claim the screen, make its own
                 // surface and report its grid, or it never attaches and the old screen stays up.
                 .id(id)
+            } else if let startError {
+                VStack(spacing: SH.Space.m) {
+                    SHTerminalNotice(startError)
+                    Button("Retry") { retryStart += 1 }
+                        .buttonStyle(.sh(.secondary))
+                        .disabled(host?.connectedClient == nil)
+                }
             } else {
-                SHTerminalNotice("starting session…")
+                SHTerminalNotice(host?.connectedClient == nil ? "host offline · reconnect to start" : "starting session…")
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -158,13 +169,19 @@ struct TerminalPaneView: View {
         .contentShape(Rectangle())
         .onAppear { visible = true }
         .onDisappear { visible = false }
-        .task(id: DemandKey(paneID: pane.id, connection: host?.connectedClient == nil ? nil : host?.session,
+        .task(id: DemandKey(retry: retryStart, paneID: pane.id, connection: host?.connectedClient == nil ? nil : host?.session,
                             active: visible && scenePhase == .active && host?.supports(RemoteProtocol.terminalStartCapability) == true)) {
             guard visible, scenePhase == .active, pane.isReview != true, pane.agentID == nil,
                   host?.supports(RemoteProtocol.terminalStartCapability) == true,
                   let client = host?.connectedClient else { return }
             // A non-nil binding can belong to the previous host process; demand is idempotent.
-            try? await client.agentAction(agentID: ref.agent, action: .startTerminal(paneID: pane.id))
+            startError = nil
+            do {
+                try await client.agentAction(agentID: ref.agent, action: .startTerminal(paneID: pane.id))
+            } catch {
+                guard !Task.isCancelled else { return }
+                startError = MobileTerminals.message(error, doing: "start the terminal")
+            }
         }
     }
 

@@ -126,3 +126,25 @@ public enum PiLaunch {
         "'" + value.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"
     }
 }
+
+/// The ask-the-user extension (`Extensions/shepherd-ask.ts`): one tool, `ask_user`, whose question
+/// pi's native dialog carries to the thread's question dock and Needs you. Installed with the pi
+/// home's other files (`PiHome.install`, outside extensions/ so pi never discovers a second copy)
+/// and loaded only by the pi of an agent someone can answer: a thread's or a design's, never an
+/// automation run's or a native subagent's (the children extension strips `SHEPHERD_` variables).
+public enum AskExtension {
+    static let fileName = "shepherd-ask.ts"
+    /// `1` turns the extension on; without it the file registers nothing.
+    public static let environmentKey = "SHEPHERD_EXT_ASK"
+
+    public static func path(in home: PiHome) -> String {
+        home.directory.appendingPathComponent(fileName).path
+    }
+
+    @discardableResult
+    static func install(in home: PiHome) throws -> URL {
+        let path = home.directory.appendingPathComponent(fileName)
+        try PiHome.write(Data(EmbeddedExtensions.source(fileName).utf8), to: path, mode: 0o600)
+        return path
+    }
+}

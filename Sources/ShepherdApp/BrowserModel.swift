@@ -73,6 +73,8 @@ extension DevServer {
 enum BrowserScriptMessage: Equatable {
     /// A console line, or an error the page threw.
     case console(level: SHConsoleLevel, text: String)
+    /// Console lines the shim batched (one post per ~50 ms); an error flushes the batch at once.
+    case consoleLines([BrowserConsoleInput])
     /// Resources the page loaded so far, its document included.
     case network(count: Int)
     /// Select an element picked `element`, at `rect` (CSS pixels in the page's viewport).
@@ -86,13 +88,14 @@ enum BrowserScriptMessage: Equatable {
 
     /// Nil for anything malformed; `page` is the page's URL for a pick.
     init?(console body: Any) {
-        guard let body = body as? [String: Any], let text = body["text"] as? String else { return nil }
-        let level: SHConsoleLevel = switch body["level"] as? String {
-        case "warning": .warning
-        case "error": .error
-        default: .log
+        if let batch = (body as? [String: Any])?["lines"] as? [Any] {
+            let lines = batch.compactMap(BrowserConsoleInput.init(body:))
+            guard !lines.isEmpty else { return nil }
+            self = .consoleLines(lines)
+            return
         }
-        self = .console(level: level, text: String(text.prefix(BrowserConsoleLog.maxTextLength)))
+        guard let line = BrowserConsoleInput(body: body) else { return nil }
+        self = .console(level: line.level, text: line.text)
     }
 
     init?(picker body: Any, page: String) {
@@ -129,6 +132,27 @@ enum BrowserScriptMessage: Equatable {
     }
 }
 
+/// One console line as the page's shim posts it, clipped.
+struct BrowserConsoleInput: Equatable {
+    var level: SHConsoleLevel
+    var text: String
+
+    init(level: SHConsoleLevel, text: String) {
+        self.level = level
+        self.text = text
+    }
+
+    init?(body: Any) {
+        guard let body = body as? [String: Any], let text = body["text"] as? String else { return nil }
+        level = switch body["level"] as? String {
+        case "warning": .warning
+        case "error": .error
+        default: .log
+        }
+        self.text = String(text.prefix(BrowserConsoleLog.maxTextLength))
+    }
+}
+
 // MARK: Console
 
 /// A page's console (the drawer): its lines, newest last, capped, and its counts. Observed on its
@@ -156,14 +180,33 @@ final class BrowserConsoleLog {
     /// The page's own errors show as warning rows too: no board draws a separate error count or
     /// red rows (the user's decision, 2026-09-29).
     func append(_ level: SHConsoleLevel, _ text: String, at date: Date = Date()) {
-        nextID += 1
-        let shown: SHConsoleLevel = level == .error ? .warning : level
-        lines.append(SHConsoleLine(id: nextID, time: Self.time(date), text: text, level: shown))
+        append(contentsOf: [BrowserConsoleInput(level: level, text: text)], at: date)
+    }
+
+    /// A batch: one mutation of `lines` and one trim, however many lines arrived.
+    func append(contentsOf batch: [BrowserConsoleInput], at date: Date = Date()) {
+        guard !batch.isEmpty else { return }
+        let time = Self.time(date)
+        var shownLines: [SHConsoleLine] = []
+        var newEntries: [Entry] = []
+        var newWarnings = 0
+        var newErrors = 0
+        for line in batch {
+            if line.level != .log { newWarnings += 1 }
+            if line.level == .error { newErrors += 1 }
+        }
+        for line in batch.suffix(Self.maxLines) {
+            nextID += 1
+            let shown: SHConsoleLevel = line.level == .error ? .warning : line.level
+            shownLines.append(SHConsoleLine(id: nextID, time: time, text: line.text, level: shown))
+            newEntries.append(Entry(time: time, level: line.level, text: line.text))
+        }
+        lines.append(contentsOf: shownLines)
         if lines.count > Self.maxLines { lines.removeFirst(lines.count - Self.maxLines) }
-        if shown == .warning { warnings += 1 }
-        entries.append(Entry(time: Self.time(date), level: level, text: text))
+        if newWarnings > 0 { warnings += newWarnings }
+        entries.append(contentsOf: newEntries)
         if entries.count > Self.maxLines { entries.removeFirst(entries.count - Self.maxLines) }
-        if level == .error { errorTotal += 1 }
+        if newErrors > 0 { errorTotal += newErrors }
     }
 
     func setNetwork(_ count: Int) {

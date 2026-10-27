@@ -20,7 +20,7 @@ extension ShepherdViewModel {
                     do { completion(.success(try await self.handleReviewCommit(agentID, query: query))) }
                     catch { completion(.failure(RemoteCreateAgentError(String(describing: error)))) }
                     return
-                case .changesOverview, .changesList, .changesFile, .changesBranches, .changesPatch, .changesUndoTurn, .changesRedoTurn:
+                case .changesOverview, .changesList, .changesFile, .changesBranches, .changesPatch, .changesUndoTurn, .changesRedoTurn, .changesRevertFile:
                     // The server answers these itself; a handler call is only ever a fallback.
                     do { completion(.success(try await self.server.changes.answer(query, agentID: agentID))) }
                     catch { completion(.failure(RemoteCreateAgentError(String(describing: error)))) }
@@ -38,7 +38,7 @@ extension ShepherdViewModel {
                     switch query {
                     case .deleteKeepingWorktree, .worktreeInfo, .deleteWorktree, .finalizeWorktree, .worktreeStatus, .worktreeSetup, .worktreeCommitCount, .worktreeDescription,
                          .commitInfo, .commitMessage, .commit,
-                         .changesOverview, .changesList, .changesFile, .changesBranches, .changesPatch, .changesUndoTurn, .changesRedoTurn:
+                         .changesOverview, .changesList, .changesFile, .changesBranches, .changesPatch, .changesUndoTurn, .changesRedoTurn, .changesRevertFile:
                         return
                     case .children:
                         result = .children(self.children(of: agentID))
@@ -212,7 +212,7 @@ extension ShepherdViewModel {
                 if case .inspectorFocus(let paneID) = result, selectedRemoteAgent == target, remoteInspectingAgent == target {
                     remoteFocusedPaneID = paneID
                 }
-            } catch { remoteActionError = String(describing: error) }
+            } catch { fail("The host refused the action", error) }
         }
     }
 

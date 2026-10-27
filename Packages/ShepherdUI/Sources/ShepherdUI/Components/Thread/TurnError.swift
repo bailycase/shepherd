@@ -119,6 +119,8 @@ public struct SHTurnError: View {
     let content: Content
     let folded: Bool
     let retry: (() -> Void)?
+    /// The provider's login no longer works: opens its sign-in.
+    let signIn: (() -> Void)?
     /// Where Details and unfolding are kept when the caller keeps them (a thread's store);
     /// otherwise the card keeps its own.
     let detailsState: Binding<Bool>?
@@ -130,10 +132,11 @@ public struct SHTurnError: View {
 
     /// `detailsOpen` seeds Details when the card keeps its own state (previews, tests).
     public init(_ content: Content, folded: Bool = false, detailsOpen: Bool = false, details: Binding<Bool>? = nil,
-                unfolded: Binding<Bool>? = nil, retry: (() -> Void)? = nil) {
+                unfolded: Binding<Bool>? = nil, retry: (() -> Void)? = nil, signIn: (() -> Void)? = nil) {
         self.content = content
         self.folded = folded
         self.retry = retry
+        self.signIn = signIn
         detailsState = details
         unfoldState = unfolded
         _ownDetails = State(initialValue: detailsOpen)
@@ -290,6 +293,16 @@ public struct SHTurnError: View {
                     .buttonStyle(.sh(.secondary, size: .s))
                     #endif
                     .shHelp("Retry this turn")
+                    .shTransition(.content)
+            }
+            if let signIn {
+                Button(action: signIn) { Label("Sign in again", systemImage: "person.badge.key") }
+                    #if os(iOS)
+                    .buttonStyle(.sh(.secondary, size: .l))
+                    #else
+                    .buttonStyle(.sh(.secondary, size: .s))
+                    #endif
+                    .shHelp("The provider's sign-in no longer works: sign in to it again")
                     .shTransition(.content)
             }
             Button {

@@ -162,6 +162,18 @@ private struct InstructionsMainColumn: View {
     var body: some View {
         VStack(alignment: .leading, spacing: SH.Space.l) {
             InstructionsFileTabs(model: model)
+            if let copy = model.adoptable(model.file) {
+                // What came over from your pi is read by every agent already; this file is empty, so say where it is and offer it here.
+                SHNoteCard(glyph: "square.and.arrow.down", link: "Use it here", action: { model.adoptImported(model.file) }) {
+                    (Text("Your pi’s \(copy.name)").fontWeight(.semibold).foregroundColor(Color.sh.textPrimary)
+                        + Text(" came over into Shepherd’s pi (\((copy.path as NSString).abbreviatingWithTildeInPath)), where every agent reads it. ")
+                        + Text("Shepherd’s own \(model.file.fileName) is empty; use the copy here to edit it as Shepherd’s, without doubling it."))
+                        .shText(size: SHPiSignInMetrics.noteProseSize, lineHeight: SHPiSignInMetrics.proseLeading)
+                        .foregroundStyle(Color.sh.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .shTransition(.disclosure)
+            }
             InstructionsEditorCard(model: model)
             if let problem = model.problem {
                 SHInlineProblem(problem).shTransition(.disclosure)

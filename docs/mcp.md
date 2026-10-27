@@ -273,8 +273,8 @@ once when the page opens (and after any edit, Reconnect, or sign-in): `connected
 
 **Which agents get it.** An agent Shepherd starts (a thread, an automation) gets `-e builtin:mcp -e
 builtin:tool-search` while Settings ▸ Pi ▸ Bundled extensions ▸ MCP servers is on. `tool_search` also loads
-Shepherd's own deferred tools (the browser, other-thread, automation and review tools, docs/context-budget.md ›
-Deferred tools), so with Settings ▸ Agents ▸ Defer rarely used tools on a thread's or an automation's launch has
+Shepherd's own deferred tools (the browser, other-thread, automation, review and rarer helper tools, and native
+codemode, docs/context-budget.md › Deferred tools), so with Settings ▸ Agents ▸ Defer rarely used tools on a thread's or an automation's launch has
 `-e builtin:tool-search` even with MCP off (it wins over the home's `-builtin:tool-search`, like MCP's). A design's agent, a
 native subagent, a draft and the model catalog do not (`--no-extensions` or no flag). Native codemode
 defaults on for primary agents, with a global switch and trusted-space override. To keep a space's

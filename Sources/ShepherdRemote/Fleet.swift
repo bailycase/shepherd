@@ -525,6 +525,7 @@ public struct FleetModel: Equatable, Sendable {
                     guard host.designs, let design = Self.design(drawnBy: agent, in: host.state) else { continue }
                     var row = Self.row(agent, ref: ref, digest: digest, space: nil, hostName: host.name,
                                        hostTag: tag, offline: !connected)
+                    row.title = design.name
                     row.design = FleetDesign(id: design.id, boards: design.boardCount)
                     row.detail = RemoteDesignPresentation.recentsDetail(boards: design.boardCount)
                     row.clock = nil

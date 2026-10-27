@@ -37,6 +37,9 @@ import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
+// The socket reader's cap on one reply line (characters); the server's replies are far smaller.
+const MAX_REPLY_CHARS = 16 * 1024 * 1024;
+
 const REQUEST_TIMEOUT_MS = 30_000;
 const FACTS_TIMEOUT_MS = 3_000;
 // Shepherd's socket takes frames up to 1 MiB; a board is capped at 900,000 bytes below that.
@@ -225,6 +228,8 @@ export default function shepherdDesign(pi: ExtensionAPI) {
       s.on("data", (chunk: string) => {
         if (socket !== s) return;
         buffer += chunk;
+        // A reply that never ends its line would grow the heap until exit: drop the connection.
+        if (buffer.length > MAX_REPLY_CHARS) { buffer = ""; s.destroy(new Error("Shepherd reply exceeds 16 MiB")); return; }
         let index = buffer.indexOf("\n");
         while (index >= 0) {
           const line = buffer.slice(0, index);
@@ -1493,7 +1498,9 @@ function designFacts(current: Snapshot | undefined, designID: string, skillDirec
       for (const p of order.slice(0, 40)) listed.push(boardLine(p, boards[p]));
       if (order.length > 40) listed.push(`- … and ${order.length - 40} more (design_read lists them all)`);
     }
-    lines.push("", `The design is at revision ${current.revision}. From its canvas.json:`, fenced(listed.join("\n")));
+    // No revision here: it moves on every write and would re-key the provider's prompt cache each
+    // turn; design_read and every write report the current one.
+    lines.push("", "From the design's canvas.json:", fenced(listed.join("\n")));
   }
   return lines.join("\n");
 }

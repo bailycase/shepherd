@@ -33,7 +33,7 @@ in UserDefaults under `shepherd.keybindings`).
 | ⌘N · ⇧⌘T · ⇧⌘N | New thread (the page) · new agent with options… · new space… |
 | ⌘R · ⇧⌘W | Rename agent · delete agent |
 | ⌘K | Command palette |
-| ⌘↓ · ⌘↑ | Next · previous agent in the sidebar (Needs you, Pinned, then Recents; organized by space, the open spaces' threads) |
+| ⌘↓ · ⌘↑ | Next · previous agent in the sidebar (Needs you, Pinned, then Recents; organized by space, the open spaces' threads). In a composer draft of several lines they stay the text view's: caret to the end or start |
 | ⌘D · ⌘W | New terminal (a new tab) · close terminal |
 | ⇧⌘] · ⇧⌘[ | Next · previous terminal (tab), wrapping while the panel shows |
 | ⌘J · ⇧⌘↩ | Show or hide the terminal panel, opening a terminal when there is none · maximize or restore it |

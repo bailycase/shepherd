@@ -84,20 +84,25 @@ struct RemoteSessionTests {
         guard case .error(3, "no_terminal", _) = try await client.next() else { Issue.record("expected no_terminal"); return }
     }
 
-    /// A replay larger than one frame is split so every frame stays under the NDJSON cap.
+    /// A replay larger than one frame is split so every frame stays under the NDJSON cap. The
+    /// replay is the newest `remoteReplayScrollbackLines` of scrollback, not the whole buffer,
+    /// which styled and wide could pass the client's reply queue and drop it.
     @Test func aLargeReplayIsChunkedUnderTheFrameLimit() async throws {
         let r = try RemoteHost()
         defer { r.stop() }
         let lines = SessionScreen.defaultScrollbackLines + 60
+        // Every other character changes colour, so each line's styled replay runs to several hundred bytes.
         let info = try await r.host.shell(
-            "awk 'BEGIN{for(i=1;i<=\(lines);i++)printf \"\\033[3%dmline %d %s\\033[0m\\n\", i%7+1, i, sprintf(\"%180s\",\"\")}' | tr ' ' '='; echo END; sleep 30",
+            "awk 'BEGIN{for(i=1;i<=\(lines);i++){printf \"line %d \", i; for(j=0;j<95;j++)printf \"\\033[3%dm==\", (i+j)%7+1; printf \"\\033[0m\\n\"}}'; echo END; sleep 30",
             cols: 200, rows: 50)
         try await r.host.waitForScreen(info.id, toContain: "END")
         let client = try await r.raw()
         try client.send(.attach(id: 2, sessionID: info.id, cols: 0, rows: 0, viewportGeneration: 0))
         guard case .attached = try await client.next() else { Issue.record("expected attached"); return }
 
-        let expected = try await r.server.attachSnapshot(sessionID: info.id, replay: true).replay
+        let expected = try #require(await r.server.remoteReplay(sessionID: info.id))
+        let whole = try await r.server.attachSnapshot(sessionID: info.id, replay: true).replay
+        #expect(expected.count < whole.count, "a remote attach replays the newest lines, not the whole scrollback")
         #expect(expected.count > SessionServer.remoteOutputChunkBytes, "the scenario must need more than one frame")
         var chunks: [Data] = []
         while chunks.reduce(0, { $0 + $1.count }) < expected.count {
