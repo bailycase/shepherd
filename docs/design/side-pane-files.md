@@ -27,8 +27,16 @@ eye button includes hidden files on demand. Refresh preserves expanded folders a
 the selected file. Directory errors, loading, empty directories and missing files are visible.
 Symlinks cannot escape the root or recursively traverse an ancestor. File reads are bounded.
 
-Remote threads currently state that Files is unavailable: the remote protocol has no arbitrary
-space-file transport. No synthetic "Added by this thread" label is shown without provenance.
+A remote thread's Files reads the thread's folder on its host over `files.v1`
+([remote-protocol](../remote-protocol.md)): the same tree, read-only, with paths sent relative to
+that folder. The host answers with the same resolver (`ThreadFileSystem`, ShepherdProtocol), so the
+root, symlink, hidden-file and bounded-read rules above hold there too. A remote read is UTF-8 text
+of at most 256 KiB (images read as binary), and a listing at most 2,000 entries. A host without
+`files.v1` (an older Shepherd) keeps the tab and says Files needs a newer Shepherd on it. The iPhone
+and iPad client draws the same tree as `ThreadFilesPane` (`App/iOS/Files`; DuoSidePaneTabs' Files
+card). No synthetic "Added by this thread" label, or added/modified mark, is shown without
+provenance: the host's recorded turns name repository paths, can be partial and can be undone, so
+they are not an accurate per-file mark for the folder.
 
 Design departures: refresh is manual rather than live. The footer counts visible files and
 folders, and metadata includes file size instead of a thread-origin badge. Added-line fills,

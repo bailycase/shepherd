@@ -88,6 +88,9 @@ enum RemoteSamples {
         .changesUndoTurn(turnID: op),
         .changesRedoTurn(turnID: op),
         .devServers,
+        .files(path: "", showHidden: false),
+        .files(path: "Sources/App Intents", showHidden: true),
+        .fileRead(path: "Widgets/NeedsYouWidget.swift"),
     ]
 
     static let revision = ChangesRevision(old: "3f2a91c0", new: "4b825dc6")
@@ -161,6 +164,12 @@ enum RemoteSamples {
                      DevServer(script: "start", command: "npm start", packageName: nil, directory: "/host/repo/apps/api",
                                manifest: "apps/api/package.json", port: nil)]),
         .devServers([]),
+        .files(ThreadFileListing(entries: [ThreadFileEntry(name: "Widgets", kind: .directory),
+                                           ThreadFileEntry(name: "render \"v2\".py", kind: .file, size: 2_048, symlink: true),
+                                           ThreadFileEntry(name: "locked", kind: .file, size: 0, error: "Permission denied")],
+                                 truncated: true)),
+        .files(ThreadFileListing(entries: [])),
+        .fileData(Data("let x = 1\n".utf8)),
     ]
 
     static let automation = AutomationID(rawValue: "automation")
@@ -830,6 +839,8 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.nativeGoalCapability, RemoteProtocol.goalExperimentCapability, RemoteProtocol.projectsExperimentCapability,
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).
             RemoteProtocol.designsCapability, RemoteProtocol.designMarkupCapability, RemoteProtocol.designDeleteCapability,
+            // Offered only to a client that lists it in hello.
+            RemoteProtocol.filesCapability,
         ]
         #expect(Set(RemoteProtocol.capabilities) == Set(named))
         #expect(RemoteProtocol.capabilities.count == named.count)
@@ -848,6 +859,8 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.nativeThreadCapability == "native.thread.v1")
         #expect(RemoteProtocol.nativeThreadV2Capability == "native.thread.v2")
         #expect(RemoteProtocol.changesCapability == "changes.v1")
+        #expect(RemoteProtocol.filesCapability == "files.v1")
+        #expect(RemoteProtocol.clientCapabilities.contains(RemoteProtocol.filesCapability))
         #expect(RemoteProtocol.nativeThreadStartingCapability == "native.thread.starting.v1")
         #expect(RemoteProtocol.nativeQueueCapability == "native.queue.v1")
         #expect(RemoteProtocol.nativeStartupDialogsCapability == "native.startup-dialogs.v1")

@@ -54,6 +54,19 @@
     for reconciliation. ON never resumes work. Legacy Space/folder project tools remain available.
   - attach, detach, input, resize, and acknowledged paste
   - terminal open and close (`openPane`, `closePane`)
+  - a thread's Files (`files.v1`, offered only to a client that lists it in `hello`; both clients do):
+    `RemoteAgentQuery.files(path:showHidden:)` lists a folder and `.fileRead(path:)` reads a file,
+    each relative to the thread's own folder on the host (its layout's cwd, else its space), answered
+    by the server itself off its queue, only for an agent the client is sent. Read-only. Paths are
+    relative (no leading `/` or `~`, no `.` or `..`); every component must stay inside the folder,
+    and a symlinked folder that resolves to one above it is refused; the open descriptor is checked
+    again (`ThreadFileSystem`, shared with the Mac's local Files pane). A listing scans at most
+    10,000 entries and replies with at most 2,000 (`ThreadFilesLimits`, `truncated` past them),
+    folders first, each with its kind and size; hidden entries only when asked. A read is UTF-8 text
+    of at most 256 KiB, one reply. Errors: `invalid_path`, `outside_root`, `not_found`,
+    `not_directory`, `special_file`, `too_large`, `binary`, `read_failed`, and `unsupported` for a
+    client that did not list it. No added/modified marks. A client of an older host says Files needs
+    a newer Shepherd there
   - `listDir`, `listModels`, `addSpace`, and `createAgent` with `creationOptions` (and the
     opening prompt's images behind `agent.create.images.v1`)
   - chunked uploads (32 MiB per file)

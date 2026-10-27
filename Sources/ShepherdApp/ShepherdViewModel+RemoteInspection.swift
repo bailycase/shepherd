@@ -77,6 +77,9 @@ extension ShepherdViewModel {
                         // Likewise: the server reads the folder itself.
                         let root = URL(fileURLWithPath: cwd, isDirectory: true)
                         result = .devServers(await Task.detached { DevServerDiscovery.find(in: root) }.value)
+                    case .files, .fileRead:
+                        // The server answers Files itself, only for a client that lists `files.v1`.
+                        throw RemoteCreateAgentError("Files is answered by the host's server")
                     }
                     completion(.success(result))
                 } catch { completion(.failure(RemoteCreateAgentError(String(describing: error)))) }

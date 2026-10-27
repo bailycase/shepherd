@@ -61,6 +61,7 @@ final class MobileApp {
         MobileBrowsers.shared.forget(host: host)
         ComposerStates.shared.forget(host: host)
         ReviewStores.shared.forget(host: host)
+        ThreadFilesStores.shared.forget(host: host)
         CommitStores.shared.forget(host: host)
         WorktreeOperations.shared.forget(host: host)
         TurnUndoStore.shared.forget(host: host)

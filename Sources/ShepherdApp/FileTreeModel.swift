@@ -1,25 +1,8 @@
 import Foundation
 import Observation
-
-// MARK: - POSIX helpers
-
-/// Canonical realpath via C realpath(3). Unlike Foundation's `resolvingSymlinksInPath`,
-/// this always resolves `/tmp` → `/private/tmp` and `/var` → `/private/var` on macOS,
-/// matching what the kernel returns from F_GETPATH on open descriptors.
-private func canonicalRealpath(_ path: String) -> String? {
-    path.withCString { cPath in
-        guard let resolved = Darwin.realpath(cPath, nil) else { return nil }
-        defer { free(resolved) }
-        return String(cString: resolved)
-    }
-}
-
-/// Containment check: `child` is within `root` (both canonical).
-private func isContained(_ child: String, in root: String) -> Bool {
-    if child == root { return true }
-    let prefix = root.hasSuffix("/") ? root : root + "/"
-    return child.hasPrefix(prefix)
-}
+import ShepherdCore
+import ShepherdProtocol
+import ShepherdRemote
 
 // MARK: - File node
 
@@ -48,6 +31,48 @@ struct FileNode: Identifiable, Equatable {
 struct OpenFileTab: Identifiable, Equatable {
     let id: String   // full path
     let name: String
+}
+
+// MARK: - Source
+
+/// Where a tree reads: this Mac's disk, or a remote thread's host over `files.v1`. Paths are the
+/// tree's own (absolute under `rootPath`); a remote source turns them into the host's relative ones.
+struct FileTreeSource: Sendable {
+    let list: @Sendable (_ path: String, _ showHidden: Bool) async -> Result<[ThreadFileEntry], FileTreeError>
+    let read: @Sendable (_ path: String) async -> Result<FileContent, FileTreeError>
+
+    /// This Mac's disk, inside `resolvedRoot`.
+    static func local(resolvedRoot: String) -> FileTreeSource {
+        FileTreeSource(list: { ThreadFileSystem.list(path: $0, resolvedRoot: resolvedRoot, showHidden: $1) },
+                       read: { FileTreeModel.safeReadFile(path: $0, resolvedRoot: resolvedRoot) })
+    }
+
+    /// `path` in the tree (under `root`) as the host takes it: relative, "" for the root.
+    static func relative(_ path: String, root: String) -> String {
+        path == root ? "" : String(path.dropFirst(root.hasSuffix("/") ? root.count : root.count + 1))
+    }
+
+    /// A remote thread's folder `root` on its host, over `files.v1`: the tree's paths go to the host relative to
+    /// it, and text comes back within `ThreadFilesLimits.readBytes` (images read as binary there).
+    static func remote(root: String, agentID: AgentID, host: String,
+                       client: @escaping @MainActor @Sendable () -> RemoteHostClient?) -> FileTreeSource {
+        @Sendable func relative(_ path: String) -> String { Self.relative(path, root: root) }
+        @Sendable func failure(_ error: Error) -> String {
+            if case RemoteHostClientError.rejected(_, let message) = error { return message }
+            return String(describing: error)
+        }
+        return FileTreeSource(list: { path, hidden in
+            guard let client = await client() else { return .failure(.listFailed("\(host) is offline.")) }
+            do { return .success(try await client.listFiles(agentID: agentID, path: relative(path), showHidden: hidden).entries) }
+            catch { return .failure(.listFailed(failure(error))) }
+        }, read: { path in
+            guard let client = await client() else { return .failure(.readFailed("\(host) is offline.")) }
+            do {
+                let data = try await client.readFile(agentID: agentID, path: relative(path))
+                return FileTreeModel.content(text: data, ext: (path as NSString).pathExtension.lowercased())
+            } catch { return .failure(.readFailed(failure(error))) }
+        })
+    }
 }
 
 // MARK: - Model
@@ -111,13 +136,17 @@ final class FileTreeModel {
 
     @ObservationIgnored private var expandGeneration: [String: UInt] = [:]
 
+    @ObservationIgnored private let source: FileTreeSource
+
     // MARK: Init
 
-    init(rootPath: String) {
+    /// A tree of `rootPath`, read from `source` (nil: this Mac's disk).
+    init(rootPath: String, source: FileTreeSource? = nil) {
         let expanded = (rootPath as NSString).expandingTildeInPath
-        let real = canonicalRealpath(expanded) ?? expanded
+        let real = ThreadFileSystem.canonicalRealpath(expanded) ?? expanded
         self.rootPath = expanded
         self.resolvedRoot = real
+        self.source = source ?? .local(resolvedRoot: real)
         self.root = FileNode(
             id: expanded,
             name: URL(fileURLWithPath: expanded).lastPathComponent,
@@ -143,10 +172,17 @@ final class FileTreeModel {
 
         updateNode(path: path) { $0.isLoading = true; $0.error = nil }
 
-        let resolvedRoot = self.resolvedRoot
+        let source = self.source
         let showHidden = self.showHidden
         let work = Task.detached(priority: .userInitiated) {
-            Self.listDirectory(path: path, resolvedRoot: resolvedRoot, showHidden: showHidden)
+            await source.list(path, showHidden).map { entries in
+                entries.map { entry in
+                    var node = FileNode(id: path.hasSuffix("/") ? path + entry.name : path + "/" + entry.name, name: entry.name,
+                                        isDirectory: entry.isDirectory, isSymlink: entry.isSymlink, fileSize: entry.size)
+                    node.error = entry.error
+                    return node
+                }
+            }
         }
         let result = await withTaskCancellationHandler { await work.value } onCancel: { work.cancel() }
 
@@ -231,7 +267,7 @@ final class FileTreeModel {
         let tabs = openTabs
         let stale = await Task.detached {
             Set(tabs.compactMap { tab -> String? in
-                guard let real = canonicalRealpath(tab.id), isContained(real, in: root) else { return tab.id }
+                guard let real = ThreadFileSystem.canonicalRealpath(tab.id), ThreadFileSystem.isContained(real, in: root) else { return tab.id }
                 return nil
             })
         }.value
@@ -263,10 +299,8 @@ final class FileTreeModel {
         selectedLoading = true
         selectedError = nil
 
-        let resolvedRoot = self.resolvedRoot
-        let work = Task.detached(priority: .userInitiated) {
-            Self.safeReadFile(path: path, resolvedRoot: resolvedRoot)
-        }
+        let source = self.source
+        let work = Task.detached(priority: .userInitiated) { await source.read(path) }
         let result = await withTaskCancellationHandler { await work.value } onCancel: { work.cancel() }
 
         // Cancelled by a newer selection
@@ -346,238 +380,24 @@ final class FileTreeModel {
 
     // MARK: - File content
 
-    /// Maximum file size to read (2 MB for text, 8 MB for images).
-    nonisolated static let maxTextSize: Int64 = 2 * 1024 * 1024
-    nonisolated static let maxImageSize: Int64 = 8 * 1024 * 1024
+    nonisolated static let maxTextSize = ThreadFileSystem.maxTextSize
+    nonisolated static let maxImageSize = ThreadFileSystem.maxImageSize
+    nonisolated static let maxDirectoryEntries = ThreadFileSystem.maxDirectoryEntries
+    nonisolated static let imageExtensions = ThreadFileSystem.imageExtensions
 
-    /// Bound total scanned entries, including hidden and unsupported entries.
-    nonisolated static let maxDirectoryEntries = 10_000
-
-    /// Image extensions we'll attempt to preview.
-    nonisolated static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "tiff", "tif", "ico", "heic", "heif"]
-
-    /// Read file content safely using descriptor-based IO to avoid TOCTOU races.
-    /// Opens with O_NONBLOCK, then fstat on the descriptor to verify regular file
-    /// and containment via F_GETPATH before reading. Uses chunked read loop
-    /// and reads max+1 bytes to detect unexpected growth.
-    private nonisolated static func safeReadFile(path: String, resolvedRoot: String) -> Result<FileContent, FileTreeError> {
+    /// A file on this Mac, through the shared descriptor-validated reader.
+    nonisolated static func safeReadFile(path: String, resolvedRoot: String) -> Result<FileContent, FileTreeError> {
         let ext = (path as NSString).pathExtension.lowercased()
         let isImage = imageExtensions.contains(ext)
-        let maxSize = isImage ? maxImageSize : maxTextSize
+        return ThreadFileSystem.read(path: path, resolvedRoot: resolvedRoot, maxSize: isImage ? maxImageSize : maxTextSize)
+            .flatMap { isImage ? .success(.image($0)) : content(text: $0, ext: ext) }
+    }
 
-        // Open with O_RDONLY | O_NONBLOCK to avoid blocking on FIFOs/devices
-        let fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC)
-        guard fd >= 0 else {
-            return .failure(.readFailed(String(cString: strerror(errno))))
-        }
-        defer { close(fd) }
-
-        // fstat on the open descriptor — no TOCTOU race
-        var st = stat()
-        guard fstat(fd, &st) == 0 else {
-            return .failure(.readFailed("fstat failed"))
-        }
-
-        // Must be a regular file
-        guard (st.st_mode & S_IFMT) == S_IFREG else {
-            return .failure(.specialFile)
-        }
-
-        // Containment via F_GETPATH on the open descriptor: the kernel resolves
-        // the fd's actual canonical path, defeating post-open symlink tricks and
-        // matching our canonicalRealpath-based root.
-        var fdPathBuf = [CChar](repeating: 0, count: Int(MAXPATHLEN))
-        guard fcntl(fd, F_GETPATH, &fdPathBuf) == 0 else {
-            return .failure(.readFailed("Cannot resolve fd path"))
-        }
-        let fdRealPath = String(cString: fdPathBuf)
-        guard isContained(fdRealPath, in: resolvedRoot) else {
-            return .failure(.outsideRoot)
-        }
-
-        let size = Int64(st.st_size)
-        guard size <= maxSize else {
-            return .failure(.tooLarge(size))
-        }
-
-        // Clear O_NONBLOCK now that we know it's a regular file
-        let flags = fcntl(fd, F_GETFL)
-        if flags >= 0 { _ = fcntl(fd, F_SETFL, flags & ~O_NONBLOCK) }
-
-        let length = Int(size)
-        // Chunked read loop: read up to max+1 to detect growth.
-        // Handles EINTR and short reads.
-        let limit = Int(maxSize) + 1
-        var data = Data()
-        data.reserveCapacity(min(length, limit))
-        let chunkSize = 64 * 1024
-        var totalRead = 0
-
-        while totalRead < limit {
-            if Task.isCancelled { return .failure(.readFailed("File load cancelled")) }
-            let toRead = min(chunkSize, limit - totalRead)
-            var chunk = [UInt8](repeating: 0, count: toRead)
-            let n = chunk.withUnsafeMutableBufferPointer { buf in
-                Darwin.read(fd, buf.baseAddress!, toRead)
-            }
-            if n < 0 {
-                if errno == EINTR { continue }
-                return .failure(.readFailed(String(cString: strerror(errno))))
-            }
-            if n == 0 { break } // EOF
-            data.append(contentsOf: chunk.prefix(n))
-            totalRead += n
-        }
-
-        // File grew past max since fstat
-        if totalRead > Int(maxSize) {
-            return .failure(.tooLarge(Int64(totalRead)))
-        }
-
-        if isImage {
-            return .success(.image(data))
-        }
-
-        // Binary detection: reject if data contains NUL or excessive control chars
-        if isBinaryData(data) {
-            return .failure(.binaryFile)
-        }
-
-        guard let text = String(data: data, encoding: .utf8) else {
-            return .failure(.binaryFile)
-        }
-
+    /// Text lines of `data`, or the binary error.
+    nonisolated static func content(text data: Data, ext: String) -> Result<FileContent, FileTreeError> {
+        guard let text = ThreadFileSystem.decodeText(data) else { return .failure(.binaryFile) }
         if data.isEmpty { return .success(.text([], ext)) }
-        let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        return .success(.text(lines, ext))
-    }
-
-    /// Reject NUL anywhere; scan the first 8KB for excessive control characters.
-    private nonisolated static func isBinaryData(_ data: Data) -> Bool {
-        if data.contains(0) { return true }
-        let scanLen = min(data.count, 8192)
-        guard scanLen > 0 else { return false }
-        var controlCount = 0
-        for i in 0..<scanLen {
-            let byte = data[i]
-            // Control chars except tab, newline, carriage return
-            if byte < 32 && byte != 9 && byte != 10 && byte != 13 {
-                controlCount += 1
-            }
-        }
-        // More than 10% control chars suggests binary
-        return controlCount > scanLen / 10
-    }
-
-    // MARK: - Directory listing
-
-    /// List a directory's contents using descriptor-based enumeration.
-    /// Opens the directory with O_DIRECTORY, verifies containment via F_GETPATH
-    /// on the descriptor (defeating a replacement-with-symlink between path
-    /// resolution and opendir), then enumerates its children.
-    /// Node IDs use the original `path` so tree lookups match the caller's paths.
-    private nonisolated static func listDirectory(path: String, resolvedRoot: String, showHidden: Bool) -> Result<[FileNode], FileTreeError> {
-        // Open the directory itself as a descriptor to verify containment
-        let dirFd = open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
-        guard dirFd >= 0 else {
-            return .failure(.listFailed(String(cString: strerror(errno))))
-        }
-
-        // Verify the opened directory is within root via F_GETPATH
-        var dirPathBuf = [CChar](repeating: 0, count: Int(MAXPATHLEN))
-        let pathOK = fcntl(dirFd, F_GETPATH, &dirPathBuf) == 0
-        let dirRealPath = pathOK ? String(cString: dirPathBuf) : ""
-        // fdopendir takes ownership only on success.
-        guard let directory = fdopendir(dirFd) else {
-            close(dirFd)
-            return .failure(.listFailed(String(cString: strerror(errno))))
-        }
-        defer { closedir(directory) }
-
-        guard pathOK else {
-            return .failure(.listFailed("Cannot resolve directory path"))
-        }
-        guard isContained(dirRealPath, in: resolvedRoot) else {
-            return .failure(.outsideRoot)
-        }
-
-        // Resolve every display ancestor: aliases can jump to siblings, so a
-        // lexical prefix comparison of the current target misses cycles.
-        var ancestors: Set<String> = [dirRealPath]
-        var ancestor = path
-        while ancestor != "/" && !ancestor.isEmpty {
-            if let canonical = canonicalRealpath(ancestor), isContained(canonical, in: resolvedRoot) {
-                ancestors.insert(canonical)
-            }
-            ancestor = (ancestor as NSString).deletingLastPathComponent
-        }
-
-        var nodes: [FileNode] = []
-        var scanned = 0
-        while true {
-            if Task.isCancelled { return .failure(.listFailed("Directory load cancelled")) }
-            errno = 0
-            guard let entry = readdir(directory) else {
-                if errno != 0 { return .failure(.listFailed(String(cString: strerror(errno)))) }
-                break
-            }
-            let name = withUnsafePointer(to: &entry.pointee.d_name) {
-                $0.withMemoryRebound(to: CChar.self, capacity: Int(MAXNAMLEN) + 1) { String(cString: $0) }
-            }
-            if name == "." || name == ".." { continue }
-            scanned += 1
-            guard scanned <= maxDirectoryEntries else {
-                return .failure(.listFailed("Directory exceeds \(maxDirectoryEntries) entries"))
-            }
-            if !showHidden && name.hasPrefix(".") { continue }
-
-            var lst = stat()
-            guard fstatat(dirFd, name, &lst, AT_SYMLINK_NOFOLLOW) == 0 else {
-                if errno == ENOENT { continue } // Removed during enumeration.
-                return .failure(.listFailed(String(cString: strerror(errno))))
-            }
-            let isSymlink = (lst.st_mode & S_IFMT) == S_IFLNK
-            let kind = lst.st_mode & S_IFMT
-            if kind != S_IFLNK && kind != S_IFREG && kind != S_IFDIR { continue }
-            let target = openat(dirFd, name, O_RDONLY | O_NONBLOCK | O_CLOEXEC | (isSymlink ? 0 : O_NOFOLLOW))
-            guard target >= 0 else {
-                if errno == ENOENT || errno == ELOOP { continue }
-                // An unreadable child must not hide its readable siblings. Its eventual
-                // selection still goes through the descriptor-validated read boundary.
-                let message = String(cString: strerror(errno))
-                var node = FileNode(id: path.hasSuffix("/") ? path + name : path + "/" + name,
-                                    name: name, isDirectory: kind == S_IFDIR,
-                                    isSymlink: isSymlink, fileSize: kind == S_IFREG ? Int64(lst.st_size) : nil)
-                node.error = message
-                nodes.append(node)
-                continue
-            }
-            defer { close(target) }
-            var st = stat()
-            guard fstat(target, &st) == 0 else {
-                return .failure(.listFailed(String(cString: strerror(errno))))
-            }
-            let isDir = (st.st_mode & S_IFMT) == S_IFDIR
-            if !isDir && (st.st_mode & S_IFMT) != S_IFREG { continue }
-            var targetPath = [CChar](repeating: 0, count: Int(MAXPATHLEN))
-            guard fcntl(target, F_GETPATH, &targetPath) == 0 else {
-                return .failure(.listFailed("Cannot resolve entry path"))
-            }
-            let canonical = String(cString: targetPath)
-            guard isContained(canonical, in: resolvedRoot) else { continue }
-            if isDir && ancestors.contains(canonical) { continue }
-            let fullPath = path.hasSuffix("/") ? path + name : path + "/" + name
-            nodes.append(FileNode(id: fullPath, name: name, isDirectory: isDir,
-                                  isSymlink: isSymlink, fileSize: isDir ? nil : Int64(st.st_size)))
-        }
-
-        // Sort: directories first, then alphabetically case-insensitive
-        nodes.sort { a, b in
-            if a.isDirectory != b.isDirectory { return a.isDirectory }
-            return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
-        }
-
-        return .success(nodes)
+        return .success(.text(text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init), ext))
     }
 }
 
@@ -592,22 +412,4 @@ enum FileContent: Equatable {
 }
 
 /// Errors from tree and file operations.
-enum FileTreeError: LocalizedError {
-    case outsideRoot
-    case specialFile
-    case tooLarge(Int64)
-    case binaryFile
-    case readFailed(String)
-    case listFailed(String)
-
-    var errorDescription: String? {
-        switch self {
-        case .outsideRoot: "File is outside the space root"
-        case .specialFile: "Cannot read special files (devices, FIFOs)"
-        case .tooLarge(let size): "File too large (\(ByteCountFormatter.string(fromByteCount: size, countStyle: .file)))"
-        case .binaryFile: "Binary file (not UTF-8 text)"
-        case .readFailed(let msg): msg
-        case .listFailed(let msg): msg
-        }
-    }
-}
+typealias FileTreeError = ThreadFileError
