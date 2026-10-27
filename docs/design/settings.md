@@ -271,7 +271,8 @@ automated step of the worktree flows can be turned off here.
 
 ## Remote (SettingsRemote)
 
-"Connect to agents on other Macs over your VPN, or let other Macs connect to this one."
+"Connect to agents on other Macs over your VPN, or let other Macs and Shepherd on your iPhone or iPad
+connect to this one."
 
 - **Hosts:** one row per host (`RemoteHostRow`, a `SettingsActionRow`): the name as its title; under
   it a line: the address in mono 12
@@ -292,12 +293,13 @@ automated step of the worktree flows can be turned off here.
   Add host (secondary), disabled until all four are valid. Edit loads a host into the same form: the
   group is titled Edit host, and its action row reads Cancel (ghost) and Save.
 - **Serve this Mac** (footnote "Remote sessions run on the host Mac; your VPN is the transport and
-  the token keeps other devices out."):
+  the token keeps other devices out. The iPhone and iPad app pairs the same way: Settings ▸ Hosts ▸
+  Add host there takes this Mac's address, port and token."):
   - Listener, "Let other Macs with your token connect to agents here.": a switch. While it is bound
     the description reads "Serving on port 7433. Other Macs with your token connect to agents here."
     A bind failure is the row's problem, "Couldn't start: port 7433 is already in use."
-  - Token, "Paste this into the other Mac's Token field. To revoke every client, delete the file and
-    turn the listener off and on." (the board: "Delete the file to revoke every client."; see the
+  - Token, "Paste this into the other Mac's, iPhone's or iPad's Token field. To revoke every client,
+    delete the file and turn the listener off and on." (the board: "Delete the file to revoke every client."; see the
     departures): a `PathRow` for `remote-token` with Reveal.
   - What a token opens, for the Browser: a connected client can ask this Mac to carry a connection
     to one of its own **loopback** ports (`127.0.0.1` or `::1`, never another address) for a thread

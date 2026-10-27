@@ -33,7 +33,7 @@ struct RemoteSettings: View {
 
     var body: some View {
         SettingsPage(title: "Remote",
-                     explanation: "Connect to agents on other Macs over your VPN, or let other Macs connect to this one.") {
+                     explanation: "Connect to agents on other Macs over your VPN, or let other Macs and Shepherd on your iPhone or iPad connect to this one.") {
             SettingsGroup(title: "Hosts") {
                 if store.connections.isEmpty {
                     SettingsRow(title: "No remote hosts",
@@ -89,7 +89,8 @@ struct RemoteSettings: View {
             }
 
             SettingsGroup(title: "Serve this Mac",
-                          footnote: "Remote sessions run on the host Mac; your VPN is the transport and the token keeps other devices out.") {
+                          footnote: "Remote sessions run on the host Mac; your VPN is the transport and the token keeps other devices out. "
+                              + "The iPhone and iPad app pairs the same way: Settings ▸ Hosts ▸ Add host there takes this Mac's address, port and token.") {
                 SettingsRow(title: "Listener", subtitle: vm.remoteListenerStatus, problem: vm.remoteListenerProblem,
                             problemHelp: vm.remoteListenerProblemDetail) {
                     SettingsSwitch(label: "Listener", isOn: Binding(
@@ -98,7 +99,7 @@ struct RemoteSettings: View {
                     ))
                 }
                 PathRow(title: "Token",
-                        subtitle: "Paste this into the other Mac's Token field. To revoke every client, delete the file and turn the listener off and on.",
+                        subtitle: "Paste this into the other Mac's, iPhone's or iPad's Token field. To revoke every client, delete the file and turn the listener off and on.",
                         url: ShepherdPaths.remoteTokenURL())
             }
         }
