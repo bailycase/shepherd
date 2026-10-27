@@ -90,84 +90,84 @@ struct ThreadScreen: View {
                     }
             }
         }
-            .safeAreaInset(edge: .top, spacing: 0) {
-                if inlineTitle {
-                    HStack(spacing: SH.Space.m) {
-                        if sidebarHidden { ThreadSidebarButton() }
-                        title
-                    }
-                        .padding(.horizontal, MobileLayout.padThreadGutter)
-                        .frame(maxWidth: .infinity, minHeight: SHPadPaneMetrics.headHeight, alignment: .leading)
-                        .background(Color.sh.bgWindow)
-                        .accessibilityAddTraits(.isHeader)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if inlineTitle {
+                HStack(spacing: SH.Space.m) {
+                    if sidebarHidden { ThreadSidebarButton() }
+                    title
+                }
+                .padding(.horizontal, MobileLayout.padThreadGutter)
+                .frame(maxWidth: .infinity, minHeight: SHPadPaneMetrics.headHeight, alignment: .leading)
+                .background(Color.sh.bgWindow)
+                .accessibilityAddTraits(.isHeader)
+            }
+        }
+        .background(Color.sh.bgWindow)
+        // Measured around the composer's inset, which would otherwise shrink what it measures.
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
+        // The side pane's Terminal tab dot and the menu's "1 running".
+        .watchesTerminals(ref)
+        .turnUndoAlert()
+        // A thread takes the whole screen on iPhone (MobileThread board): no tab bar under the composer;
+        // where the bars run down the side (iPhone Duo closed) the tab bar stays (DuoClosedThreadMenu).
+        .toolbar(verticalBars ? .automatic : .hidden, for: .tabBar)
+        .navigationTitle(agent?.name ?? "Thread")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(removing: inlineTitle ? .title : nil)
+        .toolbar {
+            if sidebarHidden, !inlineTitle {
+                ToolbarItem(placement: .topBarLeading) { ThreadSidebarButton(inBar: true) }
+            }
+            if !inlineTitle {
+                ToolbarItem(placement: .principal) {
+                    // Beside the side pane, the title keeps to the thread's column (`ThreadWithSidePane`).
+                    title.frame(maxWidth: titleMaxWidth, alignment: .leading)
                 }
             }
-            .background(Color.sh.bgWindow)
-            // Measured around the composer's inset, which would otherwise shrink what it measures.
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
-            // The side pane's Terminal tab dot and the menu's "1 running".
-            .watchesTerminals(ref)
-            .turnUndoAlert()
-            // A thread takes the whole screen on iPhone (MobileThread board): no tab bar under the composer;
-            // where the bars run down the side (iPhone Duo closed) the tab bar stays (DuoClosedThreadMenu).
-            .toolbar(verticalBars ? .automatic : .hidden, for: .tabBar)
-            .navigationTitle(agent?.name ?? "Thread")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar(removing: inlineTitle ? .title : nil)
-            .toolbar {
-                if sidebarHidden, !inlineTitle {
-                    ToolbarItem(placement: .topBarLeading) { ThreadSidebarButton(inBar: true) }
-                }
-                if !inlineTitle {
-                    ToolbarItem(placement: .principal) {
-                        // Beside the side pane, the title keeps to the thread's column (`ThreadWithSidePane`).
-                        title.frame(maxWidth: titleMaxWidth, alignment: .leading)
-                    }
-                }
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    if agent != nil {
-                        if arranged {
-                            // What sits above the composer in the laptop pose (DuoLaptop's capsule).
-                            ThreadArrangedPicker(showsTerminal: navigator.sidePane.arrangedTerminal) {
-                                navigator.sidePane.arrangedTerminal = $0
-                            }
-                        } else if sizeClass == .regular {
-                            // The side pane's one button, lit while it is open (DuoOpenSidePane).
-                            ThreadSidePaneButton(isOn: navigator.sidePane.isOpen) {
-                                withSHAnimation(.pane) { navigator.sidePane.isOpen.toggle() }
-                            }
-                        }
-                        ThreadStopButton(store: store, enabled: key.session != nil)
-                    }
-                }
-                // The system's ••• menu, so it overflows with the bar's items where the bar runs
-                // down the side (iPhone Duo).
+            ToolbarItemGroup(placement: .topBarTrailing) {
                 if agent != nil {
-                    ToolbarOverflowMenu { ThreadOptionsItems(ref: ref, store: store, branch: branch, enabled: key.session != nil) }
-                }
-                // New thread sits lowest in the side column and stays longest (DuoOpenThread); a
-                // horizontal bar leaves it to the sidebar's row.
-                if sizeClass == .regular, verticalBars {
-                    ToolbarItem(placement: .bottomBar) {
-                        Button("New thread", systemImage: "square.and.pencil") { NewThreadHooks.open(navigator: navigator) }
-                            .buttonStyle(.glassProminent)
-                            .disabled(hosts.hosts.isEmpty)
+                    if arranged {
+                        // What sits above the composer in the laptop pose (DuoLaptop's capsule).
+                        ThreadArrangedPicker(showsTerminal: navigator.sidePane.arrangedTerminal) {
+                            navigator.sidePane.arrangedTerminal = $0
+                        }
+                    } else if sizeClass == .regular {
+                        // The side pane's one button, lit while it is open (DuoOpenSidePane).
+                        ThreadSidePaneButton(isOn: navigator.sidePane.isOpen) {
+                            withSHAnimation(.pane) { navigator.sidePane.isOpen.toggle() }
+                        }
                     }
-                    .visibilityPriority(.high)
+                    ThreadStopButton(store: store, enabled: key.session != nil)
                 }
             }
-            .onAppear { visible = true }
-            .onDisappear { visible = false }
-            .task(id: key) {
-                // Through the thread's viewers: the same thread may be on screen in another window.
-                let viewers = threads.viewers(for: ref)
-                guard key.active, let session = key.session, let client = host?.connectedClient else {
-                    viewers.rest(detached: key.session == nil)
-                    return
-                }
-                let agentID = ref.agent
-                await viewers.run(connection: session) { request in try await client.nativeThread(agentID: agentID, request: request) }
+            // The system's ••• menu, so it overflows with the bar's items where the bar runs
+            // down the side (iPhone Duo).
+            if agent != nil {
+                ToolbarOverflowMenu { ThreadOptionsItems(ref: ref, store: store, branch: branch, enabled: key.session != nil) }
             }
+            // New thread sits lowest in the side column and stays longest (DuoOpenThread); a
+            // horizontal bar leaves it to the sidebar's row.
+            if sizeClass == .regular, verticalBars {
+                ToolbarItem(placement: .bottomBar) {
+                    Button("New thread", systemImage: "square.and.pencil") { NewThreadHooks.open(navigator: navigator) }
+                        .buttonStyle(.glassProminent)
+                        .disabled(hosts.hosts.isEmpty)
+                }
+                .visibilityPriority(.high)
+            }
+        }
+        .onAppear { visible = true }
+        .onDisappear { visible = false }
+        .task(id: key) {
+            // Through the thread's viewers: the same thread may be on screen in another window.
+            let viewers = threads.viewers(for: ref)
+            guard key.active, let session = key.session, let client = host?.connectedClient else {
+                viewers.rest(detached: key.session == nil)
+                return
+            }
+            let agentID = ref.agent
+            await viewers.run(connection: session) { request in try await client.nativeThread(agentID: agentID, request: request) }
+        }
     }
 
     /// The thread's composer, its height capped at a share of the thread.

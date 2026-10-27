@@ -10,10 +10,6 @@ import ShepherdRemote
 final class SidePaneState {
     var isOpen = false
     var tab: PadSidePaneTab = .changes
-    /// The window can't dock the sidebar beside the thread and the open pane (iPhone Duo's inner
-    /// display; `PadSplitLayout.sidebarFitsBesidePane`), so while the pane is open the sidebar
-    /// steps aside and its button brings it back over the thread. Set by `PadShell`.
-    var crowdsSidebar = false
     /// The thread in the laptop arrangement (DuoLaptop, DuoLaptopOpen): it takes the window, the
     /// transcript above the composer, until Back. Nil otherwise.
     var arranged: AgentRef?
