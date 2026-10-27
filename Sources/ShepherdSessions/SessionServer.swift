@@ -3264,9 +3264,15 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Reads what a connection has sent, `readBudgetPerTurn` bytes at most in this queue turn: the
+    /// read source fires again while the socket holds more, so a remote upload or a chatty
+    /// extension never holds the server queue for its whole burst.
+    static let readBudgetPerTurn = 1024 * 1024
+
     private func handleReadable(fd: Int32) {
         guard let client = clients[fd] else { return }
         var buf = [UInt8](repeating: 0, count: 32 * 1024)
+        var consumed = 0
         while true {
             let n = read(fd, &buf, buf.count)
             if n > 0 {
@@ -3286,6 +3292,8 @@ public final class SessionServer: @unchecked Sendable {
                         handleLine(line, from: client)
                     }
                 }
+                consumed += n
+                if consumed >= Self.readBudgetPerTurn { return }
                 continue
             }
             if n == 0 {
