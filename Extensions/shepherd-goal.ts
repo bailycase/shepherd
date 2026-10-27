@@ -160,10 +160,11 @@ export default function shepherdGoal(pi: ExtensionAPI) {
     clock = performance.now(); goal.runningSince = Date.now();
     publish(ctx);
   }
-  function charge(n: number, ctx: ExtensionContext) {
+  function charge(n: number, ctx: ExtensionContext, announce = true) {
     if (!enabled || !active(goal) || !n) return;
     goal.tokensUsed += n;
-    tick(); publish(ctx);
+    tick();
+    if (announce) publish(ctx);
   }
   function kickoff(ctx: ExtensionContext) {
     if (!enabled || !active(goal)) return;
@@ -395,12 +396,16 @@ export default function shepherdGoal(pi: ExtensionAPI) {
       if (active(goal)) workOwner = goal.id;
     }
   });
-  function assistantUsage(message, ctx) {
+  // Usage streamed mid-message accrues quietly (a widget frame per update is an RPC frame to the
+  // app, per token on a provider that streams usage); message_end publishes the total.
+  function assistantUsage(message, ctx, announce = true) {
     const n = tokensOf(message.usage), delta = Math.max(0, n - assistantTokens);
     assistantTokens = Math.max(n, assistantTokens);
-    if (active(goal) && goal.id === workOwner) charge(delta, ctx);
+    if (!active(goal) || goal.id !== workOwner) return;
+    charge(delta, ctx, false);
+    if (announce && n) { tick(); publish(ctx); }
   }
-  pi.on("message_update", (event, ctx) => assistantUsage(event.message, ctx));
+  pi.on("message_update", (event, ctx) => assistantUsage(event.message, ctx, false));
   pi.on("message_end", (event, ctx) => {
     const message = event.message;
     if (message.role === "assistant") {
