@@ -43,6 +43,9 @@ function workflowWorker() {
     }
   `;
   const run = (code) => new vm.Script(code).runInContext(context, { timeout: 100 });
+  // The two scripts that run again and again are compiled once.
+  const drainScript = new vm.Script("drain()");
+  const receiveScript = new vm.Script("receive(); void 0");
   try {
     run(bootstrap);
     run(`(async () => {\n${workerData.script}\n})().then(value => {
@@ -53,7 +56,7 @@ function workflowWorker() {
     }).catch(error => { outcome = { error: String(error?.message || error).slice(0, 16384) }; }); void 0;`);
     const flush = () => {
       try {
-        const text = run("drain()");
+        const text = drainScript.runInContext(context, { timeout: 100 });
         if (typeof text !== "string" || text.length > 1024 * 1024) throw Error("Invalid workflow output");
         const { messages, outcome } = JSON.parse(text);
         for (const message of messages) parentPort.postMessage({ type: "call", text: message });
@@ -61,10 +64,15 @@ function workflowWorker() {
       } catch (error) { clearInterval(timer); parentPort.postMessage({ type: "done", text: JSON.stringify({ error: "Workflow VM execution failed or exceeded its synchronous limit" }) }); }
     };
     parentPort.on("message", (text) => {
-      try { context.incoming = text; run("receive(); void 0"); delete context.incoming; }
-      catch (error) { parentPort.postMessage({ type: "done", text: JSON.stringify({ error: "Workflow VM execution failed or exceeded its synchronous limit" }) }); }
+      try { context.incoming = text; receiveScript.runInContext(context, { timeout: 100 }); delete context.incoming; }
+      catch (error) { parentPort.postMessage({ type: "done", text: JSON.stringify({ error: "Workflow VM execution failed or exceeded its synchronous limit" }) }); return; }
+      // New outbox entries appear only after the script ran: drain once its continuations settled.
+      setImmediate(flush);
     });
-    const timer = setInterval(flush, 10);
+    // The script's first calls are queued by now; after that a slow safety tick covers what no
+    // reply triggered (a timer inside the script).
+    setImmediate(flush);
+    const timer = setInterval(flush, 250);
   } catch (error) { parentPort.postMessage({ type: "done", text: JSON.stringify({ error: "Workflow VM execution failed or exceeded its synchronous limit" }) }); }
 }
 

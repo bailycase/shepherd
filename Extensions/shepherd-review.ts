@@ -7,6 +7,9 @@ import * as net from "node:net";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
+// The socket reader's cap on one reply line (characters); the server's replies are far smaller.
+const MAX_REPLY_CHARS = 16 * 1024 * 1024;
+
 const REQUEST_TIMEOUT_MS = 15_000;
 
 interface Reply {
@@ -46,6 +49,8 @@ export default function shepherdReview(pi: ExtensionAPI) {
       s.on("data", (chunk: string) => {
         if (socket !== s) return;
         buffer += chunk;
+        // A reply that never ends its line would grow the heap until exit: drop the connection.
+        if (buffer.length > MAX_REPLY_CHARS) { buffer = ""; s.destroy(new Error("Shepherd reply exceeds 16 MiB")); return; }
         let index = buffer.indexOf("\n");
         while (index >= 0) {
           const line = buffer.slice(0, index);

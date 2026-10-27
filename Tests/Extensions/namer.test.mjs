@@ -12,7 +12,7 @@ const pkg = process.env.PI_PACKAGE_DIR;
 if (!pkg) throw Error("Set PI_PACKAGE_DIR");
 const { createJiti } = createRequire(path.join(pkg, "package.json"))("jiti");
 const jiti = createJiti(import.meta.url, { alias: { typebox: path.join(pkg, "node_modules/typebox/build/index.mjs") } });
-const { default: install } = await jiti.import(path.join(root, "Extensions/shepherd-namer.ts"));
+const { default: install, promptLabel, distinguish } = await jiti.import(path.join(root, "Extensions/shepherd-namer.ts"));
 const turn = () => new Promise((resolve) => setImmediate(resolve));
 // The sibling lookup is a socket round trip before the model call.
 const calledFor = (completions) => async (n) => { while (completions.length < n) await new Promise((resolve) => setTimeout(resolve, 5)); };
@@ -100,4 +100,19 @@ test("only the current session's detached naming result is reported, including s
     await new Promise((resolve) => server.close(resolve));
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("a title that opens like a sibling's leads with the developer's own label", () => {
+  assert.equal(promptLabel("Scale test 4: list the files here and write a haiku about four"), "Scale test 4");
+  assert.equal(promptLabel("PR-123 - fix the flaky retry"), "PR-123");
+  assert.equal(promptLabel("“Checkout v2”: start the migration"), "Checkout v2");
+  assert.equal(promptLabel("Note: the cart total is wrong on checkout"), undefined, "a plain word before a colon is no label");
+  assert.equal(promptLabel("fix this"), undefined);
+  const siblings = ["List files and celebrate eight", "List files and haiku five"];
+  assert.equal(distinguish("List files and haiku four", "Scale test 4: list files, haiku about four", siblings), "Scale test 4: List files and haiku four");
+  assert.equal(distinguish("List files and haiku four", "list files, haiku about four", siblings), "List files and haiku four", "no label, no change");
+  assert.equal(distinguish("Fix checkout totals", "Scale test 4: fix totals", siblings), "Fix checkout totals", "a distinct stem needs no label");
+  assert.equal(distinguish("Scale test 4 haiku", "Scale test 4: haiku", ["Scale test 4 haiku"]), "Scale test 4 haiku", "a label already in the title is not repeated");
+  const long = distinguish("List files and write a very long haiku about the number four", "Scale test 4: go", siblings);
+  assert(long.startsWith("Scale test 4: List files") && long.length <= 60);
 });

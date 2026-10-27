@@ -9,6 +9,9 @@ import { randomUUID } from "node:crypto";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
+// The socket reader's cap on one reply line (characters); the server's replies are far smaller.
+const MAX_REPLY_CHARS = 16 * 1024 * 1024;
+
 const REQUEST_TIMEOUT_MS = 15_000;
 // Thread creation and process teardown may take longer than a normal peer request.
 const PEER_TIMEOUT_MS = 130_000;
@@ -93,6 +96,8 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       });
       s.on("data", (chunk: string) => {
         buffer += chunk;
+        // A reply that never ends its line would grow the heap until exit: drop the connection.
+        if (buffer.length > MAX_REPLY_CHARS) { buffer = ""; s.destroy(new Error("Shepherd reply exceeds 16 MiB")); return; }
         let index = buffer.indexOf("\n");
         while (index >= 0) {
           const line = buffer.slice(0, index);
@@ -647,6 +652,8 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       const initialConnectionLosses = connectionLosses;
       let sessionID;
       let connectionID;
+      // Each poll is a server-queue round trip: back off 250 → 500 → 1000 ms while the target works.
+      let pause = 250;
       while (Date.now() < deadline) {
         if (connectionLosses !== initialConnectionLosses) throw new Error("caller disconnected while waiting");
         const reply = await request({ type: "coordinateAgent", targetAgentID: params.agentID,
@@ -659,7 +666,8 @@ export default function shepherdPanes(pi: ExtensionAPI) {
         if (reply.result?.idle === true) return text("current activity settled; this does not confirm any sent task succeeded or was consumed");
         await new Promise<void>((resolve, reject) => {
           const abort = () => { clearTimeout(timer); reject(new Error("wait cancelled")); };
-          const timer = setTimeout(() => { signal?.removeEventListener("abort", abort); resolve(); }, Math.min(250, Math.max(0, deadline - Date.now())));
+          const timer = setTimeout(() => { signal?.removeEventListener("abort", abort); resolve(); }, Math.min(pause, Math.max(0, deadline - Date.now())));
+          pause = Math.min(1000, pause * 2);
           timer.unref?.();
           if (signal?.aborted) abort();
           else signal?.addEventListener("abort", abort, { once: true });

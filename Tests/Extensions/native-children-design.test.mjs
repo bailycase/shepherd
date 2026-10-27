@@ -188,8 +188,8 @@ test("a design agent's helpers read and edit its boards through it, with no iden
     const editorTools = toolsOf("HELPER_A");
     assert.deepEqual(editorTools, ["bash", "board_edit", "design_check", "design_read", "read", "shepherd_parent_message"]);
     assert(!editorTools.some((name) => ["board_write", "canvas_update", "comment_reply", "system_write", "markup_propose"].includes(name)), "nothing the profile didn't list");
-    // (The bundled scout's tools, narrowed to what this parent has active: read.)
-    assert.deepEqual(toolsOf("SCOUT"), ["read", "shepherd_parent_message"], "a helper whose profile lists no design tool has none");
+    // (The bundled scout's tools, narrowed to what this parent has active: read, and pi's search built-ins that ride with it.)
+    assert.deepEqual(toolsOf("SCOUT"), ["find", "grep", "ls", "read", "shepherd_parent_message"], "a helper whose profile lists no design tool has none");
     // The helper's model was told the tool isn't there when it asked for one it doesn't have.
     assert(toolMessages(provider.requests, "helper").some((content) => /comment_reply/.test(content) && /not found|unknown|not available/i.test(content)), "comment_reply failed inside the helper");
     // Its results reached it: design_read's board and board_edit's line.

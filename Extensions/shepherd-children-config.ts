@@ -11,6 +11,27 @@ export const bundledAgents = {
   worker: { description: "Implement only the assigned task and run focused checks.", tools: ["read", "grep", "find", "ls", "bash", "edit", "write"], prompt: "Implement only the assigned task. Inspect local conventions, preserve unrelated work, and run focused checks. Never commit or push." },
 };
 export const thinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+// pi's own tools, which every child's pi has without an extension: the default four, and its
+// search built-ins. The latter are off in Shepherd threads (docs/context-budget.md), so a child
+// may have them whenever its parent has `read`: they read no more than `read` and `bash` do.
+export const piBuiltinTools = ["read", "bash", "edit", "write", "grep", "find", "ls"];
+export const readLevelBuiltins = ["grep", "find", "ls"];
+/** Whether a parent whose active tools are `active` lets a child have `name`. */
+export function parentAllows(name, active) {
+  return active.includes(name) || (readLevelBuiltins.includes(name) && active.includes("read"));
+}
+// A design agent's helpers get these through their parent (shepherd-children.ts, serveRelay); the
+// last three stay the design agent's own.
+export const designRelayedTools = [
+  "design_read", "design_check", "system_read", "comment_list", "board_write", "board_edit", "boards_edit", "board_search",
+  "board_render", "board_interact", "design_export", "board_extract", "checkpoint_create", "checkpoint_list", "canvas_update", "system_write",
+];
+export const designTools = [...designRelayedTools, "comment_reply", "markup_propose", "checkpoint_restore"];
+/** Tools a profile lists that no child's pi can provide: not pi's own, not relayed, and no explicit extension to supply them. */
+export function unavailableTools(profile) {
+  if (!Array.isArray(profile?.tools) || profile.extensions?.length) return [];
+  return profile.tools.filter((name) => !piBuiltinTools.includes(name) && name !== "shepherd_parent_message" && !designTools.includes(name));
+}
 export function childDefaults(env = process.env) {
   const concurrency = Number(env.SHEPHERD_CHILD_CONCURRENCY ?? 4);
   const thinking = env.SHEPHERD_CHILD_THINKING || undefined;
@@ -160,7 +181,9 @@ export function discoverChildAgents(_ctx, _scope) {
         while (length < bytes.length && (count = fs.readSync(fd, bytes, length, bytes.length-length, null)) > 0) length += count;
         if (length > 128 * 1024) throw Error("Agent file exceeds 128 KiB");
         text = new TextDecoder("utf-8", {fatal:true}).decode(bytes.subarray(0,length));
-        agents.push(parseChildAgent(text, file));
+        const agent = parseChildAgent(text, file);
+        const unavailable = unavailableTools(agent);
+        agents.push(unavailable.length ? { ...agent, unavailableTools: unavailable } : agent);
       } catch (error) {
         const failed = childAgentError(text, file, error);
         agents.push(failed); diagnostics.push(failed);

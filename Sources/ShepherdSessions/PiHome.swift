@@ -210,6 +210,7 @@ public struct PiHome: Equatable, Sendable {
         }
         try ServiceTierExtension.install(in: self)
         try GoalExtension.install(in: self)
+        try AskExtension.install(in: self)
         try Self.write(Data(Self.markerText.utf8), to: marker, mode: 0o644)
         try Self.write(Data(restoreEnvScript.utf8), to: restoreEnv, mode: 0o644)
         try Self.write(Data(launcherScript.utf8), to: launcher, mode: 0o755)
