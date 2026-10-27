@@ -1559,23 +1559,26 @@ final class RPCThreadState {
             // The live rows that had ended when pi answered are the ones this history holds. One that ends while the images
             // below are read (the next message pi starts, a Steer now's above all) is not in it, and stays live.
             let persisted = Set(self.live.filter(Self.persisted).map(\.value.entryID))
-            // A history with images costs a header read and a SHA-256 each. That work is done here, off the thread's queue, into a
-            // table built from exactly these messages; the projection on the thread's queue only looks entries up. A history with
-            // no images goes straight on.
-            if case .success(let response) = result, response.success, let messages = response.messages,
-               ThreadImages.hasImages(messages) {
-                let hook = self.beforeHistoryImages
-                DispatchQueue.global(qos: .utility).async { [weak self] in
-                    hook?()
-                    let table = ThreadImages.table(for: messages)
-                    self?.queue.async { [weak self] in
-                        self?.finishRefresh(result, generation: generation, sequence: sequence, bootstrap: bootstrap, images: table, persisted: persisted,
-                                            done: measured)
-                    }
-                }
+            guard case .success(let response) = result, response.success, let messages = response.messages else {
+                self.finishRefresh(result, generation: generation, sequence: sequence, bootstrap: bootstrap, projected: nil, persisted: persisted, done: measured)
                 return
             }
-            self.finishRefresh(result, generation: generation, sequence: sequence, bootstrap: bootstrap, images: [:], persisted: persisted, done: measured)
+            // Projecting the whole history (and reading + hashing its images) is O(messages); it runs here, off the thread's
+            // queue, from a snapshot of the small tables the projection consults. The queue only swaps in the result.
+            let hook = self.beforeHistoryImages
+            let marked = self.markingStopped(messages)
+            let sentReferences = self.origins.compactMapValues(\.references)
+            let adjust = self.historyAdjuster()
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                hook?()
+                let images = ThreadImages.hasImages(messages) ? ThreadImages.table(for: messages) : [:]
+                let history = Self.projectHistory(marked, sentReferences: sentReferences, images: images, adjust: adjust)
+                let estimate = Self.estimate(messages)
+                self?.queue.async { [weak self] in
+                    self?.finishRefresh(result, generation: generation, sequence: sequence, bootstrap: bootstrap,
+                                        projected: (history, estimate), persisted: persisted, done: measured)
+                }
+            }
         }
         session.request(.getMessages, timeout: timeout,
                         onLateResponse: bootstrap ? { receive(.success($0)) } : nil, completion: receive)
@@ -1590,8 +1593,44 @@ final class RPCThreadState {
         }
     }
 
+    /// The per-message touch-ups `projectHistory` applies, closed over a copy of the tables they read so the projection
+    /// can run off the thread's queue.
+    private func historyAdjuster() -> (inout NativeThreadMessage, RPCMessage) -> Void {
+        let compactionNotes = compactionNotes, toolStarts = toolStarts, stoppedCalls = stoppedCalls
+        let thinkingByTimestamp = thinkingByTimestamp, timingByTimestamp = timingByTimestamp
+        let origins = origins, operationsByEntry = operationsByEntry
+        return { value, message in
+            if message.role == "compactionSummary", let summary = message.summary,
+               let note = compactionNotes.last(where: { $0.summary == summary }) {
+                value.compaction?.reason = note.reason
+                value.compaction?.tokensAfter = note.after
+            }
+            if let id = message.toolCallId, message.role == "toolResult", let started = toolStarts[id] {
+                value.startedAt = started
+            }
+            if let id = message.toolCallId, message.role == "toolResult", stoppedCalls.contains(id) {
+                value.status = "aborted"
+            }
+            if message.role == "assistant", let time = message.timestamp {
+                value.thinkingSeconds = thinkingByTimestamp[time]
+                value.timing = timingByTimestamp[time]
+            }
+            if message.role == "user" {
+                let text = message.content.compactMap { block -> String? in
+                    if case .text(let text) = block { return text }
+                    return nil
+                }.joined()
+                // A design comment's origin is its fence (`project`), which pi keeps.
+                if value.origin == nil {
+                    value.origin = origins[value.entryID]?.origin(text: DesignViewRecord.strippingFence(from: text))
+                }
+                value.operationID = operationsByEntry[value.entryID]
+            }
+        }
+    }
+
     private func finishRefresh(_ result: Result<RPCResponse, RPCError>, generation: String, sequence: UInt64, bootstrap: Bool,
-                               images: [String: ThreadImages.Meta], persisted: Set<String>,
+                               projected: (history: [NativeThreadMessage], estimate: ContextEstimate)?, persisted: Set<String>,
                                done: ((Result<RPCResponse, RPCError>) -> Void)?) {
         do {
             defer { done?(result) }
@@ -1606,8 +1645,7 @@ final class RPCThreadState {
                 self.announceIfServable()
                 self.drainIfReady()
             }
-            guard case .success(let response) = result, response.success,
-                  let messages = response.messages else {
+            guard let (history, estimate) = projected else {
                 self.historyUnread = true
                 return
             }
@@ -1616,41 +1654,11 @@ final class RPCThreadState {
             self.appliedHistorySequence = sequence
             self.historyUnread = false
             self.liveLeftOut = 0
-            let history = Self.projectHistory(self.markingStopped(messages),
-                                              sentReferences: self.origins.compactMapValues(\.references), images: images) { value, message in
-                if message.role == "compactionSummary", let summary = message.summary,
-                   let note = self.compactionNotes.last(where: { $0.summary == summary }) {
-                    value.compaction?.reason = note.reason
-                    value.compaction?.tokensAfter = note.after
-                }
-                if let id = message.toolCallId, message.role == "toolResult", let started = self.toolStarts[id] {
-                    value.startedAt = started
-                }
-                if let id = message.toolCallId, message.role == "toolResult", self.stoppedCalls.contains(id) {
-                    value.status = "aborted"
-                }
-                if message.role == "assistant", let time = message.timestamp {
-                    value.thinkingSeconds = self.thinkingByTimestamp[time]
-                    value.timing = self.timingByTimestamp[time]
-                }
-                if message.role == "user" {
-                    let text = message.content.compactMap { block -> String? in
-                        if case .text(let text) = block { return text }
-                        return nil
-                    }.joined()
-                    // A design comment's origin is its fence (`project`), which pi keeps.
-                    if value.origin == nil {
-                        value.origin = self.origins[value.entryID]?.origin(text: DesignViewRecord.strippingFence(from: text))
-                    }
-                    value.operationID = self.operationsByEntry[value.entryID]
-                }
-            }
             let kept = Self.keepingSummarized(previous: self.history, next: Self.interleave(self.placedRecords, into: history))
             if kept != self.history {
                 self.history = kept
                 self.historyVersion += 1
             }
-            let estimate = Self.estimate(messages)
             if estimate != self.estimate { self.estimate = estimate }
             // message_end precedes persistence: what had ended when pi answered is now history.
             self.live.removeAll { item in
