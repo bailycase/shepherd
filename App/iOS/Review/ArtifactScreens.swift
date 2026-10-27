@@ -12,19 +12,17 @@ extension EnvironmentValues {
     @Entry var openArtifact: ((String) -> Void)? = nil
 }
 
-/// How the thread opens an artifact: beside it on iPad (the docked pane's Artifacts tab), over it on iPhone.
+/// How the thread opens an artifact: beside it on iPad (the side pane's Artifacts tab), over it on iPhone.
 @MainActor
 enum ArtifactHooks {
     static func open(thread: AgentRef, path: String, navigator: MobileNavigator) {
         switch navigator.layout {
         case .pad:
             let store = ReviewStores.shared.store(for: thread)
-            store.padTab = .artifacts
             store.artifact = path
             store.padLayout = .docked
-            // The pane is already beside this thread when its review is the screen on top.
-            if case .review(.changes(thread, _))? = navigator.padPath.last { return }
-            navigator.open(.review(.changes(thread, file: nil)))
+            if navigator.padSelection != thread { navigator.open(.thread(thread)) }
+            navigator.sidePane.show(.artifacts)
         case .phone:
             navigator.present(.review(.artifact(thread, path: path)))
         }

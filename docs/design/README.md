@@ -233,15 +233,15 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | --- | --- | --- | --- |
 | DuoClosedHome | [platform-iphone-duo](platform-iphone-duo.md) | Five tabs in the side column; Home is the inbox; Search beside New thread | Not built yet |
 | DuoClosedNewThread | [platform-iphone-duo](platform-iphone-duo.md) | New thread sheet: Cancel and Send in the column; one chip row | Not built yet |
-| DuoClosedThreadMenu | [platform-iphone-duo](platform-iphone-duo.md) | A thread: the side pane's five tabs as rows in its ⋯ menu | Not built yet |
-| DuoOpenThread | [platform-iphone-duo](platform-iphone-duo.md) | Open: sidebar beside the thread | Not built yet |
-| DuoOpenSidePane | [platform-iphone-duo](platform-iphone-duo.md) | Open: thread beside the side pane; the sidebar overlays | Not built yet |
+| DuoClosedThreadMenu | [platform-iphone-duo](platform-iphone-duo.md) | A thread: the side pane's five tabs as rows in its ⋯ menu | Built; Files and Browser are placeholders |
+| DuoOpenThread | [platform-iphone-duo](platform-iphone-duo.md) | Open: sidebar beside the thread | Built |
+| DuoOpenSidePane | [platform-iphone-duo](platform-iphone-duo.md) | Open: thread beside the side pane; the sidebar overlays | Built |
 | DuoOpenNewThread | [platform-iphone-duo](platform-iphone-duo.md) | Open: New thread in the detail | Not built yet |
-| DuoSidePaneTabs | [platform-iphone-duo](platform-iphone-duo.md) | Side pane: Changes, Files, Terminal, Subagents, Browser | Not built yet |
-| DuoBook | [platform-iphone-duo](platform-iphone-duo.md) | Book: equal halves at the fold | Not built yet |
-| DuoBookSidePane | [platform-iphone-duo](platform-iphone-duo.md) | Book: thread and side pane split at the fold | Not built yet |
-| DuoLaptop | [platform-iphone-duo](platform-iphone-duo.md) | Laptop: transcript above the fold, composer below (ArrangementView) | Not built yet |
-| DuoLaptopOpen | [platform-iphone-duo](platform-iphone-duo.md) | The same view fully open: composer card over the transcript | Not built yet |
+| DuoSidePaneTabs | [platform-iphone-duo](platform-iphone-duo.md) | Side pane: Changes, Files, Terminal, Subagents, Browser | Built; Files and Browser are placeholders |
+| DuoBook | [platform-iphone-duo](platform-iphone-duo.md) | Book: equal halves at the fold | Built |
+| DuoBookSidePane | [platform-iphone-duo](platform-iphone-duo.md) | Book: thread and side pane split at the fold | Built |
+| DuoLaptop | [platform-iphone-duo](platform-iphone-duo.md) | Laptop: transcript above the fold, composer below (ArrangementView) | Built |
+| DuoLaptopOpen | [platform-iphone-duo](platform-iphone-duo.md) | The same view fully open: composer card over the transcript | Built |
 
 **Notifications**
 

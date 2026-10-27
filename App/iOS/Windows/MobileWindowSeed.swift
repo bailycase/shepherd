@@ -1,4 +1,5 @@
 import Foundation
+import ShepherdRemote
 
 /// What a window of the app is opened with (iPadSplitView board): its own identity, and the
 /// route it shows first. `ShepherdIOSApp`'s `WindowGroup(for:)` presents one per window; the
@@ -25,11 +26,13 @@ extension MobileNavigator {
         var settingsPath: [MobileRoute]
         var padSelection: AgentRef?
         var padPath: [MobileRoute]
+        /// The side pane's tab while it is open; nil closed (and in what older builds saved).
+        var sidePane: PadSidePaneTab?
     }
 
     var restoration: Restoration {
         Restoration(pad: layout == .pad, tab: tab, homePath: homePath, settingsPath: settingsPath,
-                    padSelection: padSelection, padPath: padPath)
+                    padSelection: padSelection, padPath: padPath, sidePane: sidePane.isOpen ? sidePane.tab : nil)
     }
 
     /// Puts a window back where it was, leaving out the screens of hosts no longer saved. The
@@ -42,5 +45,7 @@ extension MobileNavigator {
         settingsPath = saved.settingsPath.filter(known)
         padSelection = saved.padSelection.flatMap { hosts.contains($0.host) ? $0 : nil }
         padPath = saved.padPath.filter(known)
+        if let tab = saved.sidePane { sidePane.show(tab) }
+        if layout == .pad { takePaneScreens() }
     }
 }

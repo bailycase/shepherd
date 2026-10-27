@@ -1,4 +1,5 @@
 import SwiftUI
+import ShepherdRemote
 
 /// Where the app is: one model for iPhone (two tabs, each a stack) and iPad (a sidebar, the
 /// selected thread as the detail, and a stack pushed over it). Screens never touch paths
@@ -35,9 +36,8 @@ final class MobileNavigator {
     /// Portrait: the sidebar slides over the thread, so choosing a row hides it again; with no
     /// thread chosen it stays out.
     var padSidebarOverlays = false
-    /// The window leaves the thread too little beside the sidebar and the Changes pane
-    /// (`MobileLayout.reviewThreadMinWidth`), so a review takes the window (`PadShell`).
-    var padReviewCrowded = false
+    /// The side pane beside the thread on regular width, and the laptop arrangement.
+    let sidePane = SidePaneState()
     /// iPhone Duo's hinge: true folded shut (the outer display), false open or half open (the
     /// inner one), nil on a device without a hinge (`onHingeClosedChange`).
     var hingeClosed: Bool?
@@ -87,7 +87,17 @@ final class MobileNavigator {
             if homePath.last != route { homePath.append(route) }
             tab = .home
         case .pad:
-            if case .thread(let ref) = route {
+            // A thread's Changes, Terminal, Subagents, Files or Browser opens as the pane's tab
+            // beside the thread, never as a screen over it.
+            if let tab = route.sidePaneTab, let thread = route.thread {
+                // Beside the thread on screen: the selection, or one pushed over the stack.
+                if padPath.last != .thread(thread) {
+                    if padSelection != thread { padSelection = thread }
+                    if !padPath.isEmpty { padPath = [] }
+                }
+                showInPane(route, tab: tab)
+                if padSidebarOverlays { padColumns = .detailOnly }
+            } else if case .thread(let ref) = route {
                 padSelection = ref
                 if !padPath.isEmpty { padPath = [] }
                 if padSidebarOverlays { padColumns = .detailOnly }
@@ -137,7 +147,35 @@ final class MobileNavigator {
             padSelection = nil
             padColumns = .all
         }
+        if sidePane.arranged?.host == host { sidePane.arranged = nil }
         if presented?.route.host == host { presented = nil }
+    }
+
+    /// The pane shows `route` on `tab`: the file a review was opened at, the run a subagent link named.
+    private func showInPane(_ route: MobileRoute, tab: PadSidePaneTab) {
+        switch route {
+        case .review(.changes(let ref, let file)): ReviewStores.shared.store(for: ref).focus(file)
+        case .review(.diff(let ref, let path)): ReviewStores.shared.store(for: ref).focus(path)
+        case .subagents(.list(let ref)): SubagentInspection.of(self).show(ref, runID: nil)
+        case .subagents(.run(let ref, let runID)): SubagentInspection.of(self).show(ref, runID: runID)
+        default: break
+        }
+        sidePane.show(tab)
+    }
+
+    /// Unfolded (or restored wide) with the selected thread's Changes, Terminal, Subagents, Files
+    /// or Browser pushed over it: those screens become the open pane's tab (DuoClosedThreadMenu).
+    func takePaneScreens() {
+        // The thread under them: the last one pushed, else the selection.
+        let pushed = padPath.lastIndex { if case .thread = $0 { true } else { false } }
+        let thread: AgentRef? = if let pushed, case .thread(let ref) = padPath[pushed] { ref } else { padSelection }
+        guard let thread else { return }
+        let tabs = padPath.indices.map { index in
+            index > (pushed ?? -1) && padPath[index].thread == thread ? padPath[index].sidePaneTab : nil
+        }
+        guard let (keep, tab) = PadSplitLayout.unfold(tabs), let top = padPath.last else { return }
+        padPath = Array(padPath.prefix(keep))
+        showInPane(top, tab: tab)
     }
 
     /// Carry the active stack across size classes, not an old selection from the other layout.
@@ -155,6 +193,7 @@ final class MobileNavigator {
             } else {
                 padPath = path
             }
+            takePaneScreens()
         case .phone:
             let path = padSelection.map { [MobileRoute.thread($0)] } ?? []
             if case .settings? = padPath.last {

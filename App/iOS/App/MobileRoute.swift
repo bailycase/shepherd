@@ -19,11 +19,13 @@ enum MobileRoute: Hashable, Codable {
     case designs(DesignsRoute)
     case padDesign(PadDesignRoute)
     case projects(ProjectsRoute)
+    /// A side-pane tab's own screen on a phone (Files, Browser; SidePaneState.swift).
+    case sidePane(SidePaneRoute)
 
     @MainActor @ViewBuilder
     var destination: some View {
         switch self {
-        case .thread(let ref): ThreadScreen(ref: ref)
+        case .thread(let ref): ThreadDestination(ref: ref)
         case .home(let route): HomeDestination(route: route)
         case .newThread(let route): NewThreadDestination(route: route)
         case .subagents(let route): SubagentsDestination(route: route)
@@ -35,6 +37,7 @@ enum MobileRoute: Hashable, Codable {
         case .designs(let route): DesignsDestination(route: route)
         case .padDesign(let route): PadDesignDestination(route: route)
         case .projects(let route): ProjectsDestination(route: route)
+        case .sidePane(let route): SidePaneDestination(route: route)
         }
     }
 
@@ -45,6 +48,7 @@ enum MobileRoute: Hashable, Codable {
         case .subagents(let route): route.thread
         case .review(let route): route.thread
         case .terminal(let route): route.thread
+        case .sidePane(let route): route.thread
         case .thread, .home, .newThread, .search, .settings, .automations, .designs, .padDesign, .projects: nil
         }
     }
@@ -56,6 +60,7 @@ enum MobileRoute: Hashable, Codable {
         case .subagents(let route): route.thread.host
         case .review(let route): route.thread.host
         case .terminal(let route): route.thread.host
+        case .sidePane(let route): route.thread.host
         case .automations(let route): route.host
         case .designs(let route): route.host
         case .padDesign(let route): route.host
