@@ -816,6 +816,20 @@ class VerifyIOSTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             self.assertTrue(release.verify_ios(self.make_app(root, privacy=False), "321"))
 
+    def test_an_embedded_static_library_is_refused_and_a_dynamic_one_is_not(self):
+        thin_archive = b"!<arch>\n" + b"\0" * 24
+        fat = lambda body: (b"\xca\xfe\xba\xbe" + (1).to_bytes(4, "big")
+                            + (0).to_bytes(8, "big") + (28).to_bytes(4, "big") + bytes(8) + body)
+        dylib = b"\xcf\xfa\xed\xfe" + b"\0" * 28
+        for name, binary, refused in (("thin archive", thin_archive, True), ("universal archive", fat(thin_archive), True),
+                                      ("dylib", dylib, False), ("universal dylib", fat(dylib), False)):
+            with self.subTest(name), tempfile.TemporaryDirectory() as root:
+                app = self.make_app(root)
+                os.makedirs(os.path.join(app, "Frameworks", "Sentry.framework"))
+                with open(os.path.join(app, "Frameworks", "Sentry.framework", "Sentry"), "wb") as f:
+                    f.write(binary)
+                self.assertEqual(len(release.verify_ios(app, "321")), 1 if refused else 0)
+
     def test_the_version_rule_takes_one_to_three_integers(self):
         for version, ok in (("1", True), ("0.1", True), ("0.1.0", True), ("10.20.30", True),
                             ("1.2.3.4", False), ("1.2.3-beta.1", False), ("v1.2.3", False), ("", False)):

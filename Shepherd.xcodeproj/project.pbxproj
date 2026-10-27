@@ -17,7 +17,7 @@
 		15000000000000000000B203 /* ShepherdRemote in Frameworks */ = {isa = PBXBuildFile; productRef = 15000000000000000000C003 /* ShepherdRemote */; };
 		15000000000000000000B204 /* ShepherdUI in Frameworks */ = {isa = PBXBuildFile; productRef = 15000000000000000000C004 /* ShepherdUI */; };
 		15000000000000000000B205 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 15000000000000000000C005 /* SwiftTerm */; };
-		15000000000000000000B207 /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = 15000000000000000000C007 /* Sentry */; };
+		15000000000000000000B207 /* Sentry-Dynamic in Frameworks */ = {isa = PBXBuildFile; productRef = 15000000000000000000C007 /* Sentry-Dynamic */; };
 		15000000000000000000B206 /* DesignSurfaceKit in Frameworks */ = {isa = PBXBuildFile; productRef = 15000000000000000000C006 /* DesignSurfaceKit */; };
 		5E000000000000000000B001 /* ShepherdLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E000000000000000000A001 /* ShepherdLauncher.swift */; };
 		5E000000000000000000B002 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 5E000000000000000000A003 /* AppIcon.icon */; };
@@ -140,7 +140,7 @@
 				15000000000000000000B204 /* ShepherdUI in Frameworks */,
 				15000000000000000000B205 /* SwiftTerm in Frameworks */,
 				15000000000000000000B206 /* DesignSurfaceKit in Frameworks */,
-				15000000000000000000B207 /* Sentry in Frameworks */,
+				15000000000000000000B207 /* Sentry-Dynamic in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -248,7 +248,7 @@
 				15000000000000000000C004 /* ShepherdUI */,
 				15000000000000000000C005 /* SwiftTerm */,
 				15000000000000000000C006 /* DesignSurfaceKit */,
-				15000000000000000000C007 /* Sentry */,
+				15000000000000000000C007 /* Sentry-Dynamic */,
 			);
 			productName = "Shepherd iOS";
 			productReference = 15000000000000000000A201 /* Shepherd iOS.app */;
@@ -939,10 +939,10 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = "shepherd-cli";
 		};
-		15000000000000000000C007 /* Sentry */ = {
+		15000000000000000000C007 /* Sentry-Dynamic */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 15000000000000000000F202 /* XCRemoteSwiftPackageReference "sentry-cocoa" */;
-			productName = Sentry;
+			productName = "Sentry-Dynamic";
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

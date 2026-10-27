@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import glob
 import hashlib
 import json
 import os
@@ -648,7 +649,31 @@ def verify_ios(path: str, build: str) -> list[str]:
     executable = info.get("CFBundleExecutable")
     if not executable or not os.path.isfile(os.path.join(path, executable)):
         problems.append(f"CFBundleExecutable {executable!r} is not in the bundle")
+    # A static library packaged as a framework (sentry-cocoa's `Sentry` product) still gets
+    # embedded, cannot be signed, and App Store Connect refuses the upload (ITMS-90035).
+    for framework in sorted(glob.glob(os.path.join(path, "Frameworks", "*.framework"))):
+        binary = os.path.join(framework, os.path.basename(framework)[:-len(".framework")])
+        if os.path.isfile(binary) and _static_archive(binary):
+            problems.append(f"{os.path.relpath(binary, path)} is a static library; embed a dynamic framework")
     return problems
+
+
+def _static_archive(path: str) -> bool:
+    """Whether the file, or any slice of a universal binary, is an `ar` archive."""
+    with open(path, "rb") as f:
+        data = f.read()
+    magic = data[:4]
+    if magic not in (b"\xca\xfe\xba\xbe", b"\xca\xfe\xba\xbf"):
+        return data.startswith(b"!<arch>\n")
+    wide = magic == b"\xca\xfe\xba\xbf"
+    count = int.from_bytes(data[4:8], "big")
+    size = 32 if wide else 20
+    for index in range(count):
+        entry = data[8 + index * size: 8 + (index + 1) * size]
+        offset = int.from_bytes(entry[8:16] if wide else entry[8:12], "big")
+        if data[offset:offset + 8] == b"!<arch>\n":
+            return True
+    return False
 
 def _ios_command(*args: str) -> bytes:
     # Capture even failures: decoded profiles contain certificates, not release log material.
