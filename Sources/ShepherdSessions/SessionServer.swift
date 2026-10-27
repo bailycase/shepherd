@@ -434,6 +434,9 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     public var onRemoteHostSettings: ((RemoteHostSettingsRequest, @escaping (Result<HostSettings, RemoteCreateAgentError>) -> Void) -> Void)?
+    /// The GUI answers a client's read of this host's MCP servers, subagent profiles or providers
+    /// (`RemoteRequest.hostInventory`); nil on a headless host.
+    public var onRemoteHostInventory: ((RemoteHostInventoryRequest, @escaping (Result<RemoteHostInventoryResult, RemoteCreateAgentError>) -> Void) -> Void)?
     /// A remote client saved or restored this host's root instructions: the GUI's Settings page
     /// follows. Delivered on the main actor.
     public var onInstructionsChanged: ((InstructionsSnapshot) -> Void)?
@@ -2413,6 +2416,24 @@ public final class SessionServer: @unchecked Sendable {
                         switch result {
                         case .success(let settings): self.send(.hostSettings(id: id, settings: settings), to: client)
                         case .failure(let error): self.send(.error(id: id, code: "settings_failed", message: error.message), to: client)
+                        }
+                    }
+                }
+            }
+        case .hostInventory(let id, let request):
+            // Read-only, and only the GUI knows: hops as hostSettings does.
+            guard let handler = onRemoteHostInventory else {
+                send(.error(id: id, code: "unavailable", message: "This host has no inventory to share."), to: client)
+                return
+            }
+            hopToMain { [weak self] in
+                handler(request) { result in
+                    guard let self else { return }
+                    self.queue.async {
+                        guard self.clients[client.fd] === client else { return }
+                        switch result {
+                        case .success(let value): self.send(.hostInventory(id: id, result: value), to: client)
+                        case .failure(let error): self.send(.error(id: id, code: "inventory_failed", message: error.message), to: client)
                         }
                     }
                 }
