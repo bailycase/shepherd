@@ -1583,7 +1583,8 @@ final class RPCThreadState {
             let marked = self.markingStopped(messages)
             let sentReferences = self.origins.compactMapValues(\.references)
             let adjust = self.historyAdjuster()
-            DispatchQueue.global(qos: .utility).async { [weak self] in
+            // The thread on screen waits for this page: not utility, which a busy machine starves.
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 hook?()
                 let images = ThreadImages.hasImages(messages) ? ThreadImages.table(for: messages) : [:]
                 let history = Self.projectHistory(marked, sentReferences: sentReferences, images: images, adjust: adjust)
