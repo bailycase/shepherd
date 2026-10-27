@@ -308,7 +308,18 @@ final class ShepherdViewModel {
     var remoteRenameTarget: RemoteAgentRef?
     /// A terminal tab being renamed (the panel's Rename tab).
     var terminalRenameTarget: TerminalRenameTarget?
-    var remoteActionError: String?
+    /// The failure the error sheet shows: what was attempted, and why it failed.
+    var actionError: ActionError?
+    /// The message alone, under a generic title; `fail(_:_:)` names the action.
+    var remoteActionError: String? {
+        get { actionError?.message }
+        set { actionError = newValue.map { ActionError(title: ActionError.genericTitle, message: $0) } }
+    }
+
+    /// Reports a failed action under its own title ("Couldn’t fork"), with the error worded for a person.
+    func fail(_ title: String, _ error: Error) {
+        actionError = ActionError(title: title, message: ActionError.describe(error))
+    }
 
     /// Configured remote Shepherd hosts and their live connections.
     let remoteHosts: RemoteHostStore
@@ -411,6 +422,12 @@ final class ShepherdViewModel {
     /// Worktree agent pending delete confirmation (alert in RootView) —
     /// deleting may also remove the checkout, so it always confirms.
     var worktreeDeleteTarget: AgentID?
+    /// Agent pending delete confirmation (sheet in RootView): deleting stops a run and drops the
+    /// thread from the sidebar with nothing to bring it back, so it always confirms.
+    var agentDeleteTarget: AgentID?
+    /// A confirmed deletion runs after its sheet has dismissed (`sheet(item:onDismiss:)`):
+    /// tearing a mounted layout down mid-dismissal wedges the modal session.
+    @ObservationIgnored var afterDialogDismiss: (@MainActor () -> Void)?
 
     /// A snapshot of the agent + space whose Finalize Worktree sheet is
     /// open. Copies, not IDs: the pipeline's last act retires the agent, and
@@ -1166,6 +1183,14 @@ final class ShepherdViewModel {
 
     /// Adopt a server snapshot wholesale, keeping selection when IDs persist.
     func adopt(_ serverState: ShepherdState) {
+        // The run log is current by the time a broadcast lands; it is the one thing a broadcast
+        // of an unchanged workspace can carry.
+        let runs = server.openAutomationRuns
+        if runs != openAutomationRuns { openAutomationRuns = runs }
+        // A status report and a checkout read each broadcast the whole workspace, equal or not.
+        // Assigning `state` invalidates every view that read any part of it, so an equal snapshot
+        // stops here: one `==` instead of the sidebar, workspace, menu and palette fan-out.
+        guard !didAdopt || state != serverState else { return }
         let shownBefore = shownDesign?.id
         if !sidebarOpeningTurns.isEmpty {
             let removed = Set(state.agents.map(\.id)).subtracting(serverState.agents.map(\.id))
@@ -1178,8 +1203,6 @@ final class ShepherdViewModel {
             selectedSpaceID = agent.spaceID
         }
         checkMissingSpaces()
-        let runs = server.openAutomationRuns
-        if runs != openAutomationRuns { openAutomationRuns = runs }
         reconcileSidebarCompletions()
         // A Project's coordinator ID is recorded before its agent is registered, while its page already holds the store: keep it.
         threadStores.prune(live: Set(state.agents.map(\.id)).union(state.projects.compactMap(\.coordinatorAgentID)))
