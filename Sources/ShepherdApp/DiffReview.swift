@@ -101,6 +101,8 @@ final class ReviewSession: Identifiable {
     var branches: ChangesBranches?
     var options = ChangesOptions(fullFiles: true)
     var wordDiffs = true
+    /// Long lines wrap at the pane's edge instead of scrolling sideways.
+    var wrapLines = false
     var layoutChoice: ChangesLayoutChoice = .automatic
     /// Files cut short at `ChangesLimits.fileLines`.
     var truncated: Set<String> = []
@@ -362,7 +364,6 @@ final class ReviewPaneModel {
     @ObservationIgnored private var keyFocusRequest: UUID?
     @ObservationIgnored private var rowCache: [String: CachedRows] = [:]
     private(set) var width: CGFloat = 0
-    @ObservationIgnored private var measuredCodeWidth: (version: Int, scale: CGFloat, width: CGFloat)?
     @ObservationIgnored private var splitScrolls: [String: SHSplitDiffScroll] = [:]
     @ObservationIgnored private var splitWidths: [String: (file: DiffFile, scale: CGFloat, old: CGFloat, new: CGFloat)] = [:]
 
@@ -376,10 +377,10 @@ final class ReviewPaneModel {
     @discardableResult
     func scrollSplitCode(at point: CGPoint, delta: CGFloat, viewportWidth: CGFloat) -> Bool {
         let liveFiles = Set(session.files.map(\.id))
-        guard layout == .split,
+        guard !session.wrapLines,
               let file = rowsTops.filter({ liveFiles.contains($0.key) && $0.value <= point.y }).max(by: { $0.value < $1.value }),
               !isFolded(file.key), let scroll = splitScrolls[file.key] else { return false }
-        let old = point.x < viewportWidth / 2
+        let old = layout == .split && point.x < viewportWidth / 2
         let previous = old ? scroll.oldOffset : scroll.newOffset
         scroll.move(to: previous - delta, old: old)
         return previous != (old ? scroll.oldOffset : scroll.newOffset)
@@ -466,27 +467,8 @@ final class ReviewPaneModel {
         return rows
     }
 
-    /// Measure once per diff and text scale, never on scroll. Both split columns use the
-    /// same width, so paired lines stay aligned while the whole diff scrolls horizontally.
-    func scrollContentWidth(textScale: CGFloat) -> CGFloat {
-        if layout == .split { return width }
-        if measuredCodeWidth?.version != session.filesVersion || measuredCodeWidth?.scale != textScale {
-            let font = NSFont(name: "GeistMono-Regular", size: SHTextStyle.code.size * textScale)
-                ?? .monospacedSystemFont(ofSize: SHTextStyle.code.size * textScale, weight: .regular)
-            let widest = session.files.lazy.flatMap(\.hunks).flatMap(\.lines).reduce(CGFloat.zero) {
-                let text = NSAttributedString(string: $1.text, attributes: [.font: font])
-                return max($0, CGFloat(CTLineGetTypographicBounds(CTLineCreateWithAttributedString(text), nil, nil, nil)))
-            }
-            measuredCodeWidth = (session.filesVersion, textScale, ceil(widest))
-        }
-        let code = measuredCodeWidth?.width ?? 0
-        let commentSlot = SHDiffMetrics.commentSlotWidth
-        let content = layout == .split
-            ? 2 * (SHDiffMetrics.splitCodeLeading + code + commentSlot) + 1
-            : SHDiffMetrics.codeLeading + code + commentSlot
-        return max(width, content)
-    }
-
+    /// Each side's widest line, once per file and text scale, never on scroll. A unified file
+    /// scrolls as one column, its widest line of either side.
     func splitLineWidths(_ file: DiffFile, textScale: CGFloat) -> (old: CGFloat, new: CGFloat) {
         if let cached = splitWidths[file.id], cached.scale == textScale, cached.file == file { return (cached.old, cached.new) }
         let font = NSFont(name: "GeistMono-Regular", size: SHTextStyle.code.size * textScale)
