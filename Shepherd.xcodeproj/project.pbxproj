@@ -17,6 +17,7 @@
 		15000000000000000000B203 /* ShepherdRemote in Frameworks */ = {isa = PBXBuildFile; productRef = 15000000000000000000C003 /* ShepherdRemote */; };
 		15000000000000000000B204 /* ShepherdUI in Frameworks */ = {isa = PBXBuildFile; productRef = 15000000000000000000C004 /* ShepherdUI */; };
 		15000000000000000000B205 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 15000000000000000000C005 /* SwiftTerm */; };
+		15000000000000000000B207 /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = 15000000000000000000C007 /* Sentry */; };
 		15000000000000000000B206 /* DesignSurfaceKit in Frameworks */ = {isa = PBXBuildFile; productRef = 15000000000000000000C006 /* DesignSurfaceKit */; };
 		5E000000000000000000B001 /* ShepherdLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E000000000000000000A001 /* ShepherdLauncher.swift */; };
 		5E000000000000000000B002 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 5E000000000000000000A003 /* AppIcon.icon */; };
@@ -139,6 +140,7 @@
 				15000000000000000000B204 /* ShepherdUI in Frameworks */,
 				15000000000000000000B205 /* SwiftTerm in Frameworks */,
 				15000000000000000000B206 /* DesignSurfaceKit in Frameworks */,
+				15000000000000000000B207 /* Sentry in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -246,6 +248,7 @@
 				15000000000000000000C004 /* ShepherdUI */,
 				15000000000000000000C005 /* SwiftTerm */,
 				15000000000000000000C006 /* DesignSurfaceKit */,
+				15000000000000000000C007 /* Sentry */,
 			);
 			productName = "Shepherd iOS";
 			productReference = 15000000000000000000A201 /* Shepherd iOS.app */;
@@ -309,6 +312,7 @@
 			packageReferences = (
 				5E000000000000000000F200 /* XCLocalSwiftPackageReference "." */,
 				15000000000000000000F201 /* XCRemoteSwiftPackageReference "SwiftTerm" */,
+				15000000000000000000F202 /* XCRemoteSwiftPackageReference "sentry-cocoa" */,
 			);
 			productRefGroup = 5E000000000000000000D005 /* Products */;
 			projectDirPath = "";
@@ -525,6 +529,7 @@
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) SHEPHERD_SENTRY";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -561,6 +566,7 @@
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) SHEPHERD_SENTRY";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -597,6 +603,7 @@
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) SHEPHERD_SENTRY";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -868,6 +875,14 @@
 				minimumVersion = 1.18.0;
 			};
 		};
+		15000000000000000000F202 /* XCRemoteSwiftPackageReference "sentry-cocoa" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/getsentry/sentry-cocoa";
+			requirement = {
+				kind = exactVersion;
+				version = 9.30.1;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -923,6 +938,11 @@
 		5E000000000000000000C005 /* shepherd-cli */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = "shepherd-cli";
+		};
+		15000000000000000000C007 /* Sentry */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 15000000000000000000F202 /* XCRemoteSwiftPackageReference "sentry-cocoa" */;
+			productName = Sentry;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

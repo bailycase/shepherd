@@ -11,6 +11,8 @@ struct ShepherdIOSApp: App {
     @UIApplicationDelegateAdaptor private var appDelegate: PushAppDelegate
     @Environment(\.scenePhase) private var scenePhase
 
+    init() { MobileDiagnostics.start() }
+
     var body: some Scene {
         WindowGroup(for: MobileWindowSeed.self) { $seed in
             MobileWindowRoot(app: app, seed: seed)

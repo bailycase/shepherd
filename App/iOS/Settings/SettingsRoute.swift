@@ -31,6 +31,8 @@ enum SettingsRoute: Hashable, Codable {
     case skillsRepo(String?)
     case experiments
     case notifications
+    /// Whether this device sends crash and performance reports to Sentry.
+    case diagnostics
     /// A suggested line waiting on a host: edit it, choose its file, add it or dismiss it.
     case suggestion(UUID)
 }
@@ -55,6 +57,7 @@ struct SettingsDestination: View {
         case .skillsRepo(let repo): AddSkillsScreen(initialRepo: repo)
         case .experiments: ExperimentsScreen()
         case .notifications: NotificationsScreen()
+        case .diagnostics: DiagnosticsScreen()
         case .suggestion(let id): SuggestionScreen(id: id)
         }
     }
@@ -64,7 +67,7 @@ struct SettingsDestination: View {
 /// (iPadSettingsInstructions). The iPad's list names two of them as the Mac does ("Agents",
 /// "Pi"); the phone's rows say what they hold ("Defaults", "Extensions").
 enum SettingsPage: String, CaseIterable, Hashable, Codable {
-    case appearance, defaults, worktrees, pi, instructions, skills, hosts, notifications, experiments
+    case appearance, defaults, worktrees, pi, instructions, skills, hosts, notifications, experiments, diagnostics
 
     var title: String {
         switch self {
@@ -77,6 +80,7 @@ enum SettingsPage: String, CaseIterable, Hashable, Codable {
         case .hosts: "Hosts"
         case .notifications: "Notifications"
         case .experiments: "Experiments"
+        case .diagnostics: "Diagnostics"
         }
     }
 
@@ -100,6 +104,7 @@ enum SettingsPage: String, CaseIterable, Hashable, Codable {
         case .hosts: "desktopcomputer"
         case .notifications: "bell"
         case .experiments: "flask"
+        case .diagnostics: "stethoscope"
         }
     }
 
@@ -115,6 +120,7 @@ enum SettingsPage: String, CaseIterable, Hashable, Codable {
         case .hosts: .hosts
         case .notifications: .notifications
         case .experiments: .experiments
+        case .diagnostics: .diagnostics
         }
     }
 }
