@@ -3020,6 +3020,9 @@ public final class SessionServer: @unchecked Sendable {
     /// envelope adds ≈100 bytes, so 256 KiB raw stays well under the 1 MiB
     /// NDJSON payload limit.
     static let remoteOutputChunkBytes = 256 * 1024
+    /// Scrollback lines a remote attach replays. The full 2,000-line styled scrollback can pass
+    /// `maxQueuedReplyBytes` once base64 and framing are added, which disconnects the client.
+    static let remoteReplayScrollbackLines = 500
     static let remoteRenderPatchBytes = 700 * 1024
 
     /// Bracketed paste + optional Return — the composer's transport. One
@@ -3112,7 +3115,7 @@ public final class SessionServer: @unchecked Sendable {
                 viewportGeneration: viewportGeneration
             )
         ), to: client)
-        let replay = session.screen.snapshot()
+        let replay = session.screen.snapshot(scrollbackLimit: Self.remoteReplayScrollbackLines)
         var offset = replay.startIndex
         while offset < replay.endIndex {
             let end = replay.index(offset, offsetBy: Self.remoteOutputChunkBytes, limitedBy: replay.endIndex) ?? replay.endIndex
