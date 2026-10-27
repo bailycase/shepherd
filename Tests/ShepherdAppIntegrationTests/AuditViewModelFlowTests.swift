@@ -127,10 +127,23 @@ struct AuditViewModelFlowTests {
     @Test func aPersistedFailureSeedsTheRowUntilALiveReport() async throws {
         let app = try AppHarness()
         defer { app.stop() }
-        let (state, agents) = fleet(app)
+        var (state, agents) = fleet(app)
+        state.agents[0].lastFailure = "529 overloaded"
         let vm = try await app.start(with: state)
-        #expect(vm.failedTurns.isEmpty, "nothing is remembered until the sessions side persists it")
-        #expect(!ShepherdViewModel.persistedTurnFailed(agents[0].agent))
+        let failed = agents[0].agent.id, clean = agents[1].agent.id
+        #expect(vm.failedTurns == [failed])
+        var row = try #require(vm.sidebarLists.all.first { $0.id == .local(failed) })
+        #expect(row.leading == .dot(.failed) && row.section == .done && row.accessibilityLabel.contains("failed"))
+        #expect(vm.sidebarLists.all.first { $0.id == .local(clean) }?.leading == .dot(.idle))
+
+        // A turn starting is the live report that replaces it.
+        let status = try ExtensionClient(path: app.scratch.socketPath)
+        defer { status.closeConnection() }
+        try status.send(.setAgentStatus(agentID: failed, status: .working))
+        try await eventuallyOnMain("the live report to clear the remembered failure") { vm.failedTurns.isEmpty }
+        try await eventuallyOnMain("the server to forget it") { vm.state.agents[0].lastFailure == nil }
+        row = try #require(vm.sidebarLists.all.first { $0.id == .local(failed) })
+        #expect(row.leading == .dot(.running))
     }
 }
 

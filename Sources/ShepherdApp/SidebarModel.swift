@@ -312,7 +312,8 @@ enum SidebarDerivation {
                          opening: Bool = false, since: Date?) -> SidebarListRow {
         var agent = agent
         if opening, agent.status == .idle { agent.status = .working }
-        let failed = failed && agent.status == .done
+        // Failed qualifies a finished agent, or one restored idle with its failure remembered.
+        let failed = failed && (agent.status == .done || agent.status == .idle)
         let live = automation != nil && AutomationRow.isLive(agent, run: run)
         let leading: SHSidebarRow.Leading
         let accessory: SHSidebarRow.Accessory
@@ -349,7 +350,7 @@ enum SidebarDerivation {
             accessory = agent.status == .working ? since.map { .elapsed(since: $0) } ?? .none : .none
             word = AgentRow.statusWord(agent.status, turnFailed: failed)
         }
-        let finished = !needsYou && !cannotStart && !waiting && (agent.status == .done || (automation != nil && !live && run?.settledAt != nil))
+        let finished = !needsYou && !cannotStart && !waiting && (agent.status == .done || failed || (automation != nil && !live && run?.settledAt != nil))
         let section: SidebarActivitySection = needsYou ? .needsYou : waiting || cannotStart ? .recents
             : automation != nil ? .automations : live || agent.status == .working ? .working : finished ? .done : .recents
         return SidebarListRow(

@@ -638,7 +638,7 @@ public struct FleetModel: Equatable, Sendable {
         let detail = [word, activity ?? space?.name].compactMap { $0 }.joined(separator: " · ")
         var row = FleetThreadRow(ref: ref, title: agent.name, status: agent.status, detail: detail, activity: activity,
                                  doing: live ? digest?.doing : nil, place: space?.name, clock: clock, hostName: hostName, hostTag: hostTag, worktree: agent.worktreeBranch != nil,
-                                 offline: offline, failed: agent.status != .working && digest?.lastTurnFailed == true,
+                                 offline: offline, failed: agent.status != .working && (digest?.lastTurnFailed == true || agent.lastFailure != nil),
                                  subagents: live ? digest?.subagentsLive ?? 0 : 0,
                                  subagentsAsking: live ? digest?.subagentsAsking ?? 0 : 0)
         row.subagentsDone = live ? digest?.subagentsDone ?? 0 : 0

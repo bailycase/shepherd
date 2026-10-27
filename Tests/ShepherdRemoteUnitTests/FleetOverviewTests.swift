@@ -98,4 +98,14 @@ struct FleetOverviewTests {
         #expect(digest.lastTurnFailed == (status == "error" && !running))
         #expect(model.recents.map(\.failed) == [failed])
     }
+
+    /// The host remembers a failure across its relaunch (`Agent.lastFailure`): the row reads
+    /// failed before any snapshot of the thread, as the Mac's does, unless it is running again.
+    @Test(arguments: [(AgentStatus.idle, true), (.done, true), (.working, false)])
+    func aRememberedFailureReadsFailedWithoutASnapshot(status: AgentStatus, failed: Bool) {
+        var agent = FleetTests.agent("pay", status)
+        agent.lastFailure = "529 overloaded"
+        let model = FleetModel(hosts: [FleetTests.host(FleetTests.studio, "Studio", agents: [agent])], digests: [:])
+        #expect(model.recents.map(\.failed) == [failed])
+    }
 }
