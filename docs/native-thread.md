@@ -997,7 +997,9 @@ output grows.
   queue that changed while the thread was hidden lands without motion when it catches up.
 - **Running state:** `settledRunning` keeps `running` true for 400 ms after it drops, so tool
   boundaries don't flicker the live "Thinking…" or the Stop button.
-- **Drafts and gating:** `draft` belongs to the store; `send(images:delivery:)` sends with a
+- **Drafts and gating:** `draft` belongs to the store; on the Mac an unsent draft is also kept in
+  defaults by agent id (`ComposerDrafts`, written half a second after typing stops, restored when
+  the agent's store is next made, dropped once sent). `send(images:delivery:)` sends with a
   delivery chosen at send time (the Mac composer's ↩ queues and ⌘↩ steers now, or its Send menu's
   two rows). `delivery` is the default for a send that names none (`.followUp`).
   `supports(_:)` gates every control on `supportedActions` and on the store being ready and not
