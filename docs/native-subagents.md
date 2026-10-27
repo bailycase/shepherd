@@ -142,6 +142,10 @@ in Settings instead. Third-party settings do not affect native definitions.
 | `shepherd_workflow` | Runs a script (below). |
 | `shepherd_mission` | Manages mission records (below). Not registered unless `SHEPHERD_MISSIONS=1`. |
 
+With Settings ▸ Agents ▸ Context ▸ Defer rarely used tools on, `shepherd_child_agents`, `shepherd_child_cancel`
+and `shepherd_workflow` are deferred (the `shepherd_children` family; the model loads them with `tool_search`);
+start, message, result and resume stay direct ([docs/context-budget.md](context-budget.md)).
+
 Children report asynchronously. There is no standalone `shepherd_child_wait` tool. Start the
 children, do independent work, then end your turn when only dependent work remains. The default
 Tests that drive the parent through explicit prompts use `delivery: "report"` for held children,

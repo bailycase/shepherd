@@ -1368,7 +1368,18 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     },
   });
   if (!nativeChildren) return;
-  pi.registerTool({ name: "shepherd_child_agents", label: "child agents", description: "List effective agent profiles, sources and unsupported-field diagnostics. Reads only Shepherd's pi/agents folder. Invalid files stay visible as diagnostics and cannot run.",
+  // Deferred tools (docs/context-budget.md): the profile list, cancel and the scripted workflow are rare follow-ups to
+  // shepherd_child_start, so with SHEPHERD_DEFER_TOOLS=1 pi sends none of them until the model loads one with tool_search.
+  // start, result, message and resume (how a child's question is answered) stay direct.
+  const DEFER = process.env.SHEPHERD_DEFER_TOOLS === "1";
+  const MORE_CHILDREN = {
+    name: "shepherd_children",
+    description: "more native helper tools: the agent profiles, cancelling a helper, a scripted workflow of helpers",
+    instructions: "Native helper (subagent) extras in Shepherd: list the agent profiles (shepherd_child_agents), cancel a running helper " +
+      "(shepherd_child_cancel), or run a scripted workflow of several helpers (shepherd_workflow).",
+  };
+  const later = DEFER ? { exposure: "deferred" as const, namespace: MORE_CHILDREN } : {};
+  pi.registerTool({ name: "shepherd_child_agents", label: "child agents", ...later, description: "List effective agent profiles, sources and unsupported-field diagnostics. Reads only Shepherd's pi/agents folder. Invalid files stay visible as diagnostics and cannot run.",
     parameters: Type.Object({}), async execute(_id, _p, _s, _u, ctx) { return result({ defaults, ...discoverChildAgents(ctx, defaults.scope) }); } });
   pi.registerTool({ name: "shepherd_child_start", label: "start child", parameters: startSchema,
     description: "Start an owned background Pi helper. Use shepherd_child_agents for discovered profiles. Explicit call overrides profile, then Shepherd defaults, then parent model/thinking. Fresh or fork context; tools intersect the parent allowlist. Cwd is not a sandbox. Progress stays in the child record. A child never reaches the user: when it is blocked it asks you (needsReply, in a notice and result with a questionID): answer it yourself if you can with shepherd_child_resume and that questionID, else ask the user in your own reply and pass their answer down. delivery:report stores completion without waking the parent, so the user can keep chatting; delivery:continue resumes dependent work; a question wakes you in either. Result reads consume pending notices. For dependent work use delivery:continue and end your turn; completion resumes you. Do not poll child_result. " + (missionsOn ? "Default creates a mission; mission:false opts out. " : "") + "No nested delegation or automatic worktrees.",
@@ -1410,7 +1421,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       return result(p.id ? forParent(get(p.id)) : [...runs.values()].map((r) => ({ id: r.id, role: r.role, state: r.state, task: clip(r.task, 160),
         ...(r.needsReply ? { needsReply: true, questionID: r.questionID, question: r.questionText } : {}) })));
     } });
-  pi.registerTool({ name: "shepherd_child_cancel", label: "cancel child", description: "Clear queued work, abort, and terminate an owned child. Returns only after its process exits. Session history remains available for explicit continuation.",
+  pi.registerTool({ name: "shepherd_child_cancel", label: "cancel child", ...later, description: "Clear queued work, abort, and terminate an owned child. Returns only after its process exits. Session history remains available for explicit continuation.",
     parameters: Type.Object({ id: idSchema }), async execute(_id, p) { const run = get(p.id); await stop(run); dismissQuestion(run); pendingNotices.delete(run.id); return result(summary(run)); } });
   pi.registerTool({ name: "shepherd_child_resume", label: "continue child", description: "Continue a completed, failed, or stopped child session with a new task or answer. This is how you answer a child's question (needsReply): pass its questionID. Keeps its role, model, cwd, and history. Rejects concurrent writers and missing transcripts. Does not replay interrupted work automatically.",
     parameters: Type.Object({ id: idSchema, message: textSchema, questionID: Type.Optional(Type.String({ description: "Question identity returned by child_result or its notice; refuses stale answers." })) }), async execute(_id, p, signal, _update, ctx) {
@@ -1494,7 +1505,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
         ...(asking.includes(run) ? { needsReply: true, questionID: run.questionID, question: run.questionText } : {}) })),
       ...(asking.length ? { parentAction: `${asking.length === 1 ? "A child" : `${asking.length} children`} of this workflow asked you a question and wait on you, never on the user. Answer each yourself if you can with shepherd_child_resume {id, message, questionID}; ask the USER yourself, in one message, only what you cannot answer, and pass their answer down the same way.` } : {}) };
   };
-  pi.registerTool({ name: "shepherd_workflow", label: "workflow", parameters: workflowSchema,
+  pi.registerTool({ name: "shepherd_workflow", label: "workflow", parameters: workflowSchema, ...later,
     description: "Start a background JavaScript statement body with runs.run(key,{agent,task,...}), runs.all([{key,agent,task,...}]), runs.steer(key,message,{mode}), runs.status(key), runs.cancel(key). Await or return calls. Use ordinary sequencing/branching; no imports, process or filesystem API. This is restricted execution, NOT an OS sandbox. Children retain their normal tools. Default 30-minute deadline" + (missionsOn ? " and enclosing mission; mission:false disables persistence and state.get/set" : "") + ". delivery:report records completion without waking the parent; continue resumes dependent work. A child that is blocked asks you instead of finishing: its runs.run result then has needsReply:true, questionID and question (its output is not a result); once the workflow ends, answer it yourself with shepherd_child_resume {id, message, questionID} or ask the user and pass their answer down. A question wakes you in either delivery. async:false waits; new user input interrupts action:wait without stopping children. status/wait/cancel target this parent's workflow id. No automatic retries, worktrees or scheduling.",
     async execute(id, params, signal, _update, ctx) { return runWorkflow(params, signal, ctx, undefined, id); } });
   async function runWorkflow(params, signal, ctx, onSlashComplete, toolCallID) {

@@ -44,11 +44,23 @@
       "group": "other",
       "extension": "shepherd-status.ts",
       "verdicts": {
-        "thread": "keep",
-        "automation": "keep",
+        "thread": "defer",
+        "automation": "defer",
         "design": "keep"
       },
-      "reason": "Pi's native script executor, hosted by the status extension while codemode is enabled (on by default). Its definition costs 269 tokens; with its prompt guidance the first request grows by 875 tokens. Direct model APIs are disabled, with a five-minute deadline and 128 tool calls per script. Native subagents do not load the status extension."
+      "reason": "Pi's native script executor, hosted by the status extension while codemode is enabled (on by default). Its definition costs 269 tokens and its prompt guidance ~600 more, for a tool a minority of turns use, so it is deferred with the rest (tool_search loads it when a script is the way; a design's agent, which has no tool_search, keeps it direct). Direct model APIs are disabled, with a five-minute deadline and 128 tool calls per script. Native subagents do not load the status extension."
+    },
+    {
+      "tools": [
+        "ask_user"
+      ],
+      "group": "other",
+      "extension": "shepherd-ask.ts",
+      "verdicts": {
+        "thread": "keep",
+        "design": "keep"
+      },
+      "reason": "The one way a thread reaches the person: its question goes through pi's native dialog to the question dock and Needs you on every device. Kept direct (about 150 tokens): a model that has to search for it asks in prose instead. An automation run has nobody watching and a native subagent asks its parent, so neither loads it."
     },
     {
       "tools": [
@@ -147,11 +159,9 @@
     },
     {
       "tools": [
-        "shepherd_child_agents",
         "shepherd_child_start",
         "shepherd_child_message",
         "shepherd_child_result",
-        "shepherd_child_cancel",
         "shepherd_child_resume"
       ],
       "group": "subagents",
@@ -161,7 +171,21 @@
         "automation": "keep",
         "design": "keep"
       },
-      "reason": "Delegating to a helper is how a thread keeps a big search out of its own context (docs/context-budget.md, For agents), so the helper tools stay direct (1.2k tokens); a design's agent relays its tools through them."
+      "reason": "Delegating to a helper is how a thread keeps a big search out of its own context (docs/context-budget.md, For agents), so starting one, messaging it, reading its result and answering its question (shepherd_child_resume with the questionID) stay direct; a design's agent relays its tools through them."
+    },
+    {
+      "tools": [
+        "shepherd_child_agents",
+        "shepherd_child_cancel"
+      ],
+      "group": "subagents",
+      "extension": "shepherd-children.ts",
+      "verdicts": {
+        "thread": "defer",
+        "automation": "defer",
+        "design": "keep"
+      },
+      "reason": "Rare follow-ups to shepherd_child_start (the profile list, a cancel): deferred under the shepherd_children namespace with shepherd_workflow; a design's agent has no tool_search, so it keeps them direct."
     },
     {
       "tools": ["shepherd_child_wait"],
@@ -177,11 +201,11 @@
       "group": "subagents",
       "extension": "shepherd-children.ts",
       "verdicts": {
-        "thread": "keep",
-        "automation": "keep",
+        "thread": "defer",
+        "automation": "defer",
         "design": "keep"
       },
-      "reason": "A scripted run of helpers: 385 tokens, the heaviest single description, for the rarest use. Kept direct with the other native subagent tools; the first to defer if the budget needs it."
+      "reason": "A scripted run of helpers: 385 tokens, the heaviest single description, for the rarest use. Deferred under the shepherd_children namespace; a design's agent has no tool_search, so it keeps it direct."
     },
     {
       "tools": [
