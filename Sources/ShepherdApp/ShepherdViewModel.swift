@@ -627,6 +627,7 @@ final class ShepherdViewModel {
         threadStores.hostName = { _ in localHostName }
         remoteThreadStores.hostName = { [weak hosts] ref in hosts?.connections.first { $0.id == ref.hostID }?.config.name }
         let instructions = InstructionsModel(store: server.instructions, remoteHosts: hosts, defaults: sidebarDefaults)
+        instructions.piHome = server.pi.home
         self.instructions = instructions
         self.suggestions = SuggestionsModel(store: server.suggestions, instructionsStore: server.instructions, instructions: instructions)
         self.skills = ClientSkills(defaults: sidebarDefaults)
