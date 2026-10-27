@@ -241,8 +241,14 @@ keep the version for real breaks.
   to keep). A compaction is a line in the thread whose Show summary opens what the agent kept.
 - **Settings:** Appearance (System, Light, Dark), the hosts as cards with Retry, and a host form
   (add, edit, forget; a blank token keeps the saved one). A host's own settings as the Mac's
-  Settings sets them (`hostSettings.v1`): Defaults (model, thinking, the queue), Worktrees and
-  Extensions, with a host picker when there are several. Instructions: the root AGENTS.md and
+  Settings sets them (`hostSettings.v1`): Defaults (model, thinking, the queue; with
+  `hostSettings.agentDefaults.v1` the speed for new threads, the naming model and a Context card
+  with Compact at and the trim, deferred-tools and Codemode switches), Worktrees and Extensions,
+  with a host picker when there are several. Read-only, over `hostInventory.v1`: MCP (each
+  server's dot, last error or endpoint, sign-in in words, tools), Subagents (each profile, its
+  Markdown) and Sign-in (each provider signed in, expired or not, never a value), each saying to
+  configure or sign in on the Mac. Spaces: the host's spaces by folder over `projects.v2`, a
+  space's configuration files and whether the Mac approved its resources. Instructions: the root AGENTS.md and
   APPEND_SYSTEM.md every session Shepherd starts reads (`instructions.v1`), the same on every
   host or per host, in an editor with line numbers and a Markdown key row. Skills: the agent
   skills every host keeps in ~/.agents/skills (`skills.v1`), the same on every host: each on or
@@ -285,7 +291,8 @@ keep the version for real breaks.
   Send to agent). There is no overall comment box: anything else is said in the thread. An older
   host keeps today's working-tree (or PR) review in the same screens, and Commit sends the agent
   a turn there. Finalize for worktree agents (checks, the form, each step, the PR link). There is
-  no per-file revert: the remote protocol has none.
+  per-file revert only on a host with `changes.revert.v1`, for a working-tree review against
+  HEAD: Revert file… in a diff's bar, confirmed, fenced to the revision the review read.
 - **Commit from review (`Commit/`):** on a host with `review.commit.v1`, Commit… opens the
   commit: a sheet on iPhone, a popover under Commit… on iPad (the message, then Push and Open a
   pull request as checkboxes; the popover commits every changed file, the sheet ticks them). The host drafts the message from

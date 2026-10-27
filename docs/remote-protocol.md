@@ -82,7 +82,9 @@
     `commitMessage`, `commit` behind `review.commit.v1`; the commit is an operation polled with
     `worktreeStatus`), and the Changes pane (`changesOverview`, `changesList`, `changesFile`,
     `changesBranches`, `changesPatch`, `changesUndoTurn`, `changesRedoTurn` behind `changes.v1`,
-    answered by the server itself; thread snapshots carry `turnChanges`). Older hosts review the
+    answered by the server itself; thread snapshots carry `turnChanges`; `changesRevertFile`
+    behind `changes.revert.v1` reverts one file of an uncommitted list to HEAD, refused when the
+    file changed since the list's revision, the working tree only, as Undo). Older hosts review the
     working tree only (`review`). The terminal panel's own actions on an agent's terminals
     ride `agentAction` behind `terminal.control.v1`: `renameTerminal` (Rename tab) and
     `killTerminalProcess` (Kill process), each refused on the agent's thread. An older
@@ -124,7 +126,14 @@
     secret. Thinking and tool logs are not preview sources. Hosts without this capability cannot register destinations.
   - `hostSettings` (`hostSettings.v1`): what the host's Settings ▸ Agents, Worktrees and Pi set,
     the pi packages its pi loads, and its Shepherd and pi versions; one change per request
-    (`HostSettingChange`), applied as the Mac's own Settings would. The additive
+    (`HostSettingChange`), applied as the Mac's own Settings would. `hostSettings.agentDefaults.v1`
+    adds the speed for new threads, the session naming model and Compact at (missing from an
+    older host: Standard, Automatic, pi's default); `HostSettingChange.capability` names what a
+    change needs, and an older host refuses the change as unknown.
+  - `hostInventory` (`hostInventory.v1`): read-only, what the host's Settings ▸ MCP, Subagents and
+    Sign-in show (`RemoteHostInventoryRequest`: `mcp`, `subagents`, `subagent(file:)`,
+    `providers`), answered by the GUI. A sign-in column in words, a key's variable name but never
+    its mask, account counts but no identifiers; nothing here changes the host. The additive
     `goalCrossProviderEvaluation` consent is false when missing/null; its change applies to
     newly started or restarted agents, not a live process. Both clients disclose that scope
   - `projects.mcp.v1`: adds credential status, login/logout, poll, callback completion and
