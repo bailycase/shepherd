@@ -460,6 +460,15 @@ extension ShepherdViewModel {
 
 // MARK: Agents not signed in
 
+extension ShepherdViewModel {
+    /// The provider a local agent's model uses (its own, else the default every launch resolves to); nil when none names one.
+    func provider(of agentID: AgentID) -> String? {
+        let model = state.agents.first { $0.id == agentID }?.model ?? settings.defaultModel(piHome: server.pi.home)
+        guard let model, let slash = model.firstIndex(of: "/"), slash != model.startIndex else { return nil }
+        return String(model[..<slash])
+    }
+}
+
 /// An agent whose pi can't start because nothing signs in for its model (AgentNotSignedIn).
 struct NotSignedIn: Equatable {
     /// The provider it needs; nil when pi names none and its model says nothing.

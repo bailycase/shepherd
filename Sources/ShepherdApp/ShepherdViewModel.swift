@@ -1272,7 +1272,7 @@ final class ShepherdViewModel {
             if old != status { checkouts?.refresh(id, after: .milliseconds(300)) }
             let failed = status == .done && failure != nil
             // pi said a subscription's refresh failed: Sign-in says it expired.
-            if let message = failure?.message { piAuth.noteTurnError(message) }
+            if let message = failure?.message { piAuth.noteTurnError(message, provider: provider(of: id)) }
             if failed != failedTurns.contains(id) {
                 if failed { failedTurns.insert(id) } else { failedTurns.remove(id) }
             }

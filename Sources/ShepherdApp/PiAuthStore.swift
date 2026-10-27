@@ -223,9 +223,12 @@ final class PiAuthStore {
 
     // MARK: What pi says
 
-    /// A turn's error named a provider whose refresh failed: its row says Expired.
-    func noteTurnError(_ message: String) {
-        guard let provider = PiAuthText.expiredProvider(in: message), !expired.contains(provider) else { return }
+    /// A turn's error said a login no longer works: its row says Expired. The error names the
+    /// provider itself ("OAuth refresh failed for anthropic"), or the token endpoint's words come
+    /// through alone (`invalid_grant`) and `provider` is the agent's model's.
+    func noteTurnError(_ message: String, provider: String? = nil) {
+        guard let provider = PiAuthText.expiredProvider(in: message) ?? (PiAuthText.isSignInFailure(message) ? provider : nil),
+              !expired.contains(provider) else { return }
         expired.insert(provider)
     }
 }
