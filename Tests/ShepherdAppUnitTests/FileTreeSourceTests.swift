@@ -30,5 +30,12 @@ struct FileTreeSourceTests {
         #expect(asked.current == ["", "Sources"])
         await model.select(path: "/host/repo/README.md")
         #expect(model.selectedContent == .text(["# Hi", ""], "md"))
+        // The visible list follows the filter (it is derived once per change, not per read).
+        model.filter = "read"
+        #expect(model.visibleNodes().map(\.node.id) == ["/host/repo/Sources", "/host/repo/README.md"])
+        model.filter = "nothing"
+        #expect(model.visibleNodes().map(\.node.id) == ["/host/repo/Sources"])
+        model.filter = ""
+        #expect(model.visibleNodes().count == 2)
     }
 }
