@@ -2,6 +2,10 @@
 
 > Read when you want the ranked list of what is broken, slow or inconsistent across the Mac, iPhone and iPad apps, and where the evidence for each item is.
 
+For the fix branch's results, decisions, validation and remaining work, see
+[implementation status](implementation.md). The findings below describe the baseline, not
+all-current defects. L15's original tool diagnosis has been corrected.
+
 Whole-product audit at commit `d28f3511c`: an hour of using the apps like a new user (Mac, then iPhone and iPad paired to that Mac, real models), plus seven static read-through lanes of the code. Two models did the work so the findings are not one model's taste: Claude lanes on the Mac views, session server, surfaces/extensions and Mac UX; GPT-6 Astra lanes on the remote protocol/iOS, iOS UX and the device parity matrix; the live run drove `openai-codex/gpt-6-astra` as the agent model. Nothing in the repo was changed by the audit except this folder.
 
 | File | What it holds | Labels |
@@ -22,7 +26,7 @@ Every lane report ends with an "already good" section (do not re-fix) and a "nee
 Shepherd's core loop is solid: a thread with tools, edits, tests, review and commit worked first try; 8 threads sent back to back all finished within a minute; quit was clean; relaunch restores lazily; the phone paired first try and round-tripped a message in 10 s. The bugs cluster in five places:
 
 1. **Onboarding and model resolution.** The first launch can import a default model that cannot start, a login that no longer works, and instructions the Settings page then shows as empty, and says "Done" with a green check for all of it (L1, L13, L9). "Default model" is resolved three different ways by threads, automations and projects (L12).
-2. **Things that look alive but are dead.** A restored terminal tab with no session (L22), a model picker disabled exactly when it is needed (L2), a subagent "waiting on parent" whose process died at relaunch (L20), a leaked editor glyph painted over other settings pages (L8), subagent profiles whose listed tools do not exist (L15).
+2. **Things that look alive but are dead.** A restored terminal tab with no session (L22), a model picker disabled exactly when it is needed (L2), a subagent "waiting on parent" whose process died at relaunch (L20), a leaked editor glyph painted over other settings pages (L8), subagent profiles whose search tools are stripped by parent-tool filtering (L15).
 3. **Server-queue and main-thread stalls under load.** Every Send waits on a whole-tree git snapshot (SS-01); every turn end re-projects the whole history on the server queue (SS-02); `pushMessage` waits on that queue from the main thread (SS-05); whole-state broadcasts fan out to every view on every status tick (MV-01, SS-09); screenshots and design exports encode on the main actor (SE-01, SE-02).
 4. **Memory.** ~150 MB per idle pi (L18), a paired phone waking every idle agent (L23, RI-05), the phone keeping every visited history forever (RI-02), the Mac growing 135 MB just from visiting Settings (L10).
 5. **Inconsistency across surfaces and devices.** The same action lives in one of four Mac menus with no overlap (L7, UM-06), ⌘-Return means "steer now" on the Mac and "queue" on an iPad keyboard (FP-01), names and statuses differ between Mac, iPhone and iPad for the same thread or design (live iOS notes), and the iOS app has no MCP, Spaces, subagent-profile or provider-recovery surface (FP-02, FP-05, FP-07, FP-16).
@@ -40,7 +44,7 @@ Ordered by how many users hit it times how bad it is. "Where" names the file in 
 | 3 | "Default model" = nil for automations and projects, so pi silently picks another provider's model; thread path hard-fails on the same setting | L12 |
 | 4 | Restored terminal tab on the Mac is a blank surface with no session; shell only spawns when a remote viewer attaches | L22 |
 | 5 | ⇧⌘W (Close Window in every other app) deletes the selected agent with no confirmation or undo | UM-01 |
-| 6 | Default scout/planner/reviewer profiles list `grep/find/ls`, which pi does not have; read-only children can only `read` | L15 |
+| 6 | Parent-tool filtering strips `grep/find/ls` from scout/planner/reviewer profiles; read-only children can only `read` | L15 |
 | 7 | Parent thread fails with "no answer or tool call" after `shepherd_child_start`, auto-retries 8×, child's question is orphaned | L16 |
 | 8 | Notifications are suppressed for the selected agent while Settings or any page covers it | UM-03 |
 | 9 | iOS can send a message before a picked photo finished importing; the image lands on the next message | UI-01 |
@@ -107,7 +111,7 @@ Ordered by how many users hit it times how bad it is. "Where" names the file in 
 
 - Make `isWatching` false while Settings or a page covers the thread (UM-03).
 - Route ⇧⌘W through the worktree-delete confirmation, or add the design-style undo toast (UM-01).
-- Replace the subagent profiles' `grep/find/ls` with `bash` or drop them, and validate profile tool names against pi's tool list at load (L15).
+- Permit pi's `grep/find/ls` in read-only children when the parent allows `read`, and report genuinely unknown profile tools (L15; original diagnosis corrected).
 - `Task.detached` around `BrowserImageClamp.encode` and the design export encoder (SE-01, SE-02).
 - Make `pushMessage(toAgent:)` async (SS-05).
 - Equality-gate and frame-pace `onStateChanged` in `adopt()` (MV-01).

@@ -71,8 +71,10 @@ The Anthropic OAuth copied from `~/.pi/agent` returns `invalid_grant` on first u
 ### L14. New automation sheet fields are unlabeled (LOW, accessibility)
 Name and Folder are `AXTextField`s with no label; Prompt and the On toggle are labeled.
 
-### L15. Default subagent profiles ask for tools pi does not have, so scouts can only read (HIGH)
-`shepherd_child_agents` lists `tools: [read, grep, find, ls]` for scout, planner and reviewer. pi has no grep/find/ls tools; the child silently gets `read` only (the audit's own worker lanes show `tools: ["read","bash","edit","write"]` with grep/find/ls dropped). A scout spawned from a thread reported "I only have file-read tools (no directory listing or shell)", failed `read` on the repo root with EISDIR and blocked on a question to its parent. Settings ▸ Subagents does not warn that a listed tool does not exist. (shot `38-subagent-retry.png`)
+### L15. Parent tool filtering strips search tools from read-only children (HIGH)
+`shepherd_child_agents` lists `tools: [read, grep, find, ls]` for scout, planner and reviewer. A scout spawned from a thread reported "I only have file-read tools (no directory listing or shell)", failed `read` on the repo root with EISDIR and blocked on a question to its parent. (shot `38-subagent-retry.png`)
+
+Correction from implementation: pi does provide `grep`, `find` and `ls`. Shepherd intersected the profile with the parent's active tools, which omitted these built-ins. The fix permits these read-only tools when the parent permits `read`, and reports genuinely unknown profile tool names. Replacing the profile tools with `bash`, as originally suggested, was unnecessary.
 
 ### L16. Parent thread dies with "The provider returned no answer or tool call" after starting a child (HIGH, reproduced twice with openai-codex/gpt-6-astra)
 After the `shepherd_child_start` result, the next assistant message was empty (`text:"" error` in the session file, rows 22–28). This is treated as a provider failure and retried 4 times in 20 s; the user's Retry did 4 more (8 tries, 1 m 20 s). The parent is now "failed", the child's question never reaches it, and the Subagents pane shows the child as "done · 3 turns" in the header and "Waiting on parent" in the list. Each retry appends a `shepherd.failed-checkpoint.v1` + `checkpoint-recovery.v1` pair to the session file. Needs a second model to decide whether it is model-specific; the retry policy spends 8 identical requests either way.
