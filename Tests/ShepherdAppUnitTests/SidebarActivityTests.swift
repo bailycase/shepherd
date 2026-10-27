@@ -205,7 +205,7 @@ struct SidebarActivityTests {
         #expect(completions.records[.local(agent.id)]?.completedAt == 20_000, "a later turn uses its own activity stamp")
     }
 
-    @Test func remoteReconnectKeepsSeenAndDetectsCatchUpAndDeletion() throws {
+    @Test func remoteReconnectKeepsSeenAndDetectsDeletion() throws {
         let host = UUID(), endpoint = UUID()
         var agent = Fixture.agent("remote", in: Fixture.space("workspace")).agent
         agent.status = .done
@@ -230,12 +230,9 @@ struct SidebarActivityTests {
         source.hosts[0].state.agents[0].lastActiveAt = 2000
         source.hosts[0].offline = false
         completions.reconcile(source, endpoints: [host: endpoint])
-        let second = try #require(completions.records[id]?.generation)
-        #expect(second != first)
-        completions.reconcile(source, endpoints: [host: endpoint])
-        #expect(completions.records[id]?.generation == second)
+        #expect(completions.records[id]?.generation == first, "activity alone after a reconnect is not a completion")
         completions.reconcile(source, endpoints: [host: UUID()])
-        #expect(completions.records[id]?.generation != second, "a changed endpoint is another host")
+        #expect(completions.records[id]?.generation != first, "a changed endpoint is another host")
         source.hosts[0].state.agents = []
         completions.reconcile(source, endpoints: [host: endpoint])
         #expect(completions.records[id] == nil)

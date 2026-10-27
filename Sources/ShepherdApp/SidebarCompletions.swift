@@ -14,7 +14,6 @@ struct SidebarCompletions: Equatable {
     private(set) var records: [SidebarRowID: Record] = [:]
     private var generation = 0
     private var endpoints: [UUID: UUID] = [:]
-    private var connected: Set<UUID> = []
 
     mutating func reconcile(_ source: SidebarSource, endpoints nextEndpoints: [UUID: UUID]) {
         let local = Set(source.local.agents.map(\.id))
@@ -32,7 +31,7 @@ struct SidebarCompletions: Equatable {
             let settled = runs[agent.id]?.settledAt
             observe(.local(agent.id), finished: agent.status == .done || (agent.status == .idle && settled != nil),
                     activity: agent.lastActiveAt, completedAt: agent.lastActiveAt ?? settled.map { $0 * 1000 }
-                        ?? source.statusSince[agent.id].map { $0.timeIntervalSince1970 * 1000 }, catchUp: false)
+                        ?? source.statusSince[agent.id].map { $0.timeIntervalSince1970 * 1000 })
         }
         for host in source.hosts where !host.offline {
             let live = Set(host.state.agents.map(\.id))
@@ -40,21 +39,19 @@ struct SidebarCompletions: Equatable {
                 if case .remote(let ref) = id, ref.hostID == host.id { return live.contains(ref.agentID) }
                 return true
             }
-            let catchUp = !connected.contains(host.id) || endpoints[host.id] != nextEndpoints[host.id]
             for agent in host.state.agents where host.state.isSidebarThread(agent) {
                 observe(.remote(.init(hostID: host.id, agentID: agent.id)), finished: agent.status == .done,
-                        activity: agent.lastActiveAt, completedAt: agent.lastActiveAt, catchUp: catchUp)
+                        activity: agent.lastActiveAt, completedAt: agent.lastActiveAt)
             }
         }
-        connected = Set(source.hosts.filter { !$0.offline }.map(\.id))
         endpoints = nextEndpoints
     }
 
-    private mutating func observe(_ id: SidebarRowID, finished: Bool, activity: Double?, completedAt: Double?, catchUp: Bool) {
+    private mutating func observe(_ id: SidebarRowID, finished: Bool, activity: Double?, completedAt: Double?) {
         let previous = records[id]
-        // ponytail: a changed stamp after a disconnect is a completion hint. A refused send
-        // while disconnected is indistinguishable; add a host completion token if exactness is required.
-        let newCompletion = finished && (previous?.finished != true || (catchUp && previous?.activity != activity))
+        // ponytail: observed status edges only. A whole run missed while a host was disconnected
+        // keeps its old generation (a seen thread stays seen); a host completion token would fix that.
+        let newCompletion = finished && previous?.finished != true
         if newCompletion { generation += 1 }
         records[id] = Record(finished: finished, activity: activity,
                              generation: newCompletion ? generation : previous?.generation ?? 0,
