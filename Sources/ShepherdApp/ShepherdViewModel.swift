@@ -1222,6 +1222,19 @@ final class ShepherdViewModel {
         }
     }
 
+    /// The thread stores follow the owner's state on every adoption, equal snapshot or not: a store is
+    /// cheap to check and "held off" also reads session liveness, which no snapshot carries.
+    private func reconcileThreadStores() {
+        // A Project's coordinator ID is recorded before its agent is registered, while its page already holds the store: keep it.
+        threadStores.prune(live: Set(state.agents.map(\.id)).union(state.projects.compactMap(\.coordinatorAgentID)))
+        // The owner's state, not a page's lifetime, says whether a coordinator's pi is held off on purpose: every adoption restates it.
+        for agent in state.projects.compactMap(\.coordinatorAgentID) {
+            guard let store = threadStores.existing(for: agent) else { continue }
+            let held = coordinatorHeldOff(agent)
+            if store.offline != held { store.offline = held }
+        }
+    }
+
     /// Adopt a server snapshot wholesale, keeping selection when IDs persist.
     func adopt(_ serverState: ShepherdState) {
         // The run log is current by the time a broadcast lands; it is the one thing a broadcast
@@ -1231,7 +1244,10 @@ final class ShepherdViewModel {
         // A status report and a checkout read each broadcast the whole workspace, equal or not.
         // Assigning `state` invalidates every view that read any part of it, so an equal snapshot
         // stops here: one `==` instead of the sidebar, workspace, menu and palette fan-out.
-        guard !didAdopt || state != serverState else { return }
+        guard !didAdopt || state != serverState else {
+            reconcileThreadStores()
+            return
+        }
         // A restored agent's last outcome, before any status report this run: the row reads
         // failed as it did at quit, not idle.
         for agent in serverState.agents where statusSince[agent.id] == nil && Self.persistedTurnFailed(agent) != failedTurns.contains(agent.id) {
@@ -1255,14 +1271,7 @@ final class ShepherdViewModel {
             checkMissingSpaces()
         }
         reconcileSidebarCompletions()
-        // A Project's coordinator ID is recorded before its agent is registered, while its page already holds the store: keep it.
-        threadStores.prune(live: Set(state.agents.map(\.id)).union(state.projects.compactMap(\.coordinatorAgentID)))
-        // The owner's state, not a page's lifetime, says whether a coordinator's pi is held off on purpose: every adoption restates it.
-        for agent in state.projects.compactMap(\.coordinatorAgentID) {
-            guard let store = threadStores.existing(for: agent) else { continue }
-            let held = coordinatorHeldOff(agent)
-            if store.offline != held { store.offline = held }
-        }
+        reconcileThreadStores()
         browsers.prune(state: state)
         notifyLocalQuestions()
         checkouts?.sync(agents: state.agents.map(\.id))
