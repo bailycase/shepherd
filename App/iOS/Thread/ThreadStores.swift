@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import ShepherdProtocol
 import ShepherdRemote
 
 /// One `NativeThreadStore` per agent, kept while the app runs, so a thread shown again keeps
@@ -22,6 +23,14 @@ final class ThreadStores {
         store.hostName = hostName?(ref)
         stores[ref] = store
         return store
+    }
+
+    /// The snapshot `ref`'s store holds while its thread is on screen and polling (`isLive`), for
+    /// Home to digest instead of asking the host again (`HomeFeed.openSnapshot`); nil for a thread
+    /// not open, whose store may be stale.
+    func liveSnapshot(for ref: AgentRef) -> NativeThreadSnapshot? {
+        guard let store = stores[ref], store.isLive else { return nil }
+        return store.snapshot
     }
 
     /// The views showing `ref`'s thread, which run its store's poll loop between them.

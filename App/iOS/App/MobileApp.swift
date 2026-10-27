@@ -42,6 +42,7 @@ final class MobileApp {
         HomeFeed.of(hosts).projectNative = { [projects] ref, request in
             try await projects.native(agent: ref, request: request)
         }
+        HomeFeed.of(hosts).openSnapshot = { [threads] ref in threads.liveSnapshot(for: ref) }
         glance = GlanceBridge(hosts: hosts, windows: windows)
     }
 

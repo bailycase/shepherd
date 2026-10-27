@@ -8,9 +8,13 @@ import ShepherdRemote
 /// automations, derived once per change (`FleetModel`) from each host's pushed state and one
 /// thread snapshot per agent that matters. Views read `model` and never derive rows.
 ///
-/// Snapshots are asked for only while a Home surface is on screen (`watch()`): every few
-/// seconds for agents that run, wait on the user, or have subagents still running
-/// (`FleetDigest.watches`; an unchanged thread costs one small answer), and once per connection for the rest, so Recents knows when each last moved.
+/// Snapshots are asked for only while a Home surface is on screen (`watch()`), and only for
+/// agents that run, wait on the user, or have subagents still running (`FleetDigest.watches`;
+/// an unchanged thread costs one small answer). A thread open on this device is read from its
+/// own store (`openSnapshot`) instead. The rest are never asked: a snapshot request starts the
+/// agent's pi on the host, and a paired phone must not wake every idle agent (L23); their rows
+/// come from the host's pushed state alone (`Agent.lastActiveAt`, `waitingOn`). Hosts are swept
+/// concurrently and each publishes as it finishes, so a slow host delays no other.
 @MainActor
 @Observable
 final class HomeFeed {
@@ -23,6 +27,8 @@ final class HomeFeed {
 
     @ObservationIgnored private let hosts: MobileHosts
     @ObservationIgnored var projectNative: ((AgentRef, NativeThreadRequest) async throws -> NativeThreadResult)?
+    /// The snapshot a thread store already holds for an agent (`ThreadStores`), when one does.
+    @ObservationIgnored var openSnapshot: ((AgentRef) -> NativeThreadSnapshot?)?
     @ObservationIgnored private var inputs: [FleetHost] = []
     @ObservationIgnored private var sessions: [UUID: UUID] = [:]
     @ObservationIgnored private var digests: [FleetRef: FleetDigest] = [:]
@@ -35,9 +41,6 @@ final class HomeFeed {
 
     /// Between polls of the threads that run or wait.
     static let interval: Duration = .seconds(3)
-    /// Threads read once per connection, at most this many per poll, so a host with many
-    /// agents is read a few at a time.
-    static let quietReadsPerPoll = 6
 
     private static var feeds: [ObjectIdentifier: HomeFeed] = [:]
 
@@ -122,57 +125,73 @@ final class HomeFeed {
         defer { refreshing = false }
         repeat {
             again = false
-            var changed = false
-            for host in hosts.hosts {
-                guard let client = host.connectedClient, let session = host.session,
-                      host.supports(RemoteProtocol.nativeThreadCapability) else { continue }
-                var quietReads = 0
-                // A design's agent has no thread row to read for (its design is the row).
-                for agent in host.state.agents where !host.state.isDesignAgent(agent) {
-                    let ref = FleetRef(host: host.id, agent: agent.id)
-                    let digest = digests[ref]
-                    let current = readIn[ref] == session
-                    let hot = FleetDigest.watches(status: agent.status, digest: digest)
-                    if !hot {
-                        if current || quietReads >= Self.quietReadsPerPoll { continue }
-                        quietReads += 1
-                    }
-                    let request = NativeThreadRequest.snapshot(afterRevision: current ? digest?.revision : nil)
-                    let result: NativeThreadResult
-                    do {
-                        result = try await native(ref.agentRef, client: client, request: request)
-                    } catch RemoteHostClientError.rejected(let code, _) where code != "native_limit" {
-                        // This thread has none to read yet (pi starting) or any more (pi gone): the
-                        // host's other threads still answer. A quiet one waits for the next connection.
-                        readIn[ref] = session
-                        continue
-                    } catch {
-                        // The connection is going, or the host asks for fewer requests; its host
-                        // reports a lost connection itself.
-                        break
-                    }
-                    guard hosts.host(host.id)?.session == session else { break }
-                    switch result {
-                    case .snapshot(let value):
-                        let next = FleetDigest(value)
-                        if next != digest {
-                            digests[ref] = next
-                            changed = true
-                        }
-                        readIn[ref] = session
-                    case .unchanged(let piSessionID, let generation, let revision):
-                        // Another session or generation: read the whole snapshot next time.
-                        if digest?.matches(piSessionID: piSessionID, generation: generation, revision: revision) != true {
-                            readIn[ref] = nil
-                        }
-                    case .failure, .accepted, .transcript, .imageChunk, .artifactChunk:
-                        // A thread still starting, or one that has none: try again next connection.
-                        readIn[ref] = session
+            // One sequential sweep per host, all hosts at once; each derives as it ends.
+            await withTaskGroup(of: Void.self) { group in
+                for host in hosts.hosts {
+                    group.addTask { @MainActor [weak self] in
+                        guard let self else { return }
+                        if await self.sweep(host) { self.derive() }
                     }
                 }
             }
-            if changed { derive() }
         } while again
+    }
+
+    /// Reads one host's threads that matter; true when a digest changed.
+    private func sweep(_ host: MobileHost) async -> Bool {
+        guard let client = host.connectedClient, let session = host.session,
+              host.supports(RemoteProtocol.nativeThreadCapability) else { return false }
+        var changed = false
+        // A design's agent has no thread row to read for (its design is the row).
+        for agent in host.state.agents where !host.state.isDesignAgent(agent) {
+            let ref = FleetRef(host: host.id, agent: agent.id)
+            let digest = digests[ref]
+            // A thread open on this device was read by its own store: Home takes that.
+            if let value = openSnapshot?(ref.agentRef) {
+                let next = FleetDigest(value)
+                if next != digest {
+                    digests[ref] = next
+                    changed = true
+                }
+                readIn[ref] = session
+                continue
+            }
+            guard FleetDigest.watches(status: agent.status, digest: digest) else { continue }
+            let current = readIn[ref] == session
+            let request = NativeThreadRequest.snapshot(afterRevision: current ? digest?.revision : nil)
+            let result: NativeThreadResult
+            do {
+                result = try await native(ref.agentRef, client: client, request: request)
+            } catch RemoteHostClientError.rejected(let code, _) where code != "native_limit" {
+                // This thread has none to read yet (pi starting) or any more (pi gone): the
+                // host's other threads still answer.
+                readIn[ref] = session
+                continue
+            } catch {
+                // The connection is going, or the host asks for fewer requests; its host
+                // reports a lost connection itself.
+                break
+            }
+            guard hosts.host(host.id)?.session == session else { break }
+            switch result {
+            case .snapshot(let value):
+                let next = FleetDigest(value)
+                if next != digest {
+                    digests[ref] = next
+                    changed = true
+                }
+                readIn[ref] = session
+            case .unchanged(let piSessionID, let generation, let revision):
+                // Another session or generation: read the whole snapshot next time.
+                if digest?.matches(piSessionID: piSessionID, generation: generation, revision: revision) != true {
+                    readIn[ref] = nil
+                }
+            case .failure, .accepted, .transcript, .imageChunk, .artifactChunk:
+                // A thread still starting, or one that has none: try again next connection.
+                readIn[ref] = session
+            }
+        }
+        return changed
     }
 
     // MARK: Answering
