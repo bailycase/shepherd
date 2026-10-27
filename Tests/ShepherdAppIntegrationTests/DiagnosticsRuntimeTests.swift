@@ -163,6 +163,8 @@ struct DiagnosticsRuntimeTests {
 
         diagnostics.recordResources(["app.rss_bytes": 1234, "sessions.total": 2, "PRIVATE_PROMPT_SENTINEL": 123,
                                      "pi.rss_bytes": .infinity, "pi.count": -1])
+        // Warning-level pressure is routine while agents build; it stays a sample, never an event.
+        diagnostics.recordResources(["app.rss_bytes": 1234, "system.pressure": 1])
         diagnostics.recordDuration("agent.start", seconds: 2)
         defaults.set(DiagnosticsGate.Kind.duration.limit, forKey: "shepherd.diagnostics.duration.count")
         diagnostics.recordDuration("agent.start", seconds: 4)
