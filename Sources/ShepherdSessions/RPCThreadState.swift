@@ -854,7 +854,10 @@ final class RPCThreadState {
                 diagnosticActivity("tool.failed", details: .init(category: .other, toolKind: .init(name: name)))
             }
             askingCalls.removeAll { $0.id == id }
-            if stopped { stoppedCalls.insert(id) }
+            if stopped {
+                if stoppedCalls.count >= Self.timingLimit, let any = stoppedCalls.first { stoppedCalls.remove(any) }
+                stoppedCalls.insert(id)
+            }
             upsertTool(id: id, name: name, args: nil, content: result?.content ?? [], isError: isError, status: stopped ? "aborted" : "complete", projectAction: result?.projectAction)
             onToolFinished?(name)
         case .queueUpdate(let steering, let followUp):
@@ -1988,7 +1991,10 @@ final class RPCThreadState {
             default: break
             }
         }
-        if hasThinking, thinkingSpans[key] == nil { thinkingSpans[key] = (now, nil) }
+        if hasThinking, thinkingSpans[key] == nil {
+            if thinkingSpans.count >= Self.timingLimit, let oldest = thinkingSpans.keys.min() { thinkingSpans[oldest] = nil }
+            thinkingSpans[key] = (now, nil)
+        }
         if var span = thinkingSpans[key], span.end == nil, answered || ended {
             span.end = now
             thinkingSpans[key] = span
@@ -1996,7 +2002,11 @@ final class RPCThreadState {
         if let span = thinkingSpans[key] {
             let seconds = ((span.end ?? now) - span.start) / 1000
             value.thinkingSeconds = seconds
-            if ended, let time = raw.timestamp { thinkingByTimestamp[time] = seconds }
+            if ended, let time = raw.timestamp {
+                if thinkingByTimestamp[time] == nil, thinkingByTimestamp.count >= Self.timingLimit,
+                   let oldest = thinkingByTimestamp.keys.min() { thinkingByTimestamp[oldest] = nil }
+                thinkingByTimestamp[time] = seconds
+            }
         }
         let existing = live.firstIndex(where: { $0.kind == .assistant(key) })
         value.timing = existing.flatMap { live[$0].value.timing } ?? raw.timestamp.flatMap { timingByTimestamp[$0] } ?? (key == requestKey ? request : nil)
@@ -2024,7 +2034,10 @@ final class RPCThreadState {
         value.argumentBytes = status == "streaming" ? argumentBytes ?? previous?.argumentBytes : nil
         // One clock for the call: from when the host first saw it, which is when the model named
         // it, through its run into history.
-        if toolStarts[id] == nil { toolStarts[id] = Date().timeIntervalSince1970 * 1000 }
+        if toolStarts[id] == nil {
+            if toolStarts.count >= Self.timingLimit, let oldest = toolStarts.min(by: { $0.value < $1.value })?.key { toolStarts[oldest] = nil }
+            toolStarts[id] = Date().timeIntervalSince1970 * 1000
+        }
         value.startedAt = toolStarts[id]
         if status == "complete", value.timestamp == nil { value.timestamp = Date().timeIntervalSince1970 * 1000 }
         if let index {

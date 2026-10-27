@@ -4946,6 +4946,10 @@ public final class SessionServer: @unchecked Sendable {
             let live = Set(state.agents.map(\.id))
             peerDeliveries = peerDeliveries.filter { live.contains($0.value.agentID) }
         }
+        if !retiredRPCSessions.isEmpty {
+            let bound = Set(state.tabs.flatMap { $0.layout.leaves.compactMap(\.sessionID) })
+            retiredRPCSessions = retiredRPCSessions.filter { bound.contains($0.key) }
+        }
         let oldWatchers = Set(before.automations.filter { $0.projectID != nil }.compactMap(\.agentID))
         for agent in before.agents where oldWatchers.contains(agent.id) && !state.agents.contains(where: { $0.id == agent.id }) {
             for tab in before.tabs where tab.id == agent.tabID || tab.inspectorFor == agent.id {
