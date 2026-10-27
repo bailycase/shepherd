@@ -173,6 +173,28 @@ struct YourPiFirstLaunchTests {
         #expect(covered.importSheet?.stage == .done)
     }
 
+    /// A default model Shepherd's pi has no model for (its provider is one of the user's switched-off
+    /// extensions registers): the sheet resolves it against pi's own catalog and asks for another,
+    /// holding agents on its provider; the pick goes to Settings ▸ Agents and settles the row.
+    @Test func aDefaultModelPiCannotStartIsAskedForAgainstTheCatalog() async throws {
+        try StubPi.installAsEngine()
+        let setup = try Setup()
+        defer { setup.remove() }
+        let model = YourPiModel(pi: setup.pi)
+        model.doneBeat = .zero
+        model.settingsDefaultModel = { "cpa/gpt-6-astra" }
+        let chosen = Locked<String?>(nil)
+        model.onDefaultChosen = { model in chosen.withValue { $0 = model } }
+        let hold = await model.runFirstLaunch()
+        let sheet = try #require(model.importSheet)
+        #expect(sheet.stage == .missing && hold == .agents(using: ["cpa"]))
+        #expect(sheet.unresolvedDefault == "cpa/gpt-6-astra" && sheet.missing.isEmpty && !sheet.allSignedIn)
+        #expect(sheet.catalog.contains("anthropic/claude-fixture-4"), "the menu offers what pi can start")
+        model.chooseDefault("anthropic/claude-fixture-4")
+        #expect(chosen.current == "anthropic/claude-fixture-4")
+        #expect(model.importSheet?.unresolvedDefault == nil && model.importSheet?.allSignedIn == true)
+    }
+
     /// While the sheet asks for a missing provider, restored agents that use it wait (the sidebar
     /// says "waiting") and the others start; Done or Skip for now starts the rest.
     @Test func agentsWaitingOnAMissingProviderStartWhenTheSheetCloses() async throws {
