@@ -172,8 +172,10 @@ keep the version for real breaks.
   every host: offline hosts with Retry, Needs you (questions
   and blocked threads, answered in place when short; a subagent's question is its parent's, so
   it is never here), Working, Done (with Mark all seen), Pinned, and Recents with host tags. `HomeFeed`
-  derives it once per change from each host's state and, while Home is on screen, the threads'
-  snapshots.
+  derives it once per change from each host's state and, while Home is on screen, the snapshots of
+  the threads that run, wait on you or have live subagents (and of any thread open on this
+  device, from its own store); an idle thread is never asked for one, since that would start its
+  pi on the host. Working and Done show their first eight rows, the rest on a screen of their own.
 - **Projects (`Projects/`):** lists the paired hosts' Projects, with conversations, questions,
   task transcripts, linked-space assignment, settings and read-only file previews. Create, rename,
   delete and send use the selected host's existing capabilities and revision checks. Drafts and
