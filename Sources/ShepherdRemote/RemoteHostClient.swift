@@ -108,7 +108,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     private var pendingEvents: [PushedEvent] = []
     private var deliveryInFlight = false
 
-    private static let requestTimeout: TimeInterval = 10
+    static let requestTimeout: TimeInterval = 10
     private static let maxQueuedWriteBytes = 8 * 1024 * 1024
 
     /// This connection's Browser tunnels (`RemoteProtocol.browserTunnelCapability`): opened on
@@ -540,6 +540,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         case .files, .fileRead: RemoteProtocol.filesCapability
         case .changesOverview, .changesList, .changesFile, .changesBranches, .changesPatch, .changesUndoTurn, .changesRedoTurn:
             RemoteProtocol.changesCapability
+        case .changesRevertFile: RemoteProtocol.changesRevertCapability
         default: RemoteProtocol.agentInspectionCapability
         }
     }
@@ -781,11 +782,13 @@ public final class RemoteHostClient: @unchecked Sendable {
                 code: "update_required", message: "Update Shepherd on the host to see its settings from here."
             )
         }
-        if case .change(.goalsEnabled) = request, !capabilities.contains(RemoteProtocol.goalExperimentCapability) {
-            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to toggle the Goals experiment.")
-        }
-        if case .change(.projectsEnabled) = request, !capabilities.contains(RemoteProtocol.projectsExperimentCapability) {
-            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to toggle the Projects experiment.")
+        if case .change(let change) = request, let needed = change.capability, !capabilities.contains(needed) {
+            let what = switch change {
+            case .goalsEnabled: "toggle the Goals experiment"
+            case .projectsEnabled: "toggle the Projects experiment"
+            default: "change this default"
+            }
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to \(what).")
         }
         let reply = try await self.request { .hostSettings(id: $0, request: request) }
         switch reply {
@@ -1050,7 +1053,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     // MARK: - Connection plumbing (client queue)
 
     /// Issue an id-correlated request and await its reply.
-    private func request(
+    func request(
         timeout: TimeInterval = RemoteHostClient.requestTimeout,
         connectionGeneration: UUID? = nil,
         _ make: @escaping (Int) -> RemoteRequest
@@ -1191,7 +1194,7 @@ public final class RemoteHostClient: @unchecked Sendable {
              .state(let id, _), .attached(let id, _),
              .dirListing(let id, _, _, _), .models(let id, _, _, _, _, _, _),
              .spaceAdded(let id, _), .agentCreated(let id, _), .automationResult(let id, _), .instructions(let id, _),
-             .suggestions(let id, _), .hostSettings(let id, _), .hostUpdate(let id, _), .skills(let id, _), .projects(let id, _), .logicalProjects(let id, _), .logicalProjectRuntime(let id, _), .projectExecution(let id, _), .design(let id, _),
+             .suggestions(let id, _), .hostSettings(let id, _), .hostInventory(let id, _), .hostUpdate(let id, _), .skills(let id, _), .projects(let id, _), .logicalProjects(let id, _), .logicalProjectRuntime(let id, _), .projectExecution(let id, _), .design(let id, _),
              .browserClaimed(let id, _):
             resumePending(id: id, with: reply)
         case .error(let id, _, _):

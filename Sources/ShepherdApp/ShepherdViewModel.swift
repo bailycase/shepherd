@@ -848,6 +848,7 @@ final class ShepherdViewModel {
         self.settings.onDesignToolChange = { [weak server] on in server?.setDesignsServed(on) }
         installRemoteInspection()
         installHostSettings()
+        installHostInventory()
         installCompactionThreshold()
         server.onRemoteAgentAction = { [weak self] agentID, action, completion in
             Task { @MainActor in

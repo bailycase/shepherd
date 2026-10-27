@@ -42,6 +42,16 @@ public struct HostSettings: Codable, Hashable, Sendable {
     /// The model a new agent starts with; nil for pi's own default.
     public var defaultModel: String?
     public var defaultThinking: ThinkingLevel
+    /// Settings ▸ Agents ▸ Speed for new threads (`hostSettingsAgentDefaultsCapability`, with the
+    /// two below). Older hosts omit it, which reads as Standard.
+    public var defaultServiceTier: ServiceTier
+    /// Settings ▸ Agents ▸ Session naming model; nil for Automatic.
+    public var namingModel: String?
+    /// Settings ▸ Agents ▸ Compact at: a share of the model's window (`compactAtChoices`); nil
+    /// for pi's own default.
+    public var compactAtPercent: Int?
+    /// The shares Compact at offers, as the Mac's Settings does.
+    public static let compactAtChoices = [60, 70, 80, 90]
     /// When a turn ends, the queue goes one message per turn or all at once.
     public var queueDelivery: NativeQueueMode
     /// Explicit consent for goal checks to use another provider, for agents started afterwards.
@@ -68,7 +78,9 @@ public struct HostSettings: Codable, Hashable, Sendable {
     public var updateExtensionsDaily: Bool
 
     public init(shepherdVersion: String? = nil, piVersion: String? = nil,
-                defaultModel: String? = nil, defaultThinking: ThinkingLevel = .medium, queueDelivery: NativeQueueMode = .all,
+                defaultModel: String? = nil, defaultThinking: ThinkingLevel = .medium,
+                defaultServiceTier: ServiceTier = .standard, namingModel: String? = nil, compactAtPercent: Int? = nil,
+                queueDelivery: NativeQueueMode = .all,
                 goalCrossProviderEvaluation: Bool = false, goalsEnabled: Bool = false, projectsEnabled: Bool = false,
                 worktreeBase: WorktreeBase = .fresh, fetchBeforeCreating: Bool = true, commitRemainingWork: Bool = true,
                 generatePRDescriptions: Bool = true, deleteLocalBranch: Bool = true, mergePRAutomatically: Bool = false,
@@ -79,6 +91,9 @@ public struct HostSettings: Codable, Hashable, Sendable {
         self.piVersion = piVersion
         self.defaultModel = defaultModel
         self.defaultThinking = defaultThinking
+        self.defaultServiceTier = defaultServiceTier
+        self.namingModel = namingModel
+        self.compactAtPercent = compactAtPercent
         self.queueDelivery = queueDelivery
         self.goalCrossProviderEvaluation = goalCrossProviderEvaluation
         self.goalsEnabled = goalsEnabled
@@ -97,7 +112,8 @@ public struct HostSettings: Codable, Hashable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case shepherdVersion, piVersion, defaultModel, defaultThinking, queueDelivery, goalCrossProviderEvaluation, goalsEnabled, projectsEnabled
+        case shepherdVersion, piVersion, defaultModel, defaultThinking, defaultServiceTier, namingModel, compactAtPercent
+        case queueDelivery, goalCrossProviderEvaluation, goalsEnabled, projectsEnabled
         case worktreeBase, fetchBeforeCreating, commitRemainingWork, generatePRDescriptions
         case deleteLocalBranch, mergePRAutomatically, mergeMethod, bundledExtensions, installedExtensions
         case updatePiDaily, updateExtensionsDaily
@@ -109,6 +125,10 @@ public struct HostSettings: Codable, Hashable, Sendable {
         piVersion = try c.decodeIfPresent(String.self, forKey: .piVersion)
         defaultModel = try c.decodeIfPresent(String.self, forKey: .defaultModel)
         defaultThinking = try c.decode(ThinkingLevel.self, forKey: .defaultThinking)
+        // A tier this client does not know reads as Standard.
+        defaultServiceTier = (try? c.decodeIfPresent(ServiceTier.self, forKey: .defaultServiceTier)) ?? nil ?? .standard
+        namingModel = try c.decodeIfPresent(String.self, forKey: .namingModel)
+        compactAtPercent = try c.decodeIfPresent(Int.self, forKey: .compactAtPercent)
         queueDelivery = try c.decode(NativeQueueMode.self, forKey: .queueDelivery)
         goalCrossProviderEvaluation = try c.decodeIfPresent(Bool.self, forKey: .goalCrossProviderEvaluation) ?? false
         goalsEnabled = try c.decodeIfPresent(Bool.self, forKey: .goalsEnabled) ?? false
@@ -131,6 +151,9 @@ public struct HostSettings: Codable, Hashable, Sendable {
         switch change {
         case .defaultModel(let model): defaultModel = model
         case .defaultThinking(let level): defaultThinking = level
+        case .defaultServiceTier(let tier): defaultServiceTier = tier
+        case .namingModel(let model): namingModel = model
+        case .compactAtPercent(let percent): compactAtPercent = percent
         case .queueDelivery(let mode): queueDelivery = mode
         case .goalCrossProviderEvaluation(let on): goalCrossProviderEvaluation = on
         case .goalsEnabled(let on): goalsEnabled = on
@@ -155,6 +178,13 @@ public enum HostSettingChange: Codable, Hashable, Sendable {
     /// nil for pi's own default.
     case defaultModel(String?)
     case defaultThinking(ThinkingLevel)
+    /// The three below need `RemoteProtocol.hostSettingsAgentDefaultsCapability`; an older host
+    /// refuses them as unknown.
+    case defaultServiceTier(ServiceTier)
+    /// nil for Automatic.
+    case namingModel(String?)
+    /// One of `HostSettings.compactAtChoices`, or nil for pi's own default.
+    case compactAtPercent(Int?)
     case queueDelivery(NativeQueueMode)
     case goalCrossProviderEvaluation(Bool)
     case goalsEnabled(Bool)
@@ -170,6 +200,17 @@ public enum HostSettingChange: Codable, Hashable, Sendable {
     case bundledExtension(id: String, on: Bool)
     case updatePiDaily(Bool)
     case updateExtensionsDaily(Bool)
+
+    /// The capability a host must advertise, beyond `hostSettingsCapability`, before the change is
+    /// sent to it; nil when none.
+    public var capability: String? {
+        switch self {
+        case .goalsEnabled: RemoteProtocol.goalExperimentCapability
+        case .projectsEnabled: RemoteProtocol.projectsExperimentCapability
+        case .defaultServiceTier, .namingModel, .compactAtPercent: RemoteProtocol.hostSettingsAgentDefaultsCapability
+        default: nil
+        }
+    }
 }
 
 /// Settings on a remote host (`RemoteProtocol.hostSettingsCapability`). Every request answers

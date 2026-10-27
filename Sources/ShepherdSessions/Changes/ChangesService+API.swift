@@ -167,6 +167,9 @@ extension ChangesService {
             return .changesTurn(try await undoTurn(agentID: agentID, turnID: turnID))
         case .changesRedoTurn(let turnID):
             return .changesTurn(try await redoTurn(agentID: agentID, turnID: turnID))
+        case .changesRevertFile(let revision, let path, let oldPath):
+            try await revertFile(agentID: agentID, revision: revision, path: path, oldPath: oldPath)
+            return .ok
         default:
             throw ChangesError(ChangesError.invalid, "Not a changes query.")
         }
