@@ -55,6 +55,8 @@ extension MobileLayout {
     /// The Memory section's instructions editor.
     static let projectInstructionsMinHeight: CGFloat = 160
     static let projectPromptMinHeight: CGFloat = 120
+    /// The most pixels a Files preview decodes an image to: an iPad's full-width List at 2x.
+    static let projectFilePreviewPixels = CGSize(width: 2048, height: 2048)
 }
 
 /// A thread's turns as the transcript draws them for a Project: a key no ordinary-thread route
