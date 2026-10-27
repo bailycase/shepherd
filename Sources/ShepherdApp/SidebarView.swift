@@ -274,12 +274,13 @@ private struct RemoteRowMenu: View {
 
 /// The status language's words for an agent row.
 enum AgentRow {
-    /// A finished agent whose turn ended in an error reads failed.
+    /// A finished agent whose turn ended in an error reads failed; so does one restored idle
+    /// with that failure remembered (`Agent.lastFailure`).
     static func statusWord(_ status: AgentStatus, turnFailed: Bool = false) -> String {
         switch status {
         case .working: "running"
         case .blocked: "needs you"
-        case .idle: "idle"
+        case .idle: turnFailed ? "failed" : "idle"
         case .done: turnFailed ? "failed" : "done"
         }
     }
@@ -294,7 +295,7 @@ enum AutomationRow {
         return switch agent.status {
         case .blocked: "needs you"
         case .working, .idle, .done:
-            if isLive(agent, run: run) { "running" } else { turnFailed && agent.status == .done ? "failed" : "done" }
+            if isLive(agent, run: run) { "running" } else { turnFailed ? "failed" : "done" }
         }
     }
 
@@ -308,7 +309,7 @@ enum AutomationRow {
         guard let agent else { return .idle }
         if agent.status == .blocked { return .attention }
         if isLive(agent, run: run) { return .running }
-        return turnFailed && agent.status == .done ? .failed : .done
+        return turnFailed ? .failed : .done
     }
 }
 

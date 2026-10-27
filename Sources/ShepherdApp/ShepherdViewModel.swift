@@ -228,8 +228,8 @@ final class ShepherdViewModel {
     /// When each agent entered its current status this run: the sidebar's running elapsed
     /// time. Ephemeral; an agent restored at launch counts from its first report.
     var statusSince: [AgentID: Date] = [:]
-    /// Agents whose last turn ended in an error: done, but their sidebar row reads failed.
-    /// Ephemeral, like the status it qualifies.
+    /// Agents whose last turn ended in an error: done, but their sidebar row reads failed. An
+    /// agent restored idle with `Agent.lastFailure` reads failed too, until a turn starts.
     var failedTurns: Set<AgentID> = []
     /// Agents whose pi stopped before it served, waiting for Retry: their sidebar row reads "can't
     /// start" (docs/design/thread.md › Thread › Can't start). Ephemeral: a relaunch starts every pi again.
@@ -1340,7 +1340,9 @@ final class ShepherdViewModel {
             }
             // A turn starting or ending may have changed files.
             if old != status { checkouts?.refresh(id, after: .milliseconds(300)) }
-            let failed = status == .done && failure != nil
+            // A session (re)start reports idle; the server still remembers the failure until a
+            // turn starts, so the row keeps reading failed.
+            let failed = status == .done ? failure != nil : status == .idle && Self.persistedTurnFailed(state.agents[index])
             // pi said a subscription's refresh failed: Sign-in says it expired.
             if let message = failure?.message { piAuth.noteTurnError(message, provider: provider(of: id)) }
             if failed != failedTurns.contains(id) {
@@ -1350,11 +1352,10 @@ final class ShepherdViewModel {
         }
     }
 
-    /// Whether the server kept the agent's last turn as failed across a relaunch. The persisted
-    /// field is the sessions side's; until it lands, nothing is remembered. One line to wire:
-    /// return the agent's field here.
+    /// Whether the server kept the agent's last turn (or start problem) as failed across a
+    /// relaunch: `Agent.lastFailure`, cleared when a turn starts or ends well.
     static func persistedTurnFailed(_ agent: Agent) -> Bool {
-        false
+        agent.lastFailure != nil
     }
 
     /// Runs the ChildRuns TTL/staleness sweep only while rows exist; the
