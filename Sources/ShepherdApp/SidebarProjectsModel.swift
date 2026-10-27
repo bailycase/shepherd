@@ -382,7 +382,8 @@ private struct TreeBuilder {
         let visible = Set(projectSpaces.map(\.id))
         let runs = Dictionary(state.automations.compactMap { automation in automation.agentID.map { ($0, automation) } },
                               uniquingKeysWith: { first, _ in first })
-        for (index, agent) in state.agents.enumerated() where agent.designID == nil && !state.isProjectCoordinator(agent) && !state.isProjectWorker(agent.id) {
+        let workers = state.projectWorkerIDs
+        for (index, agent) in state.agents.enumerated() where agent.designID == nil && !state.isProjectCoordinator(agent) && !workers.contains(agent.id) {
             let automation = runs[agent.id]
             let project: SpaceID?
             if visible.contains(agent.spaceID) {
@@ -437,7 +438,8 @@ private struct TreeBuilder {
         }
         let runs = Dictionary(state.automations.compactMap { automation in automation.agentID.map { ($0, automation) } },
                               uniquingKeysWith: { first, _ in first })
-        for (index, agent) in state.agents.enumerated() where state.isSidebarThread(agent) && agent.designID == nil {
+        let workers = state.projectWorkerIDs
+        for (index, agent) in state.agents.enumerated() where state.isSidebarThread(agent, workers: workers) && agent.designID == nil {
             let automation = runs[agent.id]
             var project = projectOf[agent.spaceID]
             if project == nil, let automation,

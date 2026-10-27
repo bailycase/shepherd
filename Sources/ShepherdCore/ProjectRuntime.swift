@@ -195,8 +195,20 @@ public extension ShepherdState {
             || projectExecutions.contains { $0.assignment?.reservedWorkerID == id }
             || agents.contains { $0.id == id && ($0.executionFor != nil || $0.projectWorkerFor.map { project in projects.contains { $0.id == project } } == true) }
     }
+    /// Every worker's id at once (`isProjectWorker` per agent walks projects, executions and agents each time): build it once
+    /// per pass over the agents, then ask `isSidebarThread(_:workers:)`.
+    var projectWorkerIDs: Set<AgentID> {
+        var ids = Set<AgentID>()
+        for project in projects { for task in project.tasks { ids.insert(task.workerAgentID) } }
+        for execution in projectExecutions { if let id = execution.assignment?.reservedWorkerID { ids.insert(id) } }
+        let projectIDs = Set(projects.map(\.id))
+        for agent in agents where agent.executionFor != nil || agent.projectWorkerFor.map(projectIDs.contains) == true { ids.insert(agent.id) }
+        return ids
+    }
     /// What the sidebar lists as a thread of its own: an ordinary thread no Project started.
     func isSidebarThread(_ agent: Agent) -> Bool { isOrdinaryThread(agent) && !isProjectWorker(agent.id) }
+    /// `isSidebarThread` with the workers already gathered (`projectWorkerIDs`), for a loop over every agent.
+    func isSidebarThread(_ agent: Agent, workers: Set<AgentID>) -> Bool { isOrdinaryThread(agent) && !workers.contains(agent.id) }
     var withoutProjectCoordinators: ShepherdState {
         var copy = self
         let ids = Set(agents.filter { $0.coordinatorFor != nil }.map(\.id))

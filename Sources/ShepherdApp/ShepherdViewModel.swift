@@ -425,6 +425,8 @@ final class ShepherdViewModel {
     /// Agent pending delete confirmation (sheet in RootView): deleting stops a run and drops the
     /// thread from the sidebar with nothing to bring it back, so it always confirms.
     var agentDeleteTarget: AgentID?
+    /// The last `WorkspaceSelection` and its mounted layouts (`resolvedMountedTabs`).
+    @ObservationIgnored var mountedTabsCache: (selection: WorkspaceSelection, tabs: [Tab])?
     /// A confirmed deletion runs after its sheet has dismissed (`sheet(item:onDismiss:)`):
     /// tearing a mounted layout down mid-dismissal wedges the modal session.
     @ObservationIgnored var afterDialogDismiss: (@MainActor () -> Void)?

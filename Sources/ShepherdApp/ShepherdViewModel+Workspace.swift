@@ -24,6 +24,16 @@ extension ShepherdViewModel {
         )
     }
 
+    /// `mountedTabs` for the current inputs, built once per change: the workspace body, the
+    /// parking sweep and the launch mounter each ask on every render.
+    private var resolvedMountedTabs: [Tab] {
+        let selection = workspaceSelection
+        if let cached = mountedTabsCache, cached.selection == selection { return cached.tabs }
+        let tabs = selection.mountedTabs
+        mountedTabsCache = (selection, tabs)
+        return tabs
+    }
+
     // MARK: Mounting at launch
 
     /// Layouts mounted per run-loop turn once the first frame is up.
@@ -120,7 +130,7 @@ extension ShepherdViewModel {
     }
 
     /// Every layout the workspace keeps mounted (see `WorkspaceSelection`).
-    var mountedTabs: [Tab] { workspaceSelection.mountedTabs }
+    var mountedTabs: [Tab] { resolvedMountedTabs }
 
     /// The visible layout's id, without copying a `Tab`.
     var activeTabID: TabID? { workspaceSelection.activeTabID }
