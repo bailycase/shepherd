@@ -62,6 +62,9 @@ struct AgentStartFailure: Error, CustomStringConvertible {
 @Observable
 final class ShepherdViewModel {
     var state: ShepherdState
+    @ObservationIgnored lazy var missions = MissionController(vm: self)
+    /// The sidebar's "New mission" was pressed; the Missions page opens its start page and clears it.
+    var missionStartRequested = false
     @ObservationIgnored lazy var projectCoordinator = ProjectCoordinatorController(vm: self)
     var selectedSpaceID: SpaceID?
     /// This Mac's spaces whose folder is gone (`checkMissingSpaces`): the sidebar marks them and
@@ -1162,7 +1165,7 @@ final class ShepherdViewModel {
         // A Project's coordinator ID is recorded before its agent is registered, while its page already holds the store: keep it.
         threadStores.prune(live: Set(state.agents.map(\.id)).union(state.projects.compactMap(\.coordinatorAgentID)))
         // The owner's state, not a page's lifetime, says whether a coordinator's pi is held off on purpose: every adoption restates it.
-        for agent in state.projects.compactMap(\.coordinatorAgentID) {
+        for agent in state.projects.compactMap(\.coordinatorAgentID) + state.missions.flatMap({ $0.run?.attempts.compactMap(\.agentID) ?? [] }) {
             guard let store = threadStores.existing(for: agent) else { continue }
             let held = coordinatorHeldOff(agent)
             if store.offline != held { store.offline = held }

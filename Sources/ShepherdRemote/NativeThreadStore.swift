@@ -302,6 +302,8 @@ public final class NativeThreadStore {
     @ObservationIgnored private var startWaiters: [CheckedContinuation<Bool, Never>] = []
     @ObservationIgnored private var settleTask: Task<Void, Never>?
     @ObservationIgnored private var epoch = UUID()
+    /// Which view's loop is running (`run(owner:)`), nil for a caller that names none.
+    @ObservationIgnored private var owner: UUID?
     /// Actions (their operation ids) the host has not answered yet, and those of them a suspension
     /// reported as "outcome unknown" meanwhile: the host's answer, when it comes, settles that
     /// notice (`perform`).
@@ -758,9 +760,13 @@ public final class NativeThreadStore {
     // The view's foreground task owns this loop, while the thread is on screen. Reconnection
     // always starts without a revision.
     /// `preview` is read alongside the first pull while the thread has nothing to show yet.
-    public func run(request: @escaping Request, preview: Preview? = nil) async {
+    /// `owner`: the view whose loop this is. Several views can show one agent's store (a hidden deck thread
+    /// and a Mission station's): the newest one's loop runs, and only that owner's `suspend(owner:)` or
+    /// `stop(owner:)` ends it.
+    public func run(request: @escaping Request, preview: Preview? = nil, owner: UUID? = nil) async {
         guard !Task.isCancelled else { return }
         suspend()
+        self.owner = owner
         let run = epoch
         self.request = request
         images.configure(sessionID: snapshot?.piSessionID, fetch: request)
@@ -885,6 +891,18 @@ public final class NativeThreadStore {
 
     /// Detaches the store from its host (an error, a pruned agent, a view that went away): as
     /// `suspend`, and nothing is ready or running until it polls again.
+    /// Suspends only the loop `owner` started; another view's loop keeps running.
+    public func suspend(owner: UUID) {
+        guard self.owner == owner else { return }
+        suspend()
+    }
+
+    /// Stops only when `owner` runs the loop (or none does): a view leaving never stops another's.
+    public func stop(owner: UUID) {
+        guard self.owner == owner || request == nil else { return }
+        stop()
+    }
+
     public func stop() {
         suspend()
         if ready { ready = false }

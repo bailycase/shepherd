@@ -187,7 +187,8 @@ struct SettingsView: View {
         case .keyboard: KeyboardSettings(vm: vm)
         case .advanced: AdvancedSettings(vm: vm)
         case .experiments:
-            ExperimentsSettings(model: vm.suggestions, instructions: vm.instructions, settings: vm.settings) { vm.settingsSection = .instructions }
+            ExperimentsSettings(model: vm.suggestions, instructions: vm.instructions, settings: vm.settings,
+                                missionsActive: vm.state.missions.contains { $0.run?.phase.active == true }) { vm.settingsSection = .instructions }
         }
     }
 

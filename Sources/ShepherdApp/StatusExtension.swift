@@ -117,6 +117,7 @@ enum StatusExtension {
         browserExtensionPath: String? = nil,
         contextExtensionPath: String? = nil,
         projectContext: (path: String, json: String, coordinator: Bool)? = nil,
+        specKit: MissionSpecKitLaunch? = nil,
         deferTools: Bool = false,
         userHome: String = NSHomeDirectory(),
         model: String?,
@@ -124,6 +125,13 @@ enum StatusExtension {
     ) throws -> SessionCommand {
         // A design's agent reads its design with its own tools: never references.
         let designReferences = design == nil ? designReferences : nil
+        // ponytail: compatibility blocker, not a final restriction. Mission limits read the parent's
+        // own stats, which do not include native children or relayed `pi -p` runs, so a Spec Kit
+        // mission agent gets no delegation tools and nested print-mode pi is refused outright
+        // (never a standalone fallback). Remove once descendants bill the mission's run.
+        let panesExtensionPath = specKit == nil ? panesExtensionPath : nil
+        let childrenExtensionPath = specKit == nil ? childrenExtensionPath : nil
+        let subagentsExtensionPath = specKit == nil ? subagentsExtensionPath : nil
         // Nor does it get the browser: that is a thread's own page.
         let browserExtensionPath = design == nil ? browserExtensionPath : nil
         // Nor are its tools deferred: it works from all of them (docs/context-budget.md, Deferred tools).
@@ -140,7 +148,8 @@ enum StatusExtension {
         }
         let line = try PiLaunch.agent(home: home, cwd: cwd, sessionID: piSessionID, model: model, thinking: thinking?.rawValue,
                                       extensions: extensions, untrustedProject: PiLaunch.isHomeFolder(cwd, userHome: userHome),
-                                      coordinator: projectContext?.coordinator == true)
+                                      coordinator: projectContext?.coordinator == true,
+                                      promptTemplates: specKit.map { [$0.promptDirectory] } ?? [])
         var env = [
             "SHEPHERD_AGENT_ID": agentID.rawValue,
             "SHEPHERD_SOCKET": socketPath,
@@ -194,6 +203,10 @@ enum StatusExtension {
             }
         }
         if let model { env["SHEPHERD_MODEL"] = model }
+        // Upstream's documented override for the stock scripts; `.specify/feature.json` is ignored by Git,
+        // so a fresh mission worktree has no pointer to a feature the mission already owns.
+        if let feature = specKit?.featureDirectory { env["SPECIFY_FEATURE_DIRECTORY"] = feature }
+        if specKit != nil { env["SHEPHERD_CLI_DENIED"] = "1" }
         return SessionCommand(argv: line.argv, env: env)
     }
     static var extensionSource: String { EmbeddedExtensions.source("shepherd-status.ts") }

@@ -657,6 +657,7 @@ final class TerminalSessionStore {
                                         project: state.projectContext(for: agent.id),
                                         suggestFiles: suggestionFiles(isAutomation: isAutomation),
                                         modelOverride: modelOverrides.removeValue(forKey: agent.id),
+                                        specKit: state.specKitLaunch(for: agent.id, cwd: cwd),
                                         mcp: { [mcpLaunch] in try mcpLaunch()?.sharingProject(parent, agent: agent, cwd: cwd, state: state, verifiedWorktree: verifiedWorktree) })
             // A forked transcript resumes: pi not finding it is a start problem, never a new session.
             let resuming = fresh ? nil : agent.effectivePiSessionID
@@ -889,6 +890,13 @@ final class TerminalSessionStore {
             // this same PaneSession. Spawning here too put two pi processes
             // in one pane.
             if reservedPanes.contains(session.paneID) { return false }
+            if let agentID = pane.agentID, server.state.isMissionAgent(agentID) {
+                // Mission dispatch creates new attempt sessions explicitly. Restoring or viewing
+                // an old attempt must never restart its tools or replay its opening prompt.
+                session.phase = .stopped
+                onAgentStopped?(agentID, nil, true)
+                return false
+            }
 
             // No live binding: an agent's primary pane comes back as `pi --mode rpc` (rebuilt
             // from the agent record, resuming its pi session), everything else as a login
@@ -1113,6 +1121,7 @@ final class TerminalSessionStore {
     private static func rpcAgentCommand(for agent: Agent, cwd: String, pi: PiSetup, sessionIsFresh: Bool, isAutomation: Bool = false,
                                         project: Project? = nil,
                                         suggestFiles: [InstructionFile] = [], modelOverride: String? = nil,
+                                        specKit: MissionSpecKitLaunch? = nil,
                                         mcp: () throws -> MCPLaunch?) throws -> SessionCommand {
         let settings = AppSettings.shared
         return try StatusExtension.command(
@@ -1144,6 +1153,7 @@ final class TerminalSessionStore {
             browserExtensionPath: Self.wantsBrowser(for: agent, enabled: settings.piBrowserExtension) ? try BrowserExtension.installedPath() : nil,
             contextExtensionPath: settings.trimToolOutput ? try ContextExtension.installedPath() : nil,
             projectContext: try project.map { (try ProjectContextExtension.installedPath(), try ProjectContextExtension.context($0), agent.coordinatorFor != nil) },
+            specKit: specKit,
             deferTools: settings.deferTools,
             userHome: pi.userHome,
             // Use another model (an agent not signed in): its next start takes the model picked.

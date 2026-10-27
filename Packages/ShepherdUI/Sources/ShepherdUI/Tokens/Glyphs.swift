@@ -18,6 +18,10 @@ public enum NWGlyph: CaseIterable, Sendable {
     case fastBolt
     /// An automation: the outline bolt. The sidebar, Automations and the iOS home's bolt.
     case automation
+    /// Mission repository swimlanes (NavMissions, MXMap).
+    case mission
+    /// A mission lane's repository: lane chips, lane headers and the brief (NavMissions, MXMap).
+    case repository
     /// A remote host: Settings and the command palette's outward radio waves.
     case remoteConnection
     /// A popup's up-down pair (ProjectLead-Settings*, the Settings boards' dropdowns): the outline chevrons, never `chevron.down`.
@@ -43,6 +47,8 @@ public enum NWGlyph: CaseIterable, Sendable {
         switch self {
         case .fastBolt: "bolt.fill"
         case .automation: "bolt"
+        case .mission: "map"
+        case .repository: "book.closed"
         case .remoteConnection: "dot.radiowaves.left.and.right"
         case .popupChevrons: "chevron.up.chevron.down"
         case .document: "doc.text"

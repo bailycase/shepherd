@@ -85,10 +85,10 @@ extension NWChoiceRow where Trailing == EmptyView {
         VStack(alignment: .leading, spacing: NW.Space.l) {
             NWGroupCard {
                 NWChoiceRow("shepherd", detail: "~/code/shepherd", selected: true) {
-                    Image(systemName: "book.closed").foregroundStyle(Color.nw.textSecondary)
+                    NWGlyph.repository.image.foregroundStyle(Color.nw.textSecondary)
                 }
                 NWChoiceRow("orders-svc", detail: "on build-01") {
-                    Image(systemName: "book.closed").foregroundStyle(Color.nw.textSecondary)
+                    NWGlyph.repository.image.foregroundStyle(Color.nw.textSecondary)
                 }
             }
             NWGroupCard {

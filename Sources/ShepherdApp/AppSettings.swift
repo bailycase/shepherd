@@ -100,6 +100,7 @@ final class AppSettings {
         static let goalsEnabled = "shepherd.experiments.goals"
         static let projectsEnabled = "shepherd.experiments.projects"
         static let designToolEnabled = "shepherd.experiments.designTool"
+        static let missionsEnabled = "shepherd.experiments.missions"
         static let implementOpensThread = "shepherd.designs.implementOpensThread"
 
         static let all = [
@@ -116,7 +117,7 @@ final class AppSettings {
             worktreeDeleteLocalBranch, worktreeAutoMergePR,
             worktreeMergeMethod, skillsInSlashMenu, hiddenSlashCommands,
             mcpProjectConfig, mcpSameEverywhere,
-            goalsEnabled, projectsEnabled, designToolEnabled, implementOpensThread,
+            goalsEnabled, projectsEnabled, designToolEnabled, missionsEnabled, implementOpensThread,
             filesWordWrap, filesMarkdownPreview,
         ]
 
@@ -479,6 +480,13 @@ final class AppSettings {
     }
     @ObservationIgnored var onProjectsChange: ((Bool) -> Void)?
 
+    /// Settings ▸ Experiments ▸ Missions: the Missions destination and its sidebar section. Off by
+    /// default, as every experiment. Off hides them only: missions, their worktrees and receipts are
+    /// kept, and their threads stay out of the thread lists.
+    var missionsEnabled: Bool {
+        didSet { store.set(missionsEnabled, forKey: Key.missionsEnabled) }
+    }
+
     /// Settings ▸ Experiments ▸ Design tool: the Designs destination, design rows in Recents,
     /// and New thread's "Start a design". Off by default; designs made while it was on keep
     /// their files and agents while it is off.
@@ -576,6 +584,7 @@ final class AppSettings {
         worktreeMergeMethod = store.string(forKey: Key.worktreeMergeMethod)
             .flatMap(WorktreeMergeMethod.init(rawValue:)) ?? .squash
         designToolEnabled = store.bool(forKey: Key.designToolEnabled)
+        missionsEnabled = store.bool(forKey: Key.missionsEnabled)
         implementOpensThread = store.object(forKey: Key.implementOpensThread) as? Bool ?? true
     }
 
@@ -663,6 +672,7 @@ final class AppSettings {
         worktreeAutoMergePR = false
         worktreeMergeMethod = .squash
         designToolEnabled = false
+        missionsEnabled = false
         implementOpensThread = true
         // Then clear the store, so an unset preference reads as "never
         // configured" and follows a future change of default.

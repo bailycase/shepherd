@@ -70,6 +70,11 @@ struct ThreadView: View {
     @Environment(\.designGitChat) private var designGitChat
     /// A Project conversation or one of its worker threads: the boards space the column at 16pt, not an ordinary thread's 28 and 14.
     private var leadColumn: Bool { projectSend != nil || workerStyle != nil }
+    /// No composer at all, not a disabled one: a resolved Project thread, or a finished thread nothing will
+    /// start again (a mission step's history: offline and offering no send).
+    private var composerHidden: Bool {
+        workerStyle?.composerHidden == true || (projectSend == nil && store.offline && !store.supports("send"))
+    }
     private var userOrigins: ProjectUserOrigins {
         ProjectUserOrigins(assignment: workerStyle?.assignmentOperations ?? [], runtime: projectSend?.runtimeOperations ?? [])
     }
@@ -81,6 +86,8 @@ struct ThreadView: View {
     /// Whether the scroll view keeps the tail itself (`ThreadTailAnchor.isNative`); a test drives either.
     var nativeTail = ThreadTailAnchor.isNative
     @Environment(\.presentImages) private var presentImages
+    /// This view's claim on the store's poll loop: one agent's store can be shown by two views at once.
+    @State private var storeOwner = UUID()
     @State private var fallbackInput = ThreadInput()
     private var input: ThreadInput { retainedInput ?? fallbackInput }
     @State private var fallbackTailGuard = ThreadTailGuard()
@@ -209,7 +216,7 @@ struct ThreadView: View {
                 // The composer floats over the scroll view; inset by its real height so "the
                 // bottom" is the last turn, not the space under the card.
                 .modifier(ComposerInsetPadding(inset: composerInset, gap: leadColumn ? 0 : AppLayout.composerTranscriptGap,
-                                               present: workerStyle?.composerHidden != true))
+                                               present: !composerHidden))
                 // A margin rather than padding so scrollTo(.top) keeps the 28pt above a turn.
                 .contentMargins(.top, workerStyle != nil ? NWLeadMetrics.paneThreadTop : leadColumn ? NWLeadMetrics.columnTopPadding : AppLayout.threadTop, for: .scrollContent)
                 // Target IDs are only candidates: `ThreadTailGuard` also checks native row placement
@@ -291,7 +298,7 @@ struct ThreadView: View {
                 // The composer draws "Jump to latest" over the fade it lays on the thread and under
                 // its card and menus, so the pill reads clearly and never covers an open menu.
                 // A resolved Project thread takes no message: no composer at all, not a disabled one.
-                if workerStyle?.composerHidden != true {
+                if !composerHidden {
                     Composer(store: store, input: input, allowsLocalFiles: allowsLocalFiles, active: active, isFocused: isFocused, agentName: agentName, hasTurns: !rows.isEmpty,
                              gutter: AppLayout.gutter, measuredInset: composerInset, listModels: listModels, branch: branch, directory: allowsLocalFiles ? workingDirectory : nil,
                              showChanges: showChanges, modelSettingsOpen: modelSettingsOpen, commandKey: commandKey,
@@ -346,15 +353,15 @@ struct ThreadView: View {
         .onDisappear {
             historyAnchor.cancel()
             tailGuard.stop()
-            store.stop()
+            store.stop(owner: storeOwner)
             if let wheelMonitor { NSEvent.removeMonitor(wheelMonitor) }
             wheelMonitor = nil
         }
         // Hidden, the thread stops polling and keeps what it shows; shown again, it polls from
         // there (`NativeThreadStore.suspend`).
         .task(id: active) {
-            guard active else { historyAnchor.cancel(); historyAnchor.animating = false; tailGuard.stop(); store.suspend(); return }
-            await store.run(request: request, preview: preview)
+            guard active else { historyAnchor.cancel(); historyAnchor.animating = false; tailGuard.stop(); store.suspend(owner: storeOwner); return }
+            await store.run(request: request, preview: preview, owner: storeOwner)
         }
     }
 

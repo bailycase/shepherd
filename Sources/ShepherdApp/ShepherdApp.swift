@@ -173,6 +173,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        BoundedCommand.stopForAppTermination()
         SessionServer.shared.stop()
     }
 

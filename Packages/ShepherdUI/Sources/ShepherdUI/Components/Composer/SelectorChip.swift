@@ -87,7 +87,7 @@ extension ButtonStyle where Self == NWPressableStyle {
 #Preview("Selector chips") {
     NWPreviewBoth {
         NWFlowLayout(spacing: NWSelectorChipMetrics.spacing) {
-            Button {} label: { NWSelectorChip("shepherd", systemImage: "book.closed", active: true, accessibilityName: "Repo") }
+            Button {} label: { NWSelectorChip("shepherd", systemImage: NWGlyph.repository.symbolName, active: true, accessibilityName: "Repo") }
             Button {} label: { NWSelectorChip("This Mac", systemImage: "desktopcomputer", accessibilityName: "Host") }
             Button {} label: { NWSelectorChip("claude-opus", systemImage: "sparkle", accessibilityName: "Model") }
             Button {} label: { NWSelectorChip("Medium", systemImage: "lightbulb", mono: false, accessibilityName: "Thinking") }

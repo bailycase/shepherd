@@ -110,7 +110,7 @@ struct NewThreadRepoList: View {
             ForEach(model.repoRows) { row in
                 Button { model.choose(repo: row.id) } label: {
                     NWChoiceRow(row.name, detail: row.detail, selected: row.selected) {
-                        Image(systemName: "book.closed")
+                        NWGlyph.repository.image
                             .font(.nw(.ui))
                             .foregroundStyle(Color.nw.textSecondary)
                     }

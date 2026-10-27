@@ -12,6 +12,8 @@ struct ExperimentsSettings: View {
     var instructions: InstructionsModel
     /// This Mac's experiment switches.
     var settings: AppSettings
+    /// A mission is planning, running or publishing: Missions can't be turned off under it.
+    var missionsActive = false
     /// Opens Settings ▸ Instructions (where the lines go).
     let openInstructions: () -> Void
 
@@ -29,6 +31,7 @@ struct ExperimentsSettings: View {
                             DesignToolCard(settings: settings)
                             GoalExperimentCard(settings: settings)
                             ProjectsExperimentCard(settings: settings)
+                            MissionsExperimentCard(settings: settings, active: missionsActive)
                             if model.settings.enabled || !model.snapshot.waiting.isEmpty {
                                 WaitingSuggestions(model: model, instructions: instructions, now: context.date)
                                     .nwTransition(.disclosure)
@@ -151,6 +154,56 @@ private struct ProjectsExperimentCard: View {
             }
             Spacer(minLength: NW.Space.xxl)
             SettingsSwitch(label: "Projects", isOn: $settings.projectsEnabled)
+        }
+        .padding(.vertical, NW.Space.l + NW.Space.xxs)
+        .padding(.horizontal, NW.Space.xl)
+        .nwCard(fill: nw.bgWindow, line: nw.lineStrong)
+    }
+}
+
+/// Missions' card. Off hides the Missions destination and its sidebar section; missions and their
+/// receipts are kept, and their threads never join the thread lists either way. It can't be turned
+/// off while a mission works, so no planning, work or publication runs out of sight.
+struct MissionsExperimentCard: View {
+    @Bindable var settings: AppSettings
+    let active: Bool
+
+    /// On and something is working: the switch holds.
+    var locked: Bool { settings.missionsEnabled && active }
+
+    var body: some View {
+        let nw = Color.nw
+        HStack(alignment: .top, spacing: NW.Space.l + NW.Space.xxs) {
+            RoundedRectangle(cornerRadius: NW.Radius.m)
+                .fill(nw.lanternTint)
+                .frame(width: AppLayout.experimentTileSize, height: AppLayout.experimentTileSize)
+                .overlay {
+                    NWGlyph.mission.image
+                        .font(.nwSans(AppLayout.experimentGlyphSize))
+                        .foregroundStyle(nw.lanternText)
+                }
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+                Text("Missions")
+                    .font(.nwSans(AppLayout.experimentNameSize, .semibold))
+                    .foregroundStyle(nw.textPrimary)
+                Text("Describe an end state across your repositories; a planner maps it, agents do the work, independent checks validate it, and you publish the pull requests. "
+                     + "Adds Missions to the sidebar. Turning this off hides them and keeps your missions and files.")
+                    .nwText(size: AppLayout.experimentDescriptionSize, lineHeight: AppLayout.experimentDescriptionLineHeight)
+                    .foregroundStyle(nw.textSecondary)
+                    .frame(maxWidth: AppLayout.experimentDescriptionWidth, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                if locked {
+                    Text("Pause or stop running missions before turning this off.")
+                        .nwText(size: AppLayout.experimentDescriptionSize, lineHeight: AppLayout.experimentDescriptionLineHeight)
+                        .foregroundStyle(nw.lanternText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: NW.Space.xxl)
+            SettingsSwitch(label: "Missions", isOn: $settings.missionsEnabled)
+                .disabled(locked)
+                .help(locked ? "Pause or stop running missions before turning this off." : "Missions")
         }
         .padding(.vertical, NW.Space.l + NW.Space.xxs)
         .padding(.horizontal, NW.Space.xl)

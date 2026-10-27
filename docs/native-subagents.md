@@ -5,8 +5,8 @@ It bundles the runtime as pi extensions and has no third-party subagent dependen
 agent can start child `pi --mode rpc` processes, steer them, wait for them, and script them into
 workflows. The parent's Shepherd extension owns every child process. The app installs the
 extension modules and displays what they report. There is no daemon, scheduler,
-watchdog, automatic goal loop, nested delegation, or automatic worktree management. No mission
-or workflow grants permission to commit, merge, deploy, or otherwise mutate a repository.
+watchdog, automatic goal loop, nested delegation, or automatic worktree management. These child
+and workflow tools do not grant permission to commit, merge, deploy, or otherwise mutate a repository.
 
 Requires pi 0.85.1 or newer. No npm dependencies are installed.
 
@@ -347,9 +347,10 @@ user's permissions, and explicit extension files run with full permissions.
 
 ## Missions
 
-**Missions are off.** They are deferred (no screen shows them), and every request carried the
-mission tool and the `mission` and `missionId` parameters of `shepherd_child_start` and
-`shepherd_workflow`, about 470 tokens in every thread (docs/context-budget.md). Unless the
+**Legacy mission tools remain off.** Native Mac Missions use `SessionServer` and
+`MissionController`, not these extension records. The legacy mission tool and the `mission`
+and `missionId` parameters of `shepherd_child_start` and `shepherd_workflow` cost about 470
+tokens in every thread (docs/context-budget.md). Unless the
 environment sets `SHEPHERD_MISSIONS=1`, the runtime registers no `shepherd_mission`, offers none of
 those parameters, writes no mission record for a run, and says nothing of missions in a tool
 description; the app never sets it. The tests that cover missions set it. Everything below is how

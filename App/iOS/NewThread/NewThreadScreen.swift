@@ -135,7 +135,7 @@ private struct NewThreadForm: View {
         let repo = model.space?.name ?? "Choose repo"
         let host = model.host?.name ?? "Choose host"
         return NWFlowLayout(spacing: NWSelectorChipMetrics.spacing) {
-            chip(repo, systemImage: "book.closed", name: "Repo", panel: pad ? .repo : .workspace, active: pad ? .repo : .workspace)
+            chip(repo, systemImage: NWGlyph.repository.symbolName, name: "Repo", panel: pad ? .repo : .workspace, active: pad ? .repo : .workspace)
                 .popover(isPresented: pad ? panel(.repo) : .constant(false), arrowEdge: .top) {
                     popover("Repo") {
                         NavigationStack {
