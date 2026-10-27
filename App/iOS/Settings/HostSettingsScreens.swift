@@ -18,6 +18,7 @@ struct DefaultsScreen: View {
         let store = SettingsStore.of(hosts)
         HostSettingsPage(store: store, page: .defaults,
                          explanation: "What new threads on a host start with. Threads already running keep their own.") { settings, host in
+            let agentDefaults = host.serves(RemoteProtocol.hostSettingsAgentDefaultsCapability)
             SettingsSection("New threads") {
                 SHListCard {
                     SettingsControlRow("Model", note: "“Use the agent’s default” passes no model, so the agent picks.") {
@@ -36,6 +37,44 @@ struct DefaultsScreen: View {
                         SettingsPicker("Thinking", selection: settings.defaultThinking, options: ThinkingLevel.allCases,
                                        title: HostSettingsPresentation.title) { store.hostSettings.post(.defaultThinking($0), on: host) }
                     }
+                    if agentDefaults {
+                        SettingsControlRow("Speed", note: "New threads start on this speed. Each thread keeps its own after that.") {
+                            SettingsPicker("Speed", selection: settings.defaultServiceTier, options: ServiceTier.allCases,
+                                           title: { $0.title }) { store.hostSettings.post(.defaultServiceTier($0), on: host) }
+                        }
+                    }
+                }
+            }
+            if agentDefaults {
+                SettingsSection("Session naming") {
+                    SHListCard {
+                        SettingsControlRow("Naming model", note: "Threads are named from their first prompt; your renames are never overwritten. Automatic prefers a low-cost model the host is signed in to.") {
+                            Menu {
+                                Button("Automatic") { store.hostSettings.post(.namingModel(nil), on: host) }
+                                Divider()
+                                ForEach(Self.options(models, current: settings.namingModel), id: \.self) { model in
+                                    Button(model) { store.hostSettings.post(.namingModel(model), on: host) }
+                                }
+                            } label: {
+                                SettingsMenuLabel(settings.namingModel ?? "Automatic", mono: settings.namingModel != nil)
+                            }
+                            .accessibilityLabel("Session naming model")
+                        }
+                    }
+                }
+                SettingsSection("Context") {
+                    SHListCard {
+                        SettingsControlRow("Compact at", note: "How full an agent lets its context get before it compacts on its own, as a share of the model's window. The default leaves 16k tokens free.") {
+                            SettingsPicker("Compact at", selection: settings.compactAtPercent, options: [Int?.none] + HostSettings.compactAtChoices.map { Int?($0) },
+                                           title: { $0.map { "\($0)%" } ?? "Agent’s default" }) { store.hostSettings.post(.compactAtPercent($0), on: host) }
+                        }
+                        ForEach(settings.bundledExtensions.filter { Self.contextSwitches.contains($0.id) }) { bundled in
+                            SettingsSwitchRow(bundled.name, note: HostSettingsPresentation.note(forBundled: bundled.id), isOn: bundled.on) {
+                                store.hostSettings.post(.bundledExtension(id: bundled.id, on: $0), on: host)
+                            }
+                        }
+                    }
+                    SettingsFootnote("New threads follow a change; running ones at their next launch.")
                 }
             }
             SettingsSection("While the agent is working") {
@@ -61,6 +100,10 @@ struct DefaultsScreen: View {
             }
         }
     }
+
+    /// The Mac's Settings ▸ Agents ▸ Context switches, which the host lists with its bundled
+    /// extensions; shown here, under Compact at, rather than on the Extensions page.
+    static let contextSwitches: Set<String> = ["context", "deferTools", "codemode"]
 
     /// The host's model catalog, asked once per connection.
     private static func models(of host: MobileHost?) async -> [String] {
@@ -133,7 +176,8 @@ struct PiExtensionsScreen: View {
             let post: (HostSettingChange) -> Void = { store.hostSettings.post($0, on: host) }
             SettingsSection("Bundled with Shepherd") {
                 SHListCard {
-                    ForEach(settings.bundledExtensions) { bundled in
+                    // The Context switches live on Defaults where the host serves them there.
+                    ForEach(settings.bundledExtensions.filter { !host.serves(RemoteProtocol.hostSettingsAgentDefaultsCapability) || !DefaultsScreen.contextSwitches.contains($0.id) }) { bundled in
                         SettingsSwitchRow(bundled.name, note: HostSettingsPresentation.note(forBundled: bundled.id), isOn: bundled.on) {
                             post(.bundledExtension(id: bundled.id, on: $0))
                         }
