@@ -1013,6 +1013,8 @@ final class ShepherdViewModel {
         releaseStarts()
         sessions.releaseHeldAgents()
         if !waitingForImport.isEmpty { waitingForImport = [] }
+        // The copy (or a default chosen on the sheet) changed what a new thread starts on: the open page's chip names it.
+        if destination == .newThread { newThread.prepare(for: self) }
     }
 
     /// Who waits for the first launch's sheet: nobody, everyone, or the agents whose model's
