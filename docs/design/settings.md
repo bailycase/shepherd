@@ -131,7 +131,7 @@ The pages, in nav order. Each names its board; the strings in quotes are the boa
 "How Shepherd looks. The terminal has its own font settings."
 
 - **Theme:** Mode, "System follows your Mac and switches with it.": System · Light · Dark, default
-  System (`ThemeManager`; the Appearance menu sets the same thing). Above it the app adds a Theme
+  System (`ThemeManager`; View ▸ Appearance sets the same thing). Above it the app adds a Theme
   row, "Shepherd Design ships with Shepherd, in light and dark.", naming the theme in
   `ui`/`textSecondary`: a name, not a popup, while one theme ships.
 - **Sidebar** (SettingsAppearance, SettingsAppearanceProjects):
@@ -204,6 +204,9 @@ shell they run."
   - When a turn ends, send the queue, "All at once arrives as one turn, in the order you queued
     it.": One per turn · All at once, default All at once. It is the
     host's default for its agents; Up next's ••• menu sets one agent's own.
+  - Notify when a turn finishes, "A banner for each thread you are not looking at. Questions,
+    failures and threads waiting on you always notify.": a switch, default on
+    (`AppSettings.notifyOnTurnFinished`); off mutes only the "Turn finished" banner.
 - **Context** (no board draws it; the user's decision, 2026-10-01, with the Context card's parts
   list; docs/context-budget.md). Every row applies to agents started after a change; a running agent
   keeps what it started with and follows at its next launch.

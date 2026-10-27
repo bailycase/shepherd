@@ -58,7 +58,7 @@ enum ThreadCommand: String, CaseIterable, Identifiable {
     static func commands(for agent: Agent) -> [ThreadCommand] { allCases.filter { $0.applies(to: agent) } }
 }
 
-/// The agent menu's actions beyond rename, review and delete (SHComposer › Menus): Fork from
+/// The agent menu's actions beyond rename, review and delete (SHComposer › Menus): Fork
 /// Here, Copy Transcript and Open in Finder, for This Mac's agents, read from pi's session file.
 @MainActor
 extension ShepherdViewModel {
@@ -79,7 +79,7 @@ extension ShepherdViewModel {
         return (agent.effectivePiSessionID, TerminalSessionStore.resolvedCwd(agentCwd(agent)), agent)
     }
 
-    /// Fork from Here: the whole conversation so far, copied into a new pi session, becomes a new
+    /// Fork Thread: the whole conversation so far, copied into a new pi session, becomes a new
     /// agent beside this one ("<name> (fork)", named again by the namer from its next turn). A
     /// failure says why and creates nothing.
     func forkAgent(_ id: AgentID) {
