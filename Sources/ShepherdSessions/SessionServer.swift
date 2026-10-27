@@ -6761,6 +6761,11 @@ public final class SessionServer: @unchecked Sendable {
         await enqueueValue { self.sessions[sessionID]?.info }
     }
 
+    /// Tests: the replay a remote attach of this terminal sends now (`remoteReplayScrollbackLines`).
+    func remoteReplay(sessionID: SessionID) async -> Data? {
+        await enqueueValue { self.sessions[sessionID]?.pty?.screen.snapshot(scrollbackLimit: Self.remoteReplayScrollbackLines) }
+    }
+
     /// Hands a new agent's pi (an RPC session) its opening prompt: held until the thread serves,
     /// then sent before the thread answers any request, so every client's first snapshot shows
     /// it. Its pending row is `OpeningPrompt`'s, which a client can draw while pi starts.
