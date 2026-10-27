@@ -130,6 +130,8 @@ public enum RPCStreamingBehavior: String, Codable, Hashable, Sendable { case ste
 public enum RPCCommand: Encodable, Hashable, Sendable {
     case prompt(message: String, images: [RPCImage] = [], streamingBehavior: RPCStreamingBehavior? = nil)
     case abort
+    /// Cancels the automatic retry pi is waiting to make; the failed turn ends as it failed.
+    case abortRetry
     /// Empties pi's steering and follow-up queues and answers with their text.
     case clearQueue
     case getState
@@ -161,6 +163,7 @@ public enum RPCCommand: Encodable, Hashable, Sendable {
         switch self {
         case .prompt: return "prompt"
         case .abort: return "abort"
+        case .abortRetry: return "abort_retry"
         case .clearQueue: return "clear_queue"
         case .getState: return "get_state"
         case .getMessages: return "get_messages"
@@ -215,7 +218,7 @@ public enum RPCCommand: Encodable, Hashable, Sendable {
             try c.encode(operationID.uuidString, forKey: .operationID)
         case .getRecoveryOperation(let operationID):
             try c.encode(operationID.uuidString, forKey: .operationID)
-        case .abort, .clearQueue, .getState, .getRestartRecovery, .getSessionStats, .getCommands, .refreshSkills, .getAvailableThinkingLevels, .newSession:
+        case .abort, .abortRetry, .clearQueue, .getState, .getRestartRecovery, .getSessionStats, .getCommands, .refreshSkills, .getAvailableThinkingLevels, .newSession:
             break
         }
     }

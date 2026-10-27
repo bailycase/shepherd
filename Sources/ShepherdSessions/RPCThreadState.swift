@@ -879,10 +879,18 @@ final class RPCThreadState {
             endDiagnostic("context.compact")
             if error != nil, !aborted { diagnosticActivity("context.compact_failed", details: failureDetails(error)) }
             compactionEnded(reason: NativeCompactionReason(pi: reason), result: result, aborted: aborted, willRetry: willRetry, error: error)
-        case .autoRetryStart(let attempt, let maxAttempts, let delayMs, _):
+        case .autoRetryStart(let attempt, let maxAttempts, let delayMs, let errorMessage):
             diagnosticActivity("model.retry")
             retry = NativeThreadRetry(attempt: attempt, maxAttempts: maxAttempts,
                                       retryAt: (Date().timeIntervalSince1970 * 1000 + max(0, delayMs)).rounded())
+            // A reply with nothing in it is the model's answer to this context far more often than a
+            // transient fault: the same request gives the same empty reply. One automatic retry;
+            // a second one is cancelled so the turn fails visibly instead of spending pi's whole
+            // retry budget (and a failed-checkpoint record per attempt) on identical requests.
+            if attempt > 1, errorMessage == Self.emptyCompletionError {
+                ShepherdLog.info("rpc session \(session.id) cancels retry \(attempt)/\(maxAttempts): the provider returned an empty reply again")
+                session.request(.abortRetry) { _ in }
+            }
         case .autoRetryEnd:
             retry = nil
         case .turnStart:
