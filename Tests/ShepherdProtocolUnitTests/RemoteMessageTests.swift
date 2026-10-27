@@ -83,6 +83,8 @@ enum RemoteSamples {
         .changesList(scope: .pullRequest, options: ChangesOptions()),
         .changesFile(revision: revision, path: "ledger/outbox.go", oldPath: nil, options: ChangesOptions(ignoreWhitespace: true, fullFiles: true)),
         .changesFile(revision: revision, path: "new name.go", oldPath: "old.go", options: ChangesOptions()),
+        .changesRevertFile(revision: revision, path: "ledger/outbox.go", oldPath: nil),
+        .changesRevertFile(revision: revision, path: "new name.go", oldPath: "old.go"),
         .changesBranches,
         .changesPatch(revision: revision, options: ChangesOptions()),
         .changesUndoTurn(turnID: op),
@@ -226,13 +228,33 @@ enum RemoteSamples {
 
     static let hostSettings = HostSettings(
         shepherdVersion: "0.4.2", piVersion: "0.87.1", defaultModel: "anthropic/claude-opus", defaultThinking: .high,
+        defaultServiceTier: .fast, namingModel: "anthropic/claude-haiku", compactAtPercent: 80,
         queueDelivery: .oneAtATime, goalCrossProviderEvaluation: true, goalsEnabled: true, projectsEnabled: true,
         worktreeBase: .head, fetchBeforeCreating: false, mergePRAutomatically: true, mergeMethod: .rebase,
         bundledExtensions: [HostSettings.BundledExtension(id: "panes", name: "Panes and agent tools", on: true),
                             HostSettings.BundledExtension(id: "review", name: "Diff review tool", on: false)],
         installedExtensions: ["npm:@example/pi-tools@1.0.0"], updatePiDaily: true)
+    static let mcpInventory = HostMCPInventory(
+        servers: [HostMCPServer(name: "github", kind: .remote, endpoint: "https://api.githubcopilot.com/mcp/", status: .connected,
+                                signIn: "Signed in", tools: 12),
+                  HostMCPServer(name: "postgres", kind: .local, endpoint: "npx -y @modelcontextprotocol/server-postgres", status: .error,
+                                note: "connection refused", signIn: "DATABASE_URI", tools: nil, enabled: true),
+                  HostMCPServer(name: "old", kind: .remote, endpoint: "https://example.invalid/mcp", status: .off, enabled: false)],
+        configPath: "~/Library/Application Support/Shepherd/pi/mcp.json", problem: nil, checkedAt: 1_700_000_000)
+    static let inventoryRequests: [RemoteHostInventoryRequest] = [.mcp, .subagents, .subagent(file: "team/scout.md"), .providers]
+    static let inventoryResults: [RemoteHostInventoryResult] = [
+        .mcp(mcpInventory),
+        .mcp(HostMCPInventory(servers: [], configPath: "~/mcp.json", problem: "mcp.json line 12 isn\u{2019}t valid JSON")),
+        .subagents([HostSubagentProfile(file: "reviewer.md", name: "reviewer", description: "Reviews a diff.", tools: ["read"], context: "fork", isDefault: true),
+                    HostSubagentProfile(file: "team/broken.md", name: "broken", error: "No front matter", disabled: true)]),
+        .subagent(HostSubagentProfileText(file: "reviewer.md", text: "---\nname: reviewer\n---\nReview.\n", fingerprint: "ab12")),
+        .providers([HostProviderStatus(id: "anthropic", name: "Anthropic", badge: "Subscription", auth: .expired, detail: "Claude Pro or Max", accounts: 2, activeAccount: "work"),
+                    HostProviderStatus(id: "openai", name: "OpenAI", badge: "API key", auth: .apiKey, problem: "Couldn\u{2019}t sign out."),
+                    HostProviderStatus(id: "local", name: "local", badge: "Custom", auth: .noKey, detail: "http://localhost:11434")]),
+    ]
     static let hostSettingChanges: [HostSettingChange] = [
         .defaultModel("openai/gpt-5"), .defaultModel(nil), .defaultThinking(.low), .queueDelivery(.all),
+        .defaultServiceTier(.fast), .namingModel("openai/gpt-5-mini"), .namingModel(nil), .compactAtPercent(70), .compactAtPercent(nil),
         .goalCrossProviderEvaluation(true), .goalCrossProviderEvaluation(false), .goalsEnabled(true), .goalsEnabled(false), .projectsEnabled(true), .projectsEnabled(false),
         .worktreeBase(.fresh), .fetchBeforeCreating(true), .commitRemainingWork(false), .generatePRDescriptions(false),
         .deleteLocalBranch(false), .mergePRAutomatically(false), .mergeMethod(.squash),
@@ -298,12 +320,12 @@ struct RemoteRequestTests {
         switch request {
         case .pushRegistration, .pushUnregister, .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
              .closePane, .resizePaneSplit, .listDir, .listModels, .addSpace, .createAgent, .upload,
-             .creationOptions, .agentQuery, .agentAction, .automation, .instructions, .suggestions, .hostSettings, .hostUpdate, .skills, .projects, .logicalProjects, .projectExecution, .design,
+             .creationOptions, .agentQuery, .agentAction, .automation, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .projects, .logicalProjects, .projectExecution, .design,
              .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 36
+    static let caseCount = 37
 
     static let samples: [RemoteRequest] = [
         .pushRegistration(id: 93, registration: RemotePushRegistration(id: "11111111-2222-3333-4444-555555555555", sendToken: String(repeating: "a", count: 64))),
@@ -339,6 +361,7 @@ struct RemoteRequestTests {
         .instructions(id: 23, request: .save(file: .appendSystem, content: "Never force-push.\n", origin: "studio", sync: true)),
         .suggestions(id: 25, request: .add(id: S.op, line: "- Ask for join keys first.", file: nil)),
         .hostSettings(id: 27, request: .change(.bundledExtension(id: "review", on: true))),
+        .hostInventory(id: 28, request: .mcp),
         .skills(id: 29, request: .install(repo: "anthropics/skills", paths: ["skills/pdf"], commit: nil, invocation: nil)),
         .projects(id: 30, request: .list()),
         .logicalProjects(id: 31, request: .list),
@@ -429,6 +452,12 @@ struct RemoteRequestTests {
         #expect(try Wire.roundTrip(message) == message)
     }
 
+    @Test(arguments: RemoteSamples.inventoryRequests)
+    func everyInventoryRequestRoundTrips(_ request: RemoteHostInventoryRequest) throws {
+        let message = RemoteRequest.hostInventory(id: 1, request: request)
+        #expect(try Wire.roundTrip(message) == message)
+    }
+
     @Test func fetchingHostSettingsRoundTrips() throws {
         #expect(try Wire.roundTrip(RemoteRequest.hostSettings(id: 2, request: .fetch)) == .hostSettings(id: 2, request: .fetch))
     }
@@ -500,12 +529,12 @@ struct RemoteReplyTests {
         switch reply {
         case .nativeThread, .uploadResult, .creationOptions, .helloOk, .agentResult, .ok, .paneOpened, .error,
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
-             .agentCreated, .automationResult, .instructions, .suggestions, .hostSettings, .hostUpdate, .skills, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged,
+             .agentCreated, .automationResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged,
              .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 34
+    static let caseCount = 35
 
     static let samples: [RemoteReply] = [
         .hostUpdate(id: 90, status: HostUpdateStatus(version: "1", build: "2", channel: "nightly", phase: .available,
@@ -537,6 +566,7 @@ struct RemoteReplyTests {
         .instructions(id: 24, snapshot: S.instructions),
         .suggestions(id: 26, snapshot: S.suggestions),
         .hostSettings(id: 28, settings: S.hostSettings),
+        .hostInventory(id: 29, result: .mcp(S.mcpInventory)),
         .skills(id: 30, result: .skills(S.skills)),
         .projects(id: 31, result: .listing(ProjectListing(projects: []))),
         .logicalProjects(id: 32, result: .projects([])),
@@ -581,6 +611,19 @@ struct RemoteReplyTests {
         #expect(try Wire.roundTrip(RemoteReply.skills(id: 1, result: result)) == .skills(id: 1, result: result))
     }
 
+    @Test(arguments: RemoteSamples.inventoryResults)
+    func everyInventoryResultRoundTrips(_ result: RemoteHostInventoryResult) throws {
+        #expect(try Wire.roundTrip(RemoteReply.hostInventory(id: 1, result: result)) == .hostInventory(id: 1, result: result))
+    }
+
+    /// A provider's row never carries a credential: the wire has the state and its words only.
+    @Test func aProvidersStatusCarriesNoSecretField() throws {
+        let keys = try Wire.object(RemoteReply.hostInventory(id: 1, result: RemoteSamples.inventoryResults[4]))["result"]
+            .flatMap { ($0 as? [String: Any])?["providers"] as? [String: Any] }
+            .flatMap { ($0["_0"] as? [[String: Any]])?.flatMap(\.keys) } ?? []
+        #expect(!keys.isEmpty && !keys.contains { $0.lowercased().contains("key") || $0.lowercased().contains("token") })
+    }
+
     /// pi's skills from a newer host: a kind of origin this client doesn't know reads as pi's
     /// settings, and missing lists read as empty.
     @Test func piSkillsFromANewerHostDecodeWithDefaults() throws {
@@ -608,6 +651,27 @@ struct RemoteReplyTests {
         #expect(snapshot.lastSaved(.appendSystem) == 1_700_000_100)
         #expect(InstructionsSnapshot(directory: "/i/").path(of: .appendSystem) == "/i/APPEND_SYSTEM.md")
         #expect(InstructionsSnapshot(directory: "/i").lastSaved(.agents) == nil)
+    }
+
+    /// A host from before `hostSettings.agentDefaults.v1` sends none of the three fields: Standard,
+    /// Automatic naming and pi's own compaction; a tier this client does not know reads as Standard.
+    @Test func aLegacyHostsAgentDefaultsReadAsTheMacsDefaults() throws {
+        var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(RemoteSamples.hostSettings)) as? [String: Any])
+        for key in ["defaultServiceTier", "namingModel", "compactAtPercent"] { json.removeValue(forKey: key) }
+        var expected = RemoteSamples.hostSettings
+        expected.defaultServiceTier = .standard
+        expected.namingModel = nil
+        expected.compactAtPercent = nil
+        #expect(try JSONDecoder().decode(HostSettings.self, from: JSONSerialization.data(withJSONObject: json)) == expected)
+        json["defaultServiceTier"] = "hyperspeed"
+        #expect(try JSONDecoder().decode(HostSettings.self, from: JSONSerialization.data(withJSONObject: json)) == expected)
+        #expect(HostSettingChange.defaultServiceTier(.fast).capability == RemoteProtocol.hostSettingsAgentDefaultsCapability)
+        #expect(HostSettingChange.defaultModel(nil).capability == nil)
+        var applied = HostSettings()
+        applied.apply(.compactAtPercent(90))
+        applied.apply(.namingModel("x/y"))
+        applied.apply(.defaultServiceTier(.fast))
+        #expect(applied.compactAtPercent == 90 && applied.namingModel == "x/y" && applied.defaultServiceTier == .fast)
     }
 
     @Test func aLegacyHostNeverGrantsCrossProviderConsent() throws {
@@ -826,7 +890,9 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.nativeContextCapability,
             RemoteProtocol.createAgentImagesCapability,
             RemoteProtocol.instructionsCapability, RemoteProtocol.suggestionsCapability,
-            RemoteProtocol.hostUpdateCapability, RemoteProtocol.hostSettingsCapability, RemoteProtocol.skillsCapability, RemoteProtocol.projectsV2Capability, RemoteProtocol.projectDetailsCapability,
+            RemoteProtocol.hostUpdateCapability, RemoteProtocol.hostSettingsCapability, RemoteProtocol.hostSettingsAgentDefaultsCapability,
+            RemoteProtocol.hostInventoryCapability, RemoteProtocol.changesRevertCapability,
+            RemoteProtocol.skillsCapability, RemoteProtocol.projectsV2Capability, RemoteProtocol.projectDetailsCapability,
             RemoteProtocol.projectMCPCapability, RemoteProtocol.projectTrustCapability, RemoteProtocol.piSkillsCapability,
             RemoteProtocol.terminalControlCapability, RemoteProtocol.terminalStartCapability,
             RemoteProtocol.designContextCapability,
@@ -859,6 +925,9 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.nativeThreadCapability == "native.thread.v1")
         #expect(RemoteProtocol.nativeThreadV2Capability == "native.thread.v2")
         #expect(RemoteProtocol.changesCapability == "changes.v1")
+        #expect(RemoteProtocol.changesRevertCapability == "changes.revert.v1")
+        #expect(RemoteProtocol.hostSettingsAgentDefaultsCapability == "hostSettings.agentDefaults.v1")
+        #expect(RemoteProtocol.hostInventoryCapability == "hostInventory.v1")
         #expect(RemoteProtocol.filesCapability == "files.v1")
         #expect(RemoteProtocol.clientCapabilities.contains(RemoteProtocol.filesCapability))
         #expect(RemoteProtocol.nativeThreadStartingCapability == "native.thread.starting.v1")
