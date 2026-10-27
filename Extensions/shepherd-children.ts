@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import { StringDecoder } from "node:string_decoder";
 import { SessionManager, createBashTool, getPackageDir, resolveCliModel } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { bundledAgents as ROLES, childDefaults, discoverChildAgents, childSkills, childTargetContext, defaultChildTools, childUserExtensions, thinkingLevels } from "./shepherd-children-config.ts";
+import { bundledAgents as ROLES, childDefaults, discoverChildAgents, childSkills, childTargetContext, defaultChildTools, childUserExtensions, thinkingLevels, parentAllows, designRelayedTools as DESIGN_RELAYED, designTools as DESIGN_TOOLS } from "./shepherd-children-config.ts";
 import { executeWorkflow } from "./shepherd-workflow.ts";
 import { missionStore } from "./shepherd-missions.ts";
 import { registerNativeCommands } from "./shepherd-children-ui.ts";
@@ -99,16 +99,22 @@ export function jsonLines(onEvent, onError) {
   return (chunk) => {
     if (failed) return;
     buffer += decoder.write(chunk);
+    // One pass over the chunk: a start index walks the lines and the remainder is sliced once.
+    // UTF-16 length bounds the byte length from below, so bytes are only counted near the cap.
+    const tooLong = (text) => text.length > MAX_FRAME / 4 && Buffer.byteLength(text) > MAX_FRAME;
+    let start = 0;
     for (;;) {
-      const end = buffer.indexOf("\n");
+      const end = buffer.indexOf("\n", start);
       if (end < 0) break;
-      if (Buffer.byteLength(buffer.slice(0, end)) > MAX_FRAME) { failed = true; buffer = ""; onError(new Error("RPC frame exceeds 8 MiB")); return; }
-      const line = buffer.slice(0, end); buffer = buffer.slice(end + 1);
+      const line = buffer.slice(start, end);
+      start = end + 1;
+      if (tooLong(line)) { failed = true; buffer = ""; onError(new Error("RPC frame exceeds 8 MiB")); return; }
       if (!line.trim()) continue;
       try { onEvent(JSON.parse(line)); }
       catch (error) { failed = true; buffer = ""; onError(error); return; }
     }
-    if (Buffer.byteLength(buffer) > MAX_FRAME) { failed = true; buffer = ""; onError(new Error("RPC frame exceeds 8 MiB")); }
+    buffer = start > 0 ? buffer.slice(start) : buffer;
+    if (tooLong(buffer)) { failed = true; buffer = ""; onError(new Error("RPC frame exceeds 8 MiB")); }
   };
 }
 
@@ -308,14 +314,10 @@ export function modelNotFound(requested, models, { origin, where = "this Pi" } =
 // The parent holds the allowlist: a call for a tool the profile didn't list is refused.
 
 const RELAY_KEY = Symbol.for("shepherd.design.relay.v1");
-// The design tools a helper may use. comment_reply and markup_propose are the design agent's own voice
-// toward the viewer (it answers a comment once every helper has finished), and checkpoint_restore rewinds
-// every board, siblings' work included, so none of the three is ever relayed.
-const DESIGN_RELAYED = [
-  "design_read", "design_check", "system_read", "comment_list", "board_write", "board_edit", "boards_edit", "board_search",
-  "board_render", "board_interact", "design_export", "board_extract", "checkpoint_create", "checkpoint_list", "canvas_update", "system_write",
-];
-const DESIGN_TOOLS = [...DESIGN_RELAYED, "comment_reply", "markup_propose", "checkpoint_restore"];
+// The design tools a helper may use (DESIGN_RELAYED, in shepherd-children-config.ts). comment_reply and
+// markup_propose are the design agent's own voice toward the viewer (it answers a comment once every
+// helper has finished), and checkpoint_restore rewinds every board, siblings' work included, so none of
+// the three is ever relayed.
 const RELAY_TITLE = "shepherd-relay:v1:";
 // A request or a result: the extension socket's own frame cap, since a board is at most 900,000 bytes.
 const MAX_RELAY_BYTES = 1024 * 1024;
@@ -667,7 +669,18 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       void controls(run);
     }
   }
+  // A busy child's tool starts and ends (several a second) write status.json and republish the
+  // cards once per 250 ms; state transitions and questions still save at once.
+  const saveTimers = new Map();
+  function saveSoon(run) {
+    if (saveTimers.has(run.id)) return;
+    const pending = setTimeout(() => { saveTimers.delete(run.id); save(run); }, 250);
+    pending.unref?.();
+    saveTimers.set(run.id, pending);
+  }
   function save(run) {
+    const pending = saveTimers.get(run.id);
+    if (pending) { clearTimeout(pending); saveTimers.delete(run.id); }
     try {
       atomic(path.join(run.dir, "status.json"), { runId: run.id, state: run.state, startedAt: run.startedAt,
         ...summary(run), owner: run.owner, controlNotice: run.controlNotice, controlRequestID: run.controlRequestID,
@@ -845,7 +858,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       if (event.toolCallId) run.toolArgs.set(event.toolCallId, event.args);
       // The card and the inspector name the call in flight ("bash swift test"), not just its tool.
       run.lastActivity = { kind: "running", tool: clip(event.toolName, 80), preview: toolPreview(event.args), at: Date.now() };
-      save(run);
+      saveSoon(run);
     } else if (event.type === "tool_execution_end") {
       run.currentTool = undefined;
       run.toolCalls = (run.toolCalls ?? 0) + 1;
@@ -872,8 +885,10 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
             notifyQuestion(run);
           }
         }
+        save(run);
+      } else {
+        saveSoon(run);
       }
-      save(run);
     } else if (event.type === "message_end" && event.message?.role === "assistant") {
       const message = event.message;
       run.output = clip((message.content ?? []).filter((p) => p.type === "text").map((p) => p.text).join("\n"));
@@ -884,7 +899,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       if (Number.isFinite(message.usage?.totalTokens)) run.tokens = (run.tokens ?? 0) + message.usage.totalTokens;
       // Context fill is the child's own estimate; best-effort, the card renders without it.
       command(run, "get_session_stats", {}, 2000).then((stats) => {
-        if (Number.isFinite(stats?.contextUsage?.percent)) { run.contextPercent = stats.contextUsage.percent; save(run); }
+        if (Number.isFinite(stats?.contextUsage?.percent)) { run.contextPercent = stats.contextUsage.percent; saveSoon(run); }
       }).catch(() => {});
       save(run);
     } else if (event.type === "extension_ui_request" && event.method === "notify") {
@@ -1289,7 +1304,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
         context: params.context ?? profile.context ?? defaults.context, delivery: params.delivery ?? "continue",
         requiresProjectTrust: profile.requiresProjectTrust || (targetContext.isProjectTrusted() && (profile.inheritSkills || profile.skills?.length)), profileSource: profile.source, systemPromptMode: profile.systemPromptMode, inheritProjectContext: profile.inheritProjectContext,
         extensions: profile.extensions ?? [], skills, workflowId, ...missionFor(params, params.task),
-        tools: requestedTools.filter((name) => cli ? ctx.tools.some(tool => tool.name === name) : pi.getActiveTools().includes(name)),
+        tools: requestedTools.filter((name) => cli ? ctx.tools.some(tool => tool.name === name) : parentAllows(name, pi.getActiveTools())),
         ...(cli ? { cliCommand: params.task, localToolExtensions: requestedTools.filter(name => ["codemode", "tool_search"].includes(name)).map(name => name === "tool_search" ? "tool-search" : name) } : {}), state: "queued", startedAt: Date.now(), sessionFile: path.join(dir, "session.jsonl"), output: "",
         queueRequestID: queueInput?.requestID,
         toolCallID: typeof toolCallID === "string" ? toolCallID : undefined, stepIndex, turns: 0, toolCalls: 0, tokens: 0, added: 0, removed: 0, files: new Map() };
@@ -1416,7 +1431,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     checkScope(projectScope);
     run.projectScope = projectScope;
     run.workflowId = undefined;
-    run.tools = run.tools.filter((name) => pi.getActiveTools().includes(name));
+    run.tools = run.tools.filter((name) => parentAllows(name, pi.getActiveTools()));
     run.state = "queued";
     try { run.starting = launch(run, message, signal); return await run.starting; }
     catch (error) { if (!run.proc) { run.state = "failed"; run.endedAt = Date.now(); run.error = clip(error.message); save(run); } throw error; }
