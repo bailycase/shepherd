@@ -25,7 +25,7 @@ struct SubagentDefinitionsTests {
         try files.save("odd.md", text: odd, expected: nil)
         let oddParsed = try #require(files.snapshot().first { $0.name == "odd" })
         #expect(oddParsed.unavailableTools == ["rg"] && oddParsed.capability == "can edit · pi has no rg")
-        try files.delete("odd.md", expected: oddParsed.fingerprint)
+        try files.delete("odd.md", expected: try #require(oddParsed.fingerprint))
         let scout = try files.open("scout.md")
         try files.delete("scout.md", expected: scout.fingerprint)
         #expect(try files.snapshot().count == 4)
