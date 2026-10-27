@@ -182,6 +182,11 @@ them except the navigator, which is each window's own ([Windows](#windows-ipad))
   before setting `authorized: true`; use the current offer ID and never replay installation on
   reconnect. Busy hosts must stop work, pause Projects and close terminals. Sparkle may still
   require attention on the host if installation permissions change; do not promise no OS dialog.
+- **Thread files** (`files.v1`; docs/design/side-pane-files.md): mount `ThreadFilesPane(thread:)` in the
+  side pane, or push `ThreadFilesScreen(thread:)` on compact width (`App/iOS/Files`). Both read
+  `RemoteHostClient.listFiles(agentID:path:showHidden:)` and `.readFile(agentID:path:)` through one
+  `ThreadFilesModel` per thread (`ThreadFilesStores`, forgotten with its host) and say "Files needs a
+  newer Shepherd on <host>" on a host without the capability.
 - **Browser tunnels** (`browser.tunnel.v1`; the Mac's remote Browser tab, docs/browser.md › Remote).
   The iPad's Browser tab reuses the whole protocol layer and none of the Mac's page:
   `host.connectedClient?.tunnels` is the connection's `BrowserTunnelHub` (`bridge(fd:agentID:port:)`

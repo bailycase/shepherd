@@ -76,8 +76,15 @@ struct SidePaneView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .task { vm.ensureFileTree(owner) }
             }
-        case .remote:
-            FilesUnavailableView()
+        case .remote(let ref):
+            if let model = vm.fileTree(for: ref) {
+                FilesTab(model: model)
+                    .id(model.rootPath)
+                    .task { vm.ensureFileTree(owner) }
+            } else {
+                FilesUnavailableView(host: vm.remoteHosts.connections.first { $0.id == ref.hostID }?.config.name)
+                    .task { vm.ensureFileTree(owner) }
+            }
         }
     }
 

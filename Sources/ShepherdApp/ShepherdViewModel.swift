@@ -211,6 +211,8 @@ final class ShepherdViewModel {
     /// Per-agent file tree models for the Files tab, keyed by agent ID. Created on first
     /// Files tab open; removed when the thread is gone.
     var fileTrees: [AgentID: FileTreeModel] = [:]
+    /// A remote thread's tree, read from its host over `files.v1`; replaced when its folder there changes.
+    var remoteFileTrees: [RemoteAgentRef: FileTreeModel] = [:]
     /// When each agent entered its current status this run: the sidebar's running elapsed
     /// time. Ephemeral; an agent restored at launch counts from its first report.
     var statusSince: [AgentID: Date] = [:]

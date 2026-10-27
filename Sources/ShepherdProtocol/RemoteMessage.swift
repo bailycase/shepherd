@@ -35,7 +35,8 @@ public enum RemoteProtocol {
     /// And it runs an agent's browser tools on its own page when the host asks
     /// (`browserDriveCapability`), which a host asks only of a client that lists it.
     /// Space editing understands both legacy .pi and current .shepherd inventories (`projectsV2Capability`).
-    public static let clientCapabilities = [pushNotificationsCapability, checkpointRecoveryCapability, projectResultCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectPlacementCapability, logicalProjectRuntimeCapability, projectExecutionCapability, nativeQueueCapability, nativeStartupDialogsCapability, thinkingLevelsCapability, designsCapability, browserTunnelCapability, browserDriveCapability, projectsV2Capability]
+    /// And it browses a thread's folder (`filesCapability`), which a host offers only to a client that lists it.
+    public static let clientCapabilities = [filesCapability, pushNotificationsCapability, checkpointRecoveryCapability, projectResultCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectPlacementCapability, logicalProjectRuntimeCapability, projectExecutionCapability, nativeQueueCapability, nativeStartupDialogsCapability, thinkingLevelsCapability, designsCapability, browserTunnelCapability, browserDriveCapability, projectsV2Capability]
     public static let version = 1
     /// A host's final reply to a `hello` whose token it refused; it closes the connection after.
     public static let unauthorizedCode = "unauthorized"
@@ -143,7 +144,10 @@ public enum RemoteProtocol {
     public static let browserTabsCapability = "browser.tabs.v1"
 
     public static let moveThreadCapability = "agent.move.v1"
-    public static let capabilities = [pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectTrustCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, nativeArtifactsCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability]
+    /// The host lists and reads a thread's folder, read-only (`RemoteAgentQuery.files`, `.fileRead`; `ThreadFilesLimits`).
+    /// Offered only to a client that lists it in `hello`; a client and an older host show Files as needing a newer host.
+    public static let filesCapability = "files.v1"
+    public static let capabilities = [filesCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectTrustCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, nativeArtifactsCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -432,6 +436,19 @@ public enum RemoteAgentQuery: Codable, Hashable, Sendable {
     /// The dev servers the agent's folder on the host offers (`DevServerDiscovery`): the Browser's
     /// Nothing open (`browserTunnelCapability`). Answered by the host's server itself.
     case devServers
+    /// A folder of the thread's own folder on the host, `path` relative to it ("" for the folder itself),
+    /// hidden entries only when asked (`filesCapability`, like `fileRead`). Answered by the host's server itself.
+    case files(path: String, showHidden: Bool)
+    /// A UTF-8 text file in the thread's folder, at most `ThreadFilesLimits.readBytes`.
+    case fileRead(path: String)
+
+    /// `files` or `fileRead`: answered by the host's server itself.
+    public var isFiles: Bool {
+        switch self {
+        case .files, .fileRead: true
+        default: false
+        }
+    }
 
     /// Answered by the host's server itself, without the GUI.
     public var isChanges: Bool {
@@ -468,6 +485,10 @@ public enum RemoteAgentResult: Codable, Hashable, Sendable {
     case changesTurn(ChangesTurn)
     /// The dev servers the agent's folder on the host offers (`RemoteAgentQuery.devServers`).
     case devServers([DevServer])
+    /// A folder's entries (`RemoteAgentQuery.files`).
+    case files(ThreadFileListing)
+    /// A file's bytes, UTF-8 text (`RemoteAgentQuery.fileRead`).
+    case fileData(Data)
 }
 
 /// Client → host. The first message on a connection must be a successful

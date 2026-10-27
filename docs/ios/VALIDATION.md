@@ -183,6 +183,10 @@ iPadReviewSplit, iPadCommit, on an iPad in landscape) run against a host with `c
 `thread` (Undo), `thread-undone` (Redo), `thread-card-legacy` (an older host: no Undo), and
 `changes-card` (the iPad's "Edited 5 files").
 
+**The Files screens.** `files-tree`, `files-file` and `files-old-host` (`Fixtures/FilesFixtures.swift`)
+present `ThreadFilesScreen` over the thread (the side pane has no route yet): Studio answers
+`files.v1` listings and one read; `files-old-host` is a host without it.
+
 **The designs screens.** Studio serves designs.v1 from `Fixtures/DesignsFixtures.swift` (boards
 written for the fixtures, two comments, two systems) and refuses every design write; hosts without
 fixture designs don't offer the capability. `home-designs`, `designs`, `design`, `design-board`

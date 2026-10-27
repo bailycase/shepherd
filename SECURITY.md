@@ -73,6 +73,7 @@ Settings ▸ Remote ▸ Serve this Mac ▸ Listener.
   - create agents that run pi with your credentials
   - send agents instructions
   - list host directories
+  - read text files in a thread's folder (read-only, bounded, never outside that folder)
   - upload files (up to 32 MiB each, into a private `0700` directory)
   - review diffs and revert files
   - create, finalize (commit, push, open PRs), and delete worktrees
