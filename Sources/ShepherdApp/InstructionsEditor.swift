@@ -88,6 +88,9 @@ struct InstructionsEditor: NSViewRepresentable {
         /// text alone (and an input method's marked text with it).
         private var styled: (text: String, saved: String, scale: CGFloat)?
 
+        /// `**bold**` in a project file: compiled once, not per line per keystroke.
+        private static let bold = try! NSRegularExpression(pattern: "\\*\\*[^*]+\\*\\*")
+
         init(_ parent: InstructionsEditor) {
             self.parent = parent
         }
@@ -115,9 +118,8 @@ struct InstructionsEditor: NSViewRepresentable {
                     guard NSMaxRange(range) <= storage.length else { continue }
                     storage.addAttributes(styles.attributes(for: span.role), range: range)
                 }
-                if parent.project, parent.markdown,
-                   let pattern = try? NSRegularExpression(pattern: "\\*\\*[^*]+\\*\\*") {
-                    for match in pattern.matches(in: line, range: NSRange(location: 0, length: (line as NSString).length)) {
+                if parent.project, parent.markdown, line.contains("**") {
+                    for match in Self.bold.matches(in: line, range: NSRange(location: 0, length: (line as NSString).length)) {
                         storage.addAttributes(styles.heading, range: NSRange(location: location + match.range.location, length: match.range.length))
                     }
                 }
