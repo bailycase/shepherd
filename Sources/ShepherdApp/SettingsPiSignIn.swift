@@ -8,10 +8,19 @@ import ShepherdSessions
 struct PiSignInSettings: View {
     let yourPi: YourPiModel
     let auth: PiAuthStore
+    @State private var renaming: Renaming?
+    @State private var newName = ""
+
+    /// The account the Rename alert is up for.
+    private struct Renaming: Equatable {
+        let provider: String
+        let providerName: String
+        let account: PiAccount
+    }
 
     var body: some View {
         let page = PiSignInPage.make(survey: yourPi.survey ?? YourPiSurvey(), signingIn: signingIn, expired: auth.expired,
-                                     needed: auth.needed, problems: auth.problems)
+                                     needed: auth.needed, problems: auth.problems, accounts: auth.accounts)
         ScrollViewReader { proxy in
             SettingsPage(title: "Sign-in",
                          explanation: "Subscriptions and API keys for agents on this Mac. They live in Shepherd’s own pi, so your terminal pi keeps its own.") {
@@ -52,6 +61,19 @@ struct PiSignInSettings: View {
             }
         }
         .task { await yourPi.refresh() }
+        .task { await auth.refreshAccounts() }
+        .alert("Rename account", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } }),
+               presenting: renaming) { target in
+            TextField("Name", text: $newName)
+            Button("Rename") {
+                let name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !name.isEmpty, name != target.account.name else { return }
+                Task { await auth.renameAccount(target.provider, target.account.id, to: name) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { target in
+            Text("A name for this \(target.providerName) account, shown only here.")
+        }
     }
 
     private var signingIn: String? {
@@ -60,12 +82,56 @@ struct PiSignInSettings: View {
     }
 
     private func providerRow(_ row: ProviderRowModel) -> some View {
-        SHProviderRow(row.name, badge: row.badge, mono: row.custom, status: PiSignInWords.status(row.auth),
-                      sharedLoginNote: row.sharedLoginNote, problem: row.problem) {
-            trailing(row)
-            if hasMenu(row) {
-                SHProviderMenuButton(for: row.name) { menu(row) }
+        VStack(spacing: 0) {
+            SHProviderRow(row.name, badge: row.badge, mono: row.custom, status: PiSignInWords.status(row.auth),
+                          sharedLoginNote: row.sharedLoginNote, problem: row.problem) {
+                trailing(row)
+                if hasMenu(row) {
+                    SHProviderMenuButton(for: row.name) { menu(row) }
+                }
             }
+            if let list = row.accounts, list.accounts.count > 1 {
+                accounts(row, list)
+            }
+        }
+    }
+
+    /// A provider's saved accounts, once there are two: each with Use and its menu, then rotation.
+    @ViewBuilder private func accounts(_ row: ProviderRowModel, _ list: PiAccountList) -> some View {
+        let now = Date()
+        SHHairline().padding(.leading, SHPiAccountMetrics.inset)
+        VStack(spacing: 0) {
+            ForEach(list.accounts) { account in
+                let active = account.id == list.active
+                let limited = account.limitedUntil.flatMap { $0 > now ? $0.formatted(date: .omitted, time: .shortened) : nil }
+                SHProviderAccountRow(account.name, state: SHAccountState(active: active, limitedUntil: limited)) {
+                    if !active {
+                        Button("Use") { Task { await auth.switchAccount(row.id, to: account.id) } }
+                            .buttonStyle(.sh(.secondary, size: .s))
+                            .accessibilityLabel("Use \(account.name) for \(row.name)")
+                    }
+                    SHProviderMenuButton(for: account.name) {
+                        Button("Rename…") {
+                            newName = account.name
+                            renaming = Renaming(provider: row.id, providerName: row.name, account: account)
+                        }
+                        Divider()
+                        Button("Remove", role: .destructive) { Task { await auth.removeAccount(row.id, account.id) } }
+                    }
+                }
+            }
+        }
+        .padding(.top, SH.Space.s)
+        SHAccountRotationRow(provider: row.name, isOn: Binding(get: { list.rotate },
+                                                               set: { on in Task { await auth.setRotate(row.id, on) } }))
+    }
+
+    /// Subscriptions and keys in auth.json can save more than one account; a variable or custom provider can't.
+    private func canAddAccount(_ row: ProviderRowModel) -> Bool {
+        guard !row.custom else { return false }
+        switch row.auth {
+        case .signedIn, .key: return true
+        default: return false
         }
     }
 
@@ -76,6 +142,7 @@ struct PiSignInSettings: View {
                 .buttonStyle(.sh(.ghost, size: .s))
                 .disabled(auth.signingOut.contains(row.id))
                 .accessibilityLabel("Sign out of \(row.name)")
+                .help((row.accounts?.accounts.count ?? 0) > 1 ? "Signs out of every saved \(row.name) account." : "")
         case .expired:
             Button("Sign in again") { auth.signIn(row.id) }
                 .buttonStyle(.sh(.primary, size: .s))
@@ -108,12 +175,18 @@ struct PiSignInSettings: View {
         switch row.auth {
         case .key, .environment:
             Button("Change key…") { auth.signIn(row.id, key: true) }
+            if canAddAccount(row) {
+                Button("Add another account…") { Task { await auth.addAccount(row.id, key: true) } }
+            }
             reimportItem(row)
             Divider()
             Button("Remove key", role: .destructive) { Task { await auth.signOut(row.id) } }
                 .disabled({ if case .environment = row.auth { true } else { false } }())
         default:
             Button("Sign in again") { auth.signIn(row.id) }
+            if canAddAccount(row) {
+                Button("Add another account…") { Task { await auth.addAccount(row.id) } }
+            }
             reimportItem(row)
             if row.auth.isSignedIn || { if case .expired = row.auth { true } else { false } }() {
                 Divider()

@@ -1,5 +1,6 @@
 import Foundation
 import ShepherdProtocol
+import ShepherdRemote
 import ShepherdSessions
 
 /// A provider's sign-in in Shepherd's pi, as Settings ▸ Pi ▸ Sign-in's row draws it (PiAuthStates'
@@ -39,6 +40,8 @@ struct ProviderRowModel: Equatable, Identifiable {
     /// How its Re-import stands; nil when the user's pi has no sign-in for it.
     var freshness: PiFreshness?
     var problem: String?
+    /// Its saved accounts, when it has any (`PiAccounts`).
+    var accounts: PiAccountList?
 }
 
 /// Settings ▸ Pi ▸ Sign-in's rows, derived once per change from the survey (docs/design/settings-pi.md › Pi ▸
@@ -55,7 +58,7 @@ struct PiSignInPage: Equatable {
     /// `signingIn` is the provider whose sheet is up; `expired` those pi said failed to refresh;
     /// `needed` the providers agents wait on; `problems` a failed sign-out by provider.
     static func make(survey: YourPiSurvey, signingIn: String? = nil, expired: Set<String> = [], needed: Set<String> = [],
-                     problems: [String: String] = [:]) -> PiSignInPage {
+                     problems: [String: String] = [:], accounts: [String: PiAccountList] = [:]) -> PiSignInPage {
         var page = PiSignInPage()
         let logins = Dictionary(survey.logins.map { ($0.provider, $0) }, uniquingKeysWith: { first, _ in first })
         let custom = Set(survey.customProviderDetails.map(\.id))
@@ -73,7 +76,7 @@ struct PiSignInPage: Equatable {
             page.subscriptions.append(ProviderRowModel(
                 id: subscription.id, name: subscription.name, badge: PiSignInCatalog.badge(subscription.id), auth: auth,
                 sharedLoginNote: subscription.sharedLogin, freshness: survey.freshness["login:\(subscription.id)"],
-                problem: problems[subscription.id]))
+                problem: problems[subscription.id], accounts: accounts[subscription.id]))
         }
 
         for login in survey.logins where !custom.contains(login.provider) {
@@ -89,7 +92,8 @@ struct PiSignInPage: Equatable {
             }
             page.apiKeys.append(ProviderRowModel(
                 id: login.provider, name: PiSignInCatalog.name(login.provider), badge: PiSignInCatalog.badge(login.provider),
-                auth: auth, freshness: survey.freshness["login:\(login.provider)"], problem: problems[login.provider]))
+                auth: auth, freshness: survey.freshness["login:\(login.provider)"], problem: problems[login.provider],
+                accounts: accounts[login.provider]))
         }
         // A key being added shows as signing in until it lands.
         if let signingIn, PiSignInCatalog.subscription(signingIn) == nil, !custom.contains(signingIn),
@@ -134,6 +138,13 @@ struct PiSignInPage: Equatable {
 /// What pi's words say about sign-ins: the provider a refresh failed for, and the provider a pi
 /// that can't start needs.
 enum PiAuthText {
+    /// The provider's limit, not a fault: a rate limit (as the thread classifies it), or a
+    /// subscription's usage limit or quota, which pi doesn't retry.
+    static func isLimit(_ message: String) -> Bool {
+        NativeTurnError(text: message).kind == .rateLimit
+            || message.range(of: #"usage.?limit|quota|insufficient_quota"#, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
     /// "OAuth refresh failed for anthropic" (pi-ai: auth/resolve.js).
     static func expiredProvider(in message: String) -> String? {
         let pattern = #"OAuth refresh (?:failed|returned a token that expires too soon) for ([A-Za-z0-9._-]+)"#

@@ -652,6 +652,37 @@ struct SettingsPreviewTests {
         }
     }
 
+    /// Settings ▸ Pi ▸ Sign-in with saved accounts: Anthropic's two (one limited) rotating, OpenAI
+    /// Codex's three not, and Kimi's one, which looks as it does with none.
+    @Test func settingsPiSignInAccounts() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let limited = Date().addingTimeInterval(40 * 60).timeIntervalSince1970
+        let file: [String: Any] = [
+            "anthropic": ["active": "a1", "rotate": true, "accounts": [
+                ["id": "a1", "name": "Work", "credential": [String: Any]()],
+                ["id": "a2", "name": "Personal", "credential": [String: Any](), "limitedUntil": limited],
+            ]],
+            "openai-codex": ["active": "c2", "rotate": false, "accounts": [
+                ["id": "c1", "name": "Account 1", "credential": [String: Any]()],
+                ["id": "c2", "name": "Team Plus", "credential": [String: Any]()],
+                ["id": "c3", "name": "A very long account name somebody typed in to see exactly where it starts to truncate on this page, and then some more words",
+                 "credential": [String: Any]()],
+            ]],
+            "kimi-coding": ["active": "k1", "rotate": false, "accounts": [["id": "k1", "name": "Account 1", "credential": [String: Any]()]]],
+        ]
+        let auth = workspace.vm.piAuth
+        try FileManager.default.createDirectory(at: auth.pi.files.directory, withIntermediateDirectories: true)
+        try JSONSerialization.data(withJSONObject: file)
+            .write(to: auth.pi.files.directory.appendingPathComponent(PiAccounts.fileName))
+        await auth.refreshAccounts()
+        #expect(auth.accounts.count == 3)
+        workspace.vm.settingsSection = .piSignIn
+        try await Preview.renderMatrix("settings-pi-sign-in-accounts", size: CGSize(width: 1280, height: 2200)) {
+            SettingsView(vm: workspace.vm)
+        }
+    }
+
     @Test(arguments: ["copied", "empty", "long"], [SettingsSection.pi, .piSignIn])
     func settingsCommandCredentials(state: String, section: SettingsSection) async throws {
         var survey = state == "empty" ? YourPiSurvey() : PreviewYourPi.imported

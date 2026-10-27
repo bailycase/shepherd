@@ -22,6 +22,10 @@ final class PiAuthStore {
     var focus: String?
     /// Providers a sign-out is under way for.
     private(set) var signingOut: Set<String> = []
+    /// Saved accounts by provider (`PiAccounts`): only providers with any.
+    private(set) var accounts: [String: PiAccountList] = [:]
+    /// The provider whose sign-in under way adds an account instead of replacing the active one.
+    @ObservationIgnored private var adding: String?
 
     /// A sign-in landed for a provider: the agents waiting on it start again. Returns how many.
     @ObservationIgnored var onSignedIn: ((String) -> Int)?
@@ -61,6 +65,7 @@ final class PiAuthStore {
     /// a time: another provider's under way is cancelled.
     func signIn(_ provider: String, key: Bool = false, origin: PiSignInSession.Origin = .settings) {
         if let session, session.provider == provider, session.phase.isLive { return }
+        if adding != provider { adding = nil }
         session?.end()
         let subscription = key ? nil : PiSignInCatalog.subscription(provider)
         let next = PiSignInSession(provider: provider, subscription: subscription, origin: origin, store: self)
@@ -70,6 +75,7 @@ final class PiAuthStore {
 
     /// The sheet closed, whichever way: a sign-in under way is cancelled.
     func closeSheet() {
+        adding = nil
         session?.end()
         session = nil
     }
@@ -83,6 +89,9 @@ final class PiAuthStore {
     /// A sign-in landed in Shepherd's pi.
     func landed(_ provider: String) -> Int {
         expired.remove(provider)
+        let adding = self.adding == provider
+        self.adding = nil
+        Task { await accountChange(provider) { try $0.landed(provider, adding: adding) } }
         pi.catalog.invalidate()
         onChanged?()
         return onSignedIn?(provider) ?? 0
@@ -108,7 +117,13 @@ final class PiAuthStore {
                 failure = String(describing: error)
             }
         }
-        if let failure { problems[provider] = "Couldn’t sign out: \(failure)" } else { expired.remove(provider) }
+        if let failure { problems[provider] = "Couldn’t sign out: \(failure)" } else {
+            expired.remove(provider)
+            // Its saved accounts go with it; the one onChanged below covers both.
+            let store = accountStore
+            await Task.detached { try? store.forget(provider) }.value
+            await refreshAccounts()
+        }
         pi.catalog.invalidate()
         onChanged?()
     }
@@ -122,6 +137,64 @@ final class PiAuthStore {
             }
         }
         return "The sign-in helper stopped."
+    }
+
+    // MARK: Accounts
+
+    var accountStore: PiAccounts { PiAccounts(home: pi.files) }
+
+    /// Reads the saved accounts again.
+    func refreshAccounts() async {
+        let store = accountStore
+        accounts = await Task.detached { store.lists() }.value
+    }
+
+    /// Signs another account in beside the one there: the current one is saved first.
+    func addAccount(_ provider: String, key: Bool = false) async {
+        if let problem = await readyHome() { problems[provider] = problem; return }
+        guard await accountChange(provider, { try $0.beginAdding(provider) }) else { return }
+        signIn(provider, key: key)
+        adding = provider
+    }
+
+    func switchAccount(_ provider: String, to id: String) async {
+        if await accountChange(provider, { try $0.activate(provider, id) }) { expired.remove(provider) }
+    }
+
+    func removeAccount(_ provider: String, _ id: String) async {
+        if await accountChange(provider, { try $0.remove(provider, id) }) { expired.remove(provider) }
+    }
+
+    func renameAccount(_ provider: String, _ id: String, to name: String) async {
+        await accountChange(provider) { try $0.rename(provider, id, to: name) }
+    }
+
+    func setRotate(_ provider: String, _ on: Bool) async {
+        await accountChange(provider) { try $0.setRotate(provider, on) }
+    }
+
+    /// An agent's request hit `provider`'s limit: the next saved account takes over when rotation
+    /// is on. Returns the names switched between, or nil.
+    func limitHit(_ provider: String) async -> (from: String, to: String)? {
+        guard accounts[provider]?.rotate == true else { return nil }
+        let store = accountStore
+        let switched = await Task.detached { try? store.rotate(provider) }.value ?? nil
+        await refreshAccounts()
+        if switched != nil { expired.remove(provider); onChanged?() }
+        return switched
+    }
+
+    /// Runs one change to the accounts off the main thread; a failure is the provider's problem.
+    @discardableResult
+    private func accountChange(_ provider: String, _ change: @escaping @Sendable (PiAccounts) throws -> Void) async -> Bool {
+        let store = accountStore
+        let failure = await Task.detached { () -> String? in
+            do { try change(store); return nil } catch { return String(describing: error) }
+        }.value
+        problems[provider] = failure.map { "Couldn’t change accounts: \($0)" }
+        await refreshAccounts()
+        onChanged?()
+        return failure == nil
     }
 
     // MARK: What pi says

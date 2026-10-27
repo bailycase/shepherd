@@ -334,6 +334,23 @@ turn that fails with pi's "OAuth refresh failed for <provider>" marks that subsc
 Sign-in. The model catalog is kept until `auth.json`, `models.json` or `settings.json` in the home
 changes.
 
+### Accounts
+
+pi reads one credential per provider from `auth.json`. A provider can keep several saved accounts
+(`PiAccounts`): the active one is in `auth.json`, the rest in `shepherd-accounts.json` (0600) beside
+it. A row's ⋯ ▸ Add another account… saves the current credential (as "Account 1" the first time)
+and runs the ordinary sign-in, whose credential lands as a new account. Switching saves the active
+credential back first (refresh tokens rotate), then writes the chosen one, both under pi's lock;
+pi re-reads `auth.json` when it changes, so running agents use it on their next request. Signing
+out of the provider forgets every saved account.
+
+Rotation is per provider and off by default. When a model request fails with a limit
+(`PiAuthText.isLimit`: a rate limit, a usage limit or quota), the active account sits out
+`PiAccounts.cooldown` (an hour) and the next account not sitting out becomes active; the thread
+says which. A limit within `PiAccounts.grace` of a switch is the old account's request and doesn't
+switch again, and when every account is sitting out nothing switches, so a burst of limits stops.
+Rotation only changes which credential is in `auth.json`: pi's own retry or the next turn uses it.
+
 Sign-in's rows (`PiSignInPage`) read both sides as plain files: Shepherd's `auth.json` and
 `models.json`, and the user's pi for Re-import. A key shows only masked (`PiKeyMask`: its prefix
 and last four), a variable by name, a command as its text. How a copy stands against the user's pi
