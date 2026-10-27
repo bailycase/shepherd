@@ -139,8 +139,10 @@ enum StatusExtension {
         // Deferred tools are loaded with pi's tool_search. With MCP on the launch already has it; without, it is the one built-in to add.
         let toolSearch = deferTools && mcp == nil ? ["builtin:tool-search"] : []
         // Child result delivery must run before the goal's final-settlement evaluator.
+        // ask_user: a person watches a thread or a design; nobody answers an automation run.
+        let askExtensionPath = isAutomation ? nil : AskExtension.path(in: home)
         var extensions = [extensionPath, ServiceTierExtension.path(in: home), instructions?.extensionPath, panesExtensionPath, reviewExtensionPath, subagentsExtensionPath,
-                          childrenExtensionPath, GoalExtension.path(in: home), namerExtensionPath, design?.extensionPath ?? designTools?.extensionPath, designReferences?.extensionPath,
+                          childrenExtensionPath, GoalExtension.path(in: home), askExtensionPath, namerExtensionPath, design?.extensionPath ?? designTools?.extensionPath, designReferences?.extensionPath,
                           browserExtensionPath].compactMap { $0 } + (mcp?.extensions ?? toolSearch) + [contextExtensionPath].compactMap { $0 }
         if let projectContext {
             if projectContext.coordinator { extensions = [extensionPath, ServiceTierExtension.path(in: home)] }
@@ -176,6 +178,7 @@ enum StatusExtension {
             if !namingModel.isEmpty { env["SHEPHERD_NAMER_MODELS"] = namingModel }
         }
         if isAutomation { env["SHEPHERD_AUTOMATION"] = "1" }
+        if askExtensionPath != nil { env[AskExtension.environmentKey] = "1" }
         // A design's agent: its design tools, and the skill they hand pi.
         if let design {
             env["SHEPHERD_DESIGN_ID"] = design.designID.rawValue
