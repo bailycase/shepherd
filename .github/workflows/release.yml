@@ -438,7 +438,10 @@ jobs:
       - name: Metal toolchain
         run: xcodebuild -downloadComponent MetalToolchain
 
+      # The public DSN (docs/diagnostics.md); unset, the build reports nothing.
       - name: Archive ${{ env.SCHEME }} (unsigned)
+        env:
+          SHEPHERD_SENTRY_DSN: ${{ vars.SHEPHERD_IOS_SENTRY_DSN }}
         run: |
           xcodebuild archive \
             -project Shepherd.xcodeproj \
@@ -450,7 +453,19 @@ jobs:
             -skipPackagePluginValidation -skipMacroValidation \
             -onlyUsePackageVersionsFromResolvedFile \
             CODE_SIGNING_ALLOWED=NO \
-            CURRENT_PROJECT_VERSION="$BUILD"
+            CURRENT_PROJECT_VERSION="$BUILD" \
+            SHEPHERD_SENTRY_DSN="$SHEPHERD_SENTRY_DSN"
+
+      # After the archive, so its package plugins and macros never see the token.
+      - name: Upload optional Sentry symbols
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          SHEPHERD_SENTRY_DSN: ${{ vars.SHEPHERD_IOS_SENTRY_DSN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: shepherd-ios
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: python3 scripts/upload-sentry-symbols.py "$RUNNER_TEMP/Shepherd-iOS.xcarchive/dSYMs"
 
       - name: Verify and preserve archive entitlements
         run: |

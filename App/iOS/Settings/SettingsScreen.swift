@@ -63,6 +63,7 @@ private struct SettingsList: View {
                 SHListCard {
                     row(.notifications, trailing: SHListRow.Trailing.none)
                     row(.experiments, trailing: value(store.experimentsValue))
+                    row(.diagnostics, trailing: SHListRow.Trailing.none)
                 }
                 SettingsSection("About") {
                     SHListCard { AboutRow(agent: store.agentVersion(chosenHost: navigator.settingsSelection.chosenHost)) }
@@ -171,6 +172,7 @@ struct SettingsPageView: View {
         case .hosts: HostsScreen()
         case .notifications: NotificationsScreen()
         case .experiments: ExperimentsScreen()
+        case .diagnostics: DiagnosticsScreen()
         }
     }
 }

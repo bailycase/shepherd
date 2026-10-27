@@ -996,7 +996,9 @@ class ContractTests(unittest.TestCase):
         # The Browser loads a host's dev server at http://localhost through the device's loopback;
         # nothing broader than the local-networking exception.
         info = plistlib.loads(self.read("App", "iOS", "Info.plist").encode())
-        self.assertEqual(info, {"NSAppTransportSecurity": {"NSAllowsLocalNetworking": True}})
+        self.assertEqual(info, {"NSAppTransportSecurity": {"NSAllowsLocalNetworking": True},
+                                # Empty unless the TestFlight job supplies the public DSN.
+                                "ShepherdSentryDSN": "$(SHEPHERD_SENTRY_DSN)"})
 
     def test_every_ios_marketing_version_is_one_testflight_accepts(self):
         for block in self.ios_configurations():

@@ -3,7 +3,7 @@
 Shepherd's macOS app can send opt-in crash and performance diagnostics to Sentry. Settings > Advanced >
 Diagnostics > Share diagnostics is off by default. The existing `shareDiagnostics` preference covers both;
 there is no second switch, and existing opt-ins remain opted in. A build without a valid hosted Sentry
-DSN cannot enable reporting. iOS does not initialize the SDK.
+DSN cannot enable reporting. The iOS client reports differently: see [iOS](#ios).
 
 ## What is sent
 
@@ -156,6 +156,25 @@ For a Dev build, supply `SHEPHERD_SENTRY_DSN=<public DSN>` to the existing `xcod
 Use scratch support, defaults and agent homes for testing; never crash a running working copy.
 The SDK's default release name distinguishes bundle identifier, version and build. The main and
 Nightly apps can share a Sentry project and be filtered by release/environment.
+
+## iOS
+
+The iPhone and iPad client reports to the separate `shepherd-ios` project, and unlike the Mac it is
+opt-out: on unless Settings > Diagnostics turns it off. `App/iOS/App/MobileDiagnostics.swift` is the
+only iOS file that imports Sentry. It starts the SDK at launch with its automatic instrumentation:
+crashes, app hangs, watchdog terminations, MetricKit, every trace (app start, screens, taps, network,
+file I/O, frames, time to full display), profiles on app start and a quarter of sessions, the view
+hierarchy (types, frames, identifiers; no text), and a replay of the moments around an error with all
+text and images masked. No screenshot is attached, and `sendDefaultPii` stays off, so no IP, user or
+request headers (the push relay's bearer token) are sent. Automatic breadcrumbs keep request URLs.
+
+`DiagnosticsBudget` (ShepherdRemote) caps each UTC day at 100 errors and 1000 transactions, persisted
+across launches; profiles and replays are bounded by their sample rates and the error cap. Turning the
+switch off closes the SDK and deletes unsent reports; turning it on waits for the next launch.
+
+Only a build given a DSN reports: the TestFlight job passes repository variable `SHEPHERD_IOS_SENTRY_DSN`
+and uploads the archive's dSYMs to `shepherd-ios` with the existing `SENTRY_AUTH_TOKEN`. Local and
+simulator builds have no DSN and send nothing.
 
 ## Removing or replacing Sentry
 

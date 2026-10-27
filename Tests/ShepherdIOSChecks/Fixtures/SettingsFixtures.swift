@@ -9,6 +9,7 @@ extension FixtureCatalog {
             FixtureScreen(name: "settings", routes: [.settings(.root)], tab: .settings),
             FixtureScreen(name: "appearance", routes: [.settings(.appearance)], tab: .settings),
             FixtureScreen(name: "notifications", routes: [.settings(.notifications)], tab: .settings),
+            FixtureScreen(name: "diagnostics", routes: [.settings(.diagnostics)], tab: .settings),
             FixtureScreen(name: "hosts", routes: [.settings(.hosts)], tab: .settings),
             FixtureScreen(name: "host", routes: [.settings(.hosts), .settings(.host(FixtureData.studio))], tab: .settings),
             FixtureScreen(name: "host-offline", routes: [.settings(.hosts), .settings(.host(FixtureData.laptop))], tab: .settings),
