@@ -83,6 +83,7 @@ final class ShepherdViewModel {
     /// The sidebar's More is open, showing Hosts and Extensions. Ephemeral.
     /// Activity groups, cached on their source, pins and seen completion generations.
     @ObservationIgnored var sidebarListsCache: (source: SidebarSource, pins: SidebarPins, seen: [SidebarRowID: Int], lists: SidebarLists)?
+    @ObservationIgnored var sidebarProjectsCache: (key: SidebarProjectsKey, rows: [SidebarLogicalProject])?
     var sidebarCompletions = SidebarCompletions()
     /// Prompted creations belong in Working before pi reports its first turn.
     var sidebarOpeningTurns: Set<AgentID> = [] {
@@ -93,8 +94,19 @@ final class ShepherdViewModel {
         }
     }
     @ObservationIgnored var sidebarPreparingOpeningTurns: Set<AgentID> = []
-    /// Last ten measured tool-completion rates, not a decorative waveform.
-    var sidebarActivitySamples: [AgentID: [Double]] = [:]
+    /// Last ten measured tool-completion rates per agent, not a decorative waveform. Each agent's
+    /// box is observed by its own row alone, so one agent's tool call redraws no other row.
+    @ObservationIgnored var sidebarActivityBoxes: [AgentID: SidebarActivityBox] = [:]
+    var sidebarActivitySamples: [AgentID: [Double]] {
+        sidebarActivityBoxes.compactMapValues { $0.samples.isEmpty ? nil : $0.samples }
+    }
+    /// The agent's box, made on first ask so the row observing it sees the samples arrive.
+    func sidebarActivityBox(_ id: AgentID) -> SidebarActivityBox {
+        if let box = sidebarActivityBoxes[id] { return box }
+        let box = SidebarActivityBox()
+        sidebarActivityBoxes[id] = box
+        return box
+    }
     @ObservationIgnored var sidebarActivityLast: [AgentID: Date] = [:]
     var sidebarSeenCompletions: [SidebarRowID: Int] = [:]
     /// Last opened thread, even while a destination covers it.
@@ -569,7 +581,8 @@ final class ShepherdViewModel {
     @ObservationIgnored private var resignActiveObserver: NSObjectProtocol?
     @ObservationIgnored private var becomeActiveObserver: NSObjectProtocol?
     @ObservationIgnored var missingSpaceWatch: Task<Void, Never>?
-    @ObservationIgnored var missingSpaceCheck = (running: false, again: false)
+    /// `paths`: the spaces the last adopt-time pass read, so a broadcast that moved no space runs none.
+    @ObservationIgnored var missingSpaceCheck = (running: false, again: false, paths: [String]?.none)
     /// Reads each local agent's branch and changed files for the header (`CheckoutMonitor`);
     /// nil when the harness turned it off.
     @ObservationIgnored private(set) var checkouts: CheckoutMonitor?
@@ -1218,7 +1231,12 @@ final class ShepherdViewModel {
         if destination == nil, selectedRemoteAgent == nil, let agent = selectedAgent, selectedSpaceID != agent.spaceID {
             selectedSpaceID = agent.spaceID
         }
-        checkMissingSpaces()
+        // A status or checkout broadcast changes no folder: the stat pass runs when the spaces do.
+        let paths = state.spaces.map(\.path)
+        if paths != missingSpaceCheck.paths {
+            missingSpaceCheck.paths = paths
+            checkMissingSpaces()
+        }
         reconcileSidebarCompletions()
         // A Project's coordinator ID is recorded before its agent is registered, while its page already holds the store: keep it.
         threadStores.prune(live: Set(state.agents.map(\.id)).union(state.projects.compactMap(\.coordinatorAgentID)))
@@ -1300,7 +1318,7 @@ final class ShepherdViewModel {
             if status != .idle { sidebarOpeningTurns.remove(id) }
             if old != status || statusSince[id] == nil { statusSince[id] = Date() }
             if old != status, old != .blocked, status == .working {
-                sidebarActivitySamples.removeValue(forKey: id)
+                sidebarActivityBoxes[id]?.samples = []
                 sidebarActivityLast[id] = Date()
             }
             // A turn starting or ending may have changed files.

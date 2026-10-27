@@ -146,7 +146,7 @@ private extension SidebarItemView {
     func accessory(_ row: SidebarListRow) -> SHSidebarRow.Accessory {
         if row.section == .working, case .local(let id) = row.id {
             if case .shortcut = row.accessory { return row.accessory }
-            return .activity(vm.sidebarActivitySamples[id] ?? [])
+            return .activity(vm.sidebarActivityBox(id).samples)
         }
         return row.accessory
     }

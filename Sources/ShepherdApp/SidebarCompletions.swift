@@ -75,8 +75,9 @@ extension ShepherdViewModel {
         let kept = sidebarSeenCompletions.filter { completions.records[$0.key] != nil }
         if kept != sidebarSeenCompletions { sidebarSeenCompletions = kept }
         let live = Set(state.agents.map(\.id))
-        let samples = sidebarActivitySamples.filter { live.contains($0.key) }
-        if samples != sidebarActivitySamples { sidebarActivitySamples = samples }
+        if sidebarActivityBoxes.keys.contains(where: { !live.contains($0) }) {
+            sidebarActivityBoxes = sidebarActivityBoxes.filter { live.contains($0.key) }
+        }
         sidebarActivityLast = sidebarActivityLast.filter { live.contains($0.key) }
     }
 }

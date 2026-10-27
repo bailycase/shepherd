@@ -158,11 +158,15 @@ struct SidebarSource: Equatable {
     /// This Mac's spaces whose folder is gone (moved, renamed or deleted): no new threads.
     var missingSpaces: Set<SpaceID> = []
 
-    /// Child work affects sidebar presentation, never the parent's actual turn status.
+    /// Child work affects sidebar presentation, never the parent's actual turn status. What no
+    /// row shows is dropped too (layouts, checkouts), so a pane divider drag or a changed-files
+    /// count leaves the derivation's cache key unchanged.
     static func presentationState(_ state: ShepherdState, children: [AgentID: [ChildRun]]) -> ShepherdState {
         var state = state
+        state.tabs = []
         for index in state.agents.indices {
             let agent = state.agents[index]
+            if agent.checkout != nil { state.agents[index].checkout = nil }
             if (agent.status == .idle || agent.status == .done),
                children[agent.id]?.contains(where: { !$0.isTerminal && $0.paused != true }) == true {
                 state.agents[index].status = .working
