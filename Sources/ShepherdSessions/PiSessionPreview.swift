@@ -82,6 +82,15 @@ public enum PiSessionPreview {
         }
     }
 
+    /// pi's file for `sessionID` in the session folder of `cwd` under `sessionsRoot`; nil when pi
+    /// has not written one.
+    public static func file(sessionID: String, cwd: String, sessionsRoot: URL) -> URL? {
+        let directory = sessionsRoot.appendingPathComponent(PiSessionFolder.name(forCwd: cwd), isDirectory: true)
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path),
+              let name = names.first(where: { $0.hasSuffix("_\(sessionID).jsonl") }) else { return nil }
+        return directory.appendingPathComponent(name)
+    }
+
     /// A thread known to have nothing in it yet (a new agent), with the model and thinking level
     /// its pi is launched with, when known.
     public static func empty(sessionID: String, model: String?, thinking: String?) -> NativeThreadSnapshot {

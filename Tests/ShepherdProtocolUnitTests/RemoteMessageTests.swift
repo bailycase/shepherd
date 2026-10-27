@@ -896,7 +896,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.projectMCPCapability, RemoteProtocol.projectTrustCapability, RemoteProtocol.piSkillsCapability,
             RemoteProtocol.terminalControlCapability, RemoteProtocol.terminalStartCapability,
             RemoteProtocol.designContextCapability,
-            RemoteProtocol.nativeRetryCapability,
+            RemoteProtocol.nativeRetryCapability, RemoteProtocol.nativeThreadPreviewCapability,
             RemoteProtocol.checkpointRecoveryCapability,
             RemoteProtocol.nativeQueueSubagentCapability, RemoteProtocol.nativeInterruptCapability, RemoteProtocol.browserTunnelCapability, RemoteProtocol.browserDriveCapability,
             RemoteProtocol.browserTabsCapability,

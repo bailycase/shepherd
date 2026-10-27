@@ -155,7 +155,7 @@ struct BrowserAgentFlowTests {
         _ = try await connection.text(.read(selector: nil, maxChars: nil))
 
         // A peer's message does not give it back; the user's message to the thread does.
-        #expect(app.server.pushMessage(toAgent: live.agent.id, text: "[from: worker] hi", delivery: .report) == false, "no panes connection here")
+        #expect(await app.server.pushMessage(toAgent: live.agent.id, text: "[from: worker] hi", delivery: .report) == false, "no panes connection here")
         #expect(page.userHasControl)
         let operation = UUID()
         let result = try await app.server.nativeThread(agentID: live.agent.id, request: .send(

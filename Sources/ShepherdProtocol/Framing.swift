@@ -41,23 +41,39 @@ public struct LineBuffer: Sendable {
     /// throwing so callers cannot accidentally reuse unsafe buffered data.
     public mutating func append(_ chunk: Data) throws -> [Data] {
         guard !chunk.isEmpty else { return [] }
+        // Only the new bytes can hold the next LF, and the consumed prefix is dropped once per
+        // chunk: rescanning and shifting a large partial frame per line was quadratic.
+        var searchFrom = buffer.count
         buffer.append(chunk)
         var lines: [Data] = []
-        while let newlineIndex = buffer.firstIndex(of: 0x0A) {
-            let payloadBytes = buffer.distance(from: buffer.startIndex, to: newlineIndex)
+        var consumed = 0
+        let base = buffer.startIndex
+        while let lf = Self.newline(in: buffer, from: searchFrom) {
+            let payloadBytes = lf - consumed
             guard payloadBytes <= NDJSON.maxPayloadBytes else {
                 buffer.removeAll(keepingCapacity: false)
                 throw LineBufferError.payloadTooLarge(bytes: payloadBytes, terminated: true)
             }
-            lines.append(buffer.subdata(in: buffer.startIndex..<newlineIndex))
-            buffer.removeSubrange(buffer.startIndex...newlineIndex)
+            lines.append(buffer.subdata(in: (base + consumed)..<(base + lf)))
+            consumed = lf + 1
+            searchFrom = consumed
         }
+        if consumed > 0 { buffer.removeSubrange(base..<(base + consumed)) }
         guard buffer.count <= NDJSON.maxPayloadBytes else {
             let payloadBytes = buffer.count
             buffer.removeAll(keepingCapacity: false)
             throw LineBufferError.payloadTooLarge(bytes: payloadBytes, terminated: false)
         }
         return lines
+    }
+
+    /// The offset of the first LF at or after `offset`.
+    private static func newline(in data: Data, from offset: Int) -> Int? {
+        data.withUnsafeBytes { raw -> Int? in
+            guard offset < raw.count, let base = raw.baseAddress,
+                  let hit = memchr(base + offset, 0x0A, raw.count - offset) else { return nil }
+            return base.distance(to: UnsafeRawPointer(hit))
+        }
     }
 }
 

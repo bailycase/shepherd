@@ -67,6 +67,9 @@
   The cwd file `prompt-error` refuses ordinary prompts with its text until removed.
   "provider-error" a turn whose reply fails ("529 overloaded"), once the file `fail-turn`
            appears in the cwd
+  "empty-reply" a turn whose reply has no text and no tool call, failed as pi fails it (the
+           empty-completion error) and auto-retried up to 3 times 300 ms apart, each attempt as
+           empty as the last; `abort_retry` during the wait cancels the retry and the turn fails
   "flaky"  a turn like pi's (stamped user message_start/_end, persisted at its end) whose reply
            fails ("529 overloaded") the first time and answers "Recovered: <text>" after that;
            "flaky-hold" also waits for the file `flaky-go` before replying
@@ -640,6 +643,42 @@ def failed_turn(prompt):
     MESSAGES.extend([{"role": "user", "content": prompt}, final])
     STATE["messageCount"] = len(MESSAGES)
     emit({"type": "agent_end", "messages": [final], "willRetry": False})
+    emit({"type": "agent_settled"})
+
+
+EMPTY_COMPLETION = "The provider returned no answer or tool call. Retry to continue the interrupted turn."
+RETRY = {"abort": threading.Event()}
+
+
+def empty_reply_turn(prompt):
+    """pi's auto-retry of a reply with nothing in it: every attempt is as empty as the first."""
+    emit({"type": "agent_start"})
+    emit({"type": "turn_start"})
+    user = user_message(prompt, [], now_ms())
+    emit({"type": "message_start", "message": user})
+    emit({"type": "message_end", "message": user})
+    MESSAGES.append(user)
+    attempt, replies = 0, []
+    while True:
+        emit({"type": "message_start", "message": {"role": "assistant", "content": []}})
+        final = {"role": "assistant", "content": [], "stopReason": "error", "errorMessage": EMPTY_COMPLETION,
+                 "timestamp": now_ms()}
+        emit({"type": "message_end", "message": final})
+        emit({"type": "turn_end", "message": final, "toolResults": []})
+        MESSAGES.append(final)
+        replies.append(final)
+        if attempt >= 3:
+            emit({"type": "auto_retry_end", "success": False, "attempt": attempt, "finalError": EMPTY_COMPLETION})
+            break
+        attempt += 1
+        emit({"type": "auto_retry_start", "attempt": attempt, "maxAttempts": 3, "delayMs": 300, "errorMessage": EMPTY_COMPLETION})
+        if RETRY["abort"].wait(0.3):
+            RETRY["abort"].clear()
+            emit({"type": "auto_retry_end", "success": False, "attempt": attempt, "finalError": "Retry cancelled"})
+            break
+        emit({"type": "turn_start"})
+    STATE["messageCount"] = len(MESSAGES)
+    emit({"type": "agent_end", "messages": [user] + replies, "willRetry": False})
     emit({"type": "agent_settled"})
 
 
@@ -1510,6 +1549,9 @@ for raw in sys.stdin.buffer:
             os.unlink("ignore-thinking-response-once")
         else:
             respond(cmd, t)
+    elif t == "abort_retry":
+        RETRY["abort"].set()
+        respond(cmd, t)
     elif t == "abort" and os.path.exists("refuse-abort"):
         respond(cmd, t, success=False, error="refused by the stub")
     elif t == "abort":
@@ -1754,6 +1796,10 @@ for raw in sys.stdin.buffer:
         elif message == "provider-error":
             turn_aborted = False
             turn_thread = threading.Thread(target=failed_turn, args=(message,), daemon=True)
+            turn_thread.start()
+        elif message == "empty-reply":
+            turn_aborted = False
+            turn_thread = threading.Thread(target=empty_reply_turn, args=(message,), daemon=True)
             turn_thread.start()
         elif message == "widgets":
             ui("setStatus", statusKey="build", statusText="\x1b[32mgreen\x1b[0m ok")

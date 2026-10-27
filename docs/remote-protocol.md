@@ -16,6 +16,12 @@
   - `native.startup-dialogs.v1` is advertised by both peers. Opted-in clients can answer
     startup questions without replacing history or releasing sends; older clients get an
     update-required error rather than a partial snapshot they would mistake for empty history.
+  - `native.preview.v1`, listed by a client: a `snapshot` for an agent whose pi is not running
+    is answered from pi's saved session file (`NativeThreadSnapshot.preview == true`, no
+    `supportedActions`, a `generation` no request can name) without starting pi; a client that
+    reads many threads at once (a Home screen) then starts no pi per idle agent. Any other
+    request (send, abort, images…) starts pi as before, whose own snapshot replaces the preview.
+    A client that does not list it has every request start pi.
   - native thread requests, with the context and Compact now behind `native.context.v1`, Retry
     in place behind `native.retry.v1`, and Steer now (a message that stops pi and goes at once,
     `interrupt` in `supportedActions`, sent as a steer to a host without it) behind

@@ -103,6 +103,9 @@ struct CheckpointRecoveryIntent: Codable, Equatable, Sendable {
 
 extension RPCThreadState {
     static let retryCommand = "shepherd-retry"
+    /// pi's error for an assistant reply with no text and no tool call (the engine's
+    /// `normalizeEmptyCompletion`, mirrored by the status extension for older engines).
+    static let emptyCompletionError = "The provider returned no answer or tool call. Retry to continue the interrupted turn."
     static let recoveryUnsupported = "Continue requires an updated host and Pi engine with message-free checkpoint recovery support. Nothing was resent."
 
     func cancelRecovery() {

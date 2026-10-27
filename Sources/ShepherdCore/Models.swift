@@ -203,6 +203,11 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     public var serviceTier: ServiceTier
     /// Live goal projection for sidebar badges. The durable record belongs to the pi session.
     public var goalState: String?
+    /// Why the agent's last run ended badly: the failed turn's error, or why pi couldn't start.
+    /// Set by the host and kept in state.json (unlike `status`, which a relaunch resets to idle),
+    /// so a relaunch can still show the row as failed. Cleared when pi next serves the thread or a
+    /// turn starts or ends well. Nil from older state files and hosts.
+    public var lastFailure: String?
 
     public init(
         id: AgentID = AgentID(),
@@ -226,7 +231,8 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         coordinatorFor: ProjectID? = nil,
         designGrants: [DesignGrant] = [],
         serviceTier: ServiceTier = .standard,
-        goalState: String? = nil
+        goalState: String? = nil,
+        lastFailure: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -250,6 +256,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         self.designGrants = designGrants
         self.serviceTier = serviceTier
         self.goalState = goalState
+        self.lastFailure = lastFailure
     }
 
     /// The pi session to launch this agent with. Falls back to the agent's id,
@@ -261,7 +268,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     private enum CodingKeys: String, CodingKey {
         case id, name, spaceID, tabID, paneID, status, model, thinkingLevel, nameIsFinal
         case piSessionID, worktreeBranch, worktreeBase, worktreePath, lastActiveAt, waitingOn, waitingReason, checkout, designID, coordinatorFor, projectWorkerFor, executionFor, runtime
-        case designGrants, serviceTier, goalState
+        case designGrants, serviceTier, goalState, lastFailure
     }
 
     public init(from decoder: Decoder) throws {
@@ -302,6 +309,8 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         // as Standard, which sends nothing.
         serviceTier = ((try? c.decodeIfPresent(ServiceTier.self, forKey: .serviceTier)) ?? nil) ?? .standard
         goalState = try c.decodeIfPresent(String.self, forKey: .goalState)
+        // Absent before failures outlived a relaunch.
+        lastFailure = try c.decodeIfPresent(String.self, forKey: .lastFailure)
         // `runtime` is ignored: agents from the terminal era ("terminal") relaunch over RPC in
         // the same pi session, which is the whole migration.
     }
@@ -332,6 +341,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         if !designGrants.isEmpty { try c.encode(designGrants, forKey: .designGrants) }
         if serviceTier != .standard { try c.encode(serviceTier, forKey: .serviceTier) }
         try c.encodeIfPresent(goalState, forKey: .goalState)
+        try c.encodeIfPresent(lastFailure, forKey: .lastFailure)
         // Older remote clients default a missing runtime to terminal and would try to attach a
         // PTY that does not exist.
         try c.encode(SessionRuntime.rpc, forKey: .runtime)

@@ -45,7 +45,11 @@ public enum ShepherdStateValidationError: Error, CustomStringConvertible, Sendab
 public extension ShepherdState {
     /// Verify the references and layout invariants required by the server and UI.
     /// Optional agent/pane ownership fields remain optional for old state files.
-    func validate() throws {
+    ///
+    /// `sizingProjects` measures the encoded size of the logical projects and execution receipts
+    /// against their budgets, two whole-collection encodes; a caller that knows neither
+    /// collection changed since the last validated state passes `false`.
+    func validate(sizingProjects: Bool = true) throws {
         var spaceIDs = Set<SpaceID>()
         for space in spaces {
             guard spaceIDs.insert(space.id).inserted else {
@@ -65,14 +69,14 @@ public extension ShepherdState {
             // Space and coordinator links are soft references: deletion leaves inspectable
             // provenance, and startup clears a missing coordinator, just as it does for designs.
         }
-        guard try JSONEncoder().encode(projects).count <= Project.maximumEncodedCollectionBytes else {
+        guard try !sizingProjects || JSONEncoder().encode(projects).count <= Project.maximumEncodedCollectionBytes else {
             throw ProjectValidationError("Logical projects exceed the 512 KiB workspace budget.")
         }
 
         guard projectExecutions.count <= ProjectExecutionReceipt.maximumCount,
               Set(projectExecutions.map(\.key)).count == projectExecutions.count,
-              try JSONEncoder().encode(projectExecutions).count <= ProjectExecutionReceipt.maximumEncodedBytes,
-              try projectExecutions.reduce(2 + projectExecutions.count, { try $0 + $1.reservedEncodedBytes }) <= ProjectExecutionReceipt.maximumEncodedBytes else {
+              try !sizingProjects || JSONEncoder().encode(projectExecutions).count <= ProjectExecutionReceipt.maximumEncodedBytes,
+              try !sizingProjects || projectExecutions.reduce(2 + projectExecutions.count, { try $0 + $1.reservedEncodedBytes }) <= ProjectExecutionReceipt.maximumEncodedBytes else {
             throw ProjectValidationError("Execution receipt capacity exhausted; IDs are not automatically evicted.")
         }
         for receipt in projectExecutions {

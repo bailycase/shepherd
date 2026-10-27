@@ -316,7 +316,7 @@ struct BrowserRelayTests {
         try panes.send(.helloAgent(agentID: pi.agent.id))
         try panes.send(.listPanes(id: 1, agentID: pi.agent.id))
         _ = try await panes.reply()
-        #expect(h.server.pushMessage(toAgent: pi.agent.id, text: "[from: worker] CI is green", delivery: .report))
+        #expect(await h.server.pushMessage(toAgent: pi.agent.id, text: "[from: worker] CI is green", delivery: .report))
 
         // A send the thread refuses (a stale generation) changes nothing either.
         let refused = try await pi.request(.send(expectedSessionID: ready.piSessionID, generation: "an-older-run", operationID: UUID(),
