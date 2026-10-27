@@ -184,19 +184,12 @@ struct SidebarRowMenu: View {
                     .keyboardShortcut(KeybindingsStore.shared.shortcut(.renameAgent))
                 PinMenuItem(vm: vm, row: row)
                 if !row.worktree { ThreadMoveMenu(vm: vm, row: row.id) }
-                Button("Fork from Here", systemImage: "arrow.branch") { vm.forkAgent(id) }
-                Button("Copy Transcript", systemImage: "doc.on.doc") { vm.copyAgentTranscript(id) }
-                Divider()
-                Button("Review Changes") { vm.selectAgent(id); vm.openUserReview() }
-                Button("Open in Finder") { vm.openAgentInFinder(id) }
-                Divider()
-                if row.worktree {
-                    Button("Finalize Worktree…") { vm.beginFinalizeWorktree(id) }
-                    Divider()
-                    Button("Delete Worktree Agent…", role: .destructive) { vm.worktreeDeleteTarget = id }
-                } else {
-                    Button("Delete Agent…", role: .destructive) { vm.agentDeleteTarget = id }
+                // The same list the Agent menu and ⌘K offer (ThreadCommand).
+                ForEach(ThreadCommand.allCases.filter { $0 != .delete && ($0 != .finalizeWorktree || row.worktree) }) { command in
+                    Button(command.title, systemImage: command.symbol) { vm.perform(command, on: id) }
                 }
+                Divider()
+                Button(row.worktree ? "Delete Worktree Agent…" : "Delete Agent…", role: .destructive) { vm.requestDeleteAgent(id) }
             }
         case .design(let id):
             // DesignRecentsMenu: the card's menu with Remove from Recents.
@@ -219,14 +212,32 @@ struct SidebarRowMenu: View {
 
 /// Pin or Unpin, named for what it does now, on a row the Activity lists mark pinnable (never an
 /// automation's run, a design, or a row of the project tree).
-private struct PinMenuItem: View {
+struct PinMenuItem: View {
     var vm: ShepherdViewModel
-    let row: SidebarListRow
+    let target: SidebarRowID
+    let pinnable: Bool
+    let pinned: Bool
+
+    init(vm: ShepherdViewModel, row: SidebarListRow) {
+        self.init(vm: vm, target: row.id, pinnable: row.pinnable, pinned: row.pinned)
+    }
+
+    /// For a target with no row at hand (the Agent menu): `pinned` nil when it cannot be pinned.
+    init(vm: ShepherdViewModel, target: SidebarRowID, pinned: Bool?) {
+        self.init(vm: vm, target: target, pinnable: pinned != nil, pinned: pinned ?? false)
+    }
+
+    private init(vm: ShepherdViewModel, target: SidebarRowID, pinnable: Bool, pinned: Bool) {
+        self.vm = vm
+        self.target = target
+        self.pinnable = pinnable
+        self.pinned = pinned
+    }
 
     var body: some View {
-        if row.pinnable {
-            Button(PinWords.menuTitle(pinned: row.pinned), systemImage: PinWords.symbol(pinned: row.pinned)) {
-                if row.pinned { vm.unpinThread(row.id) } else { vm.pinThread(row.id) }
+        if pinnable {
+            Button(PinWords.menuTitle(pinned: pinned), systemImage: PinWords.symbol(pinned: pinned)) {
+                if pinned { vm.unpinThread(target) } else { vm.pinThread(target) }
             }
         }
     }

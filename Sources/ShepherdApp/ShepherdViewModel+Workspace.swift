@@ -180,6 +180,39 @@ extension ShepherdViewModel {
         }
     }
 
+    /// Whether ⌘W has a terminal (or review, or remote inspector) to close: File ▸ Close Terminal
+    /// is disabled otherwise, instead of beeping.
+    var canCloseTerminal: Bool {
+        if let remote = selectedRemoteAgent {
+            if remoteInspectingAgent == remote, remoteVisibleTab(remote) != nil { return true }
+            if let review = remoteReviews[remote], remoteFocusedPaneID == review.paneID { return true }
+            guard let connection = remoteHosts.connections.first(where: { $0.id == remote.hostID }),
+                  let agent = connection.state.agents.first(where: { $0.id == remote.agentID }),
+                  let tab = connection.state.tabs.first(where: { $0.id == agent.tabID }) else { return false }
+            let focus = remoteFocusedPaneID.flatMap { tab.layout.contains($0) ? $0 : nil } ?? agent.paneID ?? tab.layout.firstLeaf.id
+            return tab.layout.leaf(withID: focus)?.agentID == nil
+        }
+        guard let tab = activeTab else { return false }
+        let focus = focusedPaneID.flatMap { tab.layout.contains($0) ? $0 : nil } ?? tab.layout.firstLeaf.id
+        return tab.layout.leaf(withID: focus)?.agentID == nil
+    }
+
+    /// File ▸ Save: the Settings page that has a file to save, or nil for no item at all.
+    var saveMenuItem: (title: String, enabled: Bool)? {
+        guard showSettings else { return nil }
+        switch settingsSection {
+        case .subagents: return ("Save Subagent File", subagentDefinitions.canSave)
+        case .projects:
+            return ("Save Space File", !projects.showingBrowser && projects.fileLoaded && !projects.saving && projects.selected?.unavailable == nil)
+        default: return nil
+        }
+    }
+
+    func saveSettingsFile() async {
+        guard showSettings else { return }
+        if settingsSection == .subagents { await subagentDefinitions.save() } else if settingsSection == .projects { await projects.save() }
+    }
+
     /// ⌘W: closes the terminal that has the keyboard. The thread is never closed (⌘⇧W deletes
     /// the agent): closing it would strand a running pi with nothing to come back to.
     func closeFocusedTerminal() {

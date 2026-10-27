@@ -44,8 +44,8 @@ ThemeVariant    { colors:   ThemeColors     // the Shepherd Design roles below (
   hand resolved colors to what SwiftUI doesn't draw: the Core Animation spinner and glow layers,
   the iOS terminal's UIKit view, and, through `ThemeManager`, Ghostty and the external editor variant marker.
 - **`ThemeManager`** (app) owns only the appearance mode: System (the default; "System follows
-  your Mac and switches with it."), Light, or Dark, set in Settings ▸ Appearance ▸ Mode or the
-  Appearance menu. The board's rule: follow the system, and let Settings force either (SHSwift).
+  your Mac and switches with it."), Light, or Dark, set in Settings ▸ Appearance ▸ Mode or View ▸
+  Appearance. The board's rule: follow the system, and let Settings force either (SHSwift).
   `SHEPHERD_THEME=shepherd-design-dark` or `shepherd-design-light` forces one at launch (the older
   `shepherd-dark` still means dark), and Reset returns to it.
 - **What `ThemeManager` pushes:** the resolved variant goes to what cannot follow appearance on

@@ -51,6 +51,17 @@ extension ShepherdViewModel {
         }
         items.append(PaletteItem(id: "action.openExtensions", kind: .action("openExtensions"), section: .commands,
                                  title: "Open Extensions", icon: "puzzlepiece.extension"))
+        items.append(PaletteItem(id: "action.openAutomations", kind: .action("openAutomations"), section: .commands,
+                                 title: "Open Automations", icon: "clock.arrow.2.circlepath"))
+        if designToolEnabled {
+            items.append(PaletteItem(id: "action.openDesigns", kind: .action("openDesigns"), section: .commands,
+                                     title: "Open Designs", icon: "rectangle.on.rectangle"))
+        }
+        // View ▸ Appearance, as the menu bar has it.
+        for option in AppearanceMode.allCases where option != themeManager.mode {
+            items.append(PaletteItem(id: "action.appearance.\(option.rawValue)", kind: .action("appearance.\(option.rawValue)"),
+                                     section: .commands, title: "Appearance: \(option.title)", icon: "circle.lefthalf.filled"))
+        }
         for target in remoteWorktreeOperationIDs.keys {
             items.append(PaletteItem(id: "operation.\(target.hostID).\(target.agentID)",
                                      kind: .remoteOperation(hostID: target.hostID, agentID: target.agentID),
@@ -75,12 +86,37 @@ extension ShepherdViewModel {
             if let store = visibleThread?.store, let speed = Self.fastModePaletteItem(offered: store.offersServiceTier) {
                 items.append(speed)
             }
+            // The row opens the Changes tab (⌃1); ⇧⌘B toggles the pane and can close it.
             items.append(PaletteItem(id: "action.reviewDiff", kind: .action("reviewDiff"), section: .thisThread,
                                      title: "Review diff", subtitle: Self.reviewDiffContext(changedFiles: agent.checkout?.changedFiles),
-                                     shortcut: keys.display(.toggleRightPane), icon: "plus.forwardslash.minus"))
+                                     shortcut: Self.sidePaneChord(.changes), icon: "plus.forwardslash.minus"))
             items.append(PaletteItem(id: "action.reviewPR", kind: .action("reviewPR"), section: .thisThread,
                                      title: "Review PR changes", subtitle: selectedPullRequest.map(Self.pullRequestContext),
                                      icon: "arrow.triangle.pull"))
+            if visibleThread != nil {
+                items.append(PaletteItem(id: "action.stop", kind: .action("stop"), section: .thisThread,
+                                         title: "Stop", subtitle: agent.name, shortcut: keys.display(.stopAgent), icon: "stop.circle"))
+                for tab in SidePaneTab.allCases {
+                    items.append(PaletteItem(id: "action.sidePane.\(tab.rawValue)", kind: .action("sidePane.\(tab.rawValue)"),
+                                             section: .thisThread, title: "Show \(tab.title) pane", shortcut: Self.sidePaneChord(tab),
+                                             icon: "sidebar.right"))
+                }
+            }
+            // This Mac's thread: the sidebar row's commands (ThreadCommand), and Move to space.
+            if selectedRemoteAgent == nil {
+                for command in ThreadCommand.commands(for: agent) where command != .reviewChanges {
+                    items.append(PaletteItem(id: "action.thread.\(command.rawValue)", kind: .action("thread.\(command.rawValue)"),
+                                             section: .thisThread, title: command.paletteTitle, subtitle: agent.name,
+                                             shortcut: command.shortcut.map(keys.display), icon: command.symbol))
+                }
+                if agent.worktreeBranch == nil {
+                    for space in threadMoveSpaces(.local(agent.id)) where space.id != agent.spaceID {
+                        items.append(PaletteItem(id: "action.move.\(space.id.rawValue)", kind: .action("move.\(space.id.rawValue)"),
+                                                 section: .thisThread, title: "Move to \(space.name)", subtitle: agent.name,
+                                                 icon: "folder"))
+                    }
+                }
+            }
         }
         if let target = unreconciledTerminalTarget {
             let panel = terminalPanels.panel(target.key)
@@ -137,6 +173,9 @@ extension ShepherdViewModel {
         }
         return items
     }
+
+    /// "⌃1": the side pane tab's fixed chord (View menu).
+    static func sidePaneChord(_ tab: SidePaneTab) -> String { "⌃\(tab.digit)" }
 
     /// Pin thread or Unpin thread, named for what it does now, for the thread on screen when it
     /// can be pinned (`pinTarget`). It has no chord.
@@ -264,6 +303,25 @@ extension ShepherdViewModel {
         }
     }
 
+    /// "thread.<command>", "move.<space>", "sidePane.<tab>" and "appearance.<mode>".
+    private func runPrefixedPaletteAction(_ action: String) {
+        guard let dot = action.firstIndex(of: ".") else { return }
+        let (prefix, value) = (String(action[..<dot]), String(action[action.index(after: dot)...]))
+        switch prefix {
+        case "thread":
+            guard let command = ThreadCommand(rawValue: value), let id = selectedAgentID, selectedRemoteAgent == nil else { return }
+            perform(command, on: id)
+        case "move":
+            guard let id = selectedAgentID, selectedRemoteAgent == nil else { return }
+            requestThreadMove(.local(id), to: SpaceID(rawValue: value))
+        case "sidePane":
+            if let tab = SidePaneTab(rawValue: value) { selectSidePaneTab(tab) }
+        case "appearance":
+            if let mode = AppearanceMode(rawValue: value) { selectAppearance(mode, systemColorScheme: ThemeManager.effectiveSystemColorScheme) }
+        default: break
+        }
+    }
+
     func runPaletteItem(_ item: PaletteItem) {
         showCommandPalette = false
         switch item.kind {
@@ -304,7 +362,10 @@ extension ShepherdViewModel {
             case "toggleTerminal": toggleTerminalPanel()
             case "newTerminal": newTerminalTab()
             case "maximizeTerminal": toggleTerminalMaximized()
-            default: break
+            case "stop": stopVisibleAgent()
+            case "openAutomations": openDestination(.automations)
+            case "openDesigns": openDestination(.designs)
+            default: runPrefixedPaletteAction(action)
             }
         }
     }

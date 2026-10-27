@@ -20,7 +20,17 @@ final class MenuState {
         var sidebarStyle = SHSidebarStyle.activity
         var rightPaneOpen = false
         var hasMachineAgents = false
-        /// The first nine Recents rows, for ⌘1–9.
+        /// The focused pane is a terminal (or review) ⌘W can close.
+        var canCloseTerminal = false
+        /// This Mac's selected thread: what the Agent menu's thread commands act on.
+        var selectedLocalAgent: AgentID?
+        /// The commands that apply to it (Finalize is a worktree agent's alone).
+        var threadCommands: [ThreadCommand] = []
+        /// Whether it is pinned; nil when it cannot be.
+        var selectedPinned: Bool?
+        /// Save in Settings ▸ Spaces or ▸ Subagents; nil hides the item.
+        var saveTitle: String?
+        var canSave = false
         var agents: [Item] = []
         var spaces: [Item] = []
     }
@@ -32,6 +42,12 @@ final class MenuState {
     private(set) var sidebarStyle = SHSidebarStyle.activity
     private(set) var rightPaneOpen = false
     private(set) var hasMachineAgents = false
+    private(set) var canCloseTerminal = false
+    private(set) var selectedLocalAgent: AgentID?
+    private(set) var threadCommands: [ThreadCommand] = []
+    private(set) var selectedPinned: Bool?
+    private(set) var saveTitle: String?
+    private(set) var canSave = false
     private(set) var agents: [Item] = []
     private(set) var spaces: [Item] = []
 
@@ -44,6 +60,12 @@ final class MenuState {
         if sidebarStyle != snapshot.sidebarStyle { sidebarStyle = snapshot.sidebarStyle }
         if rightPaneOpen != snapshot.rightPaneOpen { rightPaneOpen = snapshot.rightPaneOpen }
         if hasMachineAgents != snapshot.hasMachineAgents { hasMachineAgents = snapshot.hasMachineAgents }
+        if canCloseTerminal != snapshot.canCloseTerminal { canCloseTerminal = snapshot.canCloseTerminal }
+        if selectedLocalAgent != snapshot.selectedLocalAgent { selectedLocalAgent = snapshot.selectedLocalAgent }
+        if threadCommands != snapshot.threadCommands { threadCommands = snapshot.threadCommands }
+        if selectedPinned != snapshot.selectedPinned { selectedPinned = snapshot.selectedPinned }
+        if saveTitle != snapshot.saveTitle { saveTitle = snapshot.saveTitle }
+        if canSave != snapshot.canSave { canSave = snapshot.canSave }
         if agents != snapshot.agents { agents = snapshot.agents }
         if spaces != snapshot.spaces { spaces = snapshot.spaces }
     }
@@ -52,6 +74,8 @@ final class MenuState {
 extension MenuState.Snapshot {
     @MainActor init(_ vm: ShepherdViewModel) {
         let selected = vm.selectedRemoteAgent?.agentID ?? vm.selectedAgentID
+        let local = vm.selectedRemoteAgent == nil ? vm.selectedAgent : nil
+        let save = vm.saveMenuItem
         self.init(
             hasVisibleThread: vm.visibleThread != nil,
             hasSelection: selected != nil || vm.selectedRemoteAgent != nil,
@@ -60,6 +84,12 @@ extension MenuState.Snapshot {
             sidebarStyle: vm.sidebarStyle,
             rightPaneOpen: vm.isRightPaneOpen,
             hasMachineAgents: !vm.sidebarWalkRows.isEmpty,
+            canCloseTerminal: vm.canCloseTerminal,
+            selectedLocalAgent: local?.id,
+            threadCommands: local.map(ThreadCommand.commands(for:)) ?? [],
+            selectedPinned: local.map { vm.canPin(.local($0.id)) ? vm.isPinned(.local($0.id)) : nil } ?? nil,
+            saveTitle: save?.title,
+            canSave: save?.enabled ?? false,
             agents: vm.sidebarShortcutRows.prefix(9).map { MenuState.Item(id: "\($0.id)", title: $0.title) },
             spaces: vm.visibleSpaces.map { MenuState.Item(id: $0.id.rawValue, title: $0.name) }
         )
@@ -104,6 +134,7 @@ struct AppSettingsCommands: Commands {
 /// with the Design tool on), and ⌘W as Close Terminal.
 struct FileCommands: Commands {
     let vm: ShepherdViewModel
+    let menu: MenuState
     let keys: KeybindingsStore
     /// The rebindings, so a changed chord rebuilds these items.
     let bindings: [ShortcutAction: KeyChord]
@@ -123,24 +154,27 @@ struct FileCommands: Commands {
             }
         }
         CommandGroup(replacing: .saveItem) {
-            Button(vm.settingsSection == .subagents ? "Save Subagent File" : "Save Space File") {
-                Task { if vm.settingsSection == .subagents { await vm.subagentDefinitions.save() } else { await vm.projects.save() } }
+            // Save exists only in Settings ▸ Spaces and ▸ Subagents; elsewhere there is no item.
+            if let title = menu.saveTitle {
+                Button(title) { Task { await vm.saveSettingsFile() } }
+                    .keyboardShortcut(keys.shortcut(.saveProjectFile))
+                    .disabled(!menu.canSave)
             }
-                .keyboardShortcut(keys.shortcut(.saveProjectFile))
-                .disabled(!vm.showSettings || (vm.settingsSection == .subagents ? !vm.subagentDefinitions.canSave :
-                    vm.settingsSection != .projects || vm.projects.showingBrowser || !vm.projects.fileLoaded || vm.projects.saving || vm.projects.selected?.unavailable != nil))
+            // Disabled with nothing to close, so ⌘W is not a beep.
             Button("Close Terminal") { later { vm.closeFocusedTerminal() } }
                 .keyboardShortcut(keys.shortcut(.closeTerminal))
+                .disabled(!menu.canCloseTerminal)
         }
     }
 }
 
-/// View ▸ Command Palette, sidebar, right pane (and the Debug component gallery).
+/// View ▸ Command Palette, sidebar, right pane, Appearance (and the Debug component gallery).
 struct ViewCommands: Commands {
     let vm: ShepherdViewModel
     let menu: MenuState
     let keys: KeybindingsStore
     let bindings: [ShortcutAction: KeyChord]
+    let themes: ThemeManager
 
     var body: some Commands {
         CommandGroup(after: .toolbar) {
@@ -149,20 +183,18 @@ struct ViewCommands: Commands {
                 .keyboardShortcut(keys.shortcut(.commandPalette))
             Button(menu.sidebarVisible ? "Hide Sidebar" : "Show Sidebar") { later { vm.toggleSidebar() } }
                 .keyboardShortcut(keys.shortcut(.toggleSidebar))
-            // Settings ▸ Appearance ▸ Sidebar ▸ Organize by, here too (Sidebar — Projects).
-            Menu("Organize Sidebar By") {
-                ForEach(SHSidebarStyle.allCases) { style in
-                    Button {
-                        later { vm.setSidebarStyle(style) }
-                    } label: {
-                        if menu.sidebarStyle == style {
-                            Label(style.title, systemImage: "checkmark")
-                        } else {
-                            Text(style.title)
-                        }
-                    }
-                }
+            // Settings ▸ Appearance ▸ Sidebar ▸ Organize by, here too (Sidebar — Projects). A picker
+            // puts the check in the state column, where VoiceOver reads it.
+            Picker("Organize Sidebar By", selection: Binding(get: { menu.sidebarStyle }, set: { style in later { vm.setSidebarStyle(style) } })) {
+                ForEach(SHSidebarStyle.allCases) { style in Text(style.title).tag(style) }
             }
+            .pickerStyle(.inline)
+            Picker("Appearance", selection: Binding(get: { themes.mode }, set: { option in
+                later { vm.selectAppearance(option, systemColorScheme: ThemeManager.effectiveSystemColorScheme) }
+            })) {
+                ForEach(AppearanceMode.allCases) { option in Text(option.title).tag(option) }
+            }
+            .pickerStyle(.inline)
             Button(menu.rightPaneOpen ? "Hide Side Pane" : "Show Side Pane") { later { vm.toggleRightPane() } }
                 .keyboardShortcut(keys.shortcut(.toggleRightPane))
                 .disabled(!menu.hasVisibleThread)
@@ -207,16 +239,22 @@ struct PaneCommands: Commands {
 struct SpaceCommands: Commands {
     let vm: ShepherdViewModel
     let menu: MenuState
+    let keys: KeybindingsStore
 
     var body: some Commands {
         CommandMenu("Space") {
             if menu.spaces.isEmpty {
                 Button("No Spaces") {}.disabled(true)
+                Divider()
             } else {
                 ForEach(menu.spaces) { space in
                     Button(space.title) { later { vm.selectSpace(SpaceID(rawValue: space.id)) } }
                 }
+                Divider()
             }
+            // The empty state offers the next step.
+            Button("New Space…") { later { vm.addSpaceFromPanel() } }
+                .keyboardShortcut(keys.shortcut(.newSpace))
         }
     }
 }
@@ -258,7 +296,15 @@ struct AgentCommands: Commands {
                 .keyboardShortcut(keys.shortcut(.previousAgent))
                 .disabled(!menu.hasMachineAgents)
             Divider()
-            Button("Delete Agent") { later { vm.deleteSelectedAgent() } }
+            // The sidebar row's commands, on the selected local thread (ThreadCommand).
+            if let agentID = menu.selectedLocalAgent {
+                PinMenuItem(vm: vm, target: .local(agentID), pinned: menu.selectedPinned)
+                ForEach(menu.threadCommands.filter { !$0.isDestructive }) { command in
+                    Button(command.title, systemImage: command.symbol) { later { vm.perform(command, on: agentID) } }
+                }
+                Divider()
+            }
+            Button("Delete Agent…", role: .destructive) { later { vm.deleteSelectedAgent() } }
                 .keyboardShortcut(keys.shortcut(.deleteAgent))
                 .disabled(!menu.canActOnSelection)
             if !menu.agents.isEmpty {
@@ -271,28 +317,6 @@ struct AgentCommands: Commands {
                         }
                     }
                     .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
-                }
-            }
-        }
-    }
-}
-
-/// Reads the mode in its own body, so a change re-renders this menu alone.
-struct AppearanceCommands: Commands {
-    let vm: ShepherdViewModel
-    let themes: ThemeManager
-
-    var body: some Commands {
-        CommandMenu("Appearance") {
-            ForEach(AppearanceMode.allCases) { option in
-                Button {
-                    later { vm.selectAppearance(option, systemColorScheme: ThemeManager.effectiveSystemColorScheme) }
-                } label: {
-                    if themes.mode == option {
-                        Label(option.title, systemImage: "checkmark")
-                    } else {
-                        Text(option.title)
-                    }
                 }
             }
         }

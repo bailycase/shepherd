@@ -71,6 +71,41 @@ struct AuditViewModelFlowTests {
         #expect(vm.afterDialogDismiss == nil)
         try await eventuallyOnMain("the agent to be deleted") { vm.state.agents.map(\.id) == [agents[0].agent.id] }
     }
+
+    /// Every row-menu command is in the Agent menu's snapshot and in ⌘K's This thread section.
+    @Test func theAgentMenuAndPaletteOfferTheRowMenusCommands() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space("one", path: app.dir.appendingPathComponent("one").path)
+        let plain = Fixture.agent("plain", in: space, order: 0)
+        var worktree = Fixture.agent("tree", in: space, order: 1)
+        worktree.agent.worktreeBranch = "feat/x"
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [plain, worktree]))
+
+        vm.selectAgent(plain.agent.id)
+        var menu = MenuState.Snapshot(vm)
+        #expect(menu.selectedLocalAgent == plain.agent.id)
+        #expect(menu.threadCommands == [.fork, .copyTranscript, .reviewChanges, .openInFinder, .delete])
+        #expect(menu.canCloseTerminal == false, "the thread's own pane is not a terminal")
+        #expect(menu.saveTitle == nil, "no Save item outside Settings")
+        let ids = Set(vm.paletteItems.map(\.id))
+        for command in ThreadCommand.commands(for: plain.agent) where command != .reviewChanges {
+            #expect(ids.contains("action.thread.\(command.rawValue)"), "\(command) in ⌘K")
+        }
+        #expect(!ids.contains("action.thread.finalizeWorktree"))
+        #expect(ids.contains("action.stop") == (vm.visibleThread != nil))
+        #expect(vm.paletteItems.first { $0.id == "action.reviewDiff" }?.shortcut == "⌃1", "Review diff shows the Changes tab's chord")
+
+        vm.selectAgent(worktree.agent.id)
+        menu = MenuState.Snapshot(vm)
+        #expect(menu.threadCommands.contains(.finalizeWorktree))
+        #expect(!vm.paletteItems.contains { $0.id.hasPrefix("action.move.") }, "a worktree thread does not move")
+
+        let delete = try #require(vm.paletteItems.first { $0.id == "action.thread.delete" })
+        vm.runPaletteItem(delete)
+        #expect(vm.worktreeDeleteTarget == worktree.agent.id, "⌘K's delete confirms like the menu's")
+        #expect(vm.state.agents.count == 2)
+    }
 }
 
 private final class ChangeFlag: @unchecked Sendable {
