@@ -14,6 +14,13 @@ struct LogicalProjectTests {
         var state = ShepherdState(); state.agents = [decoded]; state.projects = [Project(id: Self.id, name: "Owning Project")]
         #expect(state.isProjectWorker(decoded.id) && !state.isSidebarThread(decoded))
         #expect(state.projectContext(for: decoded.id) == nil, "The marker preserves presentation, not a replayable activation or tool authority.")
+        // The gathered set answers as the per-agent walk does: a worker by marker, a stray marker for no Project, a plain thread.
+        var stray = Agent(name: "Orphan", spaceID: SpaceID(), tabID: TabID()); stray.projectWorkerFor = ProjectID()
+        let plain = Agent(name: "Plain", spaceID: SpaceID(), tabID: TabID())
+        state.agents += [stray, plain]
+        #expect(state.projectWorkerIDs == Set(state.agents.map(\.id).filter(state.isProjectWorker)))
+        #expect(state.projectWorkerIDs == [decoded.id])
+        #expect(state.isSidebarThread(plain, workers: state.projectWorkerIDs) && !state.isSidebarThread(decoded, workers: state.projectWorkerIDs))
     }
 
     @Test func oldWorkspacesDecodeWithoutLogicalProjects() throws {

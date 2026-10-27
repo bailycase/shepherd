@@ -83,6 +83,7 @@ final class ShepherdViewModel {
     /// The sidebar's More is open, showing Hosts and Extensions. Ephemeral.
     /// Activity groups, cached on their source, pins and seen completion generations.
     @ObservationIgnored var sidebarListsCache: (source: SidebarSource, pins: SidebarPins, seen: [SidebarRowID: Int], lists: SidebarLists)?
+    @ObservationIgnored var sidebarProjectsCache: (key: SidebarProjectsKey, rows: [SidebarLogicalProject])?
     var sidebarCompletions = SidebarCompletions()
     /// Prompted creations belong in Working before pi reports its first turn.
     var sidebarOpeningTurns: Set<AgentID> = [] {
@@ -93,8 +94,19 @@ final class ShepherdViewModel {
         }
     }
     @ObservationIgnored var sidebarPreparingOpeningTurns: Set<AgentID> = []
-    /// Last ten measured tool-completion rates, not a decorative waveform.
-    var sidebarActivitySamples: [AgentID: [Double]] = [:]
+    /// Last ten measured tool-completion rates per agent, not a decorative waveform. Each agent's
+    /// box is observed by its own row alone, so one agent's tool call redraws no other row.
+    @ObservationIgnored var sidebarActivityBoxes: [AgentID: SidebarActivityBox] = [:]
+    var sidebarActivitySamples: [AgentID: [Double]] {
+        sidebarActivityBoxes.compactMapValues { $0.samples.isEmpty ? nil : $0.samples }
+    }
+    /// The agent's box, made on first ask so the row observing it sees the samples arrive.
+    func sidebarActivityBox(_ id: AgentID) -> SidebarActivityBox {
+        if let box = sidebarActivityBoxes[id] { return box }
+        let box = SidebarActivityBox()
+        sidebarActivityBoxes[id] = box
+        return box
+    }
     @ObservationIgnored var sidebarActivityLast: [AgentID: Date] = [:]
     var sidebarSeenCompletions: [SidebarRowID: Int] = [:]
     /// Last opened thread, even while a destination covers it.
@@ -308,7 +320,18 @@ final class ShepherdViewModel {
     var remoteRenameTarget: RemoteAgentRef?
     /// A terminal tab being renamed (the panel's Rename tab).
     var terminalRenameTarget: TerminalRenameTarget?
-    var remoteActionError: String?
+    /// The failure the error sheet shows: what was attempted, and why it failed.
+    var actionError: ActionError?
+    /// The message alone, under a generic title; `fail(_:_:)` names the action.
+    var remoteActionError: String? {
+        get { actionError?.message }
+        set { actionError = newValue.map { ActionError(title: ActionError.genericTitle, message: $0) } }
+    }
+
+    /// Reports a failed action under its own title ("Couldn’t fork"), with the error worded for a person.
+    func fail(_ title: String, _ error: Error) {
+        actionError = ActionError(title: title, message: ActionError.describe(error))
+    }
 
     /// Configured remote Shepherd hosts and their live connections.
     let remoteHosts: RemoteHostStore
@@ -411,6 +434,17 @@ final class ShepherdViewModel {
     /// Worktree agent pending delete confirmation (alert in RootView) —
     /// deleting may also remove the checkout, so it always confirms.
     var worktreeDeleteTarget: AgentID?
+    /// Automation pending delete confirmation (sheet in RootView): its prompt, schedule and
+    /// settings go with it and nothing brings them back.
+    var automationDeleteTarget: AutomationID?
+    /// Agent pending delete confirmation (sheet in RootView): deleting stops a run and drops the
+    /// thread from the sidebar with nothing to bring it back, so it always confirms.
+    var agentDeleteTarget: AgentID?
+    /// The last `WorkspaceSelection` and its mounted layouts (`resolvedMountedTabs`).
+    @ObservationIgnored var mountedTabsCache: (selection: WorkspaceSelection, tabs: [Tab])?
+    /// A confirmed deletion runs after its sheet has dismissed (`sheet(item:onDismiss:)`):
+    /// tearing a mounted layout down mid-dismissal wedges the modal session.
+    @ObservationIgnored var afterDialogDismiss: (@MainActor () -> Void)?
 
     /// A snapshot of the agent + space whose Finalize Worktree sheet is
     /// open. Copies, not IDs: the pipeline's last act retires the agent, and
@@ -550,7 +584,8 @@ final class ShepherdViewModel {
     @ObservationIgnored private var resignActiveObserver: NSObjectProtocol?
     @ObservationIgnored private var becomeActiveObserver: NSObjectProtocol?
     @ObservationIgnored var missingSpaceWatch: Task<Void, Never>?
-    @ObservationIgnored var missingSpaceCheck = (running: false, again: false)
+    /// `paths`: the spaces the last adopt-time pass read, so a broadcast that moved no space runs none.
+    @ObservationIgnored var missingSpaceCheck = (running: false, again: false, paths: [String]?.none)
     /// Reads each local agent's branch and changed files for the header (`CheckoutMonitor`);
     /// nil when the harness turned it off.
     @ObservationIgnored private(set) var checkouts: CheckoutMonitor?
@@ -1142,11 +1177,25 @@ final class ShepherdViewModel {
             selectAgentDigit(digit)
             return true
         case .adjacentAgent(let delta):
+            // ⌘↑ and ⌘↓ in a draft of several lines are the text view's own: the caret goes to
+            // the document's start or end, as in every Mac text view, and the agent stays.
+            if let text = NSApp.keyWindow?.firstResponder as? NSTextView,
+               Self.draftTakesVerticalChord(KeyChord(event: event), draft: text.string) {
+                text.interpretKeyEvents([event])
+                return true
+            }
             selectAdjacentAgent(delta)
             return true
         case nil:
             return false
         }
+    }
+
+    /// Whether a plain ⌘↑ or ⌘↓ belongs to the text view under the keyboard: only when the
+    /// draft spans more than one line, so a one-line composer still switches agents.
+    static func draftTakesVerticalChord(_ chord: KeyChord?, draft: String) -> Bool {
+        guard let chord, chord == KeyChord(key: "up", command: true) || chord == KeyChord(key: "down", command: true) else { return false }
+        return draft.contains(where: \.isNewline)
     }
 
     /// Delayed reveal so ordinary chords don't flash the badges: agent rows show their ⌘1–9
@@ -1167,6 +1216,19 @@ final class ShepherdViewModel {
 
     /// Adopt a server snapshot wholesale, keeping selection when IDs persist.
     func adopt(_ serverState: ShepherdState) {
+        // The run log is current by the time a broadcast lands; it is the one thing a broadcast
+        // of an unchanged workspace can carry.
+        let runs = server.openAutomationRuns
+        if runs != openAutomationRuns { openAutomationRuns = runs }
+        // A status report and a checkout read each broadcast the whole workspace, equal or not.
+        // Assigning `state` invalidates every view that read any part of it, so an equal snapshot
+        // stops here: one `==` instead of the sidebar, workspace, menu and palette fan-out.
+        guard !didAdopt || state != serverState else { return }
+        // A restored agent's last outcome, before any status report this run: the row reads
+        // failed as it did at quit, not idle.
+        for agent in serverState.agents where statusSince[agent.id] == nil && Self.persistedTurnFailed(agent) != failedTurns.contains(agent.id) {
+            if Self.persistedTurnFailed(agent) { failedTurns.insert(agent.id) } else { failedTurns.remove(agent.id) }
+        }
         let shownBefore = shownDesign?.id
         if !sidebarOpeningTurns.isEmpty {
             let removed = Set(state.agents.map(\.id)).subtracting(serverState.agents.map(\.id))
@@ -1178,9 +1240,12 @@ final class ShepherdViewModel {
         if destination == nil, selectedRemoteAgent == nil, let agent = selectedAgent, selectedSpaceID != agent.spaceID {
             selectedSpaceID = agent.spaceID
         }
-        checkMissingSpaces()
-        let runs = server.openAutomationRuns
-        if runs != openAutomationRuns { openAutomationRuns = runs }
+        // A status or checkout broadcast changes no folder: the stat pass runs when the spaces do.
+        let paths = state.spaces.map(\.path)
+        if paths != missingSpaceCheck.paths {
+            missingSpaceCheck.paths = paths
+            checkMissingSpaces()
+        }
         reconcileSidebarCompletions()
         // A Project's coordinator ID is recorded before its agent is registered, while its page already holds the store: keep it.
         threadStores.prune(live: Set(state.agents.map(\.id)).union(state.projects.compactMap(\.coordinatorAgentID)))
@@ -1262,7 +1327,7 @@ final class ShepherdViewModel {
             if status != .idle { sidebarOpeningTurns.remove(id) }
             if old != status || statusSince[id] == nil { statusSince[id] = Date() }
             if old != status, old != .blocked, status == .working {
-                sidebarActivitySamples.removeValue(forKey: id)
+                sidebarActivityBoxes[id]?.samples = []
                 sidebarActivityLast[id] = Date()
             }
             // A turn starting or ending may have changed files.
@@ -1275,6 +1340,13 @@ final class ShepherdViewModel {
             }
             notifyStatus(state.agents[index], from: old, failure: failure)
         }
+    }
+
+    /// Whether the server kept the agent's last turn as failed across a relaunch. The persisted
+    /// field is the sessions side's; until it lands, nothing is remembered. One line to wire:
+    /// return the agent's field here.
+    static func persistedTurnFailed(_ agent: Agent) -> Bool {
+        false
     }
 
     /// Runs the ChildRuns TTL/staleness sweep only while rows exist; the

@@ -24,6 +24,16 @@ extension ShepherdViewModel {
         )
     }
 
+    /// `mountedTabs` for the current inputs, built once per change: the workspace body, the
+    /// parking sweep and the launch mounter each ask on every render.
+    private var resolvedMountedTabs: [Tab] {
+        let selection = workspaceSelection
+        if let cached = mountedTabsCache, cached.selection == selection { return cached.tabs }
+        let tabs = selection.mountedTabs
+        mountedTabsCache = (selection, tabs)
+        return tabs
+    }
+
     // MARK: Mounting at launch
 
     /// Layouts mounted per run-loop turn once the first frame is up.
@@ -120,7 +130,7 @@ extension ShepherdViewModel {
     }
 
     /// Every layout the workspace keeps mounted (see `WorkspaceSelection`).
-    var mountedTabs: [Tab] { workspaceSelection.mountedTabs }
+    var mountedTabs: [Tab] { resolvedMountedTabs }
 
     /// The visible layout's id, without copying a `Tab`.
     var activeTabID: TabID? { workspaceSelection.activeTabID }
@@ -133,8 +143,11 @@ extension ShepherdViewModel {
     /// Append one workspace write to the serialized server-mutation tail.
     /// Local state may lead briefly for responsive UI, but a failed write
     /// always restores both mirrors from the server's committed snapshot.
+    /// `failureTitle` names a person's own edit ("Couldn’t rename the agent"): its failure shows
+    /// in the error sheet instead of snapping back in silence. Exit cleanups pass none.
     func enqueuePersistence(
         _ description: String,
+        failureTitle: String? = nil,
         operation: @escaping @Sendable (SessionServer) async throws -> Void
     ) {
         let previous = persistenceTail
@@ -150,6 +163,7 @@ extension ShepherdViewModel {
                 // reconcile, and audible feedback here beeps from test runs
                 // and post-hoc races (e.g. removing an already-removed tab).
                 NSLog("Shepherd: \(description) failed: \(error)")
+                if let failureTitle { self.fail(failureTitle, error) }
                 self.reconcileFromServer()
             }
         }
@@ -178,6 +192,39 @@ extension ShepherdViewModel {
             guard let session = await sessions.awaitSession(forPane: terminal.id, timeout: .seconds(10)) else { return }
             server.typeCommand(command, sessionID: session)
         }
+    }
+
+    /// Whether ⌘W has a terminal (or review, or remote inspector) to close: File ▸ Close Terminal
+    /// is disabled otherwise, instead of beeping.
+    var canCloseTerminal: Bool {
+        if let remote = selectedRemoteAgent {
+            if remoteInspectingAgent == remote, remoteVisibleTab(remote) != nil { return true }
+            if let review = remoteReviews[remote], remoteFocusedPaneID == review.paneID { return true }
+            guard let connection = remoteHosts.connections.first(where: { $0.id == remote.hostID }),
+                  let agent = connection.state.agents.first(where: { $0.id == remote.agentID }),
+                  let tab = connection.state.tabs.first(where: { $0.id == agent.tabID }) else { return false }
+            let focus = remoteFocusedPaneID.flatMap { tab.layout.contains($0) ? $0 : nil } ?? agent.paneID ?? tab.layout.firstLeaf.id
+            return tab.layout.leaf(withID: focus)?.agentID == nil
+        }
+        guard let tab = activeTab else { return false }
+        let focus = focusedPaneID.flatMap { tab.layout.contains($0) ? $0 : nil } ?? tab.layout.firstLeaf.id
+        return tab.layout.leaf(withID: focus)?.agentID == nil
+    }
+
+    /// File ▸ Save: the Settings page that has a file to save, or nil for no item at all.
+    var saveMenuItem: (title: String, enabled: Bool)? {
+        guard showSettings else { return nil }
+        switch settingsSection {
+        case .subagents: return ("Save Subagent File", subagentDefinitions.canSave)
+        case .projects:
+            return ("Save Space File", !projects.showingBrowser && projects.fileLoaded && !projects.saving && projects.selected?.unavailable == nil)
+        default: return nil
+        }
+    }
+
+    func saveSettingsFile() async {
+        guard showSettings else { return }
+        if settingsSection == .subagents { await subagentDefinitions.save() } else if settingsSection == .projects { await projects.save() }
     }
 
     /// ⌘W: closes the terminal that has the keyboard. The thread is never closed (⌘⇧W deletes
@@ -344,8 +391,15 @@ extension ShepherdViewModel {
             return
         }
         guard let agent = selectedAgent else { return }
-        if agent.worktreeBranch != nil { worktreeDeleteTarget = agent.id }
-        else { deleteAgent(agent.id) }
+        requestDeleteAgent(agent.id)
+    }
+
+    /// Every delete of a local agent confirms first: a worktree agent through its own dialog
+    /// (the checkout may go too), any other through the plain one.
+    func requestDeleteAgent(_ id: AgentID) {
+        guard let agent = state.agents.first(where: { $0.id == id }) else { return }
+        if agent.worktreeBranch != nil { worktreeDeleteTarget = id }
+        else { agentDeleteTarget = id }
     }
 
     /// A hand-typed name is final: pi's namer must never overwrite it.
@@ -354,7 +408,7 @@ extension ShepherdViewModel {
         guard !trimmed.isEmpty,
               let agent = state.agents.first(where: { $0.id == id }),
               agent.name != trimmed else { return }
-        enqueuePersistence("agent rename") { try await $0.renameAgent(id, to: trimmed) }
+        enqueuePersistence("agent rename", failureTitle: "Couldn’t rename the agent") { try await $0.renameAgent(id, to: trimmed) }
     }
 
     /// Persist retirement and wait for the actual process exits before removing a checkout.
@@ -388,7 +442,7 @@ extension ShepherdViewModel {
                 }
                 try verifyCheckoutUnused(canonical, except: id)
                 try await Task.detached { try GitWorktree.remove(repo: repo, branch: branch, worktree: path, fingerprint: fingerprint, checkoutBranch: checkoutBranch) }.value
-            } catch { remoteActionError = String(describing: error) }
+            } catch { fail("Couldn’t delete the worktree", error) }
         }
     }
 
@@ -402,7 +456,7 @@ extension ShepherdViewModel {
                 await MainActor.run { completion?(nil) }
             } catch {
                 await MainActor.run {
-                    self.remoteActionError = String(describing: error)
+                    self.fail("Couldn’t delete the agent", error)
                     completion?(error)
                 }
                 throw error

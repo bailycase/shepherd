@@ -158,11 +158,15 @@ struct SidebarSource: Equatable {
     /// This Mac's spaces whose folder is gone (moved, renamed or deleted): no new threads.
     var missingSpaces: Set<SpaceID> = []
 
-    /// Child work affects sidebar presentation, never the parent's actual turn status.
+    /// Child work affects sidebar presentation, never the parent's actual turn status. What no
+    /// row shows is dropped too (layouts, checkouts), so a pane divider drag or a changed-files
+    /// count leaves the derivation's cache key unchanged.
     static func presentationState(_ state: ShepherdState, children: [AgentID: [ChildRun]]) -> ShepherdState {
         var state = state
+        state.tabs = []
         for index in state.agents.indices {
             let agent = state.agents[index]
+            if agent.checkout != nil { state.agents[index].checkout = nil }
             if (agent.status == .idle || agent.status == .done),
                children[agent.id]?.contains(where: { !$0.isTerminal && $0.paused != true }) == true {
                 state.agents[index].status = .working
@@ -211,9 +215,10 @@ enum SidebarDerivation {
             automation.agentID.map { ($0, automation) }
         }, uniquingKeysWith: { first, _ in first })
         let designs = Set(source.local.designs.map(\.id))
+        let workers = source.local.projectWorkerIDs
         for (index, agent) in source.local.agents.enumerated() {
             // A Project's coordinator is its conversation, never an ordinary thread row.
-            guard source.local.isSidebarThread(agent) || agent.designID != nil else { continue }
+            guard source.local.isSidebarThread(agent, workers: workers) || agent.designID != nil else { continue }
             if let design = agent.designID, designs.contains(design) { continue }
             let automation = localRuns[agent.id]
             let notSignedIn = source.notSignedIn.contains(agent.id)
@@ -237,8 +242,9 @@ enum SidebarDerivation {
         }
         for (hostIndex, host) in source.hosts.enumerated() {
             let runs = Set(host.state.automations.compactMap(\.agentID))
+            let hostWorkers = host.state.projectWorkerIDs
             // A host sends no design's agent (`withoutDesigns`); one from before that is no thread either.
-            for (index, agent) in host.state.agents.enumerated() where host.state.isSidebarThread(agent) {
+            for (index, agent) in host.state.agents.enumerated() where host.state.isSidebarThread(agent, workers: hostWorkers) {
                 // Nothing on an offline host can be answered, so none of it waits on you here.
                 let needsYou = !host.offline && agent.status == .blocked
                 let row = remoteRow(agent, host: host, automation: runs.contains(agent.id), needsYou: needsYou)

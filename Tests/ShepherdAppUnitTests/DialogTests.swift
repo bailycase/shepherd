@@ -1,5 +1,8 @@
-import Testing
+import Foundation
+import ShepherdCore
+import ShepherdProtocol
 import ShepherdSessions
+import Testing
 import ShepherdUI
 @testable import ShepherdApp
 
@@ -37,6 +40,19 @@ struct DialogTests {
 
     @Test func anUnreachableRepoSettingExplainsWhy() {
         #expect(WorktreeRepoSettingState.unavailable("needs gh access").checklist.detail == "needs gh access")
+    }
+
+    /// The error sheet's body reads as a sentence, never as a Swift value dump.
+    @Test func actionErrorsAreWordedForAPerson() {
+        struct Plain: Error, CustomStringConvertible { var description: String { "the branch is checked out elsewhere" } }
+        struct Localized: LocalizedError { var errorDescription: String? { "The host refused the rename." } }
+        enum Dump: Error { case noSuchAgent(AgentID) }
+        #expect(ActionError.describe(ChangesError("busy", "A turn is still running.")) == "A turn is still running.")
+        #expect(ActionError.describe(Localized()) == "The host refused the rename.")
+        #expect(ActionError.describe(Plain()) == "the branch is checked out elsewhere")
+        #expect(!ActionError.describe(Dump.noSuchAgent(AgentID(rawValue: "a"))).contains("rawValue"))
+        let subtitle = AgentDeleteDialog.subtitle(Fixture.agent("Rename the API", in: Fixture.space("one", path: "/tmp/one")).agent)
+        #expect(subtitle.hasPrefix("Removes “Rename the API”"))
     }
 
     /// A fresh identity per render rebuilds every footer button; the label is stable.

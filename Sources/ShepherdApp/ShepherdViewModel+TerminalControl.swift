@@ -72,13 +72,13 @@ extension ShepherdViewModel {
         if let remote = rename.remote {
             Task {
                 do { try await remoteHosts.agentAction(remote, action: .renameTerminal(paneID: rename.paneID, title: title)) }
-                catch { remoteActionError = String(describing: error) }
+                catch { fail("Couldn’t rename the terminal", error) }
             }
             return
         }
         guard let agentID = rename.agentID else { return }
         do { try renameTerminalPane(rename.paneID, of: agentID, to: title) }
-        catch { remoteActionError = String(describing: error) }
+        catch { fail("Couldn’t rename the terminal", error) }
     }
 
     /// Kill process: the command running in the tab's terminal.

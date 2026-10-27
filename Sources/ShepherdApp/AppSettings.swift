@@ -62,6 +62,7 @@ final class AppSettings {
         static let mcpSameEverywhere = "shepherd.mcp.sameEverywhere"
         static let queueDelivery = "shepherd.agent.queueDelivery"
         static let trimToolOutput = "shepherd.agent.trimToolOutput"
+        static let notifyOnTurnFinished = "shepherd.agent.notifyOnTurnFinished"
         static let deferTools = "shepherd.agent.deferTools"
         static let codemode = "shepherd.agent.codemode"
         static let compactAtPercent = "shepherd.agent.compactAtPercent"
@@ -104,7 +105,7 @@ final class AppSettings {
 
         static let all = [
             terminalFontFamily, terminalFontSize, defaultModel,
-            defaultThinking, defaultServiceTier, goalCrossProviderEvaluation, namingModel, queueDelivery, trimToolOutput, deferTools, codemode, compactAtPercent, shellPath, editor,
+            defaultThinking, defaultServiceTier, goalCrossProviderEvaluation, namingModel, queueDelivery, trimToolOutput, notifyOnTurnFinished, deferTools, codemode, compactAtPercent, shellPath, editor,
             piPanesExtension, piReviewExtension, subagentDisplay, piNativeSubagents,
             piMCPExtension, piBrowserExtension, piDesignReferences,
             childConcurrency, childModel, childThinking, childContext,
@@ -245,6 +246,12 @@ final class AppSettings {
     /// Agents launched after a change follow it.
     var trimToolOutput: Bool {
         didSet { store.set(trimToolOutput, forKey: Key.trimToolOutput) }
+    }
+
+    /// Settings ▸ Agents ▸ Notify when a turn finishes: the one notification that can be muted.
+    /// Questions, failures and waiting stay on.
+    var notifyOnTurnFinished: Bool {
+        didSet { store.set(notifyOnTurnFinished, forKey: Key.notifyOnTurnFinished) }
     }
 
     /// Settings ▸ Agents ▸ Defer rarely used tools: agents get `SHEPHERD_DEFER_TOOLS=1` and pi's
@@ -531,6 +538,7 @@ final class AppSettings {
         queueDelivery = store.string(forKey: Key.queueDelivery)
             .flatMap(NativeQueueMode.init(rawValue:)) ?? Defaults.queueDelivery
         trimToolOutput = store.object(forKey: Key.trimToolOutput) as? Bool ?? true
+        notifyOnTurnFinished = store.object(forKey: Key.notifyOnTurnFinished) as? Bool ?? true
         deferTools = store.object(forKey: Key.deferTools) as? Bool ?? true
         codemode = store.object(forKey: Key.codemode) as? Bool ?? true
         compactAtPercent = (store.object(forKey: Key.compactAtPercent) as? Int).flatMap { PiCompactionThreshold.choices.contains($0) ? $0 : nil }
@@ -632,6 +640,7 @@ final class AppSettings {
         mcpSameEverywhere = true
         queueDelivery = Defaults.queueDelivery
         trimToolOutput = true
+        notifyOnTurnFinished = true
         deferTools = true
         codemode = true
         compactAtPercent = nil

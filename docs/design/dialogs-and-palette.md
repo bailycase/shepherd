@@ -26,7 +26,9 @@ surface: every destination and command in it is also in the sidebar or the menus
   - **Commands:** New thread ("in <space>/", the space the New thread page last chose, once it
     has chosen one; ⌘N), New agent with options… (⇧⌘T), New space… (⇧⌘N),
     New space on <host>… ("remote", one per connected host), Hide or Show sidebar (⇧⌘S), Settings…
-    (⌘,), and Check remote worktree operation (its host) while one is pending. **Not built yet:**
+    (⌘,), Open Hosts, Open Design systems, Open Extensions, Open Automations, Open Designs,
+    Appearance: <mode> for each mode not in use, and Check remote worktree operation (its host)
+    while one is pending. **Not built yet:**
     New mission… (SHComposer; it waits for Missions).
   - **This thread** (the agent on screen): Rename ("<title>", ⌘R), Pin thread or Unpin thread
     (`pin`, `pin.slash`; named for what it does now, no chord; only for a thread the sidebar can pin:
@@ -35,8 +37,11 @@ surface: every destination and command in it is also in the sidebar or the menus
     `bolt.fill` through `SHGlyph.fastBolt`, not the automations' outline `bolt`; ComposerSpeed;
     listed only while the thread's model offers a service tier, and it switches the tier as the
     model-settings popover's Speed control would, with no popover), Review diff ("working tree · 4 files", the checkout's changed files as the branch chip counts
-    them; ⇧⌘B, the side pane's chord), Review PR changes ("PR #24" once the agent's review has
-    found its pull request), and the Terminal menu's commands while a
+    them; ⌃1, the Changes tab's chord), Review PR changes ("PR #24" once the agent's review has
+    found its pull request), Stop (⌘.) and Show <tab> pane (⌃1–5) while a thread is on screen,
+    the row menu's commands for one of this Mac's threads (`ThreadCommand`: Fork thread, Copy
+    transcript, Open in Finder, Finalize worktree…, Delete agent… ⇧⌘W, each confirmed or acting
+    as the menu does) and Move to <space> for each other space, and the Terminal menu's commands while a
     thread with a layout is on screen: Show or Hide terminal (⌘J; with none it opens one), New
     terminal (⌘D), and Maximize or Restore terminal (⇧⌘↩, offered only while the thread has a
     terminal), named for what they will do.
@@ -63,8 +68,9 @@ surface: every destination and command in it is also in the sidebar or the menus
   `SHKeycap`s from `KeybindingsStore`. The highlight is `runningTint` with a `running` icon.
   Subagent rows wear their run's state color.
 - **Keys:** ↑↓ (and the pointer) move the highlight, ↩ runs it, ⇥ cycles the scope, Esc closes. A
-  new query or scope moves the highlight to the top. With nothing to list: "Nothing here yet", or
-  "No matches" for a query, in caption tertiary.
+  new query or scope moves the highlight to the top. With nothing to list: "Nothing here yet",
+  "Searching conversations…" while transcripts are still being read for a query, or "No matches"
+  once everything has answered, in caption tertiary.
 - **Motion:** rows arrive, leave, and reorder (`list`), and the card follows their height; the
   highlight moving changes no row, so it lands at once.
 - **What it never shows:** footer hints, ⌘1–9 numbering, or any status the sidebar or the thread
@@ -182,8 +188,11 @@ dialog. There is no `.alert`, `confirmationDialog`, or `NSAlert` in the app:
   moves to the Trash." or "The file returns to its last committed version. This cannot be undone
   from Shepherd.", a Repository row (mono, middle-truncated), Cancel and a destructive Discard
   changes. Commit… (`ReviewCommitSheet`) is described with the review pane.
-- A failed agent action (`ActionErrorDialog`): "Agent action failed", the error selectable, and
-  OK (primary)
+- A failed action (`ActionErrorDialog`): titled for what was attempted ("Couldn’t fork", "Couldn’t
+  rename the agent"; `ActionError`), the error worded for a person and selectable, and OK (primary)
+- Delete agent (`AgentDeleteDialog`): "Delete agent", what it stops and removes, Cancel and a
+  destructive Delete. Delete automation reads the same way. A confirmed delete runs once the sheet
+  has dismissed (`sheet(item:onDismiss:)`), never on a timed delay
 - Reset settings (`ResetSettingsDialog`): "Reset settings to defaults?", "Your spaces, agents and
   terminals are not affected.", Cancel and a destructive Reset
 - Quitting while agents are working or waiting on you (`QuitDialog`), because quitting stops

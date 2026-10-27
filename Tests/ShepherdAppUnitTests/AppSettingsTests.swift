@@ -34,6 +34,7 @@ struct AppSettingsTests {
         #expect(settings.childModel.isEmpty && settings.childThinking.isEmpty)
         #expect(settings.queueDelivery == .all, "the queue arrives as one turn")
         #expect(settings.trimToolOutput, "old tool output is trimmed from the model's context until switched off")
+        #expect(settings.notifyOnTurnFinished, "finished turns notify until switched off")
         #expect(settings.deferTools, "rarely used tools are deferred behind tool search until switched off")
         #expect(settings.codemode, "native tool scripting is enabled until switched off")
         #expect(settings.compactAtPercent == nil, "compaction is pi's own until a share is chosen")
@@ -51,11 +52,13 @@ struct AppSettingsTests {
         settings.compactAtPercent = 80
         settings.compactAtPercent = 80
         settings.trimToolOutput = false
+        settings.notifyOnTurnFinished = false
         settings.deferTools = false
         settings.codemode = false
 
         let reloaded = AppSettings(store: store)
         #expect(reloaded.compactAtPercent == 80 && !reloaded.trimToolOutput && !reloaded.deferTools && !reloaded.codemode)
+        #expect(!reloaded.notifyOnTurnFinished)
         #expect(written == [80], "only a change is handed on")
 
         store.set(75, forKey: AppSettings.Key.compactAtPercent)
@@ -63,6 +66,7 @@ struct AppSettingsTests {
 
         settings.resetToDefaults()
         #expect(settings.compactAtPercent == nil && settings.trimToolOutput && settings.deferTools && settings.codemode)
+        #expect(settings.notifyOnTurnFinished)
         #expect(written == [80, nil])
         #expect(store.object(forKey: AppSettings.Key.compactAtPercent) == nil && store.object(forKey: AppSettings.Key.trimToolOutput) == nil)
         #expect(store.object(forKey: AppSettings.Key.deferTools) == nil && store.object(forKey: AppSettings.Key.codemode) == nil)

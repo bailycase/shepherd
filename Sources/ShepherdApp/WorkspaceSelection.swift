@@ -26,7 +26,7 @@ import ShepherdCore
 ///
 /// Pure value type so this (the part that is easy to get subtly wrong) is
 /// testable without constructing a view model, which owns the session server.
-struct WorkspaceSelection {
+struct WorkspaceSelection: Equatable {
     let state: ShepherdState
     let selectedSpaceID: SpaceID?
     let selectedAgentID: AgentID?
@@ -99,9 +99,15 @@ struct WorkspaceSelection {
         // A Project's coordinator and worker threads are drawn only by its Project page and pane. Mounted here too each would be a
         // second, hidden `ThreadView` on the same store, whose `suspend()` ends the page's poll: replies never show until you leave
         // and return. The one the person opened (`active`) still mounts.
-        let projectTabs = Set(state.agents.filter { state.isProjectCoordinator($0) || state.isProjectWorker($0.id) }.map(\.tabID))
+        let workers = state.projectWorkerIDs
+        var projectTabs = Set<TabID>()
+        var coordinatorTabs = Set<TabID>()
+        for agent in state.agents {
+            if state.isProjectCoordinator(agent) { coordinatorTabs.insert(agent.tabID); projectTabs.insert(agent.tabID) }
+            else if workers.contains(agent.id) { projectTabs.insert(agent.tabID) }
+        }
         return Self.stable(state.tabs.filter { tab in
-            (!projectTabs.contains(tab.id) || (tab.id == active && !state.agents.contains { $0.tabID == tab.id && state.isProjectCoordinator($0) }))
+            (!projectTabs.contains(tab.id) || (tab.id == active && !coordinatorTabs.contains(tab.id)))
                 && (tab.id == active || (!parkedTabIDs.contains(tab.id) && !pendingMountTabIDs.contains(tab.id)))
         }, in: state)
     }

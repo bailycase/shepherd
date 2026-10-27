@@ -10,7 +10,7 @@ extension ShepherdViewModel {
     func performRemoteAction(_ target: RemoteAgentRef, action: RemoteAgentAction) {
         Task {
             do { try await remoteHosts.agentAction(target, action: action) }
-            catch { remoteActionError = String(describing: error) }
+            catch { fail("The host refused the action", error) }
         }
     }
 

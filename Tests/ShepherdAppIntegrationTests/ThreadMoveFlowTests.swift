@@ -135,9 +135,9 @@ struct ThreadMoveFlowTests {
         try menu.press("Child")
         try await eventuallyOnMain("the active-thread refusal") { vm.remoteActionError != nil }
         #expect(app.server.state.agents.first?.spaceID == parent.id)
-        let message = try #require(vm.remoteActionError)
+        let message = try #require(vm.actionError)
         let error = OffscreenWindow(size: CGSize(width: 540, height: 280), dark: true,
-                                    ActionErrorDialog(message: message) { vm.remoteActionError = nil })
+                                    ActionErrorDialog(error: message) { vm.actionError = nil })
         defer { error.close() }
         let dismiss = try error.press("OK")
         #expect(ControlPress.undersized([dismiss], minimum: .desktop).isEmpty)

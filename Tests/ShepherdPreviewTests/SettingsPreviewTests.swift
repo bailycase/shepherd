@@ -814,7 +814,7 @@ struct SettingsPreviewTests {
 
     @Test func actionErrorDialog() async throws {
         try await Preview.render("sheet-action-error", size: CGSize(width: SHDialogMetrics.width, height: 200)) {
-            ActionErrorDialog(message: "horizon rejected the rename: agent_busy — the agent is mid-turn. Try again once it settles.") {}
+            ActionErrorDialog(error: ActionError(title: "Couldn’t rename", message: "horizon rejected the rename: agent_busy — the agent is mid-turn. Try again once it settles.")) {}
         }
     }
 
