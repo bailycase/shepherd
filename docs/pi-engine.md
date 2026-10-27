@@ -122,6 +122,13 @@ install with `pi_engine.py patch-package`; it accepts an already-patched cache o
 Update the patch hash in the pin and restage whenever the patch changes, so Xcode's
 existing pin stamp cannot reuse an older unpatched engine.
 
+The patch also adds image references to RPC history (`history-images.js`). `get_messages` with
+`images: "refs"` replaces each saved image's base64 with its SHA-256, byte count and header pixel size,
+and `get_image {sha256}` answers one image's `{ mimeType, data }` from the saved branch. Without the
+flag `get_messages` is unchanged. A long design session's renders had made its history one record
+over the host's 256 MiB limit, so the agent never became ready. `history-images.test.mjs` covers
+png, gif, jpeg and webp headers, a mislabelled image and an unknown hash.
+
 The patch supplies `refresh_skills`, native file observation and the `skills_changed` /
 `skills_watch_error` RPC events, covering prompt templates as well as skills. The host coalesces dirty state and refreshes immediately at an
 idle boundary, without periodic requests. It does not

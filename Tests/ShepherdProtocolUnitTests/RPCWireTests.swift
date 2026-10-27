@@ -33,7 +33,8 @@ struct RPCWireTests {
          #"{"type":"prompt","message":"Later","streamingBehavior":"followUp"}"#),
         (.abort, nil, #"{"type":"abort"}"#),
         (.getState, nil, #"{"type":"get_state"}"#),
-        (.getMessages, nil, #"{"type":"get_messages","history":true}"#),
+        (.getMessages, nil, #"{"type":"get_messages","history":true,"images":"refs"}"#),
+        (.getImage(sha256: "ab12"), nil, #"{"type":"get_image","sha256":"ab12"}"#),
         (.getSessionStats, nil, #"{"type":"get_session_stats"}"#),
         (.getCommands, nil, #"{"type":"get_commands"}"#),
         (.refreshSkills, nil, #"{"type":"refresh_skills"}"#),
@@ -191,6 +192,7 @@ struct RPCWireTests {
         ("null data", "null"),
         ("messages not an array", #"{"messages":{"role":"user","content":"a"}}"#),
         ("a malformed element", #"{"messages":[{"role":"user","content":"a"},42]}"#),
+        ("image refs", #"{"messages":[{"role":"toolResult","content":[{"type":"image","mimeType":"image/png","sha256":"ab","byteCount":9,"width":3,"height":2}]}]}"#),
         ("images", #"{"messages":[{"role":"user","content":[{"type":"text","text":"look"},{"type":"image","data":"iVBORw0KGgo=","mimeType":"image/png"},{"type":"sticker"}]}]}"#),
         ("tool call arguments", #"{"messages":[{"role":"assistant","content":[{"type":"toolCall","id":"c1","name":"edit","arguments":{"path":"a/b.swift","n":3,"f":0.25,"big":12345678901234,"on":true,"off":false,"none":null,"list":[1,"two",[false]],"text":"café   \"q\""}}],"stopReason":"toolUse"},{"role":"toolResult","toolCallId":"c1","toolName":"edit","content":[{"type":"text","text":"ok"}],"isError":false}]}"#),
     ]
@@ -234,6 +236,7 @@ struct RPCWireTests {
     @Test(arguments: [
         RPCContentBlock.text("t"), .thinking("th"), .toolCall(id: "i", name: "n", arguments: .object(["a": .array([.null, .bool(true)])])),
         .toolCall(id: "i", name: "n", arguments: nil), .image(mimeType: "image/png", data: "AA"), .unknown(type: "sticker"),
+        .image(mimeType: "image/png", data: "", ref: RPCImageRef(sha256: "ab", byteCount: 9, width: 3, height: 2)),
     ])
     func contentBlocksRoundTrip(_ block: RPCContentBlock) throws {
         #expect(try Wire.roundTrip(block) == block)
