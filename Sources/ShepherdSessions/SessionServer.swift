@@ -4795,6 +4795,9 @@ public final class SessionServer: @unchecked Sendable {
                 if moved { $0.agents[index].lastActiveAt = now }
             }
             runLog.record(from: before, to: store.state)
+            // A turn's failure outlives the status (which a relaunch resets): written to state.json.
+            if status == .done, let message = failure?.message { recordAgentFailure(agentID: agentID, message) }
+            else if status == .working || status == .done { recordAgentFailure(agentID: agentID, nil) }
         } else {
             ShepherdLog.warning("setAgentStatus for unknown agent \(agentID); dropped")
             return
@@ -4805,6 +4808,16 @@ public final class SessionServer: @unchecked Sendable {
             self?.onAgentStatus?(agentID, status, failure)
             self?.onStateChanged?(committedState)
         }
+    }
+
+    /// Server queue: what ended the agent's last run badly (`Agent.lastFailure`), kept in
+    /// state.json so a relaunch shows the row as failed rather than idle; nil clears it. Writes
+    /// only when it changes, and never fails the run it records.
+    func recordAgentFailure(agentID: AgentID, _ message: String?) {
+        guard let index = store.state.agents.firstIndex(where: { $0.id == agentID }),
+              store.state.agents[index].lastFailure != message else { return }
+        do { try mutateState { $0.agents[index].lastFailure = message } }
+        catch { ShepherdLog.warning("agent \(agentID): could not record its failure: \(error)") }
     }
 
     /// Server queue: the question an agent's thread asks first changed (its title and the
@@ -7076,6 +7089,7 @@ public final class SessionServer: @unchecked Sendable {
             thread.onServable = { [weak serverWeak] in
                 serverWeak?.startRecords[sid]?.served()
                 guard let server = serverWeak, server.sessions[sid] != nil else { return }
+                if let agent = server.agentID(forSession: sid) { server.recordAgentFailure(agentID: agent, nil) }
                 server.diagnosticDuration("agent.start", since: diagnosticStart)
                 server.restoreAgentRecovery(sessionID: sid)
                 server.unannouncedServable.insert(sid)
@@ -7497,6 +7511,7 @@ public final class SessionServer: @unchecked Sendable {
             let problem = record.problem(exitCode: code)
             keptStarts[sessionID] = KeptStart(problem: problem, openingPrompt: sessions[sessionID]?.thread?.unreadOpeningPrompt)
             ShepherdLog.warning("rpc session \(sessionID) stopped before it served; its agent stays: \(problem.map { "\($0.kind.rawValue) \($0.lines.last ?? "")" } ?? "requested")")
+            if let problem, let agent = agentID(forSession: sessionID) { recordAgentFailure(agentID: agent, problem.title) }
             notifySessionExit(sessionID: sessionID, exit: SessionExit(code: code, keepsAgent: true, startProblem: problem))
             return
         }
