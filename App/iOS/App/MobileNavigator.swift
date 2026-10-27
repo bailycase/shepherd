@@ -262,7 +262,7 @@ extension MobileNavigator.Tab {
         case .designs(.systems), .designs(.system): nil
         case .designs, .padDesign: .designs
         case .projects: .projects
-        case .thread, .subagents, .review, .terminal, .search, .newThread: nil
+        case .thread, .subagents, .review, .terminal, .sidePane, .browser, .search, .newThread: nil
         }
     }
 

@@ -22,34 +22,27 @@ final class SidePaneState {
     }
 }
 
-/// Thread screens the phone pushes that the pane shows as tabs on regular width, until the
-/// Files and Browser lanes bring their own screens.
+/// Files pushed on a phone: the pane's Files tab on regular width. (Browser has its own route,
+/// `MobileRoute.browser`.)
 enum SidePaneRoute: Hashable, Codable {
     case files(AgentRef)
-    case browser(AgentRef)
 
     var thread: AgentRef {
         switch self {
-        case .files(let ref), .browser(let ref): ref
+        case .files(let ref): ref
         }
     }
 
-    var tab: PadSidePaneTab {
-        switch self {
-        case .files: .files
-        case .browser: .browser
-        }
-    }
+    var tab: PadSidePaneTab { .files }
 }
 
 struct SidePaneDestination: View {
     let route: SidePaneRoute
 
     var body: some View {
-        SidePaneComingSoon(tab: route.tab)
-            .toolbar(.hidden, for: .tabBar)
-            .navigationTitle(route.tab.title)
-            .navigationBarTitleDisplayMode(.inline)
+        switch route {
+        case .files(let ref): ThreadFilesScreen(thread: ref).toolbar(.hidden, for: .tabBar)
+        }
     }
 }
 
@@ -62,6 +55,7 @@ extension MobileRoute {
         case .terminal: .terminal
         case .subagents: .subagents
         case .sidePane(let route): route.tab
+        case .browser: .browser
         default: nil
         }
     }
@@ -73,7 +67,7 @@ extension MobileRoute {
         case .files: .sidePane(.files(thread))
         case .terminal: .terminal(.panes(thread))
         case .subagents: .subagents(.list(thread))
-        case .browser: .sidePane(.browser(thread))
+        case .browser: .browser(.page(thread))
         // The phone shows an artifact in a sheet (`ArtifactHooks`); its list is the changes'.
         case .artifacts: .review(.changes(thread, file: nil))
         }

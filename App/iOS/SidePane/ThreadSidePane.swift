@@ -64,7 +64,7 @@ private extension PadSplitLayout.PaneDock {
 }
 
 /// The side pane (DuoSidePaneTabs): its tabs, then the open tab. Changes, Terminal and Subagents host the screens iOS already has;
-/// Files and Browser are their own lanes' (`SidePaneComingSoon` until then); Artifacts joins once the thread has made one.
+/// Files (`ThreadFilesPane`, files.v1) and Browser (`ThreadBrowserPane`, browser.tunnel.v1) are their own views; Artifacts joins once the thread has made one.
 struct ThreadSidePane: View {
     let ref: AgentRef
     @Environment(MobileNavigator.self) private var navigator
@@ -85,10 +85,10 @@ struct ThreadSidePane: View {
             Group {
                 switch tab {
                 case .changes: SidePaneChanges(ref: ref)
-                case .files: SidePaneComingSoon(tab: .files)
+                case .files: ThreadFilesPane(thread: ref)
                 case .terminal: TerminalScreen(ref: ref, embedded: true)
                 case .subagents: PadSubagentInspector(ref: ref)
-                case .browser: SidePaneComingSoon(tab: .browser)
+                case .browser: ThreadBrowserPane(thread: ref)
                 case .artifacts: PadArtifactsPane(ref: ref, store: review, artifacts: store.artifacts)
                 }
             }
@@ -143,19 +143,5 @@ enum SidePaneTabs {
             }
             return SHPadPaneTab(id: tab.rawValue, title: tab.title, systemImage: systemImage(tab), count: count, status: status)
         }
-    }
-}
-
-/// Files and Browser, until their lanes swap in `ThreadFilesPane(thread:)` and `ThreadBrowserPane(thread:)`.
-struct SidePaneComingSoon: View {
-    let tab: PadSidePaneTab
-
-    var body: some View {
-        SHEmptyState(Text("\(tab.title) is coming"),
-                     message: tab == .files ? "Reading the thread's files arrives here next. Your Mac's side pane has them today."
-                         : "The thread's dev server arrives here next. Your Mac's side pane has it today.")
-            .padding(MobileLayout.gutter)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.sh.bgWindow)
     }
 }
