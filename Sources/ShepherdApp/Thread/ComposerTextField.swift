@@ -150,7 +150,8 @@ struct ComposerTextField: NSViewRepresentable {
         func readText(_ field: Field) {
             field.publishingEdit = true
             defer { field.publishingEdit = false }
-            parent.text = field.editor.string
+            // Not editing (an assistive client set AXValue): the cell holds the text, not the editor.
+            parent.text = field.currentEditor() != nil ? field.editor.string : field.stringValue
             field.invalidateIntrinsicContentSize()
             readSelection(field)
         }
@@ -166,6 +167,18 @@ struct ComposerTextField: NSViewRepresentable {
         var publishingEdit = false
         var wantsFocus = false
         override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); applyFocus() }
+        /// An assistive client (dictation, AX scripting) writing AXValue bypasses the field editor,
+        /// so nothing fires `didChangeText`; publish the new text ourselves.
+        override func setAccessibilityValue(_ value: Any?) {
+            super.setAccessibilityValue(value)
+            if currentEditor() == nil, let text = value as? String, stringValue != text { stringValue = text }
+            editor.changedText?()
+        }
+        /// AXConfirm on the field is the Return key: the composer's handler sends or chooses.
+        override func accessibilityPerformConfirm() -> Bool {
+            guard isEnabled, let handler = editor.keys[.return] else { return super.accessibilityPerformConfirm() }
+            return handler(Press(modifiers: [], editor: editor)) == .handled
+        }
         func applyFocus() {
             guard let window else { return }
             if wantsFocus, currentEditor() == nil { window.makeFirstResponder(self) }
