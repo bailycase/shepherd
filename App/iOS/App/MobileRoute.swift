@@ -19,6 +19,7 @@ enum MobileRoute: Hashable, Codable {
     case designs(DesignsRoute)
     case padDesign(PadDesignRoute)
     case projects(ProjectsRoute)
+    case browser(BrowserRoute)
 
     @MainActor @ViewBuilder
     var destination: some View {
@@ -35,6 +36,7 @@ enum MobileRoute: Hashable, Codable {
         case .designs(let route): DesignsDestination(route: route)
         case .padDesign(let route): PadDesignDestination(route: route)
         case .projects(let route): ProjectsDestination(route: route)
+        case .browser(let route): BrowserDestination(route: route)
         }
     }
 
@@ -45,6 +47,7 @@ enum MobileRoute: Hashable, Codable {
         case .subagents(let route): route.thread
         case .review(let route): route.thread
         case .terminal(let route): route.thread
+        case .browser(let route): route.thread
         case .thread, .home, .newThread, .search, .settings, .automations, .designs, .padDesign, .projects: nil
         }
     }
@@ -56,6 +59,7 @@ enum MobileRoute: Hashable, Codable {
         case .subagents(let route): route.thread.host
         case .review(let route): route.thread.host
         case .terminal(let route): route.thread.host
+        case .browser(let route): route.thread.host
         case .automations(let route): route.host
         case .designs(let route): route.host
         case .padDesign(let route): route.host

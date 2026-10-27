@@ -278,7 +278,12 @@ final class FixtureHost: @unchecked Sendable {
             mutation("design." + Self.kind(request))
             return [.error(id: id, code: "fixture", message: refused)]
         case .tunnel(let frame):
-            // The fixture host carries nothing: an open is refused, and the rest of a tunnel is dropped.
+            // A Browser screen's host serves its canned dev server through the tunnel (a read).
+            if let tunnel = data.tunnel {
+                note("tunnel")
+                return tunnel(frame).map { .tunnel($0) }
+            }
+            // Any other fixture host carries nothing: an open is refused, and the rest of a tunnel is dropped.
             mutation("tunnel")
             if case .open(let tunnel, _, _) = frame { return [.tunnel(.close(tunnel: tunnel, code: BrowserTunnelCode.unsupported))] }
             return []
