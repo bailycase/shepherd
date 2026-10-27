@@ -36,6 +36,7 @@ final class NewThreadModel {
     private(set) var branch = ""
     private(set) var base = NewThreadBase()
     private(set) var attachments: [NewThreadAttachment] = []
+    var pendingImports = 0
     var errorText: String?
     private(set) var starting = false
     private(set) var hostRows: [NewThreadHostRow] = []
@@ -82,8 +83,10 @@ final class NewThreadModel {
     var draft: NewThreadDraft {
         var defaults = defaults
         defaults.thinking = thinking
-        return NewThreadDraft(prompt: prompt, host: host, space: space, defaults: defaults, worktree: worktreeWanted, branch: branch,
+        var draft = NewThreadDraft(prompt: prompt, host: host, space: space, defaults: defaults, worktree: worktreeWanted, branch: branch,
                        base: base, attachments: attachments.count, starting: starting)
+        draft.pendingImports = pendingImports
+        return draft
     }
 
     var blocker: NewThreadBlocker? { NewThreadRules.blocker(draft) }

@@ -180,8 +180,10 @@ struct ThreadScreen: View {
     /// One short line for the states that matter; the store keeps the full reason.
     private func banner(host: MobileHost?, agent: Agent?, store: NativeThreadStore, supported: Bool) -> String? {
         guard let host else { return "This host was forgotten." }
-        if agent == nil { return host.phase.isConnected ? "This agent is no longer on \(host.name)." : nil }
-        if !host.phase.isConnected { return "\(host.name) is offline · showing the last known thread" }
+        if !host.phase.isConnected {
+            return agent == nil ? "\(host.name) is offline · connect to load this thread" : "\(host.name) is offline · showing the last known thread"
+        }
+        if agent == nil { return "This agent is no longer on \(host.name)." }
         if !supported { return "Update Shepherd on \(host.name) to open threads here." }
         if let error = store.loadError { return error }
         if let problem = store.startProblem { return "\(problem.title) \(problem.advice(host: host.name))" }
@@ -230,6 +232,10 @@ struct ThreadTranscript: View {
                     if let banner {
                         Text(banner).font(.sh(.caption)).foregroundStyle(Color.sh.textTertiary)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                        if let host = hosts.host(ref.host), !host.phase.isConnected {
+                            Button("Retry connection") { hosts.retry(ref.host) }
+                                .buttonStyle(.sh(.secondary))
+                        }
                     }
                     if store.snapshot == nil && store.loadError == nil && store.startProblem == nil && store.isLive {
                         ProgressView().progressViewStyle(SHSpinnerStyle()).frame(maxWidth: .infinity)

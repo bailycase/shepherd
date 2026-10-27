@@ -66,6 +66,11 @@ struct SubagentTrayTests {
         #expect(row.phase == .asked)
         #expect(row.line == .asked("Rename the new token names, or replace the old ones everywhere?"))
         #expect(row.since == 5_000)
+        #expect(row.until == nil)
+        run.state = "complete"
+        run.endedAt = 12_000
+        #expect(nativeTrayRow(run).since == 5_000)
+        #expect(nativeTrayRow(run).until == nil, "Waiting on parent uses the same live elapsed basis on every device")
         #expect(row.accessibilityLabel == "task, reviewer, Waiting on parent, asked the parent: Rename the new token names, or replace the old ones everywhere?")
         run.question = nil
         run.attentionText = nil

@@ -56,6 +56,18 @@ struct NewThreadRulesTests {
                               branch: branch, base: target.map(resolvedBase) ?? NewThreadBase(), attachments: attachments)
     }
 
+    @Test func photoImportsBlockCreationUntilEveryImportFinishes() {
+        var draft = Self.draft()
+        for pending in [2, 1] {
+            draft.pendingImports = pending
+            #expect(NewThreadRules.blocker(draft) == .importingImages)
+            #expect(NewThreadRules.creation(draft) == nil)
+        }
+        draft.pendingImports = 0
+        #expect(NewThreadRules.creation(draft) != nil)
+        #expect(NewThreadBlocker.importingImages.isPending)
+    }
+
     // MARK: Rows
 
     @Test func hostRowsSayWhatEachHostIsDoingAndOnlyConnectedOnesCanBeChosen() {

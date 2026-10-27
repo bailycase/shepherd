@@ -25,19 +25,28 @@ struct AttachButton: View {
                 .shTouchTarget(height: chip ? SHComposerMetrics.chipHeight : SH.Height.touch,
                                width: chip ? SHComposerMetrics.chipHeight : SH.Height.touch)
         }
-        .disabled(!enabled || state.room == 0)
+        .disabled(!enabled || state.room == 0 || state.pendingImports > 0)
         .accessibilityLabel("Attach images")
         .onChange(of: items) { _, picked in
             guard !picked.isEmpty else { return }
             items = []
+            state.pendingImports += 1
             Task {
+                defer { state.pendingImports -= 1 }
+                var failures = 0
                 var loaded: [(data: Data, name: String)] = []
                 for (index, item) in picked.enumerated() {
-                    guard let data = try? await item.loadTransferable(type: Data.self) else { continue }
+                    guard let data = try? await item.loadTransferable(type: Data.self) else {
+                        failures += 1
+                        continue
+                    }
                     let ext = item.supportedContentTypes.first?.preferredFilenameExtension ?? "png"
                     loaded.append((data, picked.count == 1 ? "Photo.\(ext)" : "Photo \(index + 1).\(ext)"))
                 }
                 await state.attach(loaded)
+                if failures > 0 {
+                    state.attachmentError = "\(failures) image(s) couldn't be loaded. Select them again to retry."
+                }
             }
         }
     }
