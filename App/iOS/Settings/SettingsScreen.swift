@@ -44,6 +44,9 @@ private struct SettingsList: View {
                         row(.instructions, trailing: value(store.instructionsValue))
                         row(.skills, trailing: value(store.skillsValue))
                         row(.pi, trailing: value(store.extensionsValue(chosenHost: navigator.settingsSelection.chosenHost)))
+                        row(.mcp, trailing: SHListRow.Trailing.none)
+                        row(.subagents, trailing: SHListRow.Trailing.none)
+                        row(.signIn, trailing: SHListRow.Trailing.none)
                         // While a host serves designs (More's row, before the phone had five tabs).
                         if designs.available {
                             Button { navigator.open(.designs(.systems)) } label: {
@@ -57,6 +60,7 @@ private struct SettingsList: View {
                     SHListCard {
                         row(.hosts, trailing: model.offlineCount > 0 ? .alert("\(model.offlineCount) offline")
                             : .value(model.hosts.isEmpty ? "None" : String(model.hosts.count)))
+                        row(.spaces, trailing: SHListRow.Trailing.none)
                         row(.worktrees, trailing: SHListRow.Trailing.none)
                     }
                 }
@@ -167,9 +171,13 @@ struct SettingsPageView: View {
         case .defaults: DefaultsScreen()
         case .worktrees: WorktreesScreen()
         case .pi: PiExtensionsScreen()
+        case .mcp: MCPServersScreen()
+        case .subagents: SubagentProfilesScreen()
+        case .signIn: ProvidersScreen()
         case .instructions: InstructionsScreen()
         case .skills: SkillsScreen()
         case .hosts: HostsScreen()
+        case .spaces: SpacesScreen()
         case .notifications: NotificationsScreen()
         case .experiments: ExperimentsScreen()
         case .diagnostics: DiagnosticsScreen()

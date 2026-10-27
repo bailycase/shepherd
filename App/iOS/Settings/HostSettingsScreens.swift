@@ -273,7 +273,7 @@ private struct HostSettingsPage<Content: View>: View {
 }
 
 /// Which host the page changes, when there are several.
-private struct HostChooser: View {
+struct HostChooser: View {
     let store: SettingsStore
     @Environment(MobileNavigator.self) private var navigator
     private var host: SettingsHost? { store.settingsHost(chosenHost: navigator.settingsSelection.chosenHost) }
