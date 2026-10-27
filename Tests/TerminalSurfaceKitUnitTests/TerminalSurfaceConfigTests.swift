@@ -66,6 +66,12 @@ struct TerminalSurfaceConfigTests {
     /// the keys, so they stay unbound too.
     private static let formerSplitChords = ["shift+cmd+d", "alt+cmd+right", "alt+cmd+left"]
 
+    /// Shepherd reads only columns and rows, so a divider drag's pixel-only updates (most of them)
+    /// never hop to the main queue and the server.
+    @MainActor @Test func pixelOnlyResizesAreSuppressed() {
+        #expect(TerminalSurfaceModel().session.suppressesPixelOnlyResizes)
+    }
+
     @Test func everyDefaultAppShortcutIsUnbound() {
         let bound = unbinds(TerminalSurfaceModel())
         for chord in Self.defaultAppChords {
