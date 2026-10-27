@@ -364,6 +364,7 @@ struct PadDiffOptionItems: View {
                 Button("Copy git apply command", systemImage: "doc.on.clipboard") { copy(command: true) }
                 Button("Copy as patch", systemImage: "doc.on.doc") { copy(command: false) }
             }
+            .disabled(store.copyingPatch)
         }
         if let finalize {
             Button("Finalize worktree\u{2026}", systemImage: "checkmark.seal", action: finalize)
@@ -371,10 +372,7 @@ struct PadDiffOptionItems: View {
     }
 
     private func copy(command: Bool) {
-        Task {
-            guard let patch = try? await store.patch() else { return }
-            UIPasteboard.general.string = command ? "git apply <<'PATCH'\n\(patch)\(patch.hasSuffix("\n") ? "" : "\n")PATCH\n" : patch
-        }
+        Task { await store.copyPatch(command: command) }
     }
 }
 
@@ -537,6 +535,19 @@ private struct PadSendBar: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if let notice = store.copyNotice {
+                HStack(spacing: SH.Space.m) {
+                    Text(notice).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
+                    if let command = store.failedCopyCommand {
+                        Button("Retry") { Task { await store.copyPatch(command: command) } }
+                            .buttonStyle(.sh(.secondary))
+                    }
+                    if !store.copyingPatch {
+                        Button("Dismiss") { store.copyNotice = nil }.buttonStyle(.sh(.ghost))
+                    }
+                }
+                .padding(SH.Space.l)
+            }
             if let error = store.actionError {
                 SHBanner(.failed, title: "Couldn't send the comments", message: error) {
                     Button("Dismiss") { store.actionError = nil }.buttonStyle(.sh(.ghost, size: .s))

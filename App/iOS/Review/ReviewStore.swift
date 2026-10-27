@@ -88,6 +88,9 @@ final class ReviewStore {
     private(set) var loading = false
     private(set) var loaded = false
     private(set) var loadError: String?
+    private(set) var copyingPatch = false
+    var copyNotice: String?
+    private(set) var failedCopyCommand: Bool?
 
     // MARK: Files
 
@@ -405,6 +408,22 @@ final class ReviewStore {
     }
 
     /// The scope's diff as a patch `git apply` takes.
+    func copyPatch(command: Bool) async {
+        guard !copyingPatch else { return }
+        copyingPatch = true
+        copyNotice = "Loading patch…"
+        failedCopyCommand = nil
+        defer { copyingPatch = false }
+        do {
+            let patch = try await patch()
+            UIPasteboard.general.string = command ? "git apply <<'PATCH'\n\(patch)\(patch.hasSuffix("\n") ? "" : "\n")PATCH\n" : patch
+            copyNotice = command ? "Command copied" : "Patch copied"
+        } catch {
+            copyNotice = reviewErrorText(error)
+            failedCopyCommand = command
+        }
+    }
+
     func patch() async throws -> String {
         guard let revision = list?.revision else { throw RemoteReviewError.notReady }
         guard case .changesPatch(let text, _) = try await query(.changesPatch(revision: revision, options: options)) else {

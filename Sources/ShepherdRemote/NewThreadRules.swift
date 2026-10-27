@@ -249,6 +249,7 @@ public struct NewThreadDraft: Equatable, Sendable {
     public var base: NewThreadBase
     public var attachments: Int
     public var starting: Bool
+    public var pendingImports: Int = 0
 
     public init(prompt: String, host: NewThreadHostInput?, space: Space?, defaults: NewThreadDefaults, worktree: Bool,
                 branch: String, base: NewThreadBase, attachments: Int = 0, starting: Bool = false) {
@@ -278,6 +279,7 @@ public struct NewThreadDraft: Equatable, Sendable {
 /// Why Start is unavailable. Each says what to do.
 public enum NewThreadBlocker: Equatable, Sendable {
     case starting
+    case importingImages
     case noHost
     case hostOffline(String)
     case noRepo(String)
@@ -292,6 +294,7 @@ public enum NewThreadBlocker: Equatable, Sendable {
     public var message: String {
         switch self {
         case .starting: "Starting…"
+        case .importingImages: "Adding images…"
         case .noHost: "Add a host in Settings to start a thread."
         case .hostOffline(let name): "\(name) is offline. Retry it, or choose another host."
         case .noRepo(let name): "Add a repo on \(name) to start a thread there."
@@ -308,7 +311,7 @@ public enum NewThreadBlocker: Equatable, Sendable {
     /// Waiting on the host, not on the user.
     public var isPending: Bool {
         switch self {
-        case .starting, .loadingDefaults, .resolvingBase: true
+        case .starting, .importingImages, .loadingDefaults, .resolvingBase: true
         default: false
         }
     }
@@ -332,6 +335,7 @@ public struct NewThreadCreation: Equatable, Sendable {
 public enum NewThreadRules {
     public static func blocker(_ draft: NewThreadDraft) -> NewThreadBlocker? {
         if draft.starting { return .starting }
+        if draft.pendingImports > 0 { return .importingImages }
         guard let host = draft.host else { return .noHost }
         guard host.phase.isConnected else { return .hostOffline(host.name) }
         guard draft.space != nil else { return .noRepo(host.name) }

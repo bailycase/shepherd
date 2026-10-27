@@ -220,11 +220,11 @@ keep the version for real breaks.
   agent runs or new output arrived, "↓ Jump to latest" (`SHJumpToLatest`) sits above the
   composer.
 - **Composer (`ThreadComposer`, `Composer/`):** on iPhone a paperclip beside a capsule field,
-  with the commands, model and thinking chips above it while it is in use; on iPad the Mac's
+  with the commands, model, thinking and speed chips above it; on iPad the Mac's
   card with that row under the field. The thinking chip, like the Mac's, hides for a model the
   host's `listModels` says takes no thinking level. Send queues the message while pi works (it goes when the turn ends; hold Send for the
   two ways, `NativeSendChoice`: Wait for the turn to end, and Steer now, which stops pi where the host
-  can and steers where it can't). ⌘↩ on a hardware keyboard presses Send, so it queues. Up
+  can and steers where it can't). ⌘↩ on a hardware keyboard invokes Steer now, as on the Mac. Up
   next draws the host's queue: the rare steering message first (Steer now's fallback) with Back to the queue, queued ones
   with swipe (Edit, Delete) and long-press (Steer now, Edit, Move to top, Delete) actions, an
   Undo row for a delete, and a ••• menu (Steer or Send all now, the delivery mode, Clear). A
@@ -233,7 +233,11 @@ keep the version for real breaks.
   model picker lists the host's catalog, each model's thinking levels under its name; images
   come from Photos, resized to the protocol's limits. If the complete remote request exceeds
   1 MiB, the client recompresses or downsizes the images before sending, including opening
-  prompts and Project messages; images in fitting requests stay unchanged. "/…" lists the snapshot's commands. A
+  prompts and Project messages; images in fitting requests stay unchanged. Unsent thread text
+  is saved on this device per host and agent, debounced while typing and flushed on leaving or
+  backgrounding. Acknowledged sends clear it; forgetting a host removes its drafts. Images are
+  not persisted: a restored draft warns when they must be attached again. Send and Start wait
+  for photo imports to finish. "/…" lists the snapshot's commands. A
   question from the agent takes the composer's place: numbered answers to choose, Yes and No for a confirm, a field for input and editor.
   The context ring sits just before Send (in the capsule on iPhone, in the card's row on iPad)
   from a host with `native.context.v1`; a tap opens its details as a sheet (`ContextMeter.swift`:
@@ -326,13 +330,15 @@ keep the version for real breaks.
   There is no Split. Each terminal is
   SwiftTerm's view on Shepherd Design's terminal palette, attached (`attach`) while it is on
   screen, the app is active and the host connected, and detached a second after it leaves; the
-  host replays its screen on every attach and sizes the PTY to its smallest viewer. A refused
+  host replays its screen on every attach and sizes the PTY to its smallest viewer. Detached,
+  unviewed terminal buffers are released after that grace period. A refused
   attach is retried with backoff (1 s doubling to 30 s) while the terminal stays on screen, and a
   terminal the host gives a new session (every terminal respawns its shell when the host
   relaunches) gets a new view that attaches to it. Keys go to the host as `input`; a key row (esc, tab,
   ctrl, ⌥, `|`, `~`, `/`, `-`, arrows; two rows on a phone in portrait) sits under the terminal
   while it has the keyboard, and a hardware keyboard types directly. Tabs name what
-  runs in them and show a spinner or a dot for new output where the host answers
+  runs in them (or their custom name); the selected tab's menu offers Rename and Kill Process
+  on hosts with `terminal.control.v1`. Tabs show a spinner or a dot for new output where the host answers
   `RemoteAgentQuery.terminals` (`terminal.activity.v1`); the dot follows the row's `news`, which
   leaves out a redraw after a resize on hosts that send `newsSequence`. The iPad panel closes
   with its last terminal. Closing a tab asks (naming how many shells stop, and the tab's place
@@ -346,7 +352,7 @@ keep the version for real breaks.
 - **Designs (`Designs/`):** a host's designs while it serves them (`designs.v1`, its Design tool
   on): Home's Designs row, design rows in Recents, the Designs screen with tiles drawn on the
   phone, a design's boards, one board full screen with its pins, comments pinned on a tapped
-  element, Ask the agent, Boards and Export (PNG or PDF through the share sheet), search's Designs
+  element, replies and Resolve, Duplicate board, Ask the agent, Boards and Export (PNG or PDF through the share sheet), search's Designs
   section and New design, and More ▸ Design systems. Boards render on the phone, at most two web
   views at once ([docs/designs.md › On iPhone](../designs.md#on-iphone)).
 
@@ -365,6 +371,7 @@ keep the version for real breaks.
   boards and writes notes beside the marks; Done reads them on the iPad (the handwriting with
   Vision, on the device) and sends the design agent one record, and its proposed comments come
   back in the chat with Apply both and Keep as comments (hosts that offer `design.markup.v1`).
+  Export offers PNG or PDF, one file per board on the current page.
   Details: docs/designs.md › On iPad, › Pencil markup.
 
 Push notifications use the Cloudflare relay and APNs; enable them per host in
