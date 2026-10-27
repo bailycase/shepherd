@@ -237,7 +237,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | DuoOpenThread | [platform-iphone-duo](platform-iphone-duo.md) | Open: sidebar beside the thread | Not built yet |
 | DuoOpenSidePane | [platform-iphone-duo](platform-iphone-duo.md) | Open: thread beside the side pane; the sidebar overlays | Not built yet |
 | DuoOpenNewThread | [platform-iphone-duo](platform-iphone-duo.md) | Open: New thread in the detail | Not built yet |
-| DuoSidePaneTabs | [platform-iphone-duo](platform-iphone-duo.md) | Side pane: Changes, Files, Terminal, Subagents, Browser | Not built yet |
+| DuoSidePaneTabs | [platform-iphone-duo](platform-iphone-duo.md) | Side pane: Changes, Files, Terminal, Subagents, Browser | Partial (Browser card: `ThreadBrowserPane`/`ThreadBrowserScreen`, docs/browser.md › What the iPad reuses; the pane and its tabs not mounted) |
 | DuoBook | [platform-iphone-duo](platform-iphone-duo.md) | Book: equal halves at the fold | Not built yet |
 | DuoBookSidePane | [platform-iphone-duo](platform-iphone-duo.md) | Book: thread and side pane split at the fold | Not built yet |
 | DuoLaptop | [platform-iphone-duo](platform-iphone-duo.md) | Laptop: transcript above the fold, composer below (ArrangementView) | Not built yet |

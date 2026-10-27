@@ -122,6 +122,9 @@ UIKit) lays out two views around the fold:
   arrow.up) so they join the column.
 - The four destination rows on Home take about 40% of the outer display's 678pt height. Height is
   the Duo's scarcest resource.
+- The Browser (`ThreadBrowserScreen`) keeps the system bar (Back and the title join the column);
+  its address bar, Reload and dev-server menu are content in the page, as DuoSidePaneTabs draws
+  them, not toolbar items.
 
 ## Checking it
 

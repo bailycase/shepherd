@@ -192,9 +192,13 @@ them except the navigator, which is each window's own ([Windows](#windows-ipad))
   `Refusal` when another program or another page holds the port), with a `BrowserTunnelHubSlot` filled
   from `host.connectedClient?.tunnels` while the host is connected and emptied when it drops.
   `BrowserTunnelTarget.port(of:)` says which URLs a tunnel serves. The forwarder is a listener on the
-  device's loopback, which iOS suspends with the app (not measured here: nothing runs it on iOS yet).
+  device's loopback. Built (`App/iOS/Browser`, docs/browser.md › What the iPad reuses): a page's ports
+  are a `BrowserPagePorts` over `MobileBrowsers.shared.forwarder` and `MobileHost.tunnelSlot`, held only
+  while the host is connected (`MobileHosts.onHostConnected`/`onHostDisconnected`; backgrounding drops
+  every connection), at most eight a page. Mount `ThreadBrowserPane(thread:)` in a pane, or push
+  `.browser(.page(ref))` (`ThreadBrowserScreen`).
 - **The agent driving the page** (`browser.drive.v1`, offered with the tunnel; docs/browser.md ›
-  Remote). The iPad's Browser tab reuses the wire and every rule but the web view:
+  Remote; not built on iOS yet: the page never claims). The iPad's Browser tab reuses the wire and every rule but the web view:
   `host.connectedClient?.drivesBrowser` says the host offers it (both capabilities),
   `browserClaim(agentID:)` claims the agent's browser (answering the address the host's own page holds,
   to open through the tunnel only when `BrowserViewerPolicy.verdict(for:)` allows it, and only with

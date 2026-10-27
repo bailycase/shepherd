@@ -219,6 +219,16 @@ have found their elements. Run both with
 `-r landscape`. A real Pencil (drawing while a finger pans, the palette, Done against a host)
 is checked on a device.
 
+**The Browser.** `browser`, `browser-page`, `browser-waiting`, `browser-offline` and
+`browser-legacy` push a thread's page (`ThreadBrowserScreen`). Studio offers `browser.tunnel.v1`,
+answers `devServers` with two scripts and serves a canned dev server through the tunnel on port
+41731 (`Fixtures/BrowserFixtures.swift`; tunnel frames are reads there, a mutation everywhere else).
+`browser-page` loads it through the real forwarder, hub and connection and prints `FIXTURE CHECK ok
+browser-page` once the page's title reads back; the forwarder listens on the simulator's loopback,
+which is the Mac's, so the port must be free there. `browser` is nothing running (Start on the host),
+`browser-waiting` a port being tried, `browser-offline` an offline host, `browser-legacy` a host
+without tunnels.
+
 **Projects.** `projects`, `project`, `project-task`, `project-files`, `project-settings`,
 `project-new`, `project-assign` and `projects-unsupported` use an in-memory fixture host. Run
 `project-regressions` to exercise capability gating, create/edit/delete, revision conflicts,
