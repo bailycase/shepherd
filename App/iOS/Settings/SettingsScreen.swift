@@ -22,7 +22,8 @@ struct SettingsScreen: View {
     }
 }
 
-/// The phone's list: Appearance, then Agents, Machines, Experiments and About.
+/// The phone's list: Appearance, then Agents (with Design systems while a host serves designs),
+/// Machines, Experiments and About. It holds what More did before the phone had five tabs.
 private struct SettingsList: View {
     let store: SettingsStore
     @Environment(MobileHosts.self) private var hosts
@@ -31,6 +32,7 @@ private struct SettingsList: View {
 
     var body: some View {
         let model = HomeFeed.of(hosts).model
+        let designs = MobileDesigns.of(hosts).model
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
                 SHListCard {
@@ -42,6 +44,13 @@ private struct SettingsList: View {
                         row(.instructions, trailing: value(store.instructionsValue))
                         row(.skills, trailing: value(store.skillsValue))
                         row(.pi, trailing: value(store.extensionsValue(chosenHost: navigator.settingsSelection.chosenHost)))
+                        // While a host serves designs (More's row, before the phone had five tabs).
+                        if designs.available {
+                            Button { navigator.open(.designs(.systems)) } label: {
+                                SHListRow("Design systems", leading: .symbol("paintpalette"), trailing: designs.systems.isEmpty ? .none : .value(String(designs.systems.count)))
+                            }
+                            .buttonStyle(.shRow(radius: 0))
+                        }
                     }
                 }
                 SettingsSection("Machines") {

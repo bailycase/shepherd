@@ -4,7 +4,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-/// Every Project on every paired host, grouped by its owner. Always reachable from Home: when no
+/// Every Project on every paired host, grouped by its owner. Always a tab on iPhone: when no
 /// host serves Projects, the empty state says why instead of the entry disappearing.
 struct ProjectsScreen: View {
     @Environment(MobileProjects.self) private var projects
@@ -84,7 +84,7 @@ struct ProjectsScreen: View {
 
     /// Why nothing is listed, in the order a person would fix it.
     static func emptyMessage(_ owners: [MobileProjectOwner]) -> String {
-        if owners.isEmpty { return "Projects live on a Mac. Pair one in More ▸ Hosts to see its projects here." }
+        if owners.isEmpty { return "Projects live on a Mac. Pair one in Settings ▸ Hosts to see its projects here." }
         if !owners.contains(where: \.connected) { return "No host is connected. Projects show here once their Mac is back online." }
         if !owners.contains(where: { $0.connected && $0.supported }) {
             return "No connected host serves Projects. Turn on Projects in Settings ▸ Experiments on the Mac, or update Shepherd there."

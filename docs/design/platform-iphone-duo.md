@@ -116,20 +116,19 @@ UIKit) lays out two views around the fold:
 
 ## Shepherd today (measured on the outer display, 2026-10)
 
-- Home's tab bar and its search and compose buttons already sit in the system column. That's
-  correct; keep it.
-- The New thread sheet's `Button("Cancel")` has a title and no icon, so it stays in a horizontal bar
-  at the top. Send is drawn inside the content. Both should be toolbar items with symbols (xmark,
-  arrow.up) so they join the column.
-- The four destination rows on Home take about 40% of the outer display's 678pt height. Height is
-  the Duo's scarcest resource.
+- **Closed (built 2026-10):** `PhoneShell` has five tabs (Home, Designs, Projects, Automations,
+  Settings); the system draws them as the column's lower capsule. Home's New thread (prominent,
+  highest visibility priority) and Search sit at the top of the column, and Home is only the inbox.
+  The New thread sheet's Cancel (`xmark`) and Send (`arrow.up`) are toolbar items in the column;
+  the worktree switch and Attach follow them, and go to the column's overflow menu while the
+  keyboard is up. The prompt fills down to one row of chips.
 - **Inner display (built 2026-10):** the thread's side pane (Changes, Files, Terminal, Subagents,
   Browser) docks beside it by the Mac's rule, sending the 300pt sidebar over the thread on the
   951pt display; half open, thread and pane meet the fold. Landscape puts the thread's title at the
   top of its column, level with the pane's tabs, and its controls (side pane, Stop, •••, New
   thread lowest) in the column. Closed, the ••• menu lists the same tabs and pushes each; unfolding
   with one pushed opens it in the pane. The laptop pose arranges the thread (`ArrangementView`,
-  overlay). Files and Browser are placeholders until their tracks land.
+  overlay).
 
 ## Checking it
 

@@ -52,6 +52,34 @@ struct FleetTests {
         }
     }
 
+    @Test(arguments: [
+        (#"{"command":"python3 scripts/render.py --all"}"#, "bash", "Running python3"),
+        (#"{"command":"cd tools && python fetch.py"}"#, "bash", "Running python"),
+        (#"{"command":"swift test --filter Fleet"}"#, "bash", "Running tests"),
+        (#"{"command":"swift build"}"#, "bash", "Building"),
+        (#"{"path":"App/iOS/ThreadView.swift","oldText":"a","newText":"b"}"#, "edit", "Editing ThreadView.swift"),
+        (#"{"path":"Sources/Fleet.swift"}"#, "read", "Reading Fleet.swift"),
+    ] as [(String, String, String)])
+    func homeSaysARunningCallAsAVerb(args: String, tool: String, doing: String) {
+        let digest = Self.digest(Self.snapshot([
+            Fixture.message("user", "go"),
+            Fixture.tool(tool, args: args, status: "running", startedAt: 1_000, timestamp: 1_500),
+        ], running: true))
+        #expect(digest.doing == doing)
+    }
+
+    @Test func aRunningThreadBetweenCallsIsThinkingAndASettledOneDoesNothing() throws {
+        #expect(Self.digest(Self.snapshot([Fixture.message("user", "go")], running: true)).doing == "Thinking")
+        #expect(Self.digest(Self.snapshot([Fixture.message("user", "go")])).doing == nil)
+        let thinking = Self.digest(Self.snapshot([Fixture.message("user", "go")], running: true))
+        let model = FleetModel(hosts: [Self.host(Self.studio, "Studio", agents: [Self.agent("plan", .working), Self.agent("done", .done)])],
+                               digests: [Self.ref("plan"): thinking])
+        let working = try #require(model.recents.first { $0.ref == Self.ref("plan") })
+        let done = try #require(model.recents.first { $0.ref == Self.ref("done") })
+        #expect(working.doing == "Thinking")
+        #expect(done.doing == nil && done.place == "Shepherd")
+    }
+
     @Test func aSettledThreadHasNoActivityButKnowsWhenItLastMoved() {
         let digest = Self.digest(Self.snapshot([
             Fixture.tool("bash", args: #"{"command":"ls"}"#, status: "running", timestamp: 2_000),

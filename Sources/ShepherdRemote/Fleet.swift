@@ -89,6 +89,9 @@ public struct FleetDigest: Equatable, Sendable {
     public var activity: String?
     /// When that call started (ms since epoch).
     public var activitySince: Double?
+    /// What a running thread does now, as a verb ("Running python", "Editing Fleet.swift"),
+    /// "Thinking" between calls; nil when it isn't running.
+    public var doing: String?
     /// The newest moment in the thread (ms since epoch).
     public var lastActivity: Double?
 
@@ -111,11 +114,14 @@ public struct FleetDigest: Equatable, Sendable {
         let last = snapshot.messages.last
         lastTurnFailed = !snapshot.running && last?.role == "assistant" && last?.status == "error"
         if snapshot.running, let call = entries.last(where: { $0.toolName != nil && ($0.status == "running" || $0.status == "streaming") }) {
-            activity = Self.activity(NativeActivityCall(call))
+            let activityCall = NativeActivityCall(call)
+            activity = Self.activity(activityCall)
             activitySince = call.startedAt ?? call.timestamp
+            doing = Self.doing(activityCall)
         } else {
             activity = nil
             activitySince = nil
+            doing = snapshot.running ? "Thinking" : nil
         }
         lastActivity = entries.compactMap(\.timestamp).max()
     }
@@ -128,6 +134,22 @@ public struct FleetDigest: Equatable, Sendable {
             return "\(call.label) \(name)"
         }
         return call.detail.isEmpty ? call.label : "\(call.label) \(call.detail)"
+    }
+
+    /// A running call as Home's verb: the present tense the thread's own line uses, with the
+    /// program for a plain command ("Running python") and the file for a read or an edit.
+    static func doing(_ call: NativeActivityCall) -> String {
+        let verb = nativeRunningLabel(call)
+        switch call.kind {
+        case .run:
+            guard verb == "Running", let program = call.commandHead?.split(separator: " ").first else { return verb }
+            return "Running \((program as Substring).split(separator: "/").last.map(String.init) ?? String(program))"
+        case .explore, .edit:
+            guard call.isPath, !call.detail.isEmpty else { return verb }
+            return "\(verb) \(call.detail.split(separator: "/").last.map(String.init) ?? call.detail)"
+        default:
+            return verb
+        }
     }
 
     /// Whether Home reads this thread on every poll rather than once per connection: it runs,
@@ -163,6 +185,11 @@ public struct FleetThreadRow: Identifiable, Equatable, Sendable {
     public var detail: String
     /// The call running now, alone ("swift build").
     public var activity: String?
+    /// What it does now as a verb ("Running python", "Thinking"), while it runs and its host is
+    /// connected (`FleetDigest.doing`).
+    public var doing: String?
+    /// The repo it works in ("Shepherd"); nil for one no space names.
+    public var place: String?
     public var clock: FleetClock?
     public var hostName: String
     /// The host's name when rows from several hosts mix; nil with one host.
@@ -548,7 +575,7 @@ public struct FleetModel: Equatable, Sendable {
         }
         let detail = [word, activity ?? space?.name].compactMap { $0 }.joined(separator: " · ")
         return FleetThreadRow(ref: ref, title: agent.name, status: agent.status, detail: detail, activity: activity,
-                              clock: clock, hostName: hostName, hostTag: hostTag, worktree: agent.worktreeBranch != nil,
+                              doing: live ? digest?.doing : nil, place: space?.name, clock: clock, hostName: hostName, hostTag: hostTag, worktree: agent.worktreeBranch != nil,
                               offline: offline, failed: agent.status != .working && digest?.lastTurnFailed == true,
                               subagents: live ? digest?.subagentsLive ?? 0 : 0,
                               subagentsAsking: live ? digest?.subagentsAsking ?? 0 : 0)

@@ -6,7 +6,7 @@ import ShepherdRemote
 /// The designs track's screens: a host's designs on the phone (MobileDesigns, MobileDesignBoard),
 /// shown only for hosts that serve designs (`designs.v1`).
 enum DesignsRoute: Hashable, Codable {
-    /// Every host's designs and design systems (MobileDesigns), from Home's Designs row.
+    /// Every host's designs and design systems (MobileDesigns), the Designs tab's root on iPhone.
     case list
     /// One design's boards (not drawn: a grid of its boards), from a tile, Recents or search.
     case design(HostDesignRef)
@@ -16,7 +16,7 @@ enum DesignsRoute: Hashable, Codable {
     case boards(HostDesignRef, current: String)
     /// A new design from a brief (not drawn), presented: Search's New design, the Designs screen's +.
     case newDesign(brief: String, host: UUID?)
-    /// The hosts' design systems (More ▸ Design systems).
+    /// The hosts' design systems (Settings ▸ Design systems on iPhone).
     case systems
     /// One design system (not drawn): its colors, type and steps as the host read them.
     case system(host: UUID, namespace: String)
@@ -32,7 +32,7 @@ enum DesignsRoute: Hashable, Codable {
     }
 }
 
-/// Where other screens open designs (Home's row, Recents, search, More).
+/// Where other screens open designs (Recents, search, Settings).
 @MainActor
 enum DesignsHooks {
     /// A design's boards on the phone; in the iPad's split view, its canvas (DesignPad/).
