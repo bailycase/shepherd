@@ -95,6 +95,8 @@ final class MobileHosts {
     @ObservationIgnored var onHostConnected: ((MobileHost) -> Void)?
     /// A host's connection ended (it dropped, the app went to the background, Retry, Forget).
     @ObservationIgnored var onHostDisconnected: ((MobileHost) -> Void)?
+    /// The app came to the foreground or left it (`setForeground`).
+    @ObservationIgnored var onForegroundChanged: ((Bool) -> Void)?
 
     init(defaults: UserDefaults = .standard, tokens: HostTokens = .keychain, clientName: String = "Shepherd iOS",
          makeClient: @escaping () -> RemoteHostClient = { RemoteHostClient() },
@@ -217,6 +219,7 @@ final class MobileHosts {
         for host in hosts {
             if active { retry(host.id) } else { disconnect(host) }
         }
+        onForegroundChanged?(active)
     }
 
     /// Reconnects now, with the backoff reset.

@@ -80,6 +80,22 @@ struct FleetTests {
         #expect(done.doing == nil && done.place == "Shepherd")
     }
 
+    /// The glance cards' extras: a settled turn's first line, what it changed, what waits.
+    @Test func aSettledThreadSaysHowItEndedAndWhatItChanged() {
+        var snapshot = Self.snapshot([
+            Fixture.message("user", "go"),
+            Fixture.message("assistant", "Done. 3 files changed, tests pass.\nDetails follow."),
+        ])
+        snapshot.turnChanges = [ChangesTurn(startedAt: 1, state: .ready, fileCount: 3, added: 67, removed: 48)]
+        snapshot.queue = NativeQueue(items: [NativeQueuedMessage(id: UUID(), text: "then push", sentAt: 2)], paused: false)
+        let digest = Self.digest(snapshot)
+        #expect(digest.result == "Done. 3 files changed, tests pass.")
+        #expect(digest.changes == FleetChanges(files: 3, added: 67, removed: 48))
+        #expect(digest.queued == 1)
+        snapshot.running = true
+        #expect(Self.digest(snapshot).result == nil)
+    }
+
     @Test func aSettledThreadHasNoActivityButKnowsWhenItLastMoved() {
         let digest = Self.digest(Self.snapshot([
             Fixture.tool("bash", args: #"{"command":"ls"}"#, status: "running", timestamp: 2_000),
@@ -216,6 +232,20 @@ struct FleetTests {
         let row = try #require(model.running.first)
         #expect(row.subagents == 2 && row.subagentsAsking == 1)
         #expect(row.now == "2 subagents · 1 waiting on parent")
+    }
+
+    /// The Mac's sidebar shows a thread whose turn ended as Working while its subagents run; the phone agrees, so its
+    /// Home and glance cards never call it done.
+    @Test(arguments: [AgentStatus.done, .idle])
+    func aThreadWhoseSubagentsStillRunIsWorking(status: AgentStatus) {
+        var paused = Fixture.run("paused")
+        paused.paused = true
+        let model = FleetModel(hosts: [Self.host(Self.studio, "Studio", agents: [Self.agent("parent", status), Self.agent("waits", status)])],
+                               digests: [Self.ref("parent"): Self.digest(Self.snapshot(subagents: [Fixture.run("worker")])),
+                                         Self.ref("waits"): Self.digest(Self.snapshot(subagents: [paused]))])
+        #expect(model.running.map(\.ref) == [Self.ref("parent")])
+        #expect(model.recents.first?.status == .working)
+        #expect(!model.finished.contains { $0.ref == Self.ref("parent") })
     }
 
     @Test func onlyConnectedHostsAskAndOfflineRowsAreTheirLastKnownState() {

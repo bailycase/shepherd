@@ -169,10 +169,10 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | MobileThread | [ios-iphone](ios-iphone.md) | iPhone: Thread | Built |
 | MobileApproval | [ios-iphone](ios-iphone.md) | iPhone: Thread | Built |
 | MobileThreadError | [ios-iphone](ios-iphone.md), [thread](thread.md) | iPhone: Thread (Header); Thread › Errors (touch sizes) | Built |
-| MobileLock | [notifications](notifications.md) | Notifications and Live Activities › Live Activities | Not built yet |
 | MobileAnswer | [notifications](notifications.md) | Notifications and Live Activities › Actions and answering | Not built yet |
-| MobileLiveLock | [notifications](notifications.md) | Notifications and Live Activities › Live Activities | Not built yet |
-| MobileIsland | [notifications](notifications.md) | Notifications and Live Activities › Dynamic Island | Not built yet |
+| GlanceWatch, GlanceFollow | [notifications](notifications.md) | Notifications and Live Activities › Glance: Live Activities and widgets, Live Activities | Partial |
+| GlanceIsland | [notifications](notifications.md) | Notifications and Live Activities › Dynamic Island | Partial |
+| GlanceLock, GlanceHome, GlanceControls | [notifications](notifications.md) | Notifications and Live Activities › Widgets | Partial |
 | MobileNewThread | [ios-iphone](ios-iphone.md) | iPhone: New thread and Where it runs | Partial |
 | MobileWorkspace | [ios-iphone](ios-iphone.md) | iPhone: New thread and Where it runs | Partial |
 | MobileSteer | [ios-iphone](ios-iphone.md) | iPhone: Up next and questions; iPhone: Subagents | Partial |
@@ -207,7 +207,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | iPadPortrait | [ios-ipad](ios-ipad.md) | iOS: iPad › Shell and sidebar, Composer and commands | Built |
 | iPadSidebar | [ios-ipad](ios-ipad.md) | iOS: iPad › Shell and sidebar | Partial |
 | iPadPortraitLaunch, iPadPortraitLaunchLight | [ios-ipad](ios-ipad.md) | iOS: iPad › Shell and sidebar (Portrait) | Built |
-| iPadLock | [notifications](notifications.md) | Notifications and Live Activities › Live Activities, Lock-screen widget (iPad) | Not built yet |
+| GlanceiPad | [notifications](notifications.md) | Notifications and Live Activities › Widgets | Partial |
 | iPadOverview | [ios-ipad-pages](ios-ipad-pages.md) | iOS: iPad › Overview | Partial |
 | iPadNewThread | [ios-ipad](ios-ipad.md) | iOS: iPad › New thread | Partial |
 | iPadSteer | [ios-ipad](ios-ipad.md) | iOS: iPad › Up next and steering, Subagents | Partial |

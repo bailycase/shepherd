@@ -280,6 +280,9 @@ public final class SessionServer: @unchecked Sendable {
     /// An agent's pi finished a tool call (its name). The app reads the agent's checkout again
     /// after calls that may have changed files. Delivered on the main actor.
     public var onAgentToolFinished: ((AgentID, String) -> Void)?
+    /// A model request failed: the agent, pi's provider id and its error message (each failed
+    /// attempt, retries included), for account rotation. Delivered on the main actor.
+    public var onAgentProviderError: ((AgentID, String, String) -> Void)?
     /// The shortest time between two `onThreadRevision` deliveries: one display frame.
     public static let revisionPushSpacing: DispatchTimeInterval = .microseconds(16_667)
     /// A Shepherd agent asked to see, message, or spawn peer threads.
@@ -6994,6 +6997,11 @@ public final class SessionServer: @unchecked Sendable {
             }
             session.onEvent = { [weak thread, weak serverWeak] event in
                 thread?.handle(event)
+                if case .messageEnd(let message) = event, message.role == "assistant", message.stopReason == "error",
+                   let provider = message.provider, let error = message.errorMessage, let server = serverWeak,
+                   let agentID = server.agentID(forSession: sid) {
+                    server.hopToMain { [weak server] in server?.onAgentProviderError?(agentID, provider, error) }
+                }
                 // pi emits custom message_end only after appending it to session history. A
                 // report receipt on the extension socket alone would not prove that append.
                 if case .messageEnd(let message) = event, message.role == "custom", message.customType == "shepherd-peer-report",
