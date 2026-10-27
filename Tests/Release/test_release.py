@@ -989,8 +989,14 @@ class ContractTests(unittest.TestCase):
                 self.assertEqual(self.setting(block, "CODE_SIGN_ENTITLEMENTS"), "App/iOS/ShepherdIOS.entitlements")
                 self.assertEqual(self.setting(block, "APS_ENVIRONMENT"),
                                  "development" if self.setting(block, "name") == "Debug" else "production")
-                # The Mac target is found by its INFOPLIST_FILE; the iOS target must not share it.
-                self.assertNotRegex(block, r"\bINFOPLIST_FILE = ")
+                # The Mac target is found by its INFOPLIST_FILE; the iOS target merges its own (ATS).
+                self.assertEqual(self.setting(block, "INFOPLIST_FILE"), "App/iOS/Info.plist")
+
+    def test_ios_info_plist_allows_only_local_networking(self):
+        # The Browser loads a host's dev server at http://localhost through the device's loopback;
+        # nothing broader than the local-networking exception.
+        info = plistlib.loads(self.read("App", "iOS", "Info.plist").encode())
+        self.assertEqual(info, {"NSAppTransportSecurity": {"NSAllowsLocalNetworking": True}})
 
     def test_every_ios_marketing_version_is_one_testflight_accepts(self):
         for block in self.ios_configurations():

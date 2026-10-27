@@ -90,6 +90,7 @@ cat > "$app/Info.plist" <<'PLIST'
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>MinimumOSVersion</key><string>27.0</string>
 <key>UILaunchScreen</key><dict/>
+<key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
 <key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>
 <key>UIRequiresFullScreen</key><FULL_SCREEN/>
 <key>UIApplicationSceneManifest</key><dict><key>UIApplicationSupportsMultipleScenes</key><MULTIPLE_WINDOWS/></dict>

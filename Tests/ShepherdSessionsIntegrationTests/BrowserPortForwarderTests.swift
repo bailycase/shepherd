@@ -201,6 +201,55 @@ struct BrowserPortForwarderTests {
         #expect(await get("/hello", host: "127.0.0.1", port: UInt16(port)) == "hello from the host")
     }
 
+    /// The iOS client's page: its ports are held only while the host is connected and let go when it
+    /// drops or the app leaves the foreground, then taken again; at most eight a page.
+    @Test func aPagesPortsAreLetGoWhileSuspendedAndTakenAgainOnResume() async throws {
+        let host = try await TunnelHost()
+        defer { host.stop() }
+        let dev = try DevServerFixture()
+        defer { dev.stop() }
+        let client = try await host.client()
+        defer { client.disconnect() }
+        let page = BrowserPagePorts(forwarder: BrowserPortForwarder(), owner: owner, agent: host.agent, slot: slot(client))
+        defer { page.close() }
+        let port = Int(try unusedLoopbackPort())
+        page.hostPorts[port] = Int(dev.port)
+        let url = try #require(URL(string: "http://localhost:\(port)/hello"))
+
+        #expect(page.forward(url) == .failed(port: port, errno: ENOTCONN), "nothing is held before the host is connected")
+        page.resume()
+        #expect(page.forward(url) == nil)
+        #expect(await get("/hello", host: "127.0.0.1", port: UInt16(port)) == "hello from the host")
+
+        page.suspend()
+        #expect(page.forwarder.ports(of: owner).isEmpty)
+        #expect(await get("/hello", host: "127.0.0.1", port: UInt16(port)) == nil, "nothing listens while suspended")
+        #expect(page.resume().isEmpty)
+        #expect(page.ports == [port])
+        #expect(await get("/hello", host: "127.0.0.1", port: UInt16(port)) == "hello from the host")
+
+        // Another page took the port while this one was suspended: resume says so and forgets it.
+        page.suspend()
+        let other = BrowserPortForwarder.Owner(id: "host-b/agent", hostName: "build-02")
+        #expect(page.forwarder.claim(port: port, owner: other, slot: BrowserTunnelHubSlot(), agent: AgentID()) == nil)
+        #expect(page.resume() == [.forwardedFor(port: port, hostName: "build-02")])
+        #expect(page.ports.isEmpty)
+        page.forwarder.release(other)
+
+        // Eight ports a page; the ninth is refused and binds nothing.
+        var held: [Int] = []
+        while held.count < BrowserPagePorts.limit {
+            let next = Int(try unusedLoopbackPort())
+            if held.contains(next) { continue }
+            #expect(page.forward(try #require(URL(string: "http://127.0.0.1:\(next)/"))) == nil)
+            held.append(next)
+        }
+        let ninth = Int(try unusedLoopbackPort())
+        #expect(page.forward(try #require(URL(string: "http://localhost:\(ninth)/"))) == .tooMany(port: ninth, limit: 8))
+        #expect(page.forwarder.owner(of: ninth) == nil)
+        #expect(page.forward(try #require(URL(string: "http://[::1]:\(held[0])/x"))) == nil, "a port it holds is fine")
+    }
+
     @Test func aRefusalSaysWhyInTheHostsName() {
         #expect(BrowserPortForwarder.Refusal.inUse(port: 5173).message(hostName: "build-01")
             == "Port 5173 is in use on this Mac, so build-01’s 5173 can’t be forwarded. Stop what is using it and try again.")

@@ -394,6 +394,15 @@ public enum NewThreadRules {
         return branch.isEmpty ? "Keeps the checkout clean. Merge it from Review." : "Keeps \(branch) clean. Merge it from Review."
     }
 
+    /// The repo the host's most recently active thread works in, so a new thread starts where the
+    /// last one did; nil when no thread of the host says when it last moved.
+    public static func lastUsedSpace(_ host: NewThreadHostInput) -> SpaceID? {
+        let offered = Set(host.spaces.map(\.id))
+        return host.state.agents
+            .filter { $0.lastActiveAt != nil && offered.contains($0.spaceID) && host.state.isSidebarThread($0) }
+            .max { ($0.lastActiveAt ?? 0) < ($1.lastActiveAt ?? 0) }?.spaceID
+    }
+
     /// A model id as a chip shows it: without its provider ("anthropic/claude-opus" →
     /// "claude-opus"); a blank id is the host's default.
     public static func shortModel(_ id: String) -> String {

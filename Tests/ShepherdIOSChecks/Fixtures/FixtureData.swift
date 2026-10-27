@@ -54,6 +54,8 @@ struct FixtureHostData {
     var designs: FixtureDesigns? = nil
     /// The files the thread's `write` calls made, by the path the call gave (`NativeThreadRequest.artifact`).
     var artifacts: [String: Data] = [:]
+    /// Answers the Browser's tunnel frames (a canned dev server); nil refuses every tunnel as a mutation.
+    var tunnel: (@Sendable (BrowserTunnelFrame) -> [BrowserTunnelFrame])? = nil
 
     /// Everything this build knows, `designs.v1` only while the host has designs to serve.
     var defaultCapabilities: [String] {
@@ -190,8 +192,8 @@ enum FixtureData {
 /// Every screen, by track. A track edits only its own file's list.
 @MainActor enum FixtureCatalog {
     static var all: [FixtureScreen] {
-        home + thread + context + newThread + subagents + review + changes + commit + search + settings + automations + windows + terminal + clientState
-            + designs + designPad + designPadMarkup + artifacts + ProjectFixtures.screens
+        home + thread + context + newThread + subagents + review + changes + commit + search + settings + automations + windows + terminal + clientState + duo
+            + designs + designPad + designPadMarkup + artifacts + browser + files + ProjectFixtures.screens
     }
 
     static func screen(named name: String) -> FixtureScreen? {

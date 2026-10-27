@@ -72,25 +72,35 @@ extension FleetThreadRow {
     }
 }
 
-/// A thread in Recents, the overview and the sidebar; a design's row (MobileAgents) wears the nib
-/// and "design · 4 boards".
+/// A thread in Home, Recents and the sidebar; a design's row (MobileAgents) wears the nib and
+/// "design · 4 boards". Home's rows (DuoClosedHome) say what a working thread does as a verb
+/// ("Running python") and where any other works ("Shepherd"); the host's name shows only while
+/// rows from several hosts mix, and no row has a chevron.
 struct ThreadRow: View, Equatable {
     let row: FleetThreadRow
     var selected = false
     /// The sidebar's rows are one line: the title, and the host it lives on.
     var compact = false
-    /// The overview's narrow columns leave the chevron out for the title's sake.
-    var chevron = true
 
     var body: some View {
         // The sidebar says a failed last turn (iPadThreadError): a failed dot and "failed".
         let failed = compact && row.failed
-        SHListRow(row.title, subtitle: compact ? nil : row.detail, clock: compact ? nil : row.clock?.rowClock,
+        SHListRow(row.title, subtitle: compact ? nil : row.inboxLine, clock: compact ? nil : row.clock?.rowClock,
                   leading: row.design != nil ? .symbol("pencil.tip") : .state(failed ? .failed : AgentState(row.status)),
                   trailing: failed ? .meta("failed") : row.hostTag.map { .host($0) } ?? .none,
-                  chevron: chevron && !compact, selected: selected, dimmed: row.offline, compact: compact)
-            // The sidebar's one-line rows say their state only by the dot.
-            .accessibilityValue(compact ? (failed ? "failed" : FleetModel.statusWord(row.status)) + (row.offline ? ", host offline" : "") : "")
+                  chevron: false, selected: selected, dimmed: row.offline, compact: compact)
+            // The dot alone says the state; VoiceOver hears it.
+            .accessibilityValue((failed ? "failed" : FleetModel.statusWord(row.status)) + (row.offline ? ", host offline" : ""))
+    }
+}
+
+extension FleetThreadRow {
+    /// Home's line under the title: what a working thread does now ("Running python",
+    /// "Thinking"), else the repo it works in, else what the host says of it.
+    var inboxLine: String {
+        if design != nil { return detail }
+        if status == .working, !offline { return doing ?? place ?? detail }
+        return place ?? detail
     }
 }
 
@@ -105,7 +115,7 @@ struct AttentionRow: View, Equatable {
         // The sidebar names the thread; its chip says who asks ("reviewer") or why.
         SHListRow(compact ? item.thread : item.title, subtitle: compact ? nil : item.question, subtitleTone: .attention, leading: item.leading,
                   trailing: compact ? .reason(item.reason) : item.hostTag.map { .host($0) } ?? .none,
-                  chevron: !compact, selected: selected, compact: compact)
+                  chevron: false, selected: selected, compact: compact)
     }
 }
 

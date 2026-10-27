@@ -25,7 +25,8 @@ components first), with these differences for touch:
 - **No hover:** `SHPlatform.showsHoverDetails` shows at rest what the Mac reveals on hover (a
   message's time, a turn's footer, a code block's Copy, a comment's actions); a pressed row
   shows the hover fill.
-- **Navigation:** iPhone has two tabs, Home and Settings, each a stack; iPad a split view with
+- **Navigation:** iPhone has five tabs, Home, Designs, Projects, Automations and Settings, each a
+  stack; iPad a split view with
   the sidebar beside the thread in landscape and over it in portrait (see iOS: iPad › Shell and
   sidebar). Portrait is the window's shape (taller than wide), never what the keyboard leaves
   of it (`PadSplitLayout`).
@@ -53,18 +54,14 @@ components first), with these differences for touch:
   `AppLayout`.
 - **Terminal** (iPadTerminal board; `App/iOS/Terminal`, `SHTerminalTabBar`, `SHTerminalKeyRow`; the
   terminal itself as in Terminal):
-  - **iPad:** the Mac's panel under the thread and composer, across the thread's width
-    (`.threadTerminal(_:)`), 340pt tall by default (`shepherd.ios.terminalHeight`), sliding up from
-    the bottom edge (`.pane`). Its strip is 46pt with 32pt tabs and 34pt icon buttons hit at 44
-    (`SHTerminalMetrics`), in the Mac's order and states. The divider is a 36×4pt `lineStrong`
-    grabber centered on the strip's top edge (an 88×22pt hit area) in place of a pointer handle,
-    snapping and clamping as on the Mac, adjustable with VoiceOver, and hidden while maximized. The
-    strip and key row stop growing at xxxLarge.
-  - **Toggle:** the thread's options menu: Show Terminal or Hide Terminal on iPad (iPhone:
-    Terminal), absent while the host is offline. With no terminal in the thread it opens one (the
-    panel shows on it once the host has made it; a failure gives a haptic with no panel up, and the
-    panel's banner while it is). There is no header button; iPadTerminal's is a departure
-    (Terminal panel › Show and hide).
+  - **iPad and iPhone Duo open:** the side pane's Terminal tab beside the thread (iPad › Thread ›
+    Side pane), its strip 46pt with 32pt tabs and 34pt icon buttons hit at 44
+    (`SHTerminalMetrics`), in the Mac's order and states. The panel under the thread is retired:
+    one right sidebar holds everything, as on the Mac (DuoOpenSidePane). It stays when its last
+    terminal closes and says + opens one.
+  - **Toggle:** the thread's ••• menu: Terminal ("1 running" while a command runs); with no
+    terminal in the thread it opens one once the screen or tab shows. There is no
+    header button; iPadTerminal's is a departure (Terminal panel › Show and hide).
   - **Key row** (`SHTerminalKeyRow`), while a terminal has the keyboard, under it and over the
     software keyboard: `bgWindow` with a `lineSubtle` hairline on top, 8pt top and bottom padding
     and 12pt sides, keys 6pt apart (the board adds 26pt under the row for the home indicator). Keys:
@@ -76,9 +73,9 @@ components first), with these differences for touch:
     into two rows of six equal keys (the arrows together in the second), and only where two rows
     don't fit either does it scroll, with its scroll bar showing. A hardware keyboard types
     directly.
-  - **iPhone** (no board): the options menu's Terminal opens the terminals full screen
-    ("Terminal" as the inline title, the tab bar hidden) with the same tabs and +, without
-    Maximize or Hide, and the same key row. It opens a terminal as it appears when there is none,
+  - **iPhone** (DuoClosedThreadMenu): the ••• menu's Terminal opens the terminals full screen
+    ("Terminal" as the inline title, the tab bar hidden) with the same tabs and +, and the same key
+    row. It opens a terminal as it appears when there is none,
     and goes back with its last terminal.
   - **The terminal** (iPadTerminal): Geist Mono 13 at 1.6 line height, 10×16 inset, the prompt's
     user in `done`, its path in `running`, its branch in `lanternText` and `$` in `textTertiary`,
@@ -114,8 +111,12 @@ The iPhone boards (the iOS page) draw a 390×844 screen in the dark appearance. 
 screen from these parts; the sections after this one give each board's specifics. A paragraph marked
 **Not built yet** is the spec for work that has not landed.
 
-- **Shell** (`PhoneShell`; MobileAgents, MobileSettings): two tabs, Home and Settings, each a
-  `NavigationStack`. The boards' tab bar is a 1px `lineSubtle` rule over `bgWindow`, 8pt above and
+- **Shell** (`PhoneShell`; DuoClosedHome): five tabs, Home (`house`), Designs (`pencil.tip`),
+  Projects (`square.stack.3d.up`), Automations (`bolt`) and Settings (`gearshape`), each a
+  `NavigationStack` (`MobileNavigator`'s paths). Designs is always a tab; while no host serves
+  designs its root says why. Home's badge is the Needs you count, in the system's red (SwiftUI can't
+  tint a tab badge; the board draws it `lantern`). On iPhone Duo's closed display the tab bar is the
+  system column's lower capsule. The older boards (MobileAgents, MobileSettings) drew two tabs: The boards' tab bar is a 1px `lineSubtle` rule over `bgWindow`, 8pt above and
   28pt below, each tab a 22pt glyph (a house, a gear) over an 11/500 label, 4pt apart, at least 44pt
   tall; the selected tab is `textPrimary`, the other `textTertiary`. The boards draw the tab bar
   only on the two roots, Home and Settings: every pushed screen (Needs you, Automations, More, a
@@ -123,10 +124,14 @@ screen from these parts; the sections after this one give each board's specifics
   The app uses the system `TabView` (`house`, `gearshape`) and hides the bar (`.toolbar(.hidden,
   for: .tabBar)`) on a thread, its subagents and runs, its changes and diffs, the terminal and
   search; Needs you, Recents, Automations and More still show it.
-- **Navigation:** `navigator.open(route)` pushes onto the current tab's stack (a Settings route
-  switches to the Settings tab); `navigator.present(route)` presents a sheet with its own stack: New
-  thread, Commit, the automation and host forms, rename and delete. Needs you, Recents, Automations
-  and More push from Home; a thread pushes from any list.
+- **Navigation:** `navigator.open(route)` selects the route's tab first (`MobileNavigator.Tab.landing`:
+  Settings pages and `.home(.more)` → Settings, Designs, Projects and Automations routes → their tab,
+  Needs you and Recents → Home; a thread, its screens and search open over the tab that opened them,
+  in Home when that is Settings), then pushes it, or empties the stack for the tab's own root. A
+  notification's thread (`reveal`) always lands in Home; `navigator.present(route)` presents a sheet with its own stack: New
+  thread, Commit, the automation and host forms, rename and delete. Needs you and Recents push from
+  Home; a thread pushes from any list. More is gone on iPhone: its hosts, design systems and
+  extensions are Settings rows (Design systems while a host serves designs).
 - **Large-title screens** (Home, Needs you, Automations, More, Settings, Instructions, Experiments):
   54pt from the top, 16pt sides, 10pt under, no rule. The back link sits on its own 36pt line ("‹
   Home", "‹ Settings": 16 `running` with an 11pt chevron, 6pt apart), then the title (Geist 30/600,
@@ -225,16 +230,13 @@ screen from these parts; the sections after this one give each board's specifics
 `Home/HomeScreen.swift`, derived once per change by `HomeFeed` (`FleetModel`). Every connected host
 merges into one Home.
 
-- **Header** (62pt from the top, 20pt sides, 12pt under): "Shepherd" as the large title, with Search
-  (`magnifyingglass`) and New thread (`square.and.pencil`) trailing. New thread is disabled while
-  there are no hosts. Pull to refresh retries every host.
-- **Destinations card** first (no head): Missions, Designs, Automations, More, each a 48pt row with
-  a 17pt glyph in `textSecondary` (a folded map, a diamond, a bolt, three dots), the title, a
-  trailing count and a chevron. Automations counts every host's automations (left out at zero).
-  More's trailing is the offline count in `failed` mono ("1 host offline") when any host is offline.
-- **Not built yet:** the Missions row (count of missions) and the Designs row (count of designs)
-  lead the card. They wait for Missions and the Design tool on the Mac.
-- **Offline hosts** (the app's addition; the board only counts them on More): a card of notices, one
+- **Header** (62pt from the top, 20pt sides, 12pt under): "Shepherd" as the large title, with New
+  thread (`square.and.pencil`, prominent `lantern`, `visibilityPriority(.high)`) then Search
+  (`magnifyingglass`) as toolbar items, so iPhone Duo's closed display stacks them at the top of its
+  column (DuoClosedHome). New thread is disabled while there are no hosts. Pull to refresh retries
+  every host. Home is only the inbox: the old destinations card (Designs, Projects, Automations,
+  More) is gone; they are tabs and Settings rows.
+- **Offline hosts** (the app's addition; the first card on Home): a card of notices, one
   per host that is not connected: its status dot (a spinner while connecting), the name (15/500),
   the reason in the state's text color ("Shepherd isn't running on MacBook Air, or it can't be
   reached."), and Retry (`.sh(.secondary, size: .s)`, `arrow.clockwise`). A refused token or another
@@ -250,10 +252,11 @@ merges into one Home.
   `lanternText`, the mission's name, "orders is stuck after 3 tries" in `lanternText`), opening the
   mission.
 - **Recents** (head in `textSecondary`): 52pt thread rows, newest first: the state dot (`running`
-  while working, the hollow ring while idle), the title, and a mono status line: "running · git push
-  origin main · 21s" (the live call and its ticking elapsed time) or "idle · 1h ago". The app adds
-  the space's name ("idle · Shepherd · 1h ago"). A row on another host carries its host badge; with
-  more than one host the app tags every row. At most six rows (`HomeLimits.recents`), then "Show all
+  while working, the hollow ring while idle), the title, and a mono line: a working thread's verb
+  and its ticking elapsed time ("Running python · 21s", "Editing Fleet.swift", "Thinking";
+  `FleetDigest.doing`), any other its repo and when it last moved ("Shepherd · 1h ago"). The state
+  word is the row's VoiceOver value. With one host no row has a host badge; with more than one the
+  app tags every row. No row has a chevron (DuoClosedHome); Working and Done rows read the same. At most six rows (`HomeLimits.recents`), then "Show all
   recents", which pushes `RecentsScreen`.
 - **Not built yet:** a design in Recents (a diamond glyph in `textTertiary`, its name, "design · 4
   boards").
@@ -273,13 +276,17 @@ follows the Mac's rules (Thread) with the phone's measures below.
   MobileThread, MobileQueue) or "· ⌂ your checkout" in `lanternText` for the space's own checkout
   (MobileQuestion). The boards dropped the turn and context counts and the clock for it, and so
   does the app; the word stays whole. Trailing, the thread's
-  options (•••: Refresh, Subagents while the thread has runs, Terminal, then Rename…, Move up and
-  Move down, and Delete agent… or Delete worktree agent…) at rest; ••• stays at rest and
+  options in the system's ••• (DuoClosedThreadMenu): the side pane's tabs as rows, each pushed
+  over the thread (Changes with its totals, Files, Terminal and Subagents with "1 running",
+  Browser; Files and Browser say they are coming until their tracks land), then Stop agent and
+  More… (Refresh, Open in new window, Rename…, Move up and Move down, and Delete agent… or Delete
+  worktree agent…). Where the bars run down the side (iPhone Duo closed), Back tops the column,
+  then •••, and the tab bar stays under a pushed thread. ••• stays at rest and
   while the agent runs: Stop is no longer in the header (the user's decision, 2026-10-10: the Send
   button is the stop button while the thread is active and nothing is typed). The composer's corner
   is Stop while the agent runs and the field and attachments are empty, and Send with any input.
-  While pi asks, the question replaces the composer, so the header keeps a Stop (`failed` stop
-  square, "Stop agent" to VoiceOver), the one way to refuse the question.
+  While pi asks, the question replaces the composer, so the header keeps a Stop (`stop.circle` in
+  `failed`, "Stop agent"), the one way to refuse the question.
 - **Column:** 20pt from the header, 16pt sides, 22pt between turns, 12pt between a turn's parts
   (`MobileLayout.turnItemSpacing`). The app pads the column 16pt at the top and spaces turns 24pt
   (`MobileLayout.turnSpacing`, `SH.Space.xxl`).
@@ -344,10 +351,22 @@ follows the Mac's rules (Thread) with the phone's measures below.
 
 ## iPhone: New thread and Where it runs (MobileNewThread, MobileWorkspace)
 
-`NewThread/`: presented as a sheet from Home's New thread.
+`NewThread/`: presented as a sheet from Home's New thread. Built to DuoClosedNewThread, which
+replaces MobileNewThread's header, wrapping chips and Start row below.
 
-- **Header:** Cancel (16 `running`) leading and "New thread" (16/600) centered, over a `lineSubtle`
-  rule; nothing trailing (Start lives beside the chips).
+- **Toolbar:** Cancel (`xmark`, `.cancellationAction`), Send (`arrow.up`, `.confirmationAction`,
+  prominent `lantern`, disabled until the prompt has text and nothing blocks it), then the worktree
+  switch (`arrow.triangle.branch`, `lantern` while on; a long press opens a menu with the switch and
+  Where it runs…) and Attach (`paperclip`). Each is a symbol with a title, so iPhone Duo's closed
+  display stacks them in its column. With the keyboard up that column has room for Cancel and Send
+  only; the switch and Attach go to its overflow menu. "New thread" is the inline title.
+- **Chip row:** one row, scrolling sideways, above a `lineSubtle` rule under the prompt: Repo (opens
+  Where it runs), Host only while there's more than one, and "model · thinking" (a menu of the
+  thinking levels and Choose model…, which opens the model list). The repo starts as the thread on
+  screen's, else the one the host's most recently active thread works in
+  (`NewThreadRules.lastUsedSpace`); model and thinking are the host's defaults. A reason that blocks
+  Send, or "Starting…", shows under the row.
+- The bullets below for chips and the row under them describe the iPad's form, which keeps them.
 - **Prompt:** the field takes the top, 18pt from the header with 16pt sides, in Geist 18 at 1.45
   line height (`MobileLayout.newThreadPromptSize`), focused on open with the keyboard up and a 2pt
   `lantern` caret. Placeholder: "What should the agent do?".

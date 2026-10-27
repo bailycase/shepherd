@@ -2,10 +2,10 @@ import SwiftUI
 import ShepherdUI
 import ShepherdRemote
 
-/// The iPhone Home tab's root (MobileAgents board; home track): Automations and More, hosts that
-/// are not connected with Retry, a short Needs you list, the Mac sidebar's Working, Done and
-/// Pinned (`SidebarThreads`), and Recents across every host. A row's long press is the Mac's row
-/// menu (`ThreadRowMenu`).
+/// The iPhone Home tab's root, the inbox (DuoClosedHome board; home track): hosts that are not
+/// connected with Retry, a short Needs you list, the Mac sidebar's Working, Done and Pinned
+/// (`SidebarThreads`), and Recents across every host. Designs, Projects and Automations are
+/// tabs beside it (`PhoneShell`). A row's long press is the Mac's row menu (`ThreadRowMenu`).
 struct HomeScreen: View {
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
@@ -33,11 +33,18 @@ struct HomeScreen: View {
         }
         .task { await feed.watch() }
         .navigationTitle("Shepherd")
+        // New thread is the screen's one prominent action and the last to overflow; on the Duo's
+        // closed display both join the system column above the tabs (platform-iphone-duo.md).
         .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                Button("Search", systemImage: "magnifyingglass") { SearchHooks.open(navigator: navigator) }
-                Button("New thread", systemImage: "square.and.pencil") { NewThreadHooks.open(navigator: navigator) }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { NewThreadHooks.open(navigator: navigator) } label: { Label("New thread", systemImage: "square.and.pencil") }
+                    .buttonStyle(.glassProminent)
+                    .tint(Color.sh.lantern)
                     .disabled(model.hosts.isEmpty)
+            }
+            .visibilityPriority(.high)
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { SearchHooks.open(navigator: navigator) } label: { Label("Search", systemImage: "magnifyingglass") }
             }
         }
     }
@@ -52,24 +59,7 @@ private struct HomeSections: View {
     @Environment(MobileProjects.self) private var projects
 
     var body: some View {
-        let designs = MobileDesigns.of(hosts).model
         let groups = SidebarThreads.of(hosts).groups(model)
-        SHListCard {
-            // Designs, while a host serves them (MobileAgents: between Missions and Automations).
-            if designs.available {
-                Button { navigator.open(.designs(.list)) } label: {
-                    SHListRow("Designs", leading: .symbol("pencil.tip"), trailing: designs.count.map { .value($0) } ?? .none)
-                }
-                .buttonStyle(.shRow(radius: 0))
-            }
-            // Always listed: with no host serving Projects, its screen says why.
-            Button { navigator.open(.projects(.list)) } label: {
-                SHListRow("Projects", leading: .symbol("square.stack.3d.up"), trailing: projectsTrailing)
-            }
-            .buttonStyle(.shRow(radius: 0))
-            destination("Automations", symbol: "bolt", trailing: model.automations.isEmpty ? .none : .value(String(model.automations.count)), route: .automations)
-            destination("More", symbol: "ellipsis", trailing: model.offlineSummary.map { .alert($0) } ?? .none, route: .more)
-        }
         if !model.offlineHosts.isEmpty {
             SHListCard {
                 ForEach(model.offlineHosts) { card in HostNotice(card: card).equatable() }
@@ -136,20 +126,6 @@ private struct HomeSections: View {
                 }
             }
         }
-    }
-
-    private var projectsTrailing: SHListRow.Trailing {
-        let rows = projects.rows
-        let needsYou = rows.reduce(0) { $0 + $1.needsYou }
-        if needsYou > 0 { return .alert("\(needsYou) needs you") }
-        return rows.isEmpty ? .none : .value(String(rows.count))
-    }
-
-    private func destination(_ title: String, symbol: String, trailing: SHListRow.Trailing, route: HomeRoute) -> some View {
-        Button { navigator.open(.home(route)) } label: {
-            SHListRow(title, leading: .symbol(symbol), trailing: trailing)
-        }
-        .buttonStyle(.shRow(radius: 0))
     }
 
     private func section(_ title: String, attention: Bool = false, count: Int?, trailing: MarkAllSeenChip? = nil,

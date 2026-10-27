@@ -42,6 +42,12 @@ A block over 250 lines prints as an outline of its parts; read one with a path a
   Mission screens and Design tool, each drawn dark and light. A UI decision changes the specs
   here and the canvas together.
 
+**Platform rules.** A surface spec says what Shepherd draws; the platform files say what each
+platform expects of any app (Apple's HIG, device geometry, and where Shepherd's code meets them).
+Start at [platforms](platforms.md), then [platform-macos](platform-macos.md),
+[platform-iphone](platform-iphone.md), [platform-ipad](platform-ipad.md) or
+[platform-iphone-duo](platform-iphone-duo.md).
+
 ## Board index
 
 Every board on the canvas, the section of this document that specifies it, and how much of it
@@ -220,6 +226,22 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | iPadPaneArtifacts | [ios-ipad-pages](ios-ipad-pages.md) | iOS: iPad › Side pane | Built, without versions, Edit and Open in a window (departures.md) |
 | iPadPaneFiles | [ios-ipad-pages](ios-ipad-pages.md) | iOS: iPad › Side pane | Not built yet |
 | iPadTerminal | [ios-iphone](ios-iphone.md), [terminal](terminal.md) | iOS (Terminal); Terminal (tabs only, no Split right; the options menu shows it and opens a terminal when there is none: departures) | Partial |
+
+**iPhone Duo** (light variants: `<Name>Light.png`; mock: `docs/design/mockups/iphone-duo/`)
+
+| Board | Files | Specified in | Status |
+| --- | --- | --- | --- |
+| DuoClosedHome | [platform-iphone-duo](platform-iphone-duo.md) | Five tabs in the side column; Home is the inbox; Search beside New thread | Built |
+| DuoClosedNewThread | [platform-iphone-duo](platform-iphone-duo.md) | New thread sheet: Cancel and Send in the column; one chip row | Built (the worktree switch and Attach overflow while the keyboard is up) |
+| DuoClosedThreadMenu | [platform-iphone-duo](platform-iphone-duo.md) | A thread: the side pane's five tabs as rows in its ⋯ menu | Built |
+| DuoOpenThread | [platform-iphone-duo](platform-iphone-duo.md) | Open: sidebar beside the thread | Built |
+| DuoOpenSidePane | [platform-iphone-duo](platform-iphone-duo.md) | Open: thread beside the side pane; the sidebar overlays | Built |
+| DuoOpenNewThread | [platform-iphone-duo](platform-iphone-duo.md) | Open: New thread in the detail | Not built yet |
+| DuoSidePaneTabs | [platform-iphone-duo](platform-iphone-duo.md) | Side pane: Changes, Files, Terminal, Subagents, Browser | Built |
+| DuoBook | [platform-iphone-duo](platform-iphone-duo.md) | Book: equal halves at the fold | Built |
+| DuoBookSidePane | [platform-iphone-duo](platform-iphone-duo.md) | Book: thread and side pane split at the fold | Built |
+| DuoLaptop | [platform-iphone-duo](platform-iphone-duo.md) | Laptop: transcript above the fold, composer below (ArrangementView) | Built |
+| DuoLaptopOpen | [platform-iphone-duo](platform-iphone-duo.md) | The same view fully open: composer card over the transcript | Built |
 
 **Notifications**
 

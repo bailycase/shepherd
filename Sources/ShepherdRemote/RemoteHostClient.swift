@@ -537,6 +537,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         case .commitInfo, .commitMessage, .commit: RemoteProtocol.reviewCommitCapability
         case .terminals: RemoteProtocol.terminalActivityCapability
         case .devServers: RemoteProtocol.browserTunnelCapability
+        case .files, .fileRead: RemoteProtocol.filesCapability
         case .changesOverview, .changesList, .changesFile, .changesBranches, .changesPatch, .changesUndoTurn, .changesRedoTurn:
             RemoteProtocol.changesCapability
         default: RemoteProtocol.agentInspectionCapability
@@ -571,6 +572,29 @@ public final class RemoteHostClient: @unchecked Sendable {
             throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected devServers reply")
         }
         return servers
+    }
+
+    /// A folder of the thread's folder on the host, `path` relative to it ("" for the folder) (`filesCapability`).
+    public func listFiles(agentID: AgentID, path: String, showHidden: Bool) async throws -> ThreadFileListing {
+        guard case .files(let listing) = try await filesQuery(agentID: agentID, query: .files(path: path, showHidden: showHidden)) else {
+            throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected files reply")
+        }
+        return listing
+    }
+
+    /// A UTF-8 text file in the thread's folder on the host, at most `ThreadFilesLimits.readBytes` (`filesCapability`).
+    public func readFile(agentID: AgentID, path: String) async throws -> Data {
+        guard case .fileData(let data) = try await filesQuery(agentID: agentID, query: .fileRead(path: path)) else {
+            throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected file reply")
+        }
+        return data
+    }
+
+    private func filesQuery(agentID: AgentID, query: RemoteAgentQuery) async throws -> RemoteAgentResult {
+        guard capabilities.contains(RemoteProtocol.filesCapability) else {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Files needs a newer Shepherd on the host.")
+        }
+        return try await agentQuery(agentID: agentID, query: query)
     }
 
     /// Runs `command` in a new terminal pane of the agent's layout on the host, in `cwd`

@@ -167,8 +167,9 @@ keep the version for real breaks.
   disconnects every host; the agents keep running on the Macs. When a host's connection ends is
   kept apart from its record (`shepherd.ios.hosts.lastSeen`), so a host the phone cannot reach
   says when it was last seen.
-- **iPhone:** two tabs, Home and Settings, each a navigation stack. Home merges every host:
-  Projects, Automations and More (host cards), offline hosts with Retry, Needs you (questions
+- **iPhone:** five tabs, Home, Designs, Projects, Automations and Settings (which holds More's
+  hosts, design systems and extensions), each a navigation stack. Home is the inbox and merges
+  every host: offline hosts with Retry, Needs you (questions
   and blocked threads, answered in place when short; a subagent's question is its parent's, so
   it is never here), Working, Done (with Mark all seen), Pinned, and Recents with host tags. `HomeFeed`
   derives it once per change from each host's state and, while Home is on screen, the threads'
@@ -319,12 +320,10 @@ keep the version for real breaks.
   ⌘K opens a palette over search and actions, with a live preview of the selected thread.
 
 - **Terminal (`Terminal/`):** the terminals of an agent's layout on its host, one tab each. On
-  iPad a panel under the thread (Show Terminal in the thread's options menu, which opens a
-  terminal when the thread has none; no header button) with the layout's tabs, + (a new
-  terminal), Maximize, Hide, and a divider that snaps at a third, half and two-thirds; on iPhone
-  the thread's options (Terminal) open them full screen, and the screen opens a terminal as it
-  appears when there is none and goes back with its last terminal. There is no empty panel and
-  no Split: a terminal that fails to open with no panel up gives a haptic. Each terminal is
+  iPad and iPhone Duo open the side pane's Terminal tab beside the thread (`SidePane/`); on
+  iPhone the thread's ••• menu (Terminal) opens them full screen. Either opens a terminal as it
+  appears when there is none; the phone's screen goes back with its last terminal, the tab stays.
+  There is no Split. Each terminal is
   SwiftTerm's view on Shepherd Design's terminal palette, attached (`attach`) while it is on
   screen, the app is active and the host connected, and detached a second after it leaves; the
   host replays its screen on every attach and sizes the PTY to its smallest viewer. A refused

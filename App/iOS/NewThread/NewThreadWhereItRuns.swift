@@ -6,8 +6,6 @@ import ShepherdRemote
 extension MobileLayout {
     /// New thread's prompt (the boards' 18pt).
     static let newThreadPromptSize: CGFloat = 18
-    /// The phone's round Start button.
-    static let newThreadStartSize: CGFloat = SH.Height.controlL
     /// An attached image's thumbnail.
     static let newThreadThumbnail: CGFloat = 56
     /// The iPad's repo, host, worktree and model popovers.

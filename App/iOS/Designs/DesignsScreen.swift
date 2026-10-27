@@ -4,7 +4,7 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
 
-/// Designs on iPhone (MobileDesigns), pushed from Home's Designs row: Search and New design in
+/// Designs on iPhone (MobileDesigns), the Designs tab's root: Search and New design in
 /// the navigation bar, the large title, Recent as a two-column grid of tiles (each its first board
 /// drawn on the phone), and Design systems as a list card.
 struct DesignsScreen: View {

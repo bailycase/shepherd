@@ -769,7 +769,7 @@ public func nativeActivityBurst(_ calls: [NativeActivityCall]) -> NativeActivity
     var meta: [String] = []
     switch state {
     case .running:
-        label = progressiveLabel(first)
+        label = nativeRunningLabel(first)
         meta = [first.detail]
     case .failed:
         label = failedLabel(first)
@@ -798,7 +798,7 @@ public func nativeActivityBurst(_ calls: [NativeActivityCall]) -> NativeActivity
                                accessibilityLabel: ([label] + meta + [word]).joined(separator: ", "))
 }
 
-private func progressiveLabel(_ call: NativeActivityCall) -> String {
+func nativeRunningLabel(_ call: NativeActivityCall) -> String {
     switch call.kind {
     case .explore:
         switch call.explore {
