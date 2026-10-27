@@ -10,18 +10,19 @@ import ShepherdRemote
 extension FixtureCatalog {
     static var terminal: [FixtureScreen] {
         let ref = FixtureData.ref(FixtureData.preview)
-        let routes: [MobileRoute] = [.thread(ref), .terminal(.panes(ref))]
+        // The terminals open once their screens are canned (`TerminalFixture.show`), so none attaches.
+        let routes: [MobileRoute] = [.thread(ref)]
         return [
             FixtureScreen(name: "terminal", hosts: TerminalFixture.hosts(), routes: routes,
-                          prepare: { _ in await TerminalFixture.show(ref) }),
+                          prepare: { app in await TerminalFixture.show(ref, in: app) }),
             FixtureScreen(name: "terminal-keys", hosts: TerminalFixture.hosts(), routes: routes,
-                          prepare: { _ in await TerminalFixture.show(ref, focus: true) }),
+                          prepare: { app in await TerminalFixture.show(ref, in: app, focus: true) }),
             // Closing a tab: its title and the shell that stops.
             FixtureScreen(name: "terminal-close", hosts: TerminalFixture.hosts(), routes: routes,
-                          prepare: { _ in await TerminalFixture.show(ref, closing: true) }),
+                          prepare: { app in await TerminalFixture.show(ref, in: app, closing: true) }),
             // The host relaunched: the terminal on screen has a new shell, which must get its own view.
             FixtureScreen(name: "terminal-relaunched", hosts: TerminalFixture.hosts(), routes: routes,
-                          prepare: { _ in await TerminalFixture.relaunch(ref) }),
+                          prepare: { app in await TerminalFixture.relaunch(ref, in: app) }),
         ]
     }
 }
@@ -57,6 +58,9 @@ enum TerminalFixture {
             state.agents[agent].paneID = threadPane
         }
         hosts[index].state = state
+        // Canned screens never attach, so nothing asks the host to start a shell either: without the
+        // capability, a terminal shown here never demands one (`TerminalPaneView`).
+        hosts[index].capabilities = hosts[index].defaultCapabilities.filter { $0 != RemoteProtocol.terminalStartCapability }
         // What the host says runs in each (a read, answered like a Mac's server would).
         let activity: [RemoteTerminalActivity] = [
             RemoteTerminalActivity(paneID: shell, sessionID: shellSession, process: "zsh", command: nil, outputSequence: 12),
@@ -71,13 +75,14 @@ enum TerminalFixture {
         return hosts
     }
 
-    /// Opens the panel on the first tab with canned screens, optionally focused (the key row
-    /// shows), maximized, or asking to close that tab.
-    @MainActor static func show(_ ref: AgentRef, focus: Bool = false, closing: Bool = false) async {
+    /// Opens the thread's terminals on the shell's tab with canned screens, optionally focused (the
+    /// key row shows) or asking to close that tab.
+    @MainActor static func show(_ ref: AgentRef, in app: MobileApp, focus: Bool = false, closing: Bool = false) async {
         let terminals = MobileTerminals.shared
         terminals.cannedScreens = [shellSession: shellScreen, besideSession: logsScreen, psqlSession: psqlScreen,
                                    relaunchedSession: relaunchedScreen]
         terminals.update(ref) { $0.chosenTab = shell }
+        app.navigator.open(.terminal(.panes(ref)))
         if closing {
             // As a person taps × on a tab whose title shows: once the host said what runs in it.
             await wait { terminals.activity[ref]?.isEmpty == false }
@@ -94,8 +99,8 @@ enum TerminalFixture {
     /// Shows the shell's screen, then has the host push the layout it has after a relaunch: the
     /// same terminal with a new session. The terminal must drop the old screen for the new session's own
     /// (checked, and printed as a FIXTURE CHECK).
-    @MainActor static func relaunch(_ ref: AgentRef) async {
-        await show(ref)
+    @MainActor static func relaunch(_ ref: AgentRef, in app: MobileApp) async {
+        await show(ref, in: app)
         let terminals = MobileTerminals.shared
         let old = terminals.session(host: ref.host, id: shellSession)
         await wait { old.surface?.window != nil }

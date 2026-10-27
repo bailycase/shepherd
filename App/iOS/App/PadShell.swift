@@ -76,10 +76,10 @@ struct PadShell: View {
                 if navigator.padColumns != columns { navigator.padColumns = columns }
                 Task { @MainActor in navigator.padColumns = Self.columns(navigator) }
             }
-            // Folding into the laptop pose with a thread open arranges it (DuoLaptop); laid flat it
-            // stays so, its composer a card (DuoLaptopOpen), until Back.
-            .onChange(of: laptop, initial: true) { _, laptop in
-                guard laptop, let thread = navigator.padSelection, navigator.padPath.isEmpty else { return }
+            // Folding into the laptop pose with a thread open, or opening one in it, arranges it
+            // (DuoLaptop); laid flat it stays so, its composer a card (DuoLaptopOpen), until Back.
+            .onChange(of: laptop ? navigator.padSelection : nil, initial: true) { _, thread in
+                guard let thread, navigator.padPath.isEmpty else { return }
                 navigator.sidePane.arranged = thread
             }
             .onChange(of: navigator.padPath.isEmpty) { _, _ in

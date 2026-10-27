@@ -18,13 +18,14 @@ struct ThreadArrangement<Secondary: View, Composer: View>: View {
             GeometryReader { proxy in
                 let folded = proxy.horizontalFold != nil
                 ArrangementView {
+                    // The composer's own field is the card.
                     composer
-                        .background(Color.sh.bgRaised, in: RoundedRectangle(cornerRadius: MobileLayout.cardRadius))
-                        .shBorder(Color.sh.lineSubtle, radius: MobileLayout.cardRadius)
                         .frame(maxWidth: MobileLayout.threadMaxWidth)
-                        .padding(MobileLayout.gutter)
+                        .padding(.horizontal, MobileLayout.gutter)
                         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { cardHeight = $0 }
-                        .overlayArrangementEdge(VerticalEdge.bottom)
+                        // At the foot of its part: floating, over the transcript's end (DuoLaptopOpen); half
+                        // open, over the keyboard below the fold.
+                        .frame(maxHeight: .infinity, alignment: .bottom)
                 } secondary: {
                     secondary.safeAreaPadding(.bottom, folded ? 0 : cardHeight)
                 }

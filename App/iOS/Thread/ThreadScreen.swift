@@ -54,8 +54,9 @@ struct ThreadScreen: View {
                 ArtifactHooks.open(thread: ref, path: path, navigator: navigator)
             } : nil)
         let arranged = navigator.sidePane.arranged == ref
-        let title = ThreadTitle(name: agent?.name ?? "Thread", status: status, branch: branch, wide: sizeClass == .regular,
-                                goalStore: store)
+        // The laptop arrangement's bar names the thread alone, beside its capsule (DuoLaptop).
+        let title = ThreadTitle(name: agent?.name ?? "Thread", status: status, branch: arranged ? nil : branch,
+                                wide: sizeClass == .regular && !arranged, goalStore: store)
         // Where the bars run down the side on regular width (iPhone Duo open), the title heads the
         // thread's column, level with the side pane's tabs (DuoOpenThread, DuoOpenSidePane); else
         // it is the bar's.
@@ -556,24 +557,16 @@ private struct ThreadSidebarButton: View {
 }
 
 /// The header's one side-pane button (DuoOpenThread, DuoOpenSidePane; the Mac's `SHSidePaneButton`): Show side pane opens it on the
-/// tab it last showed; while it is open the button is lit (`lanternTint`, the glyph in `lantern`) and hides it.
+/// tab it last showed; while it is open its glyph is lit in `lantern` and it hides it.
 private struct ThreadSidePaneButton: View {
     let isOn: Bool
     let action: () -> Void
 
     var body: some View {
         let label = isOn ? "Hide side pane" : "Show side pane"
-        if isOn {
-            Button(action: action) {
-                Label(label, systemImage: "sidebar.right").foregroundStyle(Color.sh.lantern)
-            }
-            .buttonStyle(.glassProminent)
-            .tint(Color.sh.lanternTint)
-            .accessibilityAddTraits(.isSelected)
-        } else {
-            Button(label, systemImage: "sidebar.right", action: action)
-                .tint(Color.sh.textPrimary)
-        }
+        Button(label, systemImage: "sidebar.right", action: action)
+            .tint(isOn ? Color.sh.lantern : Color.sh.textPrimary)
+            .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 }
 
