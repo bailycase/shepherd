@@ -795,6 +795,16 @@ final class ShepherdViewModel {
             recordSidebarActivity(agentID)
             if CheckoutMonitor.touchesFiles(tool: tool) { checkouts?.refresh(agentID, after: .seconds(1)) }
         }
+        // A limit on a provider with saved accounts and rotation on: the next account takes over,
+        // and pi's own retry (or the next turn) uses it. The thread says so.
+        server.onAgentProviderError = { [weak self] agentID, provider, message in
+            guard let self, PiAuthText.isLimit(message) else { return }
+            Task {
+                guard let switched = await self.piAuth.limitHit(provider) else { return }
+                self.threadStores.store(for: agentID).reportActionNotice(
+                    "Switched \(PiSignInCatalog.name(provider)) to \(switched.to): \(switched.from) hit its limit.")
+            }
+        }
         // Agents drive their own panes through the server's extension socket.
         installPaneControl()
         installProjectControl()
