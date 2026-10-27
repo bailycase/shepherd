@@ -24,11 +24,25 @@ enum BrowserScripts {
         if (value instanceof Error) return (value.name || 'Error') + ': ' + value.message;
         try { const json = JSON.stringify(value); return json === undefined ? String(value) : json; } catch (e) { return String(value); }
       };
+      // Lines queue and go over in one post per 50 ms (a chatty HMR loop is hundreds a second);
+      // an error flushes at once. The queue keeps the newest 500, what the drawer keeps.
+      let queue = [];
+      let timer = 0;
+      const flush = () => {
+        timer = 0;
+        if (!handler || queue.length === 0) return;
+        const lines = queue;
+        queue = [];
+        try { handler.postMessage({ lines: lines }); } catch (e) {}
+      };
       const post = (level, args) => {
         if (!handler) return;
         try {
           const text = Array.prototype.map.call(args, format).join(' ');
-          handler.postMessage({ level: level, text: text.slice(0, 2000) });
+          queue.push({ level: level, text: text.slice(0, 2000) });
+          if (queue.length > 500) queue.splice(0, queue.length - 500);
+          if (level === 'error') { if (timer) clearTimeout(timer); flush(); }
+          else if (!timer) timer = setTimeout(flush, 50);
         } catch (e) {}
       };
       for (const [name, level] of [['log', 'log'], ['info', 'log'], ['debug', 'log'], ['warn', 'warning'], ['error', 'error']]) {
@@ -201,11 +215,18 @@ enum BrowserScripts {
         hide();
         post({ kind: 'cancel' });
       }, true);
+      // One post per frame at most while the page scrolls under a picked element.
+      let following = false;
       const follow = () => {
-        if (!picked || selecting) return;
-        if (!picked.isConnected) { picked = null; hide(); return; }
-        show(picked);
-        post({ kind: 'rect', rect: rect(picked) });
+        if (!picked || selecting || following) return;
+        following = true;
+        requestAnimationFrame(() => {
+          following = false;
+          if (!picked || selecting) return;
+          if (!picked.isConnected) { picked = null; hide(); return; }
+          show(picked);
+          post({ kind: 'rect', rect: rect(picked) });
+        });
       };
       window.addEventListener('scroll', follow, { capture: true, passive: true });
       window.addEventListener('resize', follow, { passive: true });
