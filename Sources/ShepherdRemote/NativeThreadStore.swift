@@ -520,6 +520,7 @@ public final class NativeThreadStore {
         var rows: [NativeThreadRow] = []
         rows.reserveCapacity(turns.count)
         var kept: Set<String> = []
+        let recorded = changesTurnsByMessage(snapshot?.turnChanges)
         for (index, turn) in turns.enumerated() {
             if turn.isUser {
                 var row = NativeThreadRow(turn: turn, presentation: nil, live: false, promptText: nil, startedAt: nil)
@@ -551,7 +552,7 @@ public final class NativeThreadStore {
             kept.insert(turn.id)
             let prompt = opener.map { $0.messages.flatMap(\.blocks).filter { $0.kind == .text }.map(\.text).joined(separator: "\n") }
             let startedAt = opener?.messages.first?.timestamp
-            let recordedTurn = changesTurn(forMessageAt: startedAt, in: snapshot?.turnChanges)
+            let recordedTurn = startedAt.flatMap { recorded[$0] }
             let card = isLive ? nil : nativeChangesCard(turn: recordedTurn, changes: presentation.changes)
             var row = NativeThreadRow(turn: turn, presentation: presentation, live: isLive, promptText: prompt,
                                       startedAt: startedAt, recordedTurn: recordedTurn, changes: card)
