@@ -15,6 +15,12 @@ struct ThreadAuthNoticeTests {
         #expect(ThreadAuthNotice.reason(provider: provider, skipped: skipped) == reason)
     }
 
+    /// L2: a model pi has no provider for is no sign-in's fault; the card says so and offers another model.
+    @Test func aProviderPiDoesNotKnowIsNotASignInProblem() {
+        #expect(!ThreadAuthNotice.known("cpa") && ThreadAuthNotice.known("anthropic") && ThreadAuthNotice.known("openai-codex"))
+        #expect(ThreadAuthNotice.reason(provider: "cpa", skipped: false).hasPrefix("Shepherd’s pi has no provider named cpa;"))
+    }
+
     @Test func withNoProviderNamedItAsksForAny() {
         #expect(ThreadAuthNotice.providerName(nil) == "a provider")
         #expect(ThreadAuthNotice.reason(provider: nil, skipped: false)

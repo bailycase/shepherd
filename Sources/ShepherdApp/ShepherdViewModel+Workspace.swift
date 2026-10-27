@@ -480,7 +480,8 @@ extension ShepherdViewModel {
         } else if notSignedIn[agentID] != nil {
             notSignedIn[agentID] = nil
         }
-        let needed = Set(notSignedIn.values.compactMap(\.provider))
+        // Sign-in hears only providers it can sign in to: a model pi has no provider for is the thread's to settle.
+        let needed = Set(notSignedIn.values.compactMap(\.provider).filter(ThreadAuthNotice.known))
         if piAuth.needed != needed { piAuth.needed = needed }
     }
 

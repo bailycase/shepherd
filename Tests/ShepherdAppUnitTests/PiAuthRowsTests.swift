@@ -101,11 +101,25 @@ struct PiAuthRowsTests {
         #expect(PiAuthText.expiredProvider(in: message) == provider)
     }
 
+    /// L13: a refresh that fails without naming its provider (pi passes the token endpoint's words
+    /// through) is still a sign-in failure, which the thread's error card and Sign-in act on.
+    @Test(arguments: [
+        ("Token refresh failed: Token refresh failed (HTTP 400): {\"error\":\"invalid_grant\"}", true),
+        ("OAuth refresh failed for anthropic", true),
+        ("401 token has been revoked", true),
+        ("429 rate limited", false),
+        ("OpenAI API error (401): Incorrect API key provided", false),
+    ] as [(String, Bool)])
+    func aRefreshThatFailsIsASignInFailure(message: String, failure: Bool) {
+        #expect(PiAuthText.isSignInFailure(message) == failure)
+    }
+
     @Test(arguments: [
         (["No API key found for anthropic.", "", "Use /login…"], nil, nil, "anthropic"),
         (["No models available. Use /login"], "openai-codex/gpt-5", "anthropic/claude", "openai-codex"),
         (["No models available."], nil, "anthropic/claude", "anthropic"),
         (["No API key found for the selected model."], nil, nil, nil),
+        (["Error: Model \"cpa/gpt-6-astra\" not found. Use --list-models"], nil, "anthropic/claude", "cpa"),
     ] as [([String], String?, String?, String?)])
     func aNotSignedInStartNamesTheProviderItNeeds(lines: [String], model: String?, defaultModel: String?, provider: String?) {
         #expect(PiAuthText.missingProvider(lines: lines, model: model, defaultModel: defaultModel) == provider)
