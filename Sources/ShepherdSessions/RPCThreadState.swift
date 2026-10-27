@@ -777,7 +777,7 @@ final class RPCThreadState {
             requestStarted(key: sequence, timestamp: message.timestamp)
             upsertAssistant(message, ended: false)
         case .messageUpdate(let delta):
-            guard let key = currentAssistant, let index = live.firstIndex(where: { $0.kind == .assistant(key) }), let current = live[index].raw else {
+            guard let key = currentAssistant, let index = live.firstIndex(where: { $0.kind == .assistant(key) }), live[index].raw != nil else {
                 // message_start was missed (spawned mid-turn); start accumulating now.
                 sequence += 1
                 currentAssistant = sequence
@@ -792,10 +792,13 @@ final class RPCThreadState {
             observeStream(delta)
             // A call's argument fragments change nothing the reply shows, only the call's row.
             if delta.type == "toolcall_delta" {
-                streamToolCall(delta, in: current)
+                streamToolCall(delta, in: live[index].raw!)
                 break
             }
-            var raw = current
+            // The row's copy is dropped before the delta is applied, so the text buffer is uniquely
+            // owned and the append grows it in place.
+            var raw = live[index].raw!
+            live[index].raw = nil
             Self.apply(delta, to: &raw)
             upsertAssistant(raw, ended: false)
             streamToolCall(delta, in: raw)
@@ -2255,8 +2258,11 @@ final class RPCThreadState {
         case "text_start":
             message.content[index] = .text("")
         case "text_delta":
-            if case .text(let text) = message.content[index] {
-                message.content[index] = .text(text + (delta.delta ?? ""))
+            if case .text(var text) = message.content[index] {
+                // Take the buffer out first so the append grows it in place instead of copying the block.
+                message.content[index] = .text("")
+                text.append(delta.delta ?? "")
+                message.content[index] = .text(text)
             } else {
                 message.content[index] = .text(delta.delta ?? "")
             }
@@ -2265,8 +2271,10 @@ final class RPCThreadState {
         case "thinking_start":
             message.content[index] = .thinking("")
         case "thinking_delta":
-            if case .thinking(let text) = message.content[index] {
-                message.content[index] = .thinking(text + (delta.delta ?? ""))
+            if case .thinking(var text) = message.content[index] {
+                message.content[index] = .thinking("")
+                text.append(delta.delta ?? "")
+                message.content[index] = .thinking(text)
             } else {
                 message.content[index] = .thinking(delta.delta ?? "")
             }
