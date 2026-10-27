@@ -719,7 +719,7 @@ final class RPCThreadState {
             }
             dropStreamingCalls()
             refreshMessages()
-            // agent_settled follows at once and refreshes the state; one get_state per turn end.
+            refreshState()
             refreshStats()
         case .agentSettled:
             recoveryResumePending = false
