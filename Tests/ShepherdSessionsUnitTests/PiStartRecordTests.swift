@@ -24,6 +24,8 @@ struct PiStartRecordTests {
             "  /pi/docs/models.md\(reset)",
         ], exitCode: 1, kind: .notSignedIn),
         Case(name: "no key for the chosen model", stderr: ["\(red)No API key found for anthropic.\(reset)"], exitCode: 1, kind: .notSignedIn),
+        Case(name: "a model pi has no provider for", stderr: ["\(red)Error: Model \"cpa/gpt-6-astra\" not found. Use --list-models\(reset)"],
+             exitCode: 1, kind: .notSignedIn),
         Case(name: "an extension failed to load", stderr: [
             "\(red)Error: Failed to load extension \"/x/broken.ts\": SyntaxError: Unexpected token\(reset)",
             "\(yellow)Hint: Start without extensions using \"pi -ne\".\(reset)",

@@ -544,6 +544,10 @@ enum PreviewYourPi {
         var survey = imported
         survey.logins.removeAll { $0.provider == "openai-codex" || $0.provider == "kimi-coding" }
         sheet.survey = survey
+        // A default model pi has no provider for, and what the copy passed over.
+        sheet.unresolvedDefault = "cpa/gpt-6-astra"
+        sheet.catalog = ["openai-codex/gpt-6-astra", "anthropic/claude-opus-4-5"]
+        sheet.report.skipped = ["The skill pdf from ~/.pi/agent/skills/pdf wasn't copied: ~/.pi/agent/skills/tools/pdf has the same name."]
         return sheet
     }()
 

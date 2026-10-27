@@ -260,7 +260,19 @@ after that the two pis are independent.
   A provider needs a sign-in when an agent restored at this launch or the default model uses it
   and nothing in Shepherd's pi covers it (no login, no key in the environment, no custom
   provider of that name): "Your pi isn't signed in to it" or "Your pi's sign-in couldn't be
-  copied".
+  copied"; or when its copied login no longer works (each copied subscription login is checked
+  with the smallest request pi can make, bounded): "Your pi's sign-in no longer works: …". A
+  default model Shepherd's pi has no model for (resolved against pi's own catalog, a bounded
+  ask; its provider is one a switched-off extension registers) is a row of its own above the
+  sign-ins, "Default model · gpt-6-astra" over why, with a Choose model menu of the catalog that
+  sets Settings ▸ Agents' default; the title is then "Your default model needs you" (or
+  "Something's missing" beside sign-ins), Done waits for a choice, and agents on that provider
+  wait for the sheet.
+- **What was passed over** (Done and Something missing): under the body, when the copy skipped
+  or couldn't read anything (a second skill of one name, a package never installed), one line in
+  12 `textSecondary` with an `exclamationmark.circle` in `lanternText`: "1 file couldn't be read
+  · 9 things were passed over", a chevron, and the sentences (the log's) in 12 `textTertiary`
+  when opened, scrolling past 120pt. A green check never hides them.
 - **New user** (no pi of theirs): "Sign in to a model provider", "There’s no pi on this Mac, so
   there’s nothing to bring over. Use a subscription you already pay for, or an API key." A
   two-column grid, 8pt apart, of tiles (`SHSignInChoiceTile`: 11×12 padding, radius 10,

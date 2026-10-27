@@ -26,7 +26,8 @@ struct AppDialogs: ViewModifier {
                                   vm.settingsSection = .pi
                                   vm.showSettings = true
                               },
-                              close: { vm.finishImport() })
+                              close: { vm.finishImport() },
+                              chooseDefault: { vm.yourPi.chooseDefault($0) })
                     .dialogSheetFrame()
                     .sheet(item: Binding(get: { vm.piAuth.session }, set: { if $0 == nil { vm.piAuth.closeSheet() } })) { session in
                         PiSignInSheet(session: session) { vm.piAuth.closeSheet() }

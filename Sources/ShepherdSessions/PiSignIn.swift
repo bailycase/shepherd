@@ -50,8 +50,9 @@ public enum PiSignInCommand: Equatable, Sendable {
     case cancel
     /// Removes Shepherd's credential for the provider (pi's own logout).
     case logout(provider: String)
-    /// Whether a key works, with the smallest request pi can make.
-    case check(id: String, provider: String, key: PiKeyInput)
+    /// Whether a key works, with the smallest request pi can make; with no `key`, whether the
+    /// provider's stored login does (a stale OAuth token is refreshed on the way).
+    case check(id: String, provider: String, key: PiKeyInput?)
 
     /// One JSON line, newline included.
     public var line: Data {
@@ -67,6 +68,7 @@ public enum PiSignInCommand: Equatable, Sendable {
             switch key {
             case .literal(let value): object["key"] = value
             case .variable(let name): object["variable"] = name
+            case nil: break
             }
         }
         var data = (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data()

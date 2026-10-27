@@ -1488,6 +1488,8 @@ for raw in sys.stdin.buffer:
     elif t == "get_available_models":
         respond(cmd, t, data={"models": [
             {"provider": "anthropic", "id": "claude-opus-4-5", "api": "anthropic-messages", "contextWindow": 200000, "reasoning": True},
+            # "Your pi" fixture's default model: the first launch resolves it against this catalog.
+            {"provider": "anthropic", "id": "claude-fixture-4", "api": "anthropic-messages", "contextWindow": 200000, "reasoning": True},
             {"provider": "openai", "id": "gpt-5", "api": "openai-responses", "contextWindow": 400000, "reasoning": True,
              "thinkingLevelMap": {"minimal": None, "xhigh": "xhigh"}},
         ]})

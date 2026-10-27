@@ -662,6 +662,7 @@ final class ShepherdViewModel {
         threadStores.hostName = { _ in localHostName }
         remoteThreadStores.hostName = { [weak hosts] ref in hosts?.connections.first { $0.id == ref.hostID }?.config.name }
         let instructions = InstructionsModel(store: server.instructions, remoteHosts: hosts, defaults: sidebarDefaults)
+        instructions.piHome = server.pi.home
         self.instructions = instructions
         self.suggestions = SuggestionsModel(store: server.suggestions, instructionsStore: server.instructions, instructions: instructions)
         self.skills = ClientSkills(defaults: sidebarDefaults)
@@ -702,6 +703,10 @@ final class ShepherdViewModel {
             Task { await yourPi?.refresh() }
         }
         self.piAuth.onSignedIn = { [weak self] provider in self?.signInLanded(provider) ?? 0 }
+        // The first launch checks what came over against Shepherd's own pi: its default model and its logins.
+        self.yourPi.settingsDefaultModel = { [weak self] in self?.settings.agentDefaults.model }
+        self.yourPi.onDefaultChosen = { [weak self] model in self?.settings.defaultModel = model }
+        self.yourPi.checkLogins = { [weak piAuth = self.piAuth] providers in await piAuth?.checkLogins(providers) ?? [:] }
         // Logins re-imported from your pi: agents waiting on a sign-in try again.
         self.yourPi.onSignInsChanged = { [weak self] in _ = self?.retrySignedOutAgents(nil) }
         // Settings ▸ Instructions follows a remote client's save here, and sends a host that
@@ -921,7 +926,7 @@ final class ShepherdViewModel {
                         : GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: fetch)
                 }.value
                 completion(.success(.init(base: resolution.display, note: resolution.note, fetchFirst: fetch,
-                                          model: self.settings.agentDefaults.model ?? PiConfig.defaultModel(in: self.server.pi.home),
+                                          model: self.settings.defaultModel(piHome: self.server.pi.home),
                                           thinking: self.settings.defaultThinking, serviceTier: self.settings.defaultServiceTier)))
             }
         }
@@ -935,7 +940,7 @@ final class ShepherdViewModel {
             var config = NewAgentConfig(
                 spaceID: request.spaceID,
                 workingDirectory: request.cwd ?? space?.path ?? "~",
-                model: request.model ?? self.settings.agentDefaults.model,
+                model: request.model ?? self.settings.defaultModel(piHome: self.server.pi.home),
                 thinking: request.thinking ?? self.settings.defaultThinking,
                 initialPrompt: request.initialPrompt
             )
@@ -1044,6 +1049,8 @@ final class ShepherdViewModel {
         releaseStarts()
         sessions.releaseHeldAgents()
         if !waitingForImport.isEmpty { waitingForImport = [] }
+        // The copy (or a default chosen on the sheet) changed what a new thread starts on: the open page's chip names it.
+        if destination == .newThread { newThread.prepare(for: self) }
     }
 
     /// Who waits for the first launch's sheet: nobody, everyone, or the agents whose model's
@@ -1086,7 +1093,7 @@ final class ShepherdViewModel {
             if sheet.stage == .newUser {
                 finishImport()
             } else {
-                Task { await yourPi.signInLanded() }
+                Task { await yourPi.signInLanded(provider) }
             }
         }
         return retrySignedOutAgents(provider)
@@ -1334,7 +1341,7 @@ final class ShepherdViewModel {
             if old != status { checkouts?.refresh(id, after: .milliseconds(300)) }
             let failed = status == .done && failure != nil
             // pi said a subscription's refresh failed: Sign-in says it expired.
-            if let message = failure?.message { piAuth.noteTurnError(message) }
+            if let message = failure?.message { piAuth.noteTurnError(message, provider: provider(of: id)) }
             if failed != failedTurns.contains(id) {
                 if failed { failedTurns.insert(id) } else { failedTurns.remove(id) }
             }

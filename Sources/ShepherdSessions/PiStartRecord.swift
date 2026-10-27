@@ -86,8 +86,9 @@ struct PiStartRecord {
         } else if lines.contains(where: { $0.contains("Failed to load extension") }) {
             // pi: main.js, a runtime diagnostic, which exits in every mode.
             kind = .extensionFailed
-        } else if lines.contains(where: { $0.contains("No models available") || $0.contains("No API key found for") }) {
-            // pi: core/auth-guidance.js.
+        } else if lines.contains(where: { $0.contains("No models available") || $0.contains("No API key found for") || Self.modelNotFound($0) }) {
+            // pi: core/auth-guidance.js; and a model pi has no provider for (one an extension registers, switched
+            // off), which the thread treats the same way: pick another model, or sign in.
             kind = .notSignedIn
         } else if exitCode == 127 || exitCode == 126 || lines.contains(where: { $0.contains("command not found:") }) {
             // The shell's own: nothing to run, or nothing it may run.
@@ -96,6 +97,11 @@ struct PiStartRecord {
             kind = .exited
         }
         return NativeStartProblem(kind: kind, exitCode: exitCode, lines: Array(lines.suffix(NativeStartProblem.maxLines)))
+    }
+
+    /// pi's refusal of a model it doesn't know (pi: main.js): `Error: Model "cpa/x" not found. Use --list-models`.
+    static func modelNotFound(_ line: String) -> Bool {
+        line.contains("Model \"") && line.contains("\" not found")
     }
 
     /// pi's warning for a `--session-id` it found no session for (pi: main.js).

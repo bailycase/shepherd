@@ -611,6 +611,14 @@ final class AppSettings {
         return AgentDefaults(model: trimmed.isEmpty ? nil : trimmed, thinking: defaultThinking)
     }
 
+    /// The one concrete model a thread, automation or Project conversation starts on when nothing
+    /// picked one: Settings ▸ Agents' own, else the default in Shepherd's pi home (`settings.json`).
+    /// Every launch path resolves "the agent's default" here, so pi never picks a provider on its
+    /// own; nil only when neither names one.
+    func defaultModel(piHome: URL) -> String? {
+        agentDefaults.model ?? PiConfig.defaultModel(in: piHome)
+    }
+
     /// argv for a plain (non-agent) pane. Login shell so the user's PATH and
     /// rc files apply, exactly as before this was configurable.
     var shellCommand: [String] {

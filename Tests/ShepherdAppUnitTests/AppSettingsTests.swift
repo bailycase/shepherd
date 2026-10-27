@@ -8,6 +8,22 @@ import Testing
 @Suite("App settings")
 @MainActor
 struct AppSettingsTests {
+    /// L12: every launch path resolves "the agent's default" the same way: Settings ▸ Agents'
+    /// model, else the one in Shepherd's pi home, else nothing (pi's own pick, named as such).
+    @Test func theDefaultModelResolvesOneWayForEveryLaunch() throws {
+        let settings = AppSettings(store: Fixture.defaults())
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("pi-home-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        #expect(settings.defaultModel(piHome: home) == nil)
+        #expect(AutomationEditorSheet.modelLine(nil).hasPrefix("Runs on whatever model Shepherd’s pi picks"))
+        try Data(#"{"defaultProvider":"openai-codex","defaultModel":"gpt-6-astra"}"#.utf8).write(to: home.appendingPathComponent("settings.json"))
+        #expect(settings.defaultModel(piHome: home) == "openai-codex/gpt-6-astra", "pi's own default when Settings names none")
+        settings.defaultModel = "anthropic/claude-opus-4-5"
+        #expect(settings.defaultModel(piHome: home) == "anthropic/claude-opus-4-5", "Settings ▸ Agents outranks pi's")
+        #expect(AutomationEditorSheet.modelLine("anthropic/claude-opus-4-5") == "Runs on anthropic/claude-opus-4-5 (the default in Settings ▸ Agents)")
+    }
+
     @Test func freshSettingsUseThePublishedDefaults() {
         let settings = AppSettings(store: Fixture.defaults())
 

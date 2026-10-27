@@ -237,7 +237,8 @@ struct NewThreadPage: View {
                 .help("Attach images (drop or paste also works), up to \(NativeImage.maxPerSend)")
                 .accessibilityLabel("Attach file")
             let summary = ModelSettingsSummary(model: draft.model, thinking: draft.thinkingLevel(vm).rawValue, thinkingOffered: !levels.isEmpty,
-                                               speed: draft.serviceTier, speedOffered: tiers.count > 1, shortenedName: short)
+                                               speed: draft.serviceTier, speedOffered: tiers.count > 1, shortenedName: short,
+                                               qualified: draft.catalog?.isAmbiguous(draft.model) ?? false)
             Button { toggle(.settings) } label: {
                 SHModelSettingsLabel(model: summary.name, thinking: summary.thinking, fast: summary.fast)
             }

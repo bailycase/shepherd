@@ -27,7 +27,7 @@ struct AgentSettings: View {
         SettingsPage(title: "Agents", explanation: Self.explanation) {
             SettingsGroup(title: "New agents") {
                 SettingsRow(title: "Default model",
-                            subtitle: "Preselected in the New Agent sheet. \"Use the agent's default\" passes no `--model` at all.") {
+                            subtitle: "Preselected in the New Agent sheet. \"Use the agent's default\" starts every thread, automation and Project on the model Shepherd’s pi names as its own.") {
                     SHPopupMenu(settings.defaultModel.isEmpty ? agentDefault : settings.defaultModel,
                                 mono: !settings.defaultModel.isEmpty, minWidth: AppLayout.settingsPopupWidth) {
                         Button(agentDefault) { settings.defaultModel = "" }

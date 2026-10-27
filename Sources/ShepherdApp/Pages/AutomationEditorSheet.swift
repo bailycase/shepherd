@@ -107,6 +107,15 @@ struct AutomationEditorSheet: View {
                         }
                         .accessibilityLabel("Prompt")
                 }
+                if host == PageHost.localID {
+                    // A run starts on the same default every thread does (Settings ▸ Agents, else Shepherd's pi's own).
+                    SheetRow("Model") {
+                        Text(AutomationEditorSheet.modelLine(vm.settings.defaultModel(piHome: vm.server.pi.home)))
+                            .font(.sh(.caption))
+                            .foregroundStyle(Color.sh.textSecondary)
+                            .accessibilityLabel("Model")
+                    }
+                }
                 SheetRow("On") {
                     HStack(spacing: SH.Space.m) {
                         Toggle("Starts with Shepherd", isOn: $enabled)
@@ -139,6 +148,12 @@ struct AutomationEditorSheet: View {
             },
             cancel: { picking = false }
         )
+    }
+
+    /// "Runs on gpt-5 (the default in Settings ▸ Agents)"; with no default anywhere, pi's own pick, named as such.
+    static func modelLine(_ model: String?) -> String {
+        guard let model else { return "Runs on whatever model Shepherd’s pi picks. Set a default in Settings ▸ Agents." }
+        return "Runs on \(model) (the default in Settings ▸ Agents)"
     }
 
     private func load() {

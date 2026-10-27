@@ -16,10 +16,13 @@ struct ModelSettingsSummary: Equatable {
 
     /// `thinking` is the level's raw id; `thinkingOffered` and `speedOffered` say whether the
     /// model takes either. A narrow row (`shortenedName`) drops a release date from the name,
-    /// and the compact size (`dropsThinking`) drops the level from the label.
+    /// and the compact size (`dropsThinking`) drops the level from the label. `qualified` keeps
+    /// the provider in the name (another provider offers the same model name).
     init(model: String, thinking: String?, thinkingOffered: Bool, speed: ServiceTier, speedOffered: Bool,
-         shortenedName: Bool = false, dropsThinking: Bool = false) {
-        name = shortenedName ? nativeModelCompactName(model) : nativeModelShortName(model)
+         shortenedName: Bool = false, dropsThinking: Bool = false, qualified: Bool = false) {
+        let short = shortenedName ? nativeModelCompactName(model) : nativeModelShortName(model)
+        let provider = model.split(separator: "/", maxSplits: 1).first.map(String.init)
+        name = if qualified, let provider, short != model { "\(provider)/\(short)" } else { short }
         let title = thinkingOffered ? thinking.map(NativeThinkingLevel.title) : nil
         self.thinking = dropsThinking ? nil : title
         fast = speedOffered && speed != .standard

@@ -177,9 +177,12 @@ shell they run."
 "Defaults and behavior for your agents. Existing agents keep their model, thinking level and speed."
 
 - **New agents:**
-  - Default model, "Preselected in the New Agent sheet. "Use the agent's default" passes no `--model` at
-    all.": a popup whose first item is "Use the agent’s default · <pi's own default model>", then a divider
-    and the catalog's model ids. The catalog and pi's default load in a task, never in `body`.
+  - Default model, "Preselected in the New Agent sheet. "Use the agent's default" starts every thread,
+    automation and Project on the model Shepherd’s pi names as its own.": a popup whose first item is
+    "Use the agent’s default · <pi's own default model>", then a divider and the catalog's model ids.
+    The catalog and pi's default load in a task, never in `body`. Every launch path resolves the
+    default the same way (`AppSettings.defaultModel(piHome:)`: this setting, else pi's own), so pi
+    never picks a provider on its own; the automation editor names the model a run will use.
   - Default thinking level, "Can be changed per agent from the composer.": Off · Minimal · Low ·
     Medium · High · Extra high · Max, default Medium (pi uses the nearest level a model has).
   - Speed for new threads, "New threads start on this speed. Each thread keeps its own after
