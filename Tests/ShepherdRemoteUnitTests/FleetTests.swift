@@ -206,6 +206,20 @@ struct FleetTests {
         #expect(row.now == "2 subagents · 1 waiting on parent")
     }
 
+    /// The Mac's sidebar shows a thread whose turn ended as Working while its subagents run; the phone agrees, so its
+    /// Home and glance cards never call it done.
+    @Test(arguments: [AgentStatus.done, .idle])
+    func aThreadWhoseSubagentsStillRunIsWorking(status: AgentStatus) {
+        var paused = Fixture.run("paused")
+        paused.paused = true
+        let model = FleetModel(hosts: [Self.host(Self.studio, "Studio", agents: [Self.agent("parent", status), Self.agent("waits", status)])],
+                               digests: [Self.ref("parent"): Self.digest(Self.snapshot(subagents: [Fixture.run("worker")])),
+                                         Self.ref("waits"): Self.digest(Self.snapshot(subagents: [paused]))])
+        #expect(model.running.map(\.ref) == [Self.ref("parent")])
+        #expect(model.recents.first?.status == .working)
+        #expect(!model.finished.contains { $0.ref == Self.ref("parent") })
+    }
+
     @Test func onlyConnectedHostsAskAndOfflineRowsAreTheirLastKnownState() {
         let model = FleetModel(hosts: [
             Self.host(Self.studio, "Studio", .failed(RemoteHostFailure(kind: .unreachable, detail: "refused")), agents: [Self.agent("dock", .blocked), Self.agent("run", .working)]),

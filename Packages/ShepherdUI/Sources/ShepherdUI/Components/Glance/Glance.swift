@@ -274,6 +274,14 @@ public struct SHGlance: Codable, Hashable, Sendable {
         return copy
     }
 
+    /// Without the threads that finished before `date`: the Watch is about now, so a thread done an
+    /// hour ago is the widgets' Done today, not the card's. Failures stay until seen.
+    public func finished(after date: Date) -> SHGlance {
+        var copy = self
+        copy.items = items.filter { $0.state != .done || ($0.since ?? .distantPast) >= date }
+        return copy
+    }
+
     /// One item, when it is still known.
     public func item(_ id: String) -> Item? { items.first { $0.id == id } }
 }

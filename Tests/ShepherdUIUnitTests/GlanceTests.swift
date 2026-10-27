@@ -14,6 +14,18 @@ struct GlanceTests {
                       session: session ? SHGlance.Session(piSessionID: "p", generation: "g") : nil)
     }
 
+    /// The Watch drops what finished before the cut; what runs, asks or failed stays.
+    @Test func theWatchKeepsOnlyRecentlyFinishedWork() {
+        let glance = SHGlance(items: [
+            Self.item("done-old", .done, minutesAgo: 57),
+            Self.item("done-new", .done, minutesAgo: 1),
+            Self.item("failed-old", .failed, minutesAgo: 57),
+            Self.item("run", .running, minutesAgo: 90),
+        ], hosts: [], updated: Self.now)
+        let kept = glance.finished(after: Self.now.addingTimeInterval(-15 * 60))
+        #expect(Set(kept.items.map(\.agent)) == ["done-new", "failed-old", "run"])
+    }
+
     /// The card leads with what needs you longest, then failures, then the longest run; done last.
     @Test func itemsRankByUrgencyThenTime() {
         let glance = SHGlance(items: [

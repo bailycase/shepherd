@@ -52,7 +52,10 @@ struct FleetOverviewTests {
         ]))
         let model = FleetModel(hosts: [FleetTests.host(FleetTests.studio, "Studio", agents: [
             FleetTests.agent("busy", .working), FleetTests.agent("quiet", .done),
-        ])], digests: [FleetTests.ref("busy"): digest, FleetTests.ref("quiet"): digest])
+        ])], digests: [FleetTests.ref("busy"): digest, FleetTests.ref("quiet"): FleetTests.digest(FleetTests.snapshot(subagents: [
+            // A settled thread's subagents have stopped too: one still running would make it Working.
+            Fixture.run("worker", state: "complete"), Fixture.run("reviewer", state: "paused", needsAttention: true),
+        ]))])
         #expect(model.running.map(\.subagents) == [2])
         #expect(model.running.map(\.subagentsAsking) == [1])
         #expect(model.finished.map(\.subagents) == [0])

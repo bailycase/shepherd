@@ -77,6 +77,9 @@ public struct FleetDigest: Equatable, Sendable {
     /// A subagent is still running: background children outlive their parent's turn, and the
     /// thread's own question may follow from the parent that answers them.
     public var liveSubagents: Bool
+    /// A subagent is running and not paused: the thread works though its own turn ended, as the
+    /// Mac's sidebar shows it (`SidebarModel.presentationState`).
+    public var subagentsWorking: Bool
     /// Subagents still going (running, or finished their turn to wait on their parent's answer),
     /// and how many of them wait on their parent (the overview's "3 subagents · 1 waiting on
     /// parent").
@@ -114,6 +117,7 @@ public struct FleetDigest: Equatable, Sendable {
                      options: dialog.options ?? [], answerable: answers && dialog.unavailable == nil)
         }
         liveSubagents = (snapshot.subagents ?? []).contains { !$0.isTerminal }
+        subagentsWorking = (snapshot.subagents ?? []).contains { !$0.isTerminal && $0.paused != true }
         // One that asked its parent counts as live though its process finished its turn to wait.
         subagentsLive = (snapshot.subagents ?? []).filter { !$0.isTerminal || $0.needsAttention }.count
         subagentsAsking = (snapshot.subagents ?? []).filter(\.needsAttention).count
@@ -481,9 +485,11 @@ public struct FleetModel: Equatable, Sendable {
                 automation.agentID.map { ($0, automation) }
             }, uniquingKeysWith: { first, _ in first })
             var running = 0, needs = 0
-            for agent in host.state.agents {
+            for var agent in host.state.agents {
                 let ref = FleetRef(host: host.id, agent: agent.id)
                 let digest = digests[ref]
+                // Its own turn ended while its subagents still run: Working, as on the Mac.
+                if agent.status == .idle || agent.status == .done, digest?.subagentsWorking == true { agent.status = .working }
                 // A design's agent is no thread (docs/designs.md › Design agents and ordinary
                 // threads): never running, needing you, finished or counted. Its design is its
                 // Recents row where the host serves designs; a system build's has none. It lives in
