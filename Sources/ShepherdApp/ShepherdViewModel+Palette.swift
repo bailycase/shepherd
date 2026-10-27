@@ -13,6 +13,10 @@ extension ShepherdViewModel {
     var paletteItems: [PaletteItem] {
         var items: [PaletteItem] = []
         let keys = KeybindingsStore.shared
+        // One index for every per-id lookup below: the list is rebuilt on each view-model change
+        // while the palette is open, and a fleet's agents × recents walk was the cost.
+        let agentsByID = Dictionary(state.agents.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let hostsByID = Dictionary(remoteHosts.connections.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
         // Commands.
         items.append(PaletteItem(id: "action.newAgent", kind: .action("newAgent"), section: .commands,
@@ -66,7 +70,7 @@ extension ShepherdViewModel {
             items.append(PaletteItem(id: "operation.\(target.hostID).\(target.agentID)",
                                      kind: .remoteOperation(hostID: target.hostID, agentID: target.agentID),
                                      section: .commands, title: "Check remote worktree operation",
-                                     subtitle: remoteHosts.connections.first { $0.id == target.hostID }?.config.name,
+                                     subtitle: hostsByID[target.hostID]?.config.name,
                                      icon: SHGlyph.gitBranch.symbolName))
         }
 
@@ -126,7 +130,7 @@ extension ShepherdViewModel {
 
         // Subagents, live and recent: a thread's, never a design's agent's.
         for (agentID, children) in childRuns.rows {
-            guard let agent = state.agents.first(where: { $0.id == agentID }), state.isOrdinaryThread(agent) else { continue }
+            guard let agent = agentsByID[agentID], state.isOrdinaryThread(agent) else { continue }
             for child in children {
                 items.append(PaletteItem(id: "child.\(child.id)", kind: .child(agentID: agentID, child: child),
                                          section: .subagents, title: child.label,
@@ -135,7 +139,7 @@ extension ShepherdViewModel {
             }
         }
         for (target, children) in remoteChildren {
-            guard let connection = remoteHosts.connections.first(where: { $0.id == target.hostID }), connection.phase == .connected,
+            guard let connection = hostsByID[target.hostID], connection.phase == .connected,
                   let agent = remoteAgent(target) else { continue }
             for child in children {
                 items.append(PaletteItem(id: "remoteChild.\(target.hostID).\(target.agentID).\(child.id)",
@@ -151,7 +155,7 @@ extension ShepherdViewModel {
         let spaceNames = Dictionary(state.spaces.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
         let now = Date()
         for id in localRecentsOrder {
-            guard let agent = state.agents.first(where: { $0.id == id }) else { continue }
+            guard let agent = agentsByID[id] else { continue }
             let context = spaceNames[agent.spaceID].map {
                 Self.agentContext(space: $0, status: agent.status, turnFailed: failedTurns.contains(agent.id),
                                   since: statusSince[agent.id], now: now)
