@@ -37,7 +37,7 @@ usage:
                                         is arm64 only, and carries the pinned pi engine
                                         (scripts/pi_engine.py)
   release.py verify-ios <app> <build>   check an archived iOS app before it is uploaded
-  release.py prepare-ios-signing <app> ad-hoc seal production push entitlements for cloud export
+  release.py prepare-ios-signing <app> ad-hoc seal push and app group entitlements for cloud export
   release.py ensure-ios-push --key-id <id> --issuer-id <id> --key <p8>
                                        enable push on the existing iOS App ID before export
   release.py verify-ios-ipa <ipa> <build> verify the signed export before uploading
@@ -668,18 +668,36 @@ def _ios_plist(data: bytes) -> dict:
         raise ValueError("missing, malformed or unresolved iOS signing plist") from None
 
 
+IOS_GROUP = "group.com.bailycase.shepherd.ios"
+# The widget extension inside the app, its App ID, and the entitlements it requests: it reads the
+# app's glance snapshot through IOS_GROUP, so a seal without the group ships empty widgets.
+IOS_WIDGETS = ("PlugIns/Shepherd Widgets.appex", IOS.bundle_id + ".widgets", "App/Widgets/ShepherdWidgets.entitlements")
+
+
+def _ios_grouped(entitlements: dict) -> bool:
+    groups = entitlements.get("com.apple.security.application-groups")
+    return isinstance(groups, list) and IOS_GROUP in groups
+
+
 def prepare_ios_signing(path: str) -> None:
-    """Supply the entitlement request lost by CODE_SIGNING_ALLOWED=NO; no private identity."""
-    source = Path(__file__).resolve().parent.parent / "App/iOS/ShepherdIOS.entitlements"
-    entitlements = _ios_plist(source.read_bytes().replace(b"$(APS_ENVIRONMENT)", b"production"))
-    if entitlements.get("aps-environment") != "production":
+    """Supply the entitlement requests lost by CODE_SIGNING_ALLOWED=NO; no private identity.
+    The widget extension is sealed first: sealing the app covers what is inside it."""
+    repository = Path(__file__).resolve().parent.parent
+    widgets = os.path.join(path, IOS_WIDGETS[0])
+    app = _ios_plist((repository / "App/iOS/ShepherdIOS.entitlements").read_bytes().replace(b"$(APS_ENVIRONMENT)", b"production"))
+    if app.get("aps-environment") != "production":
         raise ValueError("archive must request production push entitlements")
-    with tempfile.TemporaryDirectory(prefix="shepherd-ios-signing-") as root:
-        requested = Path(root) / "entitlements.plist"
-        requested.write_bytes(plistlib.dumps(entitlements))
-        _ios_command("codesign", "--force", "--sign", "-", "--entitlements", str(requested),
-                     "--generate-entitlement-der", path)
-    actual = _ios_plist(_ios_command("codesign", "-d", "--entitlements", ":-", path))
+    for bundle, entitlements in ((widgets, _ios_plist((repository / IOS_WIDGETS[2]).read_bytes())), (path, app)):
+        if not _ios_grouped(entitlements):
+            raise ValueError("archive must request the glance app group")
+        with tempfile.TemporaryDirectory(prefix="shepherd-ios-signing-") as root:
+            requested = Path(root) / "entitlements.plist"
+            requested.write_bytes(plistlib.dumps(entitlements))
+            _ios_command("codesign", "--force", "--sign", "-", "--entitlements", str(requested),
+                         "--generate-entitlement-der", bundle)
+        actual = _ios_plist(_ios_command("codesign", "-d", "--entitlements", ":-", bundle))
+        if not _ios_grouped(actual):
+            raise ValueError("sealed archive lacks the glance app group")
     if actual.get("aps-environment") != "production":
         raise ValueError("sealed archive lacks production push entitlements")
 
@@ -716,6 +734,18 @@ def verify_ios_ipa(path: str, build: str) -> None:
                     raise ValueError(f"{label} has missing or incorrect {key}")
             if entitlements.get("get-task-allow", False) is not False:
                 raise ValueError(f"{label} permits debugging or has malformed get-task-allow")
+            if not _ios_grouped(entitlements):
+                raise ValueError(f"{label} lacks the glance app group")
+        widgets = apps[0] / IOS_WIDGETS[0]
+        signed = _ios_plist(_ios_command("codesign", "-d", "--entitlements", ":-", str(widgets)))
+        profile = _ios_plist(_ios_command("security", "cms", "-D", "-i", str(widgets / "embedded.mobileprovision")))
+        for label, entitlements in (("widgets signature", signed), ("widgets profile", profile.get("Entitlements"))):
+            if not isinstance(entitlements, dict):
+                raise ValueError(f"{label} entitlements are missing or malformed")
+            if entitlements.get("application-identifier") != f"{team}.{IOS_WIDGETS[1]}":
+                raise ValueError(f"{label} has missing or incorrect application-identifier")
+            if not _ios_grouped(entitlements):
+                raise ValueError(f"{label} lacks the glance app group")
 
 
 # TestFlight retirement. Every TestFlight run uploads a build and nothing else expires the old ones, so
