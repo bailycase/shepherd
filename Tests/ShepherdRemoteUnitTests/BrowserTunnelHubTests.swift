@@ -118,4 +118,25 @@ struct BrowserTunnelHubTests {
         #expect(BrowserTunnelHub.maxTunnels == BrowserTunnelLimits.perClient)
         #expect(BrowserTunnelHub.maxTunnels == 64)
     }
+
+    /// Past the host's per-client cap the hub opens nothing: the next is refused here, without a frame.
+    @Test func aTunnelPastTheCapIsRefusedWithoutAFrame() async {
+        let (hub, link) = make()
+        hub.probeSeconds = 60
+        var waiting: [Task<BrowserTunnelProbe, Never>] = []
+        for port in 1...BrowserTunnelHub.maxTunnels {
+            waiting.append(Task { await hub.probe(agentID: agent, port: port) })
+            #expect(await link.next() == .open(tunnel: port, agentID: agent, port: port))
+        }
+        #expect(await hub.probe(agentID: agent, port: 9_999) == .unavailable)
+        #expect(link.sent.current.count == BrowserTunnelHub.maxTunnels)
+        // The host closing one frees its place.
+        queue.async { hub.receive(.close(tunnel: 1, code: BrowserTunnelCode.refused)) }
+        #expect(await waiting[0].value == .failed(BrowserTunnelCode.refused))
+        async let freed = hub.probe(agentID: agent, port: 9_999)
+        #expect(await link.next() == .open(tunnel: BrowserTunnelHub.maxTunnels + 1, agentID: agent, port: 9_999))
+        queue.async { hub.connectionLost() }
+        #expect(await freed == .failed(BrowserTunnelCode.aborted))
+        for task in waiting.dropFirst() { #expect(await task.value == .failed(BrowserTunnelCode.aborted)) }
+    }
 }
