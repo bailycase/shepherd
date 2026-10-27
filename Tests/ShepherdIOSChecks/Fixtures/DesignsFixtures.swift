@@ -58,10 +58,10 @@ extension FixtureCatalog {
             FixtureScreen(name: "search-designs", hosts: quiet, routes: [.search(.search(query: "funnel"))], prepare: { app in
                 await DesignsFixtures.listed(app)
             }),
-            FixtureScreen(name: "more-designs", hosts: quiet, routes: [.home(.more)], prepare: { app in
+            FixtureScreen(name: "more-designs", hosts: quiet, routes: [.settings(.root)], prepare: { app in
                 await DesignsFixtures.listed(app)
             }),
-            FixtureScreen(name: "design-systems", hosts: quiet, routes: [.home(.more), .designs(.systems)], prepare: { app in
+            FixtureScreen(name: "design-systems", hosts: quiet, routes: [.settings(.root), .designs(.systems)], prepare: { app in
                 await DesignsFixtures.listed(app)
             }),
             FixtureScreen(name: "design-system", hosts: quiet, routes: [.designs(.system(host: FixtureData.studio, namespace: "acme-web"))]),

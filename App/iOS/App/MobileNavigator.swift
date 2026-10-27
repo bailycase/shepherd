@@ -1,14 +1,16 @@
 import SwiftUI
 
-/// Where the app is: one model for iPhone (two tabs, each a stack) and iPad (a sidebar, the
+/// Where the app is: one model for iPhone (five tabs, each a stack) and iPad (a sidebar, the
 /// selected thread as the detail, and a stack pushed over it). Screens never touch paths
 /// directly; they call `open` or `present`, and the navigator puts the route where the current
 /// layout shows it.
 @MainActor
 @Observable
 final class MobileNavigator {
-    enum Tab: Hashable, Codable {
-        case home, settings
+    /// The phone's tabs (DuoClosedHome board). Codable as their case names, so a window saved
+    /// with only Home and Settings restores as it was.
+    enum Tab: Hashable, Codable, CaseIterable {
+        case home, designs, projects, automations, settings
     }
 
     enum Layout: Equatable {
@@ -24,7 +26,32 @@ final class MobileNavigator {
     // iPhone
     var tab: Tab = .home
     var homePath: [MobileRoute] = []
+    var designsPath: [MobileRoute] = []
+    var projectsPath: [MobileRoute] = []
+    var automationsPath: [MobileRoute] = []
     var settingsPath: [MobileRoute] = []
+
+    /// A tab's stack.
+    subscript(path tab: Tab) -> [MobileRoute] {
+        get {
+            switch tab {
+            case .home: homePath
+            case .designs: designsPath
+            case .projects: projectsPath
+            case .automations: automationsPath
+            case .settings: settingsPath
+            }
+        }
+        set {
+            switch tab {
+            case .home: homePath = newValue
+            case .designs: designsPath = newValue
+            case .projects: projectsPath = newValue
+            case .automations: automationsPath = newValue
+            case .settings: settingsPath = newValue
+            }
+        }
+    }
 
     // iPad
     /// The thread the detail column shows; nil shows the overview.
@@ -69,23 +96,22 @@ final class MobileNavigator {
         }
     }
 
-    private var currentPhonePath: [MobileRoute] { tab == .home ? homePath : settingsPath }
+    private var currentPhonePath: [MobileRoute] { self[path: tab] }
 
-    /// Shows `route` the way the current layout does: pushed on the current tab's stack on
-    /// iPhone; on iPad a thread becomes the detail and anything else is pushed over it, a
-    /// thread's runs or review over that thread. Settings screens open in the Settings tab on
-    /// iPhone.
+    /// Shows `route` the way the current layout does. On iPhone it selects the route's tab
+    /// first (`Tab.landing`), then pushes it on that tab's stack, or empties the stack for the
+    /// tab's own root; on iPad a thread becomes the detail and anything else is pushed over it,
+    /// a thread's runs or review over that thread.
     func open(_ route: MobileRoute) {
         switch layout {
         case .phone:
-            if case .settings(let settings) = route {
-                tab = .settings
-                // The tab's root is Settings itself.
-                if settings == .root { settingsPath = [] } else if settingsPath.last != route { settingsPath.append(route) }
-                return
+            let target = Tab.landing(of: route, from: tab)
+            tab = target
+            if route.isTabRoot {
+                if !self[path: target].isEmpty { self[path: target] = [] }
+            } else if self[path: target].last != route {
+                self[path: target].append(route)
             }
-            if homePath.last != route { homePath.append(route) }
-            tab = .home
         case .pad:
             if case .thread(let ref) = route {
                 padSelection = ref
@@ -105,6 +131,13 @@ final class MobileNavigator {
         }
     }
 
+    /// Shows `route` from outside the screen on show (a notification, a window's first route):
+    /// a thread lands in Home whatever tab was chosen, rather than on top of another tab's stack.
+    func reveal(_ route: MobileRoute) {
+        if layout == .phone, Tab.owner(of: route) == nil { tab = .home }
+        open(route)
+    }
+
     /// Shows `route` modally (New thread, a host form).
     func present(_ route: MobileRoute) {
         presented = PresentedRoute(route: route)
@@ -118,7 +151,7 @@ final class MobileNavigator {
     func popToRoot() {
         switch layout {
         case .phone:
-            if tab == .home { homePath = [] } else { settingsPath = [] }
+            self[path: tab] = []
         case .pad:
             padPath = []
         }
@@ -130,8 +163,7 @@ final class MobileNavigator {
         if settingsSelection.instructionsHost == host { settingsSelection.instructionsHost = nil }
         composerPresentation.forget(host: host)
         if commitPopover?.host == host { commitPopover = nil }
-        homePath.removeAll { $0.host == host }
-        settingsPath.removeAll { $0.host == host }
+        for tab in Tab.allCases { self[path: tab].removeAll { $0.host == host } }
         padPath.removeAll { $0.host == host }
         if padSelection?.host == host {
             padSelection = nil
@@ -147,8 +179,8 @@ final class MobileNavigator {
         case .pad:
             let path = currentPhonePath
             padSelection = nil
-            if tab == .settings {
-                padPath = [.settings(.root)] + path
+            if let root = tab.padRoot {
+                padPath = [root] + path
             } else if case .thread(let ref)? = path.first {
                 padSelection = ref
                 padPath = Array(path.dropFirst())
@@ -156,14 +188,17 @@ final class MobileNavigator {
                 padPath = path
             }
         case .phone:
-            let path = padSelection.map { [MobileRoute.thread($0)] } ?? []
-            if case .settings? = padPath.last {
-                tab = .settings
-                settingsPath = path + padPath
-                if settingsPath.first == .settings(.root) { settingsPath.removeFirst() }
+            // The last screen with a tab of its own picks the tab, and the stack from it on
+            // goes there (without the tab's root, which the tab shows itself); a thread and its
+            // screens with none go to Home.
+            let stack = (padSelection.map { [MobileRoute.thread($0)] } ?? []) + padPath
+            if let start = stack.lastIndex(where: { Tab.owner(of: $0) != nil }), let owner = Tab.owner(of: stack[start]) {
+                tab = owner
+                // Home keeps what lies under its screen (a thread chosen before Needs you).
+                self[path: owner] = owner == .home ? stack : Array(stack[start...].drop(while: \.isTabRoot))
             } else {
                 tab = .home
-                homePath = path + padPath
+                homePath = stack
             }
         }
         self.layout = layout
@@ -173,6 +208,61 @@ final class MobileNavigator {
                 dismissPresented()
                 open(.search(.search(query: query)))
             }
+        }
+    }
+}
+
+extension MobileNavigator.Tab {
+    /// The tab a route belongs to on iPhone; nil for a screen that opens over whatever tab
+    /// opened it (a thread and its screens, search, design systems).
+    static func owner(of route: MobileRoute) -> Self? {
+        switch route {
+        case .settings, .home(.more): .settings
+        case .home(.automations), .automations: .automations
+        case .home(.needsYou), .home(.recents): .home
+        case .designs(.systems), .designs(.system): nil
+        case .designs, .padDesign: .designs
+        case .projects: .projects
+        case .thread, .subagents, .review, .terminal, .search, .newThread: nil
+        }
+    }
+
+    /// Where `route` opens on iPhone when `current` is the selected tab: its own tab, else the
+    /// current one. Settings keeps only its own screens and design systems (More's, now
+    /// Settings'); a thread or search opened there goes to Home.
+    static func landing(of route: MobileRoute, from current: Self) -> Self {
+        if let owner = owner(of: route) { return owner }
+        if current == .settings, !route.isDesignSystems { return .home }
+        return current
+    }
+
+    /// What iPad pushes for this tab's root when a compact window widens; nil for Home, whose
+    /// root is the overview.
+    var padRoot: MobileRoute? {
+        switch self {
+        case .home: nil
+        case .designs: .padDesign(.list)
+        case .projects: .projects(.list)
+        case .automations: .home(.automations)
+        case .settings: .settings(.root)
+        }
+    }
+}
+
+extension MobileRoute {
+    /// A screen the phone shows as a tab's root rather than pushing it: opening it selects the
+    /// tab and returns to its root.
+    var isTabRoot: Bool {
+        switch self {
+        case .settings(.root), .home(.more), .home(.automations), .designs(.list), .padDesign(.list), .projects(.list): true
+        default: false
+        }
+    }
+
+    fileprivate var isDesignSystems: Bool {
+        switch self {
+        case .designs(.systems), .designs(.system): true
+        default: false
         }
     }
 }

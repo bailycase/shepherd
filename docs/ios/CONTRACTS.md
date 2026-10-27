@@ -117,8 +117,10 @@ Screens reach each other only through `MobileNavigator` (in the environment):
   terminal route), for highlighting rows.
 - A `NavigationLink(value: MobileRoute…)` works too; every stack applies `.mobileDestinations()`.
 
-The shell: iPhone (compact width) is `PhoneShell`, a `TabView` with Home (`HomeScreen`) and
-Settings (`SettingsScreen`), each a `NavigationStack`. iPad (regular width) is `PadShell`, a
+The shell: iPhone (compact width) is `PhoneShell`, a `TabView` with Home (`HomeScreen`), Designs
+(`DesignsScreen`), Projects (`ProjectsScreen`), Automations (`AutomationsScreen`) and Settings
+(`SettingsScreen`), each a `NavigationStack`; `navigator.open` selects a route's tab
+(`MobileNavigator.Tab.landing`) before it pushes. iPad (regular width) is `PadShell`, a
 `NavigationSplitView` with `PadSidebar` beside the detail: the selected thread, or `PadOverview`
 when none is. Landscape shows both columns; in portrait the thread keeps the width and the
 sidebar slides over it, and choosing a row hides it again. With no thread chosen, the sidebar

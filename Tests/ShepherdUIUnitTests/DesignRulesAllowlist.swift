@@ -50,7 +50,6 @@ enum DesignRuleAllowlist {
         .init(.rawGlyphName, "App/iOS/Composer/ComposerControls.swift", 1, "The iOS composer draws its own Fast bolt, which SHFastBolt and SHGlyph.fastBolt exist to prevent. Move it to SHGlyph.fastBolt, with an iOS build to check it."),
         .init(.rawGlyphName, "App/iOS/Home/AutomationRow.swift", 1, bolt),
         .init(.rawGlyphName, "App/iOS/Home/HomeRows.swift", 2, bolt),
-        .init(.rawGlyphName, "App/iOS/Home/HomeScreen.swift", 1, bolt),
         .init(.rawGlyphName, "App/iOS/Home/PadSidebar.swift", 1, bolt),
         .init(.rawGlyphName, "App/iOS/Hosts/PadHostsScreen.swift", 1, bolt),
         .init(.rawGlyphName, "App/iOS/Settings/ExperimentsScreens.swift", 2, bolt),

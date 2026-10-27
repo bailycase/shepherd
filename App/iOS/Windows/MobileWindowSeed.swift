@@ -22,14 +22,44 @@ extension MobileNavigator {
         var pad: Bool
         var tab: Tab
         var homePath: [MobileRoute]
+        var designsPath: [MobileRoute] = []
+        var projectsPath: [MobileRoute] = []
+        var automationsPath: [MobileRoute] = []
         var settingsPath: [MobileRoute]
         var padSelection: AgentRef?
         var padPath: [MobileRoute]
+
+        init(pad: Bool, tab: Tab, homePath: [MobileRoute], designsPath: [MobileRoute] = [], projectsPath: [MobileRoute] = [],
+             automationsPath: [MobileRoute] = [], settingsPath: [MobileRoute], padSelection: AgentRef?, padPath: [MobileRoute]) {
+            self.pad = pad
+            self.tab = tab
+            self.homePath = homePath
+            self.designsPath = designsPath
+            self.projectsPath = projectsPath
+            self.automationsPath = automationsPath
+            self.settingsPath = settingsPath
+            self.padSelection = padSelection
+            self.padPath = padPath
+        }
+
+        /// A window saved before the phone had five tabs has no stacks for the new ones.
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            pad = try c.decode(Bool.self, forKey: .pad)
+            tab = try c.decode(Tab.self, forKey: .tab)
+            homePath = try c.decode([MobileRoute].self, forKey: .homePath)
+            designsPath = try c.decodeIfPresent([MobileRoute].self, forKey: .designsPath) ?? []
+            projectsPath = try c.decodeIfPresent([MobileRoute].self, forKey: .projectsPath) ?? []
+            automationsPath = try c.decodeIfPresent([MobileRoute].self, forKey: .automationsPath) ?? []
+            settingsPath = try c.decode([MobileRoute].self, forKey: .settingsPath)
+            padSelection = try c.decodeIfPresent(AgentRef.self, forKey: .padSelection)
+            padPath = try c.decode([MobileRoute].self, forKey: .padPath)
+        }
     }
 
     var restoration: Restoration {
-        Restoration(pad: layout == .pad, tab: tab, homePath: homePath, settingsPath: settingsPath,
-                    padSelection: padSelection, padPath: padPath)
+        Restoration(pad: layout == .pad, tab: tab, homePath: homePath, designsPath: designsPath, projectsPath: projectsPath,
+                    automationsPath: automationsPath, settingsPath: settingsPath, padSelection: padSelection, padPath: padPath)
     }
 
     /// Puts a window back where it was, leaving out the screens of hosts no longer saved. The
@@ -38,8 +68,14 @@ extension MobileNavigator {
         func known(_ route: MobileRoute) -> Bool { route.host.map(hosts.contains) ?? true }
         layout = saved.pad ? .pad : .phone
         tab = saved.tab
-        homePath = saved.homePath.filter(known)
-        settingsPath = saved.settingsPath.filter(known)
+        // A tab's root is never on its stack; a window saved with More or Automations pushed on
+        // Home comes back on Home's root.
+        func kept(_ route: MobileRoute) -> Bool { known(route) && !route.isTabRoot }
+        homePath = saved.homePath.filter(kept)
+        designsPath = saved.designsPath.filter(kept)
+        projectsPath = saved.projectsPath.filter(kept)
+        automationsPath = saved.automationsPath.filter(kept)
+        settingsPath = saved.settingsPath.filter(kept)
         padSelection = saved.padSelection.flatMap { hosts.contains($0.host) ? $0 : nil }
         padPath = saved.padPath.filter(known)
     }

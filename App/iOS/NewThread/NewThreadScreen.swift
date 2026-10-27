@@ -3,9 +3,12 @@ import ShepherdUI
 import ShepherdCore
 import ShepherdRemote
 
-/// New thread (MobileNewThread, iPadNewThread boards): the prompt, then chips for the repo,
-/// host, model and thinking, Attach, where the thread works, and Start. On iPhone the repo and
-/// host chips open Where it runs (MobileWorkspace); on iPad each chip opens its own popover.
+/// New thread (DuoClosedNewThread, iPadNewThread boards). On iPhone: Cancel, Send, the worktree
+/// switch and Attach in the toolbar (so iPhone Duo's closed display puts them in its column), the
+/// prompt down to one row of chips, the repo and "model · thinking" (and the host while there's
+/// more than one); the repo chip, and a long press on the worktree switch, open Where it runs
+/// (MobileWorkspace). On iPad: the prompt, the chips under it each with its own popover, Attach,
+/// where the thread works, and Start.
 struct NewThreadScreen: View {
     let preferredHost: UUID?
     @Environment(MobileHosts.self) private var hosts
@@ -25,8 +28,15 @@ struct NewThreadScreen: View {
         .navigationTitle("New thread")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") { navigator.dismissPresented() }
+            if navigator.layout == .phone {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button { navigator.dismissPresented() } label: { Label("Cancel", systemImage: "xmark") }
+                }
+                if let model { NewThreadPhoneToolbar(model: model) }
+            } else {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { navigator.dismissPresented() }
+                }
             }
             if navigator.layout == .pad, let model {
                 ToolbarItem(placement: .confirmationAction) {
@@ -67,17 +77,23 @@ private struct NewThreadForm: View {
                     .padding(.vertical, SH.Space.xl)
                 }
             } else {
+                // The prompt takes every point down to the chip row; a tap anywhere on it types.
                 ScrollView {
                     promptField
                         .padding(.horizontal, MobileLayout.gutter)
                         .padding(.top, SH.Space.xl)
                 }
                 .scrollDismissesKeyboard(.interactively)
+                .contentShape(Rectangle())
+                .simultaneousGesture(TapGesture().onEnded { promptFocused = true })
                 .safeAreaInset(edge: .bottom, spacing: 0) {
-                    controls
-                        .padding(.horizontal, MobileLayout.gutter)
-                        .padding(.vertical, SH.Space.l)
-                        .background(Color.sh.bgWindow)
+                    VStack(spacing: 0) {
+                        SHHairline()
+                        phoneControls
+                            .padding(.horizontal, MobileLayout.gutter)
+                            .padding(.vertical, SH.Space.l)
+                    }
+                    .background(Color.sh.bgWindow)
                 }
             }
         }
@@ -125,10 +141,52 @@ private struct NewThreadForm: View {
                     .padding(.leading, -SH.Space.l)
                 worktreeSummary
                 Spacer(minLength: SH.Space.s)
-                if !pad { startButton }
             }
             status
         }
+    }
+
+    /// The phone's one row under the prompt: images waiting to go, the chips, and what stops
+    /// Send or that it's starting.
+    private var phoneControls: some View {
+        VStack(alignment: .leading, spacing: SH.Space.l) {
+            if !model.attachments.isEmpty { NewThreadAttachmentStrip(model: model) }
+            ScrollView(.horizontal) {
+                HStack(spacing: SHSelectorChipMetrics.spacing) {
+                    chip(model.space?.name ?? "Choose repo", systemImage: "book.closed", name: "Repo", panel: .workspace, active: .workspace)
+                    // With one host there's nothing to choose (DuoClosedNewThread).
+                    if model.hostRows.count > 1 {
+                        chip(model.host?.name ?? "Choose host", systemImage: "desktopcomputer", name: "Host", panel: .workspace, active: nil)
+                    }
+                    modelAndThinkingChip
+                }
+                .buttonStyle(.shPressable(height: SHSelectorChipMetrics.height))
+                .disabled(model.starting)
+            }
+            .scrollIndicators(.hidden)
+            status
+        }
+    }
+
+    /// "gpt-6.1-sol · Medium": a menu of the thinking levels the model takes, and Choose model.
+    private var modelAndThinkingChip: some View {
+        let shortModel = NewThreadRules.shortModel(model.defaults.model)
+        let label = model.offersThinking ? "\(shortModel) · \(model.thinking.title)" : shortModel
+        return Menu {
+            Button("Choose model…", systemImage: "sparkle") { model.panel = .model }
+            if model.offersThinking {
+                Picker("Thinking", selection: Binding(get: { model.thinking }, set: { model.setThinking($0) })) {
+                    ForEach(model.thinkingLevels, id: \.self) { level in
+                        Text(level.title).tag(level)
+                    }
+                }
+                .pickerStyle(.inline)
+            }
+        } label: {
+            SHSelectorChip(label, systemImage: "sparkle", active: model.panel == .model,
+                           accessibilityName: model.offersThinking ? "Model and thinking" : "Model")
+        }
+        .menuStyle(.button)
     }
 
     private var chips: some View {
@@ -244,30 +302,6 @@ private struct NewThreadForm: View {
         }
     }
 
-    private var startButton: some View {
-        let enabled = model.blocker == nil
-        return Button { model.start() } label: {
-            ZStack {
-                Circle().fill(Color.sh.lantern)
-                if model.starting {
-                    ProgressView().progressViewStyle(SHSpinnerStyle(color: Color.sh.textOnLantern))
-                } else {
-                    Image(systemName: "arrow.up")
-                        .font(.sh(.ui, weight: .semibold))
-                        .foregroundStyle(Color.sh.textOnLantern)
-                }
-            }
-            .frame(width: MobileLayout.newThreadStartSize, height: MobileLayout.newThreadStartSize)
-        }
-        .buttonStyle(.shPressable(height: MobileLayout.newThreadStartSize))
-        // The style dims a blocked Start; while starting it stays lit with its spinner, and
-        // a second tap does nothing (`start` needs no blocker).
-        .disabled(!enabled && !model.starting)
-        .allowsHitTesting(!model.starting)
-        .accessibilityLabel(model.starting ? "Starting thread" : "Start thread")
-        .accessibilityHint(model.blocker?.message ?? "")
-    }
-
     /// What stops Start, or the host's error. Waiting on the host reads as progress.
     @ViewBuilder
     private var status: some View {
@@ -282,7 +316,7 @@ private struct NewThreadForm: View {
                     EmptyView()
                 }
             }
-        } else if let blocker = model.blocker, blocker != .starting {
+        } else if let blocker = model.blocker, blocker != .starting || !pad {
             HStack(spacing: SH.Space.s) {
                 if blocker.isPending { ProgressView().progressViewStyle(.shSpinner) }
                 Text(blocker.message)
@@ -305,3 +339,44 @@ private struct NewThreadForm: View {
     }
 }
 
+
+/// The phone's New thread toolbar after Cancel (DuoClosedNewThread): Send, prominent and lit
+/// once there's a prompt; the worktree switch, lantern while on, whose long press opens Where it
+/// runs; and Attach. Each is a symbol with a title, so iPhone Duo's closed display stacks them
+/// in its column and VoiceOver and overflow read the title.
+private struct NewThreadPhoneToolbar: ToolbarContent {
+    let model: NewThreadModel
+
+    var body: some ToolbarContent {
+        ToolbarItem(placement: .confirmationAction) {
+            Button { model.start() } label: { Label("Send", systemImage: "arrow.up") }
+                .buttonStyle(.glassProminent)
+                .tint(Color.sh.lantern)
+                .disabled(!model.canSend)
+                .accessibilityLabel(model.starting ? "Starting thread" : "Send")
+                .accessibilityHint(model.blocker?.message ?? "")
+        }
+        .visibilityPriority(.high)
+        ToolbarItemGroup(placement: .topBarTrailing) {
+            // With the keyboard up the closed Duo's column has room for Cancel and Send only, and
+            // these two go to its overflow menu, where the switch is the menu's first item.
+            Menu {
+                Toggle("New worktree", isOn: Binding(get: { model.worktreeWanted }, set: { model.setWorktree($0) }))
+                    .disabled(model.host?.supportsWorktrees != true)
+                Button("Where it runs…", systemImage: "slider.horizontal.3") {
+                    model.workspaceAnchor = .worktree
+                    model.panel = .workspace
+                }
+            } label: {
+                Label("New worktree", systemImage: SHGlyph.gitBranch.symbolName)
+            } primaryAction: {
+                model.setWorktree(!model.worktreeWanted)
+            }
+            .tint(model.usesWorktree ? Color.sh.lantern : Color.sh.textSecondary)
+            .disabled(model.starting)
+            .accessibilityValue(model.usesWorktree ? "On" : "Off")
+            .accessibilityHint(NewThreadRules.worktreeSummary(repo: model.space?.name, worktree: model.usesWorktree))
+            NewThreadAttachButton(model: model, inToolbar: true)
+        }
+    }
+}

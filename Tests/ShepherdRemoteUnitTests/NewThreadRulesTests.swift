@@ -66,6 +66,20 @@ struct NewThreadRulesTests {
         #expect(rows.map(\.selected) == [true, false, false])
     }
 
+    @Test func aNewThreadStartsInTheRepoTheHostLastWorkedIn() {
+        var host = Self.studio
+        #expect(NewThreadRules.lastUsedSpace(host) == nil, "no thread says when it last moved")
+        var older = Self.agent("older", .idle)
+        older.lastActiveAt = 1_000
+        var newer = Self.agent("newer", .done, space: Self.web)
+        newer.lastActiveAt = 2_000
+        // An automation's run lives in the hidden space, which is no repo to offer.
+        var run = Self.agent("run", .working, space: Self.hiddenSpace)
+        run.lastActiveAt = 3_000
+        host.state.agents = [older, newer, run]
+        #expect(NewThreadRules.lastUsedSpace(host) == Self.web.id)
+    }
+
     @Test func aHostOnAnOlderShepherdSaysWhatItCannotDo() {
         let rows = NewThreadRows.hosts([Self.studio, Self.build], selected: nil)
         #expect(rows[0].limitation == nil)

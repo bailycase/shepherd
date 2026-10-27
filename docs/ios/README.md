@@ -165,8 +165,9 @@ keep the version for real breaks.
   disconnects every host; the agents keep running on the Macs. When a host's connection ends is
   kept apart from its record (`shepherd.ios.hosts.lastSeen`), so a host the phone cannot reach
   says when it was last seen.
-- **iPhone:** two tabs, Home and Settings, each a navigation stack. Home merges every host:
-  Projects, Automations and More (host cards), offline hosts with Retry, Needs you (questions
+- **iPhone:** five tabs, Home, Designs, Projects, Automations and Settings (which holds More's
+  hosts, design systems and extensions), each a navigation stack. Home is the inbox and merges
+  every host: offline hosts with Retry, Needs you (questions
   and blocked threads, answered in place when short; a subagent's question is its parent's, so
   it is never here), Working, Done (with Mark all seen), Pinned, and Recents with host tags. `HomeFeed`
   derives it once per change from each host's state and, while Home is on screen, the threads'

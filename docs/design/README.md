@@ -231,9 +231,9 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 
 | Board | Files | Specified in | Status |
 | --- | --- | --- | --- |
-| DuoClosedHome | [platform-iphone-duo](platform-iphone-duo.md) | Five tabs in the side column; Home is the inbox; Search beside New thread | Not built yet |
-| DuoClosedNewThread | [platform-iphone-duo](platform-iphone-duo.md) | New thread sheet: Cancel and Send in the column; one chip row | Not built yet |
-| DuoClosedThreadMenu | [platform-iphone-duo](platform-iphone-duo.md) | A thread: the side pane's five tabs as rows in its ⋯ menu | Not built yet |
+| DuoClosedHome | [platform-iphone-duo](platform-iphone-duo.md) | Five tabs in the side column; Home is the inbox; Search beside New thread | Built |
+| DuoClosedNewThread | [platform-iphone-duo](platform-iphone-duo.md) | New thread sheet: Cancel and Send in the column; one chip row | Built (the worktree switch and Attach overflow while the keyboard is up) |
+| DuoClosedThreadMenu | [platform-iphone-duo](platform-iphone-duo.md) | A thread: the side pane's five tabs as rows in its ⋯ menu | Tab bar built; the ⋯ menu not yet |
 | DuoOpenThread | [platform-iphone-duo](platform-iphone-duo.md) | Open: sidebar beside the thread | Not built yet |
 | DuoOpenSidePane | [platform-iphone-duo](platform-iphone-duo.md) | Open: thread beside the side pane; the sidebar overlays | Not built yet |
 | DuoOpenNewThread | [platform-iphone-duo](platform-iphone-duo.md) | Open: New thread in the detail | Not built yet |
