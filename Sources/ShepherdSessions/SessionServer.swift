@@ -754,12 +754,12 @@ public final class SessionServer: @unchecked Sendable {
             }
         }
 
-        func shutdown() {
+        func shutdown(reapDeadline: DispatchTime = .now() + .seconds(2)) {
             switch self {
-            case .pty(let s): s.shutdown()
+            case .pty(let s): s.shutdown(reapDeadline: reapDeadline)
             case .rpc(let s, let thread):
                 thread.cancelPreparingPrompts()
-                s.shutdown()
+                s.shutdown(reapDeadline: reapDeadline)
             }
         }
     }
@@ -1445,8 +1445,15 @@ public final class SessionServer: @unchecked Sendable {
         currentProjectChildScope.removeAll(); projectChildAdmitted.removeAll(); projectChildClosed.removeAll(); projectChildRecentClosed.removeAll()
         projectChildDrained.removeAll(); projectChildDraining.removeAll(); projectChildStopped.removeAll(); projectChildTakenOver.removeAll()
         pendingDesignDeletions.removeAll()
+        // Every child is signalled before any is waited for, and all share one reap deadline:
+        // the quit path blocks the main thread, so it must never pay 2 s per slow child.
+        for session in sessions.values where session.isAlive {
+            session.signalProcessGroup(SIGHUP)
+            session.signalProcessGroup(SIGKILL)
+        }
+        let reapDeadline = DispatchTime.now() + .seconds(2)
         for session in sessions.values {
-            session.shutdown()
+            session.shutdown(reapDeadline: reapDeadline)
         }
         for output in outputStates.values {
             output.delivery?.cancel()
