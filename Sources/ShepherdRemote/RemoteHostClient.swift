@@ -161,12 +161,15 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
     }
 
-    /// Resolve, connect, authenticate, and fetch the host's current state.
+    /// Resolve, connect, authenticate, and fetch the host's current state. `capabilities` is
+    /// what this client tells the host it reads (`RemoteProtocol.clientCapabilities`); a client
+    /// that reads many idle threads at once adds `nativeThreadPreviewCapability`.
     public func connect(
         host: String,
         port: UInt16,
         token: String,
-        clientName: String
+        clientName: String,
+        capabilities: [String] = RemoteProtocol.clientCapabilities
     ) async throws -> ShepherdState {
         let opening = RemoteSocketOpen()
         let attempt = try queue.sync {
@@ -207,7 +210,7 @@ public final class RemoteHostClient: @unchecked Sendable {
             do {
                 let helloReply = try await request(connectionGeneration: attempt) { id in
                     .hello(id: id, token: token, clientName: clientName, protocolVersion: RemoteProtocol.version,
-                           capabilities: RemoteProtocol.clientCapabilities)
+                           capabilities: capabilities)
                 }
                 guard case .helloOk(_, _, let capabilities) = helloReply else {
                     if case .error(_, let code, let message) = helloReply {

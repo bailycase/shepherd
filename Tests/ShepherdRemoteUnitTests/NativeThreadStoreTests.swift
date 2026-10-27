@@ -484,6 +484,61 @@ struct NativeThreadStoreTests {
         #expect(!store.previewing && store.messages == [hi])
     }
 
+    /// A host serving a preview-capable client answers an idle thread's snapshot from pi's session
+    /// file without starting pi (`nativeThreadPreviewCapability`): the thread shows it as a
+    /// preview (not ready, no error, a send waits), wakes pi once with a request that is not a
+    /// snapshot, and pi's own snapshot replaces the preview in place and lets the send go.
+    @Test func aHostsPreviewSnapshotIsShownReadOnlyWakesPiOnceAndIsReplacedByPisOwn() async {
+        let fromFile = F.assistant("from the file", id: "a")
+        var preview = F.snapshot(generation: "preview", actions: [], messages: [fromFile])
+        preview.preview = true
+        let host = FakeHost(preview)
+        var woke = 0
+        let wake: (NativeThreadRequest) throws -> NativeThreadResult = { request in
+            guard case .subagentTranscript("s", NativeThreadStore.wakeRunID, nil) = request else { return .failure(code: "x", message: "unexpected") }
+            woke += 1
+            host.starting = true
+            return .failure(code: NativeThreadCode.starting, message: "The agent is starting.")
+        }
+        host.action = wake
+        let store = manualStore()
+        let task = await start(store, host)
+        defer { task.cancel() }
+        #expect(store.previewing && !store.ready && store.loadError == nil && store.awaitingPi)
+        #expect(store.messages == [fromFile] && store.rows.count == 1 && !store.supports("send"))
+        await until { store.starting }
+        #expect(woke == 1 && store.wakes == 1)
+        #expect(store.pollInterval == .milliseconds(200), "polling fast until pi serves")
+
+        store.draft = "hello"
+        let sending = Task { await store.send() }
+        await until { store.busy }
+        host.starting = false
+        await store.refresh()
+        #expect(store.previewing && store.wakes == 1 && host.actions.count == 1, "another preview wakes nothing again")
+
+        host.starting = false
+        host.snapshot = F.snapshot(messages: [fromFile])
+        host.acceptAll()
+        await store.refresh()
+        #expect(store.ready && !store.previewing && !store.starting)
+        await sending.value
+        #expect(store.supports("send"))
+        #expect(host.actions.contains { if case .send("s", "g", _, "hello", _, _, _, _, _) = $0 { true } else { false } })
+        #expect(store.draft.isEmpty)
+
+        // Shown again later, pi gone meanwhile: woken once more for that run.
+        task.cancel()
+        store.suspend()
+        host.snapshot = preview
+        host.starting = false
+        host.action = wake
+        let again = await start(store, host)
+        defer { again.cancel() }
+        await until { store.starting }
+        #expect(woke == 2 && store.wakes == 2)
+    }
+
     /// The run loop reads the preview alongside its first pull, while pi has nothing to show.
     @Test func runningAThreadLoadsItsPreviewWhilePiStarts() async {
         let host = FakeHost(F.snapshot(messages: [hi]))

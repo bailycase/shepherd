@@ -174,8 +174,12 @@ keep the version for real breaks.
   it is never here), Working, Done (with Mark all seen), Pinned, and Recents with host tags. `HomeFeed`
   derives it once per change from each host's state and, while Home is on screen, the snapshots of
   the threads that run, wait on you or have live subagents (and of any thread open on this
-  device, from its own store); an idle thread is never asked for one, since that would start its
-  pi on the host. Working and Done show their first eight rows, the rest on a screen of their own.
+  device, from its own store). An idle thread is read once per connection only from a host that
+  serves it as a preview from pi's session file (`native.preview.v1`, listed in the phone's
+  hello); on an older host that would start its pi, so there its row comes from the host's state
+  alone. Opening a thread served as a preview shows it read-only and wakes its pi once; pi's own
+  snapshot then replaces it. Working and Done show their first eight rows, the rest on a screen
+  of their own.
 - **Projects (`Projects/`):** lists the paired hosts' Projects, with conversations, questions,
   task transcripts, linked-space assignment, settings and read-only file previews. Create, rename,
   delete and send use the selected host's existing capabilities and revision checks. Drafts and

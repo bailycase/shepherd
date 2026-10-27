@@ -11,9 +11,11 @@ import ShepherdRemote
 /// Snapshots are asked for only while a Home surface is on screen (`watch()`), and only for
 /// agents that run, wait on the user, or have subagents still running (`FleetDigest.watches`;
 /// an unchanged thread costs one small answer). A thread open on this device is read from its
-/// own store (`openSnapshot`) instead. The rest are never asked: a snapshot request starts the
-/// agent's pi on the host, and a paired phone must not wake every idle agent (L23); their rows
-/// come from the host's pushed state alone (`Agent.lastActiveAt`, `waitingOn`). Hosts are swept
+/// own store (`openSnapshot`) instead. The rest are read once per connection, a few per poll,
+/// only from a host that serves them as previews from pi's session file without starting pi
+/// (`nativeThreadPreviewCapability`); on an older host a snapshot request starts the agent's pi,
+/// and a paired phone must not wake every idle agent (L23), so there their rows come from the
+/// host's pushed state alone (`Agent.lastActiveAt`, `waitingOn`). Hosts are swept
 /// concurrently and each publishes as it finishes, so a slow host delays no other.
 @MainActor
 @Observable
@@ -41,6 +43,9 @@ final class HomeFeed {
 
     /// Between polls of the threads that run or wait.
     static let interval: Duration = .seconds(3)
+    /// Threads read once per connection as previews, at most this many per poll, so a host with
+    /// many agents is read a few at a time.
+    static let quietReadsPerPoll = 6
 
     private static var feeds: [ObjectIdentifier: HomeFeed] = [:]
 
@@ -142,6 +147,8 @@ final class HomeFeed {
         guard let client = host.connectedClient, let session = host.session,
               host.supports(RemoteProtocol.nativeThreadCapability) else { return false }
         var changed = false
+        let previews = host.supports(RemoteProtocol.nativeThreadPreviewCapability)
+        var quietReads = 0
         // A design's agent has no thread row to read for (its design is the row).
         for agent in host.state.agents where !host.state.isDesignAgent(agent) {
             let ref = FleetRef(host: host.id, agent: agent.id)
@@ -156,8 +163,11 @@ final class HomeFeed {
                 readIn[ref] = session
                 continue
             }
-            guard FleetDigest.watches(status: agent.status, digest: digest) else { continue }
             let current = readIn[ref] == session
+            if !FleetDigest.watches(status: agent.status, digest: digest) {
+                guard previews, !current, quietReads < Self.quietReadsPerPoll else { continue }
+                quietReads += 1
+            }
             let request = NativeThreadRequest.snapshot(afterRevision: current ? digest?.revision : nil)
             let result: NativeThreadResult
             do {

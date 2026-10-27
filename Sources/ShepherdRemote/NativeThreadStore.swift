@@ -297,6 +297,13 @@ public final class NativeThreadStore {
     public var isLive: Bool { request != nil }
     /// When the current stretch of `native_starting` answers began.
     @ObservationIgnored private var startingSince: ContinuousClock.Instant?
+    /// The run (`epoch`) in which pi was woken for a preview snapshot: once per time on screen.
+    @ObservationIgnored private var wokenIn: UUID?
+    /// Wakes issued (tests).
+    @ObservationIgnored private(set) var wakes = 0
+    /// The run a wake names: the host starts pi for any request but a snapshot, and a transcript
+    /// of no run is the one that does nothing once pi is up.
+    public static let wakeRunID = "wake"
     /// Sends waiting for pi to start: resumed with true once the thread is ready, false when it
     /// stops or fails first. Nothing has been dispatched for them yet.
     @ObservationIgnored private var startWaiters: [CheckedContinuation<Bool, Never>] = []
@@ -1009,6 +1016,15 @@ public final class NativeThreadStore {
             switch result {
             case .snapshot(let value) where value.startProblem != nil:
                 noteStartProblem(value.startProblem!)
+            case .snapshot(let value) where value.isPreview:
+                // pi's session file, served without starting pi (`nativeThreadPreviewCapability`):
+                // read-only, shown as a preview from disk is, never ready (its generation names no
+                // session a send could use) and never an error. The thread is on screen, so pi is
+                // woken once; its own snapshot then replaces this in place.
+                preview(value)
+                if loadError != nil { loadError = nil; derive() }
+                wakePi(value, run: run)
+                caughtUp()
             case .snapshot(var value) where value.initializing == true:
                 // Startup questions are live, but this is not a replacement history page.
                 value.messages = messages
@@ -1096,6 +1112,30 @@ public final class NativeThreadStore {
             guard !Task.isCancelled, epoch == run, recentRequest == ticket else { return }
             ready = false
             setLoadError(String(describing: error))
+        }
+    }
+
+    /// Asks the host to start pi for a thread it served as a preview, once per run. The host
+    /// answers that pi is starting (the thread polls fast until pi's snapshot lands); anything
+    /// else it says is of no account.
+    private func wakePi(_ value: NativeThreadSnapshot, run: UUID) {
+        guard wokenIn != run, let request else { return }
+        wokenIn = run
+        wakes += 1
+        Task { [weak self] in
+            var starting = false
+            do {
+                if case .failure(let code, _) = try await request(.subagentTranscript(expectedSessionID: value.piSessionID, runID: Self.wakeRunID)) {
+                    starting = code == NativeThreadCode.starting
+                }
+            } catch RemoteHostClientError.rejected(let code, _) {
+                starting = code == NativeThreadCode.starting
+            } catch {
+                return
+            }
+            guard starting, let self, self.epoch == run else { return }
+            self.noteStarting()
+            self.revisionAvailable()
         }
     }
 
