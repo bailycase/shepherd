@@ -579,6 +579,11 @@ struct PaneLeafView: View, Equatable {
                     onFocusAcquired: { [vm] in vm.focusedPaneID = pane.id },
                     addToMessage: model.threadAgentID.map { agentID in { [vm] in vm.addTerminalSelection($0, to: .local(agentID)) } }
                 )
+                // A restored terminal stays dormant until its tab shows; showing it is the demand
+                // that spawns its shell (visible-first, as the iOS client asks its host).
+                .onChange(of: model.isVisible, initial: true) { _, visible in
+                    if visible { vm.sessions.activateTerminal(pane, in: tab) }
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -664,7 +669,9 @@ struct LiveTerminalPane: View {
     var body: some View {
         // A hidden restored pane mounts its surface only on first demand. Once activated,
         // it stays mounted across selection changes and connecting → live transitions.
-        if !session.isDormant {
+        if session.isDormant {
+            PanePlaceholder(text: "starting shell…")
+        } else {
             ZStack {
                 switch session.phase {
                 case .connecting, .live:
