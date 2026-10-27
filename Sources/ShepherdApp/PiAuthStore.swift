@@ -128,6 +128,30 @@ final class PiAuthStore {
         onChanged?()
     }
 
+    /// Whether each provider's stored login works: the smallest request pi can make with it, which
+    /// refreshes a stale token on the way (a refresh token that rotated in the terminal's pi comes
+    /// back `invalid_grant`). Returns the providers that failed with the provider's reason, and
+    /// marks each one expired so Sign-in says so. A bridge that can't run checks nothing.
+    func checkLogins(_ providers: [String]) async -> [String: String] {
+        guard !providers.isEmpty, await readyHome() == nil, let bridge = try? bridge() else { return [:] }
+        defer { bridge.close() }
+        for provider in providers { bridge.send(.check(id: provider, provider: provider, key: nil)) }
+        var broken: [String: String] = [:]
+        var pending = Set(providers)
+        for await reply in bridge.replies {
+            switch reply {
+            case .checked(let id, let result):
+                pending.remove(id)
+                if case .rejected(let reason) = result { broken[id] = reason }
+            case .failed: pending.removeAll()
+            default: continue
+            }
+            if pending.isEmpty { break }
+        }
+        for provider in broken.keys { expired.insert(provider) }
+        return broken
+    }
+
     private static func outcome(of bridge: PiSignInBridge, provider: String) async -> String? {
         for await reply in bridge.replies {
             switch reply {

@@ -62,7 +62,7 @@ extension ShepherdViewModel {
         let config = NewAgentConfig(
             spaceID: space.id,
             workingDirectory: identity.path,
-            model: settings.agentDefaults.model,
+            model: settings.defaultModel(piHome: server.pi.home),
             thinking: settings.agentDefaults.thinking,
             initialPrompt: nil,
             initialName: (identity.branch as NSString).lastPathComponent,

@@ -667,6 +667,10 @@ final class ShepherdViewModel {
             Task { await yourPi?.refresh() }
         }
         self.piAuth.onSignedIn = { [weak self] provider in self?.signInLanded(provider) ?? 0 }
+        // The first launch checks what came over against Shepherd's own pi: its default model and its logins.
+        self.yourPi.settingsDefaultModel = { [weak self] in self?.settings.agentDefaults.model }
+        self.yourPi.onDefaultChosen = { [weak self] model in self?.settings.defaultModel = model }
+        self.yourPi.checkLogins = { [weak piAuth = self.piAuth] providers in await piAuth?.checkLogins(providers) ?? [:] }
         // Logins re-imported from your pi: agents waiting on a sign-in try again.
         self.yourPi.onSignInsChanged = { [weak self] in _ = self?.retrySignedOutAgents(nil) }
         // Settings ▸ Instructions follows a remote client's save here, and sends a host that
@@ -885,7 +889,7 @@ final class ShepherdViewModel {
                         : GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: fetch)
                 }.value
                 completion(.success(.init(base: resolution.display, note: resolution.note, fetchFirst: fetch,
-                                          model: self.settings.agentDefaults.model ?? PiConfig.defaultModel(in: self.server.pi.home),
+                                          model: self.settings.defaultModel(piHome: self.server.pi.home),
                                           thinking: self.settings.defaultThinking, serviceTier: self.settings.defaultServiceTier)))
             }
         }
@@ -899,7 +903,7 @@ final class ShepherdViewModel {
             var config = NewAgentConfig(
                 spaceID: request.spaceID,
                 workingDirectory: request.cwd ?? space?.path ?? "~",
-                model: request.model ?? self.settings.agentDefaults.model,
+                model: request.model ?? self.settings.defaultModel(piHome: self.server.pi.home),
                 thinking: request.thinking ?? self.settings.defaultThinking,
                 initialPrompt: request.initialPrompt
             )
@@ -1050,7 +1054,7 @@ final class ShepherdViewModel {
             if sheet.stage == .newUser {
                 finishImport()
             } else {
-                Task { await yourPi.signInLanded() }
+                Task { await yourPi.signInLanded(provider) }
             }
         }
         return retrySignedOutAgents(provider)

@@ -30,6 +30,15 @@ final class YourPiModel {
     @ObservationIgnored var doneBeat: Duration = AppLayout.importDoneBeat
     /// The models restored agents and the default use, whose providers the sheet asks for.
     @ObservationIgnored private var neededModels: [String] = []
+    /// Whether each copied subscription login works, by provider: a reason for one that doesn't
+    /// (`PiAuthStore.checkLogins`). Nil skips the check (previews, tests without a bridge).
+    @ObservationIgnored var checkLogins: (@Sendable ([String]) async -> [String: String])?
+    /// Settings ▸ Agents' default model when there is one, which outranks pi's own.
+    @ObservationIgnored var settingsDefaultModel: () -> String? = { nil }
+    /// Another default model chosen on the sheet: Settings ▸ Agents takes it.
+    @ObservationIgnored var onDefaultChosen: ((String) -> Void)?
+    /// How long the first launch waits for the catalog and the login checks.
+    @ObservationIgnored var checkDeadline: Duration = AppLayout.importCatalogDeadline
 
     init(pi: PiSetup, survey: YourPiSurvey? = nil, copyDeadline: Duration = YourPiModel.copyDeadline,
          firstCopy: @escaping FirstCopy = { pi, progress in pi.copyYourPiOnce(progress: progress) }) {
@@ -161,8 +170,17 @@ final class YourPiModel {
         sheet.survey = survey
         neededModels = models()
         let needed = neededModels + [survey.shepherdDefaultModel].compactMap { $0 }
-        sheet.missing = PiImportSheetState.missing(survey: survey, models: needed)
-        let stage = PiImportSheetState.stage(report: report, survey: survey, missing: sheet.missing)
+        // A pi came over: does its default model start here, and do its logins still work? The
+        // catalog is pi's own answer (a bounded ask; none proves nothing), and each copied
+        // subscription login makes the smallest request it can.
+        if report.from != nil, report.signInsUnreadable == nil {
+            let (catalog, broken) = await checks(report: report, survey: survey)
+            sheet.catalog = catalog
+            sheet.unresolvedDefault = PiImportSheetState.unresolvedDefault(settingsDefaultModel() ?? survey.shepherdDefaultModel, catalog: catalog)
+            sheet.brokenLogins = broken
+        }
+        sheet.missing = PiImportSheetState.missing(survey: survey, models: needed, broken: sheet.brokenLogins)
+        let stage = PiImportSheetState.stage(report: report, survey: survey, missing: sheet.missing, unresolvedDefault: sheet.unresolvedDefault)
         guard let stage else {
             importSheet = nil
             return .none
@@ -175,14 +193,40 @@ final class YourPiModel {
         }
         sheet.stage = stage
         importSheet = sheet
-        return Self.hold(stage: stage, survey: survey, missing: sheet.missing)
+        return Self.hold(stage: stage, survey: survey, missing: sheet.missing, unresolvedDefault: sheet.unresolvedDefault)
     }
 
-    /// Who waits once the sheet shows `stage`.
-    static func hold(stage: PiImportSheetState.Stage, survey: YourPiSurvey, missing: [PiImportSheetState.Missing]) -> Hold {
+    /// pi's catalog and the copied subscription logins that no longer work, each within
+    /// `checkDeadline` (past it: an empty catalog, no broken logins; nothing is held on a guess).
+    private func checks(report: YourPiImportReport, survey: YourPiSurvey) async -> (catalog: [String], broken: [String: String]) {
+        let pi = pi
+        async let catalog = Self.first(within: checkDeadline) { pi.catalog.modelIDs() } ?? []
+        let subscriptions = report.logins.filter { $0.kind == .subscription }.map(\.provider)
+        var broken: [String: String] = [:]
+        if let checkLogins, !subscriptions.isEmpty {
+            broken = await Self.first(within: checkDeadline) { await checkLogins(subscriptions) } ?? [:]
+        }
+        return (await catalog, broken)
+    }
+
+    /// Who waits once the sheet shows `stage`: with an unresolved default, agents on its provider too.
+    nonisolated static func hold(stage: PiImportSheetState.Stage, survey: YourPiSurvey, missing: [PiImportSheetState.Missing],
+                                 unresolvedDefault: String? = nil) -> Hold {
         if !survey.canStartAgents || stage == .newUser || stage == .failed { return .all }
-        if stage == .missing { return .agents(using: Set(missing.map(\.id))) }
+        if stage == .missing {
+            var providers = Set(missing.map(\.id))
+            if let model = unresolvedDefault, let slash = model.firstIndex(of: "/") { providers.insert(String(model[..<slash])) }
+            return .agents(using: providers)
+        }
         return .none
+    }
+
+    /// Another default model picked on the sheet: Settings ▸ Agents takes it, and the row is settled.
+    func chooseDefault(_ model: String) {
+        guard var sheet = importSheet else { return }
+        onDefaultChosen?(model)
+        sheet.unresolvedDefault = nil
+        importSheet = sheet
     }
 
     /// One step of the first copy, as it goes: the sheet shows once it's known there's a pi to copy.
@@ -224,7 +268,7 @@ final class YourPiModel {
             sheet.steps[.logins] = .done
             sheet.steps[.apiKeys] = .done
             sheet.missing = PiImportSheetState.missing(survey: outcome.1, models: neededModels + [outcome.1.shepherdDefaultModel].compactMap { $0 })
-            sheet.stage = PiImportSheetState.stage(report: sheet.report, survey: outcome.1, missing: sheet.missing) ?? .done
+            sheet.stage = PiImportSheetState.stage(report: sheet.report, survey: outcome.1, missing: sheet.missing, unresolvedDefault: sheet.unresolvedDefault) ?? .done
             onSignInsChanged?()
         case .failure(let error):
             // Still unreadable: the reason as it is now.
@@ -234,20 +278,26 @@ final class YourPiModel {
         return Self.hold(stage: sheet.stage, survey: sheet.survey, missing: sheet.missing)
     }
 
-    /// A sign-in landed while the sheet asks for some: its row turns signed in.
-    func signInLanded() async {
+    /// A sign-in landed while the sheet asks for some: its row turns signed in (a broken login
+    /// signed in again is whole).
+    func signInLanded(_ provider: String? = nil) async {
         await refresh()
         guard var sheet = importSheet, let survey else { return }
         sheet.survey = survey
+        if let provider { sheet.brokenLogins[provider] = nil }
         importSheet = sheet
     }
 
     /// `work`'s answer, or nil when `deadline` passes first (the work carries on detached).
     nonisolated static func first<T: Sendable>(within deadline: Duration, _ work: @escaping @Sendable () -> T) async -> T? {
+        await first(within: deadline) { () async -> T in work() }
+    }
+
+    nonisolated static func first<T: Sendable>(within deadline: Duration, _ work: @escaping @Sendable () async -> T) async -> T? {
         let once = Once()
         return await withCheckedContinuation { (continuation: CheckedContinuation<T?, Never>) in
             Task.detached(priority: .userInitiated) {
-                let value = work()
+                let value = await work()
                 if once.claim() { continuation.resume(returning: value) }
             }
             Task.detached {

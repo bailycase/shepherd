@@ -136,7 +136,7 @@ extension ShepherdViewModel {
         let config = NewAgentConfig(
             spaceID: spaceID,
             workingDirectory: cwd,
-            model: settings.agentDefaults.model,
+            model: settings.defaultModel(piHome: server.pi.home),
             thinking: settings.defaultThinking,
             initialPrompt: automation.prompt,
             isAutomation: true
