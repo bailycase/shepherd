@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// One wheel observer per Changes viewport. Only horizontal gestures over split code are
+/// One wheel observer per Changes viewport. Only horizontal gestures over a file's code are
 /// consumed; vertical input remains owned by the native scroll view.
 struct SplitDiffWheelReader: NSViewRepresentable {
     let model: ReviewPaneModel
@@ -22,7 +22,7 @@ struct SplitDiffWheelReader: NSViewRepresentable {
             guard window != nil else { return }
             monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
                 guard let self, let window = self.window, event.window === window,
-                      !self.isHiddenOrHasHiddenAncestor, self.model.layout == .split,
+                      !self.isHiddenOrHasHiddenAncestor,
                       abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) else { return event }
                 let point = self.convert(event.locationInWindow, from: nil)
                 guard self.visibleRect.contains(point) else { return event }

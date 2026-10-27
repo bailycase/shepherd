@@ -570,15 +570,16 @@ private struct ReviewDiffList: View, Equatable {
         let canRevert = model.actions.revert != nil && (session.engine == nil ? !session.isPRMode : session.scope == .uncommitted)
         let canOpen = model.actions.open != nil
         let listed = Dictionary((session.list?.files ?? []).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let contentWidth = model.scrollContentWidth(textScale: ThemeStore.shared.textScale)
         ScrollViewReader { proxy in
-            ScrollView(model.layout == .split ? .vertical : [.horizontal, .vertical]) {
+            // Vertical only: each file's code scrolls sideways under its own scrollbar, so headers,
+            // gutters and comments stay in the viewport.
+            ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
                     ForEach(session.files) { file in
                         let folded = model.isFolded(file.id)
                         DiffFileSection(
                             model: model, file: file, status: listed[file.id]?.shStatus ?? file.reviewStatus,
-                            rows: folded ? [] : model.rows(for: file), layout: model.layout,
+                            rows: folded ? [] : model.rows(for: file), layout: model.layout, wraps: session.wrapLines,
                             comments: session.commentsByFile[file.id] ?? [:],
                             editingLine: model.editing?.fileID == file.id ? model.editing?.lineID : nil,
                             isFolded: folded, isViewed: session.viewed.contains(file.id),
@@ -586,9 +587,6 @@ private struct ReviewDiffList: View, Equatable {
                         )
                     }
                 }
-                // A vertical-only scroll view proposes its viewport minus any legacy scrollbar.
-                // Forcing the outer pane's width here feeds that scrollbar's width back into layout.
-                .frame(width: model.layout == .split ? nil : contentWidth, alignment: .leading)
                 // A reload of the same scope (after a Revert, a refresh) lands at once: easing the
                 // sections' offsets under pinned headers mid-scroll opens and closes blank gaps.
                 .shAnimation(.disclosure, value: model.disclosures)
@@ -651,6 +649,7 @@ private struct DiffFileSection: View, Equatable {
     let status: SHFileStatus
     let rows: [SHChangesRow]
     let layout: ChangesLayout
+    let wraps: Bool
     private var horizontalScroll: SHSplitDiffScroll { model.splitScroll(for: file.id) }
     let comments: [Int: ReviewComment]
     let editingLine: Int?
@@ -661,7 +660,7 @@ private struct DiffFileSection: View, Equatable {
     var commentFocused: FocusState<Bool>.Binding
 
     static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.model === rhs.model && lhs.file == rhs.file && lhs.status == rhs.status && lhs.rows == rhs.rows && lhs.layout == rhs.layout && lhs.comments == rhs.comments
+        lhs.model === rhs.model && lhs.file == rhs.file && lhs.status == rhs.status && lhs.rows == rhs.rows && lhs.layout == rhs.layout && lhs.wraps == rhs.wraps && lhs.comments == rhs.comments
             && lhs.editingLine == rhs.editingLine && lhs.isFolded == rhs.isFolded && lhs.isViewed == rhs.isViewed
             && lhs.canRevert == rhs.canRevert && lhs.canOpen == rhs.canOpen
     }
@@ -683,9 +682,10 @@ private struct DiffFileSection: View, Equatable {
                            onReveal: { model.reveal($0, $1, in: file.id) }) { line, note in
                     annotation(line, note)
                 }
-                .environment(\.splitDiffScroll, layout == .split ? horizontalScroll : nil)
-                if layout == .split {
-                    SHSplitDiffScrollbars(horizontalScroll)
+                .environment(\.splitDiffScroll, horizontalScroll)
+                .environment(\.diffWrapsLines, wraps)
+                if !wraps {
+                    SHSplitDiffScrollbars(horizontalScroll, unified: layout == .unified)
                 }
             }
         } header: {
@@ -713,18 +713,25 @@ private struct DiffFileSection: View, Equatable {
                 }
                 .onGeometryChange(for: CGSize.self) { $0.size } action: {
                     model.noteHeaderHeight($0.height)
-                    if layout == .split { updateHorizontalLimits($0.width) }
+                    updateHorizontalLimits($0.width)
                 }
-                .onChange(of: layout) { _, layout in if layout == .split { updateHorizontalLimits(model.width) } }
-                .onChange(of: file) { _, _ in if layout == .split { updateHorizontalLimits(model.width) } }
-                .onChange(of: ThemeStore.shared.textScale) { _, _ in if layout == .split { updateHorizontalLimits(model.width) } }
+                .onChange(of: layout) { _, _ in updateHorizontalLimits(model.width) }
+                .onChange(of: wraps) { _, _ in updateHorizontalLimits(model.width) }
+                .onChange(of: file) { _, _ in updateHorizontalLimits(model.width) }
+                .onChange(of: ThemeStore.shared.textScale) { _, _ in updateHorizontalLimits(model.width) }
         }
     }
 
+    /// Wrapped lines never scroll sideways.
     private func updateHorizontalLimits(_ width: CGFloat) {
-        let widths = model.splitLineWidths(file, textScale: ThemeStore.shared.textScale)
-        horizontalScroll.resize(oldWidth: widths.old, newWidth: widths.new,
-                                viewport: max(0, (width - 1) / 2 - SHDiffMetrics.splitCodeLeading - SHDiffMetrics.commentSlotWidth))
+        let widths = wraps ? (old: 0, new: 0) : model.splitLineWidths(file, textScale: ThemeStore.shared.textScale)
+        if layout == .split {
+            horizontalScroll.resize(oldWidth: widths.old, newWidth: widths.new,
+                                    viewport: max(0, (width - 1) / 2 - SHDiffMetrics.splitCodeLeading - SHDiffMetrics.commentSlotWidth))
+        } else {
+            horizontalScroll.resize(oldWidth: 0, newWidth: max(widths.old, widths.new),
+                                    viewport: max(0, width - SHDiffMetrics.codeLeading - SHDiffMetrics.commentSlotWidth))
+        }
     }
 
     /// What shows under each line: its comment, or the editor on the line being commented.

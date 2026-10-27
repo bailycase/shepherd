@@ -173,6 +173,7 @@ public struct SHDiffLine: View {
     let line: SHDiffLineContent
     let onComment: (() -> Void)?
     @State private var hovering = false
+    @Environment(\.diffWrapsLines) private var wraps
 
     public init(_ line: SHDiffLineContent, onComment: (() -> Void)? = nil) {
         self.line = line
@@ -191,7 +192,7 @@ public struct SHDiffLine: View {
         SHDiffLineDrawing(line: line, side: nil, reservesComment: onComment != nil)
         .overlay(alignment: .trailing) { SHDiffCommentSlot(hovering: hovering, onComment: onComment) }
         .help(line.source)
-        .frame(height: SHDiffMetrics.lineHeight)
+        .frame(minHeight: SHDiffMetrics.lineHeight, maxHeight: wraps ? nil : SHDiffMetrics.lineHeight)
         .background(SHDiffLineBackground.color(line.kind, hovering: hovering && onComment != nil))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
@@ -216,6 +217,7 @@ public struct SHSplitDiffSide: View {
     let side: Side
     let onComment: (() -> Void)?
     @State private var hovering = false
+    @Environment(\.diffWrapsLines) private var wraps
 
     public init(_ line: SHDiffLineContent?, side: Side, onComment: (() -> Void)? = nil) {
         self.line = line
@@ -228,7 +230,7 @@ public struct SHSplitDiffSide: View {
             SHDiffLineDrawing(line: line, side: side, reservesComment: onComment != nil)
             .overlay(alignment: .trailing) { SHDiffCommentSlot(hovering: hovering, onComment: onComment) }
             .help(line.source)
-            .frame(maxWidth: .infinity, minHeight: SHDiffMetrics.lineHeight, maxHeight: SHDiffMetrics.lineHeight)
+            .frame(maxWidth: .infinity, minHeight: SHDiffMetrics.lineHeight, maxHeight: wraps ? .infinity : SHDiffMetrics.lineHeight)
             .background(SHDiffLineBackground.color(line.kind, hovering: hovering && onComment != nil))
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
@@ -241,7 +243,7 @@ public struct SHSplitDiffSide: View {
             }
         } else {
             SHDiffHatch()
-                .frame(maxWidth: .infinity, minHeight: SHDiffMetrics.lineHeight, maxHeight: SHDiffMetrics.lineHeight)
+                .frame(maxWidth: .infinity, minHeight: SHDiffMetrics.lineHeight, maxHeight: wraps ? .infinity : SHDiffMetrics.lineHeight)
                 .accessibilityHidden(true)
         }
     }
@@ -252,6 +254,7 @@ public struct SHSplitDiffLine: View {
     let old: SHDiffLineContent?
     let new: SHDiffLineContent?
     let onComment: ((SHDiffLineContent) -> Void)?
+    @Environment(\.diffWrapsLines) private var wraps
 
     public init(old: SHDiffLineContent?, new: SHDiffLineContent?, onComment: ((SHDiffLineContent) -> Void)? = nil) {
         self.old = old
@@ -266,53 +269,77 @@ public struct SHSplitDiffLine: View {
             Color.sh.lineSubtle.frame(width: 1).accessibilityHidden(true)
             SHSplitDiffSide(new, side: .new, onComment: new.flatMap { line in onComment.map { comment in { comment(line) } } })
         }
-        .frame(height: SHDiffMetrics.lineHeight)
+        // Wrapped, both sides take the taller one's height.
+        .fixedSize(horizontal: false, vertical: wraps)
+        .frame(minHeight: SHDiffMetrics.lineHeight, maxHeight: wraps ? nil : SHDiffMetrics.lineHeight)
         .accessibilityElement(children: .contain)
     }
 }
 
 /// The fixed-height line is one drawing rather than several independently measured Text
-/// views. Interaction and accessibility remain on its containing row.
+/// views. Interaction and accessibility remain on its containing row. Wrapped, the code is a
+/// Text over the drawn gutter, and the row grows with it.
 private struct SHDiffLineDrawing: View {
     let line: SHDiffLineContent
     let side: SHSplitDiffSide.Side?
     let reservesComment: Bool
     @Environment(\.splitDiffScroll) private var horizontalScroll
+    @Environment(\.diffWrapsLines) private var wraps
+
+    private var numbers: [Int?] { side.map { [$0 == .old ? line.oldNumber : line.newNumber] } ?? [line.oldNumber, line.newNumber] }
+    private var signX: CGFloat { SHDiffMetrics.barWidth + SHDiffMetrics.numberWidth * CGFloat(numbers.count) }
+    private var codeX: CGFloat { signX + (side == nil ? SHDiffMetrics.signWidth : 0) }
 
     var body: some View {
-        let sh = Color.sh
-        let offset = side.map { $0 == .old ? horizontalScroll?.oldOffset ?? 0 : horizontalScroll?.newOffset ?? 0 } ?? 0
-        Canvas { context, size in
-            let bar = SHDiffMetrics.barWidth
-            let number = SHDiffMetrics.numberWidth
-            let numbers = side.map { [$0 == .old ? line.oldNumber : line.newNumber] } ?? [line.oldNumber, line.newNumber]
-            let signX = bar + number * CGFloat(numbers.count)
-            let codeX = signX + (side == nil ? SHDiffMetrics.signWidth : 0)
-            if line.kind != .context {
-                context.fill(Path(CGRect(x: 0, y: 0, width: bar, height: size.height)), with: .color(line.kind == .added ? sh.done : sh.failed))
+        if wraps {
+            let codeLine = SHTextStyle.code.size * ThemeStore.shared.textScale * SHTextStyle.code.lineHeight
+            Text(line.text)
+                .shText(.code)
+                .foregroundStyle(Color.sh.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.vertical, max(0, (SHDiffMetrics.lineHeight - codeLine) / 2))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, codeX)
+                .padding(.trailing, reservesComment ? SHDiffMetrics.commentSlotWidth : 0)
+                .background { Canvas { context, size in drawGutter(context, size) } }
+        } else {
+            let offset = side == .old ? horizontalScroll?.oldOffset ?? 0 : horizontalScroll?.newOffset ?? 0
+            Canvas { context, size in
+                drawGutter(context, size)
+                let slot = reservesComment ? SHDiffMetrics.commentSlotWidth : 0
+                context.clip(to: Path(CGRect(x: codeX, y: 0, width: max(0, size.width - codeX - slot), height: size.height)))
+                context.draw(Text(line.text).font(.sh(.code)).foregroundStyle(Color.sh.textPrimary),
+                             at: CGPoint(x: codeX - offset, y: size.height / 2), anchor: .leading)
             }
-            for (index, value) in numbers.enumerated() {
-                if let value {
-                    let text = context.resolve(Text(String(value)).font(.shMono(10.5)).foregroundStyle(sh.textTertiary))
-                    let width = text.measure(in: CGSize(width: .infinity, height: size.height)).width
-                    let scale = max(0.6, min(1, (number - SH.Space.m) / max(1, width)))
-                    var gutter = context
-                    gutter.translateBy(x: bar + number * CGFloat(index + 1) - SH.Space.m, y: size.height / 2)
-                    gutter.scaleBy(x: scale, y: scale)
-                    gutter.draw(text, at: .zero, anchor: .trailing)
-                }
-            }
-            if side == nil {
-                context.draw(Text(line.kind.sign).font(.sh(.code)).foregroundStyle(line.kind == .added ? sh.done : sh.failed),
-                             at: CGPoint(x: signX, y: size.height / 2), anchor: .leading)
-            }
-            let slot = reservesComment ? SHDiffMetrics.commentSlotWidth : 0
-            context.clip(to: Path(CGRect(x: codeX, y: 0, width: max(0, size.width - codeX - slot), height: size.height)))
-            context.draw(Text(line.text).font(.sh(.code)).foregroundStyle(sh.textPrimary),
-                         at: CGPoint(x: codeX - offset, y: size.height / 2), anchor: .leading)
+            .frame(minWidth: 0, maxWidth: .infinity)
+            .clipped()
         }
-        .frame(minWidth: 0, maxWidth: .infinity)
-        .clipped()
+    }
+
+    /// The bar down the whole row; numbers and sign centered on its first line.
+    private func drawGutter(_ context: GraphicsContext, _ size: CGSize) {
+        let sh = Color.sh
+        let bar = SHDiffMetrics.barWidth
+        let number = SHDiffMetrics.numberWidth
+        let midY = min(size.height, SHDiffMetrics.lineHeight) / 2
+        if line.kind != .context {
+            context.fill(Path(CGRect(x: 0, y: 0, width: bar, height: size.height)), with: .color(line.kind == .added ? sh.done : sh.failed))
+        }
+        for (index, value) in numbers.enumerated() {
+            if let value {
+                let text = context.resolve(Text(String(value)).font(.shMono(10.5)).foregroundStyle(sh.textTertiary))
+                let width = text.measure(in: CGSize(width: .infinity, height: size.height)).width
+                let scale = max(0.6, min(1, (number - SH.Space.m) / max(1, width)))
+                var gutter = context
+                gutter.translateBy(x: bar + number * CGFloat(index + 1) - SH.Space.m, y: midY)
+                gutter.scaleBy(x: scale, y: scale)
+                gutter.draw(text, at: .zero, anchor: .trailing)
+            }
+        }
+        if side == nil {
+            context.draw(Text(line.kind.sign).font(.sh(.code)).foregroundStyle(line.kind == .added ? sh.done : sh.failed),
+                         at: CGPoint(x: signX, y: midY), anchor: .leading)
+        }
     }
 }
 

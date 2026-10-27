@@ -89,6 +89,15 @@ struct ChangesPreviewTests {
         }
     }
 
+    /// Narrow and unified with Wrap lines on: long lines wrap under their numbers.
+    @Test func changesWrapped() async throws {
+        let session = ChangesBoard.session()
+        session.wrapLines = true
+        try await Preview.render("changes-wrapped", size: CGSize(width: AppLayout.paneDefaultWidth, height: 720)) {
+            pane(session, width: AppLayout.paneDefaultWidth, height: 720)
+        }
+    }
+
     /// Scrolled into the first file: its header stays pinned over the diff.
     @Test func changesScrolled() async throws {
         let session = ChangesBoard.session()
