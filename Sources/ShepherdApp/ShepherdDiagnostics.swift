@@ -27,17 +27,35 @@ final class ShepherdDiagnostics {
     }
 
     enum AssertionCategory: String, CaseIterable {
-        case continuationMisuse, duplicateKey, indexOutOfRange, unexpectedNil, missingEmbeddedResource, precondition
+        case continuationMisuse, duplicateKey, indexOutOfRange, unexpectedNil, missingEmbeddedResource, precondition,
+             rangeBounds, integerConversion, emptyCollection, actorIsolation, exclusivity, deallocated,
+             terminalBuffer, unreachableRequest, fatalError
+
+        /// Literal substrings of Swift runtime, dependency and Shepherd messages; first match wins.
+        /// `fatalError` is the floor: a release `fatalError`/`preconditionFailure` always says "Fatal error".
+        private static let patterns: [(String, Self)] = [
+            ("continuation misuse", .continuationMisuse),
+            ("duplicate values for key", .duplicateKey),
+            ("index out of range", .indexOutOfRange),
+            ("unexpectedly found nil while unwrapping an optional value", .unexpectedNil),
+            ("shepherd's resource bundle has no extensions/", .missingEmbeddedResource),
+            ("precondition failed", .precondition),
+            ("range requires lowerbound", .rangeBounds), ("can't form range", .rangeBounds), ("out of bounds", .rangeBounds),
+            ("not enough bits to represent", .integerConversion), ("negative value is not representable", .integerConversion),
+            ("cannot be converted to int", .integerConversion),
+            ("empty collection", .emptyCollection),
+            ("actor executor assumption", .actorIsolation), ("expected same executor", .actorIsolation),
+            ("access conflict", .exclusivity), ("simultaneous accesses", .exclusivity),
+            ("already deallocated", .deallocated),
+            ("circularlist", .terminalBuffer), ("after creating a buffer", .terminalBuffer),
+            ("handled above", .unreachableRequest), ("handled after", .unreachableRequest),
+            ("artifact request required", .unreachableRequest),
+            ("fatal error", .fatalError)
+        ]
 
         static func classify(_ reason: String) -> Self? {
             let text = String(reason.prefix(16 * 1024)).lowercased()
-            if text.contains("continuation misuse") { return .continuationMisuse }
-            if text.contains("duplicate values for key") { return .duplicateKey }
-            if text.contains("index out of range") { return .indexOutOfRange }
-            if text.contains("unexpectedly found nil while unwrapping an optional value") { return .unexpectedNil }
-            if text.contains("shepherd's resource bundle has no extensions/") { return .missingEmbeddedResource }
-            if text.contains("precondition failed") { return .precondition }
-            return nil
+            return patterns.first { text.contains($0.0) }?.1
         }
     }
 
@@ -184,7 +202,8 @@ final class ShepherdDiagnostics {
         if samples.count > 10 { samples.removeFirst(samples.count - 10) }
         let context: [String: Any] = ["samples": samples]
         SentrySDK.configureScope { $0.setContext(value: context, key: "shepherd.resources") }
-        if values["system.pressure", default: 0] > 0 { reportAnomaly(.memoryPressure) }
+        // Warning (1) is routine with agent builds running; samples keep it. Only critical (2) is an anomaly.
+        if values["system.pressure", default: 0] >= 2 { reportAnomaly(.memoryPressure) }
         if values["orphans.count", default: 0] > 0 { reportAnomaly(.orphanProcesses) }
         sampleCount += 1
         // Samples stay local each minute; export aggregates every ten samples.

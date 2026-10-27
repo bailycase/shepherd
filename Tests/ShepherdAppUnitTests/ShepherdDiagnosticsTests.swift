@@ -191,6 +191,12 @@ struct ShepherdDiagnosticsTests {
         ("Unexpectedly found nil while unwrapping an Optional value PRIVATE_SECRET", "unexpectedNil"),
         ("Shepherd's resource bundle has no Extensions/PRIVATE_SECRET", "missingEmbeddedResource"),
         ("Precondition failed: PRIVATE_SECRET", "precondition"),
+        ("Fatal error: Range requires lowerBound <= upperBound PRIVATE_SECRET", "rangeBounds"),
+        ("Fatal error: Not enough bits to represent the passed value PRIVATE_SECRET", "integerConversion"),
+        ("Fatal error: Incorrect actor executor assumption; PRIVATE_SECRET", "actorIsolation"),
+        ("Fatal error: makeEmpty closure must be configured for CircularList PRIVATE_SECRET", "terminalBuffer"),
+        ("Fatal error: Handled above PRIVATE_SECRET", "unreachableRequest"),
+        ("Fatal error: PRIVATE_SECRET", "fatalError"),
         ("PRIVATE_SECRET", "")
     ])
     func assertionEvidenceKeepsOnlyFixedCategories(reason: String, category: String) throws {
