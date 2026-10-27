@@ -16,7 +16,7 @@ extension FixtureCatalog {
                           routes: [.thread(live), .subagents(.run(live, runID: SubagentFixtures.worker))]),
             FixtureScreen(name: "duo-terminal", hosts: TerminalFixture.hosts(), routes: [.thread(review)],
                           prepare: { app in await TerminalFixture.show(review, in: app) }),
-            FixtureScreen(name: "duo-files", hosts: ReviewFixture.hosts(), routes: [.thread(review), .sidePane(.files(review))]),
+            FixtureScreen(name: "duo-files", hosts: DuoFixtures.reviewHostsWithFiles(), routes: [.thread(review), .sidePane(.files(review))]),
             // Closed on Subagents, then unfolded: the pushed screen becomes the open pane's tab beside the thread.
             FixtureScreen(name: "duo-unfold", hosts: SubagentFixtures.hosts(), routes: [.thread(live), .subagents(.list(live))],
                           prepare: { app in await DuoFixtures.unfold(app, thread: live) }),
@@ -31,6 +31,15 @@ extension FixtureCatalog {
 
 @MainActor
 enum DuoFixtures {
+    /// The review fixture's host, also answering files.v1 with the Files fixture's tree.
+    static func reviewHostsWithFiles() -> [FixtureHostData] {
+        var hosts = ReviewFixture.hosts()
+        let review = hosts[0].reply
+        let files = FilesFixture.hosts()[0].reply
+        hosts[0].reply = { request in files?(request) ?? review?(request) }
+        return hosts
+    }
+
     static let draft = "Also render the large size, and keep the Working count when nothing needs you"
 
     static func unfold(_ app: MobileApp, thread: AgentRef) async {

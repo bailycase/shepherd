@@ -507,9 +507,15 @@ struct ThreadTitle: View {
         HStack(spacing: SH.Space.m) {
             Text(name).font(.sh(.headline)).foregroundStyle(Color.sh.textPrimary).lineLimit(1)
             if let branch {
-                SHBranchChip(kind: branch.kind == .worktree ? .worktree : .checkout, branch: branch.branch,
-                             changedFiles: branch.changedFiles, host: branch.host, showsChevron: false)
-                    .layoutPriority(-1)
+                // Narrow (a half-open thread beside its pane), the host goes first, then the whole chip,
+                // rather than the branch shrinking to a letter.
+                let kind: SHBranchChip.Kind = branch.kind == .worktree ? .worktree : .checkout
+                ViewThatFits(in: .horizontal) {
+                    SHBranchChip(kind: kind, branch: branch.branch, changedFiles: branch.changedFiles, host: branch.host, showsChevron: false)
+                    SHBranchChip(kind: kind, branch: branch.branch, changedFiles: branch.changedFiles, showsChevron: false)
+                    Color.clear.frame(width: 0, height: 0)
+                }
+                .layoutPriority(-1)
             }
             SHStatusPill(status.state, label: meta.elapsed.map { "\(status.label) · \($0)" } ?? status.label)
                 .fixedSize()
