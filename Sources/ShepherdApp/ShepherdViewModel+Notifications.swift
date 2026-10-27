@@ -65,6 +65,8 @@ extension ShepherdViewModel {
             let reply = await self.snapshot(target).flatMap { AgentBanners.closingReply(in: $0.messages) }
             let current = self.state.agents.first { $0.id == agent.id } ?? agent
             let result = AgentBanners.result(reply)
+            // Settings ▸ Agents ▸ Notify when a turn finishes: the one banner that can be muted.
+            guard self.settings.notifyOnTurnFinished else { return }
             if let finished = AgentBanners.status(of: current, from: old, failure: nil, result: result, watching: false) {
                 self.notifications.post(finished)
             }

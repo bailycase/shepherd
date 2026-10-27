@@ -67,6 +67,10 @@ struct AgentSettings: View {
                     SHSegmentedPicker("When a turn ends, send the queue", selection: $settings.queueDelivery,
                                       options: [(NativeQueueMode.oneAtATime, "One per turn"), (.all, "All at once")])
                 }
+                SettingsRow(title: "Notify when a turn finishes",
+                            subtitle: "A banner for each thread you are not looking at. Questions, failures and threads waiting on you always notify.") {
+                    SettingsSwitch(label: "Notify when a turn finishes", isOn: $settings.notifyOnTurnFinished)
+                }
             }
             SettingsGroup(title: "Context") {
                 SettingsRow(title: "Compact at",
