@@ -137,7 +137,7 @@ extension ShepherdViewModel {
             return
         }
         do { try verifyCheckoutAvailable(leaf.cwd) }
-        catch { remoteActionError = String(describing: error); return }
+        catch { fail("Couldn’t open a terminal", error); return }
         let terminal = LeafPane(cwd: leaf.cwd)
         guard let layout = tab.layout.splitting(pane: anchor, axis: axis, newPane: terminal) else { NSSound.beep(); return }
         setLayout(layout, forTab: tab.id)

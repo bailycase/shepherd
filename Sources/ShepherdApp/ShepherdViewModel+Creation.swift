@@ -86,7 +86,7 @@ extension ShepherdViewModel {
     func addSpace(at url: URL, select: Bool = true) async -> SpaceID? {
         let path = url.path
         do { try verifyCheckoutAvailable(path) }
-        catch { remoteActionError = String(describing: error); return nil }
+        catch { fail("Couldn’t add the space", error); return nil }
         let reservation = UUID()
         startingCheckoutUsers[reservation] = path
         defer { startingCheckoutUsers.removeValue(forKey: reservation) }

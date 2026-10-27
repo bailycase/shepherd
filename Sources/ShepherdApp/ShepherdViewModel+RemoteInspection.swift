@@ -212,7 +212,7 @@ extension ShepherdViewModel {
                 if case .inspectorFocus(let paneID) = result, selectedRemoteAgent == target, remoteInspectingAgent == target {
                     remoteFocusedPaneID = paneID
                 }
-            } catch { remoteActionError = String(describing: error) }
+            } catch { fail("The host refused the action", error) }
         }
     }
 

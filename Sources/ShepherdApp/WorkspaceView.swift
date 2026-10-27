@@ -985,7 +985,7 @@ private struct RemotePaneLeafView: View {
                   connection.supportsTerminalStart, agent == nil, leaf.isReview != true else { return }
             // Bootstrap retains last run's sessionID. Demand must not depend on it being nil.
             do { try await vm.remoteHosts.agentAction(ref, action: .startTerminal(paneID: leaf.id)) }
-            catch { vm.remoteActionError = String(describing: error) }
+            catch { vm.fail("Couldn’t start the terminal", error) }
         }
     }
 }

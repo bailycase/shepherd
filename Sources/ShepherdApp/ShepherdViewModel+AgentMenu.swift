@@ -32,7 +32,7 @@ extension ShepherdViewModel {
                 config.piSessionID = forked
                 try await startAgent(config)
             } catch {
-                remoteActionError = "Couldn’t fork “\(source.agent.name)”: \(error)"
+                actionError = ActionError(title: "Couldn’t fork “\(source.agent.name)”", message: ActionError.describe(error))
             }
         }
     }

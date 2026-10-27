@@ -133,7 +133,7 @@ extension ShepherdViewModel {
                         _ = try await remoteHosts.agentQuery(target, query: .finishReview(paneID: session.paneID, text: text))
                     } else { try await remoteHosts.sendUserMessage(target, text: text) }
                     if remoteReviews[target] === session { sent() }
-                } catch { remoteActionError = String(describing: error) }
+                } catch { fail("Couldn’t send the review", error) }
             }
             return
         }
@@ -145,7 +145,7 @@ extension ShepherdViewModel {
             do {
                 try await sendUserMessage(text, to: agentID)
                 if reviewSessions[session.paneID] === session { sent() }
-            } catch { remoteActionError = String(describing: error) }
+            } catch { fail("Couldn’t send the review", error) }
         }
     }
 
@@ -157,7 +157,7 @@ extension ShepherdViewModel {
             do {
                 try await Task.detached { try GitDiff.revert(file, cwd: cwd) }.value
             } catch {
-                remoteActionError = "Could not revert \(file.displayPath): \(error)"
+                actionError = ActionError(title: "Couldn’t revert \(file.displayPath)", message: ActionError.describe(error))
             }
             guard reviewSessions[session.paneID] === session, session.cwd == cwd else { return }
             session.comments.removeAll { $0.fileID == file.id }
@@ -232,7 +232,7 @@ extension ShepherdViewModel {
             if session.hostReviewPane {
                 Task {
                     do { _ = try await remoteHosts.agentQuery(target, query: .finishReview(paneID: session.paneID, text: nil)) }
-                    catch { remoteActionError = String(describing: error) }
+                    catch { fail("Couldn’t cancel the review", error) }
                 }
             }
             remoteReviews.removeValue(forKey: target)
@@ -410,7 +410,7 @@ extension ShepherdViewModel {
                 var truncated = session.truncated
                 if diff.truncated { truncated.insert(fileID) } else { truncated.remove(fileID) }
                 session.adopt(files: files, truncated: truncated)
-            } catch { remoteActionError = (error as? ChangesError)?.message ?? String(describing: error) }
+            } catch { fail("Couldn’t read the changes", error) }
         }
     }
 
@@ -420,7 +420,7 @@ extension ShepherdViewModel {
             do {
                 let branches = try await engine.branches()
                 if isCurrent(session) { session.branches = branches }
-            } catch { remoteActionError = (error as? ChangesError)?.message ?? String(describing: error) }
+            } catch { fail("Couldn’t read the changes", error) }
         }
     }
 
@@ -437,7 +437,7 @@ extension ShepherdViewModel {
                 }
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(asCommand ? changesApplyCommand(patch.text) : patch.text, forType: .string)
-            } catch { remoteActionError = (error as? ChangesError)?.message ?? String(describing: error) }
+            } catch { fail("Couldn’t read the changes", error) }
         }
     }
 

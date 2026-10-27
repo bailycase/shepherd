@@ -150,7 +150,7 @@ extension ShepherdViewModel {
             }
             _ = try await server.relocateSpace(id, to: path)
         } catch {
-            remoteActionError = String(describing: error)
+            fail("Couldn’t move the space", error)
             for thread in moving {
             threadStores.store(for: thread.agent.id).restarting()
             sessions.retryStart(thread.agent.id)
