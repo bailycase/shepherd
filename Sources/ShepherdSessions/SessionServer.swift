@@ -137,6 +137,8 @@ public final class SessionServer: @unchecked Sendable {
         struct PendingReply {
             var payload: Data
             var revocation: (() -> ExtensionReply?)?
+            /// A whole-state frame: a newer one makes an unsent one worthless.
+            var state = false
         }
         var pendingReplies: [PendingReply] = []
         var pendingReplyOffset = 0
@@ -3187,7 +3189,21 @@ public final class SessionServer: @unchecked Sendable {
                 payloads[view] = .some(Self.stateChangedPayload(legacy && !state.usesOnlyLegacyThinkingLevels
                     ? state.legacyThinkingLevels() : state))
             }
-            if let data = payloads[view] ?? nil { enqueuePayload(data, to: client) }
+            if let data = payloads[view] ?? nil {
+                dropUnsentStateFrames(for: client)
+                enqueuePayload(data, to: client, state: true)
+            }
+        }
+    }
+
+    /// A burst of live changes queues one whole-state frame each; only the newest matters, so
+    /// the ones a slow client has not begun to read go.
+    private func dropUnsentStateFrames(for client: ExtensionConnection) {
+        var index = client.pendingReplyOffset == 0 ? 0 : 1
+        while index < client.pendingReplies.count {
+            guard client.pendingReplies[index].state else { index += 1; continue }
+            client.queuedReplyBytes -= client.pendingReplies[index].payload.count
+            client.pendingReplies.remove(at: index)
         }
     }
 
@@ -4593,14 +4609,14 @@ public final class SessionServer: @unchecked Sendable {
     /// by `maxQueuedReplyBytes`. Shared by extension replies and remote
     /// replies/broadcasts.
     private func enqueuePayload(_ payload: Data, to client: ExtensionConnection, limit: Int = SessionServer.maxQueuedReplyBytes,
-                                revocation: (() -> ExtensionReply?)? = nil) {
+                                revocation: (() -> ExtensionReply?)? = nil, state: Bool = false) {
         guard clients[client.fd] === client else { return }
         guard client.queuedReplyBytes + payload.count <= limit else {
             ShepherdLog.warning("reply queue overflow on fd \(client.fd)")
             disconnect(client)
             return
         }
-        client.pendingReplies.append(.init(payload: payload, revocation: revocation))
+        client.pendingReplies.append(.init(payload: payload, revocation: revocation, state: state))
         client.queuedReplyBytes += payload.count
         drainReplies(for: client)
     }
