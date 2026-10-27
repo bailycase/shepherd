@@ -104,6 +104,20 @@ struct AppDialogs: ViewModifier {
             .sheet(item: $vm.agentDeleteAgent, onDismiss: vm.runAfterDialogDismiss) { agent in
                 AgentDeleteDialog(vm: vm, agent: agent)
             }
+            .sheet(item: $vm.automationDeleteAutomation, onDismiss: vm.runAfterDialogDismiss) { automation in
+                DialogSheet(
+                    title: "Delete automation",
+                    subtitle: "Deletes “\(automation.name)” with its prompt, schedule and settings. A run in progress stops.",
+                    actions: [
+                        DialogAction("Cancel", kind: .cancel) { vm.automationDeleteTarget = nil },
+                        DialogAction("Delete", kind: .destructive) {
+                            let id = automation.id
+                            vm.afterDialogDismiss = { vm.deleteAutomation(id) }
+                            vm.automationDeleteTarget = nil
+                        },
+                    ]
+                )
+            }
             .sheet(item: $vm.spaceDeleteSpace, onDismiss: vm.runAfterDialogDismiss) { space in
                 SpaceDeleteDialog(vm: vm, space: space)
             }

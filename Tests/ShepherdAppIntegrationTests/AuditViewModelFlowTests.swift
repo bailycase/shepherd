@@ -122,6 +122,16 @@ struct AuditViewModelFlowTests {
         #expect(vm.actionError?.message.contains("rawValue") == false)
         #expect(!vm.state.agents.contains { $0.id == ghost.agent.id }, "the server's snapshot wins")
     }
+
+    /// A restored agent's remembered failure shows in its row until this run reports a status.
+    @Test func aPersistedFailureSeedsTheRowUntilALiveReport() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (state, agents) = fleet(app)
+        let vm = try await app.start(with: state)
+        #expect(vm.failedTurns.isEmpty, "nothing is remembered until the sessions side persists it")
+        #expect(!ShepherdViewModel.persistedTurnFailed(agents[0].agent))
+    }
 }
 
 private final class ChangeFlag: @unchecked Sendable {

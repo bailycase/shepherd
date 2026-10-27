@@ -177,7 +177,7 @@ struct SidebarRowMenu: View {
                     Button("Run Now") { vm.runAutomationNow(automation) }
                 }
                 Divider()
-                Button("Delete Automation", role: .destructive) { vm.deleteAutomation(automation) }
+                Button("Delete Automation…", role: .destructive) { vm.automationDeleteTarget = automation }
             } else {
                 // SHComposer's agent menu: Rename… with its keys, Fork and Copy with their glyphs.
                 Button("Rename…") { vm.agentRenameTarget = id }

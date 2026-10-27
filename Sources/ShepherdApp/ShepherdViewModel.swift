@@ -434,6 +434,9 @@ final class ShepherdViewModel {
     /// Worktree agent pending delete confirmation (alert in RootView) —
     /// deleting may also remove the checkout, so it always confirms.
     var worktreeDeleteTarget: AgentID?
+    /// Automation pending delete confirmation (sheet in RootView): its prompt, schedule and
+    /// settings go with it and nothing brings them back.
+    var automationDeleteTarget: AutomationID?
     /// Agent pending delete confirmation (sheet in RootView): deleting stops a run and drops the
     /// thread from the sidebar with nothing to bring it back, so it always confirms.
     var agentDeleteTarget: AgentID?
@@ -1220,6 +1223,11 @@ final class ShepherdViewModel {
         // Assigning `state` invalidates every view that read any part of it, so an equal snapshot
         // stops here: one `==` instead of the sidebar, workspace, menu and palette fan-out.
         guard !didAdopt || state != serverState else { return }
+        // A restored agent's last outcome, before any status report this run: the row reads
+        // failed as it did at quit, not idle.
+        for agent in serverState.agents where statusSince[agent.id] == nil && Self.persistedTurnFailed(agent) != failedTurns.contains(agent.id) {
+            if Self.persistedTurnFailed(agent) { failedTurns.insert(agent.id) } else { failedTurns.remove(agent.id) }
+        }
         let shownBefore = shownDesign?.id
         if !sidebarOpeningTurns.isEmpty {
             let removed = Set(state.agents.map(\.id)).subtracting(serverState.agents.map(\.id))
@@ -1331,6 +1339,13 @@ final class ShepherdViewModel {
             }
             notifyStatus(state.agents[index], from: old, failure: failure)
         }
+    }
+
+    /// Whether the server kept the agent's last turn as failed across a relaunch. The persisted
+    /// field is the sessions side's; until it lands, nothing is remembered. One line to wire:
+    /// return the agent's field here.
+    static func persistedTurnFailed(_ agent: Agent) -> Bool {
+        false
     }
 
     /// Runs the ChildRuns TTL/staleness sweep only while rows exist; the

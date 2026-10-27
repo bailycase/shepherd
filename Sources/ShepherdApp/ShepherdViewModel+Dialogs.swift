@@ -61,6 +61,11 @@ extension ShepherdViewModel {
         set { worktreeDeleteTarget = newValue?.id }
     }
 
+    var automationDeleteAutomation: Automation? {
+        get { automationDeleteTarget.flatMap { id in state.automations.first { $0.id == id } } }
+        set { automationDeleteTarget = newValue?.id }
+    }
+
     var agentDeleteAgent: Agent? {
         get { agent(id: agentDeleteTarget) }
         set { agentDeleteTarget = newValue?.id }
