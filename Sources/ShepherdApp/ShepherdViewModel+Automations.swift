@@ -204,7 +204,7 @@ extension ShepherdViewModel {
         }
         stopAutomation(id)
         Task { @MainActor in
-            try? await server.removeAutomation(id)
+            do { try await server.removeAutomation(id) } catch { remoteActionError = "Couldn’t delete the automation: \(error)" }
             adoptCanonical()
         }
     }
