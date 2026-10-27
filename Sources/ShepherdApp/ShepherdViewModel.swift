@@ -1158,11 +1158,25 @@ final class ShepherdViewModel {
             selectAgentDigit(digit)
             return true
         case .adjacentAgent(let delta):
+            // ⌘↑ and ⌘↓ in a draft of several lines are the text view's own: the caret goes to
+            // the document's start or end, as in every Mac text view, and the agent stays.
+            if let text = NSApp.keyWindow?.firstResponder as? NSTextView,
+               Self.draftTakesVerticalChord(KeyChord(event: event), draft: text.string) {
+                text.interpretKeyEvents([event])
+                return true
+            }
             selectAdjacentAgent(delta)
             return true
         case nil:
             return false
         }
+    }
+
+    /// Whether a plain ⌘↑ or ⌘↓ belongs to the text view under the keyboard: only when the
+    /// draft spans more than one line, so a one-line composer still switches agents.
+    static func draftTakesVerticalChord(_ chord: KeyChord?, draft: String) -> Bool {
+        guard let chord, chord == KeyChord(key: "up", command: true) || chord == KeyChord(key: "down", command: true) else { return false }
+        return draft.contains(where: \.isNewline)
     }
 
     /// Delayed reveal so ordinary chords don't flash the badges: agent rows show their ⌘1–9
