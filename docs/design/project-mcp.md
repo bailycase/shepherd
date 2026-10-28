@@ -30,15 +30,14 @@ Settings page when search is empty.
   offer the same Sign in sheet as global MCP settings, and Sign out when the host holds tokens.
   Older hosts explain that an update is required instead of offering inactive controls.
   Saved OAuth rows say "Credentials saved" and explain that tokens do not establish a thread
-  connection. Native space files show a separate approval card, with the block reason and
-  "Trust this space…" confirmation. Approval covers all Pi protected project resources, not
-  only MCP, and is saved on the selected host. The checklist and all required states are in
-  [ProjectMCPTrust](boards/ProjectMCPTrust.md). The sign-in requirement and control checklist
+  connection. Added spaces are trusted automatically on their host, including existing
+  registrations on startup. Native space files show no trust card or confirmation. Approval
+  errors remain visible inline. The sign-in requirement and control checklist
   are in [ProjectMCPSignIn](boards/ProjectMCPSignIn.md).
 - Structured edits preserve unknown JSON keys and the existing space's format. Native
   `.shepherd/mcp.json` (or `.pi/mcp.json` inventoried by an older remote host) uses `enabled`,
-  `exposure`, `timeout` and `oauth`. Both native paths keep the approval card and use the selected
-  file path in the existing trust footnote; this does not change local discovery. Shared `.mcp.json` uses
+  `exposure`, `timeout` and `oauth`. Both native paths explain automatic trust in the footnote;
+  this does not change local discovery. Shared `.mcp.json` uses
   `disabled` and its existing deferred-tool behavior. Do not silently write global-only
   `shepherd` options or Keychain references into either file. Preserve fractional timeouts and
   values above 300 seconds through unrelated edits.

@@ -14,6 +14,8 @@ public final class ProjectSettingsStore: @unchecked Sendable {
     private let queue = DispatchQueue(label: "shepherd.project-settings", qos: .userInitiated)
     private let historyURL: URL
     private let mcp: ProjectMCPService?
+    private let pi: PiSetup?
+    private var registeredDirectories: Set<String> = []
     private let home: URL
     private let sessions: URL
     private let systems: URL?
@@ -27,14 +29,44 @@ public final class ProjectSettingsStore: @unchecked Sendable {
     /// Compatibility entry point for restored hosts. Configuration is now read in place.
     public func migrateExistingProjectConfiguration(in state: ShepherdState) { remember(state) }
 
-    /// Kept for existing launch/extension callers. Neither project directory needs copying.
-    public func prepareProjectConfiguration(for cwd: String) async throws {}
+    /// Drain registration approvals before Pi loads resources. Never approve an arbitrary cwd.
+    public func prepareProjectConfiguration(for cwd: String) async throws {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.async { [self] in
+                continuation.resume(with: Result { try approveRegisteredDirectories(for: cwd) })
+            }
+        }
+    }
+
+    private func approveRegisteredDirectories(for cwd: String? = nil) throws {
+        guard let pi else { return }
+        let canonicalCwd = cwd.map(PiHome.canonical)
+        let pending = registeredDirectories.filter { path in
+            var directory: ObjCBool = false
+            return !PiHome.isInside(PiHome.canonical(pi.userHome), path)
+                && (canonicalCwd.map { PiHome.isInside($0, path) } ?? true)
+                && FileManager.default.fileExists(atPath: path, isDirectory: &directory) && directory.boolValue
+        }
+        guard !pending.isEmpty else { return }
+        if let problem = pi.prepare() { throw ProjectFileError("pi", problem.message) }
+        let notes = try PiSettingsFile(url: pi.home.appendingPathComponent("trust.json")).update { decisions in
+            for path in pending {
+                guard PiHome.canonical(path) == path else {
+                    throw ProjectFileError("trust", "A space folder changed while saving approval. Reload the space and try again.")
+                }
+                decisions[path] = true
+            }
+            return []
+        }
+        guard notes.isEmpty else { throw ProjectFileError("trust", notes.joined(separator: "\n")) }
+    }
 
     private struct Entry: Codable { var directory: String; var name: String }
 
     public init(historyURL: URL, home: URL, sessions: URL, systems: URL? = nil,
                 globalDirectories: @escaping @Sendable () -> [URL] = { [] },
                 openEditor: (@MainActor @Sendable (URL) async throws -> Void)? = nil, pi: PiSetup? = nil) {
+        self.pi = pi
         self.mcp = pi.map { ProjectMCPService(pi: $0) }
         self.openEditor = openEditor
         self.historyURL = historyURL; self.home = home; self.sessions = sessions; self.systems = systems
@@ -42,8 +74,13 @@ public final class ProjectSettingsStore: @unchecked Sendable {
     }
 
     /// Called before and after workspace mutations so deletion cannot erase a directory.
-    public func remember(_ state: ShepherdState) {
+    public func remember(_ state: ShepherdState, approve: Bool = true) {
         queue.async { [self] in
+            if approve {
+                registeredDirectories = Set(state.spaces.filter { !$0.hidden }.map { PiHome.canonical(absolute($0.path)) })
+                do { try approveRegisteredDirectories() }
+                catch { ShepherdLog.warning("Space approval could not be saved: \(error)") }
+            }
             do { try load(); try rememberEntries(Self.directories(in: state)) }
             catch { ShepherdLog.warning("Project history could not be saved: \(error)") }
         }
@@ -63,6 +100,7 @@ public final class ProjectSettingsStore: @unchecked Sendable {
                 return .mcp(try await mcp.request(directory: directory, file: file, text: "", action: action, owner: owner))
             default: break
             }
+            try await prepareProjectConfiguration(for: directory)
             let canonicalDirectory = PiHome.canonical(directory)
             let value = try await self.request(.read(directory: directory, file: file), state: state)
             guard case .text(let text) = value else { throw ProjectFileError("protocol", "Unexpected project file reply.") }

@@ -60,13 +60,12 @@ Open in editor remains available for repair and unsupported advanced fields. Pro
 skill, extension or MCP server, change project trust, or restart an agent. Running agents must
 restart before they use the changes.
 
-The native MCP page separately shows whether Pi approves project resources. "Trust this
-space…" requires confirmation covering settings, executable extensions, MCP commands and
-package installation. The selected host saves its own Pi decision for that canonical folder;
-it never approves a parent or the home folder. New threads use it without a global trust
-override. "Credentials saved" means OAuth tokens exist on that host, not that a thread has
-loaded or connected the server. The approval card also distinguishes checking, unavailable
-hosts, old hosts and errors. See [MCP approval](mcp.md#space-approval-and-thread-loading).
+Adding a space automatically trusts its configuration on its host, including executable
+extensions, MCP commands and configured packages. Existing registered spaces are approved
+on startup. Shepherd saves canonical folder decisions in Pi's locked trust store, never a global
+trust override. Home, its ancestors, reserved spaces and history-only folders are excluded.
+There is no separate trust confirmation. "Credentials saved" means OAuth tokens exist on that
+host, not that a thread has connected. See [MCP approval](mcp.md#space-approval-and-thread-loading).
 
 ## Project configuration directories
 

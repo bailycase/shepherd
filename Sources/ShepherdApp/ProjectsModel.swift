@@ -76,8 +76,6 @@ final class ProjectsModel {
     var mcpSignedIn: Set<String> = []
     var mcpProjectTrusted: Bool?
     var mcpTrustError: String?
-    var mcpTrustChecking = false
-    var mcpTrustSaving = false
     @ObservationIgnored var mcpTrustRequestID = UUID()
     private(set) var hosts: [ProjectsHost] = []
     private(set) var rows: [ProjectsRow] = []
@@ -271,7 +269,7 @@ final class ProjectsModel {
         closeMCPSignIn()
         mcpSignedIn = []
         mcpProjectTrusted = nil; mcpTrustError = nil
-        mcpTrustRequestID = UUID(); mcpTrustChecking = false
+        mcpTrustRequestID = UUID()
         guard row.unavailable == nil else { error = row.unavailable; return }
         generation += 1
         let token = generation
@@ -319,7 +317,7 @@ final class ProjectsModel {
         closeMCPSignIn()
         mcpSignedIn = []
         mcpProjectTrusted = nil; mcpTrustError = nil
-        mcpTrustRequestID = UUID(); mcpTrustChecking = false
+        mcpTrustRequestID = UUID()
         guard let selected, selected.unavailable == nil else { return }
         generation += 1
         let token = generation

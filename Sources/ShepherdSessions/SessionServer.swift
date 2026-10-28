@@ -5030,8 +5030,8 @@ public final class SessionServer: @unchecked Sendable {
         }
         let oldProjects = ProjectSettingsStore.directories(in: before)
         let newProjects = ProjectSettingsStore.directories(in: state)
-        if !oldProjects.elementsEqual(newProjects, by: { $0.0 == $1.0 && $0.1 == $1.1 }) {
-            projects.remember(before)
+        if before.spaces != state.spaces || !oldProjects.elementsEqual(newProjects, by: { $0.0 == $1.0 && $0.1 == $1.1 }) {
+            projects.remember(before, approve: false)
             projects.remember(state)
         }
         runLog.record(from: before, to: state)
@@ -6803,7 +6803,12 @@ public final class SessionServer: @unchecked Sendable {
     /// warning that it found no such session, and will start a new one under its id, then stops it
     /// before it writes anything, and its agent waits (`NativeStartProblem.Kind.resumedAsNew`).
     public func createSession(params: CreateSessionParams, resuming: String? = nil) async throws -> SessionInfo {
-        if params.runtime == .rpc { try await projects.prepareProjectConfiguration(for: params.cwd) }
+        if params.runtime == .rpc {
+            try await projects.prepareProjectConfiguration(for: params.cwd)
+            if let owner = params.env?["SHEPHERD_RESOURCE_OWNING_SPACE"] {
+                try await projects.prepareProjectConfiguration(for: owner)
+            }
+        }
         return try await enqueue {
             try self.makeSessionOnQueue(params: params, resuming: resuming)
         }
