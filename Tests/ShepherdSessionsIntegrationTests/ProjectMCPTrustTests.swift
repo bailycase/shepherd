@@ -30,7 +30,7 @@ struct ProjectMCPTrustTests {
         #expect(!files.fileExists(atPath: setup.home.appendingPathComponent("trust.json").path))
     }
 
-    @Test func approvalUnblocksNewThreadsWithoutApprovingHomeOrSiblingProjects() async throws {
+    @Test func registeredSpacesLoadResourcesWithoutSeparateApprovalButHomeAndSiblingsStayBlocked() async throws {
         let engine = try #require(EngineSmoke.engine)
         let fixture = try await RealPi.launch(engine: engine)
         defer { fixture.stop() }
@@ -98,31 +98,12 @@ struct ProjectMCPTrustTests {
             snapshot.messages.filter { $0.toolName == tool }.flatMap(\.blocks).map(\.text).joined()
         }
 
-        #expect(try await approval(.credentials).projectTrusted == false, "A missing native MCP file still reports approval")
+        #expect(try await approval(.credentials).projectTrusted == true, "Registration approves even a missing native MCP file")
         try "{}".write(to: config.appendingPathComponent("mcp.json"), atomically: true, encoding: .utf8)
-        #expect(try await approval(.credentials).projectTrusted == false, "An empty object is valid for approval checks")
+        #expect(try await approval(.credentials).projectTrusted == true)
         try JSONSerialization.data(withJSONObject: mcp).write(to: config.appendingPathComponent("mcp.json"))
-        #expect(try await approval(.credentials).projectTrusted == false)
-        #expect(!files.fileExists(atPath: marker.path), "Checking approval executes no project resource")
-        let blocked = try await probeTools(thread())
-        #expect(output(blocked, tool: "tool_search").contains("mcp__probe__echo") == false)
-        #expect(output(blocked, tool: "codemode").contains("\"mcpNames\":[]"))
-        #expect(!files.fileExists(atPath: marker.path) && !files.fileExists(atPath: log.path))
-
-        try JSONEncoder().encode([PiHome.canonical(project.path): false]).write(to: home.directory.appendingPathComponent("trust.json"))
-        #expect(try await approval(.credentials).projectTrusted == false, "Pi's saved denial remains blocked until explicit approval")
-        let tokenURL = root.appendingPathComponent("remote-token")
-        let port = try fixture.host.server.startRemoteListener(port: 0, tokenURL: tokenURL)
-        let client = RemoteHostClient()
-        defer { client.disconnect() }
-        _ = try await client.connect(host: "127.0.0.1", port: port,
-            token: String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines), clientName: "mcp-approval-test")
-        #expect(client.capabilities.contains(RemoteProtocol.projectTrustCapability))
-        guard case .mcp(let approvalResult) = try await client.projects(.mcp(directory: project.path, file: ".shepherd/mcp.json", action: .approveProject)) else {
-            Issue.record("Expected project approval reply"); return
-        }
-        #expect(approvalResult.projectTrusted == true)
-        #expect(!files.fileExists(atPath: marker.path), "Saving approval loads no project extensions")
+        #expect(try await approval(.credentials).projectTrusted == true)
+        #expect(!files.fileExists(atPath: marker.path), "Automatic approval loads no project extensions")
         let trustData = try Data(contentsOf: home.directory.appendingPathComponent("trust.json"))
         let trust = try #require(try JSONSerialization.jsonObject(with: trustData) as? [String: Bool])
         #expect(trust == [PiHome.canonical(project.path): true], "No parent, sibling or global approval")

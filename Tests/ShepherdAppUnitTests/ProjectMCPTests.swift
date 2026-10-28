@@ -45,7 +45,7 @@ struct ProjectMCPTests {
         #expect(model.mcp.document.root["servers"]?["other"] != nil)
     }
 
-    @Test func legacyRemoteInventoryKeepsNativeDisabledStateToggleAndApproval() async throws {
+    @Test func legacyRemoteInventoryKeepsNativeDisabledStateAndToggle() async throws {
         let file = File(path: ".pi/mcp.json", text: #"{"owner":"keep","mcpServers":{"issues":{"command":"tools","enabled":false,"future":"keep"}}}"#)
         let model = await file.open()
         #expect(model.selectedFile?.path == ".pi/mcp.json")
@@ -59,10 +59,7 @@ struct ProjectMCPTests {
         #expect(servers["issues"]?["disabled"] == nil)
         #expect(servers["issues"]?["future"] as? String == "keep")
         #expect(document["owner"] as? String == "keep")
-        let selected = try #require(model.selected)
-        #expect(await model.approveMCPProject(selected))
-        #expect(file.approvals == [".pi/mcp.json"])
-        #expect(model.mcpProjectTrusted == true)
+        #expect(file.approvals.isEmpty)
     }
 
     @Test(arguments: [nil, "", "{}"] as [String?])

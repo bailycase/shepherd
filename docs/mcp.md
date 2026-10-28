@@ -133,28 +133,26 @@ Saving configuration or signing in does not approve a space. The OAuth bridge ex
 loads one selected entry, so it can save credentials even while Pi blocks `.shepherd/mcp.json` in
 RPC threads. The space page labels that state "Credentials saved", not a live connection.
 
-For `.shepherd/mcp.json`, the page checks the selected host's Pi trust decision separately. An
-undecided or denied folder shows "Space configuration blocked" and "Trust this space…".
-The confirmation explains that trust also allows executable extensions, settings, skills, MCP
-commands and configured package installation. It approves only the selected canonical folder
-through Pi's `ProjectTrustStore` in `<support>/pi/trust.json`, with Pi's interprocess locking.
-No parent-folder approval, global "always" setting or blanket `--approve` launch flag is added.
-Pi inherits this decision in descendant folders, which the confirmation also explains.
-Inherited saved decisions and Pi's global default are read using Pi's own implementation.
-The home folder remains excluded and its threads retain `--no-approve`, even if Pi has a saved
-approval or an "always" default.
+Adding a space approves its canonical folder automatically, including executable extensions,
+settings, skills, MCP commands and configured packages. Existing registered spaces are approved
+on startup. `ProjectSettingsStore` saves decisions in `<support>/pi/trust.json` using
+`PiSettingsFile` and Pi's interprocess lock. RPC startup waits for pending approvals.
+The Spaces page has no separate trust card or confirmation.
 
-The check and save use the bundled SDK without creating a Pi session, loading project
-resources, connecting MCP servers or calling a provider. They have a ten-second deadline.
+Only current, non-reserved registrations grant approval, not history or arbitrary thread working
+directories. Home and its ancestors are excluded. Home threads retain `--no-approve`, even
+with a saved approval or an "always" default. No global "always" setting or blanket `--approve`
+launch flag is added. Pi still inherits approvals in descendant folders.
+Saving approval starts no Pi session, project resource, MCP connection or provider call.
+The SDK trust-status check retains its ten-second deadline.
 Normal new-thread startup then resolves the saved decision, loads `.shepherd/mcp.json` through
 `builtin:mcp`, and registers tools after connection. Deferred tools are available through
 `builtin:tool-search` and codemode's `ALL_TOOLS`. Running threads pick the edit up ([In a session](#what-pis-mcp-does)). MCP must
 also be enabled under Settings > Pi > Bundled extensions. Approval permits loading, but does
 not establish a connection or tool catalog; those belong to each thread.
 
-Remote hosts advertise `projects.trust.v1`. Approval goes to that host over the existing
-authenticated connection; older hosts show an update-required reason. Failure never turns
-into approval, and a confirmation for another host or folder cannot apply to a new selection.
+Each host approves its own registered spaces. Older remote hosts need an update for automatic
+approval. The `projects.trust.v1` requests remain available for wire compatibility.
 The shared `.mcp.json` file keeps its separate "Also use a repo's .mcp.json" opt-in.
 
 Owned worktree threads also inherit the registered owning space's `.shepherd/mcp.json`,
@@ -187,8 +185,8 @@ and blocked executable checkout resources. `AgentCreationTests` covers ownership
 launch construction without adding project approval.
 
 `ProjectMCPTrustTests` uses the bundled Pi RPC startup and a local scripted provider and MCP
-server. It verifies that undecided resources stay blocked, approval registers a deferred tool
-that search discovers and codemode calls, siblings stay blocked, and home protection wins
+server. It verifies that registration loads resources without a separate approval, search discovers
+a deferred tool and codemode calls it, siblings stay blocked, and home protection wins
 over saved approval and the global default. All homes, credentials and space data are scratch.
 `ProjectMCPTrustPreviewTests` renders only when `SHEPHERD_PREVIEW_DIR` is set, like the other
 preview suites. Normal CI runs the protocol capability checks without rendering screenshots.

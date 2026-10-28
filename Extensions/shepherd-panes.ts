@@ -426,7 +426,7 @@ export default function shepherdPanes(pi: ExtensionAPI) {
   if (!isAutomationAgent) pi.registerTool({
     name: "project_register",
     label: "Register Space",
-    description: "Register an existing local directory in Shepherd's live sidebar with a display name, when requested by the user. Does not create files, start threads, select a space, or grant space trust. Absolute paths and ~/ paths are accepted. Duplicate canonical paths return the existing registration unchanged. Returns JSON {space, created}; space contains the canonical id, name and path. Preserve folder-name spelling for name unless the user explicitly requests a different display name. A successful reply follows live UI adoption. Requires a Shepherd build with space tools.",
+    description: "Register an existing local directory in Shepherd's live sidebar with a display name, when requested by the user. Adding a space trusts its configuration, including executable extensions, MCP commands and configured packages. Does not create project files, start threads, or select a space. Absolute paths and ~/ paths are accepted. Duplicate canonical paths return the existing registration unchanged. Returns JSON {space, created}; space contains the canonical id, name and path. Preserve folder-name spelling for name unless the user explicitly requests a different display name. A successful reply follows live UI adoption. Requires a Shepherd build with space tools.",
     ...later(DEFER, PROJECTS),
     promptSnippet: line(DEFER, "Register an existing space directory in Shepherd's live sidebar"),
     parameters: Type.Object({

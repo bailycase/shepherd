@@ -36,8 +36,9 @@ existing space with `created: false`, preserving its name, position, ID, and hid
 Settings' Add Space uses the same validated registration path.
 
 `project_refresh` adopts the live server state into the sidebar and forces the existing
-Spaces settings list to reload. Neither tool selects a space, starts a thread, creates
-folders, grants project trust, or replaces an unsaved editor draft. A successful reply follows
+Spaces settings list to reload. Registration automatically trusts the space's configuration
+on its host. Refresh grants no trust. Neither tool selects a space, starts a thread, creates
+folders, or replaces an unsaved editor draft. A successful reply follows
 live UI adoption and list reload. `projects.json` is cached directory history, not sidebar
 registration. Refresh neither imports it into spaces nor rereads `state.json` over live state.
 
