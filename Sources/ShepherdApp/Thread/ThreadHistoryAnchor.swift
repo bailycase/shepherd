@@ -9,7 +9,9 @@ final class ThreadHistoryAnchor {
     @ObservationIgnored var animating = false
     // Keep the target through lazy row replacement; a one-shot proxy request can be dropped.
     var position = ScrollPosition(idType: String.self)
-    @ObservationIgnored private weak var marker: Marker?
+    // Old probes can update after the new boundary attaches. Resolve by row, not update order.
+    @ObservationIgnored private let markers = NSMapTable<NSString, Marker>(keyOptions: .strongMemory, valueOptions: .weakMemory)
+    private var marker: Marker? { rowID.flatMap { markers.object(forKey: $0 as NSString) } }
     @ObservationIgnored private weak var scroll: NSScrollView?
     @ObservationIgnored private var savedTop: CGFloat?
     @ObservationIgnored private var restoring = false
@@ -22,9 +24,9 @@ final class ThreadHistoryAnchor {
         cancel()
         guard let id else { return generation }
         self.session = session
-        scroll = marker?.enclosingScrollView
         waiting = true
         rowID = id
+        scroll = marker?.enclosingScrollView
         if marker?.rowID == id { savedTop = marker?.viewportTop }
         return generation
     }
@@ -128,7 +130,7 @@ final class ThreadHistoryAnchor {
         func attach(to anchor: ThreadHistoryAnchor, rowID: String) {
             self.anchor = anchor
             self.rowID = rowID
-            anchor.marker = self
+            anchor.markers.setObject(self, forKey: rowID as NSString)
             anchor.moved()
         }
 

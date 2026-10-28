@@ -848,6 +848,12 @@ struct ThreadScrollingTests {
         document.addSubview(marker)
         let anchor = ThreadHistoryAnchor()
         marker.attach(to: anchor, rowID: "boundary")
+        // SwiftUI can update the previous boundary's probe after this one, then remove it.
+        // That stale update must not replace the marker used to restore the current boundary.
+        let previous = ThreadHistoryAnchor.Marker()
+        document.addSubview(previous)
+        previous.attach(to: anchor, rowID: "previous-boundary")
+        previous.removeFromSuperview()
         window.layout()
         let clip = scroll.contentView
         func move(to y: CGFloat) {
