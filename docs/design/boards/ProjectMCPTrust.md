@@ -1,5 +1,9 @@
 # Space MCP approval
 
+Superseded by the user's automatic-trust requirement: adding a space approves it on its host,
+and existing registrations are approved on startup. The separate card and confirmation below
+are no longer shown. See [Space MCP](../project-mcp.md) for the current behavior.
+
 The user requested approval in Shepherd's Spaces page, reusing Pi's existing folder trust
 rather than a separate Shepherd permission system. Saved OAuth credentials must not imply
 that a new thread can load the server. Approval covers executable extensions, settings and

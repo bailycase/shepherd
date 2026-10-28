@@ -12,7 +12,6 @@ struct ProjectMCPSettings: View {
     @State private var sheet: MCPSheet?
     @State private var removing: String?
     @State private var removeError: String?
-    @State private var trustProject: ProjectsRow?
 
     init(model: ProjectsModel, initiallyExpanded: String? = nil, initialQuery: String = "", copyJSON: @escaping (String) -> Void = {
         NSPasteboard.general.clearContents()
@@ -40,20 +39,8 @@ struct ProjectMCPSettings: View {
                     Task { await model.navigate(.file(file)) }
                 }.buttonStyle(.sh(.secondary)).disabled(model.fileLoading || model.saving)
             }
-            if model.mcp.native {
-                VStack(alignment: .leading, spacing: SH.Space.m) {
-                    Text(model.mcpTrustTitle).font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.textPrimary)
-                    Text(model.mcpTrustExplanation).font(.sh(.caption)).foregroundStyle(Color.sh.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if model.mcpProjectTrusted == false, model.selected?.host.supportsProjectTrust == true {
-                        Button("Trust this space…") { model.mcpTrustError = nil; trustProject = model.selected }
-                            .buttonStyle(.sh(.secondary)).disabled(!model.mcpEditable || model.dirty || model.mcpTrustChecking)
-                    } else if model.mcpTrustError != nil {
-                        Button("Check again") { Task { await model.refreshMCPCredentials() } }
-                            .buttonStyle(.sh(.secondary)).disabled(!model.mcpEditable || model.mcpTrustChecking)
-                    }
-                }
-                .padding(SH.Space.l).frame(maxWidth: .infinity, alignment: .leading).shCard()
+            if let problem = model.mcpTrustError {
+                SHInlineProblem(problem).accessibilityLabel(problem)
             }
             if let problem = model.mcp.problem {
                 SHInlineProblem(problem)
@@ -66,7 +53,7 @@ struct ProjectMCPSettings: View {
                 .scrollIndicators(.hidden)
             }
             Text(model.mcp.native
-                 ? "Only trusted spaces load \(model.selectedFile?.path ?? ".shepherd/mcp.json"). Sign-in credentials stay on the space's host; live status belongs to its threads."
+                 ? "Added spaces are trusted automatically. Sign-in credentials stay on the space's host; live status belongs to its threads."
                  : "This file is used when Also use a repo’s .mcp.json is on in MCP settings. Its tools use Search. Sign-in credentials stay on the space's host.")
                 .font(.shSans(AppLayout.mcpNoteSize)).foregroundStyle(Color.sh.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -78,9 +65,6 @@ struct ProjectMCPSettings: View {
         .onDisappear { model.closeMCPSignIn() }
         .sheet(item: Binding(get: { model.mcpSignIn }, set: { if $0 == nil { model.closeMCPSignIn() } })) { flow in
             MCPSignInSheetHost(flow: flow) { model.closeMCPSignIn() }
-        }
-        .sheet(item: $trustProject) { project in
-            ProjectMCPTrustConfirmation(model: model, project: project) { trustProject = nil }
         }
         .sheet(item: $sheet) { selection in
             switch selection {

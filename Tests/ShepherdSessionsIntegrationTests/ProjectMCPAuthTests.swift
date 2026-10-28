@@ -115,7 +115,7 @@ struct ProjectMCPAuthTests {
             return value
         }
         if file != ".mcp.json" {
-            #expect(try await action(.credentials).projectTrusted == false)
+            #expect(try await action(.credentials).projectTrusted == true)
             #expect(try await action(.approveProject).projectTrusted == true)
             #expect(try await action(.credentials).projectTrusted == true)
             await #expect(throws: RemoteHostClientError.self) {

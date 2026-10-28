@@ -80,28 +80,6 @@ struct ProjectMCPTrustPreviewTests {
         model.draft += " "
         try await render("unsaved")
         await model.navigate(.file(try #require(model.selectedFile))); await model.discard()
-        let project = try #require(model.selected)
-        try await Preview.renderMatrix("project-mcp-trust-confirmation", size: CGSize(width: 600, height: 500)) {
-            ProjectMCPTrustConfirmation(model: model, project: project) {}
-        }
-        let displayPath = model.selected?.project.displayPath, hostName = model.selected?.host.name
-        model.selected?.project.displayPath = "~/code/" + String(repeating: "long-project-folder/", count: 8)
-        model.selected?.host.name = "Remote development host with a long display name"
-        let longProject = try #require(model.selected)
-        try await Preview.renderMatrix("project-mcp-trust-confirmation-long", size: CGSize(width: 600, height: 800)) {
-            ProjectMCPTrustConfirmation(model: model, project: longProject) {}
-        }
-        model.selected?.project.displayPath = displayPath ?? ""; model.selected?.host.name = hostName ?? ""
-        model.mcpTrustSaving = true
-        try await Preview.renderMatrix("project-mcp-trust-saving", size: CGSize(width: 600, height: 500)) {
-            ProjectMCPTrustConfirmation(model: model, project: project) {}
-        }
-        model.mcpTrustSaving = false
-        model.mcpTrustError = "Project approval couldn't be saved. Try again."
-        try await Preview.renderMatrix("project-mcp-trust-save-failure", size: CGSize(width: 600, height: 550)) {
-            ProjectMCPTrustConfirmation(model: model, project: project) {}
-        }
-        model.mcpTrustError = nil
         trusted = true; await model.refreshMCPCredentials()
         try await render("approved-credentials-saved")
         signed = []; await model.refreshMCPCredentials()
@@ -109,9 +87,6 @@ struct ProjectMCPTrustPreviewTests {
         await model.setMCPEnabled("issues", false)
         try await render("approved-server-disabled")
         await model.setMCPEnabled("issues", true)
-        model.mcpTrustChecking = true
-        try await render("checking")
-        model.mcpTrustChecking = false
         trusted = nil; failure = "Couldn't check project approval. Check again before starting a new thread."
         await model.refreshMCPCredentials()
         try await render("check-failure")
