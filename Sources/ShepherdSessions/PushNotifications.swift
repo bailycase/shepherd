@@ -26,6 +26,8 @@ final class PushNotifications: @unchecked Sendable {
     private var window = Date.distantPast
     private var eventCount = 0
     var transport: Transport
+    /// The thread you are watching on this Mac (`SessionServer.setFocusedThread`); it sends no pushes.
+    var focused: AgentID?
     var now: () -> Date = Date.init
 
     init(file: URL, queue: DispatchQueue) {
@@ -115,7 +117,7 @@ final class PushNotifications: @unchecked Sendable {
     ].map { try! NSRegularExpression(pattern: $0) }
 
     func send(agentID: AgentID, kind: Kind, title: String? = nil, preview: String? = nil) {
-        guard !registrations.isEmpty else { return }
+        guard !registrations.isEmpty, agentID != focused else { return }
         let now = now()
         if now.timeIntervalSince(window) >= 60 { window = now; eventCount = 0 }
         guard eventCount < 30 else { return }

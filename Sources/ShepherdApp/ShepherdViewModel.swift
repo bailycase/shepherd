@@ -1009,10 +1009,14 @@ final class ShepherdViewModel {
             }
             return handled ? nil : event
         }
+        trackFocusedThread()
         resignActiveObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didResignActiveNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.modifierFlagsChanged([]) }
+            MainActor.assumeIsolated {
+                self?.modifierFlagsChanged([])
+                self?.syncFocusedThread()
+            }
         }
         // Back from another app (a commit in a terminal, an editor's save): read the checkout on
         // screen again.
@@ -1022,6 +1026,7 @@ final class ShepherdViewModel {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.checkMissingSpaces()
+                self.syncFocusedThread()
                 guard self.selectedRemoteAgent == nil, let id = self.selectedAgentID else { return }
                 self.checkouts?.refresh(id)
             }
