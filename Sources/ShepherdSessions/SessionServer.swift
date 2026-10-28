@@ -7840,6 +7840,11 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// The local thread on screen with Shepherd in front: its pushes are skipped, as its banners are.
+    public func setFocusedThread(_ agentID: AgentID?) {
+        queue.async { [weak self] in self?.pushNotifications.focused = agentID }
+    }
+
     /// The agents whose revisions `onThreadRevision` reports: the app's threads on screen (their
     /// stores' poll loops run). Replaces the last set; none are watched until the app says.
     public func watchThreadRevisions(of agentIDs: Set<AgentID>) {

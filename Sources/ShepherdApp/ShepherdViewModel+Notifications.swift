@@ -24,6 +24,19 @@ extension ShepherdViewModel {
         destination == nil && !showSettings && !showComponentGallery
     }
 
+    /// Tells the server which local thread you are watching, so its phone pushes stay quiet too.
+    func syncFocusedThread() {
+        server.setFocusedThread(selectedAgentID.flatMap { isWatching(.agent($0)) ? $0 : nil })
+    }
+
+    /// Calls `syncFocusedThread` now and whenever the selection or what covers it changes.
+    /// `NSApp.isActive` is not observable: the activation observers call it themselves.
+    func trackFocusedThread() {
+        withObservationTracking { syncFocusedThread() } onChange: {
+            Task { @MainActor [weak self] in self?.trackFocusedThread() }
+        }
+    }
+
     // MARK: Posting
 
     /// Whether an agent's turns and questions post as a thread's. A design's agent never does:

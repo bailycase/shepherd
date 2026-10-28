@@ -179,6 +179,33 @@ struct PushNotificationsTests {
         #expect(requests.current == 31)
     }
 
+    @Test func theThreadWatchedOnThisMacSendsNoPush() throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let queue = DispatchQueue(label: "push.focused")
+        let pushes = PushNotifications(file: dir.appendingPathComponent("push.json"), queue: queue)
+        let requests = Locked(0)
+        let watched = AgentID()
+        try queue.sync {
+            try pushes.register(registration())
+            pushes.transport = { _, finished in
+                requests.withValue { $0 += 1 }
+                finished(nil)
+                return {}
+            }
+            pushes.focused = watched
+            pushes.send(agentID: watched, kind: .done)
+        }
+        #expect(requests.current == 0)
+        queue.sync { pushes.send(agentID: AgentID(), kind: .done) }
+        #expect(requests.current == 1)
+        queue.sync {
+            pushes.focused = nil
+            pushes.send(agentID: watched, kind: .done)
+        }
+        #expect(requests.current == 2)
+    }
+
     @Test func revokedRelaySlotsAreReclaimedButStaleResponsesAndOtherFailuresAreRetained() throws {
         let dir = try makeScratchDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
