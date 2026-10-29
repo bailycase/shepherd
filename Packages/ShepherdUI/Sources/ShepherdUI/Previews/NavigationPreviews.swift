@@ -140,14 +140,3 @@ private let started = Date().addingTimeInterval(-41 * 60)
     }
 }
 
-#Preview("Artifacts") {
-    SHPreviewBoth {
-        VStack(alignment: .leading, spacing: SH.Space.xl) {
-            SHArtifactCard(SHArtifactRow(id: "a", name: "Load test report", detail: "HTML · 6m ago", symbol: "chevron.left.forwardslash.chevron.right"), open: {})
-            SHArtifactList([SHArtifactRow(id: "a", name: "Load test report", detail: "HTML · 6m ago", symbol: "chevron.left.forwardslash.chevron.right"),
-                            SHArtifactRow(id: "b", name: "retry-plan.md", detail: "Markdown · just now", symbol: "doc.text")], selection: "a", open: { _ in })
-                .frame(height: 200)
-        }
-        .frame(width: 420)
-    }
-}

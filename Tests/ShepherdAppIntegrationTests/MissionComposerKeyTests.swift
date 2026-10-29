@@ -73,7 +73,7 @@ struct MissionComposerKeyTests {
         // As the host serves it: the ordinary request gets no actions for a mission thread; the mission's
         // source adds "send" while its turn can be steered (MissionController.thread(for:)).
         var plainSnapshot = ComposerThread.snapshot(messages: 0, commands: [])
-        plainSnapshot.supportedActions = ["images", "artifacts"]
+        plainSnapshot.supportedActions = ["images"]
         var missionSnapshot = plainSnapshot
         missionSnapshot.supportedActions.append("send")
         let window = OffscreenWindow(size: CGSize(width: 900, height: 700))

@@ -193,7 +193,7 @@ extension MissionController {
         let server = server, missionID = mission.id
         let request: NativeThreadStore.Request = { value in
             switch value {
-            case .snapshot, .image, .artifact, .subagentTranscript:
+            case .snapshot, .image, .subagentTranscript:
                 let result = try await server.nativeThread(agentID: agentID, request: value)
                 // The server offers a mission thread no actions of its own. While the mission can steer this turn,
                 // the composer may send; its send is the source's `send` (the server-owned steer), never this request.

@@ -802,7 +802,6 @@ final class ThreadRecorder {
                 case .accepted: answers.append("accepted")
                 case .transcript: answers.append("transcript")
                 case .imageChunk: answers.append("imageChunk")
-                case .artifactChunk: answers.append("artifactChunk")
                 }
                 return result
             } catch {
