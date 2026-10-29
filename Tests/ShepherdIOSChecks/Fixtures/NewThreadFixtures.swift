@@ -33,6 +33,27 @@ extension FixtureCatalog {
                                   form.panel = app.navigator.layout == .pad ? .worktree : .workspace
                               }
                           }),
+            // Where it runs' Base row pushed: the repo's branches, as the Mac's base picker lists them.
+            FixtureScreen(name: "newthread-branches", hosts: NewThreadFixtures.hosts(),
+                          routes: NewThreadFixtures.behind, presented: NewThreadFixtures.compose,
+                          prepare: { app in
+                              await NewThreadFixtures.form { form in
+                                  form.panel = app.navigator.layout == .pad ? .worktree : .workspace
+                              }
+                              try? await Task.sleep(for: .seconds(1))
+                              NewThreadModel.active?.workspacePath = [.branches]
+                              await FixtureWindows.wait("new thread branches", seconds: 5) { NewThreadModel.active?.branches != nil }
+                          }),
+            // Where it runs' Repo row pushed: every repo, searchable.
+            FixtureScreen(name: "newthread-repos", hosts: NewThreadFixtures.hosts(),
+                          routes: NewThreadFixtures.behind, presented: NewThreadFixtures.compose,
+                          prepare: { app in
+                              await NewThreadFixtures.form { $0.panel = app.navigator.layout == .pad ? .repo : .workspace }
+                              if app.navigator.layout != .pad {
+                                  try? await Task.sleep(for: .seconds(1))
+                                  NewThreadModel.active?.workspacePath = [.repo]
+                              }
+                          }),
             FixtureScreen(name: "newthread-models", hosts: NewThreadFixtures.hosts(),
                           routes: NewThreadFixtures.behind, presented: NewThreadFixtures.compose,
                           prepare: { _ in await NewThreadFixtures.form { $0.panel = .model } }),
@@ -81,13 +102,42 @@ enum NewThreadFixtures {
     static let shepherd = Space(id: FixtureData.shepherdSpace.id, name: "shepherd", path: "/Users/dev/code/shepherd")
     static let dashboard = Space(id: SpaceID(rawValue: "space-dashboard"), name: "dashboard-web", path: "/Users/dev/code/dashboard-web")
     static let orders = Space(id: FixtureData.shepherdSpace.id, name: "orders-svc", path: "/home/ci/orders-svc")
+    /// A working Mac's longer repo list, so Where it runs shows how it scrolls.
+    static let moreRepos = ["cardwave-ui", "ledger-sync", "infra-terraform", "mobile-checkout-experiments", "docs-site", "payments-api",
+                            "design-tokens", "data-pipelines"].map {
+        Space(id: SpaceID(rawValue: "space-\($0)"), name: $0, path: "/Users/dev/code/\($0)")
+    }
+    /// A host's catalog across providers, the host's default first.
+    static let models = ["anthropic/claude-opus", "anthropic/claude-sonnet", "anthropic/claude-haiku", "openai/gpt-5", "openai/gpt-5-mini",
+                         "openai-codex/gpt-5.5-codex", "google/gemini-3-pro", "google/gemini-3-flash", "xai/grok-4",
+                         "openrouter/deepseek/deepseek-r2", "ollama/qwen3-coder:32b"]
+
+    /// A working repo's branches, newest commit first: the default base, a branch checked out
+    /// in another worktree, remote branches and a few long names.
+    static let branches: ChangesBranches = {
+        let now = Date().timeIntervalSince1970
+        let names: [(String, Bool, String?)] = [
+            ("main", false, nil), ("origin/main", true, nil), ("worktree/calm-otter-4821", false, "/Users/dev/.shepherd/worktrees/calm-otter-4821"),
+            ("feat/mobile-new-thread-pickers", false, nil), ("origin/feat/mobile-new-thread-pickers", true, nil),
+            ("worktree/brisk-heron-1907", false, "/Users/dev/.shepherd/worktrees/brisk-heron-1907"),
+            ("fix/tool-rows-show-the-command-or-path-instead-of-complete", false, nil), ("origin/release/2.4", true, nil),
+            ("feat/ledger-v2", false, nil), ("chore/bump-swift-term", false, nil), ("origin/nightly", true, nil),
+            ("spike/duo-fold-aware-composer-layout-experiments", false, nil), ("docs/remote-protocol", false, nil),
+            ("origin/release/2.3", true, nil), ("fix/review-scope-menu", false, nil),
+        ]
+        return ChangesBranches(defaultBase: "origin/main", recents: ["origin/nightly"], branches: names.enumerated().map { index, branch in
+            ChangesBranch(name: branch.0, isRemote: branch.1, worktree: branch.2, isCurrent: index == 0,
+                          committedAt: now - Double(index) * 5400)
+        })
+    }()
 
     /// FixtureData's hosts with the boards' repos, answering creationOptions and listDir.
     /// `oldBuildHost` makes build-01 an older Shepherd: no creation options, worktrees or
     /// images.
     static func hosts(oldBuildHost: Bool = false) -> [FixtureHostData] {
         var hosts = FixtureData.hosts()
-        hosts[0].state.spaces = [shepherd, dashboard, FixtureData.horizonSpace]
+        hosts[0].state.spaces = [shepherd, dashboard, FixtureData.horizonSpace] + moreRepos
+        hosts[0].models = models
         hosts[0].reply = reply
         hosts[1].state.spaces = [orders]
         hosts[1].reply = oldBuildHost ? oldReply : reply
@@ -101,6 +151,8 @@ enum NewThreadFixtures {
             return .creationOptions(id: id, options: RemoteCreationOptions(
                 base: cwd == nil ? "" : "origin/main", note: cwd == nil ? "" : "origin fetched just now",
                 fetchFirst: fetchFirst ?? true, model: "anthropic/claude-opus", thinking: .medium))
+        case .creationBranches(let id, _):
+            return .agentResult(id: id, result: .changesBranches(branches))
         case .listDir(let id, let path):
             let resolved = path.isEmpty ? "/Users/dev" : path
             return .dirListing(id: id, path: resolved, parent: resolved == "/" ? nil : (resolved as NSString).deletingLastPathComponent,

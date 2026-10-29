@@ -161,13 +161,16 @@ struct NewThreadFolderScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                Button(browser.adding ? "Adding…" : "Add") {
+                // A symbol, so iPhone Duo's closed display puts it in its column with the sheet's bars.
+                Button {
                     browser.setAdding(true)
                     Task {
                         let added = await model.addRepo(browser.path)
                         browser.setAdding(false)
                         if added { dismiss() }
                     }
+                } label: {
+                    Label(browser.adding ? "Adding…" : "Add", systemImage: "plus")
                 }
                 .disabled(browser.path.isEmpty || browser.loading || browser.adding)
                 .accessibilityHint("Adds \(browser.path) as a repo on \(browser.hostName)")
