@@ -247,7 +247,7 @@ struct SidebarProjectMenu: View {
         }
         if project.missing, let space = project.space {
             Button("Locate Folder…", systemImage: "folder") { vm.locateSpaceFromPanel(space) }
-            Button("Remove Space…", role: .destructive) { vm.spaceDeleteTarget = space }
+            Button("Remove Space…", role: .destructive) { vm.requestSpaceDelete(space) }
             Divider()
         }
         // Finder and Terminal reach This Mac's folders only.
@@ -266,7 +266,7 @@ struct SidebarProjectMenu: View {
             Button(PinWords.menuTitle(pinned: project.pinned), systemImage: PinWords.symbol(pinned: project.pinned)) { vm.togglePinSpace(space) }
             Button("Hide from Sidebar", systemImage: "eye.slash") { vm.setProjectHiddenFromSidebar(space, true) }
             Divider()
-            Button("Remove Space…", role: .destructive) { vm.spaceDeleteTarget = space }
+            Button("Remove Space…", role: .destructive) { vm.requestSpaceDelete(space) }
         }
     }
 }

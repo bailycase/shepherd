@@ -20,6 +20,7 @@ struct SkillsSettings: View {
     @State private var sheet: SkillsSheet?
     @State private var toast: SHToast?
     @State private var resolving: ClientSkills.Unacknowledged?
+    @State private var dontAskAgain = false
 
     var body: some View {
         let hosts = vm.skillsHosts
@@ -34,7 +35,9 @@ struct SkillsSettings: View {
                         HStack(spacing: SH.Space.m) {
                             SHInlineProblem(problem)
                             if let entry = model.unacknowledged {
-                                Button("Resolve…") { resolving = entry }.buttonStyle(.shLink)
+                                Button("Resolve…") {
+                                    if AppSettings.shared.skipped(.forgetSkillReceipt) != nil { forget(entry) } else { resolving = entry }
+                                }.buttonStyle(.shLink)
                             }
                             Button("Dismiss") { model.dismissProblem() }.buttonStyle(.shLink)
                         }
@@ -65,12 +68,14 @@ struct SkillsSettings: View {
         .confirmationDialog("Stop waiting for this skill change?", isPresented: Binding(get: { resolving != nil }, set: { if !$0 { resolving = nil } }), presenting: resolving) { entry in
             Button("Continue without retrying") {
                 resolving = nil
-                Task { await model.resolveUnacknowledged(entry, in: vm.skillsHosts) }
+                if dontAskAgain { AppSettings.shared.skip(.forgetSkillReceipt, with: "Continue without retrying") }
+                forget(entry)
             }
             Button("Cancel", role: .cancel) { resolving = nil }
         } message: { entry in
             Text("Check the skill on \(entry.hostName) first. This forgets only this change's missing receipt, without retrying or undoing it, then sends the later changes.")
         }
+        .dialogSuppressionToggle(isSuppressed: $dontAskAgain)
         .task { await model.refresh(vm.skillsHosts) }
         .sheet(item: $sheet) { sheet in
             switch sheet {
@@ -87,6 +92,10 @@ struct SkillsSettings: View {
                 model.undoRemoval(in: vm.skillsHosts)
             })
         }
+    }
+
+    private func forget(_ entry: ClientSkills.Unacknowledged) {
+        Task { await model.resolveUnacknowledged(entry, in: vm.skillsHosts) }
     }
 
     private var header: some View {

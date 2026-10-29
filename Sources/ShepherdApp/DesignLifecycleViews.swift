@@ -46,6 +46,7 @@ struct DeleteDesignDialog: View {
     let words: DeleteDesignWords
     let delete: () -> Void
     let cancel: () -> Void
+    @State private var remember = false
 
     var body: some View {
         SHDesignAlert(symbol: "trash", title: words.title) {
@@ -60,12 +61,16 @@ struct DeleteDesignDialog: View {
             if let warning = words.warning {
                 SHDesignAlertWarning(warning)
             }
+            DontAskAgainToggle(isOn: $remember)
         } actions: {
             Button("Cancel", action: cancel)
                 .buttonStyle(.sh(.secondary))
                 .keyboardShortcut(.cancelAction)
-            Button(words.confirm, action: delete)
-                .buttonStyle(.sh(.dangerFill))
+            Button(words.confirm) {
+                if remember { AppSettings.shared.skip(.deleteDesign, with: words.confirm) }
+                delete()
+            }
+            .buttonStyle(.sh(.dangerFill))
         }
     }
 
@@ -85,6 +90,7 @@ struct DeleteSystemDialog: View {
     let words: DeleteSystemWords
     let delete: () -> Void
     let cancel: () -> Void
+    @State private var remember = false
 
     var body: some View {
         SHDesignAlert(symbol: "trash", title: words.title,
@@ -96,12 +102,16 @@ struct DeleteSystemDialog: View {
                                       Self.text(line))
                 }
             }
+            DontAskAgainToggle(isOn: $remember)
         } actions: {
             Button("Cancel", action: cancel)
                 .buttonStyle(.sh(.secondary))
                 .keyboardShortcut(.cancelAction)
-            Button(words.confirm, action: delete)
-                .buttonStyle(.sh(.dangerFill))
+            Button(words.confirm) {
+                if remember { AppSettings.shared.skip(.deleteDesignSystem, with: words.confirm) }
+                delete()
+            }
+            .buttonStyle(.sh(.dangerFill))
         }
     }
 

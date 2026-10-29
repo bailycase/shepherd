@@ -54,6 +54,13 @@ struct WorktreeSettings: View {
                     .shTransition(.disclosure)
                 }
             }
+            SettingsGroup(title: "Delete") {
+                SettingsRow(title: "Deleting a worktree agent",
+                            subtitle: "**Ask** shows the confirmation. A remembered removal still asks when the checkout has unreconciled work.") {
+                    SHSegmentedPicker("Deleting a worktree agent", selection: $settings.worktreeDeleteAction,
+                                      options: [(WorktreeDeleteAction.ask, "Ask"), (.keepWorktree, "Keep worktree"), (.removeWorktree, "Remove worktree")])
+                }
+            }
         }
         .shAnimation(.disclosure, value: settings.worktreeAutoMergePR)
     }

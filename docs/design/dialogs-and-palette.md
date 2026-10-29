@@ -85,6 +85,16 @@ the Controls and Status & feedback parts (no board draws a Mac dialog). The crea
 Delete Worktree Agent take `.dialogSheetFrame()`: the window is `bgWindow` from the first frame,
 and the title stays still while rows disclose.
 
+- **Don't ask again:** every action-only confirmation the user starts carries a "Don't ask again"
+  checkbox under its content (`DontAskAgainToggle`, caption "Acts at once next time. Change it in
+  Settings ▸ Advanced."; `.dialogSuppressionToggle` on the two native ones). It is stored
+  (`AppSettings.skippedConfirmations`, keyed by `SkippableConfirmation`, with the action clicked)
+  only when an action other than Cancel is clicked; afterwards the action runs without the
+  dialog. Settings ▸ Advanced ▸ Confirmations brings them back. Never skipped: a request from an
+  agent or another process (Remove Space through a `deleteProject` tool call shows no checkbox),
+  security and trust prompts, forms, choices whose answer depends on what was found (MCP
+  import clashes, design import), errors, and Reset settings.
+
 - **Width:** 460pt by default (`SHDialogMetrics.width`); Rename 420
   (`AppLayout.renameSheetWidth`), Delete Worktree Agent 520 (`confirmSheetWideWidth`), and the
   creation sheets their own (`AppLayout+Settings.swift`: New Agent 560, New Worktree 520,
@@ -172,8 +182,9 @@ dialog. There is no `.alert`, `confirmationDialog`, or `NSAlert` in the app:
   “Delete agent and worktree” also removes its checkout and branch.", rows for the Worktree (mono,
   middle-truncated) and the Branch, "Checking for unsaved work…" in the footer while git looks,
   an "Unreconciled work" attention banner ("<what> will be lost with the worktree.") when there
-  is some, then Cancel, Delete agent only, and a destructive Delete agent and worktree that stays
-  disabled until the check is in
+  is some, a "Don't ask again" checkbox ("Remembers the delete you choose. Change it in Settings ▸
+  Worktrees."), then Cancel, Delete agent only, and a destructive Delete agent and worktree that
+  stays disabled until the check is in. The remote sheet carries the same checkbox
 - Remove Space (`SpaceDeleteDialog`): "Remove space", "Removes <space> from the sidebar and
   stops its <n> agent(s). The local folder and all its files are kept. Saved conversations and
   space history remain. Child spaces stay registered.", Cancel and a destructive Remove
@@ -190,8 +201,9 @@ dialog. There is no `.alert`, `confirmationDialog`, or `NSAlert` in the app:
   changes. Commit… (`ReviewCommitSheet`) is described with the review pane.
 - A failed action (`ActionErrorDialog`): titled for what was attempted ("Couldn’t fork", "Couldn’t
   rename the agent"; `ActionError`), the error worded for a person and selectable, and OK (primary)
-- Delete agent (`AgentDeleteDialog`): "Delete agent", what it stops and removes, Cancel and a
-  destructive Delete. Delete automation reads the same way. A confirmed delete runs once the sheet
+- Delete agent (`AgentDeleteDialog`): "Delete agent", what it stops and removes, Don't ask again,
+  Cancel and a destructive Delete. Its remembered choice is separate from worktree deletion.
+  Delete automation reads the same way without Don't ask again. A confirmed delete runs once the sheet
   has dismissed (`sheet(item:onDismiss:)`), never on a timed delay
 - Reset settings (`ResetSettingsDialog`): "Reset settings to defaults?", "Your spaces, agents and
   terminals are not affected.", Cancel and a destructive Reset

@@ -210,7 +210,7 @@ extension ShepherdViewModel {
                 let words = DeleteDesignWords(name: design.name, boards: snapshot?.index.boards.count ?? design.boardCount ?? 0,
                                               versions: versions, comments: comments, system: design.systemNamespace,
                                               agentWorking: working, drawing: drawing)
-                designDeleteRequest = DesignDeleteRequest(target: target, name: design.name, words: words)
+                presentDesignDelete(DesignDeleteRequest(target: target, name: design.name, words: words))
             case .remote(let ref):
                 guard let connection = remoteHosts.connections.first(where: { $0.id == ref.hostID }),
                       let design = connection.state.designs.first(where: { $0.id == ref.designID }) else { return }
@@ -222,9 +222,18 @@ extension ShepherdViewModel {
                 let words = DeleteDesignWords(name: design.name, boards: summary?.boardCount ?? design.boardCount ?? 0, versions: nil,
                                               comments: summary?.openComments, system: design.systemNamespace, agentWorking: working,
                                               drawing: drawing)
-                designDeleteRequest = DesignDeleteRequest(target: target, name: design.name, words: words)
+                presentDesignDelete(DesignDeleteRequest(target: target, name: design.name, words: words))
             }
         }
+    }
+
+    /// The dialog, or its Delete at once after "Don't ask again".
+    private func presentDesignDelete(_ request: DesignDeleteRequest) {
+        if settings.skipped(.deleteDesign) != nil { confirmDesignDelete(request) } else { designDeleteRequest = request }
+    }
+
+    private func presentDesignSystemDelete(_ request: DesignSystemDeleteRequest) {
+        if settings.skipped(.deleteDesignSystem) != nil { confirmDesignSystemDelete(request) } else { designSystemDeleteRequest = request }
     }
 
     /// The dialog's Delete (or Stop and delete).
@@ -350,15 +359,15 @@ extension ShepherdViewModel {
         case .build(let id):
             guard let build = design(id) else { return }
             let repo = build.sourceSpaceID.flatMap { id in state.spaces.first { $0.id == id }?.name }
-            designSystemDeleteRequest = DesignSystemDeleteRequest(
-                target: target, name: build.name, words: DeleteSystemWords(name: build.name, components: 0, usedBy: [], repo: repo, building: true))
+            presentDesignSystemDelete(DesignSystemDeleteRequest(
+                target: target, name: build.name, words: DeleteSystemWords(name: build.name, components: 0, usedBy: [], repo: repo, building: true)))
         case .system(let namespace):
             guard let summary = designSystems.summary(namespace), !summary.builtIn else { return }
             let usedBy = state.designs.filter { !$0.buildsSystem && $0.systemNamespace == namespace }.map(\.name)
             let repo = summary.info.spaceID.flatMap { id in state.spaces.first { $0.id == id }?.name }
             let words = DeleteSystemWords(name: summary.info.title, components: summary.counts.components, usedBy: usedBy, repo: repo,
                                           building: systemIsBuilding(namespace))
-            designSystemDeleteRequest = DesignSystemDeleteRequest(target: target, name: summary.info.title, words: words)
+            presentDesignSystemDelete(DesignSystemDeleteRequest(target: target, name: summary.info.title, words: words))
         }
     }
 

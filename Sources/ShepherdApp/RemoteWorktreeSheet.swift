@@ -24,6 +24,7 @@ struct RemoteWorktreeSheet: View {
         let connection = vm.remoteHosts.connections.first { $0.id == target.hostID }
         _endpointID = State(initialValue: vm.remoteWorktreeOperationEndpoints[target] ?? connection?.endpointID)
         _transportID = State(initialValue: connection?.transportID)
+        _remember = State(initialValue: vm.settings.worktreeDeleteAction != .ask)
         if let staged {
             _info = State(initialValue: staged.info)
             _options = State(initialValue: staged.info.defaults)
@@ -51,6 +52,8 @@ struct RemoteWorktreeSheet: View {
     @State private var operation: RemoteWorktreeOperation?
     @State private var submitting = false
     @State private var acknowledgedLoss = false
+    /// Delete's "Don't ask again", stored by a delete only.
+    @State private var remember: Bool
 
     private var hostName: String {
         vm.remoteHosts.connections.first { $0.id == target.hostID }?.config.name ?? "removed"
@@ -103,6 +106,7 @@ struct RemoteWorktreeSheet: View {
                             .padding(.horizontal, SHDialogMetrics.inset)
                             .padding(.top, SH.Space.l)
                     }
+                    if !finalize { DontAskAgainToggle(isOn: $remember, caption: DontAskAgainToggle.worktreeCaption).dialogInset() }
                 }
             }
             if let operation {
@@ -212,6 +216,7 @@ struct RemoteWorktreeSheet: View {
                     .disabled(setup.running || !setup.allPassed)
             } else if !finalize {
                 Button("Delete agent only") {
+                    vm.settings.rememberWorktreeDelete(remember, removeWorktree: false)
                     Task {
                         do {
                             _ = try await query(.deleteKeepingWorktree)
@@ -305,6 +310,8 @@ struct RemoteWorktreeSheet: View {
             if info == nil, case .worktreeInfo(let value) = try await query(.worktreeInfo) {
                 info = value
                 options = value.defaults
+                // A remembered removal skips the confirmation, never the host's loss warning.
+                if !finalize, value.warning == nil, vm.settings.worktreeDeleteAction == .removeWorktree { start(value) }
             }
             showingSetup = false
             if finalize { await generateDescription() }
@@ -340,6 +347,7 @@ struct RemoteWorktreeSheet: View {
     }
 
     private func start(_ info: RemoteWorktreeInfo) {
+        if !finalize { vm.settings.rememberWorktreeDelete(remember, removeWorktree: true) }
         submitting = true
         let id = UUID()
         vm.remoteWorktreeOperationIDs[target] = id

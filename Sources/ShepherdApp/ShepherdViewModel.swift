@@ -427,15 +427,19 @@ final class ShepherdViewModel {
         showNewAgentSheet = true
     }
     /// Space pending removal confirmation (alert in RootView) — removal
-    /// kills the space's agents, so it always confirms.
+    /// kills the space's agents. The user's own removal skips it once "Don't ask again" was
+    /// checked (`requestSpaceDelete`); another process's request always confirms.
     var spaceDeleteTarget: SpaceID?
+    /// The pending removal came from another process (`ProjectRequest.delete`): its dialog
+    /// offers no "Don't ask again", and a stored skip never answers it.
+    var spaceDeleteRequested = false
     /// Rename target for a space (alert in RootView). Display-only rename;
     /// the checkout path never changes.
     var spaceRenameTarget: SpaceID?
     /// Space whose New Worktree sheet is open (sheet in RootView).
     var worktreeSheetTarget: SpaceID?
     /// Worktree agent pending delete confirmation (alert in RootView) —
-    /// deleting may also remove the checkout, so it always confirms.
+    /// deleting may also remove the checkout (`requestWorktreeDelete`).
     var worktreeDeleteTarget: AgentID?
     /// Automation pending delete confirmation (sheet in RootView): its prompt, schedule and
     /// settings go with it and nothing brings them back.

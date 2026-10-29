@@ -94,7 +94,8 @@ struct QuitDialog: View {
                     actions: [
                         DialogAction("Cancel", kind: .cancel, action: cancel),
                         DialogAction("Quit", kind: .destructive, action: quit),
-                    ]) {
+                    ],
+                    dontAskAgain: .quit) {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(prompt.rows) { row in
                     HStack(spacing: SH.Space.m) {
@@ -158,6 +159,8 @@ final class QuitConfirmation {
     }
 
     func shouldTerminate(agents: [Agent]) -> NSApplication.TerminateReply {
+        // After the dialog's "Don't ask again", a quit stops working agents without asking.
+        if pending == nil, AppSettings.shared.skipped(.quit) != nil { return .terminateNow }
         switch QuitPolicy.decide(agents: agents, systemPoweringOff: systemPoweringOff, asking: pending != nil) {
         case .quit:
             dismiss()

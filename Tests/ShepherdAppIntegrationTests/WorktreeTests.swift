@@ -377,6 +377,41 @@ struct WorktreeAgentTests {
         #expect(try sandbox.branches().contains("worktree/keep"))
     }
 
+    /// Delete Worktree Agent with a remembered choice: Ask shows the dialog; Keep deletes the agent
+    /// and leaves the checkout; Remove deletes a clean checkout without the dialog, but a checkout
+    /// with unreconciled work still shows it and keeps everything.
+    @Test(arguments: [(WorktreeDeleteAction.ask, false), (.keepWorktree, true), (.removeWorktree, false), (.removeWorktree, true)])
+    func aRememberedWorktreeDeleteSkipsTheDialogOnlyWhenNothingIsLost(action: WorktreeDeleteAction, dirty: Bool) async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let sandbox = try WorktreeSandbox()
+        defer { sandbox.remove() }
+        let branch = "worktree/remembered"
+        let agent = try worktreeAgent(in: sandbox, branch: branch)
+        let wip = sandbox.path(branch) + "/wip.txt"
+        if dirty { try "wip".write(toFile: wip, atomically: true, encoding: .utf8) }
+        let vm = try await app.start(with: Fixture.state(spaces: [agent.space], agents: [agent]))
+        app.settings.worktreeDeleteAction = action
+
+        vm.requestWorktreeDelete(agent.agent.id)
+
+        let server = app.server
+        switch (action, dirty) {
+        case (.removeWorktree, false):
+            try await eventuallyOnMain("the clean checkout to be removed without the dialog") {
+                !FileManager.default.fileExists(atPath: sandbox.path(branch)) && server.state.agents.isEmpty
+            }
+            #expect(vm.worktreeDeleteTarget == nil && vm.remoteActionError == nil)
+        case (.keepWorktree, _):
+            await app.settle()
+            #expect(vm.worktreeDeleteTarget == nil && server.state.agents.isEmpty)
+            #expect(FileManager.default.fileExists(atPath: wip))
+        default:
+            try await eventuallyOnMain("the dialog to ask") { vm.worktreeDeleteTarget == agent.agent.id }
+            #expect(server.state.agents.count == 1 && FileManager.default.fileExists(atPath: sandbox.path(branch)))
+        }
+    }
+
     @Test func aWorktreeDeletionTheServerCannotPersistKeepsTheAgentAndCheckout() async throws {
         let app = try AppHarness()
         defer { app.stop() }

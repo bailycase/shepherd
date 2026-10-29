@@ -89,11 +89,10 @@ struct MCPSettings: View {
                         actions: [
                             DialogAction("Cancel", kind: .cancel) { removing = nil },
                             DialogAction("Remove", kind: .destructive) {
-                                store.remove(item.name)
-                                if expanded == item.name { expanded = nil }
+                                remove(item.name)
                                 removing = nil
                             },
-                        ]) { EmptyView() }
+                        ], dontAskAgain: .removeMCPServer) { EmptyView() }
         }
         .sheet(item: Binding(get: { importing.map(MCPImportBatch.init) }, set: { importing = $0?.entries })) { batch in
             let clashes = store.clashes(batch.entries)
@@ -180,7 +179,12 @@ struct MCPSettings: View {
               setDirect: { store.setExposure(name, $0 ? .direct : .proxy) }, chooseTools: { sheet = .tools(name) },
               edit: { sheet = .edit(name) }, reconnect: { store.refresh() },
               copyJSON: { store.copyJSON(name); toast = SHToast(.done, message: "Copied \(name)’s JSON") },
-              remove: { removing = name })
+              remove: { if AppSettings.shared.skipped(.removeMCPServer) != nil { remove(name) } else { removing = name } })
+    }
+
+    private func remove(_ name: String) {
+        store.remove(name)
+        if expanded == name { expanded = nil }
     }
 
     private func begin(importing entries: [MCPServerEntry]) {

@@ -394,12 +394,40 @@ extension ShepherdViewModel {
         requestDeleteAgent(agent.id)
     }
 
-    /// Every delete of a local agent confirms first: a worktree agent through its own dialog
-    /// (the checkout may go too), any other through the plain one.
+    /// User-initiated local deletes confirm unless this action was remembered. Worktree
+    /// deletion has its own choice and still warns about unreconciled work.
     func requestDeleteAgent(_ id: AgentID) {
         guard let agent = state.agents.first(where: { $0.id == id }) else { return }
-        if agent.worktreeBranch != nil { worktreeDeleteTarget = id }
+        if agent.worktreeBranch != nil { requestWorktreeDelete(id) }
+        else if settings.skipped(.deleteAgent) != nil { deleteAgent(id) }
         else { agentDeleteTarget = id }
+    }
+
+    /// A worktree agent's checkout: its own path, or where its branch's worktree would be.
+    /// Empty when its space is gone.
+    func worktreeCheckoutPath(_ agent: Agent) -> String {
+        agent.worktreePath ?? state.spaces.first { $0.id == agent.spaceID }
+            .map { GitWorktree.destination(repo: $0.path, branch: agent.worktreeBranch ?? "") } ?? ""
+    }
+
+    /// Delete Worktree Agent: the dialog, unless Settings ▸ Worktrees remembers a delete. A
+    /// remembered removal probes the checkout first and still shows the dialog (with its
+    /// warning) when work would be lost or there is no checkout to probe.
+    func requestWorktreeDelete(_ id: AgentID) {
+        guard let agent = agent(id: id) else { return }
+        switch settings.worktreeDeleteAction {
+        case .ask: worktreeDeleteTarget = id
+        case .keepWorktree: deleteAgent(id)
+        case .removeWorktree:
+            let (path, branch) = (worktreeCheckoutPath(agent), agent.worktreeBranch ?? "")
+            guard !path.isEmpty else { worktreeDeleteTarget = id; return }
+            Task {
+                let warning = await Task.detached(priority: .userInitiated) {
+                    GitWorktree.unreconciledWork(worktree: path, branch: branch)
+                }.value
+                if warning == nil { deleteWorktreeAgent(id, removeWorktree: true) } else { worktreeDeleteTarget = id }
+            }
+        }
     }
 
     /// A hand-typed name is final: pi's namer must never overwrite it.

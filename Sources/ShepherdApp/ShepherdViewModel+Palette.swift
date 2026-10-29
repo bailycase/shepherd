@@ -347,7 +347,7 @@ extension ShepherdViewModel {
             switch action {
             case "newAgent": openNewThread()
             case "renameSpace": spaceRenameTarget = newThread.place?.space
-            case "removeSpace": spaceDeleteTarget = newThread.place?.space
+            case "removeSpace": requestSpaceDelete(newThread.place?.space)
             case "newAgentOptions": showNewAgentSheet = true
             case "newSpace": addSpaceFromPanel()
             case "rename": renameSelectedAgent()

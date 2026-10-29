@@ -41,15 +41,36 @@ struct ProjectEditingFlowTests {
         #expect(vm.selectedAgentID == agent.agent.id)
         #expect(FileManager.default.fileExists(atPath: child.path))
         #expect(!FileManager.default.fileExists(atPath: b.path + "/docs"))
+        // The user's "Don't ask again" for Remove Space never answers an agent's request.
+        vm.settings.skip(.removeSpace, with: "Remove space")
         let deletion = try await ask(.deleteProject(id: 2, agentID: agent.agent.id, projectID: child.id))
         #expect(deletion == .projectResult(id: 2, space: edited, created: false))
-        #expect(vm.spaceDeleteTarget == child.id)
+        #expect(vm.spaceDeleteTarget == child.id && vm.spaceDeleteRequested)
         #expect(app.server.state.spaces.contains(edited), "The tool has not deleted anything")
         vm.spaceDeleteTarget = nil
         app.server.extensionPeerCheck = { _, _ in false }
         let refused = try await ask(.editProject(id: 3, agentID: agent.agent.id, projectID: child.id, request: ProjectEdit(name: "spoofed")))
         guard case .error(3, _, _) = refused else { Issue.record("Unowned caller was accepted"); return }
         #expect(app.server.state.spaces.contains(edited))
+    }
+
+    /// The user's Remove Space… asks until its "Don't ask again", then removes at once.
+    @Test func removeSpaceAsksUntilItsDontAskAgain() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let a = Fixture.space("A", path: app.dir.appendingPathComponent("a").path)
+        let b = Fixture.space("B", path: app.dir.appendingPathComponent("b").path)
+        let vm = try await app.start(with: Fixture.state(spaces: [a, b], agents: []))
+
+        vm.requestSpaceDelete(a.id)
+        #expect(vm.spaceDeleteTarget == a.id && !vm.spaceDeleteRequested)
+        vm.spaceDeleteTarget = nil
+
+        vm.settings.skip(.removeSpace, with: "Remove space")
+        vm.requestSpaceDelete(b.id)
+        #expect(vm.spaceDeleteTarget == nil)
+        try await eventuallyOnMain("the space to be removed without the dialog") { !app.server.state.spaces.contains { $0.id == b.id } }
+        #expect(app.server.state.spaces.contains { $0.id == a.id })
     }
 
     @Test func projectListingDoesNotImportAnotherHarnessSessionHistory() async throws {

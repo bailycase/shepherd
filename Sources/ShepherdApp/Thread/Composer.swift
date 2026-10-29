@@ -907,8 +907,12 @@ struct Composer: View {
     }
 
     private func stop() {
-        if store.subagents.count(where: { !$0.isTerminal }) > 1 { confirmingStopAll = true }
-        else { Task { await store.abortAll() } }
+        guard store.subagents.count(where: { !$0.isTerminal }) > 1 else { Task { await store.abortAll() }; return }
+        switch AppSettings.shared.skipped(.stopAll) {
+        case StopAllDialog.stopAgentLabel?: Task { await store.abort() }
+        case StopAllDialog.stopAllLabel?: Task { await store.abortAll() }
+        default: confirmingStopAll = true
+        }
     }
 
     /// The thinking chip shows while pi reports a level it can set and the model takes one.

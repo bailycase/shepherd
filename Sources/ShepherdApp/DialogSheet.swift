@@ -48,7 +48,12 @@ struct DialogSheet<Content: View>: View {
     /// A caption at the footer's leading edge ("Checking for unsaved work…").
     var status: String?
     let actions: [DialogAction]
+    /// Shows "Don't ask again"; checked, the action clicked is stored as this confirmation's
+    /// skip (Cancel stores nothing).
+    var dontAskAgain: SkippableConfirmation?
+    var settings: AppSettings?
     @ViewBuilder var content: () -> Content
+    @State private var remember = false
 
     init(
         title: String,
@@ -56,6 +61,8 @@ struct DialogSheet<Content: View>: View {
         width: CGFloat = SHDialogMetrics.width,
         status: String? = nil,
         actions: [DialogAction],
+        dontAskAgain: SkippableConfirmation? = nil,
+        settings: AppSettings? = nil,
         @ViewBuilder content: @escaping () -> Content
     ) {
         self.title = title
@@ -63,12 +70,15 @@ struct DialogSheet<Content: View>: View {
         self.width = width
         self.status = status
         self.actions = actions
+        self.dontAskAgain = dontAskAgain
+        self.settings = settings
         self.content = content
     }
 
     var body: some View {
         SHDialog(title, message: subtitle, width: width) {
             content()
+            if dontAskAgain != nil { DontAskAgainToggle(isOn: $remember).dialogInset() }
         } status: {
             if let status { SHDialogStatus(status) }
         } actions: {
@@ -78,7 +88,11 @@ struct DialogSheet<Content: View>: View {
 
     @ViewBuilder
     private func button(for action: DialogAction) -> some View {
-        let button = Button(action.label, action: action.action).disabled(!action.isEnabled).help(action.help ?? "")
+        let button = Button(action.label) {
+            if action.kind != .cancel, remember, let dontAskAgain { (settings ?? .shared).skip(dontAskAgain, with: action.label) }
+            action.action()
+        }
+        .disabled(!action.isEnabled).help(action.help ?? "")
         switch action.kind {
         case .cancel:
             button.buttonStyle(.sh(.ghost)).keyboardShortcut(.cancelAction)
@@ -95,8 +109,40 @@ struct DialogSheet<Content: View>: View {
 extension DialogSheet where Content == EmptyView {
     /// Text-only dialog: title, subtitle, buttons.
     init(title: String, subtitle: String? = nil, width: CGFloat = SHDialogMetrics.width, status: String? = nil,
-         actions: [DialogAction]) {
-        self.init(title: title, subtitle: subtitle, width: width, status: status, actions: actions) { EmptyView() }
+         actions: [DialogAction], dontAskAgain: SkippableConfirmation? = nil, settings: AppSettings? = nil) {
+        self.init(title: title, subtitle: subtitle, width: width, status: status, actions: actions,
+                  dontAskAgain: dontAskAgain, settings: settings) { EmptyView() }
+    }
+}
+
+/// A confirmation's "Don't ask again" and where to undo it. Its dialog stores the choice only
+/// when an action other than Cancel is clicked.
+struct DontAskAgainToggle: View {
+    @Binding var isOn: Bool
+    var caption = "Acts at once next time. Change it in Settings ▸ Advanced."
+
+    static let worktreeCaption = "Remembers the delete you choose. Change it in Settings ▸ Worktrees."
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: SH.Space.xs) {
+            Toggle("Don't ask again", isOn: $isOn)
+                .toggleStyle(.shCheckbox)
+                .font(.sh(.ui))
+                .foregroundStyle(Color.sh.textPrimary)
+            Text(caption)
+                .font(.sh(.caption))
+                .foregroundStyle(Color.sh.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+extension View {
+    /// At a `DialogSheet`'s margins, under what is above it.
+    func dialogInset() -> some View {
+        frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, SHDialogMetrics.inset)
+            .padding(.top, SH.Space.l)
     }
 }
 
@@ -186,10 +232,15 @@ struct StopAllDialog: View {
                         : "\(runningSubagents) subagents are still running.",
                     actions: [
                         DialogAction("Cancel", kind: .cancel, action: cancel),
-                        DialogAction("Stop only the agent", action: stopAgent),
-                        DialogAction("Stop all", kind: .destructive, action: stopAll),
-                    ])
+                        DialogAction(Self.stopAgentLabel, action: stopAgent),
+                        DialogAction(Self.stopAllLabel, kind: .destructive, action: stopAll),
+                    ],
+                    dontAskAgain: .stopAll)
     }
+
+    /// Also what a skipped StopAll remembers.
+    static let stopAgentLabel = "Stop only the agent"
+    static let stopAllLabel = "Stop all"
 }
 
 /// The review pane's per-file Revert: tracked files return to HEAD, new files move to the Trash.
@@ -208,7 +259,8 @@ struct RevertFileDialog: View {
                     actions: [
                         DialogAction("Cancel", kind: .cancel, action: cancel),
                         DialogAction("Discard changes", kind: .destructive, action: revert),
-                    ]) {
+                    ],
+                    dontAskAgain: .revertFile) {
             SheetRow("Repository") {
                 Text(repository)
                     .font(.sh(.mono))

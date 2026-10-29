@@ -546,7 +546,7 @@ private struct ProjectMenu: View {
                 Button("Import Existing Worktree…") { vm.importExistingWorktreeFromPanel(in: space.id) }
             }
             Divider()
-            Button("Remove Space…", role: .destructive) { vm.spaceDeleteTarget = space.id }
+            Button("Remove Space…", role: .destructive) { vm.requestSpaceDelete(space.id) }
         } else if let place, let host = place.host, let space = place.space {
             Button("New Agent with Options…") { vm.showNewAgentSheetForRemote(hostID: host, spaceID: space) }
         }

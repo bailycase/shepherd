@@ -274,6 +274,9 @@ automated step of the worktree flows can be turned off here.
     gate it. A PR that can't merge is left open.": off. While it is on, the app discloses a Merge
     method row under it, "Must be allowed by the repository's settings.": Squash · Merge · Rebase,
     default Squash.
+- **Delete** (not on the board): Deleting a worktree agent, "**Ask** shows the confirmation. A
+  remembered removal still asks when the checkout has unreconciled work.": Ask · Keep worktree ·
+  Remove worktree, default Ask. Set by the delete dialog's "Don't ask again".
 
 ## Remote (SettingsRemote)
 
@@ -389,6 +392,10 @@ connect to this one."
   Unconfigured builds show a disabled off switch and "Diagnostics reporting is not configured in this
   build." A saved on preference can still be revoked. Full copy, states and component checklist:
   [Diagnostics](boards/Diagnostics.md). Behavior and setup: [diagnostics](../diagnostics.md).
+- **Confirmations** (not on the board): Skipped confirmations, "Every confirmation asks first. Any
+  you turn off with “Don't ask again” are listed here." or "Act at once without asking: <names>."
+  (Delete worktree agent included); Ask again (secondary, off while none are skipped) brings every
+  one back. Reset settings clears them too.
 - **Reset:** Reset settings, "Restores appearance, terminal, agent, worktree, extension, keyboard and diagnostics
   preferences. Spaces, agents, layouts and Remote are untouched." (the board: "Restores appearance,
   font, agent and keyboard preferences. Spaces, agents and layouts are untouched."; see the

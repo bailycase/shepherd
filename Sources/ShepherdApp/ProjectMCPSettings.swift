@@ -81,15 +81,9 @@ struct ProjectMCPSettings: View {
                             DialogAction("Cancel", kind: .cancel) { removing = nil },
                             DialogAction("Remove", kind: .destructive) {
                                 guard let name = removing else { return }
-                                Task {
-                                    do {
-                                        try await model.removeMCP(name)
-                                        if expanded == name { expanded = nil }
-                                        removing = nil
-                                    } catch { removeError = String(describing: error) }
-                                }
+                                Task { await remove(name) }
                             },
-                        ]) { if let removeError { SHInlineProblem(removeError) } }
+                        ], dontAskAgain: .removeSpaceMCPServer) { if let removeError { SHInlineProblem(removeError) } }
                 .disabled(model.saving)
                 .interactiveDismissDisabled(model.saving)
         }
@@ -112,6 +106,21 @@ struct ProjectMCPSettings: View {
               copyJSON: {
                   guard let entry = model.mcp.entries.first(where: { $0.name == name }) else { return }
                   copyJSON(MCPJSON.write(.object(["mcpServers": .object([name: .object(entry.json)])])))
-              }, remove: { removeError = nil; removing = name })
+              }, remove: {
+                  removeError = nil
+                  // After "Don't ask again" it goes at once; a failure opens the dialog with the error.
+                  if AppSettings.shared.skipped(.removeSpaceMCPServer) != nil { Task { await remove(name) } } else { removing = name }
+              })
+    }
+
+    private func remove(_ name: String) async {
+        do {
+            try await model.removeMCP(name)
+            if expanded == name { expanded = nil }
+            removing = nil
+        } catch {
+            removeError = String(describing: error)
+            removing = name
+        }
     }
 }

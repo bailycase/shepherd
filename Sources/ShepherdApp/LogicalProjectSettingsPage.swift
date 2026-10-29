@@ -181,7 +181,11 @@ private struct LogicalProjectGeneralTab: View {
             ProjectSettingsCard {
                 ProjectSettingsRow(title: "Delete project",
                             subtitle: "Removes the conversation, memory and automations. Threads stay in their spaces; branches and PRs are untouched.") {
-                    ProjectSettingsButton(title: "Delete…", danger: true) { confirmingDelete = true }
+                    ProjectSettingsButton(title: "Delete…", danger: true) {
+                        // After the dialog's "Don't ask again" it deletes at once; a failure is the action error.
+                        guard vm.settings.skipped(.deleteProject) != nil else { confirmingDelete = true; return }
+                        Task { if let failure = await DeleteLogicalProjectDialog.delete(ref, vm: vm) { vm.remoteActionError = failure } }
+                    }
                         .disabled(saving)
                 }
             }
@@ -257,17 +261,21 @@ struct DeleteLogicalProjectDialog: View {
                     working = true
                     failure = nil
                     Task {
-                        let ok = await vm.logicalProjects.delete(ref)
+                        failure = await Self.delete(ref, vm: vm)
                         working = false
-                        if ok {
-                            if vm.selectedLogicalProject == ref { vm.selectedLogicalProject = nil; vm.destination = nil }
-                            dismiss()
-                        } else {
-                            failure = vm.logicalProjects.failure?.message ?? "The project was not deleted."
-                        }
+                        if failure == nil { dismiss() }
                     }
                 },
-            ]
+            ],
+            dontAskAgain: .deleteProject,
+            settings: vm.settings
         ) { EmptyView() }
+    }
+
+    /// Deletes the project and leaves its page; the failure, if any.
+    static func delete(_ ref: LogicalProjectRef, vm: ShepherdViewModel) async -> String? {
+        guard await vm.logicalProjects.delete(ref) else { return vm.logicalProjects.failure?.message ?? "The project was not deleted." }
+        if vm.selectedLogicalProject == ref { vm.selectedLogicalProject = nil; vm.destination = nil }
+        return nil
     }
 }

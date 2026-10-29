@@ -6,7 +6,13 @@ import ShepherdSessions
 @MainActor @Observable
 final class SubagentDefinitionsModel {
     typealias Definition = SubagentDefinitionsStore.Definition
-    enum Confirmation: Hashable { case restore, delete, discard }
+    enum Confirmation: Hashable {
+        case restore, delete, discard
+
+        var skippable: SkippableConfirmation {
+            switch self { case .restore: .restoreSubagents; case .delete: .deleteSubagent; case .discard: .discardSubagentEdits }
+        }
+    }
 
     private(set) var definitions: [Definition] = []
     private(set) var visible: [Definition] = []
@@ -25,6 +31,7 @@ final class SubagentDefinitionsModel {
     @ObservationIgnored var models: @Sendable () -> [String] = { [] }
     @ObservationIgnored private var restoreExpected: [String: String] = [:]
     @ObservationIgnored private var afterDiscard: (() -> Void)?
+    @ObservationIgnored var settings: AppSettings = .shared
     @ObservationIgnored let store: SubagentDefinitionsStore
     @ObservationIgnored var reveal: (URL) -> Void = { NSWorkspace.shared.activateFileViewerSelecting([$0]) }
     @ObservationIgnored var openEditor: (URL) throws -> Void = { url in
@@ -120,7 +127,7 @@ final class SubagentDefinitionsModel {
     func back() { leave { self.close(); Task { await self.refresh() } } }
     func leave(_ action: @escaping () -> Void) {
         guard !busy || !editing else { return }
-        if dirty { afterDiscard = action; confirmation = .discard }
+        if dirty { afterDiscard = action; ask(.discard) }
         else { action() }
     }
     func cancelConfirmation() { confirmation = nil; afterDiscard = nil }
@@ -128,11 +135,19 @@ final class SubagentDefinitionsModel {
     func askRestore() {
         guard !busy, loaded else { return }
         restoreExpected = Dictionary(uniqueKeysWithValues: definitions.filter(\.isDefault).compactMap { d in d.fingerprint.map { (d.file, $0) } })
-        confirmation = .restore
+        ask(.restore)
     }
-    func askDelete() { if !busy, original != nil { confirmation = .delete } }
+    func askDelete() { if !busy, original != nil { ask(.delete) } }
+    /// The dialog, or after its "Don't ask again" the action at once.
+    private func ask(_ action: Confirmation) {
+        if settings.skipped(action.skippable) != nil { Task { await perform(action) } } else { confirmation = action }
+    }
     func confirm() async {
-        guard let action = confirmation, !busy else { return }
+        guard let action = confirmation else { return }
+        await perform(action)
+    }
+    private func perform(_ action: Confirmation) async {
+        guard !busy else { return }
         let leave = afterDiscard
         afterDiscard = nil; confirmation = nil
         if action == .discard {

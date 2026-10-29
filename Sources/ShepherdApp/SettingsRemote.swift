@@ -246,6 +246,7 @@ struct HostUpdateContent: View {
     var onInstall: (() -> Void)? = nil
     var onRetry: (() -> Void)? = nil
     @State private var confirmingInstall = false
+    @State private var dontAskAgain = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: SH.Space.xs) {
@@ -268,7 +269,9 @@ struct HostUpdateContent: View {
                             .disabled(polling)
                     }
                     if HostSettingsPresentation.canInstall(status) {
-                        Button("Update and restart\u{2026}") { confirmingInstall = true }
+                        Button("Update and restart\u{2026}") {
+                            if AppSettings.shared.skipped(.updateHost) != nil { onInstall?() } else { confirmingInstall = true }
+                        }
                             .buttonStyle(.sh(.secondary, size: .s))
                             .disabled(polling)
                     }
@@ -300,10 +303,14 @@ struct HostUpdateContent: View {
             isPresented: $confirmingInstall,
             titleVisibility: .visible
         ) {
-            Button("Update and restart", role: .destructive) { onInstall?() }
+            Button("Update and restart", role: .destructive) {
+                if dontAskAgain { AppSettings.shared.skip(.updateHost, with: "Update and restart") }
+                onInstall?()
+            }
         } message: {
             Text(HostSettingsPresentation.installConfirmation(host: hostName))
         }
+        .dialogSuppressionToggle(isSuppressed: $dontAskAgain)
     }
 }
 
