@@ -105,4 +105,24 @@ struct ChangesRevertTests {
         guard case .rejected(let code, _)? = again else { Issue.record("expected a refusal"); return }
         #expect(code == ChangesError.changedSince)
     }
+
+    /// New thread's base picker on a phone: a space's branches before any agent exists
+    /// (`agent.creation.branches.v1`), refused for a space the host doesn't have.
+    @Test func creationBranchesListASpacesBranchesWithoutAnAgent() async throws {
+        let repo = try ChangesRepo(files: ["a.txt": "one\n"])
+        _ = try repo.git("branch", "feat/ledger-v2")
+        let remote = try RemoteHost()
+        defer { remote.stop() }
+        let space = Fixture.space("repo", path: repo.path)
+        try await remote.host.seed(ShepherdState(spaces: [space]))
+        let client = try await remote.typed()
+        defer { client.disconnect() }
+        #expect(client.capabilities.contains(RemoteProtocol.creationBranchesCapability))
+        let branches = try await client.creationBranches(spaceID: space.id)
+        #expect(Set(branches.branches.map(\.name)).isSuperset(of: ["feat/ledger-v2"]))
+        #expect(changesBaseOptions(branches, selected: nil, includeCurrent: true).map(\.name).contains("feat/ledger-v2"))
+        let refused = await #expect(throws: RemoteHostClientError.self) { _ = try await client.creationBranches(spaceID: SpaceID()) }
+        guard case .rejected(let code, _)? = refused else { Issue.record("expected a refusal"); return }
+        #expect(code == "no_such_space")
+    }
 }

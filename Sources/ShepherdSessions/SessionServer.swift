@@ -2152,6 +2152,29 @@ public final class SessionServer: @unchecked Sendable {
                     }
                 }
             }
+        case .creationBranches(let id, let spaceID):
+            // A new worktree's base, before any agent: the space's branches, as the Mac's picker reads them.
+            guard let space = store.state.spaces.first(where: { $0.id == spaceID }) else {
+                send(.error(id: id, code: "no_such_space", message: "That repo is no longer on the host."), to: client)
+                return
+            }
+            let changes = changes
+            let connection = ChangesUnchecked(value: client)
+            let cwd = (space.path as NSString).expandingTildeInPath
+            Task.detached { [weak self] in
+                let result: Result<ChangesBranches, ChangesError>
+                do { result = .success(try await changes.branches(agentID: nil, cwd: cwd)) } catch let error as ChangesError {
+                    result = .failure(error)
+                } catch { result = .failure(ChangesError(ChangesError.gitFailed, String(describing: error))) }
+                self?.queue.async {
+                    let client = connection.value
+                    guard let self, self.clients[client.fd] === client else { return }
+                    switch result {
+                    case .success(let branches): self.send(.agentResult(id: id, result: .changesBranches(branches)), to: client)
+                    case .failure(let error): self.send(.error(id: id, code: error.code, message: error.message), to: client)
+                    }
+                }
+            }
         case .agentQuery(let id, let agentID, .terminals):
             // The server owns the sessions: answered here, without the GUI.
             guard let terminals = terminalActivity(of: agentID) else {
