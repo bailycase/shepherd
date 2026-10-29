@@ -108,7 +108,7 @@ struct NewThreadRepoList: View {
             ForEach(model.repoRows) { row in
                 Button { model.choose(repo: row.id) } label: {
                     SHChoiceRow(row.name, detail: row.detail, selected: row.selected) {
-                        Image(systemName: "book.closed")
+                        SHGlyph.repository.image
                             .font(.sh(.ui))
                             .foregroundStyle(Color.sh.textSecondary)
                     }

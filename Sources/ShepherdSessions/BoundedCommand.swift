@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 
-/// Short-lived catalog/git commands, not sessions. One deadline covers input, both output pipes
+/// Host-owned catalog/git commands and mission checks, not sessions. One deadline covers input, both output pipes
 /// and exit. The leader stays unreaped until its group is killed, so its PID cannot be reused.
 public enum BoundedCommand {
     public struct Result: Sendable {
@@ -10,13 +10,38 @@ public enum BoundedCommand {
         public var status: Int32
     }
 
-    enum Failure: Error, Equatable { case spawn(Int32), io(Int32), timedOut, outputTooLarge }
+    enum Failure: Error, Equatable { case spawn(Int32), io(Int32), timedOut, outputTooLarge, terminating }
+
+    private final class Processes: @unchecked Sendable {
+        let lock = NSLock()
+        var closing = false
+        var pids = Set<pid_t>()
+        func spawn(_ body: () -> (Int32, pid_t)) throws -> (Int32, pid_t) {
+            lock.lock(); defer { lock.unlock() }
+            guard !closing else { throw Failure.terminating }
+            let result = body()
+            if result.0 == 0 { pids.insert(result.1) }
+            return result
+        }
+        func remove(_ pid: pid_t) { lock.lock(); defer { lock.unlock() }; pids.remove(pid) }
+        func stop() {
+            lock.lock(); defer { lock.unlock() }
+            closing = true
+            for pid in pids { kill(-pid, SIGKILL) }
+        }
+    }
+    private static let processes = Processes()
+
+    /// App termination only. Synchronous kill, then permanently refuse new commands in this process.
+    /// Unlike cancelling a Swift task, this cannot lose its cleanup race against process exit.
+    public static func stopForAppTermination() { processes.stop() }
 
     public static func run(_ argv: [String], directory: URL? = nil,
                     environment: [String: String] = ProcessInfo.processInfo.environment,
                     input: Data? = nil, timeout: TimeInterval, outputLimit: Int = 64 << 20) throws -> Result {
         precondition(!argv.isEmpty && timeout.isFinite && timeout > 0 && timeout <= 86_400)
         precondition(outputLimit >= 0)
+        try Task.checkCancellation()
         var pipes = [[Int32]](repeating: [-1, -1], count: 3)
         defer { for pair in pipes { for fd in pair where fd >= 0 { Darwin.close(fd) } } }
         for i in pipes.indices {
@@ -44,11 +69,14 @@ public enum BoundedCommand {
         try checked(posix_spawnattr_setsigmask(&attr, &mask))
         try checked(posix_spawnattr_setpgroup(&attr, 0))
         try checked(posix_spawnattr_setflags(&attr, Int16(POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_CLOEXEC_DEFAULT)))
-        var pid: pid_t = 0
-        let code = args.withUnsafeMutableBufferPointer { args in
-            env.withUnsafeMutableBufferPointer { env in
-                posix_spawn(&pid, argv[0], &actions, &attr, args.baseAddress, env.baseAddress)
+        let (code, pid) = try processes.spawn {
+            var pid: pid_t = 0
+            let code = args.withUnsafeMutableBufferPointer { args in
+                env.withUnsafeMutableBufferPointer { env in
+                    posix_spawn(&pid, argv[0], &actions, &attr, args.baseAddress, env.baseAddress)
+                }
             }
+            return (code, pid)
         }
         guard code == 0 else { throw Failure.spawn(code) }
         for (i, end) in [(0, 0), (1, 1), (2, 1)] { Darwin.close(pipes[i][end]); pipes[i][end] = -1 }
@@ -61,6 +89,7 @@ public enum BoundedCommand {
                 let grace = DispatchTime.now().uptimeNanoseconds + 200_000_000
                 while !exited(pid), DispatchTime.now().uptimeNanoseconds < grace { usleep(5_000) }
                 kill(-pid, SIGKILL)
+                processes.remove(pid) // Remove while the unreaped leader still pins the PID.
                 // Usually already a zombie. Never hold the caller on an uninterruptible child.
                 let reapDeadline = DispatchTime.now().uptimeNanoseconds + 1_000_000_000
                 var status: Int32 = 0
@@ -84,6 +113,7 @@ public enum BoundedCommand {
         let input = input ?? Data()
         var written = 0, inputOpen = true, outputOpen = true, errorsOpen = true, leaderExited = false
         while true {
+            try Task.checkCancellation()
             guard DispatchTime.now().uptimeNanoseconds < deadline else { throw Failure.timedOut }
             if inputOpen && written == input.count {
                 Darwin.close(inputFD); pipes[0][1] = -1; inputOpen = false
@@ -121,6 +151,7 @@ public enum BoundedCommand {
                 }
             }
         }
+        processes.remove(pid)
         var status: Int32 = 0
         var waited: pid_t
         repeat { waited = waitpid(pid, &status, WNOHANG) } while waited < 0 && errno == EINTR
