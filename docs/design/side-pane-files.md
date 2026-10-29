@@ -4,7 +4,7 @@
 
 The selected direction is the user-supplied [FileOpenSplit board](boards/FileOpenSplit.png).
 Files sits after Browser in the existing side pane. Its fixed shortcut is ⌃5, preserving
-Artifacts on ⌃3 and Subagents on ⌃4. The existing pane controls resize, maximize and close it.
+Subagents on ⌃4 (⌃3 belonged to the removed Artifacts tab). The existing pane controls resize, maximize and close it.
 
 For a local thread, the browser reads the thread's effective working directory (including its
 worktree). Moving the thread replaces the browser's root. The browser is read-only: selecting

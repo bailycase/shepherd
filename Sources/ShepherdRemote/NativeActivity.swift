@@ -361,14 +361,6 @@ public struct NativeActivityCall: Equatable, Sendable, Identifiable {
     public static let outputHeadLines = 12
     public static let tailLines = 3
 
-    /// The file this call made, when the thread draws it as an artifact where it happened ("Made an artifact" and its card): a finished,
-    /// successful `write` of a Markdown, HTML or SVG file. Every other file a `write` makes is in the Artifacts tab's list only
-    /// (`nativeArtifacts`), since a line for each source file would only repeat "Edited N files".
-    public var artifact: NativeArtifact? {
-        guard name == "write", state == .done, !stopped, let path, NativeArtifactKind(path: path).showsCard else { return nil }
-        return NativeArtifact(path: path, createdAt: endedAt ?? startedAt)
-    }
-
     public var failed: Bool { state == .failed }
     public var running: Bool { state == .running }
     public var expandable: Bool { outputLineCount > 0 }
@@ -738,8 +730,6 @@ public struct NativeActivityBurst: Equatable, Sendable, Identifiable {
         return nativeReceivedText(bytes)
     }
     public var expandable: Bool { state != .running }
-    /// The file a one-call burst made ("Made an artifact · plan.md"): its line opens it in the side pane.
-    public var artifact: NativeArtifact? { kind == .edit && state == .done && calls.count == 1 ? calls[0].artifact : nil }
     /// A drawing burst that only rewrote boards: it reads "Updated A and A · phone" and wears the
     /// edit glyph rather than the nib.
     public var isBoardUpdate: Bool {
@@ -753,8 +743,8 @@ public func nativeActivityBursts(_ calls: [NativeActivityCall]) -> [NativeActivi
     var groups: [[NativeActivityCall]] = []
     for call in calls {
         // Each typed Project reference or explicit plan update owns its own card.
-        if call.state == .done, !call.stopped, call.projectAction == nil, call.projectPlan == nil, call.artifact == nil,
-           let last = groups.last?.last, last.state == .done, !last.stopped, last.artifact == nil,
+        if call.state == .done, !call.stopped, call.projectAction == nil, call.projectPlan == nil,
+           let last = groups.last?.last, last.state == .done, !last.stopped,
            last.projectAction == nil, last.projectPlan == nil, last.kind == call.kind,
            (call.kind != .other && call.kind != .browser) || last.name == call.name, call.kind != .lookedAt || last.designRef == call.designRef {
             groups[groups.count - 1].append(call)
@@ -918,7 +908,6 @@ private func doneWords(_ calls: [NativeActivityCall]) -> (String, [String]) {
         if lists > 0 { meta.append("list \(lists)") }
         return ("Explored " + nativeCount(files, "file"), meta + [duration].compactMap { $0 })
     case .edit:
-        if calls.count == 1, let artifact = first.artifact { return ("Made an artifact", [artifact.name]) }
         let files = Set(calls.map { $0.path ?? $0.detail }).count
         let added = calls.reduce(0) { $0 + $1.added }, removed = calls.reduce(0) { $0 + $1.removed }
         return ("Edited " + nativeCount(files, "file"), [nativeDiffText(added: added, removed: removed)])

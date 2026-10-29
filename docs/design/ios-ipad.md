@@ -141,12 +141,10 @@ selected thread, or the Overview when none is. Other screens push over the detai
   too little (iPhone Duo's inner display; `PadSplitLayout.sidebarFitsBesidePane`), opening the
   pane sends the sidebar over the thread, and Show sidebar (`sidebar.left`, a glass circle by the
   title) brings it back. Half open, the thread ends at the fold and the pane starts after it.
-  The head (52pt, `SHPadPaneHead`): Changes, Files, Terminal, Subagents, Browser, and Artifacts
-  once the thread has made a file; the open tab shows its glyph, label and count on `bgSelected`,
+  The head (52pt, `SHPadPaneHead`): Changes, Files, Terminal, Subagents and Browser; the open tab shows its glyph, label and count on `bgSelected`,
   the others their glyph alone; Terminal and Subagents carry a `running` dot while something
   runs; the pane's ⋯ trails (the tab's options, Hide side pane). Changes is the review (Review),
-  Terminal the thread's terminals (`TerminalScreen`), Subagents the runs (Subagents), Artifacts
-  the files pi made. Files and Browser are their own tracks' (`SidePaneComingSoon` until then).
+  Terminal the thread's terminals (`TerminalScreen`), Subagents the runs (Subagents). Files and Browser are their own tracks' (`SidePaneComingSoon` until then).
   Pushing a thread's Changes, Terminal or Subagents opens that tab instead of a screen, and so
   does unfolding a phone with one pushed. The pane and its tab are the window's
   (`SidePaneState`, in the navigator), so they survive the hinge and a restore.
