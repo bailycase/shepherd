@@ -498,7 +498,7 @@ struct LogicalProjectPreviewTests {
         let (world, projects) = try await world()
         defer { world.stop() }
         let vm = world.vm
-        try await Preview.renderMatrix("lead-delete-project", size: CGSize(width: 560, height: 360)) {
+        try await Preview.renderMatrix("lead-delete-project", size: CGSize(width: 560, height: 420)) {
             DeleteLogicalProjectDialog(vm: vm, ref: LogicalProjectRef(home: .local, id: projects[0].id), project: projects[0], dismiss: {})
         }
     }

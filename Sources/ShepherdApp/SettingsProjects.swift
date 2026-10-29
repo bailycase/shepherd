@@ -125,7 +125,7 @@ struct ProjectsSettings: View {
                                                adding = AddingProject(host: row.host, under: row.project.directory)
                                            }
                                        }, remove: row.host.id == "local" && row.project.projectID != nil
-                                           ? { vm.spaceDeleteTarget = row.project.projectID } : nil,
+                                           ? { vm.requestSpaceDelete(row.project.projectID) } : nil,
                                        rename: row.host.id == "local" && row.project.projectID != nil
                                            ? { vm.spaceRenameTarget = row.project.projectID } : nil)
                         if row.id != model.visible.last?.id { SHHairline() }

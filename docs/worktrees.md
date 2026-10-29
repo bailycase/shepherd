@@ -186,6 +186,13 @@ worktree"). You can choose:
   4. Checks the fingerprint again.
   5. Runs `git worktree remove --force <path>` and `git branch -D <branch>`.
 
+**Don't ask again** (on this dialog and the remote one) remembers the delete you confirm, never a
+Cancel; Settings ▸ Worktrees ▸ Deleting a worktree agent shows it and sets it back to Ask.
+Remembered **Keep worktree** deletes the agent without a dialog. Remembered **Remove worktree**
+still runs the unreconciled-work check first and shows the dialog when anything would be lost
+(or there is no checkout to check); on a remote host the sheet opens, and starts by itself only
+when the host reports no warning.
+
 ## Remote clients
 
 A remote Mac can create, finalize, and delete worktree agents on a host that advertises the

@@ -44,7 +44,9 @@ struct HostsDestination: View {
         let _ = SHRenderProbe.tick("page.hosts")
         HostsPage(model: vm.hostsPage(agentVersion: vm.server.pi.engine.version), actions: HostsPageActions(
             retry: { vm.remoteHosts.reconnect(id: $0) },
-            remove: { removing = $0 },
+            remove: { id in
+                if vm.settings.skipped(.removeHost) != nil { vm.remoteHosts.removeHost(id: id) } else { removing = id }
+            },
             addHost: { vm.showAddHost() }), chrome: chrome)
             .sheet(item: Binding(get: { removing.map(SheetItem.init) }, set: { removing = $0?.value })) { item in
                 let name = vm.remoteHosts.connections.first { $0.id == item.value }?.config.name ?? "this host"
@@ -56,7 +58,8 @@ struct HostsDestination: View {
                                     removing = nil
                                     vm.remoteHosts.removeHost(id: item.value)
                                 },
-                            ])
+                            ],
+                            dontAskAgain: .removeHost, settings: vm.settings)
             }
     }
 }

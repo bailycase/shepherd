@@ -21,6 +21,43 @@ enum WorktreeMergeMethod: String, CaseIterable {
     case merge, squash, rebase
 }
 
+/// What Delete Worktree Agent does without its dialog: `ask` shows it; the others are the
+/// dialog's two deletes, remembered by its "Don't ask again".
+enum WorktreeDeleteAction: String, CaseIterable {
+    case ask, keepWorktree, removeWorktree
+}
+
+/// A confirmation its "Don't ask again" can turn off (Delete Worktree Agent has its own
+/// `WorktreeDeleteAction`). The raw value is the stored key: never rename one. A request an
+/// agent or another process makes is confirmed whatever is stored here.
+enum SkippableConfirmation: String, CaseIterable {
+    case removeSpace, deleteAgent, deleteDesign, deleteDesignSystem, revertFile, stopAll, quit, removeHost,
+         removeMCPServer, removeSpaceMCPServer, deleteProject, updateHost, forgetSkillReceipt,
+         discardSubagentEdits, restoreSubagents, deleteSubagent
+
+    /// Its name in Settings ▸ Advanced ▸ Confirmations.
+    var title: String {
+        switch self {
+        case .removeSpace: "Remove space"
+        case .deleteAgent: "Delete agent"
+        case .deleteDesign: "Delete design"
+        case .deleteDesignSystem: "Delete design system"
+        case .revertFile: "Revert file"
+        case .stopAll: "Stop with subagents running"
+        case .quit: "Quit while agents work"
+        case .removeHost: "Remove host"
+        case .removeMCPServer: "Remove MCP server"
+        case .removeSpaceMCPServer: "Remove a space's MCP server"
+        case .deleteProject: "Delete project"
+        case .updateHost: "Update and restart host"
+        case .forgetSkillReceipt: "Stop waiting for a skill change"
+        case .discardSubagentEdits: "Discard subagent edits"
+        case .restoreSubagents: "Restore default subagents"
+        case .deleteSubagent: "Delete subagent"
+        }
+    }
+}
+
 /// User preferences that are not part of the workspace.
 ///
 /// `state.json` (owned by the session server) is the workspace: spaces,
@@ -98,6 +135,8 @@ final class AppSettings {
         static let worktreeDeleteLocalBranch = "shepherd.worktree.deleteLocalBranch"
         static let worktreeAutoMergePR = "shepherd.worktree.autoMergePR"
         static let worktreeMergeMethod = "shepherd.worktree.mergeMethod"
+        static let worktreeDeleteAction = "shepherd.worktree.deleteAction"
+        static let skippedConfirmations = "shepherd.confirmations.skipped"
         static let goalsEnabled = "shepherd.experiments.goals"
         static let projectsEnabled = "shepherd.experiments.projects"
         static let designToolEnabled = "shepherd.experiments.designTool"
@@ -116,7 +155,7 @@ final class AppSettings {
             worktreeBaseMode, worktreeFetchBeforeCreate,
             worktreeAutoCommit, worktreeGeneratePRDescription,
             worktreeDeleteLocalBranch, worktreeAutoMergePR,
-            worktreeMergeMethod, skillsInSlashMenu, hiddenSlashCommands,
+            worktreeMergeMethod, worktreeDeleteAction, skippedConfirmations, skillsInSlashMenu, hiddenSlashCommands,
             mcpProjectConfig, mcpSameEverywhere,
             goalsEnabled, projectsEnabled, designToolEnabled, missionsEnabled, implementOpensThread,
             filesWordWrap, filesMarkdownPreview,
@@ -469,6 +508,37 @@ final class AppSettings {
         didSet { store.set(worktreeMergeMethod.rawValue, forKey: Key.worktreeMergeMethod) }
     }
 
+    /// Settings ▸ Worktrees ▸ Deleting a worktree agent: ask, or the delete the dialog remembered.
+    /// A remembered removal still asks when the checkout holds unreconciled work.
+    var worktreeDeleteAction: WorktreeDeleteAction {
+        didSet { store.set(worktreeDeleteAction.rawValue, forKey: Key.worktreeDeleteAction) }
+    }
+
+    /// Confirmations turned off by their "Don't ask again", each with the label of the action it
+    /// now takes at once (StopAll remembers which of its two).
+    var skippedConfirmations: [String: String] {
+        didSet { store.set(skippedConfirmations, forKey: Key.skippedConfirmations) }
+    }
+
+    /// The action a skipped confirmation takes at once, or nil while it asks.
+    func skipped(_ confirmation: SkippableConfirmation) -> String? { skippedConfirmations[confirmation.rawValue] }
+
+    func skip(_ confirmation: SkippableConfirmation, with action: String) { skippedConfirmations[confirmation.rawValue] = action }
+
+    /// How many confirmations "Don't ask again" turned off, Delete Worktree Agent's included.
+    var skippedConfirmationCount: Int { skippedConfirmations.count + (worktreeDeleteAction == .ask ? 0 : 1) }
+
+    /// Settings ▸ Advanced ▸ Confirmations ▸ Ask again: every confirmation shows again.
+    func askAgainEverywhere() {
+        skippedConfirmations = [:]
+        worktreeDeleteAction = .ask
+    }
+
+    /// A delete from Delete Worktree Agent: checked remembers that delete, unchecked asks again.
+    func rememberWorktreeDelete(_ remember: Bool, removeWorktree: Bool) {
+        worktreeDeleteAction = !remember ? .ask : removeWorktree ? .removeWorktree : .keepWorktree
+    }
+
     /// Settings ▸ Experiments ▸ Goals. Off pauses active goals without discarding them.
     var goalsEnabled: Bool {
         didSet {
@@ -591,6 +661,11 @@ final class AppSettings {
         worktreeAutoMergePR = store.bool(forKey: Key.worktreeAutoMergePR)
         worktreeMergeMethod = store.string(forKey: Key.worktreeMergeMethod)
             .flatMap(WorktreeMergeMethod.init(rawValue:)) ?? .squash
+        worktreeDeleteAction = store.string(forKey: Key.worktreeDeleteAction)
+            .flatMap(WorktreeDeleteAction.init(rawValue:)) ?? .ask
+        let known = Set(SkippableConfirmation.allCases.map(\.rawValue))
+        skippedConfirmations = (store.dictionary(forKey: Key.skippedConfirmations) as? [String: String] ?? [:])
+            .filter { known.contains($0.key) }
         designToolEnabled = store.bool(forKey: Key.designToolEnabled)
         missionsEnabled = store.bool(forKey: Key.missionsEnabled)
         implementOpensThread = store.object(forKey: Key.implementOpensThread) as? Bool ?? true
@@ -688,6 +763,8 @@ final class AppSettings {
         worktreeDeleteLocalBranch = true
         worktreeAutoMergePR = false
         worktreeMergeMethod = .squash
+        worktreeDeleteAction = .ask
+        skippedConfirmations = [:]
         designToolEnabled = false
         missionsEnabled = false
         implementOpensThread = true

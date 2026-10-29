@@ -497,6 +497,7 @@ extension ShepherdViewModel {
                 throw ProjectFileError("confirmation_busy", "Another space removal is awaiting confirmation.")
             }
             adopt(server.state)
+            spaceDeleteRequested = true
             spaceDeleteTarget = id
             return (space, false)
         case .child(let parentPath, let path, let name, let create):

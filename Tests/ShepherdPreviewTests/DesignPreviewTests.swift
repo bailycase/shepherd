@@ -663,7 +663,7 @@ struct DesignPreviewTests {
             words = DeleteDesignWords(name: checkout.name, boards: 4, versions: 23, comments: 2, system: "acme-web", agentWorking: true,
                                       drawing: 2)
         }
-        try await renderDialog("design-delete-\(state)", width: SHDesignMetrics.alertWidth, height: state == "working" ? 330 : 270) {
+        try await renderDialog("design-delete-\(state)", width: SHDesignMetrics.alertWidth, height: state == "working" ? 390 : 330) {
             DeleteDesignDialog(words: words, delete: {}, cancel: {})
         }
     }
@@ -698,7 +698,7 @@ struct DesignPreviewTests {
             ? DeleteSystemWords(name: "acme-web", components: 9, usedBy: ["Checkout funnel dashboard", "Events explorer", "Onboarding flow"],
                                 repo: "dashboard-web", building: false)
             : DeleteSystemWords(name: "acme-mobile", components: 0, usedBy: [], repo: "mobile-app", building: true)
-        try await renderDialog("system-delete-\(state)", width: SHDesignMetrics.alertWideWidth, height: state == "confirm" ? 300 : 250) {
+        try await renderDialog("system-delete-\(state)", width: SHDesignMetrics.alertWideWidth, height: state == "confirm" ? 360 : 310) {
             DeleteSystemDialog(words: words, delete: {}, cancel: {})
         }
     }

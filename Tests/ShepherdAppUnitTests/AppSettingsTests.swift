@@ -314,6 +314,45 @@ struct AppSettingsTests {
         #expect(settings.childEnvironment["SHEPHERD_CHILD_SCOPE"] == nil)
     }
 
+    /// Delete Worktree Agent's "Don't ask again": a checked delete is remembered across launches,
+    /// an unchecked one asks again, and a reset or an unknown value asks.
+    @Test func worktreeDeleteChoiceIsRememberedUntilReset() {
+        let store = Fixture.defaults()
+        let settings = AppSettings(store: store)
+        #expect(settings.worktreeDeleteAction == .ask)
+        settings.rememberWorktreeDelete(true, removeWorktree: true)
+        #expect(AppSettings(store: store).worktreeDeleteAction == .removeWorktree)
+        settings.rememberWorktreeDelete(true, removeWorktree: false)
+        #expect(AppSettings(store: store).worktreeDeleteAction == .keepWorktree)
+        settings.rememberWorktreeDelete(false, removeWorktree: true)
+        #expect(AppSettings(store: store).worktreeDeleteAction == .ask)
+        settings.worktreeDeleteAction = .removeWorktree
+        settings.resetToDefaults()
+        #expect(AppSettings(store: store).worktreeDeleteAction == .ask)
+        store.set("shred", forKey: AppSettings.Key.worktreeDeleteAction)
+        #expect(AppSettings(store: store).worktreeDeleteAction == .ask)
+    }
+
+    /// "Don't ask again" for any other confirmation: stored per confirmation with its action,
+    /// unknown keys dropped, and Ask again or Reset brings every one back (worktree's too).
+    @Test func skippedConfirmationsPersistUntilAskedAgain() {
+        let store = Fixture.defaults()
+        let settings = AppSettings(store: store)
+        #expect(settings.skippedConfirmationCount == 0)
+        settings.skip(.stopAll, with: "Stop all")
+        settings.skip(.removeSpace, with: "Remove space")
+        settings.worktreeDeleteAction = .keepWorktree
+        store.set(settings.skippedConfirmations.merging(["retiredDialog": "OK"]) { a, _ in a }, forKey: AppSettings.Key.skippedConfirmations)
+        let reloaded = AppSettings(store: store)
+        #expect(reloaded.skipped(.stopAll) == "Stop all" && reloaded.skipped(.removeSpace) != nil && reloaded.skipped(.quit) == nil)
+        #expect(reloaded.skippedConfirmationCount == 3, "the unknown key is dropped; worktree's choice counts")
+        reloaded.askAgainEverywhere()
+        #expect(AppSettings(store: store).skippedConfirmationCount == 0)
+        settings.skip(.quit, with: "Quit")
+        settings.resetToDefaults()
+        #expect(AppSettings(store: store).skipped(.quit) == nil)
+    }
+
     @Test(arguments: [(100.0, 190.0), (275, 275), (500, 340)])
     func sidebarWidthClampsToItsDragRange(width: Double, clamped: Double) {
         #expect(AppSettings.clampSidebarWidth(width) == clamped)

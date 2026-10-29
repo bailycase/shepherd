@@ -27,6 +27,8 @@ final class AppHarness {
     /// Each harness gets its own pi home; pass `.app` explicitly to share process history.
     /// `directory` is a scratch directory the test already filled (a saved `state.json` for a cold launch).
     init(directory existing: URL? = nil, pi: PiSetup? = nil, modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels }) throws {
+        // Focus tracking reads NSApp even in model-only tests; no window is created.
+        _ = NSApplication.shared
         let directory = try existing ?? makeScratchDirectory("srv")
         let setup = pi ?? PiSetup(engine: PiSetup.app.engine, home: directory.appendingPathComponent("pi"),
                                   yourPi: PiSetup.app.yourPi, userHome: PiSetup.app.userHome)
