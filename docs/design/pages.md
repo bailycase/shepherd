@@ -76,6 +76,10 @@ one. The New agent sheet (⇧⌘T) stays for its directory and base fields.
   words come back into its composer. They are this Mac's designs and reach this Mac's spaces
   only: for a space on another host the picker says "Design references go to spaces on this
   Mac." and, with a chip attached, Send says the same under the card and in its tooltip.
+- **Slash menu:** "/…" opens the thread composer's `SHSlashMenu` under the card, with its keys
+  (↑↓, ⏎ starts the thread with "/name", ⇥ completes, Esc closes). For a place on this Mac it
+  lists the commands any pi here has listed since launch, less what Settings hides; for another
+  host, and before any pi has listed its commands, it lists none.
 - **Workplace chip** (`SHPlaceChipLabel`): a 12pt `textSecondary` folder glyph and the space in
   mono ("shepherd"), a `textTertiary` "·", a display glyph and the host in mono ("This Mac"), and a
   10pt `textTertiary` chevron, as a 26pt chip in 12 `textSecondary`. It picks where the thread runs,
