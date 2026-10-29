@@ -17,16 +17,17 @@ extension MobileLayout {
 }
 
 /// Where it runs (MobileWorkspace board): the repo, the host and the New worktree switch, in
-/// one sheet on iPhone.
+/// one sheet on iPhone. The repo is one row that pushes its searchable list, so the host and the
+/// worktree stay in view however many repos the host has; the base pushes the branch list.
 struct NewThreadWhereItRuns: View {
     @Bindable var model: NewThreadModel
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $model.workspacePath) {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: SH.Space.xxl) {
-                        NewThreadSection("Repo") { NewThreadRepoList(model: model, carded: true) }
+                        NewThreadSection("Repo") { SHGroupCard { NewThreadRepoSummary(model: model) } }
                         NewThreadSection("Host") { NewThreadHostList(model: model, carded: true) }
                         NewThreadWorktreeCard(model: model).id(NewThreadModel.Panel.worktree)
                     }
@@ -41,15 +42,162 @@ struct NewThreadWhereItRuns: View {
             .navigationTitle("Where it runs")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                // A symbol, so iPhone Duo's closed display puts it in its column with the sheet's bars.
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { model.panel = nil }.fontWeight(.semibold)
+                    Button { model.panel = nil } label: { Label("Done", systemImage: "checkmark") }
                 }
             }
-            .navigationDestination(item: $model.folders) { browser in
-                NewThreadFolderScreen(model: model, browser: browser)
-            }
+            .newThreadPages(model)
         }
         .shAnimation(.disclosure, value: model.usesWorktree)
+    }
+}
+
+extension View {
+    /// The pages Where it runs and the iPad's worktree popover push: the repo list (with Add
+    /// repo's folders) and the base branches.
+    func newThreadPages(_ model: NewThreadModel) -> some View {
+        @Bindable var model = model
+        return navigationDestination(for: NewThreadModel.Panel.self) { page in
+            switch page {
+            case .repo: NewThreadRepoPage(model: model)
+            case .branches: NewThreadBranchPicker(model: model)
+            default: EmptyView()
+            }
+        }
+        .navigationDestination(item: $model.folders) { browser in
+            NewThreadFolderScreen(model: model, browser: browser)
+        }
+    }
+}
+
+/// The chosen repo, as one row that pushes the list.
+private struct NewThreadRepoSummary: View {
+    let model: NewThreadModel
+
+    var body: some View {
+        let path = model.space.map { NewThreadRules.abbreviatedPath($0.path) }
+        NavigationLink(value: NewThreadModel.Panel.repo) {
+            SHChoiceRow(model.space?.name ?? "Choose repo", detail: path ?? model.host.map { "a repo on \($0.name)" }) {
+                SHGlyph.repository.image
+                    .font(.sh(.ui))
+                    .foregroundStyle(Color.sh.textSecondary)
+            } trailing: {
+                NewThreadDisclosure()
+            }
+        }
+        .buttonStyle(.shRow(selected: false, radius: 0))
+        .accessibilityHint("Shows every repo")
+    }
+}
+
+/// A pushed row's trailing chevron.
+struct NewThreadDisclosure: View {
+    var body: some View {
+        Image(systemName: "chevron.right")
+            .font(.sh(.caption, weight: .semibold))
+            .foregroundStyle(Color.sh.textTertiary)
+            .accessibilityHidden(true)
+    }
+}
+
+/// Every repo, searchable, and Add repo; choosing one goes back.
+private struct NewThreadRepoPage: View {
+    let model: NewThreadModel
+    @FocusState private var searching: Bool
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: SH.Space.l) {
+                SHTouchSearchField("Search repos", text: Binding(get: { model.repoQuery }, set: { model.setRepoQuery($0) }), focus: $searching)
+                NewThreadRepoList(model: model, carded: true) {
+                    if !model.workspacePath.isEmpty { model.workspacePath.removeLast() }
+                }
+            }
+            .padding(.horizontal, MobileLayout.gutter)
+            .padding(.vertical, SH.Space.l)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .background(Color.sh.bgWindow)
+        .navigationTitle("Repo")
+        .navigationBarTitleDisplayMode(.inline)
+        .onDisappear { model.setRepoQuery("") }
+    }
+}
+
+/// The worktree's base (WorktreeBasePicker on the Mac): search, then "Branch from" with the
+/// default base, recents and every branch by last commit, tagged "default" or "worktree"
+/// (`changesBaseOptions`). Choosing one goes back.
+struct NewThreadBranchPicker: View {
+    let model: NewThreadModel
+    @FocusState private var searching: Bool
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: SH.Space.l) {
+                SHTouchSearchField("Search branches", text: Binding(get: { model.branchQuery }, set: { model.setBranchQuery($0) }),
+                                   focus: $searching)
+                if model.branches != nil {
+                    NewThreadSection("Branch from") {
+                        // A repository can list hundreds of branches (the engine stops at 500).
+                        LazyVStack(spacing: 0) {
+                            ForEach(model.branchOptions) { option in
+                                VStack(spacing: 0) {
+                                    if option.id != model.branchOptions.first?.id { SHHairline() }
+                                    row(option)
+                                }
+                            }
+                        }
+                        .shCard()
+                    }
+                    if model.branchOptions.isEmpty {
+                        note(model.branchQuery.isEmpty ? "This repo has no branches yet." : "No branch matches “\(model.branchQuery)”.")
+                    }
+                } else if let error = model.branchesError {
+                    SHBanner(.failed, title: "Couldn't read the branches", message: error) {
+                        Button("Try again") { model.loadBranches() }.buttonStyle(.sh(.secondary, size: .s))
+                    }
+                } else {
+                    HStack(spacing: SH.Space.m) {
+                        ProgressView().progressViewStyle(.shSpinner)
+                        note("Reading branches on \(model.host?.name ?? "the host")…")
+                    }
+                    .frame(maxWidth: .infinity, minHeight: MobileLayout.rowHeight)
+                }
+            }
+            .padding(.horizontal, MobileLayout.gutter)
+            .padding(.vertical, SH.Space.l)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .background(Color.sh.bgWindow)
+        .navigationTitle("Base")
+        .navigationBarTitleDisplayMode(.inline)
+        .task { model.loadBranches() }
+        .onDisappear { model.setBranchQuery("") }
+    }
+
+    private func row(_ option: ChangesBaseOption) -> some View {
+        Button {
+            model.setBase(option.name)
+            if !model.workspacePath.isEmpty { model.workspacePath.removeLast() }
+        } label: {
+            SHChoiceRow(option.name, selected: option.selected) {
+                Image(systemName: SHGlyph.gitBranch.symbolName)
+                    .font(.sh(.ui))
+                    .foregroundStyle(Color.sh.textSecondary)
+            } trailing: {
+                if let tag = option.tag { SHTag(tag) }
+            }
+        }
+        .buttonStyle(.shRow(selected: false, radius: 0))
+        .accessibilityHint(option.selected ? "" : "Branches from \(option.name)")
+    }
+
+    private func note(_ text: String) -> some View {
+        Text(text)
+            .shText(.caption)
+            .foregroundStyle(Color.sh.textTertiary)
+            .padding(.horizontal, SH.Space.s)
     }
 }
 
@@ -101,12 +249,16 @@ struct NewThreadRowStack<Content: View>: View {
 struct NewThreadRepoList: View {
     let model: NewThreadModel
     let carded: Bool
+    var chosen: () -> Void = {}
 
     var body: some View {
         let connected = model.host?.phase.isConnected == true
         NewThreadRowStack(carded: carded) {
-            ForEach(model.repoRows) { row in
-                Button { model.choose(repo: row.id) } label: {
+            ForEach(model.repoMatches) { row in
+                Button {
+                    model.choose(repo: row.id)
+                    chosen()
+                } label: {
                     SHChoiceRow(row.name, detail: row.detail, selected: row.selected) {
                         SHGlyph.repository.image
                             .font(.sh(.ui))
@@ -116,8 +268,9 @@ struct NewThreadRepoList: View {
                 .buttonStyle(.shRow(selected: false, radius: 0))
                 .accessibilityHint(row.selected ? "" : "Runs the thread in \(row.name)")
             }
-            if model.repoRows.isEmpty {
-                Text(model.host.map { "No repos on \($0.name) yet." } ?? "Choose a host first.")
+            if model.repoMatches.isEmpty {
+                Text(!model.repoQuery.isEmpty ? "No repo matches “\(model.repoQuery)”."
+                     : model.host.map { "No repos on \($0.name) yet." } ?? "Choose a host first.")
                     .shText(.caption)
                     .foregroundStyle(Color.sh.textTertiary)
                     .padding(.horizontal, SH.Space.xl)
@@ -197,15 +350,37 @@ struct NewThreadWorktreeCard: View {
                     .disabled(!supported)
             }
             if on {
-                field("Branch", text: Binding(get: { model.branch }, set: { model.setBranch($0) }), prompt: "branch name")
-                VStack(alignment: .leading, spacing: SH.Space.xs) {
-                    field("Base", text: Binding(get: { model.base.base }, set: { model.setBase($0) }), prompt: "base branch")
-                    Text(model.base.resolving ? "Resolving on \(model.host?.name ?? "the host")…" : model.base.note)
-                        .shText(.caption)
-                        .foregroundStyle(Color.sh.textTertiary)
-                        .shContentTransition(.crossFade)
-                        .padding(.leading, SH.Space.xl)
-                        .padding(.bottom, model.base.note.isEmpty && !model.base.resolving ? 0 : SH.Space.m)
+                field("New branch", text: Binding(get: { model.branch }, set: { model.setBranch($0) }), prompt: "branch name")
+                if model.offersBranchList {
+                    // The base is one of the repo's branches, chosen as on the Mac.
+                    NavigationLink(value: NewThreadModel.Panel.branches) {
+                        SHCardRow("Base", description: baseNote) {
+                            HStack(spacing: SH.Space.s) {
+                                Text(model.base.base.isEmpty ? "Choose" : model.base.base)
+                                    .font(.sh(.code))
+                                    .foregroundStyle(model.base.base.isEmpty ? Color.sh.textTertiary : Color.sh.textPrimary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                NewThreadDisclosure()
+                            }
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.shRow(selected: false, radius: 0))
+                    .accessibilityLabel("Base, \(model.base.base)")
+                    .accessibilityHint("Shows the repo's branches")
+                } else {
+                    VStack(alignment: .leading, spacing: SH.Space.xs) {
+                        field("Base", text: Binding(get: { model.base.base }, set: { model.setBase($0) }), prompt: "base branch")
+                        if let baseNote {
+                            Text(baseNote)
+                                .shText(.caption)
+                                .foregroundStyle(Color.sh.textTertiary)
+                                .shContentTransition(.crossFade)
+                                .padding(.horizontal, SH.Space.xl)
+                                .padding(.bottom, SH.Space.m)
+                        }
+                    }
                 }
                 SHCardRow("Fetch origin first", description: "Resolves the base again after a fetch.") {
                     Toggle("Fetch origin first", isOn: Binding(get: { model.base.fetchFirst }, set: { model.setFetchFirst($0) }))
@@ -216,6 +391,12 @@ struct NewThreadWorktreeCard: View {
                 }
             }
         }
+    }
+
+    /// What the host said of the base ("origin fetched just now"), or that it is resolving it.
+    private var baseNote: String? {
+        if model.base.resolving { return "Resolving on \(model.host?.name ?? "the host")…" }
+        return model.base.note.isEmpty ? nil : model.base.note
     }
 
     private func field(_ label: String, text: Binding<String>, prompt: String) -> some View {
@@ -237,58 +418,103 @@ struct NewThreadWorktreeCard: View {
     }
 }
 
-/// The model picker: the host's catalog with a filter, and the host's default first.
+/// The model picker: on iPhone the thinking level first, then a search, the host's default,
+/// and the host's catalog by provider, each model named without its provider and the host's
+/// default tagged. Choosing a model closes it.
 struct NewThreadModelPicker: View {
     let model: NewThreadModel
+    /// The phone's sheet holds thinking too; the iPad has its own Thinking chip.
+    var thinking = false
     let close: () -> Void
+    @FocusState private var searching: Bool
 
     var body: some View {
-        VStack(spacing: 0) {
-            SHSearchField("Filter models", text: Binding(get: { model.modelQuery }, set: { model.setModelQuery($0) }))
-                .padding(MobileLayout.gutter)
-            SHHairline()
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    if model.modelQuery.isEmpty {
-                        row("Host default", mono: false, selected: model.defaults.model.isEmpty) { model.setModel("") }
-                    }
-                    ForEach(model.modelMatches, id: \.self) { id in
-                        row(id, mono: true, selected: id == model.defaults.model) { model.setModel(id) }
-                    }
-                    if model.modelMatches.isEmpty {
-                        Text(model.modelOptions.isEmpty ? "The host listed no models. Its default runs." : "No matching models")
-                            .shText(.caption)
-                            .foregroundStyle(Color.sh.textTertiary)
-                            .frame(maxWidth: .infinity, minHeight: MobileLayout.rowHeight)
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: SH.Space.xl) {
+                if thinking && model.offersThinking {
+                    SHGroupCard {
+                        SHCardRow("Thinking", description: "How long it reasons before it acts.") { thinkingMenu }
                     }
                 }
-            }
-        }
-        .background(Color.sh.bgWindow)
-    }
-
-    private func row(_ title: String, mono: Bool, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button {
-            action()
-            close()
-        } label: {
-            HStack(spacing: SH.Space.m) {
-                Text(title)
-                    .font(mono ? .sh(.code) : .sh(.ui))
-                    .foregroundStyle(Color.sh.textPrimary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Spacer(minLength: 0)
-                if selected {
-                    Image(systemName: "checkmark").font(.sh(.ui, weight: .semibold)).foregroundStyle(Color.sh.running)
-                        .accessibilityHidden(true)
+                SHTouchSearchField("Search models", text: Binding(get: { model.modelQuery }, set: { model.setModelQuery($0) }), focus: $searching)
+                if model.modelQuery.isEmpty {
+                    SHGroupCard { hostDefaultRow }
+                }
+                ForEach(model.modelGroups) { group in
+                    NewThreadSection(group.provider.isEmpty ? "Other" : group.provider) {
+                        SHGroupCard {
+                            ForEach(group.models) { option in row(option) }
+                        }
+                    }
+                }
+                if model.modelMatches.isEmpty {
+                    Text(model.modelOptions.isEmpty ? "The host listed no models. Its default runs." : "No model matches “\(model.modelQuery)”.")
+                        .shText(.caption)
+                        .foregroundStyle(Color.sh.textTertiary)
+                        .padding(.horizontal, SH.Space.s)
                 }
             }
             .padding(.horizontal, MobileLayout.gutter)
-            .frame(maxWidth: .infinity, minHeight: MobileLayout.rowHeight)
-            .contentShape(Rectangle())
+            .padding(.vertical, SH.Space.l)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .background(Color.sh.bgWindow)
+    }
+
+    private var hostDefaultRow: some View {
+        let detail = model.hostDefaultModel.map { id in
+            model.host.map { "\(NewThreadRules.shortModel(id)) · set on \($0.name)" } ?? NewThreadRules.shortModel(id)
+        }
+        return Button {
+            model.setModel("")
+            close()
+        } label: {
+            SHChoiceRow("Host default", detail: detail, mono: false, selected: model.followsHostDefault) {
+                Image(systemName: "sparkle")
+                    .font(.sh(.ui))
+                    .foregroundStyle(Color.sh.textSecondary)
+            }
         }
         .buttonStyle(.shRow(selected: false, radius: 0))
-        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func row(_ option: NewThreadModelGroup.Model) -> some View {
+        let selected = !model.followsHostDefault && option.id == model.defaults.model
+        return Button {
+            model.setModel(option.id)
+            close()
+        } label: {
+            SHChoiceRow(option.name, selected: selected) {
+                EmptyView()
+            } trailing: {
+                if option.id == model.hostDefaultModel { SHTag("default") }
+            }
+        }
+        .buttonStyle(.shRow(selected: false, radius: 0))
+        .accessibilityLabel(option.id)
+    }
+
+    private var thinkingMenu: some View {
+        Menu {
+            Picker("Thinking", selection: Binding(get: { model.thinking }, set: { model.setThinking($0) })) {
+                ForEach(model.thinkingLevels, id: \.self) { level in
+                    Text(level.title).tag(level)
+                }
+            }
+        } label: {
+            HStack(spacing: SH.Space.xs) {
+                Text(model.thinking.title)
+                    .font(.sh(.ui))
+                    .foregroundStyle(Color.sh.textPrimary)
+                Image(systemName: SHGlyph.popupChevrons.symbolName)
+                    .font(.sh(.caption, weight: .semibold))
+                    .foregroundStyle(Color.sh.textTertiary)
+                    .accessibilityHidden(true)
+            }
+            .shTouchTarget(height: SH.Height.controlS)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .accessibilityLabel("Thinking, \(model.thinking.title)")
     }
 }

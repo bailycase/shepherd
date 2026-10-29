@@ -126,6 +126,19 @@ public enum NewThreadRows {
     }
 }
 
+/// One provider's models in the model picker (`NewThreadRules.groupModels`).
+public struct NewThreadModelGroup: Equatable, Sendable, Identifiable {
+    public struct Model: Equatable, Sendable, Identifiable {
+        public var id: String
+        /// The id without its provider.
+        public var name: String
+    }
+
+    public var provider: String
+    public var models: [Model]
+    public var id: String { provider }
+}
+
 /// A host's model and thinking for a new thread, from `creationOptions`. The user's edits
 /// survive the answer when it is for the same host; a new host starts over. Only the newest
 /// request lands (the Mac's `NewAgentTargetDefaults`).
@@ -405,6 +418,23 @@ public enum NewThreadRules {
         return host.state.agents
             .filter { $0.lastActiveAt != nil && offered.contains($0.spaceID) && host.state.isSidebarThread($0) }
             .max { ($0.lastActiveAt ?? 0) < ($1.lastActiveAt ?? 0) }?.spaceID
+    }
+
+    /// The model picker's sections: `ids` (already ranked) by provider, each provider where its
+    /// first model falls, each model named without its provider ("openrouter/deepseek/r2" is
+    /// "deepseek/r2" under "openrouter"). An id with no provider goes under "".
+    public static func groupModels(_ ids: [String]) -> [NewThreadModelGroup] {
+        var groups: [NewThreadModelGroup] = []
+        for id in ids {
+            let parts = id.split(separator: "/", maxSplits: 1).map(String.init)
+            let (provider, name) = parts.count == 2 ? (parts[0], parts[1]) : ("", id)
+            if let index = groups.firstIndex(where: { $0.provider == provider }) {
+                groups[index].models.append(.init(id: id, name: name))
+            } else {
+                groups.append(NewThreadModelGroup(provider: provider, models: [.init(id: id, name: name)]))
+            }
+        }
+        return groups
     }
 
     /// A model id as a chip shows it: without its provider ("anthropic/claude-opus" →

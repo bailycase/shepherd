@@ -291,6 +291,11 @@ struct NewThreadRulesTests {
         #expect(NewThreadRules.rankModels("cls", in: options) == ["anthropic/claude-sonnet", "anthropic/claude-opus"])
         #expect(NewThreadRules.rankModels("", in: options, limit: 2) == ["openai/gpt-5", "anthropic/claude-sonnet"])
         #expect(NewThreadRules.rankModels("zzz", in: options).isEmpty)
+        let groups = NewThreadRules.groupModels(["anthropic/claude-opus", "openai/gpt-5", "anthropic/claude-sonnet", "openrouter/deepseek/r2", "local"])
+        #expect(groups.map(\.provider) == ["anthropic", "openai", "openrouter", ""])
+        #expect(groups[0].models.map(\.name) == ["claude-opus", "claude-sonnet"])
+        #expect(groups[2].models.map(\.name) == ["deepseek/r2"])
+        #expect(groups[3].models.map(\.id) == ["local"])
     }
 
     @Test func aGeneratedBranchIsAReadableWorktreeName() {

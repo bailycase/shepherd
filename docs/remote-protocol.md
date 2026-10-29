@@ -75,6 +75,8 @@
     a newer Shepherd there
   - `listDir`, `listModels`, `addSpace`, and `createAgent` with `creationOptions` (and the
     opening prompt's images behind `agent.create.images.v1`)
+  - `creationBranches(spaceID:)`, behind `agent.creation.branches.v1`: a space's branches for a
+    new worktree's base before any agent exists, answered `agentResult(.changesBranches)`
   - chunked uploads (32 MiB per file)
   - `agentAction.move(spaceID:)`, behind `agent.move.v1`, moves an inactive ordinary thread
     between registered spaces on the owning host. The host applies the same idle/worktree

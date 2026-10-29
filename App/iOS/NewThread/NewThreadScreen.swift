@@ -109,10 +109,15 @@ private struct NewThreadForm: View {
         }
         .sheet(isPresented: pad ? .constant(false) : panel(.model)) {
             NavigationStack {
-                NewThreadModelPicker(model: model) { model.panel = nil }
-                    .navigationTitle("Model")
+                NewThreadModelPicker(model: model, thinking: true) { model.panel = nil }
+                    .navigationTitle(model.offersThinking ? "Model and thinking" : "Model")
                     .navigationBarTitleDisplayMode(.inline)
-                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { model.panel = nil } } }
+                    .toolbar {
+                        // A symbol, so iPhone Duo's closed display puts it in its column with the sheet's bars.
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button { model.panel = nil } label: { Label("Done", systemImage: "checkmark") }
+                        }
+                    }
             }
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
@@ -151,42 +156,40 @@ private struct NewThreadForm: View {
     private var phoneControls: some View {
         VStack(alignment: .leading, spacing: SH.Space.l) {
             if !model.attachments.isEmpty { NewThreadAttachmentStrip(model: model) }
-            ScrollView(.horizontal) {
-                HStack(spacing: SHSelectorChipMetrics.spacing) {
-                    chip(model.space?.name ?? "Choose repo", systemImage: SHGlyph.repository.symbolName, name: "Repo", panel: .workspace, active: .workspace)
-                    // With one host there's nothing to choose (DuoClosedNewThread).
-                    if model.hostRows.count > 1 {
-                        chip(model.host?.name ?? "Choose host", systemImage: "desktopcomputer", name: "Host", panel: .workspace, active: nil)
-                    }
-                    modelAndThinkingChip
-                }
-                .buttonStyle(.shPressable(height: SHSelectorChipMetrics.height))
-                .disabled(model.starting)
+            // Every chip in one row that never scrolls: the host's chip goes first when there's no
+            // room (Where it runs still shows it), then the names truncate.
+            ViewThatFits(in: .horizontal) {
+                phoneChips(host: true)
+                phoneChips(host: false)
             }
-            .scrollIndicators(.hidden)
+            // "claude-…· Medium" keeps both ends of a name that doesn't fit.
+            .truncationMode(.middle)
+            .buttonStyle(.shPressable(height: SHSelectorChipMetrics.height))
+            .disabled(model.starting)
             status
         }
     }
 
-    /// "gpt-6.1-sol · Medium": a menu of the thinking levels the model takes, and Choose model.
+    private func phoneChips(host: Bool) -> some View {
+        HStack(spacing: SHSelectorChipMetrics.spacing) {
+            chip(model.space?.name ?? "Choose repo", systemImage: SHGlyph.repository.symbolName, name: "Repo", panel: .workspace, active: .workspace)
+            // With one host there's nothing to choose (DuoClosedNewThread).
+            if host && model.hostRows.count > 1 {
+                chip(model.host?.name ?? "Choose host", systemImage: "desktopcomputer", name: "Host", panel: .workspace, active: nil)
+            }
+            modelAndThinkingChip
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// "claude-opus · Medium": opens the sheet that chooses both.
     private var modelAndThinkingChip: some View {
         let shortModel = NewThreadRules.shortModel(model.defaults.model)
         let label = model.offersThinking ? "\(shortModel) · \(model.thinking.title)" : shortModel
-        return Menu {
-            Button("Choose model…", systemImage: "sparkle") { model.panel = .model }
-            if model.offersThinking {
-                Picker("Thinking", selection: Binding(get: { model.thinking }, set: { model.setThinking($0) })) {
-                    ForEach(model.thinkingLevels, id: \.self) { level in
-                        Text(level.title).tag(level)
-                    }
-                }
-                .pickerStyle(.inline)
-            }
-        } label: {
+        return Button { model.panel = .model } label: {
             SHSelectorChip(label, systemImage: "sparkle", active: model.panel == .model,
                            accessibilityName: model.offersThinking ? "Model and thinking" : "Model")
         }
-        .menuStyle(.button)
     }
 
     private var chips: some View {
@@ -294,10 +297,17 @@ private struct NewThreadForm: View {
         .accessibilityHint("Changes where the thread works")
         .popover(isPresented: pad ? panel(.worktree) : .constant(false), arrowEdge: .top) {
             popover("New worktree") {
-                NewThreadWorktreeCard(model: model)
-                    .padding(MobileLayout.gutter)
-                    .fixedSize(horizontal: false, vertical: true)
+                // A stack, so the Base row pushes the branch list.
+                NavigationStack(path: $model.workspacePath) {
+                    ScrollView {
+                        NewThreadWorktreeCard(model: model)
+                            .padding(MobileLayout.gutter)
+                    }
                     .background(Color.sh.bgWindow)
+                    .toolbar(.hidden, for: .navigationBar)
+                    .newThreadPages(model)
+                }
+                .frame(height: MobileLayout.newThreadPopoverHeight)
             }
         }
     }
