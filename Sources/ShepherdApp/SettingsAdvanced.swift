@@ -19,6 +19,14 @@ struct AdvancedSettings: View {
         return "\(short) (\(build))"
     }
 
+    /// Which confirmations "Don't ask again" turned off, by name.
+    private var skippedSummary: String {
+        let names = SkippableConfirmation.allCases.filter { vm.settings.skipped($0) != nil }.map(\.title)
+            + (vm.settings.worktreeDeleteAction == .ask ? [] : ["Delete worktree agent"])
+        return names.isEmpty ? "Every confirmation asks first. Any you turn off with “Don't ask again” are listed here."
+            : "Act at once without asking: \(names.formatted(.list(type: .and)))."
+    }
+
     var body: some View {
         SettingsPage(title: "Advanced", explanation: "Files, resets and app updates. Quitting Shepherd stops every agent.") {
             SettingsGroup(title: "Files") {
@@ -52,6 +60,13 @@ struct AdvancedSettings: View {
             }
             DiagnosticsSettings(settings: vm.settings, configured: ShepherdDiagnostics.shared.configured,
                                 active: ShepherdDiagnostics.shared.isActive)
+            SettingsGroup(title: "Confirmations") {
+                SettingsRow(title: "Skipped confirmations", subtitle: skippedSummary) {
+                    Button("Ask again") { vm.settings.askAgainEverywhere() }
+                        .buttonStyle(.sh(.secondary, size: .s))
+                        .disabled(vm.settings.skippedConfirmationCount == 0)
+                }
+            }
             SettingsGroup(title: "Reset") {
                 SettingsRow(title: "Reset settings",
                             subtitle: "Restores appearance, terminal, agent, worktree, extension, keyboard and diagnostics preferences. Spaces, agents, layouts and Remote are untouched.") {

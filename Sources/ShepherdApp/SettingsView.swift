@@ -294,7 +294,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .terminal: ["Font family", "Font size", "Shell"]
         case .agents: ["Default model", "Default thinking level", "Speed for new threads", "Session naming model",
                        "When a turn ends, send the queue", "Compact at", "Trim old tool output from the model's context", "Defer rarely used tools", "Codemode"]
-        case .worktrees: ["Base branch", "Fetch before creating", "Commit remaining work", "Generate PR descriptions", "Delete local branch", "Merge PR automatically"]
+        case .worktrees: ["Base branch", "Fetch before creating", "Commit remaining work", "Generate PR descriptions", "Delete local branch", "Merge PR automatically", "Deleting a worktree agent"]
         case .subagents: ["Filter subagents", "New subagent", "Restore defaults", "Show in Finder",
                           "Native subagents", "Subagent display", "Concurrency", "Model", "Thinking", "Context"]
         case .projects: ["Filter spaces", "All hosts", "Add space", "Instructions", "Pi settings", "Skills", "Extensions", "MCP servers"]
@@ -311,7 +311,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                     "Also use a repo’s .mcp.json", "Hosts"]
         case .remote: ["Hosts", "Add host", "Listener", "Token"]
         case .keyboard: ["Shortcuts", "Reset all shortcuts"]
-        case .advanced: ["Open files in", "Workspace state", "Extension socket", "Update channel", "Check for updates", "Share diagnostics", "Reset settings"]
+        case .advanced: ["Open files in", "Workspace state", "Extension socket", "Update channel", "Check for updates", "Share diagnostics", "Skipped confirmations", "Reset settings"]
         case .experiments: ["Goals", "Projects", "Suggested instructions", "Learn from", "Can suggest for", "Waiting for you",
                             "Added from suggestions", "Design tool"]
         }
@@ -371,7 +371,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                     "Also use a repo’s .mcp.json": ["project", "repository", ".mcp.json"]]
         case .remote: ["Hosts": ["vpn", "tailscale", "ssh"], "Listener": ["port", "serve"]]
         case .keyboard: ["Shortcuts": ["hotkey", "keybinding", "chord", "steer", "queue"]]
-        case .advanced: ["Open files in": ["editor", "xcode", "zed", "vs code", "textedit", "links"], "Update channel": ["beta", "nightly", "sparkle"], "Workspace state": ["state.json"], "Share diagnostics": ["telemetry", "privacy", "errors", "crash", "performance", "memory"]]
+        case .advanced: ["Open files in": ["editor", "xcode", "zed", "vs code", "textedit", "links"], "Update channel": ["beta", "nightly", "sparkle"], "Workspace state": ["state.json"], "Skipped confirmations": ["don't ask again", "confirm", "dialog"], "Share diagnostics": ["telemetry", "privacy", "errors", "crash", "performance", "memory"]]
         case .experiments: ["Projects": ["coordinate", "project work", "new project"],
                             "Suggested instructions": ["lessons", "learned"], "Learn from": ["threads", "automations"],
                             "Design tool": ["designs", "boards", "mockups"]]

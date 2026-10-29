@@ -26,6 +26,7 @@ struct SubagentSettingsControlTests {
                                    themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark),
                                    remoteHosts: RemoteHostStore(defaults: defaults), sidebarDefaults: defaults, themeInstaller: { _ in },
                                    restoresAgentsAtLaunch: false, checkoutReader: nil)
+        model.settings = vm.settings
         vm.madeSubagentDefinitions = model; vm.showSettings = true; vm.settingsSection = .subagents
         var revealed: URL?, opened: URL?
         model.reveal = { revealed = $0 }; model.openEditor = { opened = $0 }
@@ -108,15 +109,26 @@ struct SubagentSettingsControlTests {
         window.layout()
         try window.press("Restore defaults")
         let restoreSheet = try await sheet(window)
+        try ControlPress.press("Don't ask again", role: ControlRole.checkBox, under: restoreSheet)
         try ControlPress.press("Cancel", under: restoreSheet)
         try await eventuallyOnMain("cancelled restore") { window.window.attachedSheet == nil }
+        #expect(vm.settings.skipped(.restoreSubagents) == nil, "Cancel stores no Don't ask again")
         window.layout()
         try window.press("Restore defaults")
         let confirmedRestore = try await sheet(window)
+        try ControlPress.press("Don't ask again", role: ControlRole.checkBox, under: confirmedRestore)
         let restore = try ControlPress.press("Restore", under: confirmedRestore)
         #expect(ControlPress.undersized([restore], minimum: .desktop).isEmpty)
         try await eventuallyOnMain("restored defaults") { !model.busy && window.window.attachedSheet == nil }
         #expect(try files.snapshot().count == 7)
+        #expect(vm.settings.skipped(.restoreSubagents) == "Restore")
+        try FileManager.default.removeItem(at: files.directory.appendingPathComponent("scout.md"))
+        await model.refresh()
+        #expect(try files.snapshot().count == 6)
+        window.layout()
+        try window.press("Restore defaults")
+        try await eventuallyOnMain("restored again without asking") { (try? files.snapshot().count) == 7 && !model.busy }
+        #expect(window.window.attachedSheet == nil)
         try setField("Filter subagents", to: "api-review", under: window.host)
         #expect(model.visible.map(\.name) == ["api-review"])
         try setField("Filter subagents", to: "no-match", under: window.host)

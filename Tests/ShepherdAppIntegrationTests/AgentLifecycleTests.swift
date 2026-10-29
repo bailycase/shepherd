@@ -134,6 +134,34 @@ struct AgentLifecycleTests {
         #expect(vm.state.agents.map(\.id) == [agents[0].agent.id, agents[2].agent.id])
     }
 
+    @Test(arguments: [false, true])
+    func ordinaryAgentDeletionUsesItsOwnRememberedConfirmation(fromSelection: Bool) async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space(path: app.dir.path)
+        let agents = (0..<2).map { Fixture.agent("a\($0)", in: space, order: $0) }
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents))
+        vm.selectAgent(agents[0].agent.id)
+        // Remembering a worktree delete must not suppress an ordinary thread's dialog.
+        app.settings.worktreeDeleteAction = .keepWorktree
+        vm.requestDeleteAgent(agents[0].agent.id)
+        #expect(vm.agentDeleteTarget == agents[0].agent.id)
+        #expect(vm.state.agents.count == 2)
+        vm.agentDeleteTarget = nil
+
+        app.settings.skip(.deleteAgent, with: "Delete")
+        if fromSelection { vm.deleteSelectedAgent() }
+        else { vm.perform(.delete, on: agents[0].agent.id) }
+        await app.settle()
+        #expect(vm.agentDeleteTarget == nil && vm.worktreeDeleteTarget == nil)
+        #expect(vm.state.agents.map(\.id) == [agents[1].agent.id])
+
+        app.settings.askAgainEverywhere()
+        vm.requestDeleteAgent(agents[1].agent.id)
+        #expect(vm.agentDeleteTarget == agents[1].agent.id)
+        #expect(vm.state.agents.count == 1)
+    }
+
     @Test func aDeletionTheServerCannotPersistKeepsTheAgentAndSaysWhy() async throws {
         let app = try AppHarness()
         defer { app.stop() }

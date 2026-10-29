@@ -704,7 +704,10 @@ private struct DiffFileSection: View, Equatable {
                     Button("Show Whole File") { model.revealWholeFile(file.id) }
                         .disabled(file.isBinary)
                     if canRevert {
-                        Button("Revert File…") { model.reverting = file }
+                        Button("Revert File…") {
+                            // After its "Don't ask again", Revert acts at once.
+                            if AppSettings.shared.skipped(.revertFile) != nil { model.actions.revert?(file, model.cwd) } else { model.reverting = file }
+                        }
                     }
                     Button("Copy Path") {
                         NSPasteboard.general.clearContents()

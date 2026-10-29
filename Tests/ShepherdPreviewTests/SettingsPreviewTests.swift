@@ -591,6 +591,23 @@ struct SettingsPreviewTests {
         }
     }
 
+    /// The remote sheet's Delete over a checkout with unreconciled work, with "Don't ask again".
+    /// Staged: no host is asked.
+    @Test func remoteDeleteWorktreeSheet() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        workspace.vm.remoteHosts.addHost(name: "horizon", host: "127.0.0.1", port: 1, token: "x")
+        let host = try #require(workspace.vm.remoteHosts.connections.first)
+        let target = RemoteAgentRef(hostID: host.id, agentID: AgentID())
+        let defaults = RemoteFinalizeOptions(base: "main", title: "Fix the login redirect", body: "", autoCommit: true,
+                                             deleteLocalBranch: true, autoMergePR: false, mergeMethod: "squash")
+        let info = RemoteWorktreeInfo(path: "/Users/ada/Developer/Shepherd-worktree-fix-login", branch: "worktree/fix-login",
+                                      warning: "2 uncommitted changes", defaults: defaults, generateDescription: false)
+        try await Preview.render("sheet-remote-delete-worktree", size: CGSize(width: AppLayout.remoteWorktreeSheetWidth, height: 460)) {
+            RemoteWorktreeSheet(vm: workspace.vm, target: target, finalize: false, staged: .init(info: info, includedCommits: nil))
+        }
+    }
+
     @Test func directoryPicker() async throws {
         let root = try makeScratchDirectory("picker")
         defer { try? FileManager.default.removeItem(at: root) }
@@ -781,9 +798,20 @@ struct SettingsPreviewTests {
         var agent = seeded
         agent.worktreePath = repo.path
         try await workspace.seed(ShepherdState(spaces: [space], tabs: [tab], agents: [agent]))
-        try await Preview.render("sheet-delete-worktree", size: CGSize(width: AppLayout.confirmSheetWideWidth, height: 360),
+        try await Preview.render("sheet-delete-worktree", size: CGSize(width: AppLayout.confirmSheetWideWidth, height: 420),
                                  untilGone: "Checking", showing: "uncommitted change") {
             WorktreeDeleteDialog(vm: workspace.vm, agent: agent)
+        }
+    }
+
+    @Test func deleteAgentDialog() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let space = Space(name: "Shepherd", path: workspace.dir.path)
+        let (agent, tab) = try await workspace.agent("Fix the login redirect", in: space, order: 0)
+        try await workspace.seed(ShepherdState(spaces: [space], tabs: [tab], agents: [agent]))
+        try await Preview.render("sheet-delete-agent", size: CGSize(width: SHDialogMetrics.width, height: 300)) {
+            AgentDeleteDialog(vm: workspace.vm, agent: agent)
         }
     }
 
@@ -793,13 +821,13 @@ struct SettingsPreviewTests {
         let space = Space(name: "billing-service", path: workspace.dir.path)
         let (agent, tab) = try await workspace.agent("Migrate invoices to v2", in: space, order: 0)
         try await workspace.seed(ShepherdState(spaces: [space], tabs: [tab], agents: [agent]))
-        try await Preview.render("sheet-remove-space", size: CGSize(width: SHDialogMetrics.width, height: 220)) {
+        try await Preview.render("sheet-remove-space", size: CGSize(width: SHDialogMetrics.width, height: 300)) {
             SpaceDeleteDialog(vm: workspace.vm, space: space)
         }
     }
 
     @Test func stopAllDialog() async throws {
-        try await Preview.render("sheet-stop-all", size: CGSize(width: SHDialogMetrics.width, height: 180)) {
+        try await Preview.render("sheet-stop-all", size: CGSize(width: SHDialogMetrics.width, height: 250)) {
             StopAllDialog(runningSubagents: 3, stopAgent: {}, stopAll: {}, cancel: {})
         }
     }
@@ -813,17 +841,17 @@ struct SettingsPreviewTests {
             Agent(name: name, spaceID: space.id, tabID: TabID(), status: index == 1 ? .blocked : .working)
         }
         let prompt = try #require(QuitPrompt(agents: agents))
-        try await Preview.render("sheet-quit", size: CGSize(width: SHDialogMetrics.width, height: 330)) {
+        try await Preview.render("sheet-quit", size: CGSize(width: SHDialogMetrics.width, height: 400)) {
             QuitDialog(prompt: prompt, quit: {}, cancel: {})
         }
         let one = try #require(QuitPrompt(agents: [agents[0]]))
-        try await Preview.render("sheet-quit-one", size: CGSize(width: SHDialogMetrics.width, height: 200)) {
+        try await Preview.render("sheet-quit-one", size: CGSize(width: SHDialogMetrics.width, height: 270)) {
             QuitDialog(prompt: one, quit: {}, cancel: {})
         }
     }
 
     @Test func revertFileDialog() async throws {
-        try await Preview.render("sheet-revert-file", size: CGSize(width: SHDialogMetrics.width, height: 200)) {
+        try await Preview.render("sheet-revert-file", size: CGSize(width: SHDialogMetrics.width, height: 270)) {
             RevertFileDialog(path: "Sources/ShepherdApp/SidebarView.swift", repository: "~/Developer/Shepherd", isNew: false,
                              revert: {}, cancel: {})
         }
@@ -832,6 +860,19 @@ struct SettingsPreviewTests {
     @Test func actionErrorDialog() async throws {
         try await Preview.render("sheet-action-error", size: CGSize(width: SHDialogMetrics.width, height: 200)) {
             ActionErrorDialog(error: ActionError(title: "Couldn’t rename", message: "horizon rejected the rename: agent_busy — the agent is mid-turn. Try again once it settles.")) {}
+        }
+    }
+
+    /// Settings ▸ Advanced with confirmations turned off by "Don't ask again", worktree's included.
+    @Test func settingsAdvancedSkippedConfirmations() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        workspace.vm.settings.skip(.removeSpace, with: "Remove space")
+        workspace.vm.settings.skip(.stopAll, with: StopAllDialog.stopAllLabel)
+        workspace.vm.settings.worktreeDeleteAction = .removeWorktree
+        workspace.vm.settingsSection = .advanced
+        try await Preview.render("settings-advanced-skipped", size: CGSize(width: 1280, height: 1000)) {
+            SettingsView(vm: workspace.vm)
         }
     }
 

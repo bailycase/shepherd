@@ -26,6 +26,14 @@ extension ShepherdViewModel {
 
     /// Delete a space and everything in it (agents, layouts, sessions). Spaces nested under it by path are independent
     /// entities and survive — they re-root in the sidebar's derived forest.
+    /// Remove Space… from the user: the dialog, or at once after its "Don't ask again".
+    func requestSpaceDelete(_ id: SpaceID?) {
+        guard let id else { return }
+        if settings.skipped(.removeSpace) != nil { deleteSpace(id); return }
+        spaceDeleteRequested = false
+        spaceDeleteTarget = id
+    }
+
     func deleteSpace(_ id: SpaceID) {
         guard let index = state.spaces.firstIndex(where: { $0.id == id }) else { return }
         let doomedAgents = Set(state.agents.filter { $0.spaceID == id }.map(\.id))

@@ -6,6 +6,7 @@ struct SubagentsSettings: View {
     @Bindable var model: SubagentDefinitionsModel
     /// The native subagent switches and defaults under the list; nil in a test of the list alone.
     var native: NativeSubagentSettings? = nil
+    @State private var dontAskAgain = false
     static let explanation = "A subagent is a Markdown file: a name, a description, and the instructions it runs with. An agent starts one by name and gets the result back. Shepherd ships a few to start with. Edit them, delete them, or add your own. They are read from one folder, and nowhere else."
 
     var body: some View {
@@ -15,10 +16,14 @@ struct SubagentsSettings: View {
         }
         .task { await model.refresh() }
         .sheet(item: Binding(get: { model.confirmation.map { Confirmation(action: $0) } }, set: { if $0 == nil { model.cancelConfirmation() } else { model.confirmation = $0?.action } })) { prompt in
-            SHDialog(prompt.title, message: prompt.message, content: {}) {
+            SHDialog(prompt.title, message: prompt.message, content: { DontAskAgainToggle(isOn: $dontAskAgain).dialogInset() }) {
                 Button("Cancel") { model.cancelConfirmation() }.buttonStyle(.sh(.secondary)).keyboardShortcut(.cancelAction)
-                Button(prompt.button) { Task { await model.confirm() } }.buttonStyle(.sh(.danger))
+                Button(prompt.button) {
+                    if dontAskAgain { model.settings.skip(prompt.action.skippable, with: prompt.button) }
+                    Task { await model.confirm() }
+                }.buttonStyle(.sh(.danger))
             }
+            .onAppear { dontAskAgain = false }
         }
     }
 

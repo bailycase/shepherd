@@ -210,21 +210,26 @@ struct AppDialogs: ViewModifier {
     }
 }
 
-/// Delete Worktree Agent: always confirmed, since it may remove the checkout. The warning about
-/// unreconciled work comes from git off the main thread; until it is in, removing the worktree
-/// stays disabled so the warning can never arrive after the click.
+/// Delete Worktree Agent: confirmed unless Settings ▸ Worktrees remembers a delete
+/// (`requestWorktreeDelete`). The warning about unreconciled work comes from git off the main
+/// thread; until it is in, removing the worktree stays disabled so the warning can never arrive
+/// after the click.
 struct WorktreeDeleteDialog: View {
     var vm: ShepherdViewModel
     let agent: Agent
     @State private var warning: String?
     @State private var checked = false
+    @State private var remember: Bool
+
+    init(vm: ShepherdViewModel, agent: Agent) {
+        self.vm = vm
+        self.agent = agent
+        _remember = State(initialValue: vm.settings.worktreeDeleteAction != .ask)
+    }
 
     private var branch: String { agent.worktreeBranch ?? "" }
 
-    private var path: String {
-        agent.worktreePath ?? vm.state.spaces.first { $0.id == agent.spaceID }
-            .map { GitWorktree.destination(repo: $0.path, branch: branch) } ?? ""
-    }
+    private var path: String { vm.worktreeCheckoutPath(agent) }
 
     var body: some View {
         DialogSheet(
@@ -256,6 +261,7 @@ struct WorktreeDeleteDialog: View {
             if let warning {
                 DialogBanner(title: "Unreconciled work", message: "\(warning) will be lost with the worktree.")
             }
+            DontAskAgainToggle(isOn: $remember, caption: DontAskAgainToggle.worktreeCaption).dialogInset()
         }
         // The probe's answer arrives after the sheet is up: the warning discloses and the
         // "Checking…" status fades as the destructive action enables.
@@ -277,12 +283,13 @@ struct WorktreeDeleteDialog: View {
     /// the sheet finishes dismissing first (`onDismiss`).
     private func confirm(removeWorktree: Bool) {
         let id = agent.id
+        vm.settings.rememberWorktreeDelete(remember, removeWorktree: removeWorktree)
         vm.afterDialogDismiss = { vm.deleteWorktreeAgent(id, removeWorktree: removeWorktree) }
         vm.worktreeDeleteTarget = nil
     }
 }
 
-/// Delete Agent: always confirmed. It stops the agent's run and drops the thread from the sidebar,
+/// Delete Agent: confirmed unless remembered. It stops the agent's run and drops the thread from the sidebar,
 /// and nothing in the app brings it back.
 struct AgentDeleteDialog: View {
     var vm: ShepherdViewModel
@@ -299,7 +306,9 @@ struct AgentDeleteDialog: View {
                     vm.afterDialogDismiss = { vm.deleteAgent(id) }
                     vm.agentDeleteTarget = nil
                 },
-            ]
+            ],
+            dontAskAgain: .deleteAgent,
+            settings: vm.settings
         )
     }
 
@@ -308,7 +317,6 @@ struct AgentDeleteDialog: View {
         return "\(stops) “\(agent.name)”. Its conversation stays on disk, but the thread leaves the sidebar and cannot be reopened here."
     }
 }
-
 
 struct ProjectRenameDialog: View {
     var vm: ShepherdViewModel
@@ -352,7 +360,9 @@ struct SpaceDeleteDialog: View {
                     vm.afterDialogDismiss = { vm.deleteSpace(id) }
                     vm.spaceDeleteTarget = nil
                 },
-            ]
+            ],
+            dontAskAgain: vm.spaceDeleteRequested ? nil : .removeSpace,
+            settings: vm.settings
         )
     }
 }
