@@ -382,6 +382,16 @@ final class ShepherdDiagnostics {
             if event.tags == nil { event.tags = [:] }
             event.tags?["crash.assertion"] = assertion.rawValue
         }
+        if !(source.exceptions ?? []).isEmpty || (source.threads ?? []).contains(where: { $0.crashed == true }) {
+            // Describe captured evidence, not whether the stack contains every caller.
+            let stack = source.threads?.first(where: { $0.crashed == true })?.stacktrace
+                ?? source.exceptions?.first?.stacktrace ?? source.stacktrace
+            let count = stack?.frames.count ?? 0
+            if event.tags == nil { event.tags = [:] }
+            event.tags?["crash.stack"] = count == 0 ? "missing" : count == 1 ? "singleFrame" : count > 256 ? "truncated" : "multipleFrames"
+            let hasReason = (source.exceptions ?? []).prefix(8).contains { !($0.value ?? "").isEmpty }
+            event.tags?["crash.reason"] = assertion != nil ? "classified" : hasReason ? "unclassified" : "unavailable"
+        }
         event.context = [:]
         for (name, keys) in ["os": ["name", "version", "build", "kernel_version"],
                              "device": ["arch", "model", "family", "memory_size", "free_memory", "processor_count"]] {

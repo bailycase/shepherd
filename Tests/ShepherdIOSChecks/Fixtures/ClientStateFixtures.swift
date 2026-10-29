@@ -34,6 +34,11 @@ enum ClientStateChecks {
 
     static func run(_ app: MobileApp) async {
         navigation()
+        let ref = FixtureData.ref(FixtureData.preview)
+        check(MobileRoute.review(.diff(ref, "PRIVATE_PATH")).diagnosticScreen == "review"
+              && MobileRoute.search(.search(query: "PRIVATE_QUERY")).diagnosticScreen == "search"
+              && MobileRoute.thread(ref).diagnosticScreen == "thread",
+              "diagnostic screen labels discard paths, queries and thread identifiers")
         sceneOwnershipAndForget(app)
         await selectedHostSummaries(app)
         await sentImagesKeepTheNextAttachment()

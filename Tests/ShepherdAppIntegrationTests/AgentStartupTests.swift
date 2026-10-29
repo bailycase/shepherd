@@ -538,6 +538,47 @@ struct AgentStartupTests {
         #expect(ContinuousClock.now - exited < AgentStartQueue.aheadHold / 2, "the queue waited on a pi that had exited")
     }
 
+    @Test(arguments: [false, true], [false, true])
+    func restoringAMissingFolderPreservesTheThreadAndConversation(worktree: Bool, restoring: Bool) async throws {
+        _ = NSApplication.shared
+        try StubPi.installAsEngine()
+        let app = try AppHarness()
+        defer { app.stop() }
+        let missing = app.dir.appendingPathComponent("missing")
+        let space = Fixture.space(path: worktree ? app.dir.path : missing.path)
+        var fixture = Fixture.agent(in: space, cwd: missing.path)
+        if worktree {
+            fixture.agent.worktreePath = missing.path
+            fixture.agent.worktreeBranch = "fix/missing"
+        }
+        let id = fixture.agent.id
+        let sessionID = fixture.agent.effectivePiSessionID
+        try Self.writeStubHistory(sessionID: sessionID, cwd: missing.path, sessionsRoot: app.server.pi.sessionsRoot)
+        let history = try #require(PiSessionFile.file(sessionID: sessionID, cwd: missing.path,
+                                                      sessionsRoot: app.server.pi.sessionsRoot))
+        let original = try Data(contentsOf: history)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [fixture]), restoringAgents: restoring)
+        if !restoring { vm.sessions.activateAgent(id) }
+        let store = vm.threadStores.store(for: id)
+        let server = app.server
+        let polling = Task { await store.run { try await server.nativeThread(agentID: id, request: $0) } }
+        defer { polling.cancel(); store.stop() }
+        try await eventuallyOnMain("the missing folder refusal to reach the thread") { store.startProblem?.kind == .folderMissing }
+        #expect(store.startProblem?.exitCode == PiLaunch.refusedExitCode)
+        let tab = try #require(app.server.state.tabs.first { $0.id == fixture.agent.tabID })
+        let paneSession = vm.sessions.session(for: fixture.piPane, in: tab)
+        #expect(paneSession.startupTrigger == (restoring ? .restore : .demand))
+        #expect(paneSession.startupLocation == (worktree ? .worktree : .space))
+        #expect(vm.cannotStart.contains(id))
+        let retained = try #require(app.server.state.agents.first { $0.id == id })
+        #expect(retained.effectivePiSessionID == sessionID)
+        #expect(retained.worktreePath == fixture.agent.worktreePath)
+        #expect(app.server.state.tabs.first { $0.id == retained.tabID }?.layout.leaf(withID: fixture.piPane.id)?.cwd == missing.path)
+        #expect(try Data(contentsOf: history) == original)
+        #expect(!FileManager.default.fileExists(atPath: missing.path))
+        #expect(!StubPi.launches().contains { $0.argv.contains(sessionID) }, "No pi may run in a fallback directory")
+    }
+
     /// Only an agent's first start waits in the launch queue: a pane session made again once it
     /// has started (a view detached and remounted) binds at once.
     @Test func aPaneSessionMadeAgainAfterItsAgentStartedBindsAtOnce() async throws {
