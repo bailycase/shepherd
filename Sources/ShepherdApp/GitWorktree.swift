@@ -345,52 +345,20 @@ enum GitWorktree {
     /// terminates a command that still hangs (a stalled connection).
     @discardableResult
     private static func run(_ arguments: [String], timeout: TimeInterval? = nil) throws -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.arguments = arguments
-        var env = ProcessInfo.processInfo.environment
-        env["GIT_TERMINAL_PROMPT"] = "0"
-        process.environment = env
-        let stdout = Pipe()
-        let stderr = Pipe()
-        process.standardOutput = stdout
-        process.standardError = stderr
+        var environment = ProcessInfo.processInfo.environment
+        environment["GIT_TERMINAL_PROMPT"] = "0"
+        let result: BoundedCommand.Result
         do {
-            try process.run()
+            // Bounded so a cancelled mission or app quit can stop it; generous because a big repository's
+            // `worktree add` or status legitimately takes minutes and was never cut short before.
+            result = try BoundedCommand.run(["/usr/bin/git"] + arguments, environment: environment, timeout: timeout ?? 600)
         } catch {
-            throw Failure(message: "git not available: \(error.localizedDescription)")
+            throw Failure(message: "git stopped: \(error)")
         }
-        let timedOut = TimeoutFlag()
-        if let timeout {
-            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { [weak process] in
-                guard let process, process.isRunning else { return }
-                timedOut.set()
-                process.terminate()
-            }
-        }
-        // Drain stdout before waiting so a chatty command cannot fill the
-        // pipe and deadlock. ponytail: stderr is drained after exit — fine
-        // for git's short diagnostics; stream both if that ever changes.
-        let output = stdout.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        if timedOut.value {
-            throw Failure(message: "git \(arguments.dropFirst(2).joined(separator: " ")) timed out after \(Int(timeout ?? 0))s")
-        }
-        guard process.terminationStatus == 0 else {
-            let detail = String(
-                decoding: stderr.fileHandleForReading.readDataToEndOfFile(),
-                as: UTF8.self
-            ).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard result.status == 0 else {
+            let detail = String(decoding: result.errors, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
             throw Failure(message: detail.isEmpty ? "git \(arguments.joined(separator: " ")) failed" : detail)
         }
-        return String(decoding: output, as: UTF8.self)
+        return String(decoding: result.output, as: UTF8.self)
     }
-}
-
-/// Set once from the timeout's queue, read after the process exits.
-private final class TimeoutFlag: @unchecked Sendable {
-    private let lock = NSLock()
-    private var fired = false
-    func set() { lock.lock(); fired = true; lock.unlock() }
-    var value: Bool { lock.lock(); defer { lock.unlock() }; return fired }
 }

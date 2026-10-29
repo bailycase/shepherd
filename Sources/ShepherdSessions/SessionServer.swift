@@ -421,6 +421,7 @@ public final class SessionServer: @unchecked Sendable {
                 !project.paused || project.tasks.contains { [.reserved, .running, .waiting, .unknown].contains($0.phase) }
             }
             || store.state.projectExecutions.contains { $0.phase.active || $0.phase == .unknown }
+            || store.state.missions.contains { $0.run?.phase.active == true }
             || !movingThreads.isEmpty || !peerDeliveries.isEmpty
             || !automationStarts.isEmpty || !projectLaunches.isEmpty || !projectPromptInFlight.isEmpty
             || !publicationPending.isEmpty || !publicationTransfers.isEmpty || !publicationTransferQueue.isEmpty
@@ -1249,6 +1250,7 @@ public final class SessionServer: @unchecked Sendable {
             || Self.designAgentsNeedSettling(in: store.state, missing: missingDesigns)
         if !stale.isEmpty || deadInspectors || deadReviews || splitTerminals || staleRuns || !shellTabs.isEmpty
             || !runAgents.isEmpty || staleDesigns || !store.state.projects.isEmpty || !store.state.projectExecutions.isEmpty
+            || store.state.missions.contains(where: { $0.run?.phase.active == true })
             || store.state.agents.contains(where: { $0.coordinatorFor != nil }) {
             do {
                 try store.update { state in
@@ -1303,6 +1305,15 @@ public final class SessionServer: @unchecked Sendable {
                         state.projectExecutions[i].phase = .unknown
                         state.projectExecutions[i].revision += 1
                         state.projectExecutions[i].outcome = "Executor restarted; no work was resumed or replayed."
+                    }
+                    for i in state.missions.indices where state.missions[i].run?.phase.active == true {
+                        state.missions[i].run?.transition(to: .paused, at: Date().timeIntervalSince1970,
+                            notice: "Shepherd restarted. Nothing resumed. Inspect the retained work before continuing.")
+                        if var run = state.missions[i].run {
+                            for j in run.attempts.indices where run.attempts[j].status == .running { run.attempts[j].status = .interrupted }
+                            state.missions[i].run = run
+                        }
+                        state.missions[i].revision += 1
                     }
                     for i in state.projects.indices {
                         let staleCoordinator = state.projects[i].coordinatorAgentID.map { id in
@@ -1424,6 +1435,20 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     private func stopOnQueue() {
+        if isStarted, store.state.missions.contains(where: { $0.run?.phase.active == true }) {
+            // Save the active clock before shutdown; offline time is not mission execution time.
+            try? mutateState { state in
+                for i in state.missions.indices where state.missions[i].run?.phase.active == true {
+                    state.missions[i].run?.transition(to: .paused, at: Date().timeIntervalSince1970,
+                        notice: "Shepherd closed. Nothing will resume until you approve it.")
+                    if var run = state.missions[i].run {
+                        for j in run.attempts.indices where run.attempts[j].status == .running { run.attempts[j].status = .interrupted }
+                        state.missions[i].run = run
+                    }
+                    state.missions[i].revision += 1
+                }
+            }
+        }
         isStarted = false
         pushNotifications.stop()
         logicalProjectEpoch &+= 1
@@ -1612,6 +1637,14 @@ public final class SessionServer: @unchecked Sendable {
             completion(.failure(code: "thread_moving", message: "This thread is moving to another space. Try again when it finishes."))
             return
         }
+        if store.state.isMissionAgent(agentID) {
+            switch request {
+            case .snapshot, .image, .artifact, .subagentTranscript: break
+            default:
+                completion(.failure(code: "mission_control", message: "This thread belongs to a Mission. Use its Pause, Stop or Request changes controls."))
+                return
+            }
+        }
         if queuePausedExecutionAnswer(agentID: agentID, request: request, completion: { completion(.result($0)) }) { return }
         if queuePausedProjectAnswer(agentID: agentID, request: request, completion: { completion(.result($0)) }) { return }
         // Stop on the coordinator ends its current turn only; the Project keeps running (only Pause pauses it).
@@ -1644,6 +1677,16 @@ public final class SessionServer: @unchecked Sendable {
             } else {
                 completion(.failure(code: NativeThreadCode.starting, message: "The agent is starting."))
             }
+            return
+        }
+        // A finished mission step's pi is stopped on purpose and never relaunched. Like a Project coordinator held
+        // off, it answers `native_starting` (not serving, expected) with why; a client that knows the step is
+        // finished holds its store offline and shows the session file's history, quietly and read-only.
+        if sessions[leaf.sessionID ?? SessionID()]?.isAlive != true, store.state.isMissionAgent(agentID),
+           !store.state.missions.contains(where: { mission in
+               mission.run.map { run in run.phase.active && run.attempts.contains { $0.agentID == agentID && $0.status == .running } } == true
+           }) {
+            completion(.failure(code: NativeThreadCode.starting, message: Self.finishedMissionStep))
             return
         }
         guard let sessionID = leaf.sessionID, let session = sessions[sessionID] else {
@@ -1738,7 +1781,10 @@ public final class SessionServer: @unchecked Sendable {
                 self?.pushToBrowserOwner(agentID, .handBack(agentID: agentID))
             }
             if case .retry = request, case .accepted = result { self?.noteAgentSend(agentID) }
-            completion(.result(result))
+            if case .snapshot(var snapshot) = result, self?.store.state.isMissionAgent(agentID) == true {
+                snapshot.supportedActions = ["images", "artifacts"]
+                completion(.result(.snapshot(value: snapshot)))
+            } else { completion(.result(result)) }
             if case .queue = request, case .accepted = result { self?.projectRuntimeReady(agentID: agentID) }
         }
     }
@@ -1768,6 +1814,8 @@ public final class SessionServer: @unchecked Sendable {
                              supportedActions: [], dialogsSupported: false, dialogs: [], messages: [], provisional: [],
                              clipped: false, runtime: "rpc", startProblem: problem)
     }
+
+    public static let finishedMissionStep = "This mission step has finished. Its thread is read-only."
 
     private static func exitMessage(_ code: Int32?) -> String {
         "The agent exited (\(code.map { "code \($0)" } ?? "signal"))."
@@ -3260,7 +3308,7 @@ public final class SessionServer: @unchecked Sendable {
             let legacy = client.knowsLegacyThinkingOnly
             let view = RemoteStateView(designs: designs, legacy: legacy)
             if payloads[view] == nil {
-                let state = (designs ? full : full.withoutDesigns).withoutProjectCoordinators.withoutProjectExecutions
+                let state = (designs ? full : full.withoutDesigns).withoutProjectCoordinators.withoutProjectExecutions.withoutMissions
                 payloads[view] = .some(Self.stateChangedPayload(legacy && !state.usesOnlyLegacyThinkingLevels
                     ? state.legacyThinkingLevels() : state))
             }
@@ -3298,7 +3346,7 @@ public final class SessionServer: @unchecked Sendable {
 
     /// The workspace as `client` is sent it (`seesDesigns`).
     private func remoteState(_ state: ShepherdState, for client: ExtensionConnection) -> ShepherdState {
-        (seesDesigns(client) ? state : state.withoutDesigns).withoutProjectCoordinators.withoutProjectExecutions
+        (seesDesigns(client) ? state : state.withoutDesigns).withoutProjectCoordinators.withoutProjectExecutions.withoutMissions
     }
 
     private static func stateChangedPayload(_ state: ShepherdState) -> Data? {
@@ -3452,6 +3500,19 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
         }
+        let missionWorker = store.state.agents.contains { agent in
+            store.state.isMissionAgent(agent.id) && (agent.id == message.speaksFor || agent.id == client.agentID
+                || agent.id == client.childrenAgentID || isPiProcess(client.peerPID, ofAgent: agent.id))
+        }
+        if missionWorker {
+            switch message {
+            case .childScope, .spawnAgent, .moveAgent, .sendToAgent, .coordinateAgent, .createAutomation, .updateAutomation, .startAutomation,
+                 .openPane, .sendPaneInput, .focusPane:
+                if let id = message.replyID { reply(.error(id: id, code: "mission_scope", message: "Mission stations cannot delegate, spawn peers or create unattended work. Propose additional stations in the map instead."), to: client) }
+                return
+            default: break
+            }
+        }
         let assignedWorker = store.state.agents.contains { agent in
             isProjectWorker(agent.id) && (agent.id == message.speaksFor || agent.id == client.agentID
                 || agent.id == client.childrenAgentID || isPiProcess(client.peerPID, ofAgent: agent.id))
@@ -3466,8 +3527,8 @@ public final class SessionServer: @unchecked Sendable {
         }
         switch message {
         case .sendToAgent(let id, _, let target, _, _), .coordinateAgent(let id, _, let target, _):
-            if store.state.isProjectCoordinator(target) {
-                reply(.error(id: id, code: "project_scope", message: "Use the Project conversation; ordinary peers cannot steer its coordinator."), to: client)
+            if store.state.isProjectCoordinator(target) || store.state.isMissionAgent(target) {
+                reply(.error(id: id, code: "project_scope", message: "Use the Project or Mission controls; ordinary peers cannot steer an owned worker."), to: client)
                 return
             }
         default: break
@@ -5147,6 +5208,9 @@ public final class SessionServer: @unchecked Sendable {
 
     public func putState(_ newState: ShepherdState) async throws {
         try await enqueue {
+            guard newState.missions == self.store.state.missions else {
+                throw MissionError("mission_conflict", "Missions must be changed through their revision-checked service.")
+            }
             guard newState.projectExecutions == self.store.state.projectExecutions else {
                 throw LogicalProjectsError("conflict", "Execution receipts are executor-owned.")
             }
@@ -7209,6 +7273,7 @@ public final class SessionServer: @unchecked Sendable {
                 server.designMergeMessageConsumed(agentID: agentID, operation: operation)
                 server.projectChildUserStarted(agentID: agentID, thread: thread, operation: operation)
                 if let operation { server.projectPromptStarted(agentID: agentID, deliveryID: operation) }
+                if let operation { server.missionSteerConsumed(agentID: agentID, operation: operation) }
                 server.executionUserStarted(agentID: agentID, session: thread.piSessionID, generation: thread.generation, operation: operation, entryID: entry)
             }
             thread.onUnconsumedDispatchRetired = { [weak serverWeak, weak thread] deliveryID in
@@ -7747,7 +7812,7 @@ public final class SessionServer: @unchecked Sendable {
         var allowed = false
         if let agent = store.state.agents.first(where: { $0.id == id }),
            agent.coordinatorFor == nil, agent.designID == nil,
-           !store.state.isProjectWorker(id),
+           !store.state.isProjectWorker(id), !store.state.isMissionAgent(id),
            !store.state.projectExecutions.contains(where: { $0.assignment?.reservedWorkerID == id }),
            !Self.automationRunAgentIDs(in: store.state).contains(id) {
             allowed = true

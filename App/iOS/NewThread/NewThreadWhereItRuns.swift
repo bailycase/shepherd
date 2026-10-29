@@ -79,7 +79,7 @@ private struct NewThreadRepoSummary: View {
         let path = model.space.map { NewThreadRules.abbreviatedPath($0.path) }
         NavigationLink(value: NewThreadModel.Panel.repo) {
             SHChoiceRow(model.space?.name ?? "Choose repo", detail: path ?? model.host.map { "a repo on \($0.name)" }) {
-                Image(systemName: "book.closed")
+                SHGlyph.repository.image
                     .font(.sh(.ui))
                     .foregroundStyle(Color.sh.textSecondary)
             } trailing: {
@@ -260,7 +260,7 @@ struct NewThreadRepoList: View {
                     chosen()
                 } label: {
                     SHChoiceRow(row.name, detail: row.detail, selected: row.selected) {
-                        Image(systemName: "book.closed")
+                        SHGlyph.repository.image
                             .font(.sh(.ui))
                             .foregroundStyle(Color.sh.textSecondary)
                     }

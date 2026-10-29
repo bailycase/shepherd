@@ -85,10 +85,10 @@ extension SHChoiceRow where Trailing == EmptyView {
         VStack(alignment: .leading, spacing: SH.Space.l) {
             SHGroupCard {
                 SHChoiceRow("shepherd", detail: "~/code/shepherd", selected: true) {
-                    Image(systemName: "book.closed").foregroundStyle(Color.sh.textSecondary)
+                    SHGlyph.repository.image.foregroundStyle(Color.sh.textSecondary)
                 }
                 SHChoiceRow("orders-svc", detail: "on build-01") {
-                    Image(systemName: "book.closed").foregroundStyle(Color.sh.textSecondary)
+                    SHGlyph.repository.image.foregroundStyle(Color.sh.textSecondary)
                 }
             }
             SHGroupCard {

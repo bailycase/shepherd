@@ -39,7 +39,7 @@ Every decision has to pass one test: does this help one person supervise ten wor
   (Settings ▸ Pi, Sign-in).
 - Experiments (Projects, Goals) are off by default and turning one off never discards its data;
   turning it back on never resumes work by itself. The feature's doc in `docs/` has the detail.
-- Missions are not built. Nothing shows or links to them. The Files tab is built for local threads (FileOpenSplit board); remote file browsing is not yet supported. Artifacts is built, without versions or editing (docs/design/side-pane-artifacts.md).
+- Mac Missions have a sidebar destination with planning, worktree execution, validation and explicit PR publication. Mobile Missions and the remaining advanced boards are not built; see docs/design/departures.md. The Files tab is built for local threads (FileOpenSplit board); remote file browsing is not yet supported. Artifacts is built, without versions or editing (docs/design/side-pane-artifacts.md).
 
 ## Principles, in priority order
 

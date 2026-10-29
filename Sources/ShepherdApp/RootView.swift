@@ -271,6 +271,7 @@ private struct DestinationLayer: View {
     var body: some View {
         switch vm.shownDestination {
         case .newThread?: NewThreadPage(vm: vm, chrome: chrome)
+        case .missions?: MissionsDestination(controller: vm.missions, chrome: chrome)
         case .designs?: DesignsDestination(vm: vm, chrome: chrome)
         case .newDesign?: NewDesignPage(vm: vm, chrome: chrome)
         case .designSystem?: DesignSystemDestination(vm: vm, chrome: chrome)

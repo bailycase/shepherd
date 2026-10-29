@@ -87,7 +87,7 @@ extension ButtonStyle where Self == SHPressableStyle {
 #Preview("Selector chips") {
     SHPreviewBoth {
         SHFlowLayout(spacing: SHSelectorChipMetrics.spacing) {
-            Button {} label: { SHSelectorChip("shepherd", systemImage: "book.closed", active: true, accessibilityName: "Repo") }
+            Button {} label: { SHSelectorChip("shepherd", systemImage: SHGlyph.repository.symbolName, active: true, accessibilityName: "Repo") }
             Button {} label: { SHSelectorChip("This Mac", systemImage: "desktopcomputer", accessibilityName: "Host") }
             Button {} label: { SHSelectorChip("claude-opus", systemImage: "sparkle", accessibilityName: "Model") }
             Button {} label: { SHSelectorChip("Medium", systemImage: "lightbulb", mono: false, accessibilityName: "Thinking") }

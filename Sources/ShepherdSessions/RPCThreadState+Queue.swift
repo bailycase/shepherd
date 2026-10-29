@@ -650,6 +650,8 @@ extension RPCThreadState {
     func steerDispatch(_ id: UUID, done: @escaping (NativeThreadResult?) -> Void) {
         guard let item = items.first(where: { $0.entry.id == id }) else { done(nil); return }
         if let failure = goalCommandFailure(item.promptText) { done(failure); return }
+        // What pi will echo as the user message is the prompt text, not the composer's words.
+        if oneShotSteers[id] != nil { oneShotSteers[id] = item.promptText }
         unboundSteers.append(id)
         steersInFlight += 1
         let rpcImages = item.images.map { RPCImage(data: $0.data.base64EncodedString(), mimeType: $0.mimeType) }
@@ -768,15 +770,26 @@ extension RPCThreadState {
     /// landed (or are landing).
     func reclaim(steering: [String], followUp: [String]) {
         var remaining = steering
-        var back: [QueueItem] = []
+        var back: [QueueItem] = [], dropped: Set<UUID> = []
         for item in items where item.entry.state == .steering {
             guard let index = remaining.firstIndex(of: item.piText ?? item.promptText) else { continue }
             remaining.remove(at: index)
+            // A one-shot steer pi never read ends with its run: never a new turn of its own.
+            if oneShotSteers[item.entry.id] != nil { dropped.insert(item.entry.id); continue }
             var returned = item
             returned.piText = nil
             back.append(returned)
         }
-        items.removeAll { item in back.contains { $0.entry.id == item.entry.id } }
+        items.removeAll { item in dropped.contains(item.entry.id) || back.contains { $0.entry.id == item.entry.id } }
+        // pi can answer a steer before its queue_update binds the text, which retires the item early; its text is
+        // still pi's here. A one-shot steer is still not adopted as a message for a later turn.
+        for (id, text) in oneShotSteers where !dropped.contains(id) {
+            guard let index = remaining.firstIndex(of: text) else { continue }
+            remaining.remove(at: index)
+            dropped.insert(id)
+        }
+        for id in dropped { oneShotSteers[id] = nil }
+        undeliveredSteers.formUnion(dropped)
         let now = Date().timeIntervalSince1970 * 1000
         let adopted = (remaining + followUp).map {
             QueueItem(entry: NativeQueuedMessage(id: UUID(), text: $0, sentAt: now), images: [])
@@ -940,7 +953,12 @@ extension RPCThreadState {
             origin = dispatch.parts.map { .queue(parts: $0) }
             operationID = dispatch.id
             kept = dispatch.designPayloads
+        } else if let steer = oneShotSteers.first(where: { $0.value == text })?.key {
+            // Its item retired before pi's queue_update bound it (pi answered first): it is still this read.
+            origin = .steered
+            operationID = steer
         }
+        if let operationID { oneShotSteers[operationID] = nil }
         let id = liveEntryID(for: message)
         let sentReferences = Self.sentReferences(in: text, kept: kept)
         var value = Self.project(entryID: id, message: message, sentReferences: sentReferences)

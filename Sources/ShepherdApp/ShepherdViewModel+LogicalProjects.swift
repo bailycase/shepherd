@@ -317,9 +317,18 @@ extension ShepherdViewModel {
     /// Whether this Mac holds a coordinator's pi off on purpose: it is not running and its Project has nothing the owner would launch
     /// it for (`ProjectComposerSend.isOffline`).
     func coordinatorHeldOff(_ agent: AgentID) -> Bool {
+        if missionStepFinished(agent) { return true }
         guard let project = state.projects.first(where: { $0.coordinatorAgentID == agent }) else { return false }
         let live = state.agents.first { $0.id == agent }?.paneID.flatMap { sessions.liveSession(forPane: $0) } != nil
         return ProjectComposerSend.isOffline(paused: project.paused, messages: project.messages, coordinatorLive: live)
+    }
+
+    /// A mission step whose pi the mission stopped on purpose (no running attempt in an active run): its thread
+    /// is history from the session file, held offline like a held-off coordinator, never restarted.
+    func missionStepFinished(_ agent: AgentID) -> Bool {
+        state.isMissionAgent(agent) && !state.missions.contains { mission in
+            mission.run.map { $0.phase.active && $0.attempts.contains { $0.agentID == agent && $0.status == .running } } == true
+        }
     }
 
     // MARK: Spaces a project may link

@@ -57,6 +57,21 @@ public extension ShepherdState {
             }
         }
 
+        guard missions.count <= Mission.maximumCount else {
+            throw MissionError("mission_limit", "Workspace exceeds 32 missions.")
+        }
+        var missionIDs = Set<MissionID>()
+        for mission in missions {
+            guard missionIDs.insert(mission.id).inserted else {
+                throw ShepherdStateValidationError.duplicateID(kind: "mission", id: mission.id.rawValue)
+            }
+            try mission.validate()
+            // Lane links are provenance. Removing a Space must not erase its saved mission map.
+        }
+        guard try JSONEncoder().encode(missions).count <= Mission.maximumEncodedCollectionBytes else {
+            throw MissionError("mission_limit", "Mission records exceed the 1 MiB workspace budget.")
+        }
+
         guard projects.count <= Project.maximumCount else {
             throw ProjectValidationError("Workspace exceeds 32 logical projects.")
         }

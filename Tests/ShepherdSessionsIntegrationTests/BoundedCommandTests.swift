@@ -101,6 +101,36 @@ struct BoundedCommandTests {
         #expect(String(decoding: try SkillsGit.run(["--version"], in: dir, timeout: 1), as: UTF8.self).hasPrefix("git version"))
     }
 
+    @Test func cancellationKillsTheCommandGroupWithoutWaitingForItsDeadline() async throws {
+        let dir = try makeScratchDirectory()
+        defer { cleanup(dir) }
+        let executable = try script(in: dir, mode: "hang")
+        let task = Task.detached { try BoundedCommand.run([executable.path], timeout: 60) }
+        defer { task.cancel() }
+        try await eventually("command and helper to start") { pids(dir).count == 2 }
+        task.cancel()
+        await #expect(throws: CancellationError.self) { try await task.value }
+        try await eventually("cancelled command group to exit") { pids(dir).allSatisfy { kill($0, 0) != 0 } }
+    }
+
+    @Test func appTerminationKillsCommandsAndPermanentlyClosesTheLaunchGate() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
+            await completingScenario {
+                let fixture = BoundedCommandTests(), dir = try makeScratchDirectory()
+                defer { fixture.cleanup(dir) }
+                let executable = try fixture.script(in: dir, mode: "hang")
+                let task = Task.detached { try BoundedCommand.run([executable.path], timeout: 60) }
+                defer { task.cancel() }
+                try await eventually("command group to start") { fixture.pids(dir).count == 2 }
+                BoundedCommand.stopForAppTermination()
+                #expect(try await task.value.status != 0)
+                #expect(throws: BoundedCommand.Failure.terminating) { try BoundedCommand.run(["/usr/bin/true"], timeout: 1) }
+                try await eventually("app-owned command group to exit") { fixture.pids(dir).allSatisfy { kill($0, 0) != 0 } }
+            }
+        }
+        expectScenarioCompleted(result)
+    }
+
     @Test func commandsStreamLargeInputAndPreserveExitErrors() throws {
         let input = Data(repeating: 65, count: 1 << 20)
         let echoed = try BoundedCommand.run(["/bin/cat"], input: input, timeout: 2)

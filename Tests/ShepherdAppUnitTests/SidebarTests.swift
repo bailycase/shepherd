@@ -2,6 +2,7 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdTestKit
 import ShepherdUI
 import SwiftUI
 import Testing
@@ -290,19 +291,19 @@ struct SidebarNeedsYouTests {
     }
 }
 
-/// The destinations never move, and are the three every ProjectLead board draws: New thread, Designs (while the Design tool is on),
+/// The destinations never move: New thread, Missions, Designs (while the Design tool is on),
 /// Automations. There is no More: the command palette opens Hosts, Design systems and Extensions.
 @Suite("Sidebar destinations")
 struct SidebarDestinationTests {
     @Test func theBoardsDrawNewThreadAndAutomationsAndDesignsWhileTheToolIsOn() {
-        let off = SidebarDerivation.destinations(shown: nil, newThreadChord: "⌘N")
-        #expect(off.map(\.title) == ["New thread", "Automations"])
+        let off = SidebarDerivation.destinations(shown: nil, newThreadChord: "⌘N", missions: true)
+        #expect(off.map(\.title) == ["New thread", "Missions", "Automations"])
         #expect(off[0].trailing == .keycaps("⌘N"))
         #expect(off[0].icon == .newThread)
         #expect(off.allSatisfy { !$0.selected })
-        let on = SidebarDerivation.destinations(shown: .designs, newThreadChord: "⇧⌘N", designs: true)
-        #expect(on.map(\.title) == ["New thread", "Designs", "Automations"])
-        #expect(on.map(\.selected) == [false, true, false])
+        let on = SidebarDerivation.destinations(shown: .designs, newThreadChord: "⇧⌘N", designs: true, missions: true)
+        #expect(on.map(\.title) == ["New thread", "Missions", "Designs", "Automations"])
+        #expect(on.map(\.selected) == [false, false, true, false])
         #expect(on[0].trailing == .keycaps("⇧⌘N"))
     }
 
@@ -463,5 +464,96 @@ struct SidebarWordTests {
         ])
         #expect(ShepherdViewModel.agents(in: state, space: a.id).map(\.name) == ["one", "three"])
         #expect(ShepherdViewModel.agents(in: state, space: SpaceID()).isEmpty)
+    }
+}
+
+/// A mission's planner, worker, validator and Spec Kit threads belong to the mission: the sidebar lists
+/// the mission in its own section and never those threads, running or long finished.
+@Suite("Sidebar Missions")
+@MainActor
+struct SidebarMissionTests {
+    private let space = Fixture.space("shepherd")
+
+    private func agent(_ name: String, status: AgentStatus) -> Agent {
+        var agent = Fixture.agent(name, in: space).agent
+        agent.status = status
+        agent.lastActiveAt = 10
+        return agent
+    }
+
+    @Test func missionThreadsLeaveEveryThreadGroupWhileOrdinaryThreadsStay() {
+        let planner = agent("Spec Kit: /speckit.specify", status: .done)
+        let worker = agent("Spec Kit: /speckit.implement", status: .working)
+        let validator = agent("validator", status: .blocked)
+        let historical = agent("Add POSIX greeting scripts", status: .done)
+        let ordinary = agent("Fix terminal output buffer", status: .working)
+        let named = agent("Spec Kit: notes", status: .done)   // only a name: still an ordinary thread
+
+        var active = MissionRun(model: "m", phase: .running)
+        active.attempts = [MissionAttempt(agentID: worker.id), MissionAttempt(stationID: MissionStationID(), agentID: validator.id, status: .succeeded)]
+        active.specKit = MissionSpecKitRun(lanes: [MissionSpecKitLane(spaceID: space.id, plannerAgentID: planner.id)])
+        var finished = MissionRun(model: "m", phase: .done)
+        finished.attempts = [MissionAttempt(agentID: historical.id, status: .succeeded)]
+        let missions = [Mission(draft: MissionDraft(title: "Add greeting script", goal: "g"), run: active),
+                        Mission(draft: MissionDraft(title: "Done one", goal: "g"), run: finished)]
+        let state = ShepherdState(spaces: [space], agents: [planner, worker, validator, historical, ordinary, named], missions: missions)
+
+        let lists = SidebarDerivation.lists(SidebarSource(local: state))
+        #expect(Set(lists.all.map(\.title)) == ["Fix terminal output buffer", "Spec Kit: notes"])
+        #expect(lists.working.map(\.title) == ["Fix terminal output buffer"])
+        #expect(lists.needsYou.isEmpty)
+        #expect(state.missionAgentIDs == [planner.id, worker.id, validator.id, historical.id])
+    }
+
+    @Test func theMissionsExperimentIsOffUntilTurnedOnAndAResetTurnsItOff() {
+        let defaults = ScratchDefaults()
+        let settings = AppSettings(store: defaults)
+        #expect(!settings.missionsEnabled)
+        settings.missionsEnabled = true
+        #expect(AppSettings(store: defaults).missionsEnabled)
+        settings.resetToDefaults()
+        #expect(!settings.missionsEnabled)
+        #expect(!AppSettings(store: defaults).missionsEnabled)
+    }
+
+    @Test func theExperimentGatesOnlyTheMissionsEntryPointsNeverWhichThreadsAreListed() {
+        let worker = agent("Spec Kit: /speckit.implement", status: .working)
+        let ordinary = agent("Fix terminal output buffer", status: .working)
+        var run = MissionRun(model: "m", phase: .review)
+        run.attempts = [MissionAttempt(agentID: worker.id, status: .succeeded)]
+        let state = ShepherdState(spaces: [space], agents: [worker, ordinary],
+                                  missions: [Mission(draft: MissionDraft(title: "Add greeting script", goal: "g"), run: run)])
+        // Thread classification has no flag: off or on, the mission's worker is never a thread row.
+        let lists = SidebarDerivation.lists(SidebarSource(local: state))
+        #expect(lists.all.map(\.title) == ["Fix terminal output buffer"])
+        // Off: no Missions destination and no Missions section; on: both, the section even with no missions.
+        #expect(!SidebarDerivation.destinations(shown: nil, newThreadChord: "⌘N").contains { $0.title == "Missions" })
+        #expect(SidebarDerivation.destinations(shown: nil, newThreadChord: "⌘N", missions: true).contains { $0.title == "Missions" })
+        let rows = SidebarMission.rows(state.missions, selected: nil)
+        #expect(!lists.items(collapsed: [], missions: rows).contains { $0.id == AnyHashable("header.missions") })
+        #expect(lists.items(collapsed: [], missions: rows, showsMissions: true).contains { $0.id == AnyHashable("header.missions") })
+        #expect(lists.items(collapsed: [], missions: [], showsMissions: true).contains { $0.id == AnyHashable("header.missions") })
+    }
+
+    @Test func missionsCannotBeTurnedOffWhileOneWorks() {
+        let settings = AppSettings(store: ScratchDefaults())
+        settings.missionsEnabled = true
+        #expect(MissionsExperimentCard(settings: settings, active: true).locked)
+        #expect(!MissionsExperimentCard(settings: settings, active: false).locked)
+        settings.missionsEnabled = false
+        // Off already: nothing to protect, and turning it on is always allowed.
+        #expect(!MissionsExperimentCard(settings: settings, active: true).locked)
+    }
+
+    @Test func missionsListWaitingOnYouThenWorkingThenTheRest() {
+        var review = MissionRun(model: "m", phase: .review)
+        review.attempts = []
+        let rows = SidebarMission.rows([
+            Mission(draft: MissionDraft(title: "Old done", goal: "g"), run: MissionRun(model: "m", phase: .done)),
+            Mission(draft: MissionDraft(title: "Running", goal: "g"), run: MissionRun(model: "m", phase: .running)),
+            Mission(draft: MissionDraft(title: "Review", goal: "g"), run: review),
+        ], selected: nil)
+        #expect(rows.map(\.title) == ["Review", "Running", "Old done"])
+        #expect(rows.first?.needsYou == true)
     }
 }
