@@ -12,6 +12,8 @@ struct ExperimentsSettings: View {
     var instructions: InstructionsModel
     /// This Mac's experiment switches.
     var settings: AppSettings
+    /// A mission is planning, running or publishing: Missions can't be turned off under it.
+    var missionsActive = false
     /// Opens Settings ▸ Instructions (where the lines go).
     let openInstructions: () -> Void
 
@@ -29,6 +31,7 @@ struct ExperimentsSettings: View {
                             DesignToolCard(settings: settings)
                             GoalExperimentCard(settings: settings)
                             ProjectsExperimentCard(settings: settings)
+                            MissionsExperimentCard(settings: settings, active: missionsActive)
                             if model.settings.enabled || !model.snapshot.waiting.isEmpty {
                                 WaitingSuggestions(model: model, instructions: instructions, now: context.date)
                                     .shTransition(.disclosure)
@@ -155,6 +158,56 @@ private struct ProjectsExperimentCard: View {
         .padding(.vertical, SH.Space.l + SH.Space.xxs)
         .padding(.horizontal, SH.Space.xl)
         .shCard(fill: sh.bgWindow, line: sh.lineStrong)
+    }
+}
+
+/// Missions' card. Off hides the Missions destination and its sidebar section; missions and their
+/// receipts are kept, and their threads never join the thread lists either way. It can't be turned
+/// off while a mission works, so no planning, work or publication runs out of sight.
+struct MissionsExperimentCard: View {
+    @Bindable var settings: AppSettings
+    let active: Bool
+
+    /// On and something is working: the switch holds.
+    var locked: Bool { settings.missionsEnabled && active }
+
+    var body: some View {
+        let nw = Color.sh
+        HStack(alignment: .top, spacing: SH.Space.l + SH.Space.xxs) {
+            RoundedRectangle(cornerRadius: SH.Radius.m)
+                .fill(nw.lanternTint)
+                .frame(width: AppLayout.experimentTileSize, height: AppLayout.experimentTileSize)
+                .overlay {
+                    SHGlyph.mission.image
+                        .font(.shSans(AppLayout.experimentGlyphSize))
+                        .foregroundStyle(nw.lanternText)
+                }
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: SH.Space.xxs) {
+                Text("Missions")
+                    .font(.shSans(AppLayout.experimentNameSize, .semibold))
+                    .foregroundStyle(nw.textPrimary)
+                Text("Describe an end state across your repositories; a planner maps it, agents do the work, independent checks validate it, and you publish the pull requests. "
+                     + "Adds Missions to the sidebar. Turning this off hides them and keeps your missions and files.")
+                    .shText(size: AppLayout.experimentDescriptionSize, lineHeight: AppLayout.experimentDescriptionLineHeight)
+                    .foregroundStyle(nw.textSecondary)
+                    .frame(maxWidth: AppLayout.experimentDescriptionWidth, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                if locked {
+                    Text("Pause or stop running missions before turning this off.")
+                        .shText(size: AppLayout.experimentDescriptionSize, lineHeight: AppLayout.experimentDescriptionLineHeight)
+                        .foregroundStyle(nw.lanternText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: SH.Space.xxl)
+            SettingsSwitch(label: "Missions", isOn: $settings.missionsEnabled)
+                .disabled(locked)
+                .help(locked ? "Pause or stop running missions before turning this off." : "Missions")
+        }
+        .padding(.vertical, SH.Space.l + SH.Space.xxs)
+        .padding(.horizontal, SH.Space.xl)
+        .shCard(fill: nw.bgWindow, line: nw.lineStrong)
     }
 }
 

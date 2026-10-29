@@ -1,5 +1,6 @@
 import Foundation
 import ShepherdProtocol
+import ShepherdSessions
 
 enum GitDiff {
     /// The parser lives with `DiffFile` (ShepherdProtocol), which every review client shares.
@@ -135,58 +136,22 @@ enum GitDiff {
     }
 
     private static func runLoginShell(_ command: String, cwd: String) throws -> GitResult {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        process.arguments = ["-l", "-c", "cd -- \(shellQuoted(cwd)) || exit\n" + command]
-        process.currentDirectoryURL = URL(fileURLWithPath: cwd, isDirectory: true)
-        let stdout = Pipe()
-        let stderr = Pipe()
-        process.standardOutput = stdout
-        process.standardError = stderr
-        do {
-            try process.run()
-        } catch {
-            throw GitDiffError.couldNotStart("could not start shell in \(cwd): \(error.localizedDescription)")
-        }
-        let output = stdout.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        let errorOutput = stderr.fileHandleForReading.readDataToEndOfFile()
-        return GitResult(
-            status: process.terminationStatus,
-            stdout: String(decoding: output, as: UTF8.self),
-            stderr: String(decoding: errorOutput, as: UTF8.self)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-        )
+        try run(["/bin/zsh", "-l", "-c", "cd -- \(shellQuoted(cwd)) || exit\n" + command], cwd: cwd)
     }
 
     private static func runGit(_ arguments: [String], cwd: String) throws -> GitResult {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         // Review paths are filenames, never git pathspec patterns (even after `--`).
-        process.arguments = ["--literal-pathspecs"] + arguments
-        process.currentDirectoryURL = URL(fileURLWithPath: cwd, isDirectory: true)
-        var environment = ProcessInfo.processInfo.environment
-        environment["GIT_TERMINAL_PROMPT"] = "0"
-        process.environment = environment
+        try run(["/usr/bin/git", "--literal-pathspecs"] + arguments, cwd: cwd)
+    }
 
-        let stdout = Pipe()
-        let stderr = Pipe()
-        process.standardOutput = stdout
-        process.standardError = stderr
+    private static func run(_ argv: [String], cwd: String) throws -> GitResult {
+        var environment = ProcessInfo.processInfo.environment
+        environment["GIT_TERMINAL_PROMPT"] = "0"; environment["GH_PROMPT_DISABLED"] = "1"
         do {
-            try process.run()
-        } catch {
-            throw GitDiffError.couldNotStart("could not start git in \(cwd): \(error.localizedDescription)")
-        }
-        let output = stdout.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        let errorOutput = stderr.fileHandleForReading.readDataToEndOfFile()
-        return GitResult(
-            status: process.terminationStatus,
-            stdout: String(decoding: output, as: UTF8.self),
-            stderr: String(decoding: errorOutput, as: UTF8.self)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-        )
+            let result = try BoundedCommand.run(argv, directory: URL(fileURLWithPath: cwd), environment: environment, timeout: 600)
+            return GitResult(status: result.status, stdout: String(decoding: result.output, as: UTF8.self),
+                             stderr: String(decoding: result.errors, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
+        } catch { throw GitDiffError.couldNotStart("Review command stopped in \(cwd): \(error)") }
     }
 
     private static func commandDescription(_ arguments: [String]) -> String {
