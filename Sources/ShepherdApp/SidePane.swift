@@ -3,9 +3,9 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
-/// The side pane's tab strip over the current tab (PaneStates, Review, ArtifactList, SubagentList, FilesTab): Changes, with
+/// The side pane's tab strip over the current tab (PaneStates, Review, SubagentList, FilesTab): Changes, with
 /// its count of changed files, a local thread's Browser, Files with the space's file browser,
-/// Artifacts with its count of files, and Subagents with its count of runs.
+/// and Subagents with its count of runs.
 /// The subagent inspector is not a tab: it takes the
 /// whole pane over while a run is inspected (`AgentLayoutView`), and the Subagents tab is the list
 /// that opens it.
@@ -46,9 +46,6 @@ struct SidePaneView: View {
                         BrowserPane(vm: vm, session: vm.browsers.session(for: ref, hosts: vm.remoteHosts), store: store, active: active)
                             .shTransition(.content)
                     }
-                case .artifacts:
-                    ArtifactsTab(store: store, actions: vm.artifactsActions(for: owner))
-                        .shTransition(.content)
                 case .subagents:
                     SubagentListTab(store: store, inspect: inspect)
                         .shTransition(.content)
@@ -112,7 +109,6 @@ private struct SidePaneTabBar: View {
     var body: some View {
         SHSidePaneTabs(SidePaneTabs.items(news: news, changedFiles: review.flatMap { $0.isLoading ? nil : $0.files.count },
                                           browser: vm.sidePaneTabs(for: owner).contains(.browser), browserTip: browserTip,
-                                          artifacts: store.artifacts.isEmpty ? nil : store.artifacts.count,
                                           subagents: SidePaneTabs.subagents(store.subagents)),
                        selection: tab.rawValue,
                        select: { id in SidePaneTab(rawValue: id).map { vm.showSidePane(owner, tab: $0) } },
@@ -134,20 +130,17 @@ private struct SidePaneTabBar: View {
 /// The strip's tabs, from what each one holds.
 enum SidePaneTabs {
     /// `browserTip` is what pi last opened in the Browser: the brief line under its tab while it is news.
-    /// `artifacts` is the thread's file count; nil while it has none (no tab).
     /// `subagents` is the thread's run count and status; nil while it has none (no tab).
     static func items(news: Set<SidePaneTab>, changedFiles: Int?, browser: Bool = true, browserTip: SHSidePaneTabTip? = nil,
-                      artifacts: Int? = nil, subagents: (count: Int, status: AgentState)? = nil) -> [SHSidePaneTab] {
+                      subagents: (count: Int, status: AgentState)? = nil) -> [SHSidePaneTab] {
         SidePaneTab.tabs(browser: browser).compactMap { tab in
             let count: Int? = switch tab {
             case .changes: changedFiles
             case .browser: nil
             case .files: nil
-            case .artifacts: artifacts
             case .subagents: subagents?.count
             }
             if tab == .subagents, subagents == nil { return nil }
-            if tab == .artifacts, artifacts == nil { return nil }
             return SHSidePaneTab(id: tab.rawValue, title: tab.title, systemImage: tab.systemImage, count: count,
                                  news: news.contains(tab), status: tab == .subagents ? subagents?.status : nil, shortcut: tab.shortcutDisplay, tip: tab == .browser ? browserTip : nil)
         }

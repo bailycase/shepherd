@@ -103,7 +103,7 @@ struct ThreadFilesContent: View {
         case .loading:
             ThreadFilesMessage(text: "Loading files…")
         case .failed(let message):
-            SHArtifactNotice(.failed(message)) { Task { await model.loadIfNeeded() } }
+            SHFileNotice(.failed(message)) { Task { await model.loadIfNeeded() } }
         case .loaded where model.rows.isEmpty:
             ThreadFilesMessage(text: model.filter.isEmpty ? "This folder is empty." : "No files match in the open folders.")
         case .loaded:
@@ -211,9 +211,9 @@ struct ThreadFileView: View {
             .padding(.vertical, SH.Space.xs)
             .overlay(alignment: .bottom) { SHHairline() }
             switch content {
-            case .loading: SHArtifactNotice(.loading)
-            case .text(let text): SHArtifactSource(text)
-            case .failed(let message): SHArtifactNotice(.failed(message), retry: retry)
+            case .loading: SHFileNotice(.loading)
+            case .text(let text): SHFileSource(text)
+            case .failed(let message): SHFileNotice(.failed(message), retry: retry)
             }
         }
         .background(sh.bgWindow)

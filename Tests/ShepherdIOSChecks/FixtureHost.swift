@@ -146,15 +146,6 @@ final class FixtureHost: @unchecked Sendable {
         case .stateFetch(let id):
             note("stateFetch")
             return [.state(id: id, state: data.state)]
-        case .nativeThread(let id, _, .artifact(_, let path, let offset)):
-            // As the host does: only a path a write made (here, the fixture's files), in `NativeImage.chunkBytes` pieces.
-            note("nativeThread.artifact")
-            guard let file = data.artifacts[path], offset >= 0, offset < file.count || (offset == 0 && file.isEmpty) else {
-                return [.nativeThread(id: id, result: .failure(code: NativeArtifactCode.unknown, message: "No such artifact."))]
-            }
-            let piece = file.subdata(in: offset..<min(file.count, offset + NativeImage.chunkBytes))
-            return [.nativeThread(id: id, result: .artifactChunk(value: NativeArtifactChunk(path: path, totalBytes: file.count, offset: offset,
-                                                                                            data: piece)))]
         case .nativeThread(let id, let agentID, let command):
             guard case .snapshot(_, _, let after) = command else {
                 note("nativeThread." + Self.kind(command))
@@ -213,7 +204,7 @@ final class FixtureHost: @unchecked Sendable {
         switch request {
         case .nativeThread(let id, _, let command):
             switch command {
-            case .snapshot, .subagentTranscript, .artifact: return nil
+            case .snapshot, .subagentTranscript: return nil
             default:
                 mutation("nativeThread." + Self.kind(command))
                 return [.nativeThread(id: id, result: .failure(code: "fixture", message: refused))]

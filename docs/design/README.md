@@ -139,11 +139,11 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | BrowserTabsOpened | [side-pane-browser](side-pane-browser.md) | Side pane: Browser | Built; site initials and 24pt close targets approved |
 | BrowserTabsPopup | [side-pane-browser](side-pane-browser.md) | Side pane: Browser | Built; site initials and 24pt close targets approved |
 | BrowserTabsTwo | [side-pane-browser](side-pane-browser.md) | Side pane: Browser | Built; site initials and 24pt close targets approved |
-| PaneArtifacts | [side-pane-artifacts](side-pane-artifacts.md) | Side pane: Artifacts | Built, without versions, Edit and Open in a window (departures.md) |
-| PaneArtifactEdit | [side-pane-artifacts](side-pane-artifacts.md) | Side pane (Artifacts › Editing in place) | Not built (the user's decision: no editing in place) |
+| PaneArtifacts | none | Side pane: Artifacts | Removed (departures.md); Files covers it |
+| PaneArtifactEdit | none | Side pane (Artifacts › Editing in place) | Removed with Artifacts (departures.md) |
 | FileOpenSplit | [board](boards/FileOpenSplit.png), [side-pane-files](side-pane-files.md) | Selected Files direction: viewer and collapsible tree on the right | Built for local threads; remote transport and thread-origin badge not implemented |
 | PaneFiles | [ios-ipad-pages](ios-ipad-pages.md) | Side pane (Files) | Superseded on Mac by FileOpenSplit |
-| PaneStates | [ios-ipad-pages](ios-ipad-pages.md), [side-pane-browser](side-pane-browser.md), [side-pane-artifacts](side-pane-artifacts.md) | Side pane (tabs, dot, narrow, ⋯, button); Side pane: Browser; Side pane: Artifacts, Files | Partial (Browser: nothing open, viewport, the agent using it and the tab's tip built, on a remote thread too; Artifacts and its ⌃3 built) |
+| PaneStates | [ios-ipad-pages](ios-ipad-pages.md), [side-pane-browser](side-pane-browser.md) | Side pane (tabs, dot, narrow, ⋯, button); Side pane: Browser; Files | Partial (Browser: nothing open, viewport, the agent using it and the tab's tip built, on a remote thread too; Artifacts removed) |
 | ContextDetails | [composer](composer.md) | Composer, questions, and menus › Context meter | Built |
 | ContextFull | [composer](composer.md) | Composer, questions, and menus › Context meter | Built |
 | ContextCompacted | [composer](composer.md), [thread](thread.md) | Composer, questions, and menus › Context meter; Thread › Compactions | Built |
@@ -223,7 +223,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | iPadSplitView | [ios-iphone](ios-iphone.md), [ios-ipad-pages](ios-ipad-pages.md), [design-tool-references](design-tool-references.md) | iOS (Windows); iOS: iPad › Split View; Design tool › On iPad | Partial |
 | iPadSettingsInstructions | [settings](settings.md) | iOS: iPad › Settings | Partial |
 | iPadPaneBrowser | [ios-ipad-pages](ios-ipad-pages.md) | iOS: iPad › Side pane | Not built yet |
-| iPadPaneArtifacts | [ios-ipad-pages](ios-ipad-pages.md) | iOS: iPad › Side pane | Built, without versions, Edit and Open in a window (departures.md) |
+| iPadPaneArtifacts | [ios-ipad-pages](ios-ipad-pages.md) | iOS: iPad › Side pane | Removed (departures.md); Files covers it |
 | iPadPaneFiles | [ios-ipad-pages](ios-ipad-pages.md) | iOS: iPad › Side pane | Not built yet |
 | iPadTerminal | [ios-iphone](ios-iphone.md), [terminal](terminal.md) | iOS (Terminal); Terminal (tabs only, no Split right; the options menu shows it and opens a terminal when there is none: departures) | Partial |
 
@@ -326,7 +326,6 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | [settings-pi](settings-pi.md) | Read when you change Settings ▸ Pi: Slash commands, Sign-in or From your pi. |
 | [settings-skills](settings-skills.md) | Read when you change Settings ▸ Skills, Browse skills.sh or Add from repo. |
 | [settings](settings.md) | Read when you change a Settings page other than Pi, Instructions, Skills, MCP servers and Experiments. |
-| [side-pane-artifacts](side-pane-artifacts.md) | Read only when asked to build the Artifacts or Files tabs. |
 | [side-pane-browser](side-pane-browser.md) | Read when you change the Browser tab or how an agent drives it. |
 | [side-pane-changes](side-pane-changes.md) | Read when you change the Changes pane, a diff, a review comment, or the subagent inspector. |
 | [sidebar](sidebar.md) | Read when you change the sidebar: its rows, Needs you, Pinned, Recents or Spaces. |

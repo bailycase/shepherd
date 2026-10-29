@@ -8,27 +8,20 @@ import Testing
 @Suite("Side pane")
 struct SidePaneTests {
     @Test func theStripShowsOnlyTheTabsShepherdHas() {
-        #expect(SidePaneTab.allCases == [.changes, .browser, .artifacts, .subagents, .files])
+        #expect(SidePaneTab.allCases == [.changes, .browser, .subagents, .files])
         #expect(SidePaneTabs.items(news: [], changedFiles: nil).map(\.title) == ["Changes", "Browser", "Files"],
-                "Artifacts and Subagents wait for a first file and a first run; Files is always shown")
+                "Subagents waits for a first run; Files is always shown")
         #expect(SidePaneTabs.items(news: [], changedFiles: nil, browser: false).map(\.title) == ["Changes", "Files"],
                 "a remote thread on a host with no tunnels (an older one) has no Browser, as before")
-        #expect(SidePaneTabs.items(news: [], changedFiles: 2, artifacts: 3, subagents: (1, .running)).map(\.title)
-                == ["Changes", "Browser", "Files", "Artifacts", "Subagents"])
-        #expect(SidePaneTab.tabs(browser: true) == [.changes, .browser, .files, .artifacts, .subagents])
-        #expect(SidePaneTab.tabs(browser: false) == [.changes, .files, .artifacts, .subagents])
-    }
-
-    @Test func artifactsIsThePageGlyphOnControlThreeAndCountsItsFiles() throws {
-        let tab = try #require(SidePaneTabs.items(news: [], changedFiles: nil, artifacts: 3).first { $0.id == "artifacts" })
-        #expect(tab.title == "Artifacts" && tab.count == 3 && tab.shortcut == "⌃3" && tab.systemImage == SHGlyph.artifact.symbolName)
-        #expect(SidePaneTabs.items(news: [], changedFiles: nil, artifacts: nil).allSatisfy { $0.id != "artifacts" }, "no file, no tab")
+        #expect(SidePaneTabs.items(news: [], changedFiles: 2, subagents: (1, .running)).map(\.title)
+                == ["Changes", "Browser", "Files", "Subagents"])
+        #expect(SidePaneTab.tabs(browser: true) == [.changes, .browser, .files, .subagents])
+        #expect(SidePaneTab.tabs(browser: false) == [.changes, .files, .subagents])
     }
 
     @Test func theDigitsFollowTheBoardAndAHostWithoutTunnelsKeepsThem() {
-        #expect(SidePaneTab.allCases.map(\.digit) == [1, 2, 3, 4, 5])
-        #expect(SidePaneTab.allCases.map(\.shortcutDisplay) == ["⌃1", "⌃2", "⌃3", "⌃4", "⌃5"])
-        #expect(SidePaneTab.artifacts.digit == 3, "PaneStates: Artifacts is ⌃3; Subagents is ⌃4; Files is ⌃5")
+        #expect(SidePaneTab.allCases.map(\.digit) == [1, 2, 4, 5], "removing Artifacts left ⌃3 free rather than shifting chords")
+        #expect(SidePaneTab.allCases.map(\.shortcutDisplay) == ["⌃1", "⌃2", "⌃4", "⌃5"])
         #expect(SidePaneTab.files.digit == 5)
     }
 

@@ -67,7 +67,7 @@ final class ProjectCoordinatorController {
             case .snapshot(let expected, let before, let revision):
                 guard expected == nil || expected == task.workerSessionID else { throw LogicalProjectsError("stale_execution", "Archived worker session changed.") }
                 request = .snapshot(expectedSessionID: task.workerSessionID, beforeEntryID: before, afterRevision: revision)
-            case .image, .artifact, .subagentTranscript: break
+            case .image, .subagentTranscript: break
             default: throw LogicalProjectsError("project_scope", "Archived worker access is read-only; it never reactivates a task.")
             }
         }

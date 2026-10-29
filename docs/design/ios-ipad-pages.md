@@ -182,11 +182,8 @@ Instructions, SettingsInstructions; `Settings/InstructionsScreens.swift`):
 ## Side pane (iPadPaneBrowser, iPadPaneArtifacts, iPadPaneFiles)
 
 Built: the side pane beside a thread (`ThreadWithSidePane`; DuoOpenSidePane, DuoSidePaneTabs), its head the tabs Changes,
-Files, Terminal, Subagents, Browser, and Artifacts (iPadPaneArtifacts, once the thread has made a file), the open one labelled;
-the header's side-pane button shows and hides it (Thread › Side pane). Artifacts: the list ("This thread · N"), and the open
-artifact under a 52pt bar (All artifacts, the kind tile, the name, Preview | Source, Save a copy), Markdown in Shepherd Design colors,
-HTML and SVG in a locked-down web view on their own background, 18pt in; "Made an artifact" opens it here (on iPhone, in a
-sheet over the thread). **Not built: Browser, Files** (placeholder tabs), the board's version chip, Edit and Open in a window (departures.md).
+Files, Terminal, Subagents and Browser, the open one labelled; the header's side-pane button shows and hides it (Thread › Side
+pane). Artifacts (iPadPaneArtifacts) was built and then removed (departures.md); Files covers it.
 
 **Not built yet: the rest of the side pane.** Show side pane (a 40pt circle in the thread's header; Hide side
 pane, on `bgSelected`, while it shows) opens a pane on the thread's trailing side, with a 1px
@@ -219,11 +216,7 @@ and three more, so the docked review becomes its Changes tab.
     "Console" at 12/600, "Network" at 12 `textSecondary` with its count in mono 10.5
     `textTertiary`, "1 warning" at 11.5 `lanternText` with a triangle, and Hide console (24pt).
   - The thread's line for it: "Opened the checkout · localhost:5173".
-- **Artifacts** (iPadPaneArtifacts): the thread's line "Made an artifact · Load test report" opens it here.
-  - A 52pt bar: All artifacts (36pt), a 22pt `bgSelected` tile at radius 6, the name at 13/600,
-    Preview | Source (20pt segments), and Save a copy (36pt). (The board's version chip, Edit and Open in a window are
-    not built: departures.md.)
-  - The artifact renders in its own colors on a padded surface (18pt).
+- **Artifacts** (iPadPaneArtifacts): removed (departures.md).
 - **Files** (iPadPaneFiles), the repo while pi works in it:
   - A 210pt tree on `bgBase` (a 1px `lineSubtle` trailing edge). Its head (10×12 inset, a
     hairline under it): the repo in mono 12.5/600 with Go to file, and the branch and host at 11

@@ -9,7 +9,7 @@ height, and the dock rule measures the main column, never the thread alone. Its 
 adaptive rule are in "Window and adaptive layout" above. It shows only the tabs Shepherd has:
 **Changes**, the Changes pane, **Browser** (Side pane: Browser, below) for a local thread and
 for a remote thread whose host carries Browser tunnels, **Files** ([FileOpenSplit](side-pane-files.md)),
-**Artifacts** ([Artifacts](side-pane-artifacts.md)) once the thread has one, and **Subagents**
+and **Subagents**
 (SubagentList, in [subagents](subagents.md)), the thread's runs, once it has one. Files browses
 local threads; remote threads explicitly state that file browsing is unavailable. A tray row, a record line, and the footer's "3 subagents" open the
 inspector; the tray's Steer opens it with its Steer field focused.
@@ -17,8 +17,7 @@ inspector; the tray's Steer opens it with its Steer field focused.
 - **Showing and hiding:** ⇧⌘B, the header's side-pane button, or View › Show Side Pane / Hide Side
   Pane. Showing opens the pane on its tab (Changes starts the review); hiding also closes an
   inspected subagent, and discards the review like a cancel. ⌃1 (View › Changes) shows Changes in
-  front of an inspected subagent, ⌃2 (View › Browser) the Browser (a remote thread on a host without tunnels beeps), ⌃3
-  (View › Artifacts) the Artifacts tab (a thread with no artifact beeps) and ⌃4 (View › Subagents) the Subagents tab (a thread with
+  front of an inspected subagent, ⌃2 (View › Browser) the Browser (a remote thread on a host without tunnels beeps), ⌃4 (View › Subagents) the Subagents tab (a thread with
   no run beeps), and ⌃5 (View › Files) the file browser; they are fixed, like ⌘1–9.
   Review Changes (a sidebar row's menu), the palette's Review diff, the chip's Show Changes, a
   thread's "review ›" link and the inspector's file links show Changes too.

@@ -38,9 +38,6 @@ public enum SHGlyph: CaseIterable, Sendable {
     case pin
     /// Response visibility: the finished reply’s measured timing.
     case responseTiming
-    /// A file the agent made (PaneArtifacts, iPadPaneArtifacts: the Artifacts tab and "Made an artifact"). The boards draw a page with a
-    /// sparkle in it, which no SF Symbol matches; the page with a plus is the nearest ("made").
-    case artifact
 
     /// The SF Symbol that draws it, fill variant included.
     public var symbolName: String {
@@ -57,7 +54,6 @@ public enum SHGlyph: CaseIterable, Sendable {
         case .gitBranch: "arrow.triangle.branch"
         case .pin: "pin"
         case .responseTiming: "stopwatch"
-        case .artifact: "doc.badge.plus"
         }
     }
 

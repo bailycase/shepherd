@@ -201,7 +201,7 @@ public struct SHSidePaneTab: Identifiable, Equatable, Sendable {
     public let id: String
     public let title: String
     public let systemImage: String
-    /// Files changed, new artifacts; nil shows none.
+    /// Files changed, runs; nil shows none.
     public let count: Int?
     /// pi opened something there that you haven't looked at.
     public let news: Bool

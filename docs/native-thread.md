@@ -675,32 +675,6 @@ what it sent (`sentImages`) or on the original file.
   was ("Image attached"). The Mac draws them ([thread-images](design/thread-images.md)); the phone and iPad draw
   the count for now.
 
-### Artifacts
-
-An artifact is any file the agent made in the thread: every path a successful `write` call created. There is no
-new tool, no versioning and no editing. The host stores nothing and trusts no client path.
-
-- **Derived, not stored.** `nativeArtifacts` (ShepherdRemote) reads the thread's finished, successful `write`
-  calls: a path once however often it was written, newest write first, with its kind from the extension (Markdown,
-  HTML, SVG, other text) and the age of its latest write. `NativeThreadStore.artifacts` holds it, derived with the rows.
-  A write the host cut short keeps its `path` (`RPCThreadState.fitting` shortens long string arguments, `content`
-  first, and records `contentLines`), so a big report is still named.
-- **`NativeThreadRequest.artifact(expectedSessionID, path, offset)`** answers `artifactChunk` (`path`, `totalBytes`,
-  `offset`, `data`), at most 256 KiB a piece. The host asks pi for its history again (`get_messages`) and serves
-  only a `path` equal to the one a successful `write` of this agent's session gave (`ThreadArtifacts.writtenPaths`),
-  resolved against the agent's folder; it reads the file on a utility queue (`NativeArtifactFile`), opened with
-  `O_NOFOLLOW` (a link in the last place is refused), a regular file only, at most `NativeArtifactChunk.maxBytes`
-  (8 MiB). Failures: `stale_session`, `unknown_artifact` (not a path this thread wrote, or an offset past the end),
-  `artifact_unavailable` (gone, a link, not a file, too big).
-- **Gated** by `artifacts` in `supportedActions` and, remotely, `native.artifacts.v1`; an older host's snapshot
-  loses the action and the request is refused client-side. The tab shows from the thread's own `write` calls
-  either way, and opens "isn't available" on a host that cannot serve them.
-- **The client** (`NativeThreadArtifacts`) checks each piece (same path, in order, a size that does not change,
-  within the limits), holds up to 24 MiB, keyed by path and latest write, and drops everything on a new session.
-- **Drawn** by `SHArtifactCard`, `SHArtifactList`, `SHArtifactBar` (ShepherdUI). Markdown through the thread's prose
-  renderer; HTML and SVG in `SHArtifactWebView`: JavaScript off, no base URL (so no file access), a content rule list
-  that blocks every request but `data:`, every navigation cancelled. Save a copy writes the fetched bytes.
-
 ## Goals
 
 The snapshot's optional `goal` is the live projection of a session-persisted conversation goal.

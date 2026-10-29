@@ -1639,7 +1639,7 @@ public final class SessionServer: @unchecked Sendable {
         }
         if store.state.isMissionAgent(agentID) {
             switch request {
-            case .snapshot, .image, .artifact, .subagentTranscript: break
+            case .snapshot, .image, .subagentTranscript: break
             default:
                 completion(.failure(code: "mission_control", message: "This thread belongs to a Mission. Use its Pause, Stop or Request changes controls."))
                 return
@@ -1782,7 +1782,7 @@ public final class SessionServer: @unchecked Sendable {
             }
             if case .retry = request, case .accepted = result { self?.noteAgentSend(agentID) }
             if case .snapshot(var snapshot) = result, self?.store.state.isMissionAgent(agentID) == true {
-                snapshot.supportedActions = ["images", "artifacts"]
+                snapshot.supportedActions = ["images"]
                 completion(.result(.snapshot(value: snapshot)))
             } else { completion(.result(result)) }
             if case .queue = request, case .accepted = result { self?.projectRuntimeReady(agentID: agentID) }

@@ -568,7 +568,6 @@ struct PaneLeafView: View, Equatable {
                 )
                 // Design references reach an ordinary thread only (docs/designs.md › Isolation).
                 .environment(\.designReferences, vm.designReferenceChips(for: agentID))
-                .environment(\.openArtifact, { [vm] path in vm.selectAgent(agentID); vm.showArtifact(.local(agentID), path: path) })
                 // A login that no longer works: the error card's Sign in again opens the provider's sign-in.
                 .environment(\.turnErrorSignIn, { [vm] in vm.openSignIn(vm.provider(of: agentID), origin: .agentCard) })
             } else {
@@ -1047,7 +1046,6 @@ struct RemoteAgentThreadPane: View {
             },
             designChat: designChat, retainedInput: vm.remoteThreadStores.input(for: ref)
         )
-        .environment(\.openArtifact, designChat ? nil : { path in vm.showArtifact(.remote(ref), path: path) })
     }
 }
 

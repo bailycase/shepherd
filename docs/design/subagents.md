@@ -141,7 +141,7 @@ parent's answer all draw as `queued`; a subagent never draws `attention`, which 
   continuation at the settlement boundary. Questions expose attempt-specific IDs for stale-answer
   refusal; delivery remains best-effort, not a durable exactly-once mailbox.
 - **The Subagents tab** (SubagentList; design saved as `docs/design/boards/SubagentList.png`): the side pane's
-  fourth tab (`arrow.triangle.branch`, ⌃4, after Changes, the Browser and Artifacts), the whole thread's runs where the
+  last tab (`arrow.triangle.branch`, ⌃4, after Changes, the Browser and Files), the whole thread's runs where the
   tray holds only the current turn's. A remote thread has it too, from its own store; a host with no subagent
   control still lists the runs. `SubagentListPresentation` derives the list once per change of the runs
   (`SubagentListTab`: a lazy stack with one view per head and per row; the budget is `SHRenderProbe`

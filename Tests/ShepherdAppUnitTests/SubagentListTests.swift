@@ -131,6 +131,6 @@ struct SubagentListTests {
         #expect(SidePaneTabs.items(news: [], changedFiles: 5, subagents: nil).map(\.title) == ["Changes", "Browser", "Files"])
         let noBrowser = SidePaneTabs.items(news: [], changedFiles: 5, browser: false, subagents: (1, .done))
         #expect(noBrowser.map(\.title) == ["Changes", "Files", "Subagents"], "a host with no tunnels has no Browser")
-        #expect(noBrowser.last?.shortcut == "⌃4", "and Subagents keeps ⌃4, after Artifacts (PaneStates: Artifacts is ⌃3)")
+        #expect(noBrowser.last?.shortcut == "⌃4", "and Subagents keeps ⌃4")
     }
 }
