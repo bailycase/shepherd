@@ -13,6 +13,21 @@ import Sentry
 enum MobileDiagnostics {
     static let shareKey = "shepherd.diagnostics.share"
 
+    enum NavigationAction: String {
+        case open, present, dismiss, popToRoot
+    }
+
+    /// Only app-owned labels; never stringify routes, which carry queries, paths and IDs.
+    @MainActor static func record(_ action: NavigationAction, route: MobileRoute? = nil) {
+        #if SHEPHERD_SENTRY
+        guard SentrySDK.isEnabled else { return }
+        let crumb = Breadcrumb(level: .info, category: "shepherd.navigation")
+        crumb.message = action.rawValue
+        if let route { crumb.setData(value: route.diagnosticScreen, key: "screen") }
+        SentrySDK.addBreadcrumb(crumb)
+        #endif
+    }
+
     static var configured: Bool { dsn != nil }
 
     private static let dsn: String? = {

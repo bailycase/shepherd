@@ -147,7 +147,7 @@ struct DiagnosticsRuntimeTests {
             scope.setUser(user)
         }
         diagnostics.record(.threadSelected)
-        diagnostics.capture(.agentStartFailed, code: 2, details: .init(startupKind: .extensionFailed))
+        diagnostics.capture(.agentStartFailed, code: 2, details: .init(startupKind: .extensionFailed, trigger: .retry, location: .worktree))
         try await eventuallyOnMain("the fake transport to receive a report") { try items(ofType: "event").count == 1 }
         let first = try #require(items(ofType: "event").first)
         let envelope = String(decoding: try JSONSerialization.data(withJSONObject: first), as: UTF8.self)
@@ -156,6 +156,8 @@ struct DiagnosticsRuntimeTests {
         let tags = try #require(first["tags"] as? [String: String])
         #expect(tags["startup.kind"] == "extensionFailed")
         #expect(tags["startup.stage"] == "initialization")
+        #expect(tags["startup.trigger"] == "retry")
+        #expect(tags["startup.location"] == "worktree")
         #expect(tags["failure.category"] == nil)
         #expect(!envelope.contains("PRIVATE_PROMPT_SENTINEL"))
         #expect(try items(ofType: "attachment").isEmpty)
@@ -216,6 +218,8 @@ struct DiagnosticsRuntimeTests {
         for (body, key, value) in [
             ("agent.start_failed", "startup.kind", "extensionFailed"),
             ("agent.start_failed", "startup.stage", "initialization"),
+            ("agent.start_failed", "startup.trigger", "retry"),
+            ("agent.start_failed", "startup.location", "worktree"),
             ("model.failed", "failure.category", "rateLimit"),
             ("context.compact_failed", "failure.category", "rateLimit"),
             ("tool.failed", "tool.kind", "mcp")
@@ -237,7 +241,7 @@ struct DiagnosticsRuntimeTests {
         var runs = Set<String>()
         for item in logs + metrics {
             let attributes = try #require(item["attributes"] as? [String: [String: Any]])
-            #expect(Set(attributes.keys).isSubset(of: metadataKeys.union(["exit_code", "failure.category", "tool.kind", "startup.kind", "startup.stage"])))
+            #expect(Set(attributes.keys).isSubset(of: metadataKeys.union(["exit_code", "failure.category", "tool.kind", "startup.kind", "startup.stage", "startup.trigger", "startup.location"])))
             #expect(attributes["sentry.release"]?["value"] as? String == "shepherd-diagnostics-tests@1.0+1")
             #expect(attributes["sentry.environment"]?["value"] as? String == ShepherdEdition.current.rawValue)
             let run = try #require(attributes["shepherd.run"]?["value"] as? String)
@@ -285,9 +289,18 @@ struct DiagnosticsRuntimeTests {
                 "exhausted activity and duration budgets preserve the resource time series")
         #expect(try telemetryItems(ofType: "trace_metric").contains { $0["name"] as? String == "shepherd.app.rss_bytes" && $0["value"] as? Int == 9876 })
 
+        #expect(try items(ofType: "event").count == 1, "warning pressure must not emit an anomaly")
+        diagnostics.recordResources(["system.pressure": 2])
+        try await eventuallyOnMain("critical pressure to report an anomaly") { try items(ofType: "event").count == 2 }
+        let critical = try #require(items(ofType: "event").last)
+        #expect((critical["tags"] as? [String: String])?["shepherd.failure"] == "resources.memory_pressure")
+        diagnostics.recordResources(["system.pressure": 2])
+        await Task.detached { SentrySDK.flush(timeout: 5) }.value
+        #expect(try items(ofType: "event").count == 2, "repeated critical samples retain the anomaly throttle")
+
         DiagnosticsTransport.state.hold()
         diagnostics.capture(.agentStartFailed, code: 3)
-        try await eventuallyOnMain("a pending upload") { try items(ofType: "event").count == 2 }
+        try await eventuallyOnMain("a pending upload") { try items(ofType: "event").count == 3 }
         let recent = String(decoding: try JSONSerialization.data(withJSONObject: #require(items(ofType: "event").last)), as: UTF8.self)
         let requestsBeforeRevocation = DiagnosticsTransport.state.bodies.count
         #expect(recent.contains("shepherd.resources") && recent.contains("app.rss_bytes"))

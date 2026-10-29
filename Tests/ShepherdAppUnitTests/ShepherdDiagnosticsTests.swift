@@ -206,13 +206,15 @@ struct ShepherdDiagnosticsTests {
         let clean = ShepherdDiagnostics.sanitized(source)
         #expect(clean.tags?["crash.assertion"] == (category.isEmpty ? nil : category))
         #expect(clean.exceptions?.first?.value == nil)
+        #expect(clean.tags?["crash.reason"] == (category.isEmpty ? "unclassified" : "classified"))
+        #expect(clean.tags?["crash.stack"] == "missing")
         let json = try JSONSerialization.data(withJSONObject: clean.serialize())
         #expect(!String(decoding: json, as: UTF8.self).contains("PRIVATE_SECRET"))
         #expect(ShepherdDiagnostics.sanitized(clean).tags?["crash.assertion"] == clean.tags?["crash.assertion"])
     }
 
-    @Test(arguments: [1, 3])
-    func crashSanitizationPreservesEveryFrameOfShortStacks(count: Int) {
+    @Test(arguments: [0, 1, 3, 257])
+    func crashSanitizationLabelsCapturedEvidenceAndRetainsTheFaultingFrames(count: Int) {
         let frames = (0..<count).map { index in
             let frame = Frame()
             frame.instructionAddress = "0x\(index)"
@@ -224,8 +226,12 @@ struct ShepherdDiagnosticsTests {
         exception.stacktrace = SentryStacktrace(frames: frames, registers: [:])
         source.exceptions = [exception]
         let clean = ShepherdDiagnostics.sanitized(source)
-        #expect(clean.exceptions?.first?.stacktrace?.frames.map(\.instructionAddress) == frames.map(\.instructionAddress))
-        #expect(clean.exceptions?.first?.stacktrace?.frames.map(\.function) == frames.map(\.function))
+        #expect(clean.exceptions?.first?.stacktrace?.frames.map(\.instructionAddress) == frames.suffix(256).map(\.instructionAddress))
+        #expect(clean.exceptions?.first?.stacktrace?.frames.map(\.function) == frames.suffix(256).map(\.function))
+        #expect(clean.tags?["crash.stack"] == (count == 0 ? "missing" : count == 1 ? "singleFrame" : count > 256 ? "truncated" : "multipleFrames"))
+        #expect(clean.tags?["crash.reason"] == "unclassified")
+        source.exceptions?.first?.value = nil
+        #expect(ShepherdDiagnostics.sanitized(source).tags?["crash.reason"] == "unavailable")
     }
 
     @Test func failureMetadataIsAllowlistedInEventsAndBreadcrumbs() {

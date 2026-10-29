@@ -66,6 +66,8 @@ final class TerminalSessionStore {
         var phase: Phase = .connecting
         /// A restored, unrequested pane has neither a process nor a terminal surface.
         fileprivate(set) var isDormant = false
+        var startupTrigger: DiagnosticFailureDetails.StartupTrigger = .unknown
+        var startupLocation: DiagnosticFailureDetails.StartupLocation?
         @ObservationIgnored var sessionID: SessionID?
         struct BufferedOutput {
             let data: Data
@@ -452,7 +454,9 @@ final class TerminalSessionStore {
         handledExits.insert(sessionID)
         ShepherdDiagnostics.shared.record(.processExited, code: exit.code)
         if let problem = exit.startProblem {
-            ShepherdDiagnostics.shared.capture(.agentStartFailed, code: exit.code, details: .init(startupKind: problem.kind))
+            let session = sessions[paneID]
+            ShepherdDiagnostics.shared.capture(.agentStartFailed, code: exit.code, details: .init(
+                startupKind: problem.kind, trigger: session?.startupTrigger, location: session?.startupLocation))
         }
         // Read before the view model retires the agent: a pi that exits while it boots frees its
         // place in the launch queue now, not when its hold runs out.
@@ -489,6 +493,7 @@ final class TerminalSessionStore {
               let pane = tab.layout.leaf(withID: paneID), let session = sessions[paneID],
               session.isRPC, session.phase == .stopped else { return }
         session.phase = .connecting
+        session.startupTrigger = .retry
         onAgentStopped?(agentID, nil, false)
         let stopped = pane.sessionID
         Task { [weak self] in
@@ -537,7 +542,7 @@ final class TerminalSessionStore {
         }
     }
 
-    func session(for pane: LeafPane, in tab: Tab) -> PaneSession {
+    func session(for pane: LeafPane, in tab: Tab, trigger: DiagnosticFailureDetails.StartupTrigger = .unknown) -> PaneSession {
         // Before bootstrap the mirror is empty; the pane's role decides the session kind, so
         // read the server directly rather than guess a shell.
         let agents = (serverState ?? server.state).agents
@@ -550,6 +555,7 @@ final class TerminalSessionStore {
             detachPane(pane.id)
         }
         let session = makeSession(paneID: pane.id, isRPC: rpc, isDormant: dormantPanes.contains(pane.id))
+        session.startupTrigger = trigger
         sessions[pane.id] = session
         scheduleStart(session, pane: pane, tab: tab)
         return session
@@ -577,21 +583,22 @@ final class TerminalSessionStore {
     func restoreAgents(_ order: [AgentID], first: [AgentID], in state: ShepherdState) {
         let tabs = Set(state.agents.map(\.tabID))
         dormantPanes.formUnion(state.tabs.filter { tabs.contains($0.id) }.flatMap { $0.layout.leaves.map(\.id) })
-        for id in first { startAhead(id) }
+        for id in first { startAhead(id, trigger: .restore) }
         Task { [weak self] in
             guard let self else { return }
             let recovery = await server.agentsNeedingStartupRecovery()
-            for id in order where recovery.contains(id) { activateAgent(id) }
+            for id in order where recovery.contains(id) { activateAgent(id, trigger: .recovery) }
         }
     }
 
-    private func activatePane(_ pane: LeafPane, in tab: Tab) {
+    private func activatePane(_ pane: LeafPane, in tab: Tab, trigger: DiagnosticFailureDetails.StartupTrigger = .demand) {
         if dormantPanes.remove(pane.id) != nil, let session = sessions[pane.id] {
+            session.startupTrigger = trigger
             session.isDormant = false
             if !session.isRPC, !session.hasTerminalModel { configureTerminal(session) }
             scheduleStart(session, pane: pane, tab: tab)
         } else {
-            _ = session(for: pane, in: tab)
+            _ = session(for: pane, in: tab, trigger: trigger)
         }
     }
 
@@ -602,11 +609,11 @@ final class TerminalSessionStore {
     }
 
     /// Explicit native/remote demand starts the primary thread, not hidden terminals.
-    func activateAgent(_ agentID: AgentID) {
+    func activateAgent(_ agentID: AgentID, trigger: DiagnosticFailureDetails.StartupTrigger = .demand) {
         guard let state = serverState, let agent = state.agents.first(where: { $0.id == agentID }),
               let paneID = agent.paneID, let tab = state.tabs.first(where: { $0.id == agent.tabID }),
               let pane = tab.layout.leaf(withID: paneID) else { return }
-        activatePane(pane, in: tab)
+        activatePane(pane, in: tab, trigger: trigger)
     }
 
     /// Explicit design/worktree restoration starts the requested agents in queue order.
@@ -622,15 +629,15 @@ final class TerminalSessionStore {
 
     /// `agentID` is on screen: if its pi is still waiting to start, it starts now, ahead of the
     /// others; if it has not been queued yet, it will be as soon as it is.
-    func startAhead(_ agentID: AgentID) {
+    func startAhead(_ agentID: AgentID, trigger: DiagnosticFailureDetails.StartupTrigger = .demand) {
         // A new agent's pi is its creation's to spawn, never queued.
         if let paneID = serverState?.agents.first(where: { $0.id == agentID })?.paneID, reservedPanes.contains(paneID) { return }
         if startQueue.startAhead(agentID) { beginStart(agentID, ahead: true) }
-        activateAgent(agentID)
+        activateAgent(agentID, trigger: trigger)
         if let state = serverState, let agent = state.agents.first(where: { $0.id == agentID }),
            let tab = state.tabs.first(where: { $0.id == agent.tabID }) {
             for pane in tab.layout.leaves where dormantPanes.contains(pane.id) {
-                activatePane(pane, in: tab)
+                activatePane(pane, in: tab, trigger: trigger)
             }
         }
     }
@@ -969,6 +976,13 @@ final class TerminalSessionStore {
                let agent = serverState?.agents.first(where: { $0.id == agentID }) {
                 guard session.isRPC, isRPCPane(pane, agent: agent) else {
                     throw TerminalSessionStoreError.paneUnavailable(session.paneID)
+                }
+                if agent.worktreePath.map(Self.resolvedCwd) == cwd {
+                    session.startupLocation = .worktree
+                } else if serverState?.spaces.first(where: { $0.id == agent.spaceID }).map({ Self.resolvedCwd($0.path) }) == cwd {
+                    session.startupLocation = .space
+                } else {
+                    session.startupLocation = .other
                 }
                 try await server.projects.prepareProjectConfiguration(for: cwd)
                 // Respawn after relaunch: an agent that was never prompted has

@@ -22,6 +22,16 @@ public struct DiagnosticFailureDetails: Equatable, Sendable {
         case preflight, launch, initialization, resume, unknown
     }
 
+    public enum StartupTrigger: String, CaseIterable, Sendable {
+        case restore, recovery, demand, retry, unknown
+    }
+
+    public enum StartupLocation: String, CaseIterable, Sendable {
+        case space, worktree, other
+    }
+
+    public var startupTrigger: StartupTrigger?
+    public var startupLocation: StartupLocation?
     public var category: Category?
     public var toolKind: ToolKind?
     public var startupKind: NativeStartProblem.Kind?
@@ -32,7 +42,9 @@ public struct DiagnosticFailureDetails: Equatable, Sendable {
         self.toolKind = toolKind
     }
 
-    public init(startupKind: NativeStartProblem.Kind) {
+    public init(startupKind: NativeStartProblem.Kind, trigger: StartupTrigger? = nil, location: StartupLocation? = nil) {
+        self.startupTrigger = trigger
+        self.startupLocation = location
         self.startupKind = startupKind
         switch startupKind {
         case .homeUnsafe, .folderMissing: startupStage = .preflight
@@ -49,6 +61,8 @@ public struct DiagnosticFailureDetails: Equatable, Sendable {
         values["tool.kind"] = toolKind?.rawValue
         values["startup.kind"] = startupKind?.rawValue
         values["startup.stage"] = startupStage?.rawValue
+        values["startup.trigger"] = startupTrigger?.rawValue
+        values["startup.location"] = startupLocation?.rawValue
         return values
     }
 
@@ -59,6 +73,8 @@ public struct DiagnosticFailureDetails: Equatable, Sendable {
         clean["tool.kind"] = values["tool.kind"].flatMap(ToolKind.init(rawValue:))?.rawValue
         clean["startup.kind"] = values["startup.kind"].flatMap(NativeStartProblem.Kind.init(rawValue:))?.rawValue
         clean["startup.stage"] = values["startup.stage"].flatMap(StartupStage.init(rawValue:))?.rawValue
+        clean["startup.trigger"] = values["startup.trigger"].flatMap(StartupTrigger.init(rawValue:))?.rawValue
+        clean["startup.location"] = values["startup.location"].flatMap(StartupLocation.init(rawValue:))?.rawValue
         return clean
     }
 }

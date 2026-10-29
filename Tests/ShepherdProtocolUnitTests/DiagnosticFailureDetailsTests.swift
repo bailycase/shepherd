@@ -25,9 +25,20 @@ struct DiagnosticFailureDetailsTests {
         }
     }
 
+    @Test func startupContextRetainsOnlyBoundedLabels() {
+        for trigger in DiagnosticFailureDetails.StartupTrigger.allCases {
+            for location in DiagnosticFailureDetails.StartupLocation.allCases {
+                let details = DiagnosticFailureDetails(startupKind: .folderMissing, trigger: trigger, location: location)
+                #expect(details.attributes["startup.trigger"] == trigger.rawValue)
+                #expect(details.attributes["startup.location"] == location.rawValue)
+                #expect(DiagnosticFailureDetails.sanitized(details.attributes) == details.attributes)
+            }
+        }
+    }
+
     @Test func sanitizationRejectsUnknownKeysAndValues() {
         let privateValue = "/PRIVATE_PATH?token=PRIVATE_SECRET"
-        let poisoned = Dictionary(uniqueKeysWithValues: ["failure.category", "tool.kind", "startup.kind", "startup.stage", privateValue].map { ($0, privateValue) })
+        let poisoned = Dictionary(uniqueKeysWithValues: ["failure.category", "tool.kind", "startup.kind", "startup.stage", "startup.trigger", "startup.location", privateValue].map { ($0, privateValue) })
         #expect(DiagnosticFailureDetails.sanitized(poisoned).isEmpty)
         for category in DiagnosticFailureDetails.Category.allCases {
             let details = DiagnosticFailureDetails(category: category, toolKind: .mcp)

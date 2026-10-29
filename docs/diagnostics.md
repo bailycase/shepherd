@@ -11,7 +11,10 @@ The app sends native crash stacks, image UUIDs and addresses for symbolication, 
 OS version, hardware class and memory fields supplied by the SDK. Fixed breadcrumbs record
 app startup, selecting a local thread and process exits, with numeric exit codes. Agent-start
 failures send a fixed error code, the existing allowlisted startup problem kind and its inferred stage
-(preflight, launch, initialization, resume, or unknown). Random installation and run UUIDs permit correlation; they
+(preflight, launch, initialization, resume, or unknown). Local pane starts also record their trigger
+(restore, recovery, demand, retry, or unknown) and whether the launch cwd matches the space, recorded
+worktree, or neither; no paths are sent. Unknown or absent context is not inferred from a session ID.
+Random installation and run UUIDs permit correlation; they
 are not account, device serial, agent or project identifiers.
 
 `Sources/ShepherdApp/ShepherdDiagnostics.swift` is the only production file that imports
@@ -24,7 +27,10 @@ absolute binary paths. It retains symbols and image metadata needed for symbolic
 stack traces are enabled so native crash evidence can include async callers. Before dropping exception
 reasons, the filter recognizes only fixed assertion categories (continuation misuse, duplicate key,
 index out of range, unexpected nil, missing embedded extension resource, precondition); unknown reasons
-produce no category. These labels improve evidence, not diagnose or fix the underlying crash.
+produce no category. Crash reports also label the captured stack as missing, single-frame,
+multi-frame or truncated, and the exception reason as unavailable, unclassified or classified.
+These describe available evidence, not proof that a stack contains every caller, and do not diagnose
+or fix the underlying crash.
 
 Performance reporting adds explicit, fixed-name transactions for agent start/stop/turns, model responses,
 history refresh, compaction and tool categories (`read`, `bash`, `write`, `edit`, `mcp`, `other`). These
@@ -167,6 +173,10 @@ file I/O, frames, time to full display), profiles on app start and a quarter of 
 hierarchy (types, frames, identifiers; no text), and a replay of the moments around an error with all
 text and images masked. No screenshot is attached, and `sendDefaultPii` stays off, so no IP, user or
 request headers (the push relay's bearer token) are sent. Automatic breadcrumbs keep request URLs.
+The SDK's existing bounded breadcrumb ring also records app-owned navigation requests (open, present, dismiss,
+pop to root) with only the coarse screen kind, never route-associated paths, queries or identifiers.
+These describe requested navigation, not confirmation that a screen rendered; SDK lifecycle breadcrumbs
+already record foreground/background transitions. Opt-out disables these breadcrumbs with the SDK.
 
 `DiagnosticsBudget` (ShepherdRemote) caps each UTC day at 100 errors and 1000 transactions, persisted
 across launches; profiles and replays are bounded by their sample rates and the error cap. Turning the

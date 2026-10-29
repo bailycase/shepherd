@@ -103,6 +103,7 @@ final class MobileNavigator {
     /// tab's own root; on iPad a thread becomes the detail and anything else is pushed over it,
     /// a thread's runs or review over that thread.
     func open(_ route: MobileRoute) {
+        MobileDiagnostics.record(.open, route: route)
         switch layout {
         case .phone:
             let target = Tab.landing(of: route, from: tab)
@@ -150,15 +151,18 @@ final class MobileNavigator {
 
     /// Shows `route` modally (New thread, a host form).
     func present(_ route: MobileRoute) {
+        MobileDiagnostics.record(.present, route: route)
         presented = PresentedRoute(route: route)
     }
 
     func dismissPresented() {
+        if let presented { MobileDiagnostics.record(.dismiss, route: presented.route) }
         presented = nil
     }
 
     /// Back to the current stack's root.
     func popToRoot() {
+        MobileDiagnostics.record(.popToRoot)
         switch layout {
         case .phone:
             self[path: tab] = []
