@@ -275,8 +275,11 @@ keep the version for real breaks.
   thread's model. Model names truncate in the middle, the full id read aloud. Repo
   lists the host's spaces first and other hosts' after (choosing one moves the thread there), and
   Add repo browses the host's folders (`listDir`, `addSpace`). Host shows each one's status and
-  running threads. The New worktree switch (on by default) takes a generated branch and a base
-  resolved through `creationOptions`. Start sends `createAgent` as the Mac's New Agent sheet
+  running threads. On iPhone, Where it runs shows the chosen repo as one row that pushes the
+  searchable list, and the model chip opens one sheet for thinking and the model (by provider,
+  Host default first). The New worktree switch (on by default) takes a generated branch and a base
+  resolved through `creationOptions`; Base pushes the repo's branches as the Mac's base picker
+  lists them (`creationBranches`, `agent.creation.branches.v1`), and a typed name on an older host. Start sends `createAgent` as the Mac's New Agent sheet
   does, with images in that same request, then opens the thread only while the original form
   remains presented. A rejected creation keeps its prompt and images. An older host says what it lacks
   instead of failing. On iPad it is a small form over the thread, with a popover per chip.
