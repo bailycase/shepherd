@@ -127,7 +127,7 @@ one. The New agent sheet (⇧⌘T) stays for its directory and base fields.
 
 ## Missions page
 
-**Not built yet**, and waiting on Missions itself (NavMissions; "every mission, filtered by state").
+The Mac baseline is built in `MissionsPage.swift`: local missions, state filters and creation. Templates and remote hosts remain unbuilt. Done means PRs published, not merged; see the current decisions in departures.md. The board below remains the full target (NavMissions; "every mission, filtered by state").
 
 - **Header:** "Missions", "Filter missions", and **New mission**.
 - **Tabs:** All · Needs you · Running · Drafts · Done · Templates, each with its count.

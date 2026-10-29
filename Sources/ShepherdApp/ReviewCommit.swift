@@ -280,13 +280,13 @@ final class ReviewCommitter {
         }
     }
 
-    func run(_ options: RemoteCommitOptions, cwd: String) async {
+    func run(_ options: RemoteCommitOptions, cwd: String, pullRequestBase: String? = nil) async {
         guard phase == .idle else { return }
         phase = .running
         states[.check] = .running
         let plan: Plan
         do {
-            plan = try await check(options, cwd: cwd)
+            plan = try await check(options, cwd: cwd, pullRequestBase: pullRequestBase)
         } catch {
             fail(.check, String(describing: error), summary: "Nothing was committed.")
             return
@@ -326,7 +326,7 @@ final class ReviewCommitter {
         var newBranch: String?
     }
 
-    private func check(_ options: RemoteCommitOptions, cwd: String) async throws -> Plan {
+    private func check(_ options: RemoteCommitOptions, cwd: String, pullRequestBase: String?) async throws -> Plan {
         let title = options.title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { throw ReviewCommitRefusal("Write a commit message.") }
         guard !options.files.isEmpty else { throw ReviewCommitRefusal("Choose at least one file.") }
@@ -364,7 +364,7 @@ final class ReviewCommitter {
                 throw ReviewCommitRefusal("This branch has no remote to push to.")
             }
         case .pullRequest:
-            guard let base = checkout.defaultBranch, let remote = checkout.pushRemote else {
+            guard let base = pullRequestBase ?? checkout.defaultBranch, let remote = checkout.pushRemote else {
                 throw ReviewCommitRefusal("A pull request needs a remote and its default branch.")
             }
             var head = branch

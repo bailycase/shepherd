@@ -9,6 +9,9 @@ enum SidebarActivitySection: String, CaseIterable, Hashable {
     case automations
     /// The new Projects (ProjectLead boards). Its rows are `SidebarLogicalProject`s, not thread rows.
     case projects
+    /// Missions, one row each. A mission's planner, worker and validator threads are its own and
+    /// never appear in the thread groups.
+    case missions
 
     var title: String {
         switch self {
@@ -20,6 +23,7 @@ enum SidebarActivitySection: String, CaseIterable, Hashable {
         case .designs: "Designs"
         case .automations: "Automations"
         case .projects: "Projects"
+        case .missions: "Missions"
         }
     }
 }
@@ -29,13 +33,39 @@ enum SidebarActivityItem: Identifiable, Equatable {
     case header(SidebarActivitySection, count: Int, collapsed: Bool)
     case row(SidebarListRow)
     case project(SidebarLogicalProject)
+    case mission(SidebarMission)
 
     var id: AnyHashable {
         switch self {
         case .header(let section, _, _): AnyHashable("header.\(section.rawValue)")
         case .row(let row): AnyHashable(row.id)
         case .project(let project): AnyHashable(project.ref)
+        case .mission(let mission): AnyHashable(mission.id)
         }
+    }
+}
+
+/// A mission's sidebar row: its name, state dot and what it is doing or waiting on.
+struct SidebarMission: Equatable, Identifiable {
+    let id: MissionID
+    let title: String
+    let state: AgentState
+    let word: String
+    let needsYou: Bool
+    var selected = false
+
+    /// Waiting on you first, then working, then the rest; newest first within each.
+    static func rows(_ missions: [Mission], selected: MissionID?) -> [SidebarMission] {
+        let rows = missions.reversed().map { mission in
+            let pill = mission.pill
+            return SidebarMission(id: mission.id, title: mission.draft.title.isEmpty ? mission.draft.goal : mission.draft.title,
+                                  // One short word, like a design's board count: amber already says it needs you.
+                                  state: pill.state, word: String(pill.label.lowercased().split(separator: " · ").first ?? ""),
+                                  needsYou: pill.state == .attention,
+                                  selected: mission.id == selected)
+        }
+        func rank(_ row: SidebarMission) -> Int { row.needsYou ? 0 : row.state == .running ? 1 : 2 }
+        return rows.enumerated().sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }.map(\.element)
     }
 }
 
@@ -51,7 +81,8 @@ extension SidebarLists {
         sections.flatMap { collapsed.contains($0.section) ? [] : $0.rows }
     }
 
-    func items(collapsed: Set<SidebarActivitySection>, projects: [SidebarLogicalProject] = [], showsProjects: Bool = true) -> [SidebarActivityItem] {
+    func items(collapsed: Set<SidebarActivitySection>, projects: [SidebarLogicalProject] = [], showsProjects: Bool = true,
+               missions: [SidebarMission] = [], showsMissions: Bool = false) -> [SidebarActivityItem] {
         func block(_ section: SidebarActivitySection, _ rows: [SidebarListRow]) -> [SidebarActivityItem] {
             guard !rows.isEmpty else { return [] }
             let folded = collapsed.contains(section)
@@ -63,8 +94,16 @@ extension SidebarLists {
             // Projects follow Designs and sit above every thread group, whether or not there are any: the header and its
             // New project chip are the way to make the first one.
             if section == .designs, showsProjects { items += projectBlock(projects, collapsed: collapsed) }
+            if section == .designs, showsMissions { items += missionBlock(missions, collapsed: collapsed) }
         }
         return items
+    }
+
+    /// Missions sit with Projects, above every thread group: the header (and its New mission) even before
+    /// the first one, as Projects'.
+    private func missionBlock(_ missions: [SidebarMission], collapsed: Set<SidebarActivitySection>) -> [SidebarActivityItem] {
+        let folded = collapsed.contains(.missions)
+        return [.header(.missions, count: missions.count, collapsed: folded)] + (folded ? [] : missions.map(SidebarActivityItem.mission))
     }
 
     private func projectBlock(_ projects: [SidebarLogicalProject], collapsed: Set<SidebarActivitySection>) -> [SidebarActivityItem] {
@@ -76,7 +115,30 @@ extension SidebarLists {
 @MainActor
 extension ShepherdViewModel {
     var sidebarActivityItems: [SidebarActivityItem] {
-        presentedSidebarLists.items(collapsed: collapsedActivitySections, projects: sidebarLogicalProjects, showsProjects: projectsEnabled)
+        presentedSidebarLists.items(collapsed: collapsedActivitySections, projects: sidebarLogicalProjects, showsProjects: projectsEnabled,
+                                    missions: sidebarMissions, showsMissions: settings.missionsEnabled)
+    }
+
+    /// The Missions section's rows, shared by every sidebar style.
+    var sidebarMissions: [SidebarMission] {
+        // Hidden with the experiment; the missions and their receipts stay.
+        guard settings.missionsEnabled else { return [] }
+        return SidebarMission.rows(state.missions, selected: shownDestination == .missions ? missions.selectedID : nil)
+    }
+
+    /// A mission's sidebar row: the Missions page on that mission.
+    func openMission(_ id: MissionID) {
+        guard settings.missionsEnabled else { return }
+        missions.selectedID = id
+        openDestination(.missions)
+    }
+
+    /// The Missions section's "New mission": the Missions page's start page.
+    func openNewMission() {
+        guard settings.missionsEnabled else { return }
+        missions.selectedID = nil
+        missionStartRequested = true
+        openDestination(.missions)
     }
 
     func toggleActivitySection(_ section: SidebarActivitySection) {

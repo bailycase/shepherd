@@ -133,7 +133,8 @@ extension ShepherdViewModel {
     /// The page the main column shows: the one picked, else New thread when no thread is on
     /// screen (nothing selected, or nothing left to select).
     var shownDestination: MainDestination? {
-        if let destination, projectsEnabled || !isProjectDestination { return destination }
+        // A page whose experiment is off is not shown; what was under it shows instead.
+        if let destination, projectsEnabled || !isProjectDestination, destination != .missions || settings.missionsEnabled { return destination }
         guard selectedRemoteAgent == nil else { return nil }
         return activeTabID == nil ? .newThread : nil
     }
@@ -150,6 +151,7 @@ extension ShepherdViewModel {
     func openDestination(_ page: MainDestination) {
         // The Design tool's pages exist only while its experiment is on.
         if page == .designs || page == .newDesign || page == .designSystem, !designToolEnabled { return }
+        if page == .missions, !settings.missionsEnabled { return }
         // New thread opens in the project of the thread on screen, remote ones included.
         if page == .newThread { newThread.prepare(for: self) }
         // A project's page needs one picked; `openLogicalProject` sets it before this runs.

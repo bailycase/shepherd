@@ -161,7 +161,12 @@ and only for a layout holding a terminal (`WorkspaceSelection.coldParkCandidates
 Worktree add (`GitWorktree.swift`), Delete Worktree Agent (confirmed), Finalize Worktree (each step
 gates the next; the remote branch is never deleted), per-file Revert in the Changes pane (confirmed),
 Commit from review (`ReviewCommit.swift`: only the ticked files, refuses a dirty HEAD state, never
-force-pushes), a shared design's own repository under `<designs>/.git/<id>/`, the Changes engine's
+force-pushes), Mission PR publication (`MissionController+Review.swift`: explicit approval binds the
+validation contract and worktree contents; commits through `ReviewCommit.swift`, pushes the exact
+approved commit and creates or reuses its PR; never merges, tags, deploys or force-pushes), Mission
+Spec Kit setup (the owner's click runs stock `specify init` or `specify integration` in the mission's own
+worktree) and its per-turn worktree snapshots (a private copy of the index; only objects are written),
+a shared design's own repository under `<designs>/.git/<id>/`, the Changes engine's
 snapshots (its own index file; the user's index, tree, HEAD, refs and stash are never written),
 Undo and Redo of a turn (the turn's files only; refused when any changed since), Add child project
 (one empty directory), and an explicit project folder transfer. Nothing else, and Shepherd never
