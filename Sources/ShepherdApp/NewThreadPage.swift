@@ -25,8 +25,15 @@ struct NewThreadPage: View {
     @State private var mentions = MentionPickerState()
     /// Where the field's caret is, for ⌫ at the start of the words (not observed).
     @State private var caret = ComposerCaret()
+    /// The slash menu's highlighted row, the prompt Esc closed it for, and its matches, as the
+    /// thread composer keeps them.
+    @State private var commandIndex = 0
+    @State private var dismissedQuery: String?
+    @State private var slash = SlashMatchCache()
 
     private enum Menu: Equatable { case place, base, models, settings }
+    /// What a click outside closes: a chip's menu, the slash menu, or the @ picker.
+    private enum OpenMenu: Equatable { case none, chip, slash, mention }
 
     /// `settingsOpen` starts with the model-settings popover open, for the preview renders.
     init(vm: ShepherdViewModel, chrome: PageHeaderChrome, settingsOpen: Bool = false) {
@@ -42,10 +49,32 @@ struct NewThreadPage: View {
 
     /// The @ picker is up: a mention is being typed. It says "Loading designs…" until the designs
     /// are read, and for a project on another host a note that none can go there.
-    private var mentionShown: Bool { mentions.isOpen && references != nil }
+    private var mentionShown: Bool { mentions.isOpen && references != nil && commandQuery == nil }
+
+    /// The commands the slash menu offers before the thread exists (`NewThreadState.slashCommands`).
+    private var commands: [NativeCommand] {
+        NewThreadState.slashCommands(catalog: vm.slashCommands.catalog, hidden: vm.slashCommands.hidden,
+                                     skills: vm.settings.skillsInSlashMenu, goals: vm.settings.goalsEnabled, place: draft.place)
+    }
+
+    /// The prompt after "/" while it is one word the slash menu lists for, as in the thread composer.
+    private var commandQuery: String? {
+        let prompt = draft.prompt
+        guard prompt.hasPrefix("/"), !prompt.contains(where: \.isWhitespace), prompt != dismissedQuery,
+              !commands.isEmpty else { return nil }
+        return String(prompt.dropFirst()).lowercased()
+    }
+
+    private var commandMatches: [NativeCommand] { commandQuery == nil ? [] : slash.matches }
+
+    private var openMenu: OpenMenu {
+        menu != nil ? .chip : commandQuery != nil ? .slash : mentionShown ? .mention : .none
+    }
 
     var body: some View {
         let _ = SHRenderProbe.tick("newThread.page")
+        let query = commandQuery
+        let _ = slash.update(query: query, commands: commands)
         VStack(spacing: 0) {
             DestinationPageHeader(title: "New thread", chrome: chrome)
             VStack(spacing: AppLayout.newThreadGap) {
@@ -74,23 +103,30 @@ struct NewThreadPage: View {
             .contentShape(Rectangle())
             .onTapGesture {
                 if menu != nil { menu = nil }
+                if commandQuery != nil { dismissedQuery = draft.prompt }
                 dismissMention()
             }
         }
         .background(Color.sh.bgWindow)
         .shAnimation(.content, value: draft.notice(vm))
         .onChange(of: draft.focusRequest, initial: true) { composing = true }
-        .onChange(of: menu != nil || mentionShown, initial: true) { _, open in
-            let (menu, mentions, state) = ($menu, $mentions, vm.newThread)
+        .onChange(of: openMenu, initial: true) { _, open in
+            let (menu, mentions, dismissedQuery, state) = ($menu, $mentions, $dismissedQuery, vm.newThread)
             dismissal.dismiss = {
-                if menu.wrappedValue != nil {
-                    menu.wrappedValue = nil
-                } else {
+                switch open {
+                case .slash: dismissedQuery.wrappedValue = state.prompt
+                case .mention:
                     mentions.wrappedValue.dismissed = state.prompt
                     mentions.wrappedValue.close()
+                default: menu.wrappedValue = nil
                 }
             }
-            dismissal.watch(open)
+            dismissal.watch(open != .none)
+        }
+        .onChange(of: query) { _, query in
+            commandIndex = 0
+            // One menu at a time: typing a command takes over from a chip's menu.
+            if query != nil { menu = nil }
         }
         // A pasted reference becomes a chip; a mention opens the @ picker.
         .onChange(of: draft.prompt, initial: true) { old, new in promptChanged(from: old, to: new) }
@@ -127,6 +163,12 @@ struct NewThreadPage: View {
                               label: "What should the agent work on?", focus: $composing, attach: draft.attach)
             .onComposerKey(.return) { press in
                 if let result = press.lineBreak() { return result }
+                // ↩ over the slash menu runs its row: the thread starts with it.
+                if commandQuery != nil {
+                    let matches = commandMatches
+                    if matches.indices.contains(commandIndex) { choose(matches[commandIndex]) }
+                    return .handled
+                }
                 // ↩ over the @ picker chooses its row, and never starts the thread.
                 if mentionShown {
                     if let row = mentions.highlightedRow { chooseMention(row) }
@@ -136,16 +178,30 @@ struct NewThreadPage: View {
                 return .handled
             }
             .onComposerKey(.tab) {
+                if commandQuery != nil {
+                    let matches = commandMatches
+                    guard matches.indices.contains(commandIndex) else { return .ignored }
+                    draft.prompt = "/\(matches[commandIndex].name) "
+                    return .handled
+                }
                 guard mentionShown else { return .ignored }
                 if let row = mentions.highlightedRow { chooseMention(row) }
                 return .handled
             }
             .onComposerKey(.upArrow) {
+                if commandQuery != nil {
+                    commandIndex = max(0, commandIndex - 1)
+                    return .handled
+                }
                 guard mentionShown else { return .ignored }
                 mentions.move(-1)
                 return .handled
             }
             .onComposerKey(.downArrow) {
+                if commandQuery != nil {
+                    commandIndex = min(max(0, commandMatches.count - 1), commandIndex + 1)
+                    return .handled
+                }
                 guard mentionShown else { return .ignored }
                 mentions.move(1)
                 return .handled
@@ -173,6 +229,10 @@ struct NewThreadPage: View {
                 return .handled
             }
             .onComposerKey(.escape) {
+                if commandQuery != nil {
+                    dismissedQuery = draft.prompt
+                    return .handled
+                }
                 if mentionShown {
                     dismissMention()
                     return .handled
@@ -194,7 +254,7 @@ struct NewThreadPage: View {
             draft.attach(providers)
             return true
         }
-        .background { if mentionShown { ComposerMenuRegion(dismissal: dismissal) } }
+        .background { if mentionShown || commandQuery != nil { ComposerMenuRegion(dismissal: dismissal) } }
         .overlay(alignment: .bottomLeading) { menus }
         .overlay(alignment: .bottomLeading) { mentionMenu }
     }
@@ -341,16 +401,35 @@ struct NewThreadPage: View {
     }
 
     private func toggle(_ next: Menu) {
+        // A chip's menu takes over from the slash menu, which stays closed for the prompt as typed.
+        if commandQuery != nil { dismissedQuery = draft.prompt }
         menu = menu == next ? nil : next
+    }
+
+    /// A slash row chosen: "/name" becomes the prompt and starts the thread when it can, as the
+    /// thread composer sends it.
+    private func choose(_ command: NativeCommand) {
+        draft.prompt = "/\(command.name)"
+        dismissedQuery = nil
+        composing = true
+        if draft.blocker(vm) == nil { draft.send(vm) }
     }
 
     // MARK: Design references
 
-    /// The @ picker, under the card as the page's other menus are: designs, then a design's boards
-    /// and a board's elements, or what it says before it has rows.
+    /// The slash menu or the @ picker, under the card as the page's other menus are: the commands
+    /// for "/…", or designs, then a design's boards and a board's elements, or what it says before
+    /// it has rows.
     private var mentionMenu: some View {
         ZStack(alignment: .topLeading) {
-            if mentionShown, menu == nil {
+            if let query = commandQuery, menu == nil {
+                let slash = slash
+                SHSlashMenu(commands: slash.rows, total: commands.count, query: query, selection: $commandIndex,
+                            maxHeight: SHComposerMetrics.modelPickerMaxHeight) { command in
+                    if let match = slash.matches.first(where: { $0.name == command.name }) { choose(match) }
+                }
+                .shTransition(.overlay, anchor: .topLeading)
+            } else if mentionShown, menu == nil {
                 let content = mentions.content
                 SHMentionPicker(sections: content.sections, crumbs: content.crumbs, empty: content.empty, highlighted: mentions.highlighted,
                                 maxHeight: SHComposerMetrics.modelPickerMaxHeight, choose: { chooseMention($0) }, drill: { chooseMention($0) },
@@ -365,7 +444,7 @@ struct NewThreadPage: View {
         .fixedSize(horizontal: false, vertical: true)
         .background { ComposerMenuRegion(dismissal: dismissal) }
         .alignmentGuide(.bottom) { $0[.top] - AppLayout.menuGap }
-        .shAnimation(.overlay, value: mentionShown && menu == nil)
+        .shAnimation(.overlay, value: menu == nil ? openMenu : .none)
     }
 
     /// Esc, a click away, or the Design tool going: the picker closes for the prompt as typed.
@@ -608,5 +687,21 @@ private struct SuggestionCard: View {
         .onHover { hovering = $0 }
         .shAnimation(.hover, value: hovering)
         .accessibilityLabel("Continue \(card.title), running")
+    }
+}
+
+extension NewThreadState {
+    /// The slash menu's commands before the thread exists: every command a pi on this Mac has
+    /// listed since launch (`SessionServer.slashCommandCatalog`), less what a thread's menu leaves
+    /// out (Settings ▸ Pi ▸ Slash commands, skills while Settings ▸ Skills keeps them out, /goal
+    /// without Goals). None for another host, whose commands this Mac never sees, or before a place.
+    /// ponytail: the union of this Mac's threads, not the chosen project's own registry; and empty
+    /// until some pi has listed its commands since launch.
+    nonisolated static func slashCommands(catalog: [NativeCommand], hidden: Set<String>, skills: Bool, goals: Bool,
+                              place: NewThreadPlace?) -> [NativeCommand] {
+        guard let place, place.host == nil else { return [] }
+        return catalog.filter { command in
+            !hidden.contains(command.name) && (skills || command.source != "skill") && (goals || command.name != "goal")
+        }
     }
 }

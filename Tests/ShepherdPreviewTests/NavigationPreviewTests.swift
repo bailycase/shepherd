@@ -674,6 +674,28 @@ extension PreviewTests {
         }
     }
 
+    /// The New thread page's slash menu (SlashMenu, under the card as the page's menus are): "/re"
+    /// over the commands this Mac's pi has listed, less one switched off in Settings.
+    @Test func newThreadSlashMenu() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        try await workspace.seed(ShepherdState(spaces: [Space(name: "shepherd", path: workspace.dir.path)]))
+        vm.slashCommands.catalog = [
+            NativeCommand(name: "review", description: "Review the working tree's diff", source: "prompt"),
+            NativeCommand(name: "release-notes", description: "Draft release notes", source: "prompt", arguments: "[tag]"),
+            NativeCommand(name: "session-name", description: "Set or clear the session name", source: "extension"),
+            NativeCommand(name: "skill:research", description: "Read sources and report", source: "skill"),
+            NativeCommand(name: "secret", description: "Switched off", source: "extension"),
+        ]
+        vm.slashCommands.setHidden(["secret"])
+        vm.openNewThread()
+        vm.newThread.prompt = "/re"
+        try await Preview.render("new-thread-slash-menu", size: CGSize(width: 1280, height: 760), ready: { vm.newThread.place != nil }) {
+            NewThreadPage(vm: vm, chrome: PageHeaderChrome())
+        }
+    }
+
     @Test(arguments: [720.0, 1280.0])
     func newThreadWithFullModelControls(width: CGFloat) async throws {
         let listing = ModelListing(models: ["openai/gpt-5.4"], defaultModel: "openai/gpt-5.4",
