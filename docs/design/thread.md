@@ -25,23 +25,15 @@ SHThread, ToolRows and LiveText, one line per burst, are the rule.
   draw 4pt, see Known gaps).
 - **Following:** the thread follows the tail only while the reader is within 80pt of the bottom
   (`NativeScrollFollower`). Only a live scroll gesture or a wheel tick detaches it; content
-  growth, the composer resizing, and history swaps never do. From macOS 27 the Mac thread
-  follows by scrolling alone: while following it sets no `defaultScrollAnchor` (neither the initial
-  offset nor size changes), because a bottom anchor over the lazy stack, whose unmeasured rows are
-  estimates, left the scroll view's content size at odds with where the rows were placed and the
-  viewport drew nothing (a blank thread after a send or a finished turn, in a window of modest
-  height; `ThreadTailAnchor`). A detached reader on this scrolling-only path uses a top anchor
-  for size changes only. Collapsing a live reply preserves its content offset instead of moving
-  that reader to the tail; the initial offset and short-content alignment stay unchanged.
-  Before 27 the anchors stay: `scrollTo`, the only way to the tail
-  without them, builds every row of a long thread there, so a short window can still draw blank
-  on macOS 26 (a known issue, `ThreadBlankScreenTests`). Without an anchor every reading is the
-  layout's own: a following view that growth,
-  the composer or a settling turn leaves above its tail, or that a shrinking history or the
-  composer collapsing leaves past it, returns to it at once. The native top-margin allowance
-  and fitting content's normal empty space do not trigger overscroll recovery. (The iOS thread
-  and the Mac thread before 27 anchor natively, so they let the anchor settle a view past the
-  end first.) The Mac thread also watches which rows SwiftUI says are in view
+  growth, the composer resizing, and history swaps never do. The scroll view keeps the tail
+  itself: a bottom `defaultScrollAnchor` for the initial offset and, while following, for size
+  changes, so streamed text and a settling turn move the view with no `scrollTo` (which builds
+  every row of a long thread). A bottom anchor over a lazy stack of estimated row heights once
+  left the content size at odds with where the rows were placed and the viewport drew nothing
+  (a blank thread after a send or a finished turn; `ThreadBlankScreenTests`), so the last 30
+  rows are laid out eagerly (`ThreadView.eagerRows`) and only the history above them is lazy
+  (`ThreadTailAnchor`). A detached reader keeps a top anchor for size changes: collapsing a live
+  reply preserves the content offset instead of moving them to the tail. The Mac thread also watches which rows SwiftUI says are in view
   (`ThreadTailGuard`). The lazy stack guesses the heights of the rows it has not measured, and
   over rows of very different heights (a long answer, a turn of a hundred tool calls) the
   guesses move by thousands of points under a view that follows its tail: a turn settling into
