@@ -255,6 +255,9 @@ final class FixtureHost: @unchecked Sendable {
                 mutation("skills." + String(describing: command).prefix { $0 != "(" })
                 return [.error(id: id, code: "fixture", message: refused)]
             }
+        case .hostInventory:
+            // Reading the host's MCP servers, profiles or providers changes nothing.
+            return nil
         case .detach, .input, .resize:
             mutation(Self.kind(request))
             return []
@@ -300,7 +303,7 @@ final class FixtureHost: @unchecked Sendable {
         case .pushUnregister(let id, _):
             note("pushUnregister")
             return [.ok(id: id)]
-        case .hello, .stateFetch, .listModels, .listDir, .creationOptions, .agentQuery:
+        case .hello, .stateFetch, .listModels, .listDir, .creationOptions, .creationBranches, .agentQuery:
             return nil
         }
     }

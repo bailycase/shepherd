@@ -320,12 +320,12 @@ struct RemoteRequestTests {
         switch request {
         case .pushRegistration, .pushUnregister, .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
              .closePane, .resizePaneSplit, .listDir, .listModels, .addSpace, .createAgent, .upload,
-             .creationOptions, .agentQuery, .agentAction, .automation, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .projects, .logicalProjects, .projectExecution, .design,
+             .creationOptions, .creationBranches, .agentQuery, .agentAction, .automation, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .projects, .logicalProjects, .projectExecution, .design,
              .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 37
+    static let caseCount = 38
 
     static let samples: [RemoteRequest] = [
         .pushRegistration(id: 93, registration: RemotePushRegistration(id: "11111111-2222-3333-4444-555555555555", sendToken: String(repeating: "a", count: 64))),
@@ -355,6 +355,7 @@ struct RemoteRequestTests {
                      initialImages: [NativeImage(mimeType: "image/png", data: Data([0x89, 0x50]), name: "shot.png")], serviceTier: .fast),
         .upload(id: 50, action: .begin(sessionID: S.session, name: "image.png", size: 20)),
         .creationOptions(id: 54, spaceID: S.space, cwd: "/host/repo", fetchFirst: false),
+        .creationBranches(id: 55, spaceID: S.space),
         .agentQuery(id: 31, agentID: S.agent, query: .children),
         .agentAction(id: 20, agentID: S.agent, action: .rename(name: "new \"name\"")),
         .automation(id: 21, automationID: S.automation, request: .setEnabled(enabled: false)),
@@ -881,7 +882,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.pasteCapability, RemoteProtocol.paneControlCapability,
             RemoteProtocol.agentActionsCapability, RemoteProtocol.agentInspectionCapability,
             RemoteProtocol.worktreeActionsCapability, RemoteProtocol.worktreeSetupCapability,
-            RemoteProtocol.uploadCapability, RemoteProtocol.creationOptionsCapability,
+            RemoteProtocol.uploadCapability, RemoteProtocol.creationOptionsCapability, RemoteProtocol.creationBranchesCapability,
             RemoteProtocol.automationsCapability,
             RemoteProtocol.terminalActivityCapability,
             RemoteProtocol.reviewCommitCapability,

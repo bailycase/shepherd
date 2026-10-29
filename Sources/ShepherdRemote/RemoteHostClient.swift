@@ -399,6 +399,17 @@ public final class RemoteHostClient: @unchecked Sendable {
         throw RemoteHostClientError.rejected(code: "protocol", message: "Unexpected creation options reply")
     }
 
+    /// A space's branches for a new worktree's base (`creationBranchesCapability`).
+    public func creationBranches(spaceID: SpaceID) async throws -> ChangesBranches {
+        guard capabilities.contains(RemoteProtocol.creationBranchesCapability) else {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to choose a base branch.")
+        }
+        let reply = try await request { .creationBranches(id: $0, spaceID: spaceID) }
+        if case .agentResult(_, .changesBranches(let branches)) = reply { return branches }
+        if case .error(_, let code, let message) = reply { throw RemoteHostClientError.rejected(code: code, message: message) }
+        throw RemoteHostClientError.rejected(code: "protocol", message: "Unexpected branches reply")
+    }
+
     public func upload(file: URL, sessionID: SessionID) async throws -> String {
         guard capabilities.contains(RemoteProtocol.uploadCapability) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to drop files or images.")

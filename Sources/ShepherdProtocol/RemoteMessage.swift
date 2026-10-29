@@ -12,6 +12,9 @@ public enum RemoteProtocol {
     public static let uploadMaxBytes = 32 * 1024 * 1024
     public static let uploadCapability = "session.upload.v1"
     public static let creationOptionsCapability = "agent.creation.options.v1"
+    /// The host answers `RemoteRequest.creationBranches`: a space's branches for a new
+    /// worktree's base, before any agent exists. Older hosts leave the base a typed name.
+    public static let creationBranchesCapability = "agent.creation.branches.v1"
     public static let nativeThreadCapability = "native.thread.v1"
     /// v2: snapshot runtime/stats/commands, setModel/setThinking, send images.
     public static let nativeThreadV2Capability = "native.thread.v2"
@@ -162,7 +165,7 @@ public enum RemoteProtocol {
     /// The host lists and reads a thread's folder, read-only (`RemoteAgentQuery.files`, `.fileRead`; `ThreadFilesLimits`).
     /// Offered only to a client that lists it in `hello`; a client and an older host show Files as needing a newer host.
     public static let filesCapability = "files.v1"
-    public static let capabilities = [filesCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostInventoryCapability, changesRevertCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectTrustCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, nativeArtifactsCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability]
+    public static let capabilities = [filesCapability, pushNotificationsCapability, hostUpdateCapability, projectResultCapability, projectConversationThinkingCapability, moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, nativeThreadPreviewCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, creationBranchesCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, hostSettingsAgentDefaultsCapability, hostInventoryCapability, changesRevertCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectTrustCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, terminalStartCapability, designContextCapability, designsCapability, designMarkupCapability, designDeleteCapability, nativeRetryCapability, checkpointRecoveryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, nativeArtifactsCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -572,6 +575,9 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
 
     case upload(id: Int, action: RemoteUploadAction)
     case creationOptions(id: Int, spaceID: SpaceID, cwd: String?, fetchFirst: Bool?)
+    /// A space's branches for a new worktree's base (`creationBranchesCapability`), as the Mac's
+    /// worktree base picker reads them. Answered `agentResult(.changesBranches)`.
+    case creationBranches(id: Int, spaceID: SpaceID)
     case agentQuery(id: Int, agentID: AgentID, query: RemoteAgentQuery)
     case agentAction(id: Int, agentID: AgentID, action: RemoteAgentAction)
     /// Manage one automation (`RemoteProtocol.automationsCapability`). A `create` names the new
@@ -626,7 +632,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case nativeThread, projectExecution
         case hello, stateFetch, attach, detach, input, resize, paste
         case openPane, closePane, resizePaneSplit
-        case listDir, listModels, addSpace, createAgent, agentAction, agentQuery, upload, creationOptions
+        case listDir, listModels, addSpace, createAgent, agentAction, agentQuery, upload, creationOptions, creationBranches
         case automation
         case logicalProjectRuntime
         case instructions, suggestions, hostSettings, hostInventory, hostUpdate, skills, projects, logicalProjects
@@ -695,6 +701,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             self = .upload(id: try c.decode(Int.self, forKey: .id), action: try c.decode(RemoteUploadAction.self, forKey: .action))
         case .creationOptions:
             self = .creationOptions(id: try c.decode(Int.self, forKey: .id), spaceID: try c.decode(SpaceID.self, forKey: .spaceID), cwd: try c.decodeIfPresent(String.self, forKey: .cwd), fetchFirst: try c.decodeIfPresent(Bool.self, forKey: .fetchFirst))
+        case .creationBranches:
+            self = .creationBranches(id: try c.decode(Int.self, forKey: .id), spaceID: try c.decode(SpaceID.self, forKey: .spaceID))
         case .agentQuery:
             self = .agentQuery(id: try c.decode(Int.self, forKey: .id),
                                agentID: try c.decode(AgentID.self, forKey: .agentID),
@@ -811,6 +819,10 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(spaceID, forKey: .spaceID)
             try c.encodeIfPresent(cwd, forKey: .cwd)
             try c.encodeIfPresent(fetchFirst, forKey: .fetchFirst)
+        case .creationBranches(let id, let spaceID):
+            try c.encode(Kind.creationBranches, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(spaceID, forKey: .spaceID)
         case .agentQuery(let id, let agentID, let query):
             try c.encode(Kind.agentQuery, forKey: .type)
             try c.encode(id, forKey: .id)

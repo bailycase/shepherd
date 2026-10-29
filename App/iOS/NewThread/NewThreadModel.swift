@@ -15,12 +15,17 @@ final class NewThreadModel {
     @ObservationIgnored static weak var active: NewThreadModel?
 
     /// What a chip or row opened: on iPhone, Where it runs holds repo, host and worktree
-    /// together; on iPad each is its own popover.
+    /// together; on iPad each is its own popover. `repo` and `branches` are also the pages
+    /// Where it runs (and the iPad's worktree popover) push.
     enum Panel: Hashable {
-        case workspace, repo, host, worktree, model
+        case workspace, repo, host, worktree, model, branches
     }
 
-    var panel: Panel?
+    var panel: Panel? {
+        didSet { if panel != oldValue { workspacePath = [] } }
+    }
+    /// The pages pushed in Where it runs or the worktree popover: the repo list, the base branches.
+    var workspacePath: [Panel] = []
     /// The part of Where it runs to show first: `.worktree` when the worktree line opened it.
     var workspaceAnchor: Panel?
     var prompt = ""
@@ -32,6 +37,18 @@ final class NewThreadModel {
     private(set) var models: ModelListing?
     private(set) var modelQuery = ""
     private(set) var modelMatches: [String] = []
+    /// `modelMatches` by provider, for the picker's sections.
+    private(set) var modelGroups: [NewThreadModelGroup] = []
+    /// The model the host starts a thread with when none is chosen (its `creationOptions`).
+    private(set) var hostDefaultModel: String?
+    private(set) var repoQuery = ""
+    /// The repo list's rows matching `repoQuery`.
+    private(set) var repoMatches: [NewThreadRepoRow] = []
+    /// The chosen repo's branches for the worktree's base (`creationBranchesCapability`).
+    private(set) var branches: ChangesBranches?
+    private(set) var branchesError: String?
+    private(set) var branchQuery = ""
+    private(set) var branchOptions: [ChangesBaseOption] = []
     private(set) var worktreeWanted = true
     private(set) var branch = ""
     private(set) var base = NewThreadBase()
@@ -57,6 +74,8 @@ final class NewThreadModel {
     @ObservationIgnored private var defaultsSession: UUID?
     /// A repo just added, until the host's state push brings it.
     @ObservationIgnored private var pendingSpace: SpaceID?
+    /// The host and repo `branches` were read for.
+    @ObservationIgnored private var branchesTarget: NewThreadBase.Target?
 
     init(hosts: MobileHosts, threads: ThreadStores, navigator: MobileNavigator, preferredHost: UUID?, context: AgentRef?,
          create: @escaping (RemoteHostClient, NewThreadCreation, [NativeImage]) async throws -> AgentID = { client, creation, images in
@@ -143,6 +162,20 @@ final class NewThreadModel {
         if hostRows != self.hostRows { self.hostRows = hostRows }
         let repoRows = NewThreadRows.repos(inputs, host: hostID, space: spaceID)
         if repoRows != self.repoRows { self.repoRows = repoRows }
+        filterRepos()
+    }
+
+    func setRepoQuery(_ query: String) {
+        repoQuery = query
+        filterRepos()
+    }
+
+    private func filterRepos() {
+        let needle = repoQuery.trimmingCharacters(in: .whitespaces).lowercased()
+        let matches = needle.isEmpty ? repoRows : repoRows.filter {
+            $0.name.lowercased().contains(needle) || $0.detail.lowercased().contains(needle)
+        }
+        if matches != repoMatches { repoMatches = matches }
     }
 
     /// The host asked for, else the thread on screen's, else the first connected host with a
@@ -202,7 +235,49 @@ final class NewThreadModel {
 
     func setBranch(_ value: String) { branch = value }
 
-    func setBase(_ value: String) { base.base = value }
+    func setBase(_ value: String) {
+        base.base = value
+        rankBranches()
+    }
+
+    /// Whether the base is chosen from the host's branches; an older host takes a typed name.
+    var offersBranchList: Bool {
+        hostID.flatMap { hosts.host($0)?.supports(RemoteProtocol.creationBranchesCapability) } ?? false
+    }
+
+    /// Reads the chosen repo's branches once per host and repo (the Mac's WorktreeBasePicker).
+    func loadBranches() {
+        guard let target = draft.baseTarget, branchesTarget != target || (branches == nil && branchesError != nil) else { return }
+        branchesTarget = target
+        branches = nil
+        branchesError = nil
+        rankBranches()
+        guard let client = hosts.host(target.host)?.connectedClient else {
+            branchesError = "\(host?.name ?? "The host") is offline."
+            return
+        }
+        Task {
+            do {
+                let listed = try await client.creationBranches(spaceID: target.space)
+                guard branchesTarget == target else { return }
+                branches = listed
+            } catch {
+                guard branchesTarget == target else { return }
+                branchesError = Self.message(error)
+            }
+            rankBranches()
+        }
+    }
+
+    func setBranchQuery(_ query: String) {
+        branchQuery = query
+        rankBranches()
+    }
+
+    private func rankBranches() {
+        let options = branches.map { changesBaseOptions($0, selected: base.base, query: branchQuery, includeCurrent: true) } ?? []
+        if options != branchOptions { branchOptions = options }
+    }
 
     func setFetchFirst(_ on: Bool) {
         base.fetchFirst = on
@@ -212,6 +287,9 @@ final class NewThreadModel {
     func setModel(_ id: String) {
         defaults.edit(model: id)
     }
+
+    /// The thread takes whatever the host starts with: nothing chosen, or "Host default" chosen.
+    var followsHostDefault: Bool { !defaults.modelEdited || defaults.model.isEmpty }
 
     /// Thinking is offered only for a model that takes a level (DESIGN › Composer); a catalog
     /// still loading, or one that does not know the model, keeps it.
@@ -237,7 +315,10 @@ final class NewThreadModel {
 
     private func rankModels() {
         let matches = NewThreadRules.rankModels(modelQuery, in: modelOptions)
-        if matches != modelMatches { modelMatches = matches }
+        if matches != modelMatches {
+            modelMatches = matches
+            modelGroups = NewThreadRules.groupModels(matches)
+        }
     }
 
     func retry(host id: UUID) { hosts.retry(id) }
@@ -253,6 +334,7 @@ final class NewThreadModel {
         errorText = nil
         modelOptions = []
         models = nil
+        hostDefaultModel = nil
         rankModels()
         guard let client = hosts.host(hostID)?.connectedClient, let spaceID else {
             defaults.fail(requestID: requestID)
@@ -263,6 +345,7 @@ final class NewThreadModel {
                 let options = try await client.creationOptions(spaceID: spaceID, cwd: nil, fetchFirst: nil)
                 guard defaults.requestID == requestID, self.hostID == hostID else { return }
                 defaults.apply(requestID: requestID, model: options.model, thinking: options.thinking)
+                hostDefaultModel = options.model
                 // A catalog failure leaves the editable defaults usable.
                 if let listing = try? await client.listModels(), defaults.requestID == requestID {
                     modelOptions = listing.models
@@ -297,6 +380,7 @@ final class NewThreadModel {
             do {
                 let options = try await client.creationOptions(spaceID: target.space, cwd: target.cwd, fetchFirst: fetch)
                 base.apply(requestID: requestID, options: options)
+                rankBranches()
             } catch {
                 guard base.requestID == requestID else { return }
                 base.fail(requestID: requestID)
