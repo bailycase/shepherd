@@ -23,6 +23,26 @@ enum MobileRoute: Hashable, Codable {
     case sidePane(SidePaneRoute)
     case browser(BrowserRoute)
 
+    /// Coarse screen kind only: associated values may contain private thread or file data.
+    var diagnosticScreen: String {
+        switch self {
+        case .thread: "thread"
+        case .home: "home"
+        case .newThread: "newThread"
+        case .subagents: "subagents"
+        case .review: "review"
+        case .search: "search"
+        case .settings: "settings"
+        case .terminal: "terminal"
+        case .automations: "automations"
+        case .designs: "designs"
+        case .padDesign: "padDesign"
+        case .projects: "projects"
+        case .sidePane: "sidePane"
+        case .browser: "browser"
+        }
+    }
+
     @MainActor @ViewBuilder
     var destination: some View {
         switch self {
