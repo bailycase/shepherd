@@ -62,7 +62,7 @@ draws emphasis (a Live Activity, the iPad boards' buttons); Finished work's acti
   (see On the Mac today). An automation's run is an ordinary agent wearing the automation's name,
   so its question asks as Automation question, and its failure and finish post as that agent's
   (Automation failed and Automation passed have no kind of their own yet). Nothing else in the
-  table exists yet: Missions, plan approval, budgets and Designs are not built.
+  table exists yet: mission-specific questions, approvals, budget alerts and design notifications are not wired.
 
 ## Rules for sending
 
@@ -295,7 +295,7 @@ holds the rest, banners stack by thread, and every host's threads notify here. *
   system draws the stack.
 - A stuck lane's "TIME SENSITIVE", its Retry with hint and the rest of its Options ("Replan the
   lane", "Take over in a thread", "Open mission", "Mute this mission"), and a Planner question:
-  Missions are not built. Time Sensitive also needs the Time Sensitive Notifications entitlement,
+  mission-specific notifications are not built. Time Sensitive also needs the Time Sensitive Notifications entitlement,
   on the Mac as on iPhone.
 - **Mute** from Options ("Mute this mission"), and from a thread's or mission's ••• menu (Settings,
   below).

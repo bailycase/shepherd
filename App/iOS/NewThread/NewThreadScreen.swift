@@ -172,7 +172,7 @@ private struct NewThreadForm: View {
 
     private func phoneChips(host: Bool) -> some View {
         HStack(spacing: SHSelectorChipMetrics.spacing) {
-            chip(model.space?.name ?? "Choose repo", systemImage: "book.closed", name: "Repo", panel: .workspace, active: .workspace)
+            chip(model.space?.name ?? "Choose repo", systemImage: SHGlyph.repository.symbolName, name: "Repo", panel: .workspace, active: .workspace)
             // With one host there's nothing to choose (DuoClosedNewThread).
             if host && model.hostRows.count > 1 {
                 chip(model.host?.name ?? "Choose host", systemImage: "desktopcomputer", name: "Host", panel: .workspace, active: nil)
@@ -196,7 +196,7 @@ private struct NewThreadForm: View {
         let repo = model.space?.name ?? "Choose repo"
         let host = model.host?.name ?? "Choose host"
         return SHFlowLayout(spacing: SHSelectorChipMetrics.spacing) {
-            chip(repo, systemImage: "book.closed", name: "Repo", panel: pad ? .repo : .workspace, active: pad ? .repo : .workspace)
+            chip(repo, systemImage: SHGlyph.repository.symbolName, name: "Repo", panel: pad ? .repo : .workspace, active: pad ? .repo : .workspace)
                 .popover(isPresented: pad ? panel(.repo) : .constant(false), arrowEdge: .top) {
                     popover("Repo") {
                         NavigationStack {

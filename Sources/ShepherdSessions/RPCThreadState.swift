@@ -175,6 +175,8 @@ final class RPCThreadState {
     /// Everything pi's `get_commands` listed, after the projection (`projectCommands`) and before
     /// the user's switches. The Settings page lists from it so a disabled command can come back.
     private(set) var allCommands: [NativeCommand]? { didSet { rebuildCommands() } }
+    /// Prompt templates from the last get_commands, by name, with the file pi read each from.
+    private(set) var promptTemplatePaths: [String: String] = [:]
     /// Names left out of `commands` and refused when sent: this host's own switches, set by the
     /// server and applied live.
     var hiddenCommands: Set<String> = [] {
@@ -424,6 +426,10 @@ final class RPCThreadState {
     /// pi's own queue as its last `queue_update` had it.
     var piSteering: [String] = []
     var piFollowUp: [String] = []
+    /// Steers that belong to the run they were sent into (a Mission's): one pi has not read when that run
+    /// ends is dropped rather than queued for a later turn, and recorded in `undeliveredSteers`.
+    var oneShotSteers: [UUID: String] = [:]
+    var undeliveredSteers: Set<UUID> = []
     /// What a delete or a clear removed, for an undo.
     var deleted: [(item: QueueItem, index: Int)] = []
     /// Copies a send is granting that have not reached this thread yet: the server marks them in
@@ -660,6 +666,11 @@ final class RPCThreadState {
             let listed = response.data?["commands"]
             self.skillCommandsPending = false
             let commands = Self.projectCommands(listed)
+            self.promptTemplatePaths = Dictionary((listed?.arrayValue ?? []).prefix(512).compactMap { item in
+                guard item["source"]?.stringValue == "prompt", let name = item["name"]?.stringValue,
+                      let path = item["sourceInfo"]?["path"]?.stringValue else { return nil }
+                return (name, path)
+            }, uniquingKeysWith: { first, _ in first })
             guard self.allCommands != commands else { return }
             self.allCommands = commands
             self.commit()
