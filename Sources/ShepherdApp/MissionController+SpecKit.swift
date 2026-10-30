@@ -123,7 +123,12 @@ extension MissionController {
             throw MissionError("speckit_converge", "Only a finished converge report that added no tasks can be accepted. Rerun or request changes.")
         }
         run.specKit?.lanes[lane].convergence?.accepted = true
+        // Repositories finish side by side: while another report or appended task list still waits, accepting this one
+        // approves nothing else and starts no work. The last acceptance continues.
+        let waiting = run.specKit?.lanes.filter { $0.convergence.map { !$0.accepted } ?? false } ?? []
+        if !waiting.isEmpty { run.notice = Self.specKitWaitingNotice(mission, waiting: waiting) }
         _ = try await server.setMissionRun(id: id, expectedRevision: revision, run: run)
+        guard waiting.isEmpty else { return }
         try await launch(id: id, revision: try record(id).revision)
     }
 
@@ -490,9 +495,9 @@ extension MissionController {
         }
         specKitPhases[id] = phases
         var draft = mission.draft
-        let kept = Array(stations.prefix(128)), ids = Set(kept.map(\.id))
-        draft.plan?.stations = kept
-        draft.plan?.dependencies = wires.filter { ids.contains($0.source) && ids.contains($0.target) }
+        let fitted = try SpecKit.fitted(stations: stations, dependencies: wires, mission: id, lanes: lanes.map(\.spaceID))
+        draft.plan?.stations = fitted.stations
+        draft.plan?.dependencies = fitted.dependencies
         if !requirements.isEmpty { draft.requirements = Array(requirements.prefix(64)) }
         guard draft != mission.draft else { return }
         _ = try await server.projectSpecKitMap(id: id, expectedRevision: revision, draft: draft)
@@ -526,12 +531,18 @@ extension MissionController {
             let artifacts = SpecKit.artifactFingerprints(try Self.snapshot(root: checkout.path, prefixes: [feature + "/", ".specify/memory/"]), featureDirectory: feature)
             guard artifacts[feature + "/tasks.md"] != nil else { throw MissionError("speckit_tasks", "\(feature)/tasks.md is missing. Run /speckit.tasks first.") }
             if approving {
+                // Repositories finish side by side: when only another repository's appended tasks changed the map, a
+                // report you accepted about these exact files stays accepted. Any other replan assesses everything again.
+                let kept = !appended.isEmpty && !appended.contains(lane.spaceID) && lane.convergence?.accepted == true
+                    && (lane.observedArtifacts ?? lane.approvedArtifacts) == artifacts
                 run.specKit?.lanes[index].approvedArtifacts = artifacts
                 run.specKit?.lanes[index].observedArtifacts = artifacts
                 // A new approval assesses the work again; a report you accepted earlier was about other files.
-                if replanned || appended.contains(lane.spaceID) { run.specKit?.lanes[index].convergence = nil }
+                if appended.contains(lane.spaceID) || (replanned && !kept) {
+                    run.specKit?.lanes[index].convergence = nil
+                }
                 if appended.contains(lane.spaceID), let latest = run.attempts.lastIndex(where: {
-                    $0.stationID == SpecKit.stationID(id, lane.spaceID, "phase-0") && $0.status == .succeeded }) {
+                    $0.stationID == SpecKit.stationID(id, lane.spaceID, "phase-0") && $0.task == nil && $0.status == .succeeded }) {
                     run.attempts[latest].status = .superseded
                 }
             } else if (lane.observedArtifacts ?? lane.approvedArtifacts) != artifacts,
@@ -601,76 +612,214 @@ extension MissionController {
         }
     }
 
+    /// Every repository still owed work runs implement → your checks → converge in its own worktree, side by side, at
+    /// most the map's concurrent-station limit at once. A report you accepted stays done; one still waiting for you is
+    /// kept, never rerun under you. A failure admits nothing new but lets running repositories finish, so their reports
+    /// are kept; then it pauses the run. Every report and appended task list waits for you before review.
     func executeSpecKit(_ id: MissionID, runID: UUID) async throws {
         try await ensureCheckouts(id, runID: runID)
-        for space in try record(id, runID: runID).run?.specKit?.lanes.map(\.spaceID) ?? [] {
-            var mission = try record(id, runID: runID)
-            guard let run = mission.run, let lane = run.specKit?[space], let feature = lane.featureDirectory,
-                  let checkout = run.checkouts.first(where: { $0.spaceID == space }) else { throw MissionError("speckit_feature", "A repository has no Spec Kit feature.") }
-            let implementStation = SpecKit.stationID(id, space, "phase-0"), convergeStation = SpecKit.stationID(id, space, SpecKitCommand.converge.rawValue)
-            let converged = run.latest(convergeStation)
-            if lane.convergence?.accepted == true, converged?.status == .succeeded, converged?.id == lane.convergence?.attemptID { continue }
-            try await recoverInterruptedTurn(id, runID: runID, space: space)
-            guard let recovered = try record(id, runID: runID).run?.specKit?[space] else { throw CancellationError() }
-            try await verifyObserved(recovered, checkout: checkout)
-            let implemented = run.latest(implementStation)
-            if implemented?.status != .succeeded || implemented?.planRevision != mission.approvedPlanRevision {
-                let used = run.attempts.filter { $0.stationID == implementStation && $0.command == .implement }.count
-                guard used <= mission.draft.limits.retries else {
-                    throw MissionError("mission_retry_limit", "Implement reached the approved attempt limit across this mission. Raise the retry limit or revise the tasks.")
+        let mission = try record(id, runID: runID)
+        guard let run = mission.run, let lanes = run.specKit?.lanes else { throw MissionError("speckit_feature", "A repository has no Spec Kit feature.") }
+        var queue = lanes.filter { lane in
+            let converged = run.latest(SpecKit.stationID(id, lane.spaceID, SpecKitCommand.converge.rawValue))
+            guard let convergence = lane.convergence, converged?.status == .succeeded, converged?.id == convergence.attemptID else { return true }
+            return !convergence.accepted && [.tasksAppended, .missing].contains(convergence.outcome)
+        }.map(\.spaceID)[...]
+        var failure: Error?
+        agentSlots[id] = MissionSlots(mission.draft.limits.concurrentStations)
+        defer { agentSlots[id] = nil }
+        await withTaskGroup(of: Error?.self) { group in
+            func admit() {
+                guard failure == nil, let space = queue.popFirst() else { return }
+                group.addTask {
+                    do { _ = try await self.runSpecKitLane(id, runID: runID, space: space); return nil } catch { return error }
                 }
-                let result = try await specKitTurn(id, runID: runID, space: space, command: .implement, text: SpecKitCommand.implement.invocation(""),
-                                                   station: implementStation, reuse: nil, keepAlive: false)
+            }
+            for _ in 0..<max(1, mission.draft.limits.concurrentStations) { admit() }
+            while let result = await group.next() {
+                if let result, failure == nil || failure is CancellationError { failure = result }
+                admit()
+            }
+        }
+        if let failure { throw failure }
+        let current = try record(id, runID: runID)
+        let waiting = current.run?.specKit?.lanes.filter { $0.convergence.map { !$0.accepted } ?? false } ?? []
+        guard !waiting.isEmpty else { try await prepareReview(id, runID: runID); return }
+        let notice = Self.specKitWaitingNotice(current, waiting: waiting)
+        let saved = try await server.updateMissionRun(id: id, runID: runID) { $0.transition(to: .map, at: Self.now, notice: notice) }
+        if waiting.contains(where: { $0.convergence?.outcome == .tasksAppended }) { try await refreshSpecKitProjection(id, revision: saved.revision) }
+    }
+
+    /// What waits for you once repositories finish: appended tasks to approve, reports to accept.
+    nonisolated static func specKitWaitingNotice(_ mission: Mission, waiting: [MissionSpecKitLane]) -> String {
+        let name = { (lane: MissionSpecKitLane) in mission.draft.plan?.lanes.first { $0.spaceID == lane.spaceID }?.name ?? "this repository" }
+        let appended = waiting.filter { $0.convergence?.outcome == .tasksAppended }.map(name)
+        let reports = waiting.filter { $0.convergence?.outcome != .tasksAppended }.map(name)
+        var notes: [String] = []
+        if !appended.isEmpty { notes.append("Converge appended tasks in \(appended.formatted(.list(type: .and))). Review them and approve again before implementing.") }
+        if reports.count == 1 { notes.append("Read the /speckit.converge report for \(reports[0]). Accept it, reply or request changes. It is an assessment, not test evidence.") }
+        if reports.count > 1 { notes.append("Read the /speckit.converge reports for \(reports.formatted(.list(type: .and))). Accept each, reply or request changes. They are assessments, not test evidence.") }
+        return notes.joined(separator: " ")
+    }
+
+    /// This run's agent turns, shared by every repository (`agentSlots`); one at a time outside a run.
+    func slots(_ id: MissionID) -> MissionSlots { agentSlots[id] ?? MissionSlots(1) }
+
+    /// Batches for one agent per task (`SpecKit.implementBatches`), or nil when the repository implements in one stock
+    /// turn: no [P] tasks in tasks.md, nothing left unchecked, a mandatory implement hook (it runs once around the whole implementation), an
+    /// unfinished checklist (stock implement stops to ask about it), or too few receipts left for every task's own.
+    func taskBatches(_ id: MissionID, runID: UUID, checkout: MissionCheckout, feature: String) async throws -> [[SpecKitTaskSlot]]? {
+        guard let data = try? Data(contentsOf: Self.resolved(checkout.path, feature + "/tasks.md")) else { return nil }
+        // A task list with [P] tasks keeps one agent per task to the end, so a relaunch runs only what's unchecked.
+        let phases = SpecKit.parseTasks(String(decoding: data, as: UTF8.self)), batches = SpecKit.implementBatches(phases)
+        guard phases.contains(where: { $0.tasks.contains(where: \.parallel) }), !batches.isEmpty,
+              let used = try record(id, runID: runID).run?.attempts.count, used + batches.joined().count + 8 <= Self.taskReceiptLimit else { return nil }
+        guard !SpecKit.hasMandatoryImplementHooks(try await Self.preflight(checkout.path).hooks) else { return nil }
+        let checklists = try Self.snapshot(root: checkout.path, prefixes: [feature + "/checklists/"])
+        let unfinished = checklists.values.contains { data in
+            String(decoding: data, as: UTF8.self).split(whereSeparator: \.isNewline).contains { $0.trimmingCharacters(in: .whitespaces).hasPrefix("- [ ]") }
+        }
+        return unfinished ? nil : batches
+    }
+
+    /// A run keeps at most 160 receipts (MissionRun.validate); per-task agents leave room for the rest of the run.
+    static let taskReceiptLimit = 150
+
+    /// One agent per task, a batch at a time, each in its own thread in the repository's worktree, all bounded by the
+    /// run's agent slots. Shepherd checks a task off when its agent's reply says it's done; a task that isn't stops the
+    /// round once its batch has finished (the others in it keep their work). Launch's retry limit counts the round's
+    /// receipt (phase-0, no task), and a relaunch implements only the tasks still unchecked.
+    func implementByTask(_ id: MissionID, runID: UUID, space: SpaceID, checkout: MissionCheckout, feature: String, batches: [[SpecKitTaskSlot]]) async throws {
+        var round = MissionAttempt(stationID: SpecKit.stationID(id, space, "phase-0"), planRevision: try record(id, runID: runID).approvedPlanRevision)
+        round.command = .implement; round.startedAt = Self.now
+        let receipt = round
+        _ = try await server.updateMissionRun(id: id, runID: runID) { $0.attempts.append(receipt) }
+        var done: [String] = [], failure: Error?
+        for (index, batch) in batches.enumerated() where failure == nil {
+            await withTaskGroup(of: (String, Error?).self) { group in
+                for slot in batch {
+                    group.addTask {
+                        do { try await self.implementTask(id, runID: runID, space: space, checkout: checkout, feature: feature, slot: slot, first: index == 0) }
+                        catch { return (slot.task.id, error) }
+                        return (slot.task.id, nil)
+                    }
+                }
+                for await (task, error) in group {
+                    if let error { if failure == nil || failure is CancellationError { failure = error } } else { done.append(task) }
+                }
+            }
+        }
+        let agents = batches.joined().count, widest = batches.map(\.count).max() ?? 1
+        let summary = "Implemented \(done.isEmpty ? "no tasks" : done.joined(separator: ", ")), one agent per task (\(agents) planned, up to \(widest) at once)."
+            + (failure.map { $0 is CancellationError ? " Stopped." : " " + String(describing: $0) } ?? "")
+        let output = Self.safeText(summary), passed = failure == nil
+        _ = try? await server.updateMissionRun(id: id, runID: runID) { value in
+            guard let index = value.attempts.firstIndex(where: { $0.id == receipt.id && $0.status == .running }) else { return }
+            value.attempts[index].status = passed ? .succeeded : .failed
+            value.attempts[index].output = output; value.attempts[index].endedAt = Self.now
+        }
+        if let failure { throw failure }
+    }
+
+    /// One task's own stock /speckit.implement turn, scoped by its arguments (`SpecKit.taskScope`). Its checkbox is
+    /// checked only from its own `Done:` line; anything else fails the task with the agent's last words.
+    func implementTask(_ id: MissionID, runID: UUID, space: SpaceID, checkout: MissionCheckout, feature: String, slot: SpecKitTaskSlot, first: Bool) async throws {
+        let task = slot.task
+        let result = try await slots(id).run {
+            guard let used = try self.record(id, runID: runID).run?.attempts.count, used < Self.taskReceiptLimit else {
+                throw MissionError("mission_limit", "This mission has kept too many turns to give \(task.id) its own. Relaunch: the rest implements in one stock turn.")
+            }
+            return try await self.specKitTurn(id, runID: runID, space: space, command: .implement,
+                                              text: SpecKitCommand.implement.invocation(SpecKit.taskScope(task, first: first)),
+                                              station: SpecKit.stationID(id, space, "phase-\(slot.phase)"), reuse: nil, keepAlive: false, task: task.id)
+        }
+        guard SpecKit.taskReported(result.text, task: task.id) else {
+            let attempt = result.attemptID
+            _ = try await server.updateMissionRun(id: id, runID: runID) { value in
+                if let index = value.attempts.firstIndex(where: { $0.id == attempt }) { value.attempts[index].status = .failed }
+            }
+            let last = result.text.split(whereSeparator: \.isNewline).last.map(String.init) ?? "no reply"
+            throw MissionError("speckit_task", "\(task.id) didn't report it was done: \(Self.safeText(last, bytes: 600)) Open its thread, then relaunch to retry the unchecked tasks.")
+        }
+        let url = try Self.resolved(checkout.path, feature + "/tasks.md")
+        if let marked = SpecKit.markingDone(String(decoding: try Data(contentsOf: url), as: UTF8.self), task: task.id) {
+            try Data(marked.utf8).write(to: url, options: .atomic)
+        }
+    }
+
+    /// One repository's implement → your checks → converge, in its own worktree. Records the report and returns its outcome.
+    @discardableResult
+    func runSpecKitLane(_ id: MissionID, runID: UUID, space: SpaceID) async throws -> SpecKitConvergeOutcome {
+        var mission = try record(id, runID: runID)
+        guard let run = mission.run, let lane = run.specKit?[space], let feature = lane.featureDirectory,
+              let checkout = run.checkouts.first(where: { $0.spaceID == space }) else { throw MissionError("speckit_feature", "A repository has no Spec Kit feature.") }
+        let implementStation = SpecKit.stationID(id, space, "phase-0"), convergeStation = SpecKit.stationID(id, space, SpecKitCommand.converge.rawValue)
+        try await recoverInterruptedTurn(id, runID: runID, space: space)
+        guard let recovered = try record(id, runID: runID).run?.specKit?[space] else { throw CancellationError() }
+        try await verifyObserved(recovered, checkout: checkout)
+        // An implement round's receipt: one whole stock turn, or the round of one agent per task (`implementByTask`).
+        let implemented = run.attempts.last { $0.stationID == implementStation && $0.task == nil }
+        if implemented?.status != .succeeded || implemented?.planRevision != mission.approvedPlanRevision {
+            let used = run.attempts.filter { $0.stationID == implementStation && $0.command == .implement && $0.task == nil }.count
+            guard used <= mission.draft.limits.retries else {
+                throw MissionError("mission_retry_limit", "Implement reached the approved attempt limit across this mission. Raise the retry limit or revise the tasks.")
+            }
+            if let batches = try await taskBatches(id, runID: runID, checkout: checkout, feature: feature) {
+                try await implementByTask(id, runID: runID, space: space, checkout: checkout, feature: feature, batches: batches)
+            } else {
+                let result = try await slots(id).run {
+                    try await self.specKitTurn(id, runID: runID, space: space, command: .implement, text: SpecKitCommand.implement.invocation(""),
+                                               station: implementStation, reuse: nil, keepAlive: false)
+                }
                 guard try record(id, runID: runID).run?.attempts.first(where: { $0.id == result.attemptID })?.status == .succeeded else {
                     throw MissionError("speckit_implement", "/speckit.implement did not finish. Open its thread, then request changes or relaunch.")
                 }
-                // Implement builds what you approved; it doesn't get to change it. A rewritten spec, plan, constitution or
-                // task list goes back to you (converge would otherwise check the code against the weakened version).
-                let rewritten = try await observeImplementOutputs(id, runID: runID, space: space, checkout: checkout)
-                guard rewritten.isEmpty else {
-                    throw MissionError("speckit_scope", "/speckit.implement changed what you approved in \(mission.lane(space)?.name ?? "a repository"): \(rewritten.joined(separator: ", ")). Reply to the planner to review the change; Launch then approves the files as they are.")
-                }
             }
-            mission = try record(id, runID: runID)
-            for check in (mission.draft.plan?.stations ?? []).filter({ $0.kind == .check && $0.laneID == space }) {
-                guard try await runCheck(id, runID: runID, station: check, checkout: checkout) else {
-                    throw MissionError("mission_validation", "\(check.title) failed. Open its output, then request changes or relaunch.")
-                }
+            // Implement builds what you approved; it doesn't get to change it. A rewritten spec, plan, constitution or
+            // task list goes back to you (converge would otherwise check the code against the weakened version).
+            let rewritten = try await observeImplementOutputs(id, runID: runID, space: space, checkout: checkout)
+            guard rewritten.isEmpty else {
+                throw MissionError("speckit_scope", "/speckit.implement changed what you approved in \(mission.lane(space)?.name ?? "a repository"): \(rewritten.joined(separator: ", ")). Reply to the planner to review the change; Launch then approves the files as they are.")
             }
-            // Your own checks may write (a formatter); what they leave is part of the work converge assesses.
-            if (mission.draft.plan?.stations ?? []).contains(where: { $0.kind == .check && $0.laneID == space }) {
-                _ = try await observeImplementOutputs(id, runID: runID, space: space, checkout: checkout)
-            }
-            guard let observed = try record(id, runID: runID).run?.specKit?[space] else { throw CancellationError() }
-            try await verifyObserved(observed, checkout: checkout)
-            let before = try? Data(contentsOf: Self.resolved(checkout.path, feature + "/tasks.md"))
-            let result = try await specKitTurn(id, runID: runID, space: space, command: .converge, text: SpecKitCommand.converge.invocation(""),
-                                               station: convergeStation, reuse: nil, keepAlive: false, tasksBefore: before)
-            let after = try? Data(contentsOf: Self.resolved(checkout.path, feature + "/tasks.md"))
-            let outcome = SpecKit.convergeOutcome(before: before, after: after)
-            // Appended tasks clear approval below; anything else is converge's own observed result.
-            if outcome != .tasksAppended { try await observeArtifacts(id, runID: runID, space: space, checkout: checkout) }
-            let reviews = try await collectReviews(id)
-            let saved = try await server.updateMissionRun(id: id, runID: runID) { value in
-                if let index = value.attempts.firstIndex(where: { $0.id == result.attemptID }) {
-                    // Per-project scope: another repository's later work never makes this report stale.
-                    value.attempts[index].inputFingerprints = Dictionary(uniqueKeysWithValues: reviews.filter { $0.spaceID == space }.map { ($0.spaceID.rawValue, $0.fingerprint) })
-                }
-                if let index = value.specKit?.lanes.firstIndex(where: { $0.spaceID == space }) {
-                    value.specKit?.lanes[index].convergence = .init(attemptID: result.attemptID, outcome: outcome)
-                }
-                let name = mission.draft.plan?.lanes.first { $0.spaceID == space }?.name ?? "this repository"
-                switch outcome {
-                case .tasksAppended:
-                    value.transition(to: .map, at: Self.now, notice: "Converge appended tasks in \(name). Review them and approve again before implementing.")
-                default:
-                    value.transition(to: .map, at: Self.now, notice: "Read the /speckit.converge report for \(name). Accept it, reply or request changes. It is an assessment, not test evidence.")
-                }
-            }
-            if outcome == .tasksAppended { try await refreshSpecKitProjection(id, revision: saved.revision) }
-            return
         }
-        try await prepareReview(id, runID: runID)
+        mission = try record(id, runID: runID)
+        for check in (mission.draft.plan?.stations ?? []).filter({ $0.kind == .check && $0.laneID == space }) {
+            guard try await runCheck(id, runID: runID, station: check, checkout: checkout) else {
+                throw MissionError("mission_validation", "\(check.title) failed. Open its output, then request changes or relaunch.")
+            }
+        }
+        // Your own checks may write (a formatter); what they leave is part of the work converge assesses.
+        if (mission.draft.plan?.stations ?? []).contains(where: { $0.kind == .check && $0.laneID == space }) {
+            _ = try await observeImplementOutputs(id, runID: runID, space: space, checkout: checkout)
+        }
+        guard let observed = try record(id, runID: runID).run?.specKit?[space] else { throw CancellationError() }
+        try await verifyObserved(observed, checkout: checkout)
+        let before = try? Data(contentsOf: Self.resolved(checkout.path, feature + "/tasks.md"))
+        let result = try await slots(id).run {
+            try await self.specKitTurn(id, runID: runID, space: space, command: .converge, text: SpecKitCommand.converge.invocation(""),
+                                       station: convergeStation, reuse: nil, keepAlive: false, tasksBefore: before)
+        }
+        let after = try? Data(contentsOf: Self.resolved(checkout.path, feature + "/tasks.md"))
+        let outcome = SpecKit.convergeOutcome(before: before, after: after)
+        // Appended tasks clear approval below. Otherwise converge is held to implement's gate: a report that rewrote the
+        // spec, plan, constitution or tasks would otherwise make the weakened files the accepted baseline.
+        if outcome != .tasksAppended {
+            let rewritten = try await observeImplementOutputs(id, runID: runID, space: space, checkout: checkout)
+            guard rewritten.isEmpty else {
+                throw MissionError("speckit_scope", "/speckit.converge changed what you approved in \(mission.lane(space)?.name ?? "a repository"): \(rewritten.joined(separator: ", ")). Reply to the planner to review the change; Launch then approves the files as they are.")
+            }
+        }
+        let reviews = try await collectReviews(id)
+        _ = try await server.updateMissionRun(id: id, runID: runID) { value in
+            if let index = value.attempts.firstIndex(where: { $0.id == result.attemptID }) {
+                // Per-project scope: another repository's later work never makes this report stale.
+                value.attempts[index].inputFingerprints = Dictionary(uniqueKeysWithValues: reviews.filter { $0.spaceID == space }.map { ($0.spaceID.rawValue, $0.fingerprint) })
+            }
+            if let index = value.specKit?.lanes.firstIndex(where: { $0.spaceID == space }) {
+                value.specKit?.lanes[index].convergence = .init(attemptID: result.attemptID, outcome: outcome)
+            }
+        }
+        return outcome
     }
 
     /// An owner-entered command check, run by the host. The only test evidence a Spec Kit mission records.
@@ -709,7 +858,8 @@ extension MissionController {
     /// first, the turn bounded by mission limits, changed paths and stock-contract notes kept as evidence.
     @discardableResult
     func specKitTurn(_ id: MissionID, runID: UUID, space: SpaceID, command: SpecKitCommand?, text: String, station: MissionStationID? = nil,
-                     reuse: AgentID?, keepAlive: Bool, tasksBefore: Data? = nil, replyCommand: SpecKitCommand? = nil) async throws -> (attemptID: UUID, agentID: AgentID, text: String) {
+                     reuse: AgentID?, keepAlive: Bool, tasksBefore: Data? = nil, replyCommand: SpecKitCommand? = nil,
+                     task: String? = nil) async throws -> (attemptID: UUID, agentID: AgentID, text: String) {
         let mission = try record(id, runID: runID)
         guard let vm, let run = mission.run, let lane = run.specKit?[space],
               let checkout = run.checkouts.first(where: { $0.spaceID == space }) else { throw MissionError("mission_worktree", "The repository's worktree is missing.") }
@@ -731,12 +881,13 @@ extension MissionController {
         attempt.gitBefore = git.snapshot
         attempt.startedAt = Self.now
         attempt.command = command ?? replyCommand ?? run.attempts.last(where: { $0.agentID == agentID })?.command ?? .clarify
+        attempt.task = task
         _ = try await server.updateMissionRun(id: id, runID: runID) { $0.attempts.append(attempt) }
         do {
             if reuse == nil {
                 let config = NewAgentConfig(spaceID: checkout.spaceID, workingDirectory: checkout.path, reservedAgentID: agentID,
                                             model: run.model, thinking: .off, initialPrompt: nil,
-                                            initialName: "Spec Kit: \(command.map { "/speckit.\($0.rawValue)" } ?? "reply")",
+                                            initialName: "Spec Kit: \(task ?? command.map { "/speckit.\($0.rawValue)" } ?? "reply")",
                                             worktreeBranch: checkout.branch, worktreeBase: checkout.base, worktreePath: checkout.path)
                 _ = try await vm.startAgent(config, selectAfter: false, focusWindow: false)
             }
@@ -812,7 +963,8 @@ extension MissionController {
             attemptOutput[attempt.id] = nil
             try? await observeCheckout(id, runID: runID, space: space, before: git.snapshot)
             // A failed or interrupted implement still did owned work: its outputs are what the next launch continues from.
-            if command == .implement { try? await observeArtifacts(id, runID: runID, space: space, checkout: checkout) }
+            // Only its own outputs, though: a rewrite of what you approved is never recorded as the baseline.
+            if command == .implement { _ = try? await observeImplementOutputs(id, runID: runID, space: space, checkout: checkout) }
             if !(error is CancellationError) {
                 let message = Self.safeText(String(describing: error))
                 _ = try? await server.updateMissionRun(id: id, runID: runID) { value in

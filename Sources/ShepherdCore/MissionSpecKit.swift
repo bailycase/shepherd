@@ -168,6 +168,13 @@ public struct SpecKitPhase: Codable, Hashable, Sendable {
     public var completed: Int { tasks.filter(\.done).count }
 }
 
+/// One task for its own implement agent, with the tasks.md phase it belongs to (as `projection` numbers phases).
+public struct SpecKitTaskSlot: Hashable, Sendable {
+    public var phase: Int
+    public var task: SpecKitTask
+    public init(phase: Int, task: SpecKitTask) { self.phase = phase; self.task = task }
+}
+
 public struct SpecKitSpecSummary: Codable, Hashable, Sendable {
     public var title: String?
     public var requirements: [String]
@@ -274,8 +281,7 @@ public enum SpecKit {
             return (line[..<colon].trimmingCharacters(in: .whitespaces), value)
         }
         var unrecognized = false, dashIndent = -1
-        for raw in text.split(separator: "\n", omittingEmptySubsequences: false) {
-            let line = raw.hasSuffix("\r") ? raw.dropLast() : raw
+        for line in text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
             let indent = line.prefix { $0 == " " }.count
@@ -301,7 +307,7 @@ public enum SpecKit {
 
     public static func parseTasks(_ text: String) -> [SpecKitPhase] {
         var phases: [SpecKitPhase] = []
-        for raw in text.split(separator: "\n", omittingEmptySubsequences: false) {
+        for raw in text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline) {
             let line = raw.trimmingCharacters(in: .whitespaces)
             if line.hasPrefix("## ") {
                 phases.append(SpecKitPhase(title: String(line.dropFirst(3)).trimmingCharacters(in: .whitespaces), tasks: []))
@@ -334,7 +340,7 @@ public enum SpecKit {
     /// Stock `/speckit.analyze` puts findings in a `| ID | Category | Severity | … |` table; CRITICAL means
     /// upstream recommends resolving them before `/speckit.implement`.
     public static func analysisFoundCritical(_ report: String) -> Bool {
-        report.split(separator: "\n").contains { line in
+        report.split(whereSeparator: \.isNewline).contains { line in
             line.trimmingCharacters(in: .whitespaces).hasPrefix("|")
                 && line.split(separator: "|").contains { $0.trimmingCharacters(in: .whitespaces) == "CRITICAL" }
         }
@@ -342,7 +348,7 @@ public enum SpecKit {
 
     public static func parseSpec(_ text: String) -> SpecKitSpecSummary {
         var summary = SpecKitSpecSummary(title: nil, requirements: [], successCriteria: [], userStories: [], clarificationsNeeded: 0)
-        for raw in text.split(separator: "\n") {
+        for raw in text.split(whereSeparator: \.isNewline) {
             let line = raw.trimmingCharacters(in: .whitespaces)
             summary.clarificationsNeeded += line.components(separatedBy: "[NEEDS CLARIFICATION").count - 1
             if summary.title == nil, line.hasPrefix("# ") { summary.title = String(line.dropFirst(2)) }
@@ -370,16 +376,64 @@ public enum SpecKit {
 
     /// tasks.md with every checkbox cleared: approval binds to the tasks, not to implement's progress marks.
     public static func uncheckedTasks(_ data: Data) -> Data {
-        Data(String(decoding: data, as: UTF8.self).split(separator: "\n", omittingEmptySubsequences: false).map { line -> String in
+        Data(String(decoding: data, as: UTF8.self).split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).map { line -> String in
             let trimmed = line.drop { $0 == " " || $0 == "\t" }
             guard trimmed.hasPrefix("- [x]") || trimmed.hasPrefix("- [X]") else { return String(line) }
             return String(line[..<trimmed.startIndex]) + "- [ ]" + trimmed.dropFirst(5)
         }.joined(separator: "\n").utf8)
     }
 
+    // MARK: One agent per task
+
+    /// Unchecked tasks as batches for one implement agent each, in tasks.md order: a phase finishes before the next starts,
+    /// a run of [P] tasks goes at once, any other task alone. The round's first task always goes alone, because it alone
+    /// runs stock implement's project setup checks (ignore files), which the others skip.
+    public static func implementBatches(_ phases: [SpecKitPhase]) -> [[SpecKitTaskSlot]] {
+        var batches: [[SpecKitTaskSlot]] = []
+        for (index, phase) in phases.enumerated() {
+            var parallel: [SpecKitTaskSlot] = []
+            for task in phase.tasks where !task.done {
+                if task.parallel && !batches.isEmpty { parallel.append(.init(phase: index, task: task)); continue }
+                if !parallel.isEmpty { batches.append(parallel); parallel = [] }
+                batches.append([.init(phase: index, task: task)])
+            }
+            if !parallel.isEmpty { batches.append(parallel) }
+        }
+        return batches
+    }
+
+    /// What stock /speckit.implement is given as the user's input for one task. One line: the template reads it as $ARGUMENTS.
+    public static func taskScope(_ task: SpecKitTask, first: Bool) -> String {
+        let others = first ? "Other agents implement the remaining tasks after you, in this same worktree, some at the same time."
+            : "Other agents are implementing other tasks in this same worktree right now. Skip the project setup checks; the round's first task ran them."
+        return "Implement only task \(task.id) from tasks.md: \(task.text) \(others) Change only the files \(task.id) needs. Don't edit tasks.md or the checklists, "
+            + "don't run extension hooks and don't commit: Shepherd marks \(task.id) done from your reply. When \(task.id) is complete, end your reply with "
+            + "the line `Done: \(task.id)`. If you can't complete it, end with `Blocked: \(task.id)` and the reason."
+    }
+
+    /// The agent's own closing line for its task (`Done: T005`, emphasis ignored). Anything else, or a `Blocked:` line, is not done.
+    public static func taskReported(_ reply: String, task: String) -> Bool {
+        let lines = reply.split(whereSeparator: \.isNewline).map { $0.filter { !"*`".contains($0) }.trimmingCharacters(in: .whitespaces) }
+        return lines.contains("Done: \(task)") && !lines.contains { $0.hasPrefix("Blocked: \(task)") }
+    }
+
+    /// tasks.md with one task's checkbox checked and every other byte as it was (line endings included); nil when the task
+    /// has no unchecked line. Agents running side by side never write tasks.md, so their marks can't overwrite each other.
+    public static func markingDone(_ text: String, task: String) -> String? {
+        guard task.count > 1, task.hasPrefix("T"), task.dropFirst().allSatisfy(\.isASCII), task.dropFirst().allSatisfy(\.isNumber),
+              let range = text.range(of: "(?m)^[ \\t]*- \\[ \\] " + task + "(?=[ \\t\\r\\n]|$)", options: .regularExpression) else { return nil }
+        return text.replacingCharacters(in: range, with: text[range].replacingOccurrences(of: "- [ ]", with: "- [X]"))
+    }
+
+    /// A mandatory implement hook stock runs around the whole implementation (`EXECUTE_COMMAND`): per-task agents skip hooks,
+    /// so such a repository implements in one stock turn. Optional and conditional hooks are only ever printed.
+    public static func hasMandatoryImplementHooks(_ hooks: [SpecKitHook]) -> Bool {
+        hooks.contains { ["before_implement", "after_implement"].contains($0.event) && $0.enabled && !$0.optional && $0.condition == nil }
+    }
+
     /// Whether a tasks.md edit only checked boxes off, as stock implement does.
     public static func onlyChecksTasks(before: String, after: String) -> Bool {
-        let old = before.split(separator: "\n", omittingEmptySubsequences: false), new = after.split(separator: "\n", omittingEmptySubsequences: false)
+        let old = before.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline), new = after.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)
         guard old.count == new.count else { return false }
         return zip(old, new).allSatisfy { a, b in
             a == b || (a.replacingOccurrences(of: "- [ ]", with: "- [X]") == b.replacingOccurrences(of: "- [x]", with: "- [X]"))
@@ -425,6 +479,19 @@ public enum SpecKit {
         let uuid = UUID(uuid: (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
                                bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]))
         return MissionStationID(rawValue: uuid.uuidString.lowercased())
+    }
+
+    /// Every repository's projection within a map's 128 stations. Execution and publication read the owner's checks,
+    /// Converge and phase-0 (implement's receipt), so only later phase stations, which only display tasks.md, are trimmed.
+    public static func fitted(stations: [MissionStation], dependencies: [MissionDependency], mission: MissionID,
+                              lanes: [SpaceID], limit: Int = 128) throws -> (stations: [MissionStation], dependencies: [MissionDependency]) {
+        let phaseZero = Set(lanes.map { stationID(mission, $0, "phase-0") })
+        let fixed = Set(stations.filter { $0.kind != .worker || phaseZero.contains($0.id) }.map(\.id))
+        guard fixed.count <= limit else {
+            throw MissionError("mission_limit", "These repositories need \(fixed.count) checks and Spec Kit stations; a map holds \(limit). Use fewer repositories or checks.")
+        }
+        let ids = fixed.union(stations.filter { !fixed.contains($0.id) }.prefix(limit - fixed.count).map(\.id))
+        return (stations.filter { ids.contains($0.id) }, dependencies.filter { ids.contains($0.source) && ids.contains($0.target) })
     }
 
     /// The existing map types as a display of one repository's stock artifacts: planning stages,
