@@ -122,6 +122,84 @@ struct RemoteDesignService: Sendable {
             return .deleted(try await server.deleteDesign(id))
         case .undoDelete:
             return .ok
+        case .importBegin, .importChunk, .importFinish, .importCancel:
+            // Kept with the connection, on the server queue's own path (`remoteDesignImport`).
+            throw RemoteDesignRefusal("unsupported", "An import goes through the host's connection.")
+        case .buildSystem:
+            // Started by the app, on the server queue's own path (`remoteBuildDesignSystem`).
+            throw RemoteDesignRefusal("unsupported", "A system build is started through the host's app.")
+        case .ensureAgent:
+            // Started by the app, on the server queue's own path (`remoteEnsureDesignAgent`).
+            throw RemoteDesignRefusal("unsupported", "A design's agent is started through the host's Open.")
+        case .duplicate(let id):
+            return .designDuplicated(try await server.duplicateDesign(id))
+        case .removeFromRecents(let id):
+            try await server.removeDesignFromRecents(id)
+            return .ok
+        case .systemFile(let namespace, let path, let offset):
+            guard offset >= 0 else { throw RemoteDesignRefusal.badOffset(offset, size: nil) }
+            guard let data = try await server.designSystemFile(namespace, path: path) else {
+                throw RemoteDesignRefusal(RemoteDesignCode.noSuchFile, "\(namespace) has no \(path).")
+            }
+            guard offset <= data.count else { throw RemoteDesignRefusal.badOffset(offset, size: data.count) }
+            let end = min(data.count, offset + RemoteProtocol.designChunkBytes)
+            return .chunk(RemoteDesignChunk(sha256: Self.sha256(data), offset: offset, total: data.count, data: data.subdata(in: offset..<end)))
+        case .renameSystem(let namespace, let title):
+            let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, trimmed.utf8.count <= DesignComment.maxTextBytes else {
+                throw RemoteDesignRefusal("invalid_title", "A design system needs a title.")
+            }
+            return .systemChanged(try await server.renameDesignSystem(namespace, to: trimmed))
+        case .duplicateSystem(let namespace):
+            return .systemChanged(try await server.duplicateDesignSystem(namespace))
+        case .deleteSystem(let namespace):
+            try await server.deleteDesignSystem(namespace)
+            return .ok
+        case .resyncSystem(let namespace):
+            return .systemSynced(try await server.resyncDesignSystem(namespace))
+        case .deleteSystemBuild(let id):
+            try await server.deleteSystemBuild(id)
+            return .ok
+        case .referenceKept(let agentID, let payloadID):
+            guard server.state.agents.contains(where: { $0.id == agentID }) else { throw SessionServerError.noSuchAgent(agentID) }
+            guard let kept = await server.designReferencePayload(agentID: agentID, payloadID: payloadID) else {
+                throw RemoteDesignRefusal("no_such_reference", "The thread holds no such reference.")
+            }
+            let freshness = await server.designReferenceFreshness(agentID: agentID, payloadID: payloadID)
+            // The picture rides along while it fits one reply; a larger one comes in pieces (`referencePicture`).
+            let url = Self.keptPicture(kept)
+            let size = url.flatMap { try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize } ?? .max
+            let picture = size <= RemoteProtocol.designChunkBytes ? url.flatMap { try? Data(contentsOf: $0) } : nil
+            return .referenceKept(kept.payload, picture: picture, freshness: freshness)
+        case .referencePicture(let agentID, let payloadID, let offset):
+            guard server.state.agents.contains(where: { $0.id == agentID }) else { throw SessionServerError.noSuchAgent(agentID) }
+            guard offset >= 0 else { throw RemoteDesignRefusal.badOffset(offset, size: nil) }
+            guard let kept = await server.designReferencePayload(agentID: agentID, payloadID: payloadID), let url = Self.keptPicture(kept),
+                  let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= DesignImport.maxFileBytes,
+                  let data = try? Data(contentsOf: url) else {
+                throw RemoteDesignRefusal(RemoteDesignCode.noSuchFile, "The thread holds no picture of that reference.")
+            }
+            guard offset <= data.count else { throw RemoteDesignRefusal.badOffset(offset, size: data.count) }
+            // ponytail: reads the whole picture for each piece (at most 16 MB); a ranged read if pictures grow.
+            let end = min(data.count, offset + RemoteProtocol.designChunkBytes)
+            return .chunk(RemoteDesignChunk(sha256: Self.sha256(data), offset: offset, total: data.count, data: data.subdata(in: offset..<end)))
+        case .referenceFreshness(let reference):
+            guard reference.host == .local else { throw RemoteDesignRefusal("remote_design", "That design isn't on this host.") }
+            return .referenceFreshness(await server.designReferenceFreshness(reference))
+        case .referenceLookedAt(let agentID, let ref, let aspects):
+            guard server.state.agents.contains(where: { $0.id == agentID }) else { throw SessionServerError.noSuchAgent(agentID) }
+            return .referenceLookedAt(await server.designReferenceLookedAt(agentID: agentID, ref: ref, aspects: Set(aspects)))
+        case .pinReference(let reference):
+            // Only this host's own design (`local` here), checked and resolved by the host itself.
+            do {
+                let pinned = try await server.pinDesignReference(reference)
+                return .referencePinned(RemoteDesignReferencePin(
+                    reference: pinned.reference, label: pinned.reference.label, design: pinned.design, boardTitle: pinned.boardTitle,
+                    pageTitle: pinned.pageTitle, elementLabel: pinned.elementLabel, elementName: pinned.elementName,
+                    width: pinned.width, height: pinned.height, outline: pinned.outline))
+            } catch let error as DesignReferenceError {
+                throw RemoteDesignRefusal(error.code, error.message)
+            }
         }
     }
 
@@ -183,6 +261,14 @@ struct RemoteDesignService: Sendable {
             changed.append(RemoteDesignFile(path: path, sha256: info.sha256, size: info.size, data: nil))
         }
         return RemoteDesignFiles(designID: id, revision: revision, changed: changed, unchanged: unchanged, missing: missing)
+    }
+
+    /// A kept reference's picture, inside its copy's folder: the piece's own, else a page's or a
+    /// design's first board's.
+    static func keptPicture(_ kept: (payload: DesignReferencePayload, folder: URL)) -> URL? {
+        guard let name = kept.payload.picture?.name ?? kept.payload.boards?.first?.picture?.name,
+              name == (name as NSString).lastPathComponent, !name.hasPrefix(".") else { return nil }
+        return kept.folder.appendingPathComponent(name)
     }
 
     /// A board path a client sent, checked against the grammar.

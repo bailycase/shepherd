@@ -313,11 +313,15 @@ struct WorkspaceHeaderView: View {
                 if vm.remoteInspectingAgent == remote {
                     PlainHeader(title: "\(agent.name) · terminal", leadingInset: leadingInset, showSidebar: showSidebar)
                 } else if let (_, design) = vm.remoteDesign(drawnBy: remote) {
-                    // The host's design: its system's page and Export stay on the host for now.
+                    // The host's design: Export draws here from this Mac's synced copy.
                     let ref = RemoteDesignRef(hostID: remote.hostID, designID: design.id)
-                    DesignToolbar(name: design.name, system: design.systemNamespace, leadingInset: leadingInset,
+                    DesignToolbar(name: design.name, system: design.systemNamespace,
+                                  openSystem: design.systemNamespace.map { namespace in
+                                      { vm.openRemoteDesignSystem(RemoteSystemRef(hostID: remote.hostID, namespace: namespace)) }
+                                  }, leadingInset: leadingInset,
                                   showSidebar: showSidebar, designs: { vm.openDestination(.designs) },
                                   screen: vm.remoteDesignScreen(ref),
+                                  export: { vm.openRemoteDesignExport(ref) },
                                   menu: vm.designMenu(.remote(ref), context: .toolbar),
                                   perform: { vm.performDesignMenu($0, on: .remote(ref)) })
                         .equatable()

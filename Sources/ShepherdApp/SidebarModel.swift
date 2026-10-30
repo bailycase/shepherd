@@ -38,13 +38,15 @@ enum SidebarRowID: Hashable {
     case local(AgentID)
     case remote(RemoteAgentRef)
     case design(DesignID)
+    /// A connected host's design whose agent is gone there: opening it has the host start one.
+    case remoteDesign(RemoteDesignRef)
 
     /// The agent the row names; nil for a design.
     var agentID: AgentID? {
         switch self {
         case .local(let id): id
         case .remote(let ref): ref.agentID
-        case .design: nil
+        case .design, .remoteDesign: nil
         }
     }
 }
@@ -272,6 +274,23 @@ enum SidebarDerivation {
                 let row = remoteRow(agent, host: host, automation: runs.contains(agent.id), needsYou: needsYou)
                 let pin = runs.contains(agent.id) ? nil : PinnedThread.remote(RemoteAgentRef(hostID: host.id, agentID: agent.id))
                 entries.append(entry(row, pin, needsYou: needsYou, key: agent.lastActiveAt ?? -1, host: hostIndex + 1, index: index))
+            }
+            // A host's design (while it serves designs) is a design row that opens its agent's
+            // layout, the design's screen; one whose agent is gone there has the host start one.
+            if source.designs {
+                for (index, design) in host.state.designs.enumerated() where design.inRecents && !design.buildsSystem {
+                    let agent = host.state.agents.first(where: { $0.id == design.agentID })
+                        ?? host.state.agents.first(where: { $0.designID == design.id })
+                    let id: SidebarRowID = agent.map { .remote(RemoteAgentRef(hostID: host.id, agentID: $0.id)) }
+                        ?? .remoteDesign(RemoteDesignRef(hostID: host.id, designID: design.id))
+                    var row = designRow(design)
+                    row = SidebarListRow(id: id, title: row.title, leading: row.leading,
+                                         accessory: .tag(host.name), section: .designs, help: row.help,
+                                         accessibilityLabel: row.accessibilityLabel + ", on \(host.name)", worktree: false,
+                                         automation: nil, automationLive: false)
+                    row.offline = host.offline
+                    entries.append(entry(row, nil, needsYou: false, key: design.lastActiveAt, host: hostIndex + 1, index: index))
+                }
             }
         }
         // Most recently active first. Agents no host has timed (older hosts and state files)

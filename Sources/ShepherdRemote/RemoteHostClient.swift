@@ -54,6 +54,8 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// A design this client watches changed on the host (`RemoteDesignRequest.watch`): its files'
     /// new revision, its comments', or both. A hint to pull. Main queue.
     public var onDesignChanged: ((DesignID, UInt64?, UInt64?) -> Void)?
+    /// The host's design systems changed (`designSystemsCapability`): list them again. Main queue.
+    public var onDesignSystemsChanged: (() -> Void)?
     public var onProjectExecutionChanged: ((ProjectExecutionKey, UInt64) -> Void)?
     /// A mission on the host was made or changed (its new revision) or went (nil). A hint to pull. Main queue.
     public var onMissionChanged: ((MissionID, UInt64?) -> Void)?
@@ -112,6 +114,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         case output(SessionID, Data)
         case exited(SessionID, Int32?)
         case designChanged(DesignID, UInt64?, UInt64?)
+        case designSystemsChanged
         case projectExecutionChanged(ProjectExecutionKey, UInt64)
         case missionChanged(MissionID, UInt64?)
         case missionLive(MissionID, RemoteMissionLive)
@@ -459,7 +462,14 @@ public final class RemoteHostClient: @unchecked Sendable {
     static let imagesTooLarge = "Images exceed the remote payload limit. Send fewer or smaller images."
     /// Design references go only into a thread on the Mac that runs it (docs/designs.md › Design
     /// references), never over the remote listener.
-    public static let designReferencesRefusal = "Design references can't go to a thread on another Mac yet: send it from that Mac."
+    public static let designReferencesRefusal = "A reference to another Mac's design goes only to that Mac's own threads, where it takes them: update Shepherd there, or send it from that Mac."
+
+    /// Whether a host takes `references` in its threads: it serves references to its own designs
+    /// (`design.references.v1`) and each names one of them, as the host sees it (`local`).
+    static func hostTakes(_ references: [DesignReferenceRecord], capabilities: Set<String>) -> Bool {
+        capabilities.contains(RemoteProtocol.designReferencesCapability)
+            && references.allSatisfy { DesignReference(string: $0.ref)?.host == .local }
+    }
 
 
     /// One NDJSON frame per request: the host drops anything over the cap.
@@ -514,7 +524,8 @@ public final class RemoteHostClient: @unchecked Sendable {
         let before = value.supportedActions
         for (capability, action) in [(RemoteProtocol.checkpointRecoveryCapability, "checkpointRecovery"), (RemoteProtocol.nativeRetryCapability, "retry"), (RemoteProtocol.nativeInterruptCapability, "interrupt"),
                                      (RemoteProtocol.nativeServiceTierCapability, "setServiceTier"), (RemoteProtocol.nativeGoalCapability, "goal"),
-                                     (RemoteProtocol.nativeImagesCapability, "images"), (RemoteProtocol.nativeQueueSubagentCapability, "queueSubagent")]
+                                     (RemoteProtocol.nativeImagesCapability, "images"), (RemoteProtocol.nativeQueueSubagentCapability, "queueSubagent"),
+                                     (RemoteProtocol.designReferencesCapability, "designReferences")]
         where !capabilities.contains(capability) {
             value.supportedActions.removeAll { $0 == action }
         }
@@ -529,7 +540,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         if let missing = Self.missingCapability(outgoing, capabilities: capabilities) {
             throw RemoteHostClientError.rejected(code: "update_required", message: missing)
         }
-        if let references = outgoing.designReferences, !references.isEmpty {
+        if let references = outgoing.designReferences, !references.isEmpty, !Self.hostTakes(references, capabilities: capabilities) {
             throw RemoteHostClientError.rejected(code: "design_references_local", message: Self.designReferencesRefusal)
         }
         let command = try await Self.preparingImages(outgoing) { .nativeThread(id: Int.max, agentID: agentID, request: $0) }
@@ -995,13 +1006,16 @@ public final class RemoteHostClient: @unchecked Sendable {
             throw RemoteHostClientError.rejected(code: "update_required", message: Self.designsRefusal)
         }
         if let needed = request.capability, !capabilities.contains(needed) {
-            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to send it Pencil markup.")
+            let what = needed == RemoteProtocol.designMarkupCapability ? "send it Pencil markup" : "do that from another device"
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to \(what).")
         }
         if Self.overFrame(.design(id: 0, request: request)) {
             throw RemoteHostClientError.rejected(code: "too_large", message: "The change exceeds the remote payload limit.")
         }
         // A listing reads every design's files on the host; a comment waits for the agent's queue.
-        let reply = try await self.request(timeout: 30) { .design(id: $0, request: request) }
+        // An import reads and checks a whole project on the host before it answers.
+        let timeout: TimeInterval = if case .importFinish = request { 180 } else { 30 }
+        let reply = try await self.request(timeout: timeout) { .design(id: $0, request: request) }
         switch reply {
         case .design(_, let result): return result
         case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
@@ -1294,6 +1308,8 @@ public final class RemoteHostClient: @unchecked Sendable {
             push(.projectExecutionChanged(key, revision))
         case .designChanged(let designID, let revision, let commentsRevision):
             push(.designChanged(designID, revision, commentsRevision))
+        case .designSystemsChanged:
+            push(.designSystemsChanged)
         case .missionChanged(let missionID, let revision):
             push(.missionChanged(missionID, revision))
         case .missionLive(let missionID, let live):
@@ -1359,6 +1375,7 @@ public final class RemoteHostClient: @unchecked Sendable {
                 case .exited(let sessionID, let code): self.onSessionExited?(sessionID, code)
                 case .projectExecutionChanged(let key, let revision): self.onProjectExecutionChanged?(key, revision)
                 case .designChanged(let designID, let revision, let comments): self.onDesignChanged?(designID, revision, comments)
+                case .designSystemsChanged: self.onDesignSystemsChanged?()
                 case .missionChanged(let missionID, let revision): self.onMissionChanged?(missionID, revision)
                 case .missionLive(let missionID, let live): self.onMissionLive?(missionID, live)
                 case .capabilities(let capabilities): self.onCapabilitiesChanged?(capabilities)

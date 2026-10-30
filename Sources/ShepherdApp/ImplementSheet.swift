@@ -27,6 +27,10 @@ final class ImplementSheetModel {
     }
 
     let selection: DesignReferenceSelection
+    /// The connected host whose design this is; its threads are the targets. Nil: This Mac.
+    var hostID: UUID?
+    /// "This Mac", or the host's name.
+    var hostName = "This Mac"
     var picture: SHReferenceImage?
     /// The piece pinned at the design's revision now, and what a send of it carries; nil while
     /// the host reads it.
@@ -150,7 +154,7 @@ struct ImplementSheetView: View {
 
     var body: some View {
         // The canvas's picture of the piece, once its board has drawn (it may not have yet).
-        SHImplementSheet(picture: vm.implementPicture(model.selection) ?? model.picture, title: model.title, crumbs: model.crumbs, version: model.version, mode: $model.mode,
+        SHImplementSheet(picture: vm.implementPicture(model.selection, host: model.hostID) ?? model.picture, title: model.title, crumbs: model.crumbs, version: model.version, mode: $model.mode,
                          sends: model.sends, canSend: model.canSend, sending: model.sending,
                          close: { vm.closeImplementSheet() }, send: { vm.sendImplementSheet(model) }) {
             if model.mode == .existing {
@@ -176,7 +180,7 @@ struct ImplementSheetView: View {
                             }
                         }
                     } label: {
-                        SHImplementProjectLabel(project: model.chosenProject?.name ?? "Choose a space", host: "This Mac")
+                        SHImplementProjectLabel(project: model.chosenProject?.name ?? "Choose a space", host: model.hostName)
                     }
                     .menuStyle(.button)
                     .buttonStyle(.plain)
@@ -238,6 +242,8 @@ struct DesignReferenceToast: Identifiable, Equatable {
     enum Kind: Equatable {
         /// Sent to a thread, staying on the canvas: Open thread.
         case sent(thread: AgentID, name: String)
+        /// Sent to a connected host's thread.
+        case sentRemote(RemoteAgentRef, name: String)
         case copied
     }
 
@@ -266,6 +272,11 @@ struct DesignReferenceToastLayer: View {
                         SHReferenceToast(.sent, message: Text("Sent \(toast.piece) to \(Text(name).fontWeight(.semibold))."),
                                          actionTitle: "Open thread", actionSymbol: "text.bubble",
                                          action: { vm.referenceToast = nil; vm.selectAgent(thread) },
+                                         dismiss: { vm.referenceToast = nil })
+                    case .sentRemote(let thread, let name):
+                        SHReferenceToast(.sent, message: Text("Sent \(toast.piece) to \(Text(name).fontWeight(.semibold))."),
+                                         actionTitle: "Open thread", actionSymbol: "text.bubble",
+                                         action: { vm.referenceToast = nil; vm.selectRemoteAgent(hostID: thread.hostID, agentID: thread.agentID) },
                                          dismiss: { vm.referenceToast = nil })
                     case .copied:
                         SHReferenceToast(.copied, message: Text(DesignReferencePresentation.copied(toast.piece)),

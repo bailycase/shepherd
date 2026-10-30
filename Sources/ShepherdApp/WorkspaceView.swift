@@ -1046,6 +1046,8 @@ struct RemoteAgentThreadPane: View {
             },
             designChat: designChat, retainedInput: vm.remoteThreadStores.input(for: ref)
         )
+        // References to the host's own designs, where it takes them (docs/designs.md › Isolation).
+        .environment(\.designReferences, designChat ? nil : vm.remoteDesignReferenceChips(for: ref))
     }
 }
 

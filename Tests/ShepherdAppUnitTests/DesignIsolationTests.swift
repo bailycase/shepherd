@@ -92,8 +92,8 @@ struct DesignIsolationTests {
         #expect(offline.first { $0.label == "Waiting" }?.value == "1 thread")
     }
 
-    /// A host that sends its design agents (one from before `withoutDesigns`) still gives them
-    /// no row, no ⌘-digit, and no Needs you.
+    /// A host that sends its design agents gives them no thread row, no ⌘-digit, and no Needs
+    /// you; with the Design tool on, its design is a design row that opens that agent.
     @Test(arguments: [false, true])
     func aHostsDesignAgentIsNoRowHere(designToolOn: Bool) {
         var (hostState, thread, drawer) = workspace()
@@ -104,7 +104,8 @@ struct DesignIsolationTests {
             local: ShepherdState(spaces: [Self.space]),
             hosts: [SidebarSource.Host(id: host, name: "horizon", state: hostState)],
             designs: designToolOn))
-        #expect(lists.all.map(\.id) == [.remote(RemoteAgentRef(hostID: host, agentID: thread.id))])
+        #expect(lists.recents.map(\.id) == [.remote(RemoteAgentRef(hostID: host, agentID: thread.id))])
+        #expect(lists.designs.map(\.id) == (designToolOn ? [.remote(RemoteAgentRef(hostID: host, agentID: drawer.id))] : []))
         #expect(lists.needsYou.isEmpty)
         #expect(!lists.shortcutRows.contains { $0.id == .remote(RemoteAgentRef(hostID: host, agentID: drawer.id)) })
     }

@@ -8,7 +8,8 @@ public enum NativeThreadRequest: Codable, Hashable, Sendable {
     /// `designContext` in `supportedActions` and, remotely, `design.context.v1`; absent when nil.
     /// `designReferences` are design pieces the user hands an ordinary thread (a client sends each
     /// reference's string alone; the host reads the rest from the design and fences it), gated by
-    /// `designReferences` in `supportedActions`, local threads only; absent when nil.
+    /// `designReferences` in `supportedActions`, and remotely only by a host that offers
+    /// `design.references.v1`, for its own designs; absent when nil.
     /// `browserElements` are elements the user picked in the thread's Browser (the host fences
     /// them ahead of the message, `BrowserElementFence`), gated by `browserElements` in
     /// `supportedActions`; absent when nil.

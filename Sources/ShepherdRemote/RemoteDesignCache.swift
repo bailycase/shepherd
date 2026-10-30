@@ -322,6 +322,43 @@ public final class RemoteDesignSource: DesignFileSource, @unchecked Sendable {
         return String(decoding: data, as: UTF8.self)
     }
 
+    /// The custom properties the design's synced stylesheets declare (`ds/*/tokens.css` and the
+    /// rest of its project): what Tweak snaps to, as the host reads its project folder.
+    public func projectTokens() async -> DesignTokens {
+        guard let index = try? await sync() else { return DesignTokens() }
+        var tokens = DesignTokens()
+        for file in index.files.sorted(by: { $0.path < $1.path }) where ["css", "scss", "less"].contains(file.path.split(separator: ".").last.map { $0.lowercased() } ?? "") {
+            guard let data = cache.object(key, sha256: file.sha256) else { continue }
+            tokens = tokens.merged(with: DesignTokens.read(css: String(decoding: data, as: UTF8.self)))
+        }
+        return tokens
+    }
+
+    /// The files an export of `boards` writes, from this device's synced copy: the boards and
+    /// every board they import, the project's other files, and the uploads they name, as the
+    /// host's own export gathers them.
+    public func exportFiles(boards: [DesignPath]) async throws -> DesignExportFiles {
+        let index = try await sync()
+        var sources: [DesignPath: String] = [:]
+        for file in index.files {
+            guard let path = DesignPath(file.path), let data = cache.object(key, sha256: file.sha256) else { continue }
+            sources[path] = String(decoding: data, as: UTF8.self)
+        }
+        for path in boards where sources[path] == nil { throw RemoteHostClientError.rejected(code: "no_such_board", message: "no board at \(path)") }
+        let members = DesignBundle.members(boards) { sources[$0] }
+        var support: [String: Data] = [:]
+        for file in index.files where !file.path.hasSuffix(DesignPath.fileExtension) || file.path.hasPrefix("ds/") {
+            if let data = cache.object(key, sha256: file.sha256) { support[file.path] = data }
+        }
+        let texts = members.compactMap { sources[$0] } + support.filter { $0.key.hasSuffix(".css") }.map { String(decoding: $0.value, as: UTF8.self) }
+        var assets: [String: DesignExportFiles.Asset] = [:]
+        for blob in Set(texts.flatMap { DesignBundle.blobIDs(in: $0) }).sorted() {
+            if let asset = await self.blob(blob) { assets[blob] = DesignExportFiles.Asset(name: asset.name, data: asset.data) }
+        }
+        return DesignExportFiles(index: index.snapshot.index, boards: boards, members: members,
+                                 sources: sources.filter { members.contains($0.key) }, support: support, assets: assets)
+    }
+
     // MARK: DesignFileSource
 
     public func projectFile(_ path: String) async -> Data? {

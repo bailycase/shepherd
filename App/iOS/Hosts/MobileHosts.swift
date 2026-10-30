@@ -39,6 +39,8 @@ final class MobileHost: Identifiable {
     /// revision, its comments' revision, or both. Set by `HostDesignLibraries`, which hands it to
     /// the iPhone's and the iPad's designs alike.
     @ObservationIgnored var onDesignChanged: ((DesignID, UInt64?, UInt64?) -> Void)?
+    /// The host's design systems changed (`design.systems.v1`). Set by `HostDesignLibraries`.
+    @ObservationIgnored var onDesignSystemsChanged: (() -> Void)?
     /// The host's missions (`missions.v1`, while its Missions experiment is on): read on connect,
     /// pulled again on each pushed hint.
     let missions: RemoteMissions
@@ -316,6 +318,12 @@ final class MobileHosts {
             MainActor.assumeIsolated {
                 guard let host, host.attempt == attempt else { return }
                 host.onDesignChanged?(design, revision, comments)
+            }
+        }
+        client.onDesignSystemsChanged = { [weak host] in
+            MainActor.assumeIsolated {
+                guard let host, host.attempt == attempt else { return }
+                host.onDesignSystemsChanged?()
             }
         }
         client.onMissionChanged = { [weak host] mission, revision in

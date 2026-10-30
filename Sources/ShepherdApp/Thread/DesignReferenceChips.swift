@@ -62,6 +62,8 @@ final class DesignReferenceChips {
     }
 
     let agentID: AgentID
+    /// Where the picker's designs are, as it says so: this Mac, or a host's name.
+    var place = MentionPickerContent.thisMac
     private(set) var sent: [UUID: Sent] = [:]
     /// Composer chips' standing, by their reference's string.
     private(set) var pinned: [String: DesignReferenceFreshness] = [:]
@@ -162,7 +164,8 @@ final class DesignReferenceChips {
             guard catalogLoad.finish(request) else { return }
             if catalog != next { catalog = next }
         } else {
-            guard catalogLoad.fail(request, reason: "Reading this Mac’s designs took too long.") else { return }
+            let whose = place == MentionPickerContent.thisMac ? "this Mac’s" : "\(place)’s"
+            guard catalogLoad.fail(request, reason: "Reading \(whose) designs took too long.") else { return }
         }
         publishCatalogStage()
     }
@@ -249,11 +252,7 @@ final class DesignReferenceChips {
 
     /// design › board › element, from what a message's record says.
     static func crumbs(_ record: DesignReferenceRecord) -> [String] {
-        var crumbs = [record.design ?? "Design"]
-        if let page = record.page { crumbs.append("Page · " + (record.pageTitle ?? page)) }
-        if let board = record.board { crumbs.append(record.boardTitle ?? DesignPath(board)?.stem ?? board) }
-        if record.element != nil { crumbs.append(record.elementLabel.map { "“\($0)”" } ?? "element") }
-        return crumbs
+        DesignReferencePresentation.crumbs(record)
     }
 
     /// A composer chip's crumbs, from its label ("Checkout › A · Funnel first › button “Pay”").
