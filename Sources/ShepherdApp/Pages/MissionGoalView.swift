@@ -651,6 +651,7 @@ private enum BriefField: Hashable { case destination, context, contract, size }
 
 /// The mission brief: every section edits in place while the mission is not running.
 struct MissionBrief: View {
+    @Environment(\.missionHostName) private var missionHost
     let mission: Mission
     var specKitReports: [SpaceID: SpecKitPreflight] = [:]
     let busy: Bool
@@ -799,7 +800,7 @@ struct MissionBrief: View {
             fact("Limits", "\(MissionFormat.tokens(limits.tokens)) · \(MissionFormat.duration(limits.seconds)) · \(limits.dollars.formatted(.currency(code: "USD").precision(.fractionLength(0))))",
                  note: "\(limits.concurrentStations) at once · \(limits.retries) retries")
             fact("Model", mission.run?.model ?? "—", note: nil)
-            fact("Runs on", "This Mac", note: "fresh worktrees")
+            fact("Runs on", missionHost, note: "fresh worktrees")
         }
     }
 

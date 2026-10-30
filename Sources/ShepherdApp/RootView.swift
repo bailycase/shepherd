@@ -271,7 +271,14 @@ private struct DestinationLayer: View {
     var body: some View {
         switch vm.shownDestination {
         case .newThread?: NewThreadPage(vm: vm, chrome: chrome)
-        case .missions?: MissionsDestination(controller: vm.missions, chrome: chrome)
+        case .missions?:
+            if let host = vm.missionsHost, let driver = vm.missionDriver(for: host) {
+                MissionsDestination(controller: driver, chrome: chrome)
+                    .environment(\.missionHostName, vm.remoteHosts.connections.first { $0.id == host }?.config.name ?? "Host")
+                    .id(host)
+            } else {
+                MissionsDestination(controller: vm.missions, chrome: chrome)
+            }
         case .designs?: DesignsDestination(vm: vm, chrome: chrome)
         case .newDesign?: NewDesignPage(vm: vm, chrome: chrome)
         case .designSystem?: DesignSystemDestination(vm: vm, chrome: chrome)

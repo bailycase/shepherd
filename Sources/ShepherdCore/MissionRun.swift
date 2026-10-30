@@ -199,3 +199,15 @@ public struct MissionGitSnapshot: Codable, Hashable, Sendable {
 public extension ShepherdState {
     func isMissionAgent(_ id: AgentID) -> Bool { missions.contains { $0.run?.attempts.contains { $0.agentID == id } == true } }
 }
+
+public extension MissionRun {
+    /// One of this run's agents: a turn's, or a Spec Kit repository's planning thread.
+    static func owns(_ run: MissionRun, agent: AgentID) -> Bool {
+        run.attempts.contains { $0.agentID == agent } || run.specKit?.lanes.contains { $0.plannerAgentID == agent } == true
+    }
+
+    /// The planner's thread: a planning turn's (map runner) or a repository's Spec Kit planning thread.
+    func isPlanner(_ agent: AgentID) -> Bool {
+        specKit?.lanes.contains { $0.plannerAgentID == agent } == true || attempts.contains { $0.agentID == agent && $0.stationID == nil }
+    }
+}

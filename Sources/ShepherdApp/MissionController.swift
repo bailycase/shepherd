@@ -48,6 +48,8 @@ final class MissionController {
     @ObservationIgnored var reviewInfo: [MissionID: [SpaceID: RemoteCommitInfo]] = [:]
     /// A running Spec Kit mission's agent turns, at most its concurrent-station limit at once across every repository.
     @ObservationIgnored var agentSlots: [MissionID: MissionSlots] = [:]
+    /// What `liveOutput` and `attemptOutput` last published to paired devices, by mission (`publishLiveOutput`).
+    @ObservationIgnored var publishedLive: [MissionID: RemoteMissionLive] = [:]
 
     init(vm: ShepherdViewModel) { self.vm = vm; server = vm.server }
     var records: [Mission] { vm?.state.missions ?? [] }

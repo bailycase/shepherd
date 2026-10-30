@@ -329,7 +329,8 @@ public struct MissionPlan: Codable, Hashable, Sendable {
 }
 
 public extension ShepherdState {
-    /// Missions remain owner-local. Ordinary fleet snapshots must not expose their contents.
+    /// Missions never ride ordinary fleet snapshots (a record can approach the frame cap): a client
+    /// that lists `missions.v1` reads them through its own requests.
     var withoutMissions: ShepherdState {
         var copy = self
         copy.missions = []

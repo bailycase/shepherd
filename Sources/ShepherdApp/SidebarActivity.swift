@@ -47,22 +47,27 @@ enum SidebarActivityItem: Identifiable, Equatable {
 
 /// A mission's sidebar row: its name, state dot and what it is doing or waiting on.
 struct SidebarMission: Equatable, Identifiable {
-    let id: MissionID
+    let mission: MissionID
     let title: String
     let state: AgentState
     let word: String
     let needsYou: Bool
     var selected = false
+    /// The connected host it runs on; nil is This Mac.
+    var host: UUID? = nil
+    var id: String { "\(host?.uuidString ?? "local")/\(mission.rawValue)" }
 
-    /// Waiting on you first, then working, then the rest; newest first within each.
-    static func rows(_ missions: [Mission], selected: MissionID?) -> [SidebarMission] {
+    /// Waiting on you first, then working, then the rest; newest first within each. A host's
+    /// missions name it after their word.
+    static func rows(_ missions: [Mission], selected: MissionID?, host: (id: UUID, name: String)? = nil) -> [SidebarMission] {
         let rows = missions.reversed().map { mission in
             let pill = mission.pill
-            return SidebarMission(id: mission.id, title: mission.draft.title.isEmpty ? mission.draft.goal : mission.draft.title,
+            let word = String(pill.label.lowercased().split(separator: " · ").first ?? "")
+            return SidebarMission(mission: mission.id, title: mission.draft.title.isEmpty ? mission.draft.goal : mission.draft.title,
                                   // One short word, like a design's board count: amber already says it needs you.
-                                  state: pill.state, word: String(pill.label.lowercased().split(separator: " · ").first ?? ""),
+                                  state: pill.state, word: host.map { "\(word) · \($0.name)" } ?? word,
                                   needsYou: pill.state == .attention,
-                                  selected: mission.id == selected)
+                                  selected: mission.id == selected, host: host?.id)
         }
         func rank(_ row: SidebarMission) -> Int { row.needsYou ? 0 : row.state == .running ? 1 : 2 }
         return rows.enumerated().sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }.map(\.element)
@@ -123,20 +128,43 @@ extension ShepherdViewModel {
     var sidebarMissions: [SidebarMission] {
         // Hidden with the experiment; the missions and their receipts stay.
         guard settings.missionsEnabled else { return [] }
-        return SidebarMission.rows(state.missions, selected: shownDestination == .missions ? missions.selectedID : nil)
+        let shown = shownDestination == .missions
+        let local = SidebarMission.rows(state.missions, selected: shown && missionsHost == nil ? missions.selectedID : nil)
+        // Each connected host's missions (`missions.v1`), in configured order, after This Mac's.
+        return local + remoteHosts.connections.flatMap { connection in
+            SidebarMission.rows(connection.missions.records,
+                                selected: shown && missionsHost == connection.id ? remoteMissionDrivers[connection.id]?.selectedID : nil,
+                                host: (connection.id, connection.config.name))
+        }
     }
 
-    /// A mission's sidebar row: the Missions page on that mission.
-    func openMission(_ id: MissionID) {
+    /// A host's missions behind the Missions page, made on first use; nil for a host that is gone.
+    func missionDriver(for host: UUID) -> RemoteMissionDriver? {
+        if let driver = remoteMissionDrivers[host] { return driver }
+        guard let connection = remoteHosts.connections.first(where: { $0.id == host }) else { return nil }
+        let driver = RemoteMissionDriver(connection: connection, vm: self)
+        remoteMissionDrivers[host] = driver
+        return driver
+    }
+
+    /// A mission's sidebar row: the Missions page on that mission, on This Mac or `host`.
+    func openMission(_ id: MissionID, host: UUID? = nil) {
         guard settings.missionsEnabled else { return }
-        missions.selectedID = id
+        if let host {
+            guard let driver = missionDriver(for: host) else { return }
+            driver.selectedID = id
+        } else {
+            missions.selectedID = id
+        }
+        missionsHost = host
         openDestination(.missions)
     }
 
-    /// The Missions section's "New mission": the Missions page's start page.
+    /// The Missions section's "New mission": the Missions page's start page, on This Mac.
     func openNewMission() {
         guard settings.missionsEnabled else { return }
         missions.selectedID = nil
+        missionsHost = nil
         missionStartRequested = true
         openDestination(.missions)
     }

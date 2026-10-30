@@ -357,12 +357,12 @@ struct RemoteRequestTests {
         switch request {
         case .pushRegistration, .pushUnregister, .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
              .closePane, .resizePaneSplit, .listDir, .listModels, .addSpace, .createAgent, .upload,
-             .creationOptions, .creationBranches, .agentQuery, .agentAction, .automation, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .projects, .logicalProjects, .projectExecution, .design,
+             .creationOptions, .creationBranches, .agentQuery, .agentAction, .automation, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .projects, .logicalProjects, .projectExecution, .design, .mission,
              .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer, .hostConfig:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 39
+    static let caseCount = 40
 
     static let samples: [RemoteRequest] = [
         .pushRegistration(id: 93, registration: RemotePushRegistration(id: "11111111-2222-3333-4444-555555555555", sendToken: String(repeating: "a", count: 64))),
@@ -406,6 +406,7 @@ struct RemoteRequestTests {
         .logicalProjects(id: 31, request: .list),
         .projectExecution(id: 33, request: .execute(ProjectExecutionWireTests.assignment)),
         .design(id: 31, request: .boards(designID: RemoteDesignSamples.design, paths: nil, knownShas: [:])),
+        .mission(id: 34, request: .action(missionID: RemoteMissionSamples.mission.id, revision: 4, action: .publish(fingerprint: "f00d"))),
         .tunnel(.open(tunnel: 7, agentID: S.agent, port: 5173)),
         .browserClaim(id: 33, agentID: S.agent),
         .browserRelease(agentID: S.agent),
@@ -575,11 +576,12 @@ struct RemoteReplyTests {
         case .nativeThread, .uploadResult, .creationOptions, .helloOk, .agentResult, .ok, .paneOpened, .error,
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
              .agentCreated, .automationResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged,
+             .mission, .missionChanged, .missionLive,
              .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .hostConfig:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 36
+    static let caseCount = 39
 
     static let samples: [RemoteReply] = [
         .hostUpdate(id: 90, status: HostUpdateStatus(version: "1", build: "2", channel: "nightly", phase: .available,
@@ -620,6 +622,9 @@ struct RemoteReplyTests {
         .projectExecutionChanged(key: ProjectExecutionWireTests.key, revision: 2),
         .design(id: 32, result: .ok),
         .designChanged(designID: RemoteDesignSamples.design, revision: 8, commentsRevision: 2),
+        .mission(id: 35, result: .mission(RemoteMissionSamples.mission)),
+        .missionChanged(missionID: RemoteMissionSamples.mission.id, revision: 5),
+        .missionLive(missionID: RemoteMissionSamples.mission.id, live: RemoteMissionLive(output: "Reading orders-svc", attempts: [RemoteMissionSamples.attempt: "Editing"])),
         .capabilitiesChanged(capabilities: [RemoteProtocol.designsCapability]),
         .tunnel(.data(tunnel: 7, bytes: Data("HTTP/1.1 200 OK\r\n\r\n".utf8))),
         .browserClaimed(id: 33, url: "http://localhost:5173/checkout"),
@@ -979,6 +984,8 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.designsCapability, RemoteProtocol.designMarkupCapability, RemoteProtocol.designDeleteCapability,
             // Offered only to a client that lists it in hello.
             RemoteProtocol.filesCapability,
+            // Offered only while the host's Missions experiment is on, and only to a client that lists it.
+            RemoteProtocol.missionsCapability,
         ]
         #expect(Set(RemoteProtocol.capabilities) == Set(named))
         #expect(RemoteProtocol.capabilities.count == named.count)
@@ -1006,6 +1013,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.missionsExperimentCapability == "experiments.missions.v1")
         #expect(!RemoteProtocol.designCapabilities.contains(RemoteProtocol.designToolExperimentCapability))
         #expect(RemoteProtocol.filesCapability == "files.v1")
+        #expect(RemoteProtocol.missionsCapability == "missions.v1")
         #expect(RemoteProtocol.clientCapabilities.contains(RemoteProtocol.filesCapability))
         #expect(RemoteProtocol.nativeThreadStartingCapability == "native.thread.starting.v1")
         #expect(RemoteProtocol.nativeQueueCapability == "native.queue.v1")

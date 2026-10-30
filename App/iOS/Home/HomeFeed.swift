@@ -70,7 +70,7 @@ final class HomeFeed {
         let (next, connections) = withObservationTracking {
             (hosts.hosts.map { host in
                 FleetHost(id: host.id, name: host.name, address: host.record.address, port: host.record.port,
-                          phase: host.phase, state: host.state, lastSeen: host.lastSeen, designs: designs.serving.contains(host.id))
+                          phase: host.phase, state: host.threadState, lastSeen: host.lastSeen, designs: designs.serving.contains(host.id))
             }, Dictionary(hosts.hosts.compactMap { host in host.session.map { (host.id, $0) } }, uniquingKeysWith: { a, _ in a }))
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in self?.track() }
@@ -150,7 +150,9 @@ final class HomeFeed {
         let previews = host.supports(RemoteProtocol.nativeThreadPreviewCapability)
         var quietReads = 0
         // A design's agent has no thread row to read for (its design is the row).
-        for agent in host.state.agents where !host.state.isDesignAgent(agent) {
+        // Nor has a mission's agent: its mission is the row.
+        let state = host.threadState
+        for agent in state.agents where !state.isDesignAgent(agent) {
             let ref = FleetRef(host: host.id, agent: agent.id)
             let digest = digests[ref]
             // A thread open on this device was read by its own store: Home takes that.

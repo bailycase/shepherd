@@ -65,6 +65,9 @@ final class ShepherdViewModel {
     @ObservationIgnored lazy var missions = MissionController(vm: self)
     /// The sidebar's "New mission" was pressed; the Missions page opens its start page and clears it.
     var missionStartRequested = false
+    /// The host whose missions the Missions page shows; nil is This Mac.
+    var missionsHost: UUID?
+    @ObservationIgnored var remoteMissionDrivers: [UUID: RemoteMissionDriver] = [:]
     @ObservationIgnored lazy var projectCoordinator = ProjectCoordinatorController(vm: self)
     var selectedSpaceID: SpaceID?
     /// This Mac's spaces whose folder is gone (`checkMissingSpaces`): the sidebar marks them and
@@ -905,6 +908,7 @@ final class ShepherdViewModel {
         installRemoteInspection()
         installHostSettings()
         installHostInventory()
+        missions.installRemote()
         installHostConfig()
         installCompactionThreshold()
         server.onRemoteAgentAction = { [weak self] agentID, action, completion in

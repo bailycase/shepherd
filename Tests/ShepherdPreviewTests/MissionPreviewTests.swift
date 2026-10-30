@@ -1,6 +1,7 @@
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 import ShepherdTestSupport
 import ShepherdUI
 import SwiftUI
@@ -90,6 +91,44 @@ extension PreviewTests {
                 RootView(vm: vm).environment(\.missionInitialPanes, MissionInitialPanes(creating: true, startGoal: fixture.draft.draft.goal, startSpaces: chosen))
             }
         }
+    }
+}
+
+/// A connected host's missions (`missions.v1`) beside This Mac's: their sidebar rows name the host,
+/// and the same pages drive them through the host, its name in the header's chip.
+extension PreviewTests {
+    @Test func remoteHostMissions() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let fixture = try MissionPreviewFixture(dir: workspace.dir)
+        try await fixture.seed(workspace)
+        let vm = workspace.vm
+        vm.settings.missionsEnabled = true
+        vm.remoteHosts.addHost(name: "Studio", host: "127.0.0.1", port: 1, token: "x")
+        let connection = try #require(vm.remoteHosts.connections.first)
+        let records = [fixture.running, fixture.review]
+        let options = RemoteMissionStartOptions(models: ["anthropic/claude-opus"], defaultModel: "anthropic/claude-opus", spaces: fixture.spaces)
+        connection.missions.connect({ request in
+            switch request {
+            case .list: return .list(records.map(RemoteMissionSummary.init))
+            case .get(let id):
+                // What the host's working turns say now, as its own Run page shows it.
+                let record = records.first { $0.id == id }!
+                let working = record.run?.attempts.filter { $0.status == .running }.map(\.id) ?? []
+                let words = "Partitioning analytics.checkout_funnel by month; replaying the topic twice shows no double counts."
+                return .mission(record, live: RemoteMissionLive(output: working.isEmpty ? "" : words,
+                                                                attempts: Dictionary(uniqueKeysWithValues: working.map { ($0, words) })))
+            case .startOptions: return .startOptions(options)
+            default: throw MissionError("preview", "Previews change nothing.")
+            }
+        }, available: true)
+        await connection.missions.refresh()
+        vm.openMission(fixture.running.id, host: connection.id)
+        try await Preview.render("missions-remote-run", size: CGSize(width: 1440, height: 900),
+                                 ready: { vm.remoteMissionDrivers[connection.id]?.availableModels.isEmpty == false }) { RootView(vm: vm) }
+        vm.remoteMissionDrivers[connection.id]?.selectedID = nil
+        try await Preview.render("missions-remote-list", size: CGSize(width: 1440, height: 900),
+                                 ready: { vm.remoteMissionDrivers[connection.id]?.availableModels.isEmpty == false }) { RootView(vm: vm) }
     }
 }
 

@@ -254,17 +254,7 @@ struct MissionServiceTests {
         #expect(try host.persisted().missions.isEmpty)
     }
 
-    @Test func fetchedAndBroadcastFleetSnapshotsDoNotExposeMissionDrafts() async throws {
-        let remote = try RemoteHost()
-        defer { remote.stop() }
-        let mission = try await remote.server.createMission(draft: .init(title: "Private brief", goal: "Unpublished planning context"))
-        let client = try await remote.raw()
-        try client.send(.stateFetch(id: 2))
-        guard case .state(2, let fetched) = try await client.next() else { Issue.record("Expected fleet snapshot"); return }
-        #expect(fetched.missions.isEmpty)
-        try await remote.server.addSpace(Space(name: "Other mutation", path: remote.host.dir.path))
-        guard case .stateChanged(let pushed) = try await client.next() else { Issue.record("Expected broadcast"); return }
-        #expect(pushed.missions.isEmpty)
-        #expect(try remote.host.persisted().missions == [mission])
-    }
+    // A client without `missions.v1` still gets no missions, and one with it only through its own
+    // requests: RemoteMissionTests.aClientWithoutMissionsGetsNoneInStateRequestsOrPushes and
+    // aCapableClientListsReadsAndHearsOfChangesWhileTheHostServesMissions.
 }
