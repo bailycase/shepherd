@@ -118,4 +118,47 @@ struct RemoteDesignFlowTests {
         await vm.loadRemoteDesigns()
         #expect(vm.remoteDesignSections.first?.cards.map(\.name) == ["Checkout funnel dashboard"])
     }
+
+    /// A host's design whose agent is gone opens here: the host's app starts a fresh one
+    /// (`design.agent.v1`). Duplicate, Export's files and the host's New design go through it too.
+    @Test func aHostsDesignWithoutAnAgentOpensAndChangesThroughTheHost() async throws {
+        try StubPi.installAsEngine()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
+        defer { local.stop(); remote.stop() }
+        let (vm, connection, _, _) = try await host(local, remote)
+        let hostServer = remote.host.server
+        let bare = Design(name: "Onboarding", createdAt: 2_000)
+        _ = try await hostServer.createDesign(bare)
+        try await DesignFixtures.draw(Array(DesignFixtures.checkout.prefix(1)), in: bare.id, on: hostServer)
+        try await eventuallyOnMain("the design to reach this Mac") { connection.state.designs.contains { $0.id == bare.id } }
+        #expect(connection.supportsDesignCapability(RemoteProtocol.designAgentCapability))
+
+        let ref = RemoteDesignRef(hostID: connection.id, designID: bare.id)
+        vm.openRemoteDesign(ref)
+        try await eventuallyOnMain("the host's fresh agent on screen", timeout: .seconds(30)) {
+            vm.selectedRemoteAgent.flatMap { vm.remoteDesign(drawnBy: $0) }?.design.id == bare.id
+        }
+        #expect(hostServer.state.agents.filter { $0.designID == bare.id }.count == 1)
+        #expect(vm.remoteActionError == nil)
+
+        // Export draws from this Mac's synced copy.
+        let files = try await connection.designs.source(bare.id).exportFiles(boards: [try #require(DesignPath("A.dc.html"))])
+        #expect(files.members.map(\.rawValue) == ["A.dc.html"] && files.sources.count == 1)
+
+        // Duplicate is the host's own; its copy lists with the host's designs.
+        vm.performDesignMenu(.duplicate, on: .remote(ref))
+        try await eventuallyOnMain("the copy on the host") { hostServer.state.designs.contains { $0.name == "Onboarding copy" } }
+
+        // New design with the host chosen makes it there, and its canvas opens here.
+        vm.openNewDesign()
+        vm.newDesign.choose(host: connection.id)
+        vm.newDesign.brief = "A settings page"
+        #expect(vm.newDesign.blocker(vm) == nil)
+        vm.newDesign.send(vm)
+        try await eventuallyOnMain("the host's new design on screen", timeout: .seconds(30)) {
+            !vm.newDesign.starting && vm.selectedRemoteAgent.flatMap { vm.remoteDesign(drawnBy: $0) }?.design.name != bare.name
+                && vm.selectedRemoteAgent.flatMap { vm.remoteDesign(drawnBy: $0) } != nil
+        }
+        #expect(hostServer.state.designs.count == 4)
+    }
 }

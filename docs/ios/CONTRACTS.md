@@ -164,9 +164,10 @@ them except the navigator, which is each window's own ([Windows](#windows-ipad))
 
 `@Environment(\.mobileWindow)` is the window a view is in (its `MobileWindowSeed`).
 
-- `MobileHosts` owns every client's `onDesignChanged` and `onCapabilitiesChanged`: a host's
-  `capabilities` follow the pushes, and `MobileHost.onDesignChanged` hears its design pushes.
-  `HostDesignLibraries` (`Hosts/`) alone sets that hook, and keeps one `RemoteDesignLibrary` per
+- `MobileHosts` owns every client's `onDesignChanged`, `onDesignSystemsChanged` and
+  `onCapabilitiesChanged`: a host's `capabilities` follow the pushes, and
+  `MobileHost.onDesignChanged` and `onDesignSystemsChanged` hear its design pushes.
+  `HostDesignLibraries` (`Hosts/`) alone sets those hooks, and keeps one `RemoteDesignLibrary` per
   host over one file cache for both design tracks (K and L): each says which designs it has on
   screen (`watch(_:on:for:)`), the host is told them all, and every track hears the pushes
   (`observe`).

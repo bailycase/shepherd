@@ -54,6 +54,14 @@ enum RemoteDesignSamples {
         .settleProposals(designID: design, proposals: ["call-7#0", "call-7#1"], deliver: false, baseRevision: nil),
         .delete(designID: design),
         .undoDelete(designID: design),
+        .ensureAgent(designID: design),
+        .duplicate(designID: design),
+        .removeFromRecents(designID: design),
+        .systemFile(namespace: "acme-web", path: "components/Button.dc.html", offset: 262_144),
+        .renameSystem(namespace: "acme-web", title: "Acme \"web\""),
+        .duplicateSystem(namespace: "acme-web"),
+        .deleteSystem(namespace: "acme-web"),
+        .resyncSystem(namespace: "acme-web"),
     ]
 
     static let markup = DesignMarkup(strokes: [
@@ -96,6 +104,10 @@ enum RemoteDesignSamples {
         .proposalsSettled([kept, settled], undelivered: nil),
         .proposalsSettled([], undelivered: "The design has no agent."),
         .deleted(DesignDeletion(designID: design, name: "Checkout funnel", undoUntil: 1_700_000_010_000)),
+        .agent(AgentID(rawValue: "agent")),
+        .designDuplicated(record),
+        .systemChanged(system),
+        .systemSynced(DesignSystemSyncResult(summary: system, changes: DesignSystemSyncChanges())),
         .ok,
     ]
 }
@@ -123,7 +135,8 @@ struct RemoteDesignMessageTests {
         switch request {
         case .list, .index, .boards, .file, .asset, .comments, .addComment, .replyToComment, .resolveComment, .writeBoards,
              .updateIndex, .duplicateBoard, .restoreVersions, .system, .watch, .create, .sendMarkup, .settleProposals,
-             .delete, .undoDelete:
+             .delete, .undoDelete, .ensureAgent, .duplicate, .removeFromRecents, .systemFile, .renameSystem, .duplicateSystem,
+             .deleteSystem, .resyncSystem:
             Wire.caseName(request)
         }
     }
@@ -131,20 +144,21 @@ struct RemoteDesignMessageTests {
     static func caseName(_ result: RemoteDesignResult) -> String {
         switch result {
         case .listing, .index, .files, .chunk, .comments, .comment, .written, .boardsWritten, .duplicated, .system, .created,
-             .markupSent, .proposalsSettled, .deleted, .ok:
+             .markupSent, .proposalsSettled, .deleted, .agent, .designDuplicated, .systemChanged, .systemSynced, .ok:
             Wire.caseName(result)
         }
     }
 
     @Test func samplesCoverEveryCase() {
-        #expect(Set(S.requests.map(Self.caseName)).count == 20)
-        #expect(Set(S.results.map(Self.caseName)).count == 15)
+        #expect(Set(S.requests.map(Self.caseName)).count == 28)
+        #expect(Set(S.results.map(Self.caseName)).count == 19)
     }
 
     @Test(arguments: [
         RemoteReply.designChanged(designID: RemoteDesignSamples.design, revision: 8, commentsRevision: nil),
         .designChanged(designID: RemoteDesignSamples.design, revision: nil, commentsRevision: 6),
         .designChanged(designID: RemoteDesignSamples.design, revision: 9, commentsRevision: 6),
+        .designSystemsChanged,
         .capabilitiesChanged(capabilities: RemoteProtocol.capabilities),
         .capabilitiesChanged(capabilities: []),
     ])
@@ -161,6 +175,8 @@ struct RemoteDesignMessageTests {
     @Test func bothSidesListDesigns() {
         #expect(RemoteProtocol.capabilities.contains(RemoteProtocol.designsCapability))
         #expect(RemoteProtocol.clientCapabilities.contains(RemoteProtocol.designsCapability))
+        #expect(RemoteProtocol.clientCapabilities.contains(RemoteProtocol.designSystemsCapability))
+        #expect(RemoteProtocol.designCapabilities.isSubset(of: Set(RemoteProtocol.capabilities)))
     }
 
     /// Pencil markup and its proposals need the host to offer markup too, and Delete and its
@@ -178,6 +194,21 @@ struct RemoteDesignMessageTests {
                 #expect(request.capability == RemoteProtocol.designDeleteCapability)
                 #expect(request.writes)
                 #expect(request.designID == S.design)
+            case .ensureAgent:
+                #expect(request.capability == RemoteProtocol.designAgentCapability)
+                #expect(request.designID == S.design)
+            case .duplicate, .removeFromRecents:
+                #expect(request.capability == RemoteProtocol.designLifecycleCapability)
+                #expect(request.writes)
+                #expect(request.designID == S.design)
+            case .systemFile:
+                #expect(request.capability == RemoteProtocol.designSystemsCapability)
+                #expect(!request.writes)
+                #expect(request.designID == nil)
+            case .renameSystem, .duplicateSystem, .deleteSystem, .resyncSystem:
+                #expect(request.capability == RemoteProtocol.designSystemsCapability)
+                #expect(request.writes)
+                #expect(request.designID == nil)
             default:
                 #expect(request.capability == nil)
             }

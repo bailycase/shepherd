@@ -246,6 +246,9 @@ struct SidebarRowMenu: View {
                     Divider()
                 }
                 Button("Host Offline") {}.disabled(true)
+            } else if let (_, design) = vm.remoteDesign(drawnBy: ref) {
+                let target = DesignTarget.remote(RemoteDesignRef(hostID: ref.hostID, designID: design.id))
+                DesignMenuItems(menu: vm.designMenu(target, context: .recents)) { vm.performDesignMenu($0, on: target) }
             } else {
                 RemoteRowMenu(vm: vm, row: row, ref: ref)
             }

@@ -47,23 +47,24 @@ struct DesignMenu: Hashable {
     /// A design's menu (DesignCardMenu, DesignRecentsMenu, DesignToolbarMenu): Open (in its own
     /// toolbar, Show design system in its place, after Export), Rename…, Duplicate, Export…,
     /// Remove from Recents in Recents, then Delete design…. A host's design (`remote`) offers what
-    /// its host does: Duplicate, Export and Remove from Recents stay here only, and Delete needs
-    /// a host that deletes for other devices (`hostDeletes`). In its own toolbar, a local design
+    /// its host does: Export draws here; Duplicate and Remove from Recents need a host that does
+    /// them for other devices (`hostLifecycle`), and Delete one that deletes (`hostDeletes`). In
+    /// its own toolbar, a local design
     /// also offers "Implement <piece>…" and Copy reference for what is selected (`reference`, the
     /// piece's name; the design's own with nothing selected).
     static func design(_ context: DesignMenuContext, hasSystem: Bool, remote: String? = nil, hostDeletes: Bool = true,
-                       reference: String? = nil) -> DesignMenu {
+                       hostLifecycle: Bool = false, reference: String? = nil) -> DesignMenu {
         var main: [DesignMenuItem] = []
         if context != .toolbar { main.append(DesignMenuItem(action: .open, title: "Open", symbol: "arrow.up.forward.app")) }
         main.append(DesignMenuItem(action: .rename, title: "Rename…", symbol: "pencil"))
-        if remote == nil {
+        if remote == nil || hostLifecycle {
             main.append(DesignMenuItem(action: .duplicate, title: "Duplicate", symbol: "plus.square.on.square"))
-            main.append(DesignMenuItem(action: .export, title: "Export…", symbol: "square.and.arrow.up"))
         }
+        main.append(DesignMenuItem(action: .export, title: "Export…", symbol: "square.and.arrow.up"))
         if context == .toolbar, hasSystem, remote == nil {
             main.append(DesignMenuItem(action: .showSystem, title: "Show Design System", symbol: "paintpalette"))
         }
-        if context == .recents, remote == nil {
+        if context == .recents, remote == nil || hostLifecycle {
             main.append(DesignMenuItem(action: .removeFromRecents, title: "Remove from Recents", symbol: "clock.badge.xmark"))
         }
         var delete = DesignMenuItem(action: .delete, title: "Delete Design…", symbol: "trash", destructive: true)

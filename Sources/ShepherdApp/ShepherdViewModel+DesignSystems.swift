@@ -44,6 +44,7 @@ extension ShepherdViewModel {
             return
         }
         lastDesignSystem = .system(namespace)
+        if shownRemoteSystem != nil { shownRemoteSystem = nil }
         if shownDesignSystem != namespace { shownDesignSystem = namespace }
         openDestination(.designSystem)
     }
@@ -58,6 +59,7 @@ extension ShepherdViewModel {
     /// the first listed. With no systems, it opens the Designs page.
     func openDesignSystems() {
         guard designToolEnabled else { return }
+        if shownRemoteSystem != nil { shownRemoteSystem = nil }
         switch lastDesignSystem {
         case .build(let id)? where design(id) != nil:
             openSystemBuild(id)
@@ -147,6 +149,8 @@ extension ShepherdViewModel {
         case .build(let id):
             build = design(id)
             summary = designSystems.system(builtBy: id)
+        case .remote(let ref):
+            return remoteDesignSystemPage(ref)
         }
         let namespace = summary?.namespace
         let inputs = DesignSystemPageInputs(

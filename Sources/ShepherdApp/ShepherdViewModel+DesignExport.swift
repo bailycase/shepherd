@@ -37,6 +37,47 @@ extension ShepherdViewModel {
         }
     }
 
+    /// Export… of a host's design: the sheet over this Mac's synced copy of its files, written
+    /// here by this Mac's renderer.
+    func openRemoteDesignExport(_ ref: RemoteDesignRef) {
+        guard let connection = remoteHosts.connections.first(where: { $0.id == ref.hostID }),
+              let design = connection.state.designs.first(where: { $0.id == ref.designID }) else { return }
+        let screen = remoteDesignScreens[ref]
+        var selected = Set(screen?.picks.map(\.board) ?? [])
+        if let presented = screen?.presented { selected.insert(presented) }
+        let source = connection.designs.source(ref.designID)
+        Task {
+            do {
+                let index = try await source.sync().snapshot.index
+                let model = DesignExportModel(designID: ref.designID, designName: design.name,
+                                              selection: DesignExportSelection(index: index, selected: selected), threads: designAttachTargets)
+                model.hostID = ref.hostID
+                designExport = model
+            } catch {
+                remoteActionError = "Couldn't export \(design.name): \(Self.words(error))."
+            }
+        }
+    }
+
+    /// The files an export writes and the renderer that draws them: This Mac's design's, or a
+    /// host's from this Mac's synced copy.
+    private func designExportInputs(_ model: DesignExportModel) async throws -> (files: DesignExportFiles, tokens: DesignTokens, rendering: DesignRendering) {
+        guard let host = model.hostID else {
+            let files = try await server.designExportFiles(model.designID, boards: model.selection.boards)
+            return (files, await designTokens(model.designID, files: files), designRendering)
+        }
+        guard let connection = remoteHosts.connections.first(where: { $0.id == host }), let rendering = remoteDesignRendering(host) else {
+            throw RemoteHostClientError.rejected(code: "offline", message: "the host isn't connected")
+        }
+        let source = connection.designs.source(model.designID)
+        let files = try await source.exportFiles(boards: model.selection.boards)
+        var tokens = DesignTokens()
+        for path in files.members {
+            if let text = files.sources[path] { tokens = tokens.merged(with: DesignTokens.read(board: text)) }
+        }
+        return (files, tokens.merged(with: await source.projectTokens()), rendering)
+    }
+
     /// Cancel, the close button, Escape. An export being written finishes first.
     func closeDesignExport() {
         guard designExport?.working != true else { return }
@@ -84,10 +125,9 @@ extension ShepherdViewModel {
         model.working = true
         defer { model.working = false }
         do {
-            let files = try await server.designExportFiles(model.designID, boards: model.selection.boards)
-            let tokens = await designTokens(model.designID, files: files)
-            try await designRendering.export(model.format, files: files, designID: model.designID, name: model.designName,
-                                             tokens: tokens, to: url)
+            let (files, tokens, rendering) = try await designExportInputs(model)
+            try await rendering.export(model.format, files: files, designID: model.designID, name: model.designName,
+                                       tokens: tokens, to: url)
             if designExport === model { designExport = nil }
         } catch {
             remoteActionError = "Couldn't export \(model.designName): \((error as? LocalizedError)?.errorDescription ?? "\(error)")"
@@ -102,10 +142,9 @@ extension ShepherdViewModel {
         Task {
             defer { model.working = false }
             do {
-                let files = try await server.designExportFiles(model.designID, boards: model.selection.boards)
-                let tokens = await designTokens(model.designID, files: files)
-                let attached = try await designRendering.attachments(files: files, designID: model.designID, name: model.designName,
-                                                                     tokens: tokens, into: designAttachDirectory)
+                let (files, tokens, rendering) = try await designExportInputs(model)
+                let attached = try await rendering.attachments(files: files, designID: model.designID, name: model.designName,
+                                                               tokens: tokens, into: designAttachDirectory)
                 threadStores.store(for: agentID).attach(files: attached)
                 if designExport === model { designExport = nil }
                 if state.agents.contains(where: { $0.id == agentID }) { selectAgent(agentID) }

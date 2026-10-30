@@ -35,12 +35,9 @@ struct PadDesignChatPane: View {
                         PadDesignChat(ref: agent)
                             .environment(\.designMarkupCanvas, canvas)
                     } else {
-                        // Not drawn on any board: the least that is honest.
-                        Text("This design has no agent\(hostName.map { " on \($0)" } ?? ""). Open it there to start one.")
-                            .font(.sh(.caption))
-                            .foregroundStyle(Color.sh.textTertiary)
-                            .padding(MobileLayout.gutter)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        // Not drawn on any board: the least that is honest. A host that starts
+                        // agents for other devices (`design.agent.v1`) starts one here.
+                        PadDesignNoAgent(ref: HostDesignRef(host: canvas.ref.host, design: canvas.ref.design), hostName: hostName)
                     }
                 }
                 .opacity(chat ? 1 : 0)
@@ -60,6 +57,44 @@ struct PadDesignChatPane: View {
         .clipped()
         .background(Color.sh.bgWindow.ignoresSafeArea())
         .overlay(alignment: .leading) { SHHairline(.vertical).ignoresSafeArea() }
+    }
+}
+
+/// The chat of a design with no agent on its host: Start one there, where the host does that for
+/// other devices; else where to open it.
+private struct PadDesignNoAgent: View {
+    let ref: HostDesignRef
+    let hostName: String?
+    @Environment(MobileHosts.self) private var hosts
+    @State private var starting = false
+    @State private var problem: String?
+
+    var body: some View {
+        let designs = MobileDesigns.of(hosts)
+        let starts = designs.supports(ref.host, RemoteProtocol.designAgentCapability)
+        VStack(alignment: .leading, spacing: SH.Space.m) {
+            Text(starts ? "This design has no agent\(hostName.map { " on \($0)" } ?? "") yet."
+                 : "This design has no agent\(hostName.map { " on \($0)" } ?? ""). Open it there to start one.")
+                .font(.sh(.caption))
+                .foregroundStyle(Color.sh.textTertiary)
+            if starts {
+                Button(starting ? "Starting…" : "Start its agent") {
+                    starting = true
+                    problem = nil
+                    Task {
+                        defer { starting = false }
+                        do { _ = try await designs.ensureAgent(ref) } catch { problem = MobileDesignsError.words(error) }
+                    }
+                }
+                .buttonStyle(.sh(.secondary))
+                .disabled(starting)
+            }
+            if let problem {
+                Text(problem).font(.sh(.caption)).foregroundStyle(Color.sh.failed)
+            }
+        }
+        .padding(MobileLayout.gutter)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 

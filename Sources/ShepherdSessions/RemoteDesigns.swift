@@ -122,6 +122,36 @@ struct RemoteDesignService: Sendable {
             return .deleted(try await server.deleteDesign(id))
         case .undoDelete:
             return .ok
+        case .ensureAgent:
+            // Started by the app, on the server queue's own path (`remoteEnsureDesignAgent`).
+            throw RemoteDesignRefusal("unsupported", "A design's agent is started through the host's Open.")
+        case .duplicate(let id):
+            return .designDuplicated(try await server.duplicateDesign(id))
+        case .removeFromRecents(let id):
+            try await server.removeDesignFromRecents(id)
+            return .ok
+        case .systemFile(let namespace, let path, let offset):
+            guard offset >= 0 else { throw RemoteDesignRefusal.badOffset(offset, size: nil) }
+            // ponytail: reads the whole system for each piece; a per-file read if systems grow past a few MB.
+            guard let data = try await server.designSystemContents(namespace)[path] else {
+                throw RemoteDesignRefusal(RemoteDesignCode.noSuchFile, "\(namespace) has no \(path).")
+            }
+            guard offset <= data.count else { throw RemoteDesignRefusal.badOffset(offset, size: data.count) }
+            let end = min(data.count, offset + RemoteProtocol.designChunkBytes)
+            return .chunk(RemoteDesignChunk(sha256: Self.sha256(data), offset: offset, total: data.count, data: data.subdata(in: offset..<end)))
+        case .renameSystem(let namespace, let title):
+            let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, trimmed.utf8.count <= DesignComment.maxTextBytes else {
+                throw RemoteDesignRefusal("invalid_title", "A design system needs a title.")
+            }
+            return .systemChanged(try await server.renameDesignSystem(namespace, to: trimmed))
+        case .duplicateSystem(let namespace):
+            return .systemChanged(try await server.duplicateDesignSystem(namespace))
+        case .deleteSystem(let namespace):
+            try await server.deleteDesignSystem(namespace)
+            return .ok
+        case .resyncSystem(let namespace):
+            return .systemSynced(try await server.resyncDesignSystem(namespace))
         }
     }
 

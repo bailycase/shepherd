@@ -516,6 +516,20 @@ struct DesignToolTests {
         #expect(!lists.recents.contains { $0.id == .design(design.id) })
     }
 
+    /// A host's design is a design row too, opening its agent there; its agent is no thread row.
+    @Test func aHostsDesignIsADesignRowThatOpensItsAgent() {
+        let (local, drawer, design) = sidebar(designs: true)
+        let host = UUID()
+        var source = SidebarSource(local: ShepherdState(spaces: [Self.web]), designs: true)
+        source.hosts = [SidebarSource.Host(id: host, name: "build-01", state: local.local)]
+        let lists = SidebarDerivation.lists(source)
+        let ref = SidebarRowID.remote(RemoteAgentRef(hostID: host, agentID: drawer.id))
+        #expect(lists.designs.map(\.id) == [ref])
+        #expect(lists.designs.first?.accessory == .tag("build-01"))
+        #expect(lists.designs.first?.title == design.name)
+        #expect(!lists.recents.contains { $0.id == ref })
+    }
+
     @Test func withTheToolOffDesignsHaveNoRowsAndTheirAgentsStillDont() {
         let (source, drawer, _) = sidebar(designs: false)
         let lists = SidebarDerivation.lists(source)

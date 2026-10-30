@@ -9,6 +9,14 @@ import ShepherdUI
 enum DesignSystemTarget: Hashable {
     case system(String)
     case build(DesignID)
+    /// A connected host's system (`designs.v1`), read and changed through its host.
+    case remote(RemoteSystemRef)
+}
+
+/// A design system on a connected host.
+struct RemoteSystemRef: Hashable {
+    var hostID: UUID
+    var namespace: String
 }
 
 /// A design system's page (DZSystem) as plain values: its header, where it was read from, the

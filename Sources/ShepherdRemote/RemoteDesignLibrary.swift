@@ -27,6 +27,9 @@ public final class RemoteDesignLibrary {
     private var transport: (any RemoteDesignTransport)? { link.transport }
     @ObservationIgnored private var sources: [DesignID: RemoteDesignSource] = [:]
     @ObservationIgnored private var watched: Set<DesignID> = []
+    @ObservationIgnored private var systemReads: [String: DesignSystemRead] = [:]
+    /// Moves each time the host's systems change: pages that show one read it again.
+    public private(set) var systemsRevision = 0
 
     public init(hostID: UUID, cache: RemoteDesignCache) {
         self.hostID = hostID
@@ -40,6 +43,7 @@ public final class RemoteDesignLibrary {
         listing = nil
         error = nil
         watched = []
+        systemReads = [:]
         for source in sources.values { source.invalidate() }
         sources = [:]
         onDesignChanged = nil
@@ -96,6 +100,44 @@ public final class RemoteDesignLibrary {
     /// The host pushed a change to a watched design.
     public func changed(_ id: DesignID, revision: UInt64?, commentsRevision: UInt64?) {
         onDesignChanged?(id, revision, commentsRevision)
+    }
+
+    /// The host's design systems changed (`designSystemsChanged`): its systems are read again, and
+    /// the listing that names them.
+    public func systemsChanged() {
+        systemReads = [:]
+        systemsRevision &+= 1
+        Task { await refresh() }
+    }
+
+    /// A design system whole, as the host last answered it (`system`), read on first use.
+    public func system(_ namespace: String) async throws -> DesignSystemRead {
+        if let read = systemReads[namespace] { return read }
+        guard case .system(let read) = try await request(.system(namespace: namespace)) else {
+            throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected design reply")
+        }
+        systemReads[namespace] = read
+        return read
+    }
+
+    /// Every file of a design system its page draws specimens from, fetched in pieces
+    /// (`design.systems.v1`); a file the host no longer has is left out.
+    public func systemFiles(_ namespace: String) async throws -> [String: Data] {
+        let read = try await system(namespace)
+        var files: [String: Data] = [:]
+        for path in read.files {
+            var data = Data()
+            var total = Int.max
+            while data.count < total {
+                guard case .chunk(let piece) = try await request(.systemFile(namespace: namespace, path: path, offset: data.count)),
+                      piece.offset == data.count, piece.total <= DesignImport.maxFileBytes else { break }
+                total = piece.total
+                data.append(piece.data)
+                if piece.data.isEmpty { break }
+            }
+            if data.count == total { files[path] = data }
+        }
+        return files
     }
 
     /// Asks the host whatever `request` asks, through its connection now.

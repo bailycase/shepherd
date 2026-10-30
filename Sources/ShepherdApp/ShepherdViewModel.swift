@@ -195,6 +195,10 @@ final class ShepherdViewModel {
     /// The system the Design systems page shows (a system without an agent of its own; a
     /// build's page is its agent's layout).
     var shownDesignSystem: String?
+    /// A connected host's system the Design systems page shows instead (`design.systems.v1`), and
+    /// its read once it lands.
+    var shownRemoteSystem: RemoteSystemRef?
+    var shownRemoteSystemRead: DesignSystemRead?
     /// The system page last opened: More ▸ Design systems goes back to it.
     @ObservationIgnored var lastDesignSystem: DesignSystemTarget?
     @ObservationIgnored var designSystemPageCache: [DesignSystemTarget: (inputs: DesignSystemPageInputs, model: DesignSystemPageModel)] = [:]
@@ -990,6 +994,20 @@ final class ShepherdViewModel {
             Task { @MainActor in
                 do {
                     completion(.success(try await self.createRemoteDesign(request)))
+                } catch {
+                    completion(.failure(RemoteCreateAgentError(String(describing: error))))
+                }
+            }
+        }
+        // Another device opens a design with no agent here: one starts as this Mac's Open starts it.
+        server.onRemoteEnsureDesignAgent = { [weak self] id, completion in
+            guard let self else {
+                completion(.failure(RemoteCreateAgentError("host is shutting down")))
+                return
+            }
+            Task { @MainActor in
+                do {
+                    completion(.success(try await self.ensureRemoteDesignAgent(id)))
                 } catch {
                     completion(.failure(RemoteCreateAgentError(String(describing: error))))
                 }

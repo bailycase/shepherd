@@ -54,6 +54,8 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// A design this client watches changed on the host (`RemoteDesignRequest.watch`): its files'
     /// new revision, its comments', or both. A hint to pull. Main queue.
     public var onDesignChanged: ((DesignID, UInt64?, UInt64?) -> Void)?
+    /// The host's design systems changed (`designSystemsCapability`): list them again. Main queue.
+    public var onDesignSystemsChanged: (() -> Void)?
     public var onProjectExecutionChanged: ((ProjectExecutionKey, UInt64) -> Void)?
     /// What the host offers changed while connected (its Design tool turned on or off);
     /// `capabilities` already holds the new list. Main queue.
@@ -108,6 +110,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         case output(SessionID, Data)
         case exited(SessionID, Int32?)
         case designChanged(DesignID, UInt64?, UInt64?)
+        case designSystemsChanged
         case projectExecutionChanged(ProjectExecutionKey, UInt64)
         case capabilities(Set<String>)
         case browserDrive(BrowserDrivePush)
@@ -986,7 +989,8 @@ public final class RemoteHostClient: @unchecked Sendable {
             throw RemoteHostClientError.rejected(code: "update_required", message: Self.designsRefusal)
         }
         if let needed = request.capability, !capabilities.contains(needed) {
-            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to send it Pencil markup.")
+            let what = needed == RemoteProtocol.designMarkupCapability ? "send it Pencil markup" : "do that from another device"
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to \(what).")
         }
         if Self.overFrame(.design(id: 0, request: request)) {
             throw RemoteHostClientError.rejected(code: "too_large", message: "The change exceeds the remote payload limit.")
@@ -1284,6 +1288,8 @@ public final class RemoteHostClient: @unchecked Sendable {
             push(.projectExecutionChanged(key, revision))
         case .designChanged(let designID, let revision, let commentsRevision):
             push(.designChanged(designID, revision, commentsRevision))
+        case .designSystemsChanged:
+            push(.designSystemsChanged)
         case .tunnel(let frame):
             tunnels.receive(frame)
         case .browserDrive(let push):
@@ -1345,6 +1351,7 @@ public final class RemoteHostClient: @unchecked Sendable {
                 case .exited(let sessionID, let code): self.onSessionExited?(sessionID, code)
                 case .projectExecutionChanged(let key, let revision): self.onProjectExecutionChanged?(key, revision)
                 case .designChanged(let designID, let revision, let comments): self.onDesignChanged?(designID, revision, comments)
+                case .designSystemsChanged: self.onDesignSystemsChanged?()
                 case .capabilities(let capabilities): self.onCapabilitiesChanged?(capabilities)
                 case .browserDrive(let push): self.onBrowserDrive?(push)
                 }

@@ -58,6 +58,10 @@ final class HostDesignLibraries {
             guard let self, !self.cache.isForgotten(host: id) else { return }
             for observer in self.observers.values { observer(id, design, revision, comments) }
         }
+        host.onDesignSystemsChanged = { [weak self] in
+            guard let self, !self.cache.isForgotten(host: id) else { return }
+            self.library(id).systemsChanged()
+        }
     }
 
     /// A host this device no longer knows.

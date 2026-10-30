@@ -548,3 +548,109 @@ extension RemoteDesignTests {
         #expect(host.server.state.designs.map(\.id) == [id])
     }
 }
+
+// MARK: Agents, lifecycle and systems
+
+extension RemoteDesignTests {
+    /// A design with no agent gets one from the host's app; a host without the app, or without
+    /// the capability, refuses. A system build never opens remotely.
+    @Test func aDesignWithoutAnAgentGetsOneFromTheHostsApp() async throws {
+        let host = try RemoteHost()
+        defer { host.stop() }
+        host.server.setDesignsServed(true)
+        let id = try await design(host)
+        let raw = try await designClient(host)
+        #expect(try await refusal(raw, 2, .ensureAgent(designID: id)) == "unsupported")
+
+        let asked = Locked<[DesignID]>([])
+        let agent = AgentID()
+        host.server.onRemoteEnsureDesignAgent = { design, completion in
+            asked.withValue { $0.append(design) }
+            completion(.success(agent))
+        }
+        #expect(try await answer(raw, 3, .ensureAgent(designID: id)) == .agent(agent))
+        #expect(asked.current == [id])
+        #expect(try await refusal(raw, 4, .ensureAgent(designID: DesignID())) == DesignStoreError.noSuchDesign(DesignID()).code)
+        host.server.onRemoteEnsureDesignAgent = { _, completion in completion(.failure(RemoteCreateAgentError("no model"))) }
+        #expect(try await refusal(raw, 5, .ensureAgent(designID: id)) == "start_failed")
+
+        host.server.advertisedCapabilities = RemoteProtocol.capabilities.filter { $0 != RemoteProtocol.designAgentCapability }
+        #expect(try await refusal(raw, 6, .ensureAgent(designID: id)) == "unsupported")
+    }
+
+    /// Duplicate and Remove from Recents go through the host's own.
+    @Test func duplicateAndRemoveFromRecentsAreTheHostsOwn() async throws {
+        let host = try RemoteHost()
+        defer { host.stop() }
+        host.server.setDesignsServed(true)
+        let id = try await design(host)
+        let raw = try await designClient(host)
+
+        guard case .designDuplicated(let copy) = try await answer(raw, 2, .duplicate(designID: id)) else {
+            Issue.record("expected a copy"); return
+        }
+        #expect(copy.name == "Checkout funnel copy" && copy.id != id)
+        #expect(Set(host.server.state.designs.map(\.id)) == [id, copy.id])
+
+        #expect(try await answer(raw, 3, .removeFromRecents(designID: id)) == .ok)
+        #expect(host.server.state.designs.first { $0.id == id }?.inRecents == false)
+        #expect(try await refusal(raw, 4, .duplicate(designID: DesignID())) == DesignStoreError.noSuchDesign(DesignID()).code)
+    }
+
+    /// A host's systems are read file by file, renamed, duplicated and deleted for another
+    /// device, and each change is pushed to a client that reads it. A built-in stays read-only.
+    @Test func designSystemsChangeRemotelyAndArePushed() async throws {
+        let host = try RemoteHost()
+        defer { host.stop() }
+        let tokens = Data(#"{"format":"shepherd-tokens/1"}"#.utf8)
+        host.server.designSystems.register(DesignSystemStore.BuiltIn(
+            info: DesignSystemInfo(namespace: "shepherd-design", title: "Shepherd Design", createdAt: 0), files: ["tokens.json": tokens]))
+        host.server.setDesignsServed(true)
+        let raw = try await designClient(host)
+
+        guard case .chunk(let piece) = try await answer(raw, 2, .systemFile(namespace: "shepherd-design", path: "tokens.json", offset: 0)) else {
+            Issue.record("expected a piece"); return
+        }
+        #expect(piece.data == tokens && piece.total == tokens.count && piece.sha256 == RemoteDesignService.sha256(tokens) && piece.isLast)
+        #expect(try await refusal(raw, 3, .systemFile(namespace: "shepherd-design", path: "../state.json", offset: 0)) == RemoteDesignCode.noSuchFile)
+        #expect(try await refusal(raw, 4, .systemFile(namespace: "shepherd-design", path: "tokens.json", offset: 1_000)) == "invalid_offset")
+        #expect(try await refusal(raw, 5, .renameSystem(namespace: "shepherd-design", title: "x")) != nil, "a built-in is read-only")
+
+        try raw.send(.design(id: 6, request: .duplicateSystem(namespace: "shepherd-design")))
+        var frames: [RemoteReply] = []
+        func has(_ match: (RemoteReply) -> Bool) -> Bool { frames.contains(where: match) }
+        while !(has { if case .design(6, _) = $0 { true } else { false } } && has { $0 == .designSystemsChanged }) {
+            frames.append(try await raw.next())
+        }
+        guard case .design(_, .systemChanged(let copy)) = frames.first(where: { if case .design(6, _) = $0 { true } else { false } }) else {
+            Issue.record("expected a copy"); return
+        }
+        #expect(copy.info.namespace == "shepherd-design-copy" && !copy.builtIn)
+
+        #expect(try await refusal(raw, 7, .renameSystem(namespace: copy.namespace, title: "  ")) == "invalid_title")
+        guard case .systemChanged(let renamed) = try await answer(raw, 8, .renameSystem(namespace: copy.namespace, title: " Acme ")) else {
+            Issue.record("expected the system"); return
+        }
+        #expect(renamed.info.title == "Acme" && renamed.namespace == copy.namespace)
+        #expect(try await answer(raw, 9, .deleteSystem(namespace: copy.namespace)) == .ok)
+        #expect(await host.server.designSystemSummaries().map(\.namespace) == ["shepherd-design"])
+        #expect(try await refusal(raw, 10, .resyncSystem(namespace: "shepherd-design")) != nil, "a built-in has no project to read")
+    }
+
+    /// A client that doesn't list `design.systems.v1` is never pushed a systems change.
+    @Test func anOlderClientIsNotPushedSystemChanges() async throws {
+        let host = try RemoteHost()
+        defer { host.stop() }
+        host.server.designSystems.register(DesignSystemStore.BuiltIn(
+            info: DesignSystemInfo(namespace: "shepherd-design", title: "Shepherd Design", createdAt: 0), files: ["tokens.json": Data("{}".utf8)]))
+        host.server.setDesignsServed(true)
+        let older = try await host.raw(authenticated: false)
+        _ = try await older.hello(token: host.token, capabilities: [RemoteProtocol.designsCapability])
+        try older.send(.design(id: 2, request: .duplicateSystem(namespace: "shepherd-design")))
+        var seen = try await older.frames { if case .design(2, _) = $0 { true } else { false } }
+        #expect(await host.server.designSystemSummaries().count == 2)
+        try older.send(.stateFetch(id: 3))
+        seen += try await older.frames { if case .state(3, _) = $0 { true } else { false } }
+        #expect(!seen.contains { if case .designSystemsChanged = $0 { true } else { false } })
+    }
+}

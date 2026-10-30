@@ -39,12 +39,20 @@ struct DesignSystemScreen: View {
     let host: UUID
     let namespace: String
     @Environment(MobileHosts.self) private var hosts
+    @Environment(MobileNavigator.self) private var navigator
+    @Environment(\.dismiss) private var dismiss
     @State private var system: DesignSystemRead?
     @State private var problem: String?
+    @State private var renaming = false
+    @State private var deleting = false
+    @State private var title = ""
 
     var body: some View {
         List {
             if let system {
+                if let problem {
+                    Section { Text(problem).foregroundStyle(Color.sh.failed) }
+                }
                 Section {
                     Text(DesignSystemPresentation.counts(system.summary.counts))
                         .shText(.caption).foregroundStyle(Color.sh.textSecondary)
@@ -89,9 +97,68 @@ struct DesignSystemScreen: View {
         .background(Color.sh.bgWindow)
         .navigationTitle(system?.summary.info.title ?? namespace)
         .navigationBarTitleDisplayMode(.inline)
-        .task {
+        .toolbar {
+            // What the host does with its systems for other devices (`design.systems.v1`), as
+            // the Mac's SystemMenu offers it.
+            if let summary = system?.summary, MobileDesigns.of(hosts).supports(host, RemoteProtocol.designSystemsCapability) {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu("More", systemImage: "ellipsis") {
+                        if !summary.builtIn {
+                            if summary.info.spaceID != nil, !summary.info.sources.isEmpty {
+                                Button("Re-sync", systemImage: "arrow.triangle.2.circlepath") { change(.resyncSystem(namespace: namespace)) }
+                            }
+                            Button("Rename…", systemImage: "pencil") {
+                                title = summary.info.title
+                                renaming = true
+                            }
+                        }
+                        Button(summary.builtIn ? "Duplicate as a New System" : "Duplicate", systemImage: "plus.square.on.square") {
+                            change(.duplicateSystem(namespace: namespace), open: true)
+                        }
+                        if !summary.builtIn {
+                            Divider()
+                            Button("Delete Design System…", systemImage: "trash", role: .destructive) { deleting = true }
+                        }
+                    }
+                }
+            }
+        }
+        .alert("Rename design system", isPresented: $renaming) {
+            TextField("Title", text: $title)
+            Button("Cancel", role: .cancel) {}
+            Button("Rename") { change(.renameSystem(namespace: namespace, title: title)) }
+        }
+        .confirmationDialog("Delete the design system “\(system?.summary.info.title ?? namespace)”?", isPresented: $deleting,
+                            titleVisibility: .visible) {
+            Button("Delete", role: .destructive) { change(.deleteSystem(namespace: namespace), gone: true) }
+        } message: {
+            Text("Designs drawn in it keep their copy, and the project it was read from isn’t touched.")
+        }
+        .task { await load() }
+    }
+
+    private func load() async {
+        do {
+            system = try await MobileDesigns.of(hosts).system(host: host, namespace: namespace)
+            problem = nil
+        } catch {
+            problem = MobileDesignsError.words(error)
+        }
+    }
+
+    /// A change on the host; then this page reads the system again, opens the copy, or goes back.
+    private func change(_ request: RemoteDesignRequest, open: Bool = false, gone: Bool = false) {
+        let designs = MobileDesigns.of(hosts)
+        Task {
             do {
-                system = try await MobileDesigns.of(hosts).system(host: host, namespace: namespace)
+                let summary = try await designs.changeSystem(host: host, request)
+                if gone {
+                    dismiss()
+                } else if open, let copy = summary {
+                    navigator.open(.designs(.system(host: host, namespace: copy.namespace)))
+                } else {
+                    await load()
+                }
             } catch {
                 problem = MobileDesignsError.words(error)
             }

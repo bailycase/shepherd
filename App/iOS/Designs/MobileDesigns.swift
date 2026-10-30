@@ -25,6 +25,10 @@ final class MobileDesigns {
     private(set) var swatches: [String: [String]] = [:]
     /// The hosts serving designs now.
     private(set) var serving: Set<UUID> = []
+    /// The design deleted last, while its host holds it for Undo.
+    private(set) var deleted: (ref: HostDesignRef, name: String, id: UUID)?
+    /// Why the last design action failed, until dismissed.
+    private(set) var problem: String?
 
     @ObservationIgnored private let hosts: MobileHosts
     @ObservationIgnored private let libraries: HostDesignLibraries
@@ -261,6 +265,97 @@ final class MobileDesigns {
         }
         await list(host)
         return HostDesignRef(host: host, design: id)
+    }
+
+    // MARK: Lifecycle (design.agent.v1, design.lifecycle.v1, design.delete.v1, design.systems.v1)
+
+    /// Whether `host` offers `capability` beside its designs.
+    func supports(_ host: UUID, _ capability: String) -> Bool {
+        library(host) != nil && hosts.host(host)?.supports(capability) == true
+    }
+
+    /// The design's agent: the one its host has, else one its host starts as its own Open does.
+    func ensureAgent(_ ref: HostDesignRef) async throws -> AgentRef {
+        if let agent = agent(ref) { return agent }
+        guard let library = library(ref.host) else { throw MobileDesignsError.offline }
+        guard case .agent(let id) = try await library.request(.ensureAgent(designID: ref.design)) else { throw MobileDesignsError.unexpected }
+        return AgentRef(host: ref.host, agent: id)
+    }
+
+    func report(_ problem: String?) {
+        if self.problem != problem { self.problem = problem }
+    }
+
+    /// Delete, then Undo over the Designs screen for the host's window (counted from here: the
+    /// host's clock isn't this device's).
+    func deleteWithUndo(_ ref: HostDesignRef, name: String) async throws {
+        _ = try await delete(ref)
+        let id = UUID()
+        deleted = (ref, name, id)
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(DesignDeletion.undoWindow))
+            if self?.deleted?.id == id { self?.deleted = nil }
+        }
+    }
+
+    func undoLastDelete() async {
+        guard let last = deleted else { return }
+        deleted = nil
+        do { try await undoDelete(last.ref) } catch {
+            report("Couldn't bring back \(last.name): \(MobileDesignsError.words(error))")
+        }
+    }
+
+    /// Rename: the design's canvas title through its host's canvas update, as the Mac's does.
+    func rename(_ ref: HostDesignRef, to name: String) async throws {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let library = library(ref.host) else { throw MobileDesignsError.offline }
+        _ = try await library.request(.updateIndex(designID: ref.design, patch: .object(["title": .string(trimmed)]), baseRevision: nil))
+        await list(ref.host)
+    }
+
+    /// Delete, as the host's own: until when Undo can bring it back.
+    func delete(_ ref: HostDesignRef) async throws -> DesignDeletion {
+        guard let library = library(ref.host) else { throw MobileDesignsError.offline }
+        guard case .deleted(let deletion) = try await library.request(.delete(designID: ref.design)) else { throw MobileDesignsError.unexpected }
+        await list(ref.host)
+        return deletion
+    }
+
+    func undoDelete(_ ref: HostDesignRef) async throws {
+        guard let library = library(ref.host) else { throw MobileDesignsError.offline }
+        _ = try await library.request(.undoDelete(designID: ref.design))
+        await list(ref.host)
+    }
+
+    /// Duplicate on the host; answers the copy.
+    func duplicate(_ ref: HostDesignRef) async throws -> HostDesignRef {
+        guard let library = library(ref.host) else { throw MobileDesignsError.offline }
+        guard case .designDuplicated(let copy) = try await library.request(.duplicate(designID: ref.design)) else {
+            throw MobileDesignsError.unexpected
+        }
+        await list(ref.host)
+        return HostDesignRef(host: ref.host, design: copy.id)
+    }
+
+    func removeFromRecents(_ ref: HostDesignRef) async throws {
+        guard let library = library(ref.host) else { throw MobileDesignsError.offline }
+        _ = try await library.request(.removeFromRecents(designID: ref.design))
+    }
+
+    /// A design system change on its host (rename, duplicate, delete, re-sync), then the
+    /// systems listed again. Answers the system it left, if one.
+    @discardableResult
+    func changeSystem(host: UUID, _ request: RemoteDesignRequest) async throws -> DesignSystemSummary? {
+        guard let library = library(host) else { throw MobileDesignsError.offline }
+        let result = try await library.request(request)
+        library.systemsChanged()
+        await list(host)
+        switch result {
+        case .systemChanged(let summary): return summary
+        case .systemSynced(let synced): return synced.summary
+        default: return nil
+        }
     }
 
     // MARK: Lookups

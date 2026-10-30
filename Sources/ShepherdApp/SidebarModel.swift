@@ -271,6 +271,21 @@ enum SidebarDerivation {
                 let pin = runs.contains(agent.id) ? nil : PinnedThread.remote(RemoteAgentRef(hostID: host.id, agentID: agent.id))
                 entries.append(entry(row, pin, needsYou: needsYou, key: agent.lastActiveAt ?? -1, host: hostIndex + 1, index: index))
             }
+            // A host's design (while it serves designs) is a design row that opens its agent's
+            // layout, the design's screen; one without an agent there is on the Designs page.
+            if source.designs {
+                for (index, design) in host.state.designs.enumerated() where design.inRecents && !design.buildsSystem {
+                    guard let agent = host.state.agents.first(where: { $0.id == design.agentID })
+                            ?? host.state.agents.first(where: { $0.designID == design.id }) else { continue }
+                    var row = designRow(design)
+                    row = SidebarListRow(id: .remote(RemoteAgentRef(hostID: host.id, agentID: agent.id)), title: row.title, leading: row.leading,
+                                         accessory: .tag(host.name), section: .designs, help: row.help,
+                                         accessibilityLabel: row.accessibilityLabel + ", on \(host.name)", worktree: false,
+                                         automation: nil, automationLive: false)
+                    row.offline = host.offline
+                    entries.append(entry(row, nil, needsYou: false, key: design.lastActiveAt, host: hostIndex + 1, index: index))
+                }
+            }
         }
         // Most recently active first. Agents no host has timed (older hosts and state files)
         // follow, newest created first; ties keep This Mac first, then the hosts in order.

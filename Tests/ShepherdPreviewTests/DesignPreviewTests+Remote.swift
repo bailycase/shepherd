@@ -37,6 +37,7 @@ extension DesignPreviewTests {
             try await host.putState(ShepherdState(spaces: [space], tabs: [tab], agents: [agent]))
             _ = try await host.createDesign(design)
             try await DesignFixtures.draw(DesignFixtures.checkout, in: design.id, on: host, perRow: 3)
+            host.designSystems.register(ShepherdDesignSystem.builtIn())
             host.setDesignsServed(true)
             let tokenURL = server.dir.appendingPathComponent("remote-token")
             port = try host.startRemoteListener(port: 0, tokenURL: tokenURL)
@@ -97,6 +98,42 @@ extension DesignPreviewTests {
             return screen.isDrawn && !screen.picks.isEmpty
         }) {
             RootView(vm: vm)
+        }
+    }
+
+    /// New design with a connected host chosen: the host card, the host's systems, no model chip
+    /// (the host starts its agent on its own defaults).
+    @Test func newDesignOnHost() async throws {
+        let (workspace, host, connection) = try await remoteWorkspace()
+        defer { workspace.stop(); host.server.stop() }
+        let vm = workspace.vm
+        vm.openNewDesign()
+        vm.newDesign.choose(host: connection.id)
+        await connection.designs.refresh()
+        #expect(vm.newDesignHosts.map(\.id) == [connection.id])
+        #expect(vm.newDesign.systems(vm).map(\.namespace) == [ShepherdDesignSystem.namespace])
+        try await Preview.render("page-new-design-host", size: CGSize(width: 1440 - AppLayout.sidebarDefaultWidth, height: 848)) {
+            NewDesignPage(vm: vm, chrome: PageHeaderChrome())
+        }
+    }
+
+    /// A host's design system on this Mac: the Design systems page from the host's read, its
+    /// specimens drawn here from the files the host served (`design.systems.v1`).
+    @Test func designSystemRemote() async throws {
+        let (workspace, host, connection) = try await remoteWorkspace()
+        defer { workspace.stop(); host.server.stop() }
+        let vm = workspace.vm
+        _ = try await host.server.server.writeDesignSystem(Self.acmeWrite, for: host.design.id)
+        await connection.designs.refresh()
+        let ref = RemoteSystemRef(hostID: connection.id, namespace: "acme-web")
+        vm.openRemoteDesignSystem(ref)
+        await vm.loadRemoteDesignSystem(ref)
+        #expect(vm.shownRemoteSystemRead?.summary.namespace == ref.namespace)
+        let specimens = try #require(vm.remoteDesignRendering(connection.id)?.specimens)
+        try await Preview.render("page-design-system-remote", size: CGSize(width: 1440 - AppLayout.sidebarDefaultWidth, height: 1100), ready: {
+            (0..<6).allSatisfy { specimens.image(ref.namespace, $0) != nil }
+        }) {
+            DesignSystemDestination(vm: vm)
         }
     }
 }

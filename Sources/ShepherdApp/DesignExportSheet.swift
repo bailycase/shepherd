@@ -15,6 +15,8 @@ final class DesignExportModel {
 
     let designID: DesignID
     let designName: String
+    /// The connected host the design is saved on; nil: This Mac.
+    var hostID: UUID?
     var selection: DesignExportSelection
     var format: DesignExportFormat = .html
     /// Local threads the boards can go to, most recently active first.

@@ -38,6 +38,7 @@ struct DesignRenameRequest: Identifiable {
     enum Subject: Hashable {
         case design(DesignTarget)
         case system(String)
+        case remoteSystem(RemoteSystemRef)
     }
 
     let id = UUID()
@@ -59,7 +60,8 @@ extension ShepherdViewModel {
         case .remote(let ref):
             let connection = remoteHosts.connections.first { $0.id == ref.hostID }
             return DesignMenu.design(context, hasSystem: false, remote: connection?.config.name ?? "The host",
-                                     hostDeletes: connection?.supportsDesignDelete == true)
+                                     hostDeletes: connection?.supportsDesignDelete == true,
+                                     hostLifecycle: connection?.supportsDesignCapability(RemoteProtocol.designLifecycleCapability) == true)
         }
     }
 
@@ -71,6 +73,9 @@ extension ShepherdViewModel {
         case (.rename, _): requestDesignRename(target)
         case (.duplicate, .local(let id)): duplicateDesign(id)
         case (.export, .local(let id)): openDesignExport(id)
+        case (.export, .remote(let ref)): openRemoteDesignExport(ref)
+        case (.duplicate, .remote(let ref)): duplicateRemoteDesign(ref)
+        case (.removeFromRecents, .remote(let ref)): removeRemoteDesignFromRecents(ref)
         case (.showSystem, .local(let id)): if let system = design(id)?.systemNamespace { openDesignSystem(system) }
         case (.removeFromRecents, .local(let id)): removeDesignFromRecents(id)
         case (.delete, _): requestDesignDelete(target)
@@ -93,6 +98,8 @@ extension ShepherdViewModel {
             let resyncs = repo != nil && summary?.info.sources.isEmpty == false
             return DesignMenu.system(name: summary?.info.title ?? namespace, builtIn: summary?.builtIn == true,
                                      repo: resyncs ? repo : nil, building: systemIsBuilding(namespace))
+        case .remote(let ref):
+            return remoteDesignSystemMenu(ref)
         }
     }
 
@@ -123,6 +130,7 @@ extension ShepherdViewModel {
                 }
             }
         case (.deleteSystem, _): requestDesignSystemDelete(target)
+        case (_, .remote(let ref)): performRemoteDesignSystemMenu(action, on: ref)
         default: break
         }
     }
@@ -160,6 +168,8 @@ extension ShepherdViewModel {
                 case .system(let namespace):
                     try await server.renameDesignSystem(namespace, to: trimmed)
                     await loadDesignSystems()
+                case .remoteSystem(let ref):
+                    try await changeRemoteSystem(ref, .renameSystem(namespace: ref.namespace, title: trimmed))
                 }
             } catch {
                 remoteActionError = "Couldn't rename \(request.name): \(error)"
@@ -188,6 +198,31 @@ extension ShepherdViewModel {
                 adopt(server.state)
             } catch {
                 remoteActionError = "Couldn't remove \(design(id)?.name ?? "the design") from Recents: \(error)"
+            }
+        }
+    }
+
+    /// Duplicate of a host's design: the host's own, its copy listed with the host's designs.
+    func duplicateRemoteDesign(_ ref: RemoteDesignRef) {
+        guard let library = remoteHosts.connections.first(where: { $0.id == ref.hostID })?.designs else { return }
+        Task {
+            do {
+                _ = try await Self.remoteDesign(library, .duplicate(designID: ref.designID))
+                await library.refresh()
+            } catch {
+                remoteActionError = "Couldn't duplicate the design: \(Self.words(error))."
+            }
+        }
+    }
+
+    /// Remove from Recents of a host's design, on its host: its row leaves Recents there and here.
+    func removeRemoteDesignFromRecents(_ ref: RemoteDesignRef) {
+        guard let library = remoteHosts.connections.first(where: { $0.id == ref.hostID })?.designs else { return }
+        Task {
+            do {
+                _ = try await Self.remoteDesign(library, .removeFromRecents(designID: ref.designID))
+            } catch {
+                remoteActionError = "Couldn't remove the design from Recents: \(Self.words(error))."
             }
         }
     }
@@ -368,6 +403,14 @@ extension ShepherdViewModel {
             let words = DeleteSystemWords(name: summary.info.title, components: summary.counts.components, usedBy: usedBy, repo: repo,
                                           building: systemIsBuilding(namespace))
             presentDesignSystemDelete(DesignSystemDeleteRequest(target: target, name: summary.info.title, words: words))
+        case .remote(let ref):
+            guard let connection = remoteHosts.connections.first(where: { $0.id == ref.hostID }),
+                  let summary = connection.designs.listing?.systems.first(where: { $0.namespace == ref.namespace }), !summary.builtIn else { return }
+            let usedBy = connection.state.designs.filter { !$0.buildsSystem && $0.systemNamespace == ref.namespace }.map(\.name)
+            let repo = summary.info.spaceID.flatMap { id in connection.state.spaces.first { $0.id == id }?.name }
+            let words = DeleteSystemWords(name: summary.info.title, components: summary.counts.components, usedBy: usedBy, repo: repo,
+                                          building: false)
+            presentDesignSystemDelete(DesignSystemDeleteRequest(target: target, name: summary.info.title, words: words))
         }
     }
 
@@ -384,12 +427,16 @@ extension ShepherdViewModel {
         case .system(let namespace): shownDestination == .designSystem && designSystemShown == namespace
             || designSystems.summary(namespace)?.info.ownerDesignID.map { shownDesign?.id == $0 } == true
         case .build(let id): shownDesign?.id == id
+        case .remote(let ref): shownDestination == .designSystem && shownRemoteSystem == ref
         }
         if shown { openDestination(.designs) }
         do {
             switch target {
             case .system(let namespace): try await server.deleteDesignSystem(namespace)
             case .build(let id): try await server.deleteSystemBuild(id)
+            case .remote(let ref):
+                try await changeRemoteSystem(ref, .deleteSystem(namespace: ref.namespace))
+                return
             }
             sessions.stateDidChange(server.state)
             adopt(server.state)

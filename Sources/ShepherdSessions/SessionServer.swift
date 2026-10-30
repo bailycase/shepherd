@@ -483,6 +483,10 @@ public final class SessionServer: @unchecked Sendable {
     /// A design system was written or re-synced. Delivered on the main actor; a hint to list the
     /// systems again, not state.
     public var onDesignSystemsChanged: (() -> Void)?
+    /// A remote client opens a design with no agent here (`RemoteDesignRequest.ensureAgent`): the
+    /// app starts one as its own Open does, selecting nothing, and answers it. Main actor; a
+    /// server without it (headless, tests) refuses.
+    public var onRemoteEnsureDesignAgent: ((DesignID, @escaping (Result<AgentID, RemoteCreateAgentError>) -> Void) -> Void)?
     /// How long a deleted design can be restored (`DesignDeletion.undoWindow`). Tests shorten it
     /// before they delete.
     public var designUndoWindow: TimeInterval = DesignDeletion.undoWindow
@@ -2964,6 +2968,10 @@ public final class SessionServer: @unchecked Sendable {
             remoteCreateDesign(id: id, draft: draft, client: client)
             return
         }
+        if case .ensureAgent(let designID) = request {
+            remoteEnsureDesignAgent(id: id, designID: designID, client: client)
+            return
+        }
         let service = RemoteDesignService(server: self)
         // The connection is only touched back on the server queue.
         let connection = ChangesUnchecked(value: client)
@@ -3112,6 +3120,50 @@ public final class SessionServer: @unchecked Sendable {
                         self.send(.error(id: id, code: "create_failed", message: error.message), to: client)
                     }
                 }
+            }
+        }
+    }
+
+    /// Server queue: a design's agent for a remote client: the one it has, else one the app
+    /// starts. A system build is never opened remotely.
+    private func remoteEnsureDesignAgent(id: Int, designID: DesignID, client: ExtensionConnection) {
+        guard let design = store.state.designs.first(where: { $0.id == designID && !$0.buildsSystem }) else {
+            send(.error(id: id, code: DesignStoreError.noSuchDesign(designID).code, message: "unknown design \(designID)"), to: client)
+            return
+        }
+        let agents = store.state.agents
+        if let agent = agents.first(where: { $0.id == design.agentID }) ?? agents.first(where: { $0.designID == designID }) {
+            send(.design(id: id, result: .agent(agent.id)), to: client)
+            return
+        }
+        guard let handler = onRemoteEnsureDesignAgent else {
+            send(.error(id: id, code: "unsupported", message: "host cannot start design agents (no GUI)"), to: client)
+            return
+        }
+        hopToMain { [weak self] in
+            handler(designID) { result in
+                guard let self else { return }
+                self.queue.async {
+                    guard self.clients[client.fd] === client else { return }
+                    switch result {
+                    case .success(let agent): self.send(.design(id: id, result: .agent(agent)), to: client)
+                    case .failure(let error): self.send(.error(id: id, code: "start_failed", message: error.message), to: client)
+                    }
+                }
+            }
+        }
+    }
+
+    /// The design systems changed: the app lists them again, and so does each remote client
+    /// that reads the push (`designSystemsCapability`). Any thread.
+    private func designSystemsDidChange() {
+        hopToMain { [weak self] in self?.onDesignSystemsChanged?() }
+        queue.async { [weak self] in
+            guard let self, self.offeredCapabilities.contains(RemoteProtocol.designSystemsCapability),
+                  let payload = try? NDJSON.encode(RemoteReply.designSystemsChanged) else { return }
+            for client in self.clients.values where client.isRemote && client.authenticated
+                && client.clientCapabilities.contains(RemoteProtocol.designSystemsCapability) {
+                self.enqueuePayload(payload, to: client)
             }
         }
     }
@@ -6464,7 +6516,7 @@ public final class SessionServer: @unchecked Sendable {
             added = added || adopted.added
             if index == 0 { drawnIn = adopted.namespace }
         }
-        if added { hopToMain { [weak self] in self?.onDesignSystemsChanged?() } }
+        if added { designSystemsDidChange() }
         // The system it is drawn in is the one it came with, wherever that was kept: under
         // another name when this host has a different system by its own, or the one this host
         // already had with the same files.
@@ -6504,7 +6556,7 @@ public final class SessionServer: @unchecked Sendable {
             try await deleteDesign(owner, undoable: false)
         }
         try await designSystems.delete(namespace)
-        hopToMain { [weak self] in self?.onDesignSystemsChanged?() }
+        designSystemsDidChange()
     }
 
     /// Rename… a design system: its title, never its namespace. A built-in is refused.
@@ -6512,7 +6564,7 @@ public final class SessionServer: @unchecked Sendable {
     public func renameDesignSystem(_ namespace: String, to title: String) async throws -> DesignSystemSummary {
         guard DesignPath.isSystemNamespace(namespace) else { throw DesignSystemError.invalidNamespace(namespace) }
         let summary = try await designSystems.rename(namespace, to: title, at: Self.nowMilliseconds())
-        hopToMain { [weak self] in self?.onDesignSystemsChanged?() }
+        designSystemsDidChange()
         return summary
     }
 
@@ -6521,7 +6573,7 @@ public final class SessionServer: @unchecked Sendable {
     public func duplicateDesignSystem(_ namespace: String) async throws -> DesignSystemSummary {
         guard DesignPath.isSystemNamespace(namespace) else { throw DesignSystemError.invalidNamespace(namespace) }
         let summary = try await designSystems.duplicate(namespace, at: Self.nowMilliseconds())
-        hopToMain { [weak self] in self?.onDesignSystemsChanged?() }
+        designSystemsDidChange()
         return summary
     }
 
@@ -6583,7 +6635,7 @@ public final class SessionServer: @unchecked Sendable {
             summary = written.summary
             changed = written.changed
             notes = written.notes
-            if changed { hopToMain { [weak self] in self?.onDesignSystemsChanged?() } }
+            if changed { designSystemsDidChange() }
         } else {
             guard write.install == true else {
                 throw DesignSystemError.invalidTokens(["nothing to do: pass tokens, files, sources or install"])
@@ -6631,7 +6683,7 @@ public final class SessionServer: @unchecked Sendable {
         }
         let result = try await designSystems.resync(namespace, root: URL(fileURLWithPath: space.path, isDirectory: true),
                                                     at: Self.nowMilliseconds())
-        hopToMain { [weak self] in self?.onDesignSystemsChanged?() }
+        designSystemsDidChange()
         return result
     }
 

@@ -65,10 +65,17 @@ struct DesignsPageModel: Equatable {
         let id: UUID
         let name: String
         let cards: [Card]
+        /// The host's design systems, after its designs.
+        var systems: [System] = []
 
         var rows: [[Card]] {
             stride(from: 0, to: cards.count, by: DesignsPageModel.columns)
                 .map { Array(cards[$0..<min($0 + DesignsPageModel.columns, cards.count)]) }
+        }
+
+        var systemRows: [[System]] {
+            stride(from: 0, to: systems.count, by: DesignsPageModel.systemColumns)
+                .map { Array(systems[$0..<min($0 + DesignsPageModel.systemColumns, systems.count)]) }
         }
     }
 

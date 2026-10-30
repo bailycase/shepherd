@@ -530,12 +530,12 @@ struct RemoteReplyTests {
         switch reply {
         case .nativeThread, .uploadResult, .creationOptions, .helloOk, .agentResult, .ok, .paneOpened, .error,
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
-             .agentCreated, .automationResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged,
+             .agentCreated, .automationResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged, .designSystemsChanged,
              .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 35
+    static let caseCount = 36
 
     static let samples: [RemoteReply] = [
         .hostUpdate(id: 90, status: HostUpdateStatus(version: "1", build: "2", channel: "nightly", phase: .available,
@@ -575,6 +575,7 @@ struct RemoteReplyTests {
         .projectExecutionChanged(key: ProjectExecutionWireTests.key, revision: 2),
         .design(id: 32, result: .ok),
         .designChanged(designID: RemoteDesignSamples.design, revision: 8, commentsRevision: 2),
+        .designSystemsChanged,
         .capabilitiesChanged(capabilities: [RemoteProtocol.designsCapability]),
         .tunnel(.data(tunnel: 7, bytes: Data("HTTP/1.1 200 OK\r\n\r\n".utf8))),
         .browserClaimed(id: 33, url: "http://localhost:5173/checkout"),
@@ -906,6 +907,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.nativeGoalCapability, RemoteProtocol.goalExperimentCapability, RemoteProtocol.projectsExperimentCapability,
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).
             RemoteProtocol.designsCapability, RemoteProtocol.designMarkupCapability, RemoteProtocol.designDeleteCapability,
+            RemoteProtocol.designAgentCapability, RemoteProtocol.designLifecycleCapability, RemoteProtocol.designSystemsCapability,
             // Offered only to a client that lists it in hello.
             RemoteProtocol.filesCapability,
         ]
@@ -960,6 +962,9 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.designsCapability == "designs.v1")
         #expect(RemoteProtocol.designMarkupCapability == "design.markup.v1")
         #expect(RemoteProtocol.designDeleteCapability == "design.delete.v1")
+        #expect(RemoteProtocol.designAgentCapability == "design.agent.v1")
+        #expect(RemoteProtocol.designLifecycleCapability == "design.lifecycle.v1")
+        #expect(RemoteProtocol.designSystemsCapability == "design.systems.v1")
     }
 
     /// Commit info from a host that sends only some fields still reads, with defaults.

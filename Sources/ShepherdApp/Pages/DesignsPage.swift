@@ -22,6 +22,7 @@ struct DesignsDestination: View {
                 switch target {
                 case .system(let namespace): vm.openDesignSystem(namespace)
                 case .build(let id): vm.openSystemBuild(id)
+                case .remote(let ref): vm.openRemoteDesignSystem(ref)
                 }
             },
             build: { vm.buildDesignSystem(in: $0) },
@@ -96,6 +97,10 @@ struct DesignsPage: View {
                                 DesignCardRow(slots: row, open: actions.open, thumbnail: thumbnail,
                                               menu: { actions.designMenu($0, .local($1)) })
                                     .equatable()
+                            case .hostSystems(let row):
+                                DesignSystemCardRow(systems: row, tile: false, projects: [], open: actions.openSystem, build: { _ in },
+                                                    menu: actions.systemMenu)
+                                    .equatable()
                             case .hostCards(let host, let row):
                                 DesignCardRow(slots: row.map(DesignsPageModel.Slot.design),
                                               open: { actions.openRemote(RemoteDesignRef(hostID: host, designID: $0)) },
@@ -128,6 +133,8 @@ struct DesignsPage: View {
         case hostLabel(UUID, String, first: Bool)
         /// A row of a host's cards.
         case hostCards(UUID, [DesignsPageModel.Card])
+        /// A row of a host's design systems.
+        case hostSystems([DesignsPageModel.System])
         /// A row of system cards, whether the build tile ends it, and whether it is the first.
         case systems([DesignsPageModel.System], tile: Bool, first: Bool)
 
@@ -137,6 +144,7 @@ struct DesignsPage: View {
             case .hostLabel(let host, _, _): "label.host.\(host.uuidString)"
             case .cards(let row): "row.\(row.first?.id ?? "")"
             case .hostCards(let host, let row): "host.\(host.uuidString).\(row.first?.id.rawValue ?? "")"
+            case .hostSystems(let row): "host.systems.\(row.first.map { "\($0.id)" } ?? "")"
             case .systems(let row, let tile, _): "systems.\(row.first.map { "\($0.id)" } ?? (tile ? "tile" : ""))"
             }
         }
@@ -152,6 +160,7 @@ struct DesignsPage: View {
         for host in model.hosts {
             items.append(.hostLabel(host.id, host.name, first: items.isEmpty))
             items += host.rows.map { .hostCards(host.id, $0) }
+            items += host.systemRows.map(Item.hostSystems)
         }
         items.append(.label("Design systems", first: items.isEmpty))
         items += model.systemRows.enumerated().map { index, row in .systems(row.systems, tile: row.tile, first: index == 0) }

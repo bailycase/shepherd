@@ -124,6 +124,7 @@ struct NewDesignPage: View {
                 .disabled(draft.attachments.isFull)
                 .help("Attach a screenshot or file")
                 .accessibilityLabel("Attach a screenshot or file")
+            if draft.host == nil {
             Button { menu = menu == .settings ? nil : .settings } label: {
                 SHModelSettingsLabel(model: NewThreadRules.shortModel(draft.model),
                                      thinking: draft.thinkingLevels().isEmpty ? nil : draft.thinking.clamped(to: draft.thinkingLevels()).title)
@@ -131,6 +132,7 @@ struct NewDesignPage: View {
             .buttonStyle(.shComposerChip(active: menu == .settings || menu == .models))
             .background { ComposerMenuRegion(dismissal: dismissal) }
             .help(draft.model.isEmpty ? "Model settings: the default" : "Model settings: \(draft.model)")
+            }
             Spacer(minLength: SH.Space.m)
             if draft.starting {
                 ProgressView().progressViewStyle(.shSpinner(color: Color.sh.textTertiary))
@@ -221,6 +223,10 @@ struct NewDesignPage: View {
                     .buttonStyle(.plain)
                     .frame(width: max(0, width))
                     .help("Import a Claude Design project as a new design (\(KeybindingsStore.shared.display(.importDesign)))")
+                    if !vm.newDesignHosts.isEmpty {
+                        hostCard
+                            .frame(width: max(0, width))
+                    }
                     Spacer(minLength: 0)
                 }
             }
@@ -228,8 +234,32 @@ struct NewDesignPage: View {
         }
     }
 
+    /// Where the design is made: This Mac, or a connected host that serves designs (its own
+    /// systems, model and level; the brief alone goes).
+    private var hostCard: some View {
+        let host = draft.host.flatMap(vm.newDesignHost)
+        let card = SHDesignStartCard(symbol: host == nil ? "laptopcomputer" : "server.rack", title: host?.config.name ?? "This Mac",
+                                     line: "made on", note: host == nil ? "or on a connected host" : "drawn in its systems, on its model",
+                                     chosen: host != nil)
+        return Menu {
+            Section("Make it on") {
+                Button("This Mac") { draft.choose(host: nil) }
+                ForEach(vm.newDesignHosts, id: \.id) { connection in
+                    Button(connection.config.name) {
+                        draft.choose(host: connection.id)
+                        if connection.designs.listing == nil { Task { await connection.designs.refresh() } }
+                    }
+                }
+            }
+        } label: { card }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .help("Make it on This Mac or on a connected host")
+    }
+
     @ViewBuilder private var systemCard: some View {
-        let systems = vm.designSystems.summaries
+        let systems = draft.systems(vm)
         let words = NewDesignState.card(system: draft.chosenSystem(in: systems), spaces: vm.state.spaces)
         let card = SHDesignStartCard(symbol: "pencil.tip", title: words.title, line: words.line, note: words.note, chosen: true)
         if systems.count > 1 {

@@ -135,7 +135,7 @@ struct AppDialogs: ViewModifier {
                                    openExisting: { vm.resolveDesignImport(prompt, openExisting: true) })
             }
             .sheet(item: $vm.designRename) { request in
-                let system: Bool = if case .system = request.subject { true } else { false }
+                let system: Bool = switch request.subject { case .system, .remoteSystem: true; case .design: false }
                 RenameDialog(title: system ? "Rename design system" : "Rename design", name: request.name) { name in
                     vm.commitDesignRename(request, to: name)
                 } onCancel: {

@@ -18,6 +18,14 @@ struct DesignSystemDestination: View {
 
     var body: some View {
         let _ = SHRenderProbe.tick("page.designSystem")
+        if let remote = vm.shownRemoteSystem {
+            RemoteDesignSystemDestination(vm: vm, ref: remote, chrome: chrome)
+        } else {
+            localBody
+        }
+    }
+
+    @ViewBuilder private var localBody: some View {
         let namespace = vm.designSystemShown
         let model = namespace.map { vm.designSystemPage(.system($0)) } ?? DesignSystemPageModel()
         if let reference = model.reference {
