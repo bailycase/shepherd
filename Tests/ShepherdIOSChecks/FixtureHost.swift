@@ -219,8 +219,8 @@ final class FixtureHost: @unchecked Sendable {
         case .logicalProjects(let id, _):
             return [.error(id: id, code: "unsupported", message: "This fixture does not serve logical projects.")]
         case .automation(let id, _, let command):
-            // Reading an automation's runs is the one automation request that changes nothing.
-            if command == .runs { return nil }
+            // Reading an automation's runs or its trigger's status changes nothing.
+            if command == .runs || command == .status { return nil }
             mutation("automation." + String(describing: command).prefix { $0 != "(" })
             return [.error(id: id, code: "fixture", message: refused)]
         case .instructions(let id, let command):

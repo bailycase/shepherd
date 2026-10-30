@@ -28,6 +28,12 @@ final class AutomationsStore {
     private(set) var pendingEnabled: [AutomationKey: Bool] = [:]
     /// Automations with a change on its way: their controls wait.
     private(set) var busy: Set<AutomationKey> = []
+    /// Hosts whose every trigger is paused (Pause all triggers), as their statuses say.
+    private(set) var allPaused: [UUID: Bool] = [:]
+    /// The hosts that draw a Pause all triggers switch.
+    private(set) var pauseAllHosts: [AutomationsPauseAll.Host] = []
+    /// Pause all triggers flipped here, until a status agrees or the change fails.
+    private(set) var pendingAllPaused: [UUID: Bool] = [:]
     /// The last change a host refused.
     var failure: Failure?
     /// The automation the iPad shows beside the list; the first one when nil or gone.
@@ -50,6 +56,8 @@ final class AutomationsStore {
     @ObservationIgnored private let readRuns: (RemoteHostClient, AutomationID) async throws -> [AutomationRun]
     @ObservationIgnored private var inputs: [AutomationHost] = []
     @ObservationIgnored private var runs: [AutomationKey: [AutomationRun]] = [:]
+    /// Each triggered automation's trigger, on a host that serves `automationTriggersCapability`.
+    @ObservationIgnored private var statuses: [AutomationKey: AutomationTriggerStatus] = [:]
     /// What each automation's run looked like when its runs were last read (its agent and status).
     @ObservationIgnored private var readAt: [AutomationKey: String] = [:]
     @ObservationIgnored private var sessions: [UUID: UUID] = [:]
@@ -86,6 +94,9 @@ final class AutomationsStore {
         store.inputs.removeAll { $0.id == host }
         store.runs = store.runs.filter { $0.key.host != host }
         store.readAt = store.readAt.filter { $0.key.host != host }
+        store.statuses = store.statuses.filter { $0.key.host != host }
+        store.allPaused[host] = nil
+        store.pendingAllPaused[host] = nil
         store.sessions[host] = nil
         store.pendingEnabled = store.pendingEnabled.filter { $0.key.host != host }
         store.busy = store.busy.filter { $0.host != host }
@@ -108,6 +119,16 @@ final class AutomationsStore {
         pendingEnabled[row.key] ?? row.enabled
     }
 
+    /// Pause all triggers as drawn on `host`.
+    func isAllPaused(_ host: UUID) -> Bool {
+        pendingAllPaused[host] ?? allPaused[host] ?? false
+    }
+
+    /// Whether `host` takes triggers from here (the editor's trigger sections, the inbox).
+    func supportsTriggers(_ host: UUID) -> Bool {
+        hosts.host(host)?.supports(RemoteProtocol.automationTriggersCapability) == true
+    }
+
     /// Hosts a new automation can be saved on: connected, and serving automations.
     var editableHosts: [MobileHost] {
         hosts.hosts.filter { $0.phase.isConnected && $0.supports(RemoteProtocol.automationsCapability) }
@@ -119,7 +140,8 @@ final class AutomationsStore {
         let (next, connections) = withObservationTracking {
             (hosts.hosts.filter { !forgotten.contains($0.id) }.map { host in
                 AutomationHost(id: host.id, name: host.name, connected: host.phase.isConnected,
-                               manageable: host.supports(RemoteProtocol.automationsCapability), state: host.state)
+                               manageable: host.supports(RemoteProtocol.automationsCapability), state: host.state,
+                               triggers: host.supports(RemoteProtocol.automationTriggersCapability))
             }, Dictionary(hosts.hosts.compactMap { host in host.session.map { (host.id, $0) } }, uniquingKeysWith: { a, _ in a }))
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in self?.track() }
@@ -133,6 +155,7 @@ final class AutomationsStore {
         inputs = next
         let live = Set(next.flatMap { host in host.state.automations.map { AutomationKey(host: host.id, automation: $0.id) } })
         runs = runs.filter { live.contains($0.key) }
+        statuses = statuses.filter { live.contains($0.key) }
         for (key, enabled) in pendingEnabled where Self.automation(key, in: next)?.enabled == enabled || !live.contains(key) {
             pendingEnabled[key] = nil
         }
@@ -141,11 +164,17 @@ final class AutomationsStore {
     }
 
     private func derive() {
-        let next = AutomationsModel(hosts: inputs, runs: runs)
+        let next = AutomationsModel(hosts: inputs, runs: runs, statuses: statuses)
         var nextDetails: [AutomationKey: AutomationDetail] = [:]
         for row in next.rows {
-            nextDetails[row.key] = next.detail(row.key, runs: runs[row.key])
+            nextDetails[row.key] = next.detail(row.key, runs: runs[row.key], status: statuses[row.key])
         }
+        var paused: [UUID: Bool] = [:]
+        for (key, status) in statuses { paused[key.host] = status.allPaused }
+        for (host, value) in pendingAllPaused where paused[host] == value { pendingAllPaused[host] = nil }
+        if paused != allPaused { allPaused = paused }
+        let pauseHosts = AutomationsPauseAll.hosts(next.rows)
+        if pauseHosts != pauseAllHosts { pauseAllHosts = pauseHosts }
         var seen = Set<String>()
         let notes = next.rows.compactMap { row -> String? in
             guard !row.offline, let reason = row.abilities.readOnlyReason, seen.insert(reason).inserted else { return nil }
@@ -161,13 +190,15 @@ final class AutomationsStore {
     }
 
     /// What decides whether an automation's runs need reading again: its agent and that agent's
-    /// status.
+    /// status, and a triggered one's run threads and theirs.
     private static func signature(_ key: AutomationKey, in hosts: [AutomationHost]) -> String {
         guard let host = hosts.first(where: { $0.id == key.host }),
               let automation = host.state.automations.first(where: { $0.id == key.automation }) else { return "" }
-        guard let agentID = automation.agentID else { return "none" }
+        let threads = host.state.agents.filter { $0.automationOrigin?.automationID == key.automation }
+            .map { "\($0.id.rawValue):\($0.status.rawValue)" }.joined(separator: ",")
+        guard let agentID = automation.agentID else { return "none|" + threads }
         let status = host.state.agents.first { $0.id == agentID }?.status.rawValue ?? "gone"
-        return "\(agentID.rawValue):\(status)"
+        return "\(agentID.rawValue):\(status)|" + threads
     }
 
     // MARK: Runs
@@ -176,8 +207,12 @@ final class AutomationsStore {
     func watch() async {
         watchers += 1
         await refreshRuns()
+        await refreshStatuses()
+        // Pending events and checks change on the host without a state push: read the triggers
+        // again while a screen shows them, never off screen.
         while !Task.isCancelled {
-            try? await Task.sleep(for: .seconds(3600))
+            try? await Task.sleep(for: Self.statusInterval)
+            if !Task.isCancelled { await refreshStatuses() }
         }
         watchers -= 1
     }
@@ -207,17 +242,85 @@ final class AutomationsStore {
         if changed { derive() }
     }
 
+    static let statusInterval: Duration = .seconds(30)
+
+    /// Reads every triggered automation's trigger on the hosts that serve them.
+    func refreshStatuses() async {
+        var next = statuses
+        for host in hosts.hosts where !forgotten.contains(host.id) {
+            guard let client = host.connectedClient, host.supports(RemoteProtocol.automationTriggersCapability) else { continue }
+            for automation in host.state.automations where automation.isTriggered {
+                let key = AutomationKey(host: host.id, automation: automation.id)
+                if let status = try? await client.automationStatus(automation.id) { next[key] = status }
+            }
+        }
+        next = next.filter { !forgotten.contains($0.key.host) }
+        if next != statuses {
+            statuses = next
+            derive()
+        }
+    }
+
+    /// Pull to refresh: the runs and the triggers.
+    func refresh() async {
+        await refreshRuns()
+        await refreshStatuses()
+    }
+
     // MARK: Changes
 
     func setEnabled(_ key: AutomationKey, _ on: Bool) {
         guard !forgotten.contains(key.host) else { return }
         pendingEnabled[key] = on
         send(key, .setEnabled(enabled: on)) { [weak self] ok in
-            if !ok { self?.pendingEnabled[key] = nil }
+            if ok { self?.reread(key) } else { self?.pendingEnabled[key] = nil }
         }
     }
 
-    func run(_ key: AutomationKey) { send(key, .run) }
+    func run(_ key: AutomationKey) { send(key, .run) { [weak self] ok in if ok { self?.reread(key) } } }
+
+    func pause(_ key: AutomationKey) { send(key, .pause) { [weak self] ok in if ok { self?.reread(key) } } }
+
+    func resume(_ key: AutomationKey) { send(key, .resume) { [weak self] ok in if ok { self?.reread(key) } } }
+
+    /// Starts a pending event's run now, past the caps.
+    func runEvent(_ key: AutomationKey, eventID: String) {
+        send(key, .runEvent(eventID: eventID)) { [weak self] ok in if ok { self?.reread(key) } }
+    }
+
+    func dismissEvent(_ key: AutomationKey, eventID: String) {
+        send(key, .dismissEvent(eventID: eventID)) { [weak self] ok in if ok { self?.reread(key) } }
+    }
+
+    /// Clears a run's unread dot when its thread is opened from here. Quiet: a dot that stays is
+    /// no reason for a banner.
+    func markRead(_ key: AutomationKey, runID: UUID) {
+        guard !forgotten.contains(key.host), supportsTriggers(key.host), let client = hosts.host(key.host)?.connectedClient else { return }
+        if var list = runs[key], let index = list.firstIndex(where: { $0.id == runID }), list[index].unread {
+            list[index].unread = false
+            runs[key] = list
+            derive()
+        }
+        Task { try? await client.automation(key.automation, request: .markRead(runID: runID)) }
+    }
+
+    /// Pause all triggers on `host` (the request names any of its automations).
+    func setAllPaused(host: UUID, _ paused: Bool) {
+        guard let key = model.rows.first(where: { $0.key.host == host && $0.triggered })?.key else { return }
+        pendingAllPaused[host] = paused
+        send(key, .setAllPaused(paused: paused)) { [weak self] ok in
+            if ok { Task { await self?.refreshStatuses() } } else { self?.pendingAllPaused[host] = nil }
+        }
+    }
+
+    /// After a change: the automation's runs and every trigger, read again.
+    private func reread(_ key: AutomationKey) {
+        readAt[key] = nil
+        Task {
+            await refreshRuns()
+            await refreshStatuses()
+        }
+    }
 
     func stop(_ key: AutomationKey) { send(key, .stop) }
 
@@ -239,6 +342,7 @@ final class AutomationsStore {
             // answer never came back landed.
         }
         guard !forgotten.contains(key.host) else { throw CancellationError() }
+        if draft.settings != nil { reread(key) }
     }
 
     private func send(_ key: AutomationKey, _ request: RemoteAutomationRequest, done: ((Bool) -> Void)? = nil) {
