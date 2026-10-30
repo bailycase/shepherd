@@ -224,9 +224,11 @@
     each, at most 16) comes with `get` and as a `missionLive` push at most every half second (empty
     once nothing runs). Station threads are read through native-thread snapshots. A mission
     thread's composer is offered (`send` in its actions) while the mission can take words there,
-    and its `send`, on this Mac or any client, goes to the owner (`onMissionThreadSend`): a steer
-    while its turn works (accepted once pi queued it), the planner's answer while the mission
-    waits on you, else a failure result saying why; words only. Other requests to it stay
+    and its `send`, on this Mac or any client, goes to the owner (`onMissionThreadSend`): while its
+    turn works, as the composer chose (`followUp` queued for after the turn in the attempt's own
+    session, which settles only after it; `steer` or `interrupt` steered in, accepted once pi
+    queued it); while the mission waits on you, the planner's answer (a Spec Kit planning thread's
+    to its own repository only); else a failure result saying why; words only. Other requests to it stay
     `mission_control`. A reply past the frame cap is `too_large`. An older client never sees missions
   - `tunnel` (`browser.tunnel.v1`, offered while the host can serve it, and only to a client that
     lists it in `hello`): a thread's Browser page on a viewing Mac reaches the host's dev server.

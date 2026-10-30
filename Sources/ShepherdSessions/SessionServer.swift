@@ -447,8 +447,9 @@ public final class SessionServer: @unchecked Sendable {
     /// The GUI's mission owner takes words typed in a mission's own thread (on this Mac or a
     /// client): a steer while its turn works, the planner's answer path while the mission waits,
     /// else a refusal saying why. Answered `accepted` with the send's operation or a failure; the
-    /// owner applies every check its own controls do. Nil: such a send is `mission_control`.
-    public var onMissionThreadSend: ((AgentID, String, UUID, @escaping (NativeThreadResult) -> Void) -> Void)?
+    /// owner applies every check its own controls do, and the composer's delivery: queued words wait for the
+    /// working turn to end, a steer or interrupt goes in now. Nil: such a send is `mission_control`.
+    public var onMissionThreadSend: ((AgentID, String, UUID, NativeThreadDelivery, @escaping (NativeThreadResult) -> Void) -> Void)?
     /// A remote client saved or restored this host's root instructions: the GUI's Settings page
     /// follows. Delivered on the main actor.
     public var onInstructionsChanged: ((InstructionsSnapshot) -> Void)?
@@ -1668,14 +1669,14 @@ public final class SessionServer: @unchecked Sendable {
         if store.state.isMissionAgent(agentID) {
             switch request {
             case .snapshot, .image, .subagentTranscript: break
-            case .send(_, _, let operationID, let text, _, let images, _, let references, let elements) where onMissionThreadSend != nil:
+            case .send(_, _, let operationID, let text, let delivery, let images, _, let references, let elements) where onMissionThreadSend != nil:
                 guard (images ?? []).isEmpty, (references ?? []).isEmpty, (elements ?? []).isEmpty else {
                     completion(.result(.failure(code: "mission_words_only", message: "A mission's thread takes words only. Remove the images or attachments and send again.")))
                     return
                 }
                 let handler = onMissionThreadSend!
                 hopToMain { [weak self] in
-                    handler(agentID, text, operationID) { result in self?.queue.async { completion(.result(result)) } }
+                    handler(agentID, text, operationID, delivery) { result in self?.queue.async { completion(.result(result)) } }
                 }
                 return
             default:

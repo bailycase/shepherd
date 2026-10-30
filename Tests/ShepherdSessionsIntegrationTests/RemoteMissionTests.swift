@@ -171,7 +171,8 @@ struct RemoteMissionTests {
         let first = try await client.next()
         guard case .error(2, "mission_control", _) = first else { Issue.record("Expected mission_control, got \(first)"); return }
         let sent = Sent()
-        remote.server.onMissionThreadSend = { agent, text, operation, reply in
+        remote.server.onMissionThreadSend = { agent, text, operation, delivery, reply in
+            #expect(delivery == .followUp, "the composer's delivery reaches the owner")
             sent.withLock { $0.append((agent, text, operation)) }
             reply(.accepted(operationID: operation))
         }

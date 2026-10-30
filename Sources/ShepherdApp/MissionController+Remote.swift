@@ -21,12 +21,12 @@ extension MissionController {
                 }
             }
         }
-        server.onMissionThreadSend = { [weak self] agent, text, operation, reply in
+        server.onMissionThreadSend = { [weak self] agent, text, operation, delivery, reply in
             MainActor.assumeIsolated {
                 guard let self else { reply(.failure(code: "mission_unavailable", message: "Host is shutting down.")); return }
                 Task { @MainActor in
                     do {
-                        try await self.threadMessage(agent: agent, text: text, operation: operation)
+                        try await self.threadMessage(agent: agent, text: text, operation: operation, delivery: delivery)
                         reply(.accepted(operationID: operation))
                     } catch let error as MissionError { reply(.failure(code: error.code, message: error.description)) }
                     catch { reply(.failure(code: "mission_failed", message: Self.safeText(String(describing: error)))) }
@@ -37,10 +37,13 @@ extension MissionController {
         publishLiveOutput()
     }
 
-    /// Words typed in a mission's own thread, on this Mac or a client: a steer while its turn works (answered once
-    /// pi queued it; whether it was read is recorded on the attempt), the planner's answer while the mission waits
-    /// on you, else a refusal that says what to do instead. The same checks as the Missions page's controls.
-    func threadMessage(agent: AgentID, text: String, operation: UUID) async throws {
+    /// Words typed in a mission's own thread, on this Mac or a client. While its turn works they go as the composer
+    /// chose: queued (`.followUp`) for after the turn, in the attempt's own session, which settles only after it; or
+    /// steered in now (`.steer`, `.interrupt`), answered once pi queued it, whether it was read recorded on the
+    /// attempt. While the mission waits on you, a planner's thread takes them as the planner's answer, a Spec Kit
+    /// planning thread for its own repository only. Else a refusal that says what to do instead. The same checks
+    /// as the Missions page's controls.
+    func threadMessage(agent: AgentID, text: String, operation: UUID, delivery: NativeThreadDelivery = .steer) async throws {
         guard vm?.settings.missionsEnabled == true else { throw MissionError("missions_off", RemoteMissionRefusal.off) }
         guard let mission = records.first(where: { $0.run.map { MissionRun.owns($0, agent: agent) } == true }), let run = mission.run else {
             throw MissionError("mission_missing", "This thread's mission no longer exists.")
@@ -51,6 +54,9 @@ extension MissionController {
         if run.phase.active {
             guard let attempt = run.attempts.last(where: { $0.agentID == agent && $0.status == .running }) else {
                 throw MissionError("mission_step_idle", "This step isn't working right now (the mission is \(run.phase.rawValue)). Steer a working step, or pause the mission and message the planner.")
+            }
+            if delivery == .followUp {
+                return try await sendQueued(id: mission.id, attemptID: attempt.id, text: text, operation: operation)
             }
             let sent = try await sendSteer(id: mission.id, revision: mission.revision, attemptID: attempt.id, text: text, operation: operation)
             Task { try? await self.awaitSteer(id: mission.id, runID: sent.runID, attemptID: attempt.id, agent: sent.agent, operation: operation) }
@@ -69,7 +75,24 @@ extension MissionController {
             return try await answer(id: mission.id, revision: mission.revision, text: text, replyTo: asked.id)
         }
         let latest = run.messages.last { $0.role == .assistant && (lane == nil || $0.spaceID == lane) }
-        try await answer(id: mission.id, revision: mission.revision, text: text, replyTo: latest?.id)
+        guard let lane else { return try await answer(id: mission.id, revision: mission.revision, text: text, replyTo: latest?.id) }
+        // That repository's planning conversation only, even before its planner has said anything.
+        let words = Self.safeText(text.trimmingCharacters(in: .whitespacesAndNewlines), bytes: 16_000)
+        guard !words.isEmpty else { throw MissionError("mission_answer", "Type a message for the planner.") }
+        try await continueSpecKitPlanning(mission.id, revision: mission.revision,
+                                          reply: (lane, MissionChatMessage(role: .user, text: words, replyTo: latest?.id, spaceID: lane)))
+    }
+
+    /// The owner's words queued behind a working turn, in the attempt's own session: pi reads them as its next
+    /// turn, and the attempt settles only after that turn (its receipts record whether pi read them).
+    func sendQueued(id: MissionID, attemptID: UUID, text: String, operation: UUID) async throws {
+        let mission = try record(id)
+        let text = Self.safeText(text.trimmingCharacters(in: .whitespacesAndNewlines), bytes: 16_000)
+        guard let run = mission.run, run.phase.active, let attempt = run.attempts.first(where: { $0.id == attemptID }),
+              attempt.status == .running, let agent = attempt.agentID, !text.isEmpty else {
+            throw MissionError("mission_queue", "Only a working mission turn takes a message for after it.")
+        }
+        try await server.sendMissionQueued(id: id, runID: run.id, agentID: agent, operationID: operation, text: text)
     }
 
     /// How often paired devices hear what running missions' agents say, at most.

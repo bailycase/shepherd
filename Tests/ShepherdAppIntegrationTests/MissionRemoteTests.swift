@@ -115,9 +115,9 @@ struct MissionRemoteTests {
             try await eventuallyOnMain("the device shows the host's mission") { missions.record(id)?.revision == (try? fixture.revision(id)) }
             return try fixture.revision(id)
         }
-        func send(_ agent: AgentID, _ text: String, operation: UUID = UUID()) async throws -> NativeThreadResult {
+        func send(_ agent: AgentID, _ text: String, operation: UUID = UUID(), delivery: NativeThreadDelivery = .followUp) async throws -> NativeThreadResult {
             try await client.nativeThread(agentID: agent, request: .send(expectedSessionID: "", generation: "", operationID: operation,
-                                                                          text: text, delivery: .followUp))
+                                                                          text: text, delivery: delivery))
         }
         let branches = Dictionary(uniqueKeysWithValues: fixture.spaces.map { ($0.id, "refs/heads/main") })
         let id = try await missions.create(goal: "Change result.txt to after.", spaces: fixture.spaces.map(\.id),
@@ -132,15 +132,20 @@ struct MissionRemoteTests {
         try await fixture.wait(id, phase: .map)
         #expect(try controller.record(id).run?.notice?.contains("map is ready") == true)
 
-        // Words typed in a repository's planning thread are the planner's answer, to that repository's conversation.
+        // Words typed in a repository's planning thread are the planner's answer, to that repository's conversation
+        // only, even when the mission kept nothing that planner said (its messages keep only the newest 40).
         let planners = try #require(try controller.record(id).run?.specKit?.lanes.compactMap(\.plannerAgentID))
+        var kept = try #require(try controller.record(id).run)
+        kept.messages.removeAll { $0.spaceID == fixture.spaces[0].id }
+        _ = try await fixture.app.server.setMissionRun(id: id, expectedRevision: try fixture.revision(id), run: kept)
         let before = try fixture.loggedCalls().count
         let feedback = UUID()
         #expect(try await send(planners[0], "Keep it short.", operation: feedback) == .accepted(operationID: feedback))
         try await fixture.wait(id, phase: .map)
-        let replied = try fixture.loggedCalls().dropFirst(before)
-        #expect(replied.first?["prompt"] as? String == "Keep it short." && replied.first?["agent"] as? String == planners[0].rawValue)
-        #expect(try controller.record(id).run?.messages.last { $0.role == .user }?.text == "Keep it short.")
+        let replied = try fixture.loggedCalls().dropFirst(before).filter { $0["prompt"] as? String == "Keep it short." }
+        #expect(replied.map { $0["agent"] as? String } == [planners[0].rawValue], "only that repository's planner gets the words")
+        let answered = try #require(try controller.record(id).run?.messages.last { $0.role == .user })
+        #expect(answered.text == "Keep it short." && answered.spaceID == fixture.spaces[0].id)
 
         // Launch holds both implement turns, so they can be steered: one from its thread, one from the mission.
         try Data().write(to: fixture.root.appendingPathComponent("hold-implement"))
@@ -160,12 +165,15 @@ struct MissionRemoteTests {
         // What a working turn says reaches the device, throttled, as the host's page shows it.
         controller.attemptOutput[first.id] = "Editing result.txt"
         try await eventuallyOnMain("the device hears the turn's words") { missions.live[id]?.attempts[first.id] == "Editing result.txt" }
-        let threadSteer = UUID()
-        #expect(try await send(firstAgent, "Thread steer.", operation: threadSteer) == .accepted(operationID: threadSteer))
-        guard case .failure("mission_steer_waiting", let why) = try await send(firstAgent, "Again.") else {
-            Issue.record("A second message while one waits must say why"); return
+        // The composer's choice holds: a steer goes in now, a queued message waits for the turn to end.
+        let threadSteer = UUID(), queued = UUID()
+        #expect(try await send(firstAgent, "Thread steer.", operation: threadSteer, delivery: .steer) == .accepted(operationID: threadSteer))
+        guard case .failure("mission_steer_waiting", let why) = try await send(firstAgent, "Again.", delivery: .interrupt) else {
+            Issue.record("A second steer while one waits must say why"); return
         }
         #expect(why.contains("still waiting to be read"))
+        #expect(try await send(firstAgent, "Then check the newline.", operation: queued) == .accepted(operationID: queued))
+        #expect(try controller.record(id).run?.attempts.first { $0.id == first.id }?.operationIDs == [threadSteer, queued])
         let steering = Task { try await missions.perform(id, revision: try await shown(id), .steer(attemptID: second.id, text: "Action steer.")) }
         try await eventuallyOnMain("the mission's steer is queued with pi") {
             (try? controller.record(id).run?.attempts.first { $0.id == second.id }?.operationIDs?.count) == 1
@@ -174,7 +182,15 @@ struct MissionRemoteTests {
         _ = try await steering.value
         try await fixture.wait(id, phase: .map)
         var mission = try controller.record(id)
-        #expect(mission.run?.attempts.first { $0.id == first.id }?.deliveredOperationIDs == [threadSteer], "pi read the thread's steer")
+        let firstReceipt = try #require(mission.run?.attempts.first { $0.id == first.id })
+        #expect(firstReceipt.deliveredOperationIDs == [threadSteer, queued], "pi read the steer, then the queued message")
+        #expect(firstReceipt.status == .succeeded, "the attempt settled only after the queued turn")
+        let calls = try fixture.loggedCalls()
+        let implementCall = try #require(calls.firstIndex { $0["prompt"] as? String == "/speckit.implement" && $0["agent"] as? String == firstAgent.rawValue })
+        let queuedCall = try #require(calls.firstIndex { $0["prompt"] as? String == "Then check the newline." })
+        #expect(queuedCall > implementCall && calls[queuedCall]["agent"] as? String == firstAgent.rawValue,
+                "the queued message is its own turn after the working one, in the same thread")
+        #expect(!calls.contains { $0["steer"] as? String == "Then check the newline." }, "a queued message is never steered in")
         #expect(mission.run?.attempts.first { $0.id == second.id }?.deliveredOperationIDs?.count == 1)
         let steers = try fixture.loggedCalls().compactMap { $0["steer"] as? String }
         #expect(steers.contains("Thread steer.") && steers.contains("Action steer.") && !steers.contains("Again."))
