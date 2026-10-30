@@ -162,7 +162,7 @@ struct MissionRunPage: View {
     private var decisions: some View {
         let entries = (mission.run?.attempts ?? []).enumerated().compactMap { index, attempt -> (String, String, String, String)? in
             guard let station = plan.stations.first(where: { $0.id == attempt.stationID }) else { return nil }
-            let retried = (mission.run?.attempts ?? []).dropFirst(index + 1).contains { $0.stationID == station.id }
+            let retried = (mission.run?.attempts ?? []).dropFirst(index + 1).contains { $0.stationID == station.id && $0.task == attempt.task }
             let time = attempt.endedAt.map { Date(timeIntervalSince1970: $0).formatted(date: .omitted, time: .shortened) } ?? ""
             if attempt.status == .failed && retried { return (time, station.title, "failed, retried", "auto") }
             guard attempt.status == .succeeded else { return nil }
@@ -325,7 +325,8 @@ private struct MissionRunInspector: View {
             if attempts.count > 1 {
                 HStack(spacing: SH.Space.s) {
                     SHStatusDot(attempt.status.missionState)
-                    Text("Attempt \(index + 1) · \(attempt.status.rawValue)").shText(.caption).foregroundStyle(Color.sh.textTertiary)
+                    // One agent per task shares its phase's station: its rows name the task, not an attempt number.
+                    Text("\(attempt.task ?? "Attempt \(index + 1)") · \(attempt.status.rawValue)").shText(.caption).foregroundStyle(Color.sh.textTertiary)
                 }
             }
             let live = attempt.status == .running ? (attemptOutput[attempt.id] ?? output) : ""

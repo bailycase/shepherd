@@ -131,6 +131,21 @@ struct MissionSpecKitTests {
         #expect(spec.requirements.count == 2 && spec.successCriteria.count == 1 && spec.clarificationsNeeded == 1)
     }
 
+    /// Swift reads "\r\n" as one Character, so a split on "\n" left a Windows-edited file one unparsed line.
+    @Test func windowsLineEndingsParseLikeUnixOnes() {
+        let crlf = { (text: String) in text.replacingOccurrences(of: "\n", with: "\r\n") }
+        let tasks = "## Phase 1: Setup\n- [ ] T001 [P] a\n- [X] T002 b\n"
+        #expect(SpecKit.parseTasks(crlf(tasks)) == SpecKit.parseTasks(tasks) && SpecKit.parseTasks(tasks).first?.tasks.count == 2)
+        let spec = "# Login\n- **FR-001**: sign in\n- **FR-002**: [NEEDS CLARIFICATION: how]\n"
+        #expect(SpecKit.parseSpec(crlf(spec)) == SpecKit.parseSpec(spec) && SpecKit.parseSpec(spec).title == "Login")
+        #expect(SpecKit.uncheckedTasks(Data(crlf(tasks).utf8)) == SpecKit.uncheckedTasks(Data(crlf("## Phase 1: Setup\n- [ ] T001 [P] a\n- [ ] T002 b\n").utf8)))
+        #expect(SpecKit.onlyChecksTasks(before: crlf("- [ ] T001 a\n"), after: crlf("- [X] T001 a\n")))
+        #expect(SpecKit.analysisFoundCritical(crlf("| ID | Severity |\n| C1 | CRITICAL |\n")))
+        var warnings: [String] = []
+        let hooks = SpecKit.parseHooks(crlf("hooks:\n  after_tasks:\n    - extension: git\n      command: speckit.git.commit\n"), warnings: &warnings)
+        #expect(hooks.count == 1 && warnings.isEmpty)
+    }
+
     @Test func convergeUnchangedIsAmbiguousNotSuccess() {
         let before = Data("- [X] T001 a\n".utf8)
         #expect(SpecKit.convergeOutcome(before: before, after: before) == .unchanged)
@@ -164,6 +179,64 @@ struct MissionSpecKitTests {
                                  plan: MissionPlan(lanes: [.init(spaceID: lane, name: "app")], stations: first.stations, dependencies: first.dependencies))
         try draft.validateForApproval()
         try Mission(draft: draft).validate()
+    }
+
+    @Test func oneAgentPerTaskBatchesParallelRunsWithinPhasesAndSendsTheFirstTaskAlone() {
+        let phases = SpecKit.parseTasks("""
+        ## Phase 1: Setup
+        - [X] T001 Create structure
+        - [ ] T002 [P] Lint config
+        - [ ] T003 [P] Format config
+        - [ ] T004 Wire the CLI
+        - [ ] T005 [P] [US1] Model in src/a.swift
+        - [ ] T006 [P] [US1] Model in src/b.swift
+        ## Phase 2: Polish
+        - [ ] T007 [P] Docs
+        - [ ] T008 [P] Tests
+        """)
+        let batches = SpecKit.implementBatches(phases).map { $0.map { "\($0.phase):\($0.task.id)" } }
+        // T002 is the round's first unchecked task, so it goes alone (it alone runs stock setup checks).
+        #expect(batches == [["0:T002"], ["0:T003"], ["0:T004"], ["0:T005", "0:T006"], ["1:T007", "1:T008"]])
+        #expect(SpecKit.implementBatches(SpecKit.parseTasks("## A\n- [X] T1 a\n")).isEmpty)
+    }
+
+    @Test func aTaskIsDoneOnlyByItsOwnDoneLineAndMarkingTouchesOnlyItsCheckbox() {
+        #expect(SpecKit.taskReported("Wrote src/a.swift.\n**Done: T005**", task: "T005"))
+        #expect(SpecKit.taskReported("`Done: T005`", task: "T005"))
+        #expect(!SpecKit.taskReported("Done: T006", task: "T005"))
+        #expect(!SpecKit.taskReported("I'll get to it. Done: T005 soon", task: "T005"))
+        #expect(!SpecKit.taskReported("Done: T005\nBlocked: T005 the API is missing", task: "T005"))
+        let tasks = "## P\r\n- [ ] T005 [P] a\r\n- [ ] T0050 b\r\n  - [ ] T006 c\r\n"
+        #expect(SpecKit.markingDone(tasks, task: "T005") == "## P\r\n- [X] T005 [P] a\r\n- [ ] T0050 b\r\n  - [ ] T006 c\r\n")
+        #expect(SpecKit.markingDone(tasks, task: "T006") == "## P\r\n- [ ] T005 [P] a\r\n- [ ] T0050 b\r\n  - [X] T006 c\r\n")
+        #expect(SpecKit.markingDone("- [X] T005 a\n", task: "T005") == nil)
+        #expect(SpecKit.markingDone(tasks, task: "T.*") == nil, "a task id is never a pattern")
+        let scope = SpecKit.taskScope(SpecKitTask(id: "T005", done: false, parallel: true, story: nil, text: "Model in src/a.swift"), first: false)
+        #expect(!scope.contains("\n") && scope.contains("Done: T005") && scope.contains("Skip the project setup checks"))
+        let hook = { (event: String, optional: Bool) in SpecKitHook(event: event, extensionID: "git", command: "speckit.git.commit", optional: optional, enabled: true, condition: nil) }
+        #expect(SpecKit.hasMandatoryImplementHooks([hook("after_implement", false)]))
+        #expect(!SpecKit.hasMandatoryImplementHooks([hook("after_implement", true), hook("before_specify", false)]))
+    }
+
+    /// Trimming to 128 stations once dropped later repositories' checks and Converge, which execution and publication read.
+    @Test func fittingManyRepositoriesKeepsEveryCheckConvergeAndImplementReceipt() throws {
+        let mission = MissionID(), lanes = (0..<12).map { _ in SpaceID() }
+        let tasks = (0..<10).map { "## Phase \($0)\n- [ ] T\($0) work\n" }.joined()
+        var stations: [MissionStation] = [], wires: [MissionDependency] = []
+        for lane in lanes {
+            let check = MissionStation(kind: .check, laneID: lane, title: "Tests", goal: "swift test", command: "swift test")
+            let projected = SpecKit.projection(mission: mission, lane: lane, artifacts: [.specify: true, .plan: true, .tasks: true],
+                                               spec: nil, phases: SpecKit.parseTasks(tasks), keeping: [check])
+            stations += projected.stations; wires += projected.dependencies
+        }
+        #expect(stations.count > 128)
+        let fitted = try SpecKit.fitted(stations: stations, dependencies: wires, mission: mission, lanes: lanes)
+        let kept = Set(fitted.stations.map(\.id))
+        #expect(fitted.stations.count == 128)
+        #expect(stations.filter { $0.kind != .worker }.allSatisfy { kept.contains($0.id) })
+        #expect(lanes.allSatisfy { kept.contains(SpecKit.stationID(mission, $0, "phase-0")) })
+        try MissionPlan(lanes: lanes.map { .init(spaceID: $0, name: "repo") }, stations: fitted.stations, dependencies: fitted.dependencies).validate()
+        #expect(throws: MissionError.self) { try SpecKit.fitted(stations: stations, dependencies: wires, mission: mission, lanes: lanes, limit: 40) }
     }
 
     @Test func onlyAConsentedRunningSpecKitAttemptGetsStockPromptsAtLaunch() throws {

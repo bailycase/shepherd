@@ -46,6 +46,8 @@ final class MissionController {
     @ObservationIgnored var jobs: [MissionID: Task<Void, Never>] = [:]
     @ObservationIgnored var jobRuns: [MissionID: UUID] = [:]
     @ObservationIgnored var reviewInfo: [MissionID: [SpaceID: RemoteCommitInfo]] = [:]
+    /// A running Spec Kit mission's agent turns, at most its concurrent-station limit at once across every repository.
+    @ObservationIgnored var agentSlots: [MissionID: MissionSlots] = [:]
 
     init(vm: ShepherdViewModel) { self.vm = vm; server = vm.server }
     var records: [Mission] { vm?.state.missions ?? [] }
@@ -192,7 +194,9 @@ final class MissionController {
         if let runID {
             try Task.checkCancellation()
             guard mission.run?.id == runID, mission.run?.phase.active == true else { throw CancellationError() }
-            if let run = mission.run, let reason = run.exhausted(mission.draft.limits, at: Self.now) { throw MissionError("mission_limit", reason) }
+            // Publishing is the person's approved step, each command bounded at 60 s; the run's limits bound unattended work,
+            // and edits are locked after approval, so a limit reached here could never be raised again.
+            if let run = mission.run, run.phase != .publishing, let reason = run.exhausted(mission.draft.limits, at: Self.now) { throw MissionError("mission_limit", reason) }
         }
         return mission
     }
@@ -201,7 +205,7 @@ final class MissionController {
         error = nil; jobRuns[id] = runID
         jobs[id] = Task {
             let watchdog = Task {
-                guard let mission = try? self.record(id), let run = mission.run else { return }
+                guard let mission = try? self.record(id), let run = mission.run, run.phase != .publishing else { return }
                 let remaining = max(0, mission.draft.limits.seconds - run.elapsed(at: Self.now))
                 do {
                     try await Task.sleep(for: .seconds(remaining))
@@ -256,6 +260,8 @@ final class MissionController {
         let task = Task.detached {
             var environment = ProcessInfo.processInfo.environment
             environment["GIT_TERMINAL_PROMPT"] = "0"; environment["GH_PROMPT_DISABLED"] = "1"
+            // Reads (status, diff) never take index.lock from a repository's own turn running beside them.
+            environment["GIT_OPTIONAL_LOCKS"] = "0"
             let prefix = cwd.map { "cd -- \(shellQuoted($0)) || exit\n" } ?? ""
             return try BoundedCommand.run(["/bin/zsh", "-l", "-c", prefix + script], directory: cwd.map { URL(fileURLWithPath: $0) },
                                           environment: environment, timeout: min(86_400, max(0.01, timeout)), outputLimit: 2 << 20)
@@ -264,5 +270,39 @@ final class MissionController {
             let result = try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
             return .init(status: result.status, stdout: String(decoding: result.output, as: UTF8.self), stderr: String(decoding: result.errors, as: UTF8.self))
         } catch { return .init(status: error is CancellationError ? 130 : 124, stdout: "", stderr: "Command stopped: \(error)") }
+    }
+}
+
+/// A fixed number of turns at once, first come first served. A waiter cancelled in line leaves it without a slot.
+@MainActor final class MissionSlots {
+    private var free: Int
+    private var waiting: [(id: UUID, resume: CheckedContinuation<Void, Error>)] = []
+    init(_ limit: Int) { free = max(1, limit) }
+
+    func run<T>(_ body: () async throws -> T) async throws -> T {
+        try await acquire()
+        defer { release() }
+        return try await body()
+    }
+
+    private func acquire() async throws {
+        if free > 0 { free -= 1; return }
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                if Task.isCancelled { continuation.resume(throwing: CancellationError()) } else { waiting.append((id, continuation)) }
+            }
+        } onCancel: {
+            Task { @MainActor in self.leave(id) }
+        }
+    }
+
+    private func leave(_ id: UUID) {
+        guard let index = waiting.firstIndex(where: { $0.id == id }) else { return }
+        waiting.remove(at: index).resume.resume(throwing: CancellationError())
+    }
+
+    private func release() {
+        if waiting.isEmpty { free += 1 } else { waiting.removeFirst().resume.resume() }
     }
 }
