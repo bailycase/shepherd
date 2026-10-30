@@ -142,6 +142,11 @@ final class RemoteHostStore {
         var supportsDesignDelete: Bool {
             supportsDesigns && client?.capabilities.contains(RemoteProtocol.designDeleteCapability) == true
         }
+        /// The host offers `capability` beside its designs (`design.agent.v1`, `design.lifecycle.v1`,
+        /// `design.systems.v1`).
+        func supportsDesignCapability(_ capability: String) -> Bool {
+            supportsDesigns && client?.capabilities.contains(capability) == true
+        }
         var supportsReviewCommit: Bool { client?.capabilities.contains(RemoteProtocol.reviewCommitCapability) == true }
         /// The host carries Browser tunnels, lists its threads' dev servers and starts them
         /// (`browser.tunnel.v1`): its threads get a Browser tab here.
@@ -427,6 +432,10 @@ final class RemoteHostStore {
         client.onDesignChanged = { [weak connection] design, revision, comments in
             guard let connection, connection.client.map(ObjectIdentifier.init) == clientID else { return }
             connection.designs.changed(design, revision: revision, commentsRevision: comments)
+        }
+        client.onDesignSystemsChanged = { [weak connection] in
+            guard let connection, connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            connection.designs.systemsChanged()
         }
         client.onMissionChanged = { [weak connection] mission, revision in
             guard let connection, connection.client.map(ObjectIdentifier.init) == clientID else { return }

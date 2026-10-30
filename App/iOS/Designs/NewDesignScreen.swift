@@ -20,6 +20,8 @@ struct NewDesignScreen: View {
     @State private var system: String?
     @State private var starting = false
     @State private var problem: String?
+    @State private var importing = false
+    @State private var uploaded: Double?
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -57,6 +59,15 @@ struct NewDesignScreen: View {
                         }
                     }
                 }
+                // A Claude Design export, imported on the host (`design.import.v1`).
+                if let chosen, designs.supports(chosen, RemoteProtocol.designImportCapability) {
+                    Section {
+                        Button(uploaded.map { "Sending… \(Int($0 * 100))%" } ?? "Import a Claude Design ZIP…", systemImage: "square.and.arrow.down") {
+                            importing = true
+                        }
+                        .disabled(uploaded != nil || starting)
+                    }
+                }
                 if let problem {
                     Section { Text(problem).foregroundStyle(Color.sh.failed) }
                 }
@@ -73,9 +84,28 @@ struct NewDesignScreen: View {
                 }
             }
         }
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.zip]) { result in
+            guard case .success(let url) = result, let chosen else { return }
+            Task { await importZip(url, host: chosen) }
+        }
         .onAppear {
             if text.isEmpty { text = brief }
             focused = brief.isEmpty
+        }
+    }
+
+    private func importZip(_ url: URL, host: UUID) async {
+        uploaded = 0
+        problem = nil
+        defer { uploaded = nil }
+        do {
+            let ref = try await MobileDesigns.of(hosts).importProject(host: host, url: url) { share in
+                Task { @MainActor in if uploaded != nil { uploaded = share } }
+            }
+            dismiss()
+            DesignsHooks.open(ref, navigator: navigator)
+        } catch {
+            problem = "Couldn't import \(url.lastPathComponent): \(MobileDesignsError.words(error))"
         }
     }
 

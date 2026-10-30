@@ -77,6 +77,11 @@ struct PadDesignScreen: View {
         .sheet(item: Binding(get: { exporting.map(PadDesignExport.init) }, set: { if $0 == nil { exporting = nil } })) { export in
             PadDesignShareSheet(items: export.urls)
         }
+        .sheet(item: Binding(get: { canvas.implementing }, set: { canvas.implementing = $0 })) { implementing in
+            DesignImplementSheet(model: implementing) { target, opens in
+                if opens { navigator.open(.thread(target)) }
+            }
+        }
         .alert("Design", isPresented: Binding(get: { canvas.problem != nil }, set: { if !$0 { canvas.problem = nil } })) {
             Button("OK", role: .cancel) { canvas.problem = nil }
         } message: {
@@ -203,6 +208,7 @@ private struct PadDesignCanvasBackground: View {
 /// narrow window the design agent's latest reply.
 struct PadDesignCanvasView: View {
     @Bindable var canvas: PadDesignCanvas
+    @Environment(MobileHosts.self) private var hosts
     /// The design agent, whose latest reply floats over a narrow window's canvas; nil for none.
     let reply: AgentRef?
     /// The host takes Pencil markup (`design.markup.v1`).
@@ -265,7 +271,22 @@ struct PadDesignCanvasView: View {
             tweak: { canvas.paneTab = .tweak },
             variations: { canvas.askForVariations(of: path) },
             duplicate: { canvas.duplicate(path) },
-            play: canvas.isInteractive(path) ? { canvas.present(path) } : nil))
+            play: canvas.isInteractive(path) ? { canvas.present(path) } : nil,
+            implement: implement(path)))
+    }
+
+    /// Implement in a Thread… for the board, to one of its host's threads, where the host takes
+    /// references to its designs (`design.references.v1`).
+    private func implement(_ path: DesignPath) -> (() -> Void)? {
+        let designs = MobileDesigns.of(hosts)
+        let ref = HostDesignRef(host: canvas.ref.host, design: canvas.ref.design)
+        guard designs.supports(ref.host, RemoteProtocol.designReferencesCapability),
+              let reference = DesignReference(designID: ref.design, board: path) else { return nil }
+        let canvas = canvas
+        return {
+            canvas.implementing = DesignImplementModel(pick: DesignReferencePick(ref: ref, reference: reference, piece: canvas.title(path)),
+                                                       threads: designs.referenceThreads(host: ref.host))
+        }
     }
 }
 

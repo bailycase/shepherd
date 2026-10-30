@@ -380,7 +380,7 @@ struct ThreadTranscript: View {
             if designChat, let counts = row.designMarkup {
                 PadMarkupReadLine(counts: counts).equatable()
             } else {
-                UserTurnView(turn: row.turn).equatable()
+                UserTurnView(turn: row.turn, host: ref.host).equatable()
             }
         } else if let presentation = row.presentation {
             // The card stands in for its call only where a canvas can apply it (iPadDesign).

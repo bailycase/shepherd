@@ -33,8 +33,10 @@ struct DesignLifecycleWordsTests {
     /// A host's design: what the host does for this Mac, Delete off with why when it can't.
     @Test func aHostsDesignOffersWhatItsHostDoes() {
         let deletes = DesignMenu.design(.card, hasSystem: true, remote: "build-01", hostDeletes: true)
-        #expect(deletes.items.map(\.action) == [.open, .rename, .delete])
+        #expect(deletes.items.map(\.action) == [.open, .rename, .export, .delete])
         #expect(deletes.items.last?.enabled == true)
+        let lifecycle = DesignMenu.design(.recents, hasSystem: true, remote: "build-01", hostLifecycle: true)
+        #expect(lifecycle.items.map(\.action) == [.open, .rename, .duplicate, .export, .removeFromRecents, .delete])
         let older = DesignMenu.design(.card, hasSystem: true, remote: "build-01", hostDeletes: false)
         let delete = try? #require(older.items.last)
         #expect(delete?.enabled == false && delete?.destructive == false)

@@ -43,16 +43,31 @@ extension ShepherdViewModel {
     // MARK: Opening
 
     /// A host's design card: its agent's layout on that host, which draws as the design's screen.
-    /// A design whose agent is gone there says so: only its host starts a fresh one.
+    /// A design whose agent is gone there gets a fresh one from its host (`design.agent.v1`); an
+    /// older host says so.
     func openRemoteDesign(_ ref: RemoteDesignRef) {
         guard let connection = remoteHosts.connections.first(where: { $0.id == ref.hostID }),
               let design = connection.state.designs.first(where: { $0.id == ref.designID }) else { return }
         let agent = connection.state.agents.first { $0.id == design.agentID } ?? connection.state.agents.first { $0.designID == ref.designID }
-        guard let agent else {
+        if let agent {
+            selectRemoteAgent(hostID: ref.hostID, agentID: agent.id)
+            return
+        }
+        guard connection.supportsDesignCapability(RemoteProtocol.designAgentCapability) else {
             remoteActionError = "\(design.name) has no design agent on \(connection.config.name). Open it there to start one."
             return
         }
-        selectRemoteAgent(hostID: ref.hostID, agentID: agent.id)
+        let library = connection.designs
+        Task {
+            do {
+                guard case .agent(let agentID) = try await Self.remoteDesign(library, .ensureAgent(designID: ref.designID)) else {
+                    throw RemoteDesignReply.unexpected
+                }
+                selectRemoteAgent(hostID: ref.hostID, agentID: agentID)
+            } catch {
+                remoteActionError = "Couldn't open \(design.name): \(Self.words(error))."
+            }
+        }
     }
 
     // MARK: Screens
@@ -92,8 +107,8 @@ extension ShepherdViewModel {
                 }
                 return write.write
             },
-            // The project's stylesheets are on the host: Tweak snaps to the board's own tokens.
-            projectTokens: { DesignTokens() },
+            // The project's stylesheets as this Mac synced them (its systems' `tokens.css` among them).
+            projectTokens: { await source.projectTokens() },
             // A stale revision reads as the local store's (`remoteDesign`).
             isStale: { if case DesignStoreError.stale = $0 { true } else { false } })
         let agentRef = connection.state.designs.first { $0.id == id }?.agentID.map { RemoteAgentRef(hostID: ref.hostID, agentID: $0) }
@@ -103,6 +118,10 @@ extension ShepherdViewModel {
                                        actions: remoteDesignCanvasActions(library, agent: agentRef))
         if let system = connection.state.designs.first(where: { $0.id == id })?.systemNamespace {
             screen.tweak?.systemName = system
+        }
+        // Implement and Copy reference hand its pieces to the host's own threads, where it takes them.
+        if connection.supportsDesignCapability(RemoteProtocol.designReferencesCapability) {
+            screen.referenceActions = remoteDesignReferenceCanvasActions(ref.hostID)
         }
         remoteDesignScreens[ref] = screen
         return screen
@@ -227,6 +246,7 @@ extension ShepherdViewModel {
     func loadRemoteDesigns() async {
         for connection in remoteHosts.connections where connection.supportsDesigns {
             await connection.designs.refresh()
+            remoteReferencesDesignsChanged(connection.id)
             guard let listing = connection.designs.listing, let rendering = remoteDesignRendering(connection.id) else { continue }
             for summary in listing.designs {
                 guard let first = summary.firstBoard else { continue }
@@ -244,7 +264,7 @@ extension ShepherdViewModel {
     var remoteDesignSections: [DesignsPageModel.HostSection] {
         let now = Date()
         return remoteHosts.connections.filter(\.supportsDesigns).compactMap { connection in
-            guard let listing = connection.designs.listing, !listing.designs.isEmpty else { return nil }
+            guard let listing = connection.designs.listing, !listing.designs.isEmpty || !listing.systems.isEmpty else { return nil }
             let thumbnails = remoteDesignRenderings[connection.id]?.thumbnails
             let query = designsPageFilter.trimmingCharacters(in: .whitespacesAndNewlines)
             let cards = listing.designs.compactMap { summary -> DesignsPageModel.Card? in
@@ -260,10 +280,33 @@ extension ShepherdViewModel {
                     board: SHDesignCardBoard(size: summary.firstBoard.map { CGSize(width: $0.width, height: $0.height) }),
                     thumbnail: entry?.version ?? 0, selected: false,
                     menu: DesignMenu.design(.card, hasSystem: false, remote: connection.config.name,
-                                            hostDeletes: connection.supportsDesignDelete))
+                                            hostDeletes: connection.supportsDesignDelete,
+                                            hostLifecycle: connection.supportsDesignCapability(RemoteProtocol.designLifecycleCapability)))
             }
-            guard !cards.isEmpty else { return nil }
-            return DesignsPageModel.HostSection(id: connection.id, name: connection.config.name, cards: cards)
+            let systems = listing.systems.compactMap { summary -> DesignsPageModel.System? in
+                guard query.isEmpty || summary.info.title.localizedCaseInsensitiveContains(query) else { return nil }
+                let used = connection.state.designs.filter { !$0.buildsSystem && $0.systemNamespace == summary.namespace }.count
+                let target = DesignSystemTarget.remote(RemoteSystemRef(hostID: connection.id, namespace: summary.namespace))
+                return DesignsPageModel.System(id: target, name: summary.info.title, source: summary.info.sources.first,
+                                               count: DeleteDesignWords.count(used, "design"), swatches: [],
+                                               tag: summary.builtIn ? "Built-in" : nil, menu: designSystemMenu(target))
+            }
+            // Builds still reading their space, before their agent wrote a system.
+            let built = Set(listing.systems.compactMap(\.info.ownerDesignID))
+            let builds = connection.state.designs.filter { $0.buildsSystem && !built.contains($0.id) }.map { build in
+                let space = build.sourceSpaceID.flatMap { id in connection.state.spaces.first { $0.id == id }?.name }
+                return DesignsPageModel.System(id: .remoteBuild(RemoteDesignRef(hostID: connection.id, designID: build.id)), name: build.name,
+                                               source: space.map { "\($0) · building" } ?? "building", count: "", swatches: [],
+                                               menu: designSystemMenu(.remoteBuild(RemoteDesignRef(hostID: connection.id, designID: build.id))))
+            }
+            let projects = connection.supportsDesignCapability(RemoteProtocol.designSystemsCapability)
+                ? connection.state.spaces.filter { !$0.holdsDesigns && !$0.holdsProjects }.map { DesignsPageModel.Project(id: $0.id, name: $0.name) }
+                : nil
+            guard !cards.isEmpty || !systems.isEmpty || !builds.isEmpty else { return nil }
+            var section = DesignsPageModel.HostSection(id: connection.id, name: connection.config.name, cards: cards,
+                                                       systems: builds + systems)
+            section.projects = projects
+            return section
         }
     }
 }
@@ -289,7 +332,9 @@ struct RemoteDesignLayoutView: View {
         let _ = SHRenderProbe.tick("layout.design")
         HStack(spacing: 0) {
             if let screen = vm.remoteDesignScreen(ref) {
-                DesignCanvasPane(screen: screen)
+                DesignCanvasPane(screen: screen, vm: vm,
+                                 designName: vm.remoteHosts.connections.first { $0.id == ref.hostID }?.state.designs
+                                     .first { $0.id == ref.designID }?.name ?? "")
                 RemoteDesignChatPane(vm: vm, screen: screen, agent: agent, agentName: agentName, threadPaneID: threadPaneID)
                     .frame(width: AppLayout.designChatWidth)
             }

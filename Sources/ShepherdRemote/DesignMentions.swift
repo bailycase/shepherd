@@ -139,6 +139,10 @@ public struct DesignMentionLoad: Equatable, Sendable {
     }
 }
 
+/// One design's rows for the @ picker (`DesignMentionCatalog.entries`).
+public typealias DesignMentionEntries = (design: DesignMentionItem, pages: [DesignMentionItem], boards: [DesignMentionItem],
+                                         elements: [String: [DesignMentionItem]])
+
 /// What the @ picker offers from this Mac: its designs (most recently active first), each
 /// design's boards in canvas order, and each board's elements. Derived off the main thread and
 /// off the server's queue (`SessionServer.designMentionCatalog`); the picker reads it and

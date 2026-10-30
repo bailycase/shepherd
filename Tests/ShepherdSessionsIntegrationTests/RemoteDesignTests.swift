@@ -548,3 +548,194 @@ extension RemoteDesignTests {
         #expect(host.server.state.designs.map(\.id) == [id])
     }
 }
+
+// MARK: Agents, lifecycle and systems
+
+extension RemoteDesignTests {
+    /// A design with no agent gets one from the host's app; a host without the app, or without
+    /// the capability, refuses. A system build never opens remotely.
+    @Test func aDesignWithoutAnAgentGetsOneFromTheHostsApp() async throws {
+        let host = try RemoteHost()
+        defer { host.stop() }
+        host.server.setDesignsServed(true)
+        let id = try await design(host)
+        let raw = try await designClient(host)
+        #expect(try await refusal(raw, 2, .ensureAgent(designID: id)) == "unsupported")
+
+        let asked = Locked<[DesignID]>([])
+        let agent = AgentID()
+        host.server.onRemoteEnsureDesignAgent = { design, completion in
+            asked.withValue { $0.append(design) }
+            completion(.success(agent))
+        }
+        #expect(try await answer(raw, 3, .ensureAgent(designID: id)) == .agent(agent))
+        #expect(asked.current == [id])
+        #expect(try await refusal(raw, 4, .ensureAgent(designID: DesignID())) == DesignStoreError.noSuchDesign(DesignID()).code)
+        host.server.onRemoteEnsureDesignAgent = { _, completion in completion(.failure(RemoteCreateAgentError("no model"))) }
+        #expect(try await refusal(raw, 5, .ensureAgent(designID: id)) == "start_failed")
+
+        host.server.advertisedCapabilities = RemoteProtocol.capabilities.filter { $0 != RemoteProtocol.designAgentCapability }
+        #expect(try await refusal(raw, 6, .ensureAgent(designID: id)) == "unsupported")
+    }
+
+    /// Duplicate and Remove from Recents go through the host's own.
+    @Test func duplicateAndRemoveFromRecentsAreTheHostsOwn() async throws {
+        let host = try RemoteHost()
+        defer { host.stop() }
+        host.server.setDesignsServed(true)
+        let id = try await design(host)
+        let raw = try await designClient(host)
+
+        guard case .designDuplicated(let copy) = try await answer(raw, 2, .duplicate(designID: id)) else {
+            Issue.record("expected a copy"); return
+        }
+        #expect(copy.name == "Checkout funnel copy" && copy.id != id)
+        #expect(Set(host.server.state.designs.map(\.id)) == [id, copy.id])
+
+        #expect(try await answer(raw, 3, .removeFromRecents(designID: id)) == .ok)
+        #expect(host.server.state.designs.first { $0.id == id }?.inRecents == false)
+        #expect(try await refusal(raw, 4, .duplicate(designID: DesignID())) == DesignStoreError.noSuchDesign(DesignID()).code)
+    }
+
+    /// A host's systems are read file by file, renamed, duplicated and deleted for another
+    /// device, and each change is pushed to a client that reads it. A built-in stays read-only.
+    @Test func designSystemsChangeRemotelyAndArePushed() async throws {
+        let host = try RemoteHost()
+        defer { host.stop() }
+        let tokens = Data(#"{"format":"shepherd-tokens/1"}"#.utf8)
+        host.server.designSystems.register(DesignSystemStore.BuiltIn(
+            info: DesignSystemInfo(namespace: "shepherd-design", title: "Shepherd Design", createdAt: 0), files: ["tokens.json": tokens]))
+        host.server.setDesignsServed(true)
+        let raw = try await designClient(host)
+
+        guard case .chunk(let piece) = try await answer(raw, 2, .systemFile(namespace: "shepherd-design", path: "tokens.json", offset: 0)) else {
+            Issue.record("expected a piece"); return
+        }
+        #expect(piece.data == tokens && piece.total == tokens.count && piece.sha256 == RemoteDesignService.sha256(tokens) && piece.isLast)
+        #expect(try await refusal(raw, 3, .systemFile(namespace: "shepherd-design", path: "../state.json", offset: 0)) == RemoteDesignCode.noSuchFile)
+        #expect(try await refusal(raw, 4, .systemFile(namespace: "shepherd-design", path: "tokens.json", offset: 1_000)) == "invalid_offset")
+        #expect(try await refusal(raw, 5, .renameSystem(namespace: "shepherd-design", title: "x")) != nil, "a built-in is read-only")
+
+        try raw.send(.design(id: 6, request: .duplicateSystem(namespace: "shepherd-design")))
+        var frames: [RemoteReply] = []
+        func has(_ match: (RemoteReply) -> Bool) -> Bool { frames.contains(where: match) }
+        while !(has { if case .design(6, _) = $0 { true } else { false } } && has { $0 == .designSystemsChanged }) {
+            frames.append(try await raw.next())
+        }
+        guard case .design(_, .systemChanged(let copy)) = frames.first(where: { if case .design(6, _) = $0 { true } else { false } }) else {
+            Issue.record("expected a copy"); return
+        }
+        #expect(copy.info.namespace == "shepherd-design-copy" && !copy.builtIn)
+        // A system on disk serves the one file asked for, never its record.
+        guard case .chunk(let copied) = try await answer(raw, 60, .systemFile(namespace: copy.namespace, path: "tokens.json", offset: 0)) else {
+            Issue.record("expected the copy's file"); return
+        }
+        #expect(copied.data == tokens)
+        #expect(try await refusal(raw, 61, .systemFile(namespace: copy.namespace, path: "system.json", offset: 0)) == RemoteDesignCode.noSuchFile)
+
+        #expect(try await refusal(raw, 7, .renameSystem(namespace: copy.namespace, title: "  ")) == "invalid_title")
+        guard case .systemChanged(let renamed) = try await answer(raw, 8, .renameSystem(namespace: copy.namespace, title: " Acme ")) else {
+            Issue.record("expected the system"); return
+        }
+        #expect(renamed.info.title == "Acme" && renamed.namespace == copy.namespace)
+        #expect(try await answer(raw, 9, .deleteSystem(namespace: copy.namespace)) == .ok)
+        #expect(await host.server.designSystemSummaries().map(\.namespace) == ["shepherd-design"])
+        #expect(try await refusal(raw, 10, .resyncSystem(namespace: "shepherd-design")) != nil, "a built-in has no project to read")
+    }
+
+    /// A client that doesn't list `design.systems.v1` is never pushed a systems change.
+    @Test func anOlderClientIsNotPushedSystemChanges() async throws {
+        let host = try RemoteHost()
+        defer { host.stop() }
+        host.server.designSystems.register(DesignSystemStore.BuiltIn(
+            info: DesignSystemInfo(namespace: "shepherd-design", title: "Shepherd Design", createdAt: 0), files: ["tokens.json": Data("{}".utf8)]))
+        host.server.setDesignsServed(true)
+        let older = try await host.raw(authenticated: false)
+        _ = try await older.hello(token: host.token, capabilities: [RemoteProtocol.designsCapability])
+        try older.send(.design(id: 2, request: .duplicateSystem(namespace: "shepherd-design")))
+        var seen = try await older.frames { if case .design(2, _) = $0 { true } else { false } }
+        #expect(await host.server.designSystemSummaries().count == 2)
+        try older.send(.stateFetch(id: 3))
+        seen += try await older.frames { if case .state(3, _) = $0 { true } else { false } }
+        #expect(!seen.contains { if case .designSystemsChanged = $0 { true } else { false } })
+    }
+
+    /// "Build one from a repo" from another device: the host's app starts the build in one of its
+    /// spaces (never the designs space); a host without the app, or an unknown space, refuses.
+    @Test func aSystemBuildIsStartedByTheHostsApp() async throws {
+        let host = try RemoteHost()
+        defer { host.stop() }
+        host.server.setDesignsServed(true)
+        let web = Space(name: "dashboard-web", path: host.host.dir.path)
+        try await host.server.putState(ShepherdState(spaces: [web]))
+        let raw = try await designClient(host)
+        #expect(try await refusal(raw, 2, .buildSystem(spaceID: web.id)) == "unsupported")
+        #expect(try await refusal(raw, 3, .buildSystem(spaceID: SpaceID())) == "no_such_space")
+
+        let asked = Locked<[SpaceID]>([])
+        let build = DesignID(), agent = AgentID()
+        host.server.onRemoteBuildDesignSystem = { space, completion in
+            asked.withValue { $0.append(space) }
+            completion(.success(RemoteDesignCreated(designID: build, agentID: agent)))
+        }
+        #expect(try await answer(raw, 4, .buildSystem(spaceID: web.id)) == .created(designID: build, agentID: agent))
+        #expect(asked.current == [web.id])
+
+        // A build still reading its space goes, its agent with it; a design that isn't one is refused.
+        let reading = Design(name: "dashboard-web", createdAt: 2, buildsSystem: true, sourceSpaceID: web.id)
+        _ = try await host.server.createDesign(reading)
+        let plain = try await design(host)
+        #expect(try await refusal(raw, 6, .deleteSystemBuild(designID: plain)) != nil)
+        #expect(try await answer(raw, 7, .deleteSystemBuild(designID: reading.id)) == .ok)
+        #expect(!host.server.state.designs.contains { $0.id == reading.id })
+        #expect(host.server.state.designs.contains { $0.id == plain })
+
+        host.server.advertisedCapabilities = RemoteProtocol.capabilities.filter { $0 != RemoteProtocol.designSystemsCapability }
+        #expect(try await refusal(raw, 5, .buildSystem(spaceID: web.id)) == "unsupported")
+    }
+
+    /// Another device uploads a ZIP in order and the host's app imports it; a piece out of order,
+    /// a finish before the last piece, a non-ZIP or an oversized one is refused, and the file
+    /// goes once the import is done either way.
+    @Test func anImportIsUploadedInOrderAndImportedByTheHostsApp() async throws {
+        let host = try RemoteHost()
+        defer { host.stop() }
+        host.server.setDesignsServed(true)
+        let raw = try await designClient(host)
+        #expect(try await refusal(raw, 2, .importBegin(name: "Checkout.zip", size: 10)) == "unsupported")
+
+        let imported = Locked<[(String, Data)]>([])
+        let urls = Locked<[URL]>([])
+        let made = DesignID(), agent = AgentID()
+        host.server.onRemoteImportDesign = { url, completion in
+            imported.withValue { $0.append((url.lastPathComponent, (try? Data(contentsOf: url)) ?? Data())) }
+            urls.withValue { $0.append(url) }
+            completion(.success(RemoteDesignCreated(designID: made, agentID: agent)))
+        }
+        #expect(try await refusal(raw, 3, .importBegin(name: "Checkout.txt", size: 10)) == "invalid_import")
+        #expect(try await refusal(raw, 4, .importBegin(name: "../x.zip", size: 10)) == "invalid_import")
+        #expect(try await refusal(raw, 5, .importBegin(name: "Checkout.zip", size: RemoteProtocol.designImportMaxBytes + 1)) == "invalid_import")
+
+        let bytes = Self.bytes(RemoteProtocol.designChunkBytes + 100)
+        guard case .importStarted(let upload) = try await answer(raw, 6, .importBegin(name: "Checkout.zip", size: bytes.count)) else {
+            Issue.record("expected an upload"); return
+        }
+        let first = bytes.prefix(RemoteProtocol.designChunkBytes)
+        #expect(try await refusal(raw, 7, .importChunk(uploadID: upload, offset: 5, data: Data(first))) == "invalid_offset")
+        #expect(try await answer(raw, 8, .importChunk(uploadID: upload, offset: 0, data: Data(first))) == .ok)
+        #expect(try await refusal(raw, 9, .importFinish(uploadID: upload)) == "import_incomplete")
+        #expect(try await answer(raw, 10, .importChunk(uploadID: upload, offset: first.count, data: Data(bytes.suffix(100)))) == .ok)
+        #expect(try await answer(raw, 11, .importFinish(uploadID: upload)) == .created(designID: made, agentID: agent))
+        #expect(imported.current.map(\.0) == ["Checkout.zip"] && imported.current.first?.1 == bytes)
+        let kept = try #require(urls.current.first)
+        try await eventually("the upload to go") { !FileManager.default.fileExists(atPath: kept.path) }
+        #expect(try await refusal(raw, 12, .importFinish(uploadID: upload)) == "no_such_import", "it imports once")
+
+        host.server.onRemoteImportDesign = { _, completion in completion(.failure(RemoteDesignImportFailure("import_unreadable", "2 boards"))) }
+        guard case .importStarted(let again) = try await answer(raw, 13, .importBegin(name: "Checkout.zip", size: 3)) else {
+            Issue.record("expected an upload"); return
+        }
+        #expect(try await answer(raw, 14, .importChunk(uploadID: again, offset: 0, data: Data([1, 2, 3]))) == .ok)
+        #expect(try await refusal(raw, 15, .importFinish(uploadID: again)) == "import_unreadable")
+    }
+}

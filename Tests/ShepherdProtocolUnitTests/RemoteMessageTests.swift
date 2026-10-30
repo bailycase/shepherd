@@ -575,13 +575,13 @@ struct RemoteReplyTests {
         switch reply {
         case .nativeThread, .uploadResult, .creationOptions, .helloOk, .agentResult, .ok, .paneOpened, .error,
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
-             .agentCreated, .automationResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged,
+             .agentCreated, .automationResult, .instructions, .suggestions, .hostSettings, .hostInventory, .hostUpdate, .skills, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged, .designSystemsChanged,
              .mission, .missionChanged, .missionLive,
              .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive, .hostConfig:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 39
+    static let caseCount = 40
 
     static let samples: [RemoteReply] = [
         .hostUpdate(id: 90, status: HostUpdateStatus(version: "1", build: "2", channel: "nightly", phase: .available,
@@ -622,6 +622,7 @@ struct RemoteReplyTests {
         .projectExecutionChanged(key: ProjectExecutionWireTests.key, revision: 2),
         .design(id: 32, result: .ok),
         .designChanged(designID: RemoteDesignSamples.design, revision: 8, commentsRevision: 2),
+        .designSystemsChanged,
         .mission(id: 35, result: .mission(RemoteMissionSamples.mission)),
         .missionChanged(missionID: RemoteMissionSamples.mission.id, revision: 5),
         .missionLive(missionID: RemoteMissionSamples.mission.id, live: RemoteMissionLive(output: "Reading orders-svc", attempts: [RemoteMissionSamples.attempt: "Editing"])),
@@ -982,6 +983,8 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.hostSettingsV2Capability, RemoteProtocol.hostConfigCapability,
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).
             RemoteProtocol.designsCapability, RemoteProtocol.designMarkupCapability, RemoteProtocol.designDeleteCapability,
+            RemoteProtocol.designAgentCapability, RemoteProtocol.designLifecycleCapability, RemoteProtocol.designSystemsCapability,
+            RemoteProtocol.designReferencesCapability, RemoteProtocol.designImportCapability,
             // Offered only to a client that lists it in hello.
             RemoteProtocol.filesCapability,
             // Offered only while the host's Missions experiment is on, and only to a client that lists it.
@@ -1044,6 +1047,11 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.designsCapability == "designs.v1")
         #expect(RemoteProtocol.designMarkupCapability == "design.markup.v1")
         #expect(RemoteProtocol.designDeleteCapability == "design.delete.v1")
+        #expect(RemoteProtocol.designAgentCapability == "design.agent.v1")
+        #expect(RemoteProtocol.designLifecycleCapability == "design.lifecycle.v1")
+        #expect(RemoteProtocol.designSystemsCapability == "design.systems.v1")
+        #expect(RemoteProtocol.designReferencesCapability == "design.references.v1")
+        #expect(RemoteProtocol.designImportCapability == "design.import.v1")
     }
 
     /// Commit info from a host that sends only some fields still reads, with defaults.

@@ -162,6 +162,23 @@ public final class DesignSystemStore: @unchecked Sendable {
         try await run { try self.loadOnQueue(namespace) }
     }
 
+    /// One file of a system by its path (as `contents` names it), or nil: a regular file inside
+    /// the system's folder (no link followed), by the file grammar, `system.json` never.
+    func file(_ namespace: String, path: String) async throws -> Data? {
+        try await run {
+            guard DesignSystemFile.isPath(path) else { return nil }
+            if let builtIn = self.builtIns[namespace] { return builtIn.files[path] }
+            let folder = try self.ownFolder(namespace)
+            _ = try self.infoOnQueue(namespace)
+            let url = folder.appendingPathComponent(path)
+            let root = folder.resolvingSymlinksInPath().path + "/"
+            let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+            guard url.resolvingSymlinksInPath().path.hasPrefix(root), values?.isRegularFile == true, values?.isSymbolicLink != true,
+                  (values?.fileSize ?? 0) <= DesignImport.maxFileBytes else { return nil }
+            return try? Data(contentsOf: url)
+        }
+    }
+
     // MARK: Writes (SessionServer only)
 
     /// Writes a system's tokens and files for `owner`'s agent, reading its `sources` from

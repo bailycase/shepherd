@@ -13,7 +13,10 @@ struct DesignBoardsScreen: View {
     let ref: HostDesignRef
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
+    @Environment(\.dismiss) private var dismiss
     @State private var watchToken = UUID()
+    @State private var prompt: DesignActionPrompt?
+    @State private var starting = false
 
     var body: some View {
         let designs = MobileDesigns.of(hosts)
@@ -63,11 +66,25 @@ struct DesignBoardsScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
+                // A design with no agent on its host gets one there (`design.agent.v1`).
                 Button("Ask the agent", systemImage: "sparkle") {
-                    if let agent = designs.agent(ref) { navigator.open(.thread(agent)) }
+                    starting = true
+                    Task {
+                        defer { starting = false }
+                        do { navigator.open(.thread(try await designs.ensureAgent(ref))) } catch {
+                            designs.report("Couldn't start its agent: \(MobileDesignsError.words(error))")
+                        }
+                    }
                 }
-                .disabled(designs.agent(ref) == nil)
+                .disabled(starting || designs.agent(ref) == nil && !designs.supports(ref.host, RemoteProtocol.designAgentCapability))
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu("More", systemImage: "ellipsis") { DesignActionItems(ref: ref, prompt: $prompt) }
+            }
+        }
+        .modifier(DesignActionPrompts(prompt: $prompt, deleted: { dismiss() }))
+        .safeAreaInset(edge: .top) {
+            if designs.problem != nil { DesignActionBanners().padding(.horizontal, MobileDesignLayout.gutter) }
         }
     }
 }

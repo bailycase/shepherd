@@ -16,8 +16,26 @@ extension RemoteProtocol {
     /// The host deletes a design for another device, with Undo (`RemoteDesignRequest.delete`,
     /// `undoDelete`). Offered with `designsCapability`.
     public static let designDeleteCapability = "design.delete.v1"
+    /// The host starts a design's agent for another device when it has none
+    /// (`RemoteDesignRequest.ensureAgent`), as its own Open does. Offered with `designsCapability`.
+    public static let designAgentCapability = "design.agent.v1"
+    /// The host duplicates a design and removes it from Recents for another device
+    /// (`RemoteDesignRequest.duplicate`, `removeFromRecents`). Offered with `designsCapability`.
+    public static let designLifecycleCapability = "design.lifecycle.v1"
+    /// The host serves its design systems' files (`systemFile`) and renames, duplicates, deletes
+    /// and re-syncs them for another device. A client lists it too: the host pushes
+    /// `designSystemsChanged` only to a client that does. Offered with `designsCapability`.
+    public static let designSystemsCapability = "design.systems.v1"
     /// Every capability a host offers only while it serves designs.
-    public static let designCapabilities: Set<String> = [designsCapability, designMarkupCapability, designDeleteCapability]
+    public static let designCapabilities: Set<String> = [designsCapability, designMarkupCapability, designDeleteCapability,
+                                                         designAgentCapability, designLifecycleCapability, designSystemsCapability,
+                                                         designReferencesCapability, designImportCapability]
+    /// The host imports a Claude Design project's ZIP another device uploads
+    /// (`RemoteDesignRequest.importBegin`…`importFinish`). Offered with `designsCapability`.
+    public static let designImportCapability = "design.import.v1"
+    /// The largest ZIP another device uploads to import (ponytail: whole-project cap; the host's
+    /// own Import takes up to `DesignImportProject.maxProjectBytes` from disk).
+    public static let designImportMaxBytes = 256 * 1024 * 1024
     /// The most file bytes one design reply carries: files inline in `boards`, or one piece of a
     /// file or upload. Base64 keeps it well under the 1 MiB frame.
     public static let designChunkBytes = 256 * 1024
@@ -279,15 +297,70 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
     case delete(designID: DesignID)
     /// Undo, within the window a `delete` answered (`designDeleteCapability`).
     case undoDelete(designID: DesignID)
+    /// The design's agent, started by the host's app as its own Open starts one when the design
+    /// has none (`designAgentCapability`); nothing is selected there.
+    case ensureAgent(designID: DesignID)
+    /// Duplicate, as the host's own does: a copy under a new name, its agent started when it is
+    /// opened (`designLifecycleCapability`).
+    case duplicate(designID: DesignID)
+    /// Remove from Recents on the host (`designLifecycleCapability`).
+    case removeFromRecents(designID: DesignID)
+    /// A piece of one file of a design system from `offset` (`designSystemsCapability`): what its
+    /// page draws specimens from. `path` is one `DesignSystemRead.files` lists.
+    case systemFile(namespace: String, path: String, offset: Int)
+    /// A design system's title (`designSystemsCapability`); a built-in is refused.
+    case renameSystem(namespace: String, title: String)
+    /// A copy of a design system, a built-in's included (`designSystemsCapability`).
+    case duplicateSystem(namespace: String)
+    /// Deletes a design system and stops its build (`designSystemsCapability`); designs keep
+    /// their copy, a built-in is refused.
+    case deleteSystem(namespace: String)
+    /// Reads a system's stylesheets again from its project on the host (`designSystemsCapability`).
+    case resyncSystem(namespace: String)
+    /// "Build one from a repo" on the host (`designSystemsCapability`): a system build reading the
+    /// host's space `spaceID` (only read), its agent started by the host's app; a space with a
+    /// build already answers that one. Answered `created(build, agent)`.
+    case buildSystem(spaceID: SpaceID)
+    /// Deletes a system build still reading its space, its agent stopped, as the host's own
+    /// Delete design system does for a build (`designSystemsCapability`). Nothing to undo.
+    case deleteSystemBuild(designID: DesignID)
+    /// Import a Claude Design project's ZIP on the host (`designImportCapability`): begin with its
+    /// file name (`.zip`) and size (at most `designImportMaxBytes`), then its bytes in order
+    /// (`importChunk`, each at most `designChunkBytes`, at the offset received so far), then
+    /// `importFinish`; the host checks and imports it as its own Import does, and its app starts
+    /// the design's agent. One import at a time per connection; it goes with the connection.
+    case importBegin(name: String, size: Int)
+    case importChunk(uploadID: UUID, offset: Int, data: Data)
+    case importFinish(uploadID: UUID)
+    case importCancel(uploadID: UUID)
+    /// Pins a piece of one of the host's designs (`designReferencesCapability`), named as the
+    /// host sees it (`local`), at its revision now unless the reference names one.
+    case pinReference(DesignReference)
+    /// What the host kept of a reference a thread was sent (`designReferencesCapability`): the
+    /// payload, its picture's bytes while they fit one reply, and how it stands now. A sent chip.
+    case referenceKept(agentID: AgentID, payloadID: UUID)
+    /// A piece of that copy's picture from `offset` (`designReferencesCapability`): the one
+    /// `referenceKept` leaves out as too large for one reply, read in pieces.
+    case referencePicture(agentID: AgentID, payloadID: UUID, offset: Int)
+    /// How a pinned reference (named `local`) stands against its design now: a composer chip's
+    /// "Send vN" (`designReferencesCapability`).
+    case referenceFreshness(DesignReference)
+    /// What a "Looked at…" line says: `aspects` of the copy of `ref` the thread was sent
+    /// (`designReferencesCapability`).
+    case referenceLookedAt(agentID: AgentID, ref: String, aspects: [DesignReferenceAspect])
 
     /// The design it touches, if one.
     public var designID: DesignID? {
         switch self {
-        case .list, .system, .watch, .create: nil
+        case .list, .system, .watch, .create, .systemFile, .renameSystem, .duplicateSystem, .deleteSystem, .resyncSystem,
+             .buildSystem, .importBegin, .importChunk, .importFinish, .importCancel: nil
+        case .pinReference(let reference), .referenceFreshness(let reference): reference.designID
+        case .referenceKept, .referencePicture, .referenceLookedAt: nil
         case .index(let id), .boards(let id, _, _), .file(let id, _, _, _), .asset(let id, _, _), .comments(let id),
              .addComment(let id, _, _), .replyToComment(let id, _, _, _), .resolveComment(let id, _, _, _),
              .writeBoards(let id, _, _), .updateIndex(let id, _, _), .duplicateBoard(let id, _, _), .restoreVersions(let id, _, _),
-             .sendMarkup(let id, _), .settleProposals(let id, _, _, _), .delete(let id), .undoDelete(let id):
+             .sendMarkup(let id, _), .settleProposals(let id, _, _, _), .delete(let id), .undoDelete(let id),
+             .ensureAgent(let id), .duplicate(let id), .removeFromRecents(let id), .deleteSystemBuild(let id):
             id
         }
     }
@@ -296,7 +369,9 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
     public var writes: Bool {
         switch self {
         case .addComment, .replyToComment, .resolveComment, .writeBoards, .updateIndex, .duplicateBoard, .restoreVersions, .create,
-             .sendMarkup, .settleProposals, .delete, .undoDelete: true
+             .sendMarkup, .settleProposals, .delete, .undoDelete, .ensureAgent, .duplicate, .removeFromRecents,
+             .renameSystem, .duplicateSystem, .deleteSystem, .resyncSystem, .buildSystem, .deleteSystemBuild,
+             .importBegin, .importChunk, .importFinish, .importCancel: true
         default: false
         }
     }
@@ -306,6 +381,13 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
         switch self {
         case .sendMarkup, .settleProposals: RemoteProtocol.designMarkupCapability
         case .delete, .undoDelete: RemoteProtocol.designDeleteCapability
+        case .ensureAgent: RemoteProtocol.designAgentCapability
+        case .duplicate, .removeFromRecents: RemoteProtocol.designLifecycleCapability
+        case .systemFile, .renameSystem, .duplicateSystem, .deleteSystem, .resyncSystem, .buildSystem, .deleteSystemBuild:
+            RemoteProtocol.designSystemsCapability
+        case .pinReference, .referenceKept, .referencePicture, .referenceFreshness, .referenceLookedAt:
+            RemoteProtocol.designReferencesCapability
+        case .importBegin, .importChunk, .importFinish, .importCancel: RemoteProtocol.designImportCapability
         default: nil
         }
     }
@@ -335,6 +417,24 @@ public enum RemoteDesignResult: Codable, Hashable, Sendable {
     case proposalsSettled([DesignComment], undelivered: String?)
     /// A design deleted, and until when Undo can bring it back.
     case deleted(DesignDeletion)
+    /// The design's agent on the host (`ensureAgent`).
+    case agent(AgentID)
+    /// The copy `duplicate` made.
+    case designDuplicated(Design)
+    /// A design system as it is now (`renameSystem`, `duplicateSystem`: the copy).
+    case systemChanged(DesignSystemSummary)
+    /// What a Re-sync changed.
+    case systemSynced(DesignSystemSyncResult)
+    /// A piece of the host's design, pinned (`pinReference`).
+    case referencePinned(RemoteDesignReferencePin)
+    /// A sent reference's kept copy (`referenceKept`): its payload, its picture (nil when gone or
+    /// too large for one reply), and how it stands now.
+    case referenceKept(DesignReferencePayload, picture: Data?, freshness: DesignReferenceFreshness)
+    case referenceFreshness(DesignReferenceFreshness)
+    /// Nil when the thread holds no copy of it.
+    case referenceLookedAt(DesignReferenceLookedAt?)
+    /// An import began (`importBegin`): send its bytes under this id.
+    case importStarted(uploadID: UUID)
     case ok
 }
 

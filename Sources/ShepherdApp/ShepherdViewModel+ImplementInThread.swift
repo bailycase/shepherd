@@ -28,6 +28,22 @@ extension ShepherdViewModel {
             report: { [weak self] in self?.remoteActionError = $0 })
     }
 
+    /// What a connected host's design canvas does with references (`design.references.v1`): its
+    /// pieces go to that host's own threads, pinned by the host. Notes back stay on the host.
+    func remoteDesignReferenceCanvasActions(_ hostID: UUID) -> DesignReferenceCanvasActions {
+        DesignReferenceCanvasActions(
+            implement: { [weak self] in self?.openImplementSheet($0, host: hostID) },
+            copy: { [weak self] in self?.copyDesignReference($0, host: hostID) },
+            report: { [weak self] in self?.remoteActionError = $0 })
+    }
+
+    /// The selection's reference, named from this Mac: a host's design is `remote(host)`.
+    private func reference(_ selection: DesignReferenceSelection, host: UUID?) -> DesignReference? {
+        guard var reference = selection.reference else { return nil }
+        if let host { reference.host = .remote(host) }
+        return reference
+    }
+
     /// A thread left or the user removed a note: the canvas reads the notes again.
     func designThreadNotesChanged(_ id: DesignID) {
         guard let screen = designScreens[id] else { return }
@@ -36,11 +52,21 @@ extension ShepherdViewModel {
 
     /// Implement in a thread… (the board actions, the right-click menu, the design's •••, ⌘↩):
     /// the sheet, with the piece pinned as it opens.
-    func openImplementSheet(_ selection: DesignReferenceSelection) {
-        guard implementSheet == nil, let reference = selection.reference else { return }
-        let model = ImplementSheetModel(selection: selection, threads: implementThreads(), projects: implementProjects(),
+    /// A host's design (`host`) goes to that host's threads only: a new thread there is started
+    /// from the host itself, not here.
+    func openImplementSheet(_ selection: DesignReferenceSelection, host: UUID? = nil) {
+        guard implementSheet == nil, let reference = reference(selection, host: host) else { return }
+        let model: ImplementSheetModel
+        if let host {
+            model = ImplementSheetModel(selection: selection, threads: remoteImplementThreads(host), projects: [], project: nil,
+                                        opensThread: settings.implementOpensThread, picture: implementPicture(selection, host: host))
+            model.hostID = host
+            model.hostName = remoteHosts.connections.first { $0.id == host }?.config.name ?? "The host"
+        } else {
+            model = ImplementSheetModel(selection: selection, threads: implementThreads(), projects: implementProjects(),
                                         project: defaultImplementProject(selection.designID), opensThread: settings.implementOpensThread,
                                         picture: implementPicture(selection))
+        }
         implementSheet = model
         Task {
             do {
@@ -67,6 +93,26 @@ extension ShepherdViewModel {
         if settings.implementOpensThread != opens { settings.implementOpensThread = opens }
         model.sending = true
         model.error = nil
+        if let host = model.hostID {
+            Task {
+                defer { model.sending = false }
+                do {
+                    guard let id = model.thread.map(AgentID.init(rawValue:)) else { throw DesignReferenceFailure("Pick a thread on the host.") }
+                    let target = RemoteAgentRef(hostID: host, agentID: id)
+                    try await sendRemoteDesignReferences([prepared.reference], text: text, to: target)
+                    implementSheet = nil
+                    if opens {
+                        selectRemoteAgent(hostID: host, agentID: id)
+                    } else {
+                        let name = model.threads.first { $0.id == id }?.name ?? "the thread"
+                        referenceToast = DesignReferenceToast(designID: designID, kind: .sentRemote(target, name: name), piece: model.piece)
+                    }
+                } catch {
+                    model.error = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+                }
+            }
+            return
+        }
         Task {
             defer { model.sending = false }
             do {
@@ -131,8 +177,8 @@ extension ShepherdViewModel {
 
     /// Copy reference (the right-click menu, the design's •••, ⇧⌘C): the piece pinned now, its
     /// string on the pasteboard, and a toast saying so.
-    func copyDesignReference(_ selection: DesignReferenceSelection) {
-        guard let reference = selection.reference else { return }
+    func copyDesignReference(_ selection: DesignReferenceSelection, host: UUID? = nil) {
+        guard let reference = reference(selection, host: host) else { return }
         Task {
             do {
                 let prepared = try await prepareDesignReference(reference)
@@ -153,6 +199,20 @@ extension ShepherdViewModel {
             return ImplementSheetModel.Thread(id: agent.id, name: agent.name, project: names[agent.spaceID],
                                               age: agent.lastActiveAt.map { Self.implementAge($0, now: now) })
         }
+    }
+
+    /// A host's threads the sheet lists: its ordinary threads (never a design's agent, a
+    /// Project's coordinator or worker), most recently active first.
+    func remoteImplementThreads(_ host: UUID, now: Date = Date()) -> [ImplementSheetModel.Thread] {
+        guard let state = remoteHosts.connections.first(where: { $0.id == host })?.state else { return [] }
+        let names = Dictionary(state.spaces.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
+        let workers = state.projectWorkerIDs
+        return state.agents
+            .filter { state.isSidebarThread($0, workers: workers) && $0.designID == nil }
+            .sorted { ($0.lastActiveAt ?? -1) > ($1.lastActiveAt ?? -1) }
+            .prefix(20)
+            .map { ImplementSheetModel.Thread(id: $0.id, name: $0.name, project: names[$0.spaceID],
+                                              age: $0.lastActiveAt.map { Self.implementAge($0, now: now) }) }
     }
 
     /// "4m", "1h", "yesterday", "2d".
@@ -184,19 +244,21 @@ extension ShepherdViewModel {
 
     /// The sheet's picture: the element cut from its board as the canvas drew it, the board, or
     /// the design's first board.
-    func implementPicture(_ selection: DesignReferenceSelection) -> SHReferenceImage? {
-        let host = designRendering.host(for: selection.designID)
+    func implementPicture(_ selection: DesignReferenceSelection, host hostID: UUID? = nil) -> SHReferenceImage? {
+        let rendering = hostID.flatMap(remoteDesignRendering) ?? designRendering
+        let host = rendering.host(for: selection.designID)
+        let screen = hostID.map { remoteDesignScreens[RemoteDesignRef(hostID: $0, designID: selection.designID)] } ?? designScreens[selection.designID]
         var image: CGImage?
         if let board = selection.board {
             // Observed: a view drawing this draws again when the board's snapshot lands.
             _ = host?.tokens[board]
-            image = host?.image(board) ?? designRendering.boardPictures.image(selection.designID, board)
+            image = host?.image(board) ?? rendering.boardPictures.image(selection.designID, board)
             if let element = selection.element, let whole = image,
-               let size = designScreens[selection.designID]?.snapshot?.index.boards[board].map({ CGSize(width: $0.w, height: $0.h) }) {
+               let size = screen?.snapshot?.index.boards[board].map({ CGSize(width: $0.w, height: $0.h) }) {
                 image = Self.crop(whole, board: size, rect: element.rect) ?? whole
             }
         } else {
-            image = designRendering.thumbnails.image(selection.designID)
+            image = rendering.thumbnails.image(selection.designID)
         }
         return image.map { SHReferenceImage(id: "implement/" + (selection.reference?.string ?? ""), image: Image(decorative: $0, scale: 2)) }
     }

@@ -34,9 +34,17 @@ extension DesignPreviewTests {
                               status: .idle, nameIsFinal: true)
             let design = Design(name: "Checkout funnel dashboard", agentID: agent.id, createdAt: 1_000)
             agent.designID = design.id
-            try await host.putState(ShepherdState(spaces: [space], tabs: [tab], agents: [agent]))
+            // An ordinary thread there, for a piece of the design to go to (Implement in a thread…).
+            let threadSession = try await host.createSession(params: CreateSessionParams(cwd: server.dir.path, command: StubPi.command, runtime: .rpc))
+            let threadID = AgentID()
+            let threadPane = LeafPane(sessionID: threadSession.id, cwd: space.path, agentID: threadID)
+            let threadTab = ShepherdCore.Tab(spaceID: space.id, order: 1, layout: .leaf(threadPane))
+            let thread = Agent(id: threadID, name: "Build checkout", spaceID: space.id, tabID: threadTab.id, paneID: threadPane.id,
+                               status: .idle, nameIsFinal: true)
+            try await host.putState(ShepherdState(spaces: [space], tabs: [tab, threadTab], agents: [agent, thread]))
             _ = try await host.createDesign(design)
             try await DesignFixtures.draw(DesignFixtures.checkout, in: design.id, on: host, perRow: 3)
+            host.designSystems.register(ShepherdDesignSystem.builtIn())
             host.setDesignsServed(true)
             let tokenURL = server.dir.appendingPathComponent("remote-token")
             port = try host.startRemoteListener(port: 0, tokenURL: tokenURL)
@@ -97,6 +105,58 @@ extension DesignPreviewTests {
             return screen.isDrawn && !screen.picks.isEmpty
         }) {
             RootView(vm: vm)
+        }
+    }
+
+    /// New design with a connected host chosen: the host card, the host's systems, no model chip
+    /// (the host starts its agent on its own defaults).
+    @Test func newDesignOnHost() async throws {
+        let (workspace, host, connection) = try await remoteWorkspace()
+        defer { workspace.stop(); host.server.stop() }
+        let vm = workspace.vm
+        vm.openNewDesign()
+        vm.newDesign.choose(host: connection.id)
+        await connection.designs.refresh()
+        #expect(vm.newDesignHosts.map(\.id) == [connection.id])
+        #expect(vm.newDesign.systems(vm).map(\.namespace) == [ShepherdDesignSystem.namespace])
+        try await Preview.render("page-new-design-host", size: CGSize(width: 1440 - AppLayout.sidebarDefaultWidth, height: 848)) {
+            NewDesignPage(vm: vm, chrome: PageHeaderChrome())
+        }
+    }
+
+    /// A host's design system on this Mac: the Design systems page from the host's read, its
+    /// specimens drawn here from the files the host served (`design.systems.v1`).
+    @Test func designSystemRemote() async throws {
+        let (workspace, host, connection) = try await remoteWorkspace()
+        defer { workspace.stop(); host.server.stop() }
+        let vm = workspace.vm
+        _ = try await host.server.server.writeDesignSystem(Self.acmeWrite, for: host.design.id)
+        await connection.designs.refresh()
+        let ref = RemoteSystemRef(hostID: connection.id, namespace: "acme-web")
+        vm.openRemoteDesignSystem(ref)
+        await vm.loadRemoteDesignSystem(ref)
+        #expect(vm.shownRemoteSystemRead?.summary.namespace == ref.namespace)
+        let specimens = try #require(vm.remoteDesignRendering(connection.id)?.specimens)
+        try await Preview.render("page-design-system-remote", size: CGSize(width: 1440 - AppLayout.sidebarDefaultWidth, height: 1100), ready: {
+            (0..<6).allSatisfy { specimens.image(ref.namespace, $0) != nil }
+        }) {
+            DesignSystemDestination(vm: vm)
+        }
+    }
+
+    /// Implement in a thread… from a host's design: the host's own threads, "on build-01".
+    @Test func implementSheetRemote() async throws {
+        let (workspace, host, connection) = try await remoteWorkspace()
+        defer { workspace.stop(); host.server.stop() }
+        let vm = workspace.vm
+        let ref = RemoteDesignRef(hostID: connection.id, designID: host.design.id)
+        let screen = try #require(vm.remoteDesignScreen(ref))
+        await screen.refresh()
+        screen.implementSelection(designName: host.design.name)
+        let model = try #require(vm.implementSheet)
+        #expect(model.threads.map(\.name) == ["Build checkout"])
+        try await Preview.render("sheet-implement-remote", size: CGSize(width: 1440, height: 900), ready: { model.prepared != nil }) {
+            ImplementSheetOverlay(vm: vm)
         }
     }
 }

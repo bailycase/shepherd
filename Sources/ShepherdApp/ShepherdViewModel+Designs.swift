@@ -177,6 +177,33 @@ extension ShepherdViewModel {
         return design.id
     }
 
+    /// The connected hosts New design can make a design on: those serving designs.
+    var newDesignHosts: [RemoteHostStore.Connection] {
+        remoteHosts.connections.filter { $0.phase == .connected && $0.supportsDesigns }
+    }
+
+    func newDesignHost(_ id: UUID) -> RemoteHostStore.Connection? {
+        newDesignHosts.first { $0.id == id }
+    }
+
+    /// New design's Send with a host chosen: the host makes it as its own New design does
+    /// (`create`), and its canvas opens here once the host has its agent.
+    func createDesign(onHost hostID: UUID, brief: String, system: String?) async throws {
+        guard let connection = newDesignHost(hostID) else {
+            throw RemoteHostClientError.rejected(code: "offline", message: "the host isn't connected")
+        }
+        guard case .created(let designID, let agentID) = try await Self.remoteDesign(
+            connection.designs, .create(RemoteDesignCreate(brief: brief, systemNamespace: system))) else {
+            throw RemoteDesignReply.unexpected
+        }
+        Task { await connection.designs.refresh() }
+        if let agentID {
+            selectRemoteAgent(hostID: hostID, agentID: agentID)
+        } else {
+            openRemoteDesign(RemoteDesignRef(hostID: hostID, designID: designID))
+        }
+    }
+
     /// Another device's New design (`RemoteDesignRequest.create`): made as this Mac's is, with
     /// nothing selected or opened here. An agent that fails to start is started when the design
     /// is next opened, so the design is answered either way.
@@ -184,6 +211,19 @@ extension ShepherdViewModel {
         let design = try await makeDesign(brief: request.brief, system: request.systemNamespace)
         let agent = try? await startDesignAgent(design, brief: request.brief, images: [], select: false)
         return RemoteDesignCreated(designID: design.id, agentID: agent)
+    }
+
+    /// Another device opens a design whose agent is gone here (`RemoteDesignRequest.ensureAgent`):
+    /// a fresh one starts as Open starts it, with nothing selected here. One start at a time.
+    func ensureRemoteDesignAgent(_ id: DesignID) async throws -> AgentID {
+        guard let design = design(id), !design.buildsSystem else { throw SessionServerError.noSuchDesign(id) }
+        if let agent = state.agents.first(where: { $0.id == design.agentID }) ?? state.agents.first(where: { $0.designID == id }) {
+            return agent.id
+        }
+        guard !startingDesignAgents.contains(id) else { throw AgentStartFailure(message: "Its agent is starting. Try again in a moment.") }
+        startingDesignAgents.insert(id)
+        defer { startingDesignAgents.remove(id) }
+        return try await startDesignAgent(design, brief: nil, images: [], select: false)
     }
 
     /// The design record and folder, with `system` installed before any agent starts, so its
@@ -317,6 +357,10 @@ final class NewDesignState {
     /// The design system picked from the card's menu; nil draws in the default
     /// (`defaultSystem`).
     private(set) var system: String?
+    /// The connected host the design is made on (`RemoteDesignRequest.create`); nil: This Mac.
+    private(set) var host: UUID?
+    /// A ZIP going to the host to import, and the share of it sent.
+    private(set) var uploading: Double?
     private(set) var starting = false
     var error: String?
     /// Bumped to give the field the keyboard.
@@ -325,7 +369,8 @@ final class NewDesignState {
     /// The page is opening: a system picked earlier that is gone reads as none picked, and the
     /// model and level follow Settings unless picked here.
     func prepare(for vm: ShepherdViewModel) {
-        if let system, !vm.designSystems.summaries.isEmpty, vm.designSystems.summary(system) == nil { self.system = nil }
+        if let host, vm.newDesignHost(host) == nil { self.host = nil }
+        if host == nil, let system, !vm.designSystems.summaries.isEmpty, vm.designSystems.summary(system) == nil { self.system = nil }
         loadDefaults(vm)
     }
 
@@ -361,6 +406,21 @@ final class NewDesignState {
         }
     }
 
+    /// Makes the design on a connected host that serves designs, or nil on This Mac. Its systems
+    /// are the host's, so a system picked here goes.
+    func choose(host id: UUID?) {
+        guard host != id else { return }
+        host = id
+        system = nil
+        error = nil
+    }
+
+    /// The systems the design can be drawn in: This Mac's, or the chosen host's.
+    func systems(_ vm: ShepherdViewModel) -> [DesignSystemSummary] {
+        guard let host else { return vm.designSystems.summaries }
+        return vm.newDesignHost(host)?.designs.listing?.systems ?? []
+    }
+
     /// Draws the design in `namespace` (a system from the card's menu).
     func choose(system namespace: String) {
         guard system != namespace else { return }
@@ -370,7 +430,7 @@ final class NewDesignState {
 
     /// The system Send installs and the card shows: the one picked, else the default.
     func systemToInstall(_ vm: ShepherdViewModel) -> String? {
-        chosenSystem(in: vm.designSystems.summaries)?.namespace
+        chosenSystem(in: systems(vm))?.namespace
     }
 
     func chosenSystem(in systems: [DesignSystemSummary]) -> DesignSystemSummary? {
@@ -411,9 +471,31 @@ final class NewDesignState {
         attach(urls.map { NSItemProvider(contentsOf: $0) ?? NSItemProvider() })
     }
 
-    /// What the line under the card says: a failed start, or an image left out.
+    /// What the line under the card says: a failed start, an upload under way, or an image left out.
     var notice: String? {
-        error ?? attachments.error ?? NewThreadPlaces.imagesRefusal(attachments.images, host: nil)
+        if let uploading { return "Sending the project to the host… \(Int(uploading * 100))%" }
+        return error ?? attachments.error ?? NewThreadPlaces.imagesRefusal(attachments.images, host: nil)
+    }
+
+    /// Import a project with a host chosen: a Claude Design ZIP, uploaded and imported there
+    /// (`design.import.v1`); its canvas opens here.
+    func importOnHost(_ url: URL, vm: ShepherdViewModel) {
+        guard let host, uploading == nil, let connection = vm.newDesignHost(host) else { return }
+        uploading = 0
+        error = nil
+        Task {
+            defer { uploading = nil }
+            do {
+                let scoped = url.startAccessingSecurityScopedResource()
+                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                let (design, agent) = try await connection.designs.importProject(file: url) { [weak self] share in
+                    Task { @MainActor in if self?.uploading != nil { self?.uploading = share } }
+                }
+                if let agent { vm.selectRemoteAgent(hostID: host, agentID: agent) } else { vm.openRemoteDesign(RemoteDesignRef(hostID: host, designID: design)) }
+            } catch {
+                self.error = "Couldn't import \(url.lastPathComponent): \(ShepherdViewModel.words(error))."
+            }
+        }
     }
 
     /// Why Send is unavailable; nil when it can send.
@@ -421,6 +503,11 @@ final class NewDesignState {
         if starting { return "Starting…" }
         if brief.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Describe the design first." }
         if let big = attachments.oversize { return ComposerAttachments.oversizeMessage(big.name) }
+        if let host {
+            if vm.newDesignHost(host) == nil { return "That host isn’t connected." }
+            if !attachments.images.isEmpty { return "Images go only to a design made on This Mac for now." }
+            if RemoteDesignCreate.brief(brief) == nil { return "A brief is at most \(RemoteDesignCreate.maxBriefBytes / 1024) KB." }
+        }
         return NewThreadPlaces.imagesRefusal(attachments.images, host: nil)
     }
 
@@ -435,11 +522,17 @@ final class NewDesignState {
         let level = thinking.clamped(to: thinkingLevels())
         starting = true
         error = nil
+        let host = host
         Task {
             defer { starting = false }
             do {
-                try await vm.createDesign(brief: text, images: images, system: system,
-                                          model: chosenModel.isEmpty ? nil : chosenModel, thinking: level)
+                if let host {
+                    // The host's New design: its own model and level, its systems.
+                    try await vm.createDesign(onHost: host, brief: text, system: system)
+                } else {
+                    try await vm.createDesign(brief: text, images: images, system: system,
+                                              model: chosenModel.isEmpty ? nil : chosenModel, thinking: level)
+                }
                 brief = ""
                 attachments.removeAll()
             } catch {

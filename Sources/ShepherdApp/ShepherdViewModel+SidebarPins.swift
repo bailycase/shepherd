@@ -20,7 +20,7 @@ extension ShepherdViewModel {
             guard let state = remoteHosts.connections.first(where: { $0.id == ref.hostID })?.state,
                   let agent = state.agents.first(where: { $0.id == ref.agentID }) else { return false }
             return state.isSidebarThread(agent) && !state.automations.contains { $0.agentID == ref.agentID } && !state.missionAgentIDs.contains(ref.agentID)
-        case .design:
+        case .design, .remoteDesign:
             return false
         }
     }

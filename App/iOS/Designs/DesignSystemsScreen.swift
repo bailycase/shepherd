@@ -7,11 +7,39 @@ import ShepherdUI
 /// Settings ▸ Design systems (MobileMore's row, now in Settings): the hosts' systems, each opening its page.
 struct DesignSystemsScreen: View {
     @Environment(MobileHosts.self) private var hosts
+    @Environment(MobileNavigator.self) private var navigator
+    @State private var problem: String?
+    @State private var deleting: (host: UUID, build: Design)?
 
     var body: some View {
         let designs = MobileDesigns.of(hosts)
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
+                if let problem {
+                    SHBanner(.failed, title: problem) { Button("OK") { self.problem = nil }.buttonStyle(.sh(.secondary)) }
+                }
+                // Builds still reading their space: each opens its agent's thread; a long press deletes it there.
+                let builds = designs.builds
+                if !builds.isEmpty {
+                    SHListHeader("Building", count: nil)
+                    SHListCard {
+                        ForEach(builds, id: \.build.id) { item in
+                            Button {
+                                if let agent = designs.buildAgent(host: item.host, build: item.build.id) { navigator.open(.thread(agent)) }
+                            } label: {
+                                SHDesignSystemRow(name: item.build.name, source: [item.space.map { "\($0) · building" } ?? "building", item.hostName]
+                                    .joined(separator: " · "))
+                            }
+                            .buttonStyle(.shRow(radius: 0))
+                            .contextMenu {
+                                if designs.supports(item.host, RemoteProtocol.designSystemsCapability) {
+                                    Button("Delete Design System…", systemImage: "trash", role: .destructive) { deleting = (item.host, item.build) }
+                                }
+                            }
+                        }
+                    }
+                    SHListHeader("Design systems", count: nil)
+                }
                 if designs.model.systems.isEmpty {
                     SHEmptyState(Text("No design systems"), message: "A host's design systems show here while it serves designs.",
                                  showsMark: false)
@@ -30,6 +58,47 @@ struct DesignSystemsScreen: View {
         .refreshable { await designs.refresh() }
         .task { await designs.refresh() }
         .navigationTitle("Design systems")
+        .confirmationDialog("Delete “\(deleting?.build.name ?? "")”?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                            titleVisibility: .visible) {
+            Button("Stop and delete", role: .destructive) {
+                guard let target = deleting else { return }
+                Task {
+                    do { try await designs.changeSystem(host: target.host, .deleteSystemBuild(designID: target.build.id)) } catch {
+                        problem = "Couldn't delete \(target.build.name): \(MobileDesignsError.words(error))"
+                    }
+                }
+            }
+        } message: {
+            Text("It’s still being built. Deleting stops the build and keeps nothing from it.")
+        }
+        .toolbar {
+            // "Build one from a repo" in a host's space (`design.systems.v1`): its build agent's thread opens.
+            let buildable = designs.buildableSpaces
+            if !buildable.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu("Build from a space", systemImage: "plus") {
+                        ForEach(buildable, id: \.host) { host in
+                            Section(host.name) {
+                                ForEach(host.spaces) { space in
+                                    Button(space.name) { build(host: host.host, space: space.id) }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func build(host: UUID, space: SpaceID) {
+        let designs = MobileDesigns.of(hosts)
+        Task {
+            do {
+                if let agent = try await designs.buildSystem(host: host, space: space) { navigator.open(.thread(agent)) }
+            } catch {
+                problem = "Couldn't start the build: \(MobileDesignsError.words(error))"
+            }
+        }
     }
 }
 
@@ -39,12 +108,20 @@ struct DesignSystemScreen: View {
     let host: UUID
     let namespace: String
     @Environment(MobileHosts.self) private var hosts
+    @Environment(MobileNavigator.self) private var navigator
+    @Environment(\.dismiss) private var dismiss
     @State private var system: DesignSystemRead?
     @State private var problem: String?
+    @State private var renaming = false
+    @State private var deleting = false
+    @State private var title = ""
 
     var body: some View {
         List {
             if let system {
+                if let problem {
+                    Section { Text(problem).foregroundStyle(Color.sh.failed) }
+                }
                 Section {
                     Text(DesignSystemPresentation.counts(system.summary.counts))
                         .shText(.caption).foregroundStyle(Color.sh.textSecondary)
@@ -89,9 +166,68 @@ struct DesignSystemScreen: View {
         .background(Color.sh.bgWindow)
         .navigationTitle(system?.summary.info.title ?? namespace)
         .navigationBarTitleDisplayMode(.inline)
-        .task {
+        .toolbar {
+            // What the host does with its systems for other devices (`design.systems.v1`), as
+            // the Mac's SystemMenu offers it.
+            if let summary = system?.summary, MobileDesigns.of(hosts).supports(host, RemoteProtocol.designSystemsCapability) {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu("More", systemImage: "ellipsis") {
+                        if !summary.builtIn {
+                            if summary.info.spaceID != nil, !summary.info.sources.isEmpty {
+                                Button("Re-sync", systemImage: "arrow.triangle.2.circlepath") { change(.resyncSystem(namespace: namespace)) }
+                            }
+                            Button("Rename…", systemImage: "pencil") {
+                                title = summary.info.title
+                                renaming = true
+                            }
+                        }
+                        Button(summary.builtIn ? "Duplicate as a New System" : "Duplicate", systemImage: "plus.square.on.square") {
+                            change(.duplicateSystem(namespace: namespace), open: true)
+                        }
+                        if !summary.builtIn {
+                            Divider()
+                            Button("Delete Design System…", systemImage: "trash", role: .destructive) { deleting = true }
+                        }
+                    }
+                }
+            }
+        }
+        .alert("Rename design system", isPresented: $renaming) {
+            TextField("Title", text: $title)
+            Button("Cancel", role: .cancel) {}
+            Button("Rename") { change(.renameSystem(namespace: namespace, title: title)) }
+        }
+        .confirmationDialog("Delete the design system “\(system?.summary.info.title ?? namespace)”?", isPresented: $deleting,
+                            titleVisibility: .visible) {
+            Button("Delete", role: .destructive) { change(.deleteSystem(namespace: namespace), gone: true) }
+        } message: {
+            Text("Designs drawn in it keep their copy, and the project it was read from isn’t touched.")
+        }
+        .task(id: MobileDesigns.of(hosts).systemsRevision) { await load() }
+    }
+
+    private func load() async {
+        do {
+            system = try await MobileDesigns.of(hosts).system(host: host, namespace: namespace)
+            problem = nil
+        } catch {
+            problem = MobileDesignsError.words(error)
+        }
+    }
+
+    /// A change on the host; then this page reads the system again, opens the copy, or goes back.
+    private func change(_ request: RemoteDesignRequest, open: Bool = false, gone: Bool = false) {
+        let designs = MobileDesigns.of(hosts)
+        Task {
             do {
-                system = try await MobileDesigns.of(hosts).system(host: host, namespace: namespace)
+                let summary = try await designs.changeSystem(host: host, request)
+                if gone {
+                    dismiss()
+                } else if open, let copy = summary {
+                    navigator.open(.designs(.system(host: host, namespace: copy.namespace)))
+                } else {
+                    await load()
+                }
             } catch {
                 problem = MobileDesignsError.words(error)
             }

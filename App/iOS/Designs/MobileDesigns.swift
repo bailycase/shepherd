@@ -1,8 +1,10 @@
 import Foundation
 import Observation
+import UIKit
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdUI
 
 /// Every host's designs on the phone (designs track): each host's `RemoteDesignLibrary` (shared
 /// with the iPad's designs, `HostDesignLibraries`), following each host's connection and its
@@ -25,6 +27,12 @@ final class MobileDesigns {
     private(set) var swatches: [String: [String]] = [:]
     /// The hosts serving designs now.
     private(set) var serving: Set<UUID> = []
+    /// The design deleted last, while its host holds it for Undo (the screenshot fixtures set it).
+    var deleted: (ref: HostDesignRef, name: String, id: UUID)?
+    /// Why the last design action failed, until dismissed.
+    private(set) var problem: String?
+    /// Moves when a host's systems change: a system's page reads its system again.
+    private(set) var systemsRevision = 0
 
     @ObservationIgnored private let hosts: MobileHosts
     @ObservationIgnored private let libraries: HostDesignLibraries
@@ -71,6 +79,13 @@ final class MobileDesigns {
         libraries = HostDesignLibraries.of(hosts)
         libraries.observe("phone") { [weak self] host, design, revision, comments in
             self?.changed(HostDesignRef(host: host, design: design), files: revision != nil, comments: comments != nil)
+        }
+        // Another device changed a host's systems: the Designs screen and Design systems list them again.
+        libraries.observeSystems("phone") { [weak self] host in
+            guard let self else { return }
+            self.swatches = self.swatches.filter { !$0.key.hasPrefix(host.uuidString + "/") }
+            self.systemsRevision &+= 1
+            Task { await self.list(host) }
         }
         track()
     }
@@ -261,6 +276,227 @@ final class MobileDesigns {
         }
         await list(host)
         return HostDesignRef(host: host, design: id)
+    }
+
+    // MARK: Lifecycle (design.agent.v1, design.lifecycle.v1, design.delete.v1, design.systems.v1)
+
+    /// Whether `host` offers `capability` beside its designs.
+    func supports(_ host: UUID, _ capability: String) -> Bool {
+        library(host) != nil && hosts.host(host)?.supports(capability) == true
+    }
+
+    /// The design's agent: the one its host has, else one its host starts as its own Open does.
+    func ensureAgent(_ ref: HostDesignRef) async throws -> AgentRef {
+        if let agent = agent(ref) { return agent }
+        guard let library = library(ref.host) else { throw MobileDesignsError.offline }
+        guard case .agent(let id) = try await library.request(.ensureAgent(designID: ref.design)) else { throw MobileDesignsError.unexpected }
+        return AgentRef(host: ref.host, agent: id)
+    }
+
+    func report(_ problem: String?) {
+        if self.problem != problem { self.problem = problem }
+    }
+
+    /// Delete, then Undo over the Designs screen for the host's window (counted from here: the
+    /// host's clock isn't this device's).
+    func deleteWithUndo(_ ref: HostDesignRef, name: String) async throws {
+        _ = try await delete(ref)
+        let id = UUID()
+        deleted = (ref, name, id)
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(DesignDeletion.undoWindow))
+            if self?.deleted?.id == id { self?.deleted = nil }
+        }
+    }
+
+    func undoLastDelete() async {
+        guard let last = deleted else { return }
+        deleted = nil
+        do { try await undoDelete(last.ref) } catch {
+            report("Couldn't bring back \(last.name): \(MobileDesignsError.words(error))")
+        }
+    }
+
+    /// Rename: the design's canvas title through its host's canvas update, as the Mac's does.
+    func rename(_ ref: HostDesignRef, to name: String) async throws {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let library = library(ref.host) else { throw MobileDesignsError.offline }
+        _ = try await library.request(.updateIndex(designID: ref.design, patch: .object(["title": .string(trimmed)]), baseRevision: nil))
+        await list(ref.host)
+    }
+
+    /// Delete, as the host's own: until when Undo can bring it back.
+    func delete(_ ref: HostDesignRef) async throws -> DesignDeletion {
+        guard let library = library(ref.host) else { throw MobileDesignsError.offline }
+        guard case .deleted(let deletion) = try await library.request(.delete(designID: ref.design)) else { throw MobileDesignsError.unexpected }
+        await list(ref.host)
+        return deletion
+    }
+
+    func undoDelete(_ ref: HostDesignRef) async throws {
+        guard let library = library(ref.host) else { throw MobileDesignsError.offline }
+        _ = try await library.request(.undoDelete(designID: ref.design))
+        await list(ref.host)
+    }
+
+    /// "Build one from a repo" in one of `host`'s spaces: the build's agent there.
+    func buildSystem(host: UUID, space: SpaceID) async throws -> AgentRef? {
+        guard let library = library(host) else { throw MobileDesignsError.offline }
+        guard case .created(_, let agent) = try await library.request(.buildSystem(spaceID: space)) else { throw MobileDesignsError.unexpected }
+        await list(host)
+        return agent.map { AgentRef(host: host, agent: $0) }
+    }
+
+    /// Each serving host's system builds still reading their space (their agent hasn't written a
+    /// system yet), for Design systems' Building section.
+    var builds: [(host: UUID, hostName: String, build: Design, space: String?)] {
+        hosts.hosts.filter { serving.contains($0.id) }.flatMap { host -> [(host: UUID, hostName: String, build: Design, space: String?)] in
+            let built = Set(library(host.id)?.listing?.systems.compactMap(\.info.ownerDesignID) ?? [])
+            return host.state.designs.filter { $0.buildsSystem && !built.contains($0.id) }.map { build in
+                (host.id, host.name, build, build.sourceSpaceID.flatMap { id in host.state.spaces.first { $0.id == id }?.name })
+            }
+        }
+    }
+
+    /// A build's agent there, while it has one.
+    func buildAgent(host: UUID, build: DesignID) -> AgentRef? {
+        guard let state = hosts.host(host)?.state, let design = state.designs.first(where: { $0.id == build }) else { return nil }
+        let agent = state.agents.first { $0.id == design.agentID } ?? state.agents.first { $0.designID == build }
+        return agent.map { AgentRef(host: host, agent: $0.id) }
+    }
+
+    /// The spaces of each host that builds systems for other devices (`design.systems.v1`).
+    var buildableSpaces: [(host: UUID, name: String, spaces: [Space])] {
+        hosts.hosts.filter { supports($0.id, RemoteProtocol.designSystemsCapability) }.map { host in
+            (host.id, host.name, host.state.spaces.filter { !$0.holdsDesigns && !$0.holdsProjects })
+        }.filter { !$0.spaces.isEmpty }
+    }
+
+    /// A Claude Design ZIP from Files, imported on `host` (`design.import.v1`); answers the design.
+    func importProject(host: UUID, url: URL, progress: @escaping (Double) -> Void) async throws -> HostDesignRef {
+        guard let library = library(host) else { throw MobileDesignsError.offline }
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        let (design, _) = try await library.importProject(file: url, progress: progress)
+        await list(host)
+        return HostDesignRef(host: host, design: design)
+    }
+
+    /// Duplicate on the host; answers the copy.
+    func duplicate(_ ref: HostDesignRef) async throws -> HostDesignRef {
+        guard let library = library(ref.host) else { throw MobileDesignsError.offline }
+        guard case .designDuplicated(let copy) = try await library.request(.duplicate(designID: ref.design)) else {
+            throw MobileDesignsError.unexpected
+        }
+        await list(ref.host)
+        return HostDesignRef(host: ref.host, design: copy.id)
+    }
+
+    func removeFromRecents(_ ref: HostDesignRef) async throws {
+        guard let library = library(ref.host) else { throw MobileDesignsError.offline }
+        _ = try await library.request(.removeFromRecents(designID: ref.design))
+    }
+
+    /// A design system change on its host (rename, duplicate, delete, re-sync), then the
+    /// systems listed again. Answers the system it left, if one.
+    @discardableResult
+    func changeSystem(host: UUID, _ request: RemoteDesignRequest) async throws -> DesignSystemSummary? {
+        guard let library = library(host) else { throw MobileDesignsError.offline }
+        let result = try await library.request(request)
+        library.systemsChanged()
+        await list(host)
+        switch result {
+        case .systemChanged(let summary): return summary
+        case .systemSynced(let synced): return synced.summary
+        default: return nil
+        }
+    }
+
+    // MARK: References (design.references.v1)
+
+    /// Moves when a picture an @ picker row draws lands.
+    private(set) var mentionPicturesVersion = 0
+    @ObservationIgnored private var mentionPictures: [String: UIImage] = [:]
+    @ObservationIgnored private var mentionPicturesWanted: Set<String> = []
+
+    /// An @ picker row's picture while one is drawn: a design's first board, a board's own; an
+    /// element's is its board's (the phone cuts no element out of it).
+    func mentionPicture(_ item: DesignMentionItem, host: UUID) -> UIImage? {
+        mentionPictures[Self.mentionKey(item, host: host)]
+    }
+
+    /// A row came on screen: its picture is drawn on this device from the host's files.
+    func wantMentionPicture(_ item: DesignMentionItem, host: UUID) {
+        let key = Self.mentionKey(item, host: host)
+        guard mentionPictures[key] == nil, mentionPicturesWanted.insert(key).inserted, let library = library(host) else { return }
+        let ref = HostDesignRef(host: host, design: item.reference.designID)
+        Task {
+            defer { mentionPicturesWanted.remove(key) }
+            let source = library.source(item.reference.designID)
+            if item.kind == .design, let first = library.listing?.designs.first(where: { $0.id == item.reference.designID })?.firstBoard {
+                let size = CGSize(width: first.width, height: first.height)
+                guard let image = await DesignRendering.shared.image(ref, source: source, path: first.path, sha256: first.sha256, size: size,
+                                                                     width: SHReferenceMetrics.thumbnail.width) else { return }
+                mentionPictures[key] = image
+            } else {
+                guard let path = item.reference.board, let index = await sync(ref), let board = index.snapshot.index.boards[path],
+                      let sha = index.snapshot.boards[path],
+                      let image = await DesignRendering.shared.image(ref, source: source, path: path, sha256: sha,
+                                                                     size: CGSize(width: board.w, height: board.h),
+                                                                     width: SHReferenceMetrics.thumbnail.width) else { return }
+                mentionPictures[key] = image
+            }
+            mentionPicturesVersion &+= 1
+        }
+    }
+
+    private static func mentionKey(_ item: DesignMentionItem, host: UUID) -> String {
+        "\(host.uuidString)/\(item.reference.designID.rawValue)/\(item.reference.board?.rawValue ?? "")@\(item.revision ?? 0)"
+    }
+
+    /// A piece of `host`'s design pinned by the host (named `local`, as the host sees it).
+    func pinReference(host: UUID, _ reference: DesignReference) async throws -> RemoteDesignReferencePin {
+        guard let library = library(host) else { throw MobileDesignsError.offline }
+        guard case .referencePinned(let pin) = try await library.request(.pinReference(reference)) else { throw MobileDesignsError.unexpected }
+        return pin
+    }
+
+    /// A pasted or picked reference for a thread on `host`, named as that host sees it: one this
+    /// device copied names the host (`remote(host)`), one from the host's own thread `local`; one
+    /// naming any other Mac is refused (that host can't read it).
+    static func onHost(_ reference: DesignReference, host: UUID) throws -> DesignReference {
+        switch reference.host {
+        case .local: return reference
+        case .remote(let id) where id == host: return reference.onHost(host) ?? reference
+        case .remote: throw RemoteHostClientError.rejected(code: "remote_design", message: RemoteHostClient.designReferencesRefusal)
+        }
+    }
+
+    /// Pins a reference and puts it beside the draft of a thread on that host.
+    func attachReference(_ reference: DesignReference, to store: NativeThreadStore, host: UUID) async throws {
+        let pin = try await pinReference(host: host, try Self.onHost(reference, host: host))
+        let attached = NativeAttachedReference(reference: pin.reference, label: pin.label ?? DesignReferencePresentation.crumbs(
+            DesignReferenceRecord(ref: pin.reference.string, design: pin.design, boardTitle: pin.boardTitle)).joined(separator: " › "),
+                                               outline: pin.outline)
+        guard store.attach(reference: attached) else {
+            throw RemoteHostClientError.rejected(code: "too_many", message: "A message carries at most \(DesignReferenceRecord.maxPerMessage) design references.")
+        }
+    }
+
+    /// The host's ordinary threads a piece can go to: never a design's agent, a Project's
+    /// coordinator or worker, most recently active first.
+    func referenceThreads(host: UUID) -> [Agent] {
+        guard let state = hosts.host(host)?.state else { return [] }
+        let workers = state.projectWorkerIDs
+        return state.agents.filter { state.isSidebarThread($0, workers: workers) && $0.designID == nil }
+            .sorted { ($0.lastActiveAt ?? -1) > ($1.lastActiveAt ?? -1) }
+    }
+
+    /// Implement in a thread…: `references` (pinned, `local`) and `text` to one of the host's
+    /// threads now, waiting while its pi starts.
+    func sendReferences(_ references: [NativeAttachedReference], text: String, to agent: AgentRef) async throws {
+        guard let client = hosts.host(agent.host)?.connectedClient else { throw MobileDesignsError.offline }
+        try await NativeReferenceSend.send(references, text: text) { try await client.nativeThread(agentID: agent.agent, request: $0) }
     }
 
     // MARK: Lookups

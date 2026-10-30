@@ -10,6 +10,11 @@ import ShepherdRemote
 struct UserTurnView: View, Equatable {
     struct Bubble: Equatable {
         var text: String
+        /// Each design reference it carried: the piece (named as the thread's host sees it), its
+        /// chip's crumbs and version.
+        var pieces: [DesignReference?] = []
+        var references: [[String]] = []
+        var versions: [String?] = []
         var images: Int
         var caption: String?
         var pending: Bool
@@ -17,10 +22,18 @@ struct UserTurnView: View, Equatable {
 
     let bubbles: [Bubble]
     var fromQueue: Int?
+    /// The thread's host: a reference chip's picture comes from its files.
+    var host: UUID?
 
-    init(turn: NativeTurn) {
+    init(turn: NativeTurn, host: UUID? = nil) {
+        self.host = host
         bubbles = turn.bubbles.map { bubble in
-            Bubble(text: bubble.text, images: bubble.images, caption: bubble.sentAt.map { nativeClockText($0) }, pending: bubble.pending)
+            // References show as chips above the words, so the line that names them comes off.
+            Bubble(text: bubble.references.isEmpty ? bubble.text : DesignReferenceFence.withoutHumanLine(bubble.text, count: bubble.references.count),
+                   pieces: bubble.references.map(\.reference),
+                   references: bubble.references.map(DesignReferencePresentation.crumbs),
+                   versions: bubble.references.map { DesignReferencePresentation.version($0.revision) },
+                   images: bubble.images, caption: bubble.sentAt.map { nativeClockText($0) }, pending: bubble.pending)
         }
         fromQueue = turn.fromQueue
     }
@@ -32,9 +45,20 @@ struct UserTurnView: View, Equatable {
                 // By position: an echo and the message pi saves for it have different entries,
                 // and the bubble must stay one view to settle in place (70% → 100%).
                 ForEach(Array(bubbles.enumerated()), id: \.offset) { _, bubble in
-                    SHUserBubble(bubble.text, attachments: Array(repeating: "Image", count: bubble.images), timestamp: bubble.caption)
-                        .opacity(bubble.pending ? 0.7 : 1)
-                        .shAnimation(.hover, value: bubble.pending)
+                    VStack(alignment: .trailing, spacing: SH.Space.s) {
+                        ForEach(Array(bubble.references.enumerated()), id: \.offset) { index, crumbs in
+                            if let host {
+                                MobileReferenceChip(host: host, reference: bubble.pieces[index], crumbs: crumbs, version: bubble.versions[index])
+                            } else {
+                                SHDesignReferenceChip(crumbs: crumbs, version: bubble.versions[index]).fixedSize(horizontal: true, vertical: false)
+                            }
+                        }
+                        if !bubble.text.isEmpty || bubble.images > 0 || bubble.references.isEmpty {
+                            SHUserBubble(bubble.text, attachments: Array(repeating: "Image", count: bubble.images), timestamp: bubble.caption)
+                        }
+                    }
+                    .opacity(bubble.pending ? 0.7 : 1)
+                    .shAnimation(.hover, value: bubble.pending)
                 }
             }
         }

@@ -237,6 +237,8 @@ struct SidebarRowMenu: View {
         case .design(let id):
             // DesignRecentsMenu: the card's menu with Remove from Recents.
             DesignMenuItems(menu: vm.designMenu(.local(id), context: .recents)) { vm.performDesignMenu($0, on: .local(id)) }
+        case .remoteDesign(let ref):
+            DesignMenuItems(menu: vm.designMenu(.remote(ref), context: .recents)) { vm.performDesignMenu($0, on: .remote(ref)) }
         case .remote(let ref):
             if row.offline {
                 // Every action goes through the host, which is not connected; a pin is this
@@ -246,6 +248,9 @@ struct SidebarRowMenu: View {
                     Divider()
                 }
                 Button("Host Offline") {}.disabled(true)
+            } else if let (_, design) = vm.remoteDesign(drawnBy: ref) {
+                let target = DesignTarget.remote(RemoteDesignRef(hostID: ref.hostID, designID: design.id))
+                DesignMenuItems(menu: vm.designMenu(target, context: .recents)) { vm.performDesignMenu($0, on: target) }
             } else {
                 RemoteRowMenu(vm: vm, row: row, ref: ref)
             }

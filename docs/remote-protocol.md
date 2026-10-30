@@ -237,8 +237,15 @@
   - `design` (`designs.v1`, offered only while the host's Design tool experiment is on): its
     designs and systems, a design's index with every project file's hash, changed files only
     (inline up to 256 KiB, larger ones and uploads in resumable pieces), comments and the
-    canvas's writes through the host's own mutations, Delete with its Undo (`design.delete.v1`), and a pushed `designChanged` for the
-    designs a client watches (`capabilitiesChanged` when the experiment turns on or off).
+    canvas's writes through the host's own mutations, Delete with its Undo (`design.delete.v1`),
+    a fresh design agent (`design.agent.v1`), Duplicate and Remove from Recents
+    (`design.lifecycle.v1`), its systems' files and their Rename, Duplicate, Delete and Re-sync
+    (`design.systems.v1`, with a pushed `designSystemsChanged` to a client that lists it, and
+    "Build one from a repo" in a host's space), references to the host's own designs in its
+    threads (`design.references.v1`), a Claude Design ZIP uploaded to import
+    (`design.import.v1`), and a
+    pushed `designChanged` for the designs a client watches (`capabilitiesChanged` when the
+    experiment turns on or off).
     Answered by the server itself; boards render on the client (docs/designs.md › Remote)
   - `mission` (`missions.v1`, offered only while the host's Missions experiment is on and its app
     drives missions, and only to a client that lists it in `hello`): `RemoteMissionRequest` lists

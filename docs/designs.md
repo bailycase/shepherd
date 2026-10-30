@@ -1493,11 +1493,34 @@ send carries each reference's string alone (`NativeThreadRequest.send`'s `design
   copies. Deleting the design keeps them: the copy was sent with the message and still reaches the
   agent (the chip says the design is gone). Startup drops a design agent's grants and grants from
   before copies were kept, and removes copies no grant names.
-- **Remote:** a reference goes only into a thread on the Mac that runs it. A remote client's
-  send with references is refused (`design_references_local`), and `RemoteHostClient` refuses
-  one before it goes; a reference to another Mac's design is refused (`remote_design`). The
-  picker lists this Mac's designs only; the chip's "another host" and "host offline" states and the
-  picker's host tags are ShepherdUI states the app doesn't reach yet (`DesignReferenceFreshness.hostOffline`,
+- **Remote:** a reference goes only into a thread on the Mac whose design it names. A host that
+  offers `design.references.v1` (with `designs.v1`) takes a remote client's send naming its own
+  designs (`local` as the host sees them: the client names them `remote(<host>)` and renames
+  them as they go) through the same path as its own sends, resolved, kept and fenced there, and
+  pins them for the client (`pinReference`). Any other host's send with references, and a
+  Project transport's, is refused (`design_references_local`), and `RemoteHostClient` refuses one
+  before it goes; a reference to another Mac's design is refused (`remote_design`). On the Mac,
+  a host's design canvas offers Implement in a thread… and Copy reference where its host takes
+  them: the sheet lists that host's own threads (no new thread there yet). A host's ordinary
+  thread has the same chips, "Looked at…" lines and @ picker as a local one
+  (`remoteDesignReferenceChips`), for that host's designs: in its thread a piece is named `local`,
+  as the host names it; the picker lists the host's designs as listed and each design's pages,
+  boards and elements once it is opened in the picker (read from the files this Mac synced, so
+  search finds an unopened design by its name only); a pasted reference naming that host joins as
+  its own, one naming any other Mac is refused; sent chips read the copy the host kept
+  (`referenceKept`, its picture riding along while it fits one reply, else read in pieces with
+  `referencePicture`, up to the host's 16 MB) and composer chips how they stand
+  (`referenceFreshness`). The picker's catalog of a host is `RemoteDesignLibrary.mentionCatalog`,
+  each design's rows read by `openMentions`, shared with iOS. On iPhone and iPad, a board's actions offer Implement in a
+  Thread… (a form: the host's threads, the message, "Open the thread after sending") and, on the
+  phone, Copy Reference; a pasted reference to the thread's host's design joins a host thread's
+  composer as a chip, and a sent message shows its chips above its words, each drawn from the
+  host's files. A host thread's composer has the @ picker too, above the field: the Mac's rules
+  (`ComposerMentions.swift`, compiled into the iOS target as well), the host's designs at once
+  and a design's pages and boards and a board's elements once it is opened; a tap drills in or
+  picks, Back goes up, and there is no highlight to move. An element's row shows its board's
+  picture (nothing is cut out on the device). The chip's "another host" and "host offline" states and the picker's host tags
+  are ShepherdUI states the app doesn't reach yet (`DesignReferenceFreshness.hostOffline`,
   `DesignMentionHost.remote`).
 
 ### The copy
@@ -1717,7 +1740,8 @@ the words in `DesignLifecycle.swift`, the views in `DesignLifecycleViews.swift`)
 - **Menus** (`DesignMenu`): a design card's (a right-click anywhere on it, or ••• on hover) holds
   Open, Rename…, Duplicate, Export… and Delete Design…; its row in Recents adds Remove from
   Recents; ••• in its own toolbar holds Rename…, Duplicate, Export…, Show Design System and Delete
-  Design…. A host's design offers Open, Rename… (through the host's canvas update) and Delete
+  Design…. A host's design offers Open, Rename… (through the host's canvas update), Export… (drawn
+  here), Duplicate and Remove from Recents where the host offers `design.lifecycle.v1`, and Delete
   Design…, which is off with its reason where the host doesn't offer `design.delete.v1`. A system's
   (its card, ••• on its page) holds Open, Re-sync from <repo> (a system read from a repo), Rename…
   (its title; the namespace stays), Duplicate and Delete Design System…; a built-in holds Open,
@@ -1808,11 +1832,23 @@ a VPN or trusted network is the transport boundary, as for everything else it se
 | `sendMarkup(id, markup)` | `markupSent` | Pencil markup (`design.markup.v1`): the record checked against the canvas and the boards' sources, then handed to the design agent fenced, as a turn of its own; why it didn't reach the agent, or nil. Nothing is kept |
 | `settleProposals(id, proposals, deliver, base)` | `proposalsSettled` | The viewer's answer to the agent's proposals, which the host kept as comments when the agent made them (`design.markup.v1`): each named proposal's comment settled (`proposalSettledAt`), all or none, at the comments' revision, once; with `deliver` each one settled now goes to the agent as a comment does |
 | `watch(ids)` | `ok` | The designs this client shows; replaces the last set |
+| `ensureAgent(id)` | `agent(agentID)` | The design's agent (`design.agent.v1`): the one the host has, else one its app starts as its own Open does (`SessionServer.onRemoteEnsureDesignAgent`), selecting nothing there. A system build is refused; a host with no app answers `unsupported` |
+| `duplicate(id)`, `removeFromRecents(id)` | `designDuplicated(Design)`, `ok` | Duplicate and Remove from Recents (`design.lifecycle.v1`) through the host's own `duplicateDesign` and `removeDesignFromRecents` |
+| `systemFile(namespace, path, offset)` | `chunk` | A piece of one file `system` lists (`design.systems.v1`), up to 256 KiB, with the file's hash: what a system's page draws specimens from. The host reads that one file (a regular file in the system's folder, by the file grammar, never `system.json`) |
+| `deleteSystemBuild(id)` | `ok` | A system build still reading its space, deleted with its agent stopped as the host's own Delete design system does for a build (`design.systems.v1`); nothing to undo |
+| `renameSystem`, `duplicateSystem`, `deleteSystem`, `resyncSystem` | `systemChanged(summary)`, `ok`, `systemSynced` | A system's Rename (title trimmed, at most 8 KB), Duplicate, Delete and Re-sync (`design.systems.v1`) through the host's own; a built-in is refused as on the host |
+| `buildSystem(spaceID)` | `created(build, agentID)` | "Build one from a repo" in one of the host's spaces (`design.systems.v1`; never its designs or Projects space): its app starts the build as its own does (`SessionServer.onRemoteBuildDesignSystem`), selecting nothing; a space with a build answers that one |
+| `referenceKept(agentID, payloadID)`, `referenceFreshness(reference)`, `referenceLookedAt(agentID, ref, aspects)` | `referenceKept(payload, picture, freshness)`, `referenceFreshness`, `referenceLookedAt` | What a host thread's chips read (`design.references.v1`): the copy the host kept of a sent piece (its picture's bytes while they fit 256 KiB) and how it stands, how a pinned piece stands, and a "Looked at…" line |
+| `referencePicture(agentID, payloadID, offset)` | `chunk` | A piece of a kept copy's picture `referenceKept` left out as too large for one reply (`design.references.v1`), at most 16 MB in all, with its hash |
+| `pinReference(reference)` | `referencePinned(RemoteDesignReferencePin)` | A piece of one of the host's designs, named `local` (`design.references.v1`), pinned by the host from its own design: the reference at its revision, and what its chips and the Implement sheet say |
+| `importBegin(name, size)`, `importChunk(uploadID, offset, data)`, `importFinish(uploadID)`, `importCancel(uploadID)` | `importStarted(uploadID)`, `ok`, `created(designID, agentID)` | A Claude Design ZIP (`design.import.v1`): at most 256 MB, in pieces of 256 KiB in order, into a private file under the host's support folder that goes with the connection or once imported. The app imports it as its own Import does (`SessionServer.onRemoteImportDesign`): boards it can't read refuse it (`import_unreadable`, nothing imported), and a project already in Designs comes in as a copy. One import at a time per connection |
 | `create(brief, systemNamespace)` | `created(designID, agentID)` | New design from another device (a design belongs to no project): the host checks the brief (trimmed, at most 8 KB) and the system's name on its queue, then its app makes the design as its own New design does (`SessionServer.onRemoteCreateDesign`), selecting nothing there. A host with no app to make it refuses (`unsupported`) |
 
 - **Pushed:** `designChanged(id, revision, commentsRevision)` after each change to a watched
   design, one per write: a hint to pull, carrying no files. `capabilitiesChanged` goes to a
-  client that lists `designs.v1` when the host's experiment turns on or off. Only a client that
+  client that lists `designs.v1` when the host's experiment turns on or off.
+  `designSystemsChanged` goes to a client that lists `design.systems.v1` after any of the host's
+  systems is added, renamed, re-synced or deleted: a hint to list them again. Only a client that
   lists `designs.v1` may `watch` (`update_required` otherwise), so no other client is ever
   pushed a design frame.
 - **The experiment:** the host offers `designs.v1` only while its Settings ▸ Experiments ▸
@@ -1862,15 +1898,36 @@ a VPN or trusted network is the transport boundary, as for everything else it se
   rendered from the files the host served, the chat its thread on the host. Moves, Tweak (its
   undo too), Duplicate, Variations, comments and replies go to the host; the host pushes changes
   for the designs on screen, and the canvas pulls what changed.
-- **Its menu** (a card's, and ••• in its toolbar) renames it through the host's canvas update and
-  deletes it on its host (`delete`, then `undoDelete` from the toast); where the host doesn't offer
-  `design.delete.v1`, Delete is off with the reason. Duplicate, Export… and Remove from Recents
-  are This Mac's alone for now.
-- **Not yet:** a design whose agent is gone on its host doesn't open (it says so; only the host
-  starts a fresh agent), the header's system chip and Export do nothing for a host's design,
-  Tweak snaps to the board's own tokens (the project's stylesheets are on the host), a host's
-  design agent is a plain thread in Recents rather than a design row, and a host's design
-  systems aren't on the page.
+- **Its menu** (a card's, its Recents row's, and ••• in its toolbar) renames it through the host's
+  canvas update, duplicates it and removes it from Recents on its host (`design.lifecycle.v1`),
+  and deletes it there (`delete`, then `undoDelete` from the toast); where the host doesn't offer
+  `design.delete.v1`, Delete is off with the reason. **Export…** (and the header's Export) draws
+  the boards here from this Mac's synced copy (`RemoteDesignSource.exportFiles`) with this Mac's
+  renderer.
+- **A design whose agent is gone** on its host gets a fresh one there when it opens
+  (`ensureAgent`); an older host says to open it there.
+- **Tweak** snaps to the board's tokens and the project's synced stylesheets (`ds/*/tokens.css`
+  among them, `RemoteDesignSource.projectTokens`).
+- **Recents:** a host's design is a design row in Designs, tagged with the host's name, opening
+  its agent's layout (one whose agent is gone there gets a fresh one); its menu is the design's.
+- **New design** has a "made on" card (when a connected host serves designs): This Mac, or a
+  host. A host makes it (`create`) in one of its own systems, on its own model and level; the
+  brief alone goes (images stay on This Mac's designs), and its canvas opens here. With a host
+  chosen, Import a project sends a Claude Design ZIP there (`design.import.v1`; a folder would
+  need zipping first), with its progress under the composer, and opens it.
+- **Design systems:** each host's systems follow its designs on the Designs page (no swatches:
+  the listing carries no tokens), and the header's system chip opens one. Its page is the Design
+  systems page built from the host's `system` read, its specimens drawn here from the files
+  `systemFile` serves (`RemoteDesignSystemDestination`). Its menu offers what the host does for
+  other devices (`design.systems.v1`): Re-sync, Rename…, Duplicate, Delete Design System…, else
+  Open alone. A host's "Build one from a repo" tile builds from one of its spaces (`buildSystem`)
+  and opens the build agent's thread; a build still reading its space is a "building" card that
+  opens that thread.
+- **Implement in a thread… and Copy reference** (Design references, above) for a host's design.
+  A building card's menu deletes the build on its host, after the build's dialog
+  (`deleteSystemBuild`).
+- **Not yet:** a host's build has no system page beside its chat (it opens as its agent's
+  thread).
 
 ### On iPhone
 
@@ -1904,14 +1961,31 @@ search opens on its canvas (On iPad, below).
     comment editor pins a comment there through `addComment`, as the Mac's canvas does.
   - **Ask the agent** opens the design agent's thread, and the board's view record (the board on
     screen, and the element being commented on) rides the next send (`design.context.v1`).
+  - **Tweak** on, a tap picks the element (else the board whole) and the iPad's Tweak controls
+    rise in a sheet over the board, previewing on its live view and writing through the host
+    (`DesignTweakModel`, `PadDesignCanvas.tweakIO`), snapping to the synced stylesheets.
+  - **Play** (the board actions, for an interactive board): the board takes touches itself and
+    a link turns to its board; Done ends it. The view record then says the board is focused.
   - **Boards** is a sheet of every board; **Export** and Share render the board at zoom 1 as a
     PNG (twice its size) or a PDF (print.md) and hand it to the share sheet. The board actions
     menu also offers a confirmed Duplicate, using the host's revision checks.
 - **New design** (not drawn) is a form: the brief, the host to make it on (only when several
   serve designs), and a design system; no project, since a design stands alone. The host makes
-  it (`create`) and it opens.
-- **Not yet:** a board's interactive Play and links; Tweak and moves;
-  a design without an agent in Recents; Pencil
+  it (`create`) and it opens. Import a Claude Design ZIP… (Files) imports one on the host instead
+  (`design.import.v1`).
+- **Changing a design** (a tile's long press, ••• on its boards): Rename…, Duplicate and Remove
+  from Recents (`design.lifecycle.v1`), and Delete Design… with Undo over the Designs screen for
+  the host's window (`design.delete.v1`). Ask the agent starts a design's agent on its host where
+  it has none (`design.agent.v1`). A design system's page offers Re-sync, Rename…, Duplicate and
+  Delete where its host does (`design.systems.v1`), and Design systems' + builds one from a
+  host's space and opens its agent's thread; its Building section lists a host's builds still
+  reading their space, each opening its agent's thread, and a long press deletes one there
+  (`deleteSystemBuild`). A host's systems changing (`designSystemsChanged`) lists them again on
+  screen. A ZIP to import is read and sent a piece at a time from its file.
+- **Design references** (above): Implement in a Thread… and Copy Reference in a board's actions,
+  the @ picker and chips in a host thread's composer, chips in sent messages.
+- **Not yet:** moving boards (the phone shows one board at a time, with no canvas to move them
+  on); a design without an agent in Recents; Pencil
   markup (iPad only, below); push notifications and Live Activities (they need the push relay).
 
 ### On iPad
@@ -1939,6 +2013,8 @@ through `capabilitiesChanged`.
 - **Writes** go through the host: comments, replies and Resolve at the comments' revision, Tweak
   (`DesignTweakModel`, shared with the Mac) with its board writes and undo, Duplicate; a stale
   revision reads the design again and goes once more. A send carries the canvas's view record.
+- **A design with no agent** on its host offers Start its agent in the chat pane where the host
+  starts one for other devices (`design.agent.v1`), else says to open it there.
 - **Split View:** in a window narrower than 760pt the boards stack in one column, the chat is
   behind the header's button, and the design agent's latest reply floats over the canvas. "Send
   to the thread" (`DesignSpecHandoff`) attaches the boards picked on the page shown, else the

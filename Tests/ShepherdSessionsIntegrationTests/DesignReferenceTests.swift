@@ -607,6 +607,91 @@ struct DesignReferenceIntegrationTests {
         #expect(prompts(pi).isEmpty)
     }
 
+    /// A host that serves references to its own designs (`design.references.v1`, with designs)
+    /// pins them for a remote client and takes a send naming them, resolving and fencing each
+    /// itself; one naming any other Mac's design, or a design it lacks, is refused.
+    @Test func aRemoteClientsReferencesToTheHostsOwnDesignGoThrough() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        drawing(r.host)
+        r.server.setDesignsServed(true)
+        let pi = try await PiAgent.launch(on: r.host)
+        let designID = try await design(r.host)
+        let ready = try await pi.ready()
+        let client = try await r.raw(authenticated: false)
+        _ = try await client.hello(token: r.token, capabilities: RemoteProtocol.clientCapabilities)
+
+        try client.send(.design(id: 2, request: .pinReference(reference(designID))))
+        let pinned = try await client.frames { if case .design(2, _) = $0 { true } else if case .error(2, _, _) = $0 { true } else { false } }
+        guard case .design(_, .referencePinned(let pin))? = pinned.last else { Issue.record("expected a pin, got \(pinned)"); return }
+        #expect(pin.reference.host == .local && pin.reference.revision != nil && pin.boardTitle == "A · Funnel first")
+
+        try client.send(.design(id: 3, request: .pinReference(DesignReference(host: .remote(UUID()), designID: designID)!)))
+        let elsewhere = try await client.frames { if case .error(3, _, _) = $0 { true } else if case .design(3, _) = $0 { true } else { false } }
+        guard case .error(3, _, _)? = elsewhere.last else { Issue.record("another Mac's design was pinned"); return }
+
+        func send(_ id: Int, _ ref: DesignReference) throws {
+            try client.send(.nativeThread(id: id, agentID: pi.agent.id, request: .send(
+                expectedSessionID: ready.piSessionID, generation: ready.generation, operationID: UUID(), text: "tools:0 go",
+                delivery: .followUp, designReferences: [DesignReferenceRecord(ref)])))
+        }
+        try send(4, DesignReference(host: .remote(UUID()), designID: designID, board: Self.board)!)
+        let refused = try await client.frames { if case .error(4, _, _) = $0 { true } else if case .nativeThread(4, _) = $0 { true } else { false } }
+        guard case .error(4, _, _)? = refused.last else { Issue.record("another Mac's design went: \(refused)"); return }
+        #expect(prompts(pi).isEmpty)
+
+        try send(5, pin.reference)
+        let sent = try await client.frames { if case .error(5, _, _) = $0 { true } else if case .nativeThread(5, _) = $0 { true } else { false } }
+        guard case .nativeThread(5, let result)? = sent.last, case .accepted = result else { Issue.record("expected it to go, got \(sent)"); return }
+        try await eventually("the reference to reach pi") { lastRecord(pi)?.ref == pin.reference.string }
+        #expect(lastRecord(pi)?.boardTitle == "A · Funnel first", "the host read it from its own design")
+        #expect(!grants(r.host, pi.agent.id).isEmpty && !copies(r.host, pi.agent.id).isEmpty)
+
+        // The chips' reads: the copy kept (its picture with it), how it and a pin stand, a "Looked at…" line.
+        let payloadID = try #require(lastRecord(pi)?.payloadID)
+        func ask(_ id: Int, _ request: RemoteDesignRequest) async throws -> RemoteDesignResult? {
+            try client.send(.design(id: id, request: request))
+            let frames = try await client.frames { if case .design(id, _) = $0 { true } else if case .error(id, _, _) = $0 { true } else { false } }
+            if case .design(_, let result)? = frames.last { return result }
+            return nil
+        }
+        guard case .referenceKept(let payload, let picture, let freshness)? = try await ask(6, .referenceKept(agentID: pi.agent.id, payloadID: payloadID)) else {
+            Issue.record("expected the kept copy"); return
+        }
+        #expect(payload.id == payloadID && payload.boardTitle == "A · Funnel first" && freshness == .current)
+        #expect(picture != nil, "the picture rides along while it fits one reply")
+        #expect(try await ask(7, .referenceFreshness(pin.reference)) == .referenceFreshness(.current))
+        guard case .referenceLookedAt(let line?)? = try await ask(8, .referenceLookedAt(agentID: pi.agent.id, ref: pin.reference.string,
+                                                                                           aspects: [.summary])) else {
+            Issue.record("expected a Looked at line"); return
+        }
+        #expect(line.title.contains("A · Funnel first"))
+        #expect(try await ask(9, .referenceKept(agentID: AgentID(), payloadID: payloadID)) == nil, "another thread's copy is no thread's")
+
+        // A picture too large for one reply stays out of it and comes in pieces, whole.
+        let name = try #require(payload.picture?.name)
+        let folder = try #require(r.host.server.designReferencePayloads.folder(for: pi.agent.id, payload: payloadID))
+        let large = Data((0..<(RemoteProtocol.designChunkBytes + 1_000)).map { UInt8(truncatingIfNeeded: $0 &* 7) })
+        try large.write(to: folder.appendingPathComponent(name))
+        guard case .referenceKept(_, let none, _)? = try await ask(10, .referenceKept(agentID: pi.agent.id, payloadID: payloadID)) else {
+            Issue.record("expected the kept copy"); return
+        }
+        #expect(none == nil)
+        var pieces = Data()
+        var id = 11
+        while pieces.count < large.count {
+            guard case .chunk(let piece)? = try await ask(id, .referencePicture(agentID: pi.agent.id, payloadID: payloadID, offset: pieces.count)) else {
+                Issue.record("expected a piece at \(pieces.count)"); return
+            }
+            #expect(piece.total == large.count && piece.offset == pieces.count && piece.data.count <= RemoteProtocol.designChunkBytes)
+            pieces.append(piece.data)
+            id += 1
+        }
+        #expect(pieces == large)
+        #expect(try await ask(30, .referencePicture(agentID: pi.agent.id, payloadID: payloadID, offset: large.count + 1)) == nil)
+        #expect(try await ask(31, .referencePicture(agentID: AgentID(), payloadID: payloadID, offset: 0)) == nil)
+    }
+
     @Test func rawRemoteProjectTransportsCannotCaptureLocalDesigns() async throws {
         let r = try RemoteHost()
         defer { r.stop() }

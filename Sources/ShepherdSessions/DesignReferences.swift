@@ -59,6 +59,22 @@ public struct PreparedDesignReference: Hashable, Sendable {
     }
 }
 
+extension PreparedDesignReference {
+    /// A host's pin (`RemoteDesignRequest.pinReference`), its reference named from this device.
+    public init(pin: RemoteDesignReferencePin, host: UUID) {
+        reference = pin.reference.fromHost(host)
+        reference.label = pin.label
+        design = pin.design
+        boardTitle = pin.boardTitle
+        pageTitle = pin.pageTitle
+        elementLabel = pin.elementLabel
+        elementName = pin.elementName
+        width = pin.width
+        height = pin.height
+        outline = pin.outline
+    }
+}
+
 /// A reference a send resolved and kept: its copy, the record pi reads, and the grant it makes.
 struct SentDesignReference: Sendable {
     var payload: DesignReferencePayload
