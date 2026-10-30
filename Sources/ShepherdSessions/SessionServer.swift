@@ -440,6 +440,9 @@ public final class SessionServer: @unchecked Sendable {
     /// The GUI answers a client's read of this host's MCP servers, subagent profiles or providers
     /// (`RemoteRequest.hostInventory`); nil on a headless host.
     public var onRemoteHostInventory: ((RemoteHostInventoryRequest, @escaping (Result<RemoteHostInventoryResult, RemoteCreateAgentError>) -> Void) -> Void)?
+    /// The GUI changes this host's MCP servers, subagent profiles or sign-ins for a client
+    /// (`RemoteRequest.hostConfig`), as its own Settings would; nil on a headless host.
+    public var onRemoteHostConfig: ((RemoteHostConfigRequest, @escaping (Result<RemoteHostConfigResult, RemoteCreateAgentError>) -> Void) -> Void)?
     /// A remote client saved or restored this host's root instructions: the GUI's Settings page
     /// follows. Delivered on the main actor.
     public var onInstructionsChanged: ((InstructionsSnapshot) -> Void)?
@@ -2542,6 +2545,23 @@ public final class SessionServer: @unchecked Sendable {
                         switch result {
                         case .success(let value): self.send(.hostInventory(id: id, result: value), to: client)
                         case .failure(let error): self.send(.error(id: id, code: "inventory_failed", message: error.message), to: client)
+                        }
+                    }
+                }
+            }
+        case .hostConfig(let id, let request):
+            guard let handler = onRemoteHostConfig else {
+                send(.error(id: id, code: "unavailable", message: "This host's configuration can't be changed from here."), to: client)
+                return
+            }
+            hopToMain { [weak self] in
+                handler(request) { result in
+                    guard let self else { return }
+                    self.queue.async {
+                        guard self.clients[client.fd] === client else { return }
+                        switch result {
+                        case .success(let value): self.send(.hostConfig(id: id, result: value), to: client)
+                        case .failure(let error): self.send(.error(id: id, code: "config_failed", message: error.message), to: client)
                         }
                     }
                 }

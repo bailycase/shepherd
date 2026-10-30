@@ -259,13 +259,15 @@ SettingsSkills): every host's agent skills, the same on every host, over `skills
 
 Settings ▸ Experiments: features still being tried, each off until turned on
 (`Settings/ExperimentsScreens.swift`; the Mac's page is SettingsExperiments). Suggested
-instructions spans every host (`suggestions.v1`); `ClientSuggestions` holds every rule. Goals
-adds a separate card per connected host with `experiments.goals.v1`, using the same lantern tile
-and native switch, the existing two-ring mark, "Goals on <host>", and the description "Keep a
+instructions spans every host (`suggestions.v1`); `ClientSuggestions` holds every rule. Each
+connected host with a per-host experiment gets a section ("On <host>") of cards, using the same
+lantern tile and native switch: Goals (`experiments.goals.v1`, the two-ring mark, "Keep a
 conversation working toward a condition you set with /goal. No time or token budgets. Turning
-this off pauses active goals without clearing them." Off is the default. It applies live on
-that host, preserves paused goals and never resumes them on re-enable. The footnote explains
-that Resume is still required; unsupported hosts get no switch.
+this off pauses active goals without clearing them."), Projects (`experiments.projects.v1`),
+Design tool (`experiments.designTool.v1`) and Missions (`experiments.missions.v1`, its switch
+locked on with a lantern note while a mission runs there). Off is the default. Each applies live
+on that host; Goals preserves paused goals and never resumes them on re-enable. A host without a
+capability gets no card for it.
 
 - **The page:** "‹ Settings", the large title "Experiments", on `bgBase`, 14pt sides, 10pt apart.
   "Still being tried out. Each is off until you turn it on." (13.5/1.5 `textSecondary`).

@@ -191,7 +191,7 @@ enum FixtureData {
 @MainActor enum FixtureCatalog {
     static var all: [FixtureScreen] {
         home + thread + context + newThread + subagents + review + changes + commit + search + settings + automations + windows + terminal + clientState + duo
-            + designs + designPad + designPadMarkup + browser + files + ProjectFixtures.screens
+            + designs + designPad + designPadMarkup + browser + files + ProjectFixtures.screens + hostConfig
     }
 
     static func screen(named name: String) -> FixtureScreen? {

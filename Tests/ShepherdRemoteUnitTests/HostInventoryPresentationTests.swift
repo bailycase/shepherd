@@ -41,7 +41,7 @@ struct HostInventoryPresentationTests {
                                          accounts: 2, activeAccount: "work")
         let key = HostProviderStatus(id: "openai", name: "OpenAI", badge: "API key", auth: .apiKey, detail: "$OPENAI_API_KEY")
         let none = HostProviderStatus(id: "google", name: "Google", badge: "Subscription", auth: .notSignedIn)
-        #expect(P.providerLine(expired) == "Expired · sign in on the Mac · Claude Pro or Max · 2 accounts · work")
+        #expect(P.providerLine(expired) == "Expired · sign in again · Claude Pro or Max · 2 accounts · work")
         #expect(P.providerLine(key) == "API key · $OPENAI_API_KEY")
         #expect(P.providerLine(none) == "Not signed in")
         #expect(P.tone(.expired) == .attention && P.tone(.apiKey) == .done && P.tone(.notSignedIn) == .idle)
@@ -55,6 +55,21 @@ struct HostInventoryPresentationTests {
         let broken = ProjectSummary(directory: "/g", name: "gone", displayPath: "~/gone", summary: "directory unavailable", minimal: true, error: "not found")
         #expect(P.spaceLine(ready) == "AGENTS.md · 2 skills" && P.spaceLine(broken) == "not found")
         #expect(P.tone(ready) == .done && P.tone(broken) == .failed)
-        #expect(P.trustWord(true) == "Approved on the Mac" && P.trustWord(false) == "Not yet approved" && P.trustWord(nil) == nil)
+        #expect(P.trustWord(true) == "Approved on the host" && P.trustWord(false) == "Not yet approved" && P.trustWord(nil) == nil)
+    }
+
+    /// An older host's sign-in words, written for its own Mac, read as the state alone.
+    @Test func anOlderHostsSignInWordsNameNoMachine() {
+        #expect(P.signInWord("Sign in on the Mac") == "Not signed in")
+        #expect(P.signInWord("Expired · sign in on the Mac") == "Expired")
+        #expect(P.signInWord("Signed in") == "Signed in" && P.signInWord(nil) == nil)
+        #expect(P.authWord(.environment) == "From the host’s environment")
+    }
+
+    @Test func anAccountSaysWhetherItIsInUseOrLimited() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        #expect(P.accountLine(HostProviderAccount(id: "a", name: "work", active: true), now: now) == "In use")
+        #expect(P.accountLine(HostProviderAccount(id: "b", name: "home", active: false, limitedUntil: 500), now: now) == "Saved")
+        #expect(P.accountLine(HostProviderAccount(id: "b", name: "home", active: false, limitedUntil: 5_000), now: now).hasPrefix("Limited until"))
     }
 }

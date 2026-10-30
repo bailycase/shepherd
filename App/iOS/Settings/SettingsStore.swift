@@ -17,6 +17,9 @@ final class SettingsStore {
     let instructions: ClientInstructions
     let suggestions = ClientSuggestions()
     let skills: ClientSkills
+    let hostConfig = ClientHostConfig()
+    /// Settings ▸ MCP's server editor while it is open: the server it edits and its JSON.
+    var mcpEditor: MCPEditor?
 
     /// The hosts as Settings sees them now.
     private(set) var hosts: [SettingsHost] = []
@@ -58,6 +61,7 @@ final class SettingsStore {
         store.instructions.forget(host: host)
         store.suggestions.forget(host: host)
         store.skills.forget(host: host)
+        store.hostConfig.forget(host: host)
         store.inputs.removeAll { $0.id == host }
         store.hosts.removeAll { $0.id == host }
     }
@@ -91,15 +95,26 @@ final class SettingsStore {
         instructions.reference(in: hosts).flatMap { instructions.files(of: $0).snapshot }.map(HostSettingsPresentation.instructionsValue)
     }
 
-    var goalExperimentHosts: [SettingsHost] {
-        hosts.filter { $0.serves(RemoteProtocol.goalExperimentCapability) }
+    /// The capabilities of the experiments a client switches per host.
+    static let hostExperiments = [RemoteProtocol.goalExperimentCapability, RemoteProtocol.projectsExperimentCapability,
+                                  RemoteProtocol.designToolExperimentCapability, RemoteProtocol.missionsExperimentCapability]
+
+    /// The hosts with any experiment a client switches.
+    var experimentHosts: [SettingsHost] {
+        hosts.filter { host in Self.hostExperiments.contains { host.serves($0) } }
     }
 
     /// Experiments' value counts enabled features, rather than the hosts that serve them.
     var experimentsValue: String? {
-        let goalsOn = goalExperimentHosts.contains { hostSettings.settings(of: $0)?.goalsEnabled == true }
-        let count = (suggestions.isOn(hosts) ? 1 : 0) + (goalsOn ? 1 : 0)
-        guard !suggestions.hosts(hosts).isEmpty || !goalExperimentHosts.isEmpty else { return nil }
+        let on: [(String, (HostSettings) -> Bool)] = [
+            (RemoteProtocol.goalExperimentCapability, \.goalsEnabled), (RemoteProtocol.projectsExperimentCapability, \.projectsEnabled),
+            (RemoteProtocol.designToolExperimentCapability, \.designToolEnabled), (RemoteProtocol.missionsExperimentCapability, \.missionsEnabled),
+        ]
+        let hostCount = on.filter { capability, isOn in
+            hosts.contains { $0.serves(capability) && hostSettings.settings(of: $0).map(isOn) == true }
+        }.count
+        let count = (suggestions.isOn(hosts) ? 1 : 0) + hostCount
+        guard !suggestions.hosts(hosts).isEmpty || !experimentHosts.isEmpty else { return nil }
         return count == 0 ? "Off" : "\(count) on"
     }
 

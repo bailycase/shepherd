@@ -19,13 +19,18 @@ protocol MCPCLI: Sendable {
 }
 
 /// The real runner: the launcher in pi's home, from a login shell (`PiLaunch.mcp`), with the
-/// environment the agents' pi would have for these servers.
+/// environment the agents' pi would have for these servers. `login … --no-browser` (Shepherd's
+/// own marker, never pi's) runs pi's login through `PiLaunch.mcpLogin` instead, so a sign-in a
+/// remote client started doesn't open this Mac's browser.
 struct PiMCPCLI: MCPCLI {
     var home: PiHome
 
+    /// Marks a `login` that must not open this Mac's browser.
+    static let noBrowser = "--no-browser"
+
     func run(_ arguments: [String], environment: [String: String], timeout: TimeInterval,
              onLine: (@Sendable (String) -> Void)?) async -> MCPCLIResult {
-        let line = PiLaunch.mcp(home: home, arguments: arguments)
+        let line = Self.line(home: home, arguments: arguments)
         let process = Process()
         process.executableURL = URL(fileURLWithPath: line.argv[0])
         process.arguments = Array(line.argv.dropFirst())
@@ -89,6 +94,17 @@ struct PiMCPCLI: MCPCLI {
         if let last = collected.finishOutput() { onLine?(last) }
         collected.addError(stderr.fileHandleForReading.readDataToEndOfFile())
         return collected.result(status: status)
+    }
+
+    /// The launch line for `arguments`: a quiet login through Shepherd's script when marked and
+    /// the engine allows, else `pi mcp` as given (without the marker).
+    static func line(home: PiHome, arguments: [String]) -> PiLaunch.Line {
+        let plain = arguments.filter { $0 != noBrowser }
+        guard arguments.first == "login", arguments.contains(noBrowser), plain.count >= 2,
+              let script = try? MCPLoginScript.install(in: home.directory) else { return PiLaunch.mcp(home: home, arguments: plain) }
+        let timeout = plain.firstIndex(of: "--timeout").flatMap { plain.indices.contains($0 + 1) ? Int(plain[$0 + 1]) : nil }
+        return PiLaunch.mcpLogin(home: home, script: script.path, server: plain[1], timeout: timeout ?? Int(MCPSignInFlow.timeout))
+            ?? PiLaunch.mcp(home: home, arguments: plain)
     }
 
     /// The output so far, shared with the pipes' handlers.
@@ -193,5 +209,15 @@ enum MCPPiAuth {
         guard let data, let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
         let key = "mcp__" + server.replacingOccurrences(of: "-", with: "_") + "|" + url
         return root[key] != nil
+    }
+}
+
+/// Extensions/shepherd-mcp-login.mjs, written into pi's home beside the launcher when it differs.
+enum MCPLoginScript {
+    static func install(in directory: URL) throws -> URL {
+        let url = directory.appendingPathComponent("shepherd-mcp-login.mjs")
+        let data = EmbeddedExtensions.data("shepherd-mcp-login.mjs")
+        if (try? Data(contentsOf: url)) != data { try data.write(to: url, options: .atomic) }
+        return url
     }
 }

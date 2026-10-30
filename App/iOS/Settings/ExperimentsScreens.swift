@@ -4,7 +4,8 @@ import ShepherdProtocol
 import ShepherdRemote
 
 // Settings ▸ Experiments on iPhone and iPad (MobileExperiments; home track): features still
-// being tried, each off until turned on. Goals is a per-host switch. Suggested instructions: agents
+// being tried, each off until turned on. Goals, Projects, the Design tool and Missions are per-host
+// switches, each where the host takes it (`HostSettingChange.capability`). Suggested instructions: agents
 // draft a line for the root instructions when they learn something the hard way, and nothing is
 // written until you add it. It spans every host (`suggestions.v1`): turning it on or choosing
 // what it learns from changes every host, and the lines waiting are every host's, newest first.
@@ -39,18 +40,13 @@ struct ExperimentsScreen: View {
                             : "No host is online. Suggested instructions appears once one is back.")
                     }
                 }
-                if !store.goalExperimentHosts.isEmpty {
-                    SettingsSection("Goals") {
-                        ForEach(store.goalExperimentHosts) { host in
-                            if let settings = store.hostSettings.settings(of: host) {
-                                GoalExperimentCard(host: host.name, isOn: settings.goalsEnabled) {
-                                    store.hostSettings.post(.goalsEnabled($0), on: host)
-                                }
-                            } else {
-                                SettingsFootnote("Reading Goals settings on \(host.name)…")
-                            }
+                ForEach(store.experimentHosts) { host in
+                    SettingsSection(store.hosts.count > 1 ? "On \(host.name)" : "On this host") {
+                        if let settings = store.hostSettings.settings(of: host) {
+                            HostExperiments(host: host, settings: settings, hostSettings: store.hostSettings)
+                        } else {
+                            SettingsFootnote("Reading experiments on \(host.name)…")
                         }
-                        SettingsFootnote("Applies immediately on the selected host. Turning it back on keeps goals paused until you Resume.")
                     }
                 }
                 if let problem = store.hostSettings.problem {
@@ -156,31 +152,84 @@ private struct SuggestedInstructionsCard: View {
     }
 }
 
-private struct GoalExperimentCard: View {
+/// One host's switchable experiments, each shown only where the host takes its switch: Goals,
+/// Projects, the Design tool and Missions (locked on while a mission runs there).
+private struct HostExperiments: View {
+    let host: SettingsHost
+    let settings: HostSettings
+    let hostSettings: ClientHostSettings
+
+    var body: some View {
+        let post: (HostSettingChange) -> Void = { hostSettings.post($0, on: host) }
+        if host.serves(RemoteProtocol.goalExperimentCapability) {
+            HostExperimentCard(title: "Goals", host: host.name, isOn: settings.goalsEnabled,
+                               text: "Keep a conversation working toward a condition you set with /goal. No time or token budgets. Turning this off pauses active goals without clearing them.") {
+                SHGoalGlyph()
+            } toggle: { post(.goalsEnabled($0)) }
+        }
+        if host.serves(RemoteProtocol.projectsExperimentCapability) {
+            HostExperimentCard(title: "Projects", host: host.name, isOn: settings.projectsEnabled,
+                               text: "Coordinate work across threads and spaces. Turning this off pauses project work and keeps your projects and files.") {
+                Image(systemName: "square.stack.3d.up")
+            } toggle: { post(.projectsEnabled($0)) }
+        }
+        if host.serves(RemoteProtocol.designToolExperimentCapability) {
+            HostExperimentCard(title: "Design tool", host: host.name, isOn: settings.designToolEnabled,
+                               text: "Describe a page or flow and a design agent draws it as HTML boards on a canvas. Adds Designs to the host's sidebar and “Start a design” to New thread.") {
+                Image(systemName: "paintbrush.pointed")
+            } toggle: { post(.designToolEnabled($0)) }
+        }
+        if host.serves(RemoteProtocol.missionsExperimentCapability) {
+            let locked = settings.missionsEnabled && settings.missionsActive
+            HostExperimentCard(title: "Missions", host: host.name, isOn: settings.missionsEnabled,
+                               text: "Describe an end state across your repositories; a planner maps it, agents do the work, and you publish the pull requests. Turning this off hides Missions and keeps your missions and files.",
+                               lockedNote: locked ? "Pause or stop running missions on \(host.name) before turning this off." : nil) {
+                Image(systemName: "flag.checkered")
+            } toggle: { post(.missionsEnabled($0)) }
+        }
+        SettingsFootnote("Changes apply on \(host.name) at once.")
+    }
+}
+
+/// An experiment's card for one host: its tile, its name over what it does, and its switch.
+private struct HostExperimentCard<Glyph: View>: View {
+    let title: String
     let host: String
     let isOn: Bool
+    let text: String
+    var lockedNote: String?
+    @ViewBuilder let glyph: () -> Glyph
     let toggle: (Bool) -> Void
 
     var body: some View {
         let sh = Color.sh
         HStack(alignment: .top, spacing: SH.Space.l) {
-            SHGoalGlyph()
+            glyph()
+                .font(.sh(.ui, weight: .medium))
                 .foregroundStyle(sh.lanternText)
                 .frame(width: MobileLayout.experimentTile, height: MobileLayout.experimentTile)
                 .background(sh.lanternTint, in: RoundedRectangle(cornerRadius: SH.Radius.m))
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: SH.Space.xs) {
-                Text("Goals on \(host)")
+                Text(title)
                     .font(.sh(.ui, weight: .semibold))
                     .foregroundStyle(sh.textPrimary)
-                Text("Keep a conversation working toward a condition you set with /goal. No time or token budgets. Turning this off pauses active goals without clearing them.")
+                Text(text)
                     .shText(size: MobileLayout.settingsNoteSize, lineHeight: MobileLayout.settingsNoteLineHeight)
                     .foregroundStyle(sh.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
+                if let lockedNote {
+                    Text(lockedNote)
+                        .shText(size: MobileLayout.settingsNoteSize, lineHeight: MobileLayout.settingsNoteLineHeight)
+                        .foregroundStyle(AgentState.attention.textColor)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Toggle("Goals on \(host)", isOn: Binding(get: { isOn }, set: toggle))
+            Toggle("\(title) on \(host)", isOn: Binding(get: { isOn }, set: toggle))
                 .toggleStyle(.shSwitch)
                 .labelsHidden()
+                .disabled(lockedNote != nil)
         }
         .padding(SH.Space.l)
         .frame(maxWidth: .infinity, alignment: .leading)

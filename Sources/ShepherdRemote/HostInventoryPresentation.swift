@@ -74,18 +74,29 @@ public enum HostInventoryPresentation {
         profile.error != nil ? .failed : profile.disabled ? .idle : .done
     }
 
+    /// A server's sign-in column as a client shows it. An older host wrote it for its own Mac
+    /// ("Sign in on the Mac"): those words read as the state alone.
+    public static func signInWord(_ column: String?) -> String? {
+        switch column {
+        case "Sign in on the Mac": "Not signed in"
+        case "Expired · sign in on the Mac": "Expired"
+        default: column
+        }
+    }
+
     // MARK: Providers
 
-    /// The row's word: "Signed in", "Expired · sign in on the Mac", "Not signed in", "Signing in…",
-    /// "API key", "From the Mac’s environment", "No key needed".
+    /// The row's word: "Signed in", "Expired · sign in again", "Not signed in", "Signing in…",
+    /// "API key", "From the host’s environment", "No key needed". Host-neutral: a client may be
+    /// another Mac, and the host may take a sign-in from it (`hostConfig.v1`).
     public static func authWord(_ auth: HostProviderStatus.Auth) -> String {
         switch auth {
         case .signedIn: "Signed in"
-        case .expired: "Expired · sign in on the Mac"
+        case .expired: "Expired · sign in again"
         case .notSignedIn: "Not signed in"
         case .signingIn: "Signing in…"
         case .apiKey: "API key"
-        case .environment: "From the Mac’s environment"
+        case .environment: "From the host’s environment"
         case .noKey: "No key needed"
         }
     }
@@ -107,6 +118,14 @@ public enum HostInventoryPresentation {
             parts.append(provider.activeAccount.map { "\(provider.accounts) accounts · \($0)" } ?? "\(provider.accounts) accounts")
         }
         return parts.joined(separator: " · ")
+    }
+
+    /// A saved account's line: "In use", "Saved", or "Limited until 3:40 PM".
+    public static func accountLine(_ account: HostProviderAccount, now: Date = Date()) -> String {
+        if let until = account.limitedUntil.map(Date.init(timeIntervalSince1970:)), until > now {
+            return "Limited until \(until.formatted(date: .omitted, time: .shortened))"
+        }
+        return account.active ? "In use" : "Saved"
     }
 
     /// Sign-in's value on the Settings list: "1 needs you" when a sign-in expired or a provider is
@@ -136,7 +155,7 @@ public enum HostInventoryPresentation {
     /// "Trusted" or "Not yet approved": a space's executable resources (skills, extensions, MCP)
     /// load only once approved on the Mac; nil when the host did not say.
     public static func trustWord(_ trusted: Bool?) -> String? {
-        trusted.map { $0 ? "Approved on the Mac" : "Not yet approved" }
+        trusted.map { $0 ? "Approved on the host" : "Not yet approved" }
     }
 
     public static func spacesGuidance(host: String) -> String {

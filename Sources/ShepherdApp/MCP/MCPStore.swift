@@ -644,12 +644,14 @@ final class MCPStore {
     }
 
     func signOut(_ name: String) {
-        Task { [weak self] in
-            guard let self else { return }
-            _ = await self.runCLI(["logout", name], timeout: 15, onLine: nil)
-            self.authData = self.dependencies.authData()
-            self.refresh()
-        }
+        Task { [weak self] in await self?.signOutNow(name) }
+    }
+
+    /// pi's `mcp logout`, then the servers read again (a remote client waits on it).
+    func signOutNow(_ name: String) async {
+        _ = await runCLI(["logout", name], timeout: 15, onLine: nil)
+        authData = dependencies.authData()
+        refresh()
     }
 
     func closeSignIn() {
