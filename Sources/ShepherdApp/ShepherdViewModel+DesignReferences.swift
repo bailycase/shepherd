@@ -37,7 +37,18 @@ extension ShepherdViewModel {
     /// its revision when a pin kept that version, else now. Answers the pinned, labelled
     /// reference and what a send of it carries (`DesignReferencePresentation.sends(outline)`).
     func prepareDesignReference(_ reference: DesignReference) async throws -> PreparedDesignReference {
-        guard reference.host == .local else { throw DesignReferenceFailure(RemoteHostClient.designReferencesRefusal) }
+        if case .remote(let hostID) = reference.host {
+            // A connected host's design: pinned by that host, from its own design.
+            guard let connection = remoteHosts.connections.first(where: { $0.id == hostID }),
+                  connection.supportsDesignCapability(RemoteProtocol.designReferencesCapability),
+                  let named = reference.onHost(hostID) else {
+                throw DesignReferenceFailure(RemoteHostClient.designReferencesRefusal)
+            }
+            guard case .referencePinned(let pin) = try await Self.remoteDesign(connection.designs, .pinReference(named)) else {
+                throw RemoteDesignReply.unexpected
+            }
+            return PreparedDesignReference(pin: pin, host: hostID)
+        }
         do {
             return try await server.pinDesignReference(reference)
         } catch let error as DesignReferenceError {
@@ -104,12 +115,18 @@ extension ShepherdViewModel {
     /// works it waits in the host's queue, as any follow-up does.
     private func sendDirectly(_ references: [NativeAttachedReference], text: String, images: [NativeImage] = [], to agentID: AgentID) async throws {
         let server = server
+        try await sendDirectly(references, text: text, images: images) { try await server.nativeThread(agentID: agentID, request: $0) }
+    }
+
+    /// `sendDirectly` through whatever serves the thread: this Mac's server, or a host.
+    private func sendDirectly(_ references: [NativeAttachedReference], text: String, images: [NativeImage],
+                              thread: (NativeThreadRequest) async throws -> NativeThreadResult) async throws {
         let deadline = ContinuousClock.now + Self.referenceSendWait
         while true {
-            switch try await server.nativeThread(agentID: agentID, request: .snapshot()) {
+            switch try await thread(.snapshot()) {
             case .snapshot(let snapshot) where !snapshot.piSessionID.isEmpty:
                 let message = NativeAttachedFile.message(text, files: [], references: references.count)
-                let reply = try await server.nativeThread(agentID: agentID, request: .send(
+                let reply = try await thread(.send(
                     expectedSessionID: snapshot.piSessionID, generation: snapshot.generation, operationID: UUID(), text: message,
                     delivery: .followUp, images: images.isEmpty ? nil : images, designReferences: references.map(\.record)))
                 if case .failure(_, let why) = reply { throw DesignReferenceFailure(why) }
@@ -122,6 +139,35 @@ extension ShepherdViewModel {
                 }
                 try await Task.sleep(for: .milliseconds(200))
             }
+        }
+    }
+
+    /// Implement in a thread… for a connected host's design, to one of that host's threads
+    /// (`design.references.v1`): each piece is named as the host sees it (`local`), and the host
+    /// resolves, keeps and fences it as for its own sends. Another host's design is refused.
+    func sendRemoteDesignReferences(_ references: [DesignReference], text: String, to target: RemoteAgentRef) async throws {
+        guard !references.isEmpty else { return }
+        guard references.count <= DesignReferenceRecord.maxPerMessage else {
+            throw DesignReferenceFailure("A message carries at most \(DesignReferenceRecord.maxPerMessage) design references.")
+        }
+        guard let connection = remoteHosts.connections.first(where: { $0.id == target.hostID }),
+              connection.supportsDesignCapability(RemoteProtocol.designReferencesCapability) else {
+            throw DesignReferenceFailure(RemoteHostClient.designReferencesRefusal)
+        }
+        var prepared: [NativeAttachedReference] = []
+        for reference in references {
+            let pinned = reference.revision == nil ? try await prepareDesignReference(reference).reference : reference
+            guard let named = pinned.onHost(target.hostID) else { throw DesignReferenceFailure(RemoteHostClient.designReferencesRefusal) }
+            prepared.append(NativeAttachedReference(reference: named, label: pinned.label ?? pinned.string))
+        }
+        let store = remoteThreadStores.store(for: target)
+        guard store.isLive, store.ready else {
+            let hosts = remoteHosts
+            try await sendDirectly(prepared, text: text, images: []) { try await hosts.nativeThread(target, request: $0) }
+            return
+        }
+        guard await store.send(text: text, references: prepared) else {
+            throw DesignReferenceFailure(store.notice ?? "The thread isn't taking messages right now. Nothing was sent. Try again in a moment.")
         }
     }
 

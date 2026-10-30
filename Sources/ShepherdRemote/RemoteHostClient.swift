@@ -456,7 +456,14 @@ public final class RemoteHostClient: @unchecked Sendable {
     static let imagesTooLarge = "Images exceed the remote payload limit. Send fewer or smaller images."
     /// Design references go only into a thread on the Mac that runs it (docs/designs.md › Design
     /// references), never over the remote listener.
-    public static let designReferencesRefusal = "Design references can't go to a thread on another Mac yet: send it from that Mac."
+    public static let designReferencesRefusal = "A reference to another Mac's design goes only to that Mac's own threads, where it takes them: update Shepherd there, or send it from that Mac."
+
+    /// Whether a host takes `references` in its threads: it serves references to its own designs
+    /// (`design.references.v1`) and each names one of them, as the host sees it (`local`).
+    static func hostTakes(_ references: [DesignReferenceRecord], capabilities: Set<String>) -> Bool {
+        capabilities.contains(RemoteProtocol.designReferencesCapability)
+            && references.allSatisfy { DesignReference(string: $0.ref)?.host == .local }
+    }
 
 
     /// One NDJSON frame per request: the host drops anything over the cap.
@@ -526,7 +533,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         if let missing = Self.missingCapability(outgoing, capabilities: capabilities) {
             throw RemoteHostClientError.rejected(code: "update_required", message: missing)
         }
-        if let references = outgoing.designReferences, !references.isEmpty {
+        if let references = outgoing.designReferences, !references.isEmpty, !Self.hostTakes(references, capabilities: capabilities) {
             throw RemoteHostClientError.rejected(code: "design_references_local", message: Self.designReferencesRefusal)
         }
         let command = try await Self.preparingImages(outgoing) { .nativeThread(id: Int.max, agentID: agentID, request: $0) }
@@ -996,7 +1003,9 @@ public final class RemoteHostClient: @unchecked Sendable {
             throw RemoteHostClientError.rejected(code: "too_large", message: "The change exceeds the remote payload limit.")
         }
         // A listing reads every design's files on the host; a comment waits for the agent's queue.
-        let reply = try await self.request(timeout: 30) { .design(id: $0, request: request) }
+        // An import reads and checks a whole project on the host before it answers.
+        let timeout: TimeInterval = if case .importFinish = request { 180 } else { 30 }
+        let reply = try await self.request(timeout: timeout) { .design(id: $0, request: request) }
         switch reply {
         case .design(_, let result): return result
         case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)

@@ -7,11 +7,16 @@ import ShepherdUI
 /// Settings ▸ Design systems (MobileMore's row, now in Settings): the hosts' systems, each opening its page.
 struct DesignSystemsScreen: View {
     @Environment(MobileHosts.self) private var hosts
+    @Environment(MobileNavigator.self) private var navigator
+    @State private var problem: String?
 
     var body: some View {
         let designs = MobileDesigns.of(hosts)
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
+                if let problem {
+                    SHBanner(.failed, title: problem) { Button("OK") { self.problem = nil }.buttonStyle(.sh(.secondary)) }
+                }
                 if designs.model.systems.isEmpty {
                     SHEmptyState(Text("No design systems"), message: "A host's design systems show here while it serves designs.",
                                  showsMark: false)
@@ -30,6 +35,34 @@ struct DesignSystemsScreen: View {
         .refreshable { await designs.refresh() }
         .task { await designs.refresh() }
         .navigationTitle("Design systems")
+        .toolbar {
+            // "Build one from a repo" in a host's space (`design.systems.v1`): its build agent's thread opens.
+            let buildable = designs.buildableSpaces
+            if !buildable.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu("Build from a space", systemImage: "plus") {
+                        ForEach(buildable, id: \.host) { host in
+                            Section(host.name) {
+                                ForEach(host.spaces) { space in
+                                    Button(space.name) { build(host: host.host, space: space.id) }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func build(host: UUID, space: SpaceID) {
+        let designs = MobileDesigns.of(hosts)
+        Task {
+            do {
+                if let agent = try await designs.buildSystem(host: host, space: space) { navigator.open(.thread(agent)) }
+            } catch {
+                problem = "Couldn't start the build: \(MobileDesignsError.words(error))"
+            }
+        }
     }
 }
 
@@ -134,7 +167,7 @@ struct DesignSystemScreen: View {
         } message: {
             Text("Designs drawn in it keep their copy, and the project it was read from isn’t touched.")
         }
-        .task { await load() }
+        .task(id: MobileDesigns.of(hosts).systemsRevision) { await load() }
     }
 
     private func load() async {

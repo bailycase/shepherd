@@ -119,6 +119,10 @@ extension ShepherdViewModel {
         if let system = connection.state.designs.first(where: { $0.id == id })?.systemNamespace {
             screen.tweak?.systemName = system
         }
+        // Implement and Copy reference hand its pieces to the host's own threads, where it takes them.
+        if connection.supportsDesignCapability(RemoteProtocol.designReferencesCapability) {
+            screen.referenceActions = remoteDesignReferenceCanvasActions(ref.hostID)
+        }
         remoteDesignScreens[ref] = screen
         return screen
     }
@@ -286,8 +290,22 @@ extension ShepherdViewModel {
                                                count: DeleteDesignWords.count(used, "design"), swatches: [],
                                                tag: summary.builtIn ? "Built-in" : nil, menu: designSystemMenu(target))
             }
-            guard !cards.isEmpty || !systems.isEmpty else { return nil }
-            return DesignsPageModel.HostSection(id: connection.id, name: connection.config.name, cards: cards, systems: systems)
+            // Builds still reading their space, before their agent wrote a system.
+            let built = Set(listing.systems.compactMap(\.info.ownerDesignID))
+            let builds = connection.state.designs.filter { $0.buildsSystem && !built.contains($0.id) }.map { build in
+                let space = build.sourceSpaceID.flatMap { id in connection.state.spaces.first { $0.id == id }?.name }
+                return DesignsPageModel.System(id: .remoteBuild(RemoteDesignRef(hostID: connection.id, designID: build.id)), name: build.name,
+                                               source: space.map { "\($0) · building" } ?? "building", count: "", swatches: [],
+                                               menu: designSystemMenu(.remoteBuild(RemoteDesignRef(hostID: connection.id, designID: build.id))))
+            }
+            let projects = connection.supportsDesignCapability(RemoteProtocol.designSystemsCapability)
+                ? connection.state.spaces.filter { !$0.holdsDesigns && !$0.holdsProjects }.map { DesignsPageModel.Project(id: $0.id, name: $0.name) }
+                : nil
+            guard !cards.isEmpty || !systems.isEmpty || !builds.isEmpty else { return nil }
+            var section = DesignsPageModel.HostSection(id: connection.id, name: connection.config.name, cards: cards,
+                                                       systems: builds + systems)
+            section.projects = projects
+            return section
         }
     }
 }
@@ -313,7 +331,9 @@ struct RemoteDesignLayoutView: View {
         let _ = SHRenderProbe.tick("layout.design")
         HStack(spacing: 0) {
             if let screen = vm.remoteDesignScreen(ref) {
-                DesignCanvasPane(screen: screen)
+                DesignCanvasPane(screen: screen, vm: vm,
+                                 designName: vm.remoteHosts.connections.first { $0.id == ref.hostID }?.state.designs
+                                     .first { $0.id == ref.designID }?.name ?? "")
                 RemoteDesignChatPane(vm: vm, screen: screen, agent: agent, agentName: agentName, threadPaneID: threadPaneID)
                     .frame(width: AppLayout.designChatWidth)
             }

@@ -161,4 +161,106 @@ struct RemoteDesignFlowTests {
         }
         #expect(hostServer.state.designs.count == 4)
     }
+
+    /// Implement in a thread… from a host's design sends the piece to one of that host's threads
+    /// (`design.references.v1`): the host pins it, resolves and fences it, and its pi reads it.
+    @Test func aHostsDesignPieceGoesToTheHostsOwnThread() async throws {
+        let local = try AppHarness(), remote = try RemoteHostHarness()
+        defer { local.stop(); remote.stop() }
+        local.settings.designToolEnabled = true
+        remote.host.settings.designToolEnabled = true
+        let space = Fixture.space(path: remote.host.dir.path)
+        let log = remote.host.dir.appendingPathComponent("pi.log")
+        let thread = try await remote.host.liveAgent("Build checkout", in: space, log: log)
+        var drawer = Fixture.agent("Checkout", in: space, order: 1)
+        let design = Design(name: "Checkout", agentID: drawer.agent.id, createdAt: 1_000)
+        drawer.agent.designID = design.id
+        let hostVM = try await remote.host.start(with: Fixture.state(spaces: [space], agents: [thread, drawer]))
+        hostVM.designNetwork = .none
+        _ = try await remote.host.server.createDesign(design)
+        try await DesignFixtures.draw(Array(DesignFixtures.checkout.prefix(1)), in: design.id, on: remote.host.server)
+        let vm = try await local.start(with: ShepherdState())
+        vm.designNetwork = .none
+        vm.designLiveCap = 0
+        let connection = try await remote.connect(local.remoteHosts, name: "build-01")
+        #expect(connection.supportsDesignCapability(RemoteProtocol.designReferencesCapability))
+
+        let ref = RemoteDesignRef(hostID: connection.id, designID: design.id)
+        let screen = try #require(vm.remoteDesignScreen(ref))
+        #expect(screen.referenceActions != nil)
+        await screen.refresh()
+        #expect(vm.designMenu(.remote(ref), context: .toolbar).items.contains { $0.action == .implement })
+        screen.implementSelection(designName: design.name)
+        let model = try #require(vm.implementSheet)
+        #expect(model.hostID == connection.id && model.hostName == "build-01")
+        #expect(model.threads.map(\.id) == [thread.agent.id], "the host's own thread, never its design's agent")
+        try await eventuallyOnMain("the host to pin the piece", timeout: .seconds(30)) { model.prepared != nil || model.error != nil }
+        #expect(model.error == nil)
+        #expect(model.prepared?.reference.host == .remote(connection.id))
+
+        model.message = "Build the checkout"
+        model.opensThread = true
+        let before = AppHarness.prompts(in: log).count
+        vm.sendImplementSheet(model)
+        try await eventuallyOnMain("the send", timeout: .seconds(60)) { vm.implementSheet == nil || model.error != nil }
+        #expect(model.error == nil)
+        try await eventuallyAsync("the host's pi to get the message", timeout: .seconds(60)) { AppHarness.prompts(in: log).count > before }
+        let prompt = try #require(AppHarness.prompts(in: log).last)
+        let record = try #require(DesignReferenceFence.parse(prompt)?.records.first)
+        #expect(record.design == "Checkout" && DesignReference(string: record.ref)?.host == .local)
+        #expect(vm.selectedRemoteAgent == RemoteAgentRef(hostID: connection.id, agentID: thread.agent.id))
+    }
+
+    /// "Build one from a repo" in a host's space, from this Mac: the host starts the build, its
+    /// agent's thread opens here, and the host's section shows it building until it writes one.
+    @Test func aHostsSystemIsBuiltFromHere() async throws {
+        try StubPi.installAsEngine()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
+        defer { local.stop(); remote.stop() }
+        let (vm, connection, _, _) = try await host(local, remote)
+        let hostServer = remote.host.server
+        let space = try #require(connection.state.spaces.first)
+        await vm.loadRemoteDesigns()
+        let section = try #require(vm.remoteDesignSections.first)
+        #expect(section.projects?.map(\.id) == [space.id], "the host's spaces, for its Build tile")
+
+        vm.buildRemoteSystem(host: connection.id, in: space.id)
+        try await eventuallyOnMain("the host's build agent on screen", timeout: .seconds(30)) {
+            guard let selected = vm.selectedRemoteAgent, let agent = connection.state.agents.first(where: { $0.id == selected.agentID }) else { return false }
+            return connection.state.designs.contains { $0.buildsSystem && $0.id == agent.designID && $0.sourceSpaceID == space.id }
+        }
+        #expect(hostServer.state.designs.filter(\.buildsSystem).count == 1)
+        await vm.loadRemoteDesigns()
+        let building = try #require(vm.remoteDesignSections.first?.systems.first)
+        guard case .remoteBuild = building.id else { Issue.record("expected the build's card, got \(building.id)"); return }
+        #expect(building.source == "\(space.name) · building")
+
+        // A second build of the same space answers the one there.
+        let existing = try #require(hostServer.state.designs.first { $0.buildsSystem })
+        let again = try await connection.designs.request(.buildSystem(spaceID: space.id))
+        guard case .created(let answered, _) = again else { Issue.record("expected the build, got \(again)"); return }
+        #expect(answered == existing.id && hostServer.state.designs.filter(\.buildsSystem).count == 1)
+    }
+
+    /// A Claude Design ZIP from this Mac is imported on the host as its own Import does: the
+    /// design, its agent started there; the same project again comes in as a copy.
+    @Test func aProjectIsImportedOnTheHost() async throws {
+        try StubPi.installAsEngine()
+        let local = try AppHarness(), remote = try RemoteHostHarness()
+        defer { local.stop(); remote.stop() }
+        let (_, connection, _, _) = try await host(local, remote)
+        let hostServer = remote.host.server
+        #expect(connection.supportsDesignCapability(RemoteProtocol.designImportCapability))
+        let zip = TestZip.make(DesignLifecycleFlowTests.project())
+
+        let (design, agent) = try await connection.designs.importProject(name: "checkout-funnel.zip", data: zip)
+        let made = try #require(hostServer.state.designs.first { $0.id == design })
+        #expect(made.name == "Checkout funnel" && made.importedFrom != nil)
+        #expect(agent != nil)
+        try await eventuallyOnMain("its agent on the host") { hostServer.state.agents.contains { $0.designID == design } }
+
+        let (copy, _) = try await connection.designs.importProject(name: "checkout-funnel.zip", data: zip)
+        #expect(copy != design)
+        #expect(hostServer.state.designs.first { $0.id == copy }?.name != made.name, "the same project again comes in as a copy")
+    }
 }

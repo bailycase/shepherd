@@ -90,6 +90,34 @@ extension ShepherdViewModel {
         }
     }
 
+    /// A host's "Build one from a repo" in one of its spaces (`buildSystem`): the host starts the
+    /// build, and its agent's thread there opens here as it reads the space.
+    func buildRemoteSystem(host hostID: UUID, in spaceID: SpaceID) {
+        guard let library = remoteHosts.connections.first(where: { $0.id == hostID })?.designs else { return }
+        Task {
+            do {
+                guard case .created(let build, let agent) = try await Self.remoteDesign(library, .buildSystem(spaceID: spaceID)) else {
+                    throw RemoteDesignReply.unexpected
+                }
+                if let agent { selectRemoteAgent(hostID: hostID, agentID: agent) } else { openRemoteSystemBuild(RemoteDesignRef(hostID: hostID, designID: build)) }
+            } catch {
+                remoteActionError = "Couldn't build a design system there: \(Self.words(error))."
+            }
+        }
+    }
+
+    /// A host's build still reading its space: its agent's thread on the host.
+    func openRemoteSystemBuild(_ ref: RemoteDesignRef) {
+        guard let connection = remoteHosts.connections.first(where: { $0.id == ref.hostID }),
+              let build = connection.state.designs.first(where: { $0.id == ref.designID }) else { return }
+        let agent = connection.state.agents.first { $0.id == build.agentID } ?? connection.state.agents.first { $0.designID == build.id }
+        guard let agent else {
+            remoteActionError = "\(build.name)'s build has no agent on \(connection.config.name). Open it there to start one."
+            return
+        }
+        selectRemoteAgent(hostID: ref.hostID, agentID: agent.id)
+    }
+
     /// A change to a host's system; the host's systems are read again after it. Answers the
     /// system it left (a copy, a rename), if one.
     @discardableResult

@@ -167,7 +167,8 @@ them except the navigator, which is each window's own ([Windows](#windows-ipad))
 - `MobileHosts` owns every client's `onDesignChanged`, `onDesignSystemsChanged` and
   `onCapabilitiesChanged`: a host's `capabilities` follow the pushes, and
   `MobileHost.onDesignChanged` and `onDesignSystemsChanged` hear its design pushes.
-  `HostDesignLibraries` (`Hosts/`) alone sets those hooks, and keeps one `RemoteDesignLibrary` per
+  `HostDesignLibraries` (`Hosts/`) alone sets those hooks (a store hears systems changes through
+  `observeSystems`), and keeps one `RemoteDesignLibrary` per
   host over one file cache for both design tracks (K and L): each says which designs it has on
   screen (`watch(_:on:for:)`), the host is told them all, and every track hears the pushes
   (`observe`).

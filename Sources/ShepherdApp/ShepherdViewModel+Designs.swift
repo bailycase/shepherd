@@ -359,6 +359,8 @@ final class NewDesignState {
     private(set) var system: String?
     /// The connected host the design is made on (`RemoteDesignRequest.create`); nil: This Mac.
     private(set) var host: UUID?
+    /// A ZIP going to the host to import, and the share of it sent.
+    private(set) var uploading: Double?
     private(set) var starting = false
     var error: String?
     /// Bumped to give the field the keyboard.
@@ -469,9 +471,32 @@ final class NewDesignState {
         attach(urls.map { NSItemProvider(contentsOf: $0) ?? NSItemProvider() })
     }
 
-    /// What the line under the card says: a failed start, or an image left out.
+    /// What the line under the card says: a failed start, an upload under way, or an image left out.
     var notice: String? {
-        error ?? attachments.error ?? NewThreadPlaces.imagesRefusal(attachments.images, host: nil)
+        if let uploading { return "Sending the project to the host… \(Int(uploading * 100))%" }
+        return error ?? attachments.error ?? NewThreadPlaces.imagesRefusal(attachments.images, host: nil)
+    }
+
+    /// Import a project with a host chosen: a Claude Design ZIP, uploaded and imported there
+    /// (`design.import.v1`); its canvas opens here.
+    func importOnHost(_ url: URL, vm: ShepherdViewModel) {
+        guard let host, uploading == nil, let connection = vm.newDesignHost(host) else { return }
+        uploading = 0
+        error = nil
+        Task {
+            defer { uploading = nil }
+            do {
+                let scoped = url.startAccessingSecurityScopedResource()
+                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                let data = try Data(contentsOf: url, options: .mappedIfSafe)
+                let (design, agent) = try await connection.designs.importProject(name: url.lastPathComponent, data: data) { [weak self] share in
+                    Task { @MainActor in if self?.uploading != nil { self?.uploading = share } }
+                }
+                if let agent { vm.selectRemoteAgent(hostID: host, agentID: agent) } else { vm.openRemoteDesign(RemoteDesignRef(hostID: host, designID: design)) }
+            } catch {
+                self.error = "Couldn't import \(url.lastPathComponent): \(ShepherdViewModel.words(error))."
+            }
+        }
     }
 
     /// Why Send is unavailable; nil when it can send.

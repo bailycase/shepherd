@@ -17,6 +17,8 @@ final class HostDesignLibraries {
     /// The designs each store has on screen, by host.
     private var watching: [UUID: [String: Set<DesignID>]] = [:]
     private var observers: [String: (UUID, DesignID, UInt64?, UInt64?) -> Void] = [:]
+    /// Each store's hook for a host's design systems changing (`designSystemsChanged`).
+    private var systemsObservers: [String: (UUID) -> Void] = [:]
 
     private static var shared: [ObjectIdentifier: HostDesignLibraries] = [:]
 
@@ -61,6 +63,7 @@ final class HostDesignLibraries {
         host.onDesignSystemsChanged = { [weak self] in
             guard let self, !self.cache.isForgotten(host: id) else { return }
             self.library(id).systemsChanged()
+            for observer in self.systemsObservers.values { observer(id) }
         }
     }
 
@@ -81,6 +84,11 @@ final class HostDesignLibraries {
 
     /// `owner` hears every host's pushes for the designs watched: the host, the design, its
     /// files' revision, its comments' revision.
+    /// `owner` hears each host's systems change, to list them again.
+    func observeSystems(_ owner: String, _ observer: @escaping (UUID) -> Void) {
+        systemsObservers[owner] = observer
+    }
+
     func observe(_ owner: String, _ observer: @escaping (UUID, DesignID, UInt64?, UInt64?) -> Void) {
         observers[owner] = observer
     }

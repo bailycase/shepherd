@@ -59,9 +59,14 @@ extension ShepherdViewModel {
             return DesignMenu.design(context, hasSystem: design(id)?.systemNamespace != nil, reference: reference)
         case .remote(let ref):
             let connection = remoteHosts.connections.first { $0.id == ref.hostID }
+            // References to the host's design go to the host's threads, where it takes them.
+            let references = context == .toolbar && connection?.supportsDesignCapability(RemoteProtocol.designReferencesCapability) == true
+            let name = connection?.state.designs.first { $0.id == ref.designID }?.name ?? ""
+            let reference = references ? remoteDesignScreens[ref].map { $0.referenceSelection(designName: name).piece } : nil
             return DesignMenu.design(context, hasSystem: false, remote: connection?.config.name ?? "The host",
                                      hostDeletes: connection?.supportsDesignDelete == true,
-                                     hostLifecycle: connection?.supportsDesignCapability(RemoteProtocol.designLifecycleCapability) == true)
+                                     hostLifecycle: connection?.supportsDesignCapability(RemoteProtocol.designLifecycleCapability) == true,
+                                     reference: reference)
         }
     }
 
@@ -79,6 +84,10 @@ extension ShepherdViewModel {
         case (.showSystem, .local(let id)): if let system = design(id)?.systemNamespace { openDesignSystem(system) }
         case (.removeFromRecents, .local(let id)): removeDesignFromRecents(id)
         case (.delete, _): requestDesignDelete(target)
+        case (.implement, .remote(let ref)), (.copyReference, .remote(let ref)):
+            let name = remoteHosts.connections.first { $0.id == ref.hostID }?.state.designs.first { $0.id == ref.designID }?.name ?? ""
+            if action == .implement { remoteDesignScreen(ref)?.implementSelection(designName: name) }
+            else { remoteDesignScreen(ref)?.copySelectionReference(designName: name) }
         case (.implement, .local(let id)):
             if let design = design(id) { designScreen(id).implementSelection(designName: design.name) }
         case (.copyReference, .local(let id)):
@@ -100,6 +109,8 @@ extension ShepherdViewModel {
                                      repo: resyncs ? repo : nil, building: systemIsBuilding(namespace))
         case .remote(let ref):
             return remoteDesignSystemMenu(ref)
+        case .remoteBuild:
+            return DesignMenu(sections: [[DesignMenuItem(action: .open, title: "Open", symbol: "arrow.up.forward.app")]])
         }
     }
 
@@ -131,6 +142,7 @@ extension ShepherdViewModel {
             }
         case (.deleteSystem, _): requestDesignSystemDelete(target)
         case (_, .remote(let ref)): performRemoteDesignSystemMenu(action, on: ref)
+        case (.open, .remoteBuild(let ref)): openRemoteSystemBuild(ref)
         default: break
         }
     }
@@ -403,6 +415,8 @@ extension ShepherdViewModel {
             let words = DeleteSystemWords(name: summary.info.title, components: summary.counts.components, usedBy: usedBy, repo: repo,
                                           building: systemIsBuilding(namespace))
             presentDesignSystemDelete(DesignSystemDeleteRequest(target: target, name: summary.info.title, words: words))
+        case .remoteBuild:
+            return
         case .remote(let ref):
             guard let connection = remoteHosts.connections.first(where: { $0.id == ref.hostID }),
                   let summary = connection.designs.listing?.systems.first(where: { $0.namespace == ref.namespace }), !summary.builtIn else { return }
@@ -428,6 +442,7 @@ extension ShepherdViewModel {
             || designSystems.summary(namespace)?.info.ownerDesignID.map { shownDesign?.id == $0 } == true
         case .build(let id): shownDesign?.id == id
         case .remote(let ref): shownDestination == .designSystem && shownRemoteSystem == ref
+        case .remoteBuild: false
         }
         if shown { openDestination(.designs) }
         do {
@@ -436,6 +451,8 @@ extension ShepherdViewModel {
             case .build(let id): try await server.deleteSystemBuild(id)
             case .remote(let ref):
                 try await changeRemoteSystem(ref, .deleteSystem(namespace: ref.namespace))
+                return
+            case .remoteBuild:
                 return
             }
             sessions.stateDidChange(server.state)
@@ -522,6 +539,37 @@ extension ShepherdViewModel {
             designImporting = nil
             await server.cancelDesignImport(preview.id)
             remoteActionError = "Couldn't open \(preview.title): \(error)"
+        }
+    }
+
+    /// Another device's uploaded ZIP (`RemoteDesignRequest.importFinish`): imported as this Mac's
+    /// Import does, with nothing opened here. Without anyone here to ask, it decides as
+    /// conservatively as it can: boards that can't be read refuse it (nothing is imported), and a
+    /// project already in Designs comes in as a copy under the next name.
+    func importRemoteDesign(from url: URL) async throws -> RemoteDesignCreated {
+        let preview: DesignImportPreview
+        do {
+            preview = try await server.prepareDesignImport(from: url)
+        } catch let failure as DesignImportFailure {
+            throw RemoteDesignImportFailure("import_failed", failure.message)
+        }
+        do {
+            guard preview.unreadable.isEmpty else {
+                throw RemoteDesignImportFailure("import_unreadable", "\(DeleteDesignWords.count(preview.unreadable.count, "board")) of it can't be read, "
+                    + "so nothing was imported. Import it on the host to choose what to do.")
+            }
+            let again = state.designs.contains { $0.importedFrom.map(preview.origin.isSameProject) == true }
+            let name = again ? DesignNaming.importName(preview.title, taken: state.designs.map(\.name)) : nil
+            let design = try await server.finishDesignImport(preview, name: name)
+            adopt(server.state)
+            await loadDesignSystems()
+            let agent = try? await startDesignAgent(design, brief: DesignImportBrief.text(file: preview.file), images: [], select: false)
+            return RemoteDesignCreated(designID: design.id, agentID: agent)
+        } catch {
+            await server.cancelDesignImport(preview.id)
+            if let failure = error as? RemoteDesignImportFailure { throw failure }
+            if let failure = error as? DesignImportFailure { throw RemoteDesignImportFailure("import_failed", failure.message) }
+            throw RemoteDesignImportFailure("import_failed", Self.words(error))
         }
     }
 

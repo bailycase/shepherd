@@ -11,6 +11,9 @@ enum DesignSystemTarget: Hashable {
     case build(DesignID)
     /// A connected host's system (`designs.v1`), read and changed through its host.
     case remote(RemoteSystemRef)
+    /// A connected host's system build whose agent hasn't written its system yet: it opens as
+    /// its build agent's thread there.
+    case remoteBuild(RemoteDesignRef)
 }
 
 /// A design system on a connected host.

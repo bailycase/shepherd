@@ -28,7 +28,14 @@ extension RemoteProtocol {
     public static let designSystemsCapability = "design.systems.v1"
     /// Every capability a host offers only while it serves designs.
     public static let designCapabilities: Set<String> = [designsCapability, designMarkupCapability, designDeleteCapability,
-                                                         designAgentCapability, designLifecycleCapability, designSystemsCapability]
+                                                         designAgentCapability, designLifecycleCapability, designSystemsCapability,
+                                                         designReferencesCapability, designImportCapability]
+    /// The host imports a Claude Design project's ZIP another device uploads
+    /// (`RemoteDesignRequest.importBegin`…`importFinish`). Offered with `designsCapability`.
+    public static let designImportCapability = "design.import.v1"
+    /// The largest ZIP another device uploads to import (ponytail: whole-project cap; the host's
+    /// own Import takes up to `DesignImportProject.maxProjectBytes` from disk).
+    public static let designImportMaxBytes = 256 * 1024 * 1024
     /// The most file bytes one design reply carries: files inline in `boards`, or one piece of a
     /// file or upload. Base64 keeps it well under the 1 MiB frame.
     public static let designChunkBytes = 256 * 1024
@@ -310,11 +317,29 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
     case deleteSystem(namespace: String)
     /// Reads a system's stylesheets again from its project on the host (`designSystemsCapability`).
     case resyncSystem(namespace: String)
+    /// "Build one from a repo" on the host (`designSystemsCapability`): a system build reading the
+    /// host's space `spaceID` (only read), its agent started by the host's app; a space with a
+    /// build already answers that one. Answered `created(build, agent)`.
+    case buildSystem(spaceID: SpaceID)
+    /// Import a Claude Design project's ZIP on the host (`designImportCapability`): begin with its
+    /// file name (`.zip`) and size (at most `designImportMaxBytes`), then its bytes in order
+    /// (`importChunk`, each at most `designChunkBytes`, at the offset received so far), then
+    /// `importFinish`; the host checks and imports it as its own Import does, and its app starts
+    /// the design's agent. One import at a time per connection; it goes with the connection.
+    case importBegin(name: String, size: Int)
+    case importChunk(uploadID: UUID, offset: Int, data: Data)
+    case importFinish(uploadID: UUID)
+    case importCancel(uploadID: UUID)
+    /// Pins a piece of one of the host's designs (`designReferencesCapability`), named as the
+    /// host sees it (`local`), at its revision now unless the reference names one.
+    case pinReference(DesignReference)
 
     /// The design it touches, if one.
     public var designID: DesignID? {
         switch self {
-        case .list, .system, .watch, .create, .systemFile, .renameSystem, .duplicateSystem, .deleteSystem, .resyncSystem: nil
+        case .list, .system, .watch, .create, .systemFile, .renameSystem, .duplicateSystem, .deleteSystem, .resyncSystem,
+             .buildSystem, .importBegin, .importChunk, .importFinish, .importCancel: nil
+        case .pinReference(let reference): reference.designID
         case .index(let id), .boards(let id, _, _), .file(let id, _, _, _), .asset(let id, _, _), .comments(let id),
              .addComment(let id, _, _), .replyToComment(let id, _, _, _), .resolveComment(let id, _, _, _),
              .writeBoards(let id, _, _), .updateIndex(let id, _, _), .duplicateBoard(let id, _, _), .restoreVersions(let id, _, _),
@@ -329,7 +354,8 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
         switch self {
         case .addComment, .replyToComment, .resolveComment, .writeBoards, .updateIndex, .duplicateBoard, .restoreVersions, .create,
              .sendMarkup, .settleProposals, .delete, .undoDelete, .ensureAgent, .duplicate, .removeFromRecents,
-             .renameSystem, .duplicateSystem, .deleteSystem, .resyncSystem: true
+             .renameSystem, .duplicateSystem, .deleteSystem, .resyncSystem, .buildSystem,
+             .importBegin, .importChunk, .importFinish, .importCancel: true
         default: false
         }
     }
@@ -341,7 +367,10 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
         case .delete, .undoDelete: RemoteProtocol.designDeleteCapability
         case .ensureAgent: RemoteProtocol.designAgentCapability
         case .duplicate, .removeFromRecents: RemoteProtocol.designLifecycleCapability
-        case .systemFile, .renameSystem, .duplicateSystem, .deleteSystem, .resyncSystem: RemoteProtocol.designSystemsCapability
+        case .systemFile, .renameSystem, .duplicateSystem, .deleteSystem, .resyncSystem, .buildSystem:
+            RemoteProtocol.designSystemsCapability
+        case .pinReference: RemoteProtocol.designReferencesCapability
+        case .importBegin, .importChunk, .importFinish, .importCancel: RemoteProtocol.designImportCapability
         default: nil
         }
     }
@@ -379,6 +408,10 @@ public enum RemoteDesignResult: Codable, Hashable, Sendable {
     case systemChanged(DesignSystemSummary)
     /// What a Re-sync changed.
     case systemSynced(DesignSystemSyncResult)
+    /// A piece of the host's design, pinned (`pinReference`).
+    case referencePinned(RemoteDesignReferencePin)
+    /// An import began (`importBegin`): send its bytes under this id.
+    case importStarted(uploadID: UUID)
     case ok
 }
 

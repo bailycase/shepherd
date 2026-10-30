@@ -29,6 +29,8 @@ final class MobileDesigns {
     private(set) var deleted: (ref: HostDesignRef, name: String, id: UUID)?
     /// Why the last design action failed, until dismissed.
     private(set) var problem: String?
+    /// Moves when a host's systems change: a system's page reads its system again.
+    private(set) var systemsRevision = 0
 
     @ObservationIgnored private let hosts: MobileHosts
     @ObservationIgnored private let libraries: HostDesignLibraries
@@ -75,6 +77,13 @@ final class MobileDesigns {
         libraries = HostDesignLibraries.of(hosts)
         libraries.observe("phone") { [weak self] host, design, revision, comments in
             self?.changed(HostDesignRef(host: host, design: design), files: revision != nil, comments: comments != nil)
+        }
+        // Another device changed a host's systems: the Designs screen and Design systems list them again.
+        libraries.observeSystems("phone") { [weak self] host in
+            guard let self else { return }
+            self.swatches = self.swatches.filter { !$0.key.hasPrefix(host.uuidString + "/") }
+            self.systemsRevision &+= 1
+            Task { await self.list(host) }
         }
         track()
     }
@@ -326,6 +335,32 @@ final class MobileDesigns {
         guard let library = library(ref.host) else { throw MobileDesignsError.offline }
         _ = try await library.request(.undoDelete(designID: ref.design))
         await list(ref.host)
+    }
+
+    /// "Build one from a repo" in one of `host`'s spaces: the build's agent there.
+    func buildSystem(host: UUID, space: SpaceID) async throws -> AgentRef? {
+        guard let library = library(host) else { throw MobileDesignsError.offline }
+        guard case .created(_, let agent) = try await library.request(.buildSystem(spaceID: space)) else { throw MobileDesignsError.unexpected }
+        await list(host)
+        return agent.map { AgentRef(host: host, agent: $0) }
+    }
+
+    /// The spaces of each host that builds systems for other devices (`design.systems.v1`).
+    var buildableSpaces: [(host: UUID, name: String, spaces: [Space])] {
+        hosts.hosts.filter { supports($0.id, RemoteProtocol.designSystemsCapability) }.map { host in
+            (host.id, host.name, host.state.spaces.filter { !$0.holdsDesigns && !$0.holdsProjects })
+        }.filter { !$0.spaces.isEmpty }
+    }
+
+    /// A Claude Design ZIP from Files, imported on `host` (`design.import.v1`); answers the design.
+    func importProject(host: UUID, url: URL, progress: @escaping (Double) -> Void) async throws -> HostDesignRef {
+        guard let library = library(host) else { throw MobileDesignsError.offline }
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        let data = try Data(contentsOf: url, options: .mappedIfSafe)
+        let (design, _) = try await library.importProject(name: url.lastPathComponent, data: data, progress: progress)
+        await list(host)
+        return HostDesignRef(host: host, design: design)
     }
 
     /// Duplicate on the host; answers the copy.

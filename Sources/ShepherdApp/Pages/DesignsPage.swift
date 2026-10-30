@@ -23,10 +23,12 @@ struct DesignsDestination: View {
                 case .system(let namespace): vm.openDesignSystem(namespace)
                 case .build(let id): vm.openSystemBuild(id)
                 case .remote(let ref): vm.openRemoteDesignSystem(ref)
+                case .remoteBuild(let ref): vm.openRemoteSystemBuild(ref)
                 }
             },
             build: { vm.buildDesignSystem(in: $0) },
             openRemote: { vm.openRemoteDesign($0) },
+            buildRemote: { vm.buildRemoteSystem(host: $0, in: $1) },
             remoteThumbnail: { host, id in vm.remoteDesignRenderings[host]?.thumbnails.image(id) },
             designMenu: { vm.performDesignMenu($0, on: $1) },
             systemMenu: { vm.performDesignSystemMenu($0, on: $1) }),
@@ -52,6 +54,8 @@ struct DesignsPageActions {
     var build: (SpaceID) -> Void = { _ in }
     /// A host's design card.
     var openRemote: (RemoteDesignRef) -> Void = { _ in }
+    /// A host's "Build one from a repo", in one of its spaces.
+    var buildRemote: (UUID, SpaceID) -> Void = { _, _ in }
     /// A host's design's first board, as drawn here.
     var remoteThumbnail: (UUID, DesignID) -> CGImage? = { _, _ in nil }
     /// A design card's menu item (DesignCardMenu), and a system card's (SystemCardMenu).
@@ -97,9 +101,9 @@ struct DesignsPage: View {
                                 DesignCardRow(slots: row, open: actions.open, thumbnail: thumbnail,
                                               menu: { actions.designMenu($0, .local($1)) })
                                     .equatable()
-                            case .hostSystems(let row):
-                                DesignSystemCardRow(systems: row, tile: false, projects: [], open: actions.openSystem, build: { _ in },
-                                                    menu: actions.systemMenu)
+                            case .hostSystems(let host, let row, let tile, let projects):
+                                DesignSystemCardRow(systems: row, tile: tile, projects: projects, open: actions.openSystem,
+                                                    build: { actions.buildRemote(host, $0) }, menu: actions.systemMenu)
                                     .equatable()
                             case .hostCards(let host, let row):
                                 DesignCardRow(slots: row.map(DesignsPageModel.Slot.design),
@@ -133,8 +137,9 @@ struct DesignsPage: View {
         case hostLabel(UUID, String, first: Bool)
         /// A row of a host's cards.
         case hostCards(UUID, [DesignsPageModel.Card])
-        /// A row of a host's design systems.
-        case hostSystems([DesignsPageModel.System])
+        /// A row of a host's design systems, the last ending in its "Build one from a repo" where
+        /// the host builds for other devices.
+        case hostSystems(UUID, [DesignsPageModel.System], tile: Bool, projects: [DesignsPageModel.Project])
         /// A row of system cards, whether the build tile ends it, and whether it is the first.
         case systems([DesignsPageModel.System], tile: Bool, first: Bool)
 
@@ -144,7 +149,8 @@ struct DesignsPage: View {
             case .hostLabel(let host, _, _): "label.host.\(host.uuidString)"
             case .cards(let row): "row.\(row.first?.id ?? "")"
             case .hostCards(let host, let row): "host.\(host.uuidString).\(row.first?.id.rawValue ?? "")"
-            case .hostSystems(let row): "host.systems.\(row.first.map { "\($0.id)" } ?? "")"
+            case .hostSystems(let host, let row, let tile, _):
+                "host.systems.\(host.uuidString).\(row.first.map { "\($0.id)" } ?? (tile ? "tile" : ""))"
             case .systems(let row, let tile, _): "systems.\(row.first.map { "\($0.id)" } ?? (tile ? "tile" : ""))"
             }
         }
@@ -160,7 +166,7 @@ struct DesignsPage: View {
         for host in model.hosts {
             items.append(.hostLabel(host.id, host.name, first: items.isEmpty))
             items += host.rows.map { .hostCards(host.id, $0) }
-            items += host.systemRows.map(Item.hostSystems)
+            items += host.systemRows.map { .hostSystems(host.id, $0.systems, tile: $0.tile, projects: host.projects ?? []) }
         }
         items.append(.label("Design systems", first: items.isEmpty))
         items += model.systemRows.enumerated().map { index, row in .systems(row.systems, tile: row.tile, first: index == 0) }

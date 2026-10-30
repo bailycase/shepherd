@@ -144,6 +144,10 @@ public final class SessionServer: @unchecked Sendable {
         var pendingReplyOffset = 0
         var queuedReplyBytes = 0
         var upload: RemoteFileUpload?
+        /// A Claude Design ZIP this client is uploading to import (`design.import.v1`), and whether
+        /// the app is importing it now.
+        var designImport: RemoteDesignImportUpload?
+        var designImporting = false
         /// The Browser tunnels this remote client has open (`RemoteProtocol.browserTunnelCapability`),
         /// made when it opens its first.
         var tunnels: BrowserTunnelSession?
@@ -487,6 +491,14 @@ public final class SessionServer: @unchecked Sendable {
     /// app starts one as its own Open does, selecting nothing, and answers it. Main actor; a
     /// server without it (headless, tests) refuses.
     public var onRemoteEnsureDesignAgent: ((DesignID, @escaping (Result<AgentID, RemoteCreateAgentError>) -> Void) -> Void)?
+    /// A remote client's "Build one from a repo" (`RemoteDesignRequest.buildSystem`): the app starts
+    /// a system build reading the space (or answers the one it has), selecting nothing. Main
+    /// actor; a server without it refuses.
+    public var onRemoteBuildDesignSystem: ((SpaceID, @escaping (Result<RemoteDesignCreated, RemoteCreateAgentError>) -> Void) -> Void)?
+    /// A remote client's uploaded Claude Design ZIP (`RemoteDesignRequest.importFinish`): the app
+    /// imports it as its own Import does (a project already in Designs as a copy, unreadable boards
+    /// refused), starts its agent, and answers the design. Main actor; the file goes after.
+    public var onRemoteImportDesign: ((URL, @escaping (Result<RemoteDesignCreated, RemoteDesignImportFailure>) -> Void) -> Void)?
     /// How long a deleted design can be restored (`DesignDeletion.undoWindow`). Tests shorten it
     /// before they delete.
     public var designUndoWindow: TimeInterval = DesignDeletion.undoWindow
@@ -2125,11 +2137,17 @@ public final class SessionServer: @unchecked Sendable {
                 send(.error(id: id, code: "project_scope", message: "Use a Project-capable client."), to: client); return
             }
             guard !line.contains(13) else { disconnect(client); return }
-            // Design references are handed over on the Mac that runs the thread (docs/designs.md ›
-            // Design references): a remote client's are refused rather than dropped.
+            // Design references (docs/designs.md › Design references): a client's are refused rather
+            // than dropped, unless this host serves references to its own designs
+            // (`design.references.v1`); then the host resolves and fences each one itself, as for
+            // its own sends, and refuses one naming any other Mac's design.
             if let references = request.designReferences, !references.isEmpty {
-                send(.error(id: id, code: "design_references_local",
-                            message: "Design references go only into a thread on the Mac that runs it, for now."), to: client)
+                guard offeredCapabilities.contains(RemoteProtocol.designReferencesCapability), case .send = request else {
+                    send(.error(id: id, code: "design_references_local",
+                                message: "Design references go only into a thread on the Mac that runs it, for now."), to: client)
+                    return
+                }
+                remoteReferenceSend(id: id, agentID: agentID, request: request, client: client)
                 return
             }
             if case .retry = request, !client.clientCapabilities.contains(RemoteProtocol.checkpointRecoveryCapability) {
@@ -2972,6 +2990,17 @@ public final class SessionServer: @unchecked Sendable {
             remoteEnsureDesignAgent(id: id, designID: designID, client: client)
             return
         }
+        if case .buildSystem(let spaceID) = request {
+            remoteBuildDesignSystem(id: id, spaceID: spaceID, client: client)
+            return
+        }
+        switch request {
+        case .importBegin, .importChunk, .importFinish, .importCancel:
+            remoteDesignImport(id: id, request: request, client: client)
+            return
+        default:
+            break
+        }
         let service = RemoteDesignService(server: self)
         // The connection is only touched back on the server queue.
         let connection = ChangesUnchecked(value: client)
@@ -3151,6 +3180,116 @@ public final class SessionServer: @unchecked Sendable {
                     }
                 }
             }
+        }
+    }
+
+    /// Server queue: a remote send carrying references to this host's designs, through the same
+    /// path as the host's own (`nativeThread(agentID:request:)`: resolved, kept and fenced here).
+    private func remoteReferenceSend(id: Int, agentID: AgentID, request: NativeThreadRequest, client: ExtensionConnection) {
+        let connection = ChangesUnchecked(value: client)
+        Task.detached { [weak self] in
+            guard let self else { return }
+            let reply: RemoteReply
+            do {
+                reply = .nativeThread(id: id, result: try await self.nativeThread(agentID: agentID, request: request))
+            } catch RemoteHostClientError.rejected(let code, let message) {
+                reply = .error(id: id, code: code, message: message)
+            } catch {
+                reply = .error(id: id, code: "design_references_failed", message: String(describing: error))
+            }
+            self.queue.async {
+                let client = connection.value
+                guard self.clients[client.fd] === client else { return }
+                self.send(reply, to: client)
+            }
+        }
+    }
+
+    /// Server queue: a remote "Build one from a repo" in one of this host's spaces (never the
+    /// reserved designs space), started by the app.
+    private func remoteBuildDesignSystem(id: Int, spaceID: SpaceID, client: ExtensionConnection) {
+        guard let space = store.state.spaces.first(where: { $0.id == spaceID }), !space.holdsDesigns, !space.holdsProjects else {
+            send(.error(id: id, code: "no_such_space", message: "unknown space \(spaceID)"), to: client)
+            return
+        }
+        guard let handler = onRemoteBuildDesignSystem else {
+            send(.error(id: id, code: "unsupported", message: "host cannot build design systems (no GUI)"), to: client)
+            return
+        }
+        hopToMain { [weak self] in
+            handler(spaceID) { result in
+                guard let self else { return }
+                self.queue.async {
+                    guard self.clients[client.fd] === client else { return }
+                    switch result {
+                    case .success(let made):
+                        self.send(.design(id: id, result: .created(designID: made.designID, agentID: made.agentID)), to: client)
+                    case .failure(let error):
+                        self.send(.error(id: id, code: "create_failed", message: error.message), to: client)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Server queue: another device's Claude Design ZIP, uploaded in order to a private file, then
+    /// imported by the app. One at a time per connection; it goes with the connection.
+    private func remoteDesignImport(id: Int, request: RemoteDesignRequest, client: ExtensionConnection) {
+        let refuse = { (code: String, message: String) in self.send(.error(id: id, code: code, message: message), to: client) }
+        guard let handler = onRemoteImportDesign else {
+            refuse("unsupported", "host cannot import designs (no GUI)")
+            return
+        }
+        switch request {
+        case .importBegin(let name, let size):
+            guard !client.designImporting else { refuse("import_busy", "An import is under way."); return }
+            do {
+                client.designImport = try RemoteDesignImportUpload(root: store.url.deletingLastPathComponent().appendingPathComponent("remote-design-imports"),
+                                                                   name: name, size: size)
+                send(.design(id: id, result: .importStarted(uploadID: client.designImport!.id)), to: client)
+            } catch let failure as RemoteDesignImportFailure {
+                refuse(failure.code, failure.message)
+            } catch {
+                refuse("import_failed", String(describing: error))
+            }
+        case .importChunk(let uploadID, let offset, let data):
+            guard let upload = client.designImport, upload.id == uploadID, !client.designImporting else { refuse("no_such_import", "No such import."); return }
+            do {
+                try upload.append(data, at: offset)
+                send(.design(id: id, result: .ok), to: client)
+            } catch let failure as RemoteDesignImportFailure {
+                refuse(failure.code, failure.message)
+            } catch {
+                client.designImport = nil
+                refuse("import_failed", String(describing: error))
+            }
+        case .importCancel(let uploadID):
+            if client.designImport?.id == uploadID, !client.designImporting { client.designImport = nil }
+            send(.design(id: id, result: .ok), to: client)
+        case .importFinish(let uploadID):
+            guard let upload = client.designImport, upload.id == uploadID, !client.designImporting else { refuse("no_such_import", "No such import."); return }
+            guard upload.isComplete else { refuse("import_incomplete", "The host has \(upload.received) of \(upload.size) bytes."); return }
+            client.designImporting = true
+            let url = upload.url
+            hopToMain { [weak self] in
+                handler(url) { result in
+                    guard let self else { return }
+                    self.queue.async {
+                        // The file goes either way: a failed import uploads again.
+                        client.designImporting = false
+                        if client.designImport?.id == uploadID { client.designImport = nil }
+                        guard self.clients[client.fd] === client else { return }
+                        switch result {
+                        case .success(let made):
+                            self.send(.design(id: id, result: .created(designID: made.designID, agentID: made.agentID)), to: client)
+                        case .failure(let failure):
+                            self.send(.error(id: id, code: failure.code, message: failure.message), to: client)
+                        }
+                    }
+                }
+            }
+        default:
+            break
         }
     }
 

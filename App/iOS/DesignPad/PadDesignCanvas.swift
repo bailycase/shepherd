@@ -97,9 +97,9 @@ final class PadDesignCanvas {
     }
 
     /// Tweak's reads and writes through `designs.v1`: the same server mutations and checks as the
-    /// host's own canvas. The project's stylesheets are on the host, so a tweak snaps to the
-    /// board's own tokens and the system's.
-    private static func tweakIO(_ library: RemoteDesignLibrary, source: RemoteDesignSource, design: DesignID) -> DesignTweakIO {
+    /// host's own canvas; a tweak snaps to the board's tokens and the project's synced
+    /// stylesheets (its systems' `tokens.css` among them). The iPhone's board screen shares it.
+    static func tweakIO(_ library: RemoteDesignLibrary, source: RemoteDesignSource, design: DesignID) -> DesignTweakIO {
         DesignTweakIO(
             snapshot: { try await source.sync().snapshot },
             board: { path in
@@ -132,7 +132,7 @@ final class PadDesignCanvas {
                 }
                 return write.write
             },
-            projectTokens: { DesignTokens() },
+            projectTokens: { await source.projectTokens() },
             isStale: { PadDesignCanvas.isStale($0) })
     }
 

@@ -607,6 +607,47 @@ struct DesignReferenceIntegrationTests {
         #expect(prompts(pi).isEmpty)
     }
 
+    /// A host that serves references to its own designs (`design.references.v1`, with designs)
+    /// pins them for a remote client and takes a send naming them, resolving and fencing each
+    /// itself; one naming any other Mac's design, or a design it lacks, is refused.
+    @Test func aRemoteClientsReferencesToTheHostsOwnDesignGoThrough() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        drawing(r.host)
+        r.server.setDesignsServed(true)
+        let pi = try await PiAgent.launch(on: r.host)
+        let designID = try await design(r.host)
+        let ready = try await pi.ready()
+        let client = try await r.raw(authenticated: false)
+        _ = try await client.hello(token: r.token, capabilities: RemoteProtocol.clientCapabilities)
+
+        try client.send(.design(id: 2, request: .pinReference(reference(designID))))
+        let pinned = try await client.frames { if case .design(2, _) = $0 { true } else if case .error(2, _, _) = $0 { true } else { false } }
+        guard case .design(_, .referencePinned(let pin))? = pinned.last else { Issue.record("expected a pin, got \(pinned)"); return }
+        #expect(pin.reference.host == .local && pin.reference.revision != nil && pin.boardTitle == "A · Funnel first")
+
+        try client.send(.design(id: 3, request: .pinReference(DesignReference(host: .remote(UUID()), designID: designID)!)))
+        let elsewhere = try await client.frames { if case .error(3, _, _) = $0 { true } else if case .design(3, _) = $0 { true } else { false } }
+        guard case .error(3, _, _)? = elsewhere.last else { Issue.record("another Mac's design was pinned"); return }
+
+        func send(_ id: Int, _ ref: DesignReference) throws {
+            try client.send(.nativeThread(id: id, agentID: pi.agent.id, request: .send(
+                expectedSessionID: ready.piSessionID, generation: ready.generation, operationID: UUID(), text: "tools:0 go",
+                delivery: .followUp, designReferences: [DesignReferenceRecord(ref)])))
+        }
+        try send(4, DesignReference(host: .remote(UUID()), designID: designID, board: Self.board)!)
+        let refused = try await client.frames { if case .error(4, _, _) = $0 { true } else if case .nativeThread(4, _) = $0 { true } else { false } }
+        guard case .error(4, _, _)? = refused.last else { Issue.record("another Mac's design went: \(refused)"); return }
+        #expect(prompts(pi).isEmpty)
+
+        try send(5, pin.reference)
+        let sent = try await client.frames { if case .error(5, _, _) = $0 { true } else if case .nativeThread(5, _) = $0 { true } else { false } }
+        guard case .nativeThread(5, let result)? = sent.last, case .accepted = result else { Issue.record("expected it to go, got \(sent)"); return }
+        try await eventually("the reference to reach pi") { lastRecord(pi)?.ref == pin.reference.string }
+        #expect(lastRecord(pi)?.boardTitle == "A · Funnel first", "the host read it from its own design")
+        #expect(!grants(r.host, pi.agent.id).isEmpty && !copies(r.host, pi.agent.id).isEmpty)
+    }
+
     @Test func rawRemoteProjectTransportsCannotCaptureLocalDesigns() async throws {
         let r = try RemoteHost()
         defer { r.stop() }

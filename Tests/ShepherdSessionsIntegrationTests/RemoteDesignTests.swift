@@ -653,4 +653,74 @@ extension RemoteDesignTests {
         seen += try await older.frames { if case .state(3, _) = $0 { true } else { false } }
         #expect(!seen.contains { if case .designSystemsChanged = $0 { true } else { false } })
     }
+
+    /// "Build one from a repo" from another device: the host's app starts the build in one of its
+    /// spaces (never the designs space); a host without the app, or an unknown space, refuses.
+    @Test func aSystemBuildIsStartedByTheHostsApp() async throws {
+        let host = try RemoteHost()
+        defer { host.stop() }
+        host.server.setDesignsServed(true)
+        let web = Space(name: "dashboard-web", path: host.host.dir.path)
+        try await host.server.putState(ShepherdState(spaces: [web]))
+        let raw = try await designClient(host)
+        #expect(try await refusal(raw, 2, .buildSystem(spaceID: web.id)) == "unsupported")
+        #expect(try await refusal(raw, 3, .buildSystem(spaceID: SpaceID())) == "no_such_space")
+
+        let asked = Locked<[SpaceID]>([])
+        let build = DesignID(), agent = AgentID()
+        host.server.onRemoteBuildDesignSystem = { space, completion in
+            asked.withValue { $0.append(space) }
+            completion(.success(RemoteDesignCreated(designID: build, agentID: agent)))
+        }
+        #expect(try await answer(raw, 4, .buildSystem(spaceID: web.id)) == .created(designID: build, agentID: agent))
+        #expect(asked.current == [web.id])
+
+        host.server.advertisedCapabilities = RemoteProtocol.capabilities.filter { $0 != RemoteProtocol.designSystemsCapability }
+        #expect(try await refusal(raw, 5, .buildSystem(spaceID: web.id)) == "unsupported")
+    }
+
+    /// Another device uploads a ZIP in order and the host's app imports it; a piece out of order,
+    /// a finish before the last piece, a non-ZIP or an oversized one is refused, and the file
+    /// goes once the import is done either way.
+    @Test func anImportIsUploadedInOrderAndImportedByTheHostsApp() async throws {
+        let host = try RemoteHost()
+        defer { host.stop() }
+        host.server.setDesignsServed(true)
+        let raw = try await designClient(host)
+        #expect(try await refusal(raw, 2, .importBegin(name: "Checkout.zip", size: 10)) == "unsupported")
+
+        let imported = Locked<[(String, Data)]>([])
+        let urls = Locked<[URL]>([])
+        let made = DesignID(), agent = AgentID()
+        host.server.onRemoteImportDesign = { url, completion in
+            imported.withValue { $0.append((url.lastPathComponent, (try? Data(contentsOf: url)) ?? Data())) }
+            urls.withValue { $0.append(url) }
+            completion(.success(RemoteDesignCreated(designID: made, agentID: agent)))
+        }
+        #expect(try await refusal(raw, 3, .importBegin(name: "Checkout.txt", size: 10)) == "invalid_import")
+        #expect(try await refusal(raw, 4, .importBegin(name: "../x.zip", size: 10)) == "invalid_import")
+        #expect(try await refusal(raw, 5, .importBegin(name: "Checkout.zip", size: RemoteProtocol.designImportMaxBytes + 1)) == "invalid_import")
+
+        let bytes = Self.bytes(RemoteProtocol.designChunkBytes + 100)
+        guard case .importStarted(let upload) = try await answer(raw, 6, .importBegin(name: "Checkout.zip", size: bytes.count)) else {
+            Issue.record("expected an upload"); return
+        }
+        let first = bytes.prefix(RemoteProtocol.designChunkBytes)
+        #expect(try await refusal(raw, 7, .importChunk(uploadID: upload, offset: 5, data: Data(first))) == "invalid_offset")
+        #expect(try await answer(raw, 8, .importChunk(uploadID: upload, offset: 0, data: Data(first))) == .ok)
+        #expect(try await refusal(raw, 9, .importFinish(uploadID: upload)) == "import_incomplete")
+        #expect(try await answer(raw, 10, .importChunk(uploadID: upload, offset: first.count, data: Data(bytes.suffix(100)))) == .ok)
+        #expect(try await answer(raw, 11, .importFinish(uploadID: upload)) == .created(designID: made, agentID: agent))
+        #expect(imported.current.map(\.0) == ["Checkout.zip"] && imported.current.first?.1 == bytes)
+        let kept = try #require(urls.current.first)
+        try await eventually("the upload to go") { !FileManager.default.fileExists(atPath: kept.path) }
+        #expect(try await refusal(raw, 12, .importFinish(uploadID: upload)) == "no_such_import", "it imports once")
+
+        host.server.onRemoteImportDesign = { _, completion in completion(.failure(RemoteDesignImportFailure("import_unreadable", "2 boards"))) }
+        guard case .importStarted(let again) = try await answer(raw, 13, .importBegin(name: "Checkout.zip", size: 3)) else {
+            Issue.record("expected an upload"); return
+        }
+        #expect(try await answer(raw, 14, .importChunk(uploadID: again, offset: 0, data: Data([1, 2, 3]))) == .ok)
+        #expect(try await refusal(raw, 15, .importFinish(uploadID: again)) == "import_unreadable")
+    }
 }

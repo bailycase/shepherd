@@ -11,6 +11,11 @@ import ShepherdUI
 /// Export. Pinch zooms, a drag pans a zoomed board, and a sideways swipe on a fitted board moves
 /// to the next one. With Comment on, a tap names the element under it and a comment goes there.
 ///
+/// Tweak (the toolbar's): a tap picks the element, and the iPad's Tweak controls rise in a sheet
+/// over the board, previewing on it and writing through the host (`DesignTweakModel`). Play (the
+/// board actions, an interactive board): the board takes touches itself and its links turn to
+/// their boards; Done ends it. A phone shows one board at a time, so there is no board to move.
+///
 /// The board is the one live web view on screen (`DesignLiveBoard`); every write goes to the host.
 struct DesignBoardScreen: View {
     let ref: HostDesignRef
@@ -69,7 +74,28 @@ final class DesignBoardModel {
     private(set) var current: DesignPath?
     private(set) var live: DesignLiveBoard?
     /// Comment is on: a tap names an element to comment on.
-    var commenting = false
+    var commenting = false {
+        didSet { if commenting { tweaking = false } }
+    }
+    /// Tweak is on: a tap picks the element its controls change.
+    var tweaking = false {
+        didSet {
+            guard tweaking != oldValue else { return }
+            if tweaking { commenting = false } else { tweakPick = nil }
+        }
+    }
+    /// The element Tweak changes (nil: the board whole).
+    private(set) var tweakPick: DesignPick?
+    /// Play: the board takes touches itself.
+    private(set) var playing = false
+    /// Tweak's model, shared with the iPad and the Mac: its writes go to the host.
+    @ObservationIgnored private(set) lazy var tweak: DesignTweakModel? = designs.library(ref.host).map { library in
+        let model = DesignTweakModel(designID: ref.design, io: PadDesignCanvas.tweakIO(library, source: library.source(ref.design),
+                                                                                       design: ref.design), host: self)
+        model.previewed = { [weak self] _ in Task { await self?.measurePins() } }
+        if let system = designs.design(ref)?.systemNamespace { model.systemName = system }
+        return model
+    }
     /// The comment whose card is up.
     var selected: UUID? {
         didSet { if selected != oldValue { replyText = "" } }
@@ -108,6 +134,7 @@ final class DesignBoardModel {
         async let comments: Void = designs.loadComments(ref)
         let index = await designs.sync(ref)
         _ = await comments
+        if let index { await tweak?.snapshotChanged(index.snapshot) }
         if current == nil, let index {
             let boards = RemoteDesignPresentation.boards(index.snapshot.index)
             show(initial.flatMap { boards.contains($0) ? $0 : nil } ?? boards.first)
@@ -122,6 +149,13 @@ final class DesignBoardModel {
     private func reopen() {
         guard let current, let board, let source = designs.source(ref) else { return }
         live = DesignLiveBoard(ref: ref, path: current, size: CGSize(width: board.w, height: board.h), source: source)
+        wire(live)
+    }
+
+    /// A live board's links turn to their boards while it plays.
+    private func wire(_ live: DesignLiveBoard?) {
+        live?.playing = playing
+        live?.linked = { [weak self] target in self?.show(target) }
     }
 
     /// Shows `path`: its web view replaces the last board's, so one board is live at a time.
@@ -134,8 +168,42 @@ final class DesignBoardModel {
         draft = nil
         draftText = ""
         selected = nil
+        tweakPick = nil
         pinRects = [:]
         live = DesignLiveBoard(ref: ref, path: path, size: CGSize(width: board.w, height: board.h), source: source)
+        wire(live)
+        if playing, index?.boards[path]?.isInteractive != true { play(false) }
+    }
+
+    // MARK: Play
+
+    /// The board on screen is interactive: it can play.
+    var canPlay: Bool { board?.isInteractive == true }
+
+    func play(_ on: Bool) {
+        let on = on && canPlay
+        guard playing != on else { return }
+        playing = on
+        if on {
+            commenting = false
+            tweaking = false
+            zoom = 1
+            pan = .zero
+            cancelDraft()
+            selected = nil
+        }
+        live?.playing = on
+    }
+
+    // MARK: Tweak
+
+    /// What Tweak changes: the element picked, else the board whole.
+    var tweakTarget: DesignTweakTarget? {
+        guard tweaking, let current else { return nil }
+        guard let pick = tweakPick, let element = DesignElementID(board: current.viewName, tid: pick.tid, path: pick.path) else {
+            return DesignTweakTarget(board: current, element: nil, kind: .other, tag: nil)
+        }
+        return DesignTweakTarget(board: current, element: element, kind: pick.kind, tag: pick.tag)
     }
 
     /// The next board (`step` 1) or the one before (-1), stopping at either end.
@@ -159,6 +227,7 @@ final class DesignBoardModel {
             let before = current.flatMap { designs.indexes[ref]?.snapshot.boards[$0] }
             await designs.sync(ref)
             let after = current.flatMap { designs.indexes[ref]?.snapshot.boards[$0] }
+            if let snapshot = designs.indexes[ref]?.snapshot { await tweak?.snapshotChanged(snapshot) }
             if let current, index?.boards[current] == nil {
                 self.current = nil
                 show(boards.first)
@@ -186,6 +255,10 @@ final class DesignBoardModel {
 
     /// A tap on the board at `point` (board points).
     func tap(at point: CGPoint) async {
+        if tweaking {
+            tweakPick = await live?.pick(at: point)
+            return
+        }
         guard commenting else {
             selected = nil
             return
@@ -252,6 +325,7 @@ final class DesignBoardModel {
     /// What the phone shows, for a message to the design agent.
     var viewRecord: DesignViewRecord? {
         guard let current else { return nil }
+        if playing { return DesignViewRecord(mode: .focused, visibleBoards: [current.viewName]) }
         let element = draft.flatMap { DesignElementID(board: current.viewName, tid: $0.tid, path: $0.path) }
         return RemoteDesignPresentation.viewRecord(board: current, picked: element, kind: draft?.kind, label: draft?.label)
     }
@@ -294,6 +368,24 @@ final class DesignBoardModel {
     func dismissProblem() { problem = nil }
 }
 
+/// Tweak previews on the board on screen, whichever it is.
+extension DesignBoardModel: DesignTweakPreviews {
+    func previewStyle(_ path: DesignPath, _ changes: [Int: [String: String?]]) async -> Bool {
+        guard let live, live.path == path else { return false }
+        return await live.previewStyle(changes)
+    }
+
+    func previewProps(_ path: DesignPath, _ json: String) async -> Bool {
+        guard let live, live.path == path else { return false }
+        return await live.previewProps(json)
+    }
+
+    func endPreview(_ path: DesignPath) async {
+        guard let live, live.path == path else { return }
+        await live.endPreview()
+    }
+}
+
 /// A file for the share sheet.
 struct SharedFile: Identifiable {
     let url: URL
@@ -314,17 +406,42 @@ private struct DesignBoardContent: View {
                 // The keyboard never refits the board: the comment being written rises over it.
                 .ignoresSafeArea(.keyboard)
                 .overlay(alignment: .bottom) { cardLayer }
-            SHBoardToolbar(tools: DesignBoardTools.all, active: model.commenting ? DesignBoardTools.comment : nil,
+            if model.playing {
+                // Play's own bar: the board takes every touch until Done.
+                HStack {
+                    Text("Playing \(model.label)").shText(.caption).foregroundStyle(Color.sh.textSecondary).lineLimit(1)
+                    Spacer(minLength: SH.Space.m)
+                    Button("Done") { model.play(false) }.buttonStyle(.sh(.secondary))
+                }
+                .padding(.horizontal, MobileLayout.gutter)
+                .padding(.vertical, SH.Space.m)
+                .background(Color.sh.bgWindow)
+            } else {
+            SHBoardToolbar(tools: DesignBoardTools.all,
+                           active: model.commenting ? DesignBoardTools.comment : model.tweaking ? DesignBoardTools.tweak : nil,
                            disabled: model.designs.agent(model.ref) == nil ? [DesignBoardTools.ask] : []) { id in
                 switch id {
                 case DesignBoardTools.comment:
                     model.commenting.toggle()
                     if !model.commenting { model.cancelDraft() }
+                case DesignBoardTools.tweak:
+                    model.tweaking.toggle()
                 case DesignBoardTools.ask: ask()
                 case DesignBoardTools.boards:
                     navigator.present(.designs(.boards(model.ref, current: model.current?.rawValue ?? "")))
                 default: exporting = true
                 }
+            }
+            }
+        }
+        .sheet(isPresented: Binding(get: { model.tweaking && model.tweak != nil }, set: { if !$0 { model.tweaking = false } })) {
+            if let tweak = model.tweak {
+                PadDesignTweakPane(model: tweak, target: model.tweakTarget) {
+                    model.tweaking = false
+                    ask()
+                }
+                .presentationDetents([.fraction(MobileDesignLayout.tweakSheetFraction), .large])
+                .presentationBackgroundInteraction(.enabled(upThrough: .fraction(MobileDesignLayout.tweakSheetFraction)))
             }
         }
         .background(Color.sh.bgWindow)
@@ -346,6 +463,9 @@ private struct DesignBoardContent: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button("Share", systemImage: "square.and.arrow.up") { Task { await model.export(.png) } }
+                    if model.canPlay {
+                        Button("Play", systemImage: "play") { model.play(true) }
+                    }
                     Button("Duplicate Board…") { confirmingDuplicate = true }
                 } label: {
                     Label("Board actions", systemImage: "ellipsis")
@@ -446,7 +566,8 @@ private struct DesignBoardCanvas: View {
                 }
             }
             .clipped()
-            .gesture(gestures(space: proxy.size))
+            // Playing, the board takes every touch itself.
+            .gesture(gestures(space: proxy.size), isEnabled: !model.playing)
         }
     }
 
@@ -466,11 +587,19 @@ private struct DesignBoardCanvas: View {
         }
         .overlay(alignment: .topLeading) {
             ZStack(alignment: .topLeading) {
-                Color.clear
-                    .contentShape(Rectangle())
-                    .onTapGesture(coordinateSpace: .local) { location in
-                        Task { await model.tap(at: CGPoint(x: location.x / scale, y: location.y / scale)) }
-                    }
+                if !model.playing {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture(coordinateSpace: .local) { location in
+                            Task { await model.tap(at: CGPoint(x: location.x / scale, y: location.y / scale)) }
+                        }
+                }
+                if let pick = model.tweakPick {
+                    SHSelectionRing(.selected, tag: pick.tag)
+                        .frame(width: pick.rect.width * scale, height: pick.rect.height * scale)
+                        .offset(x: pick.rect.minX * scale, y: pick.rect.minY * scale)
+                        .allowsHitTesting(false)
+                }
                 if let draft = model.draft {
                     SHSelectionRing(.selected, tag: draft.tag)
                         .frame(width: draft.rect.width * scale, height: draft.rect.height * scale)
@@ -520,11 +649,13 @@ private struct DesignBoardCanvas: View {
 enum DesignBoardTools {
     static let comment = "comment"
     static let ask = "ask"
+    static let tweak = "tweak"
     static let boards = "boards"
     static let export = "export"
 
     static let all: [SHBoardToolbar.Tool] = [
         .init(id: comment, title: "Comment", symbol: "text.bubble"),
+        .init(id: tweak, title: "Tweak", symbol: "slider.horizontal.3"),
         .init(id: ask, title: "Ask the agent", symbol: "sparkle"),
         .init(id: boards, title: "Boards", symbol: "square.grid.2x2"),
         .init(id: export, title: "Export", symbol: "square.and.arrow.up"),

@@ -72,7 +72,7 @@ struct DesignMenu: Hashable {
             delete.destructive = false
             delete.disabledReason = "\(remote) doesn’t delete designs for other devices yet. Update Shepherd there, or delete it on \(remote)."
         }
-        if context == .toolbar, remote == nil, let reference {
+        if context == .toolbar, let reference {
             let references = [DesignMenuItem(action: .implement, title: "Implement \(reference)…", symbol: "chevron.left.forwardslash.chevron.right"),
                               DesignMenuItem(action: .copyReference, title: "Copy Reference", symbol: "link")]
             return DesignMenu(sections: [main, references, [delete]])

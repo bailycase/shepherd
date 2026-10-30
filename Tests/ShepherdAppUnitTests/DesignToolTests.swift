@@ -530,6 +530,19 @@ struct DesignToolTests {
         #expect(!lists.recents.contains { $0.id == ref })
     }
 
+    /// A host's design whose agent is gone there is still a design row; it opens through the host.
+    @Test func aHostsDesignWithoutAnAgentIsADesignRowToo() {
+        let (local, drawer, design) = sidebar(designs: true)
+        var hostState = local.local
+        hostState.agents.removeAll { $0.id == drawer.id }
+        let host = UUID()
+        var source = SidebarSource(local: ShepherdState(spaces: [Self.web]), designs: true)
+        source.hosts = [SidebarSource.Host(id: host, name: "build-01", state: hostState)]
+        let lists = SidebarDerivation.lists(source)
+        #expect(lists.designs.map(\.id) == [.remoteDesign(RemoteDesignRef(hostID: host, designID: design.id))])
+        #expect(!lists.shortcutRows.contains { $0.id == .remoteDesign(RemoteDesignRef(hostID: host, designID: design.id)) })
+    }
+
     @Test func withTheToolOffDesignsHaveNoRowsAndTheirAgentsStillDont() {
         let (source, drawer, _) = sidebar(designs: false)
         let lists = SidebarDerivation.lists(source)

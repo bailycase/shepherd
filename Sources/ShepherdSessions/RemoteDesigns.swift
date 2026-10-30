@@ -122,6 +122,12 @@ struct RemoteDesignService: Sendable {
             return .deleted(try await server.deleteDesign(id))
         case .undoDelete:
             return .ok
+        case .importBegin, .importChunk, .importFinish, .importCancel:
+            // Kept with the connection, on the server queue's own path (`remoteDesignImport`).
+            throw RemoteDesignRefusal("unsupported", "An import goes through the host's connection.")
+        case .buildSystem:
+            // Started by the app, on the server queue's own path (`remoteBuildDesignSystem`).
+            throw RemoteDesignRefusal("unsupported", "A system build is started through the host's app.")
         case .ensureAgent:
             // Started by the app, on the server queue's own path (`remoteEnsureDesignAgent`).
             throw RemoteDesignRefusal("unsupported", "A design's agent is started through the host's Open.")
@@ -152,6 +158,17 @@ struct RemoteDesignService: Sendable {
             return .ok
         case .resyncSystem(let namespace):
             return .systemSynced(try await server.resyncDesignSystem(namespace))
+        case .pinReference(let reference):
+            // Only this host's own design (`local` here), checked and resolved by the host itself.
+            do {
+                let pinned = try await server.pinDesignReference(reference)
+                return .referencePinned(RemoteDesignReferencePin(
+                    reference: pinned.reference, label: pinned.reference.label, design: pinned.design, boardTitle: pinned.boardTitle,
+                    pageTitle: pinned.pageTitle, elementLabel: pinned.elementLabel, elementName: pinned.elementName,
+                    width: pinned.width, height: pinned.height, outline: pinned.outline))
+            } catch let error as DesignReferenceError {
+                throw RemoteDesignRefusal(error.code, error.message)
+            }
         }
     }
 

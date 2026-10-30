@@ -34,7 +34,14 @@ extension DesignPreviewTests {
                               status: .idle, nameIsFinal: true)
             let design = Design(name: "Checkout funnel dashboard", agentID: agent.id, createdAt: 1_000)
             agent.designID = design.id
-            try await host.putState(ShepherdState(spaces: [space], tabs: [tab], agents: [agent]))
+            // An ordinary thread there, for a piece of the design to go to (Implement in a thread…).
+            let threadSession = try await host.createSession(params: CreateSessionParams(cwd: server.dir.path, command: StubPi.command, runtime: .rpc))
+            let threadID = AgentID()
+            let threadPane = LeafPane(sessionID: threadSession.id, cwd: space.path, agentID: threadID)
+            let threadTab = ShepherdCore.Tab(spaceID: space.id, order: 1, layout: .leaf(threadPane))
+            let thread = Agent(id: threadID, name: "Build checkout", spaceID: space.id, tabID: threadTab.id, paneID: threadPane.id,
+                               status: .idle, nameIsFinal: true)
+            try await host.putState(ShepherdState(spaces: [space], tabs: [tab, threadTab], agents: [agent, thread]))
             _ = try await host.createDesign(design)
             try await DesignFixtures.draw(DesignFixtures.checkout, in: design.id, on: host, perRow: 3)
             host.designSystems.register(ShepherdDesignSystem.builtIn())
@@ -134,6 +141,22 @@ extension DesignPreviewTests {
             (0..<6).allSatisfy { specimens.image(ref.namespace, $0) != nil }
         }) {
             DesignSystemDestination(vm: vm)
+        }
+    }
+
+    /// Implement in a thread… from a host's design: the host's own threads, "on build-01".
+    @Test func implementSheetRemote() async throws {
+        let (workspace, host, connection) = try await remoteWorkspace()
+        defer { workspace.stop(); host.server.stop() }
+        let vm = workspace.vm
+        let ref = RemoteDesignRef(hostID: connection.id, designID: host.design.id)
+        let screen = try #require(vm.remoteDesignScreen(ref))
+        await screen.refresh()
+        screen.implementSelection(designName: host.design.name)
+        let model = try #require(vm.implementSheet)
+        #expect(model.threads.map(\.name) == ["Build checkout"])
+        try await Preview.render("sheet-implement-remote", size: CGSize(width: 1440, height: 900), ready: { model.prepared != nil }) {
+            ImplementSheetOverlay(vm: vm)
         }
     }
 }

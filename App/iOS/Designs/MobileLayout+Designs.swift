@@ -15,4 +15,6 @@ enum MobileDesignLayout {
     static let boardsTileHeight: CGFloat = 140
     /// A drag this far sideways on an unzoomed board moves to the next board.
     static let swipeDistance: CGFloat = 60
+    /// Tweak's sheet rests at this part of the screen, the board still showing (and taking taps) above it.
+    static let tweakSheetFraction: CGFloat = 0.45
 }

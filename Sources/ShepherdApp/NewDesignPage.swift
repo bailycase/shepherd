@@ -21,6 +21,7 @@ struct NewDesignPage: View {
     @State private var composing = false
     @State private var dropTargeted = false
     @State private var picking = false
+    @State private var pickingZip = false
     @State private var menu: ChipMenu?
     @State private var picker: ModelPickerState?
     @State private var dismissal = ComposerMenuDismissal()
@@ -83,6 +84,11 @@ struct NewDesignPage: View {
         .fileImporter(isPresented: $picking, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
             guard case .success(let urls) = result else { return }
             draft.attach(urls: urls)
+        }
+        // A host imports a ZIP (a folder would need zipping here first).
+        .fileImporter(isPresented: $pickingZip, allowedContentTypes: [.zip]) { result in
+            guard case .success(let url) = result else { return }
+            draft.importOnHost(url, vm: vm)
         }
     }
 
@@ -216,10 +222,14 @@ struct NewDesignPage: View {
                 HStack(spacing: AppLayout.newDesignCardsGap) {
                     systemCard
                         .frame(width: max(0, width))
-                    Button { vm.chooseDesignProject() } label: {
+                    Button {
+                        if draft.host == nil { vm.chooseDesignProject() } else { pickingZip = true }
+                    } label: {
                         SHDesignStartCard(symbol: "square.and.arrow.down", title: "Import a project", line: "from Claude Design",
-                                          note: "a ZIP or folder you exported", chosen: false)
+                                          note: draft.host == nil ? "a ZIP or folder you exported" : "a ZIP you exported, sent to the host",
+                                          chosen: false)
                     }
+                    .disabled(draft.host.flatMap(vm.newDesignHost).map { !$0.supportsDesignCapability(RemoteProtocol.designImportCapability) } ?? false)
                     .buttonStyle(.plain)
                     .frame(width: max(0, width))
                     .help("Import a Claude Design project as a new design (\(KeybindingsStore.shared.display(.importDesign)))")

@@ -140,6 +140,33 @@ public final class RemoteDesignLibrary {
         return files
     }
 
+    /// Uploads a Claude Design project's ZIP and has the host import it (`design.import.v1`), in
+    /// pieces in order; `progress` hears the share sent. A failure or cancellation leaves nothing
+    /// on the host. Answers the design and its agent there.
+    public func importProject(name: String, data: Data, progress: @escaping (Double) -> Void = { _ in }) async throws -> (DesignID, AgentID?) {
+        guard case .importStarted(let upload) = try await request(.importBegin(name: name, size: data.count)) else {
+            throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected design reply")
+        }
+        do {
+            var offset = 0
+            while offset < data.count {
+                try Task.checkCancellation()
+                let end = min(data.count, offset + RemoteProtocol.designChunkBytes)
+                _ = try await request(.importChunk(uploadID: upload, offset: offset, data: data.subdata(in: offset..<end)))
+                offset = end
+                progress(Double(offset) / Double(data.count))
+            }
+            guard case .created(let design, let agent) = try await request(.importFinish(uploadID: upload)) else {
+                throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected design reply")
+            }
+            Task { await refresh() }
+            return (design, agent)
+        } catch {
+            _ = try? await request(.importCancel(uploadID: upload))
+            throw error
+        }
+    }
+
     /// Asks the host whatever `request` asks, through its connection now.
     public func request(_ request: RemoteDesignRequest) async throws -> RemoteDesignResult {
         guard !cache.isForgotten(host: hostID), let transport else { throw RemoteHostClientError.rejected(code: "update_required", message: RemoteHostClient.designsRefusal) }

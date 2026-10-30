@@ -1013,6 +1013,34 @@ final class ShepherdViewModel {
                 }
             }
         }
+        // Another device's uploaded Claude Design ZIP, imported here as this Mac's own.
+        server.onRemoteImportDesign = { [weak self] url, completion in
+            guard let self else {
+                completion(.failure(RemoteDesignImportFailure("import_failed", "host is shutting down")))
+                return
+            }
+            Task { @MainActor in
+                do {
+                    completion(.success(try await self.importRemoteDesign(from: url)))
+                } catch {
+                    completion(.failure(error as? RemoteDesignImportFailure ?? RemoteDesignImportFailure("import_failed", "\(error)")))
+                }
+            }
+        }
+        // Another device's "Build one from a repo" in one of this Mac's spaces.
+        server.onRemoteBuildDesignSystem = { [weak self] spaceID, completion in
+            guard let self else {
+                completion(.failure(RemoteCreateAgentError("host is shutting down")))
+                return
+            }
+            Task { @MainActor in
+                do {
+                    completion(.success(try await self.buildRemoteDesignSystem(spaceID)))
+                } catch {
+                    completion(.failure(RemoteCreateAgentError(String(describing: error))))
+                }
+            }
+        }
         // Adopt the persisted workspace without waiting for a pane to render
         // (an empty sidebar can never render one).
         sessions.warmUp()

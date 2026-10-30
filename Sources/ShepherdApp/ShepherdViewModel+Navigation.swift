@@ -186,6 +186,7 @@ extension ShepherdViewModel {
         case .local(let id): selectAgent(id)
         case .remote(let ref): selectRemoteAgent(hostID: ref.hostID, agentID: ref.agentID)
         case .design(let id): openDesign(id)
+        case .remoteDesign(let ref): openRemoteDesign(ref)
         }
     }
 

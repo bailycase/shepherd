@@ -62,6 +62,13 @@ enum RemoteDesignSamples {
         .duplicateSystem(namespace: "acme-web"),
         .deleteSystem(namespace: "acme-web"),
         .resyncSystem(namespace: "acme-web"),
+        .buildSystem(spaceID: SpaceID(rawValue: "space-1")),
+        .importBegin(name: "Checkout.zip", size: 400_000),
+        .importChunk(uploadID: comment, offset: 262_144, data: Data([0x50, 0x4B, 0x03, 0x04])),
+        .importFinish(uploadID: comment),
+        .importCancel(uploadID: comment),
+        .pinReference(DesignReference(designID: design, board: board, element: DesignElementID(board: board.viewName, tid: 5, path: [1, 1, 0]))!),
+        .pinReference(DesignReference(designID: design, revision: 7)!),
     ]
 
     static let markup = DesignMarkup(strokes: [
@@ -108,6 +115,11 @@ enum RemoteDesignSamples {
         .designDuplicated(record),
         .systemChanged(system),
         .systemSynced(DesignSystemSyncResult(summary: system, changes: DesignSystemSyncChanges())),
+        .importStarted(uploadID: comment),
+        .referencePinned(RemoteDesignReferencePin(reference: DesignReference(designID: design, board: board, revision: 7)!,
+                                                  label: "Checkout funnel › A · Funnel first", design: "Checkout funnel",
+                                                  boardTitle: "A · Funnel first", pageTitle: nil, elementLabel: nil, elementName: nil,
+                                                  width: 1280, height: 800, outline: DesignReferenceOutline(kind: .board, styles: 12, tokens: 4))),
         .ok,
     ]
 }
@@ -136,7 +148,7 @@ struct RemoteDesignMessageTests {
         case .list, .index, .boards, .file, .asset, .comments, .addComment, .replyToComment, .resolveComment, .writeBoards,
              .updateIndex, .duplicateBoard, .restoreVersions, .system, .watch, .create, .sendMarkup, .settleProposals,
              .delete, .undoDelete, .ensureAgent, .duplicate, .removeFromRecents, .systemFile, .renameSystem, .duplicateSystem,
-             .deleteSystem, .resyncSystem:
+             .deleteSystem, .resyncSystem, .buildSystem, .pinReference, .importBegin, .importChunk, .importFinish, .importCancel:
             Wire.caseName(request)
         }
     }
@@ -144,14 +156,15 @@ struct RemoteDesignMessageTests {
     static func caseName(_ result: RemoteDesignResult) -> String {
         switch result {
         case .listing, .index, .files, .chunk, .comments, .comment, .written, .boardsWritten, .duplicated, .system, .created,
-             .markupSent, .proposalsSettled, .deleted, .agent, .designDuplicated, .systemChanged, .systemSynced, .ok:
+             .markupSent, .proposalsSettled, .deleted, .agent, .designDuplicated, .systemChanged, .systemSynced,
+             .referencePinned, .importStarted, .ok:
             Wire.caseName(result)
         }
     }
 
     @Test func samplesCoverEveryCase() {
-        #expect(Set(S.requests.map(Self.caseName)).count == 28)
-        #expect(Set(S.results.map(Self.caseName)).count == 19)
+        #expect(Set(S.requests.map(Self.caseName)).count == 34)
+        #expect(Set(S.results.map(Self.caseName)).count == 21)
     }
 
     @Test(arguments: [
@@ -205,7 +218,15 @@ struct RemoteDesignMessageTests {
                 #expect(request.capability == RemoteProtocol.designSystemsCapability)
                 #expect(!request.writes)
                 #expect(request.designID == nil)
-            case .renameSystem, .duplicateSystem, .deleteSystem, .resyncSystem:
+            case .importBegin, .importChunk, .importFinish, .importCancel:
+                #expect(request.capability == RemoteProtocol.designImportCapability)
+                #expect(request.writes)
+                #expect(request.designID == nil)
+            case .pinReference:
+                #expect(request.capability == RemoteProtocol.designReferencesCapability)
+                #expect(!request.writes)
+                #expect(request.designID == S.design)
+            case .renameSystem, .duplicateSystem, .deleteSystem, .resyncSystem, .buildSystem:
                 #expect(request.capability == RemoteProtocol.designSystemsCapability)
                 #expect(request.writes)
                 #expect(request.designID == nil)
@@ -222,6 +243,13 @@ struct RemoteDesignMessageTests {
         let line = try NDJSON.encode(RemoteReply.design(id: 1, result: .chunk(chunk)))
         #expect(line.count - 1 <= NDJSON.maxPayloadBytes)
         #expect(chunk.isLast)
+    }
+
+    /// An import's largest piece still fits one request frame once base64-encoded.
+    @Test func aFullImportPieceFitsOneFrame() throws {
+        let piece = RemoteRequest.design(id: 1, request: .importChunk(uploadID: UUID(), offset: 0,
+                                                                     data: Data(repeating: 0xFF, count: RemoteProtocol.designChunkBytes)))
+        #expect(try NDJSON.encode(piece).count - 1 <= NDJSON.maxPayloadBytes)
     }
 
     @Test(arguments: [
@@ -245,6 +273,18 @@ struct RemoteDesignMessageTests {
     ])
     func aBriefIsTrimmedAndBounded(_ raw: String, _ kept: String?) {
         #expect(RemoteDesignCreate.brief(raw) == kept)
+    }
+
+    /// A reference to a host's design is named `local` on that host and back here, and one to
+    /// any other Mac's design has no name there.
+    @Test func aReferenceIsNamedFromTheHostsSide() {
+        let host = UUID(), other = UUID()
+        let here = DesignReference(host: .remote(host), designID: S.design, board: S.board, revision: 4)!
+        let there = try? #require(here.onHost(host))
+        #expect(there?.host == .local && there?.designID == S.design && there?.revision == 4)
+        #expect(there?.fromHost(host) == here)
+        #expect(here.onHost(other) == nil)
+        #expect(DesignReference(designID: S.design)!.onHost(host) == nil, "this Mac's own design never goes to a host")
     }
 
     /// Several boards written at once travel keyed by path and come back in the host's shape.
