@@ -98,8 +98,11 @@ public struct AutomationTriggerForm: Equatable, Sendable {
     public var minute = 0
     public var days: Set<AutomationWeekday> = AutomationWeekday.weekdays
     public var custom = ""
-    /// The saved schedule's anchor, kept through an edit.
+    /// The saved schedule's anchor, kept while its rule is unchanged.
     public var start: Double?
+    /// The saved schedule's rule as the form writes it: a changed rule drops `start`, so the
+    /// host anchors it when it is saved.
+    public var savedRRule: String?
     public var github: [GitHub] = [GitHub()]
     /// Nil: a new thread each run.
     public var thread: AgentID?
@@ -121,6 +124,7 @@ public struct AutomationTriggerForm: Equatable, Sendable {
         case .schedule(let schedule):
             kind = .schedule
             start = schedule.start
+            savedRRule = AutomationSchedulePreset(rrule: schedule.rrule).rrule
             switch AutomationSchedulePreset(rrule: schedule.rrule) {
             case .every(let minutes): (scheduleKind, everyMinutes) = (.every, minutes)
             case .daily(let h, let m): (scheduleKind, hour, minute) = (.daily, h, m)
@@ -153,7 +157,8 @@ public struct AutomationTriggerForm: Equatable, Sendable {
     public var trigger: AutomationTrigger {
         switch kind {
         case .manual: .manual
-        case .schedule: .schedule(AutomationSchedule(rrule: preset.rrule, start: start))
+        case .schedule:
+            .schedule(AutomationSchedule(rrule: preset.rrule, start: preset.rrule == savedRRule ? start : nil))
         case .github: .github(github.map(\.trigger))
         }
     }
@@ -164,6 +169,13 @@ public struct AutomationTriggerForm: Equatable, Sendable {
                            workspace: workspace, authorGate: gate,
                            limits: AutomationLimits(maxConcurrent: maxConcurrent, maxPerDay: maxPerDay),
                            model: model, thinking: thinking, serviceTier: speed)
+    }
+
+    /// "Every 30 min, counted from when you save": an interval rule that is new or changed starts
+    /// counting when it is saved. Nil otherwise.
+    public var anchorNote: String? {
+        guard kind == .schedule, case .every = preset, preset.rrule != savedRRule else { return nil }
+        return preset.summary + ", counted from when you save"
     }
 
     public var canAddGitHub: Bool { github.count < GitHubTrigger.maxPerAutomation }

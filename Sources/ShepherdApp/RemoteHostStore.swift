@@ -145,6 +145,10 @@ final class RemoteHostStore {
         var supportsChanges: Bool { client?.capabilities.contains(RemoteProtocol.changesCapability) == true }
         /// The host serves automations over the protocol; older hosts show them read-only.
         var supportsAutomations: Bool { client?.capabilities.contains(RemoteProtocol.automationsCapability) == true }
+        /// The host serves automation triggers: their status, inbox and settings.
+        var supportsAutomationTriggers: Bool {
+            supportsAutomations && client?.capabilities.contains(RemoteProtocol.automationTriggersCapability) == true
+        }
         /// The host serves its root instructions (Settings ▸ Instructions).
         var supportsInstructions: Bool { client?.capabilities.contains(RemoteProtocol.instructionsCapability) == true }
         /// The host serves Settings ▸ Skills (`skills.v1`).

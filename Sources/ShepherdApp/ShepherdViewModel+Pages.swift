@@ -12,10 +12,11 @@ extension ShepherdViewModel {
 
     /// This Mac, then every configured host, as the shared automations presentation reads them.
     var automationHosts: [AutomationHost] {
-        [AutomationHost(id: PageHost.localID, name: PageHost.localName, connected: true, manageable: true, state: state)]
+        [AutomationHost(id: PageHost.localID, name: PageHost.localName, connected: true, manageable: true, state: state, triggers: true)]
             + remoteHosts.connections.map { connection in
                 AutomationHost(id: connection.id, name: connection.config.name, connected: connection.phase == .connected,
-                               manageable: connection.supportsAutomations, state: connection.state)
+                               manageable: connection.supportsAutomations, state: connection.state,
+                               triggers: connection.supportsAutomationTriggers)
             }
     }
 
@@ -52,9 +53,11 @@ extension ShepherdViewModel {
         return model
     }
 
-    /// This Mac's trigger states, keyed as the page keys automations.
+    /// Every host's trigger states (This Mac's and each trigger host's), keyed as the page keys automations.
     var automationTriggersByKey: [AutomationKey: AutomationTriggerStatus] {
-        Dictionary(uniqueKeysWithValues: automationTriggerStatuses.map { (AutomationKey(host: PageHost.localID, automation: $0.key), $0.value) })
+        remoteAutomationTriggerStatuses.merging(
+            automationTriggerStatuses.map { (AutomationKey(host: PageHost.localID, automation: $0.key), $0.value) },
+            uniquingKeysWith: { _, local in local })
     }
 
     /// Changes whenever a run may have started, settled or ended, or an automation came or went:
@@ -94,6 +97,36 @@ extension ShepherdViewModel {
         } else {
             performRemoteAutomation(key, .run)
         }
+    }
+
+    func pauseAutomationTrigger(_ key: AutomationKey) {
+        if key.host == PageHost.localID { pauseAutomationTrigger(key.automation) } else { performRemoteAutomation(key, .pause) }
+    }
+
+    func resumeAutomationTrigger(_ key: AutomationKey) {
+        if key.host == PageHost.localID { resumeAutomationTrigger(key.automation) } else { performRemoteAutomation(key, .resume) }
+    }
+
+    /// Run now on a pending event: past the limits.
+    func runPendingAutomationEvent(_ key: AutomationKey, eventID: String) {
+        if key.host == PageHost.localID {
+            runPendingAutomationEvent(key.automation, eventID: eventID)
+        } else {
+            performRemoteAutomation(key, .runEvent(eventID: eventID))
+        }
+    }
+
+    func dismissAutomationEvent(_ key: AutomationKey, eventID: String) {
+        if key.host == PageHost.localID {
+            dismissAutomationEvent(key.automation, eventID: eventID)
+        } else {
+            performRemoteAutomation(key, .dismissEvent(eventID: eventID))
+        }
+    }
+
+    /// Pause all triggers on one host.
+    func setAllAutomationTriggersPaused(host: UUID, _ paused: Bool) {
+        if host == PageHost.localID { setAllAutomationTriggersPaused(paused) } else { setRemoteAutomationTriggersPaused(host, paused) }
     }
 
     func stopAutomation(_ key: AutomationKey) {

@@ -252,6 +252,7 @@ extension ShepherdViewModel {
         remoteInspectingAgent = nil
         if destination != nil { destination = nil }
         selectedRemoteAgent = RemoteAgentRef(hostID: hostID, agentID: agentID)
+        markRemoteAutomationRunsRead(hostID: hostID, agentID: agentID)
         if let connection = remoteHosts.connections.first(where: { $0.id == hostID }),
            let agent = connection.state.agents.first(where: { $0.id == agentID }),
            let tab = connection.state.tabs.first(where: { $0.id == agent.tabID }) {

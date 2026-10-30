@@ -11,8 +11,9 @@ import Testing
 @testable import ShepherdApp
 
 /// Triggered automations on the Mac: the Automations page as an inbox (a GitHub trigger paused by
-/// an error with an event waiting, a schedule), the editor's Schedule and GitHub sections, and
-/// run threads folded under their automation in the space tree.
+/// an error with an event waiting, a schedule, a host's), the editor's Schedule (an interval and
+/// its Speed pin) and GitHub sections, and run threads folded under their automation in the space
+/// tree and in Activity.
 extension PreviewTests {
     private static let triggerPageSize = CGSize(width: 1440 - AppLayout.sidebarDefaultWidth, height: 848)
 
@@ -166,6 +167,76 @@ extension PreviewTests {
                                  size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 420),
                                  ready: { vm.sidebarTree.projects.first?.runGroups.isEmpty == false }) {
             SidebarView(vm: vm)
+        }
+    }
+
+    /// Activity: pr-loop's finished run folded under its automation in Automations (closed, then
+    /// open); its asking run stays in Needs you.
+    @Test(arguments: [false, true])
+    func sidebarActivityAutomationRunGroup(open: Bool) async throws {
+        let fixture = try await triggerWorkspace()
+        defer { fixture.workspace.stop() }
+        let vm = fixture.workspace.vm
+        vm.settings.sidebarStyle = .activity
+        seedTriggerState(fixture)
+        if open { vm.collapsedProjects.insert(SidebarLists.runGroupKey(fixture.prLoop.id)) }
+        try await Preview.render(open ? "sidebar-activity-automation-runs-open" : "sidebar-activity-automation-runs",
+                                 size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 420),
+                                 ready: { vm.sidebarLists.runGroups.isEmpty == false }) {
+            SidebarView(vm: vm)
+        }
+    }
+
+    /// A host's triggered automation on the page: build-01 paused all its triggers (the banner's
+    /// Resume all, the header's menu), with an event waiting.
+    @Test func automationsPageRemoteHostTriggers() async throws {
+        let fixture = try await triggerWorkspace()
+        defer { fixture.workspace.stop() }
+        let vm = fixture.workspace.vm
+        seedTriggerState(fixture)
+        var state = vm.state
+        for index in state.automations.indices { state.automations[index].enabled = true }
+        let hostID = UUID()
+        let remote = Automation(name: "Nightly migrations dry run", prompt: "Run the migrations against a copy of prod.", cwd: "/srv/app",
+                                trigger: .schedule(AutomationSchedule(rrule: "FREQ=DAILY;BYHOUR=2;BYMINUTE=0")),
+                                serviceTier: .fast)
+        let key = AutomationKey(host: hostID, automation: remote.id)
+        let now = Date().timeIntervalSince1970
+        let status = AutomationTriggerStatus(state: .active, pending: [AutomationEvent(id: "schedule:1", title: "Scheduled run", occurredAt: now - 900)],
+                                             runsToday: 0, allPaused: true, timeZone: "Europe/Berlin")
+        let hosts = [
+            AutomationHost(id: PageHost.localID, name: PageHost.localName, connected: true, manageable: true, state: state, triggers: true),
+            AutomationHost(id: hostID, name: "build-01", connected: true, manageable: true, state: ShepherdState(automations: [remote]),
+                           triggers: true),
+        ]
+        var runs = vm.automationRunsByKey
+        runs[key] = [AutomationRun(startedAt: now - 86_400, settledAt: now - 86_000, result: .finished, trigger: "Scheduled run", unread: true)]
+        var triggers = vm.automationTriggersByKey
+        triggers[key] = status
+        let model = AutomationsPageModel.make(hosts: hosts, runs: runs, selection: key, filter: "", triggers: triggers, allPaused: false)
+        #expect(model.detail?.banner?.resumesAll == true && model.pauseMenuTitle == "Paused on build-01")
+        try await Preview.render("page-automations-remote-triggers", size: Self.triggerPageSize) {
+            AutomationsPage(model: model, actions: Self.noAutomationActions)
+        }
+    }
+
+    /// A new every-30-minutes schedule pinned to Fast: the editor says the interval counts from
+    /// the save, and shows the Speed pin.
+    @Test func automationEditorIntervalAndSpeed() async throws {
+        let fixture = try await triggerWorkspace()
+        defer { fixture.workspace.stop() }
+        let vm = fixture.workspace.vm
+        var form = AutomationTriggerForm()
+        form.kind = .schedule
+        form.scheduleKind = .every
+        form.speed = ServiceTier.fast.rawValue
+        let cwd = try #require(vm.state.spaces.first?.path)
+        try await vm.saveAutomation(nil, host: PageHost.localID, draft: RemoteAutomationDraft(
+            name: "Check the build", prompt: "Look at the latest CI run.", cwd: cwd, enabled: true, settings: form.settings))
+        let key = try #require(vm.automationsPageSelection)
+        try await Preview.render("sheet-automation-editor-interval",
+                                 size: CGSize(width: AppLayout.automationSheetWidth + 80, height: AppLayout.automationSheetBodyMaxHeight + 260)) {
+            AutomationEditorSheet(vm: vm, target: .edit(key)) {}
         }
     }
 

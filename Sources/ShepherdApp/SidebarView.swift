@@ -140,9 +140,18 @@ private struct SidebarItemView: View, Equatable {
                 LogicalProjectSidebarRow(vm: vm, project: project)
             case .mission(let mission):
                 SidebarMissionRow(vm: vm, mission: mission)
+            case .runGroup(let group, let expanded):
+                let key = SidebarLists.runGroupKey(group.automation)
+                SHAutomationGroupRow(group.name, count: group.count, unread: group.unread, expanded: expanded,
+                                     rollup: group.rollup, paused: group.paused) { vm.toggleRunGroup(key) }
+                    .help("\(group.name): runs of this automation")
+                    .contextMenu {
+                        Button("Show in Automations", systemImage: SHGlyph.automation.symbolName) { vm.showAutomation(group.automation) }
+                    }
             case .row(let row):
+                // A run under its group's row sits a level in (`nested`), as in the space tree.
                 SHSidebarRow(row.title, leading: row.leading, selected: row.selected, dimmed: row.offline,
-                             accessory: accessory(row), hasGoal: row.hasGoal)
+                             accessory: accessory(row), hasGoal: row.hasGoal, nested: row.runGroup != nil)
                     .help(row.help)
                     .sidebarTapRow { vm.selectSidebarRow(row.id) }
                     .accessibilityLabel(row.accessibilityLabel)
