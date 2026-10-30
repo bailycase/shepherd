@@ -6,7 +6,9 @@ import ShepherdUI
 
 // The composer's design references (DesignRefStates › In the composer, RefPasted, RefAtDesigns,
 // RefAtElements, RefAtSearch): the @ picker's rules and a pasted reference becoming a chip. Pure
-// values and rules here; the composer draws them and the view model pins and attaches.
+// values and rules here; the composer draws them and the view model pins and attaches. The iOS
+// client compiles this file into its own target too (its host threads' picker), so it stays free
+// of AppKit and of anything else in the Mac app.
 
 /// The @ mention being typed at the end of a draft: an "@" at the start or after whitespace, and
 /// what follows it on the same line.
@@ -106,13 +108,21 @@ struct MentionPickerContent: Equatable {
     var rows: [SHMentionRow] { sections.flatMap(\.rows) }
 
     static let searched = "Searches this Mac’s designs, pages, boards and elements."
+    static let thisMac = "this Mac"
+
+    /// What a search covered: this Mac's designs, or a host's (a host thread's picker).
+    static func searched(_ place: String) -> String {
+        place == thisMac ? searched : "Searches \(place)’s designs, pages, boards and elements."
+    }
     /// A whole design's or board's row: its item is the design's (or board's) own, under this id.
     static func wholeID(_ item: DesignMentionItem) -> String { "whole:" + item.id }
 
     /// The rows for `scope` and `filter` from `catalog`, most recently active designs first.
     /// `thumbnail` gives a row's picture, when one is at hand.
-    static func make(catalog: DesignMentionCatalog, scope: MentionScope, filter: String, now: Date = Date(),
+    /// `place` is where the designs are: this Mac, or the host whose thread this is.
+    static func make(catalog: DesignMentionCatalog, scope: MentionScope, filter: String, now: Date = Date(), place: String = thisMac,
                      thumbnail: (DesignMentionItem) -> SHReferenceImage? = { _ in nil }) -> MentionPickerContent {
+        let searched = searched(place)
         var content = MentionPickerContent()
         let words = filter.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
             .split(whereSeparator: \.isWhitespace).map(String.init)
@@ -130,7 +140,7 @@ struct MentionPickerContent: Equatable {
                 add(item, row: SHMentionRow(id: item.id, kind: .design, title: item.title, subtitle: designLine(item, now: now),
                                             lead: item.system, trailing: .drill, thumbnail: thumbnail(item)))
             }
-            content.sections = [SHMentionSection(id: "designs", title: "Designs", trailing: "\(catalog.designs.count) on this Mac", rows: rows)]
+            content.sections = [SHMentionSection(id: "designs", title: "Designs", trailing: "\(catalog.designs.count) on \(place)", rows: rows)]
         case .designs:
             // What the search found, where the piece's own name holds a word of it (its path is
             // there to place it, as the boards show).
@@ -279,7 +289,7 @@ struct MentionPickerState: Equatable {
     /// `unavailable` is why no design can be attached where this picker is (a New thread project on
     /// another host): it opens on that note alone, reads nothing and lists nothing.
     mutating func update(draft: String, catalog: DesignMentionCatalog?, stage: DesignMentionLoad.Stage = .loading,
-                         unavailable: String? = nil, now: Date = Date(),
+                         unavailable: String? = nil, now: Date = Date(), place: String = MentionPickerContent.thisMac,
                          thumbnail: (DesignMentionItem) -> SHReferenceImage? = { _ in nil }) {
         guard draft != dismissed, let mention = ComposerMention.token(in: draft) else {
             close()
@@ -312,7 +322,7 @@ struct MentionPickerState: Equatable {
             highlighted = nil
             return
         }
-        content = MentionPickerContent.make(catalog: catalog, scope: scope, filter: filter ?? "", now: now, thumbnail: thumbnail)
+        content = MentionPickerContent.make(catalog: catalog, scope: scope, filter: filter ?? "", now: now, place: place, thumbnail: thumbnail)
         let ids = content.rows.map(\.id)
         if highlighted.map({ !ids.contains($0) }) ?? true { highlighted = ids.first }
     }

@@ -122,6 +122,32 @@ extension FixtureCatalog {
                 await DesignsFixtures.listed(app)
                 try? await Task.sleep(for: .seconds(2))
             }),
+            // The @ picker in a host thread's composer: the host's designs at once.
+            FixtureScreen(name: "thread-mention", hosts: DesignsFixtures.referenceHosts(),
+                          routes: [.thread(FixtureData.ref(FixtureData.preview))], prepare: { app in
+                let store = app.threads.store(for: FixtureData.ref(FixtureData.preview))
+                await FixtureWindows.wait("the thread", seconds: 10) { store.snapshot != nil }
+                store.draft = "@"
+                let library = MobileDesigns.of(app.hosts).library(FixtureData.studio)
+                await FixtureWindows.wait("the host's designs listed", seconds: 10) { library?.listing != nil }
+                await DesignsFixtures.drawn(images: 3)
+                try? await Task.sleep(for: .seconds(1))
+            }),
+            // Inside a design: its boards, read from the files the phone synced, with their pictures.
+            FixtureScreen(name: "thread-mention-design", hosts: DesignsFixtures.referenceHosts(),
+                          routes: [.thread(FixtureData.ref(FixtureData.preview))], prepare: { app in
+                let store = app.threads.store(for: FixtureData.ref(FixtureData.preview))
+                await FixtureWindows.wait("the thread", seconds: 10) { store.snapshot != nil }
+                let library = MobileDesigns.of(app.hosts).library(FixtureData.studio)
+                await library?.refresh()
+                store.draft = "@Checkout funnel dashboard › "
+                await FixtureWindows.wait("the design's rows read", seconds: 20) { (library?.mentionsRevision ?? 0) > 0 }
+                guard library?.mentionCatalog().boards[DesignsFixtures.checkout]?.count == 4 else {
+                    FixtureCheck.fail("The picker didn't list the design's four boards")
+                }
+                await DesignsFixtures.drawn(images: 4)
+                try? await Task.sleep(for: .seconds(1))
+            }),
             // A host thread with a sent reference above its words and one waiting in the composer.
             FixtureScreen(name: "thread-references", hosts: DesignsFixtures.referenceHosts(),
                           routes: [.thread(FixtureData.ref(FixtureData.preview))], prepare: { app in

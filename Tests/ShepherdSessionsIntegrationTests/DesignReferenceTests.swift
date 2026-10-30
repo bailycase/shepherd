@@ -667,6 +667,29 @@ struct DesignReferenceIntegrationTests {
         }
         #expect(line.title.contains("A · Funnel first"))
         #expect(try await ask(9, .referenceKept(agentID: AgentID(), payloadID: payloadID)) == nil, "another thread's copy is no thread's")
+
+        // A picture too large for one reply stays out of it and comes in pieces, whole.
+        let name = try #require(payload.picture?.name)
+        let folder = try #require(r.host.server.designReferencePayloads.folder(for: pi.agent.id, payload: payloadID))
+        let large = Data((0..<(RemoteProtocol.designChunkBytes + 1_000)).map { UInt8(truncatingIfNeeded: $0 &* 7) })
+        try large.write(to: folder.appendingPathComponent(name))
+        guard case .referenceKept(_, let none, _)? = try await ask(10, .referenceKept(agentID: pi.agent.id, payloadID: payloadID)) else {
+            Issue.record("expected the kept copy"); return
+        }
+        #expect(none == nil)
+        var pieces = Data()
+        var id = 11
+        while pieces.count < large.count {
+            guard case .chunk(let piece)? = try await ask(id, .referencePicture(agentID: pi.agent.id, payloadID: payloadID, offset: pieces.count)) else {
+                Issue.record("expected a piece at \(pieces.count)"); return
+            }
+            #expect(piece.total == large.count && piece.offset == pieces.count && piece.data.count <= RemoteProtocol.designChunkBytes)
+            pieces.append(piece.data)
+            id += 1
+        }
+        #expect(pieces == large)
+        #expect(try await ask(30, .referencePicture(agentID: pi.agent.id, payloadID: payloadID, offset: large.count + 1)) == nil)
+        #expect(try await ask(31, .referencePicture(agentID: AgentID(), payloadID: payloadID, offset: 0)) == nil)
     }
 
     @Test func rawRemoteProjectTransportsCannotCaptureLocalDesigns() async throws {

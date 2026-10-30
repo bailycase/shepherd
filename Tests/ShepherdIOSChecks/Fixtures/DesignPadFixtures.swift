@@ -392,7 +392,7 @@ struct FixtureDesigns: Sendable {
                                                                  outline: DesignReferenceOutline(kind: pinned.kind, styles: 11, tokens: 6,
                                                                                                  system: item.design.systemNamespace)))
             }
-        case .referenceKept:
+        case .referenceKept, .referencePicture:
             return .failure(Refusal(code: "no_such_reference", message: "The fixture keeps no copies."))
         case .referenceFreshness:
             return .success(.referenceFreshness(.current))

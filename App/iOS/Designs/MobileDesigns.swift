@@ -1,8 +1,10 @@
 import Foundation
 import Observation
+import UIKit
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdUI
 
 /// Every host's designs on the phone (designs track): each host's `RemoteDesignLibrary` (shared
 /// with the iPad's designs, `HostDesignLibraries`), following each host's connection and its
@@ -411,6 +413,46 @@ final class MobileDesigns {
     }
 
     // MARK: References (design.references.v1)
+
+    /// Moves when a picture an @ picker row draws lands.
+    private(set) var mentionPicturesVersion = 0
+    @ObservationIgnored private var mentionPictures: [String: UIImage] = [:]
+    @ObservationIgnored private var mentionPicturesWanted: Set<String> = []
+
+    /// An @ picker row's picture while one is drawn: a design's first board, a board's own; an
+    /// element's is its board's (the phone cuts no element out of it).
+    func mentionPicture(_ item: DesignMentionItem, host: UUID) -> UIImage? {
+        mentionPictures[Self.mentionKey(item, host: host)]
+    }
+
+    /// A row came on screen: its picture is drawn on this device from the host's files.
+    func wantMentionPicture(_ item: DesignMentionItem, host: UUID) {
+        let key = Self.mentionKey(item, host: host)
+        guard mentionPictures[key] == nil, mentionPicturesWanted.insert(key).inserted, let library = library(host) else { return }
+        let ref = HostDesignRef(host: host, design: item.reference.designID)
+        Task {
+            defer { mentionPicturesWanted.remove(key) }
+            let source = library.source(item.reference.designID)
+            if item.kind == .design, let first = library.listing?.designs.first(where: { $0.id == item.reference.designID })?.firstBoard {
+                let size = CGSize(width: first.width, height: first.height)
+                guard let image = await DesignRendering.shared.image(ref, source: source, path: first.path, sha256: first.sha256, size: size,
+                                                                     width: SHReferenceMetrics.thumbnail.width) else { return }
+                mentionPictures[key] = image
+            } else {
+                guard let path = item.reference.board, let index = await sync(ref), let board = index.snapshot.index.boards[path],
+                      let sha = index.snapshot.boards[path],
+                      let image = await DesignRendering.shared.image(ref, source: source, path: path, sha256: sha,
+                                                                     size: CGSize(width: board.w, height: board.h),
+                                                                     width: SHReferenceMetrics.thumbnail.width) else { return }
+                mentionPictures[key] = image
+            }
+            mentionPicturesVersion &+= 1
+        }
+    }
+
+    private static func mentionKey(_ item: DesignMentionItem, host: UUID) -> String {
+        "\(host.uuidString)/\(item.reference.designID.rawValue)/\(item.reference.board?.rawValue ?? "")@\(item.revision ?? 0)"
+    }
 
     /// A piece of `host`'s design pinned by the host (named `local`, as the host sees it).
     func pinReference(host: UUID, _ reference: DesignReference) async throws -> RemoteDesignReferencePin {

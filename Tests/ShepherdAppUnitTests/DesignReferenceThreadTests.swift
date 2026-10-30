@@ -115,6 +115,14 @@ struct DesignReferenceThreadTests {
         #expect(none.empty == .nothingMatches(query: "pricng", searched: MentionPickerContent.searched) && none.rows.isEmpty)
     }
 
+    /// A host thread's picker says whose designs it lists and searched.
+    @Test func aHostThreadsPickerNamesTheHost() {
+        let listed = MentionPickerContent.make(catalog: Self.catalog, scope: .designs, filter: "", place: "Studio")
+        #expect(listed.sections.first?.trailing == "\(Self.catalog.designs.count) on Studio")
+        let none = MentionPickerContent.make(catalog: Self.catalog, scope: .designs, filter: "pricng", place: "Studio")
+        #expect(none.empty == .nothingMatches(query: "pricng", searched: "Searches Studio’s designs, pages, boards and elements."))
+    }
+
     @Test func drillingWritesTheWayInAndPickingTakesTheMentionOut() throws {
         var state = MentionPickerState()
         state.update(draft: "Match the funnel in @", catalog: Self.catalog)

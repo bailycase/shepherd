@@ -106,7 +106,7 @@ xcrun --sdk iphonesimulator swiftc -sdk "$(xcrun --sdk iphonesimulator --show-sd
     -Onone -I "$products" \
     "$products/ShepherdCore.o" "$products/ShepherdProtocol.o" "$products/ShepherdRemote.o" "$products/ShepherdUI.o" \
     "$products/SwiftTerm.o" "$products/DesignSurfaceKit.o" \
-    "${sources[@]}" Tests/ShepherdIOSChecks/ThreadSimulatorFixture.swift Tests/ShepherdIOSChecks/FixtureHost.swift \
+    "${sources[@]}" Sources/ShepherdApp/Thread/ComposerMentions.swift Tests/ShepherdIOSChecks/ThreadSimulatorFixture.swift Tests/ShepherdIOSChecks/FixtureHost.swift \
     Tests/ShepherdIOSChecks/Fixtures/*.swift Tests/ShepherdTestSupport/MarkdownFixtures.swift \
     -o "$app/ShepherdFixture"
 cp -R "$products/ShepherdUI_ShepherdUI.bundle" "$app/"

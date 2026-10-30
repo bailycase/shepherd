@@ -19,4 +19,6 @@ enum MobileDesignLayout {
     static let tweakSheetFraction: CGFloat = 0.45
     /// A notice over the board (Copied a reference, Sent) goes after this, as the Mac's toast does.
     static let noticeLifetime: Duration = .seconds(6)
+    /// The @ picker over a host thread's composer stops growing here; its rows scroll inside.
+    static let mentionPickerMaxHeight: CGFloat = 360
 }

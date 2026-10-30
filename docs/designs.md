@@ -1508,12 +1508,18 @@ send carries each reference's string alone (`NativeThreadRequest.send`'s `design
   boards and elements once it is opened in the picker (read from the files this Mac synced, so
   search finds an unopened design by its name only); a pasted reference naming that host joins as
   its own, one naming any other Mac is refused; sent chips read the copy the host kept
-  (`referenceKept`, its picture riding along while it fits one reply) and composer chips how they
-  stand (`referenceFreshness`). On iPhone and iPad, a board's actions offer Implement in a
+  (`referenceKept`, its picture riding along while it fits one reply, else read in pieces with
+  `referencePicture`, up to the host's 16 MB) and composer chips how they stand
+  (`referenceFreshness`). The picker's catalog of a host is `RemoteDesignLibrary.mentionCatalog`,
+  each design's rows read by `openMentions`, shared with iOS. On iPhone and iPad, a board's actions offer Implement in a
   Thread… (a form: the host's threads, the message, "Open the thread after sending") and, on the
   phone, Copy Reference; a pasted reference to the thread's host's design joins a host thread's
   composer as a chip, and a sent message shows its chips above its words, each drawn from the
-  host's files. The chip's "another host" and "host offline" states and the picker's host tags
+  host's files. A host thread's composer has the @ picker too, above the field: the Mac's rules
+  (`ComposerMentions.swift`, compiled into the iOS target as well), the host's designs at once
+  and a design's pages and boards and a board's elements once it is opened; a tap drills in or
+  picks, Back goes up, and there is no highlight to move. An element's row shows its board's
+  picture (nothing is cut out on the device). The chip's "another host" and "host offline" states and the picker's host tags
   are ShepherdUI states the app doesn't reach yet (`DesignReferenceFreshness.hostOffline`,
   `DesignMentionHost.remote`).
 
@@ -1833,6 +1839,7 @@ a VPN or trusted network is the transport boundary, as for everything else it se
 | `renameSystem`, `duplicateSystem`, `deleteSystem`, `resyncSystem` | `systemChanged(summary)`, `ok`, `systemSynced` | A system's Rename (title trimmed, at most 8 KB), Duplicate, Delete and Re-sync (`design.systems.v1`) through the host's own; a built-in is refused as on the host |
 | `buildSystem(spaceID)` | `created(build, agentID)` | "Build one from a repo" in one of the host's spaces (`design.systems.v1`; never its designs or Projects space): its app starts the build as its own does (`SessionServer.onRemoteBuildDesignSystem`), selecting nothing; a space with a build answers that one |
 | `referenceKept(agentID, payloadID)`, `referenceFreshness(reference)`, `referenceLookedAt(agentID, ref, aspects)` | `referenceKept(payload, picture, freshness)`, `referenceFreshness`, `referenceLookedAt` | What a host thread's chips read (`design.references.v1`): the copy the host kept of a sent piece (its picture's bytes while they fit 256 KiB) and how it stands, how a pinned piece stands, and a "Looked at…" line |
+| `referencePicture(agentID, payloadID, offset)` | `chunk` | A piece of a kept copy's picture `referenceKept` left out as too large for one reply (`design.references.v1`), at most 16 MB in all, with its hash |
 | `pinReference(reference)` | `referencePinned(RemoteDesignReferencePin)` | A piece of one of the host's designs, named `local` (`design.references.v1`), pinned by the host from its own design: the reference at its revision, and what its chips and the Implement sheet say |
 | `importBegin(name, size)`, `importChunk(uploadID, offset, data)`, `importFinish(uploadID)`, `importCancel(uploadID)` | `importStarted(uploadID)`, `ok`, `created(designID, agentID)` | A Claude Design ZIP (`design.import.v1`): at most 256 MB, in pieces of 256 KiB in order, into a private file under the host's support folder that goes with the connection or once imported. The app imports it as its own Import does (`SessionServer.onRemoteImportDesign`): boards it can't read refuse it (`import_unreadable`, nothing imported), and a project already in Designs comes in as a copy. One import at a time per connection |
 | `create(brief, systemNamespace)` | `created(designID, agentID)` | New design from another device (a design belongs to no project): the host checks the brief (trimmed, at most 8 KB) and the system's name on its queue, then its app makes the design as its own New design does (`SessionServer.onRemoteCreateDesign`), selecting nothing there. A host with no app to make it refuses (`unsupported`) |
@@ -1976,9 +1983,9 @@ search opens on its canvas (On iPad, below).
   (`deleteSystemBuild`). A host's systems changing (`designSystemsChanged`) lists them again on
   screen. A ZIP to import is read and sent a piece at a time from its file.
 - **Design references** (above): Implement in a Thread… and Copy Reference in a board's actions,
-  chips in a host thread's composer and sent messages.
+  the @ picker and chips in a host thread's composer, chips in sent messages.
 - **Not yet:** moving boards (the phone shows one board at a time, with no canvas to move them
-  on); a design without an agent in Recents; the @ picker; Pencil
+  on); a design without an agent in Recents; Pencil
   markup (iPad only, below); push notifications and Live Activities (they need the push relay).
 
 ### On iPad

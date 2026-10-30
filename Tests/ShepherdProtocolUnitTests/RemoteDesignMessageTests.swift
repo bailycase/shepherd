@@ -71,6 +71,7 @@ enum RemoteDesignSamples {
         .pinReference(DesignReference(designID: design, board: board, element: DesignElementID(board: board.viewName, tid: 5, path: [1, 1, 0]))!),
         .pinReference(DesignReference(designID: design, revision: 7)!),
         .referenceKept(agentID: AgentID(rawValue: "thread"), payloadID: comment),
+        .referencePicture(agentID: AgentID(rawValue: "thread"), payloadID: comment, offset: 262_144),
         .referenceFreshness(DesignReference(designID: design, board: board, revision: 7)!),
         .referenceLookedAt(agentID: AgentID(rawValue: "thread"), ref: "shepherd-design-ref://local/design-1/A@7", aspects: [.summary]),
     ]
@@ -159,7 +160,7 @@ struct RemoteDesignMessageTests {
         case .list, .index, .boards, .file, .asset, .comments, .addComment, .replyToComment, .resolveComment, .writeBoards,
              .updateIndex, .duplicateBoard, .restoreVersions, .system, .watch, .create, .sendMarkup, .settleProposals,
              .delete, .undoDelete, .ensureAgent, .duplicate, .removeFromRecents, .systemFile, .renameSystem, .duplicateSystem,
-             .deleteSystem, .resyncSystem, .buildSystem, .deleteSystemBuild, .pinReference, .referenceKept, .referenceFreshness, .referenceLookedAt, .importBegin, .importChunk, .importFinish, .importCancel:
+             .deleteSystem, .resyncSystem, .buildSystem, .deleteSystemBuild, .pinReference, .referenceKept, .referencePicture, .referenceFreshness, .referenceLookedAt, .importBegin, .importChunk, .importFinish, .importCancel:
             Wire.caseName(request)
         }
     }
@@ -174,7 +175,7 @@ struct RemoteDesignMessageTests {
     }
 
     @Test func samplesCoverEveryCase() {
-        #expect(Set(S.requests.map(Self.caseName)).count == 38)
+        #expect(Set(S.requests.map(Self.caseName)).count == 39)
         #expect(Set(S.results.map(Self.caseName)).count == 24)
     }
 
@@ -237,7 +238,7 @@ struct RemoteDesignMessageTests {
                 #expect(request.capability == RemoteProtocol.designReferencesCapability)
                 #expect(!request.writes)
                 #expect(request.designID == S.design)
-            case .referenceKept, .referenceLookedAt:
+            case .referenceKept, .referencePicture, .referenceLookedAt:
                 #expect(request.capability == RemoteProtocol.designReferencesCapability)
                 #expect(!request.writes)
                 #expect(request.designID == nil)

@@ -166,12 +166,23 @@ struct RemoteDesignService: Sendable {
                 throw RemoteDesignRefusal("no_such_reference", "The thread holds no such reference.")
             }
             let freshness = await server.designReferenceFreshness(agentID: agentID, payloadID: payloadID)
-            // The picture rides along while it fits one reply; a larger one stays on the host.
-            let name = kept.payload.picture?.name ?? kept.payload.boards?.first?.picture?.name
-            let url = name.map { kept.folder.appendingPathComponent($0) }
+            // The picture rides along while it fits one reply; a larger one comes in pieces (`referencePicture`).
+            let url = Self.keptPicture(kept)
             let size = url.flatMap { try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize } ?? .max
             let picture = size <= RemoteProtocol.designChunkBytes ? url.flatMap { try? Data(contentsOf: $0) } : nil
             return .referenceKept(kept.payload, picture: picture, freshness: freshness)
+        case .referencePicture(let agentID, let payloadID, let offset):
+            guard server.state.agents.contains(where: { $0.id == agentID }) else { throw SessionServerError.noSuchAgent(agentID) }
+            guard offset >= 0 else { throw RemoteDesignRefusal.badOffset(offset, size: nil) }
+            guard let kept = await server.designReferencePayload(agentID: agentID, payloadID: payloadID), let url = Self.keptPicture(kept),
+                  let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= DesignImport.maxFileBytes,
+                  let data = try? Data(contentsOf: url) else {
+                throw RemoteDesignRefusal(RemoteDesignCode.noSuchFile, "The thread holds no picture of that reference.")
+            }
+            guard offset <= data.count else { throw RemoteDesignRefusal.badOffset(offset, size: data.count) }
+            // ponytail: reads the whole picture for each piece (at most 16 MB); a ranged read if pictures grow.
+            let end = min(data.count, offset + RemoteProtocol.designChunkBytes)
+            return .chunk(RemoteDesignChunk(sha256: Self.sha256(data), offset: offset, total: data.count, data: data.subdata(in: offset..<end)))
         case .referenceFreshness(let reference):
             guard reference.host == .local else { throw RemoteDesignRefusal("remote_design", "That design isn't on this host.") }
             return .referenceFreshness(await server.designReferenceFreshness(reference))
@@ -250,6 +261,14 @@ struct RemoteDesignService: Sendable {
             changed.append(RemoteDesignFile(path: path, sha256: info.sha256, size: info.size, data: nil))
         }
         return RemoteDesignFiles(designID: id, revision: revision, changed: changed, unchanged: unchanged, missing: missing)
+    }
+
+    /// A kept reference's picture, inside its copy's folder: the piece's own, else a page's or a
+    /// design's first board's.
+    static func keptPicture(_ kept: (payload: DesignReferencePayload, folder: URL)) -> URL? {
+        guard let name = kept.payload.picture?.name ?? kept.payload.boards?.first?.picture?.name,
+              name == (name as NSString).lastPathComponent, !name.hasPrefix(".") else { return nil }
+        return kept.folder.appendingPathComponent(name)
     }
 
     /// A board path a client sent, checked against the grammar.

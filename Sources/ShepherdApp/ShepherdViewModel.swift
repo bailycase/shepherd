@@ -159,8 +159,6 @@ final class ShepherdViewModel {
     /// Hosts' threads' references (`design.references.v1`), the @ picker's rows of each host
     /// design opened in it, and the kept copies being read.
     @ObservationIgnored var remoteReferenceChips: [RemoteAgentRef: DesignReferenceChips] = [:]
-    @ObservationIgnored var remoteMentionEntries: [RemoteDesignRef: (design: DesignMentionItem, pages: [DesignMentionItem],
-                                                                     boards: [DesignMentionItem], elements: [String: [DesignMentionItem]])] = [:]
     @ObservationIgnored var remoteKeptReads: [String: Task<(payload: DesignReferencePayload, folder: URL, freshness: DesignReferenceFreshness)?, Never>] = [:]
     /// The designs as references last saw them (their activity and boards): a change reads every
     /// chip's standing again.

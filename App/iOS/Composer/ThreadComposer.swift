@@ -29,6 +29,8 @@ struct ThreadComposer: View {
     /// A design's chat (iPadDesign): the card without "/", the model's short name (DesignPad/).
     @Environment(\.composerDesignChat) private var designChat
     @FocusState private var focused: Bool
+    /// The @ picker for the host's designs (`design.references.v1`), the Mac's picker rules.
+    @State private var mentions = MentionPickerState()
 
     private var presentation: ComposerPresentation { navigator.composerPresentation.state(for: ref) }
 
@@ -103,6 +105,10 @@ struct ThreadComposer: View {
                     .shTransition(.content)
                 }
             } else {
+                if mentions.isOpen {
+                    mentionPicker(store: store)
+                        .shTransition(.content)
+                }
                 if let matches = state.matches {
                     SHTouchCommandList(commands: matches.commands.map(Self.command), total: matches.total, query: matches.query,
                                        wide: wide) { chosen in
@@ -150,7 +156,14 @@ struct ThreadComposer: View {
         .onChange(of: store.queue, initial: true) { _, queue in state.update(queue: queue) }
         .onChange(of: store.draft, initial: true) { _, draft in state.update(draft: draft, commands: store.commands) }
         // A pasted design reference to this host's own design becomes a chip (RefPasted), pinned by the host.
-        .onChange(of: store.draft) { old, new in pasteReferences(store: store, state: state, from: old, to: new) }
+        .onChange(of: store.draft) { old, new in
+            pasteReferences(store: store, state: state, from: old, to: new)
+            updateMentions(store: store)
+        }
+        // The picker's rows follow the host's listing, a design opened in it, and pictures landing.
+        .onChange(of: MobileDesigns.of(hosts).library(ref.host)?.listing) { _, _ in updateMentions(store: store) }
+        .onChange(of: MobileDesigns.of(hosts).library(ref.host)?.mentionsRevision) { _, _ in updateMentions(store: store) }
+        .onChange(of: MobileDesigns.of(hosts).mentionPicturesVersion) { _, _ in if mentions.isOpen { updateMentions(store: store) } }
         .onChange(of: store.commands) { _, commands in state.update(draft: store.draft, commands: commands) }
         // Whether the thread's model takes a thinking level: the host's catalog, once per connection.
         .task(id: ModelsAsk(session: host?.session, thinking: store.thinking != nil && store.supportedActions.contains("setThinking"))) {
@@ -369,6 +382,68 @@ struct ThreadComposer: View {
                                 version: DesignReferencePresentation.version(attached.reference.revision)) {
                 store.detachReference(attached.id)
             }
+        }
+    }
+
+    // MARK: The @ picker
+
+    /// The picker over the composer: the host's designs at once, a design's pages and boards and a
+    /// board's elements once it is opened (read from the files this device synced). A tap drills
+    /// into a design or board, or picks the piece; Back goes up a level. Touch has no highlight.
+    private func mentionPicker(store: NativeThreadStore) -> some View {
+        let content = mentions.content
+        let designs = MobileDesigns.of(hosts)
+        let host = ref.host
+        return SHMentionPicker(sections: content.sections, crumbs: content.crumbs, empty: content.empty, highlighted: nil,
+                               maxHeight: MobileDesignLayout.mentionPickerMaxHeight,
+                               choose: { chooseMention($0, store: store) }, drill: { chooseMention($0, store: store) },
+                               back: { if let draft = mentions.back() { store.draft = draft } },
+                               appear: { id in if let item = mentions.content.items[id] { designs.wantMentionPicture(item, host: host) } })
+    }
+
+    /// Follows the draft: open while it ends in an @ mention, where the host takes references to
+    /// its designs (never in a design's own chat).
+    private func updateMentions(store: NativeThreadStore) {
+        let designs = MobileDesigns.of(hosts)
+        guard store.supports("designReferences"), !designChat, let library = designs.library(ref.host) else {
+            if mentions.isOpen { mentions.close() }
+            return
+        }
+        let opening = mentions.opens(for: store.draft)
+        if opening, library.listing == nil { Task { await library.refresh() } }
+        let scope = mentions.scope
+        let host = ref.host
+        let version = designs.mentionPicturesVersion
+        mentions.update(draft: store.draft, catalog: library.listing == nil ? nil : library.mentionCatalog(),
+                        place: hosts.host(host)?.name ?? "the host") { item in
+            designs.mentionPicture(item, host: host).map { SHReferenceImage(id: item.id + "@\(version)", image: Image(uiImage: $0)) }
+        }
+        guard mentions.isOpen, opening || mentions.scope != scope else { return }
+        switch mentions.scope {
+        case .designs: break
+        case .design(let id, _): Task { await library.openMentions(id) }
+        case .board(let reference, _, _): Task { await library.openMentions(reference.designID) }
+        }
+    }
+
+    /// A row tapped: a design or board drills in (the draft spells the way), anything else is
+    /// pinned by the host and joins the composer as a chip.
+    private func chooseMention(_ row: SHMentionRow, store: NativeThreadStore) {
+        switch mentions.choose(row) {
+        case .drill(let draft)?:
+            store.draft = draft
+        case .pick(let reference, let draft)?:
+            store.draft = draft
+            let designs = MobileDesigns.of(hosts)
+            let state = ComposerStates.shared.state(for: ref)
+            let host = ref.host
+            Task {
+                do { try await designs.attachReference(reference, to: store, host: host) } catch {
+                    state.attachmentError = "That design reference didn't attach: \(MobileDesignsError.words(error))"
+                }
+            }
+        case nil:
+            break
         }
     }
 

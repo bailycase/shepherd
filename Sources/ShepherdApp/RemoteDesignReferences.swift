@@ -23,6 +23,7 @@ extension ShepherdViewModel {
               !connection.state.isDesignAgent(agent), agent.designID == nil else { return nil }
         if let chips = remoteReferenceChips[ref] { return chips }
         let chips = DesignReferenceChips(agentID: ref.agentID, io: remoteReferenceIO(ref))
+        chips.place = connection.config.name
         remoteReferenceChips[ref] = chips
         return chips
     }
@@ -113,10 +114,15 @@ extension ShepherdViewModel {
             else { return nil }
             let folder = FileManager.default.temporaryDirectory.appendingPathComponent("shepherd-remote-references/\(host.uuidString)/\(id.uuidString)",
                                                                                     isDirectory: true)
-            if let picture, let name = payload.picture?.name ?? payload.boards?.first?.picture?.name,
-               name == (name as NSString).lastPathComponent {
+            var bytes = picture
+            // One too large for that reply comes in pieces.
+            if bytes == nil, payload.picture != nil || payload.boards?.first?.picture != nil {
+                bytes = try? await library.referencePicture(agentID: agent, payloadID: id)
+            }
+            if let bytes, let name = payload.picture?.name ?? payload.boards?.first?.picture?.name,
+               name == (name as NSString).lastPathComponent, !name.hasPrefix(".") {
                 try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-                try? picture.write(to: folder.appendingPathComponent(name), options: .atomic)
+                try? bytes.write(to: folder.appendingPathComponent(name), options: .atomic)
             }
             return (payload, folder, freshness)
         }
@@ -126,27 +132,11 @@ extension ShepherdViewModel {
         return answer
     }
 
-    /// What the @ picker lists from a host: its designs as listed, and each design's pages, boards
-    /// and elements once it was opened in the picker (read from the files this Mac synced).
-    // ponytail: a design's boards join the search once opened in the picker; a host-side catalog if searching unopened ones matters.
+    /// What the @ picker lists from a host (`RemoteDesignLibrary.mentionCatalog`).
     func remoteMentionCatalog(_ host: UUID) async -> DesignMentionCatalog {
-        guard let connection = remoteHosts.connections.first(where: { $0.id == host }) else { return DesignMentionCatalog() }
-        if connection.designs.listing == nil { await connection.designs.refresh() }
-        var catalog = DesignMentionCatalog()
-        for summary in connection.designs.listing?.designs ?? [] {
-            let design = summary.design
-            if let entries = remoteMentionEntries[RemoteDesignRef(hostID: host, designID: design.id)] {
-                catalog.designs.append(entries.design)
-                catalog.pages[design.id] = entries.pages
-                catalog.boards[design.id] = entries.boards
-                catalog.elements.merge(entries.elements) { $1 }
-            } else if let whole = DesignReference(designID: design.id) {
-                catalog.designs.append(DesignMentionItem(kind: .design, reference: whole, title: design.name, breadcrumb: [],
-                                                         system: design.systemNamespace, boardCount: summary.boardCount,
-                                                         activeAt: design.lastActiveAt, revision: summary.revision))
-            }
-        }
-        return catalog
+        guard let library = remoteLibrary(host) else { return DesignMentionCatalog() }
+        if library.listing == nil { await library.refresh() }
+        return library.mentionCatalog()
     }
 
     /// The picker opened a host's design (or its board): its files synced, its rows read from
@@ -164,16 +154,10 @@ extension ShepherdViewModel {
         case .board(let reference, _, _): id = reference.designID
         }
         Task {
-            let source = library.source(id)
-            guard let index = try? await source.sync(), let design = library.listing?.designs.first(where: { $0.id == id })?.design else { return }
-            rendering.boardPictures.request(id, snapshot: index.snapshot)
-            let key = RemoteDesignRef(hostID: host, designID: id)
-            guard remoteMentionEntries[key]?.design.revision != index.snapshot.revision else { return }
-            var sources: [DesignPath: String] = [:]
-            for path in index.snapshot.index.boards.keys { sources[path] = try? await source.source(path) }
-            guard let entries = DesignMentionCatalog.entries(design: design, snapshot: index.snapshot, sources: sources,
-                                                             system: design.systemNamespace) else { return }
-            remoteMentionEntries[key] = entries
+            let revision = library.mentionsRevision
+            await library.openMentions(id)
+            if let index = library.source(id).index { rendering.boardPictures.request(id, snapshot: index.snapshot) }
+            guard library.mentionsRevision != revision else { return }
             for (ref, chips) in remoteReferenceChips where ref.hostID == host { chips.startCatalogRead() }
         }
     }

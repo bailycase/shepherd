@@ -339,6 +339,9 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
     /// What the host kept of a reference a thread was sent (`designReferencesCapability`): the
     /// payload, its picture's bytes while they fit one reply, and how it stands now. A sent chip.
     case referenceKept(agentID: AgentID, payloadID: UUID)
+    /// A piece of that copy's picture from `offset` (`designReferencesCapability`): the one
+    /// `referenceKept` leaves out as too large for one reply, read in pieces.
+    case referencePicture(agentID: AgentID, payloadID: UUID, offset: Int)
     /// How a pinned reference (named `local`) stands against its design now: a composer chip's
     /// "Send vN" (`designReferencesCapability`).
     case referenceFreshness(DesignReference)
@@ -352,7 +355,7 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
         case .list, .system, .watch, .create, .systemFile, .renameSystem, .duplicateSystem, .deleteSystem, .resyncSystem,
              .buildSystem, .importBegin, .importChunk, .importFinish, .importCancel: nil
         case .pinReference(let reference), .referenceFreshness(let reference): reference.designID
-        case .referenceKept, .referenceLookedAt: nil
+        case .referenceKept, .referencePicture, .referenceLookedAt: nil
         case .index(let id), .boards(let id, _, _), .file(let id, _, _, _), .asset(let id, _, _), .comments(let id),
              .addComment(let id, _, _), .replyToComment(let id, _, _, _), .resolveComment(let id, _, _, _),
              .writeBoards(let id, _, _), .updateIndex(let id, _, _), .duplicateBoard(let id, _, _), .restoreVersions(let id, _, _),
@@ -382,7 +385,8 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
         case .duplicate, .removeFromRecents: RemoteProtocol.designLifecycleCapability
         case .systemFile, .renameSystem, .duplicateSystem, .deleteSystem, .resyncSystem, .buildSystem, .deleteSystemBuild:
             RemoteProtocol.designSystemsCapability
-        case .pinReference, .referenceKept, .referenceFreshness, .referenceLookedAt: RemoteProtocol.designReferencesCapability
+        case .pinReference, .referenceKept, .referencePicture, .referenceFreshness, .referenceLookedAt:
+            RemoteProtocol.designReferencesCapability
         case .importBegin, .importChunk, .importFinish, .importCancel: RemoteProtocol.designImportCapability
         default: nil
         }

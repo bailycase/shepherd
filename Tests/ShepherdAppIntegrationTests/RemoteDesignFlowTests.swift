@@ -1,4 +1,6 @@
 import Foundation
+import ImageIO
+import CoreGraphics
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
@@ -231,11 +233,17 @@ struct RemoteDesignFlowTests {
         }
         store.detachReference(attached.id)
 
-        // A sent chip reads what the host kept.
+        // A sent chip reads what the host kept, its picture in pieces when it is too large for one reply.
         let payloadID = try #require(record.payloadID)
+        let kept = try #require(await remote.host.server.designReferencePayload(agentID: thread.agent.id, payloadID: payloadID))
+        let name = try #require(kept.payload.picture?.name ?? kept.payload.boards?.first?.picture?.name)
+        let large = try Self.noisePNG(side: 420)
+        #expect(large.count > RemoteProtocol.designChunkBytes)
+        try large.write(to: kept.folder.appendingPathComponent(name))
         await chips.loadSent(payloadID)
         #expect(chips.sent[payloadID]?.crumbs.first == "Checkout")
         #expect(chips.sent[payloadID]?.freshness == .current)
+        #expect(chips.sent[payloadID]?.picture != nil, "the large picture came in pieces")
     }
 
     /// "Build one from a repo" in a host's space, from this Mac: the host starts the build, its
@@ -276,6 +284,21 @@ struct RemoteDesignFlowTests {
         vm.confirmDesignSystemDelete(request)
         try await eventuallyOnMain("the build gone on the host") { !hostServer.state.designs.contains(where: \.buildsSystem) }
         #expect(vm.designToast == nil)
+    }
+
+    /// A PNG of random pixels: it barely compresses, so it outgrows one reply.
+    static func noisePNG(side: Int) throws -> Data {
+        var generator = SystemRandomNumberGenerator()
+        let bytes = (0..<(side * side * 4)).map { _ in UInt8.random(in: 0...255, using: &generator) }
+        let provider = try #require(CGDataProvider(data: Data(bytes) as CFData))
+        let image = try #require(CGImage(width: side, height: side, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: side * 4,
+                                         space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+                                         provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent))
+        let out = NSMutableData()
+        let destination = try #require(CGImageDestinationCreateWithData(out, "public.png" as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, image, nil)
+        #expect(CGImageDestinationFinalize(destination))
+        return out as Data
     }
 
     /// A Claude Design ZIP from this Mac is imported on the host as its own Import does: the
