@@ -21,7 +21,8 @@ public struct MissionAgentSnapshot: Sendable {
 }
 
 extension SessionServer {
-    /// Owner-local API. No extension or remote mutation can approve a map or publish a PR.
+    /// The owner's API, driven only by the app's `MissionController` (on this Mac or for a paired
+    /// device's `missions.v1` request). No extension message can approve a map or publish a PR.
     public func missions() async throws -> [Mission] {
         try await enqueue {
             try self.requireStarted()
@@ -236,18 +237,28 @@ extension SessionServer {
     }
 
     /// A further turn in a session a running attempt owns: a stock Spec Kit reply or next command
-    /// once the turn settled (`.followUp`), or an owner steer while it works (`.steer`). The session
-    /// is the attempt's own, or the same agent's earlier attempt's (a persistent planning thread);
-    /// the server, not the caller, carries that identity. The new operation is durable first.
+    /// once the turn settled (`.followUp`), an owner steer while it works (`.steer`), or the owner's
+    /// message queued while it works (`.queued`: pi takes it after the current turn, and the attempt
+    /// settles only after that turn). The session is the attempt's own, or the same agent's earlier
+    /// attempt's (a persistent planning thread); the server, not the caller, carries that identity.
+    /// The new operation is durable first.
     public func sendMissionFollowUp(id: MissionID, runID: UUID, agentID: AgentID, operationID: UUID, text: String) async throws {
-        try await sendMissionTurn(id: id, runID: runID, agentID: agentID, operationID: operationID, text: text, steer: false)
+        try await sendMissionTurn(id: id, runID: runID, agentID: agentID, operationID: operationID, text: text, mode: .followUp)
     }
 
     public func sendMissionSteer(id: MissionID, runID: UUID, agentID: AgentID, operationID: UUID, text: String) async throws {
-        try await sendMissionTurn(id: id, runID: runID, agentID: agentID, operationID: operationID, text: text, steer: true)
+        try await sendMissionTurn(id: id, runID: runID, agentID: agentID, operationID: operationID, text: text, mode: .steer)
     }
 
-    private func sendMissionTurn(id: MissionID, runID: UUID, agentID: AgentID, operationID: UUID, text: String, steer: Bool) async throws {
+    /// The owner's words for after the working turn: queued in the attempt's own session, read by pi as its next turn.
+    public func sendMissionQueued(id: MissionID, runID: UUID, agentID: AgentID, operationID: UUID, text: String) async throws {
+        try await sendMissionTurn(id: id, runID: runID, agentID: agentID, operationID: operationID, text: text, mode: .queued)
+    }
+
+    private enum MissionTurn { case followUp, steer, queued }
+
+    private func sendMissionTurn(id: MissionID, runID: UUID, agentID: AgentID, operationID: UUID, text: String, mode: MissionTurn) async throws {
+        let steer = mode == .steer
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             queue.async {
                 do {
@@ -259,7 +270,7 @@ extension SessionServer {
                           operationID.uuidString.lowercased() != agentID.rawValue,
                           !run.attempts.contains(where: { $0.operationIDs?.contains(operationID) == true }),
                           // A follow-up needs the idle session; a steer needs it working (canMoveSpace is false mid-turn).
-                          let thread = self.rpcThread(forAgent: agentID), thread.isServable, steer || thread.canMoveSpace,
+                          let thread = self.rpcThread(forAgent: agentID), thread.isServable, mode != .followUp || thread.canMoveSpace,
                           thread.dialogs.isEmpty, thread.session.isAlive,
                           let session = thread.piSessionID else {
                         throw MissionError("mission_send", "The mission thread is not a live session this attempt owns. Nothing was sent.")
@@ -268,10 +279,20 @@ extension SessionServer {
                         ?? run.attempts[..<index].last(where: { $0.agentID == agentID && $0.sessionID != nil }).map { ($0.sessionID!, $0.generation) }
                     // A steer goes only into a run pi can still read it in; a message Shepherd would have to hold
                     // for a later turn is refused, so the person keeps it.
-                    guard let owned, owned.0 == session, owned.1 == thread.generation,
-                          steer ? (run.attempts[index].sessionID != nil && !thread.actualTurnSettled && thread.canSteerNow) : thread.actualTurnSettled else {
-                        throw MissionError("mission_send", steer ? "Only a working mission turn in its own session can be steered."
-                                                                 : "The mission thread is not its own settled session. No follow-up was sent.")
+                    // A queued message, too, goes only behind a turn still working: after it settles the attempt may be over.
+                    let working = run.attempts[index].sessionID != nil && !thread.actualTurnSettled
+                    let ready = switch mode {
+                    case .steer: working && thread.canSteerNow
+                    case .queued: working
+                    case .followUp: thread.actualTurnSettled
+                    }
+                    guard let owned, owned.0 == session, owned.1 == thread.generation, ready else {
+                        let why = switch mode {
+                        case .steer: "Only a working mission turn in its own session can be steered."
+                        case .queued: "This turn just finished, so there is no turn to queue behind. Nothing was sent."
+                        case .followUp: "The mission thread is not its own settled session. No follow-up was sent."
+                        }
+                        throw MissionError("mission_send", why)
                     }
                     if let reason = run.exhausted(mission.draft.limits, at: Date().timeIntervalSince1970) { throw MissionError("mission_limit", reason) }
                     // One unread steer at a time: a second would duplicate words the person may resend after a timeout.
@@ -323,6 +344,16 @@ extension SessionServer {
         run.attempts[index].deliveredOperationIDs = (run.attempts[index].deliveredOperationIDs ?? []) + [operation]
         mission.run = run; mission.revision += 1
         do { try storeMission(mission) } catch { ShepherdLog.warning("Mission steer receipt not saved: \(error)") }
+    }
+
+    /// Server queue: whether a mission's thread offers its composer: its turn works in an active run (a steer),
+    /// or it is a planner's thread while the mission waits on you and nothing is published (an answer).
+    /// The owner checks again when the words arrive (`onMissionThreadSend`).
+    func missionThreadTakesWords(_ agent: AgentID) -> Bool {
+        guard onMissionThreadSend != nil,
+              let run = store.state.missions.first(where: { $0.run.map { MissionRun.owns($0, agent: agent) } == true })?.run else { return false }
+        if run.phase.active { return run.attempts.contains { $0.agentID == agent && $0.status == .running } }
+        return run.publicationApproval == nil && [.map, .paused, .stopped].contains(run.phase) && run.isPlanner(agent)
     }
 
     /// Whether a mission's earlier planning thread is still a live, servable session it could continue.
