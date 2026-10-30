@@ -1013,8 +1013,7 @@ The pure derivations live in ShepherdRemote:
   content replacement, composer resizes, and growth are treated as layout, never as intent;
   layout and recovery never re-attach a detached reader, even if they clamp the viewport into
   the bottom band. A real scroll back into the band re-attaches; programmatic scrolls ending
-  idle do not. The Mac thread from macOS 27, which sets no scroll anchor, repairs a view left past its
-  tail by any layout change at once, `nativeAnchor: false`).
+  idle do not).
   The iOS client still draws the older turn items and tool rows from here (`nativeTurnItems`,
   `NativeToolRow`).
 

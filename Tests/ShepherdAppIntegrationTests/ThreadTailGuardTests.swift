@@ -231,9 +231,14 @@ struct ThreadTailGuardTests {
         for _ in 0..<20 { rig.guardian.targets([]) }
         #expect(rebuilds == 1)
         #expect(rig.landings == ThreadTailGuard.maxAttempts)
+        // Still blank after the budget: one more try after a rest, not a burst and not never.
+        try await eventuallyOnMain("a rested guard to try once more", timeout: ThreadTailGuard.rest * 2) {
+            rig.landings == ThreadTailGuard.maxAttempts + 1
+        }
+        #expect(rebuilds == 1)
         rig.guardian.asked()
         try await eventuallyOnMain("an explicit tail request to get its own bounded rebuild") {
-            rebuilds == 2 && rig.landings == ThreadTailGuard.maxAttempts * 2
+            rebuilds == 2 && rig.landings == ThreadTailGuard.maxAttempts * 2 + 1
         }
     }
 

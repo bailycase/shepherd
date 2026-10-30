@@ -137,10 +137,15 @@ struct ThreadView: View {
         ScrollViewReader { proxy in
             let _ = keepTail(proxy)
             ZStack(alignment: .bottom) {
+                let spacing = leadColumn ? SHLeadMetrics.turnGap : AppLayout.turnSpacing
+                let eager = rows.suffix(Self.eagerRows)
                 ScrollView {
                     // Never animated as a whole (rows, their text, and the tail anchor change on
                     // every streamed chunk): turns that arrive make their own entrance.
-                    LazyVStack(alignment: .leading, spacing: leadColumn ? SHLeadMetrics.turnGap : AppLayout.turnSpacing) {
+                    // The tail is laid out for real (`eagerRows`); only the history above it is
+                    // lazy, so nothing at the end of the thread is ever a guess the scroll view
+                    // can be left past (the blank thread).
+                    VStack(alignment: .leading, spacing: spacing) {
                         notices
                         if rows.isEmpty {
                             if let project = projectSend?.emptyState { project() }
@@ -148,28 +153,14 @@ struct ThreadView: View {
                             else { emptyState }
                         }
                         if let day = leadDayTitle(rows) { SHLeadDaySeparator(word: day) }
-                        ForEach(rows) { row in
-                            let _ = SHRenderProbe.tick("thread.rowBuilder")
-                            // One view per row whatever it holds, so the lazy stack builds only the
-                            // rows on screen: a row that could be nothing would make it evaluate
-                            // every row of a long thread on each streamed chunk.
-                            ThreadRowLayer {
-                                turn(row, running: running, thinking: row.live && thinking, arriving: arrived.contains(row.id),
-                                     settled: settled)
+                        LazyVStack(alignment: .leading, spacing: spacing) {
+                            ForEach(rows.prefix(rows.count - eager.count)) { row in
+                                rowView(row, running: running, thinking: thinking, arrived: arrived, settled: settled, historyRowID: historyRowID)
                             }
-                            .id(row.id)
-                            .background {
-                                ThreadTailGuard.RowProbe(guardian: tailGuard, rowID: row.id)
-                                    .accessibilityHidden(true)
-                            }
-                            .background {
-                                if row.id == historyRowID {
-                                    ThreadHistoryAnchor.Probe(anchor: historyAnchor, rowID: row.id)
-                                        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .scrollView).minY } action: { _ in
-                                            historyAnchor.moved()
-                                        }
-                                }
-                            }
+                        }
+                        .scrollTargetLayout()
+                        ForEach(eager) { row in
+                            rowView(row, running: running, thinking: thinking, arrived: arrived, settled: settled, historyRowID: historyRowID)
                         }
                         // A Project's accepted messages the transcript has not taken in: held, in flight, or not delivered.
                         // Not delivered (unknown, failed): the person's words with what became of them. Never retried for them.
@@ -411,6 +402,34 @@ struct ThreadView: View {
     private func leadDayTitle(_ rows: [NativeThreadRow]) -> String? {
         guard projectSend != nil || workerStyle != nil, let at = rows.first?.turn.messages.first?.timestamp ?? rows.first?.startedAt else { return nil }
         return FleetFinishedDay.dayTitle(Date(timeIntervalSince1970: at / 1000), now: Date())
+    }
+
+    /// How many rows at the end of the thread are laid out for real rather than lazily: more
+    /// than any window shows, few enough that a streamed chunk's relayout stays cheap.
+    static let eagerRows = 30
+
+    /// One view per row whatever it holds, so the lazy stack builds only the rows on screen: a
+    /// row that could be nothing would make it evaluate every row of a long thread on each
+    /// streamed chunk.
+    @ViewBuilder private func rowView(_ row: NativeThreadRow, running: Bool, thinking: Bool, arrived: Set<String>, settled: Bool,
+                                      historyRowID: String?) -> some View {
+        let _ = SHRenderProbe.tick("thread.rowBuilder")
+        ThreadRowLayer {
+            turn(row, running: running, thinking: row.live && thinking, arriving: arrived.contains(row.id), settled: settled)
+        }
+        .id(row.id)
+        .background {
+            ThreadTailGuard.RowProbe(guardian: tailGuard, rowID: row.id)
+                .accessibilityHidden(true)
+        }
+        .background {
+            if row.id == historyRowID {
+                ThreadHistoryAnchor.Probe(anchor: historyAnchor, rowID: row.id)
+                    .onGeometryChange(for: CGFloat.self) { $0.frame(in: .scrollView).minY } action: { _ in
+                        historyAnchor.moved()
+                    }
+            }
+        }
     }
 
     /// The scroll target at the end of the thread: scrolled to when following, and in view
@@ -716,24 +735,20 @@ final class ThreadFinder {
 
 /// What keeps a following thread on its tail besides the follower's own scrolling.
 ///
-/// From macOS 27 nothing does: a bottom `defaultScrollAnchor` (initial offset and size changes)
-/// over this lazy stack, whose unmeasured rows are estimates, could leave the scroll view with a
-/// content size that disagreed with where the rows were placed, and the viewport drew nothing
-/// (the blank thread after a send or a finished turn; `ThreadBlankScreenTests`). Before 27 the
-/// anchors stay: `scrollTo`, the follower's only way to the tail without them, builds every row of
-/// a long thread there (`ListPerformanceTests`: 120 row builds against a budget of 40), so a short
-/// window can still draw blank on macOS 26 (a known issue in `ThreadBlankScreenTests`). Either
-/// way, a lazy stack over rows of very different heights can strand a following view past its
-/// rows, in a window of any height: `ThreadTailGuard` puts it back (`ThreadTailFlowTests` runs the
-/// thread both ways).
+/// The scroll view itself: a bottom `defaultScrollAnchor` for the initial offset and for size
+/// changes while following, so streamed text and a settling turn move the view with no `scrollTo`
+/// (which builds every row of a long thread). That anchor over a lazy stack of estimated row
+/// heights once left the scroll view with a content size that disagreed with where the rows were
+/// placed, and the viewport drew nothing (the blank thread after a send or a finished turn;
+/// `ThreadBlankScreenTests`): the thread's tail is therefore laid out eagerly
+/// (`ThreadView.eagerRows`), and only the history above it is lazy. `ThreadTailGuard` stays as
+/// the net under it (`ThreadTailFlowTests` runs the thread with and without the anchor).
 struct ThreadTailAnchor: ViewModifier {
     let sticky: Bool
     let native: Bool
 
     /// The scroll view keeps the tail itself, as the follower's `nativeAnchor` says.
-    static var isNative: Bool {
-        if #available(macOS 27, *) { false } else { true }
-    }
+    static let isNative = true
 
     @ViewBuilder func body(content: Content) -> some View {
         if native {

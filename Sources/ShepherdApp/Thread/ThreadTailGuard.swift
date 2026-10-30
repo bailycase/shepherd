@@ -81,6 +81,8 @@ final class ThreadTailGuard {
     var rebuild: () -> Void = {}
     var scrollView: () -> NSScrollView? = { nil }
     private var check: Task<Void, Never>?
+    /// Out of attempts: waiting `rest` before one more.
+    private var resting: Task<Void, Never>?
     private var settling = false
     /// A repair has begun and the thread has not been seen resting on its tail since.
     private var unsettled = false
@@ -93,7 +95,9 @@ final class ThreadTailGuard {
     /// a stranded thread counts, and at most how long a busy one is waited for (a thread drawing
     /// nothing, and one that only misses its tail); how long after a reader moves it is left alone;
     /// how long a step waits for rows to be realized; how many steps a walk takes at most; and how
-    /// many times in a row the thread is put back before it is left as it is.
+    /// many times in a row the thread is put back before it is left as it is; and how long it then
+    /// rests before one more try (a thread that stayed blank through a busy turn is not left so for
+    /// the rest of it).
     nonisolated static let band = NativeScrollFollower.threshold
     /// How far short of its tail a repaired thread may rest: the follower's own tolerance.
     nonisolated static let slack = NativeScrollFollower.repinSlack
@@ -105,6 +109,7 @@ final class ThreadTailGuard {
     nonisolated static let stepWait: Duration = .milliseconds(40)
     nonisolated static let maxSteps = 60
     nonisolated static let maxAttempts = 8
+    nonisolated static let rest: Duration = .seconds(3)
 
     func targets(_ ids: [String]) {
         visible = ids
@@ -113,6 +118,8 @@ final class ThreadTailGuard {
 
     /// The reader asked for the tail (a send, the jump pill): put it back as often as it takes.
     func asked() {
+        resting?.cancel()
+        resting = nil
         attempts = 0
         rebuilt = false
         following = true
@@ -121,6 +128,8 @@ final class ThreadTailGuard {
 
     /// A completed turn gets a fresh bounded repair, without changing the reader's position.
     func turnFinished() {
+        resting?.cancel()
+        resting = nil
         attempts = 0
         rebuilt = false
         suspect()
@@ -129,12 +138,18 @@ final class ThreadTailGuard {
     /// The reader's hands are on the scroll view (a wheel tick, a drag): leave it alone a moment.
     func readerMoved() {
         readerUntil = .now + Self.hands
+        // The reader scrolling is what used to get a given-up thread back: a fresh budget does it for them.
+        resting?.cancel()
+        resting = nil
+        attempts = 0
     }
 
     /// The thread went away or off screen.
     func stop() {
         check?.cancel()
         check = nil
+        resting?.cancel()
+        resting = nil
     }
 
     private var hasRows: Bool { !rowIDs.isEmpty }
@@ -196,7 +211,19 @@ final class ThreadTailGuard {
             stop()
             return
         }
-        guard check == nil, attempts < Self.maxAttempts else { return }
+        guard check == nil else { return }
+        // Out of attempts and still strayed: rest, then one more try (never a burst).
+        if attempts >= Self.maxAttempts {
+            guard resting == nil else { return }
+            resting = Task { [weak self] in
+                try? await Task.sleep(for: Self.rest)
+                guard !Task.isCancelled, let self else { return }
+                self.resting = nil
+                self.attempts = Self.maxAttempts - 1
+                self.suspect()
+            }
+            return
+        }
         let started = ContinuousClock.now
         check = Task { [weak self] in
             // Until things are quiet, or have been busy for long enough: a view that draws nothing
