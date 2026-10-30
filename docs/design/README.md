@@ -155,6 +155,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | QuestionPick | [ios-ipad](ios-ipad.md) | Composer, questions, and menus › Questions | Built |
 | QuestionAnswered | [ios-ipad](ios-ipad.md) | Composer, questions, and menus › Questions (The record) | Built |
 | QuestionStates | [ios-ipad](ios-ipad.md), [settings](settings.md) | Composer, questions, and menus › Questions; Keyboard | Partial |
+| QuestionDockRadio | [board](boards/QuestionDockRadio.png), [composer](composer.md), [ios-ipad](ios-ipad.md), [ios-iphone](ios-iphone.md) | Composer, questions, and menus › Questions | Built (yes/no keeps its cards; the phone keeps its docked panel) |
 | TerminalSplit | [terminal](terminal.md) | Terminal; Terminal panel (tabs only, no Split right or header button: departures) | Built |
 | TerminalPane | [terminal](terminal.md) | Terminal; Terminal panel (Send output to the agent, on a tab's one terminal; no split drawing, pane headers or header button: departures) | Partial |
 | TerminalStates | [terminal](terminal.md) | Terminal panel (tab states, maximized, divider, new terminal menu without Split right; no header toggle, Run in terminal or empty state, ⌘J opens a terminal: departures) | Partial |

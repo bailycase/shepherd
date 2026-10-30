@@ -33,7 +33,11 @@ public struct NativeQuestionPrompt: Equatable, Sendable {
     /// Identity: a new id is a new question, which arrives with nothing picked.
     public var id: String
     public var reply: Reply
+    /// The title's first paragraph, on one line: the headline.
     public var question: String
+    /// The rest of the title after its first blank line, folded under the question as Details;
+    /// nil when there is none.
+    public var details: String?
     /// The asker's longer message (a confirm's), drawn under the question.
     public var message: String?
     public var kind: NativeQuestionKind
@@ -56,7 +60,7 @@ public struct NativeQuestionPrompt: Equatable, Sendable {
     /// pi's question: select, confirm, input or editor.
     public init(dialog: NativeThreadDialog) {
         id = dialog.id
-        question = dialog.title
+        (question, details) = Self.split(dialog.title)
         message = dialog.message.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
         placeholder = dialog.placeholder ?? "Type your answer…"
         prefill = dialog.prefill ?? ""
@@ -87,6 +91,15 @@ public struct NativeQuestionPrompt: Equatable, Sendable {
             kind = .open
         }
         multiline = reply == .editor
+    }
+
+    /// Agents write paragraphs: the first is the question, the rest its details.
+    static func split(_ title: String) -> (question: String, details: String?) {
+        let parts = title.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: #/\n[ \t]*\n/#, maxSplits: 1, omittingEmptySubsequences: false)
+        let question = (parts.first ?? "").split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: " ")
+        let details = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespacesAndNewlines) : ""
+        return (question, details.isEmpty ? nil : details)
     }
 
     /// Two short options with nothing under them are a yes or a no; none is an open question.
@@ -139,6 +152,8 @@ public enum NativeQuestionAnswer: Equatable, Sendable {
     case option(NativeQuestionOption)
     /// The person's own words, in an open question's field.
     case words(String)
+    /// No answer: the asker hears the person didn't answer (pi's dialog, cancelled).
+    case skip
 }
 
 extension NativeQuestionPrompt {
@@ -163,6 +178,7 @@ extension NativeQuestionPrompt {
     /// What pi's dialog gets for `answer`; nil for an answer the dialog cannot take.
     public func dialogAnswer(_ answer: NativeQuestionAnswer) -> NativeDialogAnswer? {
         switch (reply, answer) {
+        case (_, .skip): return .cancel
         case (.select, .option(let option)): return .select(value: option.value)
         case (.confirm, .option(let option)): return .confirm(value: option.number == 1)
         case (.input, .words(let text)): return .input(value: text)
@@ -175,7 +191,8 @@ extension NativeQuestionPrompt {
 
 // MARK: Keys
 
-/// A key the dock answers (QuestionStates › Keyboard): 1–9 pick, ↩ answers, Esc hides or shows.
+/// A key the dock answers (QuestionStates › Keyboard): 1–9 pick (the number after a choice's
+/// options goes to its field), ↩ answers, Esc hides or shows.
 public enum NativeQuestionKey: Equatable, Sendable {
     case number(Int)
     case answer
@@ -188,6 +205,8 @@ public enum NativeQuestionKeyAction: Equatable, Sendable {
     case pick(Int)
     /// Pick and answer at once: a yes or a no.
     case pickAndAnswer(Int)
+    /// The number after the options, where the asker takes words: its field takes the keyboard.
+    case type
     case answer
     case hide
     case show
@@ -210,7 +229,7 @@ extension NativeQuestionPrompt {
         case .number(let number):
             guard !editing, enabled, blocked == nil else { return .pass }
             if options.contains(where: { $0.number == number }) { return kind == .yesNo ? .pickAndAnswer(number) : .pick(number) }
-            return .pass
+            return allowsText && number == options.count + 1 ? .type : .pass
         }
     }
 }

@@ -280,79 +280,91 @@ rules (QuestionStates › Rules):
    message. Widgets, a banner, the subagents and Up next stay above it.
 2. **Context stays in the thread.** What pi found is in its message just above; the dock holds
    the question, the options, and your answer, nothing else.
-3. **Label:** a question mark in lantern and a lantern outline. The thread and the sidebar show
-   Needs you (the sidebar's Needs you row, its glowing dot and the question as its reason).
-4. **Options** are numbered, and the number is the key. Each says what happens and what it
-   costs. The asker's recommendation is marked **Recommended**, never preselected.
-5. **Answer** is the only button. It lights up once an option is picked or an open question has
-   text. There is no Dismiss: pi is waiting on an answer. The dock has no note field and no
-   built-in Something else…: select takes only offered options. Project workers' `project_question`
-   draws offered choices followed by a **Say anything** text field. Pick a choice or type words,
-   then Answer submits once. Typing deselects the choice; choosing a choice clears the text.
+3. **Label:** a neutral card with a lantern edge and "Agent is asking" in lantern, so a long
+   question doesn't light up the whole thread. The thread and the sidebar show Needs you (the
+   sidebar's Needs you row, its glowing dot and the question as its reason).
+4. **Options** are radio rows, numbered, and the number is the key. Each says what happens and
+   what it costs. The asker's recommendation is marked **Recommended**, never preselected.
+5. **Answer** is the primary button. It lights up once an option is picked or an open question
+   has text. **Skip**, beside it, answers nothing: pi's dialog is cancelled, so the agent is told
+   you didn't answer. The dock has no note field, and pi's select gets no Something else…: it
+   takes only offered options. An input that offers choices (`ask_user`, `project_question`) draws
+   them followed by a **Something else…** row with a field. Pick a choice or type words, then
+   Answer submits once. Typing deselects the choice; choosing a choice clears the text.
 6. **After:** the composer comes back (the field takes the keyboard again), and the thread
    keeps the record where pi asked (below).
 
-- **The dock** (`SHQuestionDock`, `SHQuestionDockMetrics`): `bgRaised`, radius 12, a 1px
-  `lantern` line inside a 3pt `lanternTint` ring (`.shQuestionCard()`), 12pt above and below
-  and 14pt at the sides, 12pt between its parts, as wide as the composer card:
-  - the 26pt head (`SHQuestionHead`): a 13pt `questionmark.circle` and "Agent is asking" in
-    Geist 12 semibold (`.shSans(12, .semibold)`), both `lanternText`, 7pt apart; "1 / N" in
-    micro tertiary when several wait; trailing, Hide the question, a 26pt round `.shIcon`
-    (transparent, a 14pt `chevron.down` in `textSecondary`; tooltip "Hide the question (Esc)").
-    VoiceOver reads the head as one header, "Agent is asking", and the button as "Hide the
-    question"
-  - the question in Geist 16 semibold at 1.35, tracked -0.5% (`Font.shSans(16, .semibold)`;
-    15 for a yes or a no and an open question, as the Kinds cards draw it), inline code and
-    emphasis as in prose (`SHProseInline`)
+- **The dock** (QuestionDockRadio board; `SHQuestionDock`, `SHQuestionDockMetrics`): `bgRaised`,
+  radius 10, a 1px `lineStrong` line and a 3pt `lantern` edge on the leading side, no ring
+  (`.shQuestionCard()`), 14pt above and below and 16pt at the sides (inside the edge), 12pt
+  between its parts, as wide as the composer card:
+  - the head (`SHQuestionHead`): the eyebrow "AGENT IS ASKING" (Geist 11 semibold, uppercase,
+    tracked 6%, `lanternText`; " · 1 of N" when several wait), 4pt over the question in `title`
+    (15 semibold) at 1.35, inline code and emphasis as in prose (`SHProseInline`). The question
+    is the title's first paragraph on one line (`NativeQuestionPrompt.question`); the rest is its
+    details. Trailing at the top, 10pt from the heading and level with the eyebrow's top, Hide
+    the question, a 26pt round `.shIcon` (a 10pt `chevron.down` in `textSecondary`; tooltip
+    "Hide the question (Esc)"). VoiceOver reads the eyebrow and the
+    question as headers, and the button as "Hide the question"
+  - **Details** (`SHQuestionDetails`), when the title has more than one paragraph: "Details" in
+    Geist 12 `textSecondary` on a 21pt row, 5pt after a chevron that turns as it opens, folded. Open, the details in
+    13 regular `textSecondary` at 1.5, paragraphs 8pt apart, inline code as in prose, scrolling
+    past 220pt
   - the asker's longer message, when it has one (a confirm's), in mono on `bgSunken` (radius 8, a
     `lineSubtle` line, scrolling past 140pt): an app addition no board draws
-  - the options, 6pt apart. An option is a card on `bgWindow` with a 1px `lineSubtle` line,
-    radius 8, 10pt above and below and 12pt at the sides, its parts 11pt apart: its number in a
-    20pt rounded square (a `lineStrong` line, mono 11 `textSecondary`; radius 4, `SH.Radius.xs`,
-    for the board's 5); the title in `headline` (13.5 semibold) over its description in `ui`
-    regular `textSecondary` at 1.45, 3pt apart; and, trailing at the top, a 20pt
-    **Recommended** tag (`lanternTint` fill, `lanternText` 11 semibold, radius 4, 7pt side
-    padding). `NativeQuestionOption` splits an option into number, title, description (the
-    lines after the first), and a trailing "(Recommended)". A click picks it (tooltip: its title
-    and number). More than six options scroll inside a 360pt lazy stack.
-  - a footer over a `lineSubtle` hairline, 12pt below the options: trailing, **Answer**
-    (`.sh(.primary, size: .m)`, 28pt; tooltip "Answer (↩)"), disabled (40%) until there is an
-    answer. Leading, in micro tertiary, "The agent may stop waiting for this answer" when the
-    question has a timeout, or why it cannot be answered here ("An external editor is open ·
-    finish it before answering here", "This question is too large to show here"), which also
-    disables its options.
-- **Picked** (QuestionPick): the option takes a `lantern` line on `lanternTint` and its number
-  fills (`lantern`, `textOnLantern` semibold). The Recommended tag stays where it was. Picking
-  another option moves the pick; nothing is answered until Answer or ↩.
+  - the options (`SHQuestionRadioRow`), radio rows 2pt apart with no line or card, hanging 8pt
+    into the card's padding: 7pt above and below, 8pt at the sides, radius 7, `bgHover` under the
+    pointer, its parts 10pt apart: a 16pt radio (a 1.5pt `lineStrong` ring), the title in `body`
+    (13.5) with **Recommended** after it in `lanternText` 12 medium, its description under it in
+    `ui` regular `textSecondary`, and trailing, its number in mono 11 `textTertiary`.
+    `NativeQuestionOption` splits an option into number, title, description (the lines after the
+    first), and a trailing "(Recommended)". A click picks it (tooltip: its title and number). More
+    than six options scroll inside a 360pt lazy stack. Where the asker takes words, the last row
+    (`SHQuestionTextRow`), numbered N+1, is the same radio and a plain field, "Something else…"
+  - a footer over a `lineSubtle` hairline, 12pt below the options: leading, the keys in caption
+    (11.5) `textTertiary`, "[1]–[N] pick  [↩] answer" (only while the dock takes answers), with
+    the board's small caps (`SHQuestionKeycap`: mono 10.5 `textSecondary`, a 1px `lineStrong`
+    line at radius 3, 4pt at the sides; not `SHKeycap`),
+    then "The agent may stop waiting for this answer" when the question has a timeout, or why it
+    cannot be answered here ("An external editor is open · finish it before answering here",
+    "This question is too large to show here"), which also disables its options. Trailing,
+    **Skip** (ghost: Geist 13 `textSecondary`, `bgHover` under the pointer, 10pt at the sides;
+    tooltip "Skip (the agent is told you didn't answer)") and **Answer** (`lantern`, Geist 13
+    semibold, 12pt at the sides; tooltip "Answer (↩)"), both 28pt at radius 7
+    (`SHQuestionDockButtonStyle`), Answer disabled (40%) until there is an answer
+- **Picked** (QuestionDockRadio): the radio takes a `lantern` ring around an 8pt `lantern` dot;
+  the row is otherwise unchanged. Typing in Something else… fills its radio and clears the pick.
+  Picking another option moves the pick; nothing is answered until Answer or ↩.
 - **Kinds** (QuestionStates › Kinds of question), one dock shaped by the answer the asker needs
-  (`NativeQuestionKind`):
+  (`NativeQuestionKind`), each with the card, the head and Details above:
   - **Yes or no:** a confirm, or two options of at most 24 characters with nothing under them:
-    side by side, 6pt apart, each 44pt (its number, the title in semibold, Recommended; its parts
-    10pt apart), answering on click. It has no Answer button, so the dock has no footer (a
-    confirm's is only its timeout line).
+    two cards side by side, 6pt apart, each 44pt (its number in a 20pt square, the title in
+    semibold, a Recommended tag; its parts 10pt apart; picked, `lanternTint` with a `lantern`
+    line), answering on click. It has no Answer or Skip, so the dock has no footer (a confirm's
+    is only its timeout line).
   - **Open question:** no options (pi's input and editor): a field at least 64pt tall (`bgWindow`, radius 8, a `lineStrong` line, 10pt above
     and below and 12pt at the sides, 13.5 at 1.5; up to 6 lines, 12 for an editor, then it
-    scrolls) holding the asker's prefill, and Answer. It takes the keyboard when it arrives in
-    the focused thread.
+    scrolls) holding the asker's prefill, then Skip and Answer. It takes the keyboard when it
+    arrives in the focused thread.
   - **No subagent variant.** A subagent asks its parent, never the user (see Subagents), so the
-    dock never draws "<name> is asking", the branch glyph, 14.5 question or a note and
-    Something else… for one: that variant was pruned from the components, on the Mac and iOS.
+    dock never draws "<name> is asking", the branch glyph or a note for one: that variant was
+    pruned from the components, on the Mac and iOS.
 - **Hidden** (QuestionStates): Esc or Hide the question shrinks the dock to one 46pt line
   (`SHQuestionDockHidden`), so you can read the thread; it still holds the composer's place,
-  because pi is still waiting. The line is the same lantern card (radius 12, 14pt leading and 8pt
-  trailing padding, 10pt between its parts): a 14pt glyph in `lanternText`, the question in 13.5
+  because pi is still waiting. The line is the same card (radius 10, 14pt leading inside the edge
+  and 8pt trailing padding, 10pt between its parts): a 14pt glyph in `lanternText`, the question in 13.5
   semibold (truncating; inline code as in the dock), a small secondary **Answer** (24pt), and a 26pt Show the question
   (`chevron.up`; tooltip "Show the question (Esc)"). Esc, Answer or Show the question brings the
   dock back, with what was picked and typed. Only that question stays hidden: the next one pi
   asks arrives open (`NativeQuestionHiding`, the iPad's rule too).
-- **Keys** (QuestionStates › Keyboard; shown in tooltips): 1–9 pick an option (a yes or a no
-  answers at once), ↩ answers, Esc hides or shows the question. They are the dock's while its thread has the keyboard
+- **Keys** (QuestionStates › Keyboard; shown in the footer and tooltips): 1–9 pick an option (a
+  yes or a no answers at once; Something else…'s number puts the keyboard in its field), ↩ answers, Esc hides or shows the question. They are the dock's while its thread has the keyboard
   (`QuestionKeyMonitor`), from its own fields too (where numbers type and ⇧↩ breaks a line),
   never with ⌘, ⌃ or ⌥ held (⌘1–9 still select agents), and never from another text field (the
   palette's search, a terminal). Settings, the component gallery, and the command palette
   suspend workspace keyboard ownership, including hidden question shortcuts; closing them
   restores the previously focused thread or terminal.
-- **Stopping** (⌘., Agent ▸ Stop) is how a question is refused: it cancels the questions pi is
+- **Stopping** (⌘., Agent ▸ Stop) refuses every waiting question, as Skip does one: it cancels the questions pi is
   waiting on (their asker gets pi's cancelled answer), then stops the turn. The thread records
   each as not answered.
 - **The record** (QuestionAnswered; `QuestionRecord` on the board; `SHQuestionRecord`, from
@@ -385,13 +397,14 @@ it has no note or arbitrary select reply):
 | pi's select (`ctx.ui.select`) | choice, or yes or no | one of its options, exactly as offered |
 | pi's confirm (`ctx.ui.confirm`) | yes or no | true or false |
 | pi's input (`ctx.ui.input`) | open | a string |
-| Project worker's `project_question` with options | option rows, with Say anything as the final editable row | one native input string: the exact offered choice or the person's words |
+| `ask_user` or a Project worker's `project_question` with options | radio rows, with Something else… as the final editable row | one native input string: the exact offered choice or the person's words |
 | pi's editor (`ctx.ui.editor`) | open, 12 lines | a string, as typed |
+| Skip, on any of them | | pi's cancelled answer: the agent is told you didn't answer |
 | A subagent | none | it is no asker of the user: it asks its parent (`shepherd_parent_message`, `needsReply`), which asks here, as an ordinary question, when it must |
 
 `project_question` uses one `ctx.ui.input`, carrying bounded choice hints that the owner normalizes
-into its existing native input's options. **Say anything** is the final numbered option row,
-with an input in place of its title, not a separate box or a choice opening a second dialog. Both paths deliver one input reply. The inline Project card answers
+into its existing native input's options (`ask_user` sends the same shape). In the dock, **Something else…** is the
+final numbered radio row, with an input in place of its title, not a separate box or a choice opening a second dialog. Both paths deliver one input reply. The inline Project card answers
 choices immediately and submits its field with Send or Return; the worker dock uses Answer.
 A refusal retains the draft/pick. Cancellation is not an answer or permission. Other select
 dialogs retain only their offered options.

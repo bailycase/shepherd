@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// Keycaps for a real, wired shortcut: `SHKeycap("⇧⌘B")` draws one cap per key. Menus, the
-/// palette, and settings only; never under the composer, never for an unwired chord.
+/// palette, and settings only; never under the composer (the question dock's footer hints are
+/// the one exception, drawn smaller by its own `SHQuestionKeycap`), never for an unwired chord.
 public struct SHKeycap: View {
     let keys: [String]
     @Environment(\.displayScale) private var displayScale

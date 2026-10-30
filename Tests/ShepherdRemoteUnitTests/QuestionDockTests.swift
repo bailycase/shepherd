@@ -45,6 +45,23 @@ struct QuestionDockTests {
         #expect(prompt.answer(NativeQuestionPicks(prompt)) == nil, "Answer waits for a pick")
     }
 
+    /// Agents write paragraphs: the first is the headline, on one line; the rest folds under it.
+    @Test func theTitlesFirstParagraphIsTheQuestionAndTheRestItsDetails() {
+        let prompt = NativeQuestionPrompt(dialog: NativeThreadDialog(
+            id: "p", kind: .input, title: "Q2: ordinary threads\nor throwaway ones?\n \nToday a run is ephemeral.\n\nMy recommendation: persist.\n"))
+        #expect(prompt.question == "Q2: ordinary threads or throwaway ones?")
+        #expect(prompt.details == "Today a run is ephemeral.\n\nMy recommendation: persist.")
+        #expect(NativeQuestionPrompt(dialog: NativeThreadDialog(id: "q", kind: .confirm, title: "Clear?\n\n  ")).details == nil)
+        #expect(NativeQuestionPrompt(dialog: Self.select).details == nil)
+    }
+
+    /// Skip answers no question: every dialog hears it was cancelled.
+    @Test(arguments: [NativeThreadDialog.Kind.select, .confirm, .input, .editor])
+    func skipCancelsTheDialog(kind: NativeThreadDialog.Kind) {
+        let prompt = NativeQuestionPrompt(dialog: NativeThreadDialog(id: "s", kind: kind, title: "Q", options: ["A", "B", "C"]))
+        #expect(prompt.dialogAnswer(.skip) == .cancel)
+    }
+
     @Test func anOpenQuestionStartsWithWhatTheAskerPutInItsField() {
         let prompt = NativeQuestionPrompt(dialog: NativeThreadDialog(id: "e", kind: .editor, title: "Edit the message", prefill: "fix: typo"))
         #expect(NativeQuestionPicks(prompt).text == "fix: typo")
@@ -134,6 +151,7 @@ struct QuestionDockTests {
         let prompt = NativeQuestionPrompt(dialog: Self.choiceInput)
         #expect(prompt.action(for: .number(2), picks: NativeQuestionPicks(), hidden: false, editing: false) == .pick(2))
         #expect(prompt.action(for: .number(2), picks: NativeQuestionPicks(), hidden: false, editing: true) == .pass)
+        #expect(prompt.action(for: .number(3), picks: NativeQuestionPicks(), hidden: false, editing: false) == .type, "the number after the options goes to the field")
         #expect(prompt.action(for: .answer, picks: NativeQuestionPicks(text: "mine"), hidden: false, editing: true) == .answer)
     }
 

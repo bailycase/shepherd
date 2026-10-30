@@ -140,8 +140,8 @@ private struct SHPreviewSizedControls: View {
 #Preview("Question head") {
     SHPreviewBoth {
         VStack(alignment: .leading, spacing: SH.Space.xl) {
-            SHQuestionHead {}
-            SHQuestionHead(count: 2) {}
+            SHQuestionHead(question: "How should I handle Horizon’s uncommitted edits?") {}
+            SHQuestionHead(count: 3, question: "Are the threads a trigger starts ordinary threads or throwaway ones?") {}
             SHQuestionHiddenLine(question: "How should I handle Horizon’s uncommitted edits?") {}
         }
         .frame(width: 600)
@@ -161,13 +161,22 @@ struct SHQuestionDockSample: View {
 
     var body: some View {
         SHQuestionDock(content, selection: $selection, focus: $focus, answerEnabled: selection.picked != nil || !selection.text.isEmpty,
-                       answer: { _ in }, hide: {})
+                       answer: { _ in }, skip: {}, hide: {})
     }
 }
 
 #Preview("Question dock") {
     SHPreviewBoth {
         VStack(alignment: .leading, spacing: SH.Space.xl) {
+            SHQuestionDockSample(SHQuestionDockContent(
+                count: 3, question: "Q2: are the threads a trigger starts ordinary threads or throwaway ones?",
+                details: "Today an automation’s run agent is ephemeral. At every app launch, Shepherd deletes run agents and their layouts (`automationRunAgentIDs` in docs/data-flow.md).\n\nMy recommendation: triggered runs with a \"new thread\" destination become ordinary threads.",
+                kind: .choice,
+                options: [
+                    SHQuestionDockOption(number: 1, title: "Ordinary threads that persist", recommended: true),
+                    SHQuestionDockOption(number: 2, title: "Ephemeral like today"),
+                    SHQuestionDockOption(number: 3, title: "Persist, but keep them in a separate Automations inbox, not the project sidebar"),
+                ], allowsText: true), selection: SHQuestionDockSelection(picked: 1))
             SHQuestionDockSample(SHQuestionDockContent(
                 question: "How should I handle Horizon’s uncommitted edits?", kind: .choice,
                 options: [

@@ -1,14 +1,16 @@
 import SwiftUI
 
-// The head every Mac question starts with (QuestionAsk, QuestionPick, QuestionStates): "Agent is
-// asking" in lantern, then Hide the question. Hidden, a question shrinks to one line
+// The head every Mac question starts with (QuestionDockRadio): "AGENT IS ASKING" in lantern over
+// the question, then Hide the question. Hidden, a question shrinks to one line
 // (QuestionStates › hidden, in `SHQuestionDockHidden`) that still holds the composer's place.
 
 public enum SHQuestionHeadMetrics {
     public static let height: CGFloat = 26
-    public static let spacing: CGFloat = 7
-    public static let glyph: CGFloat = 13
+    /// The heading and Hide the question, 10pt apart.
+    public static let spacing: CGFloat = 10
     public static let hideButton: CGFloat = 26
+    /// The open head's chevron: small, as the board's "⌄".
+    public static let hideGlyph: CGFloat = 10
     /// The hidden line's glyph and the room between its parts.
     public static let hiddenGlyph: CGFloat = 14
     public static let hiddenSpacing: CGFloat = 10
@@ -27,47 +29,35 @@ struct SHQuestionAskerGlyph: View {
     }
 }
 
-/// The head: a question mark and "Agent is asking" in `lanternText`, then "1 / N" when several
-/// questions wait, and Hide the question.
+/// The head: the eyebrow ("AGENT IS ASKING", "· 1 of N" when several questions wait) over the
+/// question, and Hide the question at the top trailing.
 public struct SHQuestionHead: View {
     /// What every question says it is: the agent's own, since a subagent asks its parent.
     public static let title = "Agent is asking"
 
     let count: Int
+    let question: String
     let hideHelp: String
     let hide: () -> Void
 
     /// `hideHelp`: Hide the question's tooltip, with its key when it has one.
-    public init(count: Int = 1, hideHelp: String = "Hide the question", hide: @escaping () -> Void) {
+    public init(count: Int = 1, question: String, hideHelp: String = "Hide the question", hide: @escaping () -> Void) {
         self.count = count
+        self.question = question
         self.hideHelp = hideHelp
         self.hide = hide
     }
 
     public var body: some View {
-        let sh = Color.sh
-        HStack(spacing: SHQuestionHeadMetrics.spacing) {
-            HStack(spacing: SHQuestionHeadMetrics.spacing) {
-                SHQuestionAskerGlyph(size: SHQuestionHeadMetrics.glyph)
-                Text(Self.title).font(.shSans(12, .semibold)).foregroundStyle(sh.lanternText).lineLimit(1)
+        HStack(alignment: .top, spacing: SHQuestionHeadMetrics.spacing) {
+            SHQuestionHeading(count: count, question: question)
+            Button(action: hide) {
+                Image(systemName: "chevron.down").font(.system(size: SHQuestionHeadMetrics.hideGlyph, weight: .medium))
             }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(Self.title)
-            .accessibilityAddTraits(.isHeader)
-            Spacer(minLength: SH.Space.m)
-            if count > 1 {
-                Text("1 / \(count)").font(.sh(.micro)).foregroundStyle(sh.textTertiary).monospacedDigit()
-                    .shContentTransition(.numeric())
-                    .shTransition(.content)
-            }
-            Button(action: hide) { Image(systemName: "chevron.down") }
                 .buttonStyle(.shIcon(size: SHQuestionHeadMetrics.hideButton))
                 .help(hideHelp)
                 .accessibilityLabel("Hide the question")
         }
-        // Another question queuing behind this one counts up.
-        .shAnimation(.content, value: count)
-        .frame(height: SHQuestionHeadMetrics.height)
     }
 }
 

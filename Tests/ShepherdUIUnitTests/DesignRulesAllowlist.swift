@@ -71,8 +71,6 @@ enum DesignRuleAllowlist {
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Composer/Menus.swift", 13, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Composer/ModelSettings.swift", 5, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Composer/PlaceMenu.swift", 8, font),
-        .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Composer/QuestionDock.swift", 1, font),
-        .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Composer/QuestionHead.swift", 1, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Composer/Queue.swift", 8, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Composer/TouchQueue.swift", 1, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Controls/Buttons.swift", 2, font),
