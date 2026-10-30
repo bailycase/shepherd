@@ -8,11 +8,12 @@ import ShepherdRemote
 
 /// A question in the composer's place (the question dock): pi's own (select, confirm, input,
 /// editor), drawn by `SHQuestionDock` from its shared presentation (`NativeQuestionPrompt`). A
-/// subagent's never is: it asks its parent. It keeps the person's picks while it waits, answers through
-/// `answer`, and takes the dock's keys (1–9, ↩, Esc) while its thread has the keyboard.
+/// subagent's never is: it asks its parent. It keeps the person's picks while it waits, answers
+/// (or skips, `.skip`) through `answer`, and takes the dock's keys (1–9, ↩, Esc) while its thread
+/// has the keyboard.
 struct QuestionDock: View {
     let prompt: NativeQuestionPrompt
-    /// Questions waiting; the head shows "1 / N".
+    /// Questions waiting; the eyebrow says "1 of N".
     var count = 1
     /// The host takes answers.
     let enabled: Bool
@@ -54,7 +55,7 @@ struct QuestionDock: View {
                 SHQuestionDock(Self.content(prompt, count: count), selection: $selection, focus: $field,
                                enabled: enabled && prompt.blocked == nil,
                                answerEnabled: enabled && prompt.answer(Self.picks(selection)) != nil, keys: hints,
-                               answer: { send($0) }, hide: { setHidden(true) })
+                               answer: { send($0) }, skip: { if enabled { answer(.skip) } }, hide: { setHidden(true) })
                     .shTransition(.content)
             }
         }
@@ -108,6 +109,8 @@ struct QuestionDock: View {
         case .pickAndAnswer(let number):
             selection.picked = number
             send(selection)
+        case .type:
+            field = .text
         case .answer:
             send(selection)
         case .hide:
@@ -138,7 +141,7 @@ struct QuestionDock: View {
         case .open: .open
         }
         return SHQuestionDockContent(
-            count: count, question: prompt.question, message: prompt.message, kind: kind,
+            count: count, question: prompt.question, details: prompt.details, message: prompt.message, kind: kind,
             options: prompt.options.map { SHQuestionDockOption(number: $0.number, title: $0.title, detail: $0.detail, recommended: $0.recommended) },
             placeholder: prompt.placeholder, multiline: prompt.multiline,
             notice: prompt.blocked ?? (prompt.mayTimeOut ? timeoutNotice : nil), showsAnswer: prompt.showsAnswer,

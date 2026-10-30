@@ -689,17 +689,36 @@ struct ThreadPreviewTests {
         ])
         let timed = NativeThreadDialog(id: "hosts", kind: .select, title: "Which host should get the new Traefik config first?",
                                        options: ["build-01\nTraefik 3.1", "horizon\nTraefik 3.0", "This Mac\nNo Traefik here"], timeout: 60_000)
-        let size = CGSize(width: 1400, height: 820)
+        // ask_user's shape: the question, then its details after a blank line, offered choices and
+        // the person's own words.
+        let details = """
+        Today an automation’s run agent is ephemeral. At every app launch, Shepherd deletes run agents and their layouts (`automationRunAgentIDs` in docs/data-flow.md: "Never keep a run agent across launches"). That suits a watcher, but it would destroy a half-finished issue-to-PR thread if you quit Shepherd.
+
+        My recommendation: triggered runs with a "new thread" destination become ordinary threads. They show up in the project’s sidebar, survive relaunch the way any thread does, and you can open them, reply, and archive them yourself.
+
+        As with ordinary threads after a crash, they don’t pick back up mid-turn after a relaunch. You’d nudge them yourself.
+        """
+        let ask = NativeThreadDialog(id: "ask", kind: .input, title: "Q2: are the threads a trigger starts ordinary threads or throwaway ones?\n\n\(details)",
+                                     options: ["Ordinary threads that persist (Recommended)", "Ephemeral like today",
+                                               "Persist, but keep them in a separate Automations inbox, not the project sidebar"],
+                                     placeholder: "Say anything")
+        let size = CGSize(width: 1400, height: 1340)
         try await Preview.render("question-states", size: size) {
             HStack(alignment: .top, spacing: 32) {
                 VStack(alignment: .leading, spacing: 28) {
+                    Self.dock(NativeQuestionPrompt(dialog: ask), count: 3)
+                    Self.dock(NativeQuestionPrompt(dialog: ask), picks: NativeQuestionPicks(text: "Persist, but only for 30 days"))
                     Self.dock(NativeQuestionPrompt(dialog: select))
                     Self.dock(NativeQuestionPrompt(dialog: select), picks: NativeQuestionPicks(picked: 1))
                     Self.dock(NativeQuestionPrompt(dialog: select), hidden: true)
                 }
-                .frame(width: 640)
+                .frame(width: 613) // the QuestionDockRadio board's card
                 VStack(alignment: .leading, spacing: 28) {
                     Self.dock(NativeQuestionPrompt(dialog: timed), count: 2, picks: NativeQuestionPicks(picked: 2))
+                    // Details open, scrolling past their height.
+                    SHQuestionDetails(details, open: true)
+                        .padding(SHQuestionDockMetrics.padding)
+                        .shQuestionCard()
                 }
                 .frame(width: 600)
                 Spacer(minLength: 0)

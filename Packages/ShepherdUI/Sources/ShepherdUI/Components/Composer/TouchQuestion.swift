@@ -1,17 +1,16 @@
 import SwiftUI
 
-// A question from pi or an extension in the composer's place, for touch (MobileQuestion,
-// iPadQuestion boards): "Agent is asking" in lantern, the question, then the asker's answers as
-// numbered cards you choose and confirm with Answer. Shepherd has no permission model: the
-// cards are the answers the asker offered, never an approval it did not.
+// A question from pi or an extension in the composer's place, for touch (QuestionDockRadio, with
+// the MobileQuestion and iPadQuestion geometry): "AGENT IS ASKING" in lantern over the question,
+// its details folded, then the asker's answers as radio rows you choose and confirm with Answer
+// (or Skip). Shepherd has no permission model: the rows are the answers the asker offered, never
+// an approval it did not.
 
 public enum SHTouchQuestionMetrics {
-    /// An option's number, in a rounded square.
+    /// An option's number, in a rounded square (a yes or a no).
     public static let numberSize: CGFloat = 24
-    /// An option card's minimum height.
+    /// A yes or a no card's minimum height.
     public static let optionHeight: CGFloat = 56
-    /// The width past which a wide panel lays options side by side (iPad).
-    public static let columnMinWidth: CGFloat = 220
     /// How far a docked panel's fill and line run past its bottom, under the home indicator and
     /// off the screen.
     public static let dockOverhang: CGFloat = 64
@@ -31,25 +30,28 @@ public enum SHTouchQuestionMetrics {
 }
 
 /// The panel: on a phone it is docked to the bottom edge with its top corners rounded, a lantern
-/// line along them and a grabber (MobileQuestion); on iPad a card with a lantern line all around
-/// (iPadQuestion). The head says "Agent is asking"; `count` shows "1 / N" when several questions wait. `hide` folds the question
-/// and never answers it: on iPad a 40pt circle trailing the head (Hide the question), docked a
-/// tap on the grabber or a drag down from it.
+/// line along them and a grabber (MobileQuestion); on iPad the question card (`bgRaised`, a
+/// `lineStrong` line, a lantern edge on the leading side). The head is the eyebrow ("· 1 of N"
+/// when several questions wait) over `question`. `hide` folds the question and never answers
+/// it: on iPad a 40pt circle trailing the head (Hide the question), docked a tap on the grabber
+/// or a drag down from it.
 public struct SHQuestionCard<Content: View>: View {
     let docked: Bool
     let count: Int
+    let question: String
     let hide: (() -> Void)?
     let content: Content
 
-    public init(docked: Bool, count: Int = 1, hide: (() -> Void)? = nil, @ViewBuilder content: () -> Content) {
+    public init(docked: Bool, count: Int = 1, question: String, hide: (() -> Void)? = nil, @ViewBuilder content: () -> Content) {
         self.docked = docked
         self.count = count
+        self.question = question
         self.hide = hide
         self.content = content()
     }
 
     public var body: some View {
-        let sh = Color.sh
+        let M = SHQuestionDockMetrics.self
         VStack(alignment: .leading, spacing: SH.Space.l) {
             if docked {
                 SHQuestionGrabber(hide: hide)
@@ -57,20 +59,8 @@ public struct SHQuestionCard<Content: View>: View {
                     .padding(.top, -SH.Space.xs)
                     .padding(.bottom, -SH.Space.xs)
             }
-            HStack(spacing: SH.Space.s) {
-                HStack(spacing: SH.Space.s) {
-                    SHQuestionAskerGlyph(size: SHQuestionHeadMetrics.glyph)
-                    Text(SHQuestionHead.title).font(.sh(.caption, weight: .semibold)).foregroundStyle(sh.lanternText)
-                        .lineLimit(1)
-                    Spacer(minLength: SH.Space.m)
-                    if count > 1 {
-                        Text("1 / \(count)").font(.sh(.mono)).foregroundStyle(sh.textTertiary).monospacedDigit()
-                            .shContentTransition(.numeric())
-                    }
-                }
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(count > 1 ? "\(SHQuestionHead.title), 1 of \(count)" : SHQuestionHead.title)
-                .accessibilityAddTraits(.isHeader)
+            HStack(alignment: .top, spacing: SH.Space.s) {
+                SHQuestionHeading(count: count, question: question)
                 if !docked, let hide {
                     SHQuestionCardToggle(hidden: false, action: hide)
                         // The circle (a 44pt touch target on iOS) overhangs the head rather than
@@ -78,12 +68,12 @@ public struct SHQuestionCard<Content: View>: View {
                         .frame(height: SHQuestionHeadMetrics.height)
                 }
             }
-            .frame(minHeight: SHQuestionHeadMetrics.height)
             content
         }
-        .padding(.horizontal, SH.Space.xl)
-        .padding(.top, docked ? SH.Space.m : SH.Space.xl)
-        .padding(.bottom, docked ? SH.Space.m : SH.Space.xl)
+        .padding(.leading, docked ? SH.Space.xl : M.padding.leading)
+        .padding(.trailing, docked ? SH.Space.xl : M.padding.trailing)
+        .padding(.top, docked ? SH.Space.m : M.padding.top)
+        .padding(.bottom, docked ? SH.Space.m : M.padding.bottom)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background { SHTouchQuestionCardChrome(docked: docked) }
         .accessibilityElement(children: .contain)
@@ -116,7 +106,7 @@ private struct SHQuestionGrabber: View {
 }
 
 /// A question folded on iPad (Hide the question) so you can read the thread. It still holds
-/// the composer's place, because the agent is still waiting: the card's lantern line around one
+/// the composer's place, because the agent is still waiting: the question card around one
 /// row of the question mark, the question (truncating), a small **Answer**, and Show the
 /// question; either button unfolds it.
 public struct SHQuestionCardHiddenLine: View {
@@ -142,7 +132,7 @@ public struct SHQuestionCardHiddenLine: View {
                 .accessibilityLabel("Answer the question")
             SHQuestionCardToggle(hidden: true, action: show)
         }
-        .padding(.leading, SH.Space.xl)
+        .padding(.leading, SH.Space.xl + SHQuestionDockMetrics.edge)
         .padding(.trailing, SH.Space.xs)
         .padding(.vertical, SH.Space.xxs)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -168,7 +158,7 @@ private struct SHQuestionCardToggle: View {
     }
 }
 
-/// The card's fill and lantern line. Docked, the panel runs on under the home indicator: its
+/// The card's fill and line: iPad's is the question card (`SHQuestionCardFill`). Docked, the panel runs on under the home indicator: its
 /// line runs only along the top and around its corners, and the thread's content is shadowed
 /// under its edge (MobileQuestion).
 private struct SHTouchQuestionCardChrome: View {
@@ -188,10 +178,7 @@ private struct SHTouchQuestionCardChrome: View {
                 .padding(.bottom, -SHTouchQuestionMetrics.dockOverhang)
                 .allowsHitTesting(false)
         } else {
-            let shape = RoundedRectangle(cornerRadius: SH.Radius.l)
-            shape.fill(sh.bgRaised)
-                .overlay { shape.strokeBorder(sh.lantern, lineWidth: SHThreadMetrics.ruleWidth) }
-                .allowsHitTesting(false)
+            SHQuestionCardFill()
         }
     }
 }

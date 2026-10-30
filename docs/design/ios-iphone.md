@@ -216,7 +216,7 @@ screen from these parts; the sections after this one give each board's specifics
 - **Components** for these screens (ShepherdUI): `SHListCard`, `SHListRow`, `SHListHeader`,
   `SHHostBadge`, `SHAttentionCard`, `SHHostCard`, `SHWrapStack` (Fleet); `SHCapsuleComposer`,
   `SHComposerActionButton`, `SHTouchCommandList`, `SHTouchQueueCard`, `SHTouchQueueRow`,
-  `SHQuestionCard`, `SHQuestionOptionCard`, `SHSelectorChip` (Composer); `SHRunCard`,
+  `SHQuestionCard`, `SHQuestionRadioRow`, `SHQuestionOptionCard`, `SHSelectorChip` (Composer); `SHRunCard`,
   `SHRunHistoryList`, `SHRunGoal`, `SHRunQuestion`, `SHSteerField` (Agents);
   `SHReviewFileRow`, `SHTouchDiffLine`, `SHLineCommentBar`, `SHInlineComment`, `.shReviewBar`
   (Review); `SHTouchSearchField`, `SHSearchResultRow` (Navigation); `SHChoiceRow`, `SHGroupCard`,
@@ -453,29 +453,25 @@ next step. Steer now on a row and Steer all now are the same interrupt.
 - **Edit** opens a sheet ("Queued n", Cancel and Save) while the host holds the message; Delete
   leaves an Undo row in its place ("Deleted ~~text~~", Undo); clearing leaves "Cleared n messages".
 - **Paused:** as in the iOS list above (Send now in the head).
-- **Question** (MobileQuestion; `SHQuestionCard`, docked): the panel takes the composer's place,
-  full width, docked to the bottom: `bgRaised`, 18pt top corners, a 1px `lantern` line along its
-  top, the thread's content shadowed under its edge, 12pt top, 14pt sides, 34pt bottom, 10pt between
-  parts. A 36×5 `lineStrong` grabber, then a 26pt head: a 13pt question glyph and "Agent is asking"
-  (13/600 `lanternText`; "1 / N" in mono when several wait). The question at 18/600, 1.3 line
-  height; the asker's message, if any, as code on `bgSunken`. The options: 6pt apart, each a card on
-  `bgWindow` with a 1px `lineSubtle` line and 8pt corners, 11×12 padding: a 24pt number in a
-  5pt-cornered `lineStrong` square (mono 11 `textSecondary`), then "Recommended" (a 20pt
-  `lanternTint` chip, 11/600 `lanternText`) when the asker marked it, the title (15/600, 1.35) and
-  its detail (14/1.45 `textSecondary`). Tapping one selects it (the number fills); Answer, a
-  full-width 48pt `lantern` button with 12pt corners at 16/600 (`.shReviewBar(.primary)`), stays
-  at 40% until one is chosen. The panel follows the question dock's rules (Composer, questions,
-  and menus › Questions; `QuestionPanel` on `NativeQuestionPrompt`, as the Mac's dock): Answer is
-  the only button, and picking another option moves the pick. A yes or a no (pi's confirm, or two
-  short options) is two cards side by side that answer on a tap; an open question (pi's input or
-  editor) is a field over Answer. The grabber is Hide the question: a tap,
-  or a drag down from it, folds the panel to one line (`SHQuestionCardHiddenLine`, the iPad's),
-  which never answers it; Answer or Show the question on that line opens it again, and the next
-  question arrives open.
+- **Question** (MobileQuestion geometry, QuestionDockRadio content; `SHQuestionCard`, docked):
+  the panel takes the composer's place, full width, docked to the bottom: `bgRaised`, 18pt top
+  corners, a 1px `lantern` line along its top, the thread's content shadowed under its edge, 8pt
+  top, 16pt sides, 12pt between parts. A 36×5 `lineStrong` grabber, then the iPad's head (the
+  eyebrow "AGENT IS ASKING", "· 1 of N" when several wait, over the question at 15/600), its
+  folded **Details**, the asker's message as code on `bgSunken`, and the radio rows (44pt, no
+  numbers; "Recommended" in `lanternText` after the title; **Something else…** last where the
+  asker takes words). Then **Skip** (ghost) and Answer, a 48pt `lantern` button with 12pt corners
+  (`.shReviewBar(.primary)`), at 40% until there is an answer. The panel follows the question
+  dock's rules (Composer, questions, and menus › Questions; `QuestionPanel` on
+  `NativeQuestionPrompt`, as the Mac's dock): picking another option moves the pick; Skip tells
+  the agent you didn't answer. A yes or a no (pi's confirm, or two short options) is two cards
+  side by side that answer on a tap; an open question (pi's input or editor) is a field over
+  Skip and Answer. The grabber is Hide the question: a tap, or a drag down from it, folds the
+  panel to one line (`SHQuestionCardHiddenLine`, the iPad's), which never answers it; Answer or
+  Show the question on that line opens it again, and the next question arrives open.
 - **What each asker takes** is the dock's table: pi's select takes only one of its options, so it
-  gets no note and no Something else… (the components that drew them, which only a subagent's
-  question used, were pruned: a subagent asks its parent). pi's question has no
-  Dismiss: **Stop** refuses it.
+  gets no Something else… row; an input that offers choices (`ask_user`, `project_question`) does.
+  **Skip** cancels the question, as **Stop** refuses it.
 - **While pi asks** the header shows "Needs you" with a glowing dot and no Stop or •••. The app
   keeps ••• and a Stop (shown only while pi asks): Stop is how a question is refused (the host
   cancels the questions pi waits on, then stops the turn), as ⌘. is on the Mac.

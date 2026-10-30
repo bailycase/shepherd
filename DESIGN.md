@@ -50,7 +50,8 @@ Every decision has to pass one test: does this help one person supervise ten wor
    output is unboxed prose.
 3. **One quiet line per burst.** Consecutive calls of one kind merge into one activity line.
 4. **Nothing in the thread spins.** One thing moves at a time, and it is text (live text shimmers).
-5. **Nothing in the default view that isn't useful.** No key-hint rows, no repeated status text,
+5. **Nothing in the default view that isn't useful.** No key-hint rows (the question dock's
+   footer is the one exception: its 1–N and ↩ hints, QuestionDockRadio), no repeated status text,
    no footers in menus, nothing under the composer but its controls.
 
 What follows from them:
