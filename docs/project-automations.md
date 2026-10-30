@@ -87,9 +87,10 @@ the callback the entry rechecks lifecycle, association and that the task exists,
 The prompt is bounded to 15 KiB for the runtime's 16 KiB native input limit (event text is cut,
 and says so). While the Project is paused or interrupting, Projects are off, the Project is gone
 or no linked Space holds the automation's folder, the trigger keeps queueing events but starts
-nothing, and its status says why (`AutomationTriggers.Host.holdReason`). Runs per day are the
-automation's own limit; runs at once are the Project's threads-at-once. Project task history,
-not the automation run log, records these runs. Create, link, enable and Resume still launch
+nothing, and its status says why (`AutomationTriggers.Host.holdReason`). Runs per day and runs at once
+are the automation's own limits, and the Project's threads-at-once applies on top. Each run also
+opens in the automation's run log under the task's reserved worker and follows the task's phase
+(queued or working: running; waiting: asked you; settled or resolved: finished; failed: failed). Create, link, enable and Resume still launch
 nothing by themselves, and app startup still starts no Project-owned watcher.
 
 ## Plain data for Project settings

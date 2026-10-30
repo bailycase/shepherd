@@ -110,6 +110,8 @@ public struct AutomationTriggerForm: Equatable, Sendable {
     /// "" is the host's default when the run starts.
     public var model = ""
     public var thinking = ""
+    /// A `ServiceTier` raw value; "" is the default speed when the run starts.
+    public var speed = ""
 
     public init() {}
 
@@ -136,6 +138,7 @@ public struct AutomationTriggerForm: Equatable, Sendable {
         (maxConcurrent, maxPerDay) = (limits.maxConcurrent, limits.maxPerDay)
         model = settings.model ?? ""
         thinking = settings.thinking ?? ""
+        speed = settings.serviceTier ?? ""
     }
 
     public var preset: AutomationSchedulePreset {
@@ -155,12 +158,12 @@ public struct AutomationTriggerForm: Equatable, Sendable {
         }
     }
 
-    /// Everything the form sets. Speed is not on the form, so it stays as the host has it.
+    /// Everything the form sets, pins included.
     public var settings: AutomationSettings {
         AutomationSettings(trigger: trigger, destination: kind == .manual ? .newThread : thread.map { .thread($0) } ?? .newThread,
                            workspace: workspace, authorGate: gate,
                            limits: AutomationLimits(maxConcurrent: maxConcurrent, maxPerDay: maxPerDay),
-                           model: model, thinking: thinking)
+                           model: model, thinking: thinking, serviceTier: speed)
     }
 
     public var canAddGitHub: Bool { github.count < GitHubTrigger.maxPerAutomation }

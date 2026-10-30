@@ -181,7 +181,8 @@ public actor AutomationTriggers {
         let now = clock()
         var status = AutomationTriggerStatus(
             state: .active, pending: record.pending.map(\.event), nextRunAt: record.nextRunAt,
-            lastCheckedAt: record.lastCheckedAt, runsToday: runsToday(record, now: now), allPaused: file.allPaused)
+            lastCheckedAt: record.lastCheckedAt, runsToday: runsToday(record, now: now), allPaused: file.allPaused,
+            timeZone: calendar.timeZone.identifier)
         if !automation.enabled {
             status.state = .off
         } else if file.allPaused {
@@ -601,7 +602,10 @@ extension AutomationTriggers.Source {
     public static func gh(ghPath: String? = nil) -> Self {
         Self(
             activity: { repo in
-                let script = ghPath.map { "'\($0)' api graphql --input -" } ?? "gh api graphql --input -"
+                // The login shell's PATH first; Homebrew's usual places after it, for a user whose
+                // startup files don't add them.
+                let script = ghPath.map { "'\($0)' api graphql --input -" }
+                    ?? #"PATH="$PATH:/opt/homebrew/bin:/usr/local/bin" gh api graphql --input -"#
                 var environment = ProcessInfo.processInfo.environment
                 environment["GH_PROMPT_DISABLED"] = "1"
                 environment["NO_COLOR"] = "1"

@@ -102,8 +102,31 @@ final class AutomationRunLog: @unchecked Sendable {
         var list = list
         let agents = Dictionary(new.agents.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let before = Dictionary(old.agents.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        // A Project automation's run is a Project task: it follows the task, whose worker may not exist yet.
+        let tasks = automation.projectID.map { id in
+            Dictionary((new.projects.first { $0.id == id }?.tasks ?? []).map { ($0.workerAgentID, $0) }, uniquingKeysWith: { _, b in b })
+        } ?? [:]
         for index in list.indices where list[index].endedAt == nil {
             guard let agentID = list[index].agentID, agentID != automation.agentID else { continue }
+            if let task = tasks[agentID] {
+                let previous = list[index]
+                var run = previous
+                switch task.phase {
+                case .queued, .reserved, .running, .unknown: run.result = .running
+                case .waiting: run.result = .needsYou
+                case .settled, .resolved:
+                    run.result = .finished
+                    run.settledAt = run.settledAt ?? time
+                    run.endedAt = time
+                case .failed:
+                    run.result = .failed
+                    run.failure = task.error
+                    run.endedAt = time
+                }
+                if run.result != previous.result, run.result == .finished || run.result == .needsYou || run.result == .failed { run.unread = true }
+                list[index] = run
+                continue
+            }
             guard let agent = agents[agentID] else {
                 list[index] = closed(list[index], status: before[agentID]?.status, at: time, result: nil)
                 continue

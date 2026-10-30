@@ -117,6 +117,10 @@ extension ShepherdViewModel {
     /// Event ids of an automation's runs that are still going: its run threads that work, ask or
     /// haven't settled a first turn. A thread destination counts while its own turn runs.
     func liveTriggeredRuns(_ id: AutomationID, runs: [AutomationRun]) -> [String?] {
+        // A Project automation's runs are its open runs (Project tasks not yet settled).
+        if state.automations.first(where: { $0.id == id })?.projectID != nil {
+            return runs.filter { $0.endedAt == nil }.map { _ in nil }
+        }
         return state.agents.compactMap { agent in
             guard agent.automationOrigin?.automationID == id else { return nil }
             // Idle before its first turn settles is pi still starting.
@@ -140,9 +144,15 @@ extension ShepherdViewModel {
                 throw AgentStartFailure(message: "The automation's Project no longer exists")
             }
             let title = events.first.map { e in e.number.map { "#\($0) \(e.title)" } ?? e.title } ?? automation.name
-            _ = try await server.runProjectAutomation(projectID: projectID, expectedRevision: project.revision,
-                                                      automationID: automation.id, title: String(title.prefix(200)),
-                                                      prompt: Self.bounded(prompt, bytes: Self.projectPromptLimit))
+            let taskID = try await server.runProjectAutomation(projectID: projectID, expectedRevision: project.revision,
+                                                               automationID: automation.id, title: String(title.prefix(200)),
+                                                               prompt: Self.bounded(prompt, bytes: Self.projectPromptLimit))
+            // The run follows its task in the automation's log, by the task's reserved worker.
+            if let worker = server.state.projects.first(where: { $0.id == projectID })?.tasks.first(where: { $0.id == taskID })?.workerAgentID {
+                await server.openAutomationThreadRun(automation.id, agentID: worker, trigger: Self.triggerSummary(events),
+                                                     triggerURL: events.count == 1 ? events[0].url : nil)
+            }
+            refreshAutomationTriggers()
             return
         }
         if case .thread(let agentID) = automation.destination {

@@ -128,6 +128,15 @@ struct ProjectAutomationTriggerTests {
         let task = try #require(app.server.state.projects.first?.tasks.first)
         #expect(task.title == "#3 Add dark mode" && task.spaceID == space.id)
         #expect(task.prompt.hasPrefix("Implement it.") && task.prompt.contains("<github-event>"))
+        // The run is in the automation's log, following its task, and counts as live.
+        let server0 = app.server
+        try await eventually("the Project run to be logged") { @Sendable in
+            await server0.automationRuns(automationID).first?.trigger == "#3 Add dark mode · issue opened"
+        }
+        let runs = await app.server.automationRuns(automationID)
+        // Its worker isn't launched while the task queues, so the run names no thread yet.
+        #expect(runs.first?.result == .running && runs.first?.endedAt == nil)
+        #expect(vm.liveTriggeredRuns(automationID, runs: runs).count == 1)
 
         // The task's launch moves the revision on its own; pause at whatever it is now.
         let server = app.server

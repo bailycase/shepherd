@@ -127,3 +127,32 @@ struct AutomationRunLogTests {
         #expect(log.runs.isEmpty)
     }
 }
+
+/// A Project automation's run follows its Project task, whose worker may not exist yet.
+@Suite("Automation run log: Project runs")
+struct AutomationProjectRunLogTests {
+    @Test func followsTheTask() {
+        let project = ProjectID()
+        let automation = Automation(id: AutomationID(rawValue: "p"), name: "loop", prompt: "p", cwd: "/tmp", projectID: project,
+                                    trigger: .schedule(AutomationSchedule(rrule: "FREQ=DAILY")))
+        var task = ProjectTask(operationID: UUID(), spaceID: SpaceID(), title: "t", prompt: "p", phase: .queued)
+        func state() -> ShepherdState {
+            var p = Project(id: project, name: "P")
+            p.tasks = [task]
+            return ShepherdState(automations: [automation], projects: [p])
+        }
+        let log = AutomationRunLog(url: FileManager.default.temporaryDirectory.appendingPathComponent("runs-\(UUID()).json"))
+        log.openThreadRun(automation.id, agentID: task.workerAgentID, trigger: "Scheduled run", triggerURL: nil)
+        log.record(from: state(), to: state())
+        #expect(log.runs[automation.id]?.last?.endedAt == nil, "a queued task's missing worker doesn't end the run")
+        let before = state()
+        task.phase = .waiting
+        log.record(from: before, to: state())
+        #expect(log.runs[automation.id]?.last?.result == .needsYou)
+        let asking = state()
+        task.phase = .settled
+        log.record(from: asking, to: state())
+        let run = log.runs[automation.id]?.last
+        #expect(run?.result == .finished && run?.endedAt != nil && run?.unread == true)
+    }
+}

@@ -176,11 +176,15 @@ public struct AutomationTriggerStatus: Codable, Hashable, Sendable {
     public var retryAt: Double?
     /// Runs started today against `limits.maxPerDay`.
     public var runsToday: Int
-    /// Every trigger on the host is paused (Settings ▸ Automations).
+    /// Every trigger on the host is paused.
     public var allPaused: Bool
+    /// The host's time zone identifier: schedules run in it, so a client previews in it too.
+    public var timeZone: String?
 
     public init(state: State, reason: String? = nil, pending: [AutomationEvent] = [], nextRunAt: Double? = nil,
-                lastCheckedAt: Double? = nil, retryAt: Double? = nil, runsToday: Int = 0, allPaused: Bool = false) {
+                lastCheckedAt: Double? = nil, retryAt: Double? = nil, runsToday: Int = 0, allPaused: Bool = false,
+                timeZone: String? = nil) {
+        self.timeZone = timeZone
         self.state = state
         self.reason = reason
         self.pending = pending
@@ -191,7 +195,7 @@ public struct AutomationTriggerStatus: Codable, Hashable, Sendable {
         self.allPaused = allPaused
     }
 
-    private enum CodingKeys: String, CodingKey { case state, reason, pending, nextRunAt, lastCheckedAt, retryAt, runsToday, allPaused }
+    private enum CodingKeys: String, CodingKey { case state, reason, pending, nextRunAt, lastCheckedAt, retryAt, runsToday, allPaused, timeZone }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -203,6 +207,7 @@ public struct AutomationTriggerStatus: Codable, Hashable, Sendable {
         retryAt = try c.decodeIfPresent(Double.self, forKey: .retryAt)
         runsToday = try c.decodeIfPresent(Int.self, forKey: .runsToday) ?? 0
         allPaused = try c.decodeIfPresent(Bool.self, forKey: .allPaused) ?? false
+        timeZone = try c.decodeIfPresent(String.self, forKey: .timeZone)
     }
 }
 
