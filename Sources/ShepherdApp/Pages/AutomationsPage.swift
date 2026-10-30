@@ -22,13 +22,19 @@ struct AutomationsPageActions {
     var delete: (AutomationKey) -> Void
     var edit: (AutomationKey) -> Void
     var create: () -> Void
+    var pause: (AutomationKey) -> Void = { _ in }
+    var resume: (AutomationKey) -> Void = { _ in }
+    var runEvent: (AutomationKey, String) -> Void = { _, _ in }
+    var dismissEvent: (AutomationKey, String) -> Void = { _, _ in }
+    var setAllPaused: (Bool) -> Void = { _ in }
+    var openURL: (URL) -> Void = { _ in }
 }
 
-/// The Automations page (NavAutomations): the header with the filter and New automation, the
-/// table of every host's automations (Automation · Starts · Host · Last run), and the selected
-/// one's detail beside it: its prompt, facts, recent runs (each opening its thread), and Run now
-/// or Stop with Edit. Automations have no schedule or trigger, so the board's When and Next
-/// columns and its Scheduled and On an event tabs are left out.
+/// The Automations page (NavAutomations): the header with Pause all triggers, the filter and New
+/// automation, the table of every host's automations (Automation · Trigger · Host · Last run),
+/// and the selected one's detail beside it: its trigger's state, what waits, its prompt, facts,
+/// runs (each opening its thread), and Run now, Pause or Resume (Stop for a manual one's live
+/// run) with Edit.
 struct AutomationsPage: View {
     let model: AutomationsPageModel
     let actions: AutomationsPageActions
@@ -37,6 +43,13 @@ struct AutomationsPage: View {
     var body: some View {
         VStack(spacing: 0) {
             DestinationPageHeader(title: "Automations", chrome: chrome) {
+                if model.hasTriggers || model.allPaused {
+                    Toggle(isOn: Binding(get: { model.allPaused }, set: actions.setAllPaused)) {
+                        Text("Pause all triggers").font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
+                    }
+                    .toggleStyle(.shSwitch)
+                    .help("Stops every schedule and GitHub trigger on this Mac from starting runs. Run now still works.")
+                }
                 SHPageFilterField("Filter automations", text: Binding(get: { model.filter }, set: actions.setFilter))
                 Button("New automation", systemImage: "plus", action: actions.create)
                     .buttonStyle(.sh(.primary))
@@ -57,7 +70,7 @@ struct AutomationsPage: View {
 
     @ViewBuilder private var table: some View {
         VStack(spacing: 0) {
-            SHTableHead(["Automation", "Starts", "Host", "Last run"], columns: AppLayout.automationColumns)
+            SHTableHead(["Automation", "Trigger", "Host", "Last run"], columns: AppLayout.automationColumns)
                 .padding(.top, AppLayout.automationTableTop)
             if let empty = model.emptyText {
                 Text(empty)
@@ -92,7 +105,9 @@ struct AutomationTableRowView: View, Equatable {
     var body: some View {
         let _ = SHRenderProbe.tick("automations.row")
         let key = row.key
-        SHAutomationTableRow(row.name, isOn: row.enabled, switchEnabled: row.canToggle, host: row.host, outcome: row.lastRun,
+        SHAutomationTableRow(row.name, isOn: row.enabled, switchEnabled: row.canToggle, starts: row.trigger,
+                             startsGlyph: row.triggerGlyph, note: row.note, noteState: row.noteState, unread: row.unread,
+                             host: row.host, outcome: row.lastRun,
                              selected: row.selected, columns: AppLayout.automationColumns,
                              toggle: { actions.setEnabled(key, $0) }, select: { actions.select(key) })
             .contextMenu {
@@ -128,6 +143,35 @@ struct AutomationDetailPane: View, Equatable {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     header
+                    if let banner = detail.banner {
+                        let key = detail.key
+                        SHBanner(banner.state, title: banner.title, message: banner.message) {
+                            if banner.canResume {
+                                Button("Resume") { actions.resume(key) }
+                                    .buttonStyle(.sh(.secondary, size: .s))
+                                    .disabled(!detail.canEdit)
+                            }
+                        }
+                        .padding(.horizontal, AppLayout.automationDetailSide)
+                        .padding(.top, AppLayout.automationDetailSectionVertical)
+                    }
+                    if !detail.pending.isEmpty {
+                        section {
+                            SHPageSectionLabel("Waiting · \(detail.pending.count)")
+                            Text("Each waits for a free run. Run now starts it past the limits.")
+                                .font(.sh(.caption))
+                                .foregroundStyle(Color.sh.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            ForEach(detail.pending) { event in
+                                let key = detail.key
+                                SHAutomationPendingEvent(event.title, waited: event.waited, enabled: detail.canRun,
+                                                         run: { actions.runEvent(key, event.id) },
+                                                         dismiss: { actions.dismissEvent(key, event.id) })
+                            }
+                        }
+                    }
+                    // A triggered automation is an inbox: its runs lead, its definition follows.
+                    if detail.triggered { runs.overlay(alignment: .bottom) { SHHairline() } }
                     section {
                         SHPageSectionLabel("Prompt")
                         SHPageQuote(detail.prompt)
@@ -140,7 +184,7 @@ struct AutomationDetailPane: View, Equatable {
                             }
                         }
                     }
-                    runs
+                    if !detail.triggered { runs }
                 }
             }
             footer
@@ -175,9 +219,18 @@ struct AutomationDetailPane: View, Equatable {
 
     private var runs: some View {
         VStack(alignment: .leading, spacing: SH.Space.s) {
-            SHPageSectionLabel("Recent runs")
+            SHPageSectionLabel(detail.triggered ? "Runs" : "Recent runs")
             if let note = detail.runsNote {
                 Text(note).shText(.caption).foregroundStyle(Color.sh.textTertiary)
+            } else if detail.triggered {
+                VStack(spacing: 0) {
+                    ForEach(detail.runs) { run in
+                        SHAutomationInboxRun(run.trigger ?? "Run now", started: run.started, word: run.word, state: run.state,
+                                             duration: run.duration, unread: run.unread, failure: run.failure,
+                                             open: run.thread.map { thread in { actions.openThread(thread) } },
+                                             openPullRequest: run.pullRequest.map { url in { actions.openURL(url) } })
+                    }
+                }
             } else {
                 VStack(spacing: 0) {
                     ForEach(detail.runs) { run in
@@ -195,7 +248,20 @@ struct AutomationDetailPane: View, Equatable {
     private var footer: some View {
         let key = detail.key
         return HStack(spacing: SH.Space.m) {
-            if detail.live {
+            if detail.triggered {
+                Button("Run now", systemImage: "play.fill") { actions.run(key) }
+                    .buttonStyle(.sh(.secondary, size: .s))
+                    .disabled(!detail.canRun)
+                    .help("Starts one run now, outside the trigger and its limits")
+                // A paused trigger's banner holds Resume.
+                if let paused = detail.paused, !(paused && detail.banner?.canResume == true) {
+                    Button(paused ? "Resume" : "Pause", systemImage: paused ? "play.circle" : "pause") {
+                        paused ? actions.resume(key) : actions.pause(key)
+                    }
+                    .buttonStyle(.sh(.ghost, size: .s))
+                    .disabled(!detail.canEdit)
+                }
+            } else if detail.live {
                 Button("Stop", systemImage: "stop.fill") { actions.stop(key) }
                     .buttonStyle(.sh(.secondary, size: .s))
                     .disabled(!detail.canStop)

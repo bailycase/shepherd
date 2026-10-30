@@ -106,7 +106,8 @@ struct ProjectDrop: Equatable {
                 regionEnd = index
             case .project(let project) where project.depth > source.depth && !movable.isEmpty && regionEnd == index - 1:
                 regionEnd = index
-            case .row where !movable.isEmpty && regionEnd == index - 1:
+            case .row where !movable.isEmpty && regionEnd == index - 1,
+                 .runGroup where !movable.isEmpty && regionEnd == index - 1:
                 regionEnd = index
             default:
                 continue
@@ -169,6 +170,17 @@ private struct SidebarTreeItemView: View, Equatable {
                 SHSidebarSection(.host(name, unreachable: unreachable))
             case .project(let project):
                 projectRow(project)
+            case .runGroup(let group):
+                let key = group.key
+                SHAutomationGroupRow(group.group.name, count: group.group.count, unread: group.group.unread, expanded: group.expanded,
+                                     rollup: group.group.rollup, paused: group.group.paused) { vm.toggleRunGroup(key) }
+                    .padding(.leading, CGFloat(group.depth) * (SHProjectMetrics.chevronSlot + SHProjectMetrics.gap))
+                    .help("\(group.group.name): runs of this automation")
+                    .contextMenu {
+                        Button("Show in Automations", systemImage: SHGlyph.automation.symbolName) {
+                            vm.showAutomation(group.group.automation)
+                        }
+                    }
             case .row(let row):
                 SHSidebarRow(row.title, leading: row.leading, selected: row.selected, dimmed: row.offline,
                              accessory: row.accessory, hasGoal: row.hasGoal, nested: true)
