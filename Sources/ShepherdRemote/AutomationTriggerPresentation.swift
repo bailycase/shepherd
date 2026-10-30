@@ -49,6 +49,8 @@ public enum AutomationSchedulePreset: Hashable, Sendable {
             guard pair.count == 2, parts[pair[0]] == nil else { return nil }
             parts[pair[0]] = pair[1]
         }
+        // On the minute is what every preset means (an older editor wrote it out).
+        if parts["BYSECOND"] == "0" { parts["BYSECOND"] = nil }
         let interval = parts.removeValue(forKey: "INTERVAL").map { Int($0) } ?? 1
         guard let interval, interval > 0, let freq = parts.removeValue(forKey: "FREQ") else { return nil }
         switch freq {

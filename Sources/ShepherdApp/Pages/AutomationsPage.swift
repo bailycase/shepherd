@@ -26,7 +26,8 @@ struct AutomationsPageActions {
     var resume: (AutomationKey) -> Void = { _ in }
     var runEvent: (AutomationKey, String) -> Void = { _, _ in }
     var dismissEvent: (AutomationKey, String) -> Void = { _, _ in }
-    var setAllPaused: (Bool) -> Void = { _ in }
+    /// Pause all triggers on a host (This Mac's `PageHost.localID`), or resume them.
+    var setAllPaused: (UUID, Bool) -> Void = { _, _ in }
     var openURL: (URL) -> Void = { _ in }
 }
 
@@ -43,8 +44,23 @@ struct AutomationsPage: View {
     var body: some View {
         VStack(spacing: 0) {
             DestinationPageHeader(title: "Automations", chrome: chrome) {
-                if model.hasTriggers || model.allPaused {
-                    Toggle(isOn: Binding(get: { model.allPaused }, set: actions.setAllPaused)) {
+                if !model.hostPauses.isEmpty {
+                    // Hosts have their own Pause all: one menu, a checked host is paused.
+                    SHPopupMenu(model.pauseMenuTitle, minWidth: 0) {
+                        Section("Pause all triggers on") {
+                            if model.hasTriggers || model.allPaused {
+                                Toggle(PageHost.localName, isOn: Binding(get: { model.allPaused },
+                                                                         set: { actions.setAllPaused(PageHost.localID, $0) }))
+                            }
+                            ForEach(model.hostPauses) { host in
+                                Toggle(host.name, isOn: Binding(get: { host.paused }, set: { actions.setAllPaused(host.id, $0) }))
+                            }
+                        }
+                    }
+                    .accessibilityLabel("Pause all triggers")
+                    .help("Stops every schedule and GitHub trigger on a host from starting runs. Run now still works.")
+                } else if model.hasTriggers || model.allPaused {
+                    Toggle(isOn: Binding(get: { model.allPaused }, set: { actions.setAllPaused(PageHost.localID, $0) })) {
                         Text("Pause all triggers").font(.sh(.ui)).foregroundStyle(Color.sh.textSecondary)
                     }
                     .toggleStyle(.shSwitch)
@@ -148,6 +164,10 @@ struct AutomationDetailPane: View, Equatable {
                         SHBanner(banner.state, title: banner.title, message: banner.message) {
                             if banner.canResume {
                                 Button("Resume") { actions.resume(key) }
+                                    .buttonStyle(.sh(.secondary, size: .s))
+                                    .disabled(!detail.canEdit)
+                            } else if banner.resumesAll {
+                                Button("Resume all") { actions.setAllPaused(key.host, false) }
                                     .buttonStyle(.sh(.secondary, size: .s))
                                     .disabled(!detail.canEdit)
                             }

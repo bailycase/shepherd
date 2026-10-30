@@ -173,7 +173,9 @@ an inbox, like Codex's Scheduled view: each firing is a run with what fired it. 
 and Next live in the Trigger column, the line under the name and the detail; there are no tabs.
 
 - **Header** (`SHPageHeader`): "Automations", **Pause all triggers** (a switch, shown while This
-  Mac has a triggered automation or the switch is on), "Filter automations" (`SHPageFilterField`: name,
+  Mac has a triggered automation or the switch is on; once a connected host that serves triggers
+  has a triggered automation, a popup instead, "Pause triggers" or "Paused on build-01", whose
+  checked items are the paused hosts, This Mac first), "Filter automations" (`SHPageFilterField`: name,
   host or prompt), and **New automation**.
 - **Table**, columns Automation · Trigger · Host · Last run (`2fr · 76pt · 76pt · 1.15fr`,
   `SHTableColumns`, 16pt gaps), under its labels (`SHTableHead`, 16pt below the header). Each row
@@ -219,18 +221,23 @@ and Next live in the Trigger column, the line under the name and the detail; the
     it or "Run now", the outcome, start and length, why it didn't start, and a **PR** button that
     opens the pull request). Opening a run selects its thread, which marks it read. Facts: When and
     Next run, or one per GitHub trigger with Who and Checked; Runs in, Limits, Model pins. The
-    footer has Run now and Pause (Resume lives in the banner). Trigger state is This Mac's only.
+    footer has Run now and Pause (Resume lives in the banner). A host with
+    `automationTriggersCapability` gets the same inbox (its status read when the page appears and
+    every 30 s while it shows; opening a run sends `markRead`), and its Pause all banner offers
+    **Resume all**; an older host's automation shows the facts alone.
   - **Footer** pinned under a hairline, padded 12pt above and below and 14pt at the sides: **Run
     now** (secondary, small, a play glyph; **Stop** while a run is live), why nothing can change
     here when the host is offline or too old, a spacer, and **Edit** (ghost, small).
 - **New automation and Edit** open `AutomationEditorSheet`: Host (for a new one, when a connected
   host serves automations), Name, Folder (with Choose…, the directory browser on that host),
-  Prompt, and On. On This Mac it also has Trigger (Manual · Schedule · GitHub): a schedule's
-  Repeats (Minutes ≥ 5 · Daily · Weekly · Custom RRULE) with its time or days and a Next run line
-  that names an invalid rule; one to five GitHub triggers (Repository, defaulting to the folder's
+  Prompt, and On. On This Mac, and on a host that serves triggers, it also has Trigger (Manual · Schedule ·
+  GitHub): a schedule's Repeats (Minutes ≥ 5 · Daily · Weekly · Custom RRULE) with its time or
+  days and a Next run line that names an invalid rule (a new or changed interval adds "Every 30
+  min, counted from when you save"; a host's schedule previews in its time zone once its status
+  said which, else in this Mac's with a note); one to five GitHub triggers (Repository, defaulting to the folder's
   origin; Events; Labels; Authors; Title has; Number) and Who can trigger, with a warning banner
   when widened past collaborators; then Runs go to (New thread or an existing thread), Workspace,
-  Limits, Model and Thinking (Default or a pin). The form is `AutomationTriggerForm`, sent as
+  Limits, Model, Thinking and Speed (Default or a pin). The form is `AutomationTriggerForm`, sent as
   `RemoteAutomationDraft.settings`. Saving never starts a run. This Mac saves through its server; a host through
   `RemoteAutomationRequest.create`/`.update`, the fields the iOS form has.
 - The page reads every automation's runs when it opens and whenever a run starts, settles or ends

@@ -16,6 +16,8 @@ struct AutomationsDestination: View {
         AutomationsPage(model: vm.automationsPage, actions: actions, chrome: chrome)
             .task(id: vm.automationRunsSignature) { await vm.loadAutomationPageRuns() }
             .onAppear { vm.refreshAutomationTriggers() }
+            // A host's trigger status, now and every 30 s while the page is on screen.
+            .task { await vm.watchRemoteAutomationTriggers() }
             .sheet(item: $editor) { target in
                 AutomationEditorSheet(vm: vm, target: target) { editor = nil }
                     .dialogSheetFrame()
@@ -33,12 +35,11 @@ struct AutomationsDestination: View {
             delete: { vm.deleteAutomation($0) },
             edit: { editor = .edit($0) },
             create: { editor = .new },
-            // Trigger state is This Mac's; a host's automation shows no pause, resume or pending event.
-            pause: { vm.pauseAutomationTrigger($0.automation) },
-            resume: { vm.resumeAutomationTrigger($0.automation) },
-            runEvent: { vm.runPendingAutomationEvent($0.automation, eventID: $1) },
-            dismissEvent: { vm.dismissAutomationEvent($0.automation, eventID: $1) },
-            setAllPaused: { vm.setAllAutomationTriggersPaused($0) },
+            pause: { vm.pauseAutomationTrigger($0) },
+            resume: { vm.resumeAutomationTrigger($0) },
+            runEvent: { vm.runPendingAutomationEvent($0, eventID: $1) },
+            dismissEvent: { vm.dismissAutomationEvent($0, eventID: $1) },
+            setAllPaused: { vm.setAllAutomationTriggersPaused(host: $0, $1) },
             openURL: { NSWorkspace.shared.open($0) })
     }
 }

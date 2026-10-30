@@ -63,7 +63,7 @@ extension ShepherdViewModel {
     /// threads in order.
     var sidebarWalkRows: [SidebarListRow] {
         sidebarStyle == .projects ? sidebarTree.visibleRows(collapsed: collapsedProjects)
-            : sidebarLists.visibleRows(collapsed: collapsedActivitySections)
+            : sidebarLists.visibleRows(collapsed: collapsedActivitySections, openRunGroups: collapsedProjects)
     }
 
     /// The rows ⌘1–9 reach, in the style on screen.

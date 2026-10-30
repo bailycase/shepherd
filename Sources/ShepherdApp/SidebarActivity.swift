@@ -32,6 +32,8 @@ enum SidebarActivitySection: String, CaseIterable, Hashable {
 enum SidebarActivityItem: Identifiable, Equatable {
     case header(SidebarActivitySection, count: Int, collapsed: Bool)
     case row(SidebarListRow)
+    /// A triggered automation's runs in Automations, folded into one row.
+    case runGroup(SidebarRunGroup, expanded: Bool)
     case project(SidebarLogicalProject)
     case mission(SidebarMission)
 
@@ -39,6 +41,7 @@ enum SidebarActivityItem: Identifiable, Equatable {
         switch self {
         case .header(let section, _, _): AnyHashable("header.\(section.rawValue)")
         case .row(let row): AnyHashable(row.id)
+        case .runGroup(let group, _): AnyHashable(SidebarLists.runGroupKey(group.automation))
         case .project(let project): AnyHashable(project.ref)
         case .mission(let mission): AnyHashable(mission.id)
         }
@@ -77,16 +80,37 @@ extension SidebarLists {
         [(.automations, automations), (.designs, designs), (.needsYou, needsYou), (.working, working), (.done, done), (.pinned, pinned), (.recents, recents)]
     }
 
-    func visibleRows(collapsed: Set<SidebarActivitySection>) -> [SidebarListRow] {
+    /// `openRunGroups` holds the open groups' keys (`runGroupKey`); a closed group's runs aren't visible.
+    func visibleRows(collapsed: Set<SidebarActivitySection>, openRunGroups: Set<String> = []) -> [SidebarListRow] {
         sections.flatMap { collapsed.contains($0.section) ? [] : $0.rows }
+            .filter { row in row.runGroup.map { openRunGroups.contains(Self.runGroupKey($0)) } ?? true }
     }
 
-    func items(collapsed: Set<SidebarActivitySection>, projects: [SidebarLogicalProject] = [], showsProjects: Bool = true,
-               missions: [SidebarMission] = [], showsMissions: Bool = false) -> [SidebarActivityItem] {
+    /// An Activity run group's open key, remembered beside the space tree's (`SidebarRunGroupRow.key`).
+    static func runGroupKey(_ automation: AutomationID) -> String { "runs.open:activity:\(automation.rawValue)" }
+
+    func items(collapsed: Set<SidebarActivitySection>, openRunGroups: Set<String> = [], projects: [SidebarLogicalProject] = [],
+               showsProjects: Bool = true, missions: [SidebarMission] = [], showsMissions: Bool = false) -> [SidebarActivityItem] {
         func block(_ section: SidebarActivitySection, _ rows: [SidebarListRow]) -> [SidebarActivityItem] {
             guard !rows.isEmpty else { return [] }
             let folded = collapsed.contains(section)
-            return [.header(section, count: rows.count, collapsed: folded)] + (folded ? [] : rows.map(SidebarActivityItem.row))
+            var items: [SidebarActivityItem] = [.header(section, count: rows.count, collapsed: folded)]
+            guard !folded else { return items }
+            var current: AutomationID?
+            for row in rows {
+                guard let automation = row.runGroup, let group = runGroups[automation] else {
+                    current = nil
+                    items.append(.row(row))
+                    continue
+                }
+                let open = openRunGroups.contains(Self.runGroupKey(automation))
+                if current != automation {
+                    current = automation
+                    items.append(.runGroup(group, expanded: open))
+                }
+                if open { items.append(.row(row)) }
+            }
+            return items
         }
         var items: [SidebarActivityItem] = []
         for (section, rows) in sections {
@@ -115,7 +139,8 @@ extension SidebarLists {
 @MainActor
 extension ShepherdViewModel {
     var sidebarActivityItems: [SidebarActivityItem] {
-        presentedSidebarLists.items(collapsed: collapsedActivitySections, projects: sidebarLogicalProjects, showsProjects: projectsEnabled,
+        presentedSidebarLists.items(collapsed: collapsedActivitySections, openRunGroups: collapsedProjects,
+                                    projects: sidebarLogicalProjects, showsProjects: projectsEnabled,
                                     missions: sidebarMissions, showsMissions: settings.missionsEnabled)
     }
 
@@ -153,6 +178,11 @@ extension ShepherdViewModel {
         guard sidebarStyle == .activity, let selected = selectedSidebarRow,
               let section = sidebarLists.sections.first(where: { $0.rows.contains { $0.id == selected } })?.section else { return }
         collapsedActivitySections.remove(section)
+        // Selecting a run opens its group.
+        if let automation = sidebarLists.automations.first(where: { $0.id == selected })?.runGroup {
+            let key = SidebarLists.runGroupKey(automation)
+            if !collapsedProjects.contains(key) { collapsedProjects.insert(key) }
+        }
     }
 
     /// A command or rejected opening send may never report a turn. Drop the startup marker

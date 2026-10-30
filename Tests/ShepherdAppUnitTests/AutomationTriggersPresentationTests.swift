@@ -6,9 +6,10 @@ import ShepherdUI
 import Testing
 @testable import ShepherdApp
 
-/// The Mac's automation triggers as drawn: the editor's form (presets to RRULE and back, what
-/// blocks a save, the settings it sends), the line under a triggered automation's name, the
-/// sidebar's Automations badge, and run threads folded under their automation in the space tree.
+/// The Mac's automation triggers as drawn: what the editor adds to the shared form (speed, a
+/// changed rule's anchor), the line under a triggered automation's name, a host's inbox, the
+/// sidebar's Automations badge, and run threads folded under their automation in the space tree
+/// and in Activity.
 @Suite("Automation triggers presentation")
 @MainActor
 struct AutomationTriggersPresentationTests {
@@ -24,80 +25,39 @@ struct AutomationTriggersPresentationTests {
 
     // MARK: Form
 
-    @Test func presetsRoundTripThroughTheirRRule() {
-        let presets: [MacSchedulePreset] = [
-            .everyMinutes(15), .daily(hour: 9, minute: 30), .weekly(weekdays: [2, 4], hour: 9, minute: 0),
-        ]
-        for preset in presets {
-            #expect(MacSchedulePreset(rrule: preset.rrule) == preset)
-            #expect(MacSchedulePreset(rrule: "RRULE:" + preset.rrule.lowercased()) == preset)
-        }
-        #expect(MacSchedulePreset(rrule: "FREQ=WEEKLY;BYDAY=MO,TH;BYHOUR=9;BYMINUTE=0").summary == "Mon, Thu at 09:00")
-        #expect(MacSchedulePreset(rrule: "FREQ=MONTHLY;BYMONTHDAY=1") == .custom("FREQ=MONTHLY;BYMONTHDAY=1"))
-        #expect(MacSchedulePreset.daily(hour: 9, minute: 5).summary == "Daily at 09:05")
-    }
+    // The presets, validation and round trip live with the shared form (ShepherdRemoteUnitTests);
+    // these are what the Mac editor adds on top: speed, and a changed rule's anchor.
 
-    @Test func formBlocksWhatTheHostWouldRefuse() {
-        var form = MacTriggerForm()
-        #expect(form.validationError(now: now, calendar: calendar) == nil)
-        form.kind = .schedule
-        form.preset = .weekly
-        form.weekdays = []
-        #expect(form.validationError(now: now, calendar: calendar) == "Pick at least one day.")
-        form.preset = .custom
-        form.customRRule = "FREQ=MINUTELY"
-        #expect(form.validationError(now: now, calendar: calendar) == "Runs must be at least 5 minutes apart.")
-        form.customRRule = "FREQ=SOMETIMES"
-        #expect(form.validationError(now: now, calendar: calendar)?.contains("isn't supported") == true)
-        form.kind = .github
-        form.github[0].events = []
-        #expect(form.validationError(now: now, calendar: calendar) == "A GitHub trigger needs at least one event.")
-        form.github[0].events = [.pullRequestOpened]
-        form.github[0].number = "12a"
-        #expect(form.validationError(now: now, calendar: calendar) == "Trigger 1: the number must be a whole number.")
-        form.github[0].number = "#12"
-        #expect(form.validationError(now: now, calendar: calendar) == nil)
-        form.kind = .manual
-        form.thread = AgentID()
-        #expect(form.validationError(now: now, calendar: calendar) != nil)
-    }
-
-    @Test func formSendsEverySettingAndShowsTheNextRun() throws {
-        var form = MacTriggerForm()
-        form.kind = .schedule
-        form.preset = .daily
-        form.hour = 9
-        form.minute = 0
-        form.workspace = .local
-        form.maxConcurrent = 3
+    @Test func theFormSendsSpeedAndAnUnchangedRuleKeepsItsAnchor() throws {
+        var automation = Automation(name: "nightly", prompt: "p", cwd: "/tmp",
+                                    trigger: .schedule(AutomationSchedule(rrule: "FREQ=MINUTELY;INTERVAL=30", start: 42)))
+        var form = AutomationTriggerForm(AutomationSettings(of: automation))
+        #expect(form.scheduleKind == .every && form.everyMinutes == 30 && form.start == 42)
+        #expect(form.anchorNote == nil, "a saved interval keeps counting from its anchor")
+        form.speed = ServiceTier.fast.rawValue
         form.model = "gpt-5"
-        let next = try #require(form.nextRun(after: now, calendar: calendar))
-        #expect(next == now.addingTimeInterval(3600))
-        var automation = Automation(name: "nightly", prompt: "p", cwd: "/tmp")
         try form.settings.apply(to: &automation)
-        #expect(automation.trigger == .schedule(AutomationSchedule(rrule: "FREQ=DAILY;BYHOUR=9;BYMINUTE=0;BYSECOND=0")))
-        #expect(automation.workspace == .local && automation.limits.maxConcurrent == 3 && automation.model == "gpt-5")
-        #expect(automation.thinking == nil)
-        // Read back, the form is what was saved, and an unchanged schedule keeps its anchor.
-        automation.trigger = .schedule(AutomationSchedule(rrule: form.schedulePreset.rrule, start: 42))
-        let reread = MacTriggerForm(automation)
-        #expect(reread.preset == .daily && reread.hour == 9 && reread.workspace == .local)
-        #expect(reread.schedule.start == 42)
-    }
+        #expect(automation.serviceTier == .fast && automation.model == "gpt-5")
+        #expect(automation.trigger == .schedule(AutomationSchedule(rrule: "FREQ=MINUTELY;INTERVAL=30", start: 42)))
 
-    @Test func githubFieldsBecomeATrigger() {
-        var field = GitHubTriggerForm()
-        field.repo = " acme/app "
-        field.events = [.pullRequestOpened, .issueLabeled]
-        field.labels = "shepherd, , bug"
-        field.authors = "@octocat"
-        let trigger = field.trigger
-        #expect(trigger.repo == "acme/app")
-        #expect(trigger.events == [.issueLabeled, .pullRequestOpened])
-        #expect(trigger.labels == ["shepherd", "bug"])
-        #expect(trigger.authors == ["octocat"])
-        #expect(trigger.titleContains == nil && trigger.number == nil)
-        #expect(GitHubTriggerForm(trigger).trigger == trigger)
+        // A changed interval is anchored when it's saved, and the editor says so.
+        form.everyMinutes = 45
+        #expect(form.anchorNote == "Every 45 min, counted from when you save")
+        #expect(form.trigger == .schedule(AutomationSchedule(rrule: "FREQ=MINUTELY;INTERVAL=45")))
+        form.everyMinutes = 30
+        #expect(form.trigger == .schedule(AutomationSchedule(rrule: "FREQ=MINUTELY;INTERVAL=30", start: 42)), "changed back, the anchor returns")
+        form.scheduleKind = .daily
+        #expect(form.anchorNote == nil, "a daily time doesn't count from the save")
+        form.speed = ""
+        try form.settings.apply(to: &automation)
+        #expect(automation.serviceTier == nil)
+        // A new interval has no anchor yet.
+        // A schedule an older Mac editor saved, on the second, reads as its preset.
+        #expect(AutomationSchedulePreset(rrule: "FREQ=DAILY;BYHOUR=9;BYMINUTE=0;BYSECOND=0") == .daily(hour: 9, minute: 0))
+        var fresh = AutomationTriggerForm()
+        fresh.kind = .schedule
+        fresh.scheduleKind = .every
+        #expect(fresh.anchorNote == "Every 30 min, counted from when you save")
     }
 
     // MARK: Page
@@ -204,5 +164,69 @@ struct AutomationTriggersPresentationTests {
         #expect(rows.map(\.title) == ["#12 Fix login", "#13 Flaky", "mine"])
         #expect(rows.map(\.projectDepth) == [1, 1, 0])
         #expect(tree.visibleRows(collapsed: open).count == 3)
+    }
+
+    @Test func runThreadsFoldUnderTheirAutomationInActivity() throws {
+        let space = Fixture.space("shepherd", path: "/code/shepherd")
+        let automation = Automation(name: "pr-loop", prompt: "p", cwd: "/code/shepherd",
+                                    trigger: .github([GitHubTrigger(events: [.issueOpened])]))
+        func run(_ name: String, at: Double, status: AgentStatus = .idle) -> Agent {
+            var agent = Fixture.agent(name, in: space).agent
+            agent.automationOrigin = AutomationOrigin(automationID: automation.id)
+            agent.lastActiveAt = at
+            agent.status = status
+            return agent
+        }
+        var mine = Fixture.agent("mine", in: space).agent
+        mine.lastActiveAt = 20
+        let asking = run("#14 Asks", at: 40, status: .blocked)
+        let working = run("#12 Fix login", at: 30, status: .working), done = run("#13 Flaky", at: 10)
+        let state = ShepherdState(spaces: [space], agents: [asking, working, mine, done], automations: [automation])
+        let lists = SidebarDerivation.lists(SidebarSource(local: state, unreadRuns: [done.id]))
+        // The asking run stays in Needs you; the others leave Working and Recents for Automations.
+        #expect(lists.needsYou.map(\.title) == ["#14 Asks"])
+        #expect(lists.automations.map(\.title) == ["#12 Fix login", "#13 Flaky"])
+        #expect(lists.working.isEmpty && lists.recents.map(\.title) == ["mine"])
+        let group = try #require(lists.runGroups[automation.id])
+        #expect(group.count == 2 && group.unread == 1 && group.rollup == .running && group.name == "pr-loop")
+
+        // Closed (the default): one group row in Automations and its runs out of ⌘↑/↓'s reach.
+        let closed = lists.items(collapsed: [])
+        #expect(closed.filter { if case .runGroup = $0 { true } else { false } }.count == 1)
+        #expect(!closed.contains { if case .row(let row) = $0 { row.runGroup != nil } else { false } })
+        #expect(!lists.visibleRows(collapsed: []).contains { $0.runGroup != nil })
+
+        let open: Set<String> = [SidebarLists.runGroupKey(automation.id)]
+        let rows = lists.items(collapsed: [], openRunGroups: open).compactMap { if case .row(let row) = $0 { row.title } else { nil } }
+        #expect(rows.contains("#12 Fix login") && rows.contains("#13 Flaky"))
+        #expect(lists.visibleRows(collapsed: [], openRunGroups: open).count == 4)
+    }
+
+    @Test func aHostsTriggeredAutomationGetsTheInboxAndItsOwnPauseAll() throws {
+        let hostID = UUID()
+        let automation = Automation(name: "nightly", prompt: "p", cwd: "/srv",
+                                    trigger: .schedule(AutomationSchedule(rrule: "FREQ=DAILY;BYHOUR=9;BYMINUTE=0")))
+        let key = AutomationKey(host: hostID, automation: automation.id)
+        let local = AutomationHost(id: PageHost.localID, name: PageHost.localName, connected: true, manageable: true,
+                                   state: ShepherdState(), triggers: true)
+        func host(triggers: Bool) -> AutomationHost {
+            AutomationHost(id: hostID, name: "build-01", connected: true, manageable: true,
+                           state: ShepherdState(automations: [automation]), triggers: triggers)
+        }
+        let event = AutomationEvent(id: "schedule:1", title: "Scheduled run", occurredAt: now.timeIntervalSince1970 - 60)
+        let paused = AutomationTriggerStatus(state: .paused, pending: [event], allPaused: true, timeZone: "Europe/Berlin")
+        let model = AutomationsPageModel.make(hosts: [local, host(triggers: true)], runs: [key: []], selection: key, filter: "",
+                                              triggers: [key: paused], now: now, timeZone: utc, locale: locale)
+        #expect(model.hostPauses == [AutomationsPageHostPause(id: hostID, name: "build-01", paused: true)])
+        #expect(model.pauseMenuTitle == "Paused on build-01")
+        let detail = try #require(model.detail)
+        #expect(detail.paused == true && detail.pending.map(\.id) == ["schedule:1"])
+        #expect(detail.banner?.title == "All triggers on build-01 are paused" && detail.banner?.resumesAll == true)
+
+        // A host without triggers sends no status: the facts alone, no Pause and nothing waiting.
+        let old = AutomationsPageModel.make(hosts: [local, host(triggers: false)], runs: [key: []], selection: key, filter: "",
+                                            now: now, timeZone: utc, locale: locale)
+        #expect(old.hostPauses.isEmpty && old.detail?.paused == nil && old.detail?.banner == nil && old.detail?.pending == [])
+        #expect(old.detail?.facts.first?.value == "Daily at 09:00")
     }
 }

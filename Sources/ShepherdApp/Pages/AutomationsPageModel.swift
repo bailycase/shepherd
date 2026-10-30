@@ -84,6 +84,15 @@ struct AutomationsPageBanner: Equatable {
     var message: String?
     /// Resume clears it (not Pause all, which the header's switch owns).
     var canResume: Bool
+    /// A host's Pause all: the banner's Resume all lifts it there (This Mac's is the header's switch).
+    var resumesAll = false
+}
+
+/// A remote host's Pause all triggers, in the header's menu.
+struct AutomationsPageHostPause: Identifiable, Equatable {
+    var id: UUID
+    var name: String
+    var paused: Bool
 }
 
 /// The selected automation, beside the table.
@@ -131,6 +140,18 @@ struct AutomationsPageModel: Equatable {
     /// This Mac's Pause all triggers, and whether it has a trigger to pause.
     var allPaused = false
     var hasTriggers = false
+    /// Each connected host that serves triggers and has a triggered automation, with its own Pause all.
+    var hostPauses: [AutomationsPageHostPause] = []
+
+    /// The header's menu title once hosts have their own Pause all: what is paused, else the action.
+    var pauseMenuTitle: String {
+        let paused = (allPaused ? [PageHost.localName] : []) + hostPauses.filter(\.paused).map(\.name)
+        switch paused.count {
+        case 0: return "Pause triggers"
+        case 1: return "Paused on \(paused[0])"
+        default: return "Paused on \(paused.count) hosts"
+        }
+    }
 
     static let manualGlyph = "text.bubble"
     static let scheduleGlyph = "clock"
@@ -159,6 +180,11 @@ struct AutomationsPageModel: Equatable {
             host.state.automations.map { (AutomationKey(host: host.id, automation: $0.id), $0) }
         }, uniquingKeysWith: { first, _ in first })
         model.hasTriggers = hosts.first { $0.id == PageHost.localID }?.state.automations.contains(where: \.isTriggered) ?? false
+        model.hostPauses = hosts.filter { $0.id != PageHost.localID && $0.triggers && $0.connected && $0.state.automations.contains(where: \.isTriggered) }
+            .map { host in
+                AutomationsPageHostPause(id: host.id, name: host.name,
+                                         paused: triggers.contains { $0.key.host == host.id && $0.value.allPaused })
+            }
         model.rows = kept.map { row in
             let busy = pending.contains(row.key)
             var page = AutomationsPageRow(
@@ -232,7 +258,7 @@ struct AutomationsPageModel: Equatable {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = timeZone
         let parts = calendar.dateComponents([.hour, .minute], from: date)
-        let clock = MacSchedulePreset.clock(parts.hour ?? 0, parts.minute ?? 0)
+        let clock = String(format: "%02d:%02d", parts.hour ?? 0, parts.minute ?? 0)
         if calendar.isDate(date, inSameDayAs: now) { return clock }
         if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now), calendar.isDate(date, inSameDayAs: tomorrow) {
             return "tomorrow " + clock
@@ -244,7 +270,7 @@ struct AutomationsPageModel: Equatable {
     static func whenPhrase(_ trigger: AutomationTrigger) -> String {
         switch trigger {
         case .manual: "By hand"
-        case .schedule(let schedule): MacSchedulePreset(rrule: schedule.rrule).summary
+        case .schedule(let schedule): AutomationSchedulePreset(rrule: schedule.rrule).summary
         case .github(let triggers):
             "On GitHub activity in " + repos(triggers)
         }
@@ -354,7 +380,7 @@ extension AutomationsPageDetail {
         switch automation.trigger {
         case .manual: break
         case .schedule(let schedule):
-            trigger.append(.init(label: "When", value: MacSchedulePreset(rrule: schedule.rrule).summary, mono: false))
+            trigger.append(.init(label: "When", value: AutomationSchedulePreset(rrule: schedule.rrule).summary, mono: false))
             if let next = status?.nextRunAt {
                 trigger.append(.init(label: "Next run", value: Page.when(Date(timeIntervalSince1970: next), now: now, timeZone: timeZone,
                                                                         locale: locale), mono: false))
@@ -372,8 +398,9 @@ extension AutomationsPageDetail {
         let today = status.map { " · \($0.runsToday) today" } ?? ""
         trigger.append(.init(label: "Limits", value: "\(automation.limits.maxConcurrent) at once · \(automation.limits.maxPerDay) a day\(today)",
                              mono: false))
-        if automation.model != nil || automation.thinking != nil {
-            let pins = [automation.model, automation.thinking.map { "thinking " + $0.title.lowercased() }].compactMap { $0 }
+        if automation.model != nil || automation.thinking != nil || automation.serviceTier != nil {
+            let pins = [automation.model ?? "default", automation.thinking.map { "thinking " + $0.title.lowercased() },
+                        automation.serviceTier.map { "speed " + $0.title.lowercased() }].compactMap { $0 }
             facts.removeAll { $0.label == "Model" }
             trigger.append(.init(label: "Model", value: pins.joined(separator: " · "), mono: true))
         }
@@ -397,10 +424,15 @@ extension AutomationsPageDetail {
             AutomationsPageEvent(id: event.id, title: event.summary,
                                  waited: SHDuration.text(now.timeIntervalSince1970 - event.occurredAt) + " ago")
         }
-        guard local, let status else { return }
-        if allPaused || status.allPaused {
+        // A host without triggers sends no status: its automation keeps the facts alone.
+        guard let status else { return }
+        if local, allPaused || status.allPaused {
             banner = AutomationsPageBanner(state: .idle, title: "All triggers are paused",
                                            message: "Nothing starts on its own until you turn off Pause all triggers.", canResume: false)
+        } else if status.allPaused {
+            banner = AutomationsPageBanner(state: .idle, title: "All triggers on \(host.name) are paused",
+                                           message: "Nothing starts on its own there until you resume them.", canResume: false,
+                                           resumesAll: true)
         } else {
             switch status.state {
             case .paused:

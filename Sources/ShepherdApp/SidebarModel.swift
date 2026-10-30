@@ -98,7 +98,10 @@ struct SidebarLists: Equatable {
     var recents: [SidebarListRow] = []
     var designs: [SidebarListRow] = []
     /// Automation runs not waiting on the user, most recently active first; one waiting on you is in Needs you.
+    /// A triggered automation's runs sit together (`runGroup`) where its newest run falls.
     var automations: [SidebarListRow] = []
+    /// Each triggered automation's runs in Automations, folded under one row.
+    var runGroups: [AutomationID: SidebarRunGroup] = [:]
     /// Every row once, Needs you's first and the rest most recently active first, pinned or
     /// not: what a launch shows and the New thread page's Continue card read. Unmarked, as derived.
     var activity: [SidebarListRow] = []
@@ -238,6 +241,8 @@ enum SidebarDerivation {
             automation.agentID.map { ($0, automation) }
         }, uniquingKeysWith: { first, _ in first })
         let designs = Set(source.local.designs.map(\.id))
+        var runGroupNames: [AutomationID: String] = [:]
+        var runningRuns: Set<AgentID> = []
         let workers = source.local.projectWorkerIDs
         let missionAgents = source.local.missionAgentIDs
         for (index, agent) in source.local.agents.enumerated() {
@@ -251,11 +256,22 @@ enum SidebarDerivation {
             // question, or a missing sign-in, puts its row in Needs you.
             let needsYou = agent.status == .blocked || notSignedIn
             let run = automation.flatMap { source.openRuns[$0.id] }.flatMap { $0.agentID == agent.id ? $0 : nil }
-            let row = localRow(agent, automation: automation, run: run, needsYou: needsYou,
+            var row = localRow(agent, automation: automation, run: run, needsYou: needsYou,
                                failed: source.failedTurns.contains(agent.id), cannotStart: source.cannotStart.contains(agent.id),
                                notSignedIn: notSignedIn, waiting: source.waiting.contains(agent.id),
                                opening: source.openingTurns.contains(agent.id), since: source.statusSince[agent.id])
-            entries.append(entry(row, automation == nil ? .local(agent.id) : nil, needsYou: needsYou,
+            // A triggered run's thread is ordinary but folds under its automation in Automations
+            // (as in the space tree); one waiting on you stays in Needs you.
+            let origin = automation == nil ? agent.automationOrigin.flatMap { origin in
+                source.local.automations.first { $0.id == origin.automationID }
+            } : nil
+            if let origin, !needsYou {
+                row.runGroup = origin.id
+                row.section = .automations
+                runGroupNames[origin.id] = origin.name
+                if agent.status == .working || source.openingTurns.contains(agent.id) { runningRuns.insert(agent.id) }
+            }
+            entries.append(entry(row, automation == nil && origin == nil ? .local(agent.id) : nil, needsYou: needsYou,
                                  key: agent.lastActiveAt ?? -1, host: 0, index: index))
         }
         if source.designs {
@@ -307,6 +323,25 @@ enum SidebarDerivation {
             }
         }
         lists.pinned = pins.threads.compactMap { pinnedRows[$0] }
+        // A group's runs sit together where its newest run falls, and roll up into its row.
+        var firstAt: [AutomationID: Int] = [:]
+        for (position, row) in lists.automations.enumerated() {
+            if let group = row.runGroup, firstAt[group] == nil { firstAt[group] = position }
+        }
+        lists.automations = lists.automations.enumerated().sorted { a, b in
+            let ka = a.element.runGroup.flatMap { firstAt[$0] } ?? a.offset
+            let kb = b.element.runGroup.flatMap { firstAt[$0] } ?? b.offset
+            return ka != kb ? ka < kb : a.offset < b.offset
+        }.map(\.element)
+        for row in lists.automations {
+            guard let automation = row.runGroup, let name = runGroupNames[automation], case .local(let agent) = row.id else { continue }
+            var group = lists.runGroups[automation]
+                ?? SidebarRunGroup(automation: automation, name: name, paused: source.pausedAutomations.contains(automation))
+            group.count += 1
+            if source.unreadRuns.contains(agent) { group.unread += 1 }
+            if runningRuns.contains(agent) { group.rollup = .running }
+            lists.runGroups[automation] = group
+        }
         lists.done.sort { a, b in
             let left = source.completions[a.id], right = source.completions[b.id]
             let leftTime = left?.completedAt ?? -1, rightTime = right?.completedAt ?? -1

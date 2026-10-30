@@ -417,6 +417,9 @@ final class ShepherdViewModel {
     /// host-wide Pause all triggers switch.
     var automationTriggerStatuses: [AutomationID: AutomationTriggerStatus] = [:]
     var automationTriggersAllPaused = false
+    /// Each remote host's triggered automations' status (hosts with `automationTriggersCapability`),
+    /// read while the Automations page is on screen.
+    var remoteAutomationTriggerStatuses: [AutomationKey: AutomationTriggerStatus] = [:]
     /// Run threads whose pull request was looked up recently.
     @ObservationIgnored var checkedRunPullRequests: Set<AgentID> = []
     /// The Automations page's selected row and its filter. Ephemeral.
