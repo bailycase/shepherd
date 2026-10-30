@@ -264,6 +264,14 @@ public struct AutomationsModel: Equatable, Sendable {
         case .create: ("save the automation", "the automation may have been saved")
         case .update: ("save the changes", "the changes may have been saved")
         case .runs: ("read the runs", nil)
+        case .status: ("read the trigger", nil)
+        case .pause: ("pause the trigger", "the trigger may have paused")
+        case .resume: ("resume the trigger", "the trigger may have resumed")
+        case .runEvent: ("run the event", "the run may have started")
+        case .dismissEvent: ("dismiss the event", "the event may have been dismissed")
+        case .markRead: ("mark the run read", nil)
+        case .setAllPaused(let paused): (paused ? "pause all triggers" : "resume all triggers",
+                                         "triggers may have been \(paused ? "paused" : "resumed")")
         }
         switch error {
         case RemoteHostClientError.rejected(_, let message):
@@ -293,6 +301,7 @@ public struct AutomationsModel: Equatable, Sendable {
         case .finished: "finished"
         case .stopped: "stopped"
         case .interrupted: "interrupted"
+        case .failed: "didn't start"
         }
     }
 
@@ -302,7 +311,7 @@ public struct AutomationsModel: Equatable, Sendable {
         case .needsYou: .attention
         case .finished: .done
         case .stopped: .stopped
-        case .interrupted: .failed
+        case .interrupted, .failed: .failed
         }
     }
 

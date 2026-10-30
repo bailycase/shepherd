@@ -609,6 +609,8 @@ public final class SessionServer: @unchecked Sendable {
     private let agentRecovery: AgentRecoveryStore
     /// How each automation's runs went (support directory), for remote clients.
     private let runLog: AutomationRunLog
+    /// Fires triggered automations (schedules, GitHub). The app installs its host and starts it.
+    public let automationTriggers: AutomationTriggers
     /// The Changes pane's engine: scopes, diffs, the base picker, and each agent's turns with
     /// their Undo (docs/changes.md). The app calls it directly; remote clients through
     /// `RemoteAgentQuery.changes*`.
@@ -911,7 +913,8 @@ public final class SessionServer: @unchecked Sendable {
     /// `trash` is where an Undo moves the files a turn created; tests pass their own.
     public init(socketPath: String, stateURL: URL, pi: PiSetup = .app, modelCatalog: ModelCatalog? = nil,
                 skillsDirectory: URL? = nil, piSkills: PiSkillsSource = .ownHome,
-                trash: @escaping ChangesService.Trash = ChangesService.systemTrash) {
+                trash: @escaping ChangesService.Trash = ChangesService.systemTrash,
+                triggerSource: AutomationTriggers.Source? = nil) {
         self.socketPath = socketPath
         self.store = StateStore(url: stateURL, readOnly: true)
         self.pi = pi
@@ -923,6 +926,8 @@ public final class SessionServer: @unchecked Sendable {
         self.originStore = ThreadOriginStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("thread-origins", isDirectory: true))
         self.agentRecovery = AgentRecoveryStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("agent-recovery", isDirectory: true))
         self.runLog = AutomationRunLog(url: stateURL.deletingLastPathComponent().appendingPathComponent("automation-runs.json"))
+        self.automationTriggers = AutomationTriggers(url: stateURL.deletingLastPathComponent().appendingPathComponent("automation-triggers.json"),
+                                                     source: triggerSource ?? .gh())
         let instructions = InstructionsStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("instructions", isDirectory: true))
         self.instructions = instructions
         self.suggestions = SuggestionsStore(url: instructions.directory.appendingPathComponent("suggestions.json"), instructions: instructions)
@@ -1146,9 +1151,16 @@ public final class SessionServer: @unchecked Sendable {
     /// relaunched their pi on every start and piled up one per launch.
     static func automationRunAgentIDs(in state: ShepherdState) -> Set<AgentID> {
         // The designs space is hidden too, but its agents last (`settleDesignAgents`).
+        // A triggered run's thread (`automationOrigin`) is an ordinary thread and outlives a relaunch.
         let hiddenSpaces = Set(state.spaces.filter(\.holdsAutomations).map(\.id))
-        return Set(state.agents.filter { hiddenSpaces.contains($0.spaceID) }.map(\.id))
+        return Set(state.agents.filter { hiddenSpaces.contains($0.spaceID) && $0.automationOrigin == nil }.map(\.id))
             .union(state.automations.compactMap(\.agentID))
+    }
+
+    /// Agents working without a person: automation runs, including triggered run threads that
+    /// outlive a relaunch. They get the unattended message policy and never auto-recover.
+    static func unattendedAgentIDs(in state: ShepherdState) -> Set<AgentID> {
+        automationRunAgentIDs(in: state).union(state.agents.filter { $0.automationOrigin != nil }.map(\.id))
     }
 
     /// Whether startup must forget designs whose folders are gone, or clear references between
@@ -1357,7 +1369,7 @@ public final class SessionServer: @unchecked Sendable {
             }
         }
         // Runs still open died with the previous launch, their agents with them.
-        runLog.closeOpenRuns()
+        runLog.closeOpenRuns(keeping: Set(store.state.agents.filter { $0.automationOrigin != nil }.map(\.id)))
         do { try agentRecovery.prune(keeping: Set(store.state.agents.map(\.id))) }
         catch { ShepherdLog.warning("Could not prune agent recovery checkpoints") }
         changes.pruneTurns(keeping: Set(store.state.agents.map(\.id)))
@@ -2809,14 +2821,49 @@ public final class SessionServer: @unchecked Sendable {
         } else if !exists {
             return fail("no_such_automation", "The automation no longer exists on the host.")
         }
-        if request != .runs, store.state.automations.contains(where: { $0.id == automationID && $0.projectID != nil }) {
+        let reads: Bool = switch request { case .runs, .status, .markRead: true; default: false }
+        if !reads, store.state.automations.contains(where: { $0.id == automationID && $0.projectID != nil }) {
             return fail(Self.projectAutomationScopeError.code, Self.projectAutomationScopeError.description)
         }
         let routed: AutomationRequest
+        let automation = store.state.automations.first { $0.id == automationID }
+        let triggers = automationTriggers
+        /// Engine requests answer off the queue, then reply on it.
+        func answer(_ work: @escaping @Sendable () async throws -> RemoteAutomationResult) {
+            Task { [weak self] in
+                let result: Result<RemoteAutomationResult, Error>
+                do { result = .success(try await work()) } catch { result = .failure(error) }
+                self?.queue.async {
+                    guard let self, self.clients[client.fd] === client else { return }
+                    switch result {
+                    case .success(let value): self.send(.automationResult(id: id, result: value), to: client)
+                    case .failure(let error): self.send(.error(id: id, code: "failed", message: "\(error)"), to: client)
+                    }
+                }
+            }
+        }
         switch request {
         case .runs:
             send(.automationResult(id: id, result: .runs(runLog.runs(for: automationID, in: store.state))), to: client)
             return
+        case .markRead(let runID):
+            runLog.markRead(runID: runID)
+            send(.automationResult(id: id, result: .ok), to: client)
+            return
+        case .status:
+            guard let automation else { return fail("no_such_automation", "The automation no longer exists on the host.") }
+            return answer { .status(await triggers.status(of: automation)) }
+        case .pause:
+            return answer { await triggers.pause(automationID); return .ok }
+        case .resume:
+            return answer { await triggers.resume(automationID); await triggers.tick(); return .ok }
+        case .dismissEvent(let eventID):
+            return answer { await triggers.dismiss(automationID, eventID: eventID); return .ok }
+        case .runEvent(let eventID):
+            guard let automation else { return fail("no_such_automation", "The automation no longer exists on the host.") }
+            return answer { try await triggers.runPending(automation, eventID: eventID); return .ok }
+        case .setAllPaused(let paused):
+            return answer { await triggers.setAllPaused(paused); return .ok }
         case .setEnabled(let enabled):
             routed = .update(automationID: automationID, name: nil, prompt: nil, cwd: nil, enabled: enabled)
         case .run:
@@ -2832,12 +2879,15 @@ public final class SessionServer: @unchecked Sendable {
             case .failure(let error): return fail(error.code, error.message)
             }
             if case .create = request {
-                let automation = Automation(id: automationID, name: fields.name, prompt: fields.prompt, cwd: fields.cwd,
+                var automation = Automation(id: automationID, name: fields.name, prompt: fields.prompt, cwd: fields.cwd,
                                             enabled: draft.enabled)
+                if let settings = draft.settings {
+                    do { try settings.apply(to: &automation) } catch { return fail("invalid_automation", error.message) }
+                }
                 routed = .create(automation: automation, start: false)
             } else {
                 routed = .update(automationID: automationID, name: fields.name, prompt: fields.prompt, cwd: fields.cwd,
-                                 enabled: draft.enabled)
+                                 enabled: draft.enabled, settings: draft.settings)
             }
         }
         guard let handler = onAutomationRequest else {
@@ -2932,7 +2982,7 @@ public final class SessionServer: @unchecked Sendable {
             reply(.error(id: id, code: "no_such_agent", message: "no such agent"), to: client)
             return
         }
-        let kind: SuggestionSource.Kind = Self.automationRunAgentIDs(in: store.state).contains(agentID) ? .automation : .thread
+        let kind: SuggestionSource.Kind = Self.unattendedAgentIDs(in: store.state).contains(agentID) ? .automation : .thread
         let file = file ?? .agents
         guard suggestions.snapshot().settings.files(for: kind).contains(file) else {
             reply(.error(id: id, code: "suggestions_off",
@@ -3737,7 +3787,7 @@ public final class SessionServer: @unchecked Sendable {
             }
             guard !refusesDesignPeer(id: id, sender: agentID, target: targetAgentID, client: client),
                   agentActionAllowed(senderID: agentID, requestID: id, client: client, problem: nil) else { return }
-            guard !Self.automationRunAgentIDs(in: store.state).contains(agentID) else {
+            guard !Self.unattendedAgentIDs(in: store.state).contains(agentID) else {
                 reply(.error(id: id, code: "not_a_thread", message: "Automation runs cannot move threads."), to: client)
                 return
             }
@@ -3751,20 +3801,26 @@ public final class SessionServer: @unchecked Sendable {
             guard agentActionAllowed(senderID: agentID, requestID: id, client: client,
                                      problem: spawnProblem(sender: agentID, cwd: cwd)) else { return }
             routeAgentPeerRequest(.spawn(agentID: agentID, cwd: cwd, prompt: prompt), requestID: id, client: client)
-        case .createAutomation(let id, let name, let prompt, let cwd, let enabled, let start, let deleteAfterRun):
+        case .createAutomation(let id, let name, let prompt, let cwd, let enabled, let start, let deleteAfterRun, let settings):
             let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
             let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmedName.isEmpty, !trimmedPrompt.isEmpty, !cwd.isEmpty else {
                 reply(.error(id: id, code: "invalid", message: "name, prompt, and cwd are required"), to: client)
                 return
             }
-            let automation = Automation(name: trimmedName, prompt: trimmedPrompt, cwd: cwd, enabled: enabled, deleteAfterRun: deleteAfterRun)
+            var automation = Automation(name: trimmedName, prompt: trimmedPrompt, cwd: cwd, enabled: enabled, deleteAfterRun: deleteAfterRun)
+            if let settings {
+                do { try settings.apply(to: &automation) } catch {
+                    reply(.error(id: id, code: "invalid_automation", message: error.message), to: client)
+                    return
+                }
+            }
             routeAutomationRequest(.create(automation: automation, start: start), requestID: id, client: client)
         case .listAutomations(let id):
             routeAutomationRequest(.list, requestID: id, client: client)
-        case .updateAutomation(let id, let automationID, let name, let prompt, let cwd, let enabled):
+        case .updateAutomation(let id, let automationID, let name, let prompt, let cwd, let enabled, let settings):
             routeAutomationRequest(
-                .update(automationID: automationID, name: name, prompt: prompt, cwd: cwd, enabled: enabled),
+                .update(automationID: automationID, name: name, prompt: prompt, cwd: cwd, enabled: enabled, settings: settings),
                 requestID: id,
                 client: client
             )
@@ -4136,7 +4192,7 @@ public final class SessionServer: @unchecked Sendable {
 
     private func isOrdinaryDesignToolUser(_ agent: Agent) -> Bool {
         agent.designID == nil && agent.coordinatorFor == nil && !store.state.isDesignAgent(agent)
-            && !Self.automationRunAgentIDs(in: store.state).contains(agent.id)
+            && !Self.unattendedAgentIDs(in: store.state).contains(agent.id)
     }
 
     /// Server queue: one explicitly targeted design request. Design agents stay scoped to their
@@ -4303,7 +4359,7 @@ public final class SessionServer: @unchecked Sendable {
                                     problem: (code: String, message: String)?, refusalAsResult: Bool = false) -> Bool {
         switch AgentMessageGate.verdict(
             policy: agentMessagePolicy,
-            senderIsAutomation: Self.automationRunAgentIDs(in: store.state).contains(senderID),
+            senderIsAutomation: Self.unattendedAgentIDs(in: store.state).contains(senderID),
             hasThreadGrant: false) {
         case .refuse(let code, let message):
             if refusalAsResult {
@@ -4469,7 +4525,7 @@ public final class SessionServer: @unchecked Sendable {
         switch request {
         case .create(let automation, _): target = automation.id
         case .list: target = nil
-        case .update(let id, _, _, _, _), .delete(let id), .start(let id), .stop(let id): target = id
+        case .update(let id, _, _, _, _, _), .delete(let id), .start(let id), .stop(let id): target = id
         }
         if let target, store.state.automations.contains(where: { $0.id == target && $0.projectID != nil }) {
             reply(.error(id: requestID, code: Self.projectAutomationScopeError.code,
@@ -5767,6 +5823,30 @@ public final class SessionServer: @unchecked Sendable {
     /// The runs the host kept for an automation, oldest first; a run's agent only while it exists.
     public func automationRuns(_ automationID: AutomationID) async -> [AutomationRun] {
         await enqueueValue { self.runLog.runs(for: automationID, in: self.store.state) }
+    }
+
+    /// A run delivered to an existing thread (`.thread` destination) opens in the run log.
+    public func openAutomationThreadRun(_ automationID: AutomationID, agentID: AgentID, trigger: String?, triggerURL: String?) async {
+        await enqueueValue { self.runLog.openThreadRun(automationID, agentID: agentID, trigger: trigger, triggerURL: triggerURL) }
+    }
+
+    /// A triggered run that never started.
+    public func recordAutomationFailure(_ automationID: AutomationID, trigger: String?, triggerURL: String?, message: String) async {
+        await enqueueValue { self.runLog.recordFailure(automationID, trigger: trigger, triggerURL: triggerURL, message: message) }
+    }
+
+    /// The user opened a run's thread: its runs lose their unread dot.
+    public func markAutomationRunsRead(agentID: AgentID) async {
+        await enqueueValue { self.runLog.markRead(agentID: agentID) }
+    }
+
+    public func markAutomationRunRead(_ runID: UUID) async {
+        await enqueueValue { self.runLog.markRead(runID: runID) }
+    }
+
+    /// The pull request a run's thread opened.
+    public func setAutomationRunPullRequest(agentID: AgentID, url: String) async {
+        await enqueueValue { self.runLog.setPullRequest(agentID: agentID, url: url) }
     }
 
     public func addAutomation(_ automation: Automation) async throws {
@@ -7834,7 +7914,7 @@ public final class SessionServer: @unchecked Sendable {
            agent.coordinatorFor == nil, agent.designID == nil,
            !store.state.isProjectWorker(id), !store.state.isMissionAgent(id),
            !store.state.projectExecutions.contains(where: { $0.assignment?.reservedWorkerID == id }),
-           !Self.automationRunAgentIDs(in: store.state).contains(id) {
+           !Self.unattendedAgentIDs(in: store.state).contains(id) {
             allowed = true
         }
         recoveryAllowance?.allowed[id] = allowed

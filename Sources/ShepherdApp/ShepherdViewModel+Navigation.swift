@@ -203,6 +203,7 @@ extension ShepherdViewModel {
         sessions.startAhead(id)
         selectedAgentID = id
         selectedSpaceID = agent.spaceID
+        markAutomationRunsRead(id)
         // A layout still waiting to mount mounts now, as the visible one, and stays mounted when
         // a page covers it next.
         if pendingMountTabIDs.contains(agent.tabID) { pendingMountTabIDs.remove(agent.tabID) }

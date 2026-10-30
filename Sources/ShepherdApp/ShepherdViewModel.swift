@@ -47,6 +47,8 @@ struct NewAgentConfig {
     var designID: DesignID?
     /// The speed it starts on; nil takes Settings ▸ Agents ▸ Speed for new threads.
     var serviceTier: ServiceTier?
+    /// A triggered automation's run thread (`Agent.automationOrigin`).
+    var automationOrigin: AutomationOrigin?
 }
 
 struct AgentStartFailure: Error, CustomStringConvertible {
@@ -411,6 +413,12 @@ final class ShepherdViewModel {
     /// This Mac's automations' runs as the run log kept them, oldest first (read for the
     /// Automations page).
     var localAutomationRuns: [AutomationID: [AutomationRun]] = [:]
+    /// Each triggered automation's trigger state (paused, pending events, next run), and the
+    /// host-wide Pause all triggers switch.
+    var automationTriggerStatuses: [AutomationID: AutomationTriggerStatus] = [:]
+    var automationTriggersAllPaused = false
+    /// Run threads whose pull request was looked up recently.
+    @ObservationIgnored var checkedRunPullRequests: Set<AgentID> = []
     /// The Automations page's selected row and its filter. Ephemeral.
     var automationsPageSelection: AutomationKey?
     var automationsPageFilter = ""
@@ -871,6 +879,7 @@ final class ShepherdViewModel {
         installDesignRenderHandler()
         // Any pi session can create automations through the same socket.
         installAutomationControl()
+        installAutomationTriggers()
         // Agents can see, message, and spawn peer threads.
         installAgentPeerControl()
         // Agents drive their thread's Browser page.

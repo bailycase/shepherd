@@ -81,6 +81,7 @@ final class AutomationRunLog: @unchecked Sendable {
                       let status = new.agents.first(where: { $0.id == agentID })?.status {
                 list[index] = Self.following(list[index], status: status, at: time)
             }
+            list = Self.recordTriggered(automation, list: list, old: old, new: new, at: time)
             next[automation.id] = Array(list.suffix(Self.limit))
         }
         let kept = Set(new.automations.map(\.id))
@@ -92,16 +93,108 @@ final class AutomationRunLog: @unchecked Sendable {
         save()
     }
 
+    /// Triggered runs: a thread an automation started (`Agent.automationOrigin`) opens a run
+    /// when it appears and closes when it goes; a run delivered to an existing thread
+    /// (`openThreadRun`) closes when that thread settles. Both follow their thread's status and
+    /// turn unread when it settles or asks.
+    static func recordTriggered(_ automation: Automation, list: [AutomationRun], old: ShepherdState, new: ShepherdState,
+                                at time: Double) -> [AutomationRun] {
+        var list = list
+        let agents = Dictionary(new.agents.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let before = Dictionary(old.agents.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        for index in list.indices where list[index].endedAt == nil {
+            guard let agentID = list[index].agentID, agentID != automation.agentID else { continue }
+            guard let agent = agents[agentID] else {
+                list[index] = closed(list[index], status: before[agentID]?.status, at: time, result: nil)
+                continue
+            }
+            let previous = list[index]
+            var run = following(previous, status: agent.status, at: time)
+            if run.result != previous.result, run.result == .finished || run.result == .needsYou { run.unread = true }
+            // A run delivered to an existing thread ends with that thread's turn; the thread stays.
+            if agent.automationOrigin?.automationID != automation.id, run.result == .finished {
+                run.endedAt = time
+            }
+            list[index] = run
+        }
+        for agent in new.agents where agent.automationOrigin?.automationID == automation.id {
+            guard before[agent.id]?.automationOrigin == nil,
+                  !list.contains(where: { $0.agentID == agent.id }) else { continue }
+            let origin = agent.automationOrigin
+            list.append(following(AutomationRun(startedAt: time, result: .running, agentID: agent.id,
+                                                trigger: origin?.trigger, triggerURL: origin?.triggerURL),
+                                  status: agent.status, at: time))
+        }
+        return list
+    }
+
+    /// A run delivered to an existing thread (a `.thread` destination) opens here; it closes when
+    /// the thread's turn settles.
+    func openThreadRun(_ automationID: AutomationID, agentID: AgentID, trigger: String?, triggerURL: String?, now: Date = Date()) {
+        var list = runs[automationID] ?? []
+        list.append(AutomationRun(startedAt: now.timeIntervalSince1970, result: .running, agentID: agentID,
+                                  trigger: trigger, triggerURL: triggerURL))
+        runs[automationID] = Array(list.suffix(Self.limit))
+        publish()
+        save()
+    }
+
+    /// A run that never started (its thread or worktree couldn't be made).
+    func recordFailure(_ automationID: AutomationID, trigger: String?, triggerURL: String?, message: String, now: Date = Date()) {
+        let time = now.timeIntervalSince1970
+        var list = runs[automationID] ?? []
+        list.append(AutomationRun(startedAt: time, endedAt: time, result: .failed, trigger: trigger, triggerURL: triggerURL,
+                                  unread: true, failure: String(message.prefix(500))))
+        runs[automationID] = Array(list.suffix(Self.limit))
+        publish()
+        save()
+    }
+
+    /// Clears unread dots: one run, or every run of a thread the user opened. True when any changed.
+    @discardableResult
+    func markRead(runID: UUID? = nil, agentID: AgentID? = nil) -> Bool {
+        var changed = false
+        for (id, list) in runs {
+            runs[id] = list.map { run in
+                guard run.unread, run.id == runID || (agentID != nil && run.agentID == agentID) else { return run }
+                changed = true
+                var run = run
+                run.unread = false
+                return run
+            }
+        }
+        if changed { save() }
+        return changed
+    }
+
+    /// The pull request a run's thread opened.
+    func setPullRequest(agentID: AgentID, url: String) {
+        var changed = false
+        for (id, list) in runs {
+            runs[id] = list.map { run in
+                guard run.agentID == agentID, run.pullRequestURL != url else { return run }
+                changed = true
+                var run = run
+                run.pullRequestURL = url
+                return run
+            }
+        }
+        if changed { save() }
+    }
+
     /// Closes every run still open: the host is starting, and their agents died with the last
     /// launch. A run that had finished its turn stays finished; any other was interrupted.
-    func closeOpenRuns(now: Date = Date()) {
+    /// Threads in `keeping` (triggered runs, which outlive a relaunch) stay linked to their run.
+    func closeOpenRuns(keeping: Set<AgentID> = [], now: Date = Date()) {
         let time = now.timeIntervalSince1970
         var changed = false
         for (id, list) in runs {
             runs[id] = list.map { run in
                 guard run.endedAt == nil else { return run }
                 changed = true
-                return Self.closed(run, status: nil, at: time, result: run.settledAt == nil ? .interrupted : .finished)
+                var closed = Self.closed(run, status: nil, at: time, result: run.settledAt == nil ? .interrupted : .finished)
+                if let agentID = run.agentID, keeping.contains(agentID) { closed.agentID = agentID }
+                return closed
             }
         }
         if changed {

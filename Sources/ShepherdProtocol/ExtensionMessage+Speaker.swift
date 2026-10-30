@@ -51,7 +51,7 @@ extension ExtensionMessage {
              .suggestInstruction(let id, _, _, _, _), .prepareProjectConfiguration(let id, _, _),
              .listAgents(let id, _), .sendToAgent(let id, _, _, _, _), .spawnAgent(let id, _, _, _),
              .moveAgent(let id, _, _, _), .coordinateAgent(let id, _, _, _),
-             .createAutomation(let id, _, _, _, _, _, _), .listAutomations(let id), .updateAutomation(let id, _, _, _, _, _),
+             .createAutomation(let id, _, _, _, _, _, _, _), .listAutomations(let id), .updateAutomation(let id, _, _, _, _, _, _),
              .deleteAutomation(let id, _), .startAutomation(let id, _), .stopAutomation(let id, _),
              .designList(let id, _), .designRead(let id, _, _, _), .designWriteBoard(let id, _, _, _, _, _, _),
              .designEditBoard(let id, _, _, _, _, _, _), .designUpdateIndex(let id, _, _, _, _, _), .designComments(let id, _, _),
