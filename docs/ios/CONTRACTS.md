@@ -95,7 +95,7 @@ Routes today:
 | `.search(.problem(title:message:))` | an agent action from a menu that failed (presented) |
 | `.settings(.root / .hosts / .host(UUID?) / .appearance)` | Settings (the iPad's list beside its page), hosts, a host's form (nil adds one), appearance |
 | `.settings(.defaults / .worktrees / .piExtensions)` | a host's own settings: Defaults, Worktrees, Extensions (a picker chooses the host) |
-| `.settings(.mcp / .subagents / .subagent(String) / .signIn / .spaces / .space(String))` | a host's inventory, read-only (`hostInventory.v1`; Spaces over `projects.v2`): MCP servers, subagent profiles and one profile's Markdown, provider sign-ins, spaces and one space's files and approval |
+| `.settings(.mcp / .subagents / .subagent(String) / .signIn / .spaces / .space(String))` | a host's inventory (`hostInventory.v1`; Spaces over `projects.v2`): MCP servers, subagent profiles and one profile's Markdown (`subagent("+new")` a new one), provider sign-ins, spaces and one space's files and approval; editable on a host with `hostConfig.v1` (`ClientHostConfig`) |
 | `.settings(.instructions / .instructionsFile(InstructionFile))` | the root instructions on every host; one file in the editor (iPhone) |
 | `.settings(.skills / .skill(String) / .skillResult(DirectorySkill) / .skillsRepo(String?))` | every host's agent skills (and a search of skills.sh); one skill; a skills.sh result's preview with Install; Add from repo (looking up the repository given) |
 | `.settings(.experiments / .suggestion(UUID))` | Experiments; one suggested line to add or dismiss |
