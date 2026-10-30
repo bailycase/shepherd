@@ -536,7 +536,8 @@ public final class SessionServer: @unchecked Sendable {
     var automationStarts = Set<AutomationID>()
     /// Server-queue owner adapter. Must use the ProjectTask reservation/activation ledger,
     /// launch idle, fence native delivery, and retain occupancy for unknown outcomes.
-    public var onProjectAutomationRun: (@Sendable (ProjectID, UInt64, AutomationID, @escaping @Sendable (Result<ProjectTaskID, Error>) -> Void) -> Void)?
+    /// Admits one Project automation run as a Project task: (Project, revision, automation, title, prompt).
+    public var onProjectAutomationRun: (@Sendable (ProjectID, UInt64, AutomationID, String, String, @escaping @Sendable (Result<ProjectTaskID, Error>) -> Void) -> Void)?
     var logicalProjectSaveCount = 0
     var logicalProjectReadCount = 0
     var projectInputWriteCount = 0

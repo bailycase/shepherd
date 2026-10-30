@@ -1,11 +1,9 @@
 # Project-owned automation settings
 
 This slice associates the existing saved `Automation` with a logical `Project`, not a Space.
-It adds host-owned settings, not a scheduler, cron format, event listener, billing UI or engine
-change. **Project-owned execution is unavailable until the owner runtime admission adapter is
-installed and validated.** No automation execution adapter is installed. Owner-to-executor task
-placement is implemented separately (`project-execution.md`), but does not turn prompt metadata
-into a schedule.
+Project-owned automations carry the same triggers as any other ([data-flow](data-flow.md#automation-triggers)):
+a schedule or GitHub events fire a run, and that run is a **Project task** admitted through the
+Project runtime's own `assign` (below). A manual Project automation still never runs on its own.
 
 ## Owner API and compatibility
 
@@ -70,62 +68,29 @@ runtime transactions (including `projectRuntime(.pause)` through the installed c
 requires no edits to `ProjectCoordinatorController` or `SessionServer+ProjectRuntime`. It does
 not free ProjectTask reservations just because watcher metadata disappeared.
 
-## Unresolved trigger policy — execution remains disabled
+## Triggers and execution
 
-The existing record stores a prompt and enabled flag, not a Monday schedule or PR subscription.
-The outstanding product choice is whether Project automations gain real structured schedule/event
-triggers, or retain the existing prompt-driven watcher semantics. Neither choice authorizes
-replacing enabled automations with one-shot tasks. Existing settings rows/toggles persist metadata
-and guards; they do not prove a working scheduler. Enable, explicit Resume and app restart
-therefore launch no scoped watcher until that choice and the bounded adapter are implemented.
-No timer framework, fake trigger copy or unscoped launcher bypass was added to bridge this gap.
+The trigger question is decided: Project automations gain the structured schedule and GitHub
+triggers every automation has, set through the draft's `settings` on `.create`/`.update` (a nil
+`settings` keeps them). A Project run can't go to an existing thread (`invalid_automation`).
 
-The common Project admission now counts local and remote task reservations together and can be
-reused after this decision. A real adapter still needs linked Space/cwd validation, scoped
-watcher/run identity, all asynchronous revocation fences, and full-slot/Pause/restart checks.
+When a trigger fires, the app's trigger host calls `runProjectAutomation(projectID:expectedRevision:automationID:title:prompt:)`
+with the server's current revision. The entry keeps every check it had (started, Projects on,
+revision, not paused or interrupting, owned and enabled record), then calls the installed
+`onProjectAutomationRun`, which performs `ProjectRuntimeRequest.assign` with a fresh operation id
+in the Project's linked local Space that holds the automation's folder, and the automation's
+model and thinking pins. That is the existing ProjectTask ledger: the reservation, the Project's
+threads-at-once, time and activation limits, queueing, pause and revocation fences, and the
+worker launch are the runtime's, unchanged, and a repeated operation id is the same task. After
+the callback the entry rechecks lifecycle, association and that the task exists, as before.
 
-## Required execution adapter (not installed)
-
-The explicit owner API is:
-
-```swift
-func runProjectAutomation(projectID: ProjectID, expectedRevision: UInt64,
-                          automationID: AutomationID) async throws -> ProjectTaskID
-
-var onProjectAutomationRun:
-    (@Sendable (ProjectID, UInt64, AutomationID,
-                @escaping @Sendable (Result<ProjectTaskID, Error>) -> Void) -> Void)?
-```
-
-The callback runs on the SessionServer owner queue. The entry verifies started state, Project
-revision, enabled/owned record, and active Project with no interruption pending. Missing adapter
-returns `unsupported`, with no run created. After callback completion it rechecks lifecycle,
-active/enabled association and that the returned task exists in the Project. Callback success
-means admission, not proof of task success. Legacy VM `startAutomation` never routes scoped
-records to the ordinary prompt-at-launch path.
-
-Before installing the adapter, the runtime owner must:
-
-1. Reserve an activation and slot in the **existing ProjectTask ledger**, not another counter,
-   before any asynchronous launch stage. Apply the same Project threads-at-once/time/activation
-   limits as ordinary coordinated work; queueing is the existing runtime's responsibility.
-2. Resolve the approved watcher representation (the existing hidden Automations Space pattern
-   versus linked-Space task workers) without guessing trigger semantics. Launch idle with the
-   reserved worker identity and validate the explicitly linked execution Space/cwd.
-   Recheck ownership, record identity/configuration, enabled state, Project lifecycle/pause and
-   reservation after every asynchronous stage and immediately before native prompt delivery.
-   Atomically publish the automation's `agentID` through the owner queue, not legacy
-   `updateAutomation`, which intentionally refuses scoped records.
-3. Cancel pending starts on pause/delete/disable, and handle failed launch, acknowledged
-   settlement and unknown outcomes in that ledger. Never free a slot merely on disconnect,
-   metadata removal, a viewer retry or model prose. Never replay an unknown send automatically.
-4. Retain the reserved agent/session identity for interruption/exit acknowledgements. The
-   existing `sessionDidExit` lookup cannot recover an agent from a tab removed by watcher cleanup;
-   missing acknowledgement must retain unknown occupancy rather than allowing a side channel.
-5. Test real delayed StubPi boot/publication/native-send races, owner shutdown, full slots,
-   stale configuration, Stop/queue/retry/compaction and acknowledged interruption before enabling
-   runs. The tests in this slice exercise fail-closed entry and late callback rejection, not a
-   complete working launch adapter.
+The prompt is bounded to 15 KiB for the runtime's 16 KiB native input limit (event text is cut,
+and says so). While the Project is paused or interrupting, Projects are off, the Project is gone
+or no linked Space holds the automation's folder, the trigger keeps queueing events but starts
+nothing, and its status says why (`AutomationTriggers.Host.holdReason`). Runs per day are the
+automation's own limit; runs at once are the Project's threads-at-once. Project task history,
+not the automation run log, records these runs. Create, link, enable and Resume still launch
+nothing by themselves, and app startup still starts no Project-owned watcher.
 
 ## Plain data for Project settings
 
@@ -135,10 +100,8 @@ provides the actual Automation (`name`, `enabled`, `prompt`, `cwd`), owner ID/na
 not a fake success. The existing `AutomationPresentation` remains available for formatting;
 generic scoped rows say "By explicit Project action" and direct changes to Project settings.
 
-**Data limitation:** these records store no weekday, time-of-day, cron expression, pull-request
-trigger or event subscription. The board's example Monday schedule and PR-trigger semantics
-cannot be derived from this runtime. Show the stored prompt and actual run metadata instead of
-inventing secondary copy. No UI view or control is implemented in this slice.
+Each automation's `trigger` holds its schedule (an RRULE) or GitHub triggers; show those, the stored
+prompt and actual run metadata rather than inventing secondary copy.
 
 ## Validation and risk review
 
@@ -157,7 +120,12 @@ state-store/validation and protocol suites, plus 14 documentation checks. Tests 
 scratch hosts/StubPi only. The checkout's local SwiftPM Sparkle framework link was required for
 bundle discovery; no installed application or user support directory was changed.
 
-Autonomous-work review: no new model call, provider transfer, evaluator, retry loop or scheduler
-is enabled; execution is fail-closed. Settings fences and startup pause are enforced. Full
-execution-bound and interaction validation remains the adapter owner's integration requirement,
-not a completed scheduling feature. No dependency, Linux runtime or billing/budget UI was added.
+`ProjectAutomationTriggerTests` (AppHarness) cover a firing becoming a Project task in the linked
+Space with the fenced event in its prompt, waiting while the Project is paused, the refusal of a
+thread destination, and the prompt bound. The trigger engine's own bounds are covered in
+`AutomationTriggersTests`.
+
+Autonomous-work review: a triggered Project automation starts unattended model work, bounded by
+its runs-per-day limit, the Project's threads-at-once and the trigger engine's bounds; it waits
+while its Project is paused and never starts a manual watcher at launch. No dependency, Linux
+runtime or billing/budget UI was added.

@@ -26,10 +26,64 @@ extension ShepherdViewModel {
             notify: { [weak self] title, body in
                 await MainActor.run { self?.postAutomationBanner(title: title, body: body) }
             },
-            changed: { [weak self] in Task { @MainActor in self?.refreshAutomationTriggers() } }
+            changed: { [weak self] in Task { @MainActor in self?.refreshAutomationTriggers() } },
+            holdReason: { [weak self] automation in await MainActor.run { self?.triggerHoldReason(automation) } }
         )
         let triggers = server.automationTriggers
-        Task { await triggers.install(host) }
+        Task {
+            await triggers.install(host)
+            await triggers.enableProjectExecution(true)
+        }
+        installProjectAutomationAdmission()
+    }
+
+    /// Why a triggered automation's runs must wait: its Project is paused, gone, or Projects are off.
+    func triggerHoldReason(_ automation: Automation) -> String? {
+        guard let projectID = automation.projectID else { return nil }
+        guard settings.projectsEnabled else { return "Projects are off in Settings ▸ Experiments." }
+        guard let project = state.projects.first(where: { $0.id == projectID }) else { return "Its Project no longer exists." }
+        if project.paused || project.interruptPending { return "Its Project is paused." }
+        guard projectRunSpace(project, cwd: automation.cwd) != nil else {
+            return "Link \(automation.cwd) to the Project as a Space so its runs have somewhere to work."
+        }
+        return nil
+    }
+
+    /// The Project's linked Space on this Mac that holds the automation's directory (the closest).
+    func projectRunSpace(_ project: Project, cwd: String) -> SpaceID? {
+        let path = (cwd as NSString).expandingTildeInPath
+        let linked = Set(project.linkedSpaces.filter { $0.destination == .local }.map(\.spaceID))
+        return state.spaces.filter { linked.contains($0.id) && (path == $0.path || path.hasPrefix($0.path + "/")) }
+            .max { $0.path.count < $1.path.count }?.id
+    }
+
+    /// Project-owned runs become Project tasks through the Project runtime's own `assign`, which
+    /// reserves the task in the Project's ledger under its threads-at-once, time and pause rules
+    /// and launches its worker; a repeated operation id is the same task, never a second one.
+    func installProjectAutomationAdmission() {
+        server.onProjectAutomationRun = { [weak self] projectID, revision, automationID, title, prompt, completion in
+            Task { @MainActor in
+                guard let self else { return completion(.failure(AgentStartFailure(message: "Owner closed"))) }
+                do {
+                    guard let automation = self.state.automations.first(where: { $0.id == automationID }),
+                          let project = self.state.projects.first(where: { $0.id == projectID }),
+                          let space = self.projectRunSpace(project, cwd: automation.cwd) else {
+                        throw LogicalProjectsError("no_such_space", "Link the automation's folder to the Project first.")
+                    }
+                    let operation = UUID()
+                    let updated = try await self.projectCoordinator.perform(
+                        projectID: projectID, expectedRevision: revision,
+                        request: .assign(operationID: operation, spaceID: space, title: title, prompt: prompt,
+                                         model: automation.model, thinking: automation.thinking?.rawValue))
+                    guard let task = updated.tasks.first(where: { $0.operationID == operation }) else {
+                        throw LogicalProjectsError("conflict", "The Project didn't keep the run's task.")
+                    }
+                    completion(.success(task.id))
+                } catch {
+                    completion(.failure(error))
+                }
+            }
+        }
     }
 
     /// Starts the trigger clock once the workspace is adopted (with the automations' auto-start).
@@ -77,6 +131,17 @@ extension ShepherdViewModel {
     /// One run: a new thread (worktree by default) or a message to the automation's thread.
     func startTriggeredRun(_ automation: Automation, events: [AutomationEvent]) async throws {
         let prompt = Self.triggeredPrompt(automation, events: events, now: Date())
+        if let projectID = automation.projectID {
+            // The server's revision, not this view's copy, which may trail it.
+            guard let project = server.state.projects.first(where: { $0.id == projectID }) else {
+                throw AgentStartFailure(message: "The automation's Project no longer exists")
+            }
+            let title = events.first.map { e in e.number.map { "#\($0) \(e.title)" } ?? e.title } ?? automation.name
+            _ = try await server.runProjectAutomation(projectID: projectID, expectedRevision: project.revision,
+                                                      automationID: automation.id, title: String(title.prefix(200)),
+                                                      prompt: Self.bounded(prompt, bytes: Self.projectPromptLimit))
+            return
+        }
         if case .thread(let agentID) = automation.destination {
             guard state.agents.contains(where: { $0.id == agentID }) else {
                 throw AgentStartFailure(message: "The automation's thread no longer exists")
@@ -177,6 +242,18 @@ extension ShepherdViewModel {
             text += "</github-event>\n"
         }
         return text
+    }
+
+    /// A Project task's prompt limit, with room for the runtime's own framing.
+    nonisolated static let projectPromptLimit = 15 * 1024
+
+    /// Cuts `text` to `bytes` of UTF-8 at a character boundary, saying it was cut.
+    nonisolated static func bounded(_ text: String, bytes: Int) -> String {
+        guard text.utf8.count > bytes else { return text }
+        let note = "\n[event text cut to fit]"
+        var cut = Substring(text)
+        while cut.utf8.count > bytes - note.utf8.count { cut = cut.dropLast(max(1, (cut.utf8.count - bytes) / 4)) }
+        return String(cut) + note
     }
 
     /// Event text can't close its own fence.

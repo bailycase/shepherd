@@ -157,7 +157,7 @@ struct ProjectAutomationsTests {
             action: .create(draft: .init(name: "Watch", prompt: "Watch", cwd: host.dir.path, enabled: true)))))
         let task = ProjectTask(operationID: UUID(), spaceID: SpaceID(), title: "Watch", prompt: "Watch", phase: .reserved)
         let pending = Locked<(@Sendable (Result<ProjectTaskID, Error>) -> Void)?>(nil)
-        host.server.onProjectAutomationRun = { _, _, _, completion in
+        host.server.onProjectAutomationRun = { _, _, _, _, _, completion in
             host.server.changeRuntimeProject(id, { $0.tasks.append(task) }) { _ in
                 pending.withValue { $0 = completion }
             }

@@ -743,9 +743,9 @@ export default function shepherdPanes(pi: ExtensionAPI) {
         repo: Type.Optional(Type.String({ description: "owner/name; omit for the cwd's GitHub origin" })),
         events: Type.Array(Type.String(), { description: `Any of: ${GITHUB_EVENTS.join(", ")}` }),
         labels: Type.Optional(Type.Array(Type.String(), { description: "For *Labeled events the label just added must be one of these; otherwise the item must carry one" })),
-        authors: Type.Optional(Type.Array(Type.String(), { description: "Only issues/PRs by these logins" })),
+        authors: Type.Optional(Type.Array(Type.String(), { description: "Only items opened by these logins" })),
         titleContains: Type.Optional(Type.String()),
-        number: Type.Optional(Type.Number({ description: "One issue or PR only" })),
+        number: Type.Optional(Type.Number({ description: "One item number only" })),
       }), { description: "github: 1 to 5 triggers; any one firing starts a run" })),
     }, { description: "When runs start. The prompt says what each run does." })),
     destination: Type.Optional(Type.String({ description: "newThread (default: one new thread per run, receiving the event) or thisThread (every firing is sent to this thread as a message)" })),
@@ -789,8 +789,8 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     label: "Create Automation",
     description:
       "Create a Shepherd automation. With a trigger (schedule or github), Shepherd starts each run itself " +
-      "when the trigger fires; the prompt says only what one run does (e.g. 'run speckit on the issue, " +
-      "implement it, open a PR'), and the event (issue/PR, title, body) is attached to the run as untrusted data. " +
+      "when the trigger fires; the prompt says only what one run does (e.g. 'run speckit on it, " +
+      "implement it, open a PR'), and the GitHub event (number, title, body, link) is attached to the run as untrusted data. " +
       "Without a trigger it is a watch task run by a dedicated agent. For a watch task the prompt " +
       "should tell that agent what to poll (exact commands), how often (a single bash loop " +
       "with sleep between checks), the exact success/failure conditions, and to call its " +

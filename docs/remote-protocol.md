@@ -113,9 +113,14 @@
     draws that host's split tabs as one tab per terminal (`TerminalPanel.tabs`); a host without
     `pane.control.v1` fails the request `unsupported` and the client beeps
   - `automation` (`automations.v1`): switch on or off, run now, stop, the runs the host kept,
-    create, edit, delete. There is no schedule or trigger: an automation that is on starts a run
-    when Shepherd launches on the host. The Mac shows a host's automations under its sidebar
-    section; the iOS client in Automations. A host without the capability shows them read-only
+    create, edit, delete. A manual automation that is on starts a run when Shepherd launches on
+    the host. With `automationTriggers.v1` a draft also carries `settings` (trigger, destination,
+    workspace, author gate, limits, pins; a nil field keeps the host's value, so an older client's
+    edit never clears a trigger), runs carry their trigger, PR link, unread dot and failure, and
+    the request adds `status`, `pause`, `resume`, `runEvent`, `dismissEvent`, `markRead` and
+    `setAllPaused` ([data-flow](data-flow.md#automation-triggers)). The Mac shows a host's
+    automations under its sidebar section; the iOS client in Automations. A host without the
+    capability shows them read-only
   - `instructions` (`instructions.v1`): Settings ▸ Instructions' files on the host (fetch, save,
     restore a saved version), answered with the files and their history. The Mac's page syncs
     them to every host, or edits one host at a time

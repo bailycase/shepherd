@@ -87,7 +87,8 @@ struct ProjectAutomationAppTests {
         #expect(try String(contentsOf: artifact, encoding: .utf8) == "keep")
         try await eventuallyAsync("runtime Pause terminates its watcher") { await server.sessionInfo(sessionID: session)?.isAlive != true }
         #expect(await server.automationRuns(automation).last?.result == .stopped)
-        #expect(server.onProjectAutomationRun == nil, "Cleanup must not enable automation admission")
+        // Admission is the Project runtime's own assign (docs/project-automations.md); Pause still stops the watcher.
+        #expect(server.state.projects.first?.paused == true)
     }
 
     @Test func startupSkipsProjectOwnedAutomationsAndLegacyRunCannotBypassAdmission() async throws {

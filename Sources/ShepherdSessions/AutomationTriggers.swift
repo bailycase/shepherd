@@ -40,6 +40,8 @@ public actor AutomationTriggers {
         public var notify: @Sendable (_ title: String, _ body: String) async -> Void
         /// Status changed (the app redraws; remote clients read it on request).
         public var changed: @Sendable () -> Void
+        /// Why runs must wait (a Project paused), nil when they may start. Events keep queueing.
+        public var holdReason: @Sendable (Automation) async -> String?
 
         public init(automations: @escaping @Sendable () async -> [Automation],
                     liveRuns: @escaping @Sendable (AutomationID) async -> [String?],
@@ -47,7 +49,9 @@ public actor AutomationTriggers {
                     start: @escaping @Sendable (Automation, [AutomationEvent]) async throws -> Void,
                     recordFailure: @escaping @Sendable (AutomationID, AutomationEvent?, String) async -> Void,
                     notify: @escaping @Sendable (String, String) async -> Void,
-                    changed: @escaping @Sendable () -> Void = {}) {
+                    changed: @escaping @Sendable () -> Void = {},
+                    holdReason: @escaping @Sendable (Automation) async -> String? = { _ in nil }) {
+            self.holdReason = holdReason
             self.automations = automations
             self.liveRuns = liveRuns
             self.threadState = threadState
@@ -116,6 +120,8 @@ public actor AutomationTriggers {
         var heads: [String: String] = [:]
         /// This automation's own runs per item: activity inside one never fires another run.
         var windows: [String: Window] = [:]
+        /// Why runs are waiting (`Host.holdReason`), as of the last tick.
+        var heldReason: String?
     }
 
     struct File: Codable {
@@ -130,7 +136,8 @@ public actor AutomationTriggers {
     private var calendar: Calendar
     private var host: Host?
     private var file = File()
-    private var ticking = false
+    /// Notes to post once the tick's state is saved.
+    private var outbox: [(String, String)] = []
     private var loop: Task<Void, Never>?
     private var origins: [String: String?] = [:]
     /// Each repository's last read this tick round, shared by automations watching it.
@@ -186,6 +193,9 @@ public actor AutomationTriggers {
         } else if automation.projectID != nil, automation.isTriggered, !projectExecution {
             status.state = .paused
             status.reason = "Project triggers start runs through the Project's execution."
+        } else if let held = record.heldReason {
+            status.state = .paused
+            status.reason = held
         } else if let retryAt = record.retryAt, retryAt > now.timeIntervalSince1970 {
             status.state = .retrying
             status.reason = record.retryReason
@@ -219,6 +229,7 @@ public actor AutomationTriggers {
     /// happened while paused fires (a new baseline).
     public func resume(_ id: AutomationID) {
         let now = clock().timeIntervalSince1970
+        reads = [:]
         update(id) {
             $0.pausedReason = nil
             $0.failures = 0
@@ -272,11 +283,22 @@ public actor AutomationTriggers {
     // MARK: Ticking
 
     /// One pass over every triggered automation: rebaseline changed ones, fire due schedules,
-    /// check GitHub where due, and start what the limits allow. Reentrant calls return at once.
+    /// check GitHub where due, and start what the limits allow. A tick asked for while one runs
+    /// waits for it, then runs.
     public func tick() async {
-        guard let host, !ticking else { return }
-        ticking = true
-        defer { ticking = false }
+        let previous = currentTick
+        let next = Task { [weak self] in
+            await previous?.value
+            await self?.runTick()
+        }
+        currentTick = next
+        await next.value
+    }
+
+    private var currentTick: Task<Void, Never>?
+
+    private func runTick() async {
+        guard let host else { return }
         let before = file
         let automations = await host.automations()
         let now = clock()
@@ -291,6 +313,9 @@ public actor AutomationTriggers {
             save()
             host.changed()
         }
+        let notes = outbox
+        outbox = []
+        for note in notes { await host.notify(note.0, note.1) }
     }
 
     private func sameFile(_ a: File, _ b: File) -> Bool {
@@ -341,16 +366,26 @@ public actor AutomationTriggers {
         case .github(let triggers):
             if let retryAt = record.retryAt, retryAt > time { break }
             if let last = record.lastCheckedAt, time - last < Self.pollInterval { break }
-            await poll(automation, triggers: triggers, record: &record, now: now)
+            file.records[id] = record
+            let fetched = await fetch(automation, triggers: triggers, now: now)
+            // Pause, Resume or Dismiss may have landed while GitHub answered: build on them.
+            record = file.records[id] ?? record
+            guard record.pausedReason == nil, !file.allPaused else { return }
+            apply(fetched, automation: automation, triggers: triggers, to: &record, now: now)
         }
         file.records[id] = record
         guard file.records[id]?.pausedReason == nil else { return }
         await dispatch(automation, host: host, now: now)
     }
 
-    private func poll(_ automation: Automation, triggers: [GitHubTrigger], record: inout Record, now: Date) async {
-        let time = now.timeIntervalSince1970
-        var repos: [String] = []
+    enum Fetched {
+        case items([GitHubItem], origin: String?)
+        case lasting(String)
+        case passing(SourceError)
+    }
+
+    /// Reads every repository the triggers watch (each at most once a minute across automations).
+    private func fetch(_ automation: Automation, triggers: [GitHubTrigger], now: Date) async -> Fetched {
         var origin: String?
         if triggers.contains(where: { $0.repo == nil }) {
             let cwd = (automation.cwd as NSString).expandingTildeInPath
@@ -360,11 +395,13 @@ public actor AutomationTriggers {
             }
             guard origin != nil else {
                 origins[cwd] = nil
-                return pauseForError(&record, "\(automation.cwd) has no GitHub origin remote. Name the repository on the trigger.", automation: automation)
+                return .lasting("\(automation.cwd) has no GitHub origin remote. Name the repository on the trigger.")
             }
         }
-        let repoOf: (GitHubTrigger) -> String? = { $0.repo ?? origin }
-        for trigger in triggers { if let repo = repoOf(trigger), !repos.contains(repo.lowercased()) { repos.append(repo.lowercased()) } }
+        var repos: [String] = []
+        for trigger in triggers {
+            if let repo = (trigger.repo ?? origin)?.lowercased(), !repos.contains(repo) { repos.append(repo) }
+        }
         var items: [GitHubItem] = []
         for repo in repos {
             let result: Result<[GitHubItem], SourceError>
@@ -378,17 +415,30 @@ public actor AutomationTriggers {
             }
             switch result {
             case .success(let read): items += read
-            case .failure(let error):
-                if error.permanent { return pauseForError(&record, error.description, automation: automation) }
-                record.failures += 1
-                let backoff = min(Self.maxBackoff, Self.pollInterval * pow(2, Double(record.failures - 1)))
-                record.retryAt = time + max(backoff, error.retryAfter ?? 0)
-                record.retryReason = error.description
-                return
+            case .failure(let error): return error.permanent ? .lasting(error.description) : .passing(error)
             }
         }
+        return .items(items, origin: origin)
+    }
+
+    private func apply(_ fetched: Fetched, automation: Automation, triggers: [GitHubTrigger], to record: inout Record, now: Date) {
+        let time = now.timeIntervalSince1970
+        let items: [GitHubItem], origin: String?
+        switch fetched {
+        case .lasting(let reason):
+            return pauseForError(&record, reason, automation: automation)
+        case .passing(let error):
+            record.failures += 1
+            let backoff = min(Self.maxBackoff, Self.pollInterval * pow(2, Double(record.failures - 1)))
+            record.retryAt = time + max(backoff, error.retryAfter ?? 0)
+            record.retryReason = error.description
+            return
+        case .items(let read, let repo):
+            items = read
+            origin = repo
+        }
         let since = max(record.baselineAt, time - Self.catchUpWindow)
-        let found = GitHubActivity.events(in: items, triggers: triggers, repoOf: repoOf, gate: automation.authorGate,
+        let found = GitHubActivity.events(in: items, triggers: triggers, repoOf: { $0.repo ?? origin }, gate: automation.authorGate,
                                           since: Date(timeIntervalSince1970: since), now: now, heads: record.heads)
         for item in items where item.isPullRequest { if let head = item.headOID { record.heads[item.key] = head } }
         if record.heads.count > 400 { record.heads = Dictionary(uniqueKeysWithValues: record.heads.sorted { $0.key < $1.key }.suffix(400).map { ($0.key, $0.value) }) }
@@ -407,15 +457,22 @@ public actor AutomationTriggers {
 
     private func pauseForError(_ record: inout Record, _ reason: String, automation: Automation) {
         record.pausedReason = reason
-        let name = automation.name
-        if let host { Task { await host.notify("\(name) paused", reason) } }
+        outbox.append(("\(automation.name) paused", reason))
     }
 
     private func dispatch(_ automation: Automation, host: Host, now: Date) async {
         let id = automation.id.rawValue
         let time = now.timeIntervalSince1970
         let live = await host.liveRuns(automation.id)
-        guard var record = file.records[id] else { return }
+        let held = await host.holdReason(automation)
+        var threadState: ThreadState = .idle
+        if case .thread(let agentID) = automation.destination { threadState = await host.threadState(agentID) }
+        guard var record = file.records[id], record.pausedReason == nil else { return }
+        record.heldReason = held
+        guard held == nil else {
+            file.records[id] = record
+            return
+        }
         let liveItems = Set(live.compactMap { $0.flatMap(AutomationEvent.itemKey(ofEventID:)) })
         for (key, window) in record.windows where window.end == nil && !liveItems.contains(key) {
             record.windows[key]?.end = time
@@ -448,8 +505,8 @@ public actor AutomationTriggers {
                 }
             }
             record.pending = waiting
-        case .thread(let agentID):
-            switch await host.threadState(agentID) {
+        case .thread:
+            switch threadState {
             case .gone:
                 pauseForError(&record, "Its thread was deleted. Choose a new destination, then resume.", automation: automation)
                 file.records[id] = record
@@ -469,9 +526,8 @@ public actor AutomationTriggers {
             let day = Self.dayKey(now, calendar: calendar)
             if record.capNotifiedDay != day {
                 record.capNotifiedDay = day
-                let name = automation.name
                 let count = record.pending.count
-                Task { await host.notify("\(name) hit its daily limit", "\(count) event\(count == 1 ? "" : "s") waiting. They run tomorrow, or run one now from Automations.") }
+                outbox.append(("\(automation.name) hit its daily limit", "\(count) event\(count == 1 ? "" : "s") waiting. They run tomorrow, or run one now from Automations."))
             }
         }
         for group in batch {

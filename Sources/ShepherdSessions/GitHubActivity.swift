@@ -17,6 +17,12 @@ public struct GitHubItem: Hashable, Sendable {
         public var id: String
         public var at: Date
         public var activity: Activity
+
+        public init(id: String, at: Date, activity: Activity) {
+            self.id = id
+            self.at = at
+            self.activity = activity
+        }
     }
 
     public var repo: String
@@ -32,6 +38,22 @@ public struct GitHubItem: Hashable, Sendable {
     /// A pull request's head commit.
     public var headOID: String?
     public var events: [Event]
+
+    public init(repo: String, number: Int, isPullRequest: Bool, title: String, body: String, url: String?, createdAt: Date,
+                author: String?, association: String, labels: [String], headOID: String?, events: [Event]) {
+        self.repo = repo
+        self.number = number
+        self.isPullRequest = isPullRequest
+        self.title = title
+        self.body = body
+        self.url = url
+        self.createdAt = createdAt
+        self.author = author
+        self.association = association
+        self.labels = labels
+        self.headOID = headOID
+        self.events = events
+    }
 
     /// "owner/name#12": runs, windows and heads are per item.
     public var key: String { "\(repo)#\(number)" }

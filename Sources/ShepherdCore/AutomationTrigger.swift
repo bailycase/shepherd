@@ -77,6 +77,10 @@ public struct AutomationSchedule: Hashable, Sendable, Codable {
     public func next(after date: Date, calendar: Calendar = .current) -> Date? {
         guard let rule = try? RRule.parse(rrule, calendar: calendar) else { return nil }
         let anchor = start.map { Date(timeIntervalSince1970: $0) } ?? date
+        if rule.end.occurrences != nil {
+            // COUNT counts from the anchor, so walk from it.
+            return rule.recurrences(of: anchor).lazy.first { $0 > date }
+        }
         return rule.recurrences(of: anchor, in: date..<Date.distantFuture).lazy.first { $0 > date }
     }
 
