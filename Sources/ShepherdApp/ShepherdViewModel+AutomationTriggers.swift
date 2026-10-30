@@ -13,7 +13,11 @@ extension ShepherdViewModel {
     func installAutomationTriggers() {
         let host = AutomationTriggers.Host(
             automations: { [weak self] in await MainActor.run { self?.server.state.automations ?? [] } },
-            liveRuns: { [weak self] id in await MainActor.run { self?.liveTriggeredRuns(id) ?? [] } },
+            liveRuns: { [weak self] id in
+                guard let server = await MainActor.run(body: { self?.server }) else { return [] }
+                let runs = await server.automationRuns(id)
+                return await MainActor.run { self?.liveTriggeredRuns(id, runs: runs) ?? [] }
+            },
             threadState: { [weak self] agentID in await MainActor.run { self?.triggerThreadState(agentID) ?? .gone } },
             start: { [weak self] automation, events in
                 guard let self else { throw AgentStartFailure(message: "Shepherd is shutting down") }
@@ -112,12 +116,11 @@ extension ShepherdViewModel {
 
     /// Event ids of an automation's runs that are still going: its run threads that work, ask or
     /// haven't settled a first turn. A thread destination counts while its own turn runs.
-    func liveTriggeredRuns(_ id: AutomationID) -> [String?] {
-        let runs = localAutomationRuns[id] ?? []
+    func liveTriggeredRuns(_ id: AutomationID, runs: [AutomationRun]) -> [String?] {
         return state.agents.compactMap { agent in
             guard agent.automationOrigin?.automationID == id else { return nil }
             // Idle before its first turn settles is pi still starting.
-            let starting = agent.status == .idle && runs.last { $0.agentID == agent.id }.map { $0.endedAt == nil && $0.settledAt == nil } ?? true
+            let starting = agent.status == .idle && runs.last { $0.agentID == agent.id }.map { $0.endedAt == nil && $0.settledAt == nil } ?? false
             let live = agent.status == .working || agent.status == .blocked || starting
             return live ? .some(agent.automationOrigin?.eventID) : nil
         }
