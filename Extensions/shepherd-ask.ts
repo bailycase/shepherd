@@ -7,7 +7,10 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-const MAX_QUESTION_BYTES = 2000;
+// The dock draws the question as a headline and folds `details` under it. A short question cap is
+// what keeps agents from pasting their reasoning into the headline; the two fit Shepherd's 2000-byte title.
+const MAX_QUESTION_BYTES = 300;
+const MAX_DETAILS_BYTES = 1600;
 const MAX_OPTION_BYTES = 256;
 const MAX_OPTIONS = 6;
 const MAX_SHORT = 120;
@@ -24,7 +27,8 @@ export default function shepherdAsk(pi: ExtensionAPI) {
       "still answer in their own words); omit them for free text. One question per call.",
     promptSnippet: "Ask the person a question and wait for the answer",
     parameters: Type.Object({
-      question: Type.String({ minLength: 1, maxLength: MAX_QUESTION_BYTES, description: "The question, in full." }),
+      question: Type.String({ minLength: 1, maxLength: MAX_QUESTION_BYTES, description: "One short sentence: the decision you need." }),
+      details: Type.Optional(Type.String({ maxLength: MAX_DETAILS_BYTES, description: "Background needed to decide, a few sentences, shown folded under the question." })),
       options: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: MAX_OPTION_BYTES }), {
         minItems: 1, maxItems: MAX_OPTIONS, description: "A few possible answers, when it has them.",
       })),
@@ -32,17 +36,20 @@ export default function shepherdAsk(pi: ExtensionAPI) {
     }, { additionalProperties: false }),
     async execute(_id, params, signal, _update, ctx) {
       const question = typeof params?.question === "string" ? params.question.trim() : "";
+      const details = typeof params?.details === "string" ? params.details.trim() : "";
       const options = Array.isArray(params?.options) ? [...new Set(params.options.filter((o) => typeof o === "string" && o.trim()).map((o) => o.trim()))] : [];
-      if (!question || Buffer.byteLength(question) > MAX_QUESTION_BYTES || options.length > MAX_OPTIONS
-          || options.some((o) => Buffer.byteLength(o) > MAX_OPTION_BYTES)) {
-        return { content: [{ type: "text", text: "ask_user needs a question of at most 2000 bytes and at most 6 options of 256 bytes each." }], details: {}, isError: true };
+      if (!question || Buffer.byteLength(question) > MAX_QUESTION_BYTES || Buffer.byteLength(details) > MAX_DETAILS_BYTES
+          || options.length > MAX_OPTIONS || options.some((o) => Buffer.byteLength(o) > MAX_OPTION_BYTES)) {
+        return { content: [{ type: "text", text: "ask_user needs a one-sentence question of at most 300 bytes (put background in details, at most 1600) and at most 6 options of 256 bytes each." }], details: {}, isError: true };
       }
       if (!ctx.hasUI) {
         return { content: [{ type: "text", text: "No one can answer here (no question UI); decide what you can and say what you assumed." }], details: {}, isError: true };
       }
-      // Shepherd normalizes this shape into buttons plus an input (RPCThreadState.handleUIRequest).
+      // Shepherd normalizes this shape into buttons plus an input (RPCThreadState.handleUIRequest);
+      // the dock takes the first paragraph as the question and the rest as its details.
       const choices = options.filter((o) => o !== "Say anything");
-      const title = choices.length ? `${question}\n\nOptions:\n${JSON.stringify(choices)}` : question;
+      const text = details ? `${question.replace(/\s*\n\s*/g, " ")}\n\n${details}` : question;
+      const title = choices.length ? `${text}\n\nOptions:\n${JSON.stringify(choices)}` : text;
       const answer = await ctx.ui.input(title, choices.length ? "Say anything" : undefined, { signal });
       const cancelled = signal?.aborted || answer === undefined;
       if (cancelled) {

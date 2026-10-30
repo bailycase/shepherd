@@ -155,6 +155,23 @@ struct QuestionDockIntegrationTests {
         #expect(try await thread.response()["cancelled"] as? Bool == true)
         try await thread.waitForTheComposer()
     }
+
+    /// Skip answers nothing: pi's dialog is cancelled, so the agent hears you didn't answer.
+    @Test func skipCancelsTheQuestion() async throws {
+        AccessibilityNode.enable()
+        let thread = try await QuestionThread()
+        defer { thread.close() }
+        _ = try await thread.ask("ask-choice")
+        try await eventuallyOnMain("Skip to be offered") {
+            thread.window.layout()
+            return thread.window.controls().contains { $0.label == "Skip" }
+        }
+
+        try thread.window.press("Skip")
+
+        #expect(try await thread.response()["cancelled"] as? Bool == true)
+        try await thread.waitForTheComposer()
+    }
 }
 
 /// A `ThreadView` on a live stub pi, focused, in an off-screen window.

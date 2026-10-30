@@ -42,6 +42,9 @@ test("a question with options is one native input Shepherd turns into buttons an
   // Free text: the plain question, no placeholder.
   await tool.execute("call-2", { question: "Which branch?" }, undefined, undefined, ctx);
   assert.deepEqual(dialogs.at(-1), { title: "Which branch?", placeholder: undefined });
+  // Details follow the one-line question after a blank line, ahead of the options.
+  await tool.execute("call-3", { question: "Keep\nlogs?", details: "They cost disk.\n\nOld ones are rarely read.", options: ["Yes", "No"] }, undefined, undefined, ctx);
+  assert.deepEqual(dialogs.at(-1), { title: 'Keep logs?\n\nThey cost disk.\n\nOld ones are rarely read.\n\nOptions:\n["Yes","No"]', placeholder: "Say anything" });
 });
 
 test("a dismissed question is reported, never answered, and bad input or no UI is an error", async () => {
@@ -55,6 +58,8 @@ test("a dismissed question is reported, never answered, and bad input or no UI i
   const ctx = { hasUI: true, ui: { input: async () => { asked.push(1); return "x"; } } };
   assert.equal((await tool.execute("c", { question: "   " }, undefined, undefined, ctx)).isError, true);
   assert.equal((await tool.execute("c", { question: "q", options: ["a", "b", "c", "d", "e", "f", "g"] }, undefined, undefined, ctx)).isError, true);
-  assert.equal((await tool.execute("c", { question: "x".repeat(2001) }, undefined, undefined, ctx)).isError, true);
+  // A question past one short sentence is refused so the background goes in details.
+  assert.equal((await tool.execute("c", { question: "x".repeat(301) }, undefined, undefined, ctx)).isError, true);
+  assert.equal((await tool.execute("c", { question: "q", details: "x".repeat(1601) }, undefined, undefined, ctx)).isError, true);
   assert.equal(asked.length, 0, "no dialog opens for a refused call");
 });
