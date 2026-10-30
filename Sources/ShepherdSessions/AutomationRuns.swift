@@ -133,7 +133,12 @@ final class AutomationRunLog: @unchecked Sendable {
             }
             let previous = list[index]
             var run = following(previous, status: agent.status, at: time)
-            if run.result != previous.result, run.result == .finished || run.result == .needsYou { run.unread = true }
+            // A turn that ended in an error (the model refused, a sign-in expired) is a failed run, not a finished one.
+            if run.result == .finished, let failure = agent.lastFailure {
+                run.result = .failed
+                run.failure = String(failure.prefix(500))
+            }
+            if run.result != previous.result, run.result == .finished || run.result == .needsYou || run.result == .failed { run.unread = true }
             // A run delivered to an existing thread ends with that thread's turn; the thread stays.
             if agent.automationOrigin?.automationID != automation.id, run.result == .finished {
                 run.endedAt = time

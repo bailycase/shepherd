@@ -156,3 +156,27 @@ struct AutomationProjectRunLogTests {
         #expect(run?.result == .finished && run?.endedAt != nil && run?.unread == true)
     }
 }
+
+/// A triggered run whose turn ended in an error reads as failed, with the error, not finished.
+@Suite("Automation run log: failed turns")
+struct AutomationFailedTurnRunLogTests {
+    @Test func aFailedTurnIsAFailedRun() {
+        let automation = Automation(id: AutomationID(rawValue: "t"), name: "loop", prompt: "p", cwd: "/tmp",
+                                    trigger: .schedule(AutomationSchedule(rrule: "FREQ=DAILY")))
+        let space = Space(name: "s", path: "/tmp")
+        let pane = LeafPane(cwd: "/tmp")
+        let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
+        var agent = Agent(name: "#1 t", spaceID: space.id, tabID: tab.id, paneID: pane.id, status: .working)
+        agent.automationOrigin = AutomationOrigin(automationID: automation.id, trigger: "#1 t · issue opened")
+        func state() -> ShepherdState { ShepherdState(spaces: [space], tabs: [tab], agents: [agent], automations: [automation]) }
+        let log = AutomationRunLog(url: FileManager.default.temporaryDirectory.appendingPathComponent("runs-\(UUID()).json"))
+        let empty = ShepherdState(spaces: [space], automations: [automation])
+        log.record(from: empty, to: state())
+        let working = state()
+        agent.status = .done
+        agent.lastFailure = "OAuth refresh failed"
+        log.record(from: working, to: state())
+        let run = log.runs[automation.id]?.last
+        #expect(run?.result == .failed && run?.failure == "OAuth refresh failed" && run?.unread == true)
+    }
+}
